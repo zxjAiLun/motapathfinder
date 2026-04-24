@@ -17,6 +17,7 @@ function actionType(action) {
   if (action.kind === "battle") return "monster";
   if (action.kind === "fightToLevelUp") return "fightToLevelUp";
   if (action.kind === "resourcePocket") return "resourcePocket";
+  if (action.kind === "event") return action.unsupported ? "unsupportedEvent" : "event";
   if (action.kind === "pickup") return "item";
   if (action.kind === "useTool") return "tool";
   return action.kind || "misc";
@@ -31,6 +32,7 @@ function actionRole(action) {
   if (action.kind === "fightToLevelUp") return "exp";
   if (action.kind === "battle") return "fight";
   if (action.kind === "openDoor") return "unlock";
+  if (action.kind === "event") return action.unsupported ? "unsupported" : "event";
   if (action.kind === "useTool") return "tool";
   return action.kind || "misc";
 }
@@ -42,7 +44,7 @@ function isProgressAction(action) {
 function ensureActionStats(stats, type) {
   if (!stats) return null;
   if (!stats.byActionType[type]) {
-    stats.byActionType[type] = { generated: 0, kept: 0, trimmed: 0, dominated: 0, expanded: 0, invalid: 0 };
+    stats.byActionType[type] = { generated: 0, kept: 0, trimmed: 0, dominated: 0, expanded: 0, invalid: 0, beamDropped: 0 };
   }
   return stats.byActionType[type];
 }
@@ -54,7 +56,7 @@ function recordActionStat(stats, action, field) {
   if (!stats.byActionRole) return;
   const role = actionRole(action);
   if (!stats.byActionRole[role]) {
-    stats.byActionRole[role] = { generated: 0, kept: 0, trimmed: 0, dominated: 0, expanded: 0, invalid: 0 };
+    stats.byActionRole[role] = { generated: 0, kept: 0, trimmed: 0, dominated: 0, expanded: 0, invalid: 0, beamDropped: 0 };
   }
   stats.byActionRole[role][field] = Number(stats.byActionRole[role][field] || 0) + 1;
 }
@@ -76,29 +78,113 @@ function getFrontierBucketKey(simulator, options, state) {
   return state.floorId || "";
 }
 
+
+function compactAction(action) {
+  if (!action) return null;
+  const compact = {
+    type: actionType(action),
+    kind: action.kind,
+  };
+  if (action.x != null && action.y != null) {
+    compact.x = action.x;
+    compact.y = action.y;
+  }
+  if (action.target) compact.target = action.target;
+  if (action.changeFloor) compact.changeFloor = action.changeFloor;
+  if (action.tool) compact.tool = action.tool;
+  if (action.id) compact.id = action.id;
+  if (action.eventId) compact.eventId = action.eventId;
+  if (action.estimate) {
+    compact.estimate = {
+      damage: action.estimate.damage,
+      exp: action.estimate.exp,
+      money: action.estimate.money,
+      score: action.estimate.score,
+      stopReasons: action.estimate.stopReasons,
+    };
+  }
+  return compact;
+}
+
+function compactState(state) {
+  if (!state) return null;
+  const hero = state.hero || {};
+  const progress = getProgress(state);
+  return {
+    floorId: state.floorId,
+    x: state.heroLoc && state.heroLoc.x,
+    y: state.heroLoc && state.heroLoc.y,
+    hp: hero.hp,
+    atk: hero.atk,
+    def: hero.def,
+    mdef: hero.mdef,
+    lv: hero.lv,
+    exp: hero.exp,
+    money: hero.money,
+    routeLength: Array.isArray(state.route) ? state.route.length : 0,
+    stageIndex: progress.stageIndex,
+    bestFloorRank: progress.bestFloorRank,
+  };
+}
+
+function pushLimitedSample(list, sample, limit) {
+  if (!Array.isArray(list)) return;
+  const max = limit || 20;
+  if (list.length < max) list.push(sample);
+}
+
+function recordDroppedActionSample(stats, reason, state, action) {
+  if (!stats || !action) return;
+  const type = actionType(action);
+  const progressLike = isProgressAction(action) || type === "changeFloor";
+  if (!progressLike) return;
+  stats.droppedProgressActions.total += 1;
+  stats.droppedProgressActions.byReason[reason] = Number(stats.droppedProgressActions.byReason[reason] || 0) + 1;
+  pushLimitedSample(stats.droppedProgressActions.samples, {
+    reason,
+    state: compactState(state),
+    action: compactAction(action),
+  }, stats.sampleLimit);
+}
+
+function resolveStateActionOptions(options, state) {
+  const resolved = { ...(options || {}) };
+  if (options && typeof options.getMaxActionsPerState === "function") {
+    const maxActions = options.getMaxActionsPerState(state, options);
+    if (maxActions != null) resolved.maxActionsPerState = maxActions;
+  }
+  if (options && typeof options.getActionQuotasForState === "function") {
+    Object.assign(resolved, options.getActionQuotasForState(state, resolved) || {});
+  }
+  return resolved;
+}
+
 function getStateActions(simulator, options, state) {
+  const actionOptions = resolveStateActionOptions(options, state);
   const startedAt = nowMs();
   const allActions = simulator.enumerateActions(state);
   if (options && options.__stats) options.__stats.perf.timeInGenerateActionsMs += nowMs() - startedAt;
   let actions = allActions;
-  if (options && typeof options.sortStateActions === "function") {
-    actions = options.sortStateActions(state, actions.slice());
+  if (actionOptions && typeof actionOptions.sortStateActions === "function") {
+    actions = actionOptions.sortStateActions(state, actions.slice());
   }
   if (options && options.__stats) {
     actions.forEach((action) => recordActionStat(options.__stats, action, "generated"));
   }
-  if (options && typeof options.selectStateActions === "function") {
-    actions = options.selectStateActions(state, actions.slice(), options);
-  } else if (options && options.maxActionsPerState != null) {
-    const maxActions = Number(options.maxActionsPerState);
-    if (options.reserveProgressActions) {
+  if (actionOptions && typeof actionOptions.selectStateActions === "function") {
+    actions = actionOptions.selectStateActions(state, actions.slice(), actionOptions);
+  } else if (actionOptions && actionOptions.maxActionsPerState != null) {
+    const maxActions = Number(actionOptions.maxActionsPerState);
+    if (actionOptions.reserveProgressActions) {
       actions = selectActionsByQuota(actions, {
         maxActions,
-        progressActionQuota: options.progressActionQuota,
-        unlockActionQuota: options.unlockActionQuota,
-        itemActionQuota: options.itemActionQuota,
-        fightActionQuota: options.fightActionQuota,
-        shopActionQuota: options.shopActionQuota,
+        progressActionQuota: actionOptions.progressActionQuota,
+        unlockActionQuota: actionOptions.unlockActionQuota,
+        itemActionQuota: actionOptions.itemActionQuota,
+        resourceActionQuota: actionOptions.resourceActionQuota,
+        expActionQuota: actionOptions.expActionQuota,
+        fightActionQuota: actionOptions.fightActionQuota,
+        shopActionQuota: actionOptions.shopActionQuota,
       });
     } else {
       actions = actions.slice(0, maxActions);
@@ -111,7 +197,10 @@ function getStateActions(simulator, options, state) {
       if (kept.has(action)) return;
       recordActionStat(options.__stats, action, "trimmed");
       recordFloor(options.__stats, state, "trimmed");
-      if (isProgressAction(action)) options.__stats.suspicious.progressActionTrimmed += 1;
+      if (isProgressAction(action)) {
+        options.__stats.suspicious.progressActionTrimmed += 1;
+        recordDroppedActionSample(options.__stats, "actionTrimmed", state, action);
+      }
     });
   }
   return actions;
@@ -218,26 +307,61 @@ function trimFrontierPerRegion(simulator, frontier, perRegionBeamWidth, options)
   return trimmed;
 }
 
+
+function resolveBeamLimits(simulator, frontier, options) {
+  const config = options || {};
+  const needsDynamic = config.perRegionBeamWidth == null || config.perFloorBeamWidth == null || config.beamWidth == null;
+  const dynamic = needsDynamic && typeof config.getBeamLimits === "function" ? (config.getBeamLimits(frontier, config, simulator) || {}) : {};
+  return {
+    perRegionBeamWidth: config.perRegionBeamWidth != null ? config.perRegionBeamWidth : dynamic.perRegionBeamWidth,
+    perFloorBeamWidth: config.perFloorBeamWidth != null ? config.perFloorBeamWidth : dynamic.perFloorBeamWidth,
+    beamWidth: config.beamWidth != null ? config.beamWidth : dynamic.beamWidth,
+  };
+}
+
+function recordFrontierDrops(stats, before, after, reason) {
+  if (!stats || before === after || before.length === 0) return;
+  const kept = new Set(after);
+  before.forEach((state) => {
+    if (kept.has(state)) return;
+    recordFloor(stats, state, "beamDropped");
+    recordActionStat(stats, state.__sourceAction, "beamDropped");
+    recordDroppedActionSample(stats, reason || "beamDropped", state, state.__sourceAction);
+    const floorId = state.floorId || "unknown";
+    stats.frontier.beamDroppedByFloor[floorId] = Number(stats.frontier.beamDroppedByFloor[floorId] || 0) + 1;
+    const stage = String(getProgress(state).stageIndex || 0);
+    stats.frontier.beamDroppedByStage[stage] = Number(stats.frontier.beamDroppedByStage[stage] || 0) + 1;
+  });
+}
+
 function trimFrontier(simulator, frontier, options) {
   const config = options || {};
+  const limits = resolveBeamLimits(simulator, frontier, config);
   let nextFrontier = frontier;
   const beforeLength = frontier.length;
-  const derivedPerRegionBeamWidth = config.perRegionBeamWidth != null
-    ? config.perRegionBeamWidth
-    : (config.perFloorBeamWidth ? Math.max(24, Math.floor(config.perFloorBeamWidth / 3)) : undefined);
+  const derivedPerRegionBeamWidth = limits.perRegionBeamWidth != null
+    ? limits.perRegionBeamWidth
+    : (limits.perFloorBeamWidth ? Math.max(24, Math.floor(limits.perFloorBeamWidth / 3)) : undefined);
   if (derivedPerRegionBeamWidth) {
+    const before = nextFrontier;
     nextFrontier = trimFrontierPerRegion(simulator, nextFrontier, derivedPerRegionBeamWidth, config);
+    recordFrontierDrops(config.__stats, before, nextFrontier, "perRegionBeamDropped");
   }
-  if (config.perFloorBeamWidth) {
-    nextFrontier = trimFrontierPerFloor(simulator, nextFrontier, config.perFloorBeamWidth, config);
+  if (limits.perFloorBeamWidth) {
+    const before = nextFrontier;
+    nextFrontier = trimFrontierPerFloor(simulator, nextFrontier, limits.perFloorBeamWidth, config);
+    recordFrontierDrops(config.__stats, before, nextFrontier, "perFloorBeamDropped");
   }
-  if (config.beamWidth && nextFrontier.length > config.beamWidth) {
+  if (limits.beamWidth && nextFrontier.length > limits.beamWidth) {
+    const before = nextFrontier;
     sortFrontier(simulator, nextFrontier, config);
-    nextFrontier = nextFrontier.slice(0, config.beamWidth);
+    nextFrontier = nextFrontier.slice(0, limits.beamWidth);
+    recordFrontierDrops(config.__stats, before, nextFrontier, "globalBeamDropped");
   }
   if (config.__stats && nextFrontier.length < beforeLength) {
     config.__stats.trimmed += beforeLength - nextFrontier.length;
     config.__stats.pruneReasons.beamDropped = Number(config.__stats.pruneReasons.beamDropped || 0) + beforeLength - nextFrontier.length;
+    config.__stats.frontier.beamDropped += beforeLength - nextFrontier.length;
   }
   return nextFrontier;
 }
@@ -262,6 +386,48 @@ function rebuildFrontierState(simulator, frontier, expandedStateKeys, options) {
   };
 }
 
+function usesExactDominance(simulator, config, state) {
+  if (!config || config.safeDominanceMode === false || config.safeDominanceMode === "0" || config.safeDominanceMode === "off") return false;
+  return typeof simulator.requiresExactDominance === "function" && simulator.requiresExactDominance(state);
+}
+
+function registerExactState(activeRecords, stateKey, rank, score, stats, state) {
+  const existing = activeRecords.get(stateKey);
+  if (existing && existing.rank && existing.rank.score && rank && rank.score) {
+    if (existing.rank.routeLength <= rank.routeLength) {
+      recordSkip(stats, "safe-exact-same-state");
+      return false;
+    }
+  } else if (existing) {
+    recordSkip(stats, "safe-exact-same-state");
+    return false;
+  }
+  const record = {
+    bucketKey: stateKey,
+    dominanceKey: stateKey,
+    rank,
+    stateKey,
+    summary: { stateKey, score },
+    exactOnly: true,
+  };
+  activeRecords.set(stateKey, record);
+  if (stats) {
+    stats.registered += 1;
+    stats.safeDominance.exactOnly += 1;
+  }
+  recordFloor(stats, state, "kept");
+  return true;
+}
+
+function getActiveBestRecord(bestByDominanceKey, activeRecords, dominanceKey, stats) {
+  const record = bestByDominanceKey.get(dominanceKey);
+  if (!record) return null;
+  if (activeRecords.get(record.stateKey) === record) return record;
+  bestByDominanceKey.delete(dominanceKey);
+  if (stats) stats.safeDominance.staleBestRecords += 1;
+  return null;
+}
+
 function registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, state, stats, options) {
   const startedAt = stats ? nowMs() : 0;
   const config = options || {};
@@ -282,8 +448,13 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
     if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
     return true;
   }
+  if (usesExactDominance(simulator, config, state)) {
+    const registered = registerExactState(activeRecords, stateKey, rank, score, stats, state);
+    if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
+    return registered;
+  }
   const dominanceKey = buildDominanceKey(state);
-  const bestRecord = bestByDominanceKey.get(dominanceKey);
+  const bestRecord = getActiveBestRecord(bestByDominanceKey, activeRecords, dominanceKey, stats);
   const summary = simulator.buildDominanceSummary(state, score);
   if (bestRecord) {
     if (bestRecord.stateKey === stateKey && simulator.compareRanks(bestRecord.rank, rank) >= 0) {
@@ -334,6 +505,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
     }
     if (simulator.dominates(summary, record.summary)) {
       activeRecords.delete(record.stateKey);
+      if (bestByDominanceKey.get(record.dominanceKey) === record) bestByDominanceKey.delete(record.dominanceKey);
       return;
     }
     nextBucket.push(record);
@@ -374,9 +546,8 @@ function maybeAutoExpandForwardChangeFloors(simulator, parentState, frontier, ac
     const applyStartedAt = nowMs();
     const childState = simulator.applyAction(parentState, action);
     stats.perf.timeInApplyActionMs += nowMs() - applyStartedAt;
-    childState.__sourceAction = action;
+    childState.__sourceAction = compactAction(action);
     if (!registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, childState, stats, config)) return;
-    delete childState.__sourceAction;
     updateBest(childState);
     frontier.push(childState);
   });
@@ -402,12 +573,27 @@ function searchTopK(simulator, initialState, options) {
     byActionRole: {},
     byFloor: {},
     byStage: {},
+    droppedProgressActions: {
+      total: 0,
+      byReason: {},
+      samples: [],
+    },
+    frontier: {
+      beamDropped: 0,
+      beamDroppedByFloor: {},
+      beamDroppedByStage: {},
+    },
+    sampleLimit: Number(config.sampleLimit || 20),
     pruneReasons: {},
     suspicious: {
       higherStageDominatedByLowerStage: 0,
       progressActionTrimmed: 0,
       goalCandidateGeneratedButDropped: 0,
       fallbackUsedWhenStrictGoalRequired: 0,
+    },
+    safeDominance: {
+      exactOnly: 0,
+      staleBestRecords: 0,
     },
     perf: {
       wallMs: 0,
@@ -481,9 +667,8 @@ function searchTopK(simulator, initialState, options) {
       const applyStartedAt = nowMs();
       const nextState = simulator.applyAction(state, action);
       stats.perf.timeInApplyActionMs += nowMs() - applyStartedAt;
-      nextState.__sourceAction = action;
+      nextState.__sourceAction = compactAction(action);
       if (!registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, nextState, stats, config)) return;
-      delete nextState.__sourceAction;
       updateBestState(nextState);
       frontier.push(nextState);
       maybeAutoExpandForwardChangeFloors(simulator, nextState, frontier, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, stats, config, updateBestState);
@@ -532,9 +717,12 @@ function searchTopK(simulator, initialState, options) {
       byStage: stats.byStage,
       byActionType: stats.byActionType,
       byActionRole: stats.byActionRole,
+      droppedProgressActions: stats.droppedProgressActions,
+      frontier: stats.frontier,
       perf: stats.perf,
       pruneReasons: stats.pruneReasons,
       suspicious: stats.suspicious,
+      safeDominance: stats.safeDominance,
       best: {
         bestSeenFloor: bestSeenState && bestSeenState.floorId,
         bestSeenStage: bestSeenState ? getProgress(bestSeenState).stageIndex : null,

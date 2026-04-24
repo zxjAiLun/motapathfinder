@@ -229,15 +229,29 @@ function decrementTemporaryFlags(state) {
   });
 }
 
-function applyBattleRewards(project, state, enemyInfo) {
-  let money = Number(enemyInfo.money || 0);
+function sumGuardEnemyValue(project, guards, key) {
+  return (guards || []).reduce((sum, guard) => {
+    const enemy = project.enemysById[guard[2]] || {};
+    return sum + Number(enemy[key] || 0);
+  }, 0);
+}
+
+function applyAddPointReward(project, state, point) {
+  const value = Number(point || 0);
+  if (!project.defaultFlags.enableAddPoint || value <= 0) return;
+  state.hero.atk = Number(state.hero.atk || 0) + value;
+  state.notes.push(`Add-point modeled as default attack choice: atk +${value}`);
+}
+
+function applyBattleRewards(project, state, enemyInfo, guards) {
+  let money = Number(enemyInfo.money || 0) + sumGuardEnemyValue(project, guards, "money");
   if (getInventoryCount(state.inventory, "coin") > 0) money *= 2;
   if (state.flags.curse) money = 0;
   if (getInventoryCount(state.inventory, "I1788") > 0) {
     money *= getInventoryCount(state.inventory, "I1788") + 1;
   }
 
-  let exp = Number(enemyInfo.exp || 0);
+  let exp = Number(enemyInfo.exp || 0) + sumGuardEnemyValue(project, guards, "exp");
   if (state.flags.curse) exp = 0;
   if (getInventoryCount(state.inventory, "I608") > 0) {
     exp *= getInventoryCount(state.inventory, "I608");
@@ -250,9 +264,7 @@ function applyBattleRewards(project, state, enemyInfo) {
   state.hero.statistics.money = Number(state.hero.statistics.money || 0) + Math.floor(money);
   state.hero.statistics.exp = Number(state.hero.statistics.exp || 0) + Math.floor(exp);
 
-  if (project.defaultFlags.enableAddPoint && Number(enemyInfo.point || 0) > 0) {
-    state.notes.push(`Add-point event not modeled yet; skipped ${enemyInfo.point} point(s).`);
-  }
+  applyAddPointReward(project, state, Number(enemyInfo.point || 0) + sumGuardEnemyValue(project, guards, "point"));
 }
 
 class UnsupportedBattleResolver {
@@ -292,20 +304,13 @@ class FunctionBackedBattleResolver {
 
     try {
       const enemyInfo = core.enemys.getEnemyInfo(enemy, null, x, y, floorId);
-      if (Array.isArray(enemyInfo.guards) && enemyInfo.guards.length > 0) {
-        return {
-          supported: false,
-          reason: "Guard-linked battles are not modeled yet.",
-          enemy,
-          enemyInfo,
-        };
-      }
-
+      const guards = Array.isArray(enemyInfo.guards) ? enemyInfo.guards.slice() : [];
       const damageInfo = core.enemys.getDamageInfo(enemy, null, x, y, floorId);
       return {
         supported: true,
         enemy,
         enemyInfo,
+        guards,
         damageInfo,
       };
     } catch (error) {
@@ -344,8 +349,9 @@ class FunctionBackedBattleResolver {
           estimate: {
             damage: battle.damageInfo.damage,
             turn: battle.damageInfo.turn,
-            money: battle.enemyInfo.money,
-            exp: battle.enemyInfo.exp,
+            money: Number(battle.enemyInfo.money || 0) + sumGuardEnemyValue(this.project, battle.guards, "money"),
+            exp: Number(battle.enemyInfo.exp || 0) + sumGuardEnemyValue(this.project, battle.guards, "exp"),
+            guards: (battle.guards || []).length,
           },
           summary: `battle:${tile.id}@${node.state.floorId}:${targetX},${targetY}`,
         };
@@ -382,7 +388,7 @@ class FunctionBackedBattleResolver {
     state.hero.statistics.battleDamage = Number(state.hero.statistics.battleDamage || 0) + damage;
     state.hero.statistics.battle = Number(state.hero.statistics.battle || 0) + 1;
 
-    applyBattleRewards(project, state, battle.enemyInfo);
+    applyBattleRewards(project, state, battle.enemyInfo, battle.guards);
     runLevelUps(project, state, { choiceResolver });
 
     if (hasSpecial(battle.enemy.special, 17)) {
@@ -393,6 +399,9 @@ class FunctionBackedBattleResolver {
     }
 
     decrementTemporaryFlags(state);
+    (battle.guards || []).forEach((guard) => {
+      removeTileAt(state, resolvedFloorId, guard[0], guard[1]);
+    });
     removeTileAt(state, resolvedFloorId, x, y);
 
     const floor = project.floorsById[resolvedFloorId];

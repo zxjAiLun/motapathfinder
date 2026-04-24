@@ -5,7 +5,12 @@
     "verify:mt3": "node verify-route-live.js --goal=updown-mt1-mt3 --allow-fallback=0",
     "verify:best": "node verify-route-live.js --goal=best-seen --allow-fallback=0 --search-expansions=300 --beam-width=300 --per-floor-beam-width=120 --per-region-beam-width=40",
     "watch:mt3": "node verify-route-live.js --goal=updown-mt1-mt3 --allow-fallback=0 --headless=0 --step-delay-ms=700 --keep-open=1",
-    "watch:best": "node verify-route-live.js --goal=best-seen --allow-fallback=0 --search-expansions=300 --beam-width=300 --per-floor-beam-width=120 --per-region-beam-width=40 --headless=0 --step-delay-ms=700 --keep-open=1"
+    "watch:best": "node verify-route-live.js --goal=best-seen --allow-fallback=0 --search-expansions=300 --beam-width=300 --per-floor-beam-width=120 --per-region-beam-width=40 --headless=0 --step-delay-ms=700 --keep-open=1",
+    "verify:mt1-mt2-mt1:live": "node verify-route-live.js --goal=updown-mt1-mt3 --allow-fallback=0 --trace-live=1",
+    "verify:mt3:progress:live": "node verify-mt1-mt3-live.js --to-floor=MT3 --goal=best-progress --trace-live=1 --allow-fallback=0 --search-expansions=300 --beam-width=360 --per-floor-beam-width=160 --per-region-beam-width=60",
+    "verify:mt5:progress:live": "node verify-mt1-mt3-live.js --to-floor=MT5 --goal=best-progress --trace-live=1 --allow-fallback=0 --search-expansions=600 --beam-width=500 --per-floor-beam-width=220 --per-region-beam-width=80",
+    "watch:mt3:progress": "npm run verify:mt3:progress:live -- --headless=0 --step-delay-ms=500 --keep-open=1 --start-delay-ms=3000",
+    "watch:mt5:progress": "npm run verify:mt5:progress:live -- --headless=0 --step-delay-ms=500 --keep-open=1 --start-delay-ms=3000"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

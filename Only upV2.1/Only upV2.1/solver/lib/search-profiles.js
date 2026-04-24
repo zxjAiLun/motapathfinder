@@ -5,6 +5,10 @@ const { evaluateExpression } = require("./expression");
 const { getProgress } = require("./progress");
 const { getFloorOrder, getProgressFloorOrder } = require("./score");
 const {
+  compareStageObjectiveStates,
+  sortStagePolicyActions,
+} = require("./stage-policy");
+const {
   compareCandidateActions,
   compareCandidateStates,
 } = require("./updown-candidate-policy");
@@ -23,7 +27,7 @@ function getActionEndpoint(action) {
   if (action.kind === "battle" || action.kind === "openDoor" || action.kind === "useTool") {
     return action.target || null;
   }
-  if (action.kind === "pickup" || action.kind === "changeFloor") {
+  if (action.kind === "pickup" || action.kind === "changeFloor" || action.kind === "event") {
     return { x: action.x, y: action.y };
   }
   return null;
@@ -32,6 +36,75 @@ function getActionEndpoint(action) {
 function distanceTo(point, target) {
   if (!point || !target) return Number.POSITIVE_INFINITY;
   return Math.abs(point.x - target.x) + Math.abs(point.y - target.y);
+}
+
+
+function floorQuotaOverrides(floorId, base, mode) {
+  const resourceHeavy = mode === "resource-prep";
+  const defaults = {
+    maxActionsPerState: resourceHeavy ? 48 : 32,
+    progressActionQuota: 8,
+    unlockActionQuota: resourceHeavy ? 8 : 6,
+    itemActionQuota: resourceHeavy ? 16 : 6,
+    resourceActionQuota: resourceHeavy ? 18 : 12,
+    expActionQuota: resourceHeavy ? 24 : 12,
+    fightActionQuota: resourceHeavy ? 24 : 10,
+    shopActionQuota: resourceHeavy ? 6 : 3,
+  };
+  const floorOverrides = {
+    MT1: resourceHeavy
+      ? { maxActionsPerState: 42, resourceActionQuota: 14, expActionQuota: 18, fightActionQuota: 18 }
+      : { maxActionsPerState: 28, resourceActionQuota: 10, expActionQuota: 10, fightActionQuota: 8 },
+    MT2: resourceHeavy
+      ? { maxActionsPerState: 56, progressActionQuota: 10, unlockActionQuota: 10, resourceActionQuota: 22, expActionQuota: 26, fightActionQuota: 26 }
+      : { maxActionsPerState: 36, progressActionQuota: 10, unlockActionQuota: 8, resourceActionQuota: 14, expActionQuota: 14, fightActionQuota: 12 },
+    MT3: resourceHeavy
+      ? { maxActionsPerState: 52, progressActionQuota: 10, resourceActionQuota: 18, expActionQuota: 22, fightActionQuota: 22 }
+      : { maxActionsPerState: 36, progressActionQuota: 10, resourceActionQuota: 12, expActionQuota: 14, fightActionQuota: 12 },
+    MT4: { maxActionsPerState: resourceHeavy ? 50 : 34, progressActionQuota: 10, resourceActionQuota: resourceHeavy ? 18 : 12, fightActionQuota: resourceHeavy ? 20 : 12 },
+    MT5: { maxActionsPerState: resourceHeavy ? 54 : 38, progressActionQuota: 10, resourceActionQuota: resourceHeavy ? 20 : 13, fightActionQuota: resourceHeavy ? 22 : 14 },
+  };
+  const override = floorOverrides[floorId] || {};
+  return { ...defaults, ...base, ...override };
+}
+
+function createAdaptiveActionQuotaGetter(config, mode) {
+  return (state, current) => {
+    const explicitMax = config.maxActionsPerState;
+    const quotas = floorQuotaOverrides(state.floorId, current, mode);
+    if (explicitMax != null) quotas.maxActionsPerState = explicitMax;
+    return quotas;
+  };
+}
+
+function createAdaptiveBeamGetter(config, mode) {
+  return (frontier) => {
+    const resourceHeavy = mode === "resource-prep";
+    let maxFloorOrder = 0;
+    let branchyStateCount = 0;
+    frontier.forEach((state) => {
+      maxFloorOrder = Math.max(maxFloorOrder, getFloorOrder(state.floorId));
+      const features = computeFrontierFeatures(config.project, state, {
+        battleResolver: config.battleResolver,
+      });
+      const branchScore = Number(features.battleFrontierCount || 0) + Number(features.resourcePocketCount || 0) + Number(features.changeFloorCount || 0);
+      if (branchScore >= 6 || state.floorId === "MT2" || state.floorId === "MT3") branchyStateCount += 1;
+    });
+    const branchy = branchyStateCount > Math.max(3, Math.floor(frontier.length / 5));
+    const lowFloor = maxFloorOrder <= 1;
+    const base = resourceHeavy
+      ? { beamWidth: 360, perFloorBeamWidth: 160, perRegionBeamWidth: 64 }
+      : { beamWidth: 260, perFloorBeamWidth: 120, perRegionBeamWidth: 48 };
+    if (lowFloor && !branchy) {
+      return resourceHeavy
+        ? { beamWidth: 220, perFloorBeamWidth: 100, perRegionBeamWidth: 40 }
+        : { beamWidth: 160, perFloorBeamWidth: 72, perRegionBeamWidth: 30 };
+    }
+    if (branchy || maxFloorOrder >= 2) return base;
+    return resourceHeavy
+      ? { beamWidth: 280, perFloorBeamWidth: 128, perRegionBeamWidth: 52 }
+      : { beamWidth: 210, perFloorBeamWidth: 96, perRegionBeamWidth: 40 };
+  };
 }
 
 
@@ -171,6 +244,8 @@ function getStageActionScore(simulator, state, action, index) {
     if (stopReasons.includes("forwardChangeFloor")) score += 30000;
     if (stopReasons.includes("keyItem")) score += 12000;
     score += Math.min(9000, Number((action.estimate || {}).score || 0));
+  } else if (action.kind === "event") {
+    score += action.unsupported ? 50 : (action.hasStateChange ? 6100 : 200);
   } else if (action.kind === "openDoor") {
     score += 6200;
   } else if (action.kind === "useTool") {
@@ -308,10 +383,10 @@ function createUpDownMt1Mt3Profile(simulator, options) {
 }
 
 function createStageMt1Mt11Profile(simulator, options) {
-  const config = options || {};
+  const config = { ...(options || {}), project: simulator.project, battleResolver: simulator.battleResolver };
   return {
-    compareFrontierStates: (left, right) => compareStageStates(simulator, left, right),
-    sortStateActions: (state, actions) => sortStageActions(simulator, state, actions),
+    compareFrontierStates: (left, right) => compareStageObjectiveStates(simulator, left, right, config),
+    sortStateActions: (state, actions) => sortStagePolicyActions(simulator, state, actions, config),
     getFrontierBucketKey: (state) => {
       const features = computeFrontierFeatures(simulator.project, state, {
         battleResolver: simulator.battleResolver,
@@ -319,21 +394,24 @@ function createStageMt1Mt11Profile(simulator, options) {
       const progress = getProgress(state);
       return `${progress.stageIndex}|${state.floorId}|${features.regionKey}|${features.targetBandKey}`;
     },
-    maxActionsPerState: config.maxActionsPerState || 24,
+    targetFloorId: config.targetFloorId || simulator.stopFloorId,
+    maxActionsPerState: config.maxActionsPerState || 32,
     progressActionQuota: config.progressActionQuota || 8,
     unlockActionQuota: config.unlockActionQuota || 6,
     itemActionQuota: config.itemActionQuota || 6,
-    resourceActionQuota: config.resourceActionQuota || 8,
-    expActionQuota: config.expActionQuota || 8,
-    fightActionQuota: config.fightActionQuota || 6,
+    resourceActionQuota: config.resourceActionQuota || 12,
+    expActionQuota: config.expActionQuota || 12,
+    fightActionQuota: config.fightActionQuota || 10,
     shopActionQuota: config.shopActionQuota || 3,
+    getActionQuotasForState: createAdaptiveActionQuotaGetter(config, "stage"),
+    getBeamLimits: createAdaptiveBeamGetter(config, "stage"),
     reserveProgressActions: true,
     forwardChangeFloorAutoExpand: true,
   };
 }
 
 function createStageMt1Mt11ResourcePrepProfile(simulator, options) {
-  const config = options || {};
+  const config = { ...(options || {}), project: simulator.project, battleResolver: simulator.battleResolver };
   return {
     compareFrontierStates: (left, right) => compareResourcePrepStates(simulator, left, right),
     sortStateActions: (state, actions) => sortResourcePrepActions(simulator, state, actions),
@@ -355,6 +433,8 @@ function createStageMt1Mt11ResourcePrepProfile(simulator, options) {
     expActionQuota: config.expActionQuota || 24,
     fightActionQuota: config.fightActionQuota || 24,
     shopActionQuota: config.shopActionQuota || 6,
+    getActionQuotasForState: createAdaptiveActionQuotaGetter(config, "resource-prep"),
+    getBeamLimits: createAdaptiveBeamGetter(config, "resource-prep"),
     reserveProgressActions: true,
     forwardChangeFloorAutoExpand: true,
   };

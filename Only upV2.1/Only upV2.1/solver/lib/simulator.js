@@ -3,6 +3,7 @@
 const { applyPickup } = require("./effect-vm");
 const { AutoActionResolver } = require("./auto-actions");
 const { EquipmentResolver } = require("./equipment-resolver");
+const { EventResolver } = require("./event-resolver");
 const { evaluateExpression } = require("./expression");
 const { applyFloorArrival, executeActionList, runAutoEvents } = require("./events");
 const { resolveChangeFloorTarget } = require("./floor-transitions");
@@ -49,19 +50,57 @@ function findAdjacencyActions(project, reachability, predicate, buildAction) {
       const tile = getTileDefinitionAt(project, node.state, node.state.floorId, targetX, targetY);
       if (!predicate(node, tile, targetX, targetY)) return;
 
-      const action = buildAction(node, direction, targetX, targetY, tile, node.path, node.state);
-      const stateKey = buildStateKey(action.travelState || node.state);
-      keepShortestAction(actionsByKey, `${targetX},${targetY}:${action.kind}:${stateKey}`, action);
+      const built = buildAction(node, direction, targetX, targetY, tile, node.path, node.state);
+      const builtActions = Array.isArray(built) ? built : [built];
+      builtActions.filter(Boolean).forEach((action) => {
+        const stateKey = buildStateKey(action.travelState || node.state);
+        keepShortestAction(actionsByKey, `${targetX},${targetY}:${action.kind}:${action.summary || ""}:${stateKey}`, action);
+      });
     });
   });
 
   return Array.from(actionsByKey.values());
 }
 
+function containsComplexDominanceFeature(value) {
+  if (value == null) return false;
+  if (Array.isArray(value)) return value.some((item) => containsComplexDominanceFeature(item));
+  if (typeof value === "object") {
+    return Object.entries(value).some(([key, child]) => {
+      if (["choices", "shop", "condition", "status", "setValue", "setHero", "setEnemy", "if", "switch", "while"].includes(key)) return true;
+      if (key === "type" && ["choices", "shop", "if", "confirm", "input", "setValue", "setHero", "setEnemy"].includes(child)) return true;
+      return containsComplexDominanceFeature(child);
+    });
+  }
+  if (typeof value !== "string") return false;
+  return /core\.(status|openShop|insertAction|setValue|setHero|setEnemy)|\b(shop|choices|condition|if)\b/.test(value);
+}
+
+function buildUnsafeDominanceFloors(project) {
+  const floors = new Set();
+  Object.values((project || {}).floorsById || {}).forEach((floor) => {
+    const complex = [
+      floor.autoEvent,
+      floor.events,
+      floor.beforeBattle,
+      floor.afterBattle,
+      floor.afterGetItem,
+      floor.afterOpenDoor,
+      floor.firstArrive,
+      floor.eachArrive,
+      floor.parallelDo,
+    ].some((section) => containsComplexDominanceFeature(section));
+    if (complex) floors.add(floor.floorId);
+  });
+  return floors;
+}
+
+
 class StaticSimulator {
   constructor(project, options) {
     const config = options || {};
     this.project = project;
+    this.unsafeDominanceFloors = buildUnsafeDominanceFloors(project);
     this.stopFloorId = config.stopFloorId || "MT11";
     this.scoreFn = config.scoreFn || defaultScore;
     this.searchRankFn = config.searchRankFn || defaultSearchRank;
@@ -71,6 +110,9 @@ class StaticSimulator {
     this.battleResolver = config.battleResolver || new UnsupportedBattleResolver();
     this.doorResolver = config.doorResolver || new GenericDoorResolver();
     this.equipmentResolver = config.equipmentResolver || new EquipmentResolver();
+    this.eventResolver = config.eventResolver || new EventResolver({
+      includeUnsupportedExperiments: config.includeUnsupportedEventExperiments,
+    });
     this.toolRegistry = config.toolRegistry || new ToolRegistry();
     this.autoResolver = config.autoResolver || new AutoActionResolver({
       autoPickupEnabled: config.autoPickupEnabled,
@@ -140,6 +182,10 @@ class StaticSimulator {
     return this.dominatesFn(leftSummary, rightSummary);
   }
 
+  requiresExactDominance(state) {
+    return Boolean(state && this.unsafeDominanceFloors && this.unsafeDominanceFloors.has(state.floorId));
+  }
+
   enumeratePrimitiveActions(state) {
     const floor = this.project.floorsById[state.floorId];
     const reachability = buildWalkReachability(this.project, state, {
@@ -191,6 +237,7 @@ class StaticSimulator {
 
     actions.push(...this.doorResolver.enumerateActions({ project: this.project, state, reachability, helper }));
     actions.push(...this.equipmentResolver.enumerateActions({ project: this.project, state, floor, reachability, helper }));
+    actions.push(...this.eventResolver.enumerateActions({ project: this.project, state, floor, reachability, helper }));
     actions.push(...this.toolRegistry.enumerateActions({ project: this.project, state, floor, reachability, helper }));
 
     const battleActions = this.battleResolver.enumerateActions({
@@ -259,7 +306,8 @@ class StaticSimulator {
       action.kind === "openDoor" ||
       action.kind === "useTool" ||
       action.kind === "pickup" ||
-      action.kind === "equip"
+      action.kind === "equip" ||
+      (action.kind === "event" && action.hasStateChange)
     );
   }
 
@@ -321,6 +369,7 @@ class StaticSimulator {
     if (action.kind === "useTool") score += 22000;
     if (action.kind === "pickup") score += 26000;
     if (action.kind === "equip") score += 18000;
+    if (action.kind === "event") score += action.unsupported ? -100000 : (action.hasStateChange ? 38000 : -5000);
     if (action.kind === "battle") {
       score += Number((action.estimate || {}).exp || 0) * 12000;
       score -= Math.min(18000, Number((action.estimate || {}).damage || 0) * 2);
@@ -332,6 +381,7 @@ class StaticSimulator {
     if (!this.isPocketPrimitiveAction(action)) return Number.NEGATIVE_INFINITY;
     if (action.kind === "pickup") return 70000;
     if (action.kind === "equip") return 60000;
+    if (action.kind === "event") return action.unsupported || !action.hasStateChange ? Number.NEGATIVE_INFINITY : 56000;
     if (action.kind === "openDoor") return 50000;
     if (action.kind === "useTool") return 42000;
     if (action.kind === "battle") {
@@ -590,6 +640,8 @@ class StaticSimulator {
         return 420;
       case "equip":
         return 320;
+      case "event":
+        return action.unsupported ? 10 : (action.hasStateChange ? 360 : 40);
       case "pickup":
         return 200;
       default:
@@ -641,6 +693,9 @@ class StaticSimulator {
         break;
       case "equip":
         this.applyEquipAction(nextState, action);
+        break;
+      case "event":
+        nextState = this.applyEventAction(nextState, action);
         break;
       case "battle":
         this.battleResolver.applyAction({
@@ -774,6 +829,27 @@ class StaticSimulator {
 
   applyEquipAction(state, action) {
     this.equipmentResolver.applyAction({ project: this.project, state, action });
+  }
+
+  applyEventAction(state, action) {
+    const runEvent = (nextState) => {
+      this.eventResolver.applyAction({
+        project: this.project,
+        state: nextState,
+        action,
+        stabilizeState: (stableState) => this.stabilizeState(stableState),
+      });
+      return true;
+    };
+
+    if (!action.direction) {
+      runEvent(state);
+      return state;
+    }
+
+    return this.stepIntoEndpoint(state, action, {
+      afterHazards: runEvent,
+    });
   }
 
   applyFightToLevelUpAction(state, action) {

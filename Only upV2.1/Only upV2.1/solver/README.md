@@ -33,9 +33,9 @@ Auto-generated pickup / battle steps are kept in `state.route` for replay visibi
 
 Battle expansion is now wired in, but the solver is still intentionally conservative around several runtime behaviors:
 
-- support-linked fights with guard chaining are skipped
-- movement-side `repulse` is currently treated as unsupported, and `zone/laser` are scaffolded but not yet validated on MT1-MT10
-- add-point events and UI-only battle side effects are not modeled
+- support-linked fights with guard chaining are modeled for damage, rewards, and guard removal; guard-specific post-battle effects remain intentionally conservative
+- movement-side `repulse` is modeled as a runtime-style monster move; `zone/laser/ambush/betweenAttack` still need dedicated runtime trace calibration on MT1-MT10
+- add-point rewards are modeled as the deterministic attack branch when `enableAddPoint` is active; richer UI choice policies remain TODO
 - battle rewards and post-battle state updates currently implement the reusable subset needed by MT1-MT10, then hand off to floor `afterBattle` and `autoEvent`
 - dominance pruning currently assumes that higher hero resources and larger inventory are never worse inside the same floor/position/flag/map-mutation bucket
 
@@ -50,8 +50,11 @@ The structured event executor currently supports:
 - `hide`
 - `setBlock`
 - `changeFloor`
+- `win`
 
-Unsupported event types are recorded in `state.notes`.
+Unsupported event types are recorded in `state.notes`. Event macro actions now enumerate adjacent trigger endpoints for this supported subset; shop/add-point/upgrade choices are intentionally deferred because the current tower path does not require them yet.
+
+Tool audit for the current tower: `bomb` awards the target monster money/exp and removes the monster, but its project item script keeps afterBattle insertion commented out, so the solver does not run afterBattle for bombs. `pickaxe`/`centerFly` likewise do not trigger battle rewards or level-up chains.
 
 ## File layout
 
@@ -103,14 +106,21 @@ node solver/verify-mt1-mt3-live.js --search-expansions=120 --per-state-limit=6
 
 The verifier first tries to search for a short up/down candidate using the reusable MT1 -> MT2 -> MT1 stage-objective policy. If that search budget is too small, it falls back to a maintained MT1 -> MT2 -> MT1 decision list and still checks every resulting runtime snapshot against the solver state.
 
+## Stage policy
+
+The `stage-mt1-mt11` profile now uses a staged objective policy as the main search ordering. It prioritizes stable floor progress, forward stair readiness, distance to the next stair, low-damage EXP fights, level-up/resource-pocket macros, unlock actions, and key resources. `run-mt1-mt11.js --profile=stage-mt1-mt11 --to-floor=MT5` now runs this policy directly instead of relying on verifier-only up/down candidate logic.
+
+When diagnostics are enabled, `Stage objective` reports the current phase, forward stair readiness, distance to the next stair, battle frontier, and level readiness for `bestProgressState`.
+
 ## Next fill-in points
 
-1. Expand battle post-processing for support guards and add-point branches.
-2. Tighten `centerFly` semantics against engine behavior.
-3. Push the live verifier's candidate search below the current ~116-expansion self-find threshold so even tighter debug budgets still avoid the fallback route.
-4. Add stronger pruning and dominance checks now that battle expansion is enabled.
-5. Extend macro actions for more trigger tiles once MT1-MT10 search is stable.
-6. Decide whether beam-search settings should become the default runtime profile or remain explicit CLI knobs.
+1. TODO: Add dedicated shop / add-point / upgrade-choice resolvers if a future tower segment requires them.
+2. Expand battle post-processing for support guards and add-point branches.
+3. Tighten `centerFly` semantics against engine behavior.
+4. Push the live verifier's candidate search below the current ~116-expansion self-find threshold so even tighter debug budgets still avoid the fallback route.
+5. Add stronger pruning and dominance checks now that battle expansion is enabled.
+6. Extend macro actions for more trigger tiles once MT1-MT10 search is stable.
+7. Decide whether beam-search settings should become the default runtime profile or remain explicit CLI knobs.
 
 ## Extension points
 

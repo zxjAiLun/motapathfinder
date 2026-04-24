@@ -159,7 +159,9 @@ function buildMovementHazards(project, state, options) {
         const rnx = x + nextDelta.x;
         const rny = y + nextDelta.y;
         if (!floorHasCoordinate(project, floorId, rnx, rny)) return;
-        repulse[currLoc] = (repulse[currLoc] || []).concat([[x, y, id, backward]]);
+        if (getTileDefinitionAt(project, state, floorId, rnx, rny) != null) return;
+        if (SCAN4[backward] && !canMoveBetween(project, state, floorId, x, y, nextDelta)) return;
+        repulse[currLoc] = (repulse[currLoc] || []).concat([[x, y, id, backward, rnx, rny]]);
       });
     }
 
@@ -251,6 +253,7 @@ function buildMovementHazards(project, state, options) {
     type,
     repulse,
     ambush,
+    betweenAttackLocs,
   };
 }
 

@@ -8,6 +8,7 @@ const { loadProject } = require("./lib/project-loader");
 const { formatScore, getFloorOrder } = require("./lib/score");
 const { searchTopK } = require("./lib/search");
 const { createSearchProfile } = require("./lib/search-profiles");
+const { summarizeStageObjective } = require("./lib/stage-policy");
 const { StaticSimulator } = require("./lib/simulator");
 const { getDecisionDepth } = require("./lib/state");
 
@@ -79,6 +80,32 @@ function summarizeAction(action) {
   }
   const plan = Array.isArray(action.plan) ? ` plan=[${action.plan.join(" -> ")}]` : "";
   return `${action.kind}: ${action.summary}${details.length ? ` (${details.join(" ")})` : ""}${plan}`;
+}
+
+
+function summarizeReplayConfidence(state, liveVerified) {
+  if (!state) {
+    return {
+      liveVerified: false,
+      status: "no-state",
+      verifiedFloor: null,
+      routeLength: 0,
+      unsupportedNoteCount: 0,
+      unsupportedNotesPreview: [],
+    };
+  }
+  const notes = state.notes || [];
+  const unsupportedNotes = notes.filter((note) => /unsupported|未支持|not supported/i.test(String(note)));
+  return {
+    liveVerified: Boolean(liveVerified),
+    status: liveVerified ? "live-verified" : "not-live-verified",
+    verifiedFloor: liveVerified ? state.floorId : null,
+    solverFloor: state.floorId,
+    routeLength: Array.isArray(state.route) ? state.route.length : 0,
+    unsupportedNoteCount: unsupportedNotes.length,
+    unsupportedNotesPreview: unsupportedNotes.slice(0, 5),
+    hazardStats: state.meta && state.meta.hazardStats ? state.meta.hazardStats : null,
+  };
 }
 
 function printActionsForState(label, simulator, state, limit) {
@@ -176,6 +203,9 @@ function printStateSummary(label, simulator, state, options) {
     `${label}: floor=${state.floorId} hp=${state.hero.hp} atk=${state.hero.atk} def=${state.hero.def} mdef=${state.hero.mdef} ` +
       `score=${formatScore(simulator.score(state))} decisions=${getDecisionDepth(state)} routeLen=${state.route.length}`
   );
+  if (state.meta && state.meta.hazardStats) {
+    console.log(`Hazards: ${JSON.stringify(state.meta.hazardStats)}`);
+  }
   if (config.printBestRoute) {
     state.route.forEach((step) => console.log(`  ${step}`));
   }
@@ -198,6 +228,9 @@ function printProgressDebug(project, simulator, result, args) {
     }
     printActionsForState("Best progress", simulator, bestProgressState, Number(args["action-limit"] || 60));
   }
+  if (parseBooleanFlag(args["print-stage-objective"], parseBooleanFlag(args.diagnostics, false))) {
+    console.log(`Stage objective: ${JSON.stringify(summarizeStageObjective(simulator, bestProgressState, { targetFloorId: args["to-floor"] || simulator.stopFloorId }))}`);
+  }
   if (parseBooleanFlag(args["print-next-gate-deficit"], false)) {
     console.log(`Next gate deficit: ${JSON.stringify(summarizeNextGateDeficit(project, simulator, bestProgressState))}`);
   }
@@ -211,14 +244,16 @@ function main() {
   const projectRoot = path.resolve(__dirname, "..");
   const project = loadProject(projectRoot);
   const targetFloor = args["to-floor"] || "MT11";
+  const profileName = args.profile || "default";
+  const stagePolicyDefault = profileName.indexOf("stage-mt1-mt11") === 0;
 
   const simulator = new StaticSimulator(project, {
     stopFloorId: targetFloor,
     battleResolver: new FunctionBackedBattleResolver(project),
     autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
-    enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], false),
-    enableResourcePocket: parseBooleanFlag(args["resource-pocket"], false),
+    enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], stagePolicyDefault),
+    enableResourcePocket: parseBooleanFlag(args["resource-pocket"], stagePolicyDefault),
   });
 
   const initialState = simulator.createInitialState({
@@ -233,10 +268,10 @@ function main() {
   const initialActions = simulator.enumerateActions(initialState);
   printActionPreview(initialActions);
 
-  const profileName = args.profile || "default";
   const profile = createSearchProfile(profileName, simulator, {
     maxActionsPerState: parseOptionalNumber(args["max-actions-per-state"]),
     perStateLimit: parseOptionalNumber(args["per-state-limit"]),
+    targetFloorId: targetFloor,
   });
   const maxActionsPerState = parseOptionalNumber(args["max-actions-per-state"]);
   console.log(`Search profile: ${profileName}`);
@@ -251,6 +286,7 @@ function main() {
     maxActionsPerState: maxActionsPerState != null ? maxActionsPerState : profile.maxActionsPerState,
     disableDominance: parseBooleanFlag(args["disable-dominance"], false),
     dominanceMode: args["dominance-mode"],
+    safeDominanceMode: parseBooleanFlag(args["safe-dominance-mode"], true),
   });
 
   console.log(`Expansions: ${result.expansions}`);
@@ -265,10 +301,15 @@ function main() {
       console.log(`Floor stats: ${JSON.stringify(result.diagnostics.byFloor)}`);
       console.log(`Stage stats: ${JSON.stringify(result.diagnostics.byStage)}`);
       console.log(`Suspicious stats: ${JSON.stringify(result.diagnostics.suspicious)}`);
+      console.log(`Safe dominance stats: ${JSON.stringify(result.diagnostics.safeDominance || {})}`);
+      console.log(`Frontier stats: ${JSON.stringify(result.diagnostics.frontier || {})}`);
+      console.log(`Dropped progress actions: ${JSON.stringify(result.diagnostics.droppedProgressActions || {})}`);
     }
     printStateSummary("Best seen", simulator, result.bestSeenState, {
       printBestRoute: parseBooleanFlag(args["print-best-route"], false),
     });
+    console.log(`Best seen replay confidence: ${JSON.stringify(summarizeReplayConfidence(result.bestSeenState, false))}`);
+    console.log(`Best progress replay confidence: ${JSON.stringify(summarizeReplayConfidence(result.bestProgressState, false))}`);
     printProgressDebug(project, simulator, result, args);
   }
 
@@ -282,6 +323,7 @@ function main() {
     console.log(
       `#${index + 1} score=${formatScore(simulator.score(state))} decisions=${getDecisionDepth(state)} routeLen=${state.route.length}`
     );
+    console.log(`  replayConfidence=${JSON.stringify(summarizeReplayConfidence(state, false))}`);
     state.route.forEach((step) => console.log(`  ${step}`));
   });
 }

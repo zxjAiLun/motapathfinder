@@ -387,6 +387,7 @@ function findTerminalCandidate(simulator, options) {
     maxActionsPerState: config.maxActionsPerState != null ? config.maxActionsPerState : profile.maxActionsPerState,
     disableDominance: config.disableDominance,
     dominanceMode: config.dominanceMode,
+    safeDominanceMode: config.safeDominanceMode,
   });
 
   if (!result.foundGoal || !result.goalState) {
@@ -426,6 +427,9 @@ function findBestSeenCandidate(simulator, options) {
     perFloorBeamWidth: config.perFloorBeamWidth,
     perRegionBeamWidth: config.perRegionBeamWidth,
     maxActionsPerState: config.maxActionsPerState != null ? config.maxActionsPerState : profile.maxActionsPerState,
+    disableDominance: config.disableDominance,
+    dominanceMode: config.dominanceMode,
+    safeDominanceMode: config.safeDominanceMode,
   });
   if (!result.bestSeenState || result.bestSeenState.route.length === 0) {
     throw new Error(`No replayable best-seen route found within ${result.expansions} expansions.`);
@@ -455,6 +459,7 @@ function findBestProgressCandidate(simulator, options) {
     maxActionsPerState: config.maxActionsPerState != null ? config.maxActionsPerState : profile.maxActionsPerState,
     disableDominance: config.disableDominance,
     dominanceMode: config.dominanceMode,
+    safeDominanceMode: config.safeDominanceMode,
   });
   const state = result.bestProgressState || result.bestSeenState;
   if (!state || state.route.length === 0) {
@@ -494,7 +499,7 @@ function buildDecisionPlanFromSummaries(project, simulator, decisions, rank) {
     if (action.kind === "battle" || action.kind === "openDoor" || action.kind === "useTool") {
       targetX = action.target ? action.target.x : null;
       targetY = action.target ? action.target.y : null;
-    } else if (action.kind === "pickup" || action.kind === "changeFloor") {
+    } else if (action.kind === "pickup" || action.kind === "changeFloor" || action.kind === "event") {
       targetX = action.x;
       targetY = action.y;
     }
@@ -541,8 +546,17 @@ async function waitForCondition(page, predicate, description, timeoutMs) {
 function formatStatus(status) {
   if (!status) return "status=null";
   const hero = status.hero || {};
+  const eventParts = [];
+  if (status.eventId) eventParts.push(`event=${status.eventId}`);
+  if (status.eventType) eventParts.push(`eventType=${status.eventType}`);
+  if (status.eventSelection != null) eventParts.push(`selection=${status.eventSelection}`);
+  if (status.eventChoices && status.eventChoices.length > 0) eventParts.push(`choices=${JSON.stringify(status.eventChoices)}`);
+  if (status.eventCurrent) eventParts.push(`eventCurrent=${JSON.stringify(status.eventCurrent).slice(0, 240)}`);
+  const checkBlock = status.checkBlock
+    ? `checkBlock=${JSON.stringify(status.checkBlock).slice(0, 240)}`
+    : "checkBlock=none";
   return `floor=${status.floorId} x=${hero.x} y=${hero.y} hp=${hero.hp} atk=${hero.atk} def=${hero.def} mdef=${hero.mdef} ` +
-    `moving=${status.moving} lock=${status.lockControl} event=${status.eventId || "none"} replay=${status.replayAnimating}`;
+    `moving=${status.moving} lock=${status.lockControl} ${eventParts.join(" ") || "event=none"} ${checkBlock} replay=${status.replayAnimating}`;
 }
 
 function summarizePlanAction(action) {
@@ -597,23 +611,43 @@ async function waitForRuntimeIdle(page, timeoutMs) {
 }
 
 async function describeRuntimeStatus(page) {
-  return page.evaluate(() => ({
-    floorId: core.status && core.status.floorId,
-    hero: core.status && core.status.hero ? {
-      x: core.status.hero.loc.x,
-      y: core.status.hero.loc.y,
-      direction: core.status.hero.loc.direction,
-      hp: core.status.hero.hp,
-      atk: core.status.hero.atk,
-      def: core.status.hero.def,
-      mdef: core.status.hero.mdef,
-    } : null,
-    lockControl: Boolean(core.status && core.status.lockControl),
-    moving: Boolean((typeof core.isMoving === "function" && core.isMoving()) || Number((core.status || {}).heroMoving || 0) > 0),
-    eventId: (((core.status || {}).event || {}).id) || null,
-    replayAnimating: Boolean((((core.status || {}).replay || {}).animate)),
-    routeLength: Array.isArray((core.status || {}).route) ? core.status.route.length : null,
-  }));
+  return page.evaluate(() => {
+    const event = ((core.status || {}).event || {});
+    const eventData = event.data || null;
+    const eventUi = event.ui || null;
+    const heroLoc = (((core.status || {}).hero || {}).loc || {});
+    const loc = heroLoc.x != null && heroLoc.y != null ? `${heroLoc.x},${heroLoc.y}` : null;
+    const checkBlockData = (core.status || {}).checkBlock || {};
+    const checkBlock = loc ? {
+      loc,
+      damage: Number((checkBlockData.damage || {})[loc] || 0),
+      type: (checkBlockData.type || {})[loc] || {},
+      repulse: (checkBlockData.repulse || {})[loc] || [],
+      ambush: (checkBlockData.ambush || {})[loc] || [],
+    } : null;
+    return {
+      floorId: core.status && core.status.floorId,
+      hero: core.status && core.status.hero ? {
+        x: core.status.hero.loc.x,
+        y: core.status.hero.loc.y,
+        direction: core.status.hero.loc.direction,
+        hp: core.status.hero.hp,
+        atk: core.status.hero.atk,
+        def: core.status.hero.def,
+        mdef: core.status.hero.mdef,
+      } : null,
+      lockControl: Boolean(core.status && core.status.lockControl),
+      moving: Boolean((typeof core.isMoving === "function" && core.isMoving()) || Number((core.status || {}).heroMoving || 0) > 0),
+      eventId: event.id || null,
+      eventType: eventData && eventData.type ? eventData.type : null,
+      eventCurrent: Array.isArray(eventData) && eventData.length > 0 ? eventData[0] : null,
+      eventSelection: event.selection == null ? null : event.selection,
+      eventChoices: eventUi && Array.isArray(eventUi.choices) ? eventUi.choices.map((choice) => choice && (choice.text || choice)) : null,
+      replayAnimating: Boolean((((core.status || {}).replay || {}).animate)),
+      checkBlock,
+      routeLength: Array.isArray((core.status || {}).route) ? core.status.route.length : null,
+    };
+  });
 }
 
 async function quickStartRuntime(page, rank) {
@@ -803,6 +837,26 @@ async function captureRuntimeSnapshot(page) {
   }, { verifyFloors: VERIFY_FLOORS, heroFields: HERO_FIELDS });
 }
 
+
+function summarizeReplayConfidence(plan, candidate, lastSuccessfulAction, reachedGoal) {
+  const finalState = plan && plan.finalState;
+  const notes = (finalState && finalState.notes) || [];
+  const unsupportedNotes = notes.filter((note) => /unsupported|未支持|not supported/i.test(String(note)));
+  const snapshot = plan && plan.snapshots && plan.snapshots[Math.max(0, Math.min(lastSuccessfulAction + 1, plan.snapshots.length - 1))];
+  return {
+    liveVerified: Boolean(reachedGoal || (plan && lastSuccessfulAction + 1 >= plan.plan.length)),
+    reachedGoal: Boolean(reachedGoal),
+    verifiedSteps: Math.max(0, lastSuccessfulAction + 1),
+    totalSteps: plan && plan.plan ? plan.plan.length : 0,
+    verifiedFloor: snapshot && snapshot.snapshot ? snapshot.snapshot.floorId : null,
+    solverFinalFloor: finalState && finalState.floorId,
+    routeLength: finalState && Array.isArray(finalState.route) ? finalState.route.length : 0,
+    unsupportedNoteCount: unsupportedNotes.length,
+    unsupportedNotesPreview: unsupportedNotes.slice(0, 5),
+    searchExpansions: candidate && candidate.expansions,
+  };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const projectRoot = path.resolve(__dirname, "..");
@@ -836,6 +890,7 @@ async function main() {
         maxExpansions: Number(args["search-expansions"] || 2000),
         disableDominance: parseBooleanFlag(args["disable-dominance"], false),
         dominanceMode: args["dominance-mode"],
+        safeDominanceMode: parseBooleanFlag(args["safe-dominance-mode"], true),
         perFloorBeamWidth: parseOptionalNumber(args["per-floor-beam-width"]),
         perRegionBeamWidth: parseOptionalNumber(args["per-region-beam-width"]),
         perStateLimit: parseOptionalNumber(args["per-state-limit"]),
@@ -847,6 +902,9 @@ async function main() {
         beamWidth: parseOptionalNumber(args["beam-width"]),
         maxActionsPerState: parseOptionalNumber(args["max-actions-per-state"]),
         maxExpansions: Number(args["search-expansions"] || 300),
+        disableDominance: parseBooleanFlag(args["disable-dominance"], false),
+        dominanceMode: args["dominance-mode"],
+        safeDominanceMode: parseBooleanFlag(args["safe-dominance-mode"], true),
         perFloorBeamWidth: parseOptionalNumber(args["per-floor-beam-width"]),
         perRegionBeamWidth: parseOptionalNumber(args["per-region-beam-width"]),
         perStateLimit: parseOptionalNumber(args["per-state-limit"]),
@@ -860,6 +918,7 @@ async function main() {
         maxExpansions: Number(args["search-expansions"] || 300),
         disableDominance: parseBooleanFlag(args["disable-dominance"], false),
         dominanceMode: args["dominance-mode"],
+        safeDominanceMode: parseBooleanFlag(args["safe-dominance-mode"], true),
         perFloorBeamWidth: parseOptionalNumber(args["per-floor-beam-width"]),
         perRegionBeamWidth: parseOptionalNumber(args["per-region-beam-width"]),
         perStateLimit: parseOptionalNumber(args["per-state-limit"]),
@@ -882,6 +941,12 @@ async function main() {
     plan = buildDecisionPlanFromSummaries(project, simulator, FALLBACK_UP_DOWN_DECISIONS, rank);
   }
   if (fallbackMessage) console.log(fallbackMessage);
+  if (plan) {
+    console.log(
+      `Replay candidate: goal=${goal}${toFloor ? ` -> ${toFloor}` : ""}, ` +
+        `final=${plan.finalState.floorId}, decisions=${plan.decisions.length}, routeLen=${plan.finalState.route.length}`
+    );
+  }
   const browserPath = findBrowserExecutable(args.browser);
   if (!browserPath) {
     throw new Error("No Chrome/Edge executable found for live verification.");
@@ -913,6 +978,7 @@ async function main() {
     }
 
     let lastSuccessfulAction = -1;
+    let reachedGoalDuringReplay = false;
     for (let index = 0; index < plan.plan.length; index += 1) {
       const action = plan.plan[index];
       const beforeStatus = traceLive ? await describeRuntimeStatus(page) : null;
@@ -936,6 +1002,7 @@ async function main() {
       if (stopOnGoal && runtimeReachedGoal(afterStatus, goal, toFloor)) {
         console.log(`Stop-on-goal reached: ${formatStatus(afterStatus)}`);
         lastSuccessfulAction = index;
+        reachedGoalDuringReplay = true;
         break;
       }
       const runtimeSnapshot = await captureRuntimeSnapshot(page);
@@ -951,6 +1018,7 @@ async function main() {
     }
 
     console.log(`Live verification passed.`);
+    console.log(`Replay confidence: ${JSON.stringify(summarizeReplayConfidence(plan, candidate, lastSuccessfulAction, reachedGoalDuringReplay))}`);
     if (candidate) console.log(`Candidate found in ${candidate.expansions} expansions.`);
     else console.log(`Candidate search used fallback decision list.`);
     if (candidate && candidate.diagnostics) {

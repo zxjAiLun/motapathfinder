@@ -4,7 +4,7 @@ const { runAutoEvents } = require("./events");
 const { buildMovementHazards } = require("./movement-hazards");
 const { DIRECTIONS, DIRECTION_DELTAS, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
 const { buildStateKey } = require("./state-key");
-const { cloneState, floorHasCoordinate, getTileDefinitionAt } = require("./state");
+const { cloneState, floorHasCoordinate, getTileDefinitionAt, removeTileAt, replaceTileAt } = require("./state");
 
 function isEndpointTile(project, state, floorId, x, y) {
   const floor = project.floorsById[floorId];
@@ -62,6 +62,55 @@ function applyPoison(project, state) {
   return state.hero.hp > 0;
 }
 
+function ensureHazardStats(state) {
+  if (!state.meta) state.meta = {};
+  if (!state.meta.hazardStats) {
+    state.meta.hazardStats = {
+      damage: 0,
+      zone: 0,
+      laser: 0,
+      repulseDamage: 0,
+      betweenAttack: 0,
+      lava: 0,
+      repulseMoves: 0,
+      ambushBattles: 0,
+    };
+  }
+  return state.meta.hazardStats;
+}
+
+function recordHazardDamage(state, hazards, loc, damage) {
+  if (!damage) return;
+  const stats = ensureHazardStats(state);
+  stats.damage = Number(stats.damage || 0) + Number(damage);
+  const type = (hazards.type || {})[loc] || {};
+  if (type.zoneDamage) stats.zone = Number(stats.zone || 0) + 1;
+  if (type.laserDamage) stats.laser = Number(stats.laser || 0) + 1;
+  if (type.repulseDamage) stats.repulseDamage = Number(stats.repulseDamage || 0) + 1;
+  if (type.betweenAttackDamage) stats.betweenAttack = Number(stats.betweenAttack || 0) + 1;
+  Object.keys(type).forEach((key) => {
+    if (/lava|血网|熔岩/i.test(key)) stats.lava = Number(stats.lava || 0) + 1;
+  });
+}
+
+function applyRepulseMoves(project, state, repulse) {
+  (repulse || []).forEach((entry) => {
+    const [x, y, enemyId, direction, targetX, targetY] = entry;
+    if (targetX == null || targetY == null) {
+      state.notes.push(`Repulse at ${state.floorId}:${x},${y} lacks target; skipped.`);
+      return;
+    }
+    const tile = getTileDefinitionAt(project, state, state.floorId, x, y);
+    if (!tile || tile.id !== enemyId) return;
+    if (getTileDefinitionAt(project, state, state.floorId, targetX, targetY) != null) return;
+    removeTileAt(state, state.floorId, x, y);
+    replaceTileAt(state, state.floorId, targetX, targetY, tile.number);
+    const stats = ensureHazardStats(state);
+    stats.repulseMoves = Number(stats.repulseMoves || 0) + 1;
+    state.notes.push(`Repulse moved ${enemyId}@${state.floorId}:${x},${y} ${direction} -> ${targetX},${targetY}`);
+  });
+}
+
 function applyLandingHazards(project, state, options, hazardCache) {
   const hazards = getHazardsForState(project, state, options, hazardCache);
   const loc = coordinateKey(state.hero.loc.x, state.hero.loc.y);
@@ -70,17 +119,14 @@ function applyLandingHazards(project, state, options, hazardCache) {
     if (!state.hero.statistics) state.hero.statistics = {};
     state.hero.statistics.extraDamage = Number(state.hero.statistics.extraDamage || 0) + damage;
     state.hero.hp = Number(state.hero.hp || 0) - damage;
+    recordHazardDamage(state, hazards, loc, damage);
     if (state.hero.hp <= 0) return false;
-  }
-
-  const repulse = hazards.repulse[loc] || [];
-  if (repulse.length > 0) {
-    state.notes.push(`Repulse at ${state.floorId}:${loc} is not modeled yet.`);
-    return false;
   }
 
   const ambush = hazards.ambush[loc] || [];
   for (const [x, y, enemyId] of ambush) {
+    const stats = ensureHazardStats(state);
+    stats.ambushBattles = Number(stats.ambushBattles || 0) + 1;
     options.battleResolver.applyBattleAt({
       project,
       state,
@@ -94,6 +140,7 @@ function applyLandingHazards(project, state, options, hazardCache) {
     if (state.floorId == null || state.hero.hp <= 0) return false;
   }
 
+  applyRepulseMoves(project, state, hazards.repulse[loc] || []);
   runAutoEvents(project, state, { choiceResolver: options.choiceResolver });
   return state.hero.hp > 0;
 }
