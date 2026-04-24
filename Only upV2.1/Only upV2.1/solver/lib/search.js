@@ -6,7 +6,7 @@ const { compareProgress, getProgress } = require("./progress");
 
 function actionType(action) {
   if (!action) return "unknown";
-  if (action.kind === "changeFloor") return "stair";
+  if (action.kind === "changeFloor") return "changeFloor";
   if (action.kind === "useTool" && action.tool === "centerFly") return "centerFly";
   if (action.kind === "openDoor") return "door";
   if (action.kind === "battle") return "monster";
@@ -16,7 +16,7 @@ function actionType(action) {
 }
 
 function isProgressAction(action) {
-  return actionType(action) === "stair" || actionType(action) === "centerFly";
+  return actionType(action) === "changeFloor" || actionType(action) === "centerFly";
 }
 
 function ensureActionStats(stats, type) {

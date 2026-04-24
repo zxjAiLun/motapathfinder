@@ -25,6 +25,11 @@
         var startImageBackgroundDiv = document.getElementById('startImageBackgroundDiv');
         var startImageLogo = document.getElementById('startImageLogo');
         var startImageDiv = document.getElementById('startImageDiv');
+        var query = new URLSearchParams(window.location.search);
+        if (query.get('splash') !== '1') {
+            startImageBackgroundDiv.style.display = 'none';
+            return;
+        }
         startImageLogo.onload = function () {
             startImageBackgroundDiv.style.display = 'block';
             var onAnimationEnd = function () {
@@ -194,6 +199,25 @@
 <script src='libs/thirdparty/localforage.min.js'></script>
 <script src='libs/thirdparty/zip.min.js'></script>
 <script id='mainScript' src='main.js'></script>
-<script>main.init('play');main.listen();</script>
+<script>
+(function () {
+    function getAutoStartHard() {
+        var query = new URLSearchParams(window.location.search);
+        if (!query.has('autostart')) return null;
+        var value = query.get('autostart');
+        if (value == null || value === '' || value === '1' || value === 'true') return '';
+        return value;
+    }
+
+    main.init('play', function () {
+        var hard = getAutoStartHard();
+        if (hard == null || !window.core || !core.events) return;
+        setTimeout(function () {
+            core.events.startGame(hard);
+        }, 0);
+    });
+    main.listen();
+})();
+</script>
 </body>
 </html>

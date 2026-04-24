@@ -103,19 +103,29 @@ function createCenterFlyHandler() {
   return {
     id: "centerFly",
     isAvailable: ({ state }) => hasItem(state, "centerFly"),
-    enumerateActions: ({ state, floor }) => {
-      const mirroredX = floor.width - 1 - state.hero.loc.x;
-      const mirroredY = floor.height - 1 - state.hero.loc.y;
-      return [
-        {
+    enumerateActions: ({ reachability, state, floor }) => {
+      const nodes = reachability && reachability.visited
+        ? Object.values(reachability.visited)
+        : [{ x: state.hero.loc.x, y: state.hero.loc.y, path: [], state }];
+      const actionsBySource = new Map();
+      nodes.forEach((node) => {
+        if (!hasItem(node.state || state, "centerFly")) return;
+        const mirroredX = floor.width - 1 - node.x;
+        const mirroredY = floor.height - 1 - node.y;
+        const key = `${node.x},${node.y}->${mirroredX},${mirroredY}`;
+        if (actionsBySource.has(key)) return;
+        actionsBySource.set(key, {
           kind: "useTool",
           tool: "centerFly",
-          floorId: state.floorId,
+          floorId: (node.state || state).floorId,
+          stance: { x: node.x, y: node.y },
           target: { x: mirroredX, y: mirroredY },
-          path: [],
-          summary: `use:centerFly@${state.floorId}:${mirroredX},${mirroredY}`,
-        },
-      ];
+          path: Array.isArray(node.path) ? node.path.slice() : [],
+          travelState: node.state || state,
+          summary: `use:centerFly@${(node.state || state).floorId}:${node.x},${node.y}->${mirroredX},${mirroredY}`,
+        });
+      });
+      return Array.from(actionsBySource.values());
     },
     applyAction: ({ state, action }) => {
       consumeItem(state, "centerFly", 1);

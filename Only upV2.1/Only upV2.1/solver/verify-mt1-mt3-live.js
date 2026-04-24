@@ -437,6 +437,36 @@ function findBestSeenCandidate(simulator, options) {
   };
 }
 
+function findBestProgressCandidate(simulator, options) {
+  const config = options || {};
+  const profileName = config.profile || "stage-mt1-mt11";
+  const profile = createSearchProfile(profileName, simulator, {
+    maxActionsPerState: config.maxActionsPerState,
+    perStateLimit: config.perStateLimit,
+  });
+  const initialState = simulator.createInitialState({ rank: config.rank || "chaos" });
+  const result = searchTopK(simulator, initialState, {
+    ...profile,
+    topK: 1,
+    maxExpansions: Number(config.maxExpansions || 300),
+    beamWidth: config.beamWidth,
+    perFloorBeamWidth: config.perFloorBeamWidth,
+    perRegionBeamWidth: config.perRegionBeamWidth,
+    maxActionsPerState: config.maxActionsPerState != null ? config.maxActionsPerState : profile.maxActionsPerState,
+    disableDominance: config.disableDominance,
+    dominanceMode: config.dominanceMode,
+  });
+  const state = result.bestProgressState || result.bestSeenState;
+  if (!state || state.route.length === 0) {
+    throw new Error(`No replayable best-progress route found within ${result.expansions} expansions.`);
+  }
+  return {
+    diagnostics: result.diagnostics,
+    expansions: result.expansions,
+    state,
+  };
+}
+
 function buildDecisionPlan(project, simulator, candidateState, rank) {
   return buildDecisionPlanFromSummaries(project, simulator, candidateState.route.filter(isDecisionStep), rank);
 }
@@ -508,6 +538,29 @@ async function waitForCondition(page, predicate, description, timeoutMs) {
   throw new Error(`Timed out waiting for ${description}.`);
 }
 
+function formatStatus(status) {
+  if (!status) return "status=null";
+  const hero = status.hero || {};
+  return `floor=${status.floorId} x=${hero.x} y=${hero.y} hp=${hero.hp} atk=${hero.atk} def=${hero.def} mdef=${hero.mdef} ` +
+    `moving=${status.moving} lock=${status.lockControl} event=${status.eventId || "none"} replay=${status.replayAnimating}`;
+}
+
+function summarizePlanAction(action) {
+  if (!action) return "none";
+  const parts = [action.summary || action.kind];
+  if (action.stanceX != null && action.stanceY != null) parts.push(`from=${action.stanceX},${action.stanceY}`);
+  if (action.targetX != null && action.targetY != null) parts.push(`to=${action.targetX},${action.targetY}`);
+  if (action.direction) parts.push(`dir=${action.direction}`);
+  if (action.tool) parts.push(`tool=${action.tool}`);
+  return parts.join(" ");
+}
+
+function runtimeReachedGoal(status, goal, toFloor) {
+  if (!status) return false;
+  if (toFloor) return status.floorId === toFloor;
+  return false;
+}
+
 async function waitForRuntimeReady(page) {
   await waitForCondition(
     page,
@@ -528,7 +581,7 @@ async function waitForRuntimeReady(page) {
   );
 }
 
-async function waitForRuntimeIdle(page) {
+async function waitForRuntimeIdle(page, timeoutMs) {
   await waitForCondition(
     page,
     () => {
@@ -539,7 +592,7 @@ async function waitForRuntimeIdle(page) {
       return Boolean(core.status.floorId) && !moving && !replayAnimating && !core.status.lockControl && !eventId;
     },
     "runtime idle",
-    30000
+    timeoutMs || 30000
   );
 }
 
@@ -576,7 +629,7 @@ async function quickStartRuntime(page, rank) {
   await waitForRuntimeIdle(page);
 }
 
-async function stabilizeRuntime(page) {
+async function stabilizeRuntime(page, timeoutMs) {
   await page.evaluate(() => {
     core.setFlag("shiqu", 1);
     core.setFlag("autoBattle", 1);
@@ -584,11 +637,16 @@ async function stabilizeRuntime(page) {
     core.plugin.autoGetItem();
     core.plugin.autoBattle();
   });
-  await waitForRuntimeIdle(page);
+  await waitForRuntimeIdle(page, timeoutMs);
 }
 
-async function executeRuntimeDecision(page, action) {
-  console.log(`Executing runtime action: ${action.summary}`);
+async function executeRuntimeDecision(page, action, options) {
+  const config = options || {};
+  if (config.traceLive) {
+    console.log(`Executing runtime action: ${summarizePlanAction(action)}`);
+  } else {
+    console.log(`Executing runtime action: ${action.summary}`);
+  }
   for (const direction of action.path || []) {
     const moved = await page.evaluate((stepDirection) => new Promise((resolve) => {
       try {
@@ -603,7 +661,7 @@ async function executeRuntimeDecision(page, action) {
       throw new Error(`Failed to perform path step ${direction} for action: ${action.summary}`);
     }
     try {
-      await waitForRuntimeIdle(page);
+      await waitForRuntimeIdle(page, config.idleTimeoutMs);
     } catch (error) {
       const status = await describeRuntimeStatus(page);
       throw new Error(`Timed out after path step ${direction} for ${action.summary}: ${JSON.stringify(status)}`);
@@ -624,7 +682,7 @@ async function executeRuntimeDecision(page, action) {
       throw new Error(`Failed to equip for action: ${action.summary}`);
     }
     await waitForRuntimeIdle(page);
-    await stabilizeRuntime(page);
+    await stabilizeRuntime(page, config.idleTimeoutMs);
     return;
   }
 
@@ -633,8 +691,8 @@ async function executeRuntimeDecision(page, action) {
       throw new Error(`Battle action missing target coordinates: ${action.summary}`);
     }
   } else if (action.kind === "useTool") {
-    if (!action.tool || !action.direction) {
-      throw new Error(`Tool action missing tool or direction: ${action.summary}`);
+    if (!action.tool) {
+      throw new Error(`Tool action missing tool: ${action.summary}`);
     }
   } else if (action.kind !== "equip" && !action.direction) {
     throw new Error(`Runtime driver cannot execute action: ${action.summary}`);
@@ -679,7 +737,7 @@ async function executeRuntimeDecision(page, action) {
     const status = await describeRuntimeStatus(page);
     throw new Error(`Timed out after final step for ${action.summary}: ${JSON.stringify(status)}`);
   }
-  await stabilizeRuntime(page);
+  await stabilizeRuntime(page, config.idleTimeoutMs);
 }
 
 async function captureRuntimeSnapshot(page) {
@@ -753,6 +811,9 @@ async function main() {
   const goal = args.goal || (toFloor ? "terminal" : "updown-mt1-mt3");
   VERIFY_FLOORS = parseSnapshotFloors(args["snapshot-floors"], toFloor ? buildFloorRange(toFloor) : VERIFY_FLOORS);
   const keepOpen = parseBooleanFlag(args["keep-open"], false);
+  const stopOnGoal = parseBooleanFlag(args["stop-on-goal"], false);
+  const traceLive = parseBooleanFlag(args["trace-live"], false);
+  const timeoutMs = Number(args["timeout-ms"] || 30000);
   const stepDelayMs = Number(args["step-delay-ms"] || 0);
   const simulator = new StaticSimulator(project, {
     stopFloorId: toFloor || "MT11",
@@ -783,6 +844,19 @@ async function main() {
         beamWidth: parseOptionalNumber(args["beam-width"]),
         maxActionsPerState: parseOptionalNumber(args["max-actions-per-state"]),
         maxExpansions: Number(args["search-expansions"] || 300),
+        perFloorBeamWidth: parseOptionalNumber(args["per-floor-beam-width"]),
+        perRegionBeamWidth: parseOptionalNumber(args["per-region-beam-width"]),
+        perStateLimit: parseOptionalNumber(args["per-state-limit"]),
+        profile: args.profile || "stage-mt1-mt11",
+        rank,
+      });
+    } else if (goal === "best-progress") {
+      candidate = findBestProgressCandidate(simulator, {
+        beamWidth: parseOptionalNumber(args["beam-width"]),
+        maxActionsPerState: parseOptionalNumber(args["max-actions-per-state"]),
+        maxExpansions: Number(args["search-expansions"] || 300),
+        disableDominance: parseBooleanFlag(args["disable-dominance"], false),
+        dominanceMode: args["dominance-mode"],
         perFloorBeamWidth: parseOptionalNumber(args["per-floor-beam-width"]),
         perRegionBeamWidth: parseOptionalNumber(args["per-region-beam-width"]),
         perStateLimit: parseOptionalNumber(args["per-state-limit"]),
@@ -821,7 +895,7 @@ async function main() {
     await page.goto(server.url, { waitUntil: "domcontentloaded" });
     await waitForRuntimeReady(page);
     await quickStartRuntime(page, rank);
-    await stabilizeRuntime(page);
+    await stabilizeRuntime(page, timeoutMs);
 
     const initialRuntimeSnapshot = await captureRuntimeSnapshot(page);
     const initialMismatch = diffSnapshots(plan.snapshots[0].snapshot, initialRuntimeSnapshot, ["initial"]);
@@ -831,9 +905,32 @@ async function main() {
       throw new Error(`Initial live snapshot mismatch: ${initialMismatch}`);
     }
 
+    let lastSuccessfulAction = -1;
     for (let index = 0; index < plan.plan.length; index += 1) {
       const action = plan.plan[index];
-      await executeRuntimeDecision(page, action);
+      const beforeStatus = traceLive ? await describeRuntimeStatus(page) : null;
+      if (traceLive) {
+        console.log(`[trace-live] step=${index + 1}/${plan.plan.length} before ${formatStatus(beforeStatus)} action=${summarizePlanAction(action)}`);
+      }
+      try {
+        await executeRuntimeDecision(page, action, { traceLive, idleTimeoutMs: timeoutMs });
+      } catch (error) {
+        const actual = await describeRuntimeStatus(page).catch(() => null);
+        const expected = plan.snapshots[index + 1] ? summarizeSnapshot(plan.snapshots[index + 1].snapshot) : null;
+        throw new Error(
+          `Live replay failed at step ${index + 1}/${plan.plan.length}; lastSuccessfulAction=${lastSuccessfulAction + 1}; ` +
+            `nextAction=${summarizePlanAction(action)}; expected=${JSON.stringify(expected)}; actual=${formatStatus(actual)}; cause=${error.message}`
+        );
+      }
+      const afterStatus = await describeRuntimeStatus(page);
+      if (traceLive) {
+        console.log(`[trace-live] step=${index + 1}/${plan.plan.length} after ${formatStatus(afterStatus)}`);
+      }
+      if (stopOnGoal && runtimeReachedGoal(afterStatus, goal, toFloor)) {
+        console.log(`Stop-on-goal reached: ${formatStatus(afterStatus)}`);
+        lastSuccessfulAction = index;
+        break;
+      }
       const runtimeSnapshot = await captureRuntimeSnapshot(page);
       const expectedSnapshot = plan.snapshots[index + 1].snapshot;
       const mismatch = diffSnapshots(expectedSnapshot, runtimeSnapshot, [action.summary]);
@@ -842,6 +939,7 @@ async function main() {
         console.error("Actual step snapshot:", JSON.stringify(summarizeSnapshot(runtimeSnapshot), null, 2));
         throw new Error(`Live/runtime mismatch after ${action.summary}: ${mismatch}`);
       }
+      lastSuccessfulAction = index;
       if (stepDelayMs > 0) await page.waitForTimeout(stepDelayMs);
     }
 
