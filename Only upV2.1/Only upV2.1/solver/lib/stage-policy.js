@@ -1,6 +1,7 @@
 "use strict";
 
-const { computeFrontierFeatures } = require("./frontier-features");
+const { getFrontierFeatures } = require("./search-cache");
+const { getDecisionDepth } = require("./state");
 const { evaluateExpression } = require("./expression");
 const { getProgress } = require("./progress");
 const { getFloorOrder } = require("./score");
@@ -74,7 +75,7 @@ function getStageObjectiveRank(simulator, state, options) {
   const targetFloorOrder = getFloorOrder((options && options.targetFloorId) || simulator.stopFloorId);
   const progress = getProgress(state);
   const currentFloorOrder = getFloorOrder(state.floorId);
-  const features = computeFrontierFeatures(project, state, { battleResolver: simulator.battleResolver });
+  const features = getFrontierFeatures(project, state, { battleResolver: simulator.battleResolver });
   const nextTargets = getNextFloorTargets(project, state.floorId);
   const heroPoint = { x: Number((state.hero.loc || {}).x || 0), y: Number((state.hero.loc || {}).y || 0) };
   const directNextDistance = nearestDistance(heroPoint, nextTargets);
@@ -106,7 +107,7 @@ function getStageObjectiveRank(simulator, state, options) {
     expReadiness: nextLevel ? (nextLevel.deficit <= 0 ? 10000 : Math.max(0, 10000 - nextLevel.deficit * 250)) : 0,
     combat,
     hp: Number((state.hero || {}).hp || 0),
-    routeLength: Array.isArray(state.route) ? state.route.length : 0,
+    routeLength: Array.isArray(state.route) && state.route.length > 0 ? state.route.length : getDecisionDepth(state),
   };
 }
 

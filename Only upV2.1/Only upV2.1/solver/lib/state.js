@@ -1,11 +1,15 @@
 "use strict";
 
 const { syncProgress } = require("./progress");
+const { getActivePerfTracker } = require("./perf");
 
 function cloneState(state) {
+  const tracker = getActivePerfTracker();
+  const startedAt = tracker && tracker.enabled ? process.hrtime.bigint() : null;
   const cloned = typeof structuredClone === "function"
     ? structuredClone(state)
     : JSON.parse(JSON.stringify(state));
+  if (startedAt) tracker.addPhase("cloneState", Number(process.hrtime.bigint() - startedAt) / 1e6);
   if (cloned.meta && cloned.meta.__frontierFeatures) {
     delete cloned.meta.__frontierFeatures;
   }
@@ -171,7 +175,10 @@ function replaceTileAt(state, floorId, x, y, number) {
 function appendRouteStep(state, step, options) {
   const config = options || {};
   const meta = ensureMeta(state);
-  state.route.push(step);
+  if (config.storeRoute !== false && meta.__storeRoute !== false) {
+    if (!Array.isArray(state.route)) state.route = [];
+    state.route.push(step);
+  }
   if (config.decision === false) {
     meta.autoStepCount += 1;
     if (config.auto === "pickup") meta.autoPickupCount += 1;

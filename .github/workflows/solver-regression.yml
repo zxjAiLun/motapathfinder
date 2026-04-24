@@ -19,5 +19,6 @@ jobs:
       - run: node -c check-core-regressions.js
       - run: node -c audit-state-dependencies.js
       - run: npm run check:core
+      - run: npm run check:pocket
       - run: npm run check:key-audit
       - run: npm run check:stage:short

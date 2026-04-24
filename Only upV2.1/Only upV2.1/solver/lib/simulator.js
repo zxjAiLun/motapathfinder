@@ -14,6 +14,7 @@ const { buildDominanceBucketKey, buildDominanceSummary, dominatesSummary } = req
 const { GenericDoorResolver } = require("./door-resolver");
 const { compareScore, compareSearchRank, defaultScore, defaultSearchRank, getFloorOrder } = require("./score");
 const { buildStateKey } = require("./state-key");
+const { getFrontierFeatures, getScore, getSearchRank } = require("./search-cache");
 const { buildWalkReachability, stepOntoTile } = require("./step-simulator");
 const { ToolRegistry } = require("./tool-registry");
 const { syncProgress } = require("./progress");
@@ -147,17 +148,17 @@ class StaticSimulator {
 
   compareResultStates(left, right) {
     return this.compareRanks(
-      { score: this.score(left), decisionDepth: getDecisionDepth(left), routeLength: left.route.length },
-      { score: this.score(right), decisionDepth: getDecisionDepth(right), routeLength: right.route.length }
+      { score: getScore(this, left), decisionDepth: getDecisionDepth(left), routeLength: Array.isArray(left.route) && left.route.length > 0 ? left.route.length : getDecisionDepth(left) },
+      { score: getScore(this, right), decisionDepth: getDecisionDepth(right), routeLength: Array.isArray(right.route) && right.route.length > 0 ? right.route.length : getDecisionDepth(right) }
     );
   }
 
   compareSearchStates(left, right) {
-    const leftScore = this.score(left);
-    const rightScore = this.score(right);
+    const leftScore = getScore(this, left);
+    const rightScore = getScore(this, right);
     return compareSearchRank(
-      this.searchRankFn(left, leftScore, { project: this.project, battleResolver: this.battleResolver }),
-      this.searchRankFn(right, rightScore, { project: this.project, battleResolver: this.battleResolver })
+      getSearchRank(this, left, leftScore, { project: this.project, battleResolver: this.battleResolver }),
+      getSearchRank(this, right, rightScore, { project: this.project, battleResolver: this.battleResolver })
     );
   }
 
@@ -166,7 +167,7 @@ class StaticSimulator {
   }
 
   getFrontierBucketKey(state) {
-    const features = computeFrontierFeatures(this.project, state, { battleResolver: this.battleResolver });
+    const features = getFrontierFeatures(this.project, state, { battleResolver: this.battleResolver });
     return `${features.regionKey}|band:${features.targetBandKey}`;
   }
 
@@ -402,84 +403,410 @@ class StaticSimulator {
     return null;
   }
 
-  enumerateResourcePocketActions(state, actions) {
-    const floorOrder = getFloorOrder(state.floorId);
-    const seedLimit = floorOrder >= 2 ? 3 : 2;
-    const chainLimit = floorOrder >= 2 ? 6 : 4;
-    const candidateLimit = floorOrder >= 2 ? 6 : 5;
-    const seedActions = (actions || [])
-      .filter((action) => this.isPocketPrimitiveAction(action))
+  getResourcePocketSearchOptions(state, floorOrder) {
+    if (floorOrder < 2) {
+      return {
+        maxDepth: 8,
+        maxNodes: 8,
+        branchLimit: 14,
+        frontierLimit: 24,
+        resultLimit: 8,
+        continueAfterForwardChangeFloor: false,
+      };
+    }
+
+    return {
+      maxDepth: 8,
+      maxNodes: 6,
+      branchLimit: 10,
+      frontierLimit: 18,
+      resultLimit: 8,
+      continueAfterForwardChangeFloor: false,
+    };
+  }
+
+  getActionFingerprint(action) {
+    if (!action) return "";
+    const floorId = action.floorId || "";
+    if (action.kind === "battle") {
+      const target = action.target || {};
+      return `battle|${floorId}|${target.x}|${target.y}|${action.enemyId || ""}`;
+    }
+    if (action.kind === "pickup") {
+      return `pickup|${floorId}|${action.x}|${action.y}|${action.itemId || ""}`;
+    }
+    if (action.kind === "openDoor") {
+      const target = action.target || {};
+      return `openDoor|${floorId}|${target.x}|${target.y}|${action.doorId || ""}`;
+    }
+    if (action.kind === "useTool") {
+      const target = action.target || {};
+      return `useTool|${floorId}|${action.tool || ""}|${target.x ?? ""}|${target.y ?? ""}`;
+    }
+    if (action.kind === "equip") {
+      return `equip|${floorId}|${action.equipId || action.itemId || ""}`;
+    }
+    if (action.kind === "event") {
+      const choicePath = Array.isArray(action.choicePath) ? action.choicePath.join(".") : "";
+      return `event|${floorId}|${action.x}|${action.y}|${action.summary || ""}|${choicePath}`;
+    }
+    return `${action.kind}|${action.summary || ""}`;
+  }
+
+  normalizePocketStep(action) {
+    const entry = {
+      kind: action.kind,
+      summary: action.summary,
+      fingerprint: this.getActionFingerprint(action),
+      floorId: action.floorId,
+    };
+    if (action.x != null) entry.x = action.x;
+    if (action.y != null) entry.y = action.y;
+    if (action.target) entry.target = { x: action.target.x, y: action.target.y };
+    if (action.enemyId) entry.enemyId = action.enemyId;
+    if (action.itemId) entry.itemId = action.itemId;
+    if (action.equipId) entry.itemId = action.equipId;
+    if (action.tool) entry.tool = action.tool;
+    return entry;
+  }
+
+  findPrimitiveByPlanEntry(actions, entry) {
+    if (!entry) return null;
+    if (entry.fingerprint) {
+      const matched = (actions || []).find((action) => this.getActionFingerprint(action) === entry.fingerprint);
+      if (matched) return matched;
+    }
+    if (entry.summary) return (actions || []).find((action) => action.summary === entry.summary) || null;
+    return null;
+  }
+
+  getCombatSignature(state) {
+    const hero = state.hero || {};
+    return [
+      Number(hero.atk || 0),
+      Number(hero.def || 0),
+      Number(hero.mdef || 0),
+      Number(hero.lv || 0),
+      Number(hero.exp || 0),
+    ].join("|");
+  }
+
+  scorePocketPlan(baseState, node) {
+    const delta = this.summarizeResourceDelta(baseState, node.state);
+    const hero = node.state.hero || {};
+    const hp = Number(hero.hp || 0);
+    let score = 0;
+    score += Number(delta.atk || 0) * 120000;
+    score += Number(delta.def || 0) * 100000;
+    score += Number(delta.mdef || 0) * 8000;
+    score += Number(delta.lv || 0) * 300000;
+    score += Number(delta.exp || 0) * 6000;
+    score += hp * 12;
+    score -= Number((node.planEntries || []).length || 0) * 300;
+    if ((node.stopReasons || []).includes("forwardChangeFloor")) score += 350000;
+    if ((node.stopReasons || []).includes("levelUp")) score += 120000;
+    if ((node.stopReasons || []).includes("keyItem")) score += 80000;
+    return score;
+  }
+
+  comparePocketPlans(baseState, left, right) {
+    const leftCombat = this.getCombatSignature(left.state);
+    const rightCombat = this.getCombatSignature(right.state);
+    if (leftCombat === rightCombat) {
+      const hpDiff = Number((right.state.hero || {}).hp || 0) - Number((left.state.hero || {}).hp || 0);
+      if (hpDiff !== 0) return hpDiff;
+    }
+    const scoreDiff = Number(right.score || 0) - Number(left.score || 0);
+    if (scoreDiff !== 0) return scoreDiff;
+    return Number((left.planEntries || []).length || 0) - Number((right.planEntries || []).length || 0);
+  }
+
+  classifyPocketAction(currentState, action) {
+    if (!action || action.kind !== "battle") {
+      return { role: action && action.kind, highRisk: false, prep: true };
+    }
+    const damage = Number((action.estimate || {}).damage || 0);
+    const exp = Number((action.estimate || {}).exp || 0);
+    const hp = Number((currentState.hero || {}).hp || 0);
+    const level = this.getNextLevelInfo(currentState);
+    const closesLevel = Boolean(level && exp >= Number(level.deficit || 0));
+    const damageRatio = hp > 0 ? damage / hp : 1;
+    const lowDamage = damage <= 30 || damageRatio <= 0.03;
+    return {
+      role: "battle",
+      damage,
+      exp,
+      closesLevel,
+      damageRatio,
+      highRisk: damage >= 120 || damageRatio >= 0.12,
+      lowDamage,
+      prep: lowDamage || closesLevel,
+    };
+  }
+
+  takeRankedPocketActions(baseState, currentState, actions, limit) {
+    if (!limit || limit <= 0) return [];
+    return (actions || [])
       .map((action) => {
+        const rank = this.rankPocketActionForPreview(currentState, action);
+        if (!Number.isFinite(rank)) return null;
         try {
-          const nextPreview = this.applyAction(state, action);
-          return { action, nextPreview, score: this.scorePocketCandidate(state, state, nextPreview, action) };
+          const nextState = this.applyAction(currentState, action, { storeRoute: false });
+          const cls = this.classifyPocketAction(currentState, action);
+          const damage = Number((action.estimate || {}).damage || 0);
+          const riskPenalty = action.kind === "battle" && cls.highRisk ? damage * 250 : 0;
+          return {
+            action,
+            rank,
+            score: this.scorePocketCandidate(baseState, currentState, nextState, action) - riskPenalty,
+          };
         } catch (error) {
-          return null;
+          return { action, rank, score: Number.NEGATIVE_INFINITY };
         }
-      })
-      .filter((entry) => entry && entry.score > 0)
-      .sort((left, right) => right.score - left.score)
-      .slice(0, seedLimit);
-    return seedActions
-      .map((seed) => {
-        let preview = seed.nextPreview;
-        const plan = [seed.action.summary];
-        const stopReasons = [];
-        const seedReason = this.summarizePocketStopReason(state, state, preview);
-        if (seedReason) stopReasons.push(seedReason);
-        try {
-          for (let index = 0; index < chainLimit; index += 1) {
-            if (stopReasons.includes("levelUp") || stopReasons.includes("forwardChangeFloor")) break;
-            const candidates = this.enumeratePrimitiveActions(preview).actions
-              .filter((action) => this.isPocketPrimitiveAction(action))
-              .map((action) => ({ action, rank: this.rankPocketActionForPreview(preview, action) }))
-              .filter((entry) => Number.isFinite(entry.rank))
-              .sort((left, right) => right.rank - left.rank)
-              .slice(0, candidateLimit)
-              .map((entry) => {
-                try {
-                  const nextPreview = this.applyAction(preview, entry.action);
-                  return { action: entry.action, nextPreview, score: this.scorePocketCandidate(state, preview, nextPreview, entry.action) };
-                } catch (error) {
-                  return null;
-                }
-              })
-              .filter((entry) => entry && entry.score > 0)
-              .sort((left, right) => right.score - left.score);
-            const best = candidates[0] || null;
-            if (!best) break;
-            const reason = this.summarizePocketStopReason(state, preview, best.nextPreview);
-            preview = best.nextPreview;
-            plan.push(best.action.summary);
-            if (reason) stopReasons.push(reason);
-          }
-        } catch (error) {
-          return null;
-        }
-        const delta = this.summarizeResourceDelta(state, preview);
-        let score = this.scoreResourceDelta(delta);
-        if (stopReasons.includes("levelUp")) score += 300000;
-        if (stopReasons.includes("forwardChangeFloor")) score += 350000;
-        if (stopReasons.includes("keyItem")) score += 120000;
-        if (score <= 0 || plan.length <= 1) return null;
-        return {
-          kind: "resourcePocket",
-          floorId: state.floorId,
-          path: [],
-          plan,
-          estimate: {
-            ...delta,
-            damage: Math.max(0, -Number(delta.hp || 0)),
-            hpDelta: delta.hp,
-            score,
-            stopReasons,
-          },
-          summary: `resourcePocket:${state.floorId}:${plan.length}steps:${stopReasons.join(",") || "resource"}:${seed.action.summary}`,
-        };
       })
       .filter(Boolean)
-      .sort((left, right) => Number((right.estimate || {}).score || 0) - Number((left.estimate || {}).score || 0))
-      .slice(0, 8);
+      .sort((left, right) => {
+        if (right.score !== left.score) return right.score - left.score;
+        return right.rank - left.rank;
+      })
+      .slice(0, limit)
+      .map((entry) => entry.action);
+  }
+
+  dedupePocketActions(actions) {
+    const seen = new Set();
+    const result = [];
+    (actions || []).forEach((action) => {
+      const key = this.getActionFingerprint(action) || action.summary;
+      if (seen.has(key)) return;
+      seen.add(key);
+      result.push(action);
+    });
+    return result;
+  }
+
+  selectPocketExpansionCandidates(baseState, currentState, actions, options) {
+    const buckets = {
+      item: [],
+      doorToolEvent: [],
+      lowDamageBattle: [],
+      levelBattle: [],
+      mediumBattle: [],
+      highRiskBattle: [],
+    };
+
+    (actions || []).forEach((action) => {
+      const cls = this.classifyPocketAction(currentState, action);
+      if (action.kind === "pickup" || action.kind === "equip") buckets.item.push(action);
+      else if (action.kind === "openDoor" || action.kind === "useTool" || action.kind === "event") buckets.doorToolEvent.push(action);
+      else if (action.kind === "battle" && cls.lowDamage) buckets.lowDamageBattle.push(action);
+      else if (action.kind === "battle" && cls.highRisk) buckets.highRiskBattle.push(action);
+      else if (action.kind === "battle" && cls.closesLevel) buckets.levelBattle.push(action);
+      else buckets.mediumBattle.push(action);
+    });
+
+    const hasPrepCandidate =
+      buckets.item.length > 0 ||
+      buckets.doorToolEvent.length > 0 ||
+      buckets.lowDamageBattle.length > 0 ||
+      buckets.levelBattle.length > 0;
+
+    return this.dedupePocketActions([
+      ...this.takeRankedPocketActions(baseState, currentState, buckets.item, 4),
+      ...this.takeRankedPocketActions(baseState, currentState, buckets.doorToolEvent, 4),
+      ...this.takeRankedPocketActions(baseState, currentState, buckets.lowDamageBattle, 8),
+      ...this.takeRankedPocketActions(baseState, currentState, buckets.levelBattle, 4),
+      ...this.takeRankedPocketActions(baseState, currentState, buckets.mediumBattle, 5),
+      ...this.takeRankedPocketActions(baseState, currentState, buckets.highRiskBattle, hasPrepCandidate ? 2 : 5),
+    ]).slice(0, options.branchLimit);
+  }
+
+  mergePocketStopReasons(baseState, currentState, nextState, previousReasons) {
+    const reasons = Array.isArray(previousReasons) ? previousReasons.slice() : [];
+    const reason = this.summarizePocketStopReason(baseState, currentState, nextState);
+    if (reason && !reasons.includes(reason)) reasons.push(reason);
+    return reasons;
+  }
+
+  shouldStopPocketExpansion(baseState, node, options) {
+    if (node.depth >= options.maxDepth) return true;
+    if ((node.stopReasons || []).includes("forwardChangeFloor") && options.continueAfterForwardChangeFloor !== true) return true;
+    return false;
+  }
+
+  isUsefulPocketResult(baseState, node) {
+    if (!node || !Array.isArray(node.planEntries) || node.planEntries.length <= 1) return false;
+    const delta = this.summarizeResourceDelta(baseState, node.state);
+    const score = this.scoreResourceDelta(delta);
+    if (score > 0) return true;
+    return (node.stopReasons || []).some((reason) => reason === "levelUp" || reason === "forwardChangeFloor" || reason === "keyItem");
+  }
+
+  buildPocketNodeKey(node) {
+    const state = node.state;
+    const hero = state.hero || {};
+    return [
+      state.floorId,
+      hero.loc && hero.loc.x,
+      hero.loc && hero.loc.y,
+      this.getCombatSignature(state),
+      Object.keys(state.inventory || {}).sort().map((key) => `${key}:${state.inventory[key]}`).join(","),
+      JSON.stringify((state.floorStates || {})[state.floorId] || {}),
+    ].join("|");
+  }
+
+  prunePocketFrontier(baseState, nodes, options) {
+    const countsByKey = new Map();
+    const representatives = [];
+    (nodes || []).forEach((node) => {
+      const key = this.buildPocketNodeKey(node);
+      const count = countsByKey.get(key) || 0;
+      if (count >= 3) return;
+      countsByKey.set(key, count + 1);
+      representatives.push(node);
+    });
+    return representatives.slice(0, options.frontierLimit);
+  }
+
+  selectBestPocketPlans(baseState, results, resultLimit) {
+    const selected = [];
+    const seen = new Set();
+    (results || [])
+      .slice()
+      .sort((left, right) => this.comparePocketPlans(baseState, left, right))
+      .forEach((node) => {
+        const key = (node.planEntries || []).map((entry) => entry.fingerprint || entry.summary).join("|");
+        if (seen.has(key)) return;
+        seen.add(key);
+        selected.push(node);
+      });
+    return selected.slice(0, resultLimit);
+  }
+
+  buildGreedyPocketPlans(baseState, initialActions, options) {
+    let state = cloneState(baseState);
+    const planEntries = [];
+    let stopReasons = [];
+    const results = [];
+    for (let depth = 0; depth < options.maxDepth; depth += 1) {
+      const primitiveActions = (depth === 0 && Array.isArray(initialActions)
+        ? initialActions
+        : this.enumeratePrimitiveActions(state).actions).filter((action) => this.isPocketPrimitiveAction(action));
+      const candidates = this.selectPocketExpansionCandidates(baseState, state, primitiveActions, options);
+      const action = candidates[0] || null;
+      if (!action) break;
+      let nextState;
+      try {
+        nextState = this.applyAction(state, action);
+      } catch (error) {
+        break;
+      }
+      stopReasons = this.mergePocketStopReasons(baseState, state, nextState, stopReasons);
+      planEntries.push(this.normalizePocketStep(action));
+      state = nextState;
+      const node = {
+        state,
+        planEntries: planEntries.slice(),
+        stopReasons: stopReasons.slice(),
+        depth: depth + 1,
+      };
+      node.score = this.scorePocketPlan(baseState, node);
+      if (this.isUsefulPocketResult(baseState, node)) results.push(node);
+      if (this.shouldStopPocketExpansion(baseState, node, options)) break;
+    }
+    return results;
+  }
+
+
+  searchResourcePocketPlans(baseState, initialActions, options) {
+    const root = {
+      state: cloneState(baseState),
+      planEntries: [],
+      stopReasons: [],
+      depth: 0,
+      score: 0,
+    };
+    let frontier = [root];
+    const results = [];
+    results.push(...this.buildGreedyPocketPlans(baseState, initialActions, options));
+    const primitiveActionCache = new Map();
+    const getPocketPrimitiveActions = (nodeState) => {
+      const key = buildStateKey(nodeState);
+      if (!primitiveActionCache.has(key)) {
+        primitiveActionCache.set(
+          key,
+          this.enumeratePrimitiveActions(nodeState).actions.filter((action) => this.isPocketPrimitiveAction(action))
+        );
+      }
+      return primitiveActionCache.get(key);
+    };
+    let expanded = 0;
+
+    for (let depth = 0; depth < options.maxDepth && frontier.length > 0; depth += 1) {
+      const nextFrontier = [];
+      for (const node of frontier) {
+        if (expanded >= options.maxNodes) break;
+        expanded += 1;
+        const primitiveActions = node === root && Array.isArray(initialActions)
+          ? initialActions.filter((action) => this.isPocketPrimitiveAction(action))
+          : getPocketPrimitiveActions(node.state);
+        const candidates = this.selectPocketExpansionCandidates(baseState, node.state, primitiveActions, options);
+
+        candidates.forEach((action) => {
+          let nextState;
+          try {
+            nextState = this.applyAction(node.state, action, { storeRoute: false });
+          } catch (error) {
+            return;
+          }
+          const stopReasons = this.mergePocketStopReasons(baseState, node.state, nextState, node.stopReasons);
+          const nextNode = {
+            state: nextState,
+            planEntries: node.planEntries.concat([this.normalizePocketStep(action)]),
+            stopReasons,
+            depth: node.depth + 1,
+          };
+          nextNode.score = this.scorePocketPlan(baseState, nextNode);
+          if (this.isUsefulPocketResult(baseState, nextNode)) results.push(nextNode);
+          if (!this.shouldStopPocketExpansion(baseState, nextNode, options)) nextFrontier.push(nextNode);
+        });
+      }
+      if (expanded >= options.maxNodes) break;
+      frontier = this.prunePocketFrontier(baseState, nextFrontier, options);
+    }
+
+    return this.selectBestPocketPlans(baseState, results, options.resultLimit);
+  }
+
+  buildResourcePocketActionsFromPlans(baseState, plans, resultLimit) {
+    return (plans || []).slice(0, resultLimit).map((planNode) => {
+      const delta = this.summarizeResourceDelta(baseState, planNode.state);
+      const planEntries = planNode.planEntries || [];
+      const plan = planEntries.map((entry) => entry.summary);
+      return {
+        kind: "resourcePocket",
+        floorId: baseState.floorId,
+        path: [],
+        plan,
+        planEntries,
+        estimate: {
+          ...delta,
+          damage: Math.max(0, Number((baseState.hero || {}).hp || 0) - Number((planNode.state.hero || {}).hp || 0)),
+          hpAfter: Number((planNode.state.hero || {}).hp || 0),
+          hpDelta: delta.hp,
+          score: planNode.score,
+          stopReasons: planNode.stopReasons,
+        },
+        summary: `resourcePocket:${baseState.floorId}:${plan.length}steps:${planNode.stopReasons.join(",") || "resource"}:${plan[0]}`,
+      };
+    });
+  }
+
+  enumerateResourcePocketActions(state, actions) {
+    const floorOrder = getFloorOrder(state.floorId);
+    const options = this.getResourcePocketSearchOptions(state, floorOrder);
+    const plans = this.searchResourcePocketPlans(state, actions, options);
+    return this.buildResourcePocketActionsFromPlans(state, plans, options.resultLimit);
   }
 
   getNextLevelInfo(state) {
@@ -553,7 +880,7 @@ class StaticSimulator {
       plan.push(action.summary);
       totalDamage += Number((action.estimate || {}).damage || 0);
       totalExp += Number((action.estimate || {}).exp || 0);
-      preview = this.applyAction(preview, action);
+      preview = this.applyAction(preview, action, { storeRoute: false });
       if (Number((preview.hero || {}).lv || 0) > startLevel) break;
     }
 
@@ -664,7 +991,8 @@ class StaticSimulator {
     if (direction) state.hero.loc.direction = direction;
   }
 
-  applyAction(state, action) {
+  applyAction(state, action, options) {
+    const config = options || {};
     let nextState = action.travelState ? cloneState(action.travelState) : cloneState(state);
     if (!action.travelState) {
       this.moveHero(
@@ -707,17 +1035,21 @@ class StaticSimulator {
         });
         break;
       case "fightToLevelUp":
-        return this.applyFightToLevelUpAction(nextState, action);
+        return this.applyFightToLevelUpAction(nextState, action, config);
       case "resourcePocket":
-        return this.applyResourcePocketAction(nextState, action);
+        return this.applyResourcePocketAction(nextState, action, config);
       default:
         throw new Error(`Unsupported action kind: ${action.kind}`);
     }
 
-    appendRouteStep(nextState, action.summary);
+    const suppressRoute = config.storeRoute === false;
+    if (suppressRoute) nextState.meta.__storeRoute = false;
+    appendRouteStep(nextState, action.summary, { storeRoute: !suppressRoute });
     runAutoEvents(this.project, nextState, { choiceResolver: this.choiceResolver });
     syncProgress(nextState);
-    return this.stabilizeState(nextState);
+    const stabilized = this.stabilizeState(nextState);
+    if (suppressRoute && stabilized.meta) delete stabilized.meta.__storeRoute;
+    return stabilized;
   }
 
   stepIntoEndpoint(state, action, hooks) {
@@ -852,26 +1184,32 @@ class StaticSimulator {
     });
   }
 
-  applyFightToLevelUpAction(state, action) {
+  applyFightToLevelUpAction(state, action, options) {
+    const config = options || {};
     let nextState = state;
     (action.plan || []).forEach((summary) => {
       const battleAction = this.enumerateBattleActionsOnly(nextState).find((candidate) => candidate.summary === summary);
       if (!battleAction) {
         throw new Error(`Unable to replay fightToLevelUp step: ${summary}`);
       }
-      nextState = this.applyAction(nextState, battleAction);
+      nextState = this.applyAction(nextState, battleAction, { storeRoute: config.storeRoute !== false });
     });
     return nextState;
   }
 
-  applyResourcePocketAction(state, action) {
+  applyResourcePocketAction(state, action, options) {
+    const config = options || {};
     let nextState = state;
-    (action.plan || []).forEach((summary) => {
-      const primitiveAction = this.enumeratePrimitiveActions(nextState).actions.find((candidate) => candidate.summary === summary);
+    const entries = Array.isArray(action.planEntries)
+      ? action.planEntries
+      : (action.plan || []).map((summary) => ({ summary }));
+    entries.forEach((entry) => {
+      const primitiveActions = this.enumeratePrimitiveActions(nextState).actions;
+      const primitiveAction = this.findPrimitiveByPlanEntry(primitiveActions, entry);
       if (!primitiveAction) {
-        throw new Error(`Unable to replay resourcePocket step: ${summary}`);
+        throw new Error(`Unable to replay resourcePocket step: ${entry.summary || entry.fingerprint}`);
       }
-      nextState = this.applyAction(nextState, primitiveAction);
+      nextState = this.applyAction(nextState, primitiveAction, { storeRoute: config.storeRoute !== false });
     });
     return nextState;
   }

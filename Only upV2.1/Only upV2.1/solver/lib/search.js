@@ -1,8 +1,11 @@
 "use strict";
 
-const { buildDominanceKey, buildStateKey } = require("./state-key");
 const { getDecisionDepth } = require("./state");
 const { compareProgress, getProgress } = require("./progress");
+const { BinaryHeap } = require("./priority-queue");
+const { createPerfTracker, setActivePerfTracker } = require("./perf");
+const { attachRouteToState, createChildNode, createRootNode, reconstructRoute } = require("./search-nodes");
+const { getDominanceKey, getScore, getStateKey } = require("./search-cache");
 
 function nowMs() {
   const [seconds, nanoseconds] = process.hrtime();
@@ -162,17 +165,22 @@ function resolveStateActionOptions(options, state) {
 function getStateActions(simulator, options, state) {
   const actionOptions = resolveStateActionOptions(options, state);
   const startedAt = nowMs();
-  const allActions = simulator.enumerateActions(state);
+  const tracker = options && options.__perfTracker;
+  const allActions = tracker && tracker.enabled
+    ? tracker.timePhase("enumerateActions", () => simulator.enumerateActions(state))
+    : simulator.enumerateActions(state);
   if (options && options.__stats) options.__stats.perf.timeInGenerateActionsMs += nowMs() - startedAt;
   let actions = allActions;
   if (actionOptions && typeof actionOptions.sortStateActions === "function") {
-    actions = actionOptions.sortStateActions(state, actions.slice());
+    const sortActions = () => actionOptions.sortStateActions(state, actions.slice());
+    actions = tracker && tracker.enabled ? tracker.timePhase("sortActions", sortActions) : sortActions();
   }
   if (options && options.__stats) {
     actions.forEach((action) => recordActionStat(options.__stats, action, "generated"));
   }
   if (actionOptions && typeof actionOptions.selectStateActions === "function") {
-    actions = actionOptions.selectStateActions(state, actions.slice(), actionOptions);
+    const selectActions = () => actionOptions.selectStateActions(state, actions.slice(), actionOptions);
+    actions = tracker && tracker.enabled ? tracker.timePhase("sortActions", selectActions) : selectActions();
   } else if (actionOptions && actionOptions.maxActionsPerState != null) {
     const maxActions = Number(actionOptions.maxActionsPerState);
     if (actionOptions.reserveProgressActions) {
@@ -238,10 +246,11 @@ function selectActionsByQuota(actions, options) {
 }
 
 function createRank(simulator, state, score) {
+  const decisionDepth = getDecisionDepth(state);
   return {
-    score: score || simulator.score(state),
-    decisionDepth: getDecisionDepth(state),
-    routeLength: state.route.length,
+    score: score || getScore(simulator, state),
+    decisionDepth,
+    routeLength: Array.isArray(state.route) && state.route.length > 0 ? state.route.length : decisionDepth,
   };
 }
 
@@ -270,7 +279,10 @@ function recordStage(stats, state, field, amount) {
 }
 
 function sortFrontier(simulator, frontier, options) {
-  frontier.sort((left, right) => compareFrontierStates(simulator, options, right, left));
+  const tracker = options && options.__perfTracker;
+  const run = () => frontier.sort((left, right) => compareFrontierStates(simulator, options, right, left));
+  if (tracker && tracker.enabled) return tracker.timePhase("sortFrontier", run);
+  return run();
 }
 
 function trimFrontierPerFloor(simulator, frontier, perFloorBeamWidth, options) {
@@ -341,7 +353,7 @@ function summarizeFrontierBuckets(simulator, frontier, options) {
     const progress = getProgress(state);
     const regionKey = getFrontierBucketKey(simulator, options, state);
     const key = `${state.floorId || "unknown"}|stage:${progress.stageIndex || 0}|${regionKey}`;
-    const score = simulator.score(state);
+    const score = getScore(simulator, state);
     const bucket = buckets.get(key) || {
       key,
       floorId: state.floorId || "unknown",
@@ -377,6 +389,8 @@ function summarizeFrontierBuckets(simulator, frontier, options) {
 
 function trimFrontier(simulator, frontier, options) {
   const config = options || {};
+  const tracker = config.__perfTracker;
+  const run = () => {
   const limits = resolveBeamLimits(simulator, frontier, config);
   let nextFrontier = frontier;
   const beforeLength = frontier.length;
@@ -405,9 +419,13 @@ function trimFrontier(simulator, frontier, options) {
     config.__stats.frontier.beamDropped += beforeLength - nextFrontier.length;
   }
   return nextFrontier;
+  };
+  return tracker && tracker.enabled ? tracker.timePhase("trimFrontier", run) : run();
 }
 
 function rebuildFrontierState(simulator, frontier, expandedStateKeys, options) {
+  const tracker = options && options.__perfTracker;
+  const run = () => {
   const activeRecords = new Map();
   const dominanceBuckets = new Map();
   const bestByDominanceKey = new Map();
@@ -425,6 +443,8 @@ function rebuildFrontierState(simulator, frontier, expandedStateKeys, options) {
     dominanceBuckets,
     frontier: rebuiltFrontier,
   };
+  };
+  return tracker && tracker.enabled ? tracker.timePhase("rebuildFrontier", run) : run();
 }
 
 function usesExactDominance(simulator, config, state) {
@@ -472,9 +492,11 @@ function getActiveBestRecord(bestByDominanceKey, activeRecords, dominanceKey, st
 function registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, state, stats, options) {
   const startedAt = stats ? nowMs() : 0;
   const config = options || {};
-  const score = simulator.score(state);
+  const score = getScore(simulator, state);
   const rank = createRank(simulator, state, score);
-  const stateKey = buildStateKey(state);
+  const keyStartedAt = stats && config.__perfTracker && config.__perfTracker.enabled ? nowMs() : 0;
+  const stateKey = getStateKey(state);
+  if (stats && config.__perfTracker && config.__perfTracker.enabled) config.__perfTracker.addPhase("buildStateKey", nowMs() - keyStartedAt);
   if (expandedStateKeys.has(stateKey)) {
     recordSkip(stats, "expanded");
     if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
@@ -494,7 +516,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
     if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
     return registered;
   }
-  const dominanceKey = buildDominanceKey(state);
+  const dominanceKey = getDominanceKey(state);
   const bestRecord = getActiveBestRecord(bestByDominanceKey, activeRecords, dominanceKey, stats);
   const summary = simulator.buildDominanceSummary(state, score);
   if (bestRecord) {
@@ -571,7 +593,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
   return true;
 }
 
-function maybeAutoExpandForwardChangeFloors(simulator, parentState, frontier, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, stats, config, updateBest) {
+function maybeAutoExpandForwardChangeFloors(simulator, parentNode, parentState, frontier, heap, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, stats, config, updateBest, registerChild) {
   if (!config.forwardChangeFloorAutoExpand || typeof simulator.getForwardChangeFloorActions !== "function") return;
   if (simulator.isTerminal(parentState)) return;
   let actions = [];
@@ -585,24 +607,40 @@ function maybeAutoExpandForwardChangeFloors(simulator, parentState, frontier, ac
     recordFloor(stats, parentState, "generated");
     recordActionStat(stats, action, "expanded");
     const applyStartedAt = nowMs();
-    const childState = simulator.applyAction(parentState, action);
+    const tracker = config && config.__perfTracker;
+    const childState = tracker && tracker.enabled
+      ? tracker.timePhase("applyAction", () => simulator.applyAction(parentState, action, { storeRoute: false }))
+      : simulator.applyAction(parentState, action, { storeRoute: false });
     stats.perf.timeInApplyActionMs += nowMs() - applyStartedAt;
     childState.__sourceAction = compactAction(action);
-    if (!registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, childState, stats, config)) return;
+    const childNode = registerChild(parentNode, childState, action);
+    if (!childNode) return;
     updateBest(childState);
     frontier.push(childState);
+    heap.push(childState);
   });
 }
 
 function searchTopK(simulator, initialState, options) {
   const config = options || {};
-  const frontier = [initialState];
+  const perfEnabled = config.perf === true || config.perf === "1" || config.perf === "true" || config.perf === "on";
+  const perfTracker = createPerfTracker({ enabled: perfEnabled, outputPath: config.perfOutputPath });
+  config.__perfTracker = perfTracker;
+  setActivePerfTracker(perfTracker);
+
+  const frontier = [];
+  const heap = new BinaryHeap((left, right) => compareFrontierStates(simulator, config, left, right));
   const results = [];
   let activeRecords = new Map();
   let dominanceBuckets = new Map();
   let bestByDominanceKey = new Map();
   const expandedStateKeys = new Set();
+  const nodes = new Map();
+  const stateKeyToNodeId = new Map();
   const maxExpansions = config.maxExpansions || 200;
+  const trimInterval = Number(config.trimInterval || 32);
+  const beamOverflowRatio = Number(config.beamOverflowRatio || 1.5);
+  const hardFrontierLimit = Number(config.hardFrontierLimit || 0);
   const startedAt = nowMs();
   const startedCpu = process.cpuUsage();
   const stats = {
@@ -640,6 +678,7 @@ function searchTopK(simulator, initialState, options) {
       wallMs: 0,
       cpuUserMs: 0,
       cpuSystemMs: 0,
+      eventLoopUtilization: null,
       expansionsPerSec: 0,
       generatedPerSec: 0,
       timeInGenerateActionsMs: 0,
@@ -652,6 +691,8 @@ function searchTopK(simulator, initialState, options) {
       expandedStates: 0,
       generatedActions: 0,
       keptActions: 0,
+      phaseMs: {},
+      phaseCounts: {},
     },
   };
   config.__stats = stats;
@@ -659,6 +700,22 @@ function searchTopK(simulator, initialState, options) {
   let bestProgressState = initialState;
   let goalState = null;
   let expansions = 0;
+  let nextNodeId = 1;
+  let nextNodeOrder = 1;
+
+  const rootStateKey = getStateKey(initialState);
+  const rootNode = createRootNode(initialState, rootStateKey);
+  nodes.set(rootNode.nodeId, rootNode);
+  stateKeyToNodeId.set(rootStateKey, rootNode.nodeId);
+  frontier.push(initialState);
+  heap.push(initialState);
+
+  const getNodeForState = (state) => nodes.get(stateKeyToNodeId.get(getStateKey(state)));
+  const hydrateState = (state) => {
+    if (!state) return null;
+    return attachRouteToState(nodes, getNodeForState(state)) || state;
+  };
+  const hydrateStates = (states) => states.map((state) => hydrateState(state)).filter(Boolean);
   const updateBestState = (candidateState) => {
     if (compareFrontierStates(simulator, config, candidateState, bestSeenState) > 0) {
       bestSeenState = candidateState;
@@ -668,64 +725,98 @@ function searchTopK(simulator, initialState, options) {
       bestProgressState = candidateState;
     }
   };
+  const registerChild = (parentNode, childState, action) => {
+    const childStateKey = getStateKey(childState);
+    if (!registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, childState, stats, config)) return null;
+    const existingId = stateKeyToNodeId.get(childStateKey);
+    if (existingId != null) nodes.delete(existingId);
+    const childNode = createChildNode(parentNode, childState, childStateKey, action, nextNodeId, nextNodeOrder);
+    nextNodeId += 1;
+    nextNodeOrder += 1;
+    nodes.set(childNode.nodeId, childNode);
+    stateKeyToNodeId.set(childStateKey, childNode.nodeId);
+    return childNode;
+  };
+  const shouldTrim = () => {
+    if (frontier.length === 0) return false;
+    if (trimInterval > 0 && expansions > 0 && expansions % trimInterval === 0) return true;
+    const limits = resolveBeamLimits(simulator, frontier, config);
+    if (limits.beamWidth && frontier.length > limits.beamWidth * beamOverflowRatio) return true;
+    if (hardFrontierLimit > 0 && frontier.length > hardFrontierLimit) return true;
+    return false;
+  };
 
   registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, initialState, stats, config);
 
-  while (frontier.length > 0 && expansions < maxExpansions) {
-    sortFrontier(simulator, frontier, config);
-    const state = frontier.shift();
-    const stateKey = buildStateKey(state);
-    if (!activeRecords.has(stateKey)) continue;
-    activeRecords.delete(stateKey);
-    expandedStateKeys.add(stateKey);
-    expansions += 1;
-    recordFloor(stats, state, "expanded");
-    recordStage(stats, state, "expanded");
-    if (compareFrontierStates(simulator, config, state, bestSeenState) > 0) {
-      bestSeenState = state;
-    }
-    const progressDiff = compareProgress(state, bestProgressState);
-    if (progressDiff > 0 || (progressDiff === 0 && compareFrontierStates(simulator, config, state, bestProgressState) > 0)) {
-      bestProgressState = state;
-    }
+  try {
+    while (heap.size > 0 && expansions < maxExpansions) {
+      const state = heap.pop();
+      const stateKey = getStateKey(state);
+      if (!activeRecords.has(stateKey)) continue;
+      const parentNode = getNodeForState(state);
+      activeRecords.delete(stateKey);
+      expandedStateKeys.add(stateKey);
+      expansions += 1;
+      perfTracker.increment("expanded");
+      recordFloor(stats, state, "expanded");
+      recordStage(stats, state, "expanded");
+      if (compareFrontierStates(simulator, config, state, bestSeenState) > 0) {
+        bestSeenState = state;
+      }
+      const progressDiff = compareProgress(state, bestProgressState);
+      if (progressDiff > 0 || (progressDiff === 0 && compareFrontierStates(simulator, config, state, bestProgressState) > 0)) {
+        bestProgressState = state;
+      }
 
-    if (simulator.isTerminal(state)) {
-      goalState = goalState && simulator.compareResultStates(goalState, state) >= 0 ? goalState : state;
-      recordStage(stats, state, "reachedGoalCandidates");
-      recordStage(stats, state, "keptGoalCandidates");
-      results.push(state);
-      results.sort((left, right) => simulator.compareResultStates(right, left));
-      if (results.length > (config.topK || 3)) results.length = config.topK || 3;
-      continue;
-    }
+      if (simulator.isTerminal(state)) {
+        goalState = goalState && simulator.compareResultStates(goalState, state) >= 0 ? goalState : state;
+        recordStage(stats, state, "reachedGoalCandidates");
+        recordStage(stats, state, "keptGoalCandidates");
+        results.push(state);
+        results.sort((left, right) => simulator.compareResultStates(right, left));
+        if (results.length > (config.topK || 3)) results.length = config.topK || 3;
+        continue;
+      }
 
-    const actions = getStateActions(simulator, config, state);
-    stats.perf.generatedActions += actions.length;
-    actions.forEach((action) => {
-      stats.generated += 1;
-      recordFloor(stats, state, "generated");
-      recordActionStat(stats, action, "expanded");
-      const applyStartedAt = nowMs();
-      const nextState = simulator.applyAction(state, action);
-      stats.perf.timeInApplyActionMs += nowMs() - applyStartedAt;
-      nextState.__sourceAction = compactAction(action);
-      if (!registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, nextState, stats, config)) return;
-      updateBestState(nextState);
-      frontier.push(nextState);
-      maybeAutoExpandForwardChangeFloors(simulator, nextState, frontier, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, stats, config, updateBestState);
-    });
-    stats.perf.maxFrontierSize = Math.max(stats.perf.maxFrontierSize, frontier.length);
+      const actions = getStateActions(simulator, config, state);
+      stats.perf.generatedActions += actions.length;
+      actions.forEach((action) => {
+        stats.generated += 1;
+        perfTracker.increment("generated");
+        recordFloor(stats, state, "generated");
+        recordActionStat(stats, action, "expanded");
+        const applyStartedAt = nowMs();
+        const nextState = perfTracker.enabled
+          ? perfTracker.timePhase("applyAction", () => simulator.applyAction(state, action, { storeRoute: false }))
+          : simulator.applyAction(state, action, { storeRoute: false });
+        stats.perf.timeInApplyActionMs += nowMs() - applyStartedAt;
+        nextState.__sourceAction = compactAction(action);
+        const childNode = registerChild(parentNode, nextState, action);
+        if (!childNode) return;
+        perfTracker.increment("registered");
+        updateBestState(nextState);
+        frontier.push(nextState);
+        heap.push(nextState);
+        maybeAutoExpandForwardChangeFloors(simulator, childNode, nextState, frontier, heap, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, stats, config, updateBestState, registerChild);
+      });
+      stats.perf.maxFrontierSize = Math.max(stats.perf.maxFrontierSize, frontier.length);
+      perfTracker.maybePrintLive({ expanded: expansions, generated: stats.generated, registered: stats.registered, duplicates: Number(stats.skipped["same-state"] || 0) });
 
-    const trimmedFrontier = trimFrontier(simulator, frontier, config);
-    if (trimmedFrontier !== frontier) {
-      const rebuilt = rebuildFrontierState(simulator, trimmedFrontier, expandedStateKeys, config);
-      frontier.length = 0;
-      frontier.push(...rebuilt.frontier);
-      activeRecords = rebuilt.activeRecords;
-      dominanceBuckets = rebuilt.dominanceBuckets;
-      bestByDominanceKey = rebuilt.bestByDominanceKey;
+      if (shouldTrim()) {
+        const activeFrontier = frontier.filter((item) => activeRecords.has(getStateKey(item)));
+        const trimmedFrontier = trimFrontier(simulator, activeFrontier, config);
+        const rebuilt = rebuildFrontierState(simulator, trimmedFrontier, expandedStateKeys, config);
+        frontier.length = 0;
+        frontier.push(...rebuilt.frontier);
+        heap.rebuild(rebuilt.frontier);
+        activeRecords = rebuilt.activeRecords;
+        dominanceBuckets = rebuilt.dominanceBuckets;
+        bestByDominanceKey = rebuilt.bestByDominanceKey;
+      }
+      stats.perf.maxFrontierSize = Math.max(stats.perf.maxFrontierSize, frontier.length);
     }
-    stats.perf.maxFrontierSize = Math.max(stats.perf.maxFrontierSize, frontier.length);
+  } finally {
+    setActivePerfTracker(null);
   }
 
   const wallMs = nowMs() - startedAt;
@@ -738,17 +829,25 @@ function searchTopK(simulator, initialState, options) {
   stats.perf.expansionsPerSec = wallMs > 0 ? expansions / (wallMs / 1000) : 0;
   stats.perf.generatedPerSec = wallMs > 0 ? stats.generated / (wallMs / 1000) : 0;
   stats.perf.avgBranchingFactor = expansions > 0 ? stats.generated / expansions : 0;
+  const perfSummary = perfTracker.finish({ expanded: expansions, generated: stats.generated, registered: stats.registered, duplicates: Number(stats.skipped["same-state"] || 0) });
+  stats.perf = { ...stats.perf, ...perfSummary };
+
+  const hydratedGoalState = hydrateState(goalState);
+  const hydratedBestSeenState = hydrateState(bestSeenState);
+  const hydratedBestProgressState = hydrateState(bestProgressState);
+  const hydratedResults = hydrateStates(results);
+  const activeFrontier = frontier.filter((item) => activeRecords.has(getStateKey(item)));
 
   return {
-    foundGoal: Boolean(goalState),
-    goalState,
-    bestSeenState,
-    bestProgressState,
+    foundGoal: Boolean(hydratedGoalState),
+    goalState: hydratedGoalState,
+    bestSeenState: hydratedBestSeenState,
+    bestProgressState: hydratedBestProgressState,
     fallbackState: null,
-    route: goalState ? goalState.route : null,
+    route: hydratedGoalState ? hydratedGoalState.route : null,
     fallbackRoute: null,
     expansions,
-    frontierSize: frontier.length,
+    frontierSize: activeFrontier.length,
     diagnostics: {
       registered: stats.registered,
       skipped: stats.skipped,
@@ -761,21 +860,21 @@ function searchTopK(simulator, initialState, options) {
       droppedProgressActions: stats.droppedProgressActions,
       frontier: {
         ...stats.frontier,
-        topBuckets: summarizeFrontierBuckets(simulator, frontier, config),
+        topBuckets: summarizeFrontierBuckets(simulator, activeFrontier, config),
       },
       perf: stats.perf,
       pruneReasons: stats.pruneReasons,
       suspicious: stats.suspicious,
       safeDominance: stats.safeDominance,
       best: {
-        bestSeenFloor: bestSeenState && bestSeenState.floorId,
-        bestSeenStage: bestSeenState ? getProgress(bestSeenState).stageIndex : null,
-        bestSeenRouteLength: bestSeenState && bestSeenState.route ? bestSeenState.route.length : null,
-        bestProgressFloor: bestProgressState && bestProgressState.floorId,
-        bestProgressStage: bestProgressState ? getProgress(bestProgressState).stageIndex : null,
+        bestSeenFloor: hydratedBestSeenState && hydratedBestSeenState.floorId,
+        bestSeenStage: hydratedBestSeenState ? getProgress(hydratedBestSeenState).stageIndex : null,
+        bestSeenRouteLength: hydratedBestSeenState && hydratedBestSeenState.route ? hydratedBestSeenState.route.length : null,
+        bestProgressFloor: hydratedBestProgressState && hydratedBestProgressState.floorId,
+        bestProgressStage: hydratedBestProgressState ? getProgress(hydratedBestProgressState).stageIndex : null,
       },
     },
-    results,
+    results: hydratedResults,
   };
 }
 

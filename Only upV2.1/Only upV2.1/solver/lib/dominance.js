@@ -1,8 +1,7 @@
 "use strict";
 
-const { listFloorMutationSummary } = require("./state");
+const { listFloorMutationSummary, getDecisionDepth } = require("./state");
 const { buildStateKey, hasDirectionalStateSensitivity } = require("./state-key");
-const { getDecisionDepth } = require("./state");
 const { getProgress, getProgressSignature } = require("./progress");
 
 const HERO_RESOURCE_FIELDS = ["hp", "hpmax", "mana", "manamax", "atk", "def", "mdef", "money", "exp", "lv"];
@@ -55,7 +54,7 @@ function buildDominanceSummary(state, score) {
     inventory: stableObject(state.inventory),
     score,
     decisionDepth: getDecisionDepth(state),
-    routeLength: state.route.length,
+    routeLength: Array.isArray(state.route) && state.route.length > 0 ? state.route.length : getDecisionDepth(state),
   };
 }
 

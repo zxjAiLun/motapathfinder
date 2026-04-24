@@ -1,8 +1,9 @@
 "use strict";
 
-const { computeFrontierFeatures } = require("./frontier-features");
+const { getFrontierFeatures } = require("./search-cache");
 const { evaluateExpression } = require("./expression");
 const { getProgress } = require("./progress");
+const { getDecisionDepth } = require("./state");
 const { getFloorOrder, getProgressFloorOrder } = require("./score");
 const {
   compareStageObjectiveStates,
@@ -84,7 +85,7 @@ function createAdaptiveBeamGetter(config, mode) {
     let branchyStateCount = 0;
     frontier.forEach((state) => {
       maxFloorOrder = Math.max(maxFloorOrder, getFloorOrder(state.floorId));
-      const features = computeFrontierFeatures(config.project, state, {
+      const features = getFrontierFeatures(config.project, state, {
         battleResolver: config.battleResolver,
       });
       const branchScore = Number(features.battleFrontierCount || 0) + Number(features.resourcePocketCount || 0) + Number(features.changeFloorCount || 0);
@@ -110,7 +111,7 @@ function createAdaptiveBeamGetter(config, mode) {
 
 function getStageRank(simulator, state) {
   const score = simulator.score(state);
-  const frontier = computeFrontierFeatures(simulator.project, state, {
+  const frontier = getFrontierFeatures(simulator.project, state, {
     battleResolver: simulator.battleResolver,
   });
   const preferred = frontier.preferredChangeFloor || null;
@@ -142,7 +143,7 @@ function getStageRank(simulator, state) {
     hp: Number(state.hero.hp || 0),
     primary: Number(score.primary || 0),
     tertiary: Number(score.tertiary || 0),
-    routeLength: Array.isArray(state.route) ? state.route.length : 0,
+    routeLength: Array.isArray(state.route) && state.route.length > 0 ? state.route.length : getDecisionDepth(state),
   };
 }
 
@@ -191,7 +192,7 @@ function compareStageStates(simulator, left, right) {
 }
 
 function getStageActionScore(simulator, state, action, index) {
-  const frontier = computeFrontierFeatures(simulator.project, state, {
+  const frontier = getFrontierFeatures(simulator.project, state, {
     battleResolver: simulator.battleResolver,
   });
   const preferred = frontier.preferredChangeFloor || null;
@@ -388,7 +389,7 @@ function createStageMt1Mt11Profile(simulator, options) {
     compareFrontierStates: (left, right) => compareStageObjectiveStates(simulator, left, right, config),
     sortStateActions: (state, actions) => sortStagePolicyActions(simulator, state, actions, config),
     getFrontierBucketKey: (state) => {
-      const features = computeFrontierFeatures(simulator.project, state, {
+      const features = getFrontierFeatures(simulator.project, state, {
         battleResolver: simulator.battleResolver,
       });
       const progress = getProgress(state);
@@ -416,7 +417,7 @@ function createStageMt1Mt11ResourcePrepProfile(simulator, options) {
     compareFrontierStates: (left, right) => compareResourcePrepStates(simulator, left, right),
     sortStateActions: (state, actions) => sortResourcePrepActions(simulator, state, actions),
     getFrontierBucketKey: (state) => {
-      const features = computeFrontierFeatures(simulator.project, state, {
+      const features = getFrontierFeatures(simulator.project, state, {
         battleResolver: simulator.battleResolver,
       });
       const progress = getProgress(state);

@@ -1,8 +1,8 @@
 "use strict";
 
-const { computeFrontierFeatures } = require("./frontier-features");
-const { getInventoryCount } = require("./state");
+const { getFrontierFeatures } = require("./search-cache");
 const { getDecisionDepth } = require("./state");
+const { getInventoryCount } = require("./state");
 
 function defaultScore(state) {
   const totalInventory = Object.values(state.inventory || {}).reduce((sum, value) => sum + Number(value || 0), 0);
@@ -45,7 +45,7 @@ function estimateNextFloorDistance(state, project) {
 function defaultSearchRank(state, score, context) {
   const resolvedScore = score || defaultScore(state);
   const project = context && context.project;
-  const frontier = project ? computeFrontierFeatures(project, state, { battleResolver: context && context.battleResolver }) : null;
+  const frontier = project ? getFrontierFeatures(project, state, { battleResolver: context && context.battleResolver }) : null;
   const preferredChangePreview = frontier && frontier.preferredChangeFloor && frontier.preferredChangeFloor.preview
     ? frontier.preferredChangeFloor.preview
     : null;
@@ -67,7 +67,7 @@ function defaultSearchRank(state, score, context) {
     primary: resolvedScore.primary,
     tertiary: resolvedScore.tertiary,
     decisionDepth: getDecisionDepth(state),
-    routeLength: state.route.length,
+    routeLength: Array.isArray(state.route) && state.route.length > 0 ? state.route.length : getDecisionDepth(state),
   };
 }
 

@@ -13,12 +13,25 @@
     "watch:mt5:progress": "npm run verify:mt5:progress:live -- --headless=0 --step-delay-ms=500 --keep-open=1 --start-delay-ms=3000",
     "check:core": "node check-core-regressions.js",
     "check:state-deps": "npm run check:key-audit",
-    "check:static": "npm run check:core && npm run check:key-audit && npm run check:stage:short",
+    "check:static": "npm run check:core && npm run check:pocket && npm run check:key-audit && npm run check:stage:short",
     "check:live:progress": "npm run verify:mt3:progress:live && npm run verify:mt5:progress:live",
     "check:validation": "npm run check:static && npm run check:live:progress",
     "check:key-audit": "node audit-state-dependencies.js",
     "check:stage": "node check-stage-acceptance.js --targets=MT3,MT5,MT7,MT11 --max-expansions=300",
-    "check:stage:short": "node check-stage-acceptance.js --targets=MT3,MT5 --max-expansions=80"
+    "check:stage:short": "node check-stage-acceptance.js --targets=MT3,MT5 --max-expansions=80",
+    "brute:mt2": "node find-route-bruteforce.js --to-floor=MT2 --max-expanded=50000 --max-depth=120 --out=routes/latest/mt1-mt2.route.json --fail-on-miss",
+    "brute:mt3": "node find-route-bruteforce.js --to-floor=MT3 --max-expanded=100000 --max-depth=180 --out=routes/latest/mt1-mt3.route.json --fail-on-miss",
+    "brute:mt10": "node find-route-bruteforce.js --to-floor=MT10 --max-expanded=1000000 --max-depth=400 --out=routes/latest/mt1-mt10.route.json --fail-on-miss",
+    "replay:route": "node verify-route-live.js --route-file=routes/latest/mt1-mt3.route.json",
+    "watch:route": "node verify-route-live.js --route-file=routes/latest/mt1-mt3.route.json --headless=0 --step-delay-ms=700 --keep-open=1",
+    "print:route": "node print-route.js --route-file=routes/latest/mt1-mt3.route.json",
+    "perf:topk": "node --cpu-prof --cpu-prof-dir=profiles run-mt1-mt11.js --profile=stage-mt1-mt11 --to-floor=MT3 --max-expansions=2000 --perf=1",
+    "perf:brute": "node --cpu-prof --cpu-prof-dir=profiles find-route-bruteforce.js --to-floor=MT3 --max-expanded=50000 --perf=1",
+    "perf:summary": "node profile-search.js --last",
+    "brute:mt3:1w": "node find-route-bruteforce.js --to-floor=MT3 --workers=1 --max-expanded=200000 --fail-on-miss",
+    "brute:mt3:8w": "node find-route-bruteforce.js --to-floor=MT3 --workers=8 --max-expanded=200000 --fail-on-miss",
+    "perf:brute:8w": "node find-route-bruteforce.js --to-floor=MT5 --workers=8 --perf=1",
+    "check:pocket": "node check-resource-pocket-order.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

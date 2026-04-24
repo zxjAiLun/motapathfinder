@@ -361,6 +361,7 @@ function main() {
     disableDominance: parseBooleanFlag(args["disable-dominance"], false),
     dominanceMode: args["dominance-mode"],
     safeDominanceMode: parseBooleanFlag(args["safe-dominance-mode"], true),
+    perf: parseBooleanFlag(args.perf, false),
   });
 
   console.log(`Search claim: ${JSON.stringify(summarizeSearchClaim(profileName, targetFloor, args, result))}`);

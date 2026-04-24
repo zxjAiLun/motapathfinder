@@ -1,13 +1,13 @@
 "use strict";
 
-const { computeFrontierFeatures } = require("./frontier-features");
+const { getFrontierFeatures } = require("./search-cache");
 
 function isDecisionStep(step) {
   return typeof step === "string" && !step.startsWith("auto:");
 }
 
 function summarizeCandidateProgress(state) {
-  const decisions = state.route.filter(isDecisionStep);
+  const decisions = (state.route || []).filter(isDecisionStep);
   const upCount = decisions.filter((step) => step.startsWith("changeFloor@MT1:")).length;
   const downCount = decisions.filter((step) => step.startsWith("changeFloor@MT2:")).length;
   const hasVisitedMT2 = Boolean(state.visitedFloors && state.visitedFloors.MT2);
@@ -22,7 +22,7 @@ function summarizeCandidateProgress(state) {
 }
 
 function summarizeCandidateObjective(simulator, state, progress) {
-  const frontier = computeFrontierFeatures(simulator.project, state, { battleResolver: simulator.battleResolver });
+  const frontier = getFrontierFeatures(simulator.project, state, { battleResolver: simulator.battleResolver });
   if (progress.phase >= 3) {
     return {
       kind: "done",
