@@ -4,7 +4,19 @@ const { executeActionList } = require("./events");
 const { evaluateCondition } = require("./expression");
 const { coordinateKey } = require("./reachability");
 
+const NOOP_EVENT_TYPES = new Set([
+  "showStatusBar",
+  "hideStatusBar",
+  "setText",
+  "text",
+  "comment",
+  "sleep",
+  "wait",
+  "function",
+]);
+
 const SUPPORTED_EVENT_TYPES = new Set([
+  ...NOOP_EVENT_TYPES,
   "setValue",
   "openDoor",
   "if",
@@ -58,7 +70,11 @@ function mergeBranch(prefix, child) {
 
 function analyzeAction(project, state, action, extra) {
   const result = { choicePath: [], unsupported: [] };
-  if (action == null || typeof action !== "object") return [result];
+  if (action == null) return [result];
+  if (typeof action !== "object") {
+    appendUnsupported(result, "unsupported-event-shape", { type: typeof action });
+    return [result];
+  }
   if (!SUPPORTED_EVENT_TYPES.has(action.type)) {
     appendUnsupported(result, "unsupported-event-type", action);
     return [result];
@@ -86,7 +102,16 @@ function analyzeAction(project, state, action, extra) {
     .map((entry) => entry.index);
 
   if (stateChangingChoiceIndexes.length === 0) {
-    return [{ choicePath: [0], unsupported: [] }];
+    const analyzedChoices = choices.map((choice, index) => ({
+      index,
+      branches: analyzeActionList(project, state, choice && choice.action || [], extra),
+      isNoop: asActionList(choice && choice.action).length === 0,
+    }));
+    const safeChoice = analyzedChoices.find((entry) => entry.isNoop && entry.branches.some((branch) => (branch.unsupported || []).length === 0)) ||
+      analyzedChoices.find((entry) => entry.branches.some((branch) => (branch.unsupported || []).length === 0)) ||
+      analyzedChoices[0];
+    const safeBranch = (safeChoice.branches || []).find((branch) => (branch.unsupported || []).length === 0) || (safeChoice.branches || [result])[0];
+    return [mergeBranch({ choicePath: [safeChoice.index], unsupported: [] }, safeBranch)];
   }
 
   return stateChangingChoiceIndexes.flatMap((index) => {

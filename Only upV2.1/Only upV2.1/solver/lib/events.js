@@ -79,8 +79,21 @@ function defaultChoiceResolver(choiceAction) {
   return choiceAction.choices[0];
 }
 
+const NOOP_EVENT_TYPES = new Set([
+  "showStatusBar",
+  "hideStatusBar",
+  "setText",
+  "text",
+  "comment",
+  "sleep",
+  "wait",
+  "function",
+]);
+
 function executeAction(project, state, action, extra, options) {
   if (action == null || typeof action !== "object") return;
+
+  if (NOOP_EVENT_TYPES.has(action.type)) return;
 
   switch (action.type) {
     case "setValue":
