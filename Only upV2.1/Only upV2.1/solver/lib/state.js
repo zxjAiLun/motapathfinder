@@ -1,5 +1,7 @@
 "use strict";
 
+const { syncProgress } = require("./progress");
+
 function cloneState(state) {
   const cloned = typeof structuredClone === "function"
     ? structuredClone(state)
@@ -46,7 +48,7 @@ function createInitialState(project, options) {
   if (config.rank === "easy") inventory.I581 = 1;
   else if (config.rank === "hard") inventory.I582 = 1;
 
-  return {
+  const state = {
     floorId: project.data.firstData.floorId,
     hero,
     inventory,
@@ -64,6 +66,8 @@ function createInitialState(project, options) {
       autoBattleCount: 0,
     },
   };
+  syncProgress(state);
+  return state;
 }
 
 function ensureFloorState(state, floorId) {
@@ -82,6 +86,7 @@ function hasVisitedFloor(state, floorId) {
 
 function visitFloor(state, floorId) {
   state.visitedFloors[floorId] = true;
+  syncProgress(state);
 }
 
 function getInventoryCount(state, itemId) {

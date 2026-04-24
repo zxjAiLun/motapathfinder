@@ -3,6 +3,7 @@
 const { listFloorMutationSummary } = require("./state");
 const { buildStateKey, hasDirectionalStateSensitivity } = require("./state-key");
 const { getDecisionDepth } = require("./state");
+const { getProgress, getProgressSignature } = require("./progress");
 
 const HERO_RESOURCE_FIELDS = ["hp", "hpmax", "mana", "manamax", "atk", "def", "mdef", "money", "exp", "lv"];
 
@@ -26,6 +27,7 @@ function buildDominanceBucketKey(state) {
   const includeDirection = hasDirectionalStateSensitivity(state);
   return JSON.stringify({
     floorId: state.floorId,
+    progressSig: getProgressSignature(state),
     hero: {
       x: state.hero.loc.x,
       y: state.hero.loc.y,
@@ -47,6 +49,8 @@ function buildDominanceSummary(state, score) {
 
   return {
     stateKey: buildStateKey(state),
+    progress: getProgress(state),
+    progressSig: getProgressSignature(state),
     hero,
     inventory: stableObject(state.inventory),
     score,
@@ -60,6 +64,8 @@ function dominatesInventory(leftInventory, rightInventory) {
 }
 
 function dominatesSummary(leftSummary, rightSummary) {
+  if ((leftSummary.progressSig || "") !== (rightSummary.progressSig || "")) return false;
+  if (Number(((leftSummary.progress || {}).stageIndex) || 0) < Number(((rightSummary.progress || {}).stageIndex) || 0)) return false;
   if (Number(leftSummary.decisionDepth || 0) > Number(rightSummary.decisionDepth || 0)) return false;
   if (
     Number(leftSummary.decisionDepth || 0) === Number(rightSummary.decisionDepth || 0) &&

@@ -9,6 +9,7 @@ const { chromium } = require("playwright-core");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { getTileNumberAt } = require("./lib/state");
 const { loadProject } = require("./lib/project-loader");
+const { searchTopK } = require("./lib/search");
 const { createSearchProfile } = require("./lib/search-profiles");
 const { StaticSimulator } = require("./lib/simulator");
 const { buildDominanceKey } = require("./lib/state-key");
@@ -370,77 +371,70 @@ function findUpDownCandidate(project, simulator, options) {
 
 function findTerminalCandidate(simulator, options) {
   const config = options || {};
-  const maxExpansions = Number(config.maxExpansions || 2000);
-  const perStateLimit = Number(config.perStateLimit || config.maxActionsPerState || 12);
-  const beamWidth = Number(config.beamWidth || 400);
   const profileName = config.profile || "stage-mt1-mt11";
   const profile = createSearchProfile(profileName, simulator, {
     maxActionsPerState: config.maxActionsPerState,
     perStateLimit: config.perStateLimit,
   });
   const initialState = simulator.createInitialState({ rank: config.rank || "chaos" });
-  const frontier = [initialState];
-  const seen = new Set();
-  const bestByDominanceKey = new Map([[buildDominanceKey(initialState), initialState]]);
-  let bestSeenState = initialState;
-  let expansions = 0;
+  const result = searchTopK(simulator, initialState, {
+    ...profile,
+    topK: 1,
+    maxExpansions: Number(config.maxExpansions || 2000),
+    beamWidth: config.beamWidth,
+    perFloorBeamWidth: config.perFloorBeamWidth,
+    perRegionBeamWidth: config.perRegionBeamWidth,
+    maxActionsPerState: config.maxActionsPerState != null ? config.maxActionsPerState : profile.maxActionsPerState,
+    disableDominance: config.disableDominance,
+    dominanceMode: config.dominanceMode,
+  });
 
-  const compareStates = (left, right) => {
-    if (profile.compareFrontierStates) return profile.compareFrontierStates(left, right);
-    return simulator.compareSearchStates(left, right);
-  };
-  const sortFrontier = () => {
-    frontier.sort((left, right) => compareStates(right, left));
-  };
-
-  while (frontier.length > 0 && expansions < maxExpansions) {
-    sortFrontier();
-    const state = frontier.shift();
-    const key = JSON.stringify([
-      state.floorId,
-      state.hero.loc,
-      state.hero.hp,
-      state.hero.atk,
-      state.hero.def,
-      state.hero.mdef,
-      state.inventory,
-      state.flags,
-      state.floorStates,
-      state.visitedFloors,
-    ]);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    expansions += 1;
-    if (compareStates(state, bestSeenState) > 0) bestSeenState = state;
-
-    if (simulator.isTerminal(state)) {
-      return {
-        expansions,
-        state,
-      };
-    }
-
-    const actions = (profile.sortStateActions || ((_, items) => items))(state, simulator.enumerateActions(state))
-      .slice(0, perStateLimit);
-    actions.forEach((action) => {
-      const nextState = simulator.applyAction(state, action);
-      const dominanceKey = buildDominanceKey(nextState);
-      const bestNextState = bestByDominanceKey.get(dominanceKey);
-      if (bestNextState && compareStates(bestNextState, nextState) >= 0) return;
-      bestByDominanceKey.set(dominanceKey, nextState);
-      frontier.push(nextState);
-    });
-
-    if (frontier.length > beamWidth) {
-      sortFrontier();
-      frontier.length = beamWidth;
-    }
+  if (!result.foundGoal || !result.goalState) {
+    const bestProgressState = result.bestProgressState || result.bestSeenState;
+    const bestProgressSummary = bestProgressState
+      ? `${bestProgressState.floorId}, stage=${bestProgressState.progress && bestProgressState.progress.stageIndex}, decisions=${bestProgressState.meta && bestProgressState.meta.decisionDepth}, routeLen=${bestProgressState.route.length}`
+      : "none";
+    const bestSeenSummary = result.bestSeenState
+      ? `${result.bestSeenState.floorId}, stage=${result.bestSeenState.progress && result.bestSeenState.progress.stageIndex}, decisions=${result.bestSeenState.meta && result.bestSeenState.meta.decisionDepth}, routeLen=${result.bestSeenState.route.length}`
+      : "none";
+    throw new Error(
+      `Solver did not find strict goal ${simulator.stopFloorId} within ${result.expansions} expansions; ` +
+        `bestProgress=${bestProgressSummary}; bestSeen=${bestSeenSummary}; diagnostics=${JSON.stringify(result.diagnostics)}`
+    );
   }
 
-  const bestSummary = bestSeenState
-    ? `${bestSeenState.floorId}, decisions=${bestSeenState.meta && bestSeenState.meta.decisionDepth}, routeLen=${bestSeenState.route.length}`
-    : "none";
-  throw new Error(`No terminal candidate found within ${expansions} expansions; best=${bestSummary}.`);
+  return {
+    diagnostics: result.diagnostics,
+    expansions: result.expansions,
+    state: result.goalState,
+  };
+}
+
+function findBestSeenCandidate(simulator, options) {
+  const config = options || {};
+  const profileName = config.profile || "stage-mt1-mt11";
+  const profile = createSearchProfile(profileName, simulator, {
+    maxActionsPerState: config.maxActionsPerState,
+    perStateLimit: config.perStateLimit,
+  });
+  const initialState = simulator.createInitialState({ rank: config.rank || "chaos" });
+  const result = searchTopK(simulator, initialState, {
+    ...profile,
+    topK: 1,
+    maxExpansions: Number(config.maxExpansions || 300),
+    beamWidth: config.beamWidth,
+    perFloorBeamWidth: config.perFloorBeamWidth,
+    perRegionBeamWidth: config.perRegionBeamWidth,
+    maxActionsPerState: config.maxActionsPerState != null ? config.maxActionsPerState : profile.maxActionsPerState,
+  });
+  if (!result.bestSeenState || result.bestSeenState.route.length === 0) {
+    throw new Error(`No replayable best-seen route found within ${result.expansions} expansions.`);
+  }
+  return {
+    diagnostics: result.diagnostics,
+    expansions: result.expansions,
+    state: result.bestSeenState,
+  };
 }
 
 function buildDecisionPlan(project, simulator, candidateState, rank) {
@@ -758,6 +752,8 @@ async function main() {
   const toFloor = args["to-floor"] || null;
   const goal = args.goal || (toFloor ? "terminal" : "updown-mt1-mt3");
   VERIFY_FLOORS = parseSnapshotFloors(args["snapshot-floors"], toFloor ? buildFloorRange(toFloor) : VERIFY_FLOORS);
+  const keepOpen = parseBooleanFlag(args["keep-open"], false);
+  const stepDelayMs = Number(args["step-delay-ms"] || 0);
   const simulator = new StaticSimulator(project, {
     stopFloorId: toFloor || "MT11",
     battleResolver: new FunctionBackedBattleResolver(project),
@@ -774,6 +770,19 @@ async function main() {
         beamWidth: parseOptionalNumber(args["beam-width"]),
         maxActionsPerState: parseOptionalNumber(args["max-actions-per-state"]),
         maxExpansions: Number(args["search-expansions"] || 2000),
+        disableDominance: parseBooleanFlag(args["disable-dominance"], false),
+        dominanceMode: args["dominance-mode"],
+        perFloorBeamWidth: parseOptionalNumber(args["per-floor-beam-width"]),
+        perRegionBeamWidth: parseOptionalNumber(args["per-region-beam-width"]),
+        perStateLimit: parseOptionalNumber(args["per-state-limit"]),
+        profile: args.profile || "stage-mt1-mt11",
+        rank,
+      });
+    } else if (goal === "best-seen") {
+      candidate = findBestSeenCandidate(simulator, {
+        beamWidth: parseOptionalNumber(args["beam-width"]),
+        maxActionsPerState: parseOptionalNumber(args["max-actions-per-state"]),
+        maxExpansions: Number(args["search-expansions"] || 300),
         perFloorBeamWidth: parseOptionalNumber(args["per-floor-beam-width"]),
         perRegionBeamWidth: parseOptionalNumber(args["per-region-beam-width"]),
         perStateLimit: parseOptionalNumber(args["per-state-limit"]),
@@ -833,14 +842,23 @@ async function main() {
         console.error("Actual step snapshot:", JSON.stringify(summarizeSnapshot(runtimeSnapshot), null, 2));
         throw new Error(`Live/runtime mismatch after ${action.summary}: ${mismatch}`);
       }
+      if (stepDelayMs > 0) await page.waitForTimeout(stepDelayMs);
     }
 
     console.log(`Live verification passed.`);
     if (candidate) console.log(`Candidate found in ${candidate.expansions} expansions.`);
     else console.log(`Candidate search used fallback decision list.`);
+    if (candidate && candidate.diagnostics) {
+      console.log(`Search diagnostics: ${JSON.stringify(candidate.diagnostics)}`);
+    }
     console.log(`Goal: ${goal}${toFloor ? ` -> ${toFloor}` : ""}`);
+    console.log(`Final replay state: floor=${plan.finalState.floorId}, hp=${plan.finalState.hero.hp}, atk=${plan.finalState.hero.atk}, def=${plan.finalState.hero.def}, mdef=${plan.finalState.hero.mdef}`);
     console.log(`Decisions (${plan.decisions.length}):`);
     plan.decisions.forEach((step) => console.log(`  ${step}`));
+    if (keepOpen) {
+      console.log("Browser is kept open for inspection. Press Ctrl+C in this terminal when done.");
+      await new Promise(() => {});
+    }
   } finally {
     await browser.close();
     await server.close();

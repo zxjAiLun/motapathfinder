@@ -1,6 +1,7 @@
 "use strict";
 
 const { listFloorMutationSummary } = require("./state");
+const { getProgressSignature } = require("./progress");
 
 const DIRECTIONAL_STATE_ITEMS = ["pickaxe", "bomb"];
 
@@ -25,6 +26,7 @@ function serializeStateKey(state, options) {
   const includeDirection = hasDirectionalStateSensitivity(state);
   return JSON.stringify({
     floorId: state.floorId,
+    progressSig: getProgressSignature(state),
     hero: {
       x: state.hero.loc.x,
       y: state.hero.loc.y,

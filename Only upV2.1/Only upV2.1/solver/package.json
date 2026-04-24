@@ -2,7 +2,10 @@
   "scripts": {
     "smoke": "node run-mt1-mt11.js --rank=chaos --profile=stage-mt1-mt11 --top-k=1 --max-expansions=300 --beam-width=300 --per-floor-beam-width=120 --per-region-beam-width=40 --diagnostics=1",
     "verify:mt2": "node verify-route-live.js --to-floor=MT2 --allow-fallback=0",
-    "verify:mt3": "node verify-route-live.js --goal=updown-mt1-mt3 --allow-fallback=0"
+    "verify:mt3": "node verify-route-live.js --goal=updown-mt1-mt3 --allow-fallback=0",
+    "verify:best": "node verify-route-live.js --goal=best-seen --allow-fallback=0 --search-expansions=300 --beam-width=300 --per-floor-beam-width=120 --per-region-beam-width=40",
+    "watch:mt3": "node verify-route-live.js --goal=updown-mt1-mt3 --allow-fallback=0 --headless=0 --step-delay-ms=700 --keep-open=1",
+    "watch:best": "node verify-route-live.js --goal=best-seen --allow-fallback=0 --search-expansions=300 --beam-width=300 --per-floor-beam-width=120 --per-region-beam-width=40 --headless=0 --step-delay-ms=700 --keep-open=1"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

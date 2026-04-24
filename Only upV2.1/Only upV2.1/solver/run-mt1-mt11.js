@@ -118,6 +118,8 @@ function main() {
     perFloorBeamWidth: args["per-floor-beam-width"] != null ? Number(args["per-floor-beam-width"]) : undefined,
     perRegionBeamWidth: args["per-region-beam-width"] != null ? Number(args["per-region-beam-width"]) : undefined,
     maxActionsPerState: maxActionsPerState != null ? maxActionsPerState : profile.maxActionsPerState,
+    disableDominance: parseBooleanFlag(args["disable-dominance"], false),
+    dominanceMode: args["dominance-mode"],
   });
 
   console.log(`Expansions: ${result.expansions}`);

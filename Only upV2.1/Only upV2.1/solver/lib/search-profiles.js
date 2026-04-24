@@ -1,6 +1,7 @@
 "use strict";
 
 const { computeFrontierFeatures } = require("./frontier-features");
+const { getProgress } = require("./progress");
 const { getFloorOrder, getProgressFloorOrder } = require("./score");
 const {
   compareCandidateActions,
@@ -41,6 +42,8 @@ function getStageRank(simulator, state) {
   const preferredPreview = preferred && preferred.preview ? preferred.preview : {};
 
   return {
+    stageIndex: getProgress(state).stageIndex,
+    bestFloorRank: getProgress(state).bestFloorRank,
     terminal: simulator.isTerminal(state) ? 1 : 0,
     progressFloor: getProgressFloorOrder(state),
     currentFloor: getFloorOrder(state.floorId),
@@ -67,6 +70,8 @@ function compareStageStates(simulator, left, right) {
 
   const highWins = [
     "terminal",
+    "stageIndex",
+    "bestFloorRank",
     "progressFloor",
     "nextOpportunity",
     "changeOpportunity",
@@ -183,9 +188,16 @@ function createStageMt1Mt11Profile(simulator, options) {
       const features = computeFrontierFeatures(simulator.project, state, {
         battleResolver: simulator.battleResolver,
       });
-      return `${state.floorId}|${features.regionKey}|${features.targetBandKey}`;
+      const progress = getProgress(state);
+      return `${progress.stageIndex}|${state.floorId}|${features.regionKey}|${features.targetBandKey}`;
     },
-    maxActionsPerState: config.maxActionsPerState || 12,
+    maxActionsPerState: config.maxActionsPerState || 24,
+    progressActionQuota: config.progressActionQuota || 8,
+    unlockActionQuota: config.unlockActionQuota || 6,
+    itemActionQuota: config.itemActionQuota || 6,
+    fightActionQuota: config.fightActionQuota || 6,
+    shopActionQuota: config.shopActionQuota || 3,
+    reserveProgressActions: true,
   };
 }
 

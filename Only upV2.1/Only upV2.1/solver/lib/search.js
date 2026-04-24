@@ -2,6 +2,36 @@
 
 const { buildDominanceKey, buildStateKey } = require("./state-key");
 const { getDecisionDepth } = require("./state");
+const { compareProgress, getProgress } = require("./progress");
+
+function actionType(action) {
+  if (!action) return "unknown";
+  if (action.kind === "changeFloor") return "stair";
+  if (action.kind === "useTool" && action.tool === "centerFly") return "centerFly";
+  if (action.kind === "openDoor") return "door";
+  if (action.kind === "battle") return "monster";
+  if (action.kind === "pickup") return "item";
+  if (action.kind === "useTool") return "tool";
+  return action.kind || "misc";
+}
+
+function isProgressAction(action) {
+  return actionType(action) === "stair" || actionType(action) === "centerFly";
+}
+
+function ensureActionStats(stats, type) {
+  if (!stats) return null;
+  if (!stats.byActionType[type]) {
+    stats.byActionType[type] = { generated: 0, kept: 0, trimmed: 0, dominated: 0, expanded: 0, invalid: 0 };
+  }
+  return stats.byActionType[type];
+}
+
+function recordActionStat(stats, action, field) {
+  const bucket = ensureActionStats(stats, actionType(action));
+  if (!bucket) return;
+  bucket[field] = Number(bucket[field] || 0) + 1;
+}
 
 function compareFrontierStates(simulator, options, left, right) {
   if (options && typeof options.compareFrontierStates === "function") {
@@ -21,14 +51,71 @@ function getFrontierBucketKey(simulator, options, state) {
 }
 
 function getStateActions(simulator, options, state) {
-  let actions = simulator.enumerateActions(state);
+  const allActions = simulator.enumerateActions(state);
+  let actions = allActions;
   if (options && typeof options.sortStateActions === "function") {
     actions = options.sortStateActions(state, actions.slice());
   }
-  if (options && options.maxActionsPerState != null) {
-    actions = actions.slice(0, Number(options.maxActionsPerState));
+  if (options && options.__stats) {
+    actions.forEach((action) => recordActionStat(options.__stats, action, "generated"));
+  }
+  if (options && typeof options.selectStateActions === "function") {
+    actions = options.selectStateActions(state, actions.slice(), options);
+  } else if (options && options.maxActionsPerState != null) {
+    const maxActions = Number(options.maxActionsPerState);
+    if (options.reserveProgressActions) {
+      actions = selectActionsByQuota(actions, {
+        maxActions,
+        progressActionQuota: options.progressActionQuota,
+        unlockActionQuota: options.unlockActionQuota,
+        itemActionQuota: options.itemActionQuota,
+        fightActionQuota: options.fightActionQuota,
+        shopActionQuota: options.shopActionQuota,
+      });
+    } else {
+      actions = actions.slice(0, maxActions);
+    }
+  }
+  if (options && options.__stats) {
+    const kept = new Set(actions);
+    actions.forEach((action) => recordActionStat(options.__stats, action, "kept"));
+    allActions.forEach((action) => {
+      if (kept.has(action)) return;
+      recordActionStat(options.__stats, action, "trimmed");
+      recordFloor(options.__stats, state, "trimmed");
+      if (isProgressAction(action)) options.__stats.suspicious.progressActionTrimmed += 1;
+    });
   }
   return actions;
+}
+
+function takeQuota(actions, predicate, quota, kept, selected) {
+  if (!quota || quota <= 0) return;
+  actions.forEach((action) => {
+    if (selected.length >= quota) return;
+    if (kept.has(action) || !predicate(action)) return;
+    kept.add(action);
+    selected.push(action);
+  });
+}
+
+function selectActionsByQuota(actions, options) {
+  const maxActions = Number(options.maxActions || actions.length);
+  if (!Number.isFinite(maxActions) || maxActions <= 0 || actions.length <= maxActions) return actions;
+  const kept = new Set();
+  const selected = [];
+  takeQuota(actions, isProgressAction, options.progressActionQuota || 8, kept, selected);
+  takeQuota(actions, (action) => actionType(action) === "door", options.unlockActionQuota || 6, kept, selected);
+  takeQuota(actions, (action) => actionType(action) === "item", options.itemActionQuota || 6, kept, selected);
+  takeQuota(actions, (action) => actionType(action) === "monster", options.fightActionQuota || 6, kept, selected);
+  takeQuota(actions, (action) => actionType(action) === "shop", options.shopActionQuota || 3, kept, selected);
+  actions.forEach((action) => {
+    if (selected.length >= maxActions) return;
+    if (kept.has(action)) return;
+    kept.add(action);
+    selected.push(action);
+  });
+  return selected.slice(0, maxActions);
 }
 
 function createRank(simulator, state, score) {
@@ -42,6 +129,25 @@ function createRank(simulator, state, score) {
 function recordSkip(stats, reason) {
   if (!stats) return;
   stats.skipped[reason] = Number(stats.skipped[reason] || 0) + 1;
+  stats.pruneReasons[reason] = Number(stats.pruneReasons[reason] || 0) + 1;
+}
+
+function recordFloor(stats, state, field, amount) {
+  if (!stats || !state) return;
+  const floorId = state.floorId || "unknown";
+  if (!stats.byFloor[floorId]) {
+    stats.byFloor[floorId] = { expanded: 0, generated: 0, kept: 0, trimmed: 0, dominated: 0, beamDropped: 0 };
+  }
+  stats.byFloor[floorId][field] = Number(stats.byFloor[floorId][field] || 0) + Number(amount || 1);
+}
+
+function recordStage(stats, state, field, amount) {
+  if (!stats || !state) return;
+  const stage = String(getProgress(state).stageIndex || 0);
+  if (!stats.byStage[stage]) {
+    stats.byStage[stage] = { expanded: 0, reachedGoalCandidates: 0, keptGoalCandidates: 0 };
+  }
+  stats.byStage[stage][field] = Number(stats.byStage[stage][field] || 0) + Number(amount || 1);
 }
 
 function sortFrontier(simulator, frontier, options) {
@@ -101,6 +207,7 @@ function trimFrontier(simulator, frontier, options) {
   }
   if (config.__stats && nextFrontier.length < beforeLength) {
     config.__stats.trimmed += beforeLength - nextFrontier.length;
+    config.__stats.pruneReasons.beamDropped = Number(config.__stats.pruneReasons.beamDropped || 0) + beforeLength - nextFrontier.length;
   }
   return nextFrontier;
 }
@@ -113,7 +220,7 @@ function rebuildFrontierState(simulator, frontier, expandedStateKeys, options) {
 
   sortFrontier(simulator, frontier, options);
   frontier.forEach((state) => {
-    if (!registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, state)) return;
+    if (!registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, state, null, options)) return;
     rebuiltFrontier.push(state);
   });
 
@@ -125,13 +232,22 @@ function rebuildFrontierState(simulator, frontier, expandedStateKeys, options) {
   };
 }
 
-function registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, state, stats) {
+function registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, state, stats, options) {
+  const config = options || {};
   const score = simulator.score(state);
   const rank = createRank(simulator, state, score);
   const stateKey = buildStateKey(state);
   if (expandedStateKeys.has(stateKey)) {
     recordSkip(stats, "expanded");
     return false;
+  }
+  if (config.disableDominance || config.dominanceMode === "off") {
+    const summary = simulator.buildDominanceSummary(state, score);
+    const record = { bucketKey: stateKey, dominanceKey: stateKey, rank, stateKey, summary };
+    activeRecords.set(stateKey, record);
+    if (stats) stats.registered += 1;
+    recordFloor(stats, state, "kept");
+    return true;
   }
   const dominanceKey = buildDominanceKey(state);
   const bestRecord = bestByDominanceKey.get(dominanceKey);
@@ -142,7 +258,12 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
       return false;
     }
     if (simulator.dominates(bestRecord.summary, summary)) {
+      if (stats && Number(((bestRecord.summary.progress || {}).stageIndex) || 0) < Number((summary.progress || {}).stageIndex || 0)) {
+        stats.suspicious.higherStageDominatedByLowerStage += 1;
+      }
       recordSkip(stats, "best-dominates");
+      recordFloor(stats, state, "dominated");
+      recordActionStat(stats, state.__sourceAction, "dominated");
       return false;
     }
   }
@@ -158,7 +279,12 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
       continue;
     }
     if (simulator.dominates(record.summary, summary)) {
+      if (stats && Number(((record.summary.progress || {}).stageIndex) || 0) < Number((summary.progress || {}).stageIndex || 0)) {
+        stats.suspicious.higherStageDominatedByLowerStage += 1;
+      }
       recordSkip(stats, "bucket-dominates");
+      recordFloor(stats, state, "dominated");
+      recordActionStat(stats, state.__sourceAction, "dominated");
       return false;
     }
   }
@@ -190,6 +316,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
     bestByDominanceKey.set(dominanceKey, nextRecord);
   }
   if (stats) stats.registered += 1;
+  recordFloor(stats, state, "kept");
   return true;
 }
 
@@ -206,12 +333,25 @@ function searchTopK(simulator, initialState, options) {
     registered: 0,
     skipped: {},
     trimmed: 0,
+    generated: 0,
+    byActionType: {},
+    byFloor: {},
+    byStage: {},
+    pruneReasons: {},
+    suspicious: {
+      higherStageDominatedByLowerStage: 0,
+      progressActionTrimmed: 0,
+      goalCandidateGeneratedButDropped: 0,
+      fallbackUsedWhenStrictGoalRequired: 0,
+    },
   };
   config.__stats = stats;
   let bestSeenState = initialState;
+  let bestProgressState = initialState;
+  let goalState = null;
   let expansions = 0;
 
-  registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, initialState, stats);
+  registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, initialState, stats, config);
 
   while (frontier.length > 0 && expansions < maxExpansions) {
     sortFrontier(simulator, frontier, config);
@@ -221,11 +361,19 @@ function searchTopK(simulator, initialState, options) {
     activeRecords.delete(stateKey);
     expandedStateKeys.add(stateKey);
     expansions += 1;
+    recordFloor(stats, state, "expanded");
+    recordStage(stats, state, "expanded");
     if (compareFrontierStates(simulator, config, state, bestSeenState) > 0) {
       bestSeenState = state;
     }
+    if (compareProgress(state, bestProgressState) > 0) {
+      bestProgressState = state;
+    }
 
     if (simulator.isTerminal(state)) {
+      goalState = goalState && simulator.compareResultStates(goalState, state) >= 0 ? goalState : state;
+      recordStage(stats, state, "reachedGoalCandidates");
+      recordStage(stats, state, "keptGoalCandidates");
       results.push(state);
       results.sort((left, right) => simulator.compareResultStates(right, left));
       if (results.length > (config.topK || 3)) results.length = config.topK || 3;
@@ -234,10 +382,18 @@ function searchTopK(simulator, initialState, options) {
 
     const actions = getStateActions(simulator, config, state);
     actions.forEach((action) => {
+      stats.generated += 1;
+      recordFloor(stats, state, "generated");
+      recordActionStat(stats, action, "expanded");
       const nextState = simulator.applyAction(state, action);
-      if (!registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, nextState, stats)) return;
+      nextState.__sourceAction = action;
+      if (!registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, nextState, stats, config)) return;
+      delete nextState.__sourceAction;
       if (compareFrontierStates(simulator, config, nextState, bestSeenState) > 0) {
         bestSeenState = nextState;
+      }
+      if (compareProgress(nextState, bestProgressState) > 0) {
+        bestProgressState = nextState;
       }
       frontier.push(nextState);
     });
@@ -254,13 +410,32 @@ function searchTopK(simulator, initialState, options) {
   }
 
   return {
+    foundGoal: Boolean(goalState),
+    goalState,
     bestSeenState,
+    bestProgressState,
+    fallbackState: null,
+    route: goalState ? goalState.route : null,
+    fallbackRoute: null,
     expansions,
     frontierSize: frontier.length,
     diagnostics: {
       registered: stats.registered,
       skipped: stats.skipped,
       trimmed: stats.trimmed,
+      generated: stats.generated,
+      byFloor: stats.byFloor,
+      byStage: stats.byStage,
+      byActionType: stats.byActionType,
+      pruneReasons: stats.pruneReasons,
+      suspicious: stats.suspicious,
+      best: {
+        bestSeenFloor: bestSeenState && bestSeenState.floorId,
+        bestSeenStage: bestSeenState ? getProgress(bestSeenState).stageIndex : null,
+        bestSeenRouteLength: bestSeenState && bestSeenState.route ? bestSeenState.route.length : null,
+        bestProgressFloor: bestProgressState && bestProgressState.floorId,
+        bestProgressStage: bestProgressState ? getProgress(bestProgressState).stageIndex : null,
+      },
     },
     results,
   };

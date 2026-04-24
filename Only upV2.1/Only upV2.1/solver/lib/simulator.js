@@ -14,6 +14,7 @@ const { compareScore, compareSearchRank, defaultScore, defaultSearchRank } = req
 const { buildStateKey } = require("./state-key");
 const { buildWalkReachability, stepOntoTile } = require("./step-simulator");
 const { ToolRegistry } = require("./tool-registry");
+const { syncProgress } = require("./progress");
 const {
   appendRouteStep,
   cloneState,
@@ -333,6 +334,7 @@ class StaticSimulator {
 
     appendRouteStep(nextState, action.summary);
     runAutoEvents(this.project, nextState, { choiceResolver: this.choiceResolver });
+    syncProgress(nextState);
     return this.stabilizeState(nextState);
   }
 
@@ -448,7 +450,7 @@ class StaticSimulator {
   }
 
   stabilizeState(state) {
-    return this.autoResolver.stabilizeState({
+    const stabilized = this.autoResolver.stabilizeState({
       project: this.project,
       state,
       battleResolver: this.battleResolver,
@@ -456,6 +458,8 @@ class StaticSimulator {
       choiceResolver: this.choiceResolver,
       resolvePickupAt: (currentState, x, y) => this.resolvePickupAt(currentState, x, y),
     });
+    syncProgress(stabilized);
+    return stabilized;
   }
 }
 
