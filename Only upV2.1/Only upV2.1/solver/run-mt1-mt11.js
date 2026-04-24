@@ -4,6 +4,7 @@ const path = require("path");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { evaluateExpression } = require("./lib/expression");
+const { summarizeLandmarks } = require("./lib/landmarks");
 const { loadProject } = require("./lib/project-loader");
 const { formatScore, getFloorOrder } = require("./lib/score");
 const { searchTopK } = require("./lib/search");
@@ -240,6 +241,55 @@ function printStateSummary(label, simulator, state, options) {
   }
 }
 
+
+function topObjectEntries(object, limit) {
+  return Object.entries(object || {})
+    .sort((left, right) => Number(right[1] || 0) - Number(left[1] || 0))
+    .slice(0, limit || 8)
+    .map(([key, value]) => ({ key, value }));
+}
+
+function summarizeDroppedActions(diagnostics) {
+  const byKind = Object.entries((diagnostics || {}).byActionType || {})
+    .map(([kind, stats]) => ({
+      kind,
+      trimmed: Number(stats.trimmed || 0),
+      dominated: Number(stats.dominated || 0),
+      beamDropped: Number(stats.beamDropped || 0),
+    }))
+    .filter((entry) => entry.trimmed || entry.dominated || entry.beamDropped)
+    .sort((left, right) => (right.trimmed + right.dominated + right.beamDropped) - (left.trimmed + left.dominated + left.beamDropped));
+  return {
+    byKind,
+    byReason: (diagnostics.droppedProgressActions || {}).byReason || {},
+    examples: ((diagnostics.droppedProgressActions || {}).samples || []).slice(0, 8),
+  };
+}
+
+function summarizeProgressBlockers(project, simulator, state) {
+  const nextGate = summarizeNextGateDeficit(project, simulator, state);
+  const reasons = (nextGate && nextGate.reasons || []).slice();
+  if (nextGate && nextGate.forwardChangeFloorCount === 0) reasons.push("next-stair-not-currently-generated");
+  if (nextGate && nextGate.visibleBattleCount === 0) reasons.push("no-visible-battle-frontier");
+  if (nextGate && nextGate.resourcePocketCount === 0) reasons.push("no-visible-resource-pocket");
+  return {
+    reasons: Array.from(new Set(reasons)),
+    nextGate,
+  };
+}
+
+function printDiagnosticsMainView(project, simulator, result) {
+  const diagnostics = result.diagnostics || {};
+  const bestProgressState = result.bestProgressState || result.bestSeenState;
+  const view = {
+    topFrontierBuckets: (((diagnostics.frontier || {}).topBuckets) || []).slice(0, 8),
+    droppedActions: summarizeDroppedActions(diagnostics),
+    progressBlockers: summarizeProgressBlockers(project, simulator, bestProgressState),
+    landmarks: summarizeLandmarks(simulator, bestProgressState, { limit: 10 }),
+  };
+  console.log(`Diagnostics main view: ${JSON.stringify(view)}`);
+}
+
 function printProgressDebug(project, simulator, result, args) {
   const bestProgressState = result.bestProgressState || result.bestSeenState;
   if (parseBooleanFlag(args["print-best-progress-route"], false)) {
@@ -335,6 +385,7 @@ function main() {
     });
     console.log(`Best seen replay confidence: ${JSON.stringify(summarizeReplayConfidence(result.bestSeenState, false))}`);
     console.log(`Best progress replay confidence: ${JSON.stringify(summarizeReplayConfidence(result.bestProgressState, false))}`);
+    printDiagnosticsMainView(project, simulator, result);
     printProgressDebug(project, simulator, result, args);
   }
 

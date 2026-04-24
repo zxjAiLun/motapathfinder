@@ -334,6 +334,47 @@ function recordFrontierDrops(stats, before, after, reason) {
   });
 }
 
+
+function summarizeFrontierBuckets(simulator, frontier, options) {
+  const buckets = new Map();
+  (frontier || []).forEach((state) => {
+    const progress = getProgress(state);
+    const regionKey = getFrontierBucketKey(simulator, options, state);
+    const key = `${state.floorId || "unknown"}|stage:${progress.stageIndex || 0}|${regionKey}`;
+    const score = simulator.score(state);
+    const bucket = buckets.get(key) || {
+      key,
+      floorId: state.floorId || "unknown",
+      stageIndex: progress.stageIndex || 0,
+      regionKey,
+      count: 0,
+      bestScore: null,
+      bestRouteLength: null,
+      bestState: null,
+      __bestRawState: null,
+    };
+    bucket.count += 1;
+    if (!bucket.__bestRawState || compareFrontierStates(simulator, options, state, bucket.__bestRawState) > 0) {
+      bucket.bestScore = score;
+      bucket.bestRouteLength = Array.isArray(state.route) ? state.route.length : 0;
+      bucket.bestState = compactState(state);
+      bucket.__bestRawState = state;
+    }
+    buckets.set(key, bucket);
+  });
+  return Array.from(buckets.values())
+    .map((bucket) => {
+      const { __bestRawState, ...publicBucket } = bucket;
+      return publicBucket;
+    })
+    .sort((left, right) => {
+      if (left.count !== right.count) return right.count - left.count;
+      if (left.floorId !== right.floorId) return left.floorId.localeCompare(right.floorId);
+      return String(left.regionKey).localeCompare(String(right.regionKey));
+    })
+    .slice(0, 16);
+}
+
 function trimFrontier(simulator, frontier, options) {
   const config = options || {};
   const limits = resolveBeamLimits(simulator, frontier, config);
@@ -718,7 +759,10 @@ function searchTopK(simulator, initialState, options) {
       byActionType: stats.byActionType,
       byActionRole: stats.byActionRole,
       droppedProgressActions: stats.droppedProgressActions,
-      frontier: stats.frontier,
+      frontier: {
+        ...stats.frontier,
+        topBuckets: summarizeFrontierBuckets(simulator, frontier, config),
+      },
       perf: stats.perf,
       pruneReasons: stats.pruneReasons,
       suspicious: stats.suspicious,
