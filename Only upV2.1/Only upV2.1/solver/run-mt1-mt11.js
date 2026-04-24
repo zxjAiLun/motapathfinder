@@ -83,6 +83,30 @@ function summarizeAction(action) {
 }
 
 
+function summarizeSearchClaim(profileName, targetFloor, args, result) {
+  return {
+    claim: result.foundGoal ? "found-route-under-budget" : "no-route-found-under-budget",
+    profile: profileName,
+    targetFloor,
+    budget: {
+      maxExpansions: Number(args["max-expansions"] || 80),
+      topK: Number(args["top-k"] || 3),
+      beamWidth: args["beam-width"] != null ? Number(args["beam-width"]) : null,
+      perFloorBeamWidth: args["per-floor-beam-width"] != null ? Number(args["per-floor-beam-width"]) : null,
+      perRegionBeamWidth: args["per-region-beam-width"] != null ? Number(args["per-region-beam-width"]) : null,
+      maxActionsPerState: args["max-actions-per-state"] != null ? Number(args["max-actions-per-state"]) : null,
+    },
+    pruning: {
+      dominanceMode: args["dominance-mode"] || (parseBooleanFlag(args["disable-dominance"], false) ? "off" : "default"),
+      safeDominanceMode: parseBooleanFlag(args["safe-dominance-mode"], true),
+      reserveProgressActions: true,
+    },
+    semantics: "heuristic beam-search result; not a proof of global optimality or completeness",
+    expansions: result.expansions,
+    frontierRemaining: result.frontierSize,
+  };
+}
+
 function summarizeReplayConfidence(state, liveVerified) {
   if (!state) {
     return {
@@ -289,6 +313,7 @@ function main() {
     safeDominanceMode: parseBooleanFlag(args["safe-dominance-mode"], true),
   });
 
+  console.log(`Search claim: ${JSON.stringify(summarizeSearchClaim(profileName, targetFloor, args, result))}`);
   console.log(`Expansions: ${result.expansions}`);
   console.log(`Frontier remaining: ${result.frontierSize}`);
   if (parseBooleanFlag(args.diagnostics, false)) {
@@ -314,14 +339,14 @@ function main() {
   }
 
   if (result.results.length === 0) {
-    console.log(`No terminal ${targetFloor} state found in the current search budget.`);
+    console.log(`No terminal ${targetFloor} state found under profile=${profileName}, budget=${Number(args["max-expansions"] || 80)}, pruning=${args["dominance-mode"] || (parseBooleanFlag(args["disable-dominance"], false) ? "off" : "default")}.`);
     console.log("Battle evaluation and ambush/between-attack walking are active; next gains will come from stronger pruning and more rule coverage.");
     return;
   }
 
   result.results.forEach((state, index) => {
     console.log(
-      `#${index + 1} score=${formatScore(simulator.score(state))} decisions=${getDecisionDepth(state)} routeLen=${state.route.length}`
+      `#${index + 1} found under profile=${profileName} budget=${Number(args["max-expansions"] || 80)} pruning=${args["dominance-mode"] || (parseBooleanFlag(args["disable-dominance"], false) ? "off" : "default")} score=${formatScore(simulator.score(state))} decisions=${getDecisionDepth(state)} routeLen=${state.route.length}`
     );
     console.log(`  replayConfidence=${JSON.stringify(summarizeReplayConfidence(state, false))}`);
     state.route.forEach((step) => console.log(`  ${step}`));

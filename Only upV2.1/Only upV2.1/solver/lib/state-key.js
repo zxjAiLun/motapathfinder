@@ -5,6 +5,10 @@ const { getProgressSignature } = require("./progress");
 
 const DIRECTIONAL_STATE_ITEMS = ["pickaxe", "bomb"];
 
+function stableArray(array) {
+  return Array.isArray(array) ? array.slice() : [];
+}
+
 function stableObject(object) {
   return Object.keys(object || {})
     .sort()
@@ -32,16 +36,22 @@ function serializeStateKey(state, options) {
       y: state.hero.loc.y,
       direction: includeDirection ? state.hero.loc.direction : null,
       hp: config.ignoreHp ? null : state.hero.hp,
+      hpmax: state.hero.hpmax,
+      mana: state.hero.mana,
+      manamax: state.hero.manamax,
       atk: state.hero.atk,
       def: state.hero.def,
       mdef: state.hero.mdef,
       money: state.hero.money,
       exp: state.hero.exp,
+      lv: state.hero.lv,
+      equipment: stableArray(state.hero.equipment),
+      followers: stableArray(state.hero.followers),
     },
     inventory: stableObject(state.inventory),
     flags: stableObject(state.flags),
-      visitedFloors: Object.keys(state.visitedFloors || {}).sort(),
-      mutations: listFloorMutationSummary(state.floorStates || {}),
+    visitedFloors: Object.keys(state.visitedFloors || {}).sort(),
+    mutations: listFloorMutationSummary(state.floorStates || {}),
   });
 }
 

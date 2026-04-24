@@ -11,7 +11,12 @@
     "verify:mt5:progress:live": "node verify-mt1-mt3-live.js --to-floor=MT5 --goal=best-progress --trace-live=1 --allow-fallback=0 --search-expansions=600 --beam-width=500 --per-floor-beam-width=220 --per-region-beam-width=80",
     "watch:mt3:progress": "npm run verify:mt3:progress:live -- --headless=0 --step-delay-ms=500 --keep-open=1 --start-delay-ms=3000",
     "watch:mt5:progress": "npm run verify:mt5:progress:live -- --headless=0 --step-delay-ms=500 --keep-open=1 --start-delay-ms=3000",
-    "check:core": "node check-core-regressions.js"
+    "check:core": "node check-core-regressions.js",
+    "check:state-deps": "npm run check:key-audit",
+    "check:static": "npm run check:core && npm run check:key-audit",
+    "check:live:progress": "npm run verify:mt3:progress:live && npm run verify:mt5:progress:live",
+    "check:validation": "npm run check:static && npm run check:live:progress",
+    "check:key-audit": "node audit-state-dependencies.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"
