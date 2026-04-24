@@ -76,6 +76,9 @@ function compareProgress(left, right) {
   if (leftProgress.bestFloorRank !== rightProgress.bestFloorRank) {
     return leftProgress.bestFloorRank - rightProgress.bestFloorRank;
   }
+  if (leftProgress.currentFloorRank !== rightProgress.currentFloorRank) {
+    return leftProgress.currentFloorRank - rightProgress.currentFloorRank;
+  }
   if (leftProgress.visitedFloorMask !== rightProgress.visitedFloorMask) {
     return leftProgress.visitedFloorMask.length - rightProgress.visitedFloorMask.length;
   }

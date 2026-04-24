@@ -1,6 +1,7 @@
 "use strict";
 
 const { computeFrontierFeatures } = require("./frontier-features");
+const { evaluateExpression } = require("./expression");
 const { getProgress } = require("./progress");
 const { getFloorOrder, getProgressFloorOrder } = require("./score");
 const {
@@ -33,6 +34,7 @@ function distanceTo(point, target) {
   return Math.abs(point.x - target.x) + Math.abs(point.y - target.y);
 }
 
+
 function getStageRank(simulator, state) {
   const score = simulator.score(state);
   const frontier = computeFrontierFeatures(simulator.project, state, {
@@ -56,6 +58,13 @@ function getStageRank(simulator, state) {
     battleFrontier: Number(frontier.battleFrontierCount || 0),
     nextDistance: finiteNumber(frontier.nearestNextFloorDistance, Number.POSITIVE_INFINITY),
     changeDistance: finiteNumber(frontier.nearestChangeFloorDistance, Number.POSITIVE_INFINITY),
+    level: Number((state.hero || {}).lv || 0),
+    exp: Number((state.hero || {}).exp || 0),
+    expReadiness: (() => {
+      const nextLevel = getNextLevelInfo(simulator.project, state);
+      if (!nextLevel) return 0;
+      return nextLevel.deficit <= 0 ? 10000 : Math.max(0, 10000 - nextLevel.deficit * 300);
+    })(),
     combat: Number(state.hero.atk || 0) + Number(state.hero.def || 0) + Number(state.hero.mdef || 0),
     hp: Number(state.hero.hp || 0),
     primary: Number(score.primary || 0),
@@ -68,7 +77,7 @@ function compareStageStates(simulator, left, right) {
   const leftRank = getStageRank(simulator, left);
   const rightRank = getStageRank(simulator, right);
 
-  const highWins = [
+  const primaryHighWins = [
     "terminal",
     "stageIndex",
     "bestFloorRank",
@@ -76,17 +85,11 @@ function compareStageStates(simulator, left, right) {
     "nextOpportunity",
     "changeOpportunity",
     "nextReady",
-    "preferredItems",
-    "preferredZeroDamage",
-    "zeroDamageBattle",
-    "battleFrontier",
     "currentFloor",
-    "combat",
-    "hp",
-    "primary",
-    "tertiary",
+    "level",
+    "expReadiness",
   ];
-  for (const key of highWins) {
+  for (const key of primaryHighWins) {
     const diff = compareNumbers(leftRank[key], rightRank[key]);
     if (diff !== 0) return diff;
   }
@@ -95,6 +98,22 @@ function compareStageStates(simulator, left, right) {
   if (nextDistanceDiff !== 0) return nextDistanceDiff;
   const changeDistanceDiff = compareNumbers(rightRank.changeDistance, leftRank.changeDistance);
   if (changeDistanceDiff !== 0) return changeDistanceDiff;
+
+  const secondaryHighWins = [
+    "combat",
+    "exp",
+    "preferredItems",
+    "preferredZeroDamage",
+    "zeroDamageBattle",
+    "battleFrontier",
+    "hp",
+    "primary",
+    "tertiary",
+  ];
+  for (const key of secondaryHighWins) {
+    const diff = compareNumbers(leftRank[key], rightRank[key]);
+    if (diff !== 0) return diff;
+  }
   return compareNumbers(rightRank.routeLength, leftRank.routeLength);
 }
 
@@ -125,11 +144,33 @@ function getStageActionScore(simulator, state, action, index) {
     }
   } else if (action.kind === "battle") {
     const damage = Number((action.estimate || {}).damage || 0);
+    const exp = Number((action.estimate || {}).exp || 0);
+    const nextLevel = getNextLevelInfo(simulator.project, state);
     score += 8000;
     if (damage === 0) score += 1600;
     score -= Math.min(2500, damage * 4);
-    score += Math.min(900, Number((action.estimate || {}).exp || 0) * 5);
+    score += Math.min(900, exp * 5);
     score += Math.min(600, Number((action.estimate || {}).money || 0) * 3);
+    if (nextLevel && nextLevel.deficit > 0 && exp >= nextLevel.deficit) {
+      score += 60000;
+      score -= Math.min(12000, damage * 3);
+    } else if (nextLevel && nextLevel.deficit > 0 && nextLevel.deficit <= 3 && exp > 0) {
+      score += 12000 * exp;
+      score -= Math.min(6000, damage * 2);
+    }
+    if (damage <= 25 && exp > 0) score += 18000;
+  } else if (action.kind === "fightToLevelUp") {
+    score += 45000;
+    score += Number((action.estimate || {}).exp || 0) * 8000;
+    score += Number((action.estimate || {}).targetLevel || 0) * 8000;
+    score -= Math.min(9000, Number((action.estimate || {}).damage || 0));
+  } else if (action.kind === "resourcePocket") {
+    const stopReasons = (action.estimate || {}).stopReasons || [];
+    score += 9500;
+    if (stopReasons.includes("levelUp")) score += 22000;
+    if (stopReasons.includes("forwardChangeFloor")) score += 30000;
+    if (stopReasons.includes("keyItem")) score += 12000;
+    score += Math.min(9000, Number((action.estimate || {}).score || 0));
   } else if (action.kind === "openDoor") {
     score += 6200;
   } else if (action.kind === "useTool") {
@@ -147,6 +188,93 @@ function getStageActionScore(simulator, state, action, index) {
   }
   if ((action.path || []).length === 0) score += 150;
   return score;
+}
+
+function getNextLevelInfo(project, state) {
+  const entries = (((project || {}).data || {}).firstData || {}).levelUp || [];
+  const level = Number((state.hero || {}).lv || 0);
+  const next = entries[level] || null;
+  if (!next) return null;
+  const need = Number(evaluateExpression(next.need, project, state, { floorId: state.floorId }) || 0);
+  const exp = Number((state.hero || {}).exp || 0);
+  return {
+    level,
+    exp,
+    need,
+    deficit: Math.max(0, need - exp),
+  };
+}
+
+function getResourcePrepRank(simulator, state) {
+  const stageRank = getStageRank(simulator, state);
+  const nextLevel = getNextLevelInfo(simulator.project, state) || { level: Number((state.hero || {}).lv || 0), exp: Number((state.hero || {}).exp || 0), deficit: 9999 };
+  return {
+    ...stageRank,
+    level: Number((state.hero || {}).lv || 0),
+    exp: Number((state.hero || {}).exp || 0),
+    expReadiness: nextLevel.deficit <= 0 ? 10000 : Math.max(0, 10000 - nextLevel.deficit * 200),
+    money: Number((state.hero || {}).money || 0),
+  };
+}
+
+function compareResourcePrepStates(simulator, left, right) {
+  const leftRank = getResourcePrepRank(simulator, left);
+  const rightRank = getResourcePrepRank(simulator, right);
+  const highWins = [
+    "terminal",
+    "stageIndex",
+    "bestFloorRank",
+    "currentFloor",
+    "level",
+    "expReadiness",
+    "combat",
+    "hp",
+    "exp",
+    "money",
+    "nextOpportunity",
+    "changeOpportunity",
+    "battleFrontier",
+  ];
+  for (const key of highWins) {
+    const diff = compareNumbers(leftRank[key], rightRank[key]);
+    if (diff !== 0) return diff;
+  }
+  return compareNumbers(rightRank.routeLength, leftRank.routeLength);
+}
+
+function getResourcePrepActionScore(simulator, state, action, index) {
+  let score = getStageActionScore(simulator, state, action, index);
+  const nextLevel = getNextLevelInfo(simulator.project, state);
+  if (action.kind === "battle") {
+    const damage = Number((action.estimate || {}).damage || 0);
+    const exp = Number((action.estimate || {}).exp || 0);
+    score += 10000 + exp * 5000 - Math.min(5000, damage);
+    if (nextLevel && exp >= nextLevel.deficit) score += 50000;
+    else if (nextLevel && nextLevel.deficit <= 15) score += exp * 8000;
+  } else if (action.kind === "fightToLevelUp") {
+    score += 80000;
+    score += Number((action.estimate || {}).targetLevel || 0) * 10000;
+    score -= Math.min(10000, Number((action.estimate || {}).damage || 0));
+  } else if (action.kind === "resourcePocket") {
+    score += 50000;
+    score += Math.min(20000, Number((action.estimate || {}).score || 0));
+  } else if (action.kind === "pickup") {
+    score += 12000;
+  } else if (action.kind === "changeFloor") {
+    const targetFloorId = action.changeFloor && action.changeFloor.floorId;
+    if (targetFloorId === ":before") score -= 4000;
+  }
+  return score;
+}
+
+function sortResourcePrepActions(simulator, state, actions) {
+  return actions
+    .map((action, index) => ({ action, index, score: getResourcePrepActionScore(simulator, state, action, index) }))
+    .sort((left, right) => {
+      if (left.score !== right.score) return right.score - left.score;
+      return left.index - right.index;
+    })
+    .map((entry) => entry.action);
 }
 
 function sortStageActions(simulator, state, actions) {
@@ -195,9 +323,40 @@ function createStageMt1Mt11Profile(simulator, options) {
     progressActionQuota: config.progressActionQuota || 8,
     unlockActionQuota: config.unlockActionQuota || 6,
     itemActionQuota: config.itemActionQuota || 6,
+    resourceActionQuota: config.resourceActionQuota || 8,
+    expActionQuota: config.expActionQuota || 8,
     fightActionQuota: config.fightActionQuota || 6,
     shopActionQuota: config.shopActionQuota || 3,
     reserveProgressActions: true,
+    forwardChangeFloorAutoExpand: true,
+  };
+}
+
+function createStageMt1Mt11ResourcePrepProfile(simulator, options) {
+  const config = options || {};
+  return {
+    compareFrontierStates: (left, right) => compareResourcePrepStates(simulator, left, right),
+    sortStateActions: (state, actions) => sortResourcePrepActions(simulator, state, actions),
+    getFrontierBucketKey: (state) => {
+      const features = computeFrontierFeatures(simulator.project, state, {
+        battleResolver: simulator.battleResolver,
+      });
+      const progress = getProgress(state);
+      const hpBucket = Math.floor(Number((state.hero || {}).hp || 0) / 500);
+      const combatBucket = Math.floor((Number((state.hero || {}).atk || 0) + Number((state.hero || {}).def || 0)) / 10);
+      const expBucket = Math.floor(Number((state.hero || {}).exp || 0) / 5);
+      return `${progress.stageIndex}|${state.floorId}|hp${hpBucket}|c${combatBucket}|e${expBucket}|${features.targetBandKey}`;
+    },
+    maxActionsPerState: config.maxActionsPerState || 48,
+    progressActionQuota: config.progressActionQuota || 8,
+    unlockActionQuota: config.unlockActionQuota || 8,
+    itemActionQuota: config.itemActionQuota || 16,
+    resourceActionQuota: config.resourceActionQuota || 18,
+    expActionQuota: config.expActionQuota || 24,
+    fightActionQuota: config.fightActionQuota || 24,
+    shopActionQuota: config.shopActionQuota || 6,
+    reserveProgressActions: true,
+    forwardChangeFloorAutoExpand: true,
   };
 }
 
@@ -209,6 +368,9 @@ function createSearchProfile(name, simulator, options) {
       return createUpDownMt1Mt3Profile(simulator, options);
     case "stage-mt1-mt11":
       return createStageMt1Mt11Profile(simulator, options);
+    case "stage-mt1-mt11-resource-prep":
+    case "debug-exp-farming":
+      return createStageMt1Mt11ResourcePrepProfile(simulator, options);
     default:
       throw new Error(`Unknown search profile: ${name}`);
   }

@@ -4,13 +4,33 @@ const { buildDominanceKey, buildStateKey } = require("./state-key");
 const { getDecisionDepth } = require("./state");
 const { compareProgress, getProgress } = require("./progress");
 
+function nowMs() {
+  const [seconds, nanoseconds] = process.hrtime();
+  return seconds * 1000 + nanoseconds / 1e6;
+}
+
 function actionType(action) {
   if (!action) return "unknown";
   if (action.kind === "changeFloor") return "changeFloor";
   if (action.kind === "useTool" && action.tool === "centerFly") return "centerFly";
   if (action.kind === "openDoor") return "door";
   if (action.kind === "battle") return "monster";
+  if (action.kind === "fightToLevelUp") return "fightToLevelUp";
+  if (action.kind === "resourcePocket") return "resourcePocket";
   if (action.kind === "pickup") return "item";
+  if (action.kind === "useTool") return "tool";
+  return action.kind || "misc";
+}
+
+function actionRole(action) {
+  if (!action) return "unknown";
+  if (isProgressAction(action)) return "progress";
+  if (action.kind === "pickup") return "resource";
+  if (action.kind === "resourcePocket") return "resource";
+  if (action.kind === "battle" && Number((action.estimate || {}).exp || 0) > 0) return "exp";
+  if (action.kind === "fightToLevelUp") return "exp";
+  if (action.kind === "battle") return "fight";
+  if (action.kind === "openDoor") return "unlock";
   if (action.kind === "useTool") return "tool";
   return action.kind || "misc";
 }
@@ -31,6 +51,12 @@ function recordActionStat(stats, action, field) {
   const bucket = ensureActionStats(stats, actionType(action));
   if (!bucket) return;
   bucket[field] = Number(bucket[field] || 0) + 1;
+  if (!stats.byActionRole) return;
+  const role = actionRole(action);
+  if (!stats.byActionRole[role]) {
+    stats.byActionRole[role] = { generated: 0, kept: 0, trimmed: 0, dominated: 0, expanded: 0, invalid: 0 };
+  }
+  stats.byActionRole[role][field] = Number(stats.byActionRole[role][field] || 0) + 1;
 }
 
 function compareFrontierStates(simulator, options, left, right) {
@@ -51,7 +77,9 @@ function getFrontierBucketKey(simulator, options, state) {
 }
 
 function getStateActions(simulator, options, state) {
+  const startedAt = nowMs();
   const allActions = simulator.enumerateActions(state);
+  if (options && options.__stats) options.__stats.perf.timeInGenerateActionsMs += nowMs() - startedAt;
   let actions = allActions;
   if (options && typeof options.sortStateActions === "function") {
     actions = options.sortStateActions(state, actions.slice());
@@ -105,6 +133,8 @@ function selectActionsByQuota(actions, options) {
   const kept = new Set();
   const selected = [];
   takeQuota(actions, isProgressAction, options.progressActionQuota || 8, kept, selected);
+  takeQuota(actions, (action) => action.kind === "fightToLevelUp" || actionRole(action) === "exp", options.expActionQuota || 6, kept, selected);
+  takeQuota(actions, (action) => action.kind === "resourcePocket" || actionRole(action) === "resource", options.resourceActionQuota || 8, kept, selected);
   takeQuota(actions, (action) => actionType(action) === "door", options.unlockActionQuota || 6, kept, selected);
   takeQuota(actions, (action) => actionType(action) === "item", options.itemActionQuota || 6, kept, selected);
   takeQuota(actions, (action) => actionType(action) === "monster", options.fightActionQuota || 6, kept, selected);
@@ -233,12 +263,14 @@ function rebuildFrontierState(simulator, frontier, expandedStateKeys, options) {
 }
 
 function registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, state, stats, options) {
+  const startedAt = stats ? nowMs() : 0;
   const config = options || {};
   const score = simulator.score(state);
   const rank = createRank(simulator, state, score);
   const stateKey = buildStateKey(state);
   if (expandedStateKeys.has(stateKey)) {
     recordSkip(stats, "expanded");
+    if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
     return false;
   }
   if (config.disableDominance || config.dominanceMode === "off") {
@@ -247,6 +279,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
     activeRecords.set(stateKey, record);
     if (stats) stats.registered += 1;
     recordFloor(stats, state, "kept");
+    if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
     return true;
   }
   const dominanceKey = buildDominanceKey(state);
@@ -255,6 +288,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
   if (bestRecord) {
     if (bestRecord.stateKey === stateKey && simulator.compareRanks(bestRecord.rank, rank) >= 0) {
       recordSkip(stats, "same-state");
+      if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
       return false;
     }
     if (simulator.dominates(bestRecord.summary, summary)) {
@@ -264,6 +298,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
       recordSkip(stats, "best-dominates");
       recordFloor(stats, state, "dominated");
       recordActionStat(stats, state.__sourceAction, "dominated");
+      if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
       return false;
     }
   }
@@ -274,6 +309,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
     if (record.stateKey === stateKey) {
       if (simulator.compareRanks(record.rank, rank) >= 0) {
         recordSkip(stats, "same-state");
+        if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
         return false;
       }
       continue;
@@ -285,6 +321,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
       recordSkip(stats, "bucket-dominates");
       recordFloor(stats, state, "dominated");
       recordActionStat(stats, state.__sourceAction, "dominated");
+      if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
       return false;
     }
   }
@@ -317,7 +354,32 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
   }
   if (stats) stats.registered += 1;
   recordFloor(stats, state, "kept");
+  if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
   return true;
+}
+
+function maybeAutoExpandForwardChangeFloors(simulator, parentState, frontier, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, stats, config, updateBest) {
+  if (!config.forwardChangeFloorAutoExpand || typeof simulator.getForwardChangeFloorActions !== "function") return;
+  if (simulator.isTerminal(parentState)) return;
+  let actions = [];
+  try {
+    actions = simulator.getForwardChangeFloorActions(parentState);
+  } catch (error) {
+    return;
+  }
+  actions.slice(0, 3).forEach((action) => {
+    stats.generated += 1;
+    recordFloor(stats, parentState, "generated");
+    recordActionStat(stats, action, "expanded");
+    const applyStartedAt = nowMs();
+    const childState = simulator.applyAction(parentState, action);
+    stats.perf.timeInApplyActionMs += nowMs() - applyStartedAt;
+    childState.__sourceAction = action;
+    if (!registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, childState, stats, config)) return;
+    delete childState.__sourceAction;
+    updateBest(childState);
+    frontier.push(childState);
+  });
 }
 
 function searchTopK(simulator, initialState, options) {
@@ -329,12 +391,15 @@ function searchTopK(simulator, initialState, options) {
   let bestByDominanceKey = new Map();
   const expandedStateKeys = new Set();
   const maxExpansions = config.maxExpansions || 200;
+  const startedAt = nowMs();
+  const startedCpu = process.cpuUsage();
   const stats = {
     registered: 0,
     skipped: {},
     trimmed: 0,
     generated: 0,
     byActionType: {},
+    byActionRole: {},
     byFloor: {},
     byStage: {},
     pruneReasons: {},
@@ -344,12 +409,38 @@ function searchTopK(simulator, initialState, options) {
       goalCandidateGeneratedButDropped: 0,
       fallbackUsedWhenStrictGoalRequired: 0,
     },
+    perf: {
+      wallMs: 0,
+      cpuUserMs: 0,
+      cpuSystemMs: 0,
+      expansionsPerSec: 0,
+      generatedPerSec: 0,
+      timeInGenerateActionsMs: 0,
+      timeInApplyActionMs: 0,
+      timeInDominanceMs: 0,
+      timeInScoringMs: 0,
+      timeInLoggingMs: 0,
+      maxFrontierSize: frontier.length,
+      avgBranchingFactor: 0,
+      expandedStates: 0,
+      generatedActions: 0,
+      keptActions: 0,
+    },
   };
   config.__stats = stats;
   let bestSeenState = initialState;
   let bestProgressState = initialState;
   let goalState = null;
   let expansions = 0;
+  const updateBestState = (candidateState) => {
+    if (compareFrontierStates(simulator, config, candidateState, bestSeenState) > 0) {
+      bestSeenState = candidateState;
+    }
+    const candidateProgressDiff = compareProgress(candidateState, bestProgressState);
+    if (candidateProgressDiff > 0 || (candidateProgressDiff === 0 && compareFrontierStates(simulator, config, candidateState, bestProgressState) > 0)) {
+      bestProgressState = candidateState;
+    }
+  };
 
   registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, initialState, stats, config);
 
@@ -366,7 +457,8 @@ function searchTopK(simulator, initialState, options) {
     if (compareFrontierStates(simulator, config, state, bestSeenState) > 0) {
       bestSeenState = state;
     }
-    if (compareProgress(state, bestProgressState) > 0) {
+    const progressDiff = compareProgress(state, bestProgressState);
+    if (progressDiff > 0 || (progressDiff === 0 && compareFrontierStates(simulator, config, state, bestProgressState) > 0)) {
       bestProgressState = state;
     }
 
@@ -381,22 +473,22 @@ function searchTopK(simulator, initialState, options) {
     }
 
     const actions = getStateActions(simulator, config, state);
+    stats.perf.generatedActions += actions.length;
     actions.forEach((action) => {
       stats.generated += 1;
       recordFloor(stats, state, "generated");
       recordActionStat(stats, action, "expanded");
+      const applyStartedAt = nowMs();
       const nextState = simulator.applyAction(state, action);
+      stats.perf.timeInApplyActionMs += nowMs() - applyStartedAt;
       nextState.__sourceAction = action;
       if (!registerState(simulator, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, nextState, stats, config)) return;
       delete nextState.__sourceAction;
-      if (compareFrontierStates(simulator, config, nextState, bestSeenState) > 0) {
-        bestSeenState = nextState;
-      }
-      if (compareProgress(nextState, bestProgressState) > 0) {
-        bestProgressState = nextState;
-      }
+      updateBestState(nextState);
       frontier.push(nextState);
+      maybeAutoExpandForwardChangeFloors(simulator, nextState, frontier, activeRecords, dominanceBuckets, bestByDominanceKey, expandedStateKeys, stats, config, updateBestState);
     });
+    stats.perf.maxFrontierSize = Math.max(stats.perf.maxFrontierSize, frontier.length);
 
     const trimmedFrontier = trimFrontier(simulator, frontier, config);
     if (trimmedFrontier !== frontier) {
@@ -407,7 +499,19 @@ function searchTopK(simulator, initialState, options) {
       dominanceBuckets = rebuilt.dominanceBuckets;
       bestByDominanceKey = rebuilt.bestByDominanceKey;
     }
+    stats.perf.maxFrontierSize = Math.max(stats.perf.maxFrontierSize, frontier.length);
   }
+
+  const wallMs = nowMs() - startedAt;
+  const cpu = process.cpuUsage(startedCpu);
+  stats.perf.wallMs = wallMs;
+  stats.perf.cpuUserMs = cpu.user / 1000;
+  stats.perf.cpuSystemMs = cpu.system / 1000;
+  stats.perf.expandedStates = expansions;
+  stats.perf.keptActions = stats.generated;
+  stats.perf.expansionsPerSec = wallMs > 0 ? expansions / (wallMs / 1000) : 0;
+  stats.perf.generatedPerSec = wallMs > 0 ? stats.generated / (wallMs / 1000) : 0;
+  stats.perf.avgBranchingFactor = expansions > 0 ? stats.generated / expansions : 0;
 
   return {
     foundGoal: Boolean(goalState),
@@ -427,6 +531,8 @@ function searchTopK(simulator, initialState, options) {
       byFloor: stats.byFloor,
       byStage: stats.byStage,
       byActionType: stats.byActionType,
+      byActionRole: stats.byActionRole,
+      perf: stats.perf,
       pruneReasons: stats.pruneReasons,
       suspicious: stats.suspicious,
       best: {

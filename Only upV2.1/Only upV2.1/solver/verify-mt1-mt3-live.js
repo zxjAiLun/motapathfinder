@@ -815,9 +815,12 @@ async function main() {
   const traceLive = parseBooleanFlag(args["trace-live"], false);
   const timeoutMs = Number(args["timeout-ms"] || 30000);
   const stepDelayMs = Number(args["step-delay-ms"] || 0);
+  const startDelayMs = Number(args["start-delay-ms"] || 0);
   const simulator = new StaticSimulator(project, {
     stopFloorId: toFloor || "MT11",
     battleResolver: new FunctionBackedBattleResolver(project),
+    enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], false),
+    enableResourcePocket: parseBooleanFlag(args["resource-pocket"], false),
   });
 
   const rank = args.rank || "chaos";
@@ -896,6 +899,10 @@ async function main() {
     await waitForRuntimeReady(page);
     await quickStartRuntime(page, rank);
     await stabilizeRuntime(page, timeoutMs);
+    if (startDelayMs > 0) {
+      console.log(`Waiting ${startDelayMs}ms before replay actions...`);
+      await page.waitForTimeout(startDelayMs);
+    }
 
     const initialRuntimeSnapshot = await captureRuntimeSnapshot(page);
     const initialMismatch = diffSnapshots(plan.snapshots[0].snapshot, initialRuntimeSnapshot, ["initial"]);
