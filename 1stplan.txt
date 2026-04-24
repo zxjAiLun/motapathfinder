@@ -1,0 +1,255 @@
+下面这个计划，目标是做一个最小可用原型：
+
+范围固定：MT1 -> MT11
+停止条件：首次进入 MT11
+规则来源：直接复用当前塔的 h5mota 运行逻辑
+目标函数：score(state) 可插拔
+输出：top-k 条路线，不只一条最优
+一、原型目标
+
+先做出一个“能算、能回放、能验证”的求解器，而不是先追求快。
+
+第一版只要求：
+
+能从初始状态开始搜索
+能正确处理前 10 层战斗、拾取、开门、楼层事件
+能输出前 k 条到达 MT11 的候选路线
+每条路线都能在游戏里复现
+score(state) 可以随时替换
+二、总体架构
+
+建议拆成 4 层：
+
+game runtime adapter
+state/action model
+search engine
+result replay / verify
+这样后面你要换评分、换搜索算法、换加速方案，都不需要推倒重来。
+
+三、推荐实现路线
+
+Phase 1：运行时适配层
+目标：把 h5mota 当成“规则引擎”来调用，而不是当 UI 来点。
+
+做一个适配器，至少提供这些接口：
+
+initGame()
+getState()
+setState(saveData)
+enumerateActions(state)
+simulateAction(state, action) -> nextState
+isTerminal(state)
+score(state)
+这里优先复用：
+
+core.saveData()
+core.loadData(data, callback)
+core.getDamageInfo(...)
+core.events.afterBattle(...)
+core.insertAction(...)
+楼层的 autoEvent / afterBattle / afterGetItem
+这层建议直接跑在浏览器环境里，或者用无头浏览器加载塔页面后从页面里调用 core。
+
+四、状态设计
+
+第一版状态不要自己手写一大堆字段，直接以 saveData() 为主快照。
+
+但为了搜索去重，要额外做一个“搜索摘要键”：
+
+当前楼层 floorId
+勇士位置 x,y,direction
+hp/atk/def/mdef
+钥匙数量
+核心道具与常量道具
+关键 flags
+已变化地图状态
+I573
+当前 route
+做两个概念：
+
+rawState: 完整 saveData()
+stateKey: 用于判重/剪枝的摘要
+五、动作设计
+
+不要把“单步移动”当搜索动作，否则分支太爆。
+
+第一版建议用“宏动作”：
+
+去拿某个当前可达道具
+去开某个当前可开的门
+去打某个当前可安全击杀的怪
+去上下楼
+可选：使用某个工具道具
+也就是：
+
+先在当前状态下做一遍无战斗 BFS
+找所有可达目标点
+把“走到目标并触发目标事件”视为一个动作
+这样搜索图会小很多。
+
+六、动作模拟
+
+每次扩展节点时：
+
+loadData(state.rawState)
+执行该动作对应的路线/操作
+等事件链稳定
+saveData() 取出新状态
+计算 score / stateKey / terminal
+这里要注意，动作执行后要让：
+
+战斗后事件
+自动开门事件
+拾取事件
+楼层切换事件
+都结算完，再存状态。
+
+七、终止条件
+
+最小版直接定义为：
+
+state.floorId === 'MT11'
+不要先绑到塔内 win()，因为你现在是做局部求解，不是复刻整局结算。
+
+八、评分接口
+
+先统一成一个函数签名：
+
+function score(state) {
+  return number;
+}
+然后再扩展成：
+
+function score(state) {
+  return {
+    primary: number,
+    secondary: number,
+    detail: {}
+  };
+}
+这样以后可以支持：
+
+主分：I573
+次分：剩余 HP
+再次级：剩余道具数
+或者你想要的任意组合
+第一版默认建议：
+
+主分：I573
+次分：hp
+再次级：总资源数
+九、搜索算法
+
+最小原型不建议直接上 A*。
+
+建议先用：
+
+best-first search 或
+beam search + top-k terminal collection
+原因：
+
+你的目标不是单一路径最短
+评分是可插拔的
+你要 top-k，不是只要 first hit
+一个实用版流程：
+
+优先队列按“潜力值”排序
+扩展节点
+收集到达 MT11 的终局
+保留前 k 个终局
+当队列上界已不可能超过当前第 k 名时停止
+十、剪枝策略
+
+这是成败关键，第一版就要做：
+
+stateKey 判重
+支配剪枝
+同一“地图进度摘要”下，若 A 的资源全面不差于 B，则丢 B
+限制无意义往返
+对显然低收益动作降权
+比如纯绕路、重复开关、无收益战斗
+beam width 限制
+建议先保守做，别过早写太激进的剪枝。
+
+十一、输出格式
+
+每条解建议输出：
+
+排名
+总分
+终局资源摘要
+路线编码
+关键节点摘要
+比如：
+
+{
+  "rank": 1,
+  "score": 123456,
+  "floorId": "MT11",
+  "hp": 9999,
+  "i573": 123,
+  "items": {...},
+  "route": ["move:...", "battle:...", "get:..."],
+  "summary": [...]
+}
+十二、验证层
+
+原型必须带验证，不然搜索结果不可信。
+
+验证方式：
+
+把求出的路线喂回当前塔
+从初始状态回放
+检查是否真的进入 MT11
+检查终局 score(state) 是否一致
+这一步可以直接复用现有 route/replay 体系。
+
+十三、文件建议
+
+如果你准备开始写，我建议先建这些文件：
+
+solver/README.md
+solver/runtime-adapter.js
+solver/state-key.js
+solver/action-enumerator.js
+solver/simulator.js
+solver/score.js
+solver/search.js
+solver/verify.js
+solver/run-mt1-mt11.js
+十四、分阶段里程碑
+
+Milestone 1
+接通塔运行时，能：
+
+启动游戏
+拿到 saveData
+loadData 回档
+判断是否到 MT11
+Milestone 2
+做动作枚举，能列出当前状态下的可达宏动作。
+
+Milestone 3
+做单步模拟，能从一个状态执行一个动作并得到下一个状态。
+
+Milestone 4
+做基础搜索，先找出 1 条可行解。
+
+Milestone 5
+接入 score(state) 和 top-k。
+
+Milestone 6
+做回放验证和剪枝优化。
+
+十五、最重要的取舍
+
+我建议你现在明确采用这条路线：
+
+搜索在外部
+规则复用游戏内现成 JS
+UI 只做验证
+第一版用完整快照 saveData/loadData
+第一版用宏动作，不用逐步移动搜索
+这是当前性价比最高的方案。
+
+如果你要，我下一步可以直接把这个计划落成代码骨架，先把 solver/ 目录和最小运行适配层搭出来。
