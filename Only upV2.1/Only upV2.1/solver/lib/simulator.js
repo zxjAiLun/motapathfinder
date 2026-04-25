@@ -122,6 +122,7 @@ class StaticSimulator {
     this.choiceResolver = config.choiceResolver;
     this.enableFightToLevelUp = Boolean(config.enableFightToLevelUp);
     this.enableResourcePocket = Boolean(config.enableResourcePocket);
+    this.resourcePocketSearchOptions = config.resourcePocketSearchOptions || {};
   }
 
   createInitialState(options) {
@@ -404,25 +405,28 @@ class StaticSimulator {
   }
 
   getResourcePocketSearchOptions(state, floorOrder) {
-    if (floorOrder < 2) {
-      return {
-        maxDepth: 8,
-        maxNodes: 8,
-        branchLimit: 14,
-        frontierLimit: 24,
-        resultLimit: 8,
-        continueAfterForwardChangeFloor: false,
-      };
-    }
-
-    return {
-      maxDepth: 8,
-      maxNodes: 6,
-      branchLimit: 10,
-      frontierLimit: 18,
-      resultLimit: 8,
-      continueAfterForwardChangeFloor: false,
-    };
+    const defaults = floorOrder < 2
+      ? {
+          maxDepth: 12,
+          maxNodes: 500,
+          branchLimit: 14,
+          frontierLimit: 64,
+          resultLimit: 8,
+          continueAfterForwardChangeFloor: false,
+        }
+      : {
+          maxDepth: 8,
+          maxNodes: 6,
+          branchLimit: 10,
+          frontierLimit: 18,
+          resultLimit: 8,
+          continueAfterForwardChangeFloor: false,
+        };
+    const configured = typeof this.resourcePocketSearchOptions === "function"
+      ? this.resourcePocketSearchOptions(state, floorOrder, defaults) || {}
+      : this.resourcePocketSearchOptions || {};
+    const byFloor = (configured.byFloor && configured.byFloor[state.floorId]) || {};
+    return { ...defaults, ...configured, ...byFloor };
   }
 
   getActionFingerprint(action) {
@@ -465,7 +469,7 @@ class StaticSimulator {
     if (action.target) entry.target = { x: action.target.x, y: action.target.y };
     if (action.enemyId) entry.enemyId = action.enemyId;
     if (action.itemId) entry.itemId = action.itemId;
-    if (action.equipId) entry.itemId = action.equipId;
+    if (action.equipId) entry.equipId = action.equipId;
     if (action.tool) entry.tool = action.tool;
     return entry;
   }
@@ -600,8 +604,8 @@ class StaticSimulator {
       if (action.kind === "pickup" || action.kind === "equip") buckets.item.push(action);
       else if (action.kind === "openDoor" || action.kind === "useTool" || action.kind === "event") buckets.doorToolEvent.push(action);
       else if (action.kind === "battle" && cls.lowDamage) buckets.lowDamageBattle.push(action);
-      else if (action.kind === "battle" && cls.highRisk) buckets.highRiskBattle.push(action);
       else if (action.kind === "battle" && cls.closesLevel) buckets.levelBattle.push(action);
+      else if (action.kind === "battle" && cls.highRisk) buckets.highRiskBattle.push(action);
       else buckets.mediumBattle.push(action);
     });
 
@@ -669,19 +673,33 @@ class StaticSimulator {
   }
 
   selectBestPocketPlans(baseState, results, resultLimit) {
+    const byCombat = new Map();
+    (results || []).forEach((node) => {
+      const combatKey = this.getCombatSignature(node.state);
+      const existing = byCombat.get(combatKey);
+      if (!existing || this.comparePocketPlans(baseState, node, existing) < 0) {
+        byCombat.set(combatKey, node);
+      }
+    });
+
     const selected = [];
-    const seen = new Set();
+    const seenPlans = new Set();
+    const addNode = (node) => {
+      if (!node || selected.length >= resultLimit) return;
+      const key = (node.planEntries || []).map((entry) => entry.fingerprint || entry.summary).join("|");
+      if (seenPlans.has(key)) return;
+      seenPlans.add(key);
+      selected.push(node);
+    };
+
+    Array.from(byCombat.values()).forEach(addNode);
     (results || [])
       .slice()
       .sort((left, right) => this.comparePocketPlans(baseState, left, right))
-      .forEach((node) => {
-        const key = (node.planEntries || []).map((entry) => entry.fingerprint || entry.summary).join("|");
-        if (seen.has(key)) return;
-        seen.add(key);
-        selected.push(node);
-      });
+      .forEach(addNode);
     return selected.slice(0, resultLimit);
   }
+
 
   buildGreedyPocketPlans(baseState, initialActions, options) {
     let state = cloneState(baseState);

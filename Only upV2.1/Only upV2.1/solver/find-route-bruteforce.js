@@ -68,7 +68,10 @@ async function main() {
     targetFloorId: toFloor,
   });
 
-  const algorithm = args.algorithm || (args.workers != null ? "bfs" : "topk");
+  const algorithm = args.algorithm || "bfs";
+  if (!["bfs", "topk"].includes(algorithm)) {
+    throw new Error(`Unsupported algorithm: ${algorithm}. Expected "bfs" or "topk".`);
+  }
   const result = algorithm === "bfs"
     ? await searchExhaustiveParallel(simulator, initialState, {
         projectRoot,
@@ -120,6 +123,7 @@ async function main() {
     simulator,
     initialState,
     finalState: result.goalState,
+    nodes: result.searchNodes || result.actionEntries || null,
     options: {
       projectRoot,
       toFloor,

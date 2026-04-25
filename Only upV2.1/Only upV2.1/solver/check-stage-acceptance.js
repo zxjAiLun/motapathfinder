@@ -21,6 +21,32 @@ function parseList(value, fallback) {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
+function parseNumber(value) {
+  if (value == null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function buildResourcePocketSearchOptions(args) {
+  const optionMap = {
+    maxDepth: "resource-pocket-max-depth",
+    maxNodes: "resource-pocket-max-nodes",
+    branchLimit: "resource-pocket-branch-limit",
+    frontierLimit: "resource-pocket-frontier-limit",
+    resultLimit: "resource-pocket-result-limit",
+  };
+  const options = {};
+  Object.entries(optionMap).forEach(([key, argName]) => {
+    const parsed = parseNumber(args[argName]);
+    if (parsed !== undefined) options[key] = parsed;
+  });
+  if (args["resource-pocket-continue-after-forward-change-floor"] != null) {
+    options.continueAfterForwardChangeFloor = args["resource-pocket-continue-after-forward-change-floor"] === "1" ||
+      args["resource-pocket-continue-after-forward-change-floor"] === "true";
+  }
+  return Object.keys(options).length > 0 ? options : undefined;
+}
+
 function unsupportedNoteCount(state) {
   return ((state && state.notes) || []).filter((note) => /unsupported|未支持|not supported/i.test(String(note))).length;
 }
@@ -33,6 +59,7 @@ function runStage(project, targetFloor, args) {
     autoBattleEnabled: true,
     enableFightToLevelUp: true,
     enableResourcePocket: true,
+    resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
   });
   const profileName = args.profile || "stage-mt1-mt11";
   const profile = createSearchProfile(profileName, simulator, {

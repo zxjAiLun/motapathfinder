@@ -131,6 +131,36 @@ async function waitForRuntimeIdle(page, timeoutMs) {
   );
 }
 
+async function drainRuntimeActions(page, timeoutMs) {
+  const startedAt = Date.now();
+  const limit = timeoutMs || 30000;
+  while (Date.now() - startedAt < limit) {
+    const status = await page.evaluate(() => {
+      if (!window.core || !core.status) return { ready: false };
+      const event = core.status.event || {};
+      const moving = (typeof core.isMoving === "function" && core.isMoving()) || Number(core.status.heroMoving || 0) > 0;
+      const replayAnimating = Boolean(((core.status.replay || {}).animate));
+      const choices = event.ui && Array.isArray(event.ui.choices) ? event.ui.choices.length : 0;
+      return {
+        ready: true,
+        eventId: event.id || null,
+        moving,
+        replayAnimating,
+        choices,
+      };
+    });
+    if (!status.ready || status.moving || status.replayAnimating) {
+      await page.waitForTimeout(50);
+      continue;
+    }
+    if (status.eventId !== "action") return;
+    await page.evaluate(() => {
+      if (core.status && core.status.event && core.status.event.id === "action") core.doAction();
+    });
+    await page.waitForTimeout(status.choices > 0 ? 100 : 30);
+  }
+}
+
 async function describeRuntimeStatus(page) {
   return page.evaluate(() => {
     const event = ((core.status || {}).event || {});
@@ -192,6 +222,7 @@ async function stabilizeRuntime(page, timeoutMs) {
     core.plugin.autoGetItem();
     core.plugin.autoBattle();
   });
+  await drainRuntimeActions(page, timeoutMs);
   await waitForRuntimeIdle(page, timeoutMs);
 }
 
@@ -304,9 +335,7 @@ async function executeRuntimeDecision(page, action, options) {
   }), runtimeAction);
   if (!stepped) throw new Error(`Failed to perform final step for action: ${label}`);
 
-  await page.evaluate(() => {
-    if (core.status && core.status.event && core.status.event.id === "action") core.doAction();
-  });
+  await drainRuntimeActions(page, config.idleTimeoutMs);
 
   try {
     await waitForRuntimeIdle(page, config.idleTimeoutMs);
@@ -479,6 +508,10 @@ async function replayRouteFile(routeRecord, options) {
   }
 }
 
+async function replayRouteRecordLive(routeRecord, options) {
+  return replayRouteFile(routeRecord, options);
+}
+
 module.exports = {
   captureRuntimeSnapshot,
   createStaticServer,
@@ -488,6 +521,7 @@ module.exports = {
   findBrowserExecutable,
   quickStartRuntime,
   replayRouteFile,
+  replayRouteRecordLive,
   stabilizeRuntime,
   waitForRuntimeIdle,
   waitForRuntimeReady,

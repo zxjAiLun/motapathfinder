@@ -24,6 +24,7 @@ function normalizeActionEntry(action) {
     y: action.y != null ? action.y : null,
     target: action.target || null,
     stance: action.stance || null,
+    path: Array.isArray(action.path) ? action.path.slice() : [],
     direction: action.direction || null,
     tool: action.tool || null,
     equipId: action.equipId || null,
@@ -62,6 +63,23 @@ function reconstructRoute(nodes, goalNodeOrId) {
   return route.reverse();
 }
 
+function reconstructNodeChain(nodes, goalNodeOrId) {
+  const chain = [];
+  let node = typeof goalNodeOrId === "object" ? goalNodeOrId : nodes.get(goalNodeOrId);
+  while (node) {
+    chain.push(node);
+    node = nodes.get(node.parentId);
+  }
+  return chain.reverse();
+}
+
+function reconstructActionEntries(nodes, goalNodeOrId) {
+  return reconstructNodeChain(nodes, goalNodeOrId)
+    .slice(1)
+    .map((node) => node.actionEntry)
+    .filter(Boolean);
+}
+
 function attachRouteToState(nodes, nodeOrId) {
   const node = typeof nodeOrId === "object" ? nodeOrId : nodes.get(nodeOrId);
   if (!node || !node.state) return null;
@@ -74,5 +92,7 @@ module.exports = {
   createChildNode,
   createRootNode,
   normalizeActionEntry,
+  reconstructActionEntries,
+  reconstructNodeChain,
   reconstructRoute,
 };

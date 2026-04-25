@@ -97,6 +97,7 @@ function normalizeAction(action) {
     changeFloor: normalizeChangeFloor(action.changeFloor),
     estimate: normalizeEstimate(action.estimate),
   });
+  if (!Array.isArray(normalized.path)) normalized.path = [];
   normalized.fingerprint = fingerprintAction(normalized);
   return normalized;
 }
@@ -172,6 +173,32 @@ function findActionBySummary(simulator, state, summary) {
   return simulator.enumerateActions(state).find((action) => action.summary === summary);
 }
 
+function hasStructuredActionFields(action) {
+  if (!action || !action.kind) return false;
+  if (action.kind === "equip") return Boolean(action.equipId);
+  if (action.kind === "useTool") return Boolean(action.tool);
+  if (action.kind === "battle") return Boolean(action.target && action.target.x != null && action.target.y != null && action.enemyId);
+  if (action.kind === "pickup") return Boolean(action.target && action.target.x != null && action.target.y != null && action.itemId);
+  if (action.kind === "openDoor") return Boolean(action.target && action.target.x != null && action.target.y != null && action.doorId);
+  if (action.kind === "changeFloor") return Boolean(action.target && action.target.x != null && action.target.y != null);
+  if (action.kind === "event") return Boolean(action.target && action.target.x != null && action.target.y != null);
+  return Boolean(action.summary);
+}
+
+function structuredActionEntriesFromNodes(nodes) {
+  if (!Array.isArray(nodes) || nodes.length === 0) return [];
+  const entries = nodes[0] && nodes[0].actionEntry !== undefined
+    ? nodes.slice(1).map((node) => ({ actionEntry: node.actionEntry, preState: null, postState: node.state, postStateKey: node.stateKey }))
+    : nodes.map((entry) => ({ actionEntry: entry, preState: null, postState: null, postStateKey: null }));
+  if (nodes[0] && nodes[0].actionEntry !== undefined) {
+    for (let index = 0; index < entries.length; index += 1) {
+      entries[index].preState = nodes[index] && nodes[index].state;
+      entries[index].preStateKey = nodes[index] && nodes[index].stateKey;
+    }
+  }
+  return entries.filter((entry) => entry.actionEntry);
+}
+
 function pushDecision(context, action) {
   const { project, simulator, decisions, snapshotOptions } = context;
   const preState = context.currentState;
@@ -190,6 +217,29 @@ function pushDecision(context, action) {
   context.currentState = postState;
 }
 
+function pushStructuredDecision(context, entry) {
+  const { project, decisions, snapshotOptions } = context;
+  const preState = entry.preState || context.currentState;
+  const normalized = normalizeAction(entry.actionEntry);
+  if (!hasStructuredActionFields(normalized)) {
+    throw new Error(`Structured route action is missing replay fields: ${normalized.summary || normalized.kind}`);
+  }
+  const postState = entry.postState;
+  if (!postState) {
+    pushDecision(context, entry.actionEntry);
+    return;
+  }
+  decisions.push({
+    index: decisions.length + 1,
+    ...normalized,
+    preStateKey: entry.preStateKey || buildDominanceKey(preState),
+    postStateKey: entry.postStateKey || buildDominanceKey(postState),
+    preSnapshot: buildSolverSnapshot(project, preState, snapshotOptions),
+    postSnapshot: buildSolverSnapshot(project, postState, snapshotOptions),
+  });
+  context.currentState = postState;
+}
+
 function replayDecisionSummary(context, summary) {
   const action = findActionBySummary(context.simulator, context.currentState, summary);
   if (!action) throw new Error(`Unable to reconstruct action while saving route: ${summary}`);
@@ -198,6 +248,22 @@ function replayDecisionSummary(context, summary) {
     return;
   }
   pushDecision(context, action);
+}
+
+function replayStructuredEntry(context, entry) {
+  try {
+    const normalized = normalizeAction(entry.actionEntry);
+    if (entry.postState && hasStructuredActionFields(normalized)) {
+      pushStructuredDecision(context, entry);
+      return;
+    }
+  } catch (error) {
+    // Fall through to summary reconstruction when a structured entry is incomplete.
+  }
+  if (!entry.actionEntry || !entry.actionEntry.summary) {
+    throw new Error("Structured route entry is missing both replay fields and summary fallback.");
+  }
+  replayDecisionSummary(context, entry.actionEntry.summary);
 }
 
 function buildRouteRecord(input) {
@@ -214,7 +280,12 @@ function buildRouteRecord(input) {
     snapshotOptions,
     currentState: initialState,
   };
-  (finalState.route || []).filter(isDecisionStep).forEach((summary) => replayDecisionSummary(context, summary));
+  const structuredEntries = structuredActionEntriesFromNodes(input.nodes || input.actionEntries || []);
+  if (structuredEntries.length > 0) {
+    structuredEntries.forEach((entry) => replayStructuredEntry(context, entry));
+  } else {
+    (finalState.route || []).filter(isDecisionStep).forEach((summary) => replayDecisionSummary(context, summary));
+  }
   const finalSnapshot = buildSolverSnapshot(project, context.currentState, snapshotOptions);
   const expectedKey = buildDominanceKey(finalState);
   const actualKey = buildDominanceKey(context.currentState);

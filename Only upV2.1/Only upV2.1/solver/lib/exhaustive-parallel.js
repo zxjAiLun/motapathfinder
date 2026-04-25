@@ -5,7 +5,7 @@ const path = require("path");
 
 const { WorkerPool } = require("./worker-pool");
 const { chunk, serializeNodeForWorker, stableMergeResults } = require("./parallel-expander");
-const { reconstructRoute } = require("./search-nodes");
+const { reconstructActionEntries, reconstructNodeChain, reconstructRoute } = require("./search-nodes");
 const { buildStateKey } = require("./state-key");
 
 function nowMs() {
@@ -93,6 +93,8 @@ async function searchExhaustiveParallel(simulator, initialState, options) {
       foundGoal: Boolean(goalNode),
       goalState: attachRoute(nodes, goalNode),
       finalState: attachRoute(nodes, goalNode),
+      searchNodes: goalNode ? reconstructNodeChain(nodes, goalNode) : [],
+      actionEntries: goalNode ? reconstructActionEntries(nodes, goalNode) : [],
       route: goalNode ? reconstructRoute(nodes, goalNode) : null,
       expansions: stats.expanded,
       stats,
