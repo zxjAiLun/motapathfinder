@@ -1,0 +1,6 @@
+Loaded project: 白色孤岛
+Trial entry: Start 3,3 -> 试炼间 -> A1 6,11
+Auto features: pickup=on, battle=off
+Goal: win event; topK=1; maxExpansions=1200
+Search finished: found=0, expansions=1200, frontier=271, elapsedMs=51983
+Summary written: routes/latest/whiteisland-trial-topk.summary.json

@@ -1,0 +1,1532 @@
+{
+  "createdAt": "2026-04-25T17:40:57.256Z",
+  "elapsedMs": 122754,
+  "found": 0,
+  "expansions": 3000,
+  "frontierSize": 395,
+  "start": {
+    "floorId": "A1",
+    "decisions": 0,
+    "routeLength": 5,
+    "hero": {
+      "hp": 100,
+      "atk": 1,
+      "def": 0,
+      "mdef": 0,
+      "lv": 1,
+      "exp": 0,
+      "money": 0,
+      "loc": {
+        "direction": "up",
+        "x": 6,
+        "y": 11
+      }
+    }
+  },
+  "results": [],
+  "bestProgress": {
+    "floorId": "A3",
+    "decisions": 41,
+    "routeLength": 41,
+    "hero": {
+      "hp": 666,
+      "atk": 6,
+      "def": 8,
+      "mdef": 80,
+      "lv": 1,
+      "exp": 27,
+      "money": 0,
+      "loc": {
+        "direction": "right",
+        "x": 6,
+        "y": 11
+      }
+    }
+  },
+  "diagnostics": {
+    "registered": 3492,
+    "skipped": {
+      "safe-exact-same-state": 1719,
+      "same-state": 1884,
+      "expanded": 3429,
+      "best-dominates": 618,
+      "bucket-dominates": 17
+    },
+    "trimmed": 0,
+    "generated": 11158,
+    "byFloor": {
+      "A1": {
+        "expanded": 2289,
+        "generated": 8687,
+        "kept": 2546,
+        "trimmed": 0,
+        "dominated": 0,
+        "beamDropped": 0
+      },
+      "A2": {
+        "expanded": 710,
+        "generated": 2468,
+        "kept": 893,
+        "trimmed": 0,
+        "dominated": 635,
+        "beamDropped": 0
+      },
+      "A3": {
+        "expanded": 1,
+        "generated": 3,
+        "kept": 53,
+        "trimmed": 0,
+        "dominated": 0,
+        "beamDropped": 0
+      }
+    },
+    "byStage": {
+      "1000": {
+        "expanded": 143,
+        "reachedGoalCandidates": 0,
+        "keptGoalCandidates": 0
+      },
+      "1001": {
+        "expanded": 2284,
+        "reachedGoalCandidates": 0,
+        "keptGoalCandidates": 0
+      },
+      "1002": {
+        "expanded": 573,
+        "reachedGoalCandidates": 0,
+        "keptGoalCandidates": 0
+      }
+    },
+    "byActionType": {
+      "monster": {
+        "generated": 4495,
+        "kept": 4495,
+        "trimmed": 0,
+        "dominated": 43,
+        "expanded": 4495,
+        "invalid": 0,
+        "beamDropped": 0
+      },
+      "door": {
+        "generated": 992,
+        "kept": 992,
+        "trimmed": 0,
+        "dominated": 0,
+        "expanded": 992,
+        "invalid": 0,
+        "beamDropped": 0
+      },
+      "changeFloor": {
+        "generated": 5671,
+        "kept": 5671,
+        "trimmed": 0,
+        "dominated": 592,
+        "expanded": 5671,
+        "invalid": 0,
+        "beamDropped": 0
+      }
+    },
+    "byActionRole": {
+      "exp": {
+        "generated": 4495,
+        "kept": 4495,
+        "trimmed": 0,
+        "dominated": 43,
+        "expanded": 4495,
+        "invalid": 0,
+        "beamDropped": 0
+      },
+      "unlock": {
+        "generated": 992,
+        "kept": 992,
+        "trimmed": 0,
+        "dominated": 0,
+        "expanded": 992,
+        "invalid": 0,
+        "beamDropped": 0
+      },
+      "progress": {
+        "generated": 5671,
+        "kept": 5671,
+        "trimmed": 0,
+        "dominated": 592,
+        "expanded": 5671,
+        "invalid": 0,
+        "beamDropped": 0
+      }
+    },
+    "droppedProgressActions": {
+      "total": 0,
+      "byReason": {},
+      "samples": []
+    },
+    "frontier": {
+      "beamDropped": 0,
+      "beamDroppedByFloor": {},
+      "beamDroppedByStage": {},
+      "topBuckets": [
+        {
+          "key": "A1|stage:1002|A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,4|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,6|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o0",
+          "floorId": "A1",
+          "stageIndex": 1002,
+          "regionKey": "A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,4|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,6|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o0",
+          "count": 104,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 666,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A1",
+            "hp": 666,
+            "atk": 6,
+            "def": 8,
+            "mdef": 80,
+            "lv": 1,
+            "exp": 28,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1002,
+            "bestFloorRank": 1003
+          }
+        },
+        {
+          "key": "A3|stage:1002|A3:5,11|6,11|7,11|band:before:6,11->A2:6,11:d2:o0",
+          "floorId": "A3",
+          "stageIndex": 1002,
+          "regionKey": "A3:5,11|6,11|7,11|band:before:6,11->A2:6,11:d2:o0",
+          "count": 51,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 666,
+            "tertiary": 6
+          },
+          "bestRouteLength": 41,
+          "bestState": {
+            "floorId": "A3",
+            "hp": 666,
+            "atk": 6,
+            "def": 8,
+            "mdef": 80,
+            "lv": 1,
+            "exp": 27,
+            "money": 0,
+            "routeLength": 41,
+            "stageIndex": 1002,
+            "bestFloorRank": 1003
+          }
+        },
+        {
+          "key": "A1|stage:1002|A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,5|3,8|4,1|4,2|4,4|4,5|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,6|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o0",
+          "floorId": "A1",
+          "stageIndex": 1002,
+          "regionKey": "A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,5|3,8|4,1|4,2|4,4|4,5|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,6|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o0",
+          "count": 24,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 642,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A1",
+            "hp": 642,
+            "atk": 7,
+            "def": 8,
+            "mdef": 80,
+            "lv": 1,
+            "exp": 29,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1002,
+            "bestFloorRank": 1003
+          }
+        },
+        {
+          "key": "A1|stage:1002|A1:1,10|1,11|1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,4|11,5|11,6|11,7|11,9|2,1|2,10|2,11|2,2|2,7|2,8|2,9|3,10|3,11|3,2|3,5|3,8|4,1|4,2|4,4|4,5|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,6|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o0",
+          "floorId": "A1",
+          "stageIndex": 1002,
+          "regionKey": "A1:1,10|1,11|1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,4|11,5|11,6|11,7|11,9|2,1|2,10|2,11|2,2|2,7|2,8|2,9|3,10|3,11|3,2|3,5|3,8|4,1|4,2|4,4|4,5|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,6|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o0",
+          "count": 21,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 782,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A1",
+            "hp": 782,
+            "atk": 8,
+            "def": 8,
+            "mdef": 80,
+            "lv": 1,
+            "exp": 32,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1002,
+            "bestFloorRank": 1003
+          }
+        },
+        {
+          "key": "A1|stage:1002|A1:1,10|1,11|1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,4|11,5|11,6|11,7|11,9|2,1|2,10|2,11|2,2|2,7|2,8|2,9|3,10|3,11|3,2|3,8|4,1|4,2|4,4|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,6|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o0",
+          "floorId": "A1",
+          "stageIndex": 1002,
+          "regionKey": "A1:1,10|1,11|1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,4|11,5|11,6|11,7|11,9|2,1|2,10|2,11|2,2|2,7|2,8|2,9|3,10|3,11|3,2|3,8|4,1|4,2|4,4|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,6|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o0",
+          "count": 20,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 774,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A1",
+            "hp": 774,
+            "atk": 7,
+            "def": 8,
+            "mdef": 80,
+            "lv": 1,
+            "exp": 30,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1002,
+            "bestFloorRank": 1003
+          }
+        },
+        {
+          "key": "A1|stage:1002|A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,5|3,8|4,1|4,2|4,4|4,5|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o0",
+          "floorId": "A1",
+          "stageIndex": 1002,
+          "regionKey": "A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,5|3,8|4,1|4,2|4,4|4,5|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o0",
+          "count": 11,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 642,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A1",
+            "hp": 642,
+            "atk": 7,
+            "def": 8,
+            "mdef": 80,
+            "lv": 1,
+            "exp": 28,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1002,
+            "bestFloorRank": 1003
+          }
+        },
+        {
+          "key": "A1|stage:1000|A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,10|10,11|10,5|10,6|10,7|10,8|10,9|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,10|9,11|9,5|9,7|band:none",
+          "floorId": "A1",
+          "stageIndex": 1000,
+          "regionKey": "A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,10|10,11|10,5|10,6|10,7|10,8|10,9|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,10|9,11|9,5|9,7|band:none",
+          "count": 9,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 330,
+            "tertiary": 7
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A1",
+            "hp": 330,
+            "atk": 2,
+            "def": 3,
+            "mdef": 30,
+            "lv": 1,
+            "exp": 11,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1000,
+            "bestFloorRank": 1001
+          }
+        },
+        {
+          "key": "A1|stage:1000|A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,10|10,11|10,5|10,6|10,7|10,8|10,9|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,8|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,10|7,11|7,4|7,5|7,7|7,8|8,4|8,5|8,7|8,8|9,10|9,11|9,5|9,7|band:none",
+          "floorId": "A1",
+          "stageIndex": 1000,
+          "regionKey": "A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,10|10,11|10,5|10,6|10,7|10,8|10,9|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,8|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,10|7,11|7,4|7,5|7,7|7,8|8,4|8,5|8,7|8,8|9,10|9,11|9,5|9,7|band:none",
+          "count": 7,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 385,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A1",
+            "hp": 385,
+            "atk": 2,
+            "def": 2,
+            "mdef": 30,
+            "lv": 1,
+            "exp": 10,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1000,
+            "bestFloorRank": 1001
+          }
+        },
+        {
+          "key": "A2|stage:1001|A2:10,1|10,2|10,3|11,1|11,3|5,1|5,2|6,1|7,1|7,2|8,1|8,2|8,3|9,2|band:before:11,2->A1:11,2:dfar:o0",
+          "floorId": "A2",
+          "stageIndex": 1001,
+          "regionKey": "A2:10,1|10,2|10,3|11,1|11,3|5,1|5,2|6,1|7,1|7,2|8,1|8,2|8,3|9,2|band:before:11,2->A1:11,2:dfar:o0",
+          "count": 7,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 113,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A2",
+            "hp": 113,
+            "atk": 3,
+            "def": 4,
+            "mdef": 40,
+            "lv": 1,
+            "exp": 16,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1001,
+            "bestFloorRank": 1002
+          }
+        },
+        {
+          "key": "A1|stage:1000|A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,10|10,11|10,5|10,6|10,7|10,8|10,9|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,10|9,11|9,5|9,7|band:none",
+          "floorId": "A1",
+          "stageIndex": 1000,
+          "regionKey": "A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,10|10,11|10,5|10,6|10,7|10,8|10,9|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,10|9,11|9,5|9,7|band:none",
+          "count": 4,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 330,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A1",
+            "hp": 330,
+            "atk": 2,
+            "def": 3,
+            "mdef": 30,
+            "lv": 1,
+            "exp": 11,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1000,
+            "bestFloorRank": 1001
+          }
+        },
+        {
+          "key": "A1|stage:1000|A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,10|10,11|10,5|10,6|10,7|10,8|10,9|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,8|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,10|7,11|7,4|7,5|7,7|7,8|8,4|8,5|8,7|8,8|9,10|9,11|9,5|9,7|band:none",
+          "floorId": "A1",
+          "stageIndex": 1000,
+          "regionKey": "A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,10|10,11|10,5|10,6|10,7|10,8|10,9|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,8|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,10|7,11|7,4|7,5|7,7|7,8|8,4|8,5|8,7|8,8|9,10|9,11|9,5|9,7|band:none",
+          "count": 3,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 385,
+            "tertiary": 5
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A1",
+            "hp": 385,
+            "atk": 2,
+            "def": 2,
+            "mdef": 30,
+            "lv": 1,
+            "exp": 10,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1000,
+            "bestFloorRank": 1001
+          }
+        },
+        {
+          "key": "A2|stage:1002|A2:1,1|1,2|1,4|1,5|1,6|1,7|10,1|10,11|10,2|10,3|10,5|10,7|10,8|10,9|11,1|11,10|11,11|11,2|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,3|2,4|2,7|3,1|3,10|3,11|3,2|3,4|3,6|3,7|3,9|4,11|4,4|4,6|4,7|4,8|4,9|5,1|5,11|5,2|5,4|5,9|6,1|6,4|6,5|6,6|6,7|6,8|6,9|7,1|7,2|7,6|8,1|8,10|8,11|8,2|8,3|8,4|8,5|8,6|8,7|8,9|9,2|9,5|9,9|band:next:6,11->A3:6,11:dfar:o0",
+          "floorId": "A2",
+          "stageIndex": 1002,
+          "regionKey": "A2:1,1|1,2|1,4|1,5|1,6|1,7|10,1|10,11|10,2|10,3|10,5|10,7|10,8|10,9|11,1|11,10|11,11|11,2|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,3|2,4|2,7|3,1|3,10|3,11|3,2|3,4|3,6|3,7|3,9|4,11|4,4|4,6|4,7|4,8|4,9|5,1|5,11|5,2|5,4|5,9|6,1|6,4|6,5|6,6|6,7|6,8|6,9|7,1|7,2|7,6|8,1|8,10|8,11|8,2|8,3|8,4|8,5|8,6|8,7|8,9|9,2|9,5|9,9|band:next:6,11->A3:6,11:dfar:o0",
+          "count": 3,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 746,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A2",
+            "hp": 746,
+            "atk": 8,
+            "def": 8,
+            "mdef": 80,
+            "lv": 1,
+            "exp": 32,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1002,
+            "bestFloorRank": 1003
+          }
+        },
+        {
+          "key": "A2|stage:1002|A2:1,1|1,2|1,4|1,5|1,6|1,7|10,1|10,11|10,2|10,3|10,5|10,7|10,8|10,9|11,1|11,10|11,11|11,2|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,3|2,4|2,7|3,1|3,10|3,11|3,2|3,4|3,6|3,7|3,9|4,11|4,4|4,6|4,7|4,9|5,1|5,11|5,2|5,4|5,9|6,1|6,4|6,5|6,6|6,7|6,8|6,9|7,1|7,2|7,6|8,1|8,10|8,11|8,2|8,3|8,4|8,5|8,6|8,7|8,9|9,2|9,5|9,9|band:next:6,11->A3:6,11:dfar:o0",
+          "floorId": "A2",
+          "stageIndex": 1002,
+          "regionKey": "A2:1,1|1,2|1,4|1,5|1,6|1,7|10,1|10,11|10,2|10,3|10,5|10,7|10,8|10,9|11,1|11,10|11,11|11,2|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,3|2,4|2,7|3,1|3,10|3,11|3,2|3,4|3,6|3,7|3,9|4,11|4,4|4,6|4,7|4,9|5,1|5,11|5,2|5,4|5,9|6,1|6,4|6,5|6,6|6,7|6,8|6,9|7,1|7,2|7,6|8,1|8,10|8,11|8,2|8,3|8,4|8,5|8,6|8,7|8,9|9,2|9,5|9,9|band:next:6,11->A3:6,11:dfar:o0",
+          "count": 3,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 806,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A2",
+            "hp": 806,
+            "atk": 8,
+            "def": 8,
+            "mdef": 80,
+            "lv": 1,
+            "exp": 31,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1002,
+            "bestFloorRank": 1003
+          }
+        },
+        {
+          "key": "A2|stage:1002|A2:1,1|1,2|1,4|1,6|1,7|10,1|10,11|10,2|10,3|10,5|10,7|10,8|10,9|11,1|11,10|11,11|11,2|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,3|2,4|2,7|3,1|3,10|3,11|3,2|3,4|3,6|3,7|3,9|4,11|4,4|4,6|4,7|4,8|4,9|5,1|5,11|5,2|5,4|5,9|6,1|6,4|6,5|6,6|6,7|6,8|6,9|7,1|7,2|7,6|8,1|8,10|8,11|8,2|8,3|8,4|8,5|8,6|8,7|8,9|9,2|9,5|9,9|band:next:6,11->A3:6,11:dfar:o0",
+          "floorId": "A2",
+          "stageIndex": 1002,
+          "regionKey": "A2:1,1|1,2|1,4|1,6|1,7|10,1|10,11|10,2|10,3|10,5|10,7|10,8|10,9|11,1|11,10|11,11|11,2|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,3|2,4|2,7|3,1|3,10|3,11|3,2|3,4|3,6|3,7|3,9|4,11|4,4|4,6|4,7|4,8|4,9|5,1|5,11|5,2|5,4|5,9|6,1|6,4|6,5|6,6|6,7|6,8|6,9|7,1|7,2|7,6|8,1|8,10|8,11|8,2|8,3|8,4|8,5|8,6|8,7|8,9|9,2|9,5|9,9|band:next:6,11->A3:6,11:dfar:o0",
+          "count": 3,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 806,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A2",
+            "hp": 806,
+            "atk": 8,
+            "def": 8,
+            "mdef": 80,
+            "lv": 1,
+            "exp": 31,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1002,
+            "bestFloorRank": 1003
+          }
+        },
+        {
+          "key": "A1|stage:1001|A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,2|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,4|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:d2:o0",
+          "floorId": "A1",
+          "stageIndex": 1001,
+          "regionKey": "A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,2|11,3|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,4|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,1|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:d2:o0",
+          "count": 2,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 358,
+            "tertiary": 5
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A1",
+            "hp": 358,
+            "atk": 4,
+            "def": 6,
+            "mdef": 60,
+            "lv": 1,
+            "exp": 22,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1001,
+            "bestFloorRank": 1002
+          }
+        },
+        {
+          "key": "A1|stage:1000|A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,4|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,4|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o80",
+          "floorId": "A1",
+          "stageIndex": 1000,
+          "regionKey": "A1:1,2|1,3|1,4|1,5|1,6|1,7|1,8|10,1|10,10|10,11|10,2|10,3|10,5|10,6|10,7|10,8|10,9|11,3|11,4|11,5|11,6|11,7|11,9|2,1|2,2|2,7|2,8|3,2|3,8|4,1|4,2|4,4|4,6|4,7|4,8|5,1|5,10|5,11|5,2|5,3|5,4|5,8|6,1|6,10|6,11|6,12|6,4|6,5|6,8|6,9|7,1|7,10|7,11|7,2|7,4|7,5|7,7|7,8|8,1|8,2|8,4|8,5|8,7|8,8|9,10|9,11|9,5|9,7|band:next:11,2->A2:11,2:dfar:o80",
+          "count": 2,
+          "bestScore": {
+            "primary": 0,
+            "secondary": 125,
+            "tertiary": 6
+          },
+          "bestRouteLength": 5,
+          "bestState": {
+            "floorId": "A1",
+            "hp": 125,
+            "atk": 2,
+            "def": 4,
+            "mdef": 40,
+            "lv": 1,
+            "exp": 13,
+            "money": 0,
+            "routeLength": 5,
+            "stageIndex": 1000,
+            "bestFloorRank": 1001
+          }
+        }
+      ]
+    },
+    "perf": {
+      "wallMs": 122751.426444,
+      "cpuUserMs": 126867.969,
+      "cpuSystemMs": 1649.931,
+      "eventLoopUtilization": 0,
+      "expansionsPerSec": 24.439673935773342,
+      "generatedPerSec": 90.89914735198904,
+      "timeInGenerateActionsMs": 103531.97957201302,
+      "timeInApplyActionMs": 5073.071854174137,
+      "timeInDominanceMs": 197.55991835147142,
+      "timeInScoringMs": 0,
+      "timeInLoggingMs": 0,
+      "maxFrontierSize": 559,
+      "avgBranchingFactor": 3.719333333333333,
+      "expandedStates": 3000,
+      "generatedActions": 11158,
+      "keptActions": 11158,
+      "phaseMs": {
+        "buildStateKey": 2.1551860943436623,
+        "cloneState": 10493.578288000175,
+        "enumerateActions": 103525.08067499984,
+        "applyAction": 5057.38797499957,
+        "trimFrontier": 0.28048700000385907,
+        "sortFrontier": 11.6471020000115,
+        "rebuildFrontier": 74.49007900006245
+      },
+      "phaseCounts": {
+        "buildStateKey": 11159,
+        "cloneState": 657321,
+        "enumerateActions": 3000,
+        "applyAction": 11158,
+        "trimFrontier": 93,
+        "sortFrontier": 93,
+        "rebuildFrontier": 93
+      },
+      "expanded": 3000,
+      "generated": 11158,
+      "registered": 3492,
+      "duplicates": 1884,
+      "expandedPerSec": 24.4396345273317,
+      "rssMb": 312.30078125,
+      "heapUsedMb": 73.25391387939453
+    },
+    "pruneReasons": {
+      "safe-exact-same-state": 1719,
+      "same-state": 1884,
+      "expanded": 3429,
+      "best-dominates": 618,
+      "bucket-dominates": 17
+    },
+    "suspicious": {
+      "higherStageDominatedByLowerStage": 0,
+      "progressActionTrimmed": 0,
+      "goalCandidateGeneratedButDropped": 0,
+      "fallbackUsedWhenStrictGoalRequired": 0
+    },
+    "safeDominance": {
+      "exactOnly": 2599,
+      "staleBestRecords": 15
+    },
+    "confluenceDominance": {
+      "enabled": false,
+      "replacedLowerHp": 0,
+      "rejectedByHigherHp": 0,
+      "examples": []
+    },
+    "checkpoints": {
+      "edges": {
+        "A1->A2": [
+          {
+            "id": "A1->A2#24",
+            "edge": "A1->A2",
+            "fromFloorId": "A1",
+            "toFloorId": "A2",
+            "routeLength": 44,
+            "decisionDepth": 44,
+            "hero": {
+              "hp": 666,
+              "atk": 6,
+              "def": 8,
+              "mdef": 80,
+              "lv": 1,
+              "exp": 29,
+              "money": 0
+            },
+            "tags": [
+              "highest-hp",
+              "highest-atk",
+              "highest-def",
+              "highest-mdef",
+              "highest-combat",
+              "near-levelup",
+              "best-scout"
+            ],
+            "score": 3389666,
+            "scout": {
+              "score": 320000,
+              "reachable": {
+                "tileCount": 70,
+                "itemCount": 0,
+                "battleCount": 4,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 6,
+                "changeFloorCount": 4
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": true,
+                "likelyBlocked": false,
+                "reasons": []
+              },
+              "entry": {
+                "floorId": "A2",
+                "x": 11,
+                "y": 2,
+                "direction": "up"
+              }
+            }
+          },
+          {
+            "id": "A1->A2#21",
+            "edge": "A1->A2",
+            "fromFloorId": "A1",
+            "toFloorId": "A2",
+            "routeLength": 19,
+            "decisionDepth": 19,
+            "hero": {
+              "hp": 267,
+              "atk": 2,
+              "def": 4,
+              "mdef": 40,
+              "lv": 1,
+              "exp": 13,
+              "money": 0
+            },
+            "tags": [],
+            "score": 1989267,
+            "scout": {
+              "score": 240000,
+              "reachable": {
+                "tileCount": 6,
+                "itemCount": 0,
+                "battleCount": 0,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 3
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A2",
+                "x": 11,
+                "y": 2,
+                "direction": "up"
+              }
+            }
+          },
+          {
+            "id": "A1->A2#14",
+            "edge": "A1->A2",
+            "fromFloorId": "A1",
+            "toFloorId": "A2",
+            "routeLength": 19,
+            "decisionDepth": 19,
+            "hero": {
+              "hp": 232,
+              "atk": 2,
+              "def": 4,
+              "mdef": 40,
+              "lv": 1,
+              "exp": 13,
+              "money": 0
+            },
+            "tags": [],
+            "score": 1989232,
+            "scout": {
+              "score": 240000,
+              "reachable": {
+                "tileCount": 6,
+                "itemCount": 0,
+                "battleCount": 0,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 3
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A2",
+                "x": 11,
+                "y": 2,
+                "direction": "up"
+              }
+            }
+          },
+          {
+            "id": "A1->A2#18",
+            "edge": "A1->A2",
+            "fromFloorId": "A1",
+            "toFloorId": "A2",
+            "routeLength": 18,
+            "decisionDepth": 18,
+            "hero": {
+              "hp": 232,
+              "atk": 2,
+              "def": 4,
+              "mdef": 40,
+              "lv": 1,
+              "exp": 12,
+              "money": 0
+            },
+            "tags": [],
+            "score": 1989232,
+            "scout": {
+              "score": 240000,
+              "reachable": {
+                "tileCount": 6,
+                "itemCount": 0,
+                "battleCount": 0,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 3
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A2",
+                "x": 11,
+                "y": 2,
+                "direction": "up"
+              }
+            }
+          },
+          {
+            "id": "A1->A2#22",
+            "edge": "A1->A2",
+            "fromFloorId": "A1",
+            "toFloorId": "A2",
+            "routeLength": 20,
+            "decisionDepth": 20,
+            "hero": {
+              "hp": 202,
+              "atk": 2,
+              "def": 4,
+              "mdef": 40,
+              "lv": 1,
+              "exp": 14,
+              "money": 0
+            },
+            "tags": [],
+            "score": 1989202,
+            "scout": {
+              "score": 240000,
+              "reachable": {
+                "tileCount": 6,
+                "itemCount": 0,
+                "battleCount": 0,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 3
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A2",
+                "x": 11,
+                "y": 2,
+                "direction": "right"
+              }
+            }
+          },
+          {
+            "id": "A1->A2#10",
+            "edge": "A1->A2",
+            "fromFloorId": "A1",
+            "toFloorId": "A2",
+            "routeLength": 19,
+            "decisionDepth": 19,
+            "hero": {
+              "hp": 187,
+              "atk": 2,
+              "def": 4,
+              "mdef": 40,
+              "lv": 1,
+              "exp": 14,
+              "money": 0
+            },
+            "tags": [],
+            "score": 1989187,
+            "scout": {
+              "score": 240000,
+              "reachable": {
+                "tileCount": 6,
+                "itemCount": 0,
+                "battleCount": 0,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 3
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A2",
+                "x": 11,
+                "y": 2,
+                "direction": "up"
+              }
+            }
+          },
+          {
+            "id": "A1->A2#8",
+            "edge": "A1->A2",
+            "fromFloorId": "A1",
+            "toFloorId": "A2",
+            "routeLength": 20,
+            "decisionDepth": 20,
+            "hero": {
+              "hp": 187,
+              "atk": 2,
+              "def": 4,
+              "mdef": 40,
+              "lv": 1,
+              "exp": 14,
+              "money": 0
+            },
+            "tags": [],
+            "score": 1989187,
+            "scout": {
+              "score": 240000,
+              "reachable": {
+                "tileCount": 6,
+                "itemCount": 0,
+                "battleCount": 0,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 3
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A2",
+                "x": 11,
+                "y": 2,
+                "direction": "right"
+              }
+            }
+          },
+          {
+            "id": "A1->A2#19",
+            "edge": "A1->A2",
+            "fromFloorId": "A1",
+            "toFloorId": "A2",
+            "routeLength": 19,
+            "decisionDepth": 19,
+            "hero": {
+              "hp": 167,
+              "atk": 2,
+              "def": 4,
+              "mdef": 40,
+              "lv": 1,
+              "exp": 13,
+              "money": 0
+            },
+            "tags": [],
+            "score": 1989167,
+            "scout": {
+              "score": 240000,
+              "reachable": {
+                "tileCount": 6,
+                "itemCount": 0,
+                "battleCount": 0,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 3
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A2",
+                "x": 11,
+                "y": 2,
+                "direction": "right"
+              }
+            }
+          }
+        ],
+        "A2->A3": [
+          {
+            "id": "A2->A3#24",
+            "edge": "A2->A3",
+            "fromFloorId": "A2",
+            "toFloorId": "A3",
+            "routeLength": 41,
+            "decisionDepth": 41,
+            "hero": {
+              "hp": 666,
+              "atk": 6,
+              "def": 8,
+              "mdef": 80,
+              "lv": 1,
+              "exp": 27,
+              "money": 0
+            },
+            "tags": [
+              "highest-combat"
+            ],
+            "score": 2749666,
+            "scout": {
+              "score": 160000,
+              "reachable": {
+                "tileCount": 3,
+                "itemCount": 0,
+                "battleCount": 2,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 2
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A3",
+                "x": 6,
+                "y": 11,
+                "direction": "right"
+              }
+            }
+          },
+          {
+            "id": "A2->A3#16",
+            "edge": "A2->A3",
+            "fromFloorId": "A2",
+            "toFloorId": "A3",
+            "routeLength": 42,
+            "decisionDepth": 42,
+            "hero": {
+              "hp": 629,
+              "atk": 6,
+              "def": 8,
+              "mdef": 80,
+              "lv": 1,
+              "exp": 28,
+              "money": 0
+            },
+            "tags": [
+              "highest-def"
+            ],
+            "score": 2749629,
+            "scout": {
+              "score": 160000,
+              "reachable": {
+                "tileCount": 3,
+                "itemCount": 0,
+                "battleCount": 2,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 2
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A3",
+                "x": 6,
+                "y": 11,
+                "direction": "right"
+              }
+            }
+          },
+          {
+            "id": "A2->A3#17",
+            "edge": "A2->A3",
+            "fromFloorId": "A2",
+            "toFloorId": "A3",
+            "routeLength": 43,
+            "decisionDepth": 43,
+            "hero": {
+              "hp": 569,
+              "atk": 6,
+              "def": 8,
+              "mdef": 80,
+              "lv": 1,
+              "exp": 29,
+              "money": 0
+            },
+            "tags": [
+              "near-levelup"
+            ],
+            "score": 2749569,
+            "scout": {
+              "score": 160000,
+              "reachable": {
+                "tileCount": 3,
+                "itemCount": 0,
+                "battleCount": 2,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 2
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A3",
+                "x": 6,
+                "y": 11,
+                "direction": "right"
+              }
+            }
+          },
+          {
+            "id": "A2->A3#18",
+            "edge": "A2->A3",
+            "fromFloorId": "A2",
+            "toFloorId": "A3",
+            "routeLength": 43,
+            "decisionDepth": 43,
+            "hero": {
+              "hp": 549,
+              "atk": 6,
+              "def": 8,
+              "mdef": 80,
+              "lv": 1,
+              "exp": 29,
+              "money": 0
+            },
+            "tags": [],
+            "score": 2749549,
+            "scout": {
+              "score": 160000,
+              "reachable": {
+                "tileCount": 3,
+                "itemCount": 0,
+                "battleCount": 2,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 2
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A3",
+                "x": 6,
+                "y": 11,
+                "direction": "right"
+              }
+            }
+          },
+          {
+            "id": "A2->A3#12",
+            "edge": "A2->A3",
+            "fromFloorId": "A2",
+            "toFloorId": "A3",
+            "routeLength": 40,
+            "decisionDepth": 40,
+            "hero": {
+              "hp": 746,
+              "atk": 6,
+              "def": 7,
+              "mdef": 80,
+              "lv": 1,
+              "exp": 26,
+              "money": 0
+            },
+            "tags": [
+              "highest-hp",
+              "highest-atk",
+              "highest-mdef"
+            ],
+            "score": 2659746,
+            "scout": {
+              "score": 160000,
+              "reachable": {
+                "tileCount": 3,
+                "itemCount": 0,
+                "battleCount": 2,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 2
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A3",
+                "x": 6,
+                "y": 11,
+                "direction": "right"
+              }
+            }
+          },
+          {
+            "id": "A2->A3#22",
+            "edge": "A2->A3",
+            "fromFloorId": "A2",
+            "toFloorId": "A3",
+            "routeLength": 40,
+            "decisionDepth": 40,
+            "hero": {
+              "hp": 746,
+              "atk": 6,
+              "def": 7,
+              "mdef": 80,
+              "lv": 1,
+              "exp": 26,
+              "money": 0
+            },
+            "tags": [],
+            "score": 2659746,
+            "scout": {
+              "score": 160000,
+              "reachable": {
+                "tileCount": 3,
+                "itemCount": 0,
+                "battleCount": 2,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 2
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A3",
+                "x": 6,
+                "y": 11,
+                "direction": "right"
+              }
+            }
+          },
+          {
+            "id": "A2->A3#13",
+            "edge": "A2->A3",
+            "fromFloorId": "A2",
+            "toFloorId": "A3",
+            "routeLength": 41,
+            "decisionDepth": 41,
+            "hero": {
+              "hp": 709,
+              "atk": 6,
+              "def": 7,
+              "mdef": 80,
+              "lv": 1,
+              "exp": 27,
+              "money": 0
+            },
+            "tags": [],
+            "score": 2659709,
+            "scout": {
+              "score": 160000,
+              "reachable": {
+                "tileCount": 3,
+                "itemCount": 0,
+                "battleCount": 2,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 2
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A3",
+                "x": 6,
+                "y": 11,
+                "direction": "right"
+              }
+            }
+          },
+          {
+            "id": "A2->A3#23",
+            "edge": "A2->A3",
+            "fromFloorId": "A2",
+            "toFloorId": "A3",
+            "routeLength": 41,
+            "decisionDepth": 41,
+            "hero": {
+              "hp": 709,
+              "atk": 6,
+              "def": 7,
+              "mdef": 80,
+              "lv": 1,
+              "exp": 27,
+              "money": 0
+            },
+            "tags": [],
+            "score": 2659709,
+            "scout": {
+              "score": 160000,
+              "reachable": {
+                "tileCount": 3,
+                "itemCount": 0,
+                "battleCount": 2,
+                "zeroDamageBattleCount": 0,
+                "eventCount": 0,
+                "doorCount": 1,
+                "changeFloorCount": 2
+              },
+              "deficits": {
+                "minHpToAnyForwardBattle": null,
+                "hpDeficit": 0,
+                "atkDeficit": 0,
+                "defDeficit": 0,
+                "mdefDeficit": 0,
+                "expDeficitToLevel": 0,
+                "keyDeficits": {}
+              },
+              "verdict": {
+                "canProgressImmediately": false,
+                "likelyBlocked": true,
+                "reasons": [
+                  "no-forward-changeFloor-reachable"
+                ]
+              },
+              "entry": {
+                "floorId": "A3",
+                "x": 6,
+                "y": 11,
+                "direction": "right"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "best": {
+      "bestSeenFloor": "A1",
+      "bestSeenStage": 1002,
+      "bestSeenRouteLength": 45,
+      "bestProgressFloor": "A3",
+      "bestProgressStage": 1002
+    }
+  }
+}

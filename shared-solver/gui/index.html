@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Route Replay GUI</title>
+  <link rel="stylesheet" href="/gui/styles.css">
+</head>
+<body>
+  <header id="topbar" class="topbar">Loading route...</header>
+  <section id="controls" class="controls"></section>
+  <main class="layout">
+    <section class="panel timeline-panel">
+      <div class="panel-title">Timeline</div>
+      <div id="timeline" class="timeline"></div>
+    </section>
+    <section class="panel detail-panel">
+      <div class="panel-title">Step Detail</div>
+      <div id="details" class="details"></div>
+      <div class="panel-title">Runtime</div>
+      <pre id="runtime-status" class="json-block"></pre>
+    </section>
+  </main>
+  <script src="/gui/app.js"></script>
+</body>
+</html>

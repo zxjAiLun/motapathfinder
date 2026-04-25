@@ -3,9 +3,13 @@
 const path = require("path");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
+const { buildResourcePocketSearchOptions, parseBooleanFlag, parseKeyValueArgs, parseOptionalNumber, resolveProjectRoot, shouldEnableResourcePocket } = require("./lib/cli-options");
 const { evaluateExpression } = require("./lib/expression");
 const { summarizeLandmarks } = require("./lib/landmarks");
 const { loadProject } = require("./lib/project-loader");
+const { analyzeProgressBlocker } = require("./lib/progress-blockers");
+const { repairFromCheckpoints } = require("./lib/checkpoint-repair");
+const { buildRouteRecord, writeRouteFile } = require("./lib/route-store");
 const { formatScore, getFloorOrder } = require("./lib/score");
 const { searchTopK } = require("./lib/search");
 const { createSearchProfile } = require("./lib/search-profiles");
@@ -13,26 +17,17 @@ const { summarizeStageObjective } = require("./lib/stage-policy");
 const { StaticSimulator } = require("./lib/simulator");
 const { getDecisionDepth } = require("./lib/state");
 
-function parseArgs(argv) {
-  return argv.reduce((result, token) => {
-    const match = token.match(/^--([^=]+)=(.+)$/);
-    if (!match) return result;
-    result[match[1]] = match[2];
-    return result;
-  }, {});
-}
-
-function parseBooleanFlag(value, defaultValue) {
-  if (value == null) return defaultValue;
-  if (value === "1" || value === "true" || value === "on") return true;
-  if (value === "0" || value === "false" || value === "off") return false;
-  return defaultValue;
-}
-
-function parseOptionalNumber(value) {
-  if (value == null) return undefined;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : undefined;
+function summarizeRepair(repair) {
+  if (!repair) return null;
+  return {
+    attempted: repair.attempted,
+    repaired: repair.repaired,
+    selectedCheckpointId: repair.selectedCheckpointId,
+    reason: repair.reason,
+    attempts: repair.attempts,
+    finalFloorId: repair.repairedState && repair.repairedState.floorId,
+    blockerType: repair.blocker && repair.blocker.blockerType,
+  };
 }
 
 function countNotes(routeOrNotes) {
@@ -313,9 +308,9 @@ function printProgressDebug(project, simulator, result, args) {
   }
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const projectRoot = path.resolve(__dirname, "..");
+async function main() {
+  const args = parseKeyValueArgs(process.argv.slice(2));
+  const projectRoot = resolveProjectRoot(args, path.resolve(__dirname, ".."));
   const project = loadProject(projectRoot);
   const targetFloor = args["to-floor"] || "MT11";
   const profileName = args.profile || "default";
@@ -327,7 +322,8 @@ function main() {
     autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
     enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], stagePolicyDefault),
-    enableResourcePocket: parseBooleanFlag(args["resource-pocket"], stagePolicyDefault),
+    enableResourcePocket: shouldEnableResourcePocket(args, stagePolicyDefault),
+    resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
   });
 
   const initialState = simulator.createInitialState({
@@ -350,7 +346,7 @@ function main() {
   const maxActionsPerState = parseOptionalNumber(args["max-actions-per-state"]);
   console.log(`Search profile: ${profileName}`);
 
-  const result = searchTopK(simulator, initialState, {
+  const searchOptions = {
     ...profile,
     topK: Number(args["top-k"] || 3),
     maxExpansions: Number(args["max-expansions"] || 80),
@@ -362,7 +358,51 @@ function main() {
     dominanceMode: args["dominance-mode"],
     safeDominanceMode: parseBooleanFlag(args["safe-dominance-mode"], true),
     perf: parseBooleanFlag(args.perf, false),
-  });
+    parallel: parseBooleanFlag(args.parallel, false),
+    workers: parseOptionalNumber(args.workers),
+    topKBatchSize: parseOptionalNumber(args["topk-batch-size"]),
+    workerChunkSize: parseOptionalNumber(args["worker-chunk-size"]),
+    projectRoot,
+    profileName,
+    targetFloorId: targetFloor,
+    autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
+    autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
+    enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], stagePolicyDefault),
+    enableResourcePocket: shouldEnableResourcePocket(args, stagePolicyDefault),
+    resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
+  };
+
+  const result = await searchTopK(simulator, initialState, searchOptions);
+  const bestForBlocker = result.bestProgressState || result.bestSeenState;
+  const blocker = analyzeProgressBlocker(simulator, bestForBlocker, { targetFloorId: targetFloor });
+  let repair = null;
+  if (!result.goalState && parseBooleanFlag(args["checkpoint-repair"], true)) {
+    repair = await repairFromCheckpoints(simulator, {
+      checkpointPool: result.checkpointPool,
+      bestProgressState: result.bestProgressState,
+      bestSeenState: result.bestSeenState,
+      profile: searchOptions,
+    }, blocker, {
+      searchFn: searchTopK,
+      analyzeProgressBlocker,
+      targetFloorId: targetFloor,
+      maxRepairAttempts: Number(args["repair-attempts"] || 6),
+      repairExpansionsPerAttempt: Number(args["repair-expansions"] || 120),
+      topK: Number(args["top-k"] || 1),
+    });
+    if (repair && repair.repaired && repair.repairedState) {
+      result.bestProgressState = repair.repairedState;
+      result.bestSeenState = repair.repairedState;
+      if (repair.result && repair.result.goalState) {
+        result.goalState = repair.repairedState;
+        result.foundGoal = true;
+        result.results = [repair.repairedState];
+      }
+    }
+  }
+  if (!result.diagnostics) result.diagnostics = {};
+  result.diagnostics.blocker = blocker;
+  result.diagnostics.checkpointRepair = summarizeRepair(repair);
 
   console.log(`Search claim: ${JSON.stringify(summarizeSearchClaim(profileName, targetFloor, args, result))}`);
   console.log(`Expansions: ${result.expansions}`);
@@ -381,6 +421,13 @@ function main() {
       console.log(`Frontier stats: ${JSON.stringify(result.diagnostics.frontier || {})}`);
       console.log(`Dropped progress actions: ${JSON.stringify(result.diagnostics.droppedProgressActions || {})}`);
     }
+    if (parseBooleanFlag(args["print-checkpoints"], parseBooleanFlag(args.diagnostics, false))) {
+      console.log(`Floor checkpoints: ${JSON.stringify(result.diagnostics.checkpoints || {})}`);
+    }
+    if (parseBooleanFlag(args["print-blocker"], parseBooleanFlag(args.diagnostics, false))) {
+      console.log(`Progress blocker: ${JSON.stringify(result.diagnostics.blocker || null)}`);
+      console.log(`Checkpoint repair: ${JSON.stringify(result.diagnostics.checkpointRepair || null)}`);
+    }
     printStateSummary("Best seen", simulator, result.bestSeenState, {
       printBestRoute: parseBooleanFlag(args["print-best-route"], false),
     });
@@ -390,10 +437,84 @@ function main() {
     printProgressDebug(project, simulator, result, args);
   }
 
+  const writeStateRoute = (argName, state, metadata) => {
+    if (!args[argName] || !state) return;
+    const outPath = path.resolve(__dirname, args[argName]);
+    const record = buildRouteRecord({
+      project,
+      simulator,
+      initialState,
+      finalState: state,
+      options: {
+        projectRoot,
+        toFloor: targetFloor,
+        profile: profileName,
+        rank: args.rank || "chaos",
+        solver: "topk",
+        expanded: result.expansions,
+        generated: (result.diagnostics || {}).generated,
+        metadata,
+      },
+    });
+    writeRouteFile(outPath, record);
+    console.log(`Route written: ${path.relative(__dirname, outPath)}`);
+  };
+
+  writeStateRoute("out-best-progress", result.bestProgressState || result.bestSeenState, {
+    kind: "best-progress",
+    foundGoal: Boolean(result.goalState),
+    targetFloorId: targetFloor,
+    finalFloorId: (result.bestProgressState || result.bestSeenState || {}).floorId,
+    blocker: result.diagnostics.blocker,
+    checkpointRepair: result.diagnostics.checkpointRepair,
+    searchClaim: summarizeSearchClaim(profileName, targetFloor, args, result),
+  });
+  writeStateRoute("out-best-seen", result.bestSeenState, {
+    kind: "best-seen",
+    foundGoal: Boolean(result.goalState),
+    targetFloorId: targetFloor,
+    finalFloorId: (result.bestSeenState || {}).floorId,
+    blocker: result.diagnostics.blocker,
+    checkpointRepair: result.diagnostics.checkpointRepair,
+    searchClaim: summarizeSearchClaim(profileName, targetFloor, args, result),
+  });
+
+  writeStateRoute("save-best-progress-route", result.bestProgressState || result.bestSeenState, {
+    kind: "best-progress",
+    foundGoal: Boolean(result.goalState),
+    targetFloorId: targetFloor,
+    finalFloorId: (result.bestProgressState || result.bestSeenState || {}).floorId,
+    blocker: result.diagnostics.blocker,
+    checkpointRepair: result.diagnostics.checkpointRepair,
+    searchClaim: summarizeSearchClaim(profileName, targetFloor, args, result),
+  });
+
   if (result.results.length === 0) {
     console.log(`No terminal ${targetFloor} state found under profile=${profileName}, budget=${Number(args["max-expansions"] || 80)}, pruning=${args["dominance-mode"] || (parseBooleanFlag(args["disable-dominance"], false) ? "off" : "default")}.`);
     console.log("Battle evaluation and ambush/between-attack walking are active; next gains will come from stronger pruning and more rule coverage.");
     return;
+  }
+
+  const goalRoutePath = args.out || args["save-route"];
+  if (goalRoutePath && result.goalState) {
+    const outPath = path.resolve(__dirname, goalRoutePath);
+    const record = buildRouteRecord({
+      project,
+      simulator,
+      initialState,
+      finalState: result.goalState,
+      options: {
+        projectRoot,
+        toFloor: targetFloor,
+        profile: profileName,
+        rank: args.rank || "chaos",
+        solver: "topk",
+        expanded: result.expansions,
+        generated: (result.diagnostics || {}).generated,
+      },
+    });
+    writeRouteFile(outPath, record);
+    console.log(`Route written: ${path.relative(__dirname, outPath)}`);
   }
 
   result.results.forEach((state, index) => {
@@ -406,5 +527,8 @@ function main() {
 }
 
 if (require.main === module) {
-  main();
+  main().catch((error) => {
+  console.error(error && error.stack ? error.stack : String(error));
+  process.exitCode = 1;
+});
 }
