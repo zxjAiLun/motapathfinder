@@ -70,6 +70,8 @@ function createPerfTracker(options) {
   function snapshot(extra) {
     const wallMs = nowMs() - startedAt;
     const cpu = process.cpuUsage(startedCpu);
+    const cpuUserMs = cpu.user / 1000;
+    const cpuSystemMs = cpu.system / 1000;
     const memory = process.memoryUsage();
     const elu = startedElu && performance.eventLoopUtilization
       ? performance.eventLoopUtilization(startedElu)
@@ -80,8 +82,9 @@ function createPerfTracker(options) {
     const duplicates = Number((extra && extra.duplicates) || counters.duplicates || 0);
     return {
       wallMs,
-      cpuUserMs: cpu.user / 1000,
-      cpuSystemMs: cpu.system / 1000,
+      cpuUserMs,
+      cpuSystemMs,
+      cpuUtilization: wallMs > 0 ? (cpuUserMs + cpuSystemMs) / wallMs : 0,
       eventLoopUtilization: elu ? elu.utilization : null,
       expanded,
       generated,
@@ -116,6 +119,7 @@ function createPerfTracker(options) {
       sortMsPerLoop: Number(avg("sortFrontier").toFixed(4)),
       rssMb: Number(data.rssMb.toFixed(1)),
       heapUsedMb: Number(data.heapUsedMb.toFixed(1)),
+      cpuUtilization: Number((data.cpuUtilization || 0).toFixed(2)),
       eventLoopUtilization: data.eventLoopUtilization == null ? null : Number(data.eventLoopUtilization.toFixed(4)),
     });
   }

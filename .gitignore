@@ -15,3 +15,4 @@
 *.AIFF
 
 猫可露露V5.9（屑猫头基础教程）/
+**/solver/checkpoints/*.checkpoint-skyline.json

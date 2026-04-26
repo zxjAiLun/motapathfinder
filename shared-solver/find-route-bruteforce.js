@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
-const { buildResourcePocketSearchOptions, parseBooleanFlag, parseKeyValueArgs, parseOptionalNumber, resolveProjectRoot, shouldEnableResourcePocket } = require("./lib/cli-options");
+const { buildConfluenceDominanceOptions, buildResourcePocketSearchOptions, parseBooleanFlag, parseKeyValueArgs, parseOptionalNumber, resolveProjectRoot, shouldEnableResourcePocket } = require("./lib/cli-options");
 const { loadProject } = require("./lib/project-loader");
 const { buildRouteRecord, readRouteFile, writeRouteFile } = require("./lib/route-store");
 const { searchExhaustiveParallel } = require("./lib/exhaustive-parallel");
@@ -98,7 +98,10 @@ function buildBfsOptions(args, projectRoot, toFloor, stagePolicyDefault) {
     autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
     enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], stagePolicyDefault),
-    enableResourcePocket: shouldEnableResourcePocket(args, stagePolicyDefault),
+    enableResourcePocket: shouldEnableResourcePocket(args, true),
+    enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
+    enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
+    resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
   };
 }
 
@@ -143,8 +146,9 @@ async function main() {
     autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
     enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], stagePolicyDefault),
-    enableResourcePocket: shouldEnableResourcePocket(args, stagePolicyDefault),
-    enableResourceChain: parseBooleanFlag(args["resource-chain"], false),
+    enableResourcePocket: shouldEnableResourcePocket(args, true),
+    enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
+    enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
     resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
   });
   const baseInitialState = simulator.createInitialState({ rank });
@@ -172,6 +176,7 @@ async function main() {
     ? await searchExhaustiveParallel(simulator, initialState, bfsOptions)
     : await searchTopK(simulator, initialState, {
         ...profile,
+        ...buildConfluenceDominanceOptions(args, profile.enableConfluenceHpDominance, profile.confluenceRoutePolicy),
         topK: Number(args["top-k"] || 3),
         maxExpansions: Number(args["max-expanded"] || args["max-expansions"] || 200),
         beamWidth: parseOptionalNumber(args["beam-width"]),
@@ -192,7 +197,9 @@ async function main() {
         autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
         autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
         enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], stagePolicyDefault),
-        enableResourcePocket: shouldEnableResourcePocket(args, stagePolicyDefault),
+        enableResourcePocket: shouldEnableResourcePocket(args, true),
+        enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
+        enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
         resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
         maxDepth,
         selectStateActions: maxDepth == null ? profile.selectStateActions : (state, actions, options) => {

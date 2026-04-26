@@ -4,9 +4,10 @@ const assert = require("node:assert");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { resolveProjectRoot } = require("./lib/cli-options");
-const { createCheckpointPool, recordFloorEntryCheckpoint, selectRepairCheckpoints } = require("./lib/floor-checkpoints");
+const { combatSignature, createCheckpointPool, recordFloorEntryCheckpoint, selectRepairCheckpoints } = require("./lib/floor-checkpoints");
 const { loadProject } = require("./lib/project-loader");
 const { analyzeProgressBlocker } = require("./lib/progress-blockers");
+const { repairFromCheckpoints } = require("./lib/checkpoint-repair");
 const { StaticSimulator } = require("./lib/simulator");
 
 function makeSimulator() {
@@ -26,7 +27,121 @@ function applySummary(simulator, state, summary) {
   return { action, state: simulator.applyAction(state, action) };
 }
 
-function main() {
+function makeSyntheticState(floorId, routeLength, hero, inventory) {
+  return {
+    floorId,
+    hero: {
+      loc: { x: 6, y: 6, direction: "up" },
+      hp: 100,
+      atk: 10,
+      def: 10,
+      mdef: 10,
+      lv: 2,
+      exp: 0,
+      money: 0,
+      equipment: ["I100"],
+      ...(hero || {}),
+    },
+    inventory: inventory || { yellowKey: 1 },
+    flags: {},
+    visitedFloors: { [floorId]: true },
+    floorStates: { [floorId]: { removed: {}, replaced: {} } },
+    route: Array.from({ length: routeLength }, (_, index) => `step:${index}`),
+    meta: { decisionDepth: routeLength },
+  };
+}
+
+function checkCheckpointSkyline() {
+  const pool = createCheckpointPool({ checkpointLimitPerEdge: 16 });
+  const action = {
+    kind: "changeFloor",
+    floorId: "MT1",
+    changeFloor: { floorId: "MT2", loc: [6, 12] },
+    summary: "changeFloor@MT1:6,0",
+  };
+  const simulator = {
+    project: null,
+    applyAction: (state) => makeSyntheticState("MT2", (state.route || []).length + 1, state.hero, state.inventory),
+  };
+  const parent = makeSyntheticState("MT1", 1, {}, { yellowKey: 1 });
+  [
+    makeSyntheticState("MT2", 10, { hp: 100, exp: 2 }, { yellowKey: 1 }),
+    makeSyntheticState("MT2", 12, { hp: 120, exp: 2 }, { yellowKey: 1 }),
+    makeSyntheticState("MT2", 5, { hp: 90, exp: 4 }, { yellowKey: 1 }),
+    makeSyntheticState("MT2", 13, { hp: 80, exp: 1 }, { yellowKey: 1 }),
+  ].forEach((child) => recordFloorEntryCheckpoint(pool, simulator, parent, child, action));
+
+  const checkpoints = pool.edges["MT1->MT2"] || [];
+  const summaries = checkpoints.map((checkpoint) => ({ hp: checkpoint.hero.hp, routeLength: checkpoint.routeLength, exp: checkpoint.hero.exp, tags: checkpoint.tags }));
+  assert.ok(checkpoints.some((checkpoint) => checkpoint.tags.includes("skyline-highest-hp") && checkpoint.hero.hp === 120), "skyline should keep highest HP representative");
+  assert.ok(checkpoints.some((checkpoint) => checkpoint.tags.includes("skyline-shortest-route") && checkpoint.routeLength === 5), "skyline should keep shortest route representative");
+  assert.ok(checkpoints.some((checkpoint) => checkpoint.tags.includes("skyline-near-level") && checkpoint.hero.exp === 4), "skyline should keep near-level representative");
+  assert.ok(!checkpoints.some((checkpoint) => checkpoint.hero.hp === 80), `dominated checkpoint should be pruned: ${JSON.stringify(summaries)}`);
+  assert.equal(new Set(checkpoints.map(combatSignature)).size, 1, "synthetic checkpoints should share one skyline key");
+  return { pool, summaries };
+}
+
+async function checkCheckpointRepairPlanner(pool) {
+  const blocker = {
+    blockerType: "hp-deficit",
+    deficits: { hp: 5 },
+    recommendedRepair: {
+      fromEdge: "MT1->MT2",
+      minHero: { hp: 115, atk: 10, def: 10, mdef: 10 },
+      preferTags: ["skyline-shortest-route", "skyline-best-scout"],
+    },
+  };
+  const originalBest = makeSyntheticState("MT2", 20, { hp: 70, atk: 10, def: 10, mdef: 10, exp: 0 }, { yellowKey: 1 });
+  const result = await repairFromCheckpoints({
+    compareSearchStates: (left, right) => (left.hero.hp || 0) - (right.hero.hp || 0),
+  }, {
+    checkpointPool: pool,
+    bestProgressState: originalBest,
+    bestSeenState: originalBest,
+    profile: { parallel: true, workers: 4, topKBatchSize: 16, workerChunkSize: 2 },
+  }, blocker, {
+    maxRepairAttempts: 4,
+    repairExpansionsPerAttempt: 7,
+    topK: 1,
+    searchFn: async (_simulator, startState, options) => {
+      assert.deepEqual(startState.route, [], "repair short search should start with an empty suffix route");
+      assert.equal(options.maxExpansions, 7);
+      assert.equal(options.parallel, true, "repair short search should inherit parallel TopK mode");
+      assert.equal(options.workers, 4);
+      return {
+        expansions: 3,
+        goalState: {
+          ...makeSyntheticState("MT3", 1, { ...startState.hero, hp: startState.hero.hp + 1 }, startState.inventory),
+          route: ["repair-step"],
+          visitedFloors: { MT1: true, MT2: true, MT3: true },
+        },
+      };
+    },
+    analyzeProgressBlocker: () => ({ blockerType: "cleared", deficits: { hp: 0 } }),
+    targetFloorId: "MT3",
+  });
+  assert.equal(result.repaired, true, "checkpoint repair should accept a goal found from short search");
+  assert.ok(result.candidatePlan.length >= 2, "repair should build a multi-strategy candidate plan");
+  assert.ok(result.candidatePlan.some((candidate) => candidate.strategy === "preferred:skyline-shortest-route" || candidate.strategy === "fastest-route"), "repair should include fastest route strategy");
+  assert.ok(result.candidatePlan.some((candidate) => candidate.strategy === "preferred:skyline-best-scout" || candidate.strategy === "best-scout"), "repair should include best scout strategy");
+  assert.ok(result.candidatePlan.some((candidate) => (candidate.strategies || []).includes("closest-requirement")), "repair should retain coalesced closest-requirement strategy");
+  assert.ok(result.repairedState.route.length > 1, "repair should stitch checkpoint prefix with short-search suffix");
+  assert.equal(result.repairedState.route[result.repairedState.route.length - 1], "repair-step");
+  return {
+    selectedCheckpointId: result.selectedCheckpointId,
+    candidatePlan: result.candidatePlan.map((candidate) => ({
+      checkpointId: candidate.checkpointId,
+      strategy: candidate.strategy,
+      strategies: candidate.strategies,
+      requirementDeficit: candidate.requirementDeficit,
+    })),
+    routeLength: result.repairedState.route.length,
+  };
+}
+
+async function main() {
+  const skylineCheck = checkCheckpointSkyline();
+  const repairPlanner = await checkCheckpointRepairPlanner(skylineCheck.pool);
   const simulator = makeSimulator();
   const pool = createCheckpointPool();
   let state = simulator.createInitialState({ rank: "chaos" });
@@ -80,9 +195,14 @@ function main() {
   assert.ok(candidates[0].hero.hp >= 1559, `expected highest-priority repair candidate to preserve high HP, got ${candidates[0].hero.hp}`);
 
   console.log(JSON.stringify({
+    skyline: skylineCheck.summaries,
+    repairPlanner,
     blocker: blocker.blockerType,
     candidates: candidates.map((candidate) => ({ id: candidate.id, hero: candidate.hero, tags: candidate.tags })),
   }, null, 2));
 }
 
-main();
+main().catch((error) => {
+  console.error(error && error.stack ? error.stack : String(error));
+  process.exitCode = 1;
+});

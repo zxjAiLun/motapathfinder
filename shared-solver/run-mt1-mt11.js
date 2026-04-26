@@ -3,19 +3,22 @@
 const path = require("path");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
-const { buildResourcePocketSearchOptions, parseBooleanFlag, parseKeyValueArgs, parseOptionalNumber, resolveProjectRoot, shouldEnableResourcePocket } = require("./lib/cli-options");
+const { buildActionExpansionCacheOptions, buildConfluenceDominanceOptions, buildResourcePocketSearchOptions, parseBooleanFlag, parseKeyValueArgs, parseOptionalNumber, resolveProjectRoot, shouldEnableResourcePocket } = require("./lib/cli-options");
 const { evaluateExpression } = require("./lib/expression");
 const { summarizeLandmarks } = require("./lib/landmarks");
 const { loadProject } = require("./lib/project-loader");
 const { analyzeProgressBlocker } = require("./lib/progress-blockers");
 const { repairFromCheckpoints } = require("./lib/checkpoint-repair");
+const { checkpointPoolFromStore, loadCheckpointStore, mergeCheckpointPoolIntoStore, saveCheckpointStore, selectCheckpointSeeds, summarizeStore, buildRouteFingerprint } = require("./lib/checkpoint-store");
 const { buildRouteRecord, writeRouteFile } = require("./lib/route-store");
 const { formatScore, getFloorOrder } = require("./lib/score");
 const { searchTopK } = require("./lib/search");
 const { createSearchProfile } = require("./lib/search-profiles");
+const { applyConfigDefaults, loadSolverConfig } = require("./lib/solver-config");
 const { summarizeStageObjective } = require("./lib/stage-policy");
 const { StaticSimulator } = require("./lib/simulator");
-const { getDecisionDepth } = require("./lib/state");
+const { cloneState, getDecisionDepth } = require("./lib/state");
+const { summarizePruning } = require("./lib/pruning-diagnostics");
 
 function summarizeRepair(repair) {
   if (!repair) return null;
@@ -24,6 +27,7 @@ function summarizeRepair(repair) {
     repaired: repair.repaired,
     selectedCheckpointId: repair.selectedCheckpointId,
     reason: repair.reason,
+    candidatePlan: repair.candidatePlan,
     attempts: repair.attempts,
     finalFloorId: repair.repairedState && repair.repairedState.floorId,
     blockerType: repair.blocker && repair.blocker.blockerType,
@@ -168,7 +172,7 @@ function summarizeNextGateDeficit(project, simulator, state) {
     return getFloorOrder(targetFloorId) > currentFloorOrder;
   });
   const battleActions = actions.filter((action) => action.kind === "battle");
-  const resourcePocketActions = actions.filter((action) => action.kind === "resourcePocket");
+  const resourcePocketActions = actions.filter((action) => action.kind === "resourcePocket" || action.kind === "resourceCluster" || action.kind === "resourceChain");
   const fightToLevelUpActions = actions.filter((action) => action.kind === "fightToLevelUp");
   const totalAvailableExp = battleActions.reduce((sum, action) => sum + Number((action.estimate || {}).exp || 0), 0);
   const totalAvailableDamage = battleActions.reduce((sum, action) => sum + Number((action.estimate || {}).damage || 0), 0);
@@ -277,6 +281,14 @@ function printDiagnosticsMainView(project, simulator, result) {
   const diagnostics = result.diagnostics || {};
   const bestProgressState = result.bestProgressState || result.bestSeenState;
   const view = {
+    pruningOverview: diagnostics.pruningOverview || summarizePruning(diagnostics),
+    confluenceDominance: diagnostics.confluenceDominance || {},
+    graph: diagnostics.graph || {},
+    quota: diagnostics.quota || {},
+    resourceCluster: diagnostics.resourceCluster || {},
+    checkpointReuse: diagnostics.checkpointReuse || {},
+    checkpointStore: diagnostics.checkpointStore || {},
+    actionExpansionCache: diagnostics.actionExpansionCache || {},
     topFrontierBuckets: (((diagnostics.frontier || {}).topBuckets) || []).slice(0, 8),
     droppedActions: summarizeDroppedActions(diagnostics),
     progressBlockers: summarizeProgressBlockers(project, simulator, bestProgressState),
@@ -308,23 +320,112 @@ function printProgressDebug(project, simulator, result, args) {
   }
 }
 
-async function main() {
-  const args = parseKeyValueArgs(process.argv.slice(2));
+function prependRoutePrefix(state, prefixRoute) {
+  if (!state || !Array.isArray(prefixRoute) || prefixRoute.length === 0) return state;
+  state.route = prefixRoute.concat(Array.isArray(state.route) ? state.route : []);
+  if (state.meta) state.meta.decisionDepth = state.route.length;
+  return state;
+}
+
+function prependResultRoutePrefix(result, prefixRoute) {
+  if (!result || !Array.isArray(prefixRoute) || prefixRoute.length === 0) return result;
+  const seen = new Set();
+  [result.goalState, result.bestSeenState, result.bestProgressState, ...((result.results || []))].forEach((state) => {
+    if (!state || seen.has(state)) return;
+    seen.add(state);
+    prependRoutePrefix(state, prefixRoute);
+  });
+  return result;
+}
+
+function compareSearchResults(simulator, left, right) {
+  if (!left) return right;
+  if (!right) return left;
+  const leftState = left.goalState || left.bestProgressState || left.bestSeenState;
+  const rightState = right.goalState || right.bestProgressState || right.bestSeenState;
+  if (Boolean(left.goalState) !== Boolean(right.goalState)) return right.goalState ? right : left;
+  if (!leftState) return right;
+  if (!rightState) return left;
+  return simulator.compareSearchStates(rightState, leftState) > 0 ? right : left;
+}
+
+async function searchWithCheckpointSeeds(simulator, initialState, searchOptions, checkpointSeeds) {
+  const seeds = Array.isArray(checkpointSeeds) ? checkpointSeeds : [];
+  if (seeds.length === 0) return searchTopK(simulator, initialState, searchOptions);
+  let bestResult = null;
+  const attempts = [];
+  for (const checkpoint of seeds) {
+    if (!checkpoint.state) continue;
+    const startState = cloneState(checkpoint.state);
+    const prefixRoute = Array.isArray(checkpoint.route) ? checkpoint.route.slice() : [];
+    startState.route = [];
+    if (startState.meta) startState.meta.decisionDepth = 0;
+    const result = await searchTopK(simulator, startState, {
+      ...searchOptions,
+      checkpointRepair: false,
+      checkpointSeed: checkpoint.id,
+    });
+    prependResultRoutePrefix(result, prefixRoute);
+    attempts.push({
+      checkpointId: checkpoint.id,
+      edge: checkpoint.edge,
+      finalFloorId: (result.goalState || result.bestProgressState || result.bestSeenState || {}).floorId,
+      foundGoal: Boolean(result.goalState),
+      expansions: result.expansions,
+    });
+    bestResult = compareSearchResults(simulator, bestResult, result);
+    if (result.goalState) break;
+  }
+  if (!bestResult || !bestResult.goalState) {
+    const fallback = await searchTopK(simulator, initialState, {
+      ...searchOptions,
+      checkpointSeedFallback: true,
+    });
+    const selected = compareSearchResults(simulator, bestResult, fallback);
+    selected.diagnostics = selected.diagnostics || {};
+    selected.diagnostics.checkpointReuse = {
+      attempted: true,
+      used: selected === bestResult,
+      attempts,
+      fallback: selected === fallback,
+    };
+    return selected;
+  }
+  bestResult.diagnostics = bestResult.diagnostics || {};
+  bestResult.diagnostics.checkpointReuse = {
+    attempted: true,
+    used: true,
+    attempts,
+    fallback: false,
+  };
+  return bestResult;
+}
+
+async function main(providedArgs, context) {
+  let args = providedArgs || parseKeyValueArgs(process.argv.slice(2));
   const projectRoot = resolveProjectRoot(args, path.resolve(__dirname, ".."));
   const project = loadProject(projectRoot);
-  const targetFloor = args["to-floor"] || "MT11";
-  const profileName = args.profile || "default";
-  const stagePolicyDefault = profileName.indexOf("stage-mt1-mt11") === 0;
+  const resolvedConfig = (context && context.resolvedConfig) || loadSolverConfig(projectRoot, project, args);
+  args = applyConfigDefaults(args, resolvedConfig);
+  const targetFloor = args["to-floor"] || (resolvedConfig.routeContext && resolvedConfig.routeContext.targetFloor) || "MT11";
+  const profileName = args.profile || resolvedConfig.profileName || "default";
+  const stagePolicyDefault = profileName.indexOf("stage-mt1-mt11") === 0 || profileName === "linear-main";
+  const cacheOptions = buildActionExpansionCacheOptions(args);
 
   const simulator = new StaticSimulator(project, {
     stopFloorId: targetFloor,
-    battleResolver: new FunctionBackedBattleResolver(project),
+    battleResolver: new FunctionBackedBattleResolver(project, cacheOptions),
     autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
     enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], stagePolicyDefault),
-    enableResourcePocket: shouldEnableResourcePocket(args, stagePolicyDefault),
-    enableResourceChain: parseBooleanFlag(args["resource-chain"], false),
+    enableResourcePocket: shouldEnableResourcePocket(args, true),
+    enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
+    enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
+    searchGraphMode: args["search-graph"] || (profileName === "linear-main" ? "macro" : "hybrid"),
+    primitiveFallbackMode: args["primitive-fallback"] || "auto",
     resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
+    enableActionExpansionCache: cacheOptions.enableActionExpansionCache,
+    actionExpansionCacheLimit: cacheOptions.actionExpansionCacheLimit,
   });
 
   const initialState = simulator.createInitialState({
@@ -349,6 +450,8 @@ async function main() {
 
   const searchOptions = {
     ...profile,
+    ...cacheOptions,
+    ...buildConfluenceDominanceOptions(args, profile.enableConfluenceHpDominance, profile.confluenceRoutePolicy),
     topK: Number(args["top-k"] || 3),
     maxExpansions: Number(args["max-expansions"] || 80),
     beamWidth: args["beam-width"] != null ? Number(args["beam-width"]) : undefined,
@@ -369,11 +472,40 @@ async function main() {
     autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
     enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], stagePolicyDefault),
-    enableResourcePocket: shouldEnableResourcePocket(args, stagePolicyDefault),
+    enableResourcePocket: shouldEnableResourcePocket(args, true),
+    enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
+    enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
+    searchGraphMode: args["search-graph"] || profile.searchGraphMode || (profileName === "linear-main" ? "macro" : "hybrid"),
+    primitiveFallbackMode: args["primitive-fallback"] || "auto",
     resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
   };
 
-  const result = await searchTopK(simulator, initialState, searchOptions);
+  const checkpointReuseMode = args["checkpoint-reuse"] || "off";
+  const checkpointEnabled = resolvedConfig.checkpointConfig && resolvedConfig.checkpointConfig.enabled !== false;
+  const checkpointStorePath = resolvedConfig.checkpointConfig && resolvedConfig.checkpointConfig.path;
+  const routeFingerprint = buildRouteFingerprint(project, resolvedConfig.routeContext);
+  const loadedCheckpointStore = checkpointEnabled
+    ? loadCheckpointStore(checkpointStorePath, {
+        project,
+        projectId: resolvedConfig.projectId,
+        profile: profileName,
+        routeContext: resolvedConfig.routeContext,
+        routeFingerprint,
+      })
+    : null;
+  const checkpointSeeds = checkpointEnabled && checkpointReuseMode !== "off" && loadedCheckpointStore && loadedCheckpointStore.usable
+    ? selectCheckpointSeeds(loadedCheckpointStore.store, resolvedConfig.routeContext, targetFloor, {
+        maxSeeds: Number(args["checkpoint-seeds"] || 8),
+      })
+    : [];
+  const result = await searchWithCheckpointSeeds(simulator, initialState, searchOptions, checkpointSeeds);
+  if (loadedCheckpointStore && loadedCheckpointStore.usable && result.checkpointPool) {
+    const storedPool = checkpointPoolFromStore(loadedCheckpointStore.store);
+    Object.entries(storedPool.edges || {}).forEach(([edge, list]) => {
+      if (!result.checkpointPool.edges[edge]) result.checkpointPool.edges[edge] = [];
+      result.checkpointPool.edges[edge].push(...list);
+    });
+  }
   const bestForBlocker = result.bestProgressState || result.bestSeenState;
   const blocker = analyzeProgressBlocker(simulator, bestForBlocker, { targetFloorId: targetFloor });
   let repair = null;
@@ -388,7 +520,7 @@ async function main() {
       analyzeProgressBlocker,
       targetFloorId: targetFloor,
       maxRepairAttempts: Number(args["repair-attempts"] || 6),
-      repairExpansionsPerAttempt: Number(args["repair-expansions"] || 120),
+      repairExpansionsPerAttempt: Number(args["repair-expansions"] || 30),
       topK: Number(args["top-k"] || 1),
     });
     if (repair && repair.repaired && repair.repairedState) {
@@ -404,6 +536,22 @@ async function main() {
   if (!result.diagnostics) result.diagnostics = {};
   result.diagnostics.blocker = blocker;
   result.diagnostics.checkpointRepair = summarizeRepair(repair);
+  result.diagnostics.pruningOverview = summarizePruning(result.diagnostics);
+  if (loadedCheckpointStore) {
+    result.diagnostics.checkpointStore = {
+      path: checkpointStorePath ? path.relative(projectRoot, checkpointStorePath) : null,
+      usable: loadedCheckpointStore.usable,
+      stale: loadedCheckpointStore.stale,
+      loadError: loadedCheckpointStore.loadError,
+      seeds: checkpointSeeds.map((checkpoint) => ({
+        id: checkpoint.id,
+        edge: checkpoint.edge,
+        routeLength: checkpoint.routeLength,
+        hero: checkpoint.hero,
+      })),
+      summary: summarizeStore(loadedCheckpointStore.store),
+    };
+  }
 
   console.log(`Search claim: ${JSON.stringify(summarizeSearchClaim(profileName, targetFloor, args, result))}`);
   console.log(`Expansions: ${result.expansions}`);
@@ -436,6 +584,28 @@ async function main() {
     console.log(`Best progress replay confidence: ${JSON.stringify(summarizeReplayConfidence(result.bestProgressState, false))}`);
     printDiagnosticsMainView(project, simulator, result);
     printProgressDebug(project, simulator, result, args);
+  }
+
+  if (checkpointEnabled && parseBooleanFlag(args["checkpoint-save"], true) && checkpointStorePath) {
+    const baseStore = loadedCheckpointStore && loadedCheckpointStore.usable
+      ? loadedCheckpointStore.store
+      : {
+          version: 1,
+          projectId: resolvedConfig.projectId,
+          profile: profileName,
+          routeFingerprint,
+          updatedAt: new Date().toISOString(),
+          edges: {},
+        };
+    const nextStore = mergeCheckpointPoolIntoStore(baseStore, result.checkpointPool, {
+      projectId: resolvedConfig.projectId,
+      profile: profileName,
+      routeFingerprint,
+    });
+    saveCheckpointStore(checkpointStorePath, nextStore);
+    if (parseBooleanFlag(args.diagnostics, false)) {
+      console.log(`Checkpoint store written: ${path.relative(projectRoot, checkpointStorePath)}`);
+    }
   }
 
   const writeStateRoute = (argName, state, metadata) => {
@@ -533,3 +703,7 @@ if (require.main === module) {
   process.exitCode = 1;
 });
 }
+
+module.exports = {
+  main,
+};

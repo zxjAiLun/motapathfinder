@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "project": {
+    "id": "main-tower"
+  },
+  "route": {
+    "floorOrder": ["MT1", "MT2", "MT3", "MT4", "MT5", "MT6", "MT7", "MT8", "MT9", "MT10", "MT11"],
+    "startFloor": "MT1",
+    "targetFloor": "MT11"
+  },
+  "profile": "linear-main",
+  "profiles": {
+    "linear-main": {
+      "extends": "stage-mt1-mt11-resource-prep",
+      "defaults": {
+        "resourcePocketMode": "lite",
+        "resourceCluster": true,
+        "resourceChain": true,
+        "fightToLevelUp": true,
+        "searchGraph": "macro",
+        "checkpointReuse": "auto",
+        "checkpointSave": true,
+        "confluence": true,
+        "confluenceRoutePolicy": "ignore-length",
+        "confluenceRouteSlack": 12,
+        "confluenceRepresentatives": 3,
+        "confluenceMinFloor": 1
+      }
+    }
+  },
+  "checkpoints": {
+    "enabled": true,
+    "path": "solver/checkpoints/linear-main.checkpoint-skyline.json"
+  }
+}

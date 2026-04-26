@@ -120,7 +120,7 @@ function localActionScore(simulator, baseState, currentState, action) {
     score -= Math.min(90000, damage * 10);
   }
   try {
-    const nextState = simulator.applyAction(currentState, action, { storeRoute: false });
+    const nextState = applyActionPreview(simulator, currentState, action);
     const delta = deltaSummary(baseState, nextState);
     score += Math.max(0, delta.atk) * 9000;
     score += Math.max(0, delta.def) * 8000;
@@ -131,6 +131,13 @@ function localActionScore(simulator, baseState, currentState, action) {
     score -= 1000000;
   }
   return score;
+}
+
+function applyActionPreview(simulator, state, action) {
+  if (simulator && typeof simulator.applyActionPreview === "function") {
+    return simulator.applyActionPreview(state, action);
+  }
+  return simulator.applyAction(state, action, { storeRoute: false });
 }
 
 function hasForwardPrimitive(simulator, state) {
@@ -191,7 +198,7 @@ function evaluateActionResourceLookahead(simulator, state, action, providedOptio
 
   let firstState;
   try {
-    firstState = simulator.applyAction(state, action, { storeRoute: false });
+    firstState = applyActionPreview(simulator, state, action);
   } catch (error) {
     const result = invalid("first-action-failed");
     if (cache) cache.set(cacheKey, result);
@@ -233,7 +240,7 @@ function evaluateActionResourceLookahead(simulator, state, action, providedOptio
         .forEach((candidate) => {
           let nextState;
           try {
-            nextState = simulator.applyAction(node.state, candidate.action, { storeRoute: false });
+            nextState = applyActionPreview(simulator, node.state, candidate.action);
           } catch (error) {
             return;
           }

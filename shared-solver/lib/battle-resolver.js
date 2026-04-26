@@ -8,6 +8,29 @@ const { DIRECTIONS, DIRECTION_DELTAS, isEnemyTile } = require("./reachability");
 const { executeActionList, runLevelUps } = require("./events");
 const { cloneState, getTileDefinitionAt, removeTileAt } = require("./state");
 
+function stableObject(object) {
+  return Object.keys(object || {})
+    .sort()
+    .reduce((result, key) => {
+      const value = object[key];
+      if (value == null || value === 0) return result;
+      result[key] = value;
+      return result;
+    }, {});
+}
+
+function stableFloorState(floorState) {
+  const removed = Object.keys((floorState || {}).removed || {}).sort();
+  const replaced = Object.keys((floorState || {}).replaced || {})
+    .sort()
+    .map((key) => `${key}:${floorState.replaced[key]}`);
+  return { removed, replaced };
+}
+
+function cloneJson(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
 function hasSpecial(special, test) {
   if (special == null) return false;
   if (Array.isArray(special)) return special.includes(test);
@@ -287,12 +310,74 @@ class UnsupportedBattleResolver {
 
 class FunctionBackedBattleResolver {
   constructor(project, options) {
+    const config = options || {};
     this.project = project;
-    this.autoLevelUp = !options || options.autoLevelUp !== false;
+    this.autoLevelUp = config.autoLevelUp !== false;
     this.runtime = loadFunctionsRuntime(project);
+    this.enableBattleEstimateCache = config.enableBattleEstimateCache !== false;
+    this.battleEstimateCacheLimit = Number(config.battleEstimateCacheLimit || 4096);
+    this.battleEstimateCache = new Map();
+    this.cacheStats = {
+      battleEstimate: { hits: 0, misses: 0, stores: 0, evictions: 0 },
+    };
   }
 
-  evaluateBattle(state, floorId, x, y, enemyId) {
+  battleEstimateCacheKey(state, floorId, x, y, enemyId) {
+    const hero = state.hero || {};
+    return JSON.stringify({
+      floorId,
+      x,
+      y,
+      enemyId,
+      hero: {
+        atk: Number(hero.atk || 0),
+        def: Number(hero.def || 0),
+        mdef: Number(hero.mdef || 0),
+        lv: Number(hero.lv || 0),
+        hpmax: Number(hero.hpmax || 0),
+        mana: Number(hero.mana || 0),
+        manamax: Number(hero.manamax || 0),
+        equipment: Array.isArray(hero.equipment) ? hero.equipment.slice().sort() : [],
+      },
+      inventory: stableObject(state.inventory),
+      flags: stableObject(state.flags),
+      localMutations: stableFloorState(((state.floorStates || {})[floorId]) || {}),
+    });
+  }
+
+  cacheGet(name, cache, key) {
+    if (!this.enableBattleEstimateCache || !key) return undefined;
+    const stats = this.cacheStats[name];
+    if (!cache.has(key)) {
+      if (stats) stats.misses += 1;
+      return undefined;
+    }
+    const value = cache.get(key);
+    cache.delete(key);
+    cache.set(key, value);
+    if (stats) stats.hits += 1;
+    return cloneJson(value);
+  }
+
+  cacheSet(name, cache, key, value, limit) {
+    if (!this.enableBattleEstimateCache || !key) return value;
+    const stats = this.cacheStats[name];
+    cache.set(key, cloneJson(value));
+    if (stats) stats.stores += 1;
+    const maxSize = Math.max(0, Number(limit || this.battleEstimateCacheLimit || 0));
+    while (maxSize > 0 && cache.size > maxSize) {
+      const firstKey = cache.keys().next().value;
+      cache.delete(firstKey);
+      if (stats) stats.evictions += 1;
+    }
+    return value;
+  }
+
+  getCacheStats() {
+    return cloneJson(this.cacheStats);
+  }
+
+  evaluateBattleUncached(state, floorId, x, y, enemyId) {
     const evaluationState = createEvaluationState(state);
     const core = buildCoreFacade(this.project, this.runtime, evaluationState);
     const enemy = this.runtime.materialEnemys[enemyId];
@@ -320,6 +405,14 @@ class FunctionBackedBattleResolver {
         reason: error && error.message ? error.message : String(error),
       };
     }
+  }
+
+  evaluateBattle(state, floorId, x, y, enemyId) {
+    const key = this.battleEstimateCacheKey(state, floorId, x, y, enemyId);
+    const cached = this.cacheGet("battleEstimate", this.battleEstimateCache, key);
+    if (cached) return cached;
+    const result = this.evaluateBattleUncached(state, floorId, x, y, enemyId);
+    return this.cacheSet("battleEstimate", this.battleEstimateCache, key, result, this.battleEstimateCacheLimit);
   }
 
   enumerateActions(context) {

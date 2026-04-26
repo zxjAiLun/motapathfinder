@@ -21,6 +21,7 @@ function hasTarget(decision) {
 
 function validateDecision(decision) {
   assert(decision.kind !== "resourcePocket", `decision #${decision.index} is unexpanded resourcePocket`);
+  assert(decision.kind !== "resourceCluster", `decision #${decision.index} is unexpanded resourceCluster`);
   assert(decision.kind !== "fightToLevelUp", `decision #${decision.index} is unexpanded fightToLevelUp`);
   assert(decision.fingerprint, `decision #${decision.index} missing fingerprint`);
   assert(decision.kind, `decision #${decision.index} missing kind`);

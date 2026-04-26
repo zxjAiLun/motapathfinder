@@ -239,7 +239,7 @@ function getStageActionScore(simulator, state, action, index) {
     score += Number((action.estimate || {}).exp || 0) * 8000;
     score += Number((action.estimate || {}).targetLevel || 0) * 8000;
     score -= Math.min(9000, Number((action.estimate || {}).damage || 0));
-  } else if (action.kind === "resourcePocket") {
+  } else if (action.kind === "resourcePocket" || action.kind === "resourceCluster") {
     const stopReasons = (action.estimate || {}).stopReasons || [];
     score += 9500;
     if (stopReasons.includes("levelUp")) score += 22000;
@@ -342,7 +342,7 @@ function getResourcePrepActionScore(simulator, state, action, index) {
     score += 80000;
     score += Number((action.estimate || {}).targetLevel || 0) * 10000;
     score -= Math.min(10000, Number((action.estimate || {}).damage || 0));
-  } else if (action.kind === "resourcePocket") {
+  } else if (action.kind === "resourcePocket" || action.kind === "resourceCluster") {
     score += 50000;
     score += Math.min(20000, Number((action.estimate || {}).score || 0));
   } else if (action.kind === "pickup") {
@@ -451,8 +451,10 @@ function createStageMt1Mt11ResourcePrepProfile(simulator, options) {
     reserveProgressActions: true,
     forwardChangeFloorAutoExpand: true,
     enableConfluenceHpDominance: config.enableConfluenceHpDominance !== false,
+    confluenceRoutePolicy: config.confluenceRoutePolicy || "slack",
     confluenceRouteSlack: config.confluenceRouteSlack || 12,
-    confluenceRepresentatives: config.confluenceRepresentatives || 2,
+    confluenceRepresentatives: config.confluenceRepresentatives || 3,
+    confluenceMinFloorOrder: config.confluenceMinFloorOrder || 1,
   };
 }
 
@@ -467,6 +469,12 @@ function createSearchProfile(name, simulator, options) {
     case "stage-mt1-mt11-resource-prep":
     case "debug-exp-farming":
       return createStageMt1Mt11ResourcePrepProfile(simulator, options);
+    case "linear-main":
+      return {
+        ...createStageMt1Mt11ResourcePrepProfile(simulator, options),
+        confluenceRoutePolicy: "ignore-length",
+        searchGraphMode: "macro",
+      };
     default:
       throw new Error(`Unknown search profile: ${name}`);
   }

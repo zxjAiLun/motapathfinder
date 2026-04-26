@@ -1,7 +1,8 @@
 "use strict";
 
 const { compareProgress } = require("./progress");
-const { selectRepairCheckpoints } = require("./floor-checkpoints");
+const { requirementDeficitScore, selectRepairCheckpoints } = require("./floor-checkpoints");
+const { cloneState } = require("./state");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -35,25 +36,36 @@ async function repairFromCheckpoints(simulator, searchContext, blocker, options)
 
   const attempts = [];
   const originalBest = searchContext.bestProgressState || searchContext.bestSeenState;
+  const minHero = blocker && blocker.recommendedRepair && blocker.recommendedRepair.minHero || {};
   for (const checkpoint of candidates) {
     if (!checkpoint.state) {
-      attempts.push({ checkpointId: checkpoint.id, repaired: false, reason: "checkpoint-missing-state" });
+      attempts.push({ ...summarizeCheckpointCandidate(checkpoint, minHero), repaired: false, reason: "checkpoint-missing-state" });
       continue;
     }
-    const result = await searchFn(simulator, checkpoint.state, {
+    const checkpointRoute = Array.isArray(checkpoint.route) ? checkpoint.route.slice() : [];
+    const startState = cloneState(checkpoint.state);
+    startState.route = [];
+    if (startState.meta) {
+      startState.meta.decisionDepth = 0;
+      startState.meta.autoStepCount = 0;
+      startState.meta.autoPickupCount = 0;
+      startState.meta.autoBattleCount = 0;
+    }
+    const result = await searchFn(simulator, startState, {
       ...(searchContext.profile || {}),
-      maxExpansions: number(config.repairExpansionsPerAttempt, 120),
+      maxExpansions: number(config.repairExpansionsPerAttempt, 30),
       topK: number(config.topK, 1),
       disableDominance: false,
       safeDominanceMode: true,
-      parallel: false,
+      parallel: config.parallel != null ? config.parallel : ((searchContext.profile || {}).parallel || false),
       checkpointRepair: false,
       targetFloorId: config.targetFloorId || simulator.stopFloorId,
     });
     const repairedState = result.goalState || result.bestProgressState || result.bestSeenState;
-    if (repairedState && Array.isArray(checkpoint.route)) {
+    if (repairedState) {
       const suffix = Array.isArray(repairedState.route) ? repairedState.route : [];
-      repairedState.route = checkpoint.route.concat(suffix);
+      repairedState.route = checkpointRoute.concat(suffix);
+      if (repairedState.meta) repairedState.meta.decisionDepth = repairedState.route.length;
     }
     const afterBlocker = typeof analyzeProgressBlocker === "function" && repairedState
       ? analyzeProgressBlocker(simulator, repairedState, {})
@@ -64,14 +76,14 @@ async function repairFromCheckpoints(simulator, searchContext, blocker, options)
     const foundGoal = Boolean(result.goalState);
     const repaired = Boolean(foundGoal || progressImproved || sameProgressBetter || cleared);
     const attempt = {
-      checkpointId: checkpoint.id,
-      edge: checkpoint.edge,
-      hero: checkpoint.hero,
+      ...summarizeCheckpointCandidate(checkpoint, minHero),
       foundGoal,
       repaired,
       progressImproved,
       blockerCleared: cleared,
       finalFloorId: repairedState && repairedState.floorId,
+      suffixRouteLength: repairedState && Array.isArray(repairedState.route) ? Math.max(0, repairedState.route.length - checkpointRoute.length) : null,
+      expansions: result.expansions,
       result,
       blocker: afterBlocker,
     };
@@ -84,6 +96,7 @@ async function repairFromCheckpoints(simulator, searchContext, blocker, options)
         repairedState,
         result,
         blocker: afterBlocker,
+        candidatePlan: candidates.map((candidate) => summarizeCheckpointCandidate(candidate, minHero)),
         attempts: attempts.map(summarizeAttempt),
         reason: foundGoal ? "goal-found" : progressImproved ? "progress-improved" : cleared ? "blocker-cleared" : "same-progress-better",
       };
@@ -94,7 +107,23 @@ async function repairFromCheckpoints(simulator, searchContext, blocker, options)
     attempted: true,
     repaired: false,
     reason: "repair-search-no-improvement",
+    candidatePlan: candidates.map((candidate) => summarizeCheckpointCandidate(candidate, minHero)),
     attempts: attempts.map(summarizeAttempt),
+  };
+}
+
+function summarizeCheckpointCandidate(checkpoint, minHero) {
+  return {
+    checkpointId: checkpoint.id,
+    edge: checkpoint.edge,
+    strategy: checkpoint.repairStrategy || "ranked",
+    strategies: checkpoint.repairStrategies || [checkpoint.repairStrategy || "ranked"],
+    hero: checkpoint.hero,
+    routeLength: checkpoint.routeLength,
+    tags: checkpoint.tags || [],
+    skylineKey: checkpoint.skylineKey || null,
+    requirementDeficit: requirementDeficitScore(checkpoint, minHero || {}),
+    scoutScore: number(checkpoint.scout && checkpoint.scout.score, 0),
   };
 }
 
@@ -102,12 +131,19 @@ function summarizeAttempt(attempt) {
   return {
     checkpointId: attempt.checkpointId,
     edge: attempt.edge,
+    strategy: attempt.strategy,
+    strategies: attempt.strategies,
     hero: attempt.hero,
+    routeLength: attempt.routeLength,
+    requirementDeficit: attempt.requirementDeficit,
+    scoutScore: attempt.scoutScore,
     foundGoal: attempt.foundGoal,
     repaired: attempt.repaired,
     progressImproved: attempt.progressImproved,
     blockerCleared: attempt.blockerCleared,
     finalFloorId: attempt.finalFloorId,
+    suffixRouteLength: attempt.suffixRouteLength,
+    expansions: attempt.expansions,
     blockerType: attempt.blocker && attempt.blocker.blockerType,
   };
 }

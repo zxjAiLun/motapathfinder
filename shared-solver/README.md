@@ -112,6 +112,38 @@ The `stage-mt1-mt11` profile now uses a staged objective policy as the main sear
 
 When diagnostics are enabled, `Stage objective` reports the current phase, forward stair readiness, distance to the next stair, battle frontier, and level readiness for `bestProgressState`.
 
+Confluence HP dominance can be controlled from the top-k CLIs with:
+
+```bash
+--confluence=1
+--confluence-route-slack=12
+--confluence-representatives=3
+--confluence-min-floor=1
+```
+
+With `--diagnostics=1`, the diagnostics main view includes `confluenceDominance` counters for `rejectedByHigherHp`, `replacedLowerHp`, and representative examples.
+
+Resource search defaults are split by role:
+
+```bash
+--resource-pocket-mode=lite
+--resource-chain=1
+--resource-cluster=1
+```
+
+`resourcePocket` is kept as lightweight prep for near-level-up and small gain chains. Use `--resource-pocket-mode=deep` only for focused pocket deep dives. `resourceCluster` handles ABC-style local ordering where several routes reach the same final resources with different HP; the macro emits `resourceCluster:<floor>:<cluster>:bestHp` and records `dominatedPlans` / `skylineSize` in the estimate.
+
+Action expansion caches are enabled by default and are reported in diagnostics as `actionExpansionCache`:
+
+```bash
+--action-expansion-cache=1
+--action-cache-limit=1024
+--battle-estimate-cache=1
+--battle-cache-limit=4096
+```
+
+The cached layers cover walk reachability, primitive action enumeration, battle estimates, resource-cluster ordering, resource preview applies, resource-chain lookahead, and search confluence signatures. In parallel top-k mode, worker cache hit/miss deltas are aggregated under `actionExpansionCache.workers`.
+
 ## Next fill-in points
 
 1. TODO: Add dedicated shop / add-point / upgrade-choice resolvers if a future tower segment requires them.

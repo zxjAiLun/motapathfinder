@@ -170,7 +170,13 @@ function resolveSnapshotFloors(project, initialState, finalState, options) {
 }
 
 function findActionBySummary(simulator, state, summary) {
-  return simulator.enumerateActions(state).find((action) => action.summary === summary);
+  const action = simulator.enumerateActions(state).find((candidate) => candidate.summary === summary);
+  if (action) return action;
+  if (typeof simulator.enumeratePrimitiveActions === "function") {
+    const primitive = simulator.enumeratePrimitiveActions(state).actions || [];
+    return primitive.find((candidate) => candidate.summary === summary) || null;
+  }
+  return null;
 }
 
 function actionFingerprintForPlanEntry(action) {
@@ -277,7 +283,8 @@ function pushStructuredDecision(context, entry) {
 function replayDecisionSummary(context, summary) {
   const action = findActionBySummary(context.simulator, context.currentState, summary);
   if (!action) throw new Error(`Unable to reconstruct action while saving route: ${summary}`);
-  if ((action.kind === "resourcePocket" || action.kind === "fightToLevelUp") && Array.isArray(action.plan)) {
+  if (replayMacroPlanEntries(context, action)) return;
+  if ((action.kind === "resourcePocket" || action.kind === "resourceCluster" || action.kind === "fightToLevelUp") && Array.isArray(action.plan)) {
     action.plan.forEach((nestedSummary) => replayDecisionSummary(context, nestedSummary));
     return;
   }
@@ -285,10 +292,10 @@ function replayDecisionSummary(context, summary) {
 }
 
 function replayMacroPlanEntries(context, actionEntry) {
-  if (actionEntry.kind === "resourcePocket" && Array.isArray(actionEntry.planEntries)) {
+  if ((actionEntry.kind === "resourcePocket" || actionEntry.kind === "resourceCluster") && Array.isArray(actionEntry.planEntries)) {
     actionEntry.planEntries.forEach((entry) => {
       const primitiveAction = findPrimitiveByPlanEntry(context.simulator, context.currentState, entry);
-      if (!primitiveAction) throw new Error(`Unable to expand resourcePocket step while saving route: ${entry.summary || entry.fingerprint}`);
+      if (!primitiveAction) throw new Error(`Unable to expand ${actionEntry.kind} step while saving route: ${entry.summary || entry.fingerprint}`);
       pushDecision(context, primitiveAction);
     });
     return true;

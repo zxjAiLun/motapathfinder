@@ -123,7 +123,7 @@ function classifyActions(simulator, entryState, baseState, actions) {
     if (action.kind === "pickup") {
       reachable.itemCount += 1;
       resourceFrontier.push(actionResourceEntry(hero, action));
-    } else if (action.kind === "resourcePocket" || action.kind === "fightToLevelUp") {
+    } else if (action.kind === "resourcePocket" || action.kind === "resourceCluster" || action.kind === "fightToLevelUp") {
       resourceFrontier.push(actionResourceEntry(hero, action));
     } else if (action.kind === "battle") {
       reachable.battleCount += 1;

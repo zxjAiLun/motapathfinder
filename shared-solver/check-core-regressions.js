@@ -3,7 +3,7 @@
 const assert = require("node:assert");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
-const { resolveProjectRoot } = require("./lib/cli-options");
+const { buildConfluenceDominanceOptions, buildResourcePocketSearchOptions, resolveProjectRoot, shouldEnableResourcePocket } = require("./lib/cli-options");
 const { executeActionList } = require("./lib/events");
 const { loadProject } = require("./lib/project-loader");
 const { coordinateKey } = require("./lib/reachability");
@@ -262,6 +262,47 @@ function checkMacroActionMatrix() {
   };
 }
 
+function checkConfluenceCliOptions() {
+  assert.deepStrictEqual(buildConfluenceDominanceOptions({}, true), {
+    enableConfluenceHpDominance: true,
+    confluenceRoutePolicy: "slack",
+    confluenceRouteSlack: 12,
+    confluenceRepresentatives: 3,
+    confluenceMinFloorOrder: 1,
+  });
+  assert.deepStrictEqual(buildConfluenceDominanceOptions({
+    confluence: "0",
+    "confluence-route-slack": "9",
+    "confluence-representatives": "4",
+    "confluence-min-floor": "2",
+  }, true), {
+    enableConfluenceHpDominance: false,
+    confluenceRoutePolicy: "slack",
+    confluenceRouteSlack: 9,
+    confluenceRepresentatives: 4,
+    confluenceMinFloorOrder: 2,
+  });
+  return buildConfluenceDominanceOptions({ confluence: "1" }, false);
+}
+
+function checkResourceDefaultOptions() {
+  assert.equal(shouldEnableResourcePocket({}, true), true);
+  assert.equal(shouldEnableResourcePocket({ "resource-pocket-mode": "off" }, true), false);
+  assert.equal(shouldEnableResourcePocket({ "resource-pocket": "0" }, true), false);
+  assert.deepStrictEqual(buildResourcePocketSearchOptions({}), {
+    maxDepth: 4,
+    maxNodes: 20,
+    branchLimit: 5,
+    frontierLimit: 8,
+    resultLimit: 3,
+  });
+  assert.equal(buildResourcePocketSearchOptions({ "resource-pocket-mode": "deep" }).maxNodes, 500);
+  return {
+    defaultMode: "lite",
+    deepMaxNodes: buildResourcePocketSearchOptions({ "resource-pocket-mode": "deep" }).maxNodes,
+  };
+}
+
 function main() {
   const results = {
     eventMacro: checkEventMacroMatrix(),
@@ -269,6 +310,8 @@ function main() {
     guardBattle: checkGuardBattleMatrix(),
     addPoint: checkAddPointMatrix(),
     macroActionsAndStageProfile: checkMacroActionMatrix(),
+    confluenceCliOptions: checkConfluenceCliOptions(),
+    resourceDefaultOptions: checkResourceDefaultOptions(),
   };
   console.log(JSON.stringify(results, null, 2));
 }

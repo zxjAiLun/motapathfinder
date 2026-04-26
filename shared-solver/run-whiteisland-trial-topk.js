@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
-const { parseBooleanFlag, parseKeyValueArgs, parseOptionalNumber, resolveProjectRoot } = require("./lib/cli-options");
+const { buildConfluenceDominanceOptions, buildResourcePocketSearchOptions, parseBooleanFlag, parseKeyValueArgs, parseOptionalNumber, resolveProjectRoot, shouldEnableResourcePocket } = require("./lib/cli-options");
 const { executeActionList } = require("./lib/events");
 const { findContiguousTowerTerminalFloor } = require("./lib/floor-id");
 const { loadProject } = require("./lib/project-loader");
@@ -78,6 +78,10 @@ async function main() {
     }),
     autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
+    enableResourcePocket: shouldEnableResourcePocket(args, true),
+    enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
+    enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
+    resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
   });
   if (goalType === "win") {
     simulator.isTerminal = (state) => Boolean(state.meta && state.meta.winReason);
@@ -93,6 +97,7 @@ async function main() {
   });
   const searchOptions = {
     ...profile,
+    ...buildConfluenceDominanceOptions(args, profile.enableConfluenceHpDominance, profile.confluenceRoutePolicy),
     topK,
     maxExpansions,
     beamWidth: parseOptionalNumber(args["beam-width"]),
@@ -110,6 +115,10 @@ async function main() {
     targetFloorId,
     autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
+    enableResourcePocket: shouldEnableResourcePocket(args, true),
+    enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
+    enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
+    resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
   };
 
   console.log(`Loaded project: ${project.data.firstData.title}`);

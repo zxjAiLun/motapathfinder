@@ -101,7 +101,7 @@ function shouldUseResourceLookahead(rank, action, options) {
 
 function getActionResourceLookahead(simulator, state, action, rank, options) {
   if (!shouldUseResourceLookahead(rank, action, options)) return null;
-  if (action.kind === "resourcePocket") return null;
+  if (action.kind === "resourcePocket" || action.kind === "resourceCluster") return null;
   if (!options.__resourceLookaheadCache) options.__resourceLookaheadCache = createResourceLookaheadCache();
   return evaluateActionResourceLookahead(simulator, state, action, getPolicyLookaheadOptions(options, rank));
 }
@@ -293,7 +293,7 @@ function getStageActionScore(simulator, state, action, index, options) {
   } else if (action.kind === "fightToLevelUp") {
     score += 100000 + Number((action.estimate || {}).targetLevel || 0) * 12000;
     score -= Math.min(30000, Number((action.estimate || {}).damage || 0) * 2);
-  } else if (action.kind === "resourcePocket" || action.kind === "resourceChain") {
+  } else if (action.kind === "resourcePocket" || action.kind === "resourceChain" || action.kind === "resourceCluster") {
     const estimate = action.estimate || {};
     const stopReasons = estimate.stopReasons || [];
     const pocketScore = Number(estimate.score || 0);
@@ -302,6 +302,12 @@ function getStageActionScore(simulator, state, action, index, options) {
     score += 60000 + compressedPocketScore;
     if (Number(confluence.hpRank || 0) === 1) score += 45000;
     score += Math.min(40000, Number(confluence.dominatedEquivalentCount || 0) * 10000);
+    score += Math.min(40000, Number(estimate.dominatedPlans || 0) * 8000);
+    if (action.kind === "resourceCluster") {
+      if (estimate.representativeRole === "highestHp") score += 28000;
+      score += Math.min(45000, Number(estimate.rejectedByClusterDominance || 0) * 7000);
+      score += Math.min(16000, Number(estimate.skylineSize || 0) * 3000);
+    }
     if (stopReasons.includes("forwardChangeFloor")) score += 120000;
     if (stopReasons.includes("levelUp")) score += 90000;
     if (stopReasons.includes("keyItem")) score += 45000;
@@ -335,7 +341,7 @@ function getStageActionScore(simulator, state, action, index, options) {
   }
 
   if (rank.phase === "mt1-open-mt2" && action.kind === "battle") score += 8000;
-  if (rank.phase === "mt2-resource-return-or-mt3" && (action.kind === "resourcePocket" || action.kind === "resourceChain" || action.kind === "fightToLevelUp")) score += 35000;
+  if (rank.phase === "mt2-resource-return-or-mt3" && (action.kind === "resourcePocket" || action.kind === "resourceChain" || action.kind === "resourceCluster" || action.kind === "fightToLevelUp")) score += 35000;
   if (rank.phase === "mt3-mt5-local-forward" && (action.kind === "openDoor" || action.kind === "pickup")) score += 12000;
   if ((action.path || []).length === 0) score += 500;
   return score;

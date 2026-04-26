@@ -19,6 +19,7 @@ function scoreActionLandmark(action) {
   if (!action) return 0;
   if (action.kind === "changeFloor") return 100000 - actionDistance(action) * 1000;
   if (action.kind === "resourcePocket") return 80000 + Number((action.estimate || {}).score || 0);
+  if (action.kind === "resourceCluster") return 76000 + Number((action.estimate || {}).score || 0);
   if (action.kind === "fightToLevelUp") return 75000 - Number((action.estimate || {}).damage || 0) + Number((action.estimate || {}).exp || 0) * 1000;
   if (action.kind === "event" && action.hasStateChange) return 65000 - actionDistance(action) * 500;
   if (action.kind === "openDoor") return 58000 - actionDistance(action) * 500;
@@ -35,6 +36,7 @@ function classifyLandmark(action) {
   if (!action) return "unknown";
   if (action.kind === "changeFloor") return "target-stair";
   if (action.kind === "resourcePocket") return "resource-pocket";
+  if (action.kind === "resourceCluster") return "resource-cluster";
   if (action.kind === "fightToLevelUp") return "level-threshold";
   if (action.kind === "event") return action.hasStateChange ? "required-event" : "event";
   if (action.kind === "openDoor") return "gate-unlock";
@@ -71,7 +73,7 @@ function summarizeLandmarks(simulator, state, options) {
     nearestNextFloorDistance: features.nearestNextFloorDistance,
     nextFloorCount: features.nextFloorCount,
     battleFrontierCount: features.battleFrontierCount,
-    resourcePocketCount: actions.filter((action) => action.kind === "resourcePocket").length,
+    resourcePocketCount: actions.filter((action) => action.kind === "resourcePocket" || action.kind === "resourceCluster" || action.kind === "resourceChain").length,
     landmarks,
   };
 }

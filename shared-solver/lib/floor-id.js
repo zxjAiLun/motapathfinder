@@ -1,5 +1,18 @@
 "use strict";
 
+let configuredFloorIndexById = null;
+
+function configureFloorOrder(floorOrder) {
+  if (!Array.isArray(floorOrder) || floorOrder.length === 0) {
+    configuredFloorIndexById = null;
+    return;
+  }
+  configuredFloorIndexById = new Map();
+  floorOrder.forEach((floorId, index) => {
+    configuredFloorIndexById.set(String(floorId), index + 1);
+  });
+}
+
 function parseFloorId(floorId) {
   const value = String(floorId || "");
   const mtMatch = /^MT(\d+)$/.exec(value);
@@ -24,6 +37,9 @@ function parseFloorId(floorId) {
 }
 
 function getFloorOrder(floorId) {
+  if (configuredFloorIndexById && configuredFloorIndexById.has(String(floorId))) {
+    return configuredFloorIndexById.get(String(floorId));
+  }
   const parsed = parseFloorId(floorId);
   return parsed ? parsed.order : -1;
 }
@@ -49,6 +65,7 @@ function findContiguousTowerTerminalFloor(project, startFloorId) {
 }
 
 module.exports = {
+  configureFloorOrder,
   findContiguousTowerTerminalFloor,
   getFloorOrder,
   parseFloorId,

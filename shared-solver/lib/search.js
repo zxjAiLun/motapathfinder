@@ -13,6 +13,7 @@ const { WorkerPool } = require("./worker-pool");
 const { chunk, serializeNodeForWorker, stableMergeResults } = require("./parallel-expander");
 const { formatActionLabel } = require("./enemy-labels");
 const { getFloorOrder } = require("./score");
+const { dominatesAtConfluence } = require("./confluence-key");
 
 function nowMs() {
   const [seconds, nanoseconds] = process.hrtime();
@@ -28,6 +29,7 @@ function actionType(action) {
   if (action.kind === "fightToLevelUp") return "fightToLevelUp";
   if (action.kind === "resourcePocket") return "resourcePocket";
   if (action.kind === "resourceChain") return "resourceChain";
+  if (action.kind === "resourceCluster") return "resourceCluster";
   if (action.kind === "event") return action.unsupported ? "unsupportedEvent" : "event";
   if (action.kind === "pickup") return "item";
   if (action.kind === "useTool") return "tool";
@@ -40,6 +42,7 @@ function actionRole(action) {
   if (action.kind === "pickup") return "resource";
   if (action.kind === "resourcePocket") return "resource";
   if (action.kind === "resourceChain") return "resource";
+  if (action.kind === "resourceCluster") return "resource";
   if (action.kind === "battle" && Number((action.estimate || {}).exp || 0) > 0) return "exp";
   if (action.kind === "fightToLevelUp") return "exp";
   if (action.kind === "battle") return "fight";
@@ -71,6 +74,20 @@ function recordActionStat(stats, action, field) {
     stats.byActionRole[role] = { generated: 0, kept: 0, trimmed: 0, dominated: 0, expanded: 0, invalid: 0, beamDropped: 0 };
   }
   stats.byActionRole[role][field] = Number(stats.byActionRole[role][field] || 0) + 1;
+}
+
+function recordQuotaDrop(stats, action) {
+  if (!stats || !action) return;
+  if (!stats.quota) stats.quota = { dropped: 0, byActionType: {} };
+  const type = actionType(action);
+  stats.quota.dropped += 1;
+  stats.quota.byActionType[type] = Number(stats.quota.byActionType[type] || 0) + 1;
+}
+
+function recordGraphExpanded(stats, action) {
+  if (!stats || !stats.graph || !action) return;
+  const type = actionType(action);
+  stats.graph.expandedByKind[type] = Number(stats.graph.expandedByKind[type] || 0) + 1;
 }
 
 function compareFrontierStates(simulator, options, left, right) {
@@ -117,7 +134,7 @@ function compactAction(action, project) {
     };
     if (action.estimate.unlockPreview) compact.estimate.unlockPreview = action.estimate.unlockPreview;
   }
-  if (action.kind === "resourcePocket" || action.kind === "resourceChain") {
+  if (action.kind === "resourcePocket" || action.kind === "resourceChain" || action.kind === "resourceCluster") {
     compact.plan = action.plan;
     compact.planEntries = action.planEntries;
     compact.resourcePocket = {
@@ -129,6 +146,9 @@ function compactAction(action, project) {
       score: action.estimate && action.estimate.score,
       stopReasons: action.estimate && action.estimate.stopReasons,
       confluence: action.estimate && action.estimate.confluence,
+      confluenceKey: action.estimate && action.estimate.confluenceKey,
+      dominatedPlans: action.estimate && action.estimate.dominatedPlans,
+      skylineSize: action.estimate && action.estimate.skylineSize,
     };
   }
   return compact;
@@ -149,7 +169,7 @@ function compactState(state) {
     lv: hero.lv,
     exp: hero.exp,
     money: hero.money,
-    routeLength: Array.isArray(state.route) ? state.route.length : 0,
+    routeLength: effectiveRouteLength(state),
     stageIndex: progress.stageIndex,
     bestFloorRank: progress.bestFloorRank,
   };
@@ -175,6 +195,37 @@ function recordDroppedActionSample(stats, reason, state, action) {
   }, stats.sampleLimit);
 }
 
+function collectActionExpansionCacheStats(simulator) {
+  if (!simulator || typeof simulator.getActionExpansionCacheStats !== "function") return null;
+  return simulator.getActionExpansionCacheStats();
+}
+
+function collectResourceClusterDiagnostics(simulator) {
+  if (!simulator || typeof simulator.getResourceClusterDiagnostics !== "function") return null;
+  return simulator.getResourceClusterDiagnostics();
+}
+
+function mergeNumericStats(target, source) {
+  if (!source || typeof source !== "object") return target;
+  Object.entries(source).forEach(([key, value]) => {
+    if (typeof value === "number") {
+      target[key] = Number(target[key] || 0) + value;
+      return;
+    }
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      if (!target[key] || typeof target[key] !== "object" || Array.isArray(target[key])) target[key] = {};
+      mergeNumericStats(target[key], value);
+    }
+  });
+  return target;
+}
+
+function combineResourceClusterDiagnostics(simulator, workerStats) {
+  const combined = { ...(collectResourceClusterDiagnostics(simulator) || {}) };
+  mergeNumericStats(combined, workerStats || {});
+  return Object.keys(combined).length > 0 ? combined : null;
+}
+
 function resolveStateActionOptions(options, state) {
   const resolved = { ...(options || {}) };
   if (options && typeof options.getMaxActionsPerState === "function") {
@@ -189,11 +240,16 @@ function resolveStateActionOptions(options, state) {
 
 function getStateActions(simulator, options, state) {
   const actionOptions = resolveStateActionOptions(options, state);
+  if (options && options.__stats) {
+    actionOptions.graphStats = options.__stats.graph;
+    actionOptions.searchGraphMode = options.searchGraphMode || options.searchGraph;
+    actionOptions.primitiveFallbackMode = options.primitiveFallbackMode;
+  }
   const startedAt = nowMs();
   const tracker = options && options.__perfTracker;
   const allActions = tracker && tracker.enabled
-    ? tracker.timePhase("enumerateActions", () => simulator.enumerateActions(state))
-    : simulator.enumerateActions(state);
+    ? tracker.timePhase("enumerateActions", () => simulator.enumerateActions(state, actionOptions))
+    : simulator.enumerateActions(state, actionOptions);
   if (options && options.__stats) options.__stats.perf.timeInGenerateActionsMs += nowMs() - startedAt;
   let actions = allActions;
   if (actionOptions && typeof actionOptions.sortStateActions === "function") {
@@ -203,12 +259,14 @@ function getStateActions(simulator, options, state) {
   if (options && options.__stats) {
     actions.forEach((action) => recordActionStat(options.__stats, action, "generated"));
   }
+  let usedQuotaSelection = false;
   if (actionOptions && typeof actionOptions.selectStateActions === "function") {
     const selectActions = () => actionOptions.selectStateActions(state, actions.slice(), actionOptions);
     actions = tracker && tracker.enabled ? tracker.timePhase("sortActions", selectActions) : selectActions();
   } else if (actionOptions && actionOptions.maxActionsPerState != null) {
     const maxActions = Number(actionOptions.maxActionsPerState);
     if (actionOptions.reserveProgressActions) {
+      usedQuotaSelection = true;
       actions = selectActionsByQuota(actions, {
         maxActions,
         progressActionQuota: actionOptions.progressActionQuota,
@@ -229,6 +287,7 @@ function getStateActions(simulator, options, state) {
     allActions.forEach((action) => {
       if (kept.has(action)) return;
       recordActionStat(options.__stats, action, "trimmed");
+      if (usedQuotaSelection) recordQuotaDrop(options.__stats, action);
       recordFloor(options.__stats, state, "trimmed");
       if (isProgressAction(action)) {
         options.__stats.suspicious.progressActionTrimmed += 1;
@@ -256,7 +315,7 @@ function selectActionsByQuota(actions, options) {
   const selected = [];
   takeQuota(actions, isProgressAction, options.progressActionQuota || 8, kept, selected);
   takeQuota(actions, (action) => action.kind === "fightToLevelUp" || actionRole(action) === "exp", options.expActionQuota || 6, kept, selected);
-  takeQuota(actions, (action) => action.kind === "resourcePocket" || action.kind === "resourceChain" || actionRole(action) === "resource", options.resourceActionQuota || 8, kept, selected);
+  takeQuota(actions, (action) => action.kind === "resourcePocket" || action.kind === "resourceChain" || action.kind === "resourceCluster" || actionRole(action) === "resource", options.resourceActionQuota || 8, kept, selected);
   takeQuota(actions, (action) => actionType(action) === "door", options.unlockActionQuota || 6, kept, selected);
   takeQuota(actions, (action) => actionType(action) === "item", options.itemActionQuota || 6, kept, selected);
   takeQuota(actions, (action) => actionType(action) === "monster", options.fightActionQuota || 6, kept, selected);
@@ -290,11 +349,17 @@ function ensureConfluenceStats(stats, config) {
   if (!stats.confluenceDominance) {
     stats.confluenceDominance = {
       enabled: Boolean(config && config.enableConfluenceHpDominance),
+      routePolicy: (config && config.confluenceRoutePolicy) || "slack",
       replacedLowerHp: 0,
       rejectedByHigherHp: 0,
+      ignoredRouteLengthRejects: 0,
+      ignoredRouteLengthReplacements: 0,
+      representativesByKeyMax: Number((config && config.confluenceRepresentatives) || 3),
       examples: [],
     };
   }
+  stats.confluenceDominance.routePolicy = (config && config.confluenceRoutePolicy) || stats.confluenceDominance.routePolicy || "slack";
+  stats.confluenceDominance.representativesByKeyMax = Number((config && config.confluenceRepresentatives) || stats.confluenceDominance.representativesByKeyMax || 3);
   return stats.confluenceDominance;
 }
 
@@ -304,19 +369,28 @@ function shouldUseConfluenceDominance(simulator, config) {
   return typeof simulator.buildSearchConfluenceKey === "function" && typeof simulator.compareSearchConfluenceStates === "function";
 }
 
+function effectiveRouteLength(state) {
+  return Array.isArray(state && state.route) && state.route.length > 0 ? state.route.length : getDecisionDepth(state);
+}
+
 function registerConfluenceState(simulator, confluenceBestByKey, state, stats, config, commit) {
   if (!confluenceBestByKey || !shouldUseConfluenceDominance(simulator, config)) return true;
-  if (getFloorOrder(state.floorId) < 2) return true;
+  if (getFloorOrder(state.floorId) < Number(config.confluenceMinFloorOrder || 1)) return true;
   const key = simulator.buildSearchConfluenceKey(state);
   const list = confluenceBestByKey.get(key) || [];
+  const routePolicy = config.confluenceRoutePolicy || "slack";
   const slack = Number(config.confluenceRouteSlack || 12);
-  const routeLength = Array.isArray(state.route) ? state.route.length : getDecisionDepth(state);
+  const routeLength = effectiveRouteLength(state);
   for (const existing of list) {
-    const existingLength = Array.isArray(existing.route) ? existing.route.length : getDecisionDepth(existing);
-    if (existingLength <= routeLength + slack && simulator.compareSearchConfluenceStates(existing, state) <= 0) {
+    const existingLength = effectiveRouteLength(existing);
+    const dominated = routePolicy === "ignore-length"
+      ? dominatesAtConfluence(simulator, existing, state, { leftKey: key, rightKey: key })
+      : existingLength <= routeLength + slack && simulator.compareSearchConfluenceStates(existing, state) <= 0;
+    if (dominated) {
       const confluenceStats = ensureConfluenceStats(stats, config);
       if (confluenceStats) {
         confluenceStats.rejectedByHigherHp += 1;
+        if (routePolicy === "ignore-length" && existingLength > routeLength + slack) confluenceStats.ignoredRouteLengthRejects += 1;
         pushLimitedSample(confluenceStats.examples, { reason: "rejectedByHigherHp", existing: compactState(existing), rejected: compactState(state) }, stats.sampleLimit);
       }
       recordSkip(stats, "confluence-higher-hp");
@@ -326,11 +400,15 @@ function registerConfluenceState(simulator, confluenceBestByKey, state, stats, c
   if (commit !== true) return true;
   const nextList = [];
   list.forEach((existing) => {
-    const existingLength = Array.isArray(existing.route) ? existing.route.length : getDecisionDepth(existing);
-    if (routeLength <= existingLength + slack && simulator.compareSearchConfluenceStates(state, existing) < 0) {
+    const existingLength = effectiveRouteLength(existing);
+    const dominated = routePolicy === "ignore-length"
+      ? dominatesAtConfluence(simulator, state, existing, { leftKey: key, rightKey: key })
+      : routeLength <= existingLength + slack && simulator.compareSearchConfluenceStates(state, existing) < 0;
+    if (dominated) {
       const confluenceStats = ensureConfluenceStats(stats, config);
       if (confluenceStats) {
         confluenceStats.replacedLowerHp += 1;
+        if (routePolicy === "ignore-length" && routeLength > existingLength + slack) confluenceStats.ignoredRouteLengthReplacements += 1;
         pushLimitedSample(confluenceStats.examples, { reason: "replacedLowerHp", kept: compactState(state), replaced: compactState(existing) }, stats.sampleLimit);
       }
       return;
@@ -698,6 +776,7 @@ function maybeAutoExpandForwardChangeFloors(simulator, parentNode, parentState, 
     stats.generated += 1;
     recordFloor(stats, parentState, "generated");
     recordActionStat(stats, action, "expanded");
+    recordGraphExpanded(stats, action);
     const applyStartedAt = nowMs();
     const tracker = config && config.__perfTracker;
     const childState = tracker && tracker.enabled
@@ -755,6 +834,17 @@ function searchTopKSerial(simulator, initialState, options) {
       beamDroppedByFloor: {},
       beamDroppedByStage: {},
     },
+    quota: {
+      dropped: 0,
+      byActionType: {},
+    },
+    graph: {
+      mode: config.searchGraphMode || config.searchGraph || "hybrid",
+      statesWithMacroActions: 0,
+      primitiveFallbackStates: 0,
+      primitiveActionsSuppressed: 0,
+      expandedByKind: {},
+    },
     sampleLimit: Number(config.sampleLimit || 20),
     pruneReasons: {},
     suspicious: {
@@ -769,14 +859,23 @@ function searchTopKSerial(simulator, initialState, options) {
     },
     confluenceDominance: {
       enabled: Boolean(config.enableConfluenceHpDominance),
+      routePolicy: config.confluenceRoutePolicy || "slack",
       replacedLowerHp: 0,
       rejectedByHigherHp: 0,
+      ignoredRouteLengthRejects: 0,
+      ignoredRouteLengthReplacements: 0,
+      representativesByKeyMax: Number(config.confluenceRepresentatives || 3),
       examples: [],
     },
+    actionExpansionCache: {
+      workers: {},
+    },
+    resourceCluster: {},
     perf: {
       wallMs: 0,
       cpuUserMs: 0,
       cpuSystemMs: 0,
+      cpuUtilization: 0,
       eventLoopUtilization: null,
       expansionsPerSec: 0,
       generatedPerSec: 0,
@@ -792,6 +891,7 @@ function searchTopKSerial(simulator, initialState, options) {
       keptActions: 0,
       phaseMs: {},
       phaseCounts: {},
+      parallel: { enabled: false },
     },
     checkpointPool: createCheckpointPool(config.checkpointOptions),
   };
@@ -888,6 +988,7 @@ function searchTopKSerial(simulator, initialState, options) {
         perfTracker.increment("generated");
         recordFloor(stats, state, "generated");
         recordActionStat(stats, action, "expanded");
+        recordGraphExpanded(stats, action);
         const applyStartedAt = nowMs();
         const nextState = perfTracker.enabled
           ? perfTracker.timePhase("applyAction", () => simulator.applyAction(state, action, { storeRoute: false }))
@@ -928,6 +1029,7 @@ function searchTopKSerial(simulator, initialState, options) {
   stats.perf.wallMs = wallMs;
   stats.perf.cpuUserMs = cpu.user / 1000;
   stats.perf.cpuSystemMs = cpu.system / 1000;
+  stats.perf.cpuUtilization = wallMs > 0 ? (stats.perf.cpuUserMs + stats.perf.cpuSystemMs) / wallMs : 0;
   stats.perf.expandedStates = expansions;
   stats.perf.keptActions = stats.generated;
   stats.perf.expansionsPerSec = wallMs > 0 ? expansions / (wallMs / 1000) : 0;
@@ -963,6 +1065,8 @@ function searchTopKSerial(simulator, initialState, options) {
       byActionType: stats.byActionType,
       byActionRole: stats.byActionRole,
       droppedProgressActions: stats.droppedProgressActions,
+      quota: stats.quota,
+      graph: stats.graph,
       frontier: {
         ...stats.frontier,
         topBuckets: summarizeFrontierBuckets(simulator, activeFrontier, config),
@@ -972,6 +1076,11 @@ function searchTopKSerial(simulator, initialState, options) {
       suspicious: stats.suspicious,
       safeDominance: stats.safeDominance,
       confluenceDominance: stats.confluenceDominance,
+      resourceCluster: combineResourceClusterDiagnostics(simulator, stats.resourceCluster),
+      actionExpansionCache: {
+        mode: "serial",
+        main: collectActionExpansionCacheStats(simulator),
+      },
       checkpoints: summarizeCheckpointPool(stats.checkpointPool),
       best: {
         bestSeenFloor: hydratedBestSeenState && hydratedBestSeenState.floorId,
@@ -1028,6 +1137,17 @@ async function searchTopKParallel(simulator, initialState, options) {
       beamDroppedByFloor: {},
       beamDroppedByStage: {},
     },
+    quota: {
+      dropped: 0,
+      byActionType: {},
+    },
+    graph: {
+      mode: config.searchGraphMode || config.searchGraph || "hybrid",
+      statesWithMacroActions: 0,
+      primitiveFallbackStates: 0,
+      primitiveActionsSuppressed: 0,
+      expandedByKind: {},
+    },
     sampleLimit: Number(config.sampleLimit || 20),
     pruneReasons: {},
     suspicious: {
@@ -1042,14 +1162,23 @@ async function searchTopKParallel(simulator, initialState, options) {
     },
     confluenceDominance: {
       enabled: Boolean(config.enableConfluenceHpDominance),
+      routePolicy: config.confluenceRoutePolicy || "slack",
       replacedLowerHp: 0,
       rejectedByHigherHp: 0,
+      ignoredRouteLengthRejects: 0,
+      ignoredRouteLengthReplacements: 0,
+      representativesByKeyMax: Number(config.confluenceRepresentatives || 3),
       examples: [],
     },
+    actionExpansionCache: {
+      workers: {},
+    },
+    resourceCluster: {},
     perf: {
       wallMs: 0,
       cpuUserMs: 0,
       cpuSystemMs: 0,
+      cpuUtilization: 0,
       eventLoopUtilization: null,
       expansionsPerSec: 0,
       generatedPerSec: 0,
@@ -1065,6 +1194,7 @@ async function searchTopKParallel(simulator, initialState, options) {
       keptActions: 0,
       phaseMs: {},
       phaseCounts: {},
+      parallel: { enabled: false },
     },
     checkpointPool: createCheckpointPool(config.checkpointOptions),
   };
@@ -1127,6 +1257,22 @@ async function searchTopKParallel(simulator, initialState, options) {
   const workers = Math.max(1, Number(config.workers || 1));
   const topKBatchSize = Math.max(1, Number(config.topKBatchSize || 128));
   const workerChunkSize = Math.max(1, Number(config.workerChunkSize || 8));
+  stats.perf.parallel = {
+    enabled: true,
+    workers,
+    topKBatchSize,
+    requestedWorkerChunkSize: workerChunkSize,
+    batches: 0,
+    jobs: 0,
+    maxJobsPerBatch: 0,
+    maxNodesPerBatch: 0,
+    maxNodesPerJob: 0,
+    expandedInWorkers: 0,
+    candidatesFromWorkers: 0,
+    workerAwaitMs: 0,
+    workerReportedEnumerateMs: 0,
+    workerReportedApplyMs: 0,
+  };
   const pool = new WorkerPool(path.join(__dirname, "search-worker.js"), {
     workers,
     workerData: {
@@ -1136,7 +1282,15 @@ async function searchTopKParallel(simulator, initialState, options) {
       autoBattleEnabled: config.autoBattleEnabled !== false,
       enableFightToLevelUp: Boolean(config.enableFightToLevelUp),
       enableResourcePocket: Boolean(config.enableResourcePocket),
+      enableResourceChain: Boolean(config.enableResourceChain),
+      enableResourceCluster: Boolean(config.enableResourceCluster),
       resourcePocketSearchOptions: config.resourcePocketSearchOptions,
+      enableActionExpansionCache: config.enableActionExpansionCache !== false,
+      actionExpansionCacheLimit: config.actionExpansionCacheLimit,
+      searchGraphMode: config.searchGraphMode || config.searchGraph,
+      primitiveFallbackMode: config.primitiveFallbackMode,
+      enableBattleEstimateCache: config.enableBattleEstimateCache !== false,
+      battleEstimateCacheLimit: config.battleEstimateCacheLimit,
       profileName: config.profileName || "stage-mt1-mt11",
       targetFloorId: config.targetFloorId || simulator.stopFloorId,
       maxActionsPerState: config.maxActionsPerState,
@@ -1185,12 +1339,32 @@ async function searchTopKParallel(simulator, initialState, options) {
       });
 
       if (expandable.length > 0) {
-        const jobs = chunk(expandable.map((node, order) => serializeNodeForWorker(node, order)), workerChunkSize);
+        const dynamicChunkSize = Math.max(1, Math.min(workerChunkSize, Math.ceil(expandable.length / workers)));
+        const jobs = chunk(expandable.map((node, order) => serializeNodeForWorker(node, order)), dynamicChunkSize);
+        stats.perf.parallel.batches += 1;
+        stats.perf.parallel.jobs += jobs.length;
+        stats.perf.parallel.maxJobsPerBatch = Math.max(stats.perf.parallel.maxJobsPerBatch, jobs.length);
+        stats.perf.parallel.maxNodesPerBatch = Math.max(stats.perf.parallel.maxNodesPerBatch, expandable.length);
+        stats.perf.parallel.maxNodesPerJob = Math.max(stats.perf.parallel.maxNodesPerJob, dynamicChunkSize);
+        const workerAwaitStartedAt = nowMs();
         const resultsFromWorkers = await pool.map(jobs, (nodesForWorker) => ({ type: "expandBatch", nodes: nodesForWorker }));
+        const workerAwaitMs = nowMs() - workerAwaitStartedAt;
+        stats.perf.parallel.workerAwaitMs += workerAwaitMs;
+        perfTracker.addPhase("parallelWorkerAwait", workerAwaitMs);
         resultsFromWorkers.forEach((result) => {
           if (result && result.stats) {
             stats.perf.timeInGenerateActionsMs += Number(result.stats.enumerateMs || 0);
             stats.perf.timeInApplyActionMs += Number(result.stats.applyMs || 0);
+            stats.perf.parallel.expandedInWorkers += Number(result.stats.expanded || 0);
+            stats.perf.parallel.candidatesFromWorkers += Number(result.stats.generated || 0);
+            stats.perf.parallel.workerReportedEnumerateMs += Number(result.stats.enumerateMs || 0);
+            stats.perf.parallel.workerReportedApplyMs += Number(result.stats.applyMs || 0);
+            mergeNumericStats(stats.actionExpansionCache.workers, result.stats.cacheStats);
+            if (result.stats.cacheStats && result.stats.cacheStats.resourceClusterDiagnostics) {
+              if (!stats.resourceCluster) stats.resourceCluster = {};
+              mergeNumericStats(stats.resourceCluster, result.stats.cacheStats.resourceClusterDiagnostics);
+            }
+            mergeNumericStats(stats.graph, result.stats.graph);
           }
         });
         const candidates = stableMergeResults(resultsFromWorkers);
@@ -1204,6 +1378,7 @@ async function searchTopKParallel(simulator, initialState, options) {
           perfTracker.increment("generated");
           if (parentState) recordFloor(stats, parentState, "generated");
           recordActionStat(stats, action, candidate.invalid ? "invalid" : "expanded");
+          if (!candidate.invalid) recordGraphExpanded(stats, action);
           if (candidate.invalid || !candidate.state) return;
           const nextState = candidate.state;
           nextState.__sourceAction = compactAction(action, simulator.project);
@@ -1244,6 +1419,7 @@ async function searchTopKParallel(simulator, initialState, options) {
   stats.perf.wallMs = wallMs;
   stats.perf.cpuUserMs = cpu.user / 1000;
   stats.perf.cpuSystemMs = cpu.system / 1000;
+  stats.perf.cpuUtilization = wallMs > 0 ? (stats.perf.cpuUserMs + stats.perf.cpuSystemMs) / wallMs : 0;
   stats.perf.expandedStates = expansions;
   stats.perf.keptActions = stats.generated;
   stats.perf.expansionsPerSec = wallMs > 0 ? expansions / (wallMs / 1000) : 0;
@@ -1279,6 +1455,8 @@ async function searchTopKParallel(simulator, initialState, options) {
       byActionType: stats.byActionType,
       byActionRole: stats.byActionRole,
       droppedProgressActions: stats.droppedProgressActions,
+      quota: stats.quota,
+      graph: stats.graph,
       frontier: {
         ...stats.frontier,
         topBuckets: summarizeFrontierBuckets(simulator, activeFrontier, config),
@@ -1288,6 +1466,12 @@ async function searchTopKParallel(simulator, initialState, options) {
       suspicious: stats.suspicious,
       safeDominance: stats.safeDominance,
       confluenceDominance: stats.confluenceDominance,
+      resourceCluster: combineResourceClusterDiagnostics(simulator, stats.resourceCluster),
+      actionExpansionCache: {
+        mode: "parallel",
+        main: collectActionExpansionCacheStats(simulator),
+        workers: stats.actionExpansionCache.workers,
+      },
       checkpoints: summarizeCheckpointPool(stats.checkpointPool),
       best: {
         bestSeenFloor: hydratedBestSeenState && hydratedBestSeenState.floorId,
