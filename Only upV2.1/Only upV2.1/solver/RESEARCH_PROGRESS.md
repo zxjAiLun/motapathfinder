@@ -138,7 +138,7 @@
 当前命令：
 
 ```bash
-node solver/run-mt1-mt11.js --rank=chaos --top-k=1 --max-expansions=80 --beam-width=120 --per-floor-beam-width=60 --per-region-beam-width=24
+./solver.sh run --profile=linear-main --rank=chaos --top-k=1 --max-expansions=80 --beam-width=120 --per-floor-beam-width=60 --per-region-beam-width=24
 ```
 
 结果：

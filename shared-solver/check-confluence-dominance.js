@@ -3,14 +3,15 @@
 const assert = require("node:assert");
 
 const { buildConfluenceDominanceOptions } = require("./lib/cli-options");
-const { compareConfluenceResources, dominatesAtConfluence, effectiveRouteLength } = require("./lib/confluence-key");
+const { buildSearchConfluenceKey, compareConfluenceResources, dominatesAtConfluence, effectiveRouteLength } = require("./lib/confluence-key");
+const { __testing: searchTesting } = require("./lib/search");
 
 function makeState(overrides) {
   const config = overrides || {};
   const routeLength = Number(config.routeLength || 0);
   const route = Array.from({ length: routeLength }, (_, index) => `step-${index}`);
   return {
-    floorId: "MT1",
+    floorId: config.floorId || "MT1",
     hero: {
       loc: { x: 1, y: 1 },
       hp: Number(config.hp || 0),
@@ -108,17 +109,74 @@ function testDifferentFutureStatesDoNotMerge() {
   assert.strictEqual(dominatesAtConfluence(simulator, differentFlags, base), false);
 }
 
+function testSafeKeyFiltersDebugFlagsOnly() {
+  const simulator = makeSimulator();
+  const base = makeState({ hp: 500, flags: { storyGate: 1, "debug:expanded": 1 } });
+  const sameFuture = makeState({ hp: 600, flags: { storyGate: 1, "debug:expanded": 2 } });
+  const differentFuture = makeState({ hp: 700, flags: { storyGate: 2, "debug:expanded": 1 } });
+  assert.strictEqual(buildSearchConfluenceKey(simulator, base, { mode: "safe" }), buildSearchConfluenceKey(simulator, sameFuture, { mode: "safe" }));
+  assert.notStrictEqual(buildSearchConfluenceKey(simulator, base, { mode: "safe" }), buildSearchConfluenceKey(simulator, differentFuture, { mode: "safe" }));
+}
+
 function testCliPolicy() {
   assert.strictEqual(buildConfluenceDominanceOptions({ "confluence-route-policy": "ignore-length" }, true).confluenceRoutePolicy, "ignore-length");
   assert.strictEqual(buildConfluenceDominanceOptions({}, true, "ignore-length").confluenceRoutePolicy, "ignore-length");
+  assert.deepStrictEqual(
+    buildConfluenceDominanceOptions({ "confluence-ignore-length-floors": "MT1,MT3" }, true).confluenceIgnoreLengthFloors,
+    ["MT1", "MT3"]
+  );
   assert.throws(() => buildConfluenceDominanceOptions({ "confluence-route-policy": "unknown" }, true), /Invalid --confluence-route-policy/);
+}
+
+function testEffectivePolicyWhitelistAndUnsafeDowngrade() {
+  const simulator = {
+    requiresExactDominance(state) {
+      return state && state.floorId === "MT9";
+    },
+  };
+  const baseConfig = {
+    ...buildConfluenceDominanceOptions({
+      "confluence-route-policy": "ignore-length",
+      "confluence-ignore-length-floors": "MT1,MT2,MT9",
+    }, true),
+    profileName: "debug-local-resource",
+  };
+  const stats = { sampleLimit: 8 };
+  assert.strictEqual(
+    searchTesting.getEffectiveConfluenceRoutePolicy(simulator, makeState({ floorId: "MT1" }), stats, baseConfig, true),
+    "ignore-length",
+    "whitelisted floors should keep ignore-length"
+  );
+  assert.strictEqual(
+    searchTesting.getEffectiveConfluenceRoutePolicy(simulator, makeState({ floorId: "MT3" }), stats, baseConfig, true),
+    "slack",
+    "non-whitelisted floors should downgrade to slack"
+  );
+  assert.strictEqual(stats.confluenceDominance.nonWhitelistedFloorDowngrades, 1);
+  assert.strictEqual(
+    searchTesting.getEffectiveConfluenceRoutePolicy(simulator, makeState({ floorId: "MT9" }), stats, baseConfig, true),
+    "slack",
+    "unsafe floors should downgrade even when whitelisted"
+  );
+  assert.strictEqual(stats.confluenceDominance.unsafeFloorDowngrades, 1);
+  const profileConfig = {
+    ...buildConfluenceDominanceOptions({ "confluence-route-policy": "ignore-length" }, true),
+    profileName: "linear-main",
+  };
+  assert.strictEqual(
+    searchTesting.getEffectiveConfluenceRoutePolicy(simulator, makeState({ floorId: "MT4" }), { sampleLimit: 8 }, profileConfig, true),
+    "ignore-length",
+    "linear-main may opt into ignore-length when no floor whitelist is configured"
+  );
 }
 
 function main() {
   testIgnoreLengthDominatesLongerHighHp();
   testTieBreakKeepsShorterRoute();
   testDifferentFutureStatesDoNotMerge();
+  testSafeKeyFiltersDebugFlagsOnly();
   testCliPolicy();
+  testEffectivePolicyWhitelistAndUnsafeDowngrade();
   console.log(JSON.stringify({
     ok: true,
     checks: [
@@ -126,7 +184,10 @@ function main() {
       "slack compatibility",
       "short-route tie-break",
       "future-state isolation",
+      "safe-key debug flag filtering",
       "cli policy",
+      "effective policy whitelist",
+      "unsafe floor downgrade",
     ],
   }, null, 2));
 }

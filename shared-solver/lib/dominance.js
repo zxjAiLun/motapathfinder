@@ -65,13 +65,6 @@ function dominatesInventory(leftInventory, rightInventory) {
 function dominatesSummary(leftSummary, rightSummary) {
   if ((leftSummary.progressSig || "") !== (rightSummary.progressSig || "")) return false;
   if (Number(((leftSummary.progress || {}).stageIndex) || 0) < Number(((rightSummary.progress || {}).stageIndex) || 0)) return false;
-  if (Number(leftSummary.decisionDepth || 0) > Number(rightSummary.decisionDepth || 0)) return false;
-  if (
-    Number(leftSummary.decisionDepth || 0) === Number(rightSummary.decisionDepth || 0) &&
-    Number(leftSummary.routeLength || 0) > Number(rightSummary.routeLength || 0)
-  ) {
-    return false;
-  }
   const heroDominates = HERO_RESOURCE_FIELDS.every((field) => Number(leftSummary.hero[field] || 0) >= Number(rightSummary.hero[field] || 0));
   if (!heroDominates) return false;
   return dominatesInventory(leftSummary.inventory, rightSummary.inventory);

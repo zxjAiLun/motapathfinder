@@ -2,6 +2,8 @@ node_modules/
 routes/*
 !routes/.gitignore
 logs/
-profiles/
+profiles/*
+!profiles/
+!profiles/perf-baseline.json
 *.cpuprofile
 .tmp-*.js

@@ -9,6 +9,8 @@ const { cloneState } = require("./state");
 
 const SLOT_TAGS = {
   highestHp: "skyline-highest-hp",
+  highestCombat: "skyline-highest-combat",
+  fastest: "skyline-fastest",
   shortestRoute: "skyline-shortest-route",
   nearLevel: "skyline-near-level",
   mostKeys: "skyline-most-keys",
@@ -17,6 +19,51 @@ const SLOT_TAGS = {
 
 function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function routeStartsWith(route, prefixRoute) {
+  if (!Array.isArray(prefixRoute) || prefixRoute.length === 0) return true;
+  if (!Array.isArray(route) || route.length < prefixRoute.length) return false;
+  return prefixRoute.every((step, index) => route[index] === step);
+}
+
+function withRoutePrefix(route, prefixRoute) {
+  if (!Array.isArray(route)) return Array.isArray(prefixRoute) ? prefixRoute.slice() : [];
+  if (!Array.isArray(prefixRoute) || prefixRoute.length === 0 || routeStartsWith(route, prefixRoute)) return route.slice();
+  return prefixRoute.concat(route);
+}
+
+function prependCheckpointRoutePrefix(checkpoint, prefixRoute, prefixDecisionDepth) {
+  if (!checkpoint || !Array.isArray(prefixRoute) || prefixRoute.length === 0) return checkpoint;
+  const originalRoute = Array.isArray(checkpoint.route) ? checkpoint.route : [];
+  const addedCheckpointPrefix = !routeStartsWith(originalRoute, prefixRoute);
+  const originalDecisionDepth = Number.isFinite(Number(checkpoint.decisionDepth))
+    ? Number(checkpoint.decisionDepth)
+    : Number(((checkpoint.state || {}).meta || {}).decisionDepth || originalRoute.length || 0);
+  const addedDecisionDepth = Number.isFinite(Number(prefixDecisionDepth)) ? Number(prefixDecisionDepth) : prefixRoute.length;
+  checkpoint.route = withRoutePrefix(checkpoint.route, prefixRoute);
+  checkpoint.routeLength = checkpoint.route.length;
+  checkpoint.decisionDepth = addedCheckpointPrefix ? originalDecisionDepth + addedDecisionDepth : originalDecisionDepth;
+  if (checkpoint.state) {
+    const originalStateRoute = Array.isArray(checkpoint.state.route) ? checkpoint.state.route : [];
+    const addedStatePrefix = !routeStartsWith(originalStateRoute, prefixRoute);
+    const originalStateDecisionDepth = Number.isFinite(Number(((checkpoint.state || {}).meta || {}).decisionDepth))
+      ? Number(checkpoint.state.meta.decisionDepth)
+      : originalStateRoute.length;
+    checkpoint.state.route = withRoutePrefix(checkpoint.state.route, prefixRoute);
+    if (checkpoint.state.meta) {
+      checkpoint.state.meta.decisionDepth = addedStatePrefix ? originalStateDecisionDepth + addedDecisionDepth : originalStateDecisionDepth;
+    }
+  }
+  return checkpoint;
+}
+
+function prependCheckpointPoolRoutePrefix(checkpointPool, prefixRoute, prefixDecisionDepth) {
+  if (!checkpointPool || !checkpointPool.edges || !Array.isArray(prefixRoute) || prefixRoute.length === 0) return checkpointPool;
+  Object.values(checkpointPool.edges).forEach((list) => {
+    (list || []).forEach((checkpoint) => prependCheckpointRoutePrefix(checkpoint, prefixRoute, prefixDecisionDepth));
+  });
+  return checkpointPool;
 }
 
 function hashJson(value) {
@@ -104,6 +151,20 @@ function shouldReplace(slot, candidate, role) {
     }
     return leftHp > rightHp;
   }
+  if (role === "fastest") {
+    if (Number(candidate.routeLength || 0) !== Number(slot.routeLength || 0)) {
+      return Number(candidate.routeLength || 0) < Number(slot.routeLength || 0);
+    }
+    return leftHp > rightHp;
+  }
+  if (role === "highestCombat") {
+    const combatScore = (checkpoint) => {
+      const hero = checkpoint.hero || {};
+      return Number(hero.atk || 0) * 100000 + Number(hero.def || 0) * 90000 + Number(hero.mdef || 0) * 8000 + Number(hero.lv || 0) * 150000 + Number(hero.hp || 0);
+    };
+    if (combatScore(candidate) !== combatScore(slot)) return combatScore(candidate) > combatScore(slot);
+    return leftHp > rightHp;
+  }
   if (role === "nearLevel") {
     if (Number((candidate.hero || {}).exp || 0) !== Number((slot.hero || {}).exp || 0)) {
       return Number((candidate.hero || {}).exp || 0) > Number((slot.hero || {}).exp || 0);
@@ -150,6 +211,60 @@ function mergeCheckpointPoolIntoStore(store, checkpointPool, context) {
     (list || []).forEach((checkpoint) => putCheckpoint(next.edges[edge], compactCheckpoint(checkpoint)));
   });
   return next;
+}
+
+function sanitizeCheckpointStore(store, validateCheckpoint, options) {
+  if (!store || typeof validateCheckpoint !== "function") {
+    return { store, kept: 0, removed: 0, samples: [] };
+  }
+  const sampleLimit = Number((options || {}).sampleLimit || 8);
+  const validationCache = new Map();
+  const next = {
+    ...store,
+    edges: cloneJson(store.edges || {}),
+  };
+  let kept = 0;
+  let removed = 0;
+  const samples = [];
+  Object.entries(next.edges || {}).forEach(([edge, edgeRecord]) => {
+    Object.entries((edgeRecord || {}).buckets || {}).forEach(([skylineKey, bucket]) => {
+      Object.entries(bucket || {}).forEach(([role, checkpoint]) => {
+        if (!checkpoint || !checkpoint.state) return;
+        const route = Array.isArray(checkpoint.route) ? checkpoint.route : [];
+        const cacheKey = `${edge}|${skylineKey}|${checkpoint.id || ""}|${route.join("\n")}`;
+        let result = validationCache.get(cacheKey);
+        if (!result) {
+          const rawResult = validateCheckpoint(checkpoint);
+          result = rawResult === true
+            ? { ok: true }
+            : rawResult === false
+              ? { ok: false, reason: "validator-rejected" }
+              : rawResult || { ok: false, reason: "validator-rejected" };
+          validationCache.set(cacheKey, result);
+        }
+        if (result.ok) {
+          kept += 1;
+          return;
+        }
+        delete bucket[role];
+        removed += 1;
+        if (samples.length < sampleLimit) {
+          samples.push({
+            edge,
+            role,
+            checkpointId: checkpoint.id,
+            routeLength: checkpoint.routeLength,
+            routeHead: route.slice(0, 3),
+            reason: result.reason || "invalid-checkpoint-route",
+          });
+        }
+      });
+      if (Object.keys(bucket || {}).length === 0) delete edgeRecord.buckets[skylineKey];
+    });
+    if (Object.keys((edgeRecord || {}).buckets || {}).length === 0) delete next.edges[edge];
+  });
+  if (removed > 0) next.updatedAt = new Date().toISOString();
+  return { store: next, kept, removed, samples };
 }
 
 function saveCheckpointStore(filePath, store) {
@@ -235,7 +350,9 @@ module.exports = {
   checkpointPoolFromStore,
   loadCheckpointStore,
   mergeCheckpointPoolIntoStore,
+  prependCheckpointPoolRoutePrefix,
   saveCheckpointStore,
+  sanitizeCheckpointStore,
   selectCheckpointSeeds,
   summarizeStore,
 };

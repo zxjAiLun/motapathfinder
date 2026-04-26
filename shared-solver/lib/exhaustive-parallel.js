@@ -90,6 +90,8 @@ async function searchExhaustiveParallel(simulator, initialState, options) {
       enableResourceChain: Boolean(config.enableResourceChain),
       enableResourceCluster: Boolean(config.enableResourceCluster),
       resourcePocketSearchOptions: config.resourcePocketSearchOptions,
+      resourceChainOptions: config.resourceChainOptions,
+      resourceClusterOptions: config.resourceClusterOptions,
       actionAllowlist: config.actionAllowlist || null,
       floorScope: config.floorScope || null,
       regionScopes: config.regionScopes || null,

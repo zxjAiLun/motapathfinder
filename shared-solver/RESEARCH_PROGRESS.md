@@ -229,7 +229,7 @@ node -c check-mt2-resource-branch.js
 当前命令：
 
 ```bash
-node solver/run-mt1-mt11.js --rank=chaos --top-k=1 --max-expansions=80 --beam-width=120 --per-floor-beam-width=60 --per-region-beam-width=24
+node run-route.js --project-root="../Only upV2.1/Only upV2.1" --profile=linear-main --rank=chaos --top-k=1 --max-expansions=80 --beam-width=120 --per-floor-beam-width=60 --per-region-beam-width=24
 ```
 
 结果：
@@ -479,4 +479,110 @@ cd "/media/bailan/DISK1/AUbuntuProject/project/motapathfind/whiteisland（9）"
 ```bash
 cd "/media/bailan/DISK1/AUbuntuProject/project/motapathfind/whiteisland（9）"
 ./solver.sh gui --route-file=routes/latest/whiteisland-trial-best-progress.route.json --live=1 --headless=0
+```
+
+## 6. 2026-04-26：Only Up chaos 改为 canonical DP 主线
+
+### 6.1 背景
+
+用户明确指出：这个塔在 chaos 难度下基本是唯一解；一旦出现无法前进或血量不足，就说明当前路线分支错了，不能继续靠 beam 权重微调。新的主线改为：
+
+```text
+canonical state key 不包含 hp / hpmax / route length
+同 key 只保留 hp 更高状态
+展开顺序只影响先搜索谁，不作为正确性剪枝依据
+```
+
+### 6.2 已完成改动
+
+- `shared-solver/lib/dp-search.js`
+  - 新增/完善 `searchDP()`：
+    - `buildDpStateKey()` 以地图 mutation、角色 atk/def/mdef/lv/exp、inventory、equipment、flags 等构造 canonical key。
+    - 不把 `hpmax` 纳入 DP 路线优劣。
+    - 同 key 状态只保留 HP 更高者；HP 相同再用更短 decision/route。
+  - 新增 `best-first` agenda：
+    - 默认仍是 DP 剪枝，agenda 只决定展开顺序。
+    - 优先考虑楼层进度、到下一楼梯距离、当前楼层、HP、战斗资源。
+    - battle action 使用 `estimate.unlockPreview`，避免高伤但能打开资源链的动作被长期延后。
+  - 新增 `stopOnFirstGoal`，目标达成后可立即返回，避免继续跑满预算。
+
+- `shared-solver/lib/search-profiles.js`
+  - 新增/完善 `canonical-dp` profile：
+    - `searchAlgorithm: "dp"`
+    - `searchGraphMode: "primitive"`
+    - 默认 `dpKeyMode: "mutation"`
+    - 默认 `dpAgendaMode: "best-first"`
+
+- `shared-solver/run-search.js`
+  - `canonical-dp` 接入 `searchDP()`。
+  - 新增 CLI：
+    - `--dp-key-mode=mutation|location|region`
+    - `--dp-agenda=fifo|best-first`
+    - `--goal-floor=MT2`
+    - `--goal-expr='status:hp >= ...'`
+    - `--stop-on-first-goal=1`
+
+- `shared-solver/check-mt2-resource-branch.js`
+  - 新增可选 DP 回归：`--dp`。
+  - 验证从 `fixed-1f-mt2-four-priests-hp3834.route.json` checkpoint 出发，DP 能自动找到：
+    - `battle:bluePriest@MT2:2,8（初诞灵）`
+    - `battle:brownWizard@MT2:3,10（青年法师）`
+    - `battle:slimeman@MT2:4,11（石精）`
+    - `equip:I893`
+    - 最终 `MT3 hp>=8425 atk>=107 def>=100 mdef>=510 exp>=31 equipment includes I893`
+
+- `shared-solver/package.json`
+  - 新增脚本：`check:mt2-branch:dp = node check-mt2-resource-branch.js --dp`
+
+### 6.3 验证结论
+
+已通过：
+
+```bash
+npm run check:mt2-branch --prefix shared-solver
+npm run check:mt2-local-order --prefix shared-solver
+npm run check:pocket --prefix shared-solver
+npm run check:core --prefix shared-solver
+npm run check:stage:short --prefix shared-solver
+npm run check:mt2-branch:dp --prefix shared-solver
+```
+
+关键结果：
+
+```text
+check:mt2-branch:dp
+  DP found hp=8425 routeLength=111 expansions=1232
+
+root canonical-dp MT2 resource goal
+  found within expansions=1968
+```
+
+### 6.4 当前限制
+
+- `canonical-dp` 已经能证明“同 canonical state 保留高 HP”的核心语义。
+- 从 3834 checkpoint 到功法 MT3 目标能自动找到，但仍偏慢（约 1200+ expansions）。
+- 从初始状态直接追 MT3/I893 还需要进一步优化 agenda 或分层 DP；当前先把 MT2 高血资源目标作为根搜索验收点。
+- `region` key 更安全但当前过慢；默认使用 `mutation` key。后续可做轻量 reachable endpoint key，替代完整 region scan。
+
+### 6.5 常用命令
+
+从初始状态用 DP 搜索 MT2 高血资源目标：
+
+```bash
+node shared-solver/run-search.js \
+  --project-root='Only upV2.1/Only upV2.1' \
+  --profile=canonical-dp \
+  --max-expansions=3000 \
+  --goal-floor=MT2 \
+  --goal-expr='status:hp >= 3834 && status:atk >= 72 && status:def >= 35 && status:mdef >= 290' \
+  --save-route=/tmp/dp-mt2-goal.route.json
+```
+
+回放默认使用：
+
+```bash
+node shared-solver/route-gui.js \
+  --route-file=/tmp/dp-mt2-goal.route.json \
+  --live=1 \
+  --headless=0
 ```

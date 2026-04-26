@@ -22,10 +22,33 @@ const DEFAULT_OPTIONS = {
   equipmentWeight: 60000,
   forwardReadyWeight: 100000,
   returnResourceWeight: 80000,
+  followupWeight: 0.2,
+  unlockFollowupWeight: 0.85,
+  followupLimit: 8,
 };
 
 function createResourceLookaheadCache() {
-  return new Map();
+  const cache = new Map();
+  cache.stats = { hits: 0, misses: 0, stores: 0, evictions: 0, computeMs: 0, estimatedMsSaved: 0 };
+  return cache;
+}
+
+function recordCacheHit(cache) {
+  if (!cache || !cache.stats) return;
+  const stats = cache.stats;
+  stats.hits += 1;
+  const avgComputeMs = stats.stores > 0 ? Number(stats.computeMs || 0) / stats.stores : 0;
+  stats.estimatedMsSaved = Number(stats.estimatedMsSaved || 0) + avgComputeMs;
+}
+
+function storeCacheResult(cache, key, result, startedAt) {
+  if (!cache || !key) return result;
+  cache.set(key, result);
+  if (cache.stats) {
+    cache.stats.stores += 1;
+    cache.stats.computeMs = Number(cache.stats.computeMs || 0) + Math.max(0, Date.now() - startedAt);
+  }
+  return result;
 }
 
 function heroSummary(state) {
@@ -99,7 +122,77 @@ function isAllowedLookaheadAction(baseState, currentState, action, options) {
   return delta <= Number(options.maxFloorOrderDelta || 1);
 }
 
-function localActionScore(simulator, baseState, currentState, action) {
+function positiveResourceScore(delta, options) {
+  return (
+    Math.max(0, Number((delta || {}).atk || 0)) * options.atkWeight +
+    Math.max(0, Number((delta || {}).def || 0)) * options.defWeight +
+    Math.max(0, Number((delta || {}).mdef || 0)) * options.mdefWeight +
+    Math.max(0, Number((delta || {}).exp || 0)) * options.expWeight +
+    Math.max(0, Number((delta || {}).lv || 0)) * 60000 +
+    Math.max(0, Number((delta || {}).money || 0)) * 50
+  );
+}
+
+function bestImmediateFollowupScore(simulator, baseState, nextState, options) {
+  const weight = Number(options.followupWeight || 0);
+  if (weight <= 0) return 0;
+  let actions;
+  try {
+    actions = simulator.enumeratePrimitiveActions(nextState).actions;
+  } catch (error) {
+    return 0;
+  }
+  let best = 0;
+  actions
+    .filter((candidate) => isAllowedLookaheadAction(baseState, nextState, candidate, options))
+    .slice(0, Math.max(1, Number(options.followupLimit || DEFAULT_OPTIONS.followupLimit)))
+    .forEach((candidate) => {
+      try {
+        const followState = applyActionPreview(simulator, nextState, candidate);
+        best = Math.max(best, positiveResourceScore(deltaSummary(nextState, followState), options));
+      } catch (error) {
+        // Ignore invalid preview candidates.
+      }
+    });
+  return best * weight;
+}
+
+function actionKey(simulator, action) {
+  if (!action) return "";
+  if (simulator && typeof simulator.getActionFingerprint === "function") {
+    return simulator.getActionFingerprint(action) || action.summary || "";
+  }
+  return action.summary || `${action.kind || ""}:${action.floorId || ""}`;
+}
+
+function bestUnlockedFollowupScore(simulator, baseState, currentState, nextState, options) {
+  const weight = Number(options.unlockFollowupWeight || 0);
+  if (weight <= 0) return 0;
+  let beforeActions;
+  let afterActions;
+  try {
+    beforeActions = simulator.enumeratePrimitiveActions(currentState).actions;
+    afterActions = simulator.enumeratePrimitiveActions(nextState).actions;
+  } catch (error) {
+    return 0;
+  }
+  const beforeKeys = new Set((beforeActions || []).map((action) => actionKey(simulator, action)).filter(Boolean));
+  let best = 0;
+  (afterActions || [])
+    .filter((candidate) => !beforeKeys.has(actionKey(simulator, candidate)))
+    .filter((candidate) => isAllowedLookaheadAction(baseState, nextState, candidate, options))
+    .forEach((candidate) => {
+      try {
+        const followState = applyActionPreview(simulator, nextState, candidate);
+        best = Math.max(best, positiveResourceScore(deltaSummary(nextState, followState), options));
+      } catch (error) {
+        // Ignore invalid preview candidates.
+      }
+    });
+  return best * weight;
+}
+
+function localActionScore(simulator, baseState, currentState, action, options) {
   let score = 0;
   if (action.kind === "pickup") score += 90000;
   if (action.kind === "equip") score += 110000;
@@ -121,12 +214,13 @@ function localActionScore(simulator, baseState, currentState, action) {
   }
   try {
     const nextState = applyActionPreview(simulator, currentState, action);
-    const delta = deltaSummary(baseState, nextState);
-    score += Math.max(0, delta.atk) * 9000;
-    score += Math.max(0, delta.def) * 8000;
-    score += Math.max(0, delta.mdef) * 800;
-    score += Math.max(0, delta.exp) * 600;
-    score += gainedEquipment(baseState, nextState).length * 60000;
+    const stepDelta = deltaSummary(currentState, nextState);
+    const totalDelta = deltaSummary(baseState, nextState);
+    score += positiveResourceScore(stepDelta, options);
+    score += positiveResourceScore(totalDelta, options) * 0.15;
+    score += gainedEquipment(currentState, nextState).length * 60000;
+    score += bestUnlockedFollowupScore(simulator, baseState, currentState, nextState, options);
+    score += bestImmediateFollowupScore(simulator, baseState, nextState, options);
   } catch (error) {
     score -= 1000000;
   }
@@ -182,18 +276,70 @@ function compareNodes(simulator, baseState, left, right, options) {
   return Number((right.state.hero || {}).hp || 0) - Number((left.state.hero || {}).hp || 0);
 }
 
+function combatKey(state) {
+  const hero = (state || {}).hero || {};
+  return [
+    (state || {}).floorId || "",
+    Number(hero.atk || 0),
+    Number(hero.def || 0),
+    Number(hero.mdef || 0),
+    Number(hero.lv || 0),
+    Number(hero.exp || 0),
+  ].join("|");
+}
+
+function selectLookaheadFrontier(simulator, baseState, nodes, options) {
+  const limit = Math.max(1, Number(options.frontierLimit || DEFAULT_OPTIONS.frontierLimit));
+  const selected = [];
+  const seen = new Set();
+  const add = (node) => {
+    if (!node || selected.length >= limit) return;
+    const key = buildStateKey(node.state);
+    if (seen.has(key)) return;
+    seen.add(key);
+    selected.push(node);
+  };
+  const byScore = (nodes || []).slice().sort((left, right) => compareNodes(simulator, baseState, left, right, options));
+  byScore.slice(0, Math.max(1, Math.ceil(limit * 0.6))).forEach(add);
+  (nodes || [])
+    .slice()
+    .sort((left, right) =>
+      Number((right.state.hero || {}).hp || 0) - Number((left.state.hero || {}).hp || 0) ||
+      compareNodes(simulator, baseState, left, right, options)
+    )
+    .slice(0, Math.max(1, Math.ceil(limit * 0.25)))
+    .forEach(add);
+  const bestByCombat = new Map();
+  (nodes || []).forEach((node) => {
+    const key = combatKey(node.state);
+    const existing = bestByCombat.get(key);
+    if (!existing || Number((node.state.hero || {}).hp || 0) > Number((existing.state.hero || {}).hp || 0)) {
+      bestByCombat.set(key, node);
+    }
+  });
+  Array.from(bestByCombat.values())
+    .sort((left, right) => compareNodes(simulator, baseState, left, right, options))
+    .forEach(add);
+  byScore.forEach(add);
+  return selected;
+}
+
 function evaluateActionResourceLookahead(simulator, state, action, providedOptions) {
   const options = { ...DEFAULT_OPTIONS, ...(providedOptions || {}) };
   const cache = options.cache;
   const fingerprint = simulator.getActionFingerprint ? simulator.getActionFingerprint(action) : action.summary;
   const cacheKey = cache ? `${buildStateKey(state)}|${fingerprint || action.summary || ""}` : null;
-  if (cache && cache.has(cacheKey)) return cache.get(cacheKey);
+  if (cache && cache.has(cacheKey)) {
+    recordCacheHit(cache);
+    return cache.get(cacheKey);
+  }
+  if (cache && cache.stats) cache.stats.misses += 1;
+  const startedAt = Date.now();
 
   const invalid = (reason) => ({ valid: false, score: 0, reason, depth: 0, expanded: 0, bestPlan: [], bestPlanEntries: [] });
   if (!isAllowedLookaheadAction(state, state, action, options)) {
     const result = invalid("action-not-allowed");
-    if (cache) cache.set(cacheKey, result);
-    return result;
+    return storeCacheResult(cache, cacheKey, result, startedAt);
   }
 
   let firstState;
@@ -201,8 +347,7 @@ function evaluateActionResourceLookahead(simulator, state, action, providedOptio
     firstState = applyActionPreview(simulator, state, action);
   } catch (error) {
     const result = invalid("first-action-failed");
-    if (cache) cache.set(cacheKey, result);
-    return result;
+    return storeCacheResult(cache, cacheKey, result, startedAt);
   }
 
   const firstReachedForward = action.kind === "changeFloor" && isForwardChangeFloor(state, action);
@@ -234,7 +379,7 @@ function evaluateActionResourceLookahead(simulator, state, action, providedOptio
       }
       actions
         .filter((candidate) => isAllowedLookaheadAction(state, node.state, candidate, options))
-        .map((candidate) => ({ action: candidate, score: localActionScore(simulator, state, node.state, candidate) }))
+        .map((candidate) => ({ action: candidate, score: localActionScore(simulator, state, node.state, candidate, options) }))
         .sort((left, right) => right.score - left.score)
         .slice(0, options.branchLimit)
         .forEach((candidate) => {
@@ -264,8 +409,7 @@ function evaluateActionResourceLookahead(simulator, state, action, providedOptio
           nextFrontier.push(nextNode);
         });
     }
-    nextFrontier.sort((left, right) => compareNodes(simulator, state, left, right, options));
-    frontier = nextFrontier.slice(0, options.frontierLimit);
+    frontier = selectLookaheadFrontier(simulator, state, nextFrontier, options);
   }
 
   const computed = computeLookaheadScore(simulator, state, firstState, best, options);
@@ -284,8 +428,7 @@ function evaluateActionResourceLookahead(simulator, state, action, providedOptio
     openedResourceChain: computed.openedResourceChain,
     reason: computed.openedResourceChain ? "resource-chain" : "best-preview",
   };
-  if (cache) cache.set(cacheKey, result);
-  return result;
+  return storeCacheResult(cache, cacheKey, result, startedAt);
 }
 
 module.exports = {

@@ -34,8 +34,12 @@ function normalizeDefaults(profileConfig) {
   const result = {};
   const mappings = {
     resourcePocketMode: "resource-pocket-mode",
+    resourceClusterMode: "resource-cluster-mode",
     resourceCluster: "resource-cluster",
     resourceChain: "resource-chain",
+    resourceChainFloors: "resource-chain-floors",
+    resourceChainFloorOrders: "resource-chain-floor-orders",
+    resourceChainMinScore: "resource-chain-min-score",
     fightToLevelUp: "fight-to-levelup",
     searchGraph: "search-graph",
     checkpointReuse: "checkpoint-reuse",
@@ -45,6 +49,8 @@ function normalizeDefaults(profileConfig) {
     confluenceRouteSlack: "confluence-route-slack",
     confluenceRepresentatives: "confluence-representatives",
     confluenceMinFloor: "confluence-min-floor",
+    confluenceIgnoreLengthFloors: "confluence-ignore-length-floors",
+    confluenceIgnoreLengthProfiles: "confluence-ignore-length-profiles",
   };
   Object.entries(mappings).forEach(([source, target]) => {
     if (defaults[source] == null) return;

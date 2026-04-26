@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "smoke": "node run-mt1-mt11.js --rank=chaos --profile=stage-mt1-mt11 --top-k=1 --max-expansions=300 --beam-width=300 --per-floor-beam-width=120 --per-region-beam-width=40 --diagnostics=1",
+    "smoke": "../solver.sh run --rank=chaos --profile=linear-main --top-k=1 --max-expansions=300 --beam-width=300 --per-floor-beam-width=120 --per-region-beam-width=40 --diagnostics=1",
     "verify:mt2": "node verify-route-live.js --to-floor=MT2 --allow-fallback=0",
     "verify:mt3": "node verify-route-live.js --goal=updown-mt1-mt3 --allow-fallback=0",
     "verify:best": "node verify-route-live.js --goal=best-seen --allow-fallback=0 --search-expansions=300 --beam-width=300 --per-floor-beam-width=120 --per-region-beam-width=40",
@@ -25,7 +25,7 @@
     "replay:route": "node verify-route-live.js --route-file=routes/latest/mt1-mt3.route.json",
     "watch:route": "node verify-route-live.js --route-file=routes/latest/mt1-mt3.route.json --headless=0 --step-delay-ms=1400 --keep-open=1",
     "print:route": "node print-route.js --route-file=routes/latest/mt1-mt3.route.json",
-    "perf:topk": "node --cpu-prof --cpu-prof-dir=profiles run-mt1-mt11.js --profile=stage-mt1-mt11 --to-floor=MT3 --max-expansions=2000 --perf=1",
+    "perf:topk": "../solver.sh run --profile=linear-main --to-floor=MT3 --max-expansions=2000 --perf=1",
     "perf:brute": "node --cpu-prof --cpu-prof-dir=profiles find-route-bruteforce.js --to-floor=MT3 --max-expanded=50000 --perf=1 --resource-pocket-mode=off --fight-to-levelup=0",
     "perf:summary": "node profile-search.js --last",
     "brute:mt3:1w": "node find-route-bruteforce.js --algorithm=bfs --to-floor=MT3 --workers=1 --max-expanded=200000 --fail-on-miss --resource-pocket-mode=off --fight-to-levelup=0",

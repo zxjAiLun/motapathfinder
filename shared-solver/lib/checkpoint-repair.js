@@ -2,7 +2,7 @@
 
 const { compareProgress } = require("./progress");
 const { requirementDeficitScore, selectRepairCheckpoints } = require("./floor-checkpoints");
-const { cloneState } = require("./state");
+const { cloneState, getDecisionDepth } = require("./state");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -64,8 +64,9 @@ async function repairFromCheckpoints(simulator, searchContext, blocker, options)
     const repairedState = result.goalState || result.bestProgressState || result.bestSeenState;
     if (repairedState) {
       const suffix = Array.isArray(repairedState.route) ? repairedState.route : [];
+      const suffixDecisionDepth = getDecisionDepth(repairedState);
       repairedState.route = checkpointRoute.concat(suffix);
-      if (repairedState.meta) repairedState.meta.decisionDepth = repairedState.route.length;
+      if (repairedState.meta) repairedState.meta.decisionDepth = number(checkpoint.decisionDepth, checkpointRoute.length) + suffixDecisionDepth;
     }
     const afterBlocker = typeof analyzeProgressBlocker === "function" && repairedState
       ? analyzeProgressBlocker(simulator, repairedState, {})

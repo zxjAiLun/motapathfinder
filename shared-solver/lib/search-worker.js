@@ -25,6 +25,8 @@ const simulator = new StaticSimulator(project, {
   searchGraphMode: workerData.searchGraphMode || workerData.searchGraph,
   primitiveFallbackMode: workerData.primitiveFallbackMode,
   resourcePocketSearchOptions: workerData.resourcePocketSearchOptions,
+  resourceChainOptions: workerData.resourceChainOptions,
+  resourceClusterOptions: workerData.resourceClusterOptions,
   enableActionExpansionCache: workerData.enableActionExpansionCache !== false,
   actionExpansionCacheLimit: workerData.actionExpansionCacheLimit,
 });
@@ -139,7 +141,7 @@ function diffCacheStats(before, after) {
     ...Object.keys(after || {}),
   ]);
   keys.forEach((key) => {
-    if (key === "size") return;
+    if (["size", "hitRate", "avgComputeMs", "avgMsSaved"].includes(key)) return;
     const beforeValue = before ? before[key] : undefined;
     const afterValue = after ? after[key] : undefined;
     if (typeof afterValue === "number") {

@@ -3,7 +3,16 @@
 const assert = require("node:assert");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
-const { buildConfluenceDominanceOptions, buildResourcePocketSearchOptions, resolveProjectRoot, shouldEnableResourcePocket } = require("./lib/cli-options");
+const {
+  buildConfluenceDominanceOptions,
+  buildResourceChainOptions,
+  buildResourceClusterSearchOptions,
+  buildResourcePocketSearchOptions,
+  resolveProjectRoot,
+  shouldEnableResourceChain,
+  shouldEnableResourceCluster,
+  shouldEnableResourcePocket,
+} = require("./lib/cli-options");
 const { executeActionList } = require("./lib/events");
 const { loadProject } = require("./lib/project-loader");
 const { coordinateKey } = require("./lib/reachability");
@@ -14,7 +23,7 @@ const { buildMovementHazards } = require("./lib/movement-hazards");
 const { stepOntoTile } = require("./lib/step-simulator");
 
 function makeContext(options) {
-  const project = loadProject(resolveProjectRoot(process.argv.slice(2), __dirname + "/.."));
+  const project = loadProject(resolveProjectRoot(process.argv.slice(2), __dirname + "/../Only upV2.1/Only upV2.1"));
   if (options && options.enableAddPoint) project.defaultFlags.enableAddPoint = true;
   const battleResolver = new FunctionBackedBattleResolver(project);
   const simulator = new StaticSimulator(project, {
@@ -269,6 +278,9 @@ function checkConfluenceCliOptions() {
     confluenceRouteSlack: 12,
     confluenceRepresentatives: 3,
     confluenceMinFloorOrder: 1,
+    confluenceIgnoreLengthFloors: [],
+    confluenceIgnoreLengthProfiles: ["linear-main"],
+    confluenceIgnoreUnsafe: false,
   });
   assert.deepStrictEqual(buildConfluenceDominanceOptions({
     confluence: "0",
@@ -281,6 +293,9 @@ function checkConfluenceCliOptions() {
     confluenceRouteSlack: 9,
     confluenceRepresentatives: 4,
     confluenceMinFloorOrder: 2,
+    confluenceIgnoreLengthFloors: [],
+    confluenceIgnoreLengthProfiles: ["linear-main"],
+    confluenceIgnoreUnsafe: false,
   });
   return buildConfluenceDominanceOptions({ confluence: "1" }, false);
 }
@@ -289,6 +304,12 @@ function checkResourceDefaultOptions() {
   assert.equal(shouldEnableResourcePocket({}, true), true);
   assert.equal(shouldEnableResourcePocket({ "resource-pocket-mode": "off" }, true), false);
   assert.equal(shouldEnableResourcePocket({ "resource-pocket": "0" }, true), false);
+  assert.equal(shouldEnableResourceCluster({}, true), true);
+  assert.equal(shouldEnableResourceCluster({ "resource-cluster-mode": "off" }, true), false);
+  assert.equal(shouldEnableResourceCluster({ "resource-cluster": "0" }, true), false);
+  assert.equal(shouldEnableResourceChain({}, false), false);
+  assert.equal(shouldEnableResourceChain({ "resource-chain": "1" }, false), true);
+  assert.equal(shouldEnableResourceChain({ "resource-chain": "0" }, true), false);
   assert.deepStrictEqual(buildResourcePocketSearchOptions({}), {
     maxDepth: 4,
     maxNodes: 20,
@@ -296,10 +317,32 @@ function checkResourceDefaultOptions() {
     frontierLimit: 8,
     resultLimit: 3,
   });
+  assert.deepStrictEqual(buildResourceClusterSearchOptions({}), {
+    maxDepth: 5,
+    maxNodes: 200,
+    branchLimit: 6,
+    frontierLimit: 64,
+    resultLimit: 6,
+    maxClusterActions: 12,
+    mode: "normal",
+  });
+  assert.deepStrictEqual(buildResourceChainOptions({
+    "resource-chain-floors": "MT2,MT4",
+    "resource-chain-floor-orders": "2,4",
+    "resource-chain-min-score": "200000",
+  }), {
+    floorIds: ["MT2", "MT4"],
+    floorOrders: [2, 4],
+    minScore: 200000,
+  });
   assert.equal(buildResourcePocketSearchOptions({ "resource-pocket-mode": "deep" }).maxNodes, 500);
+  assert.equal(buildResourceClusterSearchOptions({ "resource-cluster-mode": "normal" }).maxNodes, 200);
+  assert.equal(buildResourceClusterSearchOptions({ "resource-cluster-mode": "deep" }).maxNodes, 1000);
+  assert.equal(buildResourceClusterSearchOptions({ "resource-cluster-mode": "deep", "resource-cluster-max-depth": "9" }).maxDepth, 9);
   return {
-    defaultMode: "lite",
+    defaultMode: "normal",
     deepMaxNodes: buildResourcePocketSearchOptions({ "resource-pocket-mode": "deep" }).maxNodes,
+    deepClusterMaxNodes: buildResourceClusterSearchOptions({ "resource-cluster-mode": "deep" }).maxNodes,
   };
 }
 

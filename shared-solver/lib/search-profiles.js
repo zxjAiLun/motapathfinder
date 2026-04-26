@@ -378,6 +378,65 @@ function createDefaultProfile() {
   return {};
 }
 
+function compareCanonicalBfsStates(left, right) {
+  const leftDepth = getDecisionDepth(left);
+  const rightDepth = getDecisionDepth(right);
+  if (leftDepth !== rightDepth) return rightDepth - leftDepth;
+  const progressDiff = getProgressFloorOrder(left) - getProgressFloorOrder(right);
+  if (progressDiff !== 0) return progressDiff;
+  const leftHero = left.hero || {};
+  const rightHero = right.hero || {};
+  const highWins = ["hp", "atk", "def", "mdef", "lv", "exp", "money"];
+  for (const key of highWins) {
+    const diff = compareNumbers(Number(leftHero[key] || 0), Number(rightHero[key] || 0));
+    if (diff !== 0) return diff;
+  }
+  const leftRoute = Array.isArray(left.route) ? left.route.length : leftDepth;
+  const rightRoute = Array.isArray(right.route) ? right.route.length : rightDepth;
+  return rightRoute - leftRoute;
+}
+
+function canonicalActionPriority(action) {
+  if (!action) return 99;
+  if (action.kind === "pickup" || action.kind === "equip") return 0;
+  if (action.kind === "battle") return 1;
+  if (action.kind === "openDoor" || action.kind === "useTool") return 2;
+  if (action.kind === "event") return 3;
+  if (action.kind === "changeFloor") return 4;
+  if (action.kind === "fightToLevelUp") return 5;
+  if (action.kind === "resourcePocket" || action.kind === "resourceChain" || action.kind === "resourceCluster") return 6;
+  return 50;
+}
+
+function sortCanonicalBfsActions(actions) {
+  return actions.slice().sort((left, right) => {
+    const priorityDiff = canonicalActionPriority(left) - canonicalActionPriority(right);
+    if (priorityDiff !== 0) return priorityDiff;
+    return String(left.summary || "").localeCompare(String(right.summary || ""));
+  });
+}
+
+function createCanonicalBfsProfile() {
+  return {
+    compareFrontierStates: (left, right) => compareCanonicalBfsStates(left, right),
+    sortStateActions: (state, actions) => sortCanonicalBfsActions(actions),
+    maxActionsPerState: 128,
+    progressActionQuota: 24,
+    unlockActionQuota: 24,
+    itemActionQuota: 32,
+    resourceActionQuota: 24,
+    expActionQuota: 64,
+    fightActionQuota: 64,
+    shopActionQuota: 8,
+    reserveProgressActions: true,
+    searchGraphMode: "hybrid",
+    enableConfluenceHpDominance: true,
+    confluenceRoutePolicy: "ignore-length",
+    confluenceRepresentatives: 1,
+    confluenceMinFloorOrder: 1,
+  };
+}
+
 function createUpDownMt1Mt3Profile(simulator, options) {
   const config = options || {};
   return {
@@ -464,6 +523,26 @@ function createSearchProfile(name, simulator, options) {
       return createDefaultProfile(simulator, options);
     case "updown-mt1-mt3":
       return createUpDownMt1Mt3Profile(simulator, options);
+    case "debug-local-resource":
+      return {
+        ...createStageMt1Mt11ResourcePrepProfile(simulator, {
+          ...(options || {}),
+          maxActionsPerState: (options && options.maxActionsPerState) || 32,
+        }),
+        searchGraphMode: (options && options.searchGraphMode) || "hybrid",
+      };
+    case "canonical-bfs":
+      return createCanonicalBfsProfile(simulator, options);
+    case "canonical-dp":
+      return {
+        ...createCanonicalBfsProfile(simulator, options),
+        searchAlgorithm: "dp",
+        searchGraphMode: "primitive",
+        dpAgendaMode: "best-first",
+        dpKeyMode: "mutation",
+      };
+    case "resource-prep-main":
+      return createStageMt1Mt11ResourcePrepProfile(simulator, options);
     case "stage-mt1-mt11":
       return createStageMt1Mt11Profile(simulator, options);
     case "stage-mt1-mt11-resource-prep":
@@ -472,7 +551,6 @@ function createSearchProfile(name, simulator, options) {
     case "linear-main":
       return {
         ...createStageMt1Mt11ResourcePrepProfile(simulator, options),
-        confluenceRoutePolicy: "ignore-length",
         searchGraphMode: "macro",
       };
     default:

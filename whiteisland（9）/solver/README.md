@@ -1,3 +1,7 @@
+# Legacy Solver Directory
+
+This directory is legacy. Use `../solver.sh` from the tower root or `../../shared-solver` for active solver work. Files here are retained for compatibility/reference and may not receive new shared-solver changes.
+
 # Solver Skeleton
 
 This directory contains a reusable MT1 -> MT11 solver skeleton for the current h5mota project.
@@ -77,38 +81,40 @@ Tool audit for the current tower: `bomb` awards the target monster money/exp and
 - `lib/search.js`: top-k search scaffold
 - `lib/updown-candidate-policy.js`: reusable MT1 -> MT2 -> MT1 local-goal search policy
 - `RESEARCH_PROGRESS.md`: current research status, verified progress, and next work
-- `run-mt1-mt11.js`: small CLI entry
+- `run-mt1-mt11.js`: legacy compatibility wrapper/entry
 - `verify-mt1-mt3-live.js`: live runtime replay check for an MT1 -> MT2 -> MT1 route
 
 ## Run
 
+Use the tower-local wrapper for normal runs:
+
 ```bash
-node solver/run-mt1-mt11.js --rank=chaos --top-k=3 --max-expansions=80
+../solver.sh run --profile=linear-main --rank=chaos --top-k=3 --max-expansions=80
 ```
 
 Disable either automation feature explicitly when needed:
 
 ```bash
-node solver/run-mt1-mt11.js --auto-pickup=0 --auto-battle=0
+../solver.sh run --auto-pickup=0 --auto-battle=0
 ```
 
 Beam trimming also accepts an optional per-region cap:
 
 ```bash
-node solver/run-mt1-mt11.js --beam-width=800 --per-floor-beam-width=300 --per-region-beam-width=80
+../solver.sh run --beam-width=800 --per-floor-beam-width=300 --per-region-beam-width=80
 ```
 
 Run the MT1-MT3 live replay verifier:
 
 ```bash
-node solver/verify-mt1-mt3-live.js --search-expansions=120 --per-state-limit=6
+../solver.sh verify-mt --search-expansions=120 --per-state-limit=6
 ```
 
 The verifier first tries to search for a short up/down candidate using the reusable MT1 -> MT2 -> MT1 stage-objective policy. If that search budget is too small, it falls back to a maintained MT1 -> MT2 -> MT1 decision list and still checks every resulting runtime snapshot against the solver state.
 
-## Stage policy
+## Route Profiles
 
-The `stage-mt1-mt11` profile now uses a staged objective policy as the main search ordering. It prioritizes stable floor progress, forward stair readiness, distance to the next stair, low-damage EXP fights, level-up/resource-pocket macros, unlock actions, and key resources. `run-mt1-mt11.js --profile=stage-mt1-mt11 --to-floor=MT5` now runs this policy directly instead of relying on verifier-only up/down candidate logic.
+Use `linear-main` for normal route search. Legacy profile names such as `stage-mt1-mt11` remain available for compatibility, but new docs and commands should use the tower-root `../solver.sh run --profile=linear-main ...` form.
 
 When diagnostics are enabled, `Stage objective` reports the current phase, forward stair readiness, distance to the next stair, battle frontier, and level readiness for `bestProgressState`.
 

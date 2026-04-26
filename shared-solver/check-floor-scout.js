@@ -10,7 +10,7 @@ const { StaticSimulator } = require("./lib/simulator");
 const { buildDominanceKey } = require("./lib/state-key");
 
 function makeSimulator() {
-  const project = loadProject(resolveProjectRoot(process.argv.slice(2), __dirname + "/.."));
+  const project = loadProject(resolveProjectRoot(process.argv.slice(2), __dirname + "/../Only upV2.1/Only upV2.1"));
   return new StaticSimulator(project, {
     stopFloorId: "MT5",
     battleResolver: new FunctionBackedBattleResolver(project),

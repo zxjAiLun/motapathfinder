@@ -11,10 +11,20 @@ const DEFAULT_OPTIONS = {
   resultLimit: 4,
   minPlanLength: 2,
   maxClusterActions: 12,
+  maxOutputActions: 12,
   clusterRepresentatives: 3,
+  groupLocalClusters: true,
+  clusterLinkDistance: 2,
+  clusterExpansionDistance: 2,
+  composeLocalClusters: true,
+  foundationCandidateClusters: 6,
+  foundationMaxClusters: 4,
+  foundationRepresentatives: 2,
+  foundationFrontierLimit: 16,
+  foundationLimit: 4,
 };
 
-const CLUSTER_ACTION_KINDS = new Set(["battle", "pickup", "equip", "event"]);
+const CLUSTER_ACTION_KINDS = new Set(["battle", "pickup", "equip", "event", "openDoor", "useTool"]);
 
 function hero(state) {
   return (state && state.hero) || {};
@@ -61,8 +71,82 @@ function scoreDelta(delta) {
   );
 }
 
-function actionFingerprint(simulator, action) {
+function inventoryGain(delta) {
+  return Object.values((delta || {}).inventory || {}).reduce((sum, value) => sum + Math.max(0, number(value)), 0);
+}
+
+function stopReasonsForDelta(delta) {
+  const reasons = [];
+  if (number((delta || {}).lv) > 0) reasons.push("levelUp");
+  if (
+    number((delta || {}).atk) > 0 ||
+    number((delta || {}).def) > 0 ||
+    number((delta || {}).mdef) > 0 ||
+    inventoryGain(delta) > 0
+  ) {
+    reasons.push("keyItem");
+  }
+  return reasons;
+}
+
+function actionPoint(action) {
+  const target = (action && action.target) || (action && action.loc) || action || {};
+  const x = target.x != null ? target.x : "";
+  const y = target.y != null ? target.y : "";
+  if (x === "" && y === "" && action && action.resourceId) return String(action.resourceId);
+  return `${x},${y}`;
+}
+
+function actionCoordinates(action) {
+  const target = (action && action.target) || (action && action.loc) || action || {};
+  const x = target.x != null ? Number(target.x) : null;
+  const y = target.y != null ? Number(target.y) : null;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+function manhattan(left, right) {
+  return Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
+}
+
+function choicePathKey(action) {
+  const path = (action && (action.choicePath || action.eventChoicePath || action.choice_path)) || "";
+  if (Array.isArray(path)) return path.join(".");
+  return String(path || "");
+}
+
+function clusterActionId(action) {
   if (!action) return "";
+  const floorId = action.floorId || "";
+  if (action.kind === "battle") {
+    const enemyId = action.enemyId || action.monsterId || action.id || action.resourceId || action.clusterLabel || "";
+    return `battle@${floorId}:${actionPoint(action)}:${enemyId}`;
+  }
+  if (action.kind === "pickup") {
+    const itemId = action.itemId || action.item || action.id || action.resourceId || "";
+    return `pickup@${floorId}:${actionPoint(action)}:${itemId}`;
+  }
+  if (action.kind === "equip") {
+    const equipId = action.equipId || action.itemId || action.item || action.id || action.resourceId || "";
+    return `equip@${equipId}`;
+  }
+  if (action.kind === "event") {
+    return `event@${floorId}:${actionPoint(action)}:${choicePathKey(action)}`;
+  }
+  if (action.kind === "openDoor") {
+    const doorId = action.doorId || action.door || action.id || action.resourceId || "";
+    return `openDoor@${floorId}:${actionPoint(action)}:${doorId}`;
+  }
+  if (action.kind === "useTool") {
+    const toolId = action.tool || action.toolId || action.itemId || action.item || action.resourceId || "";
+    return `useTool@${floorId}:${actionPoint(action)}:${toolId}`;
+  }
+  return action.resourceId ? `${action.kind || "resource"}@${floorId}:${action.resourceId}` : "";
+}
+
+function actionFingerprint(simulator, action) {
+  const stableId = clusterActionId(action);
+  if (stableId) return stableId;
   if (typeof simulator.getActionFingerprint === "function") return simulator.getActionFingerprint(action);
   return action.fingerprint || action.summary || `${action.kind}:${action.floorId || ""}`;
 }
@@ -76,6 +160,8 @@ function normalizeStep(simulator, action) {
         fingerprint: actionFingerprint(simulator, action),
         floorId: action.floorId,
       };
+  const stableId = actionFingerprint(simulator, action);
+  if (!entry.clusterActionId) entry.clusterActionId = stableId;
   if (action.clusterLabel && !entry.clusterLabel) entry.clusterLabel = action.clusterLabel;
   if (action.resourceId && !entry.resourceId) entry.resourceId = action.resourceId;
   return entry;
@@ -94,10 +180,30 @@ function isAllowedClusterAction(baseState, currentState, action) {
   return true;
 }
 
-function isUsefulClusterCandidate(baseState, currentState, action, nextState) {
+function countReachableClusterResourceSignals(simulator, state) {
+  let actions = [];
+  try {
+    actions = (((simulator.enumeratePrimitiveActions(state) || {}).actions) || []);
+  } catch (error) {
+    return 0;
+  }
+  return actions.reduce((count, action) => {
+    if (!action || action.unsupported) return count;
+    if (action.kind === "pickup" || action.kind === "equip") return count + 1;
+    if (action.kind === "event" && action.hasStateChange === true) return count + 1;
+    if (action.kind !== "battle") return count;
+    const estimate = action.estimate || {};
+    return number(estimate.exp) > 0 || number(estimate.money) > 0 || number(estimate.guards) > 0 ? count + 1 : count;
+  }, 0);
+}
+
+function isUsefulClusterCandidate(simulator, baseState, currentState, action, nextState) {
   const stepScore = scoreDelta(summarizeDelta(currentState, nextState));
   const totalScore = scoreDelta(summarizeDelta(baseState, nextState));
   if (stepScore > 0 || totalScore > 0) return true;
+  if (action.kind === "openDoor" || action.kind === "useTool") {
+    return countReachableClusterResourceSignals(simulator, nextState) > countReachableClusterResourceSignals(simulator, currentState);
+  }
   if (action.kind === "battle") {
     const estimate = action.estimate || {};
     return number(estimate.exp) > 0 || number(estimate.guards) > 0;
@@ -150,8 +256,144 @@ function createActionIndex(simulator, baseState, initialActions, options) {
   };
 }
 
+function buildClusterRegion(simulator, actions, options) {
+  const points = (actions || []).map(actionCoordinates).filter(Boolean);
+  const seedActionIds = new Set((actions || []).map((action) => actionFingerprint(simulator, action)).filter(Boolean));
+  if (points.length === 0 && seedActionIds.size === 0) return null;
+  return {
+    points,
+    seedActionIds,
+    expansionDistance: Number(options.clusterExpansionDistance || DEFAULT_OPTIONS.clusterExpansionDistance),
+  };
+}
+
+function isActionInClusterRegion(simulator, action, region) {
+  if (!region) return true;
+  const id = actionFingerprint(simulator, action);
+  if (id && region.seedActionIds && region.seedActionIds.has(id)) return true;
+  const point = actionCoordinates(action);
+  if (!point || !Array.isArray(region.points) || region.points.length === 0) return false;
+  const distance = Number(region.expansionDistance || DEFAULT_OPTIONS.clusterExpansionDistance);
+  return region.points.some((candidate) => manhattan(point, candidate) <= distance);
+}
+
+function detectLocalActionClusters(simulator, baseState, initialActions, providedOptions) {
+  const options = { ...DEFAULT_OPTIONS, ...(providedOptions || {}) };
+  const actions = (initialActions || []).filter((action) => isAllowedClusterAction(baseState, baseState, action));
+  if (actions.length === 0) return [];
+  if (options.groupLocalClusters === false) {
+    return [{ actions, region: buildClusterRegion(simulator, actions, options) }];
+  }
+
+  const linkDistance = Number(options.clusterLinkDistance || DEFAULT_OPTIONS.clusterLinkDistance);
+  const nodes = actions
+    .map((action, index) => ({ action, index, point: actionCoordinates(action) }))
+    .filter((node) => node.point);
+  const unplaced = actions.filter((action) => !actionCoordinates(action));
+  if (nodes.length === 0) return [{ actions, region: null }];
+
+  const visited = new Set();
+  const groups = [];
+  nodes.forEach((root) => {
+    if (visited.has(root.index)) return;
+    const queue = [root];
+    const members = [];
+    visited.add(root.index);
+    while (queue.length > 0) {
+      const node = queue.shift();
+      members.push(node.action);
+      nodes.forEach((candidate) => {
+        if (visited.has(candidate.index)) return;
+        if (manhattan(node.point, candidate.point) > linkDistance) return;
+        visited.add(candidate.index);
+        queue.push(candidate);
+      });
+    }
+    groups.push({ actions: members, region: buildClusterRegion(simulator, members, options) });
+  });
+  if (unplaced.length > 0) groups.push({ actions: unplaced, region: null });
+  return groups;
+}
+
 function buildBucketKey(mask, confluenceKey) {
   return JSON.stringify({ mask: Number(mask || 0), confluenceKey });
+}
+
+function planEntryKey(entry) {
+  if (!entry) return "";
+  return entry.fingerprint || entry.clusterActionId || entry.summary || "";
+}
+
+function planKey(planEntries) {
+  return (planEntries || []).map(planEntryKey).filter(Boolean).join("|");
+}
+
+function planEntryPoint(entry) {
+  if (!entry) return null;
+  const target = entry.target || entry.loc || {};
+  const x = target.x != null ? target.x : entry.x;
+  const y = target.y != null ? target.y : entry.y;
+  if (x == null || y == null) return null;
+  return { floorId: entry.floorId, x: Number(x), y: Number(y) };
+}
+
+function isPlanEntryAlreadyCovered(state, entry) {
+  const point = planEntryPoint(entry);
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+  const floorId = point.floorId || (state && state.floorId);
+  const removed = (((state || {}).floorStates || {})[floorId] || {}).removed || {};
+  return Boolean(removed[`${point.x},${point.y}`]);
+}
+
+function findPrimitiveByPlanEntry(simulator, state, entry) {
+  let actions = [];
+  try {
+    actions = (((simulator.enumeratePrimitiveActions(state) || {}).actions) || []);
+  } catch (error) {
+    return null;
+  }
+  if (typeof simulator.findPrimitiveByPlanEntry === "function") {
+    try {
+      const matched = simulator.findPrimitiveByPlanEntry(actions, entry);
+      if (matched) return matched;
+    } catch (error) {
+      // Fall through to the local matcher for lightweight test simulators.
+    }
+  }
+  const keys = new Set([
+    entry && entry.fingerprint,
+    entry && entry.clusterActionId,
+    entry && entry.summary,
+  ].filter(Boolean));
+  if (keys.size === 0) return null;
+  return actions.find((action) => (
+    keys.has(actionFingerprint(simulator, action)) ||
+    keys.has(clusterActionId(action)) ||
+    keys.has(action.summary)
+  )) || null;
+}
+
+function replayPlanEntries(simulator, state, planEntries) {
+  let nextState = cloneState(state);
+  const replayed = [];
+  let covered = 0;
+  for (const entry of planEntries || []) {
+    const action = findPrimitiveByPlanEntry(simulator, nextState, entry);
+    if (!action) {
+      if (isPlanEntryAlreadyCovered(nextState, entry)) {
+        covered += 1;
+        continue;
+      }
+      return null;
+    }
+    try {
+      nextState = simulator.applyAction(nextState, action, { storeRoute: false });
+    } catch (error) {
+      return null;
+    }
+    replayed.push(normalizeStep(simulator, action));
+  }
+  return { state: nextState, planEntries: replayed, covered };
 }
 
 function pushExample(diagnostics, sample) {
@@ -235,6 +477,7 @@ function enumerateCandidates(simulator, baseState, node, initialActions, actionI
     : simulator.enumeratePrimitiveActions(node.state).actions;
   return (rawActions || [])
     .filter((action) => isAllowedClusterAction(baseState, node.state, action))
+    .filter((action) => isActionInClusterRegion(simulator, action, options.clusterRegion))
     .filter((action) => !node.planKeys.has(actionFingerprint(simulator, action)))
     .map((action) => {
       const bit = actionIndex.getBit(action);
@@ -245,7 +488,7 @@ function enumerateCandidates(simulator, baseState, node, initialActions, actionI
       } catch (error) {
         return null;
       }
-      if (!isUsefulClusterCandidate(baseState, node.state, action, nextState)) return null;
+      if (!isUsefulClusterCandidate(simulator, baseState, node.state, action, nextState)) return null;
       const stepDelta = summarizeDelta(node.state, nextState);
       const totalDelta = summarizeDelta(baseState, nextState);
       return {
@@ -303,6 +546,124 @@ function selectFinalPlans(baseState, resultBuckets, options) {
   selected.forEach((node) => {
     node.skylineSize = completed.length;
   });
+  return selected;
+}
+
+function selectClusterPlanRepresentatives(baseState, plans, limit) {
+  const seen = new Set();
+  return (plans || [])
+    .slice()
+    .sort((left, right) => compareNodes(baseState, left, right))
+    .filter((plan) => {
+      const key = planKey(plan.planEntries);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, Math.max(1, Number(limit || DEFAULT_OPTIONS.foundationRepresentatives)));
+}
+
+function buildFoundationNode(baseState, state, mask, planEntries, localClusterIndexes, score) {
+  return {
+    state,
+    mask,
+    confluenceKey: null,
+    planEntries,
+    planKeys: new Set(planEntries.map(planEntryKey).filter(Boolean)),
+    depth: localClusterIndexes.length,
+    score,
+    dominatedPlans: 0,
+    foundation: true,
+    foundationRole: "foundation",
+    localClusterIndexes,
+  };
+}
+
+function composeLocalClusterFoundationPlans(simulator, baseState, perClusterPlans, providedOptions) {
+  const options = { ...DEFAULT_OPTIONS, ...(providedOptions || {}) };
+  const diagnostics = options.diagnostics || null;
+  const candidateClusterLimit = Math.max(2, Number(options.foundationCandidateClusters || DEFAULT_OPTIONS.foundationCandidateClusters));
+  const representatives = Math.max(1, Number(options.foundationRepresentatives || DEFAULT_OPTIONS.foundationRepresentatives));
+  const clusters = (perClusterPlans || [])
+    .map((cluster) => ({
+      clusterIndex: cluster.clusterIndex,
+      plans: selectClusterPlanRepresentatives(baseState, cluster.plans, representatives),
+    }))
+    .filter((cluster) => cluster.plans.length > 0)
+    .sort((left, right) => {
+      const leftBest = left.plans[0];
+      const rightBest = right.plans[0];
+      return compareNodes(baseState, leftBest, rightBest);
+    })
+    .slice(0, candidateClusterLimit);
+  if (clusters.length < 2) return [];
+  if (diagnostics) diagnostics.foundationCompositionsEnumerated = Number(diagnostics.foundationCompositionsEnumerated || 0) + 1;
+
+  const root = buildFoundationNode(baseState, cloneState(baseState), 0, [], [], 0);
+  root.confluenceKey = buildConfluenceKey(simulator, root.state, 0);
+  let frontier = [root];
+  const resultBuckets = new Map();
+  const maxDepth = Math.min(
+    clusters.length,
+    Math.max(2, Number(options.foundationMaxClusters || DEFAULT_OPTIONS.foundationMaxClusters))
+  );
+
+  for (let depth = 0; depth < maxDepth && frontier.length > 0; depth += 1) {
+    const nextBuckets = new Map();
+    for (const node of frontier) {
+      clusters.forEach((cluster, clusterOffset) => {
+        const clusterBit = 1 << clusterOffset;
+        if ((Number(node.mask || 0) & clusterBit) !== 0) return;
+        cluster.plans.forEach((plan) => {
+          const replayed = replayPlanEntries(simulator, node.state, plan.planEntries);
+          if (!replayed) {
+            if (diagnostics) diagnostics.foundationReplayFailures = Number(diagnostics.foundationReplayFailures || 0) + 1;
+            return;
+          }
+          if (replayed.planEntries.length === 0) {
+            if (diagnostics) diagnostics.foundationPlansAlreadyCovered = Number(diagnostics.foundationPlansAlreadyCovered || 0) + 1;
+            return;
+          }
+          if (diagnostics && Number(replayed.covered || 0) > 0) {
+            diagnostics.foundationPlanStepsAlreadyCovered = Number(diagnostics.foundationPlanStepsAlreadyCovered || 0) + Number(replayed.covered || 0);
+          }
+          const existingKeys = node.planKeys || new Set();
+          const replayKeys = replayed.planEntries.map(planEntryKey).filter(Boolean);
+          if (replayKeys.some((key) => existingKeys.has(key))) {
+            if (diagnostics) diagnostics.foundationReplayFailures = Number(diagnostics.foundationReplayFailures || 0) + 1;
+            return;
+          }
+          const planEntries = node.planEntries.concat(replayed.planEntries);
+          const localClusterIndexes = node.localClusterIndexes.concat([cluster.clusterIndex]);
+          const mask = Number(node.mask || 0) | clusterBit;
+          const score = scoreDelta(summarizeDelta(baseState, replayed.state)) + number(hero(replayed.state).hp) * 0.1 - planEntries.length * 100;
+          const nextNode = buildFoundationNode(baseState, replayed.state, mask, planEntries, localClusterIndexes, score);
+          nextNode.confluenceKey = buildConfluenceKey(simulator, replayed.state, mask);
+          if (diagnostics) diagnostics.foundationDpStates = Number(diagnostics.foundationDpStates || 0) + 1;
+          const accepted = insertNode(nextBuckets, nextNode, options, diagnostics, { countDominance: true });
+          if (!accepted) return;
+          if (localClusterIndexes.length >= 2) {
+            insertNode(resultBuckets, nextNode, options, null, { countDominance: false });
+          }
+        });
+      });
+    }
+    frontier = pruneFrontier(
+      baseState,
+      flattenBuckets(nextBuckets),
+      { ...options, frontierLimit: Number(options.foundationFrontierLimit || DEFAULT_OPTIONS.foundationFrontierLimit) }
+    );
+  }
+
+  const selected = selectFinalPlans(baseState, resultBuckets, {
+    ...options,
+    resultLimit: Number(options.foundationLimit || DEFAULT_OPTIONS.foundationLimit),
+  });
+  selected.forEach((plan) => {
+    plan.foundation = true;
+    plan.foundationRole = "foundation";
+  });
+  if (diagnostics) diagnostics.foundationPlansSelected = Number(diagnostics.foundationPlansSelected || 0) + selected.length;
   return selected;
 }
 
@@ -365,7 +726,7 @@ function searchResourceClusterPlans(simulator, baseState, initialActions, provid
 function clusterLabel(planEntries) {
   const labels = (planEntries || []).map((entry) => entry.clusterLabel).filter(Boolean);
   if (labels.length === planEntries.length && labels.every((label) => String(label).length <= 3)) return labels.join("");
-  const source = (planEntries || []).map((entry) => entry.fingerprint || entry.summary || entry.kind || "").join("|");
+  const source = (planEntries || []).map((entry) => entry.clusterActionId || entry.fingerprint || entry.summary || entry.kind || "").join("|");
   let hash = 5381;
   for (let index = 0; index < source.length; index += 1) {
     hash = ((hash << 5) + hash + source.charCodeAt(index)) >>> 0;
@@ -380,6 +741,7 @@ function buildResourceClusterActions(baseState, plans) {
     const planEntries = planNode.planEntries || [];
     const confluenceKey = planNode.confluenceKey;
     const label = clusterLabel(planEntries);
+    const role = planNode.foundationRole || "bestHp";
     return {
       kind: "resourceCluster",
       floorId: baseState.floorId,
@@ -395,23 +757,62 @@ function buildResourceClusterActions(baseState, plans) {
         representativeRole: planNode.representativeRole || "highestHp",
         dominatedPlans: number(planNode.dominatedPlans),
         skylineSize: number(planNode.skylineSize),
+        foundationClusters: Array.isArray(planNode.localClusterIndexes) ? planNode.localClusterIndexes.length : null,
+        localClusterIndexes: planNode.localClusterIndexes,
         rejectedByClusterDominance: number((plans.diagnostics || {}).skylineRejected),
         replacedByClusterDominance: number((plans.diagnostics || {}).skylineReplaced),
         score: number(planNode.score),
+        stopReasons: stopReasonsForDelta(delta),
       },
-      summary: `resourceCluster:${baseState.floorId}:${label}:bestHp`,
+      summary: `resourceCluster:${baseState.floorId}:${label}:${role}`,
     };
   });
-  if (plans && plans.diagnostics) plans.diagnostics.actionsOutput += actions.length;
+  if (plans && plans.diagnostics) {
+    plans.diagnostics.actionsOutput += actions.length;
+    plans.diagnostics.foundationActionsOutput = Number(plans.diagnostics.foundationActionsOutput || 0) +
+      (plans || []).filter((planNode) => planNode && planNode.foundation).length;
+  }
   return actions;
 }
 
 function enumerateResourceClusterActions(simulator, state, initialActions, providedOptions) {
-  const plans = searchResourceClusterPlans(simulator, state, initialActions, providedOptions);
-  return buildResourceClusterActions(state, plans);
+  const options = { ...DEFAULT_OPTIONS, ...(providedOptions || {}) };
+  const diagnostics = options.diagnostics || null;
+  const localClusters = detectLocalActionClusters(simulator, state, initialActions, options);
+  if (diagnostics) {
+    diagnostics.localClustersDetected = Number(diagnostics.localClustersDetected || 0) + localClusters.length;
+    diagnostics.localClusterMaxSize = Math.max(
+      Number(diagnostics.localClusterMaxSize || 0),
+      ...localClusters.map((cluster) => (cluster.actions || []).length)
+    );
+  }
+  const allPlans = [];
+  const perClusterPlans = [];
+  localClusters.forEach((cluster) => {
+    const plans = searchResourceClusterPlans(simulator, state, cluster.actions, {
+      ...options,
+      clusterRegion: cluster.region,
+    });
+    plans.forEach((plan) => {
+      plan.localClusterIndexes = [perClusterPlans.length];
+    });
+    perClusterPlans.push({ clusterIndex: perClusterPlans.length, plans });
+    allPlans.push(...plans);
+  });
+  if (options.composeLocalClusters !== false) {
+    const foundationPlans = composeLocalClusterFoundationPlans(simulator, state, perClusterPlans, options);
+    allPlans.push(...foundationPlans);
+  }
+  allPlans.sort((left, right) => compareNodes(state, left, right));
+  const selectedPlans = allPlans.slice(0, Number(options.maxOutputActions || DEFAULT_OPTIONS.maxOutputActions));
+  selectedPlans.diagnostics = diagnostics;
+  return buildResourceClusterActions(state, selectedPlans);
 }
 
 module.exports = {
+  actionCoordinates,
+  clusterActionId,
+  detectLocalActionClusters,
   buildConfluenceKey,
   buildResourceClusterActions,
   enumerateResourceClusterActions,

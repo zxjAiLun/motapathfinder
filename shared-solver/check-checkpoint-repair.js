@@ -11,7 +11,7 @@ const { repairFromCheckpoints } = require("./lib/checkpoint-repair");
 const { StaticSimulator } = require("./lib/simulator");
 
 function makeSimulator() {
-  const project = loadProject(resolveProjectRoot(process.argv.slice(2), __dirname + "/.."));
+  const project = loadProject(resolveProjectRoot(process.argv.slice(2), __dirname + "/../Only upV2.1/Only upV2.1"));
   return new StaticSimulator(project, {
     stopFloorId: "MT5",
     battleResolver: new FunctionBackedBattleResolver(project),
@@ -74,7 +74,9 @@ function checkCheckpointSkyline() {
   const checkpoints = pool.edges["MT1->MT2"] || [];
   const summaries = checkpoints.map((checkpoint) => ({ hp: checkpoint.hero.hp, routeLength: checkpoint.routeLength, exp: checkpoint.hero.exp, tags: checkpoint.tags }));
   assert.ok(checkpoints.some((checkpoint) => checkpoint.tags.includes("skyline-highest-hp") && checkpoint.hero.hp === 120), "skyline should keep highest HP representative");
+  assert.ok(checkpoints.some((checkpoint) => checkpoint.tags.includes("skyline-highest-combat") && checkpoint.hero.hp === 120), "skyline should keep highest combat representative");
   assert.ok(checkpoints.some((checkpoint) => checkpoint.tags.includes("skyline-shortest-route") && checkpoint.routeLength === 5), "skyline should keep shortest route representative");
+  assert.ok(checkpoints.some((checkpoint) => checkpoint.tags.includes("skyline-fastest") && checkpoint.routeLength === 5), "skyline should keep fastest representative");
   assert.ok(checkpoints.some((checkpoint) => checkpoint.tags.includes("skyline-near-level") && checkpoint.hero.exp === 4), "skyline should keep near-level representative");
   assert.ok(!checkpoints.some((checkpoint) => checkpoint.hero.hp === 80), `dominated checkpoint should be pruned: ${JSON.stringify(summaries)}`);
   assert.equal(new Set(checkpoints.map(combatSignature)).size, 1, "synthetic checkpoints should share one skyline key");

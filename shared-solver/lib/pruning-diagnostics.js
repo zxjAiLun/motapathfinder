@@ -41,7 +41,10 @@ function summarizePruning(diagnostics) {
     replacedLowerHp: number(confluence.replacedLowerHp),
     ignoredRouteLengthRejects: number(confluence.ignoredRouteLengthRejects),
     ignoredRouteLengthReplacements: number(confluence.ignoredRouteLengthReplacements),
+    unsafeFloorDowngrades: number(confluence.unsafeFloorDowngrades),
+    nonWhitelistedFloorDowngrades: number(confluence.nonWhitelistedFloorDowngrades),
     representativesByKeyMax: number(confluence.representativesByKeyMax),
+    byFloor: confluence.byFloor || {},
     examples: Array.isArray(confluence.examples) ? confluence.examples.slice(0, 8) : [],
   };
   const totalDropped =
@@ -68,6 +71,21 @@ function summarizePruning(diagnostics) {
   };
 }
 
+function summarizeConfluence(diagnostics) {
+  const confluence = ((diagnostics || {}).confluenceDominance) || {};
+  return {
+    enabled: Boolean(confluence.enabled),
+    routePolicy: confluence.routePolicy || "slack",
+    rejectedByHigherHp: number(confluence.rejectedByHigherHp),
+    replacedLowerHp: number(confluence.replacedLowerHp),
+    unsafeFloorDowngrades: number(confluence.unsafeFloorDowngrades),
+    nonWhitelistedFloorDowngrades: number(confluence.nonWhitelistedFloorDowngrades),
+    representativesByKeyMax: number(confluence.representativesByKeyMax),
+    byFloor: confluence.byFloor || {},
+  };
+}
+
 module.exports = {
+  summarizeConfluence,
   summarizePruning,
 };

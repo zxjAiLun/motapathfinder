@@ -77,25 +77,35 @@ Tool audit for the current tower: `bomb` awards the target monster money/exp and
 - `lib/search.js`: top-k search scaffold
 - `lib/updown-candidate-policy.js`: reusable MT1 -> MT2 -> MT1 local-goal search policy
 - `RESEARCH_PROGRESS.md`: current research status, verified progress, and next work
-- `run-mt1-mt11.js`: small CLI entry
+- `run-route.js`: main route-search CLI entry
+- `run-search.js`: generic search runner used by the config wrapper
+- `run-mt1-mt11.js`: legacy compatibility wrapper/entry
 - `verify-mt1-mt3-live.js`: live runtime replay check for an MT1 -> MT2 -> MT1 route
 
 ## Run
 
+Use a tower-local wrapper for normal runs:
+
 ```bash
-node solver/run-mt1-mt11.js --rank=chaos --top-k=3 --max-expansions=80
+./solver.sh run --profile=linear-main --rank=chaos --top-k=3 --max-expansions=80
+```
+
+Or call the shared entry directly:
+
+```bash
+node run-route.js --project-root="../Only upV2.1/Only upV2.1" --profile=linear-main --rank=chaos --top-k=3 --max-expansions=80
 ```
 
 Disable either automation feature explicitly when needed:
 
 ```bash
-node solver/run-mt1-mt11.js --auto-pickup=0 --auto-battle=0
+./solver.sh run --auto-pickup=0 --auto-battle=0
 ```
 
 Beam trimming also accepts an optional per-region cap:
 
 ```bash
-node solver/run-mt1-mt11.js --beam-width=800 --per-floor-beam-width=300 --per-region-beam-width=80
+./solver.sh run --beam-width=800 --per-floor-beam-width=300 --per-region-beam-width=80
 ```
 
 Run the MT1-MT3 live replay verifier:
@@ -106,11 +116,30 @@ node solver/verify-mt1-mt3-live.js --search-expansions=120 --per-state-limit=6
 
 The verifier first tries to search for a short up/down candidate using the reusable MT1 -> MT2 -> MT1 stage-objective policy. If that search budget is too small, it falls back to a maintained MT1 -> MT2 -> MT1 decision list and still checks every resulting runtime snapshot against the solver state.
 
-## Stage policy
+## Route profiles
 
-The `stage-mt1-mt11` profile now uses a staged objective policy as the main search ordering. It prioritizes stable floor progress, forward stair readiness, distance to the next stair, low-damage EXP fights, level-up/resource-pocket macros, unlock actions, and key resources. `run-mt1-mt11.js --profile=stage-mt1-mt11 --to-floor=MT5` now runs this policy directly instead of relying on verifier-only up/down candidate logic.
+New runs should use these profile names:
+
+- `linear-main`: default route search profile; macro-first graph, lite resource pocket, resource cluster/chain enabled, confluence HP dominance, checkpoint reuse/save.
+- `resource-prep-main`: resource-heavy preparation profile for broader resource exploration while preserving the current staged policy.
+- `debug-local-resource`: focused local resource ordering/debug profile with deep pocket search and checkpoint reuse/save off by default.
+
+Legacy names remain accepted for compatibility, but are no longer the recommended documentation entry:
+
+- `stage-mt1-mt11`
+- `stage-mt1-mt11-resource-prep`
+
+The staged objective policy prioritizes stable floor progress, forward stair readiness, distance to the next stair, low-damage EXP fights, level-up/resource-pocket/resource-cluster macros, unlock actions, and key resources. `run-route.js --profile=linear-main --to-floor=MT5` is the main documented route-search entry.
 
 When diagnostics are enabled, `Stage objective` reports the current phase, forward stair readiness, distance to the next stair, battle frontier, and level readiness for `bestProgressState`.
+
+Search graph selection is explicit:
+
+```bash
+--search-graph=macro      # normal route search
+--search-graph=primitive  # debug/oracle runs
+--search-graph=hybrid     # checkpoint repair or hard-stuck exploration
+```
 
 Confluence HP dominance can be controlled from the top-k CLIs with:
 
@@ -121,17 +150,20 @@ Confluence HP dominance can be controlled from the top-k CLIs with:
 --confluence-min-floor=1
 ```
 
-With `--diagnostics=1`, the diagnostics main view includes `confluenceDominance` counters for `rejectedByHigherHp`, `replacedLowerHp`, and representative examples.
+With `--diagnostics=1`, the diagnostics main view includes a compact `confluence` summary plus the full `confluenceDominance` counters for `rejectedByHigherHp`, `replacedLowerHp`, and representative examples.
+
+The default confluence route policy for portable configs is `slack`. Use `--confluence-route-policy=ignore-length` only for towers or floor ranges whose confluence key coverage has been audited; it allows a longer high-resource route to dominate a shorter low-resource route at the same future-equivalent key.
 
 Resource search defaults are split by role:
 
 ```bash
 --resource-pocket-mode=lite
---resource-chain=1
 --resource-cluster=1
+--resource-cluster-mode=normal
+--resource-chain=0
 ```
 
-`resourcePocket` is kept as lightweight prep for near-level-up and small gain chains. Use `--resource-pocket-mode=deep` only for focused pocket deep dives. `resourceCluster` handles ABC-style local ordering where several routes reach the same final resources with different HP; the macro emits `resourceCluster:<floor>:<cluster>:bestHp` and records `dominatedPlans` / `skylineSize` in the estimate.
+`fightToLevelUp` handles near-level-up fights, `resourcePocket` stays as lightweight same-floor prep, and `resourceCluster` owns ABC-style local ordering where several routes reach the same final resources with different HP. Cluster search has three presets: `lite` (`maxDepth=3`, `maxNodes=36`, `branchLimit=4`), `normal` (`5`, `200`, `6`), and `deep` (`8`, `1000`, `8`). The simulator gates cluster DP behind local candidate signals, so states without an obvious resource cluster skip the heavier optimizer. `resourceChain` is reserved for cross-floor/equipment/backtrack chains and should be enabled by profile or floor gate, for example `--resource-chain=1 --resource-chain-floors=MT2`.
 
 Action expansion caches are enabled by default and are reported in diagnostics as `actionExpansionCache`:
 
@@ -142,7 +174,16 @@ Action expansion caches are enabled by default and are reported in diagnostics a
 --battle-cache-limit=4096
 ```
 
-The cached layers cover walk reachability, primitive action enumeration, battle estimates, resource-cluster ordering, resource preview applies, resource-chain lookahead, and search confluence signatures. In parallel top-k mode, worker cache hit/miss deltas are aggregated under `actionExpansionCache.workers`.
+The cached layers cover walk reachability, primitive action enumeration, battle estimates, resource-cluster ordering, resource preview applies, resource-chain lookahead, and search confluence signatures. Cache stats include `hitRate`, `avgComputeMs`, `estimatedMsSaved`, and `avgMsSaved`. In parallel top-k mode, worker cache hit/miss deltas are aggregated under `actionExpansionCache.workers`.
+
+Top-k performance baselines:
+
+```bash
+npm run perf:topk:serial
+npm run perf:topk:parallel
+```
+
+Compare `perf.expansionsPerSec`, `perf.timeInGenerateActionsMs`, `actionExpansionCache.*.hitRate`, `confluenceDominance.rejectedByHigherHp`, and `resourceCluster.skylineRejected` between runs.
 
 ## Next fill-in points
 

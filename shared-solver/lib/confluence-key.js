@@ -1,6 +1,5 @@
 "use strict";
 
-const { getProgressSignature } = require("./progress");
 const { listFloorMutationSummary, getDecisionDepth } = require("./state");
 
 const RESOURCE_FIELDS = ["hp", "mana", "atk", "def", "mdef", "money", "exp", "lv"];
@@ -102,7 +101,25 @@ function buildRegionSignature(simulator, state) {
   };
 }
 
-function buildSearchConfluenceKey(simulator, state) {
+function isDebugFlag(flagName) {
+  return /^(debug|ui|trace|perf|diagnostic|tmp|temp)[.:_-]/i.test(String(flagName || ""));
+}
+
+function filteredFlags(flags, mode) {
+  const stable = stableObject(flags);
+  if (mode !== "safe") return stable;
+  return Object.keys(stable)
+    .filter((key) => !isDebugFlag(key))
+    .sort()
+    .reduce((result, key) => {
+      result[key] = stable[key];
+      return result;
+    }, {});
+}
+
+function buildSearchConfluenceKey(simulator, state, options) {
+  const config = options || {};
+  const mode = config.mode || "exact-safe";
   const hero = (state || {}).hero || {};
   const region = buildRegionSignature(simulator, state);
   const combatSignature = simulator && typeof simulator.getCombatSignature === "function"
@@ -110,26 +127,23 @@ function buildSearchConfluenceKey(simulator, state) {
     : [hero.atk, hero.def, hero.mdef, hero.lv, hero.exp].map((value) => number(value)).join("|");
   return JSON.stringify({
     floorId: state && state.floorId,
-    progressSig: getProgressSignature(state),
     regionKey: region.regionKey,
     reachableEndpointsKey: region.reachableEndpointsKey,
     combatSignature,
     hero: {
-      money: number(hero.money),
       mana: number(hero.mana),
-      manamax: number(hero.manamax),
       equipment: stableArray(hero.equipment),
       followers: stableArray(hero.followers),
     },
     inventory: stableObject((state || {}).inventory),
-    flags: stableObject((state || {}).flags),
+    flags: filteredFlags((state || {}).flags, mode),
     visitedFloors: Object.keys((state || {}).visitedFloors || {}).sort(),
     mutations: listFloorMutationSummary((state || {}).floorStates || {}),
   });
 }
 
 function buildClusterConfluenceKey(simulator, state, mask) {
-  const parsed = JSON.parse(buildSearchConfluenceKey(simulator, state));
+  const parsed = JSON.parse(buildSearchConfluenceKey(simulator, state, { mode: "cluster" }));
   parsed.mask = Number(mask || 0);
   return JSON.stringify(parsed);
 }
@@ -137,8 +151,8 @@ function buildClusterConfluenceKey(simulator, state, mask) {
 function dominatesAtConfluence(simulator, leftState, rightState, options) {
   const config = options || {};
   if (config.requireSameKey !== false) {
-    const leftKey = config.leftKey || buildSearchConfluenceKey(simulator, leftState);
-    const rightKey = config.rightKey || buildSearchConfluenceKey(simulator, rightState);
+    const leftKey = config.leftKey || buildSearchConfluenceKey(simulator, leftState, config);
+    const rightKey = config.rightKey || buildSearchConfluenceKey(simulator, rightState, config);
     if (leftKey !== rightKey) return false;
   }
   const comparison = compareConfluenceResources(leftState, rightState);

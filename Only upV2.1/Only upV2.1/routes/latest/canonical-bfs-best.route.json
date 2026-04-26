@@ -1,0 +1,217 @@
+{
+  "schema": "motapathfinder.route.v1",
+  "createdAt": "2026-04-26T13:29:18.540Z",
+  "source": {
+    "commit": "deafb09",
+    "solver": "topk",
+    "profile": "canonical-bfs",
+    "rank": "chaos",
+    "projectTitle": "Only Up"
+  },
+  "goal": {
+    "type": "floor",
+    "floorId": "MT5"
+  },
+  "metadata": {
+    "kind": "best-progress",
+    "foundGoal": false,
+    "targetFloorId": "MT5",
+    "finalFloorId": "MT1",
+    "blocker": {
+      "floorId": "MT1",
+      "stageIndex": 0,
+      "nextForwardTarget": null,
+      "blockerType": "unreachable-forward",
+      "deficits": {
+        "hp": 0,
+        "atk": 0,
+        "def": 0,
+        "mdef": 0,
+        "expToLevel": 0,
+        "yellowKey": 0,
+        "blueKey": 0
+      },
+      "recommendedRepair": {
+        "fromEdge": "World->MT1",
+        "preferTags": [
+          "best-scout",
+          "highest-combat"
+        ],
+        "minHero": {
+          "hp": 201,
+          "atk": 2,
+          "def": 0,
+          "mdef": 10
+        }
+      },
+      "examples": {
+        "lethalBattle": null,
+        "missingDoor": null,
+        "unsupportedAction": null
+      },
+      "actionCounts": {
+        "total": 3,
+        "forwardChangeFloor": 0,
+        "battle": 2,
+        "door": 0
+      }
+    },
+    "checkpointRepair": {
+      "attempted": true,
+      "repaired": false,
+      "reason": "no-checkpoint-for-edge",
+      "attempts": []
+    },
+    "searchClaim": {
+      "claim": "no-route-found-under-budget",
+      "profile": "canonical-bfs",
+      "targetFloor": "MT5",
+      "budget": {
+        "maxExpansions": 30,
+        "topK": 3,
+        "beamWidth": null,
+        "perFloorBeamWidth": null,
+        "perRegionBeamWidth": null,
+        "maxActionsPerState": null
+      },
+      "pruning": {
+        "dominanceMode": "default",
+        "safeDominanceMode": true,
+        "reserveProgressActions": true
+      },
+      "semantics": "heuristic beam-search result; not a proof of global optimality or completeness",
+      "expansions": 30,
+      "frontierRemaining": 30
+    }
+  },
+  "stats": {
+    "expanded": 30,
+    "generated": 137,
+    "depth": 0,
+    "routeLength": 0
+  },
+  "start": {
+    "snapshot": {
+      "floorId": "MT1",
+      "hero": {
+        "hp": 201,
+        "hpmax": 9999,
+        "mana": 0,
+        "manamax": -1,
+        "atk": 2,
+        "def": 0,
+        "mdef": 10,
+        "money": 0,
+        "exp": 0,
+        "lv": 1,
+        "loc": {
+          "x": 6,
+          "y": 7,
+          "direction": "down"
+        },
+        "equipment": []
+      },
+      "inventory": {
+        "I600": 1,
+        "book": 1,
+        "fly": 1
+      },
+      "flags": {
+        "autoBattle": 1,
+        "shiqu": 1
+      },
+      "floors": {
+        "MT1": {
+          "removed": [
+            "5,6",
+            "7,6",
+            "5,8",
+            "7,8"
+          ],
+          "replaced": []
+        },
+        "MT2": {
+          "removed": [],
+          "replaced": []
+        },
+        "MT3": {
+          "removed": [],
+          "replaced": []
+        },
+        "MT4": {
+          "removed": [],
+          "replaced": []
+        },
+        "MT5": {
+          "removed": [],
+          "replaced": []
+        }
+      }
+    },
+    "stateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":6,\"y\":7,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":0,\"mdef\":10,\"money\":0,\"exp\":0,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"5,6\",\"5,8\",\"7,6\",\"7,8\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"MT4\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"MT5\",\"removed\":[],\"replaced\":[]}]}"
+  },
+  "final": {
+    "snapshot": {
+      "floorId": "MT1",
+      "hero": {
+        "hp": 201,
+        "hpmax": 9999,
+        "mana": 0,
+        "manamax": -1,
+        "atk": 2,
+        "def": 0,
+        "mdef": 10,
+        "money": 0,
+        "exp": 0,
+        "lv": 1,
+        "loc": {
+          "x": 6,
+          "y": 7,
+          "direction": "down"
+        },
+        "equipment": []
+      },
+      "inventory": {
+        "I600": 1,
+        "book": 1,
+        "fly": 1
+      },
+      "flags": {
+        "autoBattle": 1,
+        "shiqu": 1
+      },
+      "floors": {
+        "MT1": {
+          "removed": [
+            "5,6",
+            "7,6",
+            "5,8",
+            "7,8"
+          ],
+          "replaced": []
+        },
+        "MT2": {
+          "removed": [],
+          "replaced": []
+        },
+        "MT3": {
+          "removed": [],
+          "replaced": []
+        },
+        "MT4": {
+          "removed": [],
+          "replaced": []
+        },
+        "MT5": {
+          "removed": [],
+          "replaced": []
+        }
+      }
+    },
+    "stateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":6,\"y\":7,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":0,\"mdef\":10,\"money\":0,\"exp\":0,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"5,6\",\"5,8\",\"7,6\",\"7,8\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"MT4\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"MT5\",\"removed\":[],\"replaced\":[]}]}",
+    "floorId": "MT1"
+  },
+  "decisions": [],
+  "rawRoute": [],
+  "notes": []
+}

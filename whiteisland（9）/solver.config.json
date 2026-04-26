@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "project": {
+    "id": "whiteisland"
+  },
+  "route": {
+    "floorOrder": [
+      "sample0",
+      "sample1",
+      "sample2",
+      "New",
+      "Start",
+      "A1",
+      "A2",
+      "A3",
+      "B1",
+      "B2",
+      "B3",
+      "C1",
+      "C2",
+      "C3",
+      "D1",
+      "D2",
+      "D3",
+      "F1",
+      "F2",
+      "F3",
+      "G1",
+      "G2",
+      "G3",
+      "A21",
+      "A22",
+      "A23",
+      "B21",
+      "B22",
+      "B23",
+      "C21",
+      "C22",
+      "C23"
+    ],
+    "startFloor": "Start",
+    "targetFloor": "C23"
+  },
+  "profile": "linear-main",
+  "profiles": {
+    "linear-main": {
+      "extends": "resource-prep-main",
+      "defaults": {
+        "resourcePocketMode": "lite",
+        "resourceCluster": true,
+        "resourceClusterMode": "normal",
+        "resourceChain": true,
+        "resourceChainFloors": [
+          "A2"
+        ],
+        "fightToLevelUp": true,
+        "searchGraph": "macro",
+        "checkpointReuse": "auto",
+        "checkpointSave": true,
+        "confluence": true,
+        "confluenceRoutePolicy": "slack",
+        "confluenceRouteSlack": 12,
+        "confluenceRepresentatives": 3,
+        "confluenceMinFloor": 1
+      }
+    },
+    "resource-prep-main": {
+      "extends": "stage-mt1-mt11-resource-prep",
+      "defaults": {
+        "resourcePocketMode": "lite",
+        "resourceCluster": true,
+        "resourceClusterMode": "normal",
+        "resourceChain": false,
+        "fightToLevelUp": true,
+        "searchGraph": "hybrid",
+        "checkpointReuse": "auto",
+        "checkpointSave": true,
+        "confluence": true,
+        "confluenceRoutePolicy": "slack",
+        "confluenceRouteSlack": 12,
+        "confluenceRepresentatives": 3,
+        "confluenceMinFloor": 1
+      }
+    },
+    "debug-local-resource": {
+      "extends": "resource-prep-main",
+      "defaults": {
+        "resourcePocketMode": "deep",
+        "resourceCluster": true,
+        "resourceClusterMode": "deep",
+        "resourceChain": false,
+        "fightToLevelUp": true,
+        "searchGraph": "hybrid",
+        "checkpointReuse": "off",
+        "checkpointSave": false,
+        "confluence": true,
+        "confluenceRoutePolicy": "slack",
+        "confluenceRouteSlack": 12,
+        "confluenceRepresentatives": 3,
+        "confluenceMinFloor": 1
+      }
+    }
+  },
+  "checkpoints": {
+    "enabled": true,
+    "path": "solver/checkpoints/linear-main.checkpoint-skyline.json"
+  }
+}

@@ -132,6 +132,10 @@ function compareByHp(left, right) {
     number(left.routeLength, 0) - number(right.routeLength, 0);
 }
 
+function compareByCombat(left, right) {
+  return combatScore(right.hero || {}) - combatScore(left.hero || {}) || compareByHp(left, right);
+}
+
 function compareByRoute(left, right) {
   return number(left.routeLength, 0) - number(right.routeLength, 0) ||
     number(right.hero && right.hero.hp, 0) - number(left.hero && left.hero.hp, 0) ||
@@ -191,7 +195,9 @@ function tagSkylineBucket(bucket, skylineKey) {
     addTag(checkpoint, "skyline");
   });
   tagBest(skyline, "skyline-highest-hp", compareByHp);
+  tagBest(skyline, "skyline-highest-combat", compareByCombat);
   tagBest(skyline, "skyline-shortest-route", compareByRoute);
+  tagBest(skyline, "skyline-fastest", compareByRoute);
   tagBest(skyline, "skyline-near-level", compareByExp);
   tagBest(skyline, "skyline-most-keys", compareByKeys);
   tagBest(skyline, "skyline-best-scout", compareByScout);
@@ -227,7 +233,9 @@ function retentionPriority(checkpoint) {
   const tags = new Set(checkpoint.tags || []);
   let priority = 0;
   if (tags.has("skyline-highest-hp")) priority += 1000;
+  if (tags.has("skyline-highest-combat")) priority += 950;
   if (tags.has("skyline-shortest-route")) priority += 900;
+  if (tags.has("skyline-fastest")) priority += 900;
   if (tags.has("skyline-near-level")) priority += 800;
   if (tags.has("skyline-most-keys")) priority += 700;
   if (tags.has("skyline-best-scout")) priority += 600;
@@ -296,7 +304,9 @@ function summarizeCheckpoint(checkpoint) {
     skylineKey: checkpoint.skylineKey || combatSignature(checkpoint),
     skylineRoles: {
       highestHp: tags.includes("skyline-highest-hp"),
+      highestCombat: tags.includes("skyline-highest-combat"),
       shortestRoute: tags.includes("skyline-shortest-route"),
+      fastest: tags.includes("skyline-fastest"),
       nearLevel: tags.includes("skyline-near-level"),
       mostKeys: tags.includes("skyline-most-keys"),
       bestScout: tags.includes("skyline-best-scout"),
@@ -373,7 +383,8 @@ function selectRepairCheckpoints(pool, blocker, options) {
   });
   bestBy("closest-requirement", list, (left, right) => requirementDeficitScore(left, minHero) - requirementDeficitScore(right, minHero) || compareByHp(left, right));
   bestBy("highest-hp", byTag("skyline-highest-hp").concat(byTag("highest-hp")), compareByHp);
-  bestBy("fastest-route", byTag("skyline-shortest-route").concat(byTag("shortest-route")).concat(byTag("fastest")), compareByRoute);
+  bestBy("highest-combat", byTag("skyline-highest-combat").concat(byTag("highest-combat")), compareByCombat);
+  bestBy("fastest-route", byTag("skyline-fastest").concat(byTag("skyline-shortest-route")).concat(byTag("shortest-route")).concat(byTag("fastest")), compareByRoute);
   bestBy("near-level", byTag("skyline-near-level").concat(byTag("near-levelup")), compareByExp);
   bestBy("most-keys", byTag("skyline-most-keys"), compareByKeys);
   bestBy("best-scout", byTag("skyline-best-scout").concat(byTag("best-scout")), compareByScout);

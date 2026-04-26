@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
-const { buildConfluenceDominanceOptions, buildResourcePocketSearchOptions, parseBooleanFlag, parseKeyValueArgs, parseOptionalNumber, resolveProjectRoot, shouldEnableResourcePocket } = require("./lib/cli-options");
+const { buildConfluenceDominanceOptions, buildResourceChainOptions, buildResourceClusterSearchOptions, buildResourcePocketSearchOptions, parseBooleanFlag, parseKeyValueArgs, parseOptionalNumber, resolveProjectRoot, shouldEnableResourceChain, shouldEnableResourceCluster, shouldEnableResourcePocket } = require("./lib/cli-options");
 const { executeActionList } = require("./lib/events");
 const { findContiguousTowerTerminalFloor } = require("./lib/floor-id");
 const { loadProject } = require("./lib/project-loader");
@@ -79,9 +79,11 @@ async function main() {
     autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
     enableResourcePocket: shouldEnableResourcePocket(args, true),
-    enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
-    enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
+    enableResourceChain: shouldEnableResourceChain(args, false),
+    enableResourceCluster: shouldEnableResourceCluster(args, true),
     resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
+    resourceChainOptions: buildResourceChainOptions(args),
+    resourceClusterOptions: buildResourceClusterSearchOptions(args),
   });
   if (goalType === "win") {
     simulator.isTerminal = (state) => Boolean(state.meta && state.meta.winReason);
@@ -116,9 +118,11 @@ async function main() {
     autoPickupEnabled: parseBooleanFlag(args["auto-pickup"], true),
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
     enableResourcePocket: shouldEnableResourcePocket(args, true),
-    enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
-    enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
+    enableResourceChain: shouldEnableResourceChain(args, false),
+    enableResourceCluster: shouldEnableResourceCluster(args, true),
     resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
+    resourceChainOptions: buildResourceChainOptions(args),
+    resourceClusterOptions: buildResourceClusterSearchOptions(args),
   };
 
   console.log(`Loaded project: ${project.data.firstData.title}`);

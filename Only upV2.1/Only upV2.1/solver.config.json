@@ -11,11 +11,13 @@
   "profile": "linear-main",
   "profiles": {
     "linear-main": {
-      "extends": "stage-mt1-mt11-resource-prep",
+      "extends": "resource-prep-main",
       "defaults": {
         "resourcePocketMode": "lite",
         "resourceCluster": true,
+        "resourceClusterMode": "normal",
         "resourceChain": true,
+        "resourceChainFloors": ["MT2"],
         "fightToLevelUp": true,
         "searchGraph": "macro",
         "checkpointReuse": "auto",
@@ -24,7 +26,45 @@
         "confluenceRoutePolicy": "ignore-length",
         "confluenceRouteSlack": 12,
         "confluenceRepresentatives": 3,
+        "confluenceMinFloor": 1,
+        "confluenceIgnoreLengthFloors": ["MT1", "MT2", "MT3", "MT4", "MT5"]
+      }
+    },
+    "resource-prep-main": {
+      "extends": "stage-mt1-mt11-resource-prep",
+      "defaults": {
+        "resourcePocketMode": "lite",
+        "resourceCluster": true,
+        "resourceClusterMode": "normal",
+        "resourceChain": false,
+        "fightToLevelUp": true,
+        "searchGraph": "hybrid",
+        "checkpointReuse": "auto",
+        "checkpointSave": true,
+        "confluence": true,
+        "confluenceRoutePolicy": "slack",
+        "confluenceRouteSlack": 12,
+        "confluenceRepresentatives": 3,
         "confluenceMinFloor": 1
+      }
+    },
+    "debug-local-resource": {
+      "extends": "resource-prep-main",
+      "defaults": {
+        "resourcePocketMode": "deep",
+        "resourceCluster": true,
+        "resourceClusterMode": "deep",
+        "resourceChain": false,
+        "fightToLevelUp": true,
+        "searchGraph": "hybrid",
+        "checkpointReuse": "off",
+        "checkpointSave": false,
+        "confluence": true,
+        "confluenceRoutePolicy": "ignore-length",
+        "confluenceRouteSlack": 12,
+        "confluenceRepresentatives": 3,
+        "confluenceMinFloor": 1,
+        "confluenceIgnoreLengthFloors": ["MT1", "MT2", "MT3", "MT4", "MT5"]
       }
     }
   },

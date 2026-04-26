@@ -284,7 +284,7 @@ function replayDecisionSummary(context, summary) {
   const action = findActionBySummary(context.simulator, context.currentState, summary);
   if (!action) throw new Error(`Unable to reconstruct action while saving route: ${summary}`);
   if (replayMacroPlanEntries(context, action)) return;
-  if ((action.kind === "resourcePocket" || action.kind === "resourceCluster" || action.kind === "fightToLevelUp") && Array.isArray(action.plan)) {
+  if ((action.kind === "resourcePocket" || action.kind === "resourceChain" || action.kind === "resourceCluster" || action.kind === "fightToLevelUp") && Array.isArray(action.plan)) {
     action.plan.forEach((nestedSummary) => replayDecisionSummary(context, nestedSummary));
     return;
   }
@@ -292,7 +292,7 @@ function replayDecisionSummary(context, summary) {
 }
 
 function replayMacroPlanEntries(context, actionEntry) {
-  if ((actionEntry.kind === "resourcePocket" || actionEntry.kind === "resourceCluster") && Array.isArray(actionEntry.planEntries)) {
+  if ((actionEntry.kind === "resourcePocket" || actionEntry.kind === "resourceChain" || actionEntry.kind === "resourceCluster") && Array.isArray(actionEntry.planEntries)) {
     actionEntry.planEntries.forEach((entry) => {
       const primitiveAction = findPrimitiveByPlanEntry(context.simulator, context.currentState, entry);
       if (!primitiveAction) throw new Error(`Unable to expand ${actionEntry.kind} step while saving route: ${entry.summary || entry.fingerprint}`);

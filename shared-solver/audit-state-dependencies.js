@@ -166,7 +166,7 @@ function summarize(matches) {
 
 function main() {
   const args = parseKeyValueArgs(process.argv.slice(2));
-  const projectRoot = resolveProjectRoot(args, path.resolve(__dirname, ".."));
+  const projectRoot = resolveProjectRoot(args, path.resolve(__dirname, "../Only upV2.1/Only upV2.1"));
   loadProject(projectRoot);
   const files = [];
   walkFiles(projectRoot, (filePath) => SOURCE_EXTENSIONS.has(path.extname(filePath)), files);

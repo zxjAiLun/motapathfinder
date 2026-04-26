@@ -318,7 +318,7 @@ class FunctionBackedBattleResolver {
     this.battleEstimateCacheLimit = Number(config.battleEstimateCacheLimit || 4096);
     this.battleEstimateCache = new Map();
     this.cacheStats = {
-      battleEstimate: { hits: 0, misses: 0, stores: 0, evictions: 0 },
+      battleEstimate: { hits: 0, misses: 0, stores: 0, evictions: 0, computeMs: 0, estimatedMsSaved: 0 },
     };
   }
 
@@ -355,15 +355,22 @@ class FunctionBackedBattleResolver {
     const value = cache.get(key);
     cache.delete(key);
     cache.set(key, value);
-    if (stats) stats.hits += 1;
+    if (stats) {
+      stats.hits += 1;
+      const avgComputeMs = stats.stores > 0 ? Number(stats.computeMs || 0) / stats.stores : 0;
+      stats.estimatedMsSaved = Number(stats.estimatedMsSaved || 0) + avgComputeMs;
+    }
     return cloneJson(value);
   }
 
-  cacheSet(name, cache, key, value, limit) {
+  cacheSet(name, cache, key, value, limit, computeMs) {
     if (!this.enableBattleEstimateCache || !key) return value;
     const stats = this.cacheStats[name];
     cache.set(key, cloneJson(value));
-    if (stats) stats.stores += 1;
+    if (stats) {
+      stats.stores += 1;
+      if (Number.isFinite(Number(computeMs))) stats.computeMs = Number(stats.computeMs || 0) + Number(computeMs);
+    }
     const maxSize = Math.max(0, Number(limit || this.battleEstimateCacheLimit || 0));
     while (maxSize > 0 && cache.size > maxSize) {
       const firstKey = cache.keys().next().value;
@@ -374,7 +381,17 @@ class FunctionBackedBattleResolver {
   }
 
   getCacheStats() {
-    return cloneJson(this.cacheStats);
+    const stats = cloneJson(this.cacheStats);
+    Object.values(stats).forEach((entry) => {
+      const hits = Number(entry.hits || 0);
+      const misses = Number(entry.misses || 0);
+      const stores = Number(entry.stores || 0);
+      entry.hitRate = hits + misses > 0 ? hits / (hits + misses) : 0;
+      entry.avgComputeMs = stores > 0 ? Number(entry.computeMs || 0) / stores : 0;
+      entry.avgMsSaved = hits > 0 ? Number(entry.estimatedMsSaved || 0) / hits : 0;
+      entry.size = this.battleEstimateCache.size;
+    });
+    return stats;
   }
 
   evaluateBattleUncached(state, floorId, x, y, enemyId) {
@@ -411,8 +428,9 @@ class FunctionBackedBattleResolver {
     const key = this.battleEstimateCacheKey(state, floorId, x, y, enemyId);
     const cached = this.cacheGet("battleEstimate", this.battleEstimateCache, key);
     if (cached) return cached;
+    const startedAt = Date.now();
     const result = this.evaluateBattleUncached(state, floorId, x, y, enemyId);
-    return this.cacheSet("battleEstimate", this.battleEstimateCache, key, result, this.battleEstimateCacheLimit);
+    return this.cacheSet("battleEstimate", this.battleEstimateCache, key, result, this.battleEstimateCacheLimit, Date.now() - startedAt);
   }
 
   enumerateActions(context) {

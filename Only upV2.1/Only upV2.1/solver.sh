@@ -17,7 +17,7 @@ done
 
 case "$COMMAND" in
   run|topk)
-    SCRIPT="run-mt1-mt11.js"
+    SCRIPT="run-route.js"
     ;;
   brute|bruteforce)
     SCRIPT="find-route-bruteforce.js"

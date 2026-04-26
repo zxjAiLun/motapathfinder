@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "description": "TopK performance baseline records. Update with `npm run perf:baseline -- --project-root=/path/to/tower` or a tower-local `./solver.sh record-perf-baseline.js ...` run.",
+  "benchmarks": {
+    "linear-main-MT5-serial": {
+      "name": "linear-main-MT5-serial",
+      "command": [
+        "run-route.js",
+        "--profile=linear-main",
+        "--to-floor=MT5",
+        "--parallel=0",
+        "--resource-pocket-mode=lite",
+        "--resource-cluster=1",
+        "--resource-chain=0",
+        "--max-expansions=100",
+        "--perf=1",
+        "--diagnostics=1",
+        "--checkpoint-save=0",
+        "--project-root=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/Only upV2.1/Only upV2.1"
+      ],
+      "status": 0,
+      "updatedAt": "2026-04-26T10:49:32.420Z",
+      "expandedPerSec": 2.539154360817288,
+      "generatedPerSec": 7.3127645591537895,
+      "enumerateActionsMsPerState": 329.12077606999964,
+      "resourceClusterMsPerState": 1359.5116279069769,
+      "actionCacheHitRate": 0.6256085686465434,
+      "battleCacheHitRate": 0.9973351082113426,
+      "resourceClusterCacheHitRate": 0.022727272727272728,
+      "confluenceRejects": 22,
+      "goalFound": false,
+      "bestProgress": {
+        "graphMode": "macro",
+        "primitiveFallbackStates": 0,
+        "floor": "MT3",
+        "stage": 2,
+        "bestSeenFloor": "MT1",
+        "bestSeenStage": 2
+      }
+    }
+  },
+  "updatedAt": "2026-04-26T10:49:32.420Z"
+}

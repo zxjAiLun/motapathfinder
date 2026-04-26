@@ -96,7 +96,7 @@ function shouldUseResourceLookahead(rank, action, options) {
     if (damageRatio > 0.55) return false;
   }
   if (Number(rank.battleFrontier || 0) > 8) return false;
-  return ["battle", "equip", "fightToLevelUp"].includes(action.kind);
+  return ["battle", "equip", "fightToLevelUp", "changeFloor"].includes(action.kind);
 }
 
 function getActionResourceLookahead(simulator, state, action, rank, options) {

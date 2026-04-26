@@ -97,6 +97,13 @@ function compareFrontierStates(simulator, options, left, right) {
   return simulator.compareSearchStates(left, right);
 }
 
+function compareBestStates(simulator, options, left, right) {
+  if (options && typeof options.compareBestStates === "function") {
+    return options.compareBestStates(left, right);
+  }
+  return compareFrontierStates(simulator, options, left, right);
+}
+
 function getFrontierBucketKey(simulator, options, state) {
   if (options && typeof options.getFrontierBucketKey === "function") {
     return options.getFrontierBucketKey(state);
@@ -203,6 +210,23 @@ function collectActionExpansionCacheStats(simulator) {
 function collectResourceClusterDiagnostics(simulator) {
   if (!simulator || typeof simulator.getResourceClusterDiagnostics !== "function") return null;
   return simulator.getResourceClusterDiagnostics();
+}
+
+function enrichCacheStats(stats) {
+  if (!stats || typeof stats !== "object" || Array.isArray(stats)) return stats;
+  Object.values(stats).forEach((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return;
+    if (entry.hits != null || entry.misses != null || entry.stores != null) {
+      const hits = Number(entry.hits || 0);
+      const misses = Number(entry.misses || 0);
+      const stores = Number(entry.stores || 0);
+      entry.hitRate = hits + misses > 0 ? hits / (hits + misses) : 0;
+      entry.avgComputeMs = stores > 0 ? Number(entry.computeMs || 0) / stores : 0;
+      entry.avgMsSaved = hits > 0 ? Number(entry.estimatedMsSaved || 0) / hits : 0;
+    }
+    enrichCacheStats(entry);
+  });
+  return stats;
 }
 
 function mergeNumericStats(target, source) {
@@ -354,7 +378,10 @@ function ensureConfluenceStats(stats, config) {
       rejectedByHigherHp: 0,
       ignoredRouteLengthRejects: 0,
       ignoredRouteLengthReplacements: 0,
+      unsafeFloorDowngrades: 0,
+      nonWhitelistedFloorDowngrades: 0,
       representativesByKeyMax: Number((config && config.confluenceRepresentatives) || 3),
+      byFloor: {},
       examples: [],
     };
   }
@@ -363,22 +390,98 @@ function ensureConfluenceStats(stats, config) {
   return stats.confluenceDominance;
 }
 
+function incrementConfluenceFloor(stats, config, state, field) {
+  const confluenceStats = ensureConfluenceStats(stats, config);
+  if (!confluenceStats) return null;
+  const floorId = (state && state.floorId) || "unknown";
+  if (!confluenceStats.byFloor) confluenceStats.byFloor = {};
+  if (!confluenceStats.byFloor[floorId]) {
+    confluenceStats.byFloor[floorId] = {
+      rejectedByHigherHp: 0,
+      replacedLowerHp: 0,
+      unsafeFloorDowngrades: 0,
+      nonWhitelistedFloorDowngrades: 0,
+    };
+  }
+  confluenceStats.byFloor[floorId][field] = Number(confluenceStats.byFloor[floorId][field] || 0) + 1;
+  return confluenceStats;
+}
+
+function normalizeList(value) {
+  if (value == null || value === "") return [];
+  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
+  return String(value).split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function listAllows(list, value) {
+  const normalized = normalizeList(list);
+  if (normalized.length === 0) return false;
+  if (normalized.includes("*")) return true;
+  return normalized.includes(String(value || ""));
+}
+
+function isIgnoreLengthAllowedForState(state, config) {
+  const floorAllowList = normalizeList(config && config.confluenceIgnoreLengthFloors);
+  if (floorAllowList.length > 0) return listAllows(floorAllowList, state && state.floorId);
+  return listAllows(config && config.confluenceIgnoreLengthProfiles, (config && (config.profileName || config.profile)) || "");
+}
+
 function shouldUseConfluenceDominance(simulator, config) {
   if (!config || config.enableConfluenceHpDominance !== true) return false;
   if (config.safeDominanceMode === false || config.safeDominanceMode === "0" || config.safeDominanceMode === "off") return false;
   return typeof simulator.buildSearchConfluenceKey === "function" && typeof simulator.compareSearchConfluenceStates === "function";
 }
 
+function getEffectiveConfluenceRoutePolicy(simulator, state, stats, config, commit) {
+  const configuredPolicy = (config && config.confluenceRoutePolicy) || "slack";
+  if (configuredPolicy === "ignore-length" && !isIgnoreLengthAllowedForState(state, config || {})) {
+    const confluenceStats = commit ? ensureConfluenceStats(stats, config) : null;
+    if (confluenceStats) {
+      confluenceStats.nonWhitelistedFloorDowngrades = Number(confluenceStats.nonWhitelistedFloorDowngrades || 0) + 1;
+      incrementConfluenceFloor(stats, config, state, "nonWhitelistedFloorDowngrades");
+      pushLimitedSample(confluenceStats.examples, {
+        reason: "non-whitelisted-floor-route-policy-downgrade",
+        floorId: state && state.floorId,
+        profile: config && (config.profileName || config.profile),
+        from: "ignore-length",
+        to: "slack",
+      }, stats.sampleLimit);
+    }
+    return "slack";
+  }
+  if (
+    configuredPolicy === "ignore-length" &&
+    !config.confluenceIgnoreUnsafe &&
+    simulator &&
+    typeof simulator.requiresExactDominance === "function" &&
+    simulator.requiresExactDominance(state)
+  ) {
+    const confluenceStats = commit ? ensureConfluenceStats(stats, config) : null;
+    if (confluenceStats) {
+      confluenceStats.unsafeFloorDowngrades = Number(confluenceStats.unsafeFloorDowngrades || 0) + 1;
+      incrementConfluenceFloor(stats, config, state, "unsafeFloorDowngrades");
+      pushLimitedSample(confluenceStats.examples, {
+        reason: "unsafe-floor-route-policy-downgrade",
+        floorId: state && state.floorId,
+        from: "ignore-length",
+        to: "slack",
+      }, stats.sampleLimit);
+    }
+    return "slack";
+  }
+  return configuredPolicy;
+}
+
 function effectiveRouteLength(state) {
   return Array.isArray(state && state.route) && state.route.length > 0 ? state.route.length : getDecisionDepth(state);
 }
 
-function registerConfluenceState(simulator, confluenceBestByKey, state, stats, config, commit) {
+function registerConfluenceState(simulator, confluenceBestByKey, state, stats, config, commit, activeRecords) {
   if (!confluenceBestByKey || !shouldUseConfluenceDominance(simulator, config)) return true;
   if (getFloorOrder(state.floorId) < Number(config.confluenceMinFloorOrder || 1)) return true;
   const key = simulator.buildSearchConfluenceKey(state);
   const list = confluenceBestByKey.get(key) || [];
-  const routePolicy = config.confluenceRoutePolicy || "slack";
+  const routePolicy = getEffectiveConfluenceRoutePolicy(simulator, state, stats, config, commit);
   const slack = Number(config.confluenceRouteSlack || 12);
   const routeLength = effectiveRouteLength(state);
   for (const existing of list) {
@@ -390,6 +493,7 @@ function registerConfluenceState(simulator, confluenceBestByKey, state, stats, c
       const confluenceStats = ensureConfluenceStats(stats, config);
       if (confluenceStats) {
         confluenceStats.rejectedByHigherHp += 1;
+        incrementConfluenceFloor(stats, config, state, "rejectedByHigherHp");
         if (routePolicy === "ignore-length" && existingLength > routeLength + slack) confluenceStats.ignoredRouteLengthRejects += 1;
         pushLimitedSample(confluenceStats.examples, { reason: "rejectedByHigherHp", existing: compactState(existing), rejected: compactState(state) }, stats.sampleLimit);
       }
@@ -399,7 +503,9 @@ function registerConfluenceState(simulator, confluenceBestByKey, state, stats, c
   }
   if (commit !== true) return true;
   const nextList = [];
+  const stateKey = getStateKey(state);
   list.forEach((existing) => {
+    const existingStateKey = getStateKey(existing);
     const existingLength = effectiveRouteLength(existing);
     const dominated = routePolicy === "ignore-length"
       ? dominatesAtConfluence(simulator, state, existing, { leftKey: key, rightKey: key })
@@ -408,9 +514,11 @@ function registerConfluenceState(simulator, confluenceBestByKey, state, stats, c
       const confluenceStats = ensureConfluenceStats(stats, config);
       if (confluenceStats) {
         confluenceStats.replacedLowerHp += 1;
+        incrementConfluenceFloor(stats, config, state, "replacedLowerHp");
         if (routePolicy === "ignore-length" && routeLength > existingLength + slack) confluenceStats.ignoredRouteLengthReplacements += 1;
         pushLimitedSample(confluenceStats.examples, { reason: "replacedLowerHp", kept: compactState(state), replaced: compactState(existing) }, stats.sampleLimit);
       }
+      if (activeRecords && existingStateKey !== stateKey) activeRecords.delete(existingStateKey);
       return;
     }
     nextList.push(existing);
@@ -673,7 +781,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
     const summary = simulator.buildDominanceSummary(state, score);
     const record = { bucketKey: stateKey, dominanceKey: stateKey, rank, stateKey, summary };
     activeRecords.set(stateKey, record);
-    registerConfluenceState(simulator, confluenceBestByKey, state, stats, config, true);
+    registerConfluenceState(simulator, confluenceBestByKey, state, stats, config, true, activeRecords);
     if (stats) stats.registered += 1;
     recordFloor(stats, state, "kept");
     if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
@@ -681,7 +789,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
   }
   if (usesExactDominance(simulator, config, state)) {
     const registered = registerExactState(activeRecords, stateKey, rank, score, stats, state);
-    if (registered) registerConfluenceState(simulator, confluenceBestByKey, state, stats, config, true);
+    if (registered) registerConfluenceState(simulator, confluenceBestByKey, state, stats, config, true, activeRecords);
     if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
     return registered;
   }
@@ -709,6 +817,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
   const bucket = dominanceBuckets.get(bucketKey) || [];
 
   for (const record of bucket) {
+    if (activeRecords.get(record.stateKey) !== record) continue;
     if (record.stateKey === stateKey) {
       if (simulator.compareRanks(record.rank, rank) >= 0) {
         recordSkip(stats, "same-state");
@@ -731,6 +840,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
 
   const nextBucket = [];
   bucket.forEach((record) => {
+    if (activeRecords.get(record.stateKey) !== record) return;
     if (record.stateKey === stateKey) {
       activeRecords.delete(record.stateKey);
       return;
@@ -756,7 +866,7 @@ function registerState(simulator, activeRecords, dominanceBuckets, bestByDominan
   if (!bestRecord || simulator.dominates(summary, bestRecord.summary) || simulator.compareRanks(rank, bestRecord.rank) > 0) {
     bestByDominanceKey.set(dominanceKey, nextRecord);
   }
-  registerConfluenceState(simulator, confluenceBestByKey, state, stats, config, true);
+  registerConfluenceState(simulator, confluenceBestByKey, state, stats, config, true, activeRecords);
   if (stats) stats.registered += 1;
   recordFloor(stats, state, "kept");
   if (stats) stats.perf.timeInDominanceMs += nowMs() - startedAt;
@@ -843,6 +953,7 @@ function searchTopKSerial(simulator, initialState, options) {
       statesWithMacroActions: 0,
       primitiveFallbackStates: 0,
       primitiveActionsSuppressed: 0,
+      primitiveActionsSuppressedByMacroPlan: 0,
       expandedByKind: {},
     },
     sampleLimit: Number(config.sampleLimit || 20),
@@ -864,7 +975,10 @@ function searchTopKSerial(simulator, initialState, options) {
       rejectedByHigherHp: 0,
       ignoredRouteLengthRejects: 0,
       ignoredRouteLengthReplacements: 0,
+      unsafeFloorDowngrades: 0,
+      nonWhitelistedFloorDowngrades: 0,
       representativesByKeyMax: Number(config.confluenceRepresentatives || 3),
+      byFloor: {},
       examples: [],
     },
     actionExpansionCache: {
@@ -917,11 +1031,11 @@ function searchTopKSerial(simulator, initialState, options) {
   };
   const hydrateStates = (states) => states.map((state) => hydrateState(state)).filter(Boolean);
   const updateBestState = (candidateState) => {
-    if (compareFrontierStates(simulator, config, candidateState, bestSeenState) > 0) {
+    if (compareBestStates(simulator, config, candidateState, bestSeenState) > 0) {
       bestSeenState = candidateState;
     }
     const candidateProgressDiff = compareProgress(candidateState, bestProgressState);
-    if (candidateProgressDiff > 0 || (candidateProgressDiff === 0 && compareFrontierStates(simulator, config, candidateState, bestProgressState) > 0)) {
+    if (candidateProgressDiff > 0 || (candidateProgressDiff === 0 && compareBestStates(simulator, config, candidateState, bestProgressState) > 0)) {
       bestProgressState = candidateState;
     }
   };
@@ -963,11 +1077,11 @@ function searchTopKSerial(simulator, initialState, options) {
       perfTracker.increment("expanded");
       recordFloor(stats, state, "expanded");
       recordStage(stats, state, "expanded");
-      if (compareFrontierStates(simulator, config, state, bestSeenState) > 0) {
+      if (compareBestStates(simulator, config, state, bestSeenState) > 0) {
         bestSeenState = state;
       }
       const progressDiff = compareProgress(state, bestProgressState);
-      if (progressDiff > 0 || (progressDiff === 0 && compareFrontierStates(simulator, config, state, bestProgressState) > 0)) {
+      if (progressDiff > 0 || (progressDiff === 0 && compareBestStates(simulator, config, state, bestProgressState) > 0)) {
         bestProgressState = state;
       }
 
@@ -1146,6 +1260,7 @@ async function searchTopKParallel(simulator, initialState, options) {
       statesWithMacroActions: 0,
       primitiveFallbackStates: 0,
       primitiveActionsSuppressed: 0,
+      primitiveActionsSuppressedByMacroPlan: 0,
       expandedByKind: {},
     },
     sampleLimit: Number(config.sampleLimit || 20),
@@ -1167,7 +1282,10 @@ async function searchTopKParallel(simulator, initialState, options) {
       rejectedByHigherHp: 0,
       ignoredRouteLengthRejects: 0,
       ignoredRouteLengthReplacements: 0,
+      unsafeFloorDowngrades: 0,
+      nonWhitelistedFloorDowngrades: 0,
       representativesByKeyMax: Number(config.confluenceRepresentatives || 3),
+      byFloor: {},
       examples: [],
     },
     actionExpansionCache: {
@@ -1285,6 +1403,8 @@ async function searchTopKParallel(simulator, initialState, options) {
       enableResourceChain: Boolean(config.enableResourceChain),
       enableResourceCluster: Boolean(config.enableResourceCluster),
       resourcePocketSearchOptions: config.resourcePocketSearchOptions,
+      resourceChainOptions: config.resourceChainOptions,
+      resourceClusterOptions: config.resourceClusterOptions,
       enableActionExpansionCache: config.enableActionExpansionCache !== false,
       actionExpansionCacheLimit: config.actionExpansionCacheLimit,
       searchGraphMode: config.searchGraphMode || config.searchGraph,
@@ -1470,7 +1590,7 @@ async function searchTopKParallel(simulator, initialState, options) {
       actionExpansionCache: {
         mode: "parallel",
         main: collectActionExpansionCacheStats(simulator),
-        workers: stats.actionExpansionCache.workers,
+        workers: enrichCacheStats(stats.actionExpansionCache.workers),
       },
       checkpoints: summarizeCheckpointPool(stats.checkpointPool),
       best: {
@@ -1500,4 +1620,8 @@ module.exports = {
   searchTopK,
   searchTopKParallel,
   searchTopKSerial,
+  __testing: {
+    getEffectiveConfluenceRoutePolicy,
+    isIgnoreLengthAllowedForState,
+  },
 };

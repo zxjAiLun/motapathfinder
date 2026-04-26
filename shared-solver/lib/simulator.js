@@ -64,6 +64,78 @@ function stableFloorState(floorState) {
   return { removed, replaced };
 }
 
+function clusterCandidatePoint(action) {
+  const source = (action && (action.target || action.loc)) || action || {};
+  const x = source.x != null ? Number(source.x) : null;
+  const y = source.y != null ? Number(source.y) : null;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+function isResourceClusterSignalAction(action, state) {
+  if (!action) return false;
+  if (action.kind === "pickup" || action.kind === "equip") return true;
+  if (action.kind === "event") return action.hasStateChange === true;
+  if (action.kind !== "battle") return false;
+  const estimate = action.estimate || {};
+  const exp = Number(estimate.exp || 0);
+  const money = Number(estimate.money || 0);
+  const guards = Number(estimate.guards || 0);
+  const damage = Number(estimate.damage || 0);
+  const hp = Number(((state || {}).hero || {}).hp || 0);
+  const lowDamage = damage === 0 || damage <= 30 || (hp > 0 && damage / hp <= 0.03);
+  return exp > 0 || money > 0 || guards > 0 || lowDamage;
+}
+
+function actionKindCounts(actions) {
+  return (actions || []).reduce((result, action) => {
+    const kind = (action && action.kind) || "unknown";
+    result[kind] = Number(result[kind] || 0) + 1;
+    return result;
+  }, {});
+}
+
+function detectResourceCandidateClusters(candidates) {
+  const nodes = (candidates || [])
+    .map((action, index) => ({
+      action,
+      index,
+      point: clusterCandidatePoint(action),
+      kind: action && action.kind,
+      isResource: isResourceClusterSignalAction(action),
+      isGuard: action && action.kind === "battle",
+      isUnlock: action && (action.kind === "openDoor" || action.kind === "useTool"),
+    }))
+    .filter((node) => node.point);
+  const visited = new Set();
+  const clusters = [];
+  nodes.forEach((root) => {
+    if (visited.has(root.index)) return;
+    const queue = [root];
+    const members = [];
+    visited.add(root.index);
+    while (queue.length > 0) {
+      const node = queue.shift();
+      members.push(node);
+      nodes.forEach((candidate) => {
+        if (visited.has(candidate.index)) return;
+        const distance = Math.abs(candidate.point.x - node.point.x) + Math.abs(candidate.point.y - node.point.y);
+        if (distance > 2) return;
+        visited.add(candidate.index);
+        queue.push(candidate);
+      });
+    }
+    clusters.push({
+      size: members.length,
+      hasResource: members.some((member) => member.isResource),
+      hasGuard: members.some((member) => member.isGuard),
+      hasUnlock: members.some((member) => member.isUnlock),
+      kinds: actionKindCounts(members.map((member) => member.action)),
+    });
+  });
+  return clusters;
+}
+
 function compareNumbersDescending(left, right) {
   const diff = Number(right || 0) - Number(left || 0);
   if (diff !== 0) return diff;
@@ -145,6 +217,11 @@ function buildUnsafeDominanceFloors(project) {
   return floors;
 }
 
+function normalizeSearchGraphMode(value, fallback) {
+  const mode = String(value || fallback || "hybrid").trim();
+  if (["primitive", "macro", "hybrid"].includes(mode)) return mode;
+  throw new Error(`Invalid search graph mode: ${mode}. Expected primitive, macro, or hybrid.`);
+}
 
 class StaticSimulator {
   constructor(project, options) {
@@ -174,13 +251,42 @@ class StaticSimulator {
     this.enableResourcePocket = Boolean(config.enableResourcePocket);
     this.enableResourceChain = Boolean(config.enableResourceChain);
     this.enableResourceCluster = Boolean(config.enableResourceCluster);
-    this.searchGraphMode = config.searchGraphMode || config.searchGraph || "hybrid";
+    this.searchGraphMode = normalizeSearchGraphMode(config.searchGraphMode || config.searchGraph, "hybrid");
     this.primitiveFallbackMode = config.primitiveFallbackMode || "auto";
     this.resourcePocketSearchOptions = config.resourcePocketSearchOptions || {};
+    this.resourceChainOptions = config.resourceChainOptions || {};
     this.resourceClusterOptions = config.resourceClusterOptions || {};
+    this.resourceChainStats = {
+      enabled: Boolean(config.enableResourceChain),
+      candidateStates: 0,
+      skippedByFloorGate: 0,
+      actionsOutput: 0,
+    };
     this.resourceClusterStats = {
       enabled: Boolean(config.enableResourceCluster),
+      mode: this.resourceClusterOptions.mode || "custom",
       clustersEnumerated: 0,
+      candidateStates: 0,
+      skippedNoCandidate: 0,
+      skippedTooFewCandidates: 0,
+      skippedTooFewSignals: 0,
+      detectorCandidateCount: 0,
+      detectorResourceSignals: 0,
+      detectorUnlockSignals: 0,
+      detectorLookaheadResourceSignals: 0,
+      detectorClusters: 0,
+      detectorGuardedResourceClusters: 0,
+      detectorMaxClusterSize: 0,
+      detectorByKind: {},
+      localClustersDetected: 0,
+      localClusterMaxSize: 0,
+      foundationCompositionsEnumerated: 0,
+      foundationDpStates: 0,
+      foundationReplayFailures: 0,
+      foundationPlansAlreadyCovered: 0,
+      foundationPlanStepsAlreadyCovered: 0,
+      foundationPlansSelected: 0,
+      foundationActionsOutput: 0,
       dpStates: 0,
       skylineRejected: 0,
       skylineReplaced: 0,
@@ -198,7 +304,7 @@ class StaticSimulator {
       searchConfluence: new Map(),
     };
     this.actionExpansionCacheStats = Object.keys(this.actionExpansionCaches).reduce((stats, name) => {
-      stats[name] = { hits: 0, misses: 0, stores: 0, evictions: 0 };
+      stats[name] = { hits: 0, misses: 0, stores: 0, evictions: 0, computeMs: 0, estimatedMsSaved: 0 };
       return stats;
     }, {});
   }
@@ -220,17 +326,24 @@ class StaticSimulator {
     const value = cache.get(key);
     cache.delete(key);
     cache.set(key, value);
-    if (stats) stats.hits += 1;
+    if (stats) {
+      stats.hits += 1;
+      const avgComputeMs = stats.stores > 0 ? Number(stats.computeMs || 0) / stats.stores : 0;
+      stats.estimatedMsSaved = Number(stats.estimatedMsSaved || 0) + avgComputeMs;
+    }
     return typeof cloneValue === "function" ? cloneValue(value) : value;
   }
 
-  cacheSet(name, key, value, cloneValue) {
+  cacheSet(name, key, value, cloneValue, computeMs) {
     if (!this.enableActionExpansionCache || !key) return value;
     const cache = this.actionExpansionCaches[name];
     const stats = this.actionExpansionCacheStats[name];
     if (!cache) return value;
     cache.set(key, typeof cloneValue === "function" ? cloneValue(value) : value);
-    if (stats) stats.stores += 1;
+    if (stats) {
+      stats.stores += 1;
+      if (Number.isFinite(Number(computeMs))) stats.computeMs = Number(stats.computeMs || 0) + Number(computeMs);
+    }
     const limit = this.cacheLimitFor(name);
     while (limit > 0 && cache.size > limit) {
       const firstKey = cache.keys().next().value;
@@ -243,12 +356,24 @@ class StaticSimulator {
   getActionExpansionCacheStats() {
     const stats = cloneJson(this.actionExpansionCacheStats);
     Object.entries(this.actionExpansionCaches || {}).forEach(([name, cache]) => {
-      if (!stats[name]) stats[name] = { hits: 0, misses: 0, stores: 0, evictions: 0 };
+      if (!stats[name]) stats[name] = { hits: 0, misses: 0, stores: 0, evictions: 0, computeMs: 0, estimatedMsSaved: 0 };
+      if (cache && cache.stats) {
+        Object.entries(cache.stats).forEach(([key, value]) => {
+          if (typeof value === "number") stats[name][key] = Number(stats[name][key] || 0) + value;
+        });
+      }
+      const hits = Number(stats[name].hits || 0);
+      const misses = Number(stats[name].misses || 0);
+      const stores = Number(stats[name].stores || 0);
+      stats[name].hitRate = hits + misses > 0 ? hits / (hits + misses) : 0;
+      stats[name].avgComputeMs = stores > 0 ? Number(stats[name].computeMs || 0) / stores : 0;
+      stats[name].avgMsSaved = hits > 0 ? Number(stats[name].estimatedMsSaved || 0) / hits : 0;
       stats[name].size = cache.size;
     });
     if (this.battleResolver && typeof this.battleResolver.getCacheStats === "function") {
       stats.battleResolver = this.battleResolver.getCacheStats();
     }
+    stats.resourceChainDiagnostics = cloneJson(this.resourceChainStats || {});
     stats.resourceClusterDiagnostics = this.getResourceClusterDiagnostics();
     return stats;
   }
@@ -261,13 +386,14 @@ class StaticSimulator {
     const key = buildStateKey(state);
     const cached = this.cacheGet("reachability", key);
     if (cached) return cached;
+    const startedAt = Date.now();
     const reachability = buildWalkReachability(this.project, state, {
       battleResolver: this.battleResolver,
       executeActionList,
       choiceResolver: this.choiceResolver,
       stabilizeState: (nextState) => this.stabilizeState(nextState),
     });
-    return this.cacheSet("reachability", key, reachability);
+    return this.cacheSet("reachability", key, reachability, null, Date.now() - startedAt);
   }
 
   clonePrimitiveActions(value) {
@@ -341,6 +467,7 @@ class StaticSimulator {
     const cacheKey = buildStateKey(state);
     const cached = this.cacheGet("primitiveActions", cacheKey, (value) => this.clonePrimitiveActions(value));
     if (cached) return cached;
+    const startedAt = Date.now();
     const floor = this.project.floorsById[state.floorId];
     const reachability = this.getWalkReachability(state);
     const actions = [];
@@ -397,7 +524,7 @@ class StaticSimulator {
     actions.push(...battleActions);
 
     const result = { actions, battleActions };
-    return this.cacheSet("primitiveActions", cacheKey, result, (value) => this.clonePrimitiveActions(value));
+    return this.cacheSet("primitiveActions", cacheKey, result, (value) => this.clonePrimitiveActions(value), Date.now() - startedAt);
   }
 
   enumerateMacroActions(state, primitiveActions, battleActions) {
@@ -409,25 +536,79 @@ class StaticSimulator {
       const fightToLevelUpAction = this.enumerateFightToLevelUpAction(state, sourceBattleActions);
       if (fightToLevelUpAction) actions.push(fightToLevelUpAction);
     }
-    if (this.enableResourceCluster) {
+    if (this.enableResourceCluster && this.shouldEnumerateResourceCluster(state, sourceActions)) {
       actions.push(...this.enumerateResourceClusterActions(state, sourceActions));
     }
     if (this.enableResourcePocket && this.shouldEnumerateResourcePocket(state, sourceActions.concat(actions))) {
       actions.push(...this.enumerateResourcePocketActions(state, sourceActions.concat(actions)));
     }
-    if (this.enableResourceChain) actions.push(...this.enumerateResourceChainActions(state, sourceActions.concat(actions)));
+    if (this.enableResourceChain && this.shouldEnumerateResourceChain(state)) {
+      actions.push(...this.enumerateResourceChainActions(state, sourceActions.concat(actions)));
+    }
     return actions;
   }
 
   isMacroGraphPrimitiveAction(action) {
+    return this.isMacroGraphPrimitiveActionForState(null, action);
+  }
+
+  isMacroGraphPrimitiveActionForState(state, action) {
     if (!action) return false;
-    if (action.kind === "battle") return false;
+    if (action.kind === "battle") return this.shouldKeepPrimitiveBattleInMacroGraph(state, action);
     return true;
+  }
+
+  shouldKeepPrimitiveBattleInMacroGraph(state, action) {
+    if (!state || !action || action.kind !== "battle") return false;
+    const hp = Number((state.hero || {}).hp || 0);
+    const damage = Number((action.estimate || {}).damage || 0);
+    if (hp <= 0 || damage >= hp) return false;
+    if (damage / hp < 0.55) return false;
+    let nextState;
+    try {
+      nextState = this.applyActionPreview(state, action);
+    } catch (error) {
+      return false;
+    }
+    const currentOrder = getFloorOrder(state.floorId);
+    try {
+      return this.enumeratePrimitiveActions(nextState).actions.some((candidate) => {
+        if (!candidate || candidate.kind !== "changeFloor") return false;
+        const targetFloorId = candidate.changeFloor && candidate.changeFloor.floorId;
+        if (targetFloorId === ":next") return true;
+        return getFloorOrder(targetFloorId) > currentOrder;
+      });
+    } catch (error) {
+      return false;
+    }
+  }
+
+  isPrimitiveCoveredByMacro(action, coveredPrimitiveIds) {
+    if (!action || !coveredPrimitiveIds || coveredPrimitiveIds.size === 0) return false;
+    if (!["pickup", "equip", "event", "openDoor", "useTool"].includes(action.kind)) return false;
+    const fingerprint = this.getActionFingerprint(action);
+    return (fingerprint && coveredPrimitiveIds.has(fingerprint)) ||
+      (action.summary && coveredPrimitiveIds.has(action.summary));
+  }
+
+  collectMacroCoveredPrimitiveIds(macroActions) {
+    const covered = new Set();
+    (macroActions || []).forEach((action) => {
+      (action.planEntries || []).forEach((entry) => {
+        if (entry.fingerprint) covered.add(entry.fingerprint);
+        if (entry.clusterActionId) covered.add(entry.clusterActionId);
+        if (entry.summary) covered.add(entry.summary);
+      });
+      (action.plan || []).forEach((summary) => {
+        if (summary) covered.add(summary);
+      });
+    });
+    return covered;
   }
 
   selectGraphActions(state, primitiveActions, macroActions, options) {
     const config = options || {};
-    const mode = config.searchGraphMode || config.searchGraph || this.searchGraphMode || "hybrid";
+    const mode = normalizeSearchGraphMode(config.searchGraphMode || config.searchGraph || this.searchGraphMode, "hybrid");
     const graphStats = config.graphStats || config.__graphStats;
     const primitives = primitiveActions || [];
     const macros = macroActions || [];
@@ -435,16 +616,23 @@ class StaticSimulator {
     if (mode === "primitive") return primitives;
     if (mode !== "macro") return primitives.concat(macros);
 
-    const nonBattlePrimitives = primitives.filter((action) => this.isMacroGraphPrimitiveAction(action));
+    const coveredPrimitiveIds = this.collectMacroCoveredPrimitiveIds(macros);
+    const nonBattlePrimitives = primitives.filter((action) =>
+      this.isMacroGraphPrimitiveActionForState(state, action) && !this.isPrimitiveCoveredByMacro(action, coveredPrimitiveIds)
+    );
     const selected = nonBattlePrimitives.concat(macros);
     if (graphStats && macros.length > 0) graphStats.statesWithMacroActions += 1;
     const suppressed = primitives.length - nonBattlePrimitives.length;
+    const suppressedByMacroPlan = primitives.filter((action) => this.isPrimitiveCoveredByMacro(action, coveredPrimitiveIds)).length;
     const shouldFallback = selected.length === 0 && (config.primitiveFallbackMode || this.primitiveFallbackMode) !== "off";
     if (shouldFallback) {
       if (graphStats) graphStats.primitiveFallbackStates += 1;
       return primitives.concat(macros);
     }
     if (graphStats && suppressed > 0) graphStats.primitiveActionsSuppressed += suppressed;
+    if (graphStats && suppressedByMacroPlan > 0) {
+      graphStats.primitiveActionsSuppressedByMacroPlan = Number(graphStats.primitiveActionsSuppressedByMacroPlan || 0) + suppressedByMacroPlan;
+    }
     return selected;
   }
 
@@ -457,21 +645,26 @@ class StaticSimulator {
   }
 
   enumerateResourceChainActions(state, actions) {
-    if (getFloorOrder(state.floorId) !== 2) return [];
+    const minScore = Number((this.resourceChainOptions || {}).minScore || 180000);
+    const chainOptions = this.resourceChainOptions || {};
     const cache = this.actionExpansionCaches.resourceLookahead || createResourceLookaheadCache();
-    return (actions || [])
-      .filter((action) => action.kind === "battle" || action.kind === "equip")
+    const result = (actions || [])
+      .filter((action) => action.kind === "battle" || action.kind === "equip" || action.kind === "changeFloor")
       .map((action) => {
+        const startsWithFloorChange = action.kind === "changeFloor";
+        const lookaheadDefaults = startsWithFloorChange
+          ? { maxDepth: 11, maxNodes: 140, branchLimit: 8, frontierLimit: 32 }
+          : { maxDepth: 9, maxNodes: 48, branchLimit: 6, frontierLimit: 16 };
         const preview = evaluateActionResourceLookahead(this, state, action, {
           cache,
-          maxDepth: 9,
-          maxNodes: 24,
-          branchLimit: 4,
-          frontierLimit: 8,
+          maxDepth: Number(chainOptions.lookaheadMaxDepth || lookaheadDefaults.maxDepth),
+          maxNodes: Number(chainOptions.lookaheadMaxNodes || lookaheadDefaults.maxNodes),
+          branchLimit: Number(chainOptions.lookaheadBranchLimit || lookaheadDefaults.branchLimit),
+          frontierLimit: Number(chainOptions.lookaheadFrontierLimit || lookaheadDefaults.frontierLimit),
           includeResourcePocket: false,
           includeFightToLevelUp: false,
         });
-        if (!preview || !preview.valid || Number(preview.score || 0) < 180000) return null;
+        if (!preview || !preview.valid || Number(preview.score || 0) < minScore) return null;
         const planEntries = preview.bestPlanEntries || [];
         if (planEntries.length <= 1) return null;
         return {
@@ -495,23 +688,142 @@ class StaticSimulator {
       .filter(Boolean)
       .sort((left, right) => Number((right.estimate || {}).score || 0) - Number((left.estimate || {}).score || 0))
       .slice(0, 3);
+    if (this.resourceChainStats) this.resourceChainStats.actionsOutput += result.length;
+    return result;
+  }
+
+  shouldEnumerateResourceChain(state) {
+    const options = this.resourceChainOptions || {};
+    const floorIds = new Set((options.floorIds || options.floors || []).map(String));
+    const floorOrders = new Set((options.floorOrders || []).map(Number).filter((value) => Number.isFinite(value)));
+    const hasExplicitGate = floorIds.size > 0 || floorOrders.size > 0;
+    const floorOrder = getFloorOrder(state.floorId);
+    const allowed = hasExplicitGate
+      ? floorIds.has(String(state.floorId)) || floorOrders.has(floorOrder)
+      : floorOrder === 2;
+    if (!allowed) {
+      if (this.resourceChainStats) this.resourceChainStats.skippedByFloorGate += 1;
+      return false;
+    }
+    if (this.resourceChainStats) this.resourceChainStats.candidateStates += 1;
+    return true;
   }
 
   enumerateResourceClusterActions(state, actions) {
     const key = this.buildResourceClusterCacheKey(state, actions);
     const cached = this.cacheGet("resourceCluster", key, cloneJson);
     if (cached) return cached;
+    const startedAt = Date.now();
     const result = enumerateResourceClusterActions(this, state, actions, {
       ...this.resourceClusterOptions,
       diagnostics: this.resourceClusterStats,
     });
-    return this.cacheSet("resourceCluster", key, result, cloneJson);
+    return this.cacheSet("resourceCluster", key, result, cloneJson, Date.now() - startedAt);
+  }
+
+  isResourceClusterCandidateAction(state, action) {
+    if (!action) return false;
+    if (!["battle", "pickup", "equip", "event", "openDoor", "useTool"].includes(action.kind)) return false;
+    if (action.unsupported) return false;
+    if (action.floorId && action.floorId !== state.floorId) return false;
+    if (action.kind === "event" && action.hasStateChange !== true) return false;
+    return true;
+  }
+
+  getResourceClusterCandidateSummary(state, actions) {
+    const candidates = (actions || []).filter((action) => this.isResourceClusterCandidateAction(state, action));
+    const resourceSignals = candidates.reduce((count, action) => count + (isResourceClusterSignalAction(action, state) ? 1 : 0), 0);
+    const unlockSignals = candidates.filter((action) => action.kind === "openDoor" || action.kind === "useTool").length;
+    const clusters = detectResourceCandidateClusters(candidates);
+    const guardedResourceClusters = clusters.filter((cluster) => cluster.hasResource && (cluster.hasGuard || cluster.hasUnlock)).length;
+    const currentFingerprints = new Set(candidates.map((action) => this.getActionFingerprint(action) || action.summary || action.kind).filter(Boolean));
+    let lookaheadResourceSignals = 0;
+    candidates
+      .filter((action) => action.kind === "battle" || action.kind === "openDoor" || action.kind === "useTool")
+      .forEach((action) => {
+        let nextState = null;
+        try {
+          nextState = this.applyAction(state, action, { storeRoute: false });
+        } catch (error) {
+          return;
+        }
+        let nextActions = [];
+        try {
+          nextActions = ((this.enumeratePrimitiveActions(nextState) || {}).actions) || [];
+        } catch (error) {
+          return;
+        }
+        const newSignals = nextActions
+          .filter((candidate) => this.isResourceClusterCandidateAction(nextState, candidate))
+          .filter((candidate) => isResourceClusterSignalAction(candidate, nextState))
+          .filter((candidate) => {
+            const fingerprint = this.getActionFingerprint(candidate) || candidate.summary || candidate.kind;
+            return !fingerprint || !currentFingerprints.has(fingerprint);
+          })
+          .length;
+        lookaheadResourceSignals = Math.max(lookaheadResourceSignals, newSignals);
+      });
+    return {
+      candidates,
+      resourceSignals,
+      unlockSignals,
+      lookaheadResourceSignals,
+      clusters,
+      guardedResourceClusters,
+      byKind: actionKindCounts(candidates),
+      maxClusterSize: clusters.reduce((max, cluster) => Math.max(max, Number(cluster.size || 0)), 0),
+    };
+  }
+
+  shouldEnumerateResourceCluster(state, actions) {
+    const options = this.resourceClusterOptions || {};
+    const minCandidateActions = Math.max(1, Number(options.minCandidateActions || 2));
+    const minResourceSignals = Math.max(1, Number(options.minResourceSignals || 2));
+    const summary = this.getResourceClusterCandidateSummary(state, actions);
+    const stats = this.resourceClusterStats;
+    if (stats) {
+      stats.detectorCandidateCount += summary.candidates.length;
+      stats.detectorResourceSignals += summary.resourceSignals;
+      stats.detectorUnlockSignals += summary.unlockSignals;
+      stats.detectorLookaheadResourceSignals += Number(summary.lookaheadResourceSignals || 0);
+      stats.detectorClusters += summary.clusters.length;
+      stats.detectorGuardedResourceClusters += summary.guardedResourceClusters;
+      stats.detectorMaxClusterSize = Math.max(Number(stats.detectorMaxClusterSize || 0), Number(summary.maxClusterSize || 0));
+      Object.entries(summary.byKind || {}).forEach(([kind, count]) => {
+        stats.detectorByKind[kind] = Number(stats.detectorByKind[kind] || 0) + Number(count || 0);
+      });
+    }
+    if (summary.candidates.length === 0) {
+      if (stats) stats.skippedNoCandidate += 1;
+      return false;
+    }
+    const hasLocalUnlockShape =
+      (summary.unlockSignals > 0 && summary.resourceSignals > 0) ||
+      summary.guardedResourceClusters > 0 ||
+      Number(summary.lookaheadResourceSignals || 0) > 0;
+    if (summary.candidates.length < minCandidateActions && !hasLocalUnlockShape) {
+      if (stats) stats.skippedTooFewCandidates += 1;
+      return false;
+    }
+    if (summary.resourceSignals < minResourceSignals && !hasLocalUnlockShape) {
+      if (stats) stats.skippedTooFewSignals += 1;
+      return false;
+    }
+    if (stats) stats.candidateStates += 1;
+    return true;
   }
 
   buildResourceClusterCacheKey(state, actions) {
     const hero = state.hero || {};
     const actionKey = (actions || [])
-      .filter((action) => action && (action.kind === "battle" || action.kind === "pickup" || action.kind === "equip" || action.kind === "event"))
+      .filter((action) => action && (
+        action.kind === "battle" ||
+        action.kind === "pickup" ||
+        action.kind === "equip" ||
+        action.kind === "event" ||
+        action.kind === "openDoor" ||
+        action.kind === "useTool"
+      ))
       .map((action) => this.getActionFingerprint(action) || action.summary || action.kind)
       .sort()
       .join("|");
@@ -775,15 +1087,16 @@ class StaticSimulator {
       if (!cached.valid) throw new Error(cached.error || "cached invalid action preview");
       return cloneState(cached.state);
     }
+    const startedAt = Date.now();
     try {
       const nextState = this.applyAction(state, action, { storeRoute: false });
-      this.cacheSet("resourcePreviewApply", key, { valid: true, state: cloneState(nextState) });
+      this.cacheSet("resourcePreviewApply", key, { valid: true, state: cloneState(nextState) }, null, Date.now() - startedAt);
       return nextState;
     } catch (error) {
       this.cacheSet("resourcePreviewApply", key, {
         valid: false,
         error: error && error.message ? error.message : String(error),
-      });
+      }, null, Date.now() - startedAt);
       throw error;
     }
   }
@@ -1142,8 +1455,9 @@ class StaticSimulator {
     const stateKey = buildStateKey(state);
     const cached = this.cacheGet("searchConfluence", stateKey);
     if (cached) return cached;
+    const startedAt = Date.now();
     const key = buildSharedSearchConfluenceKey(this, state);
-    return this.cacheSet("searchConfluence", stateKey, key);
+    return this.cacheSet("searchConfluence", stateKey, key, null, Date.now() - startedAt);
   }
 
   compareSearchConfluenceStates(left, right) {
@@ -1859,4 +2173,9 @@ class StaticSimulator {
 
 module.exports = {
   StaticSimulator,
+  __testing: {
+    clusterCandidatePoint,
+    detectResourceCandidateClusters,
+    isResourceClusterSignalAction,
+  },
 };

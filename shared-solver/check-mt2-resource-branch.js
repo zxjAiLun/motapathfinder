@@ -7,6 +7,7 @@ const path = require("node:path");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { formatActionLabel } = require("./lib/enemy-labels");
 const { createSearchProfile } = require("./lib/search-profiles");
+const { searchDP } = require("./lib/dp-search");
 const { searchTopK } = require("./lib/search");
 const { buildResourcePocketSearchOptions, resolveProjectRoot } = require("./lib/cli-options");
 const { loadProject } = require("./lib/project-loader");
@@ -145,12 +146,45 @@ async function checkSearchFindsBranch() {
   return { hp: found.hero.hp, routeLength: (found.route || []).length, expansions: result.expansions };
 }
 
+function checkDpFindsBranch() {
+  const simulator = makeSimulator({ enableFightToLevelUp: false, enableResourcePocket: false, enableResourceChain: false, stopFloorId: "MT3" });
+  const baseline = loadBaselineState(simulator);
+  const result = searchDP(simulator, baseline, {
+    targetFloorId: "MT3",
+    maxExpansions: 1600,
+    maxActionsPerState: 256,
+    dpKeyMode: "mutation",
+    dpAgendaMode: "best-first",
+    stopOnFirstGoal: true,
+    goalPredicate: (state) => state.floorId === "MT3" &&
+      state.hero.hp >= 8425 &&
+      state.hero.atk >= 107 &&
+      state.hero.def >= 100 &&
+      state.hero.mdef >= 510 &&
+      state.hero.exp >= 31 &&
+      (state.hero.equipment || []).includes("I893"),
+  });
+  const found = result.goalState;
+  assert.ok(found, `DP should find MT2 resource branch within budget; best=${JSON.stringify(result.diagnostics && result.diagnostics.best)}`);
+  assertBranchGoal(found, "dp search");
+  const routeText = (found.route || []).join("\n");
+  [
+    "battle:bluePriest@MT2:2,8",
+    "battle:brownWizard@MT2:3,10",
+    "battle:slimeman@MT2:4,11",
+    "equip:I893",
+  ].forEach((summary) => assert.ok(routeText.includes(summary), `DP route should include ${formatActionLabel(simulator.project, summary)}`));
+  return { hp: found.hero.hp, routeLength: (found.route || []).length, expansions: result.expansions };
+}
+
 async function main() {
   const staticReplay = checkStaticReplay();
   const ranking = checkFirstActionRanking();
   const shouldRunSearch = process.argv.includes("--search") || process.argv.includes("--full");
+  const shouldRunDp = process.argv.includes("--dp") || process.argv.includes("--full");
   const search = shouldRunSearch ? await checkSearchFindsBranch() : { skipped: true, reason: "pass --search to run bounded topK search" };
-  console.log(JSON.stringify({ staticReplay, ranking, search }, null, 2));
+  const dp = shouldRunDp ? checkDpFindsBranch() : { skipped: true, reason: "pass --dp to run bounded canonical DP search" };
+  console.log(JSON.stringify({ staticReplay, ranking, search, dp }, null, 2));
 }
 
 main().catch((error) => {

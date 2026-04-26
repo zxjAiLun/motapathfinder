@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
-const { buildConfluenceDominanceOptions, buildResourcePocketSearchOptions, parseBooleanFlag, parseKeyValueArgs, parseOptionalNumber, resolveProjectRoot, shouldEnableResourcePocket } = require("./lib/cli-options");
+const { buildConfluenceDominanceOptions, buildResourceChainOptions, buildResourceClusterSearchOptions, buildResourcePocketSearchOptions, parseBooleanFlag, parseKeyValueArgs, parseOptionalNumber, resolveProjectRoot, shouldEnableResourceChain, shouldEnableResourceCluster, shouldEnableResourcePocket } = require("./lib/cli-options");
 const { loadProject } = require("./lib/project-loader");
 const { buildRouteRecord, readRouteFile, writeRouteFile } = require("./lib/route-store");
 const { searchExhaustiveParallel } = require("./lib/exhaustive-parallel");
@@ -99,9 +99,11 @@ function buildBfsOptions(args, projectRoot, toFloor, stagePolicyDefault) {
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
     enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], stagePolicyDefault),
     enableResourcePocket: shouldEnableResourcePocket(args, true),
-    enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
-    enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
+    enableResourceCluster: shouldEnableResourceCluster(args, true),
+    enableResourceChain: shouldEnableResourceChain(args, false),
     resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
+    resourceChainOptions: buildResourceChainOptions(args),
+    resourceClusterOptions: buildResourceClusterSearchOptions(args),
   };
 }
 
@@ -137,7 +139,10 @@ async function main() {
   const toFloor = args["to-floor"] || "MT11";
   const profileName = args.profile || "stage-mt1-mt11";
   const rank = args.rank || "chaos";
-  const stagePolicyDefault = profileName.indexOf("stage-mt1-mt11") === 0;
+  const stagePolicyDefault = profileName.indexOf("stage-mt1-mt11") === 0 ||
+    profileName === "linear-main" ||
+    profileName === "resource-prep-main" ||
+    profileName === "debug-local-resource";
   const maxDepth = parseOptionalNumber(args["max-depth"]);
 
   const simulator = new StaticSimulator(project, {
@@ -147,9 +152,11 @@ async function main() {
     autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
     enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], stagePolicyDefault),
     enableResourcePocket: shouldEnableResourcePocket(args, true),
-    enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
-    enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
+    enableResourceCluster: shouldEnableResourceCluster(args, true),
+    enableResourceChain: shouldEnableResourceChain(args, false),
     resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
+    resourceChainOptions: buildResourceChainOptions(args),
+    resourceClusterOptions: buildResourceClusterSearchOptions(args),
   });
   const baseInitialState = simulator.createInitialState({ rank });
   if (args["start-route"] && args["start-state"]) {
@@ -198,9 +205,11 @@ async function main() {
         autoBattleEnabled: parseBooleanFlag(args["auto-battle"], true),
         enableFightToLevelUp: parseBooleanFlag(args["fight-to-levelup"], stagePolicyDefault),
         enableResourcePocket: shouldEnableResourcePocket(args, true),
-        enableResourceCluster: parseBooleanFlag(args["resource-cluster"], true),
-        enableResourceChain: parseBooleanFlag(args["resource-chain"], true),
+        enableResourceCluster: shouldEnableResourceCluster(args, true),
+        enableResourceChain: shouldEnableResourceChain(args, false),
         resourcePocketSearchOptions: buildResourcePocketSearchOptions(args),
+        resourceChainOptions: buildResourceChainOptions(args),
+        resourceClusterOptions: buildResourceClusterSearchOptions(args),
         maxDepth,
         selectStateActions: maxDepth == null ? profile.selectStateActions : (state, actions, options) => {
           if (getDecisionDepth(state) >= maxDepth) return [];
