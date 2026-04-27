@@ -203,12 +203,14 @@ function sourceActionRank(action) {
   return 1;
 }
 
-function buildDpAgendaRank(simulator, state, sourceAction, sequence) {
+function buildDpAgendaRank(simulator, state, sourceAction, sequence, options) {
+  const config = options || {};
   const progress = getProgress(state);
   const hero = state.hero || {};
   const nextDistance = estimateNextFloorDistance(state, simulator.project);
   const routeLength = Array.isArray(state.route) ? state.route.length : getDecisionDepth(state);
   return {
+    priorityMode: String(config.dpPriorityMode || "default"),
     bestFloorRank: Number(progress.bestFloorRank || 0),
     finiteNextDistance: Number.isFinite(nextDistance) ? 1 : 0,
     nextDistance: finiteNumber(nextDistance, 9999),
@@ -236,16 +238,9 @@ function compareDpAgendaRank(left, right) {
     if (diff !== 0) return diff;
   }
   if (left.nextDistance !== right.nextDistance) return right.nextDistance - left.nextDistance;
-  const remainingHighWins = [
-    "currentFloorRank",
-    "sourceActionRank",
-    "hp",
-    "atk",
-    "def",
-    "mdef",
-    "lv",
-    "exp",
-  ];
+  const remainingHighWins = left.priorityMode === "combat-first"
+    ? ["currentFloorRank", "sourceActionRank", "atk", "def", "mdef", "lv", "exp", "hp"]
+    : ["currentFloorRank", "sourceActionRank", "hp", "atk", "def", "mdef", "lv", "exp"];
   for (const field of remainingHighWins) {
     const diff = Number(left[field] || 0) - Number(right[field] || 0);
     if (diff !== 0) return diff;
@@ -284,6 +279,7 @@ function searchDP(simulator, initialState, options) {
   const maxActionsPerState = Number(config.maxActionsPerState || 256);
   const agendaMode = String(config.dpAgendaMode || config.agendaMode || "best-first");
   const stopOnFirstGoal = config.stopOnFirstGoal !== false;
+  const maxRuntimeMs = Number(config.maxRuntimeMs || config.timeLimitMs || 0);
   const fifoEntries = [];
   const heap = agendaMode === "fifo"
     ? null
@@ -313,6 +309,7 @@ function searchDP(simulator, initialState, options) {
   let bestSeenNode = null;
   let bestProgressNode = null;
   let sequence = 0;
+  let stoppedReason = null;
   const isGoalState = typeof config.goalPredicate === "function"
     ? config.goalPredicate
     : (state) => simulator.isTerminal(state);
@@ -342,7 +339,7 @@ function searchDP(simulator, initialState, options) {
       ? createChildNode(parentNode, state, key, actionForEntry, nextNodeId++, sequence)
       : createRootNode(state, key);
     node.key = key;
-    node.rank = buildDpAgendaRank(simulator, state, sourceAction, sequence);
+    node.rank = buildDpAgendaRank(simulator, state, sourceAction, sequence, config);
     sequence += 1;
     nodes.set(node.nodeId, node);
     bestByKey.set(key, node);
@@ -381,6 +378,10 @@ function searchDP(simulator, initialState, options) {
   };
 
   while (expansions < maxExpansions) {
+    if (maxRuntimeMs > 0 && Date.now() - startedAt >= maxRuntimeMs) {
+      stoppedReason = "time-limit";
+      break;
+    }
     if (stopOnFirstGoal && firstGoalNode) break;
     const entry = popNext();
     if (!entry) break;
@@ -391,10 +392,15 @@ function searchDP(simulator, initialState, options) {
     expansions += 1;
     let actions = [];
     try {
-      actions = simulator.enumeratePrimitiveActions(state).actions;
+      actions = typeof config.actionProvider === "function"
+        ? config.actionProvider(simulator, state, entry)
+        : simulator.enumeratePrimitiveActions(state).actions;
     } catch (error) {
       invalid += 1;
       continue;
+    }
+    if (typeof config.actionFilter === "function") {
+      actions = actions.filter((action) => config.actionFilter(action, state));
     }
     maxActionsGeneratedForState = Math.max(maxActionsGeneratedForState, actions.length);
     if (actions.length > maxActionsPerState) {
@@ -517,6 +523,8 @@ function searchDP(simulator, initialState, options) {
       },
       dp: {
         keys: bestByKey.size,
+        stoppedReason,
+        maxRuntimeMs,
         completeWithinActionSet: actionTrimmed === 0,
         maxActionsPerState,
         actionTrimmed,

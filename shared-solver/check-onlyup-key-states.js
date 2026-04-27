@@ -299,6 +299,251 @@ function checkMt4Hp4459Fixture(simulator) {
   };
 }
 
+function checkMt4Mt3ExperienceDetour(simulator) {
+  const { state: mt4State } = replayRouteRecord(simulator, FIXTURES.mt4Hp6428);
+  const afterLocalGems = replaySummaries(simulator, [
+    "battle:greenKing@MT4:4,1",
+    "battle:blueKnight@MT4:2,1",
+  ], mt4State);
+
+  const detour = replaySummaries(simulator, [
+    "changeFloor@MT4:6,0",
+    "changeFloor@MT3:6,0",
+  ], afterLocalGems);
+  assert.equal(detour.floorId, "MT4");
+  assert.equal(detour.hero.exp, afterLocalGems.hero.exp + 16, "MT4->MT3 detour should collect 16 zero-damage exp");
+  assert.equal(detour.hero.hp, afterLocalGems.hero.hp, "MT4->MT3 detour should not spend hp");
+
+  const sharedSuffix = [
+    "battle:goldSlime@MT4:4,7",
+    "battle:poisonSkeleton@MT4:6,6",
+    "battle:poisonSkeleton@MT4:10,8",
+    "battle:poisonSkeleton@MT4:2,8",
+    "battle:poisonSkeleton@MT4:3,10",
+  ];
+  const noDetourBeforeGate = replaySummaries(simulator, sharedSuffix, afterLocalGems);
+  const noDetourGate = findAction(simulator, noDetourBeforeGate, "battle:poisonSkeleton@MT4:1,11");
+  assert.ok(noDetourGate, "no-detour route should still need MT4:1,11");
+  assert.equal(Number((noDetourGate.estimate || {}).damage || 0), 688);
+  const noDetourAfterGate = simulator.applyAction(noDetourBeforeGate, noDetourGate);
+
+  const detourAfterShared = replaySummaries(simulator, sharedSuffix, detour);
+  const detourGate = findAction(simulator, detourAfterShared, "battle:poisonSkeleton@MT4:1,11");
+  assert.equal(detourGate, null, "detour route should auto-clear MT4:1,11 after earlier MT3 exp");
+  assert.ok(
+    detourAfterShared.hero.hp >= noDetourAfterGate.hero.hp + 688,
+    `detour should preserve at least 688 hp: detour=${detourAfterShared.hero.hp}, noDetour=${noDetourAfterGate.hero.hp}`
+  );
+
+  return {
+    afterLocalGems: {
+      hp: afterLocalGems.hero.hp,
+      atk: afterLocalGems.hero.atk,
+      def: afterLocalGems.hero.def,
+      mdef: afterLocalGems.hero.mdef,
+      exp: afterLocalGems.hero.exp,
+    },
+    detourGain: {
+      exp: detour.hero.exp - afterLocalGems.hero.exp,
+      hpCost: afterLocalGems.hero.hp - detour.hero.hp,
+      savedHpAtGate: detourAfterShared.hero.hp - noDetourAfterGate.hero.hp,
+    },
+    noDetourGate: formatActionLabel(simulator.project, "battle:poisonSkeleton@MT4:1,11"),
+  };
+}
+
+const MT4_MT5_DETOUR_PREFIX = [
+  "battle:greenKing@MT4:4,1",
+  "battle:blueKnight@MT4:2,1",
+  "changeFloor@MT4:6,0",
+  "changeFloor@MT3:6,0",
+  "battle:goldSlime@MT4:4,7",
+  "battle:poisonSkeleton@MT4:6,6",
+  "battle:poisonSkeleton@MT4:10,8",
+  "battle:poisonSkeleton@MT4:2,8",
+  "battle:poisonSkeleton@MT4:3,10",
+];
+
+const MT4_MT5_FIRST_ENTRY_PREFIX = [
+  ...MT4_MT5_DETOUR_PREFIX,
+  "battle:poisonBat@MT4:4,11",
+  "changeFloor@MT4:6,12",
+];
+
+function checkMt5SegmentedResourceRoute(simulator) {
+  const { state: mt4State } = replayRouteRecord(simulator, FIXTURES.mt4Hp6428);
+  const afterDetourPrefix = replaySummaries(simulator, MT4_MT5_DETOUR_PREFIX, mt4State);
+  assert.equal(afterDetourPrefix.floorId, "MT4");
+  assertHeroAtLeast(afterDetourPrefix, { hp: 44773, atk: 737, def: 705, mdef: 4210, lv: 7, exp: 61 }, "MT4/MT5 detour prefix");
+
+  const earlyEntry = replaySummaries(simulator, [
+    "battle:poisonBat@MT4:4,11",
+    "changeFloor@MT4:6,12",
+  ], afterDetourPrefix);
+  assert.equal(earlyEntry.floorId, "MT5");
+  assertHeroAtLeast(earlyEntry, { hp: 44471, atk: 777, def: 745, mdef: 4910, exp: 77 }, "MT5 early gem entry");
+
+  const returnedEarlyEntry = replaySummaries(simulator, [
+    "changeFloor@MT5:6,12",
+  ], earlyEntry);
+  assert.equal(returnedEarlyEntry.floorId, "MT4");
+
+  const decisionState = replaySummaries(simulator, [
+    "battle:skeletonPriest@MT4:11,11",
+    "battle:poisonBat@MT4:6,8",
+  ], returnedEarlyEntry);
+  assert.equal(decisionState.floorId, "MT4");
+  assertHeroAtLeast(decisionState, { hp: 93836, atk: 927, def: 745, mdef: 5910, exp: 141 }, "MT4/MT5 first decision state");
+
+  const firstEntry = replaySummaries(simulator, [
+    "battle:skeletonKing@MT4:4,3",
+    "changeFloor@MT4:6,12",
+  ], decisionState);
+  assert.equal(firstEntry.floorId, "MT5");
+  assertHeroAtLeast(firstEntry, { hp: 78915, atk: 927, def: 795, mdef: 5910, exp: 173 }, "MT5 first entry");
+
+  const firstSweep = replaySummaries(simulator, [
+    "battle:skeletonKing@MT5:4,11",
+    "battle:skeletonPresbyter@MT5:3,10",
+    "battle:skeletonKing@MT5:8,11",
+  ], firstEntry);
+  assert.equal(firstSweep.floorId, "MT5");
+  assertHeroAtLeast(firstSweep, { hp: 136514, atk: 977, def: 795, mdef: 6110, exp: 221 }, "MT5 first sweep");
+
+  const afterSecondGroup = replaySummaries(simulator, [
+    "battle:devilWarrior@MT5:11,11",
+    "battle:skeletonKnight@MT5:1,11",
+    "changeFloor@MT5:6,12",
+    "battle:skeletonKing@MT4:8,3",
+    "changeFloor@MT4:6,12",
+  ], firstSweep);
+  assertHeroAtLeast(afterSecondGroup, { hp: 105876, atk: 1077, def: 895, mdef: 6110, exp: 289 }, "MT5 second group");
+
+  const afterThirdGate = replaySummaries(simulator, [
+    "changeFloor@MT5:6,12",
+    "battle:devilWarrior@MT4:10,5",
+    "changeFloor@MT4:6,12",
+    "battle:evilHero@MT5:9,10",
+  ], afterSecondGroup);
+  assertHeroAtLeast(afterThirdGate, { hp: 105138, atk: 1097, def: 965, mdef: 6310, exp: 367 }, "MT5 third gate");
+
+  const afterSustainBalance = replaySummaries(simulator, [
+    "battle:skeletonPresbyter@MT5:3,6",
+  ], afterThirdGate);
+  assertEffectiveHeroAtLeast(afterSustainBalance, { hp: 94905, atk: 1621, def: 1456, mdef: 7887 }, "MT5 sustain/forward balance");
+
+  const beforeFinalHpPickup = replaySummaries(simulator, [
+    "battle:devilWarrior@MT5:9,6",
+    "battle:skeletonPresbyter@MT5:9,4",
+    "battle:goldHornSlime@MT5:10,5",
+    "equip:I894",
+    "battle:goldHornSlime@MT5:3,4",
+    "battle:redKing@MT5:4,7",
+  ], afterSustainBalance);
+  assertEffectiveHeroAtLeast(beforeFinalHpPickup, { hp: 417246, atk: 3147, def: 3096, mdef: 20816 }, "MT5 final stats before HP pickup");
+
+  const beforeBlueKing = replaySummaries(simulator, [
+    "battle:demonPriest@MT5:8,3",
+  ], beforeFinalHpPickup);
+  assertEffectiveHeroAtLeast(beforeBlueKing, { hp: 1098112, atk: 3147, def: 3096, mdef: 20816 }, "MT5 before blueKing");
+  const blueKing = findAction(simulator, beforeBlueKing, "battle:blueKing@MT5:6,7");
+  assert.ok(blueKing, `expected ${formatActionLabel(simulator.project, "battle:blueKing@MT5:6,7")} to be reachable`);
+  assert.ok(
+    beforeBlueKing.hero.hp > Number((blueKing.estimate || {}).damage || 0),
+    `expected blueKing to be survivable: hp=${beforeBlueKing.hero.hp}, damage=${(blueKing.estimate || {}).damage}`
+  );
+  const afterBlueKing = simulator.applyAction(beforeBlueKing, blueKing);
+  assertEffectiveHeroAtLeast(afterBlueKing, { hp: 4464, atk: 3467, def: 3416, mdef: 20816 }, "MT5 after blueKing");
+
+  return {
+    detourPrefix: {
+      hp: afterDetourPrefix.hero.hp,
+      atk: afterDetourPrefix.hero.atk,
+      def: afterDetourPrefix.hero.def,
+      mdef: afterDetourPrefix.hero.mdef,
+      exp: afterDetourPrefix.hero.exp,
+    },
+    earlyEntry: {
+      hp: earlyEntry.hero.hp,
+      atk: earlyEntry.hero.atk,
+      def: earlyEntry.hero.def,
+      mdef: earlyEntry.hero.mdef,
+      exp: earlyEntry.hero.exp,
+    },
+    firstDecision: {
+      hp: decisionState.hero.hp,
+      atk: decisionState.hero.atk,
+      def: decisionState.hero.def,
+      mdef: decisionState.hero.mdef,
+      exp: decisionState.hero.exp,
+    },
+    firstSweep: {
+      hp: firstSweep.hero.hp,
+      atk: firstSweep.hero.atk,
+      def: firstSweep.hero.def,
+      mdef: firstSweep.hero.mdef,
+      exp: firstSweep.hero.exp,
+    },
+    secondGroup: {
+      required: [
+        formatActionLabel(simulator.project, "battle:devilWarrior@MT5:11,11"),
+        formatActionLabel(simulator.project, "battle:skeletonKnight@MT5:1,11"),
+        "changeFloor@MT5:6,12",
+        formatActionLabel(simulator.project, "battle:skeletonKing@MT4:8,3"),
+        "changeFloor@MT4:6,12",
+      ],
+      final: {
+        hp: afterSecondGroup.hero.hp,
+        atk: afterSecondGroup.hero.atk,
+        def: afterSecondGroup.hero.def,
+        mdef: afterSecondGroup.hero.mdef,
+        exp: afterSecondGroup.hero.exp,
+      },
+    },
+    thirdGate: {
+      required: [
+        "changeFloor@MT5:6,12",
+        formatActionLabel(simulator.project, "battle:devilWarrior@MT4:10,5"),
+        "changeFloor@MT4:6,12",
+        formatActionLabel(simulator.project, "battle:evilHero@MT5:9,10"),
+      ],
+      final: {
+        hp: afterThirdGate.hero.hp,
+        atk: afterThirdGate.hero.atk,
+        def: afterThirdGate.hero.def,
+        mdef: afterThirdGate.hero.mdef,
+        exp: afterThirdGate.hero.exp,
+      },
+    },
+    finalBoss: {
+      required: [
+        formatActionLabel(simulator.project, "battle:skeletonPresbyter@MT5:3,6"),
+        formatActionLabel(simulator.project, "battle:devilWarrior@MT5:9,6"),
+        formatActionLabel(simulator.project, "battle:skeletonPresbyter@MT5:9,4"),
+        formatActionLabel(simulator.project, "battle:goldHornSlime@MT5:10,5"),
+        "equip:I894",
+        formatActionLabel(simulator.project, "battle:goldHornSlime@MT5:3,4"),
+        formatActionLabel(simulator.project, "battle:redKing@MT5:4,7"),
+        formatActionLabel(simulator.project, "battle:demonPriest@MT5:8,3"),
+        formatActionLabel(simulator.project, "battle:blueKing@MT5:6,7"),
+      ],
+      beforeBlueKing: {
+        hp: beforeBlueKing.hero.hp,
+        effective: effectiveHero(beforeBlueKing),
+        damage: Number((blueKing.estimate || {}).damage || 0),
+      },
+      final: {
+        hp: afterBlueKing.hero.hp,
+        atk: afterBlueKing.hero.atk,
+        def: afterBlueKing.hero.def,
+        mdef: afterBlueKing.hero.mdef,
+        exp: afterBlueKing.hero.exp,
+        effective: effectiveHero(afterBlueKing),
+      },
+    },
+  };
+}
+
 function tileIdAt(simulator, state, floorId, x, y) {
   const floor = simulator.project.floorsById[floorId];
   const floorState = (state.floorStates || {})[floorId] || {};
@@ -364,6 +609,8 @@ function main() {
       mt2Hp3834: checkMt2Hp3834Fixture(simulator),
       mt3I893Hp8425: checkMt3I893Hp8425Fixture(simulator),
       mt4Hp4459: checkMt4Hp4459Fixture(simulator),
+      mt4Mt3ExperienceDetour: checkMt4Mt3ExperienceDetour(simulator),
+      mt5SegmentedResourceRoute: checkMt5SegmentedResourceRoute(simulator),
       mt5BlueKingDoors: checkMt5BlueKingOpensMechanismDoors(simulator),
     },
   };

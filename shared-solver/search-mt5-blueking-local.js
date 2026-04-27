@@ -14,6 +14,7 @@ const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only 
 const DEFAULT_START_ROUTE = path.join(__dirname, "routes", "fixtures", "mt1-mt4-hp6428-best.route.json");
 const DEFAULT_OUT_ROUTE = path.join(__dirname, "routes", "latest", "mt5-blueking-local.route.json");
 const LOCAL_STAIR_COORDINATE = "6,12";
+const BACKTRACK_STAIR_COORDINATE = "6,0";
 const DEFAULT_TARGET = { floorId: "MT5", x: 6, y: 7, enemyId: "blueKing", name: "织光仙子" };
 
 function parseArgs(argv) {
@@ -49,7 +50,7 @@ function stableObject(object) {
 
 function localMutationSummary(state) {
   return listFloorMutationSummary(state.floorStates || {})
-    .filter((entry) => entry.floorId === "MT4" || entry.floorId === "MT5")
+    .filter((entry) => entry.floorId === "MT3" || entry.floorId === "MT4" || entry.floorId === "MT5")
     .map((entry) => ({
       floorId: entry.floorId,
       removed: entry.removed,
@@ -164,6 +165,9 @@ function localSearchActions(simulator, state, node, config) {
   return primitiveLocalActions(simulator, state, node, config)
     .filter((action) => isAllowedAction(action, state, node, config))
     .filter((action) => {
+      if (action.kind === "changeFloor" && !hasUsefulChangeFloorTransition(simulator, state, action)) {
+        return false;
+      }
       if (action.kind !== "changeFloor") return true;
       if (action.summary === `changeFloor@MT4:${LOCAL_STAIR_COORDINATE}`) {
         return node.mt5Entries < config.maxMt5Entries;
@@ -200,7 +204,11 @@ function isAllowedAction(action, state, node, config) {
   if (action.kind !== "changeFloor") {
     return (action.floorId || state.floorId) === "MT4" || (action.floorId || state.floorId) === "MT5";
   }
-  if (state.floorId === "MT4") return action.summary === `changeFloor@MT4:${LOCAL_STAIR_COORDINATE}`;
+  if (state.floorId === "MT3") return action.summary === `changeFloor@MT3:${BACKTRACK_STAIR_COORDINATE}`;
+  if (state.floorId === "MT4") {
+    return action.summary === `changeFloor@MT4:${LOCAL_STAIR_COORDINATE}`
+      || action.summary === `changeFloor@MT4:${BACKTRACK_STAIR_COORDINATE}`;
+  }
   if (state.floorId === "MT5") {
     if (action.summary === `changeFloor@MT5:${LOCAL_STAIR_COORDINATE}`) return true;
     return Boolean(config && config.allowForwardMt5Stair && action.summary === "changeFloor@MT5:6,0");
@@ -208,8 +216,78 @@ function isAllowedAction(action, state, node, config) {
   return false;
 }
 
-function actionPriority(action) {
-  if (action.kind === "changeFloor") return 100000000;
+function previewActionGain(simulator, state, action) {
+  try {
+    const preview = simulator.applyAction(state, action, { storeRoute: false });
+    const beforeHero = state.hero || {};
+    const afterHero = preview.hero || {};
+    return {
+      hpDelta: number(afterHero.hp, 0) - number(beforeHero.hp, 0),
+      atkDelta: number(afterHero.atk, 0) - number(beforeHero.atk, 0),
+      defDelta: number(afterHero.def, 0) - number(beforeHero.def, 0),
+      mdefDelta: number(afterHero.mdef, 0) - number(beforeHero.mdef, 0),
+      lvDelta: number(afterHero.lv, 0) - number(beforeHero.lv, 0),
+      expDelta: number(afterHero.exp, 0) - number(beforeHero.exp, 0),
+      autoBattleDelta: number((preview.meta || {}).autoBattleCount, 0) - number((state.meta || {}).autoBattleCount, 0),
+      autoPickupDelta: number((preview.meta || {}).autoPickupCount, 0) - number((state.meta || {}).autoPickupCount, 0),
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+function hasViableBattle(simulator, state) {
+  try {
+    const hp = number((state.hero || {}).hp, 0);
+    return simulator.enumerateBattleActionsOnly(state)
+      .some((action) => {
+        const damage = number((action.estimate || {}).damage, Number.POSITIVE_INFINITY);
+        return Number.isFinite(damage) && damage < hp;
+      });
+  } catch (error) {
+    return false;
+  }
+}
+
+function hasUsefulChangeFloorTransition(simulator, state, action) {
+  if (action.kind !== "changeFloor") return true;
+  try {
+    const preview = simulator.applyAction(state, action, { storeRoute: false });
+    const gain = previewActionGain(simulator, state, action);
+    if (gain && (
+      gain.hpDelta > 0 ||
+      gain.atkDelta > 0 ||
+      gain.defDelta > 0 ||
+      gain.mdefDelta > 0 ||
+      gain.lvDelta > 0 ||
+      gain.expDelta > 0 ||
+      gain.autoBattleDelta > 0 ||
+      gain.autoPickupDelta > 0
+    )) {
+      return true;
+    }
+    return hasViableBattle(simulator, preview);
+  } catch (error) {
+    return false;
+  }
+}
+
+function actionPriority(simulator, state, action) {
+  if (action.kind === "changeFloor") {
+    const gain = previewActionGain(simulator, state, action);
+    let score = 100000000;
+    if (gain && gain.hpDelta >= 0) {
+      score += Math.max(0, gain.autoBattleDelta) * 350000000;
+      score += Math.max(0, gain.autoPickupDelta) * 180000000;
+      score += Math.max(0, gain.lvDelta) * 600000000;
+      score += Math.max(0, gain.expDelta) * 25000000;
+      score += Math.max(0, gain.atkDelta) * 18000000;
+      score += Math.max(0, gain.defDelta) * 16000000;
+      score += Math.max(0, gain.mdefDelta) * 200000;
+      score += Math.max(0, gain.hpDelta) * 100;
+    }
+    return score;
+  }
   const estimate = action.estimate || {};
   const enemyId = action.enemyId || "";
   let bonus = 0;
@@ -462,6 +540,9 @@ function statePriority(simulator, state, routeLength, mode, target) {
 }
 
 function nodePriority(simulator, node, state, routeLength, mode, target, config) {
+  if (state.floorId === "MT3") {
+    return Number.MAX_SAFE_INTEGER - routeLength;
+  }
   const base = statePriority(simulator, state, routeLength, mode, target);
   if (mode !== "boss-readiness" || !config || config.forwardGreed === false) return base;
 
@@ -685,8 +766,8 @@ function searchLocal(simulator, startState, options) {
   const branchLimit = number(config.branchLimit, 9999);
   const keyMode = String(config.keyMode || "region");
   const searchConfig = {
-    maxMt5Entries: number(config.maxMt5Entries, 2),
-    maxMt5Returns: number(config.maxMt5Returns, 1),
+    maxMt5Entries: number(config.maxMt5Entries, 99),
+    maxMt5Returns: number(config.maxMt5Returns, 99),
     maxKeyReplacements: number(config.maxKeyReplacements, 8),
     maxRouteLength: number(config.maxRouteLength, 80),
     bestMode: String(config.bestMode || "boss-readiness"),
@@ -697,6 +778,7 @@ function searchLocal(simulator, startState, options) {
     enableUpperBoundPruning: config.enableUpperBoundPruning === true,
     target: config.target || { ...DEFAULT_TARGET },
     frontierSamples: number(config.frontierSamples, 8),
+    timeLimitMs: number(config.timeLimitMs, 15000),
   };
   const project = simulator.project;
   const root = {
@@ -725,10 +807,17 @@ function searchLocal(simulator, startState, options) {
   let bestSeen = 0;
   let goalNode = -1;
   let expansions = 0;
+  let stoppedReason = null;
+  const startedAt = Date.now();
 
   while (frontier.length > 0 && expansions < maxExpansions) {
+    if (searchConfig.timeLimitMs > 0 && Date.now() - startedAt >= searchConfig.timeLimitMs) {
+      stoppedReason = "time-limit";
+      break;
+    }
     if (frontier.length > maxFrontier) {
       skipped.frontierCap += 1;
+      stoppedReason = "frontier-cap";
       break;
     }
     const nodeId = frontier.pop();
@@ -772,7 +861,7 @@ function searchLocal(simulator, startState, options) {
         }
         return ok;
       })
-      .sort((left, right) => actionPriority(right) - actionPriority(left));
+      .sort((left, right) => actionPriority(simulator, node.state, right) - actionPriority(simulator, node.state, left));
     actionDiagnostics.eligible += eligibleActions.length;
     for (const action of eligibleActions) incrementCounter(actionDiagnostics.byKind.eligible, actionKind(action));
 
@@ -857,6 +946,7 @@ function searchLocal(simulator, startState, options) {
     frontierSample,
     keyMode,
     searchConfig,
+    stoppedReason,
   };
 }
 
@@ -903,6 +993,7 @@ function main() {
     forwardGreed: booleanArg(args["forward-greed"], true),
     enableUpperBoundPruning: booleanArg(args["upper-bound-pruning"], false),
     frontierSamples: args["frontier-samples"],
+    timeLimitMs: args["time-limit-ms"],
     target,
   });
   const node = result.nodes[result.nodeId];
@@ -936,7 +1027,14 @@ function main() {
             rules: {
               allowedFloors: ["MT4", "MT5"],
               actionScope: result.searchConfig.actionScope,
-              allowedActions: ["battle", "changeFloor@MT4:6,12", "changeFloor@MT5:6,12"],
+              allowedActions: [
+                "battle@MT4",
+                "battle@MT5",
+                "changeFloor@MT4:6,0",
+                "changeFloor@MT3:6,0",
+                "changeFloor@MT4:6,12",
+                "changeFloor@MT5:6,12",
+              ],
               noStairLoop: "bounded",
               maxMt5Entries: result.searchConfig.maxMt5Entries,
               maxMt5Returns: result.searchConfig.maxMt5Returns,
@@ -948,6 +1046,7 @@ function main() {
               allowForwardMt5Stair: result.searchConfig.allowForwardMt5Stair,
               enableUpperBoundPruning: result.searchConfig.enableUpperBoundPruning,
               frontierSamples: result.searchConfig.frontierSamples,
+              timeLimitMs: result.searchConfig.timeLimitMs,
               localDpKey: result.keyMode === "region"
                 ? "floor+reachable-region+combat+inventory+flags+MT4/MT5 mutations; hp skyline"
                 : "floor+combat+inventory+flags+MT4/MT5 mutations; hp skyline",
@@ -957,6 +1056,7 @@ function main() {
               expansions: result.expansions,
               nodes: result.nodes.length,
               frontierRemaining: result.frontierRemaining,
+              stoppedReason: result.stoppedReason,
               skipped: result.skipped,
               actionDiagnostics: result.actionDiagnostics,
               frontierSample: result.frontierSample,
@@ -984,6 +1084,7 @@ function main() {
     searchConfig: result.searchConfig,
     nodes: result.nodes.length,
     frontierRemaining: result.frontierRemaining,
+    stoppedReason: result.stoppedReason,
     skipped: result.skipped,
     actionDiagnostics: result.actionDiagnostics,
     frontierSample: result.frontierSample,
