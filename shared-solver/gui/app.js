@@ -7,6 +7,7 @@ const state = {
   session: { state: "idle", stepStatuses: {} },
   polling: null,
   speedDelayMs: 1400,
+  controlsRendered: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -60,33 +61,52 @@ function renderTopbar() {
 }
 
 function renderControls() {
+  if (!state.controlsRendered) {
+    $("controls").innerHTML = `
+      <button id="btn-start">打开游戏进行回放</button>
+      <button id="btn-play">Play</button>
+      <button id="btn-pause">Pause</button>
+      <button id="btn-step">Step</button>
+      <button id="btn-restart">Restart</button>
+      <button id="btn-jump">Jump to selected</button>
+      <label>Speed <select id="speed">
+        <option value="0">0x (fast)</option>
+        <option value="2800">0.5x</option>
+        <option value="1400">1x</option>
+        <option value="700">2x</option>
+      </select></label>
+      <label>From Step <input id="from-step" type="number" min="1"></label>
+    `;
+    $("btn-start").onclick = startLive;
+    $("btn-play").onclick = play;
+    $("btn-pause").onclick = pause;
+    $("btn-step").onclick = stepOnce;
+    $("btn-restart").onclick = restart;
+    $("btn-jump").onclick = jumpToSelected;
+    $("speed").onchange = (event) => { state.speedDelayMs = Number(event.target.value); };
+    $("from-step").onchange = (event) => loadStep(Number(event.target.value));
+    state.controlsRendered = true;
+  }
+
   const session = state.session || { state: "idle" };
   const isRunning = session.state === "running" || session.state === "pausing" || session.busy;
   const isPaused = session.state === "paused";
   const canStart = ["idle", "closed", "failed"].includes(session.state || "idle") && !session.busy;
-  $("controls").innerHTML = `
-    <button id="btn-start" ${canStart ? "" : "disabled"}>打开游戏进行回放</button>
-    <button id="btn-play" ${isPaused && !session.busy ? "" : "disabled"}>Play</button>
-    <button id="btn-pause" ${isRunning ? "" : "disabled"}>Pause</button>
-    <button id="btn-step" ${isPaused && !session.busy ? "" : "disabled"}>Step</button>
-    <button id="btn-restart" ${isRunning ? "disabled" : ""}>Restart</button>
-    <button id="btn-jump" ${isRunning ? "disabled" : ""}>Jump to selected</button>
-    <label>Speed <select id="speed">
-      <option value="0" ${state.speedDelayMs === 0 ? "selected" : ""}>0x (fast)</option>
-      <option value="2800" ${state.speedDelayMs === 2800 ? "selected" : ""}>0.5x</option>
-      <option value="1400" ${state.speedDelayMs === 1400 ? "selected" : ""}>1x</option>
-      <option value="700" ${state.speedDelayMs === 700 ? "selected" : ""}>2x</option>
-    </select></label>
-    <label>From Step <input id="from-step" type="number" min="1" max="${escapeHtml((state.route || {}).decisionCount || 1)}" value="${escapeHtml(state.selectedStep)}"></label>
-  `;
-  $("btn-start").onclick = startLive;
-  $("btn-play").onclick = play;
-  $("btn-pause").onclick = pause;
-  $("btn-step").onclick = stepOnce;
-  $("btn-restart").onclick = restart;
-  $("btn-jump").onclick = jumpToSelected;
-  $("speed").onchange = (event) => { state.speedDelayMs = Number(event.target.value); };
-  $("from-step").onchange = (event) => loadStep(Number(event.target.value));
+
+  $("btn-start").disabled = !canStart;
+  $("btn-play").disabled = !isPaused || !!session.busy;
+  $("btn-pause").disabled = !isRunning;
+  $("btn-step").disabled = !isPaused || !!session.busy;
+  $("btn-restart").disabled = isRunning;
+  $("btn-jump").disabled = isRunning;
+
+  if (document.activeElement !== $("speed")) {
+    $("speed").value = String(state.speedDelayMs);
+  }
+  $("from-step").max = String((state.route || {}).decisionCount || 1);
+  if (document.activeElement !== $("from-step")) {
+    $("from-step").value = String(state.selectedStep);
+  }
 }
 
 function rowStatus(index) {

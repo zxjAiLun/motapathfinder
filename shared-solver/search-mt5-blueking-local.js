@@ -154,46 +154,25 @@ function actionAllowedByScope(action, scope) {
 
 function primitiveLocalActions(simulator, state, node, config) {
   if (config.actionScope === "battle-only") {
-    return simulator.enumerateBattleActionsOnly(state);
+    return simulator.enumerateBattleActionsOnly(state)
+      .concat(primitiveActions(simulator, state).filter((action) => action.kind === "changeFloor"));
   }
   return primitiveActions(simulator, state).filter((action) => actionAllowedByScope(action, config.actionScope));
 }
 
 function localSearchActions(simulator, state, node, config) {
-  const actions = primitiveLocalActions(simulator, state, node, config)
-    .filter((action) => isAllowedAction(action, state, node, config));
-  const canUseStair =
-    (state.floorId === "MT4" && node.mt5Entries < config.maxMt5Entries) ||
-    (state.floorId === "MT5" && node.mt5Returns < config.maxMt5Returns);
-  if (canUseStair && (state.floorId === "MT4" || state.floorId === "MT5")) {
-    const floor = simulator.project.floorsById[state.floorId];
-    const reachability = simulator.getWalkReachability(state);
-    Object.values(reachability.visited || {}).forEach((visited) => {
-      DIRECTIONS.forEach((direction) => {
-        const delta = DIRECTION_DELTAS[direction];
-        const x = visited.x + delta.x;
-        const y = visited.y + delta.y;
-        const changeFloor = (floor.changeFloor || {})[coordinateKey(x, y)];
-        if (!changeFloor || coordinateKey(x, y) !== LOCAL_STAIR_COORDINATE) return;
-        const pathToStance = reconstructPath(reachability, visited.x, visited.y) || [];
-        const travelState = cloneState(state);
-        simulator.moveHero(travelState, pathToStance, { x: visited.x, y: visited.y }, direction);
-        actions.push({
-          kind: "changeFloor",
-          floorId: state.floorId,
-          stance: { x: visited.x, y: visited.y },
-          direction,
-          x,
-          y,
-          path: pathToStance,
-          travelState,
-          changeFloor,
-          summary: `changeFloor@${state.floorId}:${x},${y}`,
-        });
-      });
+  return primitiveLocalActions(simulator, state, node, config)
+    .filter((action) => isAllowedAction(action, state, node, config))
+    .filter((action) => {
+      if (action.kind !== "changeFloor") return true;
+      if (action.summary === `changeFloor@MT4:${LOCAL_STAIR_COORDINATE}`) {
+        return node.mt5Entries < config.maxMt5Entries;
+      }
+      if (action.summary === `changeFloor@MT5:${LOCAL_STAIR_COORDINATE}`) {
+        return node.mt5Returns < config.maxMt5Returns;
+      }
+      return true;
     });
-  }
-  return actions;
 }
 
 function findAction(simulator, state, summary) {
@@ -482,6 +461,25 @@ function statePriority(simulator, state, routeLength, mode, target) {
   return mode === "attributes" ? attributeScore : progressScore;
 }
 
+function nodePriority(simulator, node, state, routeLength, mode, target, config) {
+  const base = statePriority(simulator, state, routeLength, mode, target);
+  if (mode !== "boss-readiness" || !config || config.forwardGreed === false) return base;
+
+  const targetPath = targetPathMetrics(simulator, state, target || DEFAULT_TARGET);
+  let score = base;
+
+  if (state.floorId === (target || DEFAULT_TARGET).floorId) {
+    score += 300000000000000000;
+    if (targetPath.canFightNextBlocker) score += 200000000000000000;
+  } else if (node && node.hasEnteredMt5) {
+    score -= 300000000000000000;
+  }
+
+  const returns = node ? Number(node.mt5Returns || 0) : 0;
+  score -= returns * 120000000000000000;
+  return score;
+}
+
 function compactHero(state) {
   const hero = state.hero || {};
   return {
@@ -642,6 +640,44 @@ function reconstruct(nodes, nodeId) {
   return route.reverse();
 }
 
+function reconstructStructuredNodes(nodes, nodeId) {
+  const lineage = [];
+  let current = nodeId;
+  while (current >= 0) {
+    lineage.push(nodes[current]);
+    current = nodes[current].parentId;
+  }
+  lineage.reverse();
+  return lineage.map((node) => ({
+    actionEntry: node.action || null,
+    state: node.state,
+    stateKey: node.key || null,
+  }));
+}
+
+function buildStructuredRouteNodes(simulator, startRouteFile, localNodes, localNodeId) {
+  const routeNodes = [{
+    actionEntry: null,
+    state: simulator.createInitialState({ rank: "chaos" }),
+    stateKey: null,
+  }];
+  let state = routeNodes[0].state;
+  for (const decision of readRouteFile(startRouteFile).decisions || []) {
+    const action = findAction(simulator, state, decision.summary);
+    if (!action) throw new Error(`Unable to replay prefix action ${decision.summary}`);
+    state = simulator.applyAction(state, action, { storeRoute: false });
+    routeNodes.push({
+      actionEntry: action,
+      state,
+      stateKey: null,
+    });
+  }
+
+  const localLineage = reconstructStructuredNodes(localNodes, localNodeId);
+  localLineage.slice(1).forEach((entry) => routeNodes.push(entry));
+  return routeNodes;
+}
+
 function searchLocal(simulator, startState, options) {
   const config = options || {};
   const maxExpansions = number(config.maxExpansions, 200000);
@@ -655,6 +691,7 @@ function searchLocal(simulator, startState, options) {
     maxRouteLength: number(config.maxRouteLength, 80),
     bestMode: String(config.bestMode || "boss-readiness"),
     queueMode: String(config.queueMode || "boss-readiness"),
+    forwardGreed: config.forwardGreed !== false,
     actionScope: String(config.actionScope || "battle-only"),
     allowForwardMt5Stair: config.allowForwardMt5Stair === true,
     enableUpperBoundPruning: config.enableUpperBoundPruning === true,
@@ -672,9 +709,11 @@ function searchLocal(simulator, startState, options) {
     hasEnteredMt5: startState.floorId === "MT5",
     mt5Entries: startState.floorId === "MT5" ? 1 : 0,
     mt5Returns: 0,
-    priority: statePriority(simulator, startState, 0, searchConfig.queueMode, searchConfig.target),
-    bestPriority: statePriority(simulator, startState, 0, searchConfig.bestMode, searchConfig.target),
+    priority: 0,
+    bestPriority: 0,
   };
+  root.priority = nodePriority(simulator, root, startState, 0, searchConfig.queueMode, searchConfig.target, searchConfig);
+  root.bestPriority = statePriority(simulator, startState, 0, searchConfig.bestMode, searchConfig.target);
   root.key = buildLocalNodeKey(simulator, startState, keyMode, root.mt5Entries, root.mt5Returns);
   const nodes = [root];
   const frontier = new BinaryHeap((left, right) => nodes[left].priority - nodes[right].priority);
@@ -788,9 +827,11 @@ function searchLocal(simulator, startState, options) {
         hasEnteredMt5: node.hasEnteredMt5 || nextState.floorId === "MT5",
         mt5Entries,
         mt5Returns,
-        priority: statePriority(simulator, nextState, routeLength, searchConfig.queueMode, searchConfig.target),
-        bestPriority: statePriority(simulator, nextState, routeLength, searchConfig.bestMode, searchConfig.target),
+        priority: 0,
+        bestPriority: 0,
       };
+      nextNode.priority = nodePriority(simulator, nextNode, nextState, routeLength, searchConfig.queueMode, searchConfig.target, searchConfig);
+      nextNode.bestPriority = statePriority(simulator, nextState, routeLength, searchConfig.bestMode, searchConfig.target);
       nodes.push(nextNode);
       bestByKey.set(key, nextNode.id);
       frontier.push(nextNode.id);
@@ -859,12 +900,14 @@ function main() {
     queueMode: args["queue-mode"],
     actionScope: args["action-scope"],
     allowForwardMt5Stair: booleanArg(args["allow-forward-mt5-stair"], false),
+    forwardGreed: booleanArg(args["forward-greed"], true),
     enableUpperBoundPruning: booleanArg(args["upper-bound-pruning"], false),
     frontierSamples: args["frontier-samples"],
     target,
   });
   const node = result.nodes[result.nodeId];
   const suffix = reconstruct(result.nodes, result.nodeId);
+  const structuredNodes = buildStructuredRouteNodes(simulator, startRouteFile, result.nodes, result.nodeId);
   const replayed = tryReplaySuffix(simulator, startRouteFile, suffix);
   const finalState = replayed.state || node.state;
   const replayValid = replayed.error == null;
@@ -901,6 +944,7 @@ function main() {
               maxRouteLength: result.searchConfig.maxRouteLength,
               bestMode: result.searchConfig.bestMode,
               queueMode: result.searchConfig.queueMode,
+              forwardGreed: result.searchConfig.forwardGreed,
               allowForwardMt5Stair: result.searchConfig.allowForwardMt5Stair,
               enableUpperBoundPruning: result.searchConfig.enableUpperBoundPruning,
               frontierSamples: result.searchConfig.frontierSamples,
@@ -921,6 +965,7 @@ function main() {
             },
           },
         },
+        nodes: structuredNodes,
       });
     writeRouteFile(outRouteFile, routeRecord);
     } catch (error) {
