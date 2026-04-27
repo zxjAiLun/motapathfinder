@@ -150,6 +150,12 @@ function goalActionScore(simulator, state, action, segment) {
       score -= 10000000;
     }
   }
+  for (const preferred of goal.preferredPresentTiles || []) {
+    const preferredKey = `${preferred.floorId}:${preferred.x},${preferred.y}`;
+    if (actionTileKey === preferredKey && isRequiredTileStillPresent(simulator.project, state, preferred)) {
+      score -= 1000000;
+    }
+  }
   if (action && action.kind === "equip") {
     for (const itemId of goal.equipmentIncludes || []) {
       if (String(action.summary || "") === `equip:${itemId}` && !hasEquipment(state, itemId)) score += 12000000;
@@ -324,24 +330,155 @@ function compactState(state) {
   };
 }
 
+function hasMissingField(missing, predicate) {
+  return (missing || []).some((entry) => predicate(String((entry || {}).field || ""), entry || {}));
+}
+
+function classifySegmentFailure(missing, segment) {
+  const missingFields = missing || [];
+  const classes = [];
+  const preferredCandidateTags = [];
+  const recommendedNext = [];
+  const addClass = (failureClass, reason, tags, recommendation) => {
+    classes.push({ failureClass, reason });
+    (tags || []).forEach((tag) => {
+      if (!preferredCandidateTags.includes(tag)) preferredCandidateTags.push(tag);
+    });
+    if (recommendation && !recommendedNext.includes(recommendation)) recommendedNext.push(recommendation);
+  };
+
+  if (hasMissingField(missingFields, (field) => field === "presentTiles")) {
+    addClass(
+      "present-tile-overconstrained",
+      "hard presentTiles constraint was violated before this milestone goal",
+      ["best-combat", "shortest"],
+      "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource"
+    );
+  }
+
+  if (hasMissingField(missingFields, (field) => field === "actionSurvivable", (entry) => entry.actual === "missing-action")) {
+    addClass(
+      "target-action-unreachable",
+      "required target action is absent from the current primitive action set",
+      ["shortest", "best-combat"],
+      "check allowedFloors, allowChangeFloors, presentTiles, and local action scope for this segment"
+    );
+  }
+
+  if (hasMissingField(missingFields, (field) => field === "hero.atk" || field === "effectiveHero.atk")) {
+    addClass(
+      "atk-deficit",
+      "attack threshold is not met",
+      ["highest-atk", "best-combat"],
+      "backtrack to the previous milestone and try highest-atk or best-combat candidates"
+    );
+  }
+
+  if (hasMissingField(missingFields, (field) => field === "hero.def" || field === "effectiveHero.def")) {
+    addClass(
+      "def-deficit",
+      "defense threshold is not met",
+      ["highest-def", "best-combat"],
+      "backtrack to the previous milestone and try highest-def or best-combat candidates"
+    );
+  }
+
+  if (hasMissingField(missingFields, (field) => field === "hero.mdef" || field === "effectiveHero.mdef")) {
+    addClass(
+      "mdef-deficit",
+      "magic-defense threshold is not met",
+      ["highest-mdef", "best-combat"],
+      "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+    );
+  }
+
+  if (hasMissingField(missingFields, (field) => field === "hero.hp")) {
+    addClass(
+      "hp-deficit",
+      "HP threshold is not met",
+      ["highest-hp"],
+      "backtrack to the previous milestone and try highest-hp candidates"
+    );
+  }
+
+  if (hasMissingField(missingFields, (field, entry) => field === "actionSurvivable" && entry.actual !== "missing-action")) {
+    addClass(
+      "action-survivability-deficit",
+      "required action exists but current HP cannot survive it",
+      ["highest-hp"],
+      "backtrack to the previous milestone and try highest-hp candidates"
+    );
+  }
+
+  if (hasMissingField(missingFields, (field) => field === "equipment")) {
+    addClass(
+      "equipment-missing",
+      "required equipment is not equipped",
+      ["best-combat", "shortest"],
+      "check whether equip actions or the required item pickup are allowed in this segment"
+    );
+  }
+
+  if (hasMissingField(missingFields, (field) => field === "tileRemoved" || field === "removedTiles")) {
+    addClass(
+      "target-tile-not-cleared",
+      "required tile remains present at the best seen state",
+      ["best-combat", "highest-atk"],
+      "retry this segment with a candidate that has stronger combat or verify the target tile is reachable under the action policy"
+    );
+  }
+
+  if (hasMissingField(missingFields, (field) => field === "floorId")) {
+    addClass(
+      "floor-scope-mismatch",
+      "best seen state did not reach the target floor",
+      ["shortest", "best-combat"],
+      "check allowedFloors and allowChangeFloors for the segment"
+    );
+  }
+
+  if (classes.length === 0) {
+    addClass(
+      "budget-or-action-scope-exhausted",
+      "no goal state was found under the current segment budget and action policy",
+      ["best-combat", "highest-hp"],
+      "increase segment budget, widen action scope, or rerun the previous milestone with location key"
+    );
+  }
+
+  const primary = classes[0];
+  return {
+    failureClass: primary.failureClass,
+    failureReason: primary.reason,
+    allFailureClasses: classes,
+    preferredCandidateTags,
+    recommendedRepair: recommendedNext[0],
+    recommendedNext,
+    segmentId: segment && segment.id,
+  };
+}
+
 function summarizeSegmentFailure(project, segment, result, simulator) {
   const best = (result && (result.bestProgressState || result.bestSeenState)) || null;
+  const missing = best ? missingGoalFields(project, simulator, best, segment) : [{ field: "state", expected: "reachable", actual: "none" }];
+  const classification = classifySegmentFailure(missing, segment);
   return {
     failedSegmentId: segment.id,
     label: segment.label,
     bestSeen: compactState(best),
-    missingGoalFields: best ? missingGoalFields(project, simulator, best, segment) : [{ field: "state", expected: "reachable", actual: "none" }],
+    missingGoalFields: missing,
+    failureClass: classification.failureClass,
+    failureReason: classification.failureReason,
+    preferredCandidateTags: classification.preferredCandidateTags,
+    recommendedRepair: classification.recommendedRepair,
+    failurePropagation: classification,
     diagnostics: {
       actionTrimmed: result && result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionTrimmed,
       frontierRemaining: result && result.frontierSize,
       rejectedByHigherHp: result && result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.rejectedByHigherHp,
       replacedLowerHp: result && result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.replacedLowerHp,
     },
-    recommendedNext: [
-      "increase segment candidate limit",
-      "rerun previous milestone with location key",
-      "expand allowed action floors",
-    ],
+    recommendedNext: classification.recommendedNext,
   };
 }
 
@@ -385,6 +522,17 @@ function searchSegmentDP(simulator, startState, segment, options) {
       rejectedByHigherHp: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.rejectedByHigherHp,
       replacedLowerHp: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.replacedLowerHp,
       failure: goalSkyline.length > 0 ? null : summarizeSegmentFailure(simulator.project, segment, result, simulator),
+      goalSkyline: {
+        primaryOutput: true,
+        count: goalSkyline.length,
+        candidates: goalSkyline.map((candidate) => ({
+          id: candidate.id,
+          tags: candidate.tags,
+          hero: candidate.hero,
+          effectiveHero: candidate.effectiveHero,
+          routeLength: candidate.route.length,
+        })),
+      },
       actionScope: segment.actionPolicy || {},
     },
     rawResult: result,
@@ -415,6 +563,34 @@ function mergeMilestoneFrontier(simulator, candidates, segment, options) {
     tags: record.tags,
     score: record.score,
   }));
+}
+
+function mergeFailurePropagation(attempts) {
+  const failures = (attempts || [])
+    .map((attempt) => attempt && attempt.diagnostics && attempt.diagnostics.failure)
+    .filter(Boolean);
+  if (failures.length === 0) return null;
+  const classCounts = {};
+  const preferredCandidateTags = [];
+  const recommendedNext = [];
+  failures.forEach((failure) => {
+    const failureClass = failure.failureClass || "unknown";
+    classCounts[failureClass] = Number(classCounts[failureClass] || 0) + 1;
+    (failure.preferredCandidateTags || []).forEach((tag) => {
+      if (!preferredCandidateTags.includes(tag)) preferredCandidateTags.push(tag);
+    });
+    (failure.recommendedNext || []).forEach((recommendation) => {
+      if (!recommendedNext.includes(recommendation)) recommendedNext.push(recommendation);
+    });
+  });
+  const primaryFailureClass = Object.entries(classCounts)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0][0];
+  return {
+    primaryFailureClass,
+    classCounts,
+    preferredCandidateTags,
+    recommendedNext,
+  };
 }
 
 function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
@@ -454,6 +630,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     const merged = mergeMilestoneFrontier(simulator, nextCandidates, segment, {
       candidateLimit: config.candidateLimit || (segment.dp && segment.dp.goalSkylineLimit),
     });
+    const failurePropagation = mergeFailurePropagation(attempts);
     segmentResults.push({
       segmentId: segment.id,
       label: segment.label,
@@ -472,6 +649,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         goalCount: attempt.goalSkyline.length,
         diagnostics: attempt.diagnostics,
       })),
+      failurePropagation,
     });
     if (merged.length === 0) {
       return {

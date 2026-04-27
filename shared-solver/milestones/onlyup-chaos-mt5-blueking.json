@@ -1,0 +1,419 @@
+{
+  "routeName": "onlyup-chaos-mt5-blueking",
+  "milestones": [
+    {
+      "id": "mt1-gate-1559",
+      "label": "MT1 1559 生存门槛",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT1",
+        "minHero": { "hp": 1559, "atk": 19, "def": 10, "mdef": 130, "exp": 5 },
+        "actionSurvivable": { "summary": "battle:skeleton@MT1:8,1", "exactDamage": 1558 }
+      },
+      "actionPolicy": { "allowedFloors": ["MT1"] },
+      "dp": { "maxExpansions": 4000 }
+    },
+    {
+      "id": "mt2-entry",
+      "label": "进入 MT2",
+      "startFrom": "mt1-gate-1559",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": { "hp": 1601, "atk": 21, "def": 17, "mdef": 130, "exp": 6 }
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT1", "MT2"],
+        "allowChangeFloors": ["MT1:6,0"]
+      },
+      "dp": { "maxExpansions": 2500 }
+    },
+    {
+      "id": "mt2-local-3582",
+      "label": "MT2 三怪顺序合流",
+      "startFrom": "mt2-entry",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": { "hp": 3582, "atk": 31, "def": 19, "mdef": 250, "exp": 9 }
+      },
+      "actionPolicy": { "allowedFloors": ["MT2"] },
+      "dp": {
+        "keyMode": "mutation",
+        "safeReason": "MT2 local three-monster confluence has no movement damage and uses identical map mutation/resource state.",
+        "maxExpansions": 800
+      }
+    },
+    {
+      "id": "mt2-hp3834",
+      "label": "MT2 四怪前 3834 基准",
+      "startFrom": "mt2-local-3582",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": { "hp": 3834, "atk": 72, "def": 35, "mdef": 290 }
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT1", "MT2"],
+        "allowChangeFloors": ["MT2:6,0", "MT1:6,0"]
+      },
+      "dp": {
+        "keyMode": "mutation",
+        "safeReason": "Verified MT2/MT1 local return branch; mutation key is used only inside this bounded confluence segment.",
+        "maxExpansions": 1400
+      }
+    },
+    {
+      "id": "mt2-left-chain-open",
+      "label": "MT2 左线资源链打开",
+      "startFrom": "mt2-hp3834",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": { "hp": 8372, "atk": 87, "def": 50, "mdef": 440, "exp": 7 },
+        "removedTiles": [
+          { "floorId": "MT2", "x": 2, "y": 8 },
+          { "floorId": "MT2", "x": 3, "y": 10 },
+          { "floorId": "MT2", "x": 4, "y": 11 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT2", "x": 4, "y": 7, "reason": "Preserve redPriest HP timing for the later I893 resource chain." },
+          { "floorId": "MT2", "x": 8, "y": 7, "reason": "Preserve redPriest HP timing for the later I893 resource chain." },
+          { "floorId": "MT2", "x": 10, "y": 8, "reason": "Preserve redPriest HP timing for the later I893 resource chain." },
+          { "floorId": "MT2", "x": 11, "y": 11 },
+          { "floorId": "MT2", "x": 6, "y": 6 },
+          { "floorId": "MT2", "x": 6, "y": 8 },
+          { "floorId": "MT2", "x": 6, "y": 9 }
+        ],
+        "preferredPresentTiles": [
+          { "floorId": "MT2", "x": 8, "y": 11 },
+          { "floorId": "MT2", "x": 9, "y": 10 },
+          { "floorId": "MT2", "x": 10, "y": 11 },
+          { "floorId": "MT2", "x": 9, "y": 9 }
+        ]
+      },
+      "actionPolicy": { "allowedFloors": ["MT2"] },
+      "dp": {
+        "enablePreviewScore": false,
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "This strict setup segment has hard presentTiles for later I893 resources; first passing goal is the intended left-chain checkpoint.",
+        "maxExpansions": 1200,
+        "maxRuntimeMs": 10000
+      }
+    },
+    {
+      "id": "mt3-first-return",
+      "label": "MT3 首轮宝石后返回 MT2",
+      "startFrom": "mt2-left-chain-open",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": { "hp": 9172, "atk": 97, "def": 65, "mdef": 440, "exp": 11 },
+        "removedTiles": [
+          { "floorId": "MT2", "x": 2, "y": 8 },
+          { "floorId": "MT2", "x": 3, "y": 10 },
+          { "floorId": "MT2", "x": 4, "y": 11 },
+          { "floorId": "MT3", "x": 5, "y": 11 },
+          { "floorId": "MT3", "x": 7, "y": 11 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT2", "x": 11, "y": 11 },
+          { "floorId": "MT2", "x": 6, "y": 6 },
+          { "floorId": "MT2", "x": 6, "y": 8 },
+          { "floorId": "MT2", "x": 6, "y": 9 }
+        ],
+        "preferredPresentTiles": [
+          { "floorId": "MT2", "x": 4, "y": 7 },
+          { "floorId": "MT2", "x": 8, "y": 7 },
+          { "floorId": "MT2", "x": 10, "y": 8 }
+        ],
+        "actionSurvivable": { "summary": "battle:redWizard@MT2:11,11" }
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT2", "MT3"],
+        "allowChangeFloors": ["MT2:6,12", "MT3:6,12"]
+      },
+      "dp": {
+        "enablePreviewScore": false,
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "This bridge segment only needs MT3 gem pickup and return while preserving I893 chain blockers.",
+        "maxExpansions": 600,
+        "maxRuntimeMs": 8000
+      }
+    },
+    {
+      "id": "mt2-redwizard-shield",
+      "label": "MT2 右下护盾资源",
+      "startFrom": "mt3-first-return",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": { "hp": 1, "atk": 97, "def": 90, "mdef": 490, "exp": 19 },
+        "removedTiles": [{ "floorId": "MT2", "x": 11, "y": 11 }]
+      },
+      "actionPolicy": { "allowedFloors": ["MT2"] },
+      "dp": {
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "Single removedTile target for the right-bottom shield resource; later skyline is handled by the next segment.",
+        "maxExpansions": 500,
+        "maxRuntimeMs": 6000
+      }
+    },
+    {
+      "id": "mt2-i893-equipped",
+      "label": "MT2 装备 I893",
+      "startFrom": "mt2-redwizard-shield",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": { "hp": 8425, "atk": 107, "def": 95, "mdef": 490, "exp": 26 },
+        "equipmentIncludes": ["I893"],
+        "removedTiles": [
+          { "floorId": "MT2", "x": 11, "y": 11 },
+          { "floorId": "MT2", "x": 6, "y": 6 },
+          { "floorId": "MT2", "x": 6, "y": 8 },
+          { "floorId": "MT2", "x": 6, "y": 9 }
+        ]
+      },
+      "actionPolicy": { "allowedFloors": ["MT2"] },
+      "dp": {
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "Goal requires I893 equipped plus all center blockers removed; this is a strict terminal setup for the next floor transition.",
+        "maxExpansions": 1400,
+        "maxRuntimeMs": 10000
+      }
+    },
+    {
+      "id": "mt3-i893-hp8425",
+      "label": "MT3 I893 功法",
+      "startFrom": "mt2-i893-equipped",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT3",
+        "minHero": { "hp": 8425, "atk": 107, "def": 100, "mdef": 510, "exp": 31 },
+        "equipmentIncludes": ["I893"],
+        "removedTiles": [
+          { "floorId": "MT2", "x": 11, "y": 11 },
+          { "floorId": "MT2", "x": 6, "y": 6 },
+          { "floorId": "MT2", "x": 6, "y": 8 },
+          { "floorId": "MT2", "x": 6, "y": 9 },
+          { "floorId": "MT3", "x": 5, "y": 11 },
+          { "floorId": "MT3", "x": 7, "y": 11 }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT2", "MT3"],
+        "allowChangeFloors": ["MT2:6,12", "MT3:6,12"]
+      },
+      "dp": {
+        "enablePreviewScore": false,
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "Only final MT2->MT3 transition and automatic MT3 pickup remain after I893 is equipped.",
+        "maxExpansions": 600,
+        "maxRuntimeMs": 8000
+      }
+    },
+    {
+      "id": "mt4-hp4459",
+      "label": "MT4 入口关键属性",
+      "startFrom": "mt3-i893-hp8425",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": { "hp": 4459 },
+        "minEffectiveHero": { "atk": 421, "def": 318, "mdef": 5012 },
+        "equipmentIncludes": ["I893"]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT3", "MT4"],
+        "allowChangeFloors": ["MT3:6,0", "MT4:6,0"]
+      },
+      "dp": { "maxExpansions": 7000 }
+    },
+    {
+      "id": "mt5-early-gem-entry",
+      "label": "MT4/MT5 早上楼资源分支",
+      "startFrom": "mt4-hp4459",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": { "hp": 44471, "atk": 777, "def": 745, "mdef": 4910, "exp": 77 }
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT3", "MT4", "MT5"],
+        "allowChangeFloors": ["MT4:6,0", "MT3:6,0", "MT4:6,12", "MT5:6,12"]
+      },
+      "dp": { "maxExpansions": 7000 }
+    },
+    {
+      "id": "mt5-first-sweep",
+      "label": "MT5 第一轮资源扫荡",
+      "startFrom": "mt5-early-gem-entry",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": { "hp": 136514, "atk": 977, "def": 795, "mdef": 6110, "exp": 221 }
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT4", "MT5"],
+        "allowChangeFloors": ["MT4:6,12", "MT5:6,12"]
+      },
+      "dp": { "maxExpansions": 7000 }
+    },
+    {
+      "id": "mt5-third-gate",
+      "label": "MT5 第三门槛",
+      "startFrom": "mt5-first-sweep",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": { "hp": 105138, "atk": 1097, "def": 965, "mdef": 6310, "exp": 367 }
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT4", "MT5"],
+        "allowChangeFloors": ["MT4:6,12", "MT5:6,12"]
+      },
+      "dp": { "maxExpansions": 7000 }
+    },
+    {
+      "id": "mt5-sustain-balance",
+      "label": "MT5 续航与前进平衡",
+      "startFrom": "mt5-third-gate",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": { "hp": 94905, "atk": 1297, "def": 1165, "mdef": 6310, "exp": 435 },
+        "minEffectiveHero": { "atk": 1621, "def": 1456, "mdef": 7887 },
+        "removedTiles": [{ "floorId": "MT5", "x": 3, "y": 6 }],
+        "presentTiles": [
+          { "floorId": "MT5", "x": 9, "y": 6 },
+          { "floorId": "MT5", "x": 9, "y": 4 },
+          { "floorId": "MT5", "x": 10, "y": 5 },
+          { "floorId": "MT5", "x": 3, "y": 4 },
+          { "floorId": "MT5", "x": 4, "y": 7 },
+          { "floorId": "MT5", "x": 8, "y": 3 },
+          { "floorId": "MT5", "x": 6, "y": 7 }
+        ]
+      },
+      "actionPolicy": { "allowedFloors": ["MT5"] },
+      "dp": {
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "This segment is the single MT5 sustain gate at 3,6 while preserving all later I894 and blueKing resources.",
+        "maxExpansions": 800,
+        "maxRuntimeMs": 6000
+      }
+    },
+    {
+      "id": "mt5-i894-equipped",
+      "label": "MT5 装备 I894",
+      "startFrom": "mt5-sustain-balance",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": { "hp": 14404 },
+        "minEffectiveHero": { "atk": 2075, "def": 2024, "mdef": 13296 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT5", "x": 9, "y": 6 },
+          { "floorId": "MT5", "x": 9, "y": 4 },
+          { "floorId": "MT5", "x": 10, "y": 5 },
+          { "floorId": "MT5", "x": 11, "y": 5 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT5", "x": 3, "y": 4 },
+          { "floorId": "MT5", "x": 4, "y": 7 },
+          { "floorId": "MT5", "x": 8, "y": 3 },
+          { "floorId": "MT5", "x": 6, "y": 7 }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT5"],
+        "allowChangeFloors": ["MT5:6,12"]
+      },
+      "dp": {
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "Goal requires I894 equipped after clearing the three mandatory blockers; later HP/boss resources are protected by presentTiles.",
+        "maxExpansions": 3000,
+        "maxRuntimeMs": 8000
+      }
+    },
+    {
+      "id": "mt5-final-stats-before-hp",
+      "label": "MT5 boss 前最终属性",
+      "startFrom": "mt5-i894-equipped",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": { "hp": 417246, "lv": 8, "exp": 1033 },
+        "minEffectiveHero": { "atk": 3147, "def": 3096, "mdef": 20816 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT5", "x": 3, "y": 4 },
+          { "floorId": "MT5", "x": 4, "y": 7 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT5", "x": 8, "y": 3 },
+          { "floorId": "MT5", "x": 6, "y": 7 }
+        ]
+      },
+      "actionPolicy": { "allowedFloors": ["MT5"] },
+      "dp": {
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "This strict post-I894 segment clears final stat resources while preserving the HP pickup chain and blueKing.",
+        "maxExpansions": 3000,
+        "maxRuntimeMs": 8000
+      }
+    },
+    {
+      "id": "mt5-before-blueking",
+      "label": "MT5 boss 前血量",
+      "startFrom": "mt5-final-stats-before-hp",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": { "hp": 1098112 },
+        "minEffectiveHero": { "atk": 3147, "def": 3096, "mdef": 20816 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [{ "floorId": "MT5", "x": 8, "y": 3 }],
+        "presentTiles": [{ "floorId": "MT5", "x": 6, "y": 7 }],
+        "actionSurvivable": { "summary": "battle:blueKing@MT5:6,7" }
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT5"],
+        "allowChangeFloors": ["MT5:6,12"]
+      },
+      "dp": {
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "Only the final HP pickup chain at 8,3 remains; blueKing is protected as presentTiles until the kill segment.",
+        "maxExpansions": 2000,
+        "maxRuntimeMs": 8000
+      }
+    },
+    {
+      "id": "mt5-blueking-kill",
+      "label": "MT5 击破 blueKing（织光仙子）",
+      "startFrom": "mt5-before-blueking",
+      "goal": {
+        "type": "bossDefeated",
+        "floorId": "MT5",
+        "x": 6,
+        "y": 7,
+        "enemyId": "blueKing",
+        "minHero": { "hp": 1, "atk": 2167, "def": 2135, "mdef": 13010, "lv": 8 },
+        "minEffectiveHero": { "atk": 3467, "def": 3416, "mdef": 20816 }
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT5"],
+        "actionKinds": ["battle", "pickup", "equip", "changeFloor"],
+        "allowChangeFloors": ["MT5:6,12", "MT5:6,0"]
+      },
+      "dp": { "maxExpansions": 4000 }
+    }
+  ]
+}

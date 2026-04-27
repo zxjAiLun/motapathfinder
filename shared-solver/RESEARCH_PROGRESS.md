@@ -1,6 +1,6 @@
 # 研究进度记录
 
-更新日期：2026-04-26
+更新日期：2026-04-28
 
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 
@@ -92,6 +92,43 @@ node -c check-mt2-resource-branch.js
 2. 优化 lookahead / resourceChain 性能：限制生成候选、复用 primitive actions 缓存、缓存 confluence 可达区签名。
 3. 打通 `resourceChain` 的 route 保存和 `route-gui.js` 回放，确保宏动作最终落盘为 primitive 决策序列。
 4. 再回到整段 `run-mt1-mt11 --to-floor=MT5`，比较 `--resource-pocket-mode=off/lite` 和 `--resource-chain=1` 的 bestProgress。
+
+## 0.6 2026-04-28：Segment DP / milestone graph 进度
+
+当前主方向已从 stage score / beam 权重转为：
+
+```text
+milestone graph
+-> segment DP
+-> goal skyline candidates
+-> failure propagation
+-> route-gui live replay
+```
+
+已完成：
+
+- **正式 milestone graph**：`lib/milestone-spec.js` 已覆盖 MT2 I893 分支与 MT5 `blueKing（织光仙子）` 击破段。
+- **goal skyline 主输出**：`lib/segment-dp.js` 每段保留 `highest-hp / highest-atk / highest-def / highest-mdef / highest-exp / shortest / best-combat` 代表，不只传单一路线。
+- **失败传播**：segment 失败时输出 `failureClass`、`preferredCandidateTags`、`recommendedRepair`，例如 `atk-deficit -> 回退上一 milestone 的 highest-atk / best-combat candidate`。
+- **hard/soft tile 约束**：`presentTiles` 是硬约束；`preferredPresentTiles` 只影响动作排序，不直接过滤路线。
+- **milestone audit**：新增 `check-milestone-audit.js` 与 `npm run check:milestone:audit`，检查 mutation safeReason、stopOnFirstGoal 说明、hard present tile 后续用途或原因。
+- **数据拆分**：milestone 数据已从 `lib/milestone-spec.js` 拆到 `milestones/onlyup-chaos-mt5-blueking.json`；JS 层只做加载、默认补齐和结构校验。
+
+当前验证：
+
+```bash
+cd shared-solver
+npm run check:onlyup:segments
+npm run check:milestone:audit
+npm run check:core
+npm run check:onlyup:key-states
+```
+
+关键结果：
+
+- `mt2-hp3834 -> mt3-i893-hp8425` 通过，最终 `hp=8425 atk=107 def=100 mdef=510`。
+- `mt5-third-gate -> mt5-blueking-kill` 通过，最终击破 `battle:blueKing（织光仙子）@MT5:6,7`，剩余 `hp=4464`。
+- 审计目前无 error；warning 主要提示 HP 阈值和 removedTiles 仍需补充容错说明，属于约束质量债，不阻塞当前回归。
 
 ## 1. 目标与当前结论
 
@@ -757,12 +794,35 @@ mt2-i893-equipped
 mt3-i893-hp8425
 ```
 
-- `presentTiles` / `removedTiles` 已作为 milestone goal 的一部分使用：`removedTiles` 表示当前段必须击破/获取的目标，`presentTiles` 表示必须保留给后续段的资源，任何会提前破坏 `presentTiles` 的动作会被该段 action provider 过滤掉。这解决了“当前 HP 更高但提前吃掉后续资源，导致下一段接不上”的错误 skyline 候选。
+- `presentTiles` / `preferredPresentTiles` / `removedTiles` 已作为 milestone goal 的一部分使用：
+  - `removedTiles`：当前段必须击破/获取的目标。
+  - `presentTiles`：hard constraint，必须保留，否则后续段必死；任何会提前破坏它的动作会被该段 action provider 过滤掉。
+  - `preferredPresentTiles`：soft hint，只降低破坏该 tile 的动作排序，不直接过滤；允许 DP 在能补偿的情况下牺牲它。
+- 这解决了“当前 HP 更高但提前吃掉后续资源，导致下一段接不上”的错误 skyline 候选，同时避免把所有后续资源都写成 hard constraint。
 - `mt5-third-gate -> mt5-blueking-kill` 可由 segmented DP 自动找到并击破 `blueKing（织光仙子）`。
+  该段已从原 `mt5-blueking-local-balanced.route.json` / key-state 路线经验中拆出正式 milestone：
+
+```text
+mt5-sustain-balance
+mt5-i894-equipped
+mt5-final-stats-before-hp
+mt5-before-blueking
+mt5-blueking-kill
+```
+
+  关键约束包括：
+  - `mt5-sustain-balance`：先清 `skeletonPresbyter@MT5:3,6（幽墟卫）`，并保留 I894 / boss 前血量链。
+  - `mt5-i894-equipped`：清 `9,6 -> 9,4 -> 10,5` 并装备 `I894`。
+  - `mt5-final-stats-before-hp`：清 `3,4 -> 4,7`，达到 boss 前最终攻防魔防。
+  - `mt5-before-blueking`：清 `demonPriest@MT5:8,3（流萤猪）` 拿最终血量，保留 `blueKing@MT5:6,7（织光仙子）` 到 kill 段。
 - 失败诊断输出 `failedSegmentId` 与 `missingGoalFields`，不再把局部失败表述成全局无解。
 - route 输出仍为 primitive decision，可继续用 `route-gui.js` live replay。
+- `check:onlyup:segments` 现在包含 milestone spec 静态审计：
+  - `keyMode: "mutation"` 必须写 `dp.safeReason`。
+  - `stopOnFirstGoal: true` 必须写 `dp.firstGoalSafeReason`。
+  - `preferredPresentTiles` 不能和 hard `presentTiles` 重复。
 
 已知限制：
 
-- `presentTiles` 是 milestone 级约束，不是全局禁止动作。它只在当前段内过滤“会破坏本段下游地基”的动作；下一段如果目标需要清这些 tile，可以通过新的 milestone 放开。
+- `presentTiles` 是 milestone 级约束，不是全局禁止动作。它只在当前段内过滤“会破坏本段下游地基”的动作；下一段如果目标需要清这些 tile，可以通过新的 milestone 放开。非必死资源应优先写入 `preferredPresentTiles`。
 - 目前完整 `initial -> mt5-blueking-kill` 仍不默认进 `check:static`，避免本地耗时过高；轻量必过项是 MT2→I893 和 MT5 third-gate→blueKing 两个关键单段。

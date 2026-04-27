@@ -103,6 +103,41 @@ function assertNoMacroRoute(state, label) {
   }
 }
 
+function tileKey(tile) {
+  return `${tile.floorId}:${tile.x},${tile.y}`;
+}
+
+function checkMilestoneSafetyAnnotations(simulator) {
+  const spec = getMilestoneSpec(simulator.project, "onlyup-chaos-mt5-blueking");
+  for (const milestone of spec.milestones || []) {
+    const dp = milestone.dp || {};
+    if ((dp.keyMode || dp.dpKeyMode) === "mutation") {
+      assert.ok(
+        typeof dp.safeReason === "string" && dp.safeReason.trim().length > 0,
+        `${milestone.id}: mutation keyMode must include dp.safeReason`
+      );
+    }
+    if (dp.stopOnFirstGoal === true) {
+      assert.ok(
+        typeof dp.firstGoalSafeReason === "string" && dp.firstGoalSafeReason.trim().length > 0,
+        `${milestone.id}: stopOnFirstGoal=true must include dp.firstGoalSafeReason`
+      );
+    }
+    const hard = new Set(((milestone.goal || {}).presentTiles || []).map(tileKey));
+    for (const preferred of ((milestone.goal || {}).preferredPresentTiles || [])) {
+      assert.ok(
+        !hard.has(tileKey(preferred)),
+        `${milestone.id}: preferredPresentTiles must not duplicate hard presentTiles: ${tileKey(preferred)}`
+      );
+    }
+  }
+  return {
+    milestones: (spec.milestones || []).length,
+    mutationMilestones: (spec.milestones || []).filter((milestone) => ((milestone.dp || {}).keyMode || (milestone.dp || {}).dpKeyMode) === "mutation").length,
+    firstGoalMilestones: (spec.milestones || []).filter((milestone) => (milestone.dp || {}).stopOnFirstGoal === true).length,
+  };
+}
+
 function checkMt5ThirdGateToBlueKing(simulator) {
   const project = simulator.project;
   const spec = getMilestoneSpec(project, "onlyup-chaos-mt5-blueking");
@@ -118,9 +153,31 @@ function checkMt5ThirdGateToBlueKing(simulator) {
   assert.ok(final, "MT5 segment graph should return a final candidate");
   assert.equal(final.floorId, "MT5");
   assert.ok(final.hero.hp >= 1, `expected positive HP after blueKing, got ${final.hero.hp}`);
+  const completedSegments = (result.segmentResults || []).filter((segment) => segment.found).map((segment) => segment.segmentId);
+  for (const segmentId of [
+    "mt5-sustain-balance",
+    "mt5-i894-equipped",
+    "mt5-final-stats-before-hp",
+    "mt5-before-blueking",
+    "mt5-blueking-kill",
+  ]) {
+    assert.ok(completedSegments.includes(segmentId), `MT5 segment graph should complete ${segmentId}`);
+  }
+  const route = final.route || [];
+  for (const summary of [
+    "battle:skeletonPresbyter@MT5:3,6",
+    "battle:goldHornSlime@MT5:10,5",
+    "equip:I894",
+    "battle:redKing@MT5:4,7",
+    "battle:demonPriest@MT5:8,3",
+    "battle:blueKing@MT5:6,7",
+  ]) {
+    assert.ok(route.includes(summary), `MT5 route should include ${summary}`);
+  }
   assertNoMacroRoute(final, "MT5 segment graph");
   return {
     reachedMilestone: result.reachedMilestone,
+    completedSegments,
     hp: final.hero.hp,
     atk: final.hero.atk,
     def: final.hero.def,
@@ -176,15 +233,23 @@ function checkFailureDiagnostics(simulator) {
   assert.equal(result.found, false, "low-HP synthetic start should fail the boss segment");
   assert.ok(result.diagnostics.failure, "failed segment should include failure diagnostics");
   assert.ok(result.diagnostics.failure.missingGoalFields.length > 0, "failure diagnostics should include missing goal fields");
+  assert.ok(result.diagnostics.failure.failureClass, "failure diagnostics should classify the failure");
+  assert.ok(
+    Array.isArray(result.diagnostics.failure.preferredCandidateTags) &&
+      result.diagnostics.failure.preferredCandidateTags.length > 0,
+    "failure diagnostics should recommend rollback candidate tags"
+  );
+  assert.ok(result.diagnostics.failure.recommendedRepair, "failure diagnostics should recommend a repair direction");
   return result.diagnostics.failure;
 }
 
 function main() {
   const simulator = makeSimulator();
+  const safety = checkMilestoneSafetyAnnotations(simulator);
   const mt2 = checkMt2Hp3834ToI893(simulator);
   const mt5 = checkMt5ThirdGateToBlueKing(simulator);
   const failure = checkFailureDiagnostics(simulator);
-  console.log(JSON.stringify({ mt2, mt5, failure }, null, 2));
+  console.log(JSON.stringify({ safety, mt2, mt5, failure }, null, 2));
 }
 
 main();
