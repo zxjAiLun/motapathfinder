@@ -64,6 +64,37 @@ function heroHp(state) {
   return Number(((state || {}).hero || {}).hp || 0);
 }
 
+function effectiveHeroValue(state, field) {
+  const hero = (state || {}).hero || {};
+  const flags = (state || {}).flags || {};
+  const buff = Number(flags[`__${field}_buff__`] || 1);
+  return Math.floor(Number(hero[field] || 0) * buff);
+}
+
+function routeLengthOfState(state) {
+  return Array.isArray((state || {}).route)
+    ? state.route.length
+    : getDecisionDepth(state);
+}
+
+function compareGoalStates(left, right) {
+  if (!right) return 1;
+  if (!left) return -1;
+  const hpDiff = heroHp(left) - heroHp(right);
+  if (hpDiff !== 0) return hpDiff;
+  for (const field of ["atk", "def", "mdef"]) {
+    const diff = effectiveHeroValue(left, field) - effectiveHeroValue(right, field);
+    if (diff !== 0) return diff;
+  }
+  const leftHero = left.hero || {};
+  const rightHero = right.hero || {};
+  for (const field of ["lv", "exp", "atk", "def", "mdef"]) {
+    const diff = Number(leftHero[field] || 0) - Number(rightHero[field] || 0);
+    if (diff !== 0) return diff;
+  }
+  return routeLengthOfState(right) - routeLengthOfState(left);
+}
+
 class BinaryHeap {
   constructor(compare) {
     this.compare = compare;
@@ -163,6 +194,9 @@ function actionPriority(action) {
 
 function sortDpActions(actions) {
   return (actions || []).slice().sort((left, right) => {
+    const leftSegment = Number((((left || {}).estimate || {}).segmentPreviewScore) || 0);
+    const rightSegment = Number((((right || {}).estimate || {}).segmentPreviewScore) || 0);
+    if ((leftSegment || rightSegment) && leftSegment !== rightSegment) return rightSegment - leftSegment;
     const priorityDiff = actionPriority(left) - actionPriority(right);
     if (priorityDiff !== 0) return priorityDiff;
     const leftUnlock = Number((((left || {}).estimate || {}).unlockPreview || {}).score || 0);
@@ -273,6 +307,25 @@ function recordAction(stats, action, field) {
   stats.byActionType[type][field] = Number(stats.byActionType[type][field] || 0) + 1;
 }
 
+function selectGoalSkylineNodes(goalNodes, options) {
+  const config = options || {};
+  const limit = Math.max(1, Number(config.goalSkylineLimit || 8));
+  const sorted = (goalNodes || [])
+    .filter(Boolean)
+    .slice()
+    .sort((left, right) => compareGoalStates(right.state, left.state));
+  const selected = [];
+  const seenKeys = new Set();
+  for (const node of sorted) {
+    const key = node.key || node.stateKey || `node:${node.nodeId}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    selected.push(node);
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
+
 function searchDP(simulator, initialState, options) {
   const config = options || {};
   const maxExpansions = Number(config.maxExpansions || 1000);
@@ -306,6 +359,7 @@ function searchDP(simulator, initialState, options) {
   let invalid = 0;
   let firstGoalNode = null;
   let bestGoalNode = null;
+  const goalNodes = [];
   let bestSeenNode = null;
   let bestProgressNode = null;
   let sequence = 0;
@@ -353,7 +407,8 @@ function searchDP(simulator, initialState, options) {
     }
     if (isGoalState(state)) {
       if (!firstGoalNode) firstGoalNode = node;
-      if (!bestGoalNode || compareDpBest(state, bestGoalNode.state) > 0) bestGoalNode = node;
+      goalNodes.push(node);
+      if (!bestGoalNode || compareGoalStates(state, bestGoalNode.state) > 0) bestGoalNode = node;
     }
     return node;
   };
@@ -429,6 +484,13 @@ function searchDP(simulator, initialState, options) {
   const frontierSize = heap
     ? heap.activeCount(isActiveEntry)
     : fifoEntries.slice(cursor).filter(isActiveEntry).length;
+  const goalSkylineNodes = selectGoalSkylineNodes(
+    goalNodes.filter((node) => {
+      const active = bestByKey.get(node.key);
+      return Boolean(active && active.nodeId === node.nodeId && isGoalState(node.state));
+    }),
+    config
+  );
 
   const attachRouteToNodeState = (node) => {
     if (!node || !node.state) return null;
@@ -437,6 +499,9 @@ function searchDP(simulator, initialState, options) {
   };
   const firstGoalState = attachRouteToNodeState(firstGoalNode);
   const bestGoalState = attachRouteToNodeState(bestGoalNode);
+  const goalSkylineStates = goalSkylineNodes
+    .map((node) => attachRouteToNodeState(node))
+    .filter(Boolean);
   const bestSeenState = attachRouteToNodeState(bestSeenNode);
   const bestProgressState = attachRouteToNodeState(bestProgressNode);
 
@@ -445,6 +510,7 @@ function searchDP(simulator, initialState, options) {
     goalState: bestGoalState,
     firstGoalState,
     bestGoalState,
+    goalSkylineStates,
     bestSeenState,
     bestProgressState,
     fallbackState: null,
@@ -453,7 +519,7 @@ function searchDP(simulator, initialState, options) {
     expansions,
     frontierSize,
     checkpointPool: createCheckpointPool(config.checkpointOptions),
-    results: [bestGoalState, firstGoalState].filter((state, index, list) => state && list.indexOf(state) === index),
+    results: [bestGoalState, firstGoalState, ...goalSkylineStates].filter((state, index, list) => state && list.indexOf(state) === index),
     diagnostics: {
       algorithm: "dp",
       registered,
@@ -542,6 +608,8 @@ function searchDP(simulator, initialState, options) {
         targetFloorOrder: getFloorOrder(config.targetFloorId || simulator.stopFloorId),
         foundFirstGoal: Boolean(firstGoalState),
         foundBestGoal: Boolean(bestGoalState),
+        goalSkylineLimit: Math.max(1, Number(config.goalSkylineLimit || 8)),
+        goalSkylineCount: goalSkylineStates.length,
         firstGoal: firstGoalState ? {
           floorId: firstGoalState.floorId,
           hp: heroHp(firstGoalState),

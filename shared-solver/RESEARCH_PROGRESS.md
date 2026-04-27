@@ -713,3 +713,56 @@ changeFloor@MT3:6,0
 ```
 
 这里发现并修正了一个模拟语义问题：`I2090` 等拾取物品可增加经验，但旧模拟只在战斗后调用 `runLevelUps()`，导致 `battle:blackKing@MT3:6,8` 后自动拾取经验结晶到 `exp=165` 时没有升级。现在 `resolvePickupAt()` 在拾取及 `afterGetItem` 后也会调用 `runLevelUps()`，因此该分支最终 raw 状态为 `lv=6 atk=337 def=255 mdef=4010 exp=5`，乘 `I893` buff 后与 GUI 观察的 `atk=421 def=318 mdef=5012` 对齐。
+
+### 6.8 Checkpoint Graph + Segment DP + HP Skyline
+
+当前算法方向已从 `beam/stage score/topK` 调权重切到分段 DP：
+
+```text
+milestone spec
+-> segment DP
+-> goal skyline
+-> milestone candidate frontier
+-> route-gui live replay
+```
+
+新增入口：
+
+```bash
+npm run check:onlyup:segments --prefix shared-solver
+
+node shared-solver/run-segmented-dp.js \
+  --project-root='Only upV2.1/Only upV2.1' \
+  --route-name=onlyup-chaos-mt5-blueking \
+  --to-milestone=mt5-blueking-kill \
+  --out=shared-solver/routes/latest/segmented-mt5-blueking.route.json
+```
+
+核心文件：
+
+- `lib/milestone-spec.js`：把已验证 key state 升级为正式 milestone，不再只作为测试 oracle。
+- `lib/segment-dp.js`：每段用 primitive-action DP 搜索，保留 goal skyline 候选。
+- `lib/dp-search.js`：新增 `goalSkylineStates`，并保留 `firstGoalState` / `bestGoalState` 语义。
+- `run-segmented-dp.js`：按 milestone graph 串接每段候选，后段失败时可自然尝试上一 milestone 的其他代表。
+
+当前已验证：
+
+- `mt2-hp3834 -> mt3-i893-hp8425` 可由 segmented DP 自动找到。该段已拆成：
+
+```text
+mt2-left-chain-open
+mt3-first-return
+mt2-redwizard-shield
+mt2-i893-equipped
+mt3-i893-hp8425
+```
+
+- `presentTiles` / `removedTiles` 已作为 milestone goal 的一部分使用：`removedTiles` 表示当前段必须击破/获取的目标，`presentTiles` 表示必须保留给后续段的资源，任何会提前破坏 `presentTiles` 的动作会被该段 action provider 过滤掉。这解决了“当前 HP 更高但提前吃掉后续资源，导致下一段接不上”的错误 skyline 候选。
+- `mt5-third-gate -> mt5-blueking-kill` 可由 segmented DP 自动找到并击破 `blueKing（织光仙子）`。
+- 失败诊断输出 `failedSegmentId` 与 `missingGoalFields`，不再把局部失败表述成全局无解。
+- route 输出仍为 primitive decision，可继续用 `route-gui.js` live replay。
+
+已知限制：
+
+- `presentTiles` 是 milestone 级约束，不是全局禁止动作。它只在当前段内过滤“会破坏本段下游地基”的动作；下一段如果目标需要清这些 tile，可以通过新的 milestone 放开。
+- 目前完整 `initial -> mt5-blueking-kill` 仍不默认进 `check:static`，避免本地耗时过高；轻量必过项是 MT2→I893 和 MT5 third-gate→blueKing 两个关键单段。
