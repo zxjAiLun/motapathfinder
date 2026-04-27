@@ -505,13 +505,36 @@ canonical state key 不包含 hp / hpmax / route length
     - 优先考虑楼层进度、到下一楼梯距离、当前楼层、HP、战斗资源。
     - battle action 使用 `estimate.unlockPreview`，避免高伤但能打开资源链的动作被长期延后。
   - 新增 `stopOnFirstGoal`，目标达成后可立即返回，避免继续跑满预算。
+  - 拆分 goal 语义：
+    - `firstGoalState`：agenda 第一次命中的可行目标。
+    - `bestGoalState`：预算内按 `compareDpBest()` 选择的最佳目标。
+    - 兼容字段 `goalState` 指向 `bestGoalState`。
+  - 修正 DP diagnostics 剪枝计数：
+    - `acceptedStates`：成功入队状态数。
+    - `newKeys`：首次出现的 canonical key。
+    - `replacedLowerHp`：同 key 下新状态 HP 更高并替换旧状态。
+    - `sameHpShorterRoute`：同 key 同 HP 但 decision/route 更短并替换旧状态。
+    - `rejectedByHigherHp`：同 key 已有状态 HP 更高，拒绝新状态。
+    - `sameHpRejected`：同 key 同 HP 但路线不更短，拒绝新状态。
+  - DP 热路径不再复制完整 route：
+    - 搜索节点使用 `{ nodeId, parentId, state, stateKey, actionEntry, rank }` parent 链。
+    - `applyAction()` 改为 `{ storeRoute: false }`。
+    - 命中目标或输出 best state 时再用 parent 链重建 route。
+    - 保留 initial auto route prefix，避免从 checkpoint 启动时丢失已有前缀。
+  - DP action cap 语义显式化：
+    - `completeWithinActionSet = actionTrimmed === 0`。
+    - `maxActionsPerState` 记录当前每状态展开上限。
+    - `actionTrimmed` 记录因 cap 被截掉的 action 总数。
+    - `statesWithActionTrim` 记录发生 action trim 的状态数。
+    - 小范围正确性验证可用 `--max-actions-per-state=9999`，避免 action cap 漏路线。
 
 - `shared-solver/lib/search-profiles.js`
   - 新增/完善 `canonical-dp` profile：
     - `searchAlgorithm: "dp"`
     - `searchGraphMode: "primitive"`
-    - 默认 `dpKeyMode: "mutation"`
+    - 默认 `dpKeyMode: "region"`，安全优先，按可达区域合流
     - 默认 `dpAgendaMode: "best-first"`
+    - `mutation` 仅作为已验证局部资源区/专项性能模式，通过 `--dp-key-mode=mutation` 显式启用
 
 - `shared-solver/run-search.js`
   - `canonical-dp` 接入 `searchDP()`。
@@ -521,6 +544,8 @@ canonical state key 不包含 hp / hpmax / route length
     - `--goal-floor=MT2`
     - `--goal-expr='status:hp >= ...'`
     - `--stop-on-first-goal=1`
+    - `--save-first-goal-route=...`
+    - `--save-best-goal-route=...`
 
 - `shared-solver/check-mt2-resource-branch.js`
   - 新增可选 DP 回归：`--dp`。
@@ -562,7 +587,8 @@ root canonical-dp MT2 resource goal
 - `canonical-dp` 已经能证明“同 canonical state 保留高 HP”的核心语义。
 - 从 3834 checkpoint 到功法 MT3 目标能自动找到，但仍偏慢（约 1200+ expansions）。
 - 从初始状态直接追 MT3/I893 还需要进一步优化 agenda 或分层 DP；当前先把 MT2 高血资源目标作为根搜索验收点。
-- `region` key 更安全但当前过慢；默认使用 `mutation` key。后续可做轻量 reachable endpoint key，替代完整 region scan。
+- `region` key 是默认安全模式；当前性能较慢。`mutation` key 剪枝更强，但只建议用于已验证楼层或局部资源区。
+- 后续可做轻量 reachable endpoint key，替代完整 region scan，作为 `region` 的性能优化版。
 
 ### 6.5 常用命令
 
@@ -578,6 +604,59 @@ node shared-solver/run-search.js \
   --save-route=/tmp/dp-mt2-goal.route.json
 ```
 
+快速找任意可行目标：
+
+```bash
+node shared-solver/run-search.js \
+  --project-root='Only upV2.1/Only upV2.1' \
+  --profile=canonical-dp \
+  --max-expansions=3000 \
+  --goal-floor=MT2 \
+  --goal-expr='status:hp >= 3834 && status:atk >= 72 && status:def >= 35 && status:mdef >= 290' \
+  --stop-on-first-goal=1 \
+  --save-first-goal-route=/tmp/dp-mt2-first.route.json
+```
+
+预算内优化目标 HP / 资源：
+
+```bash
+node shared-solver/run-search.js \
+  --project-root='Only upV2.1/Only upV2.1' \
+  --profile=canonical-dp \
+  --max-expansions=3000 \
+  --goal-floor=MT2 \
+  --goal-expr='status:hp >= 3834 && status:atk >= 72 && status:def >= 35 && status:mdef >= 290' \
+  --stop-on-first-goal=0 \
+  --save-first-goal-route=/tmp/dp-mt2-first.route.json \
+  --save-best-goal-route=/tmp/dp-mt2-best-goal.route.json
+```
+
+小范围完整 action set 验证：
+
+```bash
+node shared-solver/run-search.js \
+  --project-root='Only upV2.1/Only upV2.1' \
+  --profile=canonical-dp \
+  --dp-key-mode=mutation \
+  --max-actions-per-state=9999 \
+  --max-expansions=3000 \
+  --goal-floor=MT2 \
+  --goal-expr='status:hp >= 3834 && status:atk >= 72 && status:def >= 35 && status:mdef >= 290'
+```
+
+已验证局部资源区可显式使用激进 `mutation`：
+
+```bash
+node shared-solver/run-search.js \
+  --project-root='Only upV2.1/Only upV2.1' \
+  --profile=canonical-dp \
+  --dp-key-mode=mutation \
+  --max-expansions=3000 \
+  --goal-floor=MT2 \
+  --goal-expr='status:hp >= 3834 && status:atk >= 72 && status:def >= 35 && status:mdef >= 290' \
+  --save-route=/tmp/dp-mt2-goal.route.json
+```
+
 回放默认使用：
 
 ```bash
@@ -586,3 +665,51 @@ node shared-solver/route-gui.js \
   --live=1 \
   --headless=0
 ```
+
+### 6.6 Only Up chaos key-state 回归
+
+新增固定验收脚本：
+
+```bash
+npm run check:onlyup:key-states --prefix shared-solver
+```
+
+当前覆盖的关键状态：
+
+- `MT1`：`hp=1559` 时可打 `battle:skeleton（废弃傀儡）@MT1:8,1`，伤害为 `1558`。
+- `MT2`：验证 `(8,1)->(4,1)` 是两步短期更优，但 `(4,1)->(2,1)->auto(8,1)` 是三步合流后更优。
+- `MT2`：fixture `routes/fixtures/mt1-mt2-hp3834.route.json` 回放到 `hp>=3834 atk>=72 def>=35 mdef>=290`。
+- `MT3/I893`：fixture `routes/fixtures/mt1-mt3-i893-hp8425.route.json` 回放到 `hp>=8425 atk>=107 def>=100 mdef>=510 exp>=31` 且装备 `I893`。
+- `MT4`：fixture `routes/fixtures/mt1-mt4-hp4459-atk421-def318-mdef5012.route.json` 回放到 `hp=4459`，raw `atk=337 def=255 mdef=4010`，按 `I893` 的 25% 功法 buff 后有效值为 `atk=421 def=318 mdef=5012`。
+
+这个脚本的目标不是手动指定搜索路线，而是给 DP / confluence / action 枚举修改提供稳定 oracle。后续若搜索生成更优 `MT4 hp>=4459 atk>=421 def>=318 mdef>=5012` 路线，应更新上述 fixture，并保持该项为强断言。
+
+### 6.7 MT3 -> MT4 key-state 解析
+
+从 `MT3 hp=8425` / `I893` checkpoint 开始，当前 3F 固定 oracle 分支为：
+
+```text
+battle:brownWizard@MT3:8,11
+battle:blueGateKeeper@MT3:3,10
+battle:blueGateKeeper@MT3:9,10
+battle:redGateKeeper@MT3:10,8
+battle:blueGateKeeper@MT3:8,7
+battle:redGateKeeper@MT3:4,7
+battle:swordsman@MT3:9,6
+battle:soldier@MT3:9,4
+battle:darkKnight@MT3:10,5
+battle:redKnight@MT3:3,6
+battle:redKnight@MT3:3,4
+battle:darkKnight@MT3:4,3
+battle:yellowKing@MT3:10,1
+battle:yellowKing@MT3:2,5
+battle:yellowKnight@MT3:4,1
+changeFloor@MT3:6,0
+changeFloor@MT4:6,0
+battle:yellowKnight@MT3:8,3
+battle:blackKing@MT3:6,6
+battle:blackKing@MT3:6,8
+changeFloor@MT3:6,0
+```
+
+这里发现并修正了一个模拟语义问题：`I2090` 等拾取物品可增加经验，但旧模拟只在战斗后调用 `runLevelUps()`，导致 `battle:blackKing@MT3:6,8` 后自动拾取经验结晶到 `exp=165` 时没有升级。现在 `resolvePickupAt()` 在拾取及 `afterGetItem` 后也会调用 `runLevelUps()`，因此该分支最终 raw 状态为 `lv=6 atk=337 def=255 mdef=4010 exp=5`，乘 `I893` buff 后与 GUI 观察的 `atk=421 def=318 mdef=5012` 对齐。

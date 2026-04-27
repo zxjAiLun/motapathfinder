@@ -2,8 +2,9 @@
 
 const { getProgress, compareProgress } = require("./progress");
 const { estimateNextFloorDistance, getFloorOrder } = require("./score");
-const { getDecisionDepth, listFloorMutationSummary } = require("./state");
+const { cloneState, getDecisionDepth, listFloorMutationSummary } = require("./state");
 const { createCheckpointPool } = require("./floor-checkpoints");
+const { createChildNode, createRootNode, reconstructRoute } = require("./search-nodes");
 
 function stableArray(array) {
   return Array.isArray(array) ? array.slice().sort() : [];
@@ -287,17 +288,30 @@ function searchDP(simulator, initialState, options) {
   const heap = agendaMode === "fifo"
     ? null
     : new BinaryHeap((left, right) => compareDpAgendaRank(left.rank, right.rank));
+  const initialRoutePrefix = Array.isArray(initialState.route) ? initialState.route.slice() : [];
+  const rootState = cloneState(initialState);
+  rootState.route = [];
+  const nodes = new Map();
+  let nextNodeId = 1;
   const bestByKey = new Map();
   const actionStats = emptyActionStats();
   const startedAt = Date.now();
   let expansions = 0;
   let generated = 0;
   let registered = 0;
-  let rejectedByDp = 0;
+  let newKeys = 0;
+  let replacedLowerHp = 0;
+  let sameHpShorterRoute = 0;
+  let rejectedByHigherHp = 0;
+  let sameHpRejected = 0;
+  let actionTrimmed = 0;
+  let statesWithActionTrim = 0;
+  let maxActionsGeneratedForState = 0;
   let invalid = 0;
-  let goalState = null;
-  let bestSeenState = initialState;
-  let bestProgressState = initialState;
+  let firstGoalNode = null;
+  let bestGoalNode = null;
+  let bestSeenNode = null;
+  let bestProgressNode = null;
   let sequence = 0;
   const isGoalState = typeof config.goalPredicate === "function"
     ? config.goalPredicate
@@ -305,38 +319,49 @@ function searchDP(simulator, initialState, options) {
 
   const isActiveEntry = (entry) => {
     const active = bestByKey.get(entry.key);
-    return Boolean(active && active.state === entry.state && !isGoalState(entry.state));
+    return Boolean(active && active.nodeId === entry.nodeId && !isGoalState(entry.state));
   };
 
-  const enqueue = (state, sourceAction) => {
+  const enqueue = (state, sourceAction, parentNode) => {
     const key = buildDpStateKey(simulator, state, config);
     const existing = bestByKey.get(key);
-    if (!isBetterForSameDpKey(state, existing && existing.state)) {
-      rejectedByDp += 1;
+    const existingState = existing && existing.state;
+    const hpDiff = existingState ? heroHp(state) - heroHp(existingState) : null;
+    if (!isBetterForSameDpKey(state, existingState)) {
+      if (hpDiff === 0) sameHpRejected += 1;
+      else rejectedByHigherHp += 1;
       return false;
     }
-    bestByKey.set(key, { state, key });
-    const entry = {
-      state,
-      key,
-      rank: buildDpAgendaRank(simulator, state, sourceAction, sequence),
-    };
+    if (!existingState) newKeys += 1;
+    else if (hpDiff > 0) replacedLowerHp += 1;
+    else if (hpDiff === 0) sameHpShorterRoute += 1;
+    const actionForEntry = sourceAction && !sourceAction.fingerprint && typeof simulator.getActionFingerprint === "function"
+      ? { ...sourceAction, fingerprint: simulator.getActionFingerprint(sourceAction) }
+      : sourceAction;
+    const node = parentNode
+      ? createChildNode(parentNode, state, key, actionForEntry, nextNodeId++, sequence)
+      : createRootNode(state, key);
+    node.key = key;
+    node.rank = buildDpAgendaRank(simulator, state, sourceAction, sequence);
     sequence += 1;
-    if (heap) heap.push(entry);
-    else fifoEntries.push(entry);
+    nodes.set(node.nodeId, node);
+    bestByKey.set(key, node);
+    if (heap) heap.push(node);
+    else fifoEntries.push(node);
     registered += 1;
-    if (compareDpBest(state, bestSeenState) > 0) bestSeenState = state;
-    const progressDiff = compareProgress(state, bestProgressState);
-    if (progressDiff > 0 || (progressDiff === 0 && compareDpBest(state, bestProgressState) > 0)) {
-      bestProgressState = state;
+    if (!bestSeenNode || compareDpBest(state, bestSeenNode.state) > 0) bestSeenNode = node;
+    const progressDiff = bestProgressNode ? compareProgress(state, bestProgressNode.state) : 1;
+    if (!bestProgressNode || progressDiff > 0 || (progressDiff === 0 && compareDpBest(state, bestProgressNode.state) > 0)) {
+      bestProgressNode = node;
     }
     if (isGoalState(state)) {
-      if (!goalState || compareDpBest(state, goalState) > 0) goalState = state;
+      if (!firstGoalNode) firstGoalNode = node;
+      if (!bestGoalNode || compareDpBest(state, bestGoalNode.state) > 0) bestGoalNode = node;
     }
-    return true;
+    return node;
   };
 
-  enqueue(initialState);
+  enqueue(rootState);
 
   let cursor = 0;
   const popNext = () => {
@@ -356,11 +381,11 @@ function searchDP(simulator, initialState, options) {
   };
 
   while (expansions < maxExpansions) {
-    if (stopOnFirstGoal && goalState) break;
+    if (stopOnFirstGoal && firstGoalNode) break;
     const entry = popNext();
     if (!entry) break;
     const active = bestByKey.get(entry.key);
-    if (!active || active.state !== entry.state) continue;
+    if (!active || active.nodeId !== entry.nodeId) continue;
     const state = entry.state;
     if (isGoalState(state)) continue;
     expansions += 1;
@@ -371,6 +396,11 @@ function searchDP(simulator, initialState, options) {
       invalid += 1;
       continue;
     }
+    maxActionsGeneratedForState = Math.max(maxActionsGeneratedForState, actions.length);
+    if (actions.length > maxActionsPerState) {
+      actionTrimmed += actions.length - maxActionsPerState;
+      statesWithActionTrim += 1;
+    }
     sortDpActions(actions)
       .slice(0, maxActionsPerState)
       .forEach((action) => {
@@ -378,13 +408,14 @@ function searchDP(simulator, initialState, options) {
         recordAction(actionStats, action, "expanded");
         let nextState;
         try {
-          nextState = simulator.applyAction(state, action);
+          nextState = simulator.applyAction(state, action, { storeRoute: false });
         } catch (error) {
           invalid += 1;
           recordAction(actionStats, action, "invalid");
           return;
         }
-        if (enqueue(nextState, action)) recordAction(actionStats, action, "kept");
+        const childNode = enqueue(nextState, action, entry);
+        if (childNode) recordAction(actionStats, action, "kept");
         else recordAction(actionStats, action, "dominated");
       });
   }
@@ -393,25 +424,38 @@ function searchDP(simulator, initialState, options) {
     ? heap.activeCount(isActiveEntry)
     : fifoEntries.slice(cursor).filter(isActiveEntry).length;
 
+  const attachRouteToNodeState = (node) => {
+    if (!node || !node.state) return null;
+    node.state.route = initialRoutePrefix.concat(reconstructRoute(nodes, node));
+    return node.state;
+  };
+  const firstGoalState = attachRouteToNodeState(firstGoalNode);
+  const bestGoalState = attachRouteToNodeState(bestGoalNode);
+  const bestSeenState = attachRouteToNodeState(bestSeenNode);
+  const bestProgressState = attachRouteToNodeState(bestProgressNode);
+
   return {
-    foundGoal: Boolean(goalState),
-    goalState,
+    foundGoal: Boolean(bestGoalState),
+    goalState: bestGoalState,
+    firstGoalState,
+    bestGoalState,
     bestSeenState,
     bestProgressState,
     fallbackState: null,
-    route: goalState ? goalState.route : null,
+    route: bestGoalState ? bestGoalState.route : null,
     fallbackRoute: null,
     expansions,
     frontierSize,
     checkpointPool: createCheckpointPool(config.checkpointOptions),
-    results: goalState ? [goalState] : [],
+    results: [bestGoalState, firstGoalState].filter((state, index, list) => state && list.indexOf(state) === index),
     diagnostics: {
       algorithm: "dp",
       registered,
       generated,
-      trimmed: 0,
+      trimmed: actionTrimmed,
       skipped: {
-        "dp-lower-hp-same-state": rejectedByDp,
+        "dp-lower-hp-same-state": rejectedByHigherHp,
+        "dp-same-hp-not-shorter": sameHpRejected,
         invalid,
       },
       byActionType: actionStats.byActionType,
@@ -436,14 +480,21 @@ function searchDP(simulator, initialState, options) {
         keptActions: registered,
         expansionsPerSec: expansions > 0 ? expansions / Math.max(0.001, (Date.now() - startedAt) / 1000) : 0,
       },
-      pruneReasons: { "dp-lower-hp-same-state": rejectedByDp },
+      pruneReasons: {
+        "dp-lower-hp-same-state": rejectedByHigherHp,
+        "dp-same-hp-not-shorter": sameHpRejected,
+      },
       suspicious: {},
       safeDominance: {},
       confluenceDominance: {
         enabled: true,
         routePolicy: "dp-key",
-        replacedLowerHp: registered,
-        rejectedByHigherHp: rejectedByDp,
+        acceptedStates: registered,
+        newKeys,
+        replacedLowerHp,
+        sameHpShorterRoute,
+        rejectedByHigherHp,
+        sameHpRejected,
         ignoredRouteLengthRejects: 0,
         ignoredRouteLengthReplacements: 0,
         unsafeFloorDowngrades: 0,
@@ -466,10 +517,35 @@ function searchDP(simulator, initialState, options) {
       },
       dp: {
         keys: bestByKey.size,
+        completeWithinActionSet: actionTrimmed === 0,
+        maxActionsPerState,
+        actionTrimmed,
+        statesWithActionTrim,
+        maxActionsGeneratedForState,
+        acceptedStates: registered,
+        newKeys,
+        replacedLowerHp,
+        sameHpShorterRoute,
+        rejectedByHigherHp,
+        sameHpRejected,
         agendaMode,
         stopOnFirstGoal,
         keyMode: String(config.dpKeyMode || config.keyMode || "location"),
         targetFloorOrder: getFloorOrder(config.targetFloorId || simulator.stopFloorId),
+        foundFirstGoal: Boolean(firstGoalState),
+        foundBestGoal: Boolean(bestGoalState),
+        firstGoal: firstGoalState ? {
+          floorId: firstGoalState.floorId,
+          hp: heroHp(firstGoalState),
+          routeLength: Array.isArray(firstGoalState.route) ? firstGoalState.route.length : getDecisionDepth(firstGoalState),
+          decisionDepth: getDecisionDepth(firstGoalState),
+        } : null,
+        bestGoal: bestGoalState ? {
+          floorId: bestGoalState.floorId,
+          hp: heroHp(bestGoalState),
+          routeLength: Array.isArray(bestGoalState.route) ? bestGoalState.route.length : getDecisionDepth(bestGoalState),
+          decisionDepth: getDecisionDepth(bestGoalState),
+        } : null,
       },
     },
   };

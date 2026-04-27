@@ -5,7 +5,7 @@ const { AutoActionResolver } = require("./auto-actions");
 const { EquipmentResolver } = require("./equipment-resolver");
 const { EventResolver } = require("./event-resolver");
 const { evaluateExpression } = require("./expression");
-const { applyFloorArrival, executeActionList, runAutoEvents } = require("./events");
+const { applyFloorArrival, executeActionList, runAutoEvents, runLevelUps } = require("./events");
 const { resolveChangeFloorTarget } = require("./floor-transitions");
 const { computeFrontierFeatures } = require("./frontier-features");
 const { scoutChangeFloor } = require("./floor-scout");
@@ -2027,15 +2027,16 @@ class StaticSimulator {
 
     const floor = this.project.floorsById[state.floorId];
     const afterGetItem = (floor.afterGetItem || {})[coordinateKey(x, y)];
-    if (!afterGetItem) return;
-
-    executeActionList(
-      this.project,
-      state,
-      afterGetItem,
-      { floorId: state.floorId, eventLoc: { x, y } },
-      { choiceResolver: this.choiceResolver }
-    );
+    if (afterGetItem) {
+      executeActionList(
+        this.project,
+        state,
+        afterGetItem,
+        { floorId: state.floorId, eventLoc: { x, y } },
+        { choiceResolver: this.choiceResolver }
+      );
+    }
+    runLevelUps(this.project, state, { choiceResolver: this.choiceResolver });
   }
 
   resolvePickupOnCurrentTile(state, action) {

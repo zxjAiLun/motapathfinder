@@ -86,10 +86,14 @@ function summarizeAction(action) {
 
 
 function summarizeSearchClaim(profileName, targetFloor, args, result) {
+  const diagnostics = result.diagnostics || {};
+  const dp = diagnostics.dp || null;
+  const algorithm = diagnostics.algorithm || null;
   return {
     claim: result.foundGoal ? "found-route-under-budget" : "no-route-found-under-budget",
     profile: profileName,
     targetFloor,
+    algorithm,
     budget: {
       maxExpansions: Number(args["max-expansions"] || 80),
       topK: Number(args["top-k"] || 3),
@@ -98,12 +102,23 @@ function summarizeSearchClaim(profileName, targetFloor, args, result) {
       perRegionBeamWidth: args["per-region-beam-width"] != null ? Number(args["per-region-beam-width"]) : null,
       maxActionsPerState: args["max-actions-per-state"] != null ? Number(args["max-actions-per-state"]) : null,
     },
+    dp: dp ? {
+      completeWithinActionSet: Boolean(dp.completeWithinActionSet),
+      maxActionsPerState: dp.maxActionsPerState,
+      actionTrimmed: dp.actionTrimmed,
+      statesWithActionTrim: dp.statesWithActionTrim,
+      keyMode: dp.keyMode,
+      agendaMode: dp.agendaMode,
+      stopOnFirstGoal: dp.stopOnFirstGoal,
+    } : null,
     pruning: {
       dominanceMode: args["dominance-mode"] || (parseBooleanFlag(args["disable-dominance"], false) ? "off" : "default"),
       safeDominanceMode: parseBooleanFlag(args["safe-dominance-mode"], true),
       reserveProgressActions: true,
     },
-    semantics: "heuristic beam-search result; not a proof of global optimality or completeness",
+    semantics: algorithm === "dp"
+      ? "canonical DP over enumerated action set; complete only when completeWithinActionSet=true and expansion budget is not exhausted"
+      : "heuristic beam-search result; not a proof of global optimality or completeness",
     expansions: result.expansions,
     frontierRemaining: result.frontierSize,
   };
@@ -768,6 +783,28 @@ async function main(providedArgs, context) {
     searchClaim: summarizeSearchClaim(profileName, targetFloor, args, result),
   });
 
+  writeStateRoute("save-first-goal-route", result.firstGoalState, {
+    kind: "first-goal",
+    foundGoal: Boolean(result.firstGoalState),
+    targetFloorId: targetFloor,
+    finalFloorId: (result.firstGoalState || {}).floorId,
+    goalRouteKind: "first-goal",
+    stopOnFirstGoal: searchOptions.stopOnFirstGoal,
+    dp: result.diagnostics && result.diagnostics.dp,
+    searchClaim: summarizeSearchClaim(profileName, targetFloor, args, result),
+  });
+
+  writeStateRoute("save-best-goal-route", result.bestGoalState || result.goalState, {
+    kind: "best-goal-under-budget",
+    foundGoal: Boolean(result.bestGoalState || result.goalState),
+    targetFloorId: targetFloor,
+    finalFloorId: (result.bestGoalState || result.goalState || {}).floorId,
+    goalRouteKind: "best-goal-under-budget",
+    stopOnFirstGoal: searchOptions.stopOnFirstGoal,
+    dp: result.diagnostics && result.diagnostics.dp,
+    searchClaim: summarizeSearchClaim(profileName, targetFloor, args, result),
+  });
+
   if (result.results.length === 0) {
     console.log(`No terminal ${targetFloor} state found under profile=${profileName}, budget=${Number(args["max-expansions"] || 80)}, pruning=${args["dominance-mode"] || (parseBooleanFlag(args["disable-dominance"], false) ? "off" : "default")}.`);
     console.log("Battle evaluation and ambush/between-attack walking are active; next gains will come from stronger pruning and more rule coverage.");
@@ -775,13 +812,14 @@ async function main(providedArgs, context) {
   }
 
   const goalRoutePath = args.out || args["save-route"];
-  if (goalRoutePath && result.goalState) {
+  const selectedGoalState = result.bestGoalState || result.goalState;
+  if (goalRoutePath && selectedGoalState) {
     const outPath = path.resolve(projectRoot, goalRoutePath);
     const record = buildRouteRecord({
       project,
       simulator,
       initialState,
-      finalState: result.goalState,
+      finalState: selectedGoalState,
       options: {
         projectRoot,
         toFloor: targetFloor,
@@ -790,10 +828,34 @@ async function main(providedArgs, context) {
         solver: "topk",
         expanded: result.expansions,
         generated: (result.diagnostics || {}).generated,
+        metadata: {
+          kind: "best-goal-under-budget",
+          foundGoal: Boolean(selectedGoalState),
+          targetFloorId: targetFloor,
+          finalFloorId: selectedGoalState.floorId,
+          goalRouteKind: "best-goal-under-budget",
+          stopOnFirstGoal: searchOptions.stopOnFirstGoal,
+          dp: result.diagnostics && result.diagnostics.dp,
+          searchClaim: summarizeSearchClaim(profileName, targetFloor, args, result),
+        },
       },
     });
     writeRouteFile(outPath, record);
     console.log(`Route written: ${path.relative(projectRoot, outPath)}`);
+  }
+
+  if (useDpSearch && result.diagnostics && result.diagnostics.dp) {
+    const dp = result.diagnostics.dp;
+    console.log(`DP goal summary: ${JSON.stringify({
+      stopOnFirstGoal: dp.stopOnFirstGoal,
+      firstGoal: dp.firstGoal,
+      bestGoal: dp.bestGoal,
+      completeWithinActionSet: dp.completeWithinActionSet,
+      maxActionsPerState: dp.maxActionsPerState,
+      actionTrimmed: dp.actionTrimmed,
+      statesWithActionTrim: dp.statesWithActionTrim,
+      routeSelection: "save-route/out writes best-goal-under-budget; use --save-first-goal-route for first-goal",
+    })}`);
   }
 
   result.results.forEach((state, index) => {

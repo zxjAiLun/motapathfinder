@@ -1,2 +1,4 @@
 *
 !.gitignore
+!fixtures/
+!fixtures/*.route.json

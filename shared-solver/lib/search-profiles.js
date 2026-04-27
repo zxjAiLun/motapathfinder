@@ -539,7 +539,7 @@ function createSearchProfile(name, simulator, options) {
         searchAlgorithm: "dp",
         searchGraphMode: "primitive",
         dpAgendaMode: "best-first",
-        dpKeyMode: "mutation",
+        dpKeyMode: "region",
       };
     case "resource-prep-main":
       return createStageMt1Mt11ResourcePrepProfile(simulator, options);

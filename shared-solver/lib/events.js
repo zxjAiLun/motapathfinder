@@ -192,17 +192,16 @@ function applyFloorArrival(project, state, floorId, options) {
 function runAutoEvents(project, state, options) {
   const floor = project.floorsById[state.floorId];
   const autoEvent = floor.autoEvent || {};
-  let changed = true;
   let guard = 0;
 
-  while (changed) {
-    changed = false;
+  while (true) {
     guard += 1;
     if (guard > 64) {
       state.notes.push(`Auto event loop hit safety limit on floor ${state.floorId}`);
       break;
     }
 
+    const eligible = [];
     Object.keys(autoEvent)
       .sort()
       .forEach((locKey) => {
@@ -216,12 +215,15 @@ function runAutoEvents(project, state, options) {
             const uniqueKey = `${state.floorId}:${locKey}:${index}`;
             if (!event.multiExecute && state.triggeredAutoEvents[uniqueKey]) return;
             if (!evaluateCondition(event.condition, project, state, { floorId: state.floorId })) return;
-
-            executeActionList(project, state, event.data || [], { floorId: state.floorId, eventLoc: { x, y } }, options);
-            if (!event.multiExecute) state.triggeredAutoEvents[uniqueKey] = true;
-            changed = true;
+            eligible.push({ event, uniqueKey, x, y });
           });
       });
+    if (eligible.length === 0) break;
+
+    eligible.forEach((entry) => {
+      executeActionList(project, state, entry.event.data || [], { floorId: state.floorId, eventLoc: { x: entry.x, y: entry.y } }, options);
+      if (!entry.event.multiExecute) state.triggeredAutoEvents[entry.uniqueKey] = true;
+    });
   }
 }
 
