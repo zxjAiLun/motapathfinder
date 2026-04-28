@@ -93,6 +93,18 @@ function missingGoalFields(project, simulator, state, segment) {
       });
     }
   });
+  if (Array.isArray(goal.anyRemovedTiles) && goal.anyRemovedTiles.length > 0) {
+    const matched = goal.anyRemovedTiles.some((required) =>
+      getTileDefinitionAt(project, state, required.floorId, required.x, required.y) == null
+    );
+    if (!matched) {
+      missing.push({
+        field: "anyRemovedTiles",
+        expected: goal.anyRemovedTiles.map((tile) => `${tile.floorId}:${tile.x},${tile.y}=removed`),
+        actual: "all-present",
+      });
+    }
+  }
   (goal.presentTiles || []).forEach((required) => {
     const tile = getTileDefinitionAt(project, state, required.floorId, required.x, required.y);
     if (tile == null) {
@@ -142,6 +154,12 @@ function goalActionScore(simulator, state, action, segment) {
     const requiredKey = `${required.floorId}:${required.x},${required.y}`;
     if (actionTileKey === requiredKey && isRequiredTileStillPresent(simulator.project, state, required)) {
       score += 10000000;
+    }
+  }
+  for (const required of goal.anyRemovedTiles || []) {
+    const requiredKey = `${required.floorId}:${required.x},${required.y}`;
+    if (actionTileKey === requiredKey && isRequiredTileStillPresent(simulator.project, state, required)) {
+      score += 8000000;
     }
   }
   for (const preserved of goal.presentTiles || []) {
@@ -419,7 +437,7 @@ function classifySegmentFailure(missing, segment) {
     );
   }
 
-  if (hasMissingField(missingFields, (field) => field === "tileRemoved" || field === "removedTiles")) {
+  if (hasMissingField(missingFields, (field) => field === "tileRemoved" || field === "removedTiles" || field === "anyRemovedTiles")) {
     addClass(
       "target-tile-not-cleared",
       "required tile remains present at the best seen state",

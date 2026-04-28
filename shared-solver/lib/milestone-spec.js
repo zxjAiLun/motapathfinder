@@ -100,6 +100,7 @@ function validateMilestoneSpec(spec) {
       errors.push(`${routeName}/${milestone.id}: startFrom must reference a previous milestone: ${milestone.startFrom}`);
     }
     validateTileList(routeName, milestone, "removedTiles", errors);
+    validateTileList(routeName, milestone, "anyRemovedTiles", errors);
     validateTileList(routeName, milestone, "presentTiles", errors);
     validateTileList(routeName, milestone, "preferredPresentTiles", errors);
     if (milestone.id) previousIds.add(milestone.id);
