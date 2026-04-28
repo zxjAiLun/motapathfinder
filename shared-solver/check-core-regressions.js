@@ -47,6 +47,20 @@ function getTileId(project, state, floorId, x, y) {
   return tile && tile.id;
 }
 
+function hasSpecial(special, test) {
+  if (special == null) return false;
+  if (Array.isArray(special)) return special.includes(test);
+  if (typeof special === "number") return special === test;
+  if (typeof special === "object" && special.special != null) return hasSpecial(special.special, test);
+  return false;
+}
+
+function findTileNumber(project, predicate, label) {
+  const entry = Object.entries(project.mapTilesByNumber || {}).find(([, tile]) => predicate(tile || {}));
+  assert(entry, `missing tile number for ${label}`);
+  return Number(entry[0]);
+}
+
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -271,6 +285,78 @@ function checkMacroActionMatrix() {
   };
 }
 
+function checkAutoPickupDoesNotCrossHazardTransit() {
+  const { project } = makeContext();
+  const itemNumber = findTileNumber(project, (tile) => tile.id === "weakWine", "weakWine");
+  const betweenEnemyNumber = findTileNumber(
+    project,
+    (tile) => typeof tile.cls === "string" && tile.cls.indexOf("enemy") === 0 && hasSpecial((project.enemysById[tile.id] || {}).special, 16),
+    "between-attack enemy"
+  );
+
+  const floor = cloneJson(project.floorsById.MT1);
+  floor.floorId = "SYN_AUTO_PICKUP_HAZARD";
+  floor.title = "Synthetic Auto Pickup Hazard";
+  floor.name = "Synthetic Auto Pickup Hazard";
+  floor.width = 5;
+  floor.height = 3;
+  floor.map = Array.from({ length: 3 }, () => Array(5).fill(0));
+  floor.map[0][3] = betweenEnemyNumber;
+  floor.map[1][2] = itemNumber;
+  floor.map[1][4] = itemNumber;
+  floor.map[2][3] = betweenEnemyNumber;
+  floor.events = {};
+  floor.changeFloor = {};
+  floor.beforeBattle = {};
+  floor.afterBattle = {};
+  floor.afterGetItem = {};
+  floor.firstArrive = [];
+  floor.eachArrive = [];
+  project.floorsById[floor.floorId] = floor;
+  project.floorOrder = (project.floorOrder || []).concat(floor.floorId);
+
+  const battleResolver = new FunctionBackedBattleResolver(project);
+  const simulator = new StaticSimulator(project, {
+    battleResolver,
+    autoPickupEnabled: true,
+    autoBattleEnabled: false,
+  });
+  const state = simulator.createInitialState({ rank: "chaos" });
+  state.floorId = floor.floorId;
+  state.hero.loc = { x: 0, y: 1, direction: "right" };
+  state.hero.hp = 1000000;
+  state.hero.atk = 1;
+  state.hero.def = 0;
+  state.hero.mdef = 0;
+  state.floorStates[floor.floorId] = { removed: {}, replaced: {} };
+
+  const hazards = buildMovementHazards(project, state, { floorId: floor.floorId, battleResolver });
+  assert(Number(hazards.damage["3,1"] || 0) > 0, "synthetic transit point should have between-attack damage");
+
+  simulator.stabilizeState(state);
+  assert.strictEqual(getTileDefinitionAt(project, state, floor.floorId, 2, 1), null, "auto pickup should collect reachable item before hazard");
+  assert.strictEqual(
+    getTileId(project, state, floor.floorId, 4, 1),
+    "weakWine",
+    "auto pickup must not remotely collect an item behind a hazardous transit tile"
+  );
+
+  const pickup = simulator.enumeratePrimitiveActions(state).actions.find((action) => action.kind === "pickup" && action.x === 4 && action.y === 1);
+  assert(pickup, "explicit pickup behind hazard should remain available");
+  assert.deepStrictEqual(pickup.path.slice(-1), ["right"], "explicit pickup should route through the hazardous transit point");
+  const preview = simulator.applyAction(state, pickup);
+  assert.strictEqual(getTileDefinitionAt(project, preview, floor.floorId, 4, 1), null, "explicit pickup should collect item behind hazard");
+  assert(Number(((preview.meta || {}).hazardStats || {}).betweenAttack || 0) > 0, "explicit pickup should charge between-attack transit damage");
+
+  return {
+    floorId: floor.floorId,
+    transitHazard: hazards.damage["3,1"],
+    autoPicked: ["2,1"],
+    explicitPickupPath: pickup.path,
+    hazardStats: preview.meta.hazardStats,
+  };
+}
+
 function checkConfluenceCliOptions() {
   assert.deepStrictEqual(buildConfluenceDominanceOptions({}, true), {
     enableConfluenceHpDominance: true,
@@ -353,6 +439,7 @@ function main() {
     guardBattle: checkGuardBattleMatrix(),
     addPoint: checkAddPointMatrix(),
     macroActionsAndStageProfile: checkMacroActionMatrix(),
+    autoPickupHazardTransit: checkAutoPickupDoesNotCrossHazardTransit(),
     confluenceCliOptions: checkConfluenceCliOptions(),
     resourceDefaultOptions: checkResourceDefaultOptions(),
   };

@@ -218,6 +218,8 @@ function finiteNumber(value, fallback) {
 
 function sourceActionRank(action) {
   if (!action) return 0;
+  const segmentScore = Number((((action || {}).estimate || {}).segmentPreviewScore) || 0);
+  if (segmentScore !== 0) return 10 + Math.max(-20, Math.min(100, segmentScore / 1000000));
   if (action.kind === "changeFloor") return 8;
   if (action.kind === "pickup" || action.kind === "equip") return 7;
   if (action.kind === "openDoor" || action.kind === "useTool") return 6;

@@ -3,7 +3,7 @@
 const { runAutoEvents } = require("./events");
 const { buildMovementHazards } = require("./movement-hazards");
 const { DIRECTIONS, DIRECTION_DELTAS, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
-const { buildStateKey } = require("./state-key");
+const { buildDominanceKey, buildStateKey } = require("./state-key");
 const { cloneState, floorHasCoordinate, getTileDefinitionAt, removeTileAt, replaceTileAt } = require("./state");
 
 function isEndpointTile(project, state, floorId, x, y) {
@@ -193,10 +193,11 @@ function simulateTransitStep(project, state, direction, options, hazardCache) {
 function buildWalkReachability(project, state, options) {
   const config = options || {};
   const initialState = cloneState(state);
-  const initialKey = buildStateKey(initialState);
+  const initialKey = buildDominanceKey(initialState);
   const hazardCache = new Map();
   const queue = [
     {
+      key: initialKey,
       x: initialState.hero.loc.x,
       y: initialState.hero.loc.y,
       distance: 0,
@@ -207,19 +208,26 @@ function buildWalkReachability(project, state, options) {
   const visited = {
     [initialKey]: queue[0],
   };
+  const bestHpByKey = {
+    [initialKey]: Number(initialState.hero.hp || 0),
+  };
 
   while (queue.length > 0) {
     const node = queue.shift();
+    if (visited[node.key] !== node) continue;
 
     DIRECTIONS.forEach((direction) => {
       const nextState = simulateTransitStep(project, node.state, direction, config, hazardCache);
       if (!nextState) return;
       if (nextState.floorId !== state.floorId) return;
 
-      const key = buildStateKey(nextState);
-      if (visited[key]) return;
+      const key = buildDominanceKey(nextState);
+      const nextHp = Number(nextState.hero.hp || 0);
+      if (bestHpByKey[key] != null && bestHpByKey[key] >= nextHp) return;
+      bestHpByKey[key] = nextHp;
 
       visited[key] = {
+        key,
         x: nextState.hero.loc.x,
         y: nextState.hero.loc.y,
         distance: node.distance + 1,

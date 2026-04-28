@@ -80,6 +80,51 @@ function compactSegmentResult(segment) {
   };
 }
 
+function sanitizeFilePart(value) {
+  return String(value || "checkpoint").replace(/[^A-Za-z0-9_.-]+/g, "_");
+}
+
+function saveUniqueCheckpointRoutes({ args, project, projectRoot, simulator, routeName, spec, result, rank }) {
+  if (!parseBoolean(args["save-unique-checkpoints"], true)) return [];
+  const checkpoints = (result.checkpointResults || []).filter((checkpoint) => checkpoint.uniqueFeasibleRoute);
+  if (checkpoints.length === 0) return [];
+  const checkpointDir = path.resolve(args["checkpoint-dir"] || path.join("routes", "latest", "checkpoints", routeName));
+  const written = [];
+  checkpoints.forEach((checkpoint) => {
+    const candidate = checkpoint.candidates && checkpoint.candidates[0];
+    if (!candidate || !candidate.state) return;
+    const finalState = candidate.state;
+    finalState.route = Array.isArray(candidate.route) ? candidate.route.slice() : finalState.route;
+    const filePath = path.join(checkpointDir, `${sanitizeFilePart(checkpoint.segmentId)}.route.json`);
+    const routeRecord = buildRouteRecord({
+      project,
+      simulator,
+      finalState,
+      options: {
+        projectRoot,
+        solver: "segmented-dp",
+        profile: routeName,
+        rank,
+        toFloor: finalState.floorId,
+        goalType: "milestone-checkpoint",
+        metadata: {
+          kind: "segmented-dp-checkpoint",
+          segmentedDp: {
+            routeName,
+            milestoneIds: spec.milestones.map((milestone) => milestone.id),
+            checkpointSegmentId: checkpoint.segmentId,
+            uniqueFeasibleRoute: true,
+            candidateId: candidate.id,
+          },
+        },
+      },
+    });
+    writeRouteFile(filePath, routeRecord);
+    written.push(filePath);
+  });
+  return written;
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const projectRoot = path.resolve(args["project-root"] || DEFAULT_PROJECT_ROOT);
@@ -107,8 +152,25 @@ function main() {
     failedSegmentId: result.failedSegment && result.failedSegment.segmentId,
     completedSegments: result.segmentResults.filter((segment) => segment.found).map((segment) => segment.segmentId),
     segments: result.segmentResults.map(compactSegmentResult),
+    checkpoints: (result.checkpointResults || []).map((checkpoint) => ({
+      segmentId: checkpoint.segmentId,
+      uniqueFeasibleRoute: checkpoint.uniqueFeasibleRoute,
+      candidateCount: checkpoint.candidateCount,
+    })),
   };
   console.log(JSON.stringify(summary, null, 2));
+
+  const checkpointFiles = saveUniqueCheckpointRoutes({
+    args,
+    project,
+    projectRoot,
+    simulator,
+    routeName,
+    spec,
+    result,
+    rank: args.rank || "chaos",
+  });
+  checkpointFiles.forEach((filePath) => console.log(`Checkpoint written: ${filePath}`));
 
   const out = args.out ? path.resolve(args.out) : null;
   if (out && result.found && result.finalCandidate && result.finalCandidate.state) {

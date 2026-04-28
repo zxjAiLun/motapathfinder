@@ -243,13 +243,147 @@ function checkFailureDiagnostics(simulator) {
   return result.diagnostics.failure;
 }
 
+function makeSyntheticBacktrackSimulator() {
+  const project = {
+    data: { firstData: { title: "synthetic", floorId: "SYN", hero: {} } },
+    floorsById: { SYN: { width: 3, height: 1, map: [[0, 0, 0]], changeFloor: {} } },
+    mapTilesByNumber: {},
+    floorOrder: ["SYN"],
+  };
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+  return {
+    project,
+    stopFloorId: "SYN",
+    buildReachableRegionSignature(state) {
+      return {
+        regionKey: `${state.floorId}:region`,
+        reachableEndpointsKey: "",
+        counts: {},
+      };
+    },
+    enumerateActions(state) {
+      return this.enumeratePrimitiveActions(state).actions;
+    },
+    enumeratePrimitiveActions(state) {
+      const flags = state.flags || {};
+      if (flags.aHp || flags.zAtk) return { actions: [] };
+      return {
+        actions: [
+          { kind: "pickup", summary: "pickup:aHp@SYN:0,0", floorId: "SYN", itemId: "aHp" },
+          { kind: "pickup", summary: "pickup:zAtk@SYN:1,0", floorId: "SYN", itemId: "zAtk" },
+        ],
+      };
+    },
+    applyAction(state, action) {
+      const next = clone(state);
+      next.route = Array.isArray(next.route) ? next.route.slice() : [];
+      next.route.push(action.summary);
+      next.flags = next.flags || {};
+      next.meta = next.meta || {};
+      next.meta.decisionDepth = Number(next.meta.decisionDepth || 0) + 1;
+      if (action.summary === "pickup:aHp@SYN:0,0") {
+        next.flags.aHp = true;
+        next.hero.hp = 200;
+        next.hero.exp = 1;
+      } else if (action.summary === "pickup:zAtk@SYN:1,0") {
+        next.flags.zAtk = true;
+        next.hero.hp = 80;
+        next.hero.atk = 10;
+        next.hero.exp = 1;
+      } else {
+        throw new Error(`unexpected synthetic action ${action.summary}`);
+      }
+      return next;
+    },
+  };
+}
+
+function checkFailureBacktracking() {
+  const simulator = makeSyntheticBacktrackSimulator();
+  const initialState = {
+    floorId: "SYN",
+    hero: { hp: 100, atk: 1, def: 1, mdef: 1, lv: 1, exp: 0, money: 0, equipment: [] },
+    inventory: {},
+    flags: {},
+    visitedFloors: {},
+    floorStates: {},
+    route: [],
+    meta: { decisionDepth: 0 },
+  };
+  const spec = {
+    routeName: "synthetic-backtrack",
+    milestones: [
+      {
+        id: "prep",
+        label: "Synthetic prep",
+        goal: { type: "heroAtLeast", floorId: "SYN", minHero: { exp: 1 } },
+        actionPolicy: { allowedFloors: ["SYN"], actionKinds: ["pickup"] },
+        dp: {
+          keyMode: "location",
+          stopOnFirstGoal: true,
+          firstGoalSafeReason: "Synthetic test intentionally forces first-goal repair coverage.",
+          maxExpansions: 4,
+          maxRuntimeMs: 1000,
+          goalSkylineLimit: 1,
+        },
+      },
+      {
+        id: "gate",
+        label: "Synthetic atk gate",
+        startFrom: "prep",
+        goal: { type: "heroAtLeast", floorId: "SYN", minHero: { atk: 10 } },
+        actionPolicy: { allowedFloors: ["SYN"], actionKinds: ["pickup"] },
+        dp: {
+          keyMode: "location",
+          stopOnFirstGoal: true,
+          firstGoalSafeReason: "Synthetic gate is already satisfied by the repaired prep candidate.",
+          maxExpansions: 2,
+          maxRuntimeMs: 1000,
+          goalSkylineLimit: 1,
+        },
+      },
+    ],
+  };
+
+  const withoutRepair = runMilestoneGraph(simulator, initialState, spec, {
+    candidateLimit: 1,
+    enableFailureBacktracking: false,
+  });
+  assert.equal(withoutRepair.found, false, "synthetic graph should fail without failure backtracking");
+  assert.equal(withoutRepair.failedSegment.segmentId, "gate");
+
+  const withRepair = runMilestoneGraph(simulator, initialState, spec, {
+    candidateLimit: 1,
+    enableFailureBacktracking: true,
+  });
+  assert.equal(withRepair.found, true, `synthetic graph should repair from previous milestone: ${JSON.stringify(withRepair.failedSegment || null)}`);
+  assert.equal(withRepair.reachedMilestone, "gate");
+  assert.ok(withRepair.finalCandidate.state.hero.atk >= 10, "repair should select the highest-atk prep candidate");
+  assert.ok((withRepair.finalCandidate.route || []).includes("pickup:zAtk@SYN:1,0"), "repair route should use the high-atk branch");
+  assert.ok((withRepair.segmentResults[0] || {}).backtrack, "previous segment should record backtrack expansion metadata");
+  assert.ok((withRepair.segmentResults[1] || {}).backtrack, "current segment should record retry metadata");
+  return {
+    withoutRepair: {
+      found: withoutRepair.found,
+      failedSegmentId: withoutRepair.failedSegment.segmentId,
+    },
+    withRepair: {
+      found: withRepair.found,
+      reachedMilestone: withRepair.reachedMilestone,
+      route: withRepair.finalCandidate.route,
+      backtrack: withRepair.segmentResults.map((segment) => segment.backtrack || null),
+    },
+  };
+}
+
 function main() {
   const simulator = makeSimulator();
   const safety = checkMilestoneSafetyAnnotations(simulator);
   const mt2 = checkMt2Hp3834ToI893(simulator);
   const mt5 = checkMt5ThirdGateToBlueKing(simulator);
   const failure = checkFailureDiagnostics(simulator);
-  console.log(JSON.stringify({ safety, mt2, mt5, failure }, null, 2));
+  const backtracking = checkFailureBacktracking();
+  console.log(JSON.stringify({ safety, mt2, mt5, failure, backtracking }, null, 2));
 }
 
 main();

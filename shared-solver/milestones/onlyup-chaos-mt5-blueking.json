@@ -414,6 +414,206 @@
         "allowChangeFloors": ["MT5:6,12", "MT5:6,0"]
       },
       "dp": { "maxExpansions": 4000 }
+    },
+    {
+      "id": "mt6-upper-left-blueking",
+      "label": "MT6 上半区左侧织光仙子前置链",
+      "startFrom": "mt5-blueking-kill",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": { "hp": 142115, "atk": 4567, "def": 3335, "mdef": 23010, "lv": 9, "exp": 309 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT6", "x": 4, "y": 1 },
+          { "floorId": "MT6", "x": 8, "y": 1 },
+          { "floorId": "MT6", "x": 4, "y": 3 },
+          { "floorId": "MT6", "x": 9, "y": 4 },
+          { "floorId": "MT6", "x": 9, "y": 6 },
+          { "floorId": "MT6", "x": 3, "y": 6 },
+          { "floorId": "MT6", "x": 2, "y": 5 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT6", "x": 4, "y": 7 }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT5", "MT6"],
+        "allowChangeFloors": ["MT5:6,0"]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "This segment forces the MT6 left-side blueKing resource before the right-side blueKing is consumed.",
+        "maxExpansions": 1800,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 4
+      }
+    },
+    {
+      "id": "mt6-upper-right-blueking",
+      "label": "MT6 右侧夹击血瓶显式拾取",
+      "startFrom": "mt6-upper-left-blueking",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": { "hp": 324506, "atk": 4567, "def": 4335, "mdef": 23010, "lv": 9, "exp": 351 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT6", "x": 4, "y": 7 },
+          { "floorId": "MT6", "x": 7, "y": 7 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT6", "x": 1, "y": 11, "reason": "Preserve the lower attack-pair route after the explicit 7,7 pickup." },
+          { "floorId": "MT6", "x": 10, "y": 8, "reason": "Preserve the lower attack-pair route after the explicit 7,7 pickup." },
+          { "floorId": "MT6", "x": 6, "y": 6, "reason": "Preserve the first center guard as the next sustain checkpoint." },
+          { "floorId": "MT6", "x": 6, "y": 8, "reason": "Preserve the second center guard for the later lower sweep." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT6"]
+      },
+      "dp": {
+        "keyMode": "location",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "This segment only makes the formerly implicit 7,7 pickup explicit and preserves all lower MT6 resources.",
+        "maxExpansions": 500,
+        "maxRuntimeMs": 5000,
+        "goalSkylineLimit": 4
+      }
+    },
+    {
+      "id": "mt6-first-center-guard",
+      "label": "MT6 第一中路制动警卫",
+      "startFrom": "mt6-upper-right-blueking",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": { "hp": 680706, "atk": 4567, "def": 4335, "mdef": 23010, "lv": 9, "exp": 393 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT6", "x": 6, "y": 6 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT6", "x": 1, "y": 11, "reason": "Preserve lower attack resource after first center guard." },
+          { "floorId": "MT6", "x": 10, "y": 8, "reason": "Preserve lower attack resource after first center guard." },
+          { "floorId": "MT6", "x": 6, "y": 8, "reason": "Preserve second center guard until lower attack pair is resolved." },
+          { "floorId": "MT6", "x": 2, "y": 1, "reason": "Preserve optional high-defense skyline candidate for MT7." },
+          { "floorId": "MT6", "x": 9, "y": 10, "reason": "Preserve lower sweep resource." },
+          { "floorId": "MT6", "x": 11, "y": 11, "reason": "Preserve optional high-defense skyline candidate for MT7." },
+          { "floorId": "MT6", "x": 4, "y": 11, "reason": "Preserve final MT6 mdef pickup route." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT6"]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "Only one center guard can be taken safely before the lower attack pair.",
+        "maxExpansions": 700,
+        "maxRuntimeMs": 6000,
+        "goalSkylineLimit": 4
+      }
+    },
+    {
+      "id": "mt6-lower-attack-pair",
+      "label": "MT6 下半区双碎晶反应",
+      "startFrom": "mt6-first-center-guard",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": { "hp": 579586, "atk": 5567, "def": 4335, "mdef": 23010, "lv": 9, "exp": 477 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT6", "x": 1, "y": 11 },
+          { "floorId": "MT6", "x": 10, "y": 8 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT6", "x": 6, "y": 8, "reason": "Second center guard must be delayed until both attack resources are collected." },
+          { "floorId": "MT6", "x": 2, "y": 1, "reason": "Preserve optional high-defense skyline candidate for MT7." },
+          { "floorId": "MT6", "x": 9, "y": 10, "reason": "Preserve lower sweep resource." },
+          { "floorId": "MT6", "x": 11, "y": 11, "reason": "Preserve optional high-defense skyline candidate for MT7." },
+          { "floorId": "MT6", "x": 4, "y": 11, "reason": "Preserve final MT6 mdef pickup route." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT6"]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": false,
+        "maxExpansions": 1200,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 4
+      }
+    },
+    {
+      "id": "mt6-second-center-guard",
+      "label": "MT6 第二中路制动警卫",
+      "startFrom": "mt6-lower-attack-pair",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": { "hp": 466554, "atk": 5767, "def": 4535, "mdef": 25010, "lv": 9, "exp": 519 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT6", "x": 6, "y": 8 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT6", "x": 2, "y": 1, "reason": "Preserve optional high-defense skyline candidate for MT7." },
+          { "floorId": "MT6", "x": 9, "y": 10, "reason": "Preserve lower sweep resource." },
+          { "floorId": "MT6", "x": 11, "y": 11, "reason": "Preserve optional high-defense skyline candidate for MT7." },
+          { "floorId": "MT6", "x": 4, "y": 11, "reason": "Preserve final MT6 mdef pickup route." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT6"]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "The second center guard is the only immediate route to the next lower MT6 skyline.",
+        "maxExpansions": 900,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 4
+      }
+    },
+    {
+      "id": "mt7-entry-after-mt6-sweep",
+      "label": "MT6 最终魔防后进入 MT7",
+      "startFrom": "mt6-second-center-guard",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT7",
+        "minHero": { "hp": 405000, "atk": 5767, "def": 4535, "mdef": 30010, "lv": 9, "exp": 603 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT6", "x": 4, "y": 11 }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT6", "MT7"],
+        "allowChangeFloors": ["MT5:6,0", "MT6:6,12"]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": false,
+        "maxExpansions": 1600,
+        "maxRuntimeMs": 12000,
+        "goalSkylineLimit": 8
+      }
     }
   ]
 }

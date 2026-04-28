@@ -498,6 +498,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     maxRuntimeMs: number(dpConfig.maxRuntimeMs, 15000),
     dpKeyMode: dpConfig.keyMode || dpConfig.dpKeyMode || "region",
     dpAgendaMode: dpConfig.agendaMode || "best-first",
+    dpPriorityMode: dpConfig.priorityMode || dpConfig.dpPriorityMode || "default",
     stopOnFirstGoal: dpConfig.stopOnFirstGoal === true,
     goalSkylineLimit: number(dpConfig.goalSkylineLimit, 8),
     actionProvider: buildSegmentActionProvider(simulator, segment),
@@ -593,9 +594,182 @@ function mergeFailurePropagation(attempts) {
   };
 }
 
+function numericOption(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function segmentCandidateLimit(segment, config, overrides) {
+  return numericOption(
+    overrides && overrides.candidateLimit,
+    numericOption(config && config.candidateLimit, numericOption(segment && segment.dp && segment.dp.goalSkylineLimit, 8))
+  );
+}
+
+function segmentDpOverrides(segment, config, overrides) {
+  const dpConfig = (segment || {}).dp || {};
+  const repair = (overrides && overrides.dpOverrides) || {};
+  return {
+    ...(config && config.dpKeyMode ? { keyMode: config.dpKeyMode } : {}),
+    ...(config && config.maxExpansions ? { maxExpansions: config.maxExpansions } : {}),
+    ...(config && config.maxRuntimeMs ? { maxRuntimeMs: config.maxRuntimeMs } : {}),
+    ...(config && config.stopOnFirstGoal != null ? { stopOnFirstGoal: config.stopOnFirstGoal } : {}),
+    ...(repair.stopOnFirstGoal != null ? { stopOnFirstGoal: repair.stopOnFirstGoal } : {}),
+    ...(repair.maxExpansions != null ? { maxExpansions: repair.maxExpansions } : {}),
+    ...(repair.maxRuntimeMs != null ? { maxRuntimeMs: repair.maxRuntimeMs } : {}),
+    ...(repair.keyMode != null ? { keyMode: repair.keyMode } : {}),
+    ...(repair.dpKeyMode != null ? { dpKeyMode: repair.dpKeyMode } : {}),
+    ...(repair.priorityMode != null ? { priorityMode: repair.priorityMode } : {}),
+    ...(repair.dpPriorityMode != null ? { dpPriorityMode: repair.dpPriorityMode } : {}),
+    ...(repair.goalSkylineLimit != null ? { goalSkylineLimit: repair.goalSkylineLimit } : {}),
+    ...(repair.maxActionsPerState != null ? { maxActionsPerState: repair.maxActionsPerState } : {}),
+    ...(repair.agendaMode != null ? { agendaMode: repair.agendaMode } : {}),
+    ...(repair.dpAgendaMode != null ? { dpAgendaMode: repair.dpAgendaMode } : {}),
+    ...(repair.maxRuntimeMs == null && overrides && overrides.expandRuntime
+      ? { maxRuntimeMs: Math.max(numericOption(dpConfig.maxRuntimeMs, 0), numericOption(dpConfig.maxRuntimeMs, 0) * 2) }
+      : {}),
+  };
+}
+
+function compactSegmentCandidates(candidates) {
+  return (candidates || []).map((candidate) => ({
+    id: candidate.id,
+    hero: candidate.hero,
+    effectiveHero: candidate.effectiveHero,
+    tags: candidate.tags,
+    routeLength: candidate.route.length,
+  }));
+}
+
+function buildMilestoneCheckpoint(segment, execution) {
+  const candidates = (execution && execution.merged) || [];
+  return {
+    segmentId: segment.id,
+    label: segment.label,
+    uniqueFeasibleRoute: candidates.length === 1,
+    candidateCount: candidates.length,
+    candidates,
+  };
+}
+
+function runSegmentAgainstFrontier(simulator, segment, frontier, config, overrides) {
+  const candidateLimit = segmentCandidateLimit(segment, config || {}, overrides || {});
+  const nextCandidates = [];
+  const attempts = [];
+  for (const candidate of frontier || []) {
+    const result = searchSegmentDP(simulator, candidate.state, segment, {
+      candidateId: candidate.id,
+      prefixRoute: candidate.route,
+      candidateLimit,
+      dpOverrides: segmentDpOverrides(segment, config || {}, overrides || {}),
+    });
+    attempts.push(result);
+    result.goalSkyline.forEach((goal) => nextCandidates.push({
+      ...goal,
+      id: `${segment.id}:${candidate.id}:${goal.id}`,
+    }));
+  }
+  const merged = mergeMilestoneFrontier(simulator, nextCandidates, segment, { candidateLimit });
+  const failurePropagation = mergeFailurePropagation(attempts);
+  const summary = {
+    segmentId: segment.id,
+    label: segment.label,
+    found: merged.length > 0,
+    startCandidatesTried: (frontier || []).length,
+    candidates: compactSegmentCandidates(merged),
+    attempts: attempts.map((attempt) => ({
+      startCandidateId: attempt.startCandidateId,
+      found: attempt.found,
+      goalCount: attempt.goalSkyline.length,
+      diagnostics: attempt.diagnostics,
+    })),
+    failurePropagation,
+  };
+  return { segment, inputFrontier: frontier || [], merged, attempts, summary, candidateLimit };
+}
+
+function preferredTagScore(candidate, preferredTags) {
+  const tags = new Set((candidate && candidate.tags) || []);
+  return (preferredTags || []).reduce((score, tag, index) => (
+    score + (tags.has(tag) ? Math.max(1, preferredTags.length - index) : 0)
+  ), 0);
+}
+
+function rankCandidatesByPreferredTags(candidates, preferredTags) {
+  return (candidates || []).slice().sort((left, right) => {
+    const tagDiff = preferredTagScore(right, preferredTags) - preferredTagScore(left, preferredTags);
+    if (tagDiff !== 0) return tagDiff;
+    return (right.score || 0) - (left.score || 0);
+  });
+}
+
+function backtrackCandidateLimit(segment, config) {
+  const base = numericOption(config && config.candidateLimit, numericOption(segment && segment.dp && segment.dp.goalSkylineLimit, 4));
+  return Math.max(base + 1, numericOption(config && config.backtrackCandidateLimit, base * 2), 8);
+}
+
+function backtrackDpOverrides(segment, config) {
+  const dpConfig = (segment || {}).dp || {};
+  return {
+    stopOnFirstGoal: false,
+    goalSkylineLimit: backtrackCandidateLimit(segment, config || {}),
+    maxExpansions: numericOption(
+      config && config.backtrackMaxExpansions,
+      Math.max(numericOption(dpConfig.maxExpansions, 1000), numericOption(dpConfig.maxExpansions, 1000) * 2)
+    ),
+    maxRuntimeMs: numericOption(
+      config && config.backtrackMaxRuntimeMs,
+      Math.max(numericOption(dpConfig.maxRuntimeMs, 5000), numericOption(dpConfig.maxRuntimeMs, 5000) * 2)
+    ),
+  };
+}
+
+function tryRepairFromPreviousMilestone(simulator, segments, segmentIndex, history, failedExecution, config) {
+  if ((config || {}).enableFailureBacktracking === false) return null;
+  if (!Array.isArray(history) || history.length === 0 || segmentIndex <= 0) return null;
+  const previous = history[history.length - 1];
+  if (!previous || previous.repairExpanded) return null;
+  const failedSummary = failedExecution && failedExecution.summary;
+  const preferredTags = ((failedSummary || {}).failurePropagation || {}).preferredCandidateTags || [];
+  if (preferredTags.length === 0) return null;
+
+  const previousSegment = previous.segment;
+  const currentSegment = segments[segmentIndex];
+  const expandedPrevious = runSegmentAgainstFrontier(simulator, previousSegment, previous.inputFrontier, config || {}, {
+    candidateLimit: backtrackCandidateLimit(previousSegment, config || {}),
+    dpOverrides: backtrackDpOverrides(previousSegment, config || {}),
+  });
+  expandedPrevious.summary.backtrack = {
+    mode: "expanded-previous-segment",
+    triggeredBySegment: currentSegment.id,
+    preferredCandidateTags: preferredTags,
+    previousCandidateCount: previous.merged.length,
+    expandedCandidateCount: expandedPrevious.merged.length,
+  };
+  if (expandedPrevious.merged.length === 0) {
+    return { found: false, expandedPrevious, repairedCurrent: null };
+  }
+
+  const rankedFrontier = rankCandidatesByPreferredTags(expandedPrevious.merged, preferredTags)
+    .slice(0, backtrackCandidateLimit(currentSegment, config || {}));
+  const repairedCurrent = runSegmentAgainstFrontier(simulator, currentSegment, rankedFrontier, config || {}, {});
+  repairedCurrent.summary.backtrack = {
+    mode: "retry-current-segment",
+    repairedFromSegment: previousSegment.id,
+    preferredCandidateTags: preferredTags,
+    startCandidatesTried: rankedFrontier.length,
+  };
+  return {
+    found: repairedCurrent.merged.length > 0,
+    expandedPrevious,
+    repairedCurrent,
+  };
+}
+
 function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   const config = options || {};
   const segments = milestoneRange(milestoneSpec, config.fromMilestoneId, config.toMilestoneId);
+  const checkpointResults = [];
   let frontier = [{
     id: "initial#0",
     state: cloneState(initialState),
@@ -606,61 +780,69 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     score: goalCandidateScore(initialState),
   }];
   const segmentResults = [];
-  for (const segment of segments) {
-    const nextCandidates = [];
-    const attempts = [];
-    for (const candidate of frontier) {
-      const result = searchSegmentDP(simulator, candidate.state, segment, {
-        candidateId: candidate.id,
-        prefixRoute: candidate.route,
-        candidateLimit: config.candidateLimit || (segment.dp && segment.dp.goalSkylineLimit),
-        dpOverrides: {
-          ...(config.dpKeyMode ? { keyMode: config.dpKeyMode } : {}),
-          ...(config.maxExpansions ? { maxExpansions: config.maxExpansions } : {}),
-          ...(config.maxRuntimeMs ? { maxRuntimeMs: config.maxRuntimeMs } : {}),
-          ...(config.stopOnFirstGoal != null ? { stopOnFirstGoal: config.stopOnFirstGoal } : {}),
-        },
-      });
-      attempts.push(result);
-      result.goalSkyline.forEach((goal) => nextCandidates.push({
-        ...goal,
-        id: `${segment.id}:${candidate.id}:${goal.id}`,
-      }));
-    }
-    const merged = mergeMilestoneFrontier(simulator, nextCandidates, segment, {
-      candidateLimit: config.candidateLimit || (segment.dp && segment.dp.goalSkylineLimit),
-    });
-    const failurePropagation = mergeFailurePropagation(attempts);
-    segmentResults.push({
-      segmentId: segment.id,
-      label: segment.label,
-      found: merged.length > 0,
-      startCandidatesTried: frontier.length,
-      candidates: merged.map((candidate) => ({
-        id: candidate.id,
-        hero: candidate.hero,
-        effectiveHero: candidate.effectiveHero,
-        tags: candidate.tags,
-        routeLength: candidate.route.length,
-      })),
-      attempts: attempts.map((attempt) => ({
-        startCandidateId: attempt.startCandidateId,
-        found: attempt.found,
-        goalCount: attempt.goalSkyline.length,
-        diagnostics: attempt.diagnostics,
-      })),
-      failurePropagation,
-    });
-    if (merged.length === 0) {
+  const history = [];
+  for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+    const segment = segments[segmentIndex];
+    const execution = runSegmentAgainstFrontier(simulator, segment, frontier, config, {});
+    if (execution.merged.length === 0) {
+      const repair = tryRepairFromPreviousMilestone(simulator, segments, segmentIndex, history, execution, config);
+      if (repair && repair.found) {
+        if (checkpointResults.length > 0) checkpointResults.pop();
+        checkpointResults.push(buildMilestoneCheckpoint(repair.expandedPrevious.segment, repair.expandedPrevious));
+        checkpointResults.push(buildMilestoneCheckpoint(segment, repair.repairedCurrent));
+        const previousIndex = segmentResults.length - 1;
+        if (previousIndex >= 0) segmentResults[previousIndex] = repair.expandedPrevious.summary;
+        segmentResults.push(repair.repairedCurrent.summary);
+        history[history.length - 1] = {
+          segment: repair.expandedPrevious.segment,
+          inputFrontier: repair.expandedPrevious.inputFrontier,
+          merged: repair.expandedPrevious.merged,
+          summary: repair.expandedPrevious.summary,
+          repairExpanded: true,
+        };
+        history.push({
+          segment,
+          inputFrontier: repair.repairedCurrent.inputFrontier,
+          merged: repair.repairedCurrent.merged,
+          summary: repair.repairedCurrent.summary,
+        });
+        frontier = repair.repairedCurrent.merged;
+        continue;
+      }
+      const failedSummary = execution.summary;
+      if (repair) {
+        failedSummary.backtrack = {
+          attempted: true,
+          repaired: false,
+          expandedPrevious: repair.expandedPrevious && {
+            segmentId: repair.expandedPrevious.segment.id,
+            candidates: compactSegmentCandidates(repair.expandedPrevious.merged),
+          },
+          repairedCurrent: repair.repairedCurrent && {
+            segmentId: repair.repairedCurrent.segment.id,
+            found: repair.repairedCurrent.merged.length > 0,
+          },
+        };
+      }
+      segmentResults.push(failedSummary);
       return {
         found: false,
         reachedMilestone: segment.startFrom || null,
         failedSegment: segmentResults[segmentResults.length - 1],
         finalCandidates: frontier,
         segmentResults,
+        checkpointResults,
       };
     }
-    frontier = merged;
+    segmentResults.push(execution.summary);
+    checkpointResults.push(buildMilestoneCheckpoint(segment, execution));
+    history.push({
+      segment,
+      inputFrontier: frontier,
+      merged: execution.merged,
+      summary: execution.summary,
+    });
+    frontier = execution.merged;
   }
   const final = frontier.slice().sort((left, right) => right.score - left.score)[0] || null;
   return {
@@ -670,6 +852,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     finalCandidate: final,
     finalCandidates: frontier,
     segmentResults,
+    checkpointResults,
   };
 }
 

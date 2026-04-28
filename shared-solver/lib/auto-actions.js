@@ -89,6 +89,7 @@ function collectTargets(project, state, options) {
       }
 
       if (!isAutoTraverseTile(project, state, state.floorId, x, y)) return;
+      if (typeof options.canTraverse === "function" && !options.canTraverse(project, state, tile, x, y)) return;
       visited.add(key);
       queue.push({ x, y, distance: current.distance + 1 });
     });
@@ -177,6 +178,7 @@ class AutoActionResolver {
           continuePast: !hasHazardAt(hazards, x, y, { damage: true, repulse: false, ambush: true }),
         };
       },
+      canTraverse: (_, __, ___, x, y) => !hasHazardAt(hazards, x, y, { damage: true, repulse: true, ambush: true }),
     });
   }
 
@@ -188,6 +190,7 @@ class AutoActionResolver {
     return collector(project, state, {
       evaluateTarget: (currentProject, currentState, tile, x, y) =>
         this.evaluateAutoBattleTarget(currentProject, currentState, battleResolver, hazards, tile, x, y),
+      canTraverse: (_, __, ___, x, y) => !hasHazardAt(hazards, x, y, { damage: true, repulse: true, ambush: true }),
     });
   }
 
