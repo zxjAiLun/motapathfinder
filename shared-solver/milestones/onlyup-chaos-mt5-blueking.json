@@ -7,11 +7,26 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT1",
-        "minHero": { "hp": 1559, "atk": 19, "def": 10, "mdef": 130, "exp": 5 },
-        "actionSurvivable": { "summary": "battle:skeleton@MT1:8,1", "exactDamage": 1558 }
+        "minHero": {
+          "hp": 1559,
+          "atk": 19,
+          "def": 10,
+          "mdef": 130,
+          "exp": 5
+        },
+        "actionSurvivable": {
+          "summary": "battle:skeleton@MT1:8,1",
+          "exactDamage": 1558
+        }
       },
-      "actionPolicy": { "allowedFloors": ["MT1"] },
-      "dp": { "maxExpansions": 4000 }
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT1"
+        ]
+      },
+      "dp": {
+        "maxExpansions": 4000
+      }
     },
     {
       "id": "mt2-entry",
@@ -20,13 +35,26 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT2",
-        "minHero": { "hp": 1601, "atk": 21, "def": 17, "mdef": 130, "exp": 6 }
+        "minHero": {
+          "hp": 1601,
+          "atk": 21,
+          "def": 17,
+          "mdef": 130,
+          "exp": 6
+        }
       },
       "actionPolicy": {
-        "allowedFloors": ["MT1", "MT2"],
-        "allowChangeFloors": ["MT1:6,0"]
+        "allowedFloors": [
+          "MT1",
+          "MT2"
+        ],
+        "allowChangeFloors": [
+          "MT1:6,0"
+        ]
       },
-      "dp": { "maxExpansions": 2500 }
+      "dp": {
+        "maxExpansions": 2500
+      }
     },
     {
       "id": "mt2-local-3582",
@@ -35,9 +63,19 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT2",
-        "minHero": { "hp": 3582, "atk": 31, "def": 19, "mdef": 250, "exp": 9 }
+        "minHero": {
+          "hp": 3582,
+          "atk": 31,
+          "def": 19,
+          "mdef": 250,
+          "exp": 9
+        }
       },
-      "actionPolicy": { "allowedFloors": ["MT2"] },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT2"
+        ]
+      },
       "dp": {
         "keyMode": "mutation",
         "safeReason": "MT2 local three-monster confluence has no movement damage and uses identical map mutation/resource state.",
@@ -51,11 +89,22 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT2",
-        "minHero": { "hp": 3834, "atk": 72, "def": 35, "mdef": 290 }
+        "minHero": {
+          "hp": 3834,
+          "atk": 72,
+          "def": 35,
+          "mdef": 290
+        }
       },
       "actionPolicy": {
-        "allowedFloors": ["MT1", "MT2"],
-        "allowChangeFloors": ["MT2:6,0", "MT1:6,0"]
+        "allowedFloors": [
+          "MT1",
+          "MT2"
+        ],
+        "allowChangeFloors": [
+          "MT2:6,0",
+          "MT1:6,0"
+        ]
       },
       "dp": {
         "keyMode": "mutation",
@@ -70,29 +119,98 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT2",
-        "minHero": { "hp": 8372, "atk": 87, "def": 50, "mdef": 440, "exp": 7 },
+        "minHero": {
+          "hp": 8372,
+          "atk": 87,
+          "def": 50,
+          "mdef": 440,
+          "exp": 7
+        },
         "removedTiles": [
-          { "floorId": "MT2", "x": 2, "y": 8 },
-          { "floorId": "MT2", "x": 3, "y": 10 },
-          { "floorId": "MT2", "x": 4, "y": 11 }
+          {
+            "floorId": "MT2",
+            "x": 2,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 10
+          },
+          {
+            "floorId": "MT2",
+            "x": 4,
+            "y": 11
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT2", "x": 4, "y": 7, "reason": "Preserve redPriest HP timing for the later I893 resource chain." },
-          { "floorId": "MT2", "x": 8, "y": 7, "reason": "Preserve redPriest HP timing for the later I893 resource chain." },
-          { "floorId": "MT2", "x": 10, "y": 8, "reason": "Preserve redPriest HP timing for the later I893 resource chain." },
-          { "floorId": "MT2", "x": 11, "y": 11 },
-          { "floorId": "MT2", "x": 6, "y": 6 },
-          { "floorId": "MT2", "x": 6, "y": 8 },
-          { "floorId": "MT2", "x": 6, "y": 9 }
+          {
+            "floorId": "MT2",
+            "x": 4,
+            "y": 7,
+            "reason": "Preserve redPriest HP timing for the later I893 resource chain."
+          },
+          {
+            "floorId": "MT2",
+            "x": 8,
+            "y": 7,
+            "reason": "Preserve redPriest HP timing for the later I893 resource chain."
+          },
+          {
+            "floorId": "MT2",
+            "x": 10,
+            "y": 8,
+            "reason": "Preserve redPriest HP timing for the later I893 resource chain."
+          },
+          {
+            "floorId": "MT2",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 6
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 9
+          }
         ],
         "preferredPresentTiles": [
-          { "floorId": "MT2", "x": 8, "y": 11 },
-          { "floorId": "MT2", "x": 9, "y": 10 },
-          { "floorId": "MT2", "x": 10, "y": 11 },
-          { "floorId": "MT2", "x": 9, "y": 9 }
+          {
+            "floorId": "MT2",
+            "x": 8,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 10
+          },
+          {
+            "floorId": "MT2",
+            "x": 10,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 9
+          }
         ]
       },
-      "actionPolicy": { "allowedFloors": ["MT2"] },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT2"
+        ]
+      },
       "dp": {
         "enablePreviewScore": false,
         "stopOnFirstGoal": true,
@@ -108,30 +226,92 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT2",
-        "minHero": { "hp": 9172, "atk": 97, "def": 65, "mdef": 440, "exp": 11 },
+        "minHero": {
+          "hp": 9172,
+          "atk": 97,
+          "def": 65,
+          "mdef": 440,
+          "exp": 11
+        },
         "removedTiles": [
-          { "floorId": "MT2", "x": 2, "y": 8 },
-          { "floorId": "MT2", "x": 3, "y": 10 },
-          { "floorId": "MT2", "x": 4, "y": 11 },
-          { "floorId": "MT3", "x": 5, "y": 11 },
-          { "floorId": "MT3", "x": 7, "y": 11 }
+          {
+            "floorId": "MT2",
+            "x": 2,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 10
+          },
+          {
+            "floorId": "MT2",
+            "x": 4,
+            "y": 11
+          },
+          {
+            "floorId": "MT3",
+            "x": 5,
+            "y": 11
+          },
+          {
+            "floorId": "MT3",
+            "x": 7,
+            "y": 11
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT2", "x": 11, "y": 11 },
-          { "floorId": "MT2", "x": 6, "y": 6 },
-          { "floorId": "MT2", "x": 6, "y": 8 },
-          { "floorId": "MT2", "x": 6, "y": 9 }
+          {
+            "floorId": "MT2",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 6
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 9
+          }
         ],
         "preferredPresentTiles": [
-          { "floorId": "MT2", "x": 4, "y": 7 },
-          { "floorId": "MT2", "x": 8, "y": 7 },
-          { "floorId": "MT2", "x": 10, "y": 8 }
+          {
+            "floorId": "MT2",
+            "x": 4,
+            "y": 7
+          },
+          {
+            "floorId": "MT2",
+            "x": 8,
+            "y": 7
+          },
+          {
+            "floorId": "MT2",
+            "x": 10,
+            "y": 8
+          }
         ],
-        "actionSurvivable": { "summary": "battle:redWizard@MT2:11,11" }
+        "actionSurvivable": {
+          "summary": "battle:redWizard@MT2:11,11"
+        }
       },
       "actionPolicy": {
-        "allowedFloors": ["MT2", "MT3"],
-        "allowChangeFloors": ["MT2:6,12", "MT3:6,12"]
+        "allowedFloors": [
+          "MT2",
+          "MT3"
+        ],
+        "allowChangeFloors": [
+          "MT2:6,12",
+          "MT3:6,12"
+        ]
       },
       "dp": {
         "enablePreviewScore": false,
@@ -148,10 +328,26 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT2",
-        "minHero": { "hp": 1, "atk": 97, "def": 90, "mdef": 490, "exp": 19 },
-        "removedTiles": [{ "floorId": "MT2", "x": 11, "y": 11 }]
+        "minHero": {
+          "hp": 1,
+          "atk": 97,
+          "def": 90,
+          "mdef": 490,
+          "exp": 19
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT2",
+            "x": 11,
+            "y": 11
+          }
+        ]
       },
-      "actionPolicy": { "allowedFloors": ["MT2"] },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT2"
+        ]
+      },
       "dp": {
         "enablePreviewScore": "required",
         "stopOnFirstGoal": true,
@@ -167,16 +363,44 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT2",
-        "minHero": { "hp": 8425, "atk": 107, "def": 95, "mdef": 490, "exp": 26 },
-        "equipmentIncludes": ["I893"],
+        "minHero": {
+          "hp": 8425,
+          "atk": 107,
+          "def": 95,
+          "mdef": 490,
+          "exp": 26
+        },
+        "equipmentIncludes": [
+          "I893"
+        ],
         "removedTiles": [
-          { "floorId": "MT2", "x": 11, "y": 11 },
-          { "floorId": "MT2", "x": 6, "y": 6 },
-          { "floorId": "MT2", "x": 6, "y": 8 },
-          { "floorId": "MT2", "x": 6, "y": 9 }
+          {
+            "floorId": "MT2",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 6
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 9
+          }
         ]
       },
-      "actionPolicy": { "allowedFloors": ["MT2"] },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT2"
+        ]
+      },
       "dp": {
         "enablePreviewScore": "required",
         "stopOnFirstGoal": true,
@@ -192,20 +416,58 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT3",
-        "minHero": { "hp": 8425, "atk": 107, "def": 100, "mdef": 510, "exp": 31 },
-        "equipmentIncludes": ["I893"],
+        "minHero": {
+          "hp": 8425,
+          "atk": 107,
+          "def": 100,
+          "mdef": 510,
+          "exp": 31
+        },
+        "equipmentIncludes": [
+          "I893"
+        ],
         "removedTiles": [
-          { "floorId": "MT2", "x": 11, "y": 11 },
-          { "floorId": "MT2", "x": 6, "y": 6 },
-          { "floorId": "MT2", "x": 6, "y": 8 },
-          { "floorId": "MT2", "x": 6, "y": 9 },
-          { "floorId": "MT3", "x": 5, "y": 11 },
-          { "floorId": "MT3", "x": 7, "y": 11 }
+          {
+            "floorId": "MT2",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 6
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 9
+          },
+          {
+            "floorId": "MT3",
+            "x": 5,
+            "y": 11
+          },
+          {
+            "floorId": "MT3",
+            "x": 7,
+            "y": 11
+          }
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT2", "MT3"],
-        "allowChangeFloors": ["MT2:6,12", "MT3:6,12"]
+        "allowedFloors": [
+          "MT2",
+          "MT3"
+        ],
+        "allowChangeFloors": [
+          "MT2:6,12",
+          "MT3:6,12"
+        ]
       },
       "dp": {
         "enablePreviewScore": false,
@@ -222,15 +484,31 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT4",
-        "minHero": { "hp": 4459 },
-        "minEffectiveHero": { "atk": 421, "def": 318, "mdef": 5012 },
-        "equipmentIncludes": ["I893"]
+        "minHero": {
+          "hp": 4459
+        },
+        "minEffectiveHero": {
+          "atk": 421,
+          "def": 318,
+          "mdef": 5012
+        },
+        "equipmentIncludes": [
+          "I893"
+        ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT3", "MT4"],
-        "allowChangeFloors": ["MT3:6,0", "MT4:6,0"]
+        "allowedFloors": [
+          "MT3",
+          "MT4"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT4:6,0"
+        ]
       },
-      "dp": { "maxExpansions": 7000 }
+      "dp": {
+        "maxExpansions": 7000
+      }
     },
     {
       "id": "mt5-early-gem-entry",
@@ -239,13 +517,30 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT5",
-        "minHero": { "hp": 44471, "atk": 777, "def": 745, "mdef": 4910, "exp": 77 }
+        "minHero": {
+          "hp": 44471,
+          "atk": 777,
+          "def": 745,
+          "mdef": 4910,
+          "exp": 77
+        }
       },
       "actionPolicy": {
-        "allowedFloors": ["MT3", "MT4", "MT5"],
-        "allowChangeFloors": ["MT4:6,0", "MT3:6,0", "MT4:6,12", "MT5:6,12"]
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT4:6,0",
+          "MT3:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
       },
-      "dp": { "maxExpansions": 7000 }
+      "dp": {
+        "maxExpansions": 7000
+      }
     },
     {
       "id": "mt5-first-sweep",
@@ -254,13 +549,27 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT5",
-        "minHero": { "hp": 136514, "atk": 977, "def": 795, "mdef": 6110, "exp": 221 }
+        "minHero": {
+          "hp": 136514,
+          "atk": 977,
+          "def": 795,
+          "mdef": 6110,
+          "exp": 221
+        }
       },
       "actionPolicy": {
-        "allowedFloors": ["MT4", "MT5"],
-        "allowChangeFloors": ["MT4:6,12", "MT5:6,12"]
+        "allowedFloors": [
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
       },
-      "dp": { "maxExpansions": 7000 }
+      "dp": {
+        "maxExpansions": 7000
+      }
     },
     {
       "id": "mt5-third-gate",
@@ -269,13 +578,27 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT5",
-        "minHero": { "hp": 105138, "atk": 1097, "def": 965, "mdef": 6310, "exp": 367 }
+        "minHero": {
+          "hp": 105138,
+          "atk": 1097,
+          "def": 965,
+          "mdef": 6310,
+          "exp": 367
+        }
       },
       "actionPolicy": {
-        "allowedFloors": ["MT4", "MT5"],
-        "allowChangeFloors": ["MT4:6,12", "MT5:6,12"]
+        "allowedFloors": [
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
       },
-      "dp": { "maxExpansions": 7000 }
+      "dp": {
+        "maxExpansions": 7000
+      }
     },
     {
       "id": "mt5-sustain-balance",
@@ -284,20 +607,68 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT5",
-        "minHero": { "hp": 94905, "atk": 1297, "def": 1165, "mdef": 6310, "exp": 435 },
-        "minEffectiveHero": { "atk": 1621, "def": 1456, "mdef": 7887 },
-        "removedTiles": [{ "floorId": "MT5", "x": 3, "y": 6 }],
+        "minHero": {
+          "hp": 94905,
+          "atk": 1297,
+          "def": 1165,
+          "mdef": 6310,
+          "exp": 435
+        },
+        "minEffectiveHero": {
+          "atk": 1621,
+          "def": 1456,
+          "mdef": 7887
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 6
+          }
+        ],
         "presentTiles": [
-          { "floorId": "MT5", "x": 9, "y": 6 },
-          { "floorId": "MT5", "x": 9, "y": 4 },
-          { "floorId": "MT5", "x": 10, "y": 5 },
-          { "floorId": "MT5", "x": 3, "y": 4 },
-          { "floorId": "MT5", "x": 4, "y": 7 },
-          { "floorId": "MT5", "x": 8, "y": 3 },
-          { "floorId": "MT5", "x": 6, "y": 7 }
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 6
+          },
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 10,
+            "y": 5
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 7
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 3
+          },
+          {
+            "floorId": "MT5",
+            "x": 6,
+            "y": 7
+          }
         ]
       },
-      "actionPolicy": { "allowedFloors": ["MT5"] },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT5"
+        ]
+      },
       "dp": {
         "enablePreviewScore": "required",
         "stopOnFirstGoal": true,
@@ -313,25 +684,69 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT5",
-        "minHero": { "hp": 14404 },
-        "minEffectiveHero": { "atk": 2075, "def": 2024, "mdef": 13296 },
-        "equipmentIncludes": ["I894"],
+        "minHero": {
+          "hp": 14404
+        },
+        "minEffectiveHero": {
+          "atk": 2075,
+          "def": 2024,
+          "mdef": 13296
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
         "removedTiles": [
-          { "floorId": "MT5", "x": 9, "y": 6 },
-          { "floorId": "MT5", "x": 9, "y": 4 },
-          { "floorId": "MT5", "x": 10, "y": 5 },
-          { "floorId": "MT5", "x": 11, "y": 5 }
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 6
+          },
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 10,
+            "y": 5
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 5
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT5", "x": 3, "y": 4 },
-          { "floorId": "MT5", "x": 4, "y": 7 },
-          { "floorId": "MT5", "x": 8, "y": 3 },
-          { "floorId": "MT5", "x": 6, "y": 7 }
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 7
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 3
+          },
+          {
+            "floorId": "MT5",
+            "x": 6,
+            "y": 7
+          }
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT5"],
-        "allowChangeFloors": ["MT5:6,12"]
+        "allowedFloors": [
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT5:6,12"
+        ]
       },
       "dp": {
         "enablePreviewScore": "required",
@@ -348,19 +763,49 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT5",
-        "minHero": { "hp": 417246, "lv": 8, "exp": 1033 },
-        "minEffectiveHero": { "atk": 3147, "def": 3096, "mdef": 20816 },
-        "equipmentIncludes": ["I894"],
+        "minHero": {
+          "hp": 417246,
+          "lv": 8,
+          "exp": 1033
+        },
+        "minEffectiveHero": {
+          "atk": 3147,
+          "def": 3096,
+          "mdef": 20816
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
         "removedTiles": [
-          { "floorId": "MT5", "x": 3, "y": 4 },
-          { "floorId": "MT5", "x": 4, "y": 7 }
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 7
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT5", "x": 8, "y": 3 },
-          { "floorId": "MT5", "x": 6, "y": 7 }
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 3
+          },
+          {
+            "floorId": "MT5",
+            "x": 6,
+            "y": 7
+          }
         ]
       },
-      "actionPolicy": { "allowedFloors": ["MT5"] },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT5"
+        ]
+      },
       "dp": {
         "enablePreviewScore": "required",
         "stopOnFirstGoal": true,
@@ -376,16 +821,42 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT5",
-        "minHero": { "hp": 1098112 },
-        "minEffectiveHero": { "atk": 3147, "def": 3096, "mdef": 20816 },
-        "equipmentIncludes": ["I894"],
-        "removedTiles": [{ "floorId": "MT5", "x": 8, "y": 3 }],
-        "presentTiles": [{ "floorId": "MT5", "x": 6, "y": 7 }],
-        "actionSurvivable": { "summary": "battle:blueKing@MT5:6,7" }
+        "minHero": {
+          "hp": 1098112
+        },
+        "minEffectiveHero": {
+          "atk": 3147,
+          "def": 3096,
+          "mdef": 20816
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 3
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT5",
+            "x": 6,
+            "y": 7
+          }
+        ],
+        "actionSurvivable": {
+          "summary": "battle:blueKing@MT5:6,7"
+        }
       },
       "actionPolicy": {
-        "allowedFloors": ["MT5"],
-        "allowChangeFloors": ["MT5:6,12"]
+        "allowedFloors": [
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT5:6,12"
+        ]
       },
       "dp": {
         "enablePreviewScore": "required",
@@ -405,15 +876,37 @@
         "x": 6,
         "y": 7,
         "enemyId": "blueKing",
-        "minHero": { "hp": 1, "atk": 2167, "def": 2135, "mdef": 13010, "lv": 8 },
-        "minEffectiveHero": { "atk": 3467, "def": 3416, "mdef": 20816 }
+        "minHero": {
+          "hp": 1,
+          "atk": 2167,
+          "def": 2135,
+          "mdef": 13010,
+          "lv": 8
+        },
+        "minEffectiveHero": {
+          "atk": 3467,
+          "def": 3416,
+          "mdef": 20816
+        }
       },
       "actionPolicy": {
-        "allowedFloors": ["MT5"],
-        "actionKinds": ["battle", "pickup", "equip", "changeFloor"],
-        "allowChangeFloors": ["MT5:6,12", "MT5:6,0"]
+        "allowedFloors": [
+          "MT5"
+        ],
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "changeFloor"
+        ],
+        "allowChangeFloors": [
+          "MT5:6,12",
+          "MT5:6,0"
+        ]
       },
-      "dp": { "maxExpansions": 4000 }
+      "dp": {
+        "maxExpansions": 4000
+      }
     },
     {
       "id": "mt6-upper-left-blueking",
@@ -422,24 +915,70 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT6",
-        "minHero": { "hp": 142115, "atk": 4567, "def": 3335, "mdef": 23010, "lv": 9, "exp": 309 },
-        "equipmentIncludes": ["I894"],
+        "minHero": {
+          "hp": 142115,
+          "atk": 4567,
+          "def": 3335,
+          "mdef": 23010,
+          "lv": 9,
+          "exp": 309
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
         "removedTiles": [
-          { "floorId": "MT6", "x": 4, "y": 1 },
-          { "floorId": "MT6", "x": 8, "y": 1 },
-          { "floorId": "MT6", "x": 4, "y": 3 },
-          { "floorId": "MT6", "x": 9, "y": 4 },
-          { "floorId": "MT6", "x": 9, "y": 6 },
-          { "floorId": "MT6", "x": 3, "y": 6 },
-          { "floorId": "MT6", "x": 2, "y": 5 }
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "floorId": "MT6",
+            "x": 8,
+            "y": 1
+          },
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 3
+          },
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 4
+          },
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 6
+          },
+          {
+            "floorId": "MT6",
+            "x": 3,
+            "y": 6
+          },
+          {
+            "floorId": "MT6",
+            "x": 2,
+            "y": 5
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT6", "x": 4, "y": 7 }
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 7
+          }
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT5", "MT6"],
-        "allowChangeFloors": ["MT5:6,0"]
+        "allowedFloors": [
+          "MT5",
+          "MT6"
+        ],
+        "allowChangeFloors": [
+          "MT5:6,0"
+        ]
       },
       "dp": {
         "keyMode": "location",
@@ -459,22 +998,67 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT6",
-        "minHero": { "hp": 324506, "atk": 4567, "def": 4335, "mdef": 23010, "lv": 9, "exp": 351 },
-        "equipmentIncludes": ["I894"],
+        "minHero": {
+          "hp": 324506,
+          "atk": 4567,
+          "def": 4335,
+          "mdef": 23010,
+          "lv": 9,
+          "exp": 351
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
         "removedTiles": [
-          { "floorId": "MT6", "x": 4, "y": 7 },
-          { "floorId": "MT6", "x": 7, "y": 7 }
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 7
+          },
+          {
+            "floorId": "MT6",
+            "x": 7,
+            "y": 7
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT6", "x": 1, "y": 11, "reason": "Preserve the lower attack-pair route after the explicit 7,7 pickup." },
-          { "floorId": "MT6", "x": 10, "y": 8, "reason": "Preserve the lower attack-pair route after the explicit 7,7 pickup." },
-          { "floorId": "MT6", "x": 6, "y": 6, "reason": "Preserve the first center guard as the next sustain checkpoint." },
-          { "floorId": "MT6", "x": 6, "y": 8, "reason": "Preserve the second center guard for the later lower sweep." }
+          {
+            "floorId": "MT6",
+            "x": 1,
+            "y": 11,
+            "reason": "Preserve the lower attack-pair route after the explicit 7,7 pickup."
+          },
+          {
+            "floorId": "MT6",
+            "x": 10,
+            "y": 8,
+            "reason": "Preserve the lower attack-pair route after the explicit 7,7 pickup."
+          },
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 6,
+            "reason": "Preserve the first center guard as the next sustain checkpoint."
+          },
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 8,
+            "reason": "Preserve the second center guard for the later lower sweep."
+          }
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT6"],
-        "actionKinds": ["battle", "pickup", "interactPickup", "equip", "changeFloor"]
+        "allowedFloors": [
+          "MT6"
+        ],
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "interactPickup",
+          "equip",
+          "changeFloor"
+        ]
       },
       "dp": {
         "keyMode": "location",
@@ -493,23 +1077,72 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT6",
-        "minHero": { "hp": 223386, "atk": 5567, "def": 4335, "mdef": 23010, "lv": 9, "exp": 435 },
-        "equipmentIncludes": ["I894"],
+        "minHero": {
+          "hp": 223386,
+          "atk": 5567,
+          "def": 4335,
+          "mdef": 23010,
+          "lv": 9,
+          "exp": 435
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
         "removedTiles": [
-          { "floorId": "MT6", "x": 1, "y": 11 },
-          { "floorId": "MT6", "x": 10, "y": 8 }
+          {
+            "floorId": "MT6",
+            "x": 1,
+            "y": 11
+          },
+          {
+            "floorId": "MT6",
+            "x": 10,
+            "y": 8
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT6", "x": 6, "y": 6, "reason": "Delay center HP sustain until both lower attack resources are collected." },
-          { "floorId": "MT6", "x": 6, "y": 8, "reason": "Preserve second center guard until lower attack pair is resolved." },
-          { "floorId": "MT6", "x": 2, "y": 1, "reason": "Preserve optional high-defense skyline candidate for MT7." },
-          { "floorId": "MT6", "x": 9, "y": 10, "reason": "Preserve lower sweep resource." },
-          { "floorId": "MT6", "x": 11, "y": 11, "reason": "Preserve optional high-defense skyline candidate for MT7." },
-          { "floorId": "MT6", "x": 4, "y": 11, "reason": "Preserve final MT6 mdef pickup route." }
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 6,
+            "reason": "Delay center HP sustain until both lower attack resources are collected."
+          },
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 8,
+            "reason": "Preserve second center guard until lower attack pair is resolved."
+          },
+          {
+            "floorId": "MT6",
+            "x": 2,
+            "y": 1,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 10,
+            "reason": "Preserve lower sweep resource."
+          },
+          {
+            "floorId": "MT6",
+            "x": 11,
+            "y": 11,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 11,
+            "reason": "Preserve final MT6 mdef pickup route."
+          }
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT6"]
+        "allowedFloors": [
+          "MT6"
+        ]
       },
       "dp": {
         "keyMode": "location",
@@ -528,21 +1161,61 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT6",
-        "minHero": { "hp": 670354, "atk": 5567, "def": 4335, "mdef": 23010, "lv": 9, "exp": 477 },
-        "equipmentIncludes": ["I894"],
+        "minHero": {
+          "hp": 670354,
+          "atk": 5567,
+          "def": 4335,
+          "mdef": 23010,
+          "lv": 9,
+          "exp": 477
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
         "removedTiles": [
-          { "floorId": "MT6", "x": 6, "y": 6 }
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 6
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT6", "x": 6, "y": 8, "reason": "Second center guard must be delayed until both attack resources are collected." },
-          { "floorId": "MT6", "x": 2, "y": 1, "reason": "Preserve optional high-defense skyline candidate for MT7." },
-          { "floorId": "MT6", "x": 9, "y": 10, "reason": "Preserve lower sweep resource." },
-          { "floorId": "MT6", "x": 11, "y": 11, "reason": "Preserve optional high-defense skyline candidate for MT7." },
-          { "floorId": "MT6", "x": 4, "y": 11, "reason": "Preserve final MT6 mdef pickup route." }
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 8,
+            "reason": "Second center guard must be delayed until both attack resources are collected."
+          },
+          {
+            "floorId": "MT6",
+            "x": 2,
+            "y": 1,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 10,
+            "reason": "Preserve lower sweep resource."
+          },
+          {
+            "floorId": "MT6",
+            "x": 11,
+            "y": 11,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 11,
+            "reason": "Preserve final MT6 mdef pickup route."
+          }
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT6"]
+        "allowedFloors": [
+          "MT6"
+        ]
       },
       "dp": {
         "keyMode": "location",
@@ -562,20 +1235,55 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT6",
-        "minHero": { "hp": 557322, "atk": 5767, "def": 4535, "mdef": 25010, "lv": 9, "exp": 519 },
-        "equipmentIncludes": ["I894"],
+        "minHero": {
+          "hp": 557322,
+          "atk": 5767,
+          "def": 4535,
+          "mdef": 25010,
+          "lv": 9,
+          "exp": 519
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
         "removedTiles": [
-          { "floorId": "MT6", "x": 6, "y": 8 }
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 8
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT6", "x": 2, "y": 1, "reason": "Preserve optional high-defense skyline candidate for MT7." },
-          { "floorId": "MT6", "x": 9, "y": 10, "reason": "Preserve lower sweep resource." },
-          { "floorId": "MT6", "x": 11, "y": 11, "reason": "Preserve optional high-defense skyline candidate for MT7." },
-          { "floorId": "MT6", "x": 4, "y": 11, "reason": "Preserve final MT6 mdef pickup route." }
+          {
+            "floorId": "MT6",
+            "x": 2,
+            "y": 1,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 10,
+            "reason": "Preserve lower sweep resource."
+          },
+          {
+            "floorId": "MT6",
+            "x": 11,
+            "y": 11,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 11,
+            "reason": "Preserve final MT6 mdef pickup route."
+          }
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT6"]
+        "allowedFloors": [
+          "MT6"
+        ]
       },
       "dp": {
         "keyMode": "location",
@@ -595,15 +1303,34 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT7",
-        "minHero": { "hp": 1, "atk": 5767, "def": 4535, "mdef": 30010, "lv": 9, "exp": 561 },
-        "equipmentIncludes": ["I894"],
+        "minHero": {
+          "hp": 1,
+          "atk": 5767,
+          "def": 4535,
+          "mdef": 30010,
+          "lv": 9,
+          "exp": 561
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
         "removedTiles": [
-          { "floorId": "MT6", "x": 4, "y": 11 }
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 11
+          }
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT6", "MT7"],
-        "allowChangeFloors": ["MT5:6,0", "MT6:6,12"]
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT5:6,0",
+          "MT6:6,12"
+        ]
       },
       "dp": {
         "keyMode": "location",
@@ -623,21 +1350,61 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT6",
-        "minHero": { "hp": 112394, "atk": 5767, "def": 5035, "mdef": 30010, "lv": 9, "exp": 603 },
-        "equipmentIncludes": ["I894"],
+        "minHero": {
+          "hp": 112394,
+          "atk": 5767,
+          "def": 5035,
+          "mdef": 30010,
+          "lv": 9,
+          "exp": 603
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
         "removedTiles": [
-          { "floorId": "MT6", "x": 2, "y": 1 }
+          {
+            "floorId": "MT6",
+            "x": 2,
+            "y": 1
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT6", "x": 9, "y": 10, "reason": "Delay the lower-right sustain chain until after the MT6 defense pickup." },
-          { "floorId": "MT6", "x": 11, "y": 11, "reason": "Keep the right-side crystal guard for the next sustain segment." },
-          { "floorId": "MT7", "x": 4, "y": 11, "reason": "MT7 bottom fairies are the next segment, not part of this MT6 defense sweep." },
-          { "floorId": "MT7", "x": 8, "y": 11, "reason": "MT7 bottom fairies are the next segment, not part of this MT6 defense sweep." }
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 10,
+            "reason": "Delay the lower-right sustain chain until after the MT6 defense pickup."
+          },
+          {
+            "floorId": "MT6",
+            "x": 11,
+            "y": 11,
+            "reason": "Keep the right-side crystal guard for the next sustain segment."
+          },
+          {
+            "floorId": "MT7",
+            "x": 4,
+            "y": 11,
+            "reason": "MT7 bottom fairies are the next segment, not part of this MT6 defense sweep."
+          },
+          {
+            "floorId": "MT7",
+            "x": 8,
+            "y": 11,
+            "reason": "MT7 bottom fairies are the next segment, not part of this MT6 defense sweep."
+          }
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT6", "MT7"],
-        "allowChangeFloors": ["MT7:6,12", "MT6:6,12", "MT6:6,0"]
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12",
+          "MT6:6,12",
+          "MT6:6,0"
+        ]
       },
       "dp": {
         "keyMode": "location",
@@ -657,22 +1424,65 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT6",
-        "minHero": { "hp": 152669, "atk": 5767, "def": 5535, "mdef": 30010, "lv": 9, "exp": 729 },
-        "equipmentIncludes": ["I894"],
+        "minHero": {
+          "hp": 152669,
+          "atk": 5767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9,
+          "exp": 729
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
         "removedTiles": [
-          { "floorId": "MT6", "x": 9, "y": 10 },
-          { "floorId": "MT6", "x": 11, "y": 11 },
-          { "floorId": "MT6", "x": 8, "y": 7 }
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 10
+          },
+          {
+            "floorId": "MT6",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT6",
+            "x": 8,
+            "y": 7
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT7", "x": 4, "y": 11, "reason": "Both MT7 bottom fairies must be delayed until the MT6 right-side defense resource is collected." },
-          { "floorId": "MT7", "x": 8, "y": 11, "reason": "Both MT7 bottom fairies must be delayed until the MT6 right-side defense resource is collected." },
-          { "floorId": "MT7", "x": 11, "y": 11, "reason": "MT7 right crystal guard belongs after both bottom fairies." }
+          {
+            "floorId": "MT7",
+            "x": 4,
+            "y": 11,
+            "reason": "Both MT7 bottom fairies must be delayed until the MT6 right-side defense resource is collected."
+          },
+          {
+            "floorId": "MT7",
+            "x": 8,
+            "y": 11,
+            "reason": "Both MT7 bottom fairies must be delayed until the MT6 right-side defense resource is collected."
+          },
+          {
+            "floorId": "MT7",
+            "x": 11,
+            "y": 11,
+            "reason": "MT7 right crystal guard belongs after both bottom fairies."
+          }
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT6", "MT7"],
-        "allowChangeFloors": ["MT7:6,12", "MT6:6,12", "MT6:6,0"]
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12",
+          "MT6:6,12",
+          "MT6:6,0"
+        ]
       },
       "dp": {
         "keyMode": "location",
@@ -692,19 +1502,47 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT7",
-        "minHero": { "hp": 499741, "atk": 5767, "def": 5535, "mdef": 30010, "lv": 9, "exp": 813 },
-        "equipmentIncludes": ["I894"],
+        "minHero": {
+          "hp": 499741,
+          "atk": 5767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9,
+          "exp": 813
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
         "removedTiles": [
-          { "floorId": "MT7", "x": 4, "y": 11 },
-          { "floorId": "MT7", "x": 8, "y": 11 }
+          {
+            "floorId": "MT7",
+            "x": 4,
+            "y": 11
+          },
+          {
+            "floorId": "MT7",
+            "x": 8,
+            "y": 11
+          }
         ],
         "presentTiles": [
-          { "floorId": "MT7", "x": 11, "y": 11, "reason": "The right-side crystal guard must wait until both bottom weakWine pickups are collected." }
+          {
+            "floorId": "MT7",
+            "x": 11,
+            "y": 11,
+            "reason": "The right-side crystal guard must wait until both bottom weakWine pickups are collected."
+          }
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT6", "MT7"],
-        "allowChangeFloors": ["MT7:6,12", "MT6:6,12"]
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12",
+          "MT6:6,12"
+        ]
       },
       "dp": {
         "keyMode": "location",
@@ -718,31 +1556,228 @@
       }
     },
     {
-      "id": "mt7-right-exp-crystal",
-      "label": "MT7 右侧傀儡后拿进化结晶",
+      "id": "mt7-special80-ready",
+      "label": "MT7 生命限制怪前 HP 准备",
       "startFrom": "mt7-bottom-double-fairy",
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT7",
-        "minHero": { "hp": 298478, "atk": 5767, "def": 5535, "mdef": 30010, "lv": 9, "exp": 1855 },
-        "equipmentIncludes": ["I894"],
-        "removedTiles": [
-          { "floorId": "MT7", "x": 11, "y": 11 }
-        ]
+        "minHero": {
+          "hp": 1,
+          "atk": 5767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT7",
+            "x": 1,
+            "y": 11,
+            "reason": "Keep poisonZombie（废墟入土魂灵） until the life-limit survivability threshold is reached."
+          },
+          {
+            "floorId": "MT7",
+            "x": 0,
+            "y": 11,
+            "reason": "I616（灰岩重剑） is the reward behind the life-limit blocker and belongs to the next segment."
+          }
+        ],
+        "actionSurvivable": {
+          "summary": "battle:poisonZombie@MT7:1,11"
+        }
       },
       "actionPolicy": {
-        "allowedFloors": ["MT7"],
-        "allowChangeFloors": ["MT7:6,12"]
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "interactPickup",
+          "equip",
+          "changeFloor",
+          "floorFly"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12",
+          "MT6:6,12",
+          "MT6:6,0",
+          "MT7:6,0"
+        ],
+        "forbidUnsupportedEvents": true
       },
       "dp": {
         "keyMode": "location",
         "priorityMode": "combat-first",
         "enablePreviewScore": "required",
-        "stopOnFirstGoal": true,
-        "firstGoalSafeReason": "The right-side yellowPriest is only survivable after both MT7 bottom weakWine pickups.",
-        "maxExpansions": 700,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 3000,
+        "maxRuntimeMs": 12000,
+        "goalSkylineLimit": 8
+      }
+    },
+    {
+      "id": "mt7-left-sword",
+      "label": "MT7 击破生命限制怪并取得灰岩重剑",
+      "startFrom": "mt7-special80-ready",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT7",
+        "minHero": {
+          "hp": 1,
+          "atk": 8767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT7",
+            "x": 1,
+            "y": 11
+          },
+          {
+            "floorId": "MT7",
+            "x": 0,
+            "y": 11
+          }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT7"
+        ],
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "interactPickup",
+          "equip",
+          "changeFloor"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12",
+          "MT7:6,0"
+        ],
+        "forbidUnsupportedEvents": true
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": false,
+        "maxExpansions": 1200,
         "maxRuntimeMs": 8000,
-        "goalSkylineLimit": 4
+        "goalSkylineLimit": 8
+      }
+    },
+    {
+      "id": "mt7-right-exp-crystal",
+      "label": "MT7 灰岩重剑后拿右侧进化结晶",
+      "startFrom": "mt7-left-sword",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT7",
+        "minHero": {
+          "hp": 1,
+          "atk": 8767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT7",
+            "x": 11,
+            "y": 11
+          }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": false,
+        "maxExpansions": 1200,
+        "maxRuntimeMs": 10000,
+        "goalSkylineLimit": 8
+      }
+    },
+    {
+      "id": "mt8-entry-after-mt7-left-sword",
+      "label": "MT7 灰岩重剑与右侧结晶后进入 MT8",
+      "startFrom": "mt7-right-exp-crystal",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT8",
+        "minHero": {
+          "hp": 1,
+          "atk": 8767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT7",
+            "x": 1,
+            "y": 11
+          },
+          {
+            "floorId": "MT7",
+            "x": 0,
+            "y": 11
+          }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT7",
+          "MT8"
+        ],
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "interactPickup",
+          "equip",
+          "changeFloor",
+          "floorFly"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,0",
+          "MT7:6,12"
+        ],
+        "forbidUnsupportedEvents": true
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2000,
+        "maxRuntimeMs": 10000,
+        "goalSkylineLimit": 8
       }
     }
   ]

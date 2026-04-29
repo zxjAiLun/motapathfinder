@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
 
-const { getDecisionDepth } = require("./state");
+const { createInitialState, ensureFloorState, getDecisionDepth } = require("./state");
 const { buildDominanceKey } = require("./state-key");
 const { isDecisionStep } = require("./updown-candidate-policy");
 const { buildSolverSnapshot } = require("./route-snapshot");
@@ -142,6 +142,64 @@ function readRouteFile(filePath) {
     throw new Error(`Unsupported route schema in ${filePath}: ${record && record.schema}`);
   }
   return record;
+}
+
+function snapshotTileIdToNumber(project, tileId) {
+  if (tileId == null) return null;
+  const value = String(tileId);
+  const unknownMatch = /^X(\d+)$/.exec(value);
+  if (unknownMatch) return Number(unknownMatch[1]);
+  const number = (project.mapNumbersById || {})[value];
+  if (number == null) throw new Error(`Cannot restore snapshot tile id ${value}; tile id is not in project maps.`);
+  return Number(number);
+}
+
+function applySnapshotFloorMutations(project, state, snapshotFloors) {
+  Object.entries(snapshotFloors || {}).forEach(([floorId, floorSnapshot]) => {
+    const floorState = ensureFloorState(state, floorId);
+    (floorSnapshot.removed || []).forEach((loc) => {
+      const key = String(loc);
+      floorState.removed[key] = true;
+      delete floorState.replaced[key];
+    });
+    (floorSnapshot.replaced || []).forEach((entry) => {
+      const match = /^(\d+),(\d+)=(.+)$/.exec(String(entry));
+      if (!match) throw new Error(`Cannot restore malformed replaced tile entry: ${entry}`);
+      const key = `${Number(match[1])},${Number(match[2])}`;
+      floorState.replaced[key] = snapshotTileIdToNumber(project, match[3]);
+      delete floorState.removed[key];
+    });
+  });
+}
+
+function createStateFromSnapshot(project, snapshot, options) {
+  if (!snapshot || !snapshot.floorId || !snapshot.hero) {
+    throw new Error("Cannot restore state from missing route snapshot.");
+  }
+  const config = options || {};
+  const state = createInitialState(project, { rank: config.rank || null });
+  state.floorId = snapshot.floorId;
+  state.hero = cloneJson(snapshot.hero) || {};
+  state.inventory = cloneJson(snapshot.inventory) || {};
+  state.flags = cloneJson(snapshot.flags) || {};
+  state.floorStates = {};
+  state.visitedFloors = Object.keys(snapshot.floors || {}).reduce((visited, floorId) => {
+    visited[floorId] = true;
+    return visited;
+  }, {});
+  state.visitedFloors[state.floorId] = true;
+  state.triggeredAutoEvents = {};
+  state.route = Array.isArray(config.route) ? config.route.slice() : [];
+  state.notes = Array.isArray(config.notes) ? config.notes.slice() : [];
+  state.meta = {
+    rank: config.rank || null,
+    decisionDepth: Number(config.decisionDepth || 0),
+    autoStepCount: Number(config.autoStepCount || 0),
+    autoPickupCount: Number(config.autoPickupCount || 0),
+    autoBattleCount: Number(config.autoBattleCount || 0),
+  };
+  applySnapshotFloorMutations(project, state, snapshot.floors || {});
+  return state;
 }
 
 function getGitCommit(projectRoot) {
@@ -409,6 +467,7 @@ function buildRouteRecord(input) {
 module.exports = {
   ROUTE_SCHEMA,
   buildRouteRecord,
+  createStateFromSnapshot,
   fingerprintAction,
   normalizeAction,
   readRouteFile,

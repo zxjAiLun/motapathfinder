@@ -1,0 +1,1741 @@
+{
+  "schema": "motapathfinder.route.v1",
+  "createdAt": "2026-04-29T12:33:15.441Z",
+  "source": {
+    "commit": "efe551a",
+    "solver": "region-dp",
+    "profile": "whiteisland-trial-smoke",
+    "rank": "chaos",
+    "projectTitle": "白色孤岛"
+  },
+  "goal": {
+    "type": "region",
+    "floorId": "A1"
+  },
+  "metadata": {
+    "kind": "region-dp",
+    "regionDp": {
+      "regionId": "whiteisland-trial-smoke",
+      "regionSpec": "towers/whiteisland/trial-specs/trial-smoke.json",
+      "milestoneRoute": null,
+      "fromMilestoneId": null,
+      "toMilestoneId": null,
+      "scope": {
+        "floors": [
+          "Start",
+          "A1",
+          "A2",
+          "A3"
+        ]
+      },
+      "search": {
+        "algorithm": "segment-dp",
+        "dpKeyMode": "region",
+        "candidateLimit": 4,
+        "stopOnFirstGoal": false,
+        "dpBudget": {
+          "maxExpansions": 600,
+          "maxRuntimeMs": 4000
+        }
+      },
+      "candidateLimit": 4,
+      "proofClaim": {
+        "found": true,
+        "proofLevel": "candidate",
+        "completeWithinActionSet": false,
+        "actionTrimmed": 0,
+        "stoppedReasons": [
+          "time-limit"
+        ],
+        "expansionBudgetExhausted": false,
+        "expansionBudgetExhaustedSegments": [],
+        "stopOnFirstGoalSegments": [],
+        "unsafeStopOnFirstGoal": false,
+        "unsafeStopOnFirstGoalSegments": [],
+        "notes": [
+          "stoppedReason present: time-limit"
+        ]
+      }
+    }
+  },
+  "stats": {
+    "expanded": null,
+    "generated": null,
+    "depth": 9,
+    "routeLength": 14
+  },
+  "start": {
+    "snapshot": {
+      "floorId": "A1",
+      "hero": {
+        "hp": 100,
+        "hpmax": 9999,
+        "mana": 0,
+        "manamax": -1,
+        "atk": 1,
+        "def": 0,
+        "mdef": 0,
+        "money": 0,
+        "exp": 0,
+        "lv": 1,
+        "loc": {
+          "x": 6,
+          "y": 11,
+          "direction": "up"
+        },
+        "equipment": []
+      },
+      "inventory": {
+        "I600": 1,
+        "blueKey": 1,
+        "book": 1,
+        "fly": 1,
+        "yellowKey": 1
+      },
+      "flags": {
+        "shiqu": 1,
+        "shop1": 1
+      },
+      "floors": {
+        "Start": {
+          "removed": [
+            "4,6",
+            "8,6",
+            "6,8"
+          ],
+          "replaced": []
+        },
+        "A1": {
+          "removed": [
+            "5,10",
+            "7,10"
+          ],
+          "replaced": []
+        },
+        "A2": {
+          "removed": [],
+          "replaced": []
+        },
+        "A3": {
+          "removed": [],
+          "replaced": []
+        }
+      }
+    },
+    "stateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":6,\"y\":11,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":1,\"def\":0,\"mdef\":0,\"money\":0,\"exp\":0,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"blueKey\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"5,10\",\"7,10\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}"
+  },
+  "final": {
+    "snapshot": {
+      "floorId": "A1",
+      "hero": {
+        "hp": 675,
+        "hpmax": 9999,
+        "mana": 0,
+        "manamax": -1,
+        "atk": 2,
+        "def": 2,
+        "mdef": 20,
+        "money": 0,
+        "exp": 6,
+        "lv": 1,
+        "loc": {
+          "x": 4,
+          "y": 2,
+          "direction": "left"
+        },
+        "equipment": []
+      },
+      "inventory": {
+        "I600": 1,
+        "book": 1,
+        "fly": 1,
+        "yellowKey": 1
+      },
+      "flags": {
+        "hatred": 12,
+        "shiqu": 1,
+        "shop1": 1
+      },
+      "floors": {
+        "Start": {
+          "removed": [
+            "4,6",
+            "8,6",
+            "6,8"
+          ],
+          "replaced": []
+        },
+        "A1": {
+          "removed": [
+            "2,1",
+            "4,1",
+            "1,2",
+            "3,2",
+            "5,2",
+            "5,3",
+            "4,4",
+            "5,4",
+            "6,4",
+            "8,4",
+            "7,5",
+            "9,5",
+            "10,5",
+            "11,6",
+            "8,7",
+            "10,7",
+            "7,8",
+            "10,8",
+            "6,9",
+            "11,9",
+            "5,10",
+            "7,10",
+            "10,10",
+            "8,11",
+            "9,11"
+          ],
+          "replaced": []
+        },
+        "A2": {
+          "removed": [],
+          "replaced": []
+        },
+        "A3": {
+          "removed": [],
+          "replaced": []
+        }
+      }
+    },
+    "stateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":4,\"y\":2,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":6,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"hatred\":12,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"1,2\",\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"2,1\",\"3,2\",\"4,1\",\"4,4\",\"5,10\",\"5,2\",\"5,3\",\"5,4\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+    "floorId": "A1"
+  },
+  "decisions": [
+    {
+      "index": 1,
+      "kind": "openDoor",
+      "summary": "openDoor:blueDoor@A1:8,11",
+      "floorId": "A1",
+      "path": [
+        "right"
+      ],
+      "stance": {
+        "floorId": "A1",
+        "x": 7,
+        "y": 11
+      },
+      "target": {
+        "floorId": "A1",
+        "x": 8,
+        "y": 11
+      },
+      "direction": "right",
+      "doorId": "blueDoor",
+      "fingerprint": "openDoor|A1|8,11|blueDoor",
+      "preStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":6,\"y\":11,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":1,\"def\":0,\"mdef\":0,\"money\":0,\"exp\":0,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"blueKey\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"5,10\",\"7,10\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "postStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":7,\"y\":11,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":1,\"def\":1,\"mdef\":0,\"money\":0,\"exp\":0,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"5,10\",\"7,10\",\"8,11\",\"9,11\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "preSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 100,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 1,
+          "def": 0,
+          "mdef": 0,
+          "money": 0,
+          "exp": 0,
+          "lv": 1,
+          "loc": {
+            "x": 6,
+            "y": 11,
+            "direction": "up"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "blueKey": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "5,10",
+              "7,10"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      },
+      "postSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 100,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 1,
+          "def": 1,
+          "mdef": 0,
+          "money": 0,
+          "exp": 0,
+          "lv": 1,
+          "loc": {
+            "x": 7,
+            "y": 11,
+            "direction": "right"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "5,10",
+              "7,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      }
+    },
+    {
+      "index": 2,
+      "kind": "battle",
+      "summary": "battle:greenSlime@A1:6,9",
+      "floorId": "A1",
+      "path": [
+        "up",
+        "left"
+      ],
+      "stance": {
+        "floorId": "A1",
+        "x": 6,
+        "y": 10
+      },
+      "target": {
+        "floorId": "A1",
+        "x": 6,
+        "y": 9
+      },
+      "direction": "up",
+      "enemyId": "greenSlime",
+      "estimate": {
+        "damage": 40,
+        "turn": 21,
+        "money": 0,
+        "exp": 1,
+        "guards": 0
+      },
+      "fingerprint": "battle|A1|6,9|greenSlime",
+      "preStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":7,\"y\":11,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":1,\"def\":1,\"mdef\":0,\"money\":0,\"exp\":0,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"5,10\",\"7,10\",\"8,11\",\"9,11\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "postStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":6,\"y\":10,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":1,\"def\":1,\"mdef\":0,\"money\":0,\"exp\":1,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":2},\"flags\":{\"hatred\":2,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"5,10\",\"6,9\",\"7,10\",\"7,8\",\"8,11\",\"8,7\",\"9,11\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "preSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 100,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 1,
+          "def": 1,
+          "mdef": 0,
+          "money": 0,
+          "exp": 0,
+          "lv": 1,
+          "loc": {
+            "x": 7,
+            "y": 11,
+            "direction": "right"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "5,10",
+              "7,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      },
+      "postSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 160,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 1,
+          "def": 1,
+          "mdef": 0,
+          "money": 0,
+          "exp": 1,
+          "lv": 1,
+          "loc": {
+            "x": 6,
+            "y": 10,
+            "direction": "up"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 2
+        },
+        "flags": {
+          "hatred": 2,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "8,7",
+              "7,8",
+              "6,9",
+              "5,10",
+              "7,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      }
+    },
+    {
+      "index": 3,
+      "kind": "battle",
+      "summary": "battle:redSlime@A1:10,10",
+      "floorId": "A1",
+      "path": [
+        "right",
+        "down",
+        "right",
+        "right",
+        "up"
+      ],
+      "stance": {
+        "floorId": "A1",
+        "x": 9,
+        "y": 10
+      },
+      "target": {
+        "floorId": "A1",
+        "x": 10,
+        "y": 10
+      },
+      "direction": "right",
+      "enemyId": "redSlime",
+      "estimate": {
+        "damage": 90,
+        "turn": 31,
+        "money": 0,
+        "exp": 1,
+        "guards": 0
+      },
+      "fingerprint": "battle|A1|10,10|redSlime",
+      "preStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":6,\"y\":10,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":1,\"def\":1,\"mdef\":0,\"money\":0,\"exp\":1,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":2},\"flags\":{\"hatred\":2,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"5,10\",\"6,9\",\"7,10\",\"7,8\",\"8,11\",\"8,7\",\"9,11\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "postStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":9,\"y\":10,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":1,\"mdef\":0,\"money\":0,\"exp\":2,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":2},\"flags\":{\"hatred\":4,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"11,9\",\"5,10\",\"6,9\",\"7,10\",\"7,8\",\"8,11\",\"8,7\",\"9,11\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "preSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 160,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 1,
+          "def": 1,
+          "mdef": 0,
+          "money": 0,
+          "exp": 1,
+          "lv": 1,
+          "loc": {
+            "x": 6,
+            "y": 10,
+            "direction": "up"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 2
+        },
+        "flags": {
+          "hatred": 2,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "8,7",
+              "7,8",
+              "6,9",
+              "5,10",
+              "7,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      },
+      "postSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 70,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 1,
+          "mdef": 0,
+          "money": 0,
+          "exp": 2,
+          "lv": 1,
+          "loc": {
+            "x": 9,
+            "y": 10,
+            "direction": "right"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 2
+        },
+        "flags": {
+          "hatred": 4,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "8,7",
+              "7,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      }
+    },
+    {
+      "index": 4,
+      "kind": "battle",
+      "summary": "battle:greenSlime@A1:10,8",
+      "floorId": "A1",
+      "path": [
+        "right",
+        "up"
+      ],
+      "stance": {
+        "floorId": "A1",
+        "x": 10,
+        "y": 9
+      },
+      "target": {
+        "floorId": "A1",
+        "x": 10,
+        "y": 8
+      },
+      "direction": "up",
+      "enemyId": "greenSlime",
+      "estimate": {
+        "damage": 20,
+        "turn": 11,
+        "money": 0,
+        "exp": 1,
+        "guards": 0
+      },
+      "fingerprint": "battle|A1|10,8|greenSlime",
+      "preStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":9,\"y\":10,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":1,\"mdef\":0,\"money\":0,\"exp\":2,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":2},\"flags\":{\"hatred\":4,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"11,9\",\"5,10\",\"6,9\",\"7,10\",\"7,8\",\"8,11\",\"8,7\",\"9,11\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "postStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":10,\"y\":9,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":1,\"mdef\":10,\"money\":0,\"exp\":3,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":3},\"flags\":{\"hatred\":6,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"5,10\",\"6,9\",\"7,10\",\"7,8\",\"8,11\",\"8,7\",\"9,11\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "preSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 70,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 1,
+          "mdef": 0,
+          "money": 0,
+          "exp": 2,
+          "lv": 1,
+          "loc": {
+            "x": 9,
+            "y": 10,
+            "direction": "right"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 2
+        },
+        "flags": {
+          "hatred": 4,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "8,7",
+              "7,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      },
+      "postSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 250,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 1,
+          "mdef": 10,
+          "money": 0,
+          "exp": 3,
+          "lv": 1,
+          "loc": {
+            "x": 10,
+            "y": 9,
+            "direction": "up"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 3
+        },
+        "flags": {
+          "hatred": 6,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "10,5",
+              "11,6",
+              "8,7",
+              "10,7",
+              "7,8",
+              "10,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      }
+    },
+    {
+      "index": 5,
+      "kind": "openDoor",
+      "summary": "openDoor:yellowDoor@A1:9,5",
+      "floorId": "A1",
+      "path": [
+        "up",
+        "up",
+        "up",
+        "up"
+      ],
+      "stance": {
+        "floorId": "A1",
+        "x": 10,
+        "y": 5
+      },
+      "target": {
+        "floorId": "A1",
+        "x": 9,
+        "y": 5
+      },
+      "direction": "left",
+      "doorId": "yellowDoor",
+      "fingerprint": "openDoor|A1|9,5|yellowDoor",
+      "preStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":10,\"y\":9,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":1,\"mdef\":10,\"money\":0,\"exp\":3,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":3},\"flags\":{\"hatred\":6,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"5,10\",\"6,9\",\"7,10\",\"7,8\",\"8,11\",\"8,7\",\"9,11\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "postStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":10,\"y\":5,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":3,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":2},\"flags\":{\"hatred\":6,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"5,10\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "preSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 250,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 1,
+          "mdef": 10,
+          "money": 0,
+          "exp": 3,
+          "lv": 1,
+          "loc": {
+            "x": 10,
+            "y": 9,
+            "direction": "up"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 3
+        },
+        "flags": {
+          "hatred": 6,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "10,5",
+              "11,6",
+              "8,7",
+              "10,7",
+              "7,8",
+              "10,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      },
+      "postSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 350,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 2,
+          "mdef": 20,
+          "money": 0,
+          "exp": 3,
+          "lv": 1,
+          "loc": {
+            "x": 10,
+            "y": 5,
+            "direction": "left"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 2
+        },
+        "flags": {
+          "hatred": 6,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "6,4",
+              "8,4",
+              "7,5",
+              "9,5",
+              "10,5",
+              "11,6",
+              "8,7",
+              "10,7",
+              "7,8",
+              "10,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      }
+    },
+    {
+      "index": 6,
+      "kind": "battle",
+      "summary": "battle:slimelord@A1:5,4",
+      "floorId": "A1",
+      "path": [
+        "left",
+        "left",
+        "up",
+        "left",
+        "left"
+      ],
+      "stance": {
+        "floorId": "A1",
+        "x": 6,
+        "y": 4
+      },
+      "target": {
+        "floorId": "A1",
+        "x": 5,
+        "y": 4
+      },
+      "direction": "left",
+      "enemyId": "slimelord",
+      "estimate": {
+        "damage": 155,
+        "turn": 35,
+        "money": 0,
+        "exp": 1,
+        "guards": 0
+      },
+      "fingerprint": "battle|A1|5,4|slimelord",
+      "preStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":10,\"y\":5,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":3,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":2},\"flags\":{\"hatred\":6,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"5,10\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "postStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":6,\"y\":4,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":4,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":2},\"flags\":{\"hatred\":8,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"4,4\",\"5,10\",\"5,4\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "preSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 350,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 2,
+          "mdef": 20,
+          "money": 0,
+          "exp": 3,
+          "lv": 1,
+          "loc": {
+            "x": 10,
+            "y": 5,
+            "direction": "left"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 2
+        },
+        "flags": {
+          "hatred": 6,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "6,4",
+              "8,4",
+              "7,5",
+              "9,5",
+              "10,5",
+              "11,6",
+              "8,7",
+              "10,7",
+              "7,8",
+              "10,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      },
+      "postSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 295,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 2,
+          "mdef": 20,
+          "money": 0,
+          "exp": 4,
+          "lv": 1,
+          "loc": {
+            "x": 6,
+            "y": 4,
+            "direction": "left"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 2
+        },
+        "flags": {
+          "hatred": 8,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "4,4",
+              "5,4",
+              "6,4",
+              "8,4",
+              "7,5",
+              "9,5",
+              "10,5",
+              "11,6",
+              "8,7",
+              "10,7",
+              "7,8",
+              "10,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      }
+    },
+    {
+      "index": 7,
+      "kind": "openDoor",
+      "summary": "openDoor:yellowDoor@A1:5,3",
+      "floorId": "A1",
+      "path": [
+        "left"
+      ],
+      "stance": {
+        "floorId": "A1",
+        "x": 5,
+        "y": 4
+      },
+      "target": {
+        "floorId": "A1",
+        "x": 5,
+        "y": 3
+      },
+      "direction": "up",
+      "doorId": "yellowDoor",
+      "fingerprint": "openDoor|A1|5,3|yellowDoor",
+      "preStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":6,\"y\":4,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":4,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":2},\"flags\":{\"hatred\":8,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"4,4\",\"5,10\",\"5,4\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "postStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":5,\"y\":4,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":4,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"hatred\":8,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"4,4\",\"5,10\",\"5,3\",\"5,4\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "preSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 295,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 2,
+          "mdef": 20,
+          "money": 0,
+          "exp": 4,
+          "lv": 1,
+          "loc": {
+            "x": 6,
+            "y": 4,
+            "direction": "left"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 2
+        },
+        "flags": {
+          "hatred": 8,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "4,4",
+              "5,4",
+              "6,4",
+              "8,4",
+              "7,5",
+              "9,5",
+              "10,5",
+              "11,6",
+              "8,7",
+              "10,7",
+              "7,8",
+              "10,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      },
+      "postSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 295,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 2,
+          "mdef": 20,
+          "money": 0,
+          "exp": 4,
+          "lv": 1,
+          "loc": {
+            "x": 5,
+            "y": 4,
+            "direction": "up"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 1
+        },
+        "flags": {
+          "hatred": 8,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "5,3",
+              "4,4",
+              "5,4",
+              "6,4",
+              "8,4",
+              "7,5",
+              "9,5",
+              "10,5",
+              "11,6",
+              "8,7",
+              "10,7",
+              "7,8",
+              "10,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      }
+    },
+    {
+      "index": 8,
+      "kind": "battle",
+      "summary": "battle:redSlime@A1:5,2",
+      "floorId": "A1",
+      "path": [
+        "up"
+      ],
+      "stance": {
+        "floorId": "A1",
+        "x": 5,
+        "y": 3
+      },
+      "target": {
+        "floorId": "A1",
+        "x": 5,
+        "y": 2
+      },
+      "direction": "up",
+      "enemyId": "redSlime",
+      "estimate": {
+        "damage": 10,
+        "turn": 16,
+        "money": 0,
+        "exp": 1,
+        "guards": 0
+      },
+      "fingerprint": "battle|A1|5,2|redSlime",
+      "preStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":5,\"y\":4,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":4,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"hatred\":8,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"4,4\",\"5,10\",\"5,3\",\"5,4\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "postStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":5,\"y\":3,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":5,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"hatred\":10,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"4,1\",\"4,4\",\"5,10\",\"5,2\",\"5,3\",\"5,4\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "preSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 295,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 2,
+          "mdef": 20,
+          "money": 0,
+          "exp": 4,
+          "lv": 1,
+          "loc": {
+            "x": 5,
+            "y": 4,
+            "direction": "up"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 1
+        },
+        "flags": {
+          "hatred": 8,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "5,3",
+              "4,4",
+              "5,4",
+              "6,4",
+              "8,4",
+              "7,5",
+              "9,5",
+              "10,5",
+              "11,6",
+              "8,7",
+              "10,7",
+              "7,8",
+              "10,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      },
+      "postSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 385,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 2,
+          "mdef": 20,
+          "money": 0,
+          "exp": 5,
+          "lv": 1,
+          "loc": {
+            "x": 5,
+            "y": 3,
+            "direction": "up"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 1
+        },
+        "flags": {
+          "hatred": 10,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "4,1",
+              "5,2",
+              "5,3",
+              "4,4",
+              "5,4",
+              "6,4",
+              "8,4",
+              "7,5",
+              "9,5",
+              "10,5",
+              "11,6",
+              "8,7",
+              "10,7",
+              "7,8",
+              "10,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      }
+    },
+    {
+      "index": 9,
+      "kind": "battle",
+      "summary": "battle:redSlime@A1:3,2",
+      "floorId": "A1",
+      "path": [
+        "up",
+        "left"
+      ],
+      "stance": {
+        "floorId": "A1",
+        "x": 4,
+        "y": 2
+      },
+      "target": {
+        "floorId": "A1",
+        "x": 3,
+        "y": 2
+      },
+      "direction": "left",
+      "enemyId": "redSlime",
+      "estimate": {
+        "damage": 10,
+        "turn": 16,
+        "money": 0,
+        "exp": 1,
+        "guards": 0
+      },
+      "fingerprint": "battle|A1|3,2|redSlime",
+      "preStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":5,\"y\":3,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":5,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"hatred\":10,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"4,1\",\"4,4\",\"5,10\",\"5,2\",\"5,3\",\"5,4\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "postStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":4,\"y\":2,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":6,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"hatred\":12,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"1,2\",\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"2,1\",\"3,2\",\"4,1\",\"4,4\",\"5,10\",\"5,2\",\"5,3\",\"5,4\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "preSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 385,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 2,
+          "mdef": 20,
+          "money": 0,
+          "exp": 5,
+          "lv": 1,
+          "loc": {
+            "x": 5,
+            "y": 3,
+            "direction": "up"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 1
+        },
+        "flags": {
+          "hatred": 10,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "4,1",
+              "5,2",
+              "5,3",
+              "4,4",
+              "5,4",
+              "6,4",
+              "8,4",
+              "7,5",
+              "9,5",
+              "10,5",
+              "11,6",
+              "8,7",
+              "10,7",
+              "7,8",
+              "10,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      },
+      "postSnapshot": {
+        "floorId": "A1",
+        "hero": {
+          "hp": 675,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 2,
+          "def": 2,
+          "mdef": 20,
+          "money": 0,
+          "exp": 6,
+          "lv": 1,
+          "loc": {
+            "x": 4,
+            "y": 2,
+            "direction": "left"
+          },
+          "equipment": []
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1,
+          "yellowKey": 1
+        },
+        "flags": {
+          "hatred": 12,
+          "shiqu": 1,
+          "shop1": 1
+        },
+        "floors": {
+          "Start": {
+            "removed": [
+              "4,6",
+              "8,6",
+              "6,8"
+            ],
+            "replaced": []
+          },
+          "A1": {
+            "removed": [
+              "2,1",
+              "4,1",
+              "1,2",
+              "3,2",
+              "5,2",
+              "5,3",
+              "4,4",
+              "5,4",
+              "6,4",
+              "8,4",
+              "7,5",
+              "9,5",
+              "10,5",
+              "11,6",
+              "8,7",
+              "10,7",
+              "7,8",
+              "10,8",
+              "6,9",
+              "11,9",
+              "5,10",
+              "7,10",
+              "10,10",
+              "8,11",
+              "9,11"
+            ],
+            "replaced": []
+          },
+          "A2": {
+            "removed": [],
+            "replaced": []
+          },
+          "A3": {
+            "removed": [],
+            "replaced": []
+          }
+        }
+      }
+    }
+  ],
+  "rawRoute": [
+    "auto:pickup:book@Start:8,6",
+    "auto:pickup:fly@Start:6,8",
+    "auto:pickup:I600@Start:4,6",
+    "auto:pickup:blueKey@A1:7,10",
+    "auto:pickup:yellowKey@A1:5,10",
+    "openDoor:blueDoor@A1:8,11",
+    "battle:greenSlime@A1:6,9",
+    "battle:redSlime@A1:10,10",
+    "battle:greenSlime@A1:10,8",
+    "openDoor:yellowDoor@A1:9,5",
+    "battle:slimelord@A1:5,4",
+    "openDoor:yellowDoor@A1:5,3",
+    "battle:redSlime@A1:5,2",
+    "battle:redSlime@A1:3,2"
+  ],
+  "notes": [
+    "route-store: reconstructed dominance key differs from source final key; source={\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":4,\"y\":2,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":6,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"hatred\":12,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"1,2\",\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"2,1\",\"3,2\",\"4,1\",\"4,4\",\"5,10\",\"5,2\",\"5,3\",\"5,4\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}; reconstructed={\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":4,\"y\":2,\"direction\":null,\"hp\":null,\"hpmax\":null,\"mana\":0,\"manamax\":null,\"atk\":2,\"def\":2,\"mdef\":20,\"money\":0,\"exp\":6,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"hatred\":12,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"1,2\",\"10,10\",\"10,5\",\"10,7\",\"10,8\",\"11,6\",\"11,9\",\"2,1\",\"3,2\",\"4,1\",\"4,4\",\"5,10\",\"5,2\",\"5,3\",\"5,4\",\"6,4\",\"6,9\",\"7,10\",\"7,5\",\"7,8\",\"8,11\",\"8,4\",\"8,7\",\"9,11\",\"9,5\"],\"replaced\":[]},{\"floorId\":\"A2\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"A3\",\"removed\":[],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}"
+  ]
+}

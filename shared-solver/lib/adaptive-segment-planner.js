@@ -107,6 +107,7 @@ function shouldAutoSplit(result) {
   const failureClass = failed.failureClass ||
     (failed.failurePropagation && (failed.failurePropagation.failureClass || failed.failurePropagation.primaryFailureClass));
   if (failureClass === "budget-or-action-scope-exhausted") return true;
+  if (failureClass && failureClass !== "unknown") return false;
   const attempts = Array.isArray(failed.attempts) ? failed.attempts : [];
   return attempts.some((attempt) => {
     const dp = attempt && attempt.diagnostics && attempt.diagnostics.dp;
@@ -264,69 +265,58 @@ function collectVisibleChangeFloors(simulator, candidates) {
 }
 
 function buildRepairSegment(simulator, result, options) {
-  const config = options || {};
-  const failed = result && result.failedSegment;
-  const failedSegmentId = failed && failed.segmentId;
-  const failureClass = inferFailureClass(result);
-  const missingGoalFields = inferMissingGoalFields(result);
-  const frontier = result && result.finalCandidates;
-  if (config.enableAutoSplit !== false && shouldAutoSplit(result)) {
-    const splitSegment = buildAutoSplitSegment(result, config.currentSpec, config);
-    if (splitSegment) return splitSegment;
-  }
-  const intents = scanResourceIntents(simulator, frontier, {
-    failureClass,
-    missingGoalFields,
-  }, {
-    maxIntentRecords: config.repairIntentRecords || config.repairActionCandidates || 24,
-    recordsPerIntent: config.repairRecordsPerIntent || config.repairTileCandidates || 6,
-    maxIntents: config.repairMaxIntents || 6,
-  });
-  const selectedIntent = intents[0] || null;
-  if (selectedIntent) {
-    const maxExpansions = number(config.repairMaxExpansions, 2500);
-    const maxRuntimeMs = number(config.repairMaxRuntimeMs, 10000);
-    return {
-      id: `auto-repair-${failedSegmentId || "segment"}-${number(config.repairIndex, 0) + 1}`,
-      label: `自动修复 ${failedSegmentId || "segment"}：${failureClass}/${selectedIntent.kind}`,
-      generated: true,
-      generatedBy: {
-        mode: "resource-intent-scanner",
-        failureClass,
-        intentKind: selectedIntent.kind,
-        desiredStats: selectedIntent.desiredStats,
-        failedSegmentId,
-        missingGoalFields: cloneJson(missingGoalFields),
-        intents: intents.map((intent) => ({
-          kind: intent.kind,
-          primaryStat: intent.primaryStat,
-          score: Math.round(intent.score),
-          goal: intent.goal,
-          candidates: (intent.records || []).map((record) => ({
-            actionSummary: record.actionSummary,
-            actionKind: record.actionKind,
-            tile: record.tile,
-            score: record.score,
-            damage: record.damage,
-            delta: record.delta,
-            frontierDelta: record.frontierDelta,
-          })),
+  const segments = buildRepairSegments(simulator, result, options);
+  return segments[0] || null;
+}
+
+function buildIntentRepairSegment(selectedIntent, failedSegmentId, failureClass, missingGoalFields, config) {
+  const maxExpansions = number(config.repairMaxExpansions, 2500);
+  const maxRuntimeMs = number(config.repairMaxRuntimeMs, 10000);
+  return {
+    id: `auto-repair-${failedSegmentId || "segment"}-${number(config.repairIndex, 0) + 1}-${selectedIntent.kind}`,
+    label: `自动修复 ${failedSegmentId || "segment"}：${failureClass}/${selectedIntent.kind}`,
+    generated: true,
+    generatedBy: {
+      mode: "resource-intent-scanner",
+      failureClass,
+      intentKind: selectedIntent.kind,
+      desiredStats: selectedIntent.desiredStats,
+      failedSegmentId,
+      missingGoalFields: cloneJson(missingGoalFields),
+      intents: (config.allIntents || [selectedIntent]).map((intent) => ({
+        kind: intent.kind,
+        primaryStat: intent.primaryStat,
+        score: Math.round(intent.score),
+        goal: intent.goal,
+        targetBattle: intent.targetBattle,
+        candidates: (intent.records || []).map((record) => ({
+          actionSummary: record.actionSummary,
+          actionChain: record.actionChain,
+          actionKind: record.actionKind,
+          tile: record.tile,
+          score: record.score,
+          damage: record.damage,
+          delta: record.delta,
+          frontierDelta: record.frontierDelta,
+          targetBattleImpact: record.targetBattleImpact,
         })),
-      },
-      goal: selectedIntent.goal,
-      actionPolicy: selectedIntent.actionPolicy,
-      dp: {
-        keyMode: config.repairKeyMode || "region",
-        priorityMode: selectedIntent.kind === "stat-hp" ? "default" : "combat-first",
-        stopOnFirstGoal: false,
-        maxActionsPerState: number(config.repairMaxActionsPerState, 9999),
-        maxExpansions,
-        maxRuntimeMs,
-        goalSkylineLimit: number(config.repairGoalSkylineLimit, config.candidateLimit || 8),
-      },
-    };
-  }
-  const repairCandidates = collectRepairCandidates(simulator, frontier, failureClass, config);
+      })),
+    },
+    goal: selectedIntent.goal,
+    actionPolicy: selectedIntent.actionPolicy,
+    dp: {
+      keyMode: config.repairKeyMode || "region",
+      priorityMode: selectedIntent.kind === "stat-hp" || selectedIntent.kind === "life-limit-hp-prep" || selectedIntent.kind === "blocked-hp-resource" ? "default" : "combat-first",
+      stopOnFirstGoal: false,
+      maxActionsPerState: number(config.repairMaxActionsPerState, 9999),
+      maxExpansions,
+      maxRuntimeMs,
+      goalSkylineLimit: number(config.repairGoalSkylineLimit, config.candidateLimit || 8),
+    },
+  };
+}
+
+function buildFallbackRepairSegment(failedSegmentId, failureClass, missingGoalFields, frontier, repairCandidates, config) {
   const tileCandidates = repairCandidates.filter((candidate) => candidate.tile).slice(0, Math.max(1, number(config.repairTileCandidates, 6)));
   if (tileCandidates.length === 0) return null;
   const floors = new Set();
@@ -334,11 +324,11 @@ function buildRepairSegment(simulator, result, options) {
     if (candidate && candidate.state && candidate.state.floorId) floors.add(candidate.state.floorId);
   }
   tileCandidates.forEach((candidate) => floors.add(candidate.tile.floorId));
-  const visibleChangeFloors = collectVisibleChangeFloors(simulator, frontier);
+  const visibleChangeFloors = collectVisibleChangeFloors(config.simulator, frontier);
   const maxExpansions = number(config.repairMaxExpansions, 2500);
   const maxRuntimeMs = number(config.repairMaxRuntimeMs, 10000);
   return {
-    id: `auto-repair-${failedSegmentId || "segment"}-${number(config.repairIndex, 0) + 1}`,
+    id: `auto-repair-${failedSegmentId || "segment"}-${number(config.repairIndex, 0) + 1}-fallback`,
     label: `自动修复 ${failedSegmentId || "segment"}：${failureClass}`,
     generated: true,
     generatedBy: {
@@ -369,7 +359,7 @@ function buildRepairSegment(simulator, result, options) {
     },
     dp: {
       keyMode: config.repairKeyMode || "region",
-      priorityMode: failureClass === "hp-deficit" || failureClass === "action-survivability-deficit" ? "default" : "combat-first",
+      priorityMode: failureClass === "hp-deficit" || failureClass === "action-survivability-deficit" || failureClass === "life-limit-hp-deficit" ? "default" : "combat-first",
       stopOnFirstGoal: false,
       maxActionsPerState: number(config.repairMaxActionsPerState, 9999),
       maxExpansions,
@@ -377,6 +367,39 @@ function buildRepairSegment(simulator, result, options) {
       goalSkylineLimit: number(config.repairGoalSkylineLimit, config.candidateLimit || 8),
     },
   };
+}
+
+function buildRepairSegments(simulator, result, options) {
+  const config = options || {};
+  const failed = result && result.failedSegment;
+  const failedSegmentId = failed && failed.segmentId;
+  const failureClass = inferFailureClass(result);
+  const missingGoalFields = inferMissingGoalFields(result);
+  const frontier = result && result.finalCandidates;
+  if (config.enableAutoSplit !== false && shouldAutoSplit(result)) {
+    const splitSegment = buildAutoSplitSegment(result, config.currentSpec, config);
+    if (splitSegment) return [splitSegment];
+  }
+  const intents = scanResourceIntents(simulator, frontier, {
+    failureClass,
+    missingGoalFields,
+  }, {
+    maxIntentRecords: config.repairIntentRecords || config.repairActionCandidates || 24,
+    recordsPerIntent: config.repairRecordsPerIntent || config.repairTileCandidates || 6,
+    maxIntents: config.repairMaxIntents || 6,
+    intentDepth: config.intentDepth || 1,
+    maxIntentNodes: config.intentNodeLimit || config.maxIntentNodes || 80,
+    targetBattle: config.targetBattle || null,
+  });
+  if (intents.length > 0) {
+    const branchLimit = Math.max(1, number(config.repairBranchLimit, 1));
+    return intents.slice(0, branchLimit).map((intent) =>
+      buildIntentRepairSegment(intent, failedSegmentId, failureClass, missingGoalFields, { ...config, allIntents: intents })
+    );
+  }
+  const repairCandidates = collectRepairCandidates(simulator, frontier, failureClass, config);
+  const fallback = buildFallbackRepairSegment(failedSegmentId, failureClass, missingGoalFields, frontier, repairCandidates, { ...config, simulator });
+  return fallback ? [fallback] : [];
 }
 
 function cloneSpecWithInsertedSegment(spec, failedSegmentId, repairSegment) {
@@ -391,41 +414,91 @@ function cloneSpecWithInsertedSegment(spec, failedSegmentId, repairSegment) {
   return next;
 }
 
+function compactAdaptiveAttempt(index, result, insertedSegments) {
+  return {
+    index,
+    found: result.found,
+    reachedMilestone: result.reachedMilestone,
+    failedSegmentId: result.failedSegment && result.failedSegment.segmentId,
+    insertedSegments: insertedSegments.map((segment) => segment.id),
+    segmentResults: (result.segmentResults || []).map((segment) => ({
+      segmentId: segment.segmentId,
+      found: segment.found,
+      candidateCount: (segment.candidates || []).length,
+      failureClass: segment.failureClass || (segment.failurePropagation && segment.failurePropagation.failureClass),
+    })),
+  };
+}
+
+function resultBestCandidateScore(result) {
+  const candidates = result && result.finalCandidates;
+  if (Array.isArray(candidates) && candidates.length > 0) {
+    return candidates.reduce((best, candidate) => Math.max(best, number(candidate && candidate.score, 0)), 0);
+  }
+  return number(result && result.finalCandidate && result.finalCandidate.score, 0);
+}
+
+function scoreRepairBranch(branch, failedSegmentId) {
+  const result = branch.result || {};
+  const completed = (result.segmentResults || []).filter((segment) => segment.found).length;
+  const repairSummary = (result.segmentResults || []).find((segment) => segment.segmentId === branch.repairSegment.id);
+  const originalSummary = (result.segmentResults || []).find((segment) => segment.segmentId === failedSegmentId);
+  const intentKind = branch.repairSegment && branch.repairSegment.generatedBy && branch.repairSegment.generatedBy.intentKind;
+  const failureClass = branch.repairSegment && branch.repairSegment.generatedBy && branch.repairSegment.generatedBy.failureClass;
+  const intentPriority =
+    failureClass === "life-limit-hp-deficit" && intentKind === "blocked-hp-resource" ? 200000000000000 :
+      failureClass === "life-limit-hp-deficit" && intentKind === "life-limit-hp-prep" ? 150000000000000 :
+        0;
+  return (result.found ? 1000000000000000 : 0) +
+    (originalSummary && originalSummary.found ? 500000000000000 : 0) +
+    (repairSummary && repairSummary.found ? 100000000000000 : 0) +
+    intentPriority +
+    completed * 1000000000 +
+    resultBestCandidateScore(result);
+}
+
+function buildAdaptiveReturn(result, spec, attempts, insertedSegments, repairBranches, selectedBranch) {
+  return {
+    ...result,
+    adaptive: {
+      enabled: true,
+      attempts,
+      insertedSegments,
+      repairCount: insertedSegments.length,
+      repairBranches,
+      selectedBranch,
+    },
+    effectiveSpec: spec,
+  };
+}
+
+function adaptiveGraphConfig(config) {
+  return {
+    ...(config || {}),
+    enableFailureBacktracking: (config || {}).enableFailureBacktracking === undefined
+      ? true
+      : config.enableFailureBacktracking,
+  };
+}
+
 function runAdaptiveSegmentPlanner(simulator, initialState, milestoneSpec, options) {
   const config = options || {};
+  const graphConfig = adaptiveGraphConfig(config);
   const maxRepairs = Math.max(0, number(config.maxAdaptiveRepairs, 2));
   let spec = cloneJson(milestoneSpec);
   const attempts = [];
   const insertedSegments = [];
+  const repairBranches = [];
+  let selectedBranch = null;
   for (let repairIndex = 0; repairIndex <= maxRepairs; repairIndex += 1) {
-    const result = runMilestoneGraph(simulator, initialState, spec, config);
-    attempts.push({
-      index: repairIndex,
-      found: result.found,
-      reachedMilestone: result.reachedMilestone,
-      failedSegmentId: result.failedSegment && result.failedSegment.segmentId,
-      insertedSegments: insertedSegments.map((segment) => segment.id),
-      segmentResults: (result.segmentResults || []).map((segment) => ({
-        segmentId: segment.segmentId,
-        found: segment.found,
-        candidateCount: (segment.candidates || []).length,
-        failureClass: segment.failureClass || (segment.failurePropagation && segment.failurePropagation.failureClass),
-      })),
-    });
+    const result = runMilestoneGraph(simulator, initialState, spec, graphConfig);
+    attempts.push(compactAdaptiveAttempt(repairIndex, result, insertedSegments));
     if (result.found || repairIndex >= maxRepairs || !result.failedSegment) {
-      return {
-        ...result,
-        adaptive: {
-          enabled: true,
-          attempts,
-          insertedSegments,
-          repairCount: insertedSegments.length,
-        },
-        effectiveSpec: spec,
-      };
+      return buildAdaptiveReturn(result, spec, attempts, insertedSegments, repairBranches, selectedBranch);
     }
-    const repairSegment = buildRepairSegment(simulator, result, { ...config, currentSpec: spec, repairIndex });
-    if (!repairSegment) {
+    const failedSegmentId = result.failedSegment.segmentId;
+    const repairSegments = buildRepairSegments(simulator, result, { ...config, currentSpec: spec, repairIndex });
+    if (repairSegments.length === 0) {
       return {
         ...result,
         adaptive: {
@@ -433,13 +506,53 @@ function runAdaptiveSegmentPlanner(simulator, initialState, milestoneSpec, optio
           attempts,
           insertedSegments,
           repairCount: insertedSegments.length,
+          repairBranches,
+          selectedBranch,
           stoppedReason: "no-repair-segment-generated",
         },
         effectiveSpec: spec,
       };
     }
-    const nextSpec = cloneSpecWithInsertedSegment(spec, result.failedSegment.segmentId, repairSegment);
-    if (!nextSpec) {
+    const branches = [];
+    repairSegments.forEach((repairSegment, branchIndex) => {
+      const nextSpec = cloneSpecWithInsertedSegment(spec, failedSegmentId, repairSegment);
+      if (!nextSpec) {
+        repairBranches.push({
+          repairIndex,
+          branchIndex,
+          insertedSegmentId: repairSegment.id,
+          intentKind: repairSegment.generatedBy && repairSegment.generatedBy.intentKind,
+          error: "failed-segment-not-found",
+        });
+        return;
+      }
+      const branchResult = runMilestoneGraph(simulator, initialState, nextSpec, graphConfig);
+      const repairSummary = (branchResult.segmentResults || []).find((segment) => segment.segmentId === repairSegment.id);
+      const originalSummary = (branchResult.segmentResults || []).find((segment) => segment.segmentId === failedSegmentId);
+      const branch = {
+        repairIndex,
+        branchIndex,
+        repairSegment,
+        nextSpec,
+        result: branchResult,
+      };
+      branch.score = scoreRepairBranch(branch, failedSegmentId);
+      const summary = {
+        repairIndex,
+        branchIndex,
+        insertedSegmentId: repairSegment.id,
+        intentKind: repairSegment.generatedBy && repairSegment.generatedBy.intentKind,
+        foundRepair: Boolean(repairSummary && repairSummary.found),
+        foundOriginalAfterRepair: Boolean((originalSummary && originalSummary.found) || branchResult.found),
+        found: Boolean(branchResult.found),
+        reachedMilestone: branchResult.reachedMilestone,
+        failedSegmentId: branchResult.failedSegment && branchResult.failedSegment.segmentId,
+        score: Math.round(branch.score),
+      };
+      repairBranches.push(summary);
+      branches.push(branch);
+    });
+    if (branches.length === 0) {
       return {
         ...result,
         adaptive: {
@@ -447,19 +560,30 @@ function runAdaptiveSegmentPlanner(simulator, initialState, milestoneSpec, optio
           attempts,
           insertedSegments,
           repairCount: insertedSegments.length,
+          repairBranches,
+          selectedBranch,
           stoppedReason: "failed-segment-not-found",
         },
         effectiveSpec: spec,
       };
     }
-    insertedSegments.push(repairSegment);
-    spec = nextSpec;
+    branches.sort((left, right) => right.score - left.score);
+    const selected = branches[0];
+    selectedBranch = repairBranches.findIndex((branch) =>
+      branch.repairIndex === selected.repairIndex && branch.branchIndex === selected.branchIndex
+    );
+    insertedSegments.push(selected.repairSegment);
+    if (selected.result.found) {
+      return buildAdaptiveReturn(selected.result, selected.nextSpec, attempts, insertedSegments, repairBranches, selectedBranch);
+    }
+    spec = selected.nextSpec;
   }
   throw new Error("unreachable adaptive planner exit");
 }
 
 module.exports = {
   buildRepairSegment,
+  buildRepairSegments,
   collectRepairCandidates,
   runAdaptiveSegmentPlanner,
 };

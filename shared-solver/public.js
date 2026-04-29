@@ -10,6 +10,7 @@ const {
   buildDpStateKey,
   searchDP,
 } = require("./lib/dp-search");
+const { estimateBattleSurvivability } = require("./lib/battle-thresholds");
 const {
   buildSegmentActionProvider,
   buildSegmentGoalPredicate,
@@ -27,6 +28,7 @@ const {
 } = require("./lib/region-spec");
 const {
   buildRouteRecord,
+  createStateFromSnapshot,
   readRouteFile,
   writeRouteFile,
 } = require("./lib/route-store");
@@ -65,7 +67,9 @@ module.exports = {
   applyAction,
 
   buildDpStateKey,
+  estimateBattleSurvivability,
   buildRouteRecord,
+  createStateFromSnapshot,
   readRouteFile,
   writeRouteFile,
 

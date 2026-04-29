@@ -1,12 +1,13 @@
 "use strict";
 
+const fs = require("node:fs");
 const path = require("node:path");
 
 const { runAdaptiveSegmentPlanner } = require("./lib/adaptive-segment-planner");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
-const { buildRouteRecord, readRouteFile, writeRouteFile } = require("./lib/route-store");
+const { buildRouteRecord, createStateFromSnapshot, readRouteFile, writeRouteFile } = require("./lib/route-store");
 const { StaticSimulator } = require("./lib/simulator");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
@@ -30,6 +31,41 @@ function optionalNumber(value) {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function routeCachePath(routeFile) {
+  return `${routeFile}.state-cache.json`;
+}
+
+function readReplayCache(routeFile, projectRoot, rank) {
+  const cacheFile = routeCachePath(routeFile);
+  if (!fs.existsSync(cacheFile)) return null;
+  const routeStat = fs.statSync(routeFile);
+  const cache = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+  if (!cache || !cache.state || !cache.source) return null;
+  if (cache.source.routeFile !== routeFile) return null;
+  if (cache.source.projectRoot !== projectRoot) return null;
+  if (cache.source.rank !== rank) return null;
+  if (cache.source.size !== routeStat.size) return null;
+  if (cache.source.mtimeMs !== routeStat.mtimeMs) return null;
+  return cache.state;
+}
+
+function writeReplayCache(routeFile, projectRoot, rank, state) {
+  const routeStat = fs.statSync(routeFile);
+  const cacheFile = routeCachePath(routeFile);
+  fs.writeFileSync(cacheFile, `${JSON.stringify({
+    schema: "motapathfinder.replay-state-cache.v1",
+    createdAt: new Date().toISOString(),
+    source: {
+      routeFile,
+      projectRoot,
+      rank,
+      size: routeStat.size,
+      mtimeMs: routeStat.mtimeMs,
+    },
+    state,
+  })}\n`, "utf8");
 }
 
 function makeSimulator(project, args) {
@@ -71,14 +107,27 @@ function findAction(simulator, state, summary) {
   return actions.find((action) => action.summary === summary) || null;
 }
 
-function replayRouteFile(simulator, routeFile, rank) {
-  let state = simulator.createInitialState({ rank: rank || "chaos" });
+function replayRouteFile(simulator, routeFile, rank, useSnapshot, useCache, projectRoot) {
   const record = readRouteFile(routeFile);
+  if (useSnapshot && record.final && record.final.snapshot) {
+    return createStateFromSnapshot(simulator.project, record.final.snapshot, {
+      rank: rank || "chaos",
+      route: Array.isArray(record.rawRoute) ? record.rawRoute : [],
+      decisionDepth: record.stats && record.stats.depth,
+      notes: record.notes,
+    });
+  }
+  if (useCache) {
+    const cached = readReplayCache(routeFile, projectRoot || "", rank || "chaos");
+    if (cached) return cached;
+  }
+  let state = simulator.createInitialState({ rank: rank || "chaos" });
   for (const decision of record.decisions || []) {
     const action = findAction(simulator, state, decision.summary);
     if (!action) throw new Error(`Unable to replay start route at ${decision.index}: ${decision.summary}`);
     state = simulator.applyAction(state, action);
   }
+  if (useCache) writeReplayCache(routeFile, projectRoot || "", rank || "chaos", state);
   return state;
 }
 
@@ -111,7 +160,9 @@ function guiCommand(projectRootArg, outPath) {
     `  --project-root="${projectRootArg}" \\`,
     `  --route-file=${routePath} \\`,
     "  --live=1 \\",
-    "  --headless=0",
+    "  --headless=0 \\",
+    "  --runtime-auto-battle=1 \\",
+    "  --runtime-auto-pickup=1",
   ].join("\n");
 }
 
@@ -126,7 +177,14 @@ function main() {
   const spec = getMilestoneSpec(project, routeName);
   const startRoute = args["start-route"] ? path.resolve(args["start-route"]) : null;
   const initialState = startRoute
-    ? replayRouteFile(simulator, startRoute, rank)
+    ? replayRouteFile(
+      simulator,
+      startRoute,
+      rank,
+      parseBoolean(args["start-route-snapshot"], false),
+      parseBoolean(args["start-route-cache"], true),
+      projectRoot
+    )
     : simulator.createInitialState({ rank });
   const result = runAdaptiveSegmentPlanner(simulator, initialState, spec, {
     fromMilestoneId: args["from-milestone"] || null,
@@ -142,9 +200,17 @@ function main() {
     repairIntentRecords: optionalNumber(args["repair-intent-records"]) || null,
     repairRecordsPerIntent: optionalNumber(args["repair-records-per-intent"]) || null,
     repairMaxIntents: optionalNumber(args["repair-max-intents"]) || null,
+    repairBranchLimit: optionalNumber(args["repair-branch-limit"]) || 3,
+    intentDepth: optionalNumber(args["intent-depth"]) || 3,
+    intentNodeLimit: optionalNumber(args["intent-node-limit"]) || optionalNumber(args["max-intent-nodes"]) || 120,
+    battleThresholds: parseBoolean(args["battle-thresholds"], true),
     repairMaxExpansions: optionalNumber(args["repair-max-expansions"]) || 2500,
     repairMaxRuntimeMs: optionalNumber(args["repair-max-runtime-ms"]) || 10000,
     repairGoalSkylineLimit: optionalNumber(args["repair-goal-skyline-limit"]) || optionalNumber(args["candidate-limit"]) || 8,
+    enableFailureBacktracking: parseBoolean(args["failure-backtracking"], true),
+    backtrackCandidateLimit: optionalNumber(args["backtrack-candidate-limit"]) || null,
+    backtrackMaxExpansions: optionalNumber(args["backtrack-max-expansions"]) || null,
+    backtrackMaxRuntimeMs: optionalNumber(args["backtrack-max-runtime-ms"]) || null,
   });
   const summary = {
     routeName,
@@ -186,6 +252,8 @@ function main() {
             completedSegments: summary.completedSegments,
             insertedSegments: summary.insertedSegments,
             attempts: summary.attempts,
+            repairBranches: ((result.adaptive || {}).repairBranches || []),
+            selectedBranch: (result.adaptive || {}).selectedBranch,
             candidateIds: (result.finalCandidates || []).map((candidate) => candidate.id),
           },
         },
@@ -195,6 +263,12 @@ function main() {
     console.log(`Route written: ${out}`);
     console.log("GUI replay:");
     console.log(guiCommand(projectRootArg, out));
+  }
+  if (args["save-effective-spec"] && result.effectiveSpec) {
+    const specOut = path.resolve(args["save-effective-spec"]);
+    fs.mkdirSync(path.dirname(specOut), { recursive: true });
+    fs.writeFileSync(specOut, `${JSON.stringify(result.effectiveSpec, null, 2)}\n`, "utf8");
+    console.log(`Effective spec written: ${specOut}`);
   }
   if (result.failedSegment && parseBoolean(args["print-failures"], true)) {
     console.log(`Segment failure: ${JSON.stringify(result.failedSegment, null, 2)}`);

@@ -3,6 +3,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { spawnSync } = require("child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
@@ -38,6 +39,61 @@ function resolvePath(filePath) {
 
 function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+function toPosix(filePath) {
+  return filePath.split(path.sep).join("/");
+}
+
+function runGit(args) {
+  const result = spawnSync("git", args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  if (result.error || result.status !== 0) return [];
+  return (result.stdout || "")
+    .split(/\r?\n/)
+    .map((line) => toPosix(line.trim()))
+    .filter(Boolean);
+}
+
+function gitChangedFiles() {
+  return [...new Set([
+    ...runGit(["diff", "--name-only"]),
+    ...runGit(["diff", "--name-only", "--cached"]),
+    ...runGit(["ls-files", "--others", "--exclude-standard"]),
+  ])].sort();
+}
+
+function fileFingerprint(filePath) {
+  const absolutePath = path.join(repoRoot, filePath);
+  if (!fs.existsSync(absolutePath)) return "missing";
+  const stat = fs.statSync(absolutePath);
+  if (!stat.isFile()) return `non-file:${stat.size}:${stat.mtimeMs}`;
+  const hash = crypto.createHash("sha1");
+  hash.update(fs.readFileSync(absolutePath));
+  return `${stat.size}:${hash.digest("hex")}`;
+}
+
+function changedFileSnapshot() {
+  const snapshot = new Map();
+  for (const filePath of gitChangedFiles()) {
+    snapshot.set(filePath, fileFingerprint(filePath));
+  }
+  return snapshot;
+}
+
+function changedFilesSince(beforeSnapshot) {
+  const before = beforeSnapshot || new Map();
+  const after = changedFileSnapshot();
+  const changed = new Set();
+  for (const [filePath, fingerprint] of after.entries()) {
+    if (before.get(filePath) !== fingerprint) changed.add(filePath);
+  }
+  for (const [filePath, fingerprint] of before.entries()) {
+    if (!after.has(filePath) && fingerprint !== "missing") changed.add(filePath);
+  }
+  return [...changed].sort();
 }
 
 function runCommand(command, options) {
@@ -153,7 +209,30 @@ function diagnosticsQuality(diagnostics) {
   return Boolean(diagnostics.proofClaim);
 }
 
-function engineeringDiscipline(agent, paths, metrics, missingOutputs) {
+function runBoundaryCheck(agentName, beforeSnapshot, paths) {
+  const changedFilesPath = path.join(paths.taskDir, "boundary-files.json");
+  const changedFilesPathRelative = path.relative(repoRoot, changedFilesPath);
+  const changedFiles = [...new Set([...changedFilesSince(beforeSnapshot), changedFilesPathRelative])].sort();
+  fs.writeFileSync(changedFilesPath, `${JSON.stringify(changedFiles, null, 2)}\n`);
+  const result = runCommand([
+    process.execPath,
+    path.join(repoRoot, "tools", "check-agent-boundaries.js"),
+    `--agent=${agentName}`,
+    `--changed-files=${changedFilesPath}`,
+  ], {});
+  return {
+    passed: result.status === 0,
+    status: result.status,
+    signal: result.signal,
+    changedFiles,
+    changedFilesPath: changedFilesPathRelative,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    error: result.error,
+  };
+}
+
+function engineeringDiscipline(agent, paths, metrics, missingOutputs, boundaryCheck) {
   const required = Array.isArray(agent.requiredOutputs) ? agent.requiredOutputs : [];
   const missingRequired = required.filter((name) => {
     const key = name.replace(/\.json$|\.md$/g, "").replace(/-/g, "");
@@ -163,10 +242,15 @@ function engineeringDiscipline(agent, paths, metrics, missingOutputs) {
     if (name === "agent-report.md") return !fs.existsSync(paths.report);
     return missingOutputs.includes(key) || !fs.existsSync(path.join(paths.taskDir, name));
   });
+  const claimedIllegalWrites = Number((metrics || {}).illegalWrites || 0);
+  const boundaryIllegalWrites = boundaryCheck && !boundaryCheck.passed ? 1 : 0;
+  const illegalWrites = Math.max(claimedIllegalWrites, boundaryIllegalWrites);
   return {
-    passed: missingRequired.length === 0 && Number((metrics || {}).illegalWrites || 0) === 0,
+    passed: missingRequired.length === 0 && illegalWrites === 0,
     missingRequired,
-    illegalWrites: Number((metrics || {}).illegalWrites || 0),
+    illegalWrites,
+    claimedIllegalWrites,
+    boundaryCheck,
   };
 }
 
@@ -188,10 +272,11 @@ function taskScore(metrics, diagnostics, discipline) {
   return score;
 }
 
-function runTask(agent, suite, task, runDir) {
+function runTask(agent, suite, task, runDir, agentName) {
   const paths = taskOutputPaths(runDir, task.taskId);
   const startedAt = Date.now();
   const command = agentCommand(agent, task, paths);
+  const boundaryBefore = changedFileSnapshot();
   const result = runCommand(command, {
     env: {
       AGENT_RUN_DIR: paths.taskDir,
@@ -208,7 +293,8 @@ function runTask(agent, suite, task, runDir) {
   const diagnostics = readOptionalJson(paths.diagnostics);
   if (!fs.existsSync(paths.report)) writeDefaultReport(paths, task, result, metrics);
   const missingOutputs = validateTaskOutputs(paths);
-  const discipline = engineeringDiscipline(agent, paths, metrics, missingOutputs);
+  const boundaryCheck = runBoundaryCheck(agentName, boundaryBefore, paths);
+  const discipline = engineeringDiscipline(agent, paths, metrics, missingOutputs, boundaryCheck);
   const proof = proofAwareness(metrics, diagnostics);
   const diagnostic = diagnosticsQuality(diagnostics);
   return {
@@ -263,7 +349,7 @@ function main() {
   ensureDir(runDir);
 
   const tasks = (suite.tasks || []).filter((task) => task.enabled !== false || args["include-disabled"] === "1");
-  const results = tasks.map((task) => runTask(agent, suite, task, runDir));
+  const results = tasks.map((task) => runTask(agent, suite, task, runDir, agentName));
   const summary = {
     kind: "agent-benchmark",
     leaderboard: suite.leaderboard || "agent-from-scratch",
@@ -294,6 +380,7 @@ function main() {
       engineeringDiscipline: results.filter((result) => result.evaluation.engineeringDiscipline).length,
       failedProcess: results.filter((result) => result.status !== 0).length,
       missingOutputs: results.filter((result) => result.missingOutputs.length > 0).length,
+      boundaryFailures: results.filter((result) => !result.evaluation.discipline.boundaryCheck.passed).length,
       score: results.reduce((sum, result) => sum + result.evaluation.score, 0),
     },
     results,

@@ -506,6 +506,10 @@ function searchDP(simulator, initialState, options) {
     .filter(Boolean);
   const bestSeenState = attachRouteToNodeState(bestSeenNode);
   const bestProgressState = attachRouteToNodeState(bestProgressNode);
+  const expansionBudgetExhausted = expansions >= maxExpansions &&
+    frontierSize > 0 &&
+    !stoppedReason &&
+    !(stopOnFirstGoal && firstGoalState);
 
   return {
     foundGoal: Boolean(bestGoalState),
@@ -593,6 +597,10 @@ function searchDP(simulator, initialState, options) {
         keys: bestByKey.size,
         stoppedReason,
         maxRuntimeMs,
+        maxExpansions,
+        expansions,
+        frontierSize,
+        expansionBudgetExhausted,
         completeWithinActionSet: actionTrimmed === 0,
         maxActionsPerState,
         actionTrimmed,

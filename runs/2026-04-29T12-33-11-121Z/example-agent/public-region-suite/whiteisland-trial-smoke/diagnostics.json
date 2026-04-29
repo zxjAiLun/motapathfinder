@@ -1,0 +1,138 @@
+{
+  "kind": "region-dp",
+  "regionId": "whiteisland-trial-smoke",
+  "label": "Whiteisland Trial Smoke: A1 local resource timing",
+  "tower": "whiteisland",
+  "found": true,
+  "proofClaim": {
+    "found": true,
+    "proofLevel": "candidate",
+    "completeWithinActionSet": false,
+    "actionTrimmed": 0,
+    "stoppedReasons": [
+      "time-limit"
+    ],
+    "expansionBudgetExhausted": false,
+    "expansionBudgetExhaustedSegments": [],
+    "stopOnFirstGoalSegments": [],
+    "unsafeStopOnFirstGoal": false,
+    "unsafeStopOnFirstGoalSegments": [],
+    "notes": [
+      "stoppedReason present: time-limit"
+    ]
+  },
+  "routeFile": "/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T12-33-11-121Z/example-agent/public-region-suite/whiteisland-trial-smoke/route.json",
+  "reachedMilestone": "whiteisland-trial-smoke-goal",
+  "failedSegmentId": null,
+  "scope": {
+    "floors": [
+      "Start",
+      "A1",
+      "A2",
+      "A3"
+    ]
+  },
+  "search": {
+    "algorithm": "segment-dp",
+    "dpKeyMode": "region",
+    "candidateLimit": 4,
+    "stopOnFirstGoal": false,
+    "dpBudget": {
+      "maxExpansions": 600,
+      "maxRuntimeMs": 4000
+    }
+  },
+  "resourceTimingPolicy": {
+    "mode": "prefer-zero-damage-stat-resource-before-blue-door",
+    "hpPickupPolicy": "late-if-same-key"
+  },
+  "expectedRegressionTraps": [
+    {
+      "id": "a1-redslime-defense-before-slimelord",
+      "description": "A1 10,10 zero-damage defense resource should be preferred before A1 9,1 slimelord."
+    },
+    {
+      "id": "avoid-only-blue-door",
+      "description": "The smoke route must not spend the only blue key early."
+    }
+  ],
+  "metrics": {
+    "taskId": "whiteisland-trial-smoke",
+    "found": true,
+    "liveVerified": false,
+    "proofLevel": "candidate",
+    "completeWithinActionSet": false,
+    "proofClaim": {
+      "found": true,
+      "proofLevel": "candidate",
+      "completeWithinActionSet": false,
+      "actionTrimmed": 0,
+      "stoppedReasons": [
+        "time-limit"
+      ],
+      "expansionBudgetExhausted": false,
+      "expansionBudgetExhaustedSegments": [],
+      "stopOnFirstGoalSegments": [],
+      "unsafeStopOnFirstGoal": false,
+      "unsafeStopOnFirstGoalSegments": [],
+      "notes": [
+        "stoppedReason present: time-limit"
+      ]
+    },
+    "expansions": 38,
+    "wallMs": 4273,
+    "final": {
+      "floorId": "A1",
+      "hp": 675,
+      "atk": 2,
+      "def": 2,
+      "mdef": 20,
+      "exp": 6
+    },
+    "routeLength": 9,
+    "illegalWrites": 0
+  },
+  "segments": [
+    {
+      "segmentId": "whiteisland-trial-smoke-goal",
+      "label": "Whiteisland Trial Smoke: A1 local resource timing",
+      "found": true,
+      "startCandidatesTried": 1,
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "id": "whiteisland-trial-smoke-goal:candidate-0",
+          "hero": {
+            "hp": 675,
+            "atk": 2,
+            "def": 2,
+            "mdef": 20,
+            "lv": 1,
+            "exp": 6,
+            "money": 0,
+            "equipment": []
+          },
+          "effectiveHero": {
+            "hp": 675,
+            "atk": 2,
+            "def": 2,
+            "mdef": 20,
+            "lv": 1,
+            "exp": 6
+          },
+          "tags": [
+            "highest-hp",
+            "highest-atk",
+            "highest-def",
+            "highest-mdef",
+            "highest-exp",
+            "shortest",
+            "best-combat"
+          ],
+          "routeLength": 14
+        }
+      ],
+      "failurePropagation": null
+    }
+  ]
+}

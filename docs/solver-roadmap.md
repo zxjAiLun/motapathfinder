@@ -304,3 +304,41 @@ debug 对照使用：
 - 保留多个 milestone skyline 候选。
 - 用 route-gui/live replay 证明最终路线。
 
+## 7. MT7 生命限制段：blocked resource intent
+
+`poisonZombie@MT7:1,11（废墟入土魂灵）` 不能只按普通 HP 缺口处理。它后面的 `I616（灰岩重剑）` 需要先解决左下局部资源链：
+
+```text
+redSwordsman@MT7:3,10（褐泥妖偶）
+-> I619@MT7:3,9（灵红补给品，约 +2,560,000 HP）
+-> poisonZombie@MT7:1,11（生命限制）
+-> I616@MT7:0,11（灰岩重剑，攻击 +3000）
+```
+
+因此 adaptive scanner 必须支持“当前不可执行但地图上可解释”的 intent：
+
+- `blocked-hp-resource`：扫描目标附近被怪挡住的大血瓶。
+- `blockerBattle`：输出 blocker 的 `enemyId（中文名）`、当前伤害和 `minHpToSurvive`。
+- `blockedResource`：输出资源 item、坐标、估算 HP 增益和打 blocker 后净 HP。
+- `targetBattleImpact`：估算拿到资源后生命限制怪伤害是否下降。
+
+这个 intent 生成的 repair goal 不是“直接拿资源”，而是：
+
+```json
+{
+  "type": "adaptiveResourceIntent",
+  "actionSurvivable": {
+    "summary": "battle:redSwordsman@MT7:3,10"
+  },
+  "presentTiles": [
+    { "floorId": "MT7", "x": 1, "y": 11 },
+    { "floorId": "MT7", "x": 3, "y": 9 }
+  ]
+}
+```
+
+关键约束：
+
+- 当前 `mt7-right-exp-crystal` 单一路线只有约 `298478 HP`，不够打 `redSwordsman@3,10`。
+- planner 应回退到更早 skyline，寻找 `highest-hp + highest-def/best-combat` 地基。
+- 不应把 `floorFly` 的多个等价落点当成不同实质路线；segment DP 对同一目标楼层默认只保留最短 `floorFly` 代表。

@@ -975,3 +975,70 @@ MT5 blueKing 后
 - `actionSurvivable` 驱动的 adaptive segment：失败时自动回退上一 milestone 的 `highest-hp / best-combat / highest-def / highest-atk` skyline。
 - 资源 intent scanner 对 `action-survivability-deficit` 同时扫描 HP、攻、防、魔防、装备与路径 blocker。
 - 自动保存 bestSeen / bestProgress route 与对应 H5 checkpoint，避免每次从前 5 层手动回放。
+
+### 2026-04-29 更新：MT7 blocked HP resource intent
+
+用户指出 `poisonZombie@MT7:1,11（废墟入土魂灵）` 右上局部还有一条关键资源链。复查 MT7 左下地图后确认：
+
+```text
+redSwordsman@MT7:3,10（褐泥妖偶）
+-> I619@MT7:3,9（灵红补给品）
+-> poisonZombie@MT7:1,11（废墟入土魂灵）
+-> I616@MT7:0,11（灰岩重剑）
+```
+
+`I619` 的估算 HP 增益为：
+
+```text
+core.values.greenPotion * 32 * MT7.ratio = 800 * 32 * 100 = 2,560,000
+```
+
+在当前 `segmented-mt7-right-exp-crystal.route.json` 终点：
+
+```text
+hp = 298478
+def = 5535
+redSwordsman@MT7:3,10 damage = 660000
+redSwordsman minHpToSurvive = 660001
+poisonZombie@MT7:1,11 damage = 22408975
+poisonZombie minHpToSurvive = 2565103
+```
+
+因此算法结论变为：
+
+```text
+当前固定路线不是“直接继续往后推”的好地基。
+正确 repair 子目标应是 battle:redSwordsman@MT7:3,10 可生存，
+然后由正式 DP 自己打 redSwordsman、拾取 I619，再验证 poisonZombie 可生存。
+```
+
+本轮已实现：
+
+- `battle-thresholds.js`：黑盒二分估算 `minHpToSurvive`，识别 `special=80` 为 `life-limit / hp-scaled-damage`。
+- `segment-dp.js`：`actionSurvivable` 失败输出 `enemyId（中文名）`、伤害、阈值、riskTags；并将 special 80 归类为 `life-limit-hp-deficit`。
+- `resource-intent-scanner.js`：新增 `blocked-hp-resource`，能从地图扫描到 `redSwordsman -> I619` 这种当前不可执行但解释明确的资源链。
+- `adaptive-segment-planner.js`：life-limit 下优先选择 `blocked-hp-resource` repair branch。
+- `segment-dp.js`：同一目标楼层的 `floorFly` 默认只保留最短代表，避免等价传送动作淹没局部 DP。
+
+专项检查：
+
+```bash
+npm run check:onlyup:mt7-special80 --prefix shared-solver
+npm run check:adaptive:onlyup --prefix shared-solver
+npm run check:milestone:audit --prefix shared-solver
+```
+
+当前状态：
+
+```text
+scanner 已能正确输出 blocked-hp-resource:
+  actionSurvivable battle:redSwordsman@MT7:3,10
+  minHero.hp >= 660001
+  present MT7:1,11 poisonZombie
+  present MT7:3,9 I619
+
+但从 mt7-right-exp-crystal 固定终点出发仍无法完成该 repair，
+因为当前 HP=298478 已低于 redSwordsman 阈值。
+下一步应让 planner 自动回退到 mt7-bottom-double-fairy 或更早 MT6 skyline，
+寻找同时满足高 HP 与足够 def 的候选，而不是继续沿 mt7-right-exp-crystal 单路线修补。
+```

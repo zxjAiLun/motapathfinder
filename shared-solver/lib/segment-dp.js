@@ -1,6 +1,7 @@
 "use strict";
 
 const { buildDpStateKey, searchDP } = require("./dp-search");
+const { estimateBattleSurvivability } = require("./battle-thresholds");
 const { formatActionLabel } = require("./enemy-labels");
 const { getTileDefinitionAt, cloneState } = require("./state");
 
@@ -53,33 +54,6 @@ function findPrimitiveAction(simulator, state, summary) {
   }
 }
 
-function parseBattleSummary(summary) {
-  const match = /^battle:([^@]+)@([^:]+):(\d+),(\d+)$/.exec(String(summary || ""));
-  if (!match) return null;
-  return {
-    enemyId: match[1],
-    floorId: match[2],
-    x: Number(match[3]),
-    y: Number(match[4]),
-  };
-}
-
-function evaluateBattleSummary(simulator, state, summary) {
-  const parsed = parseBattleSummary(summary);
-  if (!parsed || !simulator || !simulator.battleResolver || typeof simulator.battleResolver.evaluateBattle !== "function") return null;
-  try {
-    const battle = simulator.battleResolver.evaluateBattle(state, parsed.floorId, parsed.x, parsed.y, parsed.enemyId);
-    if (!battle || !battle.supported || !battle.damageInfo || battle.damageInfo.damage == null) return null;
-    return {
-      ...parsed,
-      damage: number(battle.damageInfo.damage, Number.POSITIVE_INFINITY),
-      turn: number(battle.damageInfo.turn, 0),
-    };
-  } catch (error) {
-    return null;
-  }
-}
-
 function checkMinFields(actual, expected, prefix, missing) {
   Object.entries(expected || {}).forEach(([field, value]) => {
     const got = number(actual[field], 0);
@@ -87,6 +61,36 @@ function checkMinFields(actual, expected, prefix, missing) {
       missing.push({ field: `${prefix}.${field}`, expected: Number(value), actual: got });
     }
   });
+}
+
+function buildActionSurvivableMissing(simulator, state, summary, action) {
+  const threshold = estimateBattleSurvivability(simulator, state, action || summary);
+  const currentHp = number((state.hero || {}).hp, 0);
+  const damage = threshold && threshold.supported
+    ? number(threshold.currentDamage, Number.POSITIVE_INFINITY)
+    : number(((action || {}).estimate || {}).damage, Number.POSITIVE_INFINITY);
+  const entry = {
+    field: "actionSurvivable",
+    expected: Number.isFinite(damage) ? `hp > ${damage}` : summary,
+    actual: currentHp,
+    action: summary,
+  };
+  if (threshold && threshold.supported) {
+    entry.damage = threshold.currentDamage;
+    entry.turn = threshold.currentTurn;
+    entry.enemyId = threshold.enemyId;
+    entry.enemyName = threshold.enemyName;
+    entry.enemyLabel = threshold.enemyLabel;
+    entry.riskTags = threshold.riskTags;
+    entry.special = threshold.special;
+    entry.minHpToSurvive = threshold.minHpToSurvive;
+    entry.samples = threshold.samples;
+    if (threshold.nonMonotonic) entry.nonMonotonic = true;
+  } else if (action && action.estimate) {
+    entry.damage = damage;
+    entry.turn = number(action.estimate.turn, 0);
+  }
+  return entry;
 }
 
 function missingGoalFields(project, simulator, state, segment) {
@@ -145,16 +149,9 @@ function missingGoalFields(project, simulator, state, segment) {
   if (goal.actionSurvivable && goal.actionSurvivable.summary) {
     const action = findPrimitiveAction(simulator, state, goal.actionSurvivable.summary);
     if (!action) {
-      const battle = evaluateBattleSummary(simulator, state, goal.actionSurvivable.summary);
-      if (battle && !(number((state.hero || {}).hp, 0) > battle.damage)) {
-        missing.push({
-          field: "actionSurvivable",
-          expected: `hp > ${battle.damage}`,
-          actual: number((state.hero || {}).hp, 0),
-          action: goal.actionSurvivable.summary,
-          damage: battle.damage,
-          turn: battle.turn,
-        });
+      const threshold = estimateBattleSurvivability(simulator, state, goal.actionSurvivable.summary);
+      if (threshold && threshold.supported && !threshold.survivable) {
+        missing.push(buildActionSurvivableMissing(simulator, state, goal.actionSurvivable.summary, null));
       } else {
         missing.push({ field: "actionSurvivable", expected: goal.actionSurvivable.summary, actual: "missing-action" });
       }
@@ -164,7 +161,7 @@ function missingGoalFields(project, simulator, state, segment) {
         missing.push({ field: "actionDamage", expected: Number(goal.actionSurvivable.exactDamage), actual: damage });
       }
       if (!(number((state.hero || {}).hp, 0) > damage)) {
-        missing.push({ field: "actionSurvivable", expected: `hp > ${damage}`, actual: number((state.hero || {}).hp, 0) });
+        missing.push(buildActionSurvivableMissing(simulator, state, goal.actionSurvivable.summary, action));
       }
     }
   }
@@ -301,6 +298,29 @@ function isAllowedAction(action, state, segment, simulator) {
   return !policy.allowedFloors || policy.allowedFloors.includes(floorId);
 }
 
+function trimFloorFlyActions(actions, policy) {
+  const maxPerTarget = Math.max(1, number(policy.maxFloorFlyPerTarget, 1));
+  const floorFlyGroups = new Map();
+  const kept = [];
+  for (const action of actions || []) {
+    if (!action || action.kind !== "floorFly") {
+      kept.push(action);
+      continue;
+    }
+    const targetFloor = action.targetFloorId || (action.target && action.target.floorId) || "?";
+    if (!floorFlyGroups.has(targetFloor)) floorFlyGroups.set(targetFloor, []);
+    floorFlyGroups.get(targetFloor).push(action);
+  }
+  floorFlyGroups.forEach((group) => {
+    group
+      .slice()
+      .sort((left, right) => (left.path || []).length - (right.path || []).length)
+      .slice(0, maxPerTarget)
+      .forEach((action) => kept.push(action));
+  });
+  return kept;
+}
+
 function buildSegmentActionProvider(simulator, segment) {
   return (unusedSimulator, state) => {
     const policy = (segment || {}).actionPolicy || {};
@@ -313,7 +333,7 @@ function buildSegmentActionProvider(simulator, segment) {
     if (allowedKinds.has("floorFly") && typeof simulator.enumerateFloorFlyActions === "function") {
       actions = actions.concat(simulator.enumerateFloorFlyActions(state));
     }
-    return actions
+    return trimFloorFlyActions(actions, policy)
       .filter((action) => isAllowedAction(action, state, segment, simulator))
       .map((action) => annotateSegmentAction(simulator, state, action, segment));
   };
@@ -462,6 +482,17 @@ function classifySegmentFailure(missing, segment) {
       "magic-defense threshold is not met",
       ["highest-mdef", "best-combat"],
       "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+    );
+  }
+
+  if (hasMissingField(missingFields, (field, entry) =>
+    field === "actionSurvivable" && (entry.riskTags || []).includes("life-limit")
+  )) {
+    addClass(
+      "life-limit-hp-deficit",
+      "life-limit battle threshold is not survivable at current HP",
+      ["highest-hp", "highest-def", "best-combat"],
+      "scan HP/def sustain resources before retrying the life-limit battle"
     );
   }
 
@@ -638,6 +669,18 @@ function milestoneRange(milestoneSpec, fromMilestoneId, toMilestoneId) {
   const endIndex = toMilestoneId ? toIndex : milestones.length - 1;
   if (startIndex < 0 || endIndex < 0 || startIndex > endIndex) return [];
   return milestones.slice(startIndex, endIndex + 1);
+}
+
+function milestoneRangeError(milestoneSpec, fromMilestoneId, toMilestoneId) {
+  const milestones = milestoneSpec.milestones || [];
+  const fromIndex = fromMilestoneId ? milestones.findIndex((milestone) => milestone.id === fromMilestoneId) : -1;
+  const toIndex = toMilestoneId ? milestones.findIndex((milestone) => milestone.id === toMilestoneId) : -1;
+  if (fromMilestoneId && fromIndex < 0) return `Unknown fromMilestoneId: ${fromMilestoneId}`;
+  if (toMilestoneId && toIndex < 0) return `Unknown toMilestoneId: ${toMilestoneId}`;
+  const startIndex = fromMilestoneId ? fromIndex + 1 : 0;
+  const endIndex = toMilestoneId ? toIndex : milestones.length - 1;
+  if (startIndex > endIndex) return `Invalid milestone range: ${fromMilestoneId || "start"} is not before ${toMilestoneId || "end"}`;
+  return null;
 }
 
 function mergeMilestoneFrontier(simulator, candidates, segment, options) {
@@ -856,6 +899,31 @@ function tryRepairFromPreviousMilestone(simulator, segments, segmentIndex, histo
 
 function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   const config = options || {};
+  const rangeError = milestoneRangeError(milestoneSpec, config.fromMilestoneId, config.toMilestoneId);
+  if (rangeError) {
+    return {
+      found: false,
+      reachedMilestone: config.fromMilestoneId || null,
+      failedSegment: {
+        segmentId: config.toMilestoneId || null,
+        label: "Invalid milestone range",
+        found: false,
+        failureClass: "invalid-milestone-range",
+        failureReason: rangeError,
+        startCandidatesTried: 0,
+        candidates: [],
+        attempts: [],
+        failurePropagation: {
+          primaryFailureClass: "invalid-milestone-range",
+          failureClass: "invalid-milestone-range",
+          recommendedNext: ["choose a toMilestone that appears after fromMilestone in the route spec"],
+        },
+      },
+      finalCandidates: [],
+      segmentResults: [],
+      checkpointResults: [],
+    };
+  }
   const segments = milestoneRange(milestoneSpec, config.fromMilestoneId, config.toMilestoneId);
   const checkpointResults = [];
   let frontier = [{

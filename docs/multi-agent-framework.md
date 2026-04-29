@@ -70,6 +70,14 @@ require("../../whiteisland（9）/solver/lib/search");
 
 - `docs/public-api.md`
 
+给模型的统一 brief 见：
+
+- `docs/AGENT_BRIEF.md`
+
+给模型进入 plan mode 的统一提示词见：
+
+- `docs/AGENT_PLANMODE_PROMPTS.md`
+
 ## 4. Agent 类型
 
 ### 4.1 Agent-from-scratch
@@ -271,4 +279,3 @@ npm run benchmark:public --prefix shared-solver
 - 每个任务的资源时机 trap 标注。
 - baseline metrics 的持久化与 diff 报告。
 - 对 agent import `shared-solver/lib/**` 的静态扫描。
-

@@ -49,6 +49,7 @@
     "check:agent-boundaries": "node ../tools/check-agent-boundaries.js",
     "check:agent-boundaries:public-dev": "node ../tools/check-agent-boundaries.js --allow-public-layer-dev=1",
     "check:adaptive:onlyup": "node check-adaptive-onlyup.js",
+    "check:onlyup:mt7-special80": "node check-onlyup-mt7-special80.js",
     "run:region": "node run-region-dp.js",
     "run:onlyup:region1": "node run-region-dp.js --project-root='../Only upV2.1/Only upV2.1' --region-spec='../towers/onlyup/region-specs/region-1.json' --out='routes/latest/onlyup-region-1.route.json'",
     "run:onlyup:region2": "node run-region-dp.js --project-root='../Only upV2.1/Only upV2.1' --region-spec='../towers/onlyup/region-specs/region-2.json' --out='routes/latest/onlyup-region-2.route.json'",

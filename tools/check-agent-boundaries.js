@@ -65,6 +65,30 @@ function changedFiles() {
   return [...names].sort();
 }
 
+function resolveInputPath(filePath) {
+  if (path.isAbsolute(filePath)) return filePath;
+  return path.resolve(repoRoot, filePath);
+}
+
+function filesFromListFile(filePath) {
+  const source = fs.readFileSync(resolveInputPath(filePath), "utf8");
+  const parsed = (() => {
+    try {
+      return JSON.parse(source);
+    } catch (error) {
+      return source.split(/\r?\n/);
+    }
+  })();
+  return [...new Set((Array.isArray(parsed) ? parsed : [])
+    .map((item) => {
+      const value = String(item || "").trim();
+      if (!value) return "";
+      return toPosix(path.isAbsolute(value) ? path.relative(repoRoot, value) : value.replace(/^\.\//, ""));
+    })
+    .filter(Boolean))]
+    .sort();
+}
+
 function startsWithAny(filePath, roots) {
   return roots.some((root) => filePath.startsWith(root));
 }
@@ -144,6 +168,7 @@ function usage() {
   console.log([
     "Usage:",
     "  node tools/check-agent-boundaries.js [--agent=<name>]",
+    "  node tools/check-agent-boundaries.js --agent=<name> --changed-files=<json-or-lines-file>",
     "  node tools/check-agent-boundaries.js --allow-public-layer-dev=1",
     "  node tools/check-agent-boundaries.js --public-layer-dev",
     "",
@@ -170,7 +195,7 @@ function main() {
       args["public-layer-dev"] === "true",
   };
 
-  const files = changedFiles();
+  const files = args["changed-files"] ? filesFromListFile(args["changed-files"]) : changedFiles();
   const writeViolations = [];
   const importProblems = [];
 
