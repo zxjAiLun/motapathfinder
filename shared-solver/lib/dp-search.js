@@ -184,9 +184,9 @@ function compareDpBest(left, right) {
 
 function actionPriority(action) {
   if (!action) return 99;
-  if (action.kind === "pickup" || action.kind === "equip") return 0;
+  if (action.kind === "pickup" || action.kind === "interactPickup" || action.kind === "equip") return 0;
   if (action.kind === "event") return action.unsupported ? 8 : 1;
-  if (action.kind === "changeFloor") return 2;
+  if (action.kind === "changeFloor" || action.kind === "floorFly") return 2;
   if (action.kind === "battle") return 3;
   if (action.kind === "openDoor" || action.kind === "useTool") return 2;
   return 9;
@@ -220,8 +220,8 @@ function sourceActionRank(action) {
   if (!action) return 0;
   const segmentScore = Number((((action || {}).estimate || {}).segmentPreviewScore) || 0);
   if (segmentScore !== 0) return 10 + Math.max(-20, Math.min(100, segmentScore / 1000000));
-  if (action.kind === "changeFloor") return 8;
-  if (action.kind === "pickup" || action.kind === "equip") return 7;
+  if (action.kind === "changeFloor" || action.kind === "floorFly") return 8;
+  if (action.kind === "pickup" || action.kind === "interactPickup" || action.kind === "equip") return 7;
   if (action.kind === "openDoor" || action.kind === "useTool") return 6;
   if (action.kind === "battle") {
     const estimate = (action || {}).estimate || {};

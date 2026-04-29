@@ -2,7 +2,7 @@
 
 const { getTileDefinitionAt } = require("./state");
 
-const DEFAULT_ACTION_KINDS = ["battle", "pickup", "equip", "openDoor", "useTool", "changeFloor", "event"];
+const DEFAULT_ACTION_KINDS = ["battle", "pickup", "equip", "openDoor", "useTool", "changeFloor", "floorFly", "event"];
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -78,11 +78,32 @@ function previewAction(simulator, state, action) {
 }
 
 function enumeratePrimitive(simulator, state) {
+  const actions = [];
+  const seen = new Set();
+  const addActions = (list) => {
+    (list || []).forEach((action) => {
+      if (!action || !action.summary || seen.has(action.summary)) return;
+      seen.add(action.summary);
+      actions.push(action);
+    });
+  };
   try {
-    return simulator.enumeratePrimitiveActions(state).actions || [];
+    addActions(simulator.enumeratePrimitiveActions(state).actions || []);
   } catch (error) {
-    return [];
   }
+  try {
+    if (typeof simulator.enumerateInteractPickupActions === "function") {
+      addActions(simulator.enumerateInteractPickupActions(state) || []);
+    }
+  } catch (error) {
+  }
+  try {
+    if (typeof simulator.enumerateFloorFlyActions === "function") {
+      addActions(simulator.enumerateFloorFlyActions(state) || []);
+    }
+  } catch (error) {
+  }
+  return actions;
 }
 
 function actionKindCounts(actions) {
@@ -154,7 +175,10 @@ function desiredStatsFromFailure(failureClass, missingGoalFields) {
   if (failureClass === "atk-deficit") stats.add("atk");
   if (failureClass === "def-deficit") stats.add("def");
   if (failureClass === "mdef-deficit") stats.add("mdef");
-  if (failureClass === "hp-deficit" || failureClass === "action-survivability-deficit") stats.add("hp");
+  if (failureClass === "hp-deficit") stats.add("hp");
+  if (failureClass === "action-survivability-deficit") {
+    ["hp", "atk", "def", "mdef", "path"].forEach((stat) => stats.add(stat));
+  }
   if (failureClass === "equipment-missing") stats.add("equipment");
   if (failureClass === "target-action-unreachable" || failureClass === "target-tile-not-cleared" || failureClass === "floor-scope-mismatch") stats.add("path");
   if (stats.size === 0) ["atk", "def", "mdef", "hp", "path"].forEach((stat) => stats.add(stat));

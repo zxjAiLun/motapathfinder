@@ -826,3 +826,152 @@ mt5-blueking-kill
 
 - `presentTiles` 是 milestone 级约束，不是全局禁止动作。它只在当前段内过滤“会破坏本段下游地基”的动作；下一段如果目标需要清这些 tile，可以通过新的 milestone 放开。非必死资源应优先写入 `preferredPresentTiles`。
 - 目前完整 `initial -> mt5-blueking-kill` 仍不默认进 `check:static`，避免本地耗时过高；轻量必过项是 MT2→I893 和 MT5 third-gate→blueKing 两个关键单段。
+
+### 6.9 MT6/MT7：生命限制与目标制定经验
+
+当前 MT5 `blueKing（织光仙子）` 后的路线推进遇到的关键问题不是普通防御门槛，而是 MT7 `poisonZombie@MT7:1,11（废墟入土魂灵）` 守护 `I616@MT7:0,11（灰岩重剑）`。`I616` 拾取后攻击 +3000，是继续推进的重要资源。
+
+#### 6.9.1 `生命限制` 的真实语义
+
+项目源码中 `special 80` 的说明与公式为：
+
+```text
+生命限制：敌人每回合伤害 *（敌人生命 / 角色生命）
+```
+
+也就是说，`poisonZombie（废墟入土魂灵）` 的伤害不是固定由攻防差决定；当前角色 HP 越高，单回合伤害越低。该机制带来两个直接要求：
+
+- 战斗估算缓存 key 必须包含当前 `hero.hp`，否则相同攻防魔防但不同 HP 的状态会错误复用旧伤害。
+- 对 `special 80` 敌人制定目标时，不能只写 `minHero.atk/def/mdef`；应优先使用 `goal.actionSurvivable.summary = "battle:poisonZombie@MT7:1,11"`，让 DP 根据当前状态计算真实所需 HP。
+
+已修正：
+
+- `lib/battle-resolver.js` 的 `battleEstimateCacheKey()` 已纳入 `hero.hp`。
+- `check-core-regressions.js` 增加 `checkHpDependentBattleCache()`，用 `poisonZombie + special 80` 样本断言高 HP 伤害低于低 HP，且同 HP 仍可稳定命中缓存。
+- `lib/segment-dp.js` 对 `actionSurvivable` 的失败诊断会输出真实 `hp > damage` 缺口，而不是只报 `missing-action`。
+
+#### 6.9.2 当前已保存的 MT7 高血准备 checkpoint
+
+从 `mt7-entry-after-mt6-sweep` 附近重新搜索，当前最好专项路线保存为：
+
+```text
+routes/latest/mt7-special80-hp-prep-bestseen.route.json
+routes/latest/h5/mt7-special80-hp-prep-bestseen-from-step94.h5save
+```
+
+该路线停在：
+
+```text
+floorId = MT7
+loc = 6,12
+hp = 728418
+atk = 5767
+def = 4535
+mdef = 30010
+lv = 9
+exp = 603
+equipment = I894
+```
+
+对 `battle:poisonZombie@MT7:1,11（废墟入土魂灵）` 的诊断为：
+
+```text
+expected: hp > 10764157
+actual: 728418
+damage: 10764157
+turn: 375
+failureClass: action-survivability-deficit
+```
+
+因此，当前结论是：`MT7:1,11` 不是“当前路线差一点就能打”的普通怪，而是需要前置路线显著提高 HP / 战力后再尝试。继续从 `mt7-right-exp-crystal` 往后硬推没有意义。
+
+H5 回放命令：
+
+```bash
+cd shared-solver
+node export-h5-segment.js \
+  --h5save=routes/latest/h5/mt7-special80-hp-prep-bestseen-from-step94.h5save \
+  --play=1 \
+  --headless=0 \
+  --keep-open=1 \
+  --auto-play=1 \
+  --runtime-auto-battle=1 \
+  --runtime-auto-pickup=1 \
+  --timeout-ms=60000
+```
+
+注意：H5 回放必须开启 runtime 自动战斗和自动拾取，否则 GUI 与 solver route 会在 `getNext`、自动清怪、自动拾取处出现表面不一致。
+
+#### 6.9.3 这轮发现的错误目标
+
+旧目标 `mt7-right-exp-crystal` 的含义是：
+
+```text
+MT7 底部双飞蛾
+-> battle:yellowPriest@MT7:11,11
+-> auto pickup I734@MT7:12,11
+```
+
+该路线能拿 `I734（初等进化结晶）`，但在当前阶段会把 HP 从约 `499741` 降到 `298478`。从 `生命限制` 视角看，低 HP 会显著放大 `poisonZombie` 每回合伤害，因此这个目标不是通向 `I616` 的正确局部目标。
+
+更合适的目标应写成：
+
+```js
+goal: {
+  type: "heroAtLeast",
+  floorId: "MT7",
+  actionSurvivable: {
+    summary: "battle:poisonZombie@MT7:1,11"
+  }
+}
+```
+
+或拆成更早的高血地基目标：
+
+```text
+MT5 blueKing 后
+-> MT6 保留/获取高 HP 与关键防御资源
+-> MT7 入口高 HP
+-> 能承受 poisonZombie@MT7:1,11
+-> 击破 1,11 后拾取 I616@0,11
+```
+
+不要把 `I734` 或右侧经验晶体作为默认“向前推进”目标；只有当它能带来足够等级/属性收益，且不会破坏 `生命限制` 所需 HP 时，才应进入当前段。
+
+#### 6.9.4 目标制定原则更新
+
+后续制定 milestone / adaptive repair 时按以下优先级判断：
+
+1. **能否执行关键动作**：优先用 `actionSurvivable` 表达“能打这个怪并活下来”，不要先猜一个固定 HP 阈值。
+2. **失败分类必须准确**：`actionSurvivable` 存在但 HP 不足时是 `action-survivability-deficit`，不是 `target-action-unreachable`。
+3. **生存缺口不是纯 HP 问题**：对 `special 80`，HP、攻击、有效防御、魔防、等级和装备都会改变最终伤害；repair scanner 应同时考虑 `hp/atk/def/mdef/path`。
+4. **高 HP 地基优先于短期经验**：如果目标怪存在 `生命限制`，提前打高伤怪换少量经验可能是负收益；应保留 HP 至少到关键承受线附近。
+5. **有意义上下楼允许，无收益循环靠 DP key 剪掉**：上下楼用于清怪、拿资源、触发自动拾取或回到已开区域；纯 `A->B->A` 且无状态变化的循环应被同 key 更短/更高 HP 状态剪掉。
+6. **checkpoint 不应只保留 highest-hp**：后续段失败时，需要同时保留 `highest-hp`、`best-combat`、`highest-def`、`highest-atk` 代表。特别是 `生命限制` 既吃当前 HP，也吃缩短战斗回合的战力。
+
+#### 6.9.5 当前搜索方向
+
+下一轮不要从 `mt7-right-exp-crystal` 继续往后硬推；应回退到 `mt5-blueking-kill` 或 MT6 早期 checkpoint，重新搜索：
+
+```text
+目标 A：MT6/MT7 高血地基
+  floorId = MT7
+  hp 尽量高
+  保留进入 I616 左侧资源链的可能性
+
+目标 B：MT7 生命限制承受线
+  actionSurvivable battle:poisonZombie@MT7:1,11
+
+目标 C：I616
+  removedTile MT7:1,11
+  pickup I616@MT7:0,11
+  atk +3000 后进入下一段
+```
+
+当前已知失败样本显示，从 MT7 底部局部空间内最多只能推到约 `hp=728418`，仍远低于 `hp > 10764157`。这说明问题很可能在更早的 MT6/MT5 路线地基，而不是 MT7 底部几个怪的排列顺序。
+
+建议下一步实现/使用：
+
+- `actionSurvivable` 驱动的 adaptive segment：失败时自动回退上一 milestone 的 `highest-hp / best-combat / highest-def / highest-atk` skyline。
+- 资源 intent scanner 对 `action-survivability-deficit` 同时扫描 HP、攻、防、魔防、装备与路径 blocker。
+- 自动保存 bestSeen / bestProgress route 与对应 H5 checkpoint，避免每次从前 5 层手动回放。

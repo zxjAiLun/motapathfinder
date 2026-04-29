@@ -24,7 +24,7 @@ const DEFAULT_OPTIONS = {
   foundationLimit: 4,
 };
 
-const CLUSTER_ACTION_KINDS = new Set(["battle", "pickup", "equip", "event", "openDoor", "useTool"]);
+const CLUSTER_ACTION_KINDS = new Set(["battle", "pickup", "interactPickup", "equip", "event", "openDoor", "useTool"]);
 
 function hero(state) {
   return (state && state.hero) || {};
@@ -122,9 +122,9 @@ function clusterActionId(action) {
     const enemyId = action.enemyId || action.monsterId || action.id || action.resourceId || action.clusterLabel || "";
     return `battle@${floorId}:${actionPoint(action)}:${enemyId}`;
   }
-  if (action.kind === "pickup") {
+  if (action.kind === "pickup" || action.kind === "interactPickup") {
     const itemId = action.itemId || action.item || action.id || action.resourceId || "";
-    return `pickup@${floorId}:${actionPoint(action)}:${itemId}`;
+    return `${action.kind}@${floorId}:${actionPoint(action)}:${itemId}`;
   }
   if (action.kind === "equip") {
     const equipId = action.equipId || action.itemId || action.item || action.id || action.resourceId || "";
@@ -189,7 +189,7 @@ function countReachableClusterResourceSignals(simulator, state) {
   }
   return actions.reduce((count, action) => {
     if (!action || action.unsupported) return count;
-    if (action.kind === "pickup" || action.kind === "equip") return count + 1;
+    if (action.kind === "pickup" || action.kind === "interactPickup" || action.kind === "equip") return count + 1;
     if (action.kind === "event" && action.hasStateChange === true) return count + 1;
     if (action.kind !== "battle") return count;
     const estimate = action.estimate || {};
@@ -208,7 +208,7 @@ function isUsefulClusterCandidate(simulator, baseState, currentState, action, ne
     const estimate = action.estimate || {};
     return number(estimate.exp) > 0 || number(estimate.guards) > 0;
   }
-  return action.kind === "pickup" || action.kind === "equip" || action.kind === "event";
+  return action.kind === "pickup" || action.kind === "interactPickup" || action.kind === "equip" || action.kind === "event";
 }
 
 function compareNodes(baseState, left, right) {

@@ -330,6 +330,7 @@ class FunctionBackedBattleResolver {
       y,
       enemyId,
       hero: {
+        hp: Number(hero.hp || 0),
         atk: Number(hero.atk || 0),
         def: Number(hero.def || 0),
         mdef: Number(hero.mdef || 0),

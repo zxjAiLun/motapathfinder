@@ -473,7 +473,8 @@
         ]
       },
       "actionPolicy": {
-        "allowedFloors": ["MT6"]
+        "allowedFloors": ["MT6"],
+        "actionKinds": ["battle", "pickup", "interactPickup", "equip", "changeFloor"]
       },
       "dp": {
         "keyMode": "location",
@@ -486,56 +487,21 @@
       }
     },
     {
-      "id": "mt6-first-center-guard",
-      "label": "MT6 第一中路制动警卫",
+      "id": "mt6-lower-attack-pair",
+      "label": "MT6 下半区双碎晶反应",
       "startFrom": "mt6-upper-right-blueking",
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT6",
-        "minHero": { "hp": 680706, "atk": 4567, "def": 4335, "mdef": 23010, "lv": 9, "exp": 393 },
-        "equipmentIncludes": ["I894"],
-        "removedTiles": [
-          { "floorId": "MT6", "x": 6, "y": 6 }
-        ],
-        "presentTiles": [
-          { "floorId": "MT6", "x": 1, "y": 11, "reason": "Preserve lower attack resource after first center guard." },
-          { "floorId": "MT6", "x": 10, "y": 8, "reason": "Preserve lower attack resource after first center guard." },
-          { "floorId": "MT6", "x": 6, "y": 8, "reason": "Preserve second center guard until lower attack pair is resolved." },
-          { "floorId": "MT6", "x": 2, "y": 1, "reason": "Preserve optional high-defense skyline candidate for MT7." },
-          { "floorId": "MT6", "x": 9, "y": 10, "reason": "Preserve lower sweep resource." },
-          { "floorId": "MT6", "x": 11, "y": 11, "reason": "Preserve optional high-defense skyline candidate for MT7." },
-          { "floorId": "MT6", "x": 4, "y": 11, "reason": "Preserve final MT6 mdef pickup route." }
-        ]
-      },
-      "actionPolicy": {
-        "allowedFloors": ["MT6"]
-      },
-      "dp": {
-        "keyMode": "location",
-        "priorityMode": "combat-first",
-        "enablePreviewScore": "required",
-        "stopOnFirstGoal": true,
-        "firstGoalSafeReason": "Only one center guard can be taken safely before the lower attack pair.",
-        "maxExpansions": 700,
-        "maxRuntimeMs": 6000,
-        "goalSkylineLimit": 4
-      }
-    },
-    {
-      "id": "mt6-lower-attack-pair",
-      "label": "MT6 下半区双碎晶反应",
-      "startFrom": "mt6-first-center-guard",
-      "goal": {
-        "type": "heroAtLeast",
-        "floorId": "MT6",
-        "minHero": { "hp": 579586, "atk": 5567, "def": 4335, "mdef": 23010, "lv": 9, "exp": 477 },
+        "minHero": { "hp": 223386, "atk": 5567, "def": 4335, "mdef": 23010, "lv": 9, "exp": 435 },
         "equipmentIncludes": ["I894"],
         "removedTiles": [
           { "floorId": "MT6", "x": 1, "y": 11 },
           { "floorId": "MT6", "x": 10, "y": 8 }
         ],
         "presentTiles": [
-          { "floorId": "MT6", "x": 6, "y": 8, "reason": "Second center guard must be delayed until both attack resources are collected." },
+          { "floorId": "MT6", "x": 6, "y": 6, "reason": "Delay center HP sustain until both lower attack resources are collected." },
+          { "floorId": "MT6", "x": 6, "y": 8, "reason": "Preserve second center guard until lower attack pair is resolved." },
           { "floorId": "MT6", "x": 2, "y": 1, "reason": "Preserve optional high-defense skyline candidate for MT7." },
           { "floorId": "MT6", "x": 9, "y": 10, "reason": "Preserve lower sweep resource." },
           { "floorId": "MT6", "x": 11, "y": 11, "reason": "Preserve optional high-defense skyline candidate for MT7." },
@@ -556,13 +522,47 @@
       }
     },
     {
-      "id": "mt6-second-center-guard",
-      "label": "MT6 第二中路制动警卫",
+      "id": "mt6-first-center-guard",
+      "label": "MT6 第一中路制动警卫",
       "startFrom": "mt6-lower-attack-pair",
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT6",
-        "minHero": { "hp": 466554, "atk": 5767, "def": 4535, "mdef": 25010, "lv": 9, "exp": 519 },
+        "minHero": { "hp": 670354, "atk": 5567, "def": 4335, "mdef": 23010, "lv": 9, "exp": 477 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT6", "x": 6, "y": 6 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT6", "x": 6, "y": 8, "reason": "Second center guard must be delayed until both attack resources are collected." },
+          { "floorId": "MT6", "x": 2, "y": 1, "reason": "Preserve optional high-defense skyline candidate for MT7." },
+          { "floorId": "MT6", "x": 9, "y": 10, "reason": "Preserve lower sweep resource." },
+          { "floorId": "MT6", "x": 11, "y": 11, "reason": "Preserve optional high-defense skyline candidate for MT7." },
+          { "floorId": "MT6", "x": 4, "y": 11, "reason": "Preserve final MT6 mdef pickup route." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT6"]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "After both lower attack resources are collected, this single center guard is the sustain checkpoint for the second center guard.",
+        "maxExpansions": 700,
+        "maxRuntimeMs": 6000,
+        "goalSkylineLimit": 4
+      }
+    },
+    {
+      "id": "mt6-second-center-guard",
+      "label": "MT6 第二中路制动警卫",
+      "startFrom": "mt6-first-center-guard",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": { "hp": 557322, "atk": 5767, "def": 4535, "mdef": 25010, "lv": 9, "exp": 519 },
         "equipmentIncludes": ["I894"],
         "removedTiles": [
           { "floorId": "MT6", "x": 6, "y": 8 }
@@ -595,7 +595,7 @@
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT7",
-        "minHero": { "hp": 405000, "atk": 5767, "def": 4535, "mdef": 30010, "lv": 9, "exp": 603 },
+        "minHero": { "hp": 1, "atk": 5767, "def": 4535, "mdef": 30010, "lv": 9, "exp": 561 },
         "equipmentIncludes": ["I894"],
         "removedTiles": [
           { "floorId": "MT6", "x": 4, "y": 11 }
@@ -609,10 +609,140 @@
         "keyMode": "location",
         "priorityMode": "combat-first",
         "enablePreviewScore": "required",
-        "stopOnFirstGoal": false,
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "This milestone is an MT7 entry checkpoint; later MT7 fights belong to the next segment.",
         "maxExpansions": 1600,
         "maxRuntimeMs": 12000,
         "goalSkylineLimit": 8
+      }
+    },
+    {
+      "id": "mt7-mt6-defense-sweep",
+      "label": "MT7 入口后回 MT6 拿左上防御资源",
+      "startFrom": "mt7-entry-after-mt6-sweep",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": { "hp": 112394, "atk": 5767, "def": 5035, "mdef": 30010, "lv": 9, "exp": 603 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT6", "x": 2, "y": 1 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT6", "x": 9, "y": 10, "reason": "Delay the lower-right sustain chain until after the MT6 defense pickup." },
+          { "floorId": "MT6", "x": 11, "y": 11, "reason": "Keep the right-side crystal guard for the next sustain segment." },
+          { "floorId": "MT7", "x": 4, "y": 11, "reason": "MT7 bottom fairies are the next segment, not part of this MT6 defense sweep." },
+          { "floorId": "MT7", "x": 8, "y": 11, "reason": "MT7 bottom fairies are the next segment, not part of this MT6 defense sweep." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT6", "MT7"],
+        "allowChangeFloors": ["MT7:6,12", "MT6:6,12", "MT6:6,0"]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "This segment only removes MT6:2,1 to unlock the +500 defense pickup before the right-side sustain chain.",
+        "maxExpansions": 800,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 4
+      }
+    },
+    {
+      "id": "mt7-mt6-right-crystal-sweep",
+      "label": "MT6 右下制动警卫与傀儡资源",
+      "startFrom": "mt7-mt6-defense-sweep",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": { "hp": 152669, "atk": 5767, "def": 5535, "mdef": 30010, "lv": 9, "exp": 729 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT6", "x": 9, "y": 10 },
+          { "floorId": "MT6", "x": 11, "y": 11 },
+          { "floorId": "MT6", "x": 8, "y": 7 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT7", "x": 4, "y": 11, "reason": "Both MT7 bottom fairies must be delayed until the MT6 right-side defense resource is collected." },
+          { "floorId": "MT7", "x": 8, "y": 11, "reason": "Both MT7 bottom fairies must be delayed until the MT6 right-side defense resource is collected." },
+          { "floorId": "MT7", "x": 11, "y": 11, "reason": "MT7 right crystal guard belongs after both bottom fairies." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT6", "MT7"],
+        "allowChangeFloors": ["MT7:6,12", "MT6:6,12", "MT6:6,0"]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "The MT6 right-side chain has a fixed local sustain dependency after MT6:2,1 is cleared.",
+        "maxExpansions": 1200,
+        "maxRuntimeMs": 10000,
+        "goalSkylineLimit": 4
+      }
+    },
+    {
+      "id": "mt7-bottom-double-fairy",
+      "label": "MT7 底部双飞蛾补给链",
+      "startFrom": "mt7-mt6-right-crystal-sweep",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT7",
+        "minHero": { "hp": 499741, "atk": 5767, "def": 5535, "mdef": 30010, "lv": 9, "exp": 813 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT7", "x": 4, "y": 11 },
+          { "floorId": "MT7", "x": 8, "y": 11 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT7", "x": 11, "y": 11, "reason": "The right-side crystal guard must wait until both bottom weakWine pickups are collected." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT6", "MT7"],
+        "allowChangeFloors": ["MT7:6,12", "MT6:6,12"]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "After MT6 defense resources, both MT7 bottom fairies are the only local HP-positive bottom route.",
+        "maxExpansions": 900,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 4
+      }
+    },
+    {
+      "id": "mt7-right-exp-crystal",
+      "label": "MT7 右侧傀儡后拿进化结晶",
+      "startFrom": "mt7-bottom-double-fairy",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT7",
+        "minHero": { "hp": 298478, "atk": 5767, "def": 5535, "mdef": 30010, "lv": 9, "exp": 1855 },
+        "equipmentIncludes": ["I894"],
+        "removedTiles": [
+          { "floorId": "MT7", "x": 11, "y": 11 }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT7"],
+        "allowChangeFloors": ["MT7:6,12"]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "The right-side yellowPriest is only survivable after both MT7 bottom weakWine pickups.",
+        "maxExpansions": 700,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 4
       }
     }
   ]

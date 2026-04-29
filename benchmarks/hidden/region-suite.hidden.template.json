@@ -1,0 +1,25 @@
+{
+  "id": "hidden-region-suite",
+  "leaderboard": "agent-from-scratch",
+  "hidden": true,
+  "evaluationDimensions": [
+    "solvingAbility",
+    "proofAwareness",
+    "generalization",
+    "engineeringDiscipline",
+    "debuggingAbility",
+    "trapResistance",
+    "cost",
+    "reproducibility"
+  ],
+  "tasks": [
+    {
+      "taskId": "hidden-resource-timing-trap",
+      "tower": "redacted",
+      "projectRoot": "redacted",
+      "regionSpec": "redacted",
+      "enabled": false,
+      "expectedTraps": ["early-hp-positive-net-gain-is-wrong"]
+    }
+  ]
+}

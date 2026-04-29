@@ -1,0 +1,42 @@
+{
+  "id": "public-region-suite",
+  "leaderboard": "agent-from-scratch",
+  "evaluationDimensions": [
+    "solvingAbility",
+    "proofAwareness",
+    "generalization",
+    "engineeringDiscipline",
+    "debuggingAbility",
+    "trapResistance",
+    "cost",
+    "reproducibility"
+  ],
+  "tasks": [
+    {
+      "taskId": "onlyup-region-1",
+      "tower": "onlyup",
+      "projectRoot": "Only upV2.1/Only upV2.1",
+      "regionSpec": "towers/onlyup/region-specs/region-1.json",
+      "expectedTraps": ["mt1-1559-vs-1558", "mt2-three-monster-order", "mt5-sustain-timing"],
+      "enabled": false,
+      "reason": "Full MT1~MT5 bounded DP can be expensive; run explicitly for solver validation."
+    },
+    {
+      "taskId": "onlyup-region-2",
+      "tower": "onlyup",
+      "projectRoot": "Only upV2.1/Only upV2.1",
+      "regionSpec": "towers/onlyup/region-specs/region-2.json",
+      "expectedTraps": ["mt6-getnext-weakwine", "mt6-attack-before-center-guard", "mt7-life-limit-monster"],
+      "enabled": false,
+      "reason": "Depends on MT5 prefix; run with a checkpoint route for faster iteration."
+    },
+    {
+      "taskId": "whiteisland-trial-smoke",
+      "tower": "whiteisland",
+      "projectRoot": "whiteisland（9）",
+      "regionSpec": "towers/whiteisland/trial-specs/trial-smoke.json",
+      "expectedTraps": ["a1-redslime-defense-before-slimelord", "avoid-only-blue-door"],
+      "enabled": true
+    }
+  ]
+}

@@ -4,7 +4,7 @@ const { runMilestoneGraph, summarizeEffectiveHero, summarizeHero } = require("./
 const { scanResourceIntents } = require("./resource-intent-scanner");
 const { getTileDefinitionAt } = require("./state");
 
-const DEFAULT_ACTION_KINDS = ["battle", "pickup", "equip", "openDoor", "useTool", "changeFloor", "event"];
+const DEFAULT_ACTION_KINDS = ["battle", "pickup", "equip", "openDoor", "useTool", "changeFloor", "floorFly", "event"];
 
 function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -182,10 +182,10 @@ function scoreRepairAction(simulator, state, action, preview, failureClass) {
   const mdefDelta = statDelta(state, preview, "mdef");
   const equipmentGain = (afterHero.equipment || []).filter((itemId) => !(beforeHero.equipment || []).includes(itemId)).length;
   const damage = number(((action || {}).estimate || {}).damage, 0);
-  const kindBonus = action.kind === "pickup" ? 150000
+  const kindBonus = action.kind === "pickup" || action.kind === "interactPickup" ? 150000
     : action.kind === "equip" ? 140000
       : action.kind === "battle" ? 90000
-        : action.kind === "openDoor" || action.kind === "useTool" ? 30000
+        : action.kind === "openDoor" || action.kind === "useTool" || action.kind === "floorFly" ? 30000
           : 0;
   let statScore = 0;
   if (failureClass === "atk-deficit") statScore = atkDelta * 120000 + expDelta * 1000;

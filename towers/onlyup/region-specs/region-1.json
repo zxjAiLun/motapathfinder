@@ -1,0 +1,58 @@
+{
+  "id": "onlyup-region-1",
+  "tower": "onlyup",
+  "label": "Only Up Region 1: MT1~MT5 blueKing",
+  "projectRoot": "Only upV2.1/Only upV2.1",
+  "rank": "chaos",
+  "start": {
+    "type": "initial",
+    "floorId": "MT1"
+  },
+  "milestoneRoute": "onlyup-chaos-mt5-blueking",
+  "fromMilestoneId": null,
+  "toMilestoneId": "mt5-blueking-kill",
+  "scope": {
+    "floors": ["MT1", "MT2", "MT3", "MT4", "MT5"]
+  },
+  "actionPolicy": {
+    "actionKinds": ["battle", "pickup", "interactPickup", "equip", "openDoor", "useTool", "changeFloor", "floorFly", "event"]
+  },
+  "search": {
+    "algorithm": "segment-dp",
+    "dpKeyMode": "region",
+    "candidateLimit": 8,
+    "stopOnFirstGoal": false,
+    "dpBudget": {
+      "maxExpansions": 12000,
+      "maxRuntimeMs": 20000
+    }
+  },
+  "candidateLimit": 8,
+  "dpBudget": {
+    "maxExpansions": 12000,
+    "maxRuntimeMs": 20000
+  },
+  "resourceTimingPolicy": {
+    "mode": "defer-consumables-until-needed",
+    "hpPickupPolicy": "late-if-same-key",
+    "stopOnFirstGoalForTimingCriticalSegments": false,
+    "notes": [
+      "Do not spend high-value HP bottles before key atk/def/mdef pickups when the delayed route reaches the same abstract state.",
+      "Intermediate region candidates should keep HP skyline, not just the first passing goal."
+    ]
+  },
+  "expectedRegressionTraps": [
+    {
+      "id": "mt1-1559-vs-1558",
+      "description": "MT1 route must preserve the 1559 HP survival gate before fighting the 1558-damage skeleton."
+    },
+    {
+      "id": "mt2-three-monster-order",
+      "description": "MT2 local ordering must avoid the short-sighted three-step HP trap."
+    },
+    {
+      "id": "mt5-sustain-timing",
+      "description": "MT5 should delay sustain pickups until they unlock more efficient atk/def/mdef progression."
+    }
+  ]
+}

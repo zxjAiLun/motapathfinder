@@ -26,12 +26,14 @@ function validateDecision(decision) {
   assert(decision.fingerprint, `decision #${decision.index} missing fingerprint`);
   assert(decision.kind, `decision #${decision.index} missing kind`);
   assert(Array.isArray(decision.path), `decision #${decision.index} missing path array`);
-  if (["battle", "pickup", "openDoor", "changeFloor", "event"].includes(decision.kind)) {
+  if (["battle", "pickup", "interactPickup", "openDoor", "changeFloor", "event"].includes(decision.kind)) {
     assert(hasTarget(decision), `decision #${decision.index} missing target`);
   }
   if (decision.kind === "battle") assert(decision.enemyId, `decision #${decision.index} battle missing enemyId`);
   if (decision.kind === "pickup") assert(decision.itemId, `decision #${decision.index} pickup missing itemId`);
+  if (decision.kind === "interactPickup") assert(decision.itemId && decision.direction, `decision #${decision.index} interactPickup missing itemId/direction`);
   if (decision.kind === "useTool") assert(decision.tool, `decision #${decision.index} useTool missing tool`);
+  if (decision.kind === "floorFly") assert(decision.targetFloorId, `decision #${decision.index} floorFly missing targetFloorId`);
   if (decision.kind === "equip") assert(decision.equipId, `decision #${decision.index} equip missing equipId`);
 }
 

@@ -47,9 +47,28 @@ function makeSimulator(project, args) {
 }
 
 function findAction(simulator, state, summary) {
-  return (simulator.enumeratePrimitiveActions(state).actions || []).find((action) => action.summary === summary)
-    || simulator.enumerateActions(state).find((action) => action.summary === summary)
-    || null;
+  const actions = [];
+  try {
+    actions.push(...(simulator.enumeratePrimitiveActions(state).actions || []));
+  } catch (error) {
+  }
+  try {
+    actions.push(...(simulator.enumerateActions(state) || []));
+  } catch (error) {
+  }
+  try {
+    if (typeof simulator.enumerateInteractPickupActions === "function") {
+      actions.push(...(simulator.enumerateInteractPickupActions(state) || []));
+    }
+  } catch (error) {
+  }
+  try {
+    if (typeof simulator.enumerateFloorFlyActions === "function") {
+      actions.push(...(simulator.enumerateFloorFlyActions(state) || []));
+    }
+  } catch (error) {
+  }
+  return actions.find((action) => action.summary === summary) || null;
 }
 
 function replayRouteFile(simulator, routeFile, rank) {

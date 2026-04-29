@@ -1,0 +1,61 @@
+{
+  "id": "onlyup-region-2",
+  "tower": "onlyup",
+  "label": "Only Up Region 2: MT6~MT10 scaffold",
+  "projectRoot": "Only upV2.1/Only upV2.1",
+  "rank": "chaos",
+  "milestoneRoute": "onlyup-chaos-mt5-blueking",
+  "fromMilestoneId": "mt5-blueking-kill",
+  "toMilestoneId": "mt7-right-exp-crystal",
+  "start": {
+    "milestonePrefix": {
+      "routeName": "onlyup-chaos-mt5-blueking",
+      "toMilestoneId": "mt5-blueking-kill",
+      "candidateLimit": 4
+    }
+  },
+  "scope": {
+    "floors": ["MT6", "MT7", "MT8", "MT9", "MT10"]
+  },
+  "actionPolicy": {
+    "actionKinds": ["battle", "pickup", "interactPickup", "equip", "openDoor", "useTool", "changeFloor", "floorFly", "event"]
+  },
+  "search": {
+    "algorithm": "segment-dp",
+    "dpKeyMode": "region",
+    "candidateLimit": 6,
+    "stopOnFirstGoal": false,
+    "dpBudget": {
+      "maxExpansions": 10000,
+      "maxRuntimeMs": 20000
+    }
+  },
+  "candidateLimit": 6,
+  "dpBudget": {
+    "maxExpansions": 10000,
+    "maxRuntimeMs": 20000
+  },
+  "resourceTimingPolicy": {
+    "mode": "defer-consumables-until-needed",
+    "hpPickupPolicy": "late-if-same-key",
+    "pathBlockerPolicy": "clear-only-when-it-unlocks-resource-or-floor",
+    "notes": [
+      "MT6 7,7 weakWine should be collected with getNext/interactPickup or floor-fly timing to avoid unnecessary夹击 damage.",
+      "MT7 1,11 life-limit monster must be treated as a special battle effect, not a normal high-HP guard."
+    ]
+  },
+  "expectedRegressionTraps": [
+    {
+      "id": "mt6-getnext-weakwine",
+      "description": "Standing on MT6 6,7 can face-pick MT6 7,7 weakWine; route should not waste an extra夹击 step."
+    },
+    {
+      "id": "mt6-attack-before-center-guard",
+      "description": "MT6 side attack resources should be taken before central guard cleanup when they dominate same-key routes."
+    },
+    {
+      "id": "mt7-life-limit-monster",
+      "description": "MT7 1,11 special life-limit monster changes survivability and must appear in diagnostics."
+    }
+  ]
+}

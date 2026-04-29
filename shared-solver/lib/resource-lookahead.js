@@ -114,7 +114,8 @@ function isAllowedLookaheadAction(baseState, currentState, action, options) {
   if (action.kind === "resourcePocket") return options.includeResourcePocket === true;
   if (action.kind === "fightToLevelUp") return options.includeFightToLevelUp === true;
   if (action.kind === "event") return action.hasStateChange && !action.unsupported;
-  if (!["battle", "pickup", "equip", "openDoor", "useTool", "changeFloor"].includes(action.kind)) return false;
+  if (!["battle", "pickup", "interactPickup", "equip", "openDoor", "useTool", "changeFloor", "floorFly"].includes(action.kind)) return false;
+  if (action.kind === "floorFly") return options.allowForwardChangeFloor !== false || options.allowBackwardChangeFloor !== false;
   if (action.kind !== "changeFloor") return true;
   if (isForwardChangeFloor(currentState, action) && options.allowForwardChangeFloor === false) return false;
   if (isBackwardChangeFloor(currentState, action) && options.allowBackwardChangeFloor === false) return false;
@@ -194,7 +195,7 @@ function bestUnlockedFollowupScore(simulator, baseState, currentState, nextState
 
 function localActionScore(simulator, baseState, currentState, action, options) {
   let score = 0;
-  if (action.kind === "pickup") score += 90000;
+  if (action.kind === "pickup" || action.kind === "interactPickup") score += 90000;
   if (action.kind === "equip") score += 110000;
   if (action.kind === "openDoor" || action.kind === "useTool") score += 30000;
   if (action.kind === "changeFloor") {
@@ -202,6 +203,7 @@ function localActionScore(simulator, baseState, currentState, action, options) {
     else if (isBackwardChangeFloor(currentState, action)) score += 25000;
     else score += 15000;
   }
+  if (action.kind === "floorFly") score += 18000;
   if (action.kind === "battle") {
     const damage = Number((action.estimate || {}).damage || 0);
     const hp = Number((currentState.hero || {}).hp || 0);

@@ -32,7 +32,7 @@ function getNextFloorTargets(project, floorId) {
 function getActionEndpoint(action) {
   if (!action) return null;
   if (action.kind === "battle" || action.kind === "openDoor" || action.kind === "useTool") return action.target || null;
-  if (action.kind === "pickup" || action.kind === "changeFloor" || action.kind === "event") return { x: action.x, y: action.y };
+  if (action.kind === "pickup" || action.kind === "interactPickup" || action.kind === "changeFloor" || action.kind === "event") return { x: action.x, y: action.y };
   return null;
 }
 
@@ -319,8 +319,10 @@ function getStageActionScore(simulator, state, action, index, options) {
     }
   } else if (action.kind === "openDoor") {
     score += 28000;
-  } else if (action.kind === "pickup") {
+  } else if (action.kind === "pickup" || action.kind === "interactPickup") {
     score += 22000;
+  } else if (action.kind === "floorFly") {
+    score += 30000;
   } else if (action.kind === "useTool") {
     score += action.tool === "centerFly" ? 35000 : 26000;
   } else if (action.kind === "equip") {
@@ -342,7 +344,7 @@ function getStageActionScore(simulator, state, action, index, options) {
 
   if (rank.phase === "mt1-open-mt2" && action.kind === "battle") score += 8000;
   if (rank.phase === "mt2-resource-return-or-mt3" && (action.kind === "resourcePocket" || action.kind === "resourceChain" || action.kind === "resourceCluster" || action.kind === "fightToLevelUp")) score += 35000;
-  if (rank.phase === "mt3-mt5-local-forward" && (action.kind === "openDoor" || action.kind === "pickup")) score += 12000;
+  if (rank.phase === "mt3-mt5-local-forward" && (action.kind === "openDoor" || action.kind === "pickup" || action.kind === "interactPickup")) score += 12000;
   if ((action.path || []).length === 0) score += 500;
   return score;
 }

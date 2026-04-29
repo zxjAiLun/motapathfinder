@@ -28,10 +28,10 @@ function compactObject(object) {
 }
 
 function parseArgsSummary(summary) {
-  const match = /^(pickup|battle|openDoor):([^@]+)@([^:]+):(\d+),(\d+)$/.exec(summary || "");
+  const match = /^(pickup|battle|openDoor|getNext):([^@]+)@([^:]+):(\d+),(\d+)$/.exec(summary || "");
   if (!match) return null;
   return {
-    kind: match[1],
+    kind: match[1] === "getNext" ? "interactPickup" : match[1],
     id: match[2],
     floorId: match[3],
     x: Number(match[4]),
@@ -87,8 +87,9 @@ function normalizeAction(action) {
     tool: action.tool || null,
     equipId: action.equipId || null,
     equipType: action.equipType == null ? null : action.equipType,
+    targetFloorId: action.targetFloorId || null,
     enemyId: action.enemyId || (action.kind === "battle" && parsed ? parsed.id : null),
-    itemId: action.itemId || (action.kind === "pickup" && parsed ? parsed.id : null),
+    itemId: action.itemId || ((action.kind === "pickup" || action.kind === "interactPickup") && parsed ? parsed.id : null),
     doorId: action.doorId || (action.kind === "openDoor" && parsed ? parsed.id : null),
     event: action.kind === "event" ? {
       choicePath: Array.isArray(action.choicePath) ? action.choicePath.slice() : [],
@@ -119,9 +120,11 @@ function changeFloorDestination(action) {
 function fingerprintAction(action) {
   const floorId = action.floorId || (action.target && action.target.floorId) || (action.stance && action.stance.floorId) || "";
   if (action.kind === "pickup") return `pickup|${floorId}|${targetLoc(action)}|${action.itemId || ""}`;
+  if (action.kind === "interactPickup") return `interactPickup|${floorId}|${targetLoc(action)}|${action.itemId || ""}|${action.direction || ""}`;
   if (action.kind === "battle") return `battle|${floorId}|${targetLoc(action)}|${action.enemyId || ""}`;
   if (action.kind === "openDoor") return `openDoor|${floorId}|${targetLoc(action)}|${action.doorId || ""}`;
   if (action.kind === "useTool") return `useTool|${floorId}|${targetLoc(action)}|${action.tool || ""}`;
+  if (action.kind === "floorFly") return `floorFly|${floorId}|${action.targetFloorId || ""}|${(action.stance || {}).x ?? ""},${(action.stance || {}).y ?? ""}`;
   if (action.kind === "equip") return `equip|${action.equipId || ""}`;
   if (action.kind === "changeFloor") return `changeFloor|${floorId}|${targetLoc(action)}|${changeFloorDestination(action)}`;
   if (action.kind === "event") return `event|${floorId}|${targetLoc(action)}|${(((action.event || {}).choicePath) || []).join(".")}`;
@@ -172,11 +175,18 @@ function resolveSnapshotFloors(project, initialState, finalState, options) {
 function findActionBySummary(simulator, state, summary) {
   const action = simulator.enumerateActions(state).find((candidate) => candidate.summary === summary);
   if (action) return action;
+  const extraActions = [];
   if (typeof simulator.enumeratePrimitiveActions === "function") {
     const primitive = simulator.enumeratePrimitiveActions(state).actions || [];
-    return primitive.find((candidate) => candidate.summary === summary) || null;
+    extraActions.push(...primitive);
   }
-  return null;
+  if (typeof simulator.enumerateInteractPickupActions === "function") {
+    extraActions.push(...simulator.enumerateInteractPickupActions(state));
+  }
+  if (typeof simulator.enumerateFloorFlyActions === "function") {
+    extraActions.push(...simulator.enumerateFloorFlyActions(state));
+  }
+  return extraActions.find((candidate) => candidate.summary === summary) || null;
 }
 
 function actionFingerprintForPlanEntry(action) {
@@ -187,6 +197,7 @@ function actionFingerprintForPlanEntry(action) {
     return `battle|${floorId}|${target.x}|${target.y}|${action.enemyId || ""}`;
   }
   if (action.kind === "pickup") return `pickup|${floorId}|${action.x}|${action.y}|${action.itemId || ""}`;
+  if (action.kind === "interactPickup") return `interactPickup|${floorId}|${action.x}|${action.y}|${action.itemId || ""}|${action.direction || ""}`;
   if (action.kind === "openDoor") {
     const target = action.target || {};
     return `openDoor|${floorId}|${target.x}|${target.y}|${action.doorId || ""}`;
@@ -196,6 +207,7 @@ function actionFingerprintForPlanEntry(action) {
     return `useTool|${floorId}|${action.tool || ""}|${target.x ?? ""}|${target.y ?? ""}`;
   }
   if (action.kind === "equip") return `equip|${floorId}|${action.equipId || action.itemId || ""}`;
+  if (action.kind === "floorFly") return `floorFly|${floorId}|${action.targetFloorId || ""}|${((action.stance || {}).x) ?? ""},${((action.stance || {}).y) ?? ""}`;
   if (action.kind === "event") {
     const choicePath = Array.isArray(action.choicePath) ? action.choicePath.join(".") : "";
     return `event|${floorId}|${action.x}|${action.y}|${action.summary || ""}|${choicePath}`;
@@ -217,8 +229,10 @@ function hasStructuredActionFields(action) {
   if (!action || !action.kind) return false;
   if (action.kind === "equip") return Boolean(action.equipId);
   if (action.kind === "useTool") return Boolean(action.tool);
+  if (action.kind === "floorFly") return Boolean(action.targetFloorId);
   if (action.kind === "battle") return Boolean(action.target && action.target.x != null && action.target.y != null && action.enemyId);
   if (action.kind === "pickup") return Boolean(action.target && action.target.x != null && action.target.y != null && action.itemId);
+  if (action.kind === "interactPickup") return Boolean(action.target && action.target.x != null && action.target.y != null && action.itemId && action.direction);
   if (action.kind === "openDoor") return Boolean(action.target && action.target.x != null && action.target.y != null && action.doorId);
   if (action.kind === "changeFloor") return Boolean(action.target && action.target.x != null && action.target.y != null);
   if (action.kind === "event") return Boolean(action.target && action.target.x != null && action.target.y != null);

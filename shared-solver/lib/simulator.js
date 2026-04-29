@@ -74,7 +74,7 @@ function clusterCandidatePoint(action) {
 
 function isResourceClusterSignalAction(action, state) {
   if (!action) return false;
-  if (action.kind === "pickup" || action.kind === "equip") return true;
+  if (action.kind === "pickup" || action.kind === "interactPickup" || action.kind === "equip") return true;
   if (action.kind === "event") return action.hasStateChange === true;
   if (action.kind !== "battle") return false;
   const estimate = action.estimate || {};
@@ -159,6 +159,118 @@ function compareInventoryDominance(leftInventory, rightInventory) {
 
 function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function getProjectFlag(project, state, key, fallback) {
+  if (state && state.flags && Object.prototype.hasOwnProperty.call(state.flags, key)) return state.flags[key];
+  if (project && project.defaultFlags && Object.prototype.hasOwnProperty.call(project.defaultFlags, key)) return project.defaultFlags[key];
+  return fallback;
+}
+
+function cloneHeroLoc(state) {
+  const loc = ((state || {}).hero || {}).loc || {};
+  return {
+    x: Number(loc.x || 0),
+    y: Number(loc.y || 0),
+    direction: loc.direction || "down",
+  };
+}
+
+function recordLeaveLocation(state, targetFloorId, options) {
+  const config = options || {};
+  if (!state || !state.floorId || !state.hero) return;
+  if (config.isFlying && state.floorId === targetFloorId) return;
+  state.flags = state.flags || {};
+  state.flags.__leaveLoc__ = state.flags.__leaveLoc__ || {};
+  state.flags.__leaveLoc__[state.floorId] = cloneHeroLoc(state);
+}
+
+function findTilePositionById(project, state, floorId, tileId) {
+  const floor = project.floorsById[floorId];
+  if (!floor) return null;
+  for (let y = 0; y < floor.height; y += 1) {
+    for (let x = 0; x < floor.width; x += 1) {
+      const tile = getTileDefinitionAt(project, state, floorId, x, y);
+      if (tile && tile.id === tileId) return { x, y };
+    }
+  }
+  return null;
+}
+
+function hasEnemyLeft(project, state, enemyId) {
+  return Object.keys(project.floorsById || {}).some((floorId) => {
+    const floor = project.floorsById[floorId];
+    for (let y = 0; y < floor.height; y += 1) {
+      for (let x = 0; x < floor.width; x += 1) {
+        const tile = getTileDefinitionAt(project, state, floorId, x, y);
+        if (tile && tile.id === enemyId) return true;
+      }
+    }
+    return false;
+  });
+}
+
+function isNearChangeFloor(project, state) {
+  const floor = project.floorsById[state.floorId];
+  if (!floor) return false;
+  const loc = cloneHeroLoc(state);
+  if ((floor.changeFloor || {})[coordinateKey(loc.x, loc.y)]) return true;
+  return DIRECTIONS.some((direction) => {
+    const delta = DIRECTION_DELTAS[direction];
+    return Boolean((floor.changeFloor || {})[coordinateKey(loc.x + delta.x, loc.y + delta.y)]);
+  });
+}
+
+function canUseFloorFly(project, state, targetFloorId, options) {
+  const config = options || {};
+  if (getInventoryCount(state, "fly") <= 0) return false;
+  if (!project.floorsById[targetFloorId]) return false;
+  if (!state.visitedFloors || !state.visitedFloors[targetFloorId]) return false;
+  const fromFloor = project.floorsById[state.floorId];
+  const targetFloor = project.floorsById[targetFloorId];
+  if (!fromFloor || !targetFloor) return false;
+  if (fromFloor.canFlyFrom !== true || targetFloor.canFlyTo !== true) return false;
+  if (getProjectFlag(project, state, "flyNearStair", false) && !isNearChangeFloor(project, state)) return false;
+  const hasFlyBlocker = Object.prototype.hasOwnProperty.call(config, "hasFlyBlocker")
+    ? Boolean(config.hasFlyBlocker)
+    : hasEnemyLeft(project, state, "E1649");
+  if (hasFlyBlocker) return false;
+  return true;
+}
+
+function resolveFloorFlyTarget(project, state, targetFloorId) {
+  const floor = project.floorsById[targetFloorId];
+  const leaveLocs = (state.flags && state.flags.__leaveLoc__) || {};
+  const savedLoc = getProjectFlag(project, state, "flyRecordPosition", false) ? leaveLocs[targetFloorId] : null;
+  if (savedLoc && savedLoc.x != null && savedLoc.y != null) {
+    return {
+      floorId: targetFloorId,
+      x: Number(savedLoc.x),
+      y: Number(savedLoc.y),
+      direction: savedLoc.direction || cloneHeroLoc(state).direction,
+    };
+  }
+  if (Array.isArray(floor.flyPoint) && floor.flyPoint.length === 2) {
+    return {
+      floorId: targetFloorId,
+      x: Number(floor.flyPoint[0]),
+      y: Number(floor.flyPoint[1]),
+      direction: cloneHeroLoc(state).direction,
+    };
+  }
+
+  const fromIndex = project.floorOrder.indexOf(state.floorId);
+  const targetIndex = project.floorOrder.indexOf(targetFloorId);
+  const stairId = fromIndex === targetIndex && floor.underGround
+    ? "upFloor"
+    : fromIndex <= targetIndex ? "downFloor" : "upFloor";
+  const stair = findTilePositionById(project, state, targetFloorId, stairId) || cloneHeroLoc(state);
+  return {
+    floorId: targetFloorId,
+    x: Number(stair.x),
+    y: Number(stair.y),
+    direction: cloneHeroLoc(state).direction,
+  };
 }
 
 function findAdjacencyActions(project, reachability, predicate, buildAction) {
@@ -400,6 +512,36 @@ class StaticSimulator {
     return cloneState(value);
   }
 
+  enumerateInteractPickupActions(state, reachability) {
+    if (getProjectFlag(this.project, state, "enableGentleClick", true) === false) return [];
+    const scan = reachability || this.getWalkReachability(state);
+    const actionsByKey = new Map();
+    Object.values(scan.visited || {}).forEach((node) => {
+      DIRECTIONS.forEach((direction) => {
+        const delta = DIRECTION_DELTAS[direction];
+        const targetX = node.x + delta.x;
+        const targetY = node.y + delta.y;
+        const tile = getTileDefinitionAt(this.project, node.state, node.state.floorId, targetX, targetY);
+        if (!tile || tile.cls !== "items") return;
+        const action = {
+          kind: "interactPickup",
+          floorId: node.state.floorId,
+          stance: { x: node.x, y: node.y },
+          direction,
+          x: targetX,
+          y: targetY,
+          itemId: tile.id,
+          target: { x: targetX, y: targetY },
+          path: Array.isArray(node.path) ? node.path.slice() : [],
+          travelState: node.state,
+          summary: `getNext:${tile.id}@${node.state.floorId}:${targetX},${targetY}`,
+        };
+        keepShortestAction(actionsByKey, `${targetX},${targetY}:interactPickup:${action.summary}:${buildStateKey(node.state)}`, action);
+      });
+    });
+    return Array.from(actionsByKey.values());
+  }
+
   createInitialState(options) {
     const state = createInitialState(this.project, options);
     this.autoResolver.initializeFlags(state);
@@ -461,6 +603,34 @@ class StaticSimulator {
 
   requiresExactDominance(state) {
     return Boolean(state && this.unsafeDominanceFloors && this.unsafeDominanceFloors.has(state.floorId));
+  }
+
+  enumerateFloorFlyActions(state, reachability) {
+    const scan = reachability || this.getWalkReachability(state);
+    const actions = [];
+    const flyTargets = new Set();
+    Object.values(scan.visited || {}).forEach((node) => {
+      const hasFlyBlocker = hasEnemyLeft(this.project, node.state, "E1649");
+      Object.keys(node.state.visitedFloors || {}).forEach((targetFloorId) => {
+        if (!canUseFloorFly(this.project, node.state, targetFloorId, { hasFlyBlocker })) return;
+        const target = resolveFloorFlyTarget(this.project, node.state, targetFloorId);
+        const key = `${node.state.floorId}:${node.x},${node.y}->${targetFloorId}:${target.x},${target.y}`;
+        if (flyTargets.has(key)) return;
+        flyTargets.add(key);
+        actions.push({
+          kind: "floorFly",
+          tool: "fly",
+          floorId: node.state.floorId,
+          targetFloorId,
+          target,
+          stance: { x: node.x, y: node.y },
+          path: Array.isArray(node.path) ? node.path.slice() : [],
+          travelState: node.state,
+          summary: `floorFly:${targetFloorId}@${node.state.floorId}:${node.x},${node.y}`,
+        });
+      });
+    });
+    return actions;
   }
 
   enumeratePrimitiveActions(state) {
@@ -649,9 +819,9 @@ class StaticSimulator {
     const chainOptions = this.resourceChainOptions || {};
     const cache = this.actionExpansionCaches.resourceLookahead || createResourceLookaheadCache();
     const result = (actions || [])
-      .filter((action) => action.kind === "battle" || action.kind === "equip" || action.kind === "changeFloor")
+      .filter((action) => action.kind === "battle" || action.kind === "equip" || action.kind === "pickup" || action.kind === "interactPickup" || action.kind === "changeFloor" || action.kind === "floorFly")
       .map((action) => {
-        const startsWithFloorChange = action.kind === "changeFloor";
+        const startsWithFloorChange = action.kind === "changeFloor" || action.kind === "floorFly";
         const lookaheadDefaults = startsWithFloorChange
           ? { maxDepth: 11, maxNodes: 140, branchLimit: 8, frontierLimit: 32 }
           : { maxDepth: 9, maxNodes: 48, branchLimit: 6, frontierLimit: 16 };
@@ -723,7 +893,7 @@ class StaticSimulator {
 
   isResourceClusterCandidateAction(state, action) {
     if (!action) return false;
-    if (!["battle", "pickup", "equip", "event", "openDoor", "useTool"].includes(action.kind)) return false;
+    if (!["battle", "pickup", "interactPickup", "equip", "event", "openDoor", "useTool"].includes(action.kind)) return false;
     if (action.unsupported) return false;
     if (action.floorId && action.floorId !== state.floorId) return false;
     if (action.kind === "event" && action.hasStateChange !== true) return false;
@@ -819,6 +989,7 @@ class StaticSimulator {
       .filter((action) => action && (
         action.kind === "battle" ||
         action.kind === "pickup" ||
+        action.kind === "interactPickup" ||
         action.kind === "equip" ||
         action.kind === "event" ||
         action.kind === "openDoor" ||
@@ -880,6 +1051,7 @@ class StaticSimulator {
       action.kind === "openDoor" ||
       action.kind === "useTool" ||
       action.kind === "pickup" ||
+      action.kind === "interactPickup" ||
       action.kind === "equip" ||
       (action.kind === "event" && action.hasStateChange)
     );
@@ -980,7 +1152,7 @@ class StaticSimulator {
     if (this.isLargeResourceDelta(stepDelta)) score += 90000;
     if (action.kind === "openDoor") score += 30000;
     if (action.kind === "useTool") score += 22000;
-    if (action.kind === "pickup") score += 26000;
+    if (action.kind === "pickup" || action.kind === "interactPickup") score += 26000;
     if (action.kind === "equip") score += 18000;
     if (action.kind === "event") score += action.unsupported ? -100000 : (action.hasStateChange ? 38000 : -5000);
     if (action.kind === "battle") {
@@ -992,7 +1164,7 @@ class StaticSimulator {
 
   rankPocketActionForPreview(state, action) {
     if (!this.isPocketPrimitiveAction(action)) return Number.NEGATIVE_INFINITY;
-    if (action.kind === "pickup") return 70000;
+    if (action.kind === "pickup" || action.kind === "interactPickup") return 70000;
     if (action.kind === "equip") return 60000;
     if (action.kind === "event") return action.unsupported || !action.hasStateChange ? Number.NEGATIVE_INFINITY : 56000;
     if (action.kind === "openDoor") return 50000;
@@ -1058,6 +1230,9 @@ class StaticSimulator {
     if (action.kind === "pickup") {
       return `pickup|${floorId}|${action.x}|${action.y}|${action.itemId || ""}`;
     }
+    if (action.kind === "interactPickup") {
+      return `interactPickup|${floorId}|${action.x}|${action.y}|${action.itemId || ""}|${action.direction || ""}`;
+    }
     if (action.kind === "openDoor") {
       const target = action.target || {};
       return `openDoor|${floorId}|${target.x}|${target.y}|${action.doorId || ""}`;
@@ -1068,6 +1243,10 @@ class StaticSimulator {
     }
     if (action.kind === "equip") {
       return `equip|${floorId}|${action.equipId || action.itemId || ""}`;
+    }
+    if (action.kind === "floorFly") {
+      const stance = action.stance || {};
+      return `floorFly|${floorId}|${action.targetFloorId || ""}|${stance.x ?? ""},${stance.y ?? ""}`;
     }
     if (action.kind === "event") {
       const choicePath = Array.isArray(action.choicePath) ? action.choicePath.join(".") : "";
@@ -1115,6 +1294,8 @@ class StaticSimulator {
     if (action.itemId) entry.itemId = action.itemId;
     if (action.equipId) entry.equipId = action.equipId;
     if (action.tool) entry.tool = action.tool;
+    if (action.direction) entry.direction = action.direction;
+    if (action.targetFloorId) entry.targetFloorId = action.targetFloorId;
     return entry;
   }
 
@@ -1246,7 +1427,7 @@ class StaticSimulator {
 
     (actions || []).forEach((action) => {
       const cls = this.classifyPocketAction(currentState, action);
-      if (action.kind === "pickup" || action.kind === "equip") buckets.item.push(action);
+      if (action.kind === "pickup" || action.kind === "interactPickup" || action.kind === "equip") buckets.item.push(action);
       else if (action.kind === "openDoor" || action.kind === "useTool" || action.kind === "event") buckets.doorToolEvent.push(action);
       else if (action.kind === "battle" && cls.lowDamage) buckets.lowDamageBattle.push(action);
       else if (action.kind === "battle" && cls.closesLevel) buckets.levelBattle.push(action);
@@ -1797,7 +1978,9 @@ class StaticSimulator {
     const nonRareActions = actions.filter((action) => !this.isRareDoorAction(state, action));
     const hasUsefulAlternative = nonRareActions.some((action) => (
       action.kind === "changeFloor" ||
+      action.kind === "floorFly" ||
       action.kind === "pickup" ||
+      action.kind === "interactPickup" ||
       action.kind === "battle" ||
       action.kind === "resourcePocket" ||
       action.kind === "fightToLevelUp" ||
@@ -1860,6 +2043,8 @@ class StaticSimulator {
         if ((action.path || []).length === 0) priority += 40;
         return priority;
       }
+      case "floorFly":
+        return 760;
       case "battle": {
         const damage = Number(action.estimate && action.estimate.damage || 0);
         const preferredChange = frontierFeatures ? frontierFeatures.preferredChangeFloor : null;
@@ -1909,6 +2094,7 @@ class StaticSimulator {
       case "event":
         return action.unsupported ? 10 : (action.hasStateChange ? 360 : 40);
       case "pickup":
+      case "interactPickup":
         return 200;
       default:
         return 0;
@@ -1941,7 +2127,7 @@ class StaticSimulator {
         action.direction
       );
     }
-    if (action.travelState && action.direction && (action.kind === "battle" || action.kind === "openDoor" || action.kind === "useTool")) {
+    if (action.travelState && action.direction && (action.kind === "battle" || action.kind === "openDoor" || action.kind === "useTool" || action.kind === "interactPickup")) {
       nextState.hero.loc.direction = action.direction;
     }
 
@@ -1949,8 +2135,14 @@ class StaticSimulator {
       case "pickup":
         nextState = this.applyPickupAction(nextState, action);
         break;
+      case "interactPickup":
+        nextState = this.applyInteractPickupAction(nextState, action);
+        break;
       case "changeFloor":
         nextState = this.applyChangeFloorAction(nextState, action);
+        break;
+      case "floorFly":
+        nextState = this.applyFloorFlyAction(nextState, action);
         break;
       case "openDoor":
         this.applyDoorAction(nextState, action);
@@ -2068,9 +2260,16 @@ class StaticSimulator {
     });
   }
 
+  applyInteractPickupAction(state, action) {
+    if (action.direction) state.hero.loc.direction = action.direction;
+    this.resolvePickupAt(state, action.x, action.y);
+    return state;
+  }
+
   applyChangeFloorAction(state, action) {
     const applyTransition = (nextState) => {
       const target = resolveChangeFloorTarget(this.project, nextState, action.changeFloor);
+      recordLeaveLocation(nextState, target.floorId, { isFlying: false });
       nextState.floorId = target.floorId;
       nextState.hero.loc.x = target.x;
       nextState.hero.loc.y = target.y;
@@ -2087,6 +2286,22 @@ class StaticSimulator {
     return this.stepIntoEndpoint(state, action, {
       afterHazards: applyTransition,
     });
+  }
+
+  applyFloorFlyAction(state, action) {
+    const targetFloorId = action.targetFloorId || (action.target && action.target.floorId);
+    if (!targetFloorId) throw new Error(`Missing floorFly target: ${action.summary || "floorFly"}`);
+    if (!canUseFloorFly(this.project, state, targetFloorId)) {
+      throw new Error(`Cannot fly from ${state.floorId} to ${targetFloorId}`);
+    }
+    const target = resolveFloorFlyTarget(this.project, state, targetFloorId);
+    recordLeaveLocation(state, target.floorId, { isFlying: true });
+    state.floorId = target.floorId;
+    state.hero.loc.x = target.x;
+    state.hero.loc.y = target.y;
+    state.hero.loc.direction = target.direction || state.hero.loc.direction || "down";
+    applyFloorArrival(this.project, state, state.floorId, { choiceResolver: this.choiceResolver });
+    return state;
   }
 
   applyDoorAction(state, action) {

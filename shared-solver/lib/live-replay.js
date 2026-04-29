@@ -556,12 +556,17 @@ async function executeRuntimeDecision(page, action, options) {
     targetX: getTargetX(action),
     targetY: getTargetY(action),
     tool: action.tool || null,
+    targetFloorId: action.targetFloorId || null,
   };
 
   if (runtimeAction.kind === "battle") {
     if (runtimeAction.targetX == null || runtimeAction.targetY == null) throw new Error(`Battle action missing target coordinates: ${label}`);
   } else if (runtimeAction.kind === "useTool") {
     if (!runtimeAction.tool) throw new Error(`Tool action missing tool: ${label}`);
+  } else if (runtimeAction.kind === "interactPickup") {
+    if (!runtimeAction.direction) throw new Error(`interactPickup action missing direction: ${label}`);
+  } else if (runtimeAction.kind === "floorFly") {
+    if (!runtimeAction.targetFloorId) throw new Error(`floorFly action missing target floor: ${label}`);
   } else if (!runtimeAction.direction) {
     throw new Error(`Runtime driver cannot execute action: ${label}`);
   }
@@ -577,6 +582,15 @@ async function executeRuntimeDecision(page, action, options) {
       if (step.kind === "useTool") {
         if (step.direction) core.setHeroLoc("direction", step.direction);
         core.useItem(step.tool, true, function () { resolve(true); });
+        return;
+      }
+      if (step.kind === "interactPickup") {
+        core.setHeroLoc("direction", step.direction);
+        resolve(core.getNextItem(false) !== false);
+        return;
+      }
+      if (step.kind === "floorFly") {
+        if (!core.flyTo(step.targetFloorId, function () { resolve(true); })) resolve(false);
         return;
       }
       core.moveHero(step.direction, function () { resolve(true); });

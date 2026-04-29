@@ -33,6 +33,13 @@ function makeContext(options) {
     autoBattleEnabled: true,
     enableFightToLevelUp: true,
     enableResourcePocket: true,
+    resourcePocketSearchOptions: {
+      maxDepth: 4,
+      maxNodes: 20,
+      branchLimit: 5,
+      frontierLimit: 8,
+      resultLimit: 3,
+    },
   });
   return {
     project,
@@ -264,6 +271,45 @@ function checkAddPointMatrix() {
   });
 }
 
+function checkHpDependentBattleCache() {
+  const { project, battleResolver, initialState } = makeContext();
+  const sample = findEnemyTiles(project, (enemy, tile) => tile.id === "poisonZombie" && hasSpecial(enemy.special, 80))[0];
+  assert(sample, "expected a poisonZombie special-80 enemy sample");
+  const lowHpState = makeFloorState(initialState, sample.floorId, {
+    hp: 300000,
+    atk: 5767,
+    def: 5535,
+    mdef: 30010,
+    lv: 9,
+    exp: 1855,
+  });
+  const highHpState = cloneState(lowHpState);
+  highHpState.hero.hp = 10000000;
+
+  const lowHpBattle = battleResolver.evaluateBattle(lowHpState, sample.floorId, sample.x, sample.y, sample.id);
+  const highHpBattle = battleResolver.evaluateBattle(highHpState, sample.floorId, sample.x, sample.y, sample.id);
+  const lowHpRepeat = battleResolver.evaluateBattle(lowHpState, sample.floorId, sample.x, sample.y, sample.id);
+
+  assert(lowHpBattle.damageInfo && lowHpBattle.damageInfo.damage != null, "low-HP special-80 battle should have damage");
+  assert(highHpBattle.damageInfo && highHpBattle.damageInfo.damage != null, "high-HP special-80 battle should have damage");
+  assert(
+    Number(lowHpBattle.damageInfo.damage) > Number(highHpBattle.damageInfo.damage),
+    "special-80 damage must depend on current hero HP and must not reuse a cached low-HP estimate"
+  );
+  assert.strictEqual(
+    Number(lowHpRepeat.damageInfo.damage),
+    Number(lowHpBattle.damageInfo.damage),
+    "same-HP special-80 battle should still be cache-stable"
+  );
+
+  return {
+    sample,
+    lowHpDamage: lowHpBattle.damageInfo.damage,
+    highHpDamage: highHpBattle.damageInfo.damage,
+    repeatedLowHpDamage: lowHpRepeat.damageInfo.damage,
+  };
+}
+
 function checkMacroActionMatrix() {
   const { simulator, initialState } = makeContext();
   const actions = simulator.enumerateActions(initialState);
@@ -348,12 +394,26 @@ function checkAutoPickupDoesNotCrossHazardTransit() {
   assert.strictEqual(getTileDefinitionAt(project, preview, floor.floorId, 4, 1), null, "explicit pickup should collect item behind hazard");
   assert(Number(((preview.meta || {}).hazardStats || {}).betweenAttack || 0) > 0, "explicit pickup should charge between-attack transit damage");
 
+  const gentleState = cloneState(state);
+  gentleState.hero.loc = { x: 3, y: 1, direction: "right" };
+  const interactPickup = simulator.enumerateInteractPickupActions(gentleState).find((action) =>
+    action.kind === "interactPickup" && action.x === 4 && action.y === 1
+  );
+  assert(interactPickup, "getNext interact pickup should be available for adjacent item");
+  const gentlePreview = simulator.applyAction(gentleState, interactPickup);
+  assert.strictEqual(getTileDefinitionAt(project, gentlePreview, floor.floorId, 4, 1), null, "getNext should collect adjacent item");
+  assert.strictEqual(gentlePreview.hero.loc.x, 3, "getNext should not step onto item x");
+  assert.strictEqual(gentlePreview.hero.loc.y, 1, "getNext should not step onto item y");
+  assert.strictEqual(Number((((gentlePreview.meta || {}).hazardStats || {}).betweenAttack) || 0), 0, "getNext should not charge landing between-attack");
+
   return {
     floorId: floor.floorId,
     transitHazard: hazards.damage["3,1"],
     autoPicked: ["2,1"],
     explicitPickupPath: pickup.path,
     hazardStats: preview.meta.hazardStats,
+    interactPickup: interactPickup.summary,
+    interactHazardStats: gentlePreview.meta.hazardStats || null,
   };
 }
 
@@ -438,6 +498,7 @@ function main() {
     repulseMove: checkRepulseMoveMatrix(),
     guardBattle: checkGuardBattleMatrix(),
     addPoint: checkAddPointMatrix(),
+    hpDependentBattleCache: checkHpDependentBattleCache(),
     macroActionsAndStageProfile: checkMacroActionMatrix(),
     autoPickupHazardTransit: checkAutoPickupDoesNotCrossHazardTransit(),
     confluenceCliOptions: checkConfluenceCliOptions(),

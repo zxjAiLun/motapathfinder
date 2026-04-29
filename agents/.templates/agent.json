@@ -1,0 +1,27 @@
+{
+  "name": "example-agent",
+  "model": "replace-with-model-name",
+  "publicApi": "../../shared-solver/public",
+  "command": [
+    "{node}",
+    "{repoRoot}/shared-solver/run-region-dp.js",
+    "--project-root={projectRoot}",
+    "--region-spec={regionSpec}",
+    "--out={route}",
+    "--metrics={metrics}",
+    "--diagnostics={diagnostics}"
+  ],
+  "allowedWriteRoots": [
+    "agents/<agent>/runs",
+    "runs",
+    "routes/generated",
+    "logs/generated",
+    "benchmarks/results"
+  ],
+  "requiredOutputs": [
+    "route.json",
+    "metrics.json",
+    "diagnostics.json",
+    "agent-report.md"
+  ]
+}

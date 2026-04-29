@@ -23,6 +23,7 @@ function nowMs() {
 function actionType(action) {
   if (!action) return "unknown";
   if (action.kind === "changeFloor") return "changeFloor";
+  if (action.kind === "floorFly") return "floorFly";
   if (action.kind === "useTool" && action.tool === "centerFly") return "centerFly";
   if (action.kind === "openDoor") return "door";
   if (action.kind === "battle") return "monster";
@@ -31,7 +32,7 @@ function actionType(action) {
   if (action.kind === "resourceChain") return "resourceChain";
   if (action.kind === "resourceCluster") return "resourceCluster";
   if (action.kind === "event") return action.unsupported ? "unsupportedEvent" : "event";
-  if (action.kind === "pickup") return "item";
+  if (action.kind === "pickup" || action.kind === "interactPickup") return "item";
   if (action.kind === "useTool") return "tool";
   return action.kind || "misc";
 }
@@ -39,7 +40,7 @@ function actionType(action) {
 function actionRole(action) {
   if (!action) return "unknown";
   if (isProgressAction(action)) return "progress";
-  if (action.kind === "pickup") return "resource";
+  if (action.kind === "pickup" || action.kind === "interactPickup") return "resource";
   if (action.kind === "resourcePocket") return "resource";
   if (action.kind === "resourceChain") return "resource";
   if (action.kind === "resourceCluster") return "resource";
@@ -53,7 +54,7 @@ function actionRole(action) {
 }
 
 function isProgressAction(action) {
-  return actionType(action) === "changeFloor" || actionType(action) === "centerFly";
+  return actionType(action) === "changeFloor" || actionType(action) === "floorFly" || actionType(action) === "centerFly";
 }
 
 function ensureActionStats(stats, type) {
@@ -126,6 +127,7 @@ function compactAction(action, project) {
     compact.y = action.y;
   }
   if (action.target) compact.target = action.target;
+  if (action.targetFloorId) compact.targetFloorId = action.targetFloorId;
   if (action.changeFloor) compact.changeFloor = action.changeFloor;
   if (project) compact.label = formatActionLabel(project, action);
   if (action.tool) compact.tool = action.tool;

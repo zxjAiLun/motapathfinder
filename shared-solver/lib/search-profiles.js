@@ -29,7 +29,7 @@ function getActionEndpoint(action) {
   if (action.kind === "battle" || action.kind === "openDoor" || action.kind === "useTool") {
     return action.target || null;
   }
-  if (action.kind === "pickup" || action.kind === "changeFloor" || action.kind === "event") {
+  if (action.kind === "pickup" || action.kind === "interactPickup" || action.kind === "changeFloor" || action.kind === "event") {
     return { x: action.x, y: action.y };
   }
   return null;
@@ -254,7 +254,7 @@ function getStageActionScore(simulator, state, action, index) {
     score += 5600;
   } else if (action.kind === "equip") {
     score += 5000;
-  } else if (action.kind === "pickup") {
+  } else if (action.kind === "pickup" || action.kind === "interactPickup") {
     score += 4200;
   }
 
@@ -345,8 +345,10 @@ function getResourcePrepActionScore(simulator, state, action, index) {
   } else if (action.kind === "resourcePocket" || action.kind === "resourceCluster") {
     score += 50000;
     score += Math.min(20000, Number((action.estimate || {}).score || 0));
-  } else if (action.kind === "pickup") {
+  } else if (action.kind === "pickup" || action.kind === "interactPickup") {
     score += 12000;
+  } else if (action.kind === "floorFly") {
+    score += 9000;
   } else if (action.kind === "changeFloor") {
     const targetFloorId = action.changeFloor && action.changeFloor.floorId;
     if (targetFloorId === ":before") score -= 4000;
@@ -398,11 +400,11 @@ function compareCanonicalBfsStates(left, right) {
 
 function canonicalActionPriority(action) {
   if (!action) return 99;
-  if (action.kind === "pickup" || action.kind === "equip") return 0;
+  if (action.kind === "pickup" || action.kind === "interactPickup" || action.kind === "equip") return 0;
   if (action.kind === "battle") return 1;
   if (action.kind === "openDoor" || action.kind === "useTool") return 2;
   if (action.kind === "event") return 3;
-  if (action.kind === "changeFloor") return 4;
+  if (action.kind === "changeFloor" || action.kind === "floorFly") return 4;
   if (action.kind === "fightToLevelUp") return 5;
   if (action.kind === "resourcePocket" || action.kind === "resourceChain" || action.kind === "resourceCluster") return 6;
   return 50;

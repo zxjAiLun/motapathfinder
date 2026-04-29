@@ -175,6 +175,66 @@ function checkMt5ThirdGateToBlueKing(simulator) {
     assert.ok(route.includes(summary), `MT5 route should include ${summary}`);
   }
   assertNoMacroRoute(final, "MT5 segment graph");
+  const mt6Result = runMilestoneGraph(simulator, final, spec, {
+    fromMilestoneId: "mt5-blueking-kill",
+    toMilestoneId: "mt6-upper-right-blueking",
+    candidateLimit: 4,
+    maxRuntimeMs: 15000,
+  });
+  assert.equal(mt6Result.found, true, `MT6 getNext segment should pass: ${JSON.stringify(mt6Result.failedSegment || null)}`);
+  const mt6Final = mt6Result.finalCandidate && mt6Result.finalCandidate.state;
+  assert.ok(mt6Final, "MT6 getNext segment should return a final candidate");
+  assert.ok((mt6Final.route || []).includes("getNext:weakWine@MT6:7,7"), "MT6 route should use getNext for the 7,7 weakWine pickup");
+  assert.ok(!(mt6Final.route || []).includes("pickup:weakWine@MT6:7,7"), "MT6 route should not step onto the 7,7 weakWine tile");
+  assertNoMacroRoute(mt6Final, "MT6 getNext segment graph");
+  const mt7Result = runMilestoneGraph(simulator, final, spec, {
+    fromMilestoneId: "mt5-blueking-kill",
+    toMilestoneId: "mt7-entry-after-mt6-sweep",
+    candidateLimit: 4,
+    maxRuntimeMs: 20000,
+  });
+  assert.equal(mt7Result.found, true, `MT6->MT7 segment graph should pass: ${JSON.stringify(mt7Result.failedSegment || null)}`);
+  const mt7Final = mt7Result.finalCandidate && mt7Result.finalCandidate.state;
+  assert.ok(mt7Final, "MT6->MT7 segment graph should return a final candidate");
+  const mt7Route = mt7Final.route || [];
+  const getNextIndex = mt7Route.indexOf("getNext:weakWine@MT6:7,7");
+  const leftAttackIndex = mt7Route.indexOf("battle:whiteHornSlime@MT6:1,11");
+  const rightAttackIndex = mt7Route.indexOf("battle:whiteHornSlime@MT6:10,8");
+  const centerGuardIndex = mt7Route.indexOf("battle:silverSlime@MT6:6,6");
+  assert.ok(getNextIndex >= 0, "MT6->MT7 route should include explicit 7,7 getNext");
+  assert.ok(leftAttackIndex > getNextIndex, "MT6->MT7 route should take 1,11 attack resource after getNext");
+  assert.ok(rightAttackIndex > getNextIndex, "MT6->MT7 route should take 10,8 attack resource after getNext");
+  assert.ok(centerGuardIndex > leftAttackIndex && centerGuardIndex > rightAttackIndex, "MT6->MT7 route should delay 6,6 center guard until after both attack resources");
+  assert.equal(mt7Route[mt7Route.length - 1], "changeFloor@MT6:6,12", "MT7 entry route should stop at the MT7 staircase instead of consuming MT7 fights");
+  assert.ok(!mt7Route.some((summary) => /^battle:[^@]+@MT7:/.test(String(summary))), "MT7 entry segment should not include MT7 battles");
+  assertNoMacroRoute(mt7Final, "MT6->MT7 segment graph");
+  const mt7RightExpResult = runMilestoneGraph(simulator, final, spec, {
+    fromMilestoneId: "mt5-blueking-kill",
+    toMilestoneId: "mt7-right-exp-crystal",
+    candidateLimit: 4,
+    maxRuntimeMs: 22000,
+  });
+  assert.equal(mt7RightExpResult.found, true, `MT6->MT7 right exp crystal graph should pass: ${JSON.stringify(mt7RightExpResult.failedSegment || null)}`);
+  const mt7RightExpFinal = mt7RightExpResult.finalCandidate && mt7RightExpResult.finalCandidate.state;
+  assert.ok(mt7RightExpFinal, "MT6->MT7 right exp crystal graph should return a final candidate");
+  assert.equal(mt7RightExpFinal.floorId, "MT7");
+  assert.ok(mt7RightExpFinal.hero.hp >= 298478, `expected MT7 right exp hp >= 298478, got ${mt7RightExpFinal.hero.hp}`);
+  assert.ok(mt7RightExpFinal.hero.def >= 5535, `expected MT7 right exp def >= 5535, got ${mt7RightExpFinal.hero.def}`);
+  assert.ok(mt7RightExpFinal.hero.exp >= 1855, `expected MT7 right exp exp >= 1855, got ${mt7RightExpFinal.hero.exp}`);
+  const mt7RightExpRoute = mt7RightExpFinal.route || [];
+  const mt6DefenseIndex = mt7RightExpRoute.indexOf("battle:evilFairy@MT6:2,1");
+  const mt6SilverIndex = mt7RightExpRoute.indexOf("battle:silverSlime@MT6:9,10");
+  const mt6PriestIndex = mt7RightExpRoute.indexOf("battle:yellowPriest@MT6:11,11");
+  const mt7LeftFairyIndex = mt7RightExpRoute.indexOf("battle:evilFairy@MT7:4,11");
+  const mt7RightFairyIndex = mt7RightExpRoute.indexOf("battle:evilFairy@MT7:8,11");
+  const mt7PriestIndex = mt7RightExpRoute.indexOf("battle:yellowPriest@MT7:11,11");
+  assert.ok(mt6DefenseIndex >= 0, "MT7 route should return to MT6 and clear 2,1 defense resource");
+  assert.ok(mt6SilverIndex > mt6DefenseIndex, "MT7 route should clear MT6 9,10 after MT6 2,1 defense resource");
+  assert.ok(mt6PriestIndex > mt6SilverIndex, "MT7 route should clear MT6 11,11 after MT6 9,10 sustain pickup");
+  assert.ok(mt7LeftFairyIndex > mt6PriestIndex, "MT7 route should delay MT7 left fairy until after MT6 right crystal sweep");
+  assert.ok(mt7RightFairyIndex > mt6PriestIndex, "MT7 route should delay MT7 right fairy until after MT6 right crystal sweep");
+  assert.ok(mt7PriestIndex > mt7LeftFairyIndex && mt7PriestIndex > mt7RightFairyIndex, "MT7 route should clear both bottom fairies before MT7 11,11 crystal guard");
+  assertNoMacroRoute(mt7RightExpFinal, "MT6->MT7 right exp crystal graph");
   return {
     reachedMilestone: result.reachedMilestone,
     completedSegments,
@@ -183,6 +243,31 @@ function checkMt5ThirdGateToBlueKing(simulator) {
     def: final.hero.def,
     mdef: final.hero.mdef,
     routeLength: (result.finalCandidate.route || []).length,
+    mt6GetNext: {
+      reachedMilestone: mt6Result.reachedMilestone,
+      hp: mt6Final.hero.hp,
+      atk: mt6Final.hero.atk,
+      def: mt6Final.hero.def,
+      mdef: mt6Final.hero.mdef,
+      routeLength: (mt6Result.finalCandidate.route || []).length,
+    },
+    mt7Entry: {
+      reachedMilestone: mt7Result.reachedMilestone,
+      hp: mt7Final.hero.hp,
+      atk: mt7Final.hero.atk,
+      def: mt7Final.hero.def,
+      mdef: mt7Final.hero.mdef,
+      routeLength: (mt7Result.finalCandidate.route || []).length,
+    },
+    mt7RightExp: {
+      reachedMilestone: mt7RightExpResult.reachedMilestone,
+      hp: mt7RightExpFinal.hero.hp,
+      atk: mt7RightExpFinal.hero.atk,
+      def: mt7RightExpFinal.hero.def,
+      mdef: mt7RightExpFinal.hero.mdef,
+      exp: mt7RightExpFinal.hero.exp,
+      routeLength: (mt7RightExpResult.finalCandidate.route || []).length,
+    },
   };
 }
 
