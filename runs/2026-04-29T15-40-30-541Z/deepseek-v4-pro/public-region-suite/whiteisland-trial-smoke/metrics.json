@@ -1,0 +1,36 @@
+{
+  "taskId": "whiteisland-trial-smoke",
+  "found": true,
+  "liveVerified": false,
+  "proofLevel": "candidate",
+  "completeWithinActionSet": false,
+  "proofClaim": {
+    "found": true,
+    "proofLevel": "candidate",
+    "completeWithinActionSet": false,
+    "actionTrimmed": 0,
+    "stoppedReasons": [
+      "time-limit"
+    ],
+    "expansionBudgetExhausted": false,
+    "expansionBudgetExhaustedSegments": [],
+    "stopOnFirstGoalSegments": [],
+    "unsafeStopOnFirstGoal": false,
+    "unsafeStopOnFirstGoalSegments": [],
+    "notes": [
+      "stoppedReason present: time-limit"
+    ]
+  },
+  "expansions": 39,
+  "wallMs": 4295,
+  "final": {
+    "floorId": "A1",
+    "hp": 675,
+    "atk": 2,
+    "def": 2,
+    "mdef": 20,
+    "exp": 6
+  },
+  "routeLength": 9,
+  "illegalWrites": 0
+}

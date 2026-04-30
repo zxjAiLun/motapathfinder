@@ -1,0 +1,30 @@
+{
+  "name": "deepseek-v4-pro",
+  "model": "deepseek-v4-pro",
+  "publicApi": "../../shared-solver/public",
+  "command": [
+    "{node}",
+    "{repoRoot}/agents/deepseek-v4-pro/src/solve.js",
+    "--task-id={taskId}",
+    "--project-root={projectRoot}",
+    "--region-spec={regionSpec}",
+    "--run-dir={runDir}",
+    "--out={route}",
+    "--metrics={metrics}",
+    "--diagnostics={diagnostics}",
+    "--report={report}"
+  ],
+  "allowedWriteRoots": [
+    "agents/deepseek-v4-pro/runs",
+    "runs",
+    "routes/generated",
+    "logs/generated",
+    "benchmarks/results"
+  ],
+  "requiredOutputs": [
+    "route.json",
+    "metrics.json",
+    "diagnostics.json",
+    "agent-report.md"
+  ]
+}

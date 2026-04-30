@@ -29,6 +29,7 @@ function normalizeActionEntry(action) {
     tool: action.tool || null,
     equipId: action.equipId || null,
     equipType: action.equipType == null ? null : action.equipType,
+    targetFloorId: action.targetFloorId || null,
     enemyId: action.enemyId || null,
     itemId: action.itemId || null,
     doorId: action.doorId || null,
@@ -80,6 +81,24 @@ function reconstructActionEntries(nodes, goalNodeOrId) {
     .filter(Boolean);
 }
 
+function reconstructActionTrace(nodes, goalNodeOrId) {
+  const chain = reconstructNodeChain(nodes, goalNodeOrId);
+  const trace = [];
+  for (let index = 1; index < chain.length; index += 1) {
+    const node = chain[index];
+    if (!node || !node.actionEntry) continue;
+    const parent = nodes.get(node.parentId);
+    trace.push({
+      actionEntry: node.actionEntry,
+      preState: parent && parent.state,
+      preStateKey: parent && parent.stateKey,
+      postState: node.state,
+      postStateKey: node.stateKey,
+    });
+  }
+  return trace;
+}
+
 function attachRouteToState(nodes, nodeOrId) {
   const node = typeof nodeOrId === "object" ? nodeOrId : nodes.get(nodeOrId);
   if (!node || !node.state) return null;
@@ -93,6 +112,7 @@ module.exports = {
   createRootNode,
   normalizeActionEntry,
   reconstructActionEntries,
+  reconstructActionTrace,
   reconstructNodeChain,
   reconstructRoute,
 };

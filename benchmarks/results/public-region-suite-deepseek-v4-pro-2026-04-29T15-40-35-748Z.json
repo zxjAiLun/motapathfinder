@@ -1,0 +1,278 @@
+{
+  "kind": "agent-benchmark",
+  "leaderboard": "agent-from-scratch",
+  "evaluationDimensions": [
+    "solvingAbility",
+    "proofAwareness",
+    "generalization",
+    "engineeringDiscipline",
+    "debuggingAbility",
+    "trapResistance",
+    "cost",
+    "reproducibility"
+  ],
+  "agent": {
+    "name": "deepseek-v4-pro",
+    "file": "agents/deepseek-v4-pro/agent.json"
+  },
+  "suite": {
+    "id": "public-region-suite",
+    "file": "benchmarks/public/region-suite.json"
+  },
+  "runDir": "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite",
+  "totals": {
+    "tasks": 3,
+    "found": 1,
+    "proofAware": 3,
+    "diagnosticsQuality": 3,
+    "engineeringDiscipline": 3,
+    "failedProcess": 0,
+    "missingOutputs": 0,
+    "boundaryFailures": 0,
+    "score": 150
+  },
+  "results": [
+    {
+      "taskId": "onlyup-region-1",
+      "enabled": false,
+      "command": "/usr/bin/node /media/bailan/DISK1/AUbuntuProject/project/motapathfind/agents/deepseek-v4-pro/src/solve.js --task-id=onlyup-region-1 \"--project-root=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/Only upV2.1/Only upV2.1\" --region-spec=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/towers/onlyup/region-specs/region-1.json --run-dir=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1 --out=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/route.json --metrics=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/metrics.json --diagnostics=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/diagnostics.json --report=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/agent-report.md",
+      "status": 0,
+      "signal": null,
+      "wallMs": 314,
+      "found": false,
+      "liveVerified": false,
+      "missingOutputs": [],
+      "evaluation": {
+        "score": 40,
+        "proofAwareness": true,
+        "diagnosticsQuality": true,
+        "engineeringDiscipline": true,
+        "completeWithinActionSet": false,
+        "proofLevel": "not-found",
+        "generalizedTower": "onlyup",
+        "trapCoverage": 3,
+        "cost": {
+          "expansions": 1,
+          "wallMs": 51,
+          "routeLength": 0
+        },
+        "discipline": {
+          "passed": true,
+          "missingRequired": [],
+          "illegalWrites": 0,
+          "claimedIllegalWrites": 0,
+          "boundaryCheck": {
+            "passed": true,
+            "status": 0,
+            "signal": null,
+            "changedFiles": [
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/agent-report.md",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/boundary-files.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/diagnostics.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/metrics.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/route.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/stderr.log",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/stdout.log"
+            ],
+            "changedFilesPath": "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1/boundary-files.json",
+            "stdout": "Agent boundary check passed (7 changed files).\n",
+            "stderr": "",
+            "error": null
+          }
+        }
+      },
+      "outputDir": "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-1",
+      "metrics": {
+        "taskId": "onlyup-region-1",
+        "found": false,
+        "liveVerified": false,
+        "proofLevel": "not-found",
+        "completeWithinActionSet": false,
+        "proofClaim": {
+          "proofLevel": "not-found",
+          "completeWithinActionSet": false,
+          "actionTrimmed": 0,
+          "stoppedReasons": [],
+          "expansionBudgetExhausted": false,
+          "unsafeStopOnFirstGoal": false
+        },
+        "expansions": 1,
+        "wallMs": 51,
+        "final": null,
+        "routeLength": 0,
+        "illegalWrites": 0
+      },
+      "diagnosticsSummary": {
+        "found": false,
+        "failedSegmentId": "mt1-gate-1559"
+      }
+    },
+    {
+      "taskId": "onlyup-region-2",
+      "enabled": false,
+      "command": "/usr/bin/node /media/bailan/DISK1/AUbuntuProject/project/motapathfind/agents/deepseek-v4-pro/src/solve.js --task-id=onlyup-region-2 \"--project-root=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/Only upV2.1/Only upV2.1\" --region-spec=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/towers/onlyup/region-specs/region-2.json --run-dir=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2 --out=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/route.json --metrics=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/metrics.json --diagnostics=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/diagnostics.json --report=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/agent-report.md",
+      "status": 0,
+      "signal": null,
+      "wallMs": 285,
+      "found": false,
+      "liveVerified": false,
+      "missingOutputs": [],
+      "evaluation": {
+        "score": 40,
+        "proofAwareness": true,
+        "diagnosticsQuality": true,
+        "engineeringDiscipline": true,
+        "completeWithinActionSet": false,
+        "proofLevel": "not-found",
+        "generalizedTower": "onlyup",
+        "trapCoverage": 3,
+        "cost": {
+          "expansions": 1,
+          "wallMs": 52,
+          "routeLength": 0
+        },
+        "discipline": {
+          "passed": true,
+          "missingRequired": [],
+          "illegalWrites": 0,
+          "claimedIllegalWrites": 0,
+          "boundaryCheck": {
+            "passed": true,
+            "status": 0,
+            "signal": null,
+            "changedFiles": [
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/agent-report.md",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/boundary-files.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/diagnostics.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/metrics.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/route.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/stderr.log",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/stdout.log"
+            ],
+            "changedFilesPath": "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2/boundary-files.json",
+            "stdout": "Agent boundary check passed (7 changed files).\n",
+            "stderr": "",
+            "error": null
+          }
+        }
+      },
+      "outputDir": "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/onlyup-region-2",
+      "metrics": {
+        "taskId": "onlyup-region-2",
+        "found": false,
+        "liveVerified": false,
+        "proofLevel": "not-found",
+        "completeWithinActionSet": false,
+        "proofClaim": {
+          "proofLevel": "not-found",
+          "completeWithinActionSet": false,
+          "actionTrimmed": 0,
+          "stoppedReasons": [],
+          "expansionBudgetExhausted": false,
+          "unsafeStopOnFirstGoal": false
+        },
+        "expansions": 1,
+        "wallMs": 52,
+        "final": null,
+        "routeLength": 0,
+        "illegalWrites": 0
+      },
+      "diagnosticsSummary": {
+        "found": false,
+        "failedSegmentId": "mt1-gate-1559"
+      }
+    },
+    {
+      "taskId": "whiteisland-trial-smoke",
+      "enabled": true,
+      "command": "/usr/bin/node /media/bailan/DISK1/AUbuntuProject/project/motapathfind/agents/deepseek-v4-pro/src/solve.js --task-id=whiteisland-trial-smoke --project-root=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/whiteisland（9） --region-spec=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/towers/whiteisland/trial-specs/trial-smoke.json --run-dir=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke --out=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/route.json --metrics=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/metrics.json --diagnostics=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/diagnostics.json --report=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/agent-report.md",
+      "status": 0,
+      "signal": null,
+      "wallMs": 4608,
+      "found": true,
+      "liveVerified": false,
+      "missingOutputs": [],
+      "evaluation": {
+        "score": 70,
+        "proofAwareness": true,
+        "diagnosticsQuality": true,
+        "engineeringDiscipline": true,
+        "completeWithinActionSet": false,
+        "proofLevel": "candidate",
+        "generalizedTower": "whiteisland",
+        "trapCoverage": 2,
+        "cost": {
+          "expansions": 39,
+          "wallMs": 4295,
+          "routeLength": 9
+        },
+        "discipline": {
+          "passed": true,
+          "missingRequired": [],
+          "illegalWrites": 0,
+          "claimedIllegalWrites": 0,
+          "boundaryCheck": {
+            "passed": true,
+            "status": 0,
+            "signal": null,
+            "changedFiles": [
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/agent-report.md",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/boundary-files.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/diagnostics.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/metrics.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/route.json",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/stderr.log",
+              "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/stdout.log"
+            ],
+            "changedFilesPath": "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/boundary-files.json",
+            "stdout": "Agent boundary check passed (7 changed files).\n",
+            "stderr": "",
+            "error": null
+          }
+        }
+      },
+      "outputDir": "runs/2026-04-29T15-40-30-541Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke",
+      "metrics": {
+        "taskId": "whiteisland-trial-smoke",
+        "found": true,
+        "liveVerified": false,
+        "proofLevel": "candidate",
+        "completeWithinActionSet": false,
+        "proofClaim": {
+          "found": true,
+          "proofLevel": "candidate",
+          "completeWithinActionSet": false,
+          "actionTrimmed": 0,
+          "stoppedReasons": [
+            "time-limit"
+          ],
+          "expansionBudgetExhausted": false,
+          "expansionBudgetExhaustedSegments": [],
+          "stopOnFirstGoalSegments": [],
+          "unsafeStopOnFirstGoal": false,
+          "unsafeStopOnFirstGoalSegments": [],
+          "notes": [
+            "stoppedReason present: time-limit"
+          ]
+        },
+        "expansions": 39,
+        "wallMs": 4295,
+        "final": {
+          "floorId": "A1",
+          "hp": 675,
+          "atk": 2,
+          "def": 2,
+          "mdef": 20,
+          "exp": 6
+        },
+        "routeLength": 9,
+        "illegalWrites": 0
+      },
+      "diagnosticsSummary": {
+        "found": true,
+        "reachedMilestone": "whiteisland-trial-smoke-goal",
+        "failedSegmentId": null
+      }
+    }
+  ]
+}

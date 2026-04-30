@@ -1649,10 +1649,14 @@
             "x": 0,
             "y": 11
           }
-        ]
+        ],
+        "actionSurvivable": {
+          "summary": "battle:poisonZombie@MT7:1,11"
+        }
       },
       "actionPolicy": {
         "allowedFloors": [
+          "MT6",
           "MT7"
         ],
         "actionKinds": [
@@ -1660,21 +1664,24 @@
           "pickup",
           "interactPickup",
           "equip",
-          "changeFloor"
+          "changeFloor",
+          "floorFly"
         ],
         "allowChangeFloors": [
-          "MT7:6,12",
-          "MT7:6,0"
+          "MT6:6,12",
+          "MT7:6,12"
         ],
         "forbidUnsupportedEvents": true
       },
       "dp": {
-        "keyMode": "location",
-        "priorityMode": "combat-first",
+        "keyMode": "region",
+        "priorityMode": "default",
+        "resourceTimingMode": "sustain-prep",
         "enablePreviewScore": "required",
         "stopOnFirstGoal": false,
-        "maxExpansions": 1200,
-        "maxRuntimeMs": 8000,
+        "continueAfterGoal": true,
+        "maxExpansions": 6000,
+        "maxRuntimeMs": 20000,
         "goalSkylineLimit": 8
       }
     },

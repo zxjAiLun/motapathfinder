@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert");
+const fs = require("node:fs");
 const path = require("node:path");
 
 const { runAdaptiveSegmentPlanner } = require("./lib/adaptive-segment-planner");
@@ -10,13 +11,16 @@ const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
 const { readRouteFile } = require("./lib/route-store");
 const { scanResourceIntents } = require("./lib/resource-intent-scanner");
+const { searchSegmentDP } = require("./lib/segment-dp");
 const { getTileDefinitionAt } = require("./lib/state");
 const { StaticSimulator } = require("./lib/simulator");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
 const ROUTE_NAME = "onlyup-chaos-mt5-blueking";
 const START_ROUTE = path.join(__dirname, "routes", "latest", "segmented-mt7-right-exp-crystal.route.json");
+const LATEST_LEFT_SWORD_ROUTE = path.join(__dirname, "routes", "latest", "adaptive-mt7-left-sword.route.json");
 const ADAPTIVE_START_ROUTE = path.join(__dirname, "routes", "latest", "checkpoints", "onlyup-chaos-mt5-blueking", "mt7-bottom-double-fairy.route.json");
+const WINDOW_START_ROUTE = path.join(__dirname, "routes", "latest", "checkpoints", "onlyup-chaos-mt5-blueking", "mt6-first-center-guard.route.json");
 
 function makeSimulator() {
   const project = loadProject(PROJECT_ROOT);
@@ -188,12 +192,129 @@ function checkAdaptiveBranch(simulator) {
   return result;
 }
 
+function routeIndex(route, summary) {
+  return (route || []).findIndex((entry) => String(entry && (entry.summary || entry)) === summary);
+}
+
+function routeSummaries(record) {
+  return (record.decisions || []).map((entry) => String(entry && (entry.summary || entry)));
+}
+
+function checkLatestLeftSwordOrdering() {
+  if (!fs.existsSync(LATEST_LEFT_SWORD_ROUTE)) return null;
+  const route = routeSummaries(readRouteFile(LATEST_LEFT_SWORD_ROUTE));
+  const redSwordsman = routeIndex(route, "battle:redSwordsman@MT7:3,10");
+  const mt6LifeLimit = routeIndex(route, "battle:poisonZombie@MT6:10,5");
+  const mt7LifeLimit = routeIndex(route, "battle:poisonZombie@MT7:1,11");
+  const rightDef = routeIndex(route, "battle:whiteSlimeman@MT7:9,10");
+  const rightMdef = routeIndex(route, "battle:redSwordsman@MT7:10,8");
+  const leftHp = routeIndex(route, "battle:whiteSlimeman@MT7:2,8");
+  assert.ok(redSwordsman >= 0, `latest left-sword route should include MT7:3,10: ${route.join(" | ")}`);
+  assert.ok(mt6LifeLimit > redSwordsman, `MT6:10,5 sustain should happen after MT7:3,10: ${route.join(" | ")}`);
+  assert.ok(mt6LifeLimit < mt7LifeLimit, `MT6:10,5 sustain should happen before MT7:1,11: ${route.join(" | ")}`);
+  assert.ok(
+    rightDef > mt6LifeLimit && rightDef < rightMdef && rightMdef < leftHp && leftHp < mt7LifeLimit,
+    `expected DP-selected sustain branch MT7:9,10 -> MT7:10,8 -> MT7:2,8 before MT7:1,11: ${route.join(" | ")}`
+  );
+  return {
+    redSwordsman,
+    mt6LifeLimit,
+    rightDef,
+    rightMdef,
+    leftHp,
+    mt7LifeLimit,
+  };
+}
+
+function checkResourceTimingWindow(simulator) {
+  const startState = replayRoute(simulator, WINDOW_START_ROUTE);
+  const segment = {
+    id: "test-mt7-special80-resource-window",
+    label: "MT7 special80 sustain prep window",
+    goal: {
+      type: "heroAtLeast",
+      floorId: "MT7",
+      minHero: {
+        hp: 1,
+        atk: 5767,
+        def: 5535,
+        mdef: 30010,
+        lv: 9,
+      },
+      equipmentIncludes: ["I894"],
+      presentTiles: [
+        { floorId: "MT7", x: 1, y: 11, reason: "keep life-limit blocker until prep is complete" },
+        { floorId: "MT7", x: 0, y: 11, reason: "keep sword reward until blocker is killed" },
+      ],
+      actionSurvivable: {
+        summary: "battle:poisonZombie@MT7:1,11",
+      },
+    },
+    actionPolicy: {
+      allowedFloors: ["MT6", "MT7"],
+      actionKinds: ["battle", "pickup", "interactPickup", "equip", "changeFloor"],
+      allowChangeFloors: ["MT7:6,12", "MT6:6,12", "MT6:6,0", "MT7:6,0"],
+      forbidUnsupportedEvents: true,
+      resourceTimingMode: "sustain-prep",
+    },
+    dp: {
+      keyMode: "region",
+      priorityMode: "default",
+      resourceTimingMode: "sustain-prep",
+      enablePreviewScore: "required",
+      stopOnFirstGoal: false,
+      maxExpansions: 20000,
+      maxRuntimeMs: 60000,
+      goalSkylineLimit: 8,
+    },
+  };
+  const result = searchSegmentDP(simulator, startState, segment, { candidateLimit: 8 });
+  assert.equal(result.found, true, `resource timing window should find a special80 prep route: ${JSON.stringify(result.diagnostics.failure || result.diagnostics.dp)}`);
+  const candidate = result.goalSkyline[0];
+  const finalState = candidate.state;
+  const suffix = candidate.route.slice(startState.route.length);
+  const summaries = suffix.map((entry) => String(entry && (entry.summary || entry)));
+  assert.ok(Number(finalState.hero.hp || 0) >= 2500000, `expected HP enough for life-limit battle, got ${finalState.hero.hp}`);
+  assertRemoved(simulator.project, finalState, "MT7", 3, 10, "redSwordsman@MT7:3,10");
+  assertRemoved(simulator.project, finalState, "MT7", 3, 9, "I619@MT7:3,9");
+  assert.ok(summaries.includes("battle:redSwordsman@MT7:3,10"), `expected redSwordsman prep route: ${summaries.join(" | ")}`);
+
+  const defenseFirst = routeIndex(summaries, "battle:evilFairy@MT6:2,1");
+  const centerSecond = routeIndex(summaries, "battle:silverSlime@MT6:6,8");
+  const firstUp = summaries.findIndex((summary) => summary === "changeFloor@MT6:6,12");
+  assert.ok(defenseFirst >= 0 && centerSecond >= 0, `expected MT6 defense/center comparison route: ${summaries.join(" | ")}`);
+  assert.ok(defenseFirst < centerSecond, `expected DP to prefer MT6:2,1 before MT6:6,8 by HP dominance: ${summaries.join(" | ")}`);
+  assert.ok(firstUp < 0 || firstUp > centerSecond, `expected no early upstairs before MT6:2,1 and MT6:6,8 are resolved: ${summaries.join(" | ")}`);
+
+  const poisonThreshold = estimateBattleSurvivability(simulator, finalState, {
+    floorId: "MT7",
+    x: 1,
+    y: 11,
+    enemyId: "poisonZombie",
+  });
+  assert.equal(poisonThreshold.survivable, true, `expected poisonZombie survivable after prep: ${JSON.stringify(poisonThreshold)}`);
+  return {
+    hero: {
+      hp: finalState.hero.hp,
+      atk: finalState.hero.atk,
+      def: finalState.hero.def,
+      mdef: finalState.hero.mdef,
+      exp: finalState.hero.exp,
+    },
+    suffix: summaries,
+    expansions: result.diagnostics.dp.expansions,
+    stoppedReason: result.diagnostics.dp.stoppedReason,
+  };
+}
+
 function main() {
   const simulator = makeSimulator();
   const startState = replayRoute(simulator, START_ROUTE);
   const threshold = checkThreshold(simulator, startState);
   const intents = checkResourceIntent(simulator, startState, threshold);
+  const window = checkResourceTimingWindow(simulator);
   const adaptive = checkAdaptiveBranch(simulator);
+  const latestOrdering = checkLatestLeftSwordOrdering();
   console.log(JSON.stringify({
     threshold: {
       enemyLabel: threshold.enemyLabel,
@@ -207,6 +328,12 @@ function main() {
       goal: intents[0].goal,
       actionPolicy: intents[0].actionPolicy,
     },
+    resourceTimingWindow: {
+      hero: window.hero,
+      expansions: window.expansions,
+      stoppedReason: window.stoppedReason,
+      suffix: window.suffix,
+    },
     adaptive: {
       found: adaptive.found,
       reachedMilestone: adaptive.reachedMilestone,
@@ -214,6 +341,7 @@ function main() {
       insertedSegments: ((adaptive.adaptive || {}).insertedSegments || []).map((segment) => segment.id),
       repairBranches: (adaptive.adaptive || {}).repairBranches || [],
     },
+    latestOrdering,
   }, null, 2));
 }
 

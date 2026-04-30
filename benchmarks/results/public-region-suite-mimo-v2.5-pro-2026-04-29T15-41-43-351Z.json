@@ -1,0 +1,111 @@
+{
+  "kind": "agent-benchmark",
+  "leaderboard": "agent-from-scratch",
+  "evaluationDimensions": [
+    "solvingAbility",
+    "proofAwareness",
+    "generalization",
+    "engineeringDiscipline",
+    "debuggingAbility",
+    "trapResistance",
+    "cost",
+    "reproducibility"
+  ],
+  "agent": {
+    "name": "mimo-v2.5-pro",
+    "file": "agents/mimo-v2.5-pro/agent.json"
+  },
+  "suite": {
+    "id": "public-region-suite",
+    "file": "benchmarks/public/region-suite.json"
+  },
+  "runDir": "runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite",
+  "totals": {
+    "tasks": 1,
+    "found": 0,
+    "proofAware": 1,
+    "diagnosticsQuality": 1,
+    "engineeringDiscipline": 1,
+    "failedProcess": 1,
+    "missingOutputs": 0,
+    "boundaryFailures": 0,
+    "score": 40
+  },
+  "results": [
+    {
+      "taskId": "whiteisland-trial-smoke",
+      "enabled": true,
+      "command": "/usr/bin/node /media/bailan/DISK1/AUbuntuProject/project/motapathfind/agents/mimo-v2.5-pro/src/solve.js --task-id=whiteisland-trial-smoke --project-root=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/whiteisland（9） --region-spec=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/towers/whiteisland/trial-specs/trial-smoke.json --run-dir=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke --out=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/route.json --metrics=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/metrics.json --diagnostics=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/diagnostics.json --report=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/agent-report.md",
+      "status": 1,
+      "signal": null,
+      "wallMs": 265,
+      "found": false,
+      "liveVerified": false,
+      "missingOutputs": [],
+      "evaluation": {
+        "score": 40,
+        "proofAwareness": true,
+        "diagnosticsQuality": true,
+        "engineeringDiscipline": true,
+        "completeWithinActionSet": false,
+        "proofLevel": "not-found",
+        "generalizedTower": "whiteisland",
+        "trapCoverage": 2,
+        "cost": {
+          "expansions": 0,
+          "wallMs": 17,
+          "routeLength": 0
+        },
+        "discipline": {
+          "passed": true,
+          "missingRequired": [],
+          "illegalWrites": 0,
+          "claimedIllegalWrites": 0,
+          "boundaryCheck": {
+            "passed": true,
+            "status": 0,
+            "signal": null,
+            "changedFiles": [
+              "runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/agent-report.md",
+              "runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/boundary-files.json",
+              "runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/diagnostics.json",
+              "runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/metrics.json",
+              "runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/route.json",
+              "runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/stderr.log",
+              "runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/stdout.log"
+            ],
+            "changedFilesPath": "runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke/boundary-files.json",
+            "stdout": "Agent boundary check passed (7 changed files).\n",
+            "stderr": "",
+            "error": null
+          }
+        }
+      },
+      "outputDir": "runs/2026-04-29T15-41-43-063Z/mimo-v2.5-pro/public-region-suite/whiteisland-trial-smoke",
+      "metrics": {
+        "taskId": "whiteisland-trial-smoke",
+        "found": false,
+        "liveVerified": false,
+        "proofLevel": "not-found",
+        "completeWithinActionSet": false,
+        "proofClaim": {
+          "proofLevel": "not-found",
+          "found": false,
+          "completeWithinActionSet": false,
+          "actionTrimmed": 0,
+          "stoppedReasons": [],
+          "expansionBudgetExhausted": false
+        },
+        "expansions": 0,
+        "wallMs": 17,
+        "final": null,
+        "routeLength": 0,
+        "illegalWrites": 0
+      },
+      "diagnosticsSummary": {
+        "found": false,
+        "failedSegmentId": null
+      }
+    }
+  ]
+}

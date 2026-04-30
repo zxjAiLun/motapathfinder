@@ -38,6 +38,8 @@ const MIME_TYPES = {
 
 function parseBooleanFlag(value, defaultValue) {
   if (value == null) return defaultValue;
+  if (value === 1) return true;
+  if (value === 0) return false;
   if (value === true || value === "1" || value === "true" || value === "on") return true;
   if (value === false || value === "0" || value === "false" || value === "off") return false;
   return defaultValue;
@@ -265,6 +267,46 @@ function normalizeSnapshotForRuntime(snapshot, config) {
   const normalized = JSON.parse(JSON.stringify(snapshot));
   if (normalized.flags) delete normalized.flags.autoBattle;
   return normalized;
+}
+
+function diffSnapshotSubset(expected, actual, pathSegments) {
+  const prefix = pathSegments || [];
+  if (expected && expected.partial === true && prefix.length === 0) {
+    const clone = JSON.parse(JSON.stringify(expected));
+    delete clone.partial;
+    return diffSnapshotSubset(clone, actual, prefix);
+  }
+  if (expected && typeof expected === "object" && !Array.isArray(expected)) {
+    if (!actual || typeof actual !== "object" || Array.isArray(actual)) {
+      return `${prefix.join(".")}: object mismatch`;
+    }
+    for (const key of Object.keys(expected).sort()) {
+      if (key === "partial") continue;
+      const mismatch = diffSnapshotSubset(expected[key], actual[key], prefix.concat(key));
+      if (mismatch) return mismatch;
+    }
+    return null;
+  }
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(actual)) return `${prefix.join(".")}: array mismatch`;
+    if (expected.length !== actual.length) return `${prefix.join(".")}: length mismatch (${expected.length} !== ${actual.length})`;
+    for (let index = 0; index < expected.length; index += 1) {
+      const mismatch = diffSnapshotSubset(expected[index], actual[index], prefix.concat(String(index)));
+      if (mismatch) return mismatch;
+    }
+    return null;
+  }
+  if (expected !== actual) return `${prefix.join(".")}: ${JSON.stringify(expected)} !== ${JSON.stringify(actual)}`;
+  return null;
+}
+
+function diffRouteSnapshot(expected, actual, config, pathSegments) {
+  const normalizedExpected = normalizeSnapshotForRuntime(expected, config);
+  const normalizedActual = normalizeSnapshotForRuntime(actual, config);
+  if (normalizedExpected && normalizedExpected.partial) {
+    return diffSnapshotSubset(normalizedExpected, normalizedActual, pathSegments || []);
+  }
+  return diffSnapshots(normalizedExpected, normalizedActual, pathSegments);
 }
 
 async function quickStartRuntime(page, rank, options) {
@@ -804,11 +846,7 @@ async function executeRouteDecision(session, decision, options) {
     console.log(`[trace-live] after ${formatStatus(afterStatus)}`);
   }
   const actual = await captureRuntimeSnapshot(session.page, { verifyFloors: session.verifyFloors });
-  const mismatch = diffSnapshots(
-    normalizeSnapshotForRuntime(decision.postSnapshot, config),
-    normalizeSnapshotForRuntime(actual, config),
-    [decision.summary || decision.fingerprint || "step"]
-  );
+  const mismatch = diffRouteSnapshot(decision.postSnapshot, actual, config, [decision.summary || decision.fingerprint || "step"]);
   if (stepDelayMs > 0 && !mismatch) await session.page.waitForTimeout(stepDelayMs);
   return {
     ok: !mismatch,
@@ -890,11 +928,7 @@ async function replayRouteFile(routeRecord, options) {
         console.log(`[trace-live] step=${index + 1}/${decisions.length} after ${formatStatus(afterStatus)}`);
       }
       const runtimeSnapshot = await captureRuntimeSnapshot(page, { verifyFloors });
-      const mismatch = diffSnapshots(
-        normalizeSnapshotForRuntime(action.postSnapshot, config),
-        normalizeSnapshotForRuntime(runtimeSnapshot, config),
-        [action.summary || action.fingerprint || `step${index + 1}`]
-      );
+      const mismatch = diffRouteSnapshot(action.postSnapshot, runtimeSnapshot, config, [action.summary || action.fingerprint || `step${index + 1}`]);
       if (mismatch) {
         console.error("Expected step snapshot:", JSON.stringify(summarizeSnapshot(action.postSnapshot), null, 2));
         console.error("Actual step snapshot:", JSON.stringify(summarizeSnapshot(runtimeSnapshot), null, 2));

@@ -3,6 +3,7 @@
 const { buildDpStateKey, searchDP } = require("./dp-search");
 const { estimateBattleSurvivability } = require("./battle-thresholds");
 const { formatActionLabel } = require("./enemy-labels");
+const { buildSolverSnapshot } = require("./route-snapshot");
 const { getTileDefinitionAt, cloneState } = require("./state");
 
 function number(value, fallback) {
@@ -93,7 +94,9 @@ function buildActionSurvivableMissing(simulator, state, summary, action) {
   return entry;
 }
 
-function missingGoalFields(project, simulator, state, segment) {
+function missingGoalFields(project, simulator, state, segment, options) {
+  const config = options || {};
+  const diagnostic = config.diagnostic !== false;
   const goal = (segment || {}).goal || {};
   const missing = [];
   if (goal.floorId && state.floorId !== goal.floorId) {
@@ -147,13 +150,20 @@ function missingGoalFields(project, simulator, state, segment) {
     }
   });
   if (goal.actionSurvivable && goal.actionSurvivable.summary) {
+    if (actionTargetAlreadyRemovedByGoal(project, state, goal, goal.actionSurvivable.summary)) {
+      return missing;
+    }
     const action = findPrimitiveAction(simulator, state, goal.actionSurvivable.summary);
     if (!action) {
-      const threshold = estimateBattleSurvivability(simulator, state, goal.actionSurvivable.summary);
-      if (threshold && threshold.supported && !threshold.survivable) {
-        missing.push(buildActionSurvivableMissing(simulator, state, goal.actionSurvivable.summary, null));
-      } else {
+      if (!diagnostic) {
         missing.push({ field: "actionSurvivable", expected: goal.actionSurvivable.summary, actual: "missing-action" });
+      } else {
+        const threshold = estimateBattleSurvivability(simulator, state, goal.actionSurvivable.summary);
+        if (threshold && threshold.supported && !threshold.survivable) {
+          missing.push(buildActionSurvivableMissing(simulator, state, goal.actionSurvivable.summary, null));
+        } else {
+          missing.push({ field: "actionSurvivable", expected: goal.actionSurvivable.summary, actual: "missing-action" });
+        }
       }
     } else {
       const damage = number((action.estimate || {}).damage, Number.POSITIVE_INFINITY);
@@ -161,7 +171,17 @@ function missingGoalFields(project, simulator, state, segment) {
         missing.push({ field: "actionDamage", expected: Number(goal.actionSurvivable.exactDamage), actual: damage });
       }
       if (!(number((state.hero || {}).hp, 0) > damage)) {
-        missing.push(buildActionSurvivableMissing(simulator, state, goal.actionSurvivable.summary, action));
+        if (diagnostic) {
+          missing.push(buildActionSurvivableMissing(simulator, state, goal.actionSurvivable.summary, action));
+        } else {
+          missing.push({
+            field: "actionSurvivable",
+            expected: Number.isFinite(damage) ? `hp > ${damage}` : goal.actionSurvivable.summary,
+            actual: number((state.hero || {}).hp, 0),
+            action: goal.actionSurvivable.summary,
+            damage,
+          });
+        }
       }
     }
   }
@@ -169,7 +189,7 @@ function missingGoalFields(project, simulator, state, segment) {
 }
 
 function buildSegmentGoalPredicate(project, segment, simulator) {
-  return (state) => missingGoalFields(project, simulator, state, segment).length === 0;
+  return (state) => missingGoalFields(project, simulator, state, segment, { diagnostic: false }).length === 0;
 }
 
 function parseActionTileKey(summary) {
@@ -180,6 +200,20 @@ function parseActionTileKey(summary) {
 
 function isRequiredTileStillPresent(project, state, required) {
   return getTileDefinitionAt(project, state, required.floorId, required.x, required.y) != null;
+}
+
+function actionTargetAlreadyRemovedByGoal(project, state, goal, summary) {
+  const actionTileKey = parseActionTileKey(summary);
+  if (!actionTileKey) return false;
+  const requiredTiles = [];
+  if ((goal.type === "bossDefeated" || goal.type === "tileRemoved") && goal.floorId != null && goal.x != null && goal.y != null) {
+    requiredTiles.push({ floorId: goal.floorId, x: goal.x, y: goal.y });
+  }
+  (goal.removedTiles || []).forEach((tile) => requiredTiles.push(tile));
+  return requiredTiles.some((tile) =>
+    `${tile.floorId}:${tile.x},${tile.y}` === actionTileKey &&
+    getTileDefinitionAt(project, state, tile.floorId, tile.x, tile.y) == null
+  );
 }
 
 function goalActionScore(simulator, state, action, segment) {
@@ -243,15 +277,70 @@ function segmentPreviewScore(simulator, state, action) {
   }
 }
 
+function actionSurvivablePrepScore(simulator, state, action, segment) {
+  const goal = (segment || {}).goal || {};
+  if (!goal.actionSurvivable || !goal.actionSurvivable.summary || !action) return 0;
+  if (action.kind === "changeFloor" || action.kind === "floorFly") return 0;
+  try {
+    const preview = simulator.applyAction(state, action, { storeRoute: false });
+    const beforeHero = summarizeHero(state);
+    const afterHero = summarizeHero(preview);
+    const beforeEffective = summarizeEffectiveHero(state);
+    const afterEffective = summarizeEffectiveHero(preview);
+    const hpGain = afterHero.hp - beforeHero.hp;
+    const atkGain = afterEffective.atk - beforeEffective.atk;
+    const defGain = afterEffective.def - beforeEffective.def;
+    const mdefGain = afterEffective.mdef - beforeEffective.mdef;
+    const expGain = afterHero.exp - beforeHero.exp;
+    const equipmentGain = afterHero.equipment.filter((itemId) => !beforeHero.equipment.includes(itemId)).length;
+    const positivePrep =
+      hpGain > 0 ||
+      atkGain > 0 ||
+      defGain > 0 ||
+      mdefGain > 0 ||
+      expGain > 0 ||
+      equipmentGain > 0;
+    if (!positivePrep) return 0;
+    const damage = number((action.estimate || {}).damage, 0);
+    return Math.max(0,
+      hpGain * 8 +
+      atkGain * 30000 +
+      defGain * 140000 +
+      mdefGain * 5000 +
+      expGain * 2500 +
+      equipmentGain * 500000 -
+      Math.max(0, damage) * 0.2
+    );
+  } catch (error) {
+    return 0;
+  }
+}
+
+function usesResourceTimingMode(segment) {
+  const dpConfig = (segment || {}).dp || {};
+  const policy = (segment || {}).actionPolicy || {};
+  return dpConfig.resourceTimingMode === "sustain-prep" ||
+    policy.resourceTimingMode === "sustain-prep";
+}
+
+function isResourceTimingAction(simulator, state, action, segment) {
+  if (!usesResourceTimingMode(segment)) return true;
+  if (!action) return false;
+  if (action.kind === "changeFloor" || action.kind === "floorFly") return true;
+  if (goalActionScore(simulator, state, action, segment) > 0) return true;
+  return actionSurvivablePrepScore(simulator, state, action, segment) > 0;
+}
+
 function annotateSegmentAction(simulator, state, action, segment) {
   const goalScore = goalActionScore(simulator, state, action, segment);
   const dpConfig = (segment || {}).dp || {};
+  const prepScore = actionSurvivablePrepScore(simulator, state, action, segment);
   const previewScore = dpConfig.enablePreviewScore === false
     ? 0
     : dpConfig.enablePreviewScore === "required"
-      ? (goalScore > 0 ? segmentPreviewScore(simulator, state, action) : 0)
+      ? (goalScore > 0 || prepScore > 0 ? segmentPreviewScore(simulator, state, action) + prepScore : 0)
       : segmentPreviewScore(simulator, state, action);
-  const score = goalScore + previewScore;
+  const score = goalScore + previewScore + (dpConfig.enablePreviewScore === "required" ? 0 : prepScore);
   if (score === 0) return action;
   return {
     ...action,
@@ -335,6 +424,7 @@ function buildSegmentActionProvider(simulator, segment) {
     }
     return trimFloorFlyActions(actions, policy)
       .filter((action) => isAllowedAction(action, state, segment, simulator))
+      .filter((action) => isResourceTimingAction(simulator, state, action, segment))
       .map((action) => annotateSegmentAction(simulator, state, action, segment));
   };
 }
@@ -373,6 +463,26 @@ function addTag(record, tag) {
   if (!record.tags.includes(tag)) record.tags.push(tag);
 }
 
+function buildTraceSnapshot(project, state) {
+  if (!state) return null;
+  const snapshot = buildSolverSnapshot(project, state, { floorIds: [state.floorId].filter(Boolean) });
+  snapshot.partial = true;
+  return snapshot;
+}
+
+function compactTraceEntry(project, entry) {
+  if (!entry || !entry.actionEntry) return null;
+  const preSnapshot = entry.preSnapshot || buildTraceSnapshot(project, entry.preState);
+  const postSnapshot = entry.postSnapshot || buildTraceSnapshot(project, entry.postState);
+  return {
+    actionEntry: entry.actionEntry,
+    preSnapshot,
+    postSnapshot,
+    preStateKey: entry.preStateKey || null,
+    postStateKey: entry.postStateKey || null,
+  };
+}
+
 function selectGoalSkyline(simulator, states, segment, options) {
   const limit = Math.max(1, number((options || {}).candidateLimit || (segment.dp || {}).goalSkylineLimit, 8));
   const keyMode = ((segment.dp || {}).keyMode || "region");
@@ -382,15 +492,22 @@ function selectGoalSkyline(simulator, states, segment, options) {
     const existing = byKey.get(key);
     if (!existing || compareCandidateStates(state, existing) < 0) byKey.set(key, state);
   });
-  const records = Array.from(byKey.values()).map((state, index) => ({
-    id: `${segment.id || "segment"}#${index}`,
-    state,
-    route: Array.isArray(state.route) ? state.route.slice() : [],
-    hero: summarizeHero(state),
-    effectiveHero: summarizeEffectiveHero(state),
-    score: goalCandidateScore(state),
-    tags: [],
-  }));
+  const records = Array.from(byKey.values()).map((state, index) => {
+    const trace = Array.isArray(state.routeTrace)
+      ? state.routeTrace.map((entry) => compactTraceEntry(simulator.project, entry)).filter(Boolean)
+      : [];
+    if (Object.prototype.hasOwnProperty.call(state, "routeTrace")) delete state.routeTrace;
+    return {
+      id: `${segment.id || "segment"}#${index}`,
+      state,
+      route: Array.isArray(state.route) ? state.route.slice() : [],
+      trace,
+      hero: summarizeHero(state),
+      effectiveHero: summarizeEffectiveHero(state),
+      score: goalCandidateScore(state),
+      tags: [],
+    };
+  });
   const rolePickers = [
     ["highest-hp", (left, right) => summarizeHero(right.state).hp - summarizeHero(left.state).hp],
     ["highest-atk", (left, right) => right.effectiveHero.atk - left.effectiveHero.atk],
@@ -596,7 +713,8 @@ function searchSegmentDP(simulator, startState, segment, options) {
   const maxRuntimeMs = number(dpConfig.maxRuntimeMs, 15000);
   const maxActionsPerState = number(dpConfig.maxActionsPerState, 9999);
   const prefixRoute = Array.isArray(config.prefixRoute) ? config.prefixRoute : (Array.isArray(startState.route) ? startState.route : []);
-  const seed = cloneState(startState);
+  const prefixTrace = Array.isArray(config.prefixTrace) ? config.prefixTrace : (Array.isArray(startState.routeTrace) ? startState.routeTrace : []);
+  const seed = cloneStateWithoutRouteTrace(startState);
   seed.route = prefixRoute.slice();
   const result = searchDP(simulator, seed, {
     targetFloorId: segment.goal && segment.goal.floorId,
@@ -607,6 +725,8 @@ function searchSegmentDP(simulator, startState, segment, options) {
     dpAgendaMode: dpConfig.agendaMode || "best-first",
     dpPriorityMode: dpConfig.priorityMode || dpConfig.dpPriorityMode || "default",
     stopOnFirstGoal: dpConfig.stopOnFirstGoal === true,
+    continueAfterGoal: dpConfig.continueAfterGoal === true,
+    initialRouteTracePrefix: prefixTrace,
     goalSkylineLimit: number(dpConfig.goalSkylineLimit, 8),
     actionProvider: buildSegmentActionProvider(simulator, segment),
     goalPredicate: buildSegmentGoalPredicate(simulator.project, segment, simulator),
@@ -684,12 +804,18 @@ function milestoneRangeError(milestoneSpec, fromMilestoneId, toMilestoneId) {
 }
 
 function mergeMilestoneFrontier(simulator, candidates, segment, options) {
-  const states = (candidates || []).map((candidate) => candidate.state).filter(Boolean);
+  const states = (candidates || []).map((candidate) => {
+    if (candidate && candidate.state && Array.isArray(candidate.trace)) {
+      candidate.state.routeTrace = candidate.trace;
+    }
+    return candidate && candidate.state;
+  }).filter(Boolean);
   const selected = selectGoalSkyline(simulator, states, segment, options);
   return selected.map((record, index) => ({
     id: `${segment.id}:candidate-${index}`,
     state: record.state,
     route: record.route,
+    trace: record.trace,
     hero: record.hero,
     effectiveHero: record.effectiveHero,
     tags: record.tags,
@@ -728,6 +854,17 @@ function mergeFailurePropagation(attempts) {
 function numericOption(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function cloneStateWithoutRouteTrace(state) {
+  if (!state || !Object.prototype.hasOwnProperty.call(state, "routeTrace")) return cloneState(state);
+  const routeTrace = state.routeTrace;
+  delete state.routeTrace;
+  try {
+    return cloneState(state);
+  } finally {
+    state.routeTrace = routeTrace;
+  }
 }
 
 function segmentCandidateLimit(segment, config, overrides) {
@@ -791,6 +928,7 @@ function runSegmentAgainstFrontier(simulator, segment, frontier, config, overrid
     const result = searchSegmentDP(simulator, candidate.state, segment, {
       candidateId: candidate.id,
       prefixRoute: candidate.route,
+      prefixTrace: candidate.trace,
       candidateLimit,
       dpOverrides: segmentDpOverrides(segment, config || {}, overrides || {}),
     });
@@ -926,10 +1064,12 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   }
   const segments = milestoneRange(milestoneSpec, config.fromMilestoneId, config.toMilestoneId);
   const checkpointResults = [];
+  const initialFrontierState = cloneStateWithoutRouteTrace(initialState);
   let frontier = [{
     id: "initial#0",
-    state: cloneState(initialState),
+    state: initialFrontierState,
     route: Array.isArray(initialState.route) ? initialState.route.slice() : [],
+    trace: Array.isArray(initialState.routeTrace) ? initialState.routeTrace.slice() : [],
     hero: summarizeHero(initialState),
     effectiveHero: summarizeEffectiveHero(initialState),
     tags: ["initial"],
@@ -1000,7 +1140,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     });
     frontier = execution.merged;
   }
-  const final = frontier.slice().sort((left, right) => right.score - left.score)[0] || null;
+  const final = frontier[0] || null;
   return {
     found: Boolean(final),
     reachedMilestone: segments.length ? segments[segments.length - 1].id : null,

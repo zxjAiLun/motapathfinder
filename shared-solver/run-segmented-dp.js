@@ -5,9 +5,11 @@ const path = require("node:path");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
+const { buildSolverSnapshot } = require("./lib/route-snapshot");
 const { buildRouteRecord, readRouteFile, writeRouteFile } = require("./lib/route-store");
 const { runMilestoneGraph } = require("./lib/segment-dp");
 const { StaticSimulator } = require("./lib/simulator");
+const { buildDominanceKey } = require("./lib/state-key");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
 
@@ -71,14 +73,36 @@ function findAction(simulator, state, summary) {
   return actions.find((action) => action.summary === summary) || null;
 }
 
+function buildTraceSnapshot(project, state) {
+  if (!state) return null;
+  const snapshot = buildSolverSnapshot(project, state, { floorIds: [state.floorId].filter(Boolean) });
+  snapshot.partial = true;
+  return snapshot;
+}
+
+function decisionTraceEntry(project, decision, preState, postState) {
+  return {
+    actionEntry: decision,
+    preSnapshot: preState ? buildTraceSnapshot(project, preState) : (decision.preSnapshot || null),
+    postSnapshot: postState ? buildTraceSnapshot(project, postState) : (decision.postSnapshot || null),
+    preStateKey: preState ? buildDominanceKey(preState) : (decision.preStateKey || null),
+    postStateKey: postState ? buildDominanceKey(postState) : (decision.postStateKey || null),
+  };
+}
+
 function replayRouteFile(simulator, routeFile) {
   let state = simulator.createInitialState({ rank: "chaos" });
+  let routeTrace = [];
   const record = readRouteFile(routeFile);
   for (const decision of record.decisions || []) {
+    const preState = state;
     const action = findAction(simulator, state, decision.summary);
     if (!action) throw new Error(`Unable to replay start route at ${decision.index}: ${decision.summary}`);
+    if (Object.prototype.hasOwnProperty.call(state, "routeTrace")) delete state.routeTrace;
     state = simulator.applyAction(state, action);
+    routeTrace = routeTrace.concat(decisionTraceEntry(simulator.project, decision, preState, state));
   }
+  state.routeTrace = routeTrace;
   return state;
 }
 
@@ -114,6 +138,7 @@ function saveUniqueCheckpointRoutes({ args, project, projectRoot, simulator, rou
     if (!candidate || !candidate.state) return;
     const finalState = candidate.state;
     finalState.route = Array.isArray(candidate.route) ? candidate.route.slice() : finalState.route;
+    finalState.routeTrace = Array.isArray(candidate.trace) ? candidate.trace.slice() : finalState.routeTrace;
     const filePath = path.join(checkpointDir, `${sanitizeFilePart(checkpoint.segmentId)}.route.json`);
     const routeRecord = buildRouteRecord({
       project,
@@ -195,6 +220,7 @@ function main() {
   if (out && result.found && result.finalCandidate && result.finalCandidate.state) {
     const finalState = result.finalCandidate.state;
     finalState.route = Array.isArray(result.finalCandidate.route) ? result.finalCandidate.route.slice() : finalState.route;
+    finalState.routeTrace = Array.isArray(result.finalCandidate.trace) ? result.finalCandidate.trace.slice() : finalState.routeTrace;
     const routeRecord = buildRouteRecord({
       project,
       simulator,

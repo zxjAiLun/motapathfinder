@@ -1,0 +1,21 @@
+{
+  "taskId": "whiteisland-trial-smoke",
+  "found": false,
+  "proofClaim": {
+    "proofLevel": "not-found",
+    "found": false,
+    "completeWithinActionSet": false,
+    "actionTrimmed": 0,
+    "stoppedReasons": [],
+    "expansionBudgetExhausted": false
+  },
+  "segments": [],
+  "failedSegmentId": null,
+  "failureClass": "start-state-error",
+  "missingGoalFields": [],
+  "attempts": [
+    {
+      "error": "whiteislandTrial: Start 3,3 does not contain 试炼间 choice"
+    }
+  ]
+}

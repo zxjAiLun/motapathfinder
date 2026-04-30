@@ -1,0 +1,128 @@
+{
+  "kind": "agent-benchmark",
+  "leaderboard": "agent-from-scratch",
+  "evaluationDimensions": [
+    "solvingAbility",
+    "proofAwareness",
+    "generalization",
+    "engineeringDiscipline",
+    "debuggingAbility",
+    "trapResistance",
+    "cost",
+    "reproducibility"
+  ],
+  "agent": {
+    "name": "deepseek-v4-pro",
+    "file": "agents/deepseek-v4-pro/agent.json"
+  },
+  "suite": {
+    "id": "public-region-suite",
+    "file": "benchmarks/public/region-suite.json"
+  },
+  "runDir": "runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite",
+  "totals": {
+    "tasks": 1,
+    "found": 1,
+    "proofAware": 1,
+    "diagnosticsQuality": 1,
+    "engineeringDiscipline": 1,
+    "failedProcess": 0,
+    "missingOutputs": 0,
+    "boundaryFailures": 0,
+    "score": 70
+  },
+  "results": [
+    {
+      "taskId": "whiteisland-trial-smoke",
+      "enabled": true,
+      "command": "/usr/bin/node /media/bailan/DISK1/AUbuntuProject/project/motapathfind/agents/deepseek-v4-pro/src/solve.js --task-id=whiteisland-trial-smoke --project-root=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/whiteisland（9） --region-spec=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/towers/whiteisland/trial-specs/trial-smoke.json --run-dir=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke --out=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/route.json --metrics=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/metrics.json --diagnostics=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/diagnostics.json --report=/media/bailan/DISK1/AUbuntuProject/project/motapathfind/runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/agent-report.md",
+      "status": 0,
+      "signal": null,
+      "wallMs": 4595,
+      "found": true,
+      "liveVerified": false,
+      "missingOutputs": [],
+      "evaluation": {
+        "score": 70,
+        "proofAwareness": true,
+        "diagnosticsQuality": true,
+        "engineeringDiscipline": true,
+        "completeWithinActionSet": false,
+        "proofLevel": "candidate",
+        "generalizedTower": "whiteisland",
+        "trapCoverage": 2,
+        "cost": {
+          "expansions": 39,
+          "wallMs": 4297,
+          "routeLength": 9
+        },
+        "discipline": {
+          "passed": true,
+          "missingRequired": [],
+          "illegalWrites": 0,
+          "claimedIllegalWrites": 0,
+          "boundaryCheck": {
+            "passed": true,
+            "status": 0,
+            "signal": null,
+            "changedFiles": [
+              "runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/agent-report.md",
+              "runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/boundary-files.json",
+              "runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/diagnostics.json",
+              "runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/metrics.json",
+              "runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/route.json",
+              "runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/stderr.log",
+              "runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/stdout.log"
+            ],
+            "changedFilesPath": "runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke/boundary-files.json",
+            "stdout": "Agent boundary check passed (7 changed files).\n",
+            "stderr": "",
+            "error": null
+          }
+        }
+      },
+      "outputDir": "runs/2026-04-29T15-40-12-588Z/deepseek-v4-pro/public-region-suite/whiteisland-trial-smoke",
+      "metrics": {
+        "taskId": "whiteisland-trial-smoke",
+        "found": true,
+        "liveVerified": false,
+        "proofLevel": "candidate",
+        "completeWithinActionSet": false,
+        "proofClaim": {
+          "found": true,
+          "proofLevel": "candidate",
+          "completeWithinActionSet": false,
+          "actionTrimmed": 0,
+          "stoppedReasons": [
+            "time-limit"
+          ],
+          "expansionBudgetExhausted": false,
+          "expansionBudgetExhaustedSegments": [],
+          "stopOnFirstGoalSegments": [],
+          "unsafeStopOnFirstGoal": false,
+          "unsafeStopOnFirstGoalSegments": [],
+          "notes": [
+            "stoppedReason present: time-limit"
+          ]
+        },
+        "expansions": 39,
+        "wallMs": 4297,
+        "final": {
+          "floorId": "A1",
+          "hp": 675,
+          "atk": 2,
+          "def": 2,
+          "mdef": 20,
+          "exp": 6
+        },
+        "routeLength": 9,
+        "illegalWrites": 0
+      },
+      "diagnosticsSummary": {
+        "found": true,
+        "reachedMilestone": "whiteisland-trial-smoke-goal",
+        "failedSegmentId": null
+      }
+    }
+  ]
+}

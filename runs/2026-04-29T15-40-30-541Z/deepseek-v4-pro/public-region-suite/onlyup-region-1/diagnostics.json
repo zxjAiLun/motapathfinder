@@ -1,0 +1,117 @@
+{
+  "taskId": "onlyup-region-1",
+  "found": false,
+  "proofClaim": {
+    "proofLevel": "not-found",
+    "completeWithinActionSet": false,
+    "actionTrimmed": 0,
+    "stoppedReasons": [],
+    "expansionBudgetExhausted": false,
+    "unsafeStopOnFirstGoal": false
+  },
+  "segments": [
+    {
+      "segmentId": "mt1-gate-1559",
+      "label": "MT1 1559 生存门槛",
+      "found": false,
+      "candidateCount": 0,
+      "candidates": [],
+      "failurePropagation": {
+        "primaryFailureClass": "target-action-unreachable",
+        "classCounts": {
+          "target-action-unreachable": 1
+        },
+        "preferredCandidateTags": [
+          "shortest",
+          "best-combat",
+          "highest-atk",
+          "highest-def",
+          "highest-mdef",
+          "highest-hp"
+        ],
+        "recommendedNext": [
+          "check allowedFloors, allowChangeFloors, presentTiles, and local action scope for this segment",
+          "backtrack to the previous milestone and try highest-atk or best-combat candidates",
+          "backtrack to the previous milestone and try highest-def or best-combat candidates",
+          "backtrack to the previous milestone and try highest-mdef or best-combat candidates",
+          "backtrack to the previous milestone and try highest-hp candidates"
+        ]
+      }
+    }
+  ],
+  "failedSegmentId": "mt1-gate-1559",
+  "failureClass": "no-path",
+  "missingGoalFields": [],
+  "attempts": [
+    {
+      "attemptIndex": 0,
+      "params": {
+        "candidateLimit": 8,
+        "dpKeyMode": "region",
+        "maxExpansions": 12000,
+        "maxRuntimeMs": 20000,
+        "stopOnFirstGoal": false,
+        "enableFailureBacktracking": true
+      },
+      "found": false,
+      "error": null,
+      "wallMs": 19
+    },
+    {
+      "attemptIndex": 1,
+      "params": {
+        "candidateLimit": 12,
+        "dpKeyMode": "region",
+        "maxExpansions": 12000,
+        "maxRuntimeMs": 20000,
+        "stopOnFirstGoal": false,
+        "enableFailureBacktracking": true
+      },
+      "found": false,
+      "error": null,
+      "wallMs": 1
+    },
+    {
+      "attemptIndex": 2,
+      "params": {
+        "candidateLimit": 8,
+        "dpKeyMode": "location",
+        "maxExpansions": 12000,
+        "maxRuntimeMs": 20000,
+        "stopOnFirstGoal": false,
+        "enableFailureBacktracking": true
+      },
+      "found": false,
+      "error": null,
+      "wallMs": 0
+    },
+    {
+      "attemptIndex": 3,
+      "params": {
+        "candidateLimit": 8,
+        "dpKeyMode": "region",
+        "maxExpansions": 24000,
+        "maxRuntimeMs": 40000,
+        "stopOnFirstGoal": false,
+        "enableFailureBacktracking": true
+      },
+      "found": false,
+      "error": null,
+      "wallMs": 0
+    },
+    {
+      "attemptIndex": 4,
+      "params": {
+        "candidateLimit": 16,
+        "dpKeyMode": "region",
+        "maxExpansions": 12000,
+        "maxRuntimeMs": 20000,
+        "stopOnFirstGoal": false,
+        "enableFailureBacktracking": true
+      },
+      "found": false,
+      "error": null,
+      "wallMs": 0
+    }
+  ]
+}

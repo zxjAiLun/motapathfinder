@@ -1,0 +1,20 @@
+{
+  "taskId": "onlyup-region-2",
+  "found": false,
+  "liveVerified": false,
+  "proofLevel": "not-found",
+  "completeWithinActionSet": false,
+  "proofClaim": {
+    "proofLevel": "not-found",
+    "completeWithinActionSet": false,
+    "actionTrimmed": 0,
+    "stoppedReasons": [],
+    "expansionBudgetExhausted": false,
+    "unsafeStopOnFirstGoal": false
+  },
+  "expansions": 1,
+  "wallMs": 52,
+  "final": null,
+  "routeLength": 0,
+  "illegalWrites": 0
+}

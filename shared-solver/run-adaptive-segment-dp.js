@@ -7,6 +7,8 @@ const { runAdaptiveSegmentPlanner } = require("./lib/adaptive-segment-planner");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
+const { buildSolverSnapshot } = require("./lib/route-snapshot");
+const { buildDominanceKey } = require("./lib/state-key");
 const { buildRouteRecord, createStateFromSnapshot, readRouteFile, writeRouteFile } = require("./lib/route-store");
 const { StaticSimulator } = require("./lib/simulator");
 
@@ -46,8 +48,10 @@ function readReplayCache(routeFile, projectRoot, rank) {
   if (cache.source.routeFile !== routeFile) return null;
   if (cache.source.projectRoot !== projectRoot) return null;
   if (cache.source.rank !== rank) return null;
+  if (cache.source.traceVersion !== 2) return null;
   if (cache.source.size !== routeStat.size) return null;
   if (cache.source.mtimeMs !== routeStat.mtimeMs) return null;
+  if (!Array.isArray(cache.state.routeTrace)) return null;
   return cache.state;
 }
 
@@ -63,6 +67,7 @@ function writeReplayCache(routeFile, projectRoot, rank, state) {
       rank,
       size: routeStat.size,
       mtimeMs: routeStat.mtimeMs,
+      traceVersion: 2,
     },
     state,
   })}\n`, "utf8");
@@ -107,26 +112,50 @@ function findAction(simulator, state, summary) {
   return actions.find((action) => action.summary === summary) || null;
 }
 
+function buildTraceSnapshot(project, state) {
+  if (!state) return null;
+  const snapshot = buildSolverSnapshot(project, state, { floorIds: [state.floorId].filter(Boolean) });
+  snapshot.partial = true;
+  return snapshot;
+}
+
+function decisionTraceEntry(project, decision, preState, postState) {
+  return {
+    actionEntry: decision,
+    preSnapshot: preState ? buildTraceSnapshot(project, preState) : (decision.preSnapshot || null),
+    postSnapshot: postState ? buildTraceSnapshot(project, postState) : (decision.postSnapshot || null),
+    preStateKey: preState ? buildDominanceKey(preState) : (decision.preStateKey || null),
+    postStateKey: postState ? buildDominanceKey(postState) : (decision.postStateKey || null),
+  };
+}
+
 function replayRouteFile(simulator, routeFile, rank, useSnapshot, useCache, projectRoot) {
   const record = readRouteFile(routeFile);
   if (useSnapshot && record.final && record.final.snapshot) {
-    return createStateFromSnapshot(simulator.project, record.final.snapshot, {
+    const state = createStateFromSnapshot(simulator.project, record.final.snapshot, {
       rank: rank || "chaos",
       route: Array.isArray(record.rawRoute) ? record.rawRoute : [],
       decisionDepth: record.stats && record.stats.depth,
       notes: record.notes,
     });
+    state.routeTrace = (record.decisions || []).map((decision) => decisionTraceEntry(simulator.project, decision, null, null));
+    return state;
   }
   if (useCache) {
     const cached = readReplayCache(routeFile, projectRoot || "", rank || "chaos");
     if (cached) return cached;
   }
   let state = simulator.createInitialState({ rank: rank || "chaos" });
+  let routeTrace = [];
   for (const decision of record.decisions || []) {
+    const preState = state;
     const action = findAction(simulator, state, decision.summary);
     if (!action) throw new Error(`Unable to replay start route at ${decision.index}: ${decision.summary}`);
+    if (Object.prototype.hasOwnProperty.call(state, "routeTrace")) delete state.routeTrace;
     state = simulator.applyAction(state, action);
+    routeTrace = routeTrace.concat(decisionTraceEntry(simulator.project, decision, preState, state));
   }
+  state.routeTrace = routeTrace;
   if (useCache) writeReplayCache(routeFile, projectRoot || "", rank || "chaos", state);
   return state;
 }
@@ -207,6 +236,12 @@ function main() {
     repairMaxExpansions: optionalNumber(args["repair-max-expansions"]) || 2500,
     repairMaxRuntimeMs: optionalNumber(args["repair-max-runtime-ms"]) || 10000,
     repairGoalSkylineLimit: optionalNumber(args["repair-goal-skyline-limit"]) || optionalNumber(args["candidate-limit"]) || 8,
+    repairRollbackSegments: optionalNumber(args["repair-rollback-segments"]) || null,
+    windowRepairMaxExpansions: optionalNumber(args["window-repair-max-expansions"]) || null,
+    windowRepairMaxRuntimeMs: optionalNumber(args["window-repair-max-runtime-ms"]) || null,
+    windowRepairKeyMode: args["window-repair-key-mode"] || null,
+    windowRepairPriorityMode: args["window-repair-priority-mode"] || null,
+    enableWindowRepair: parseBoolean(args["window-repair"], true),
     enableFailureBacktracking: parseBoolean(args["failure-backtracking"], true),
     backtrackCandidateLimit: optionalNumber(args["backtrack-candidate-limit"]) || null,
     backtrackMaxExpansions: optionalNumber(args["backtrack-max-expansions"]) || null,
@@ -233,6 +268,7 @@ function main() {
   if (out && result.found && result.finalCandidate && result.finalCandidate.state) {
     const finalState = result.finalCandidate.state;
     finalState.route = Array.isArray(result.finalCandidate.route) ? result.finalCandidate.route.slice() : finalState.route;
+    finalState.routeTrace = Array.isArray(result.finalCandidate.trace) ? result.finalCandidate.trace.slice() : finalState.routeTrace;
     const routeRecord = buildRouteRecord({
       project,
       simulator,

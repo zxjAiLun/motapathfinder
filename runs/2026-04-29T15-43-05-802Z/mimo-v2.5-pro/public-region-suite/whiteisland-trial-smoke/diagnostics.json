@@ -1,0 +1,74 @@
+{
+  "taskId": "whiteisland-trial-smoke",
+  "found": true,
+  "proofClaim": {
+    "found": true,
+    "proofLevel": "candidate",
+    "completeWithinActionSet": false,
+    "actionTrimmed": 0,
+    "stoppedReasons": [
+      "time-limit"
+    ],
+    "expansionBudgetExhausted": false,
+    "expansionBudgetExhaustedSegments": [],
+    "stopOnFirstGoalSegments": [],
+    "unsafeStopOnFirstGoal": false,
+    "unsafeStopOnFirstGoalSegments": [],
+    "notes": [
+      "stoppedReason present: time-limit"
+    ]
+  },
+  "segments": [
+    {
+      "segmentId": "whiteisland-trial-smoke-goal",
+      "label": "Whiteisland Trial Smoke: A1 local resource timing",
+      "found": true,
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "id": "whiteisland-trial-smoke-goal:candidate-0",
+          "hero": {
+            "hp": 675,
+            "atk": 2,
+            "def": 2,
+            "mdef": 20,
+            "lv": 1,
+            "exp": 6,
+            "money": 0,
+            "equipment": []
+          },
+          "effectiveHero": {
+            "hp": 675,
+            "atk": 2,
+            "def": 2,
+            "mdef": 20,
+            "lv": 1,
+            "exp": 6
+          },
+          "tags": [
+            "highest-hp",
+            "highest-atk",
+            "highest-def",
+            "highest-mdef",
+            "highest-exp",
+            "shortest",
+            "best-combat"
+          ],
+          "routeLength": 11
+        }
+      ],
+      "failurePropagation": null
+    }
+  ],
+  "failedSegmentId": null,
+  "failureClass": null,
+  "missingGoalFields": [],
+  "attempts": [
+    {
+      "dpKeyMode": "region",
+      "candidateLimit": 4,
+      "found": true,
+      "expansions": 46
+    }
+  ]
+}

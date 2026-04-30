@@ -2,6 +2,7 @@
 
 const { runMilestoneGraph, summarizeEffectiveHero, summarizeHero } = require("./segment-dp");
 const { scanResourceIntents } = require("./resource-intent-scanner");
+const { resolveRelativeFloor } = require("./floor-transitions");
 const { getTileDefinitionAt } = require("./state");
 
 const DEFAULT_ACTION_KINDS = ["battle", "pickup", "equip", "openDoor", "useTool", "changeFloor", "floorFly", "event"];
@@ -369,6 +370,115 @@ function buildFallbackRepairSegment(failedSegmentId, failureClass, missingGoalFi
   };
 }
 
+function shouldBuildWindowRepair(failureClass) {
+  return [
+    "hp-deficit",
+    "action-survivability-deficit",
+    "life-limit-hp-deficit",
+    "def-deficit",
+    "target-action-unreachable",
+  ].includes(failureClass);
+}
+
+function changeFloorTargetAllowed(project, allowedFloors, key) {
+  const match = /^([^:]+):(\d+),(\d+)$/.exec(String(key || ""));
+  if (!match) return true;
+  const sourceFloorId = match[1];
+  const loc = `${match[2]},${match[3]}`;
+  if (!allowedFloors.has(sourceFloorId)) return false;
+  const floor = project && project.floorsById && project.floorsById[sourceFloorId];
+  const changeFloor = floor && floor.changeFloor && floor.changeFloor[loc];
+  if (!changeFloor || !changeFloor.floorId) return true;
+  try {
+    return allowedFloors.has(resolveRelativeFloor(project, sourceFloorId, changeFloor.floorId));
+  } catch (error) {
+    return false;
+  }
+}
+
+function unionActionPolicy(segments, project) {
+  const sustainActionKinds = new Set(["battle", "pickup", "interactPickup", "equip", "changeFloor"]);
+  const actionKinds = new Set(["battle", "pickup", "interactPickup", "equip", "changeFloor"]);
+  const allowedFloors = new Set();
+  const rawAllowChangeFloors = new Set();
+  let forbidUnsupportedEvents = true;
+  (segments || []).forEach((segment) => {
+    const policy = (segment || {}).actionPolicy || {};
+    (policy.actionKinds || []).forEach((kind) => {
+      if (sustainActionKinds.has(kind)) actionKinds.add(kind);
+    });
+    (policy.allowedFloors || []).forEach((floorId) => allowedFloors.add(floorId));
+    (policy.allowChangeFloors || []).forEach((key) => rawAllowChangeFloors.add(key));
+    if (policy.forbidUnsupportedEvents === false) forbidUnsupportedEvents = false;
+  });
+  const allowChangeFloors = Array.from(rawAllowChangeFloors)
+    .filter((key) => changeFloorTargetAllowed(project, allowedFloors, key));
+  return {
+    actionKinds: Array.from(actionKinds).sort(),
+    forbidUnsupportedEvents,
+    ...(allowedFloors.size > 0 ? { allowedFloors: Array.from(allowedFloors).sort() } : {}),
+    ...(allowChangeFloors.length > 0 ? { allowChangeFloors: allowChangeFloors.sort() } : {}),
+    maxFloorFlyPerTarget: 1,
+    resourceTimingMode: "sustain-prep",
+  };
+}
+
+function defaultRepairRollbackSegments(failureClass, config) {
+  if (config && config.repairRollbackSegments != null) return number(config.repairRollbackSegments, 3);
+  if (failureClass === "life-limit-hp-deficit" || failureClass === "action-survivability-deficit") return 5;
+  return 3;
+}
+
+function buildWindowRepairSegment(result, spec, options) {
+  const config = options || {};
+  if (config.enableWindowRepair === false) return null;
+  const failed = result && result.failedSegment;
+  const failedSegmentId = failed && failed.segmentId;
+  const failureClass = inferFailureClass(result);
+  if (!failedSegmentId || !shouldBuildWindowRepair(failureClass)) return null;
+  const milestones = (spec || {}).milestones || [];
+  const failedIndex = milestones.findIndex((segment) => segment.id === failedSegmentId);
+  if (failedIndex < 0) return null;
+  const fromIndex = config.fromMilestoneId
+    ? milestones.findIndex((segment) => segment.id === config.fromMilestoneId)
+    : -1;
+  const lowerBound = fromIndex >= 0 ? fromIndex + 1 : 0;
+  const rollback = Math.max(1, defaultRepairRollbackSegments(failureClass, config));
+  const startIndex = Math.max(lowerBound, failedIndex - rollback);
+  if (startIndex >= failedIndex) return null;
+  const windowSegments = milestones.slice(startIndex, failedIndex + 1);
+  const failedSpecSegment = milestones[failedIndex];
+  return {
+    id: `auto-window-${failedSegmentId || "segment"}-${number(config.repairIndex, 0) + 1}`,
+    label: `自动合并窗口 ${windowSegments[0].id}..${failedSegmentId}`,
+    generated: true,
+    generatedBy: {
+      mode: "adaptive-window-repair",
+      failureClass,
+      failedSegmentId,
+      replaceFromSegmentId: windowSegments[0].id,
+      replaceToSegmentId: failedSegmentId,
+      rollbackSegments: failedIndex - startIndex,
+      windowSegmentIds: windowSegments.map((segment) => segment.id),
+      missingGoalFields: cloneJson(inferMissingGoalFields(result)),
+      reason: "downstream failure may require reordering sustain resources across multiple previous milestones",
+    },
+    startFrom: windowSegments[0].startFrom || null,
+    goal: cloneJson((failedSpecSegment || {}).goal || {}),
+    actionPolicy: unionActionPolicy(windowSegments, config.simulator && config.simulator.project),
+    dp: {
+      keyMode: config.windowRepairKeyMode || "region",
+      priorityMode: config.windowRepairPriorityMode || "default",
+      resourceTimingMode: "sustain-prep",
+      stopOnFirstGoal: false,
+      maxActionsPerState: number(config.windowRepairMaxActionsPerState, 9999),
+      maxExpansions: number(config.windowRepairMaxExpansions, Math.max(6000, number(config.repairMaxExpansions, 2500) * 3)),
+      maxRuntimeMs: number(config.windowRepairMaxRuntimeMs, Math.max(18000, number(config.repairMaxRuntimeMs, 10000) * 2)),
+      goalSkylineLimit: number(config.repairGoalSkylineLimit, config.candidateLimit || 8),
+    },
+  };
+}
+
 function buildRepairSegments(simulator, result, options) {
   const config = options || {};
   const failed = result && result.failedSegment;
@@ -376,9 +486,10 @@ function buildRepairSegments(simulator, result, options) {
   const failureClass = inferFailureClass(result);
   const missingGoalFields = inferMissingGoalFields(result);
   const frontier = result && result.finalCandidates;
+  const windowRepair = buildWindowRepairSegment(result, config.currentSpec, { ...config, simulator });
   if (config.enableAutoSplit !== false && shouldAutoSplit(result)) {
     const splitSegment = buildAutoSplitSegment(result, config.currentSpec, config);
-    if (splitSegment) return [splitSegment];
+    if (splitSegment) return windowRepair ? [windowRepair, splitSegment] : [splitSegment];
   }
   const intents = scanResourceIntents(simulator, frontier, {
     failureClass,
@@ -393,17 +504,33 @@ function buildRepairSegments(simulator, result, options) {
   });
   if (intents.length > 0) {
     const branchLimit = Math.max(1, number(config.repairBranchLimit, 1));
-    return intents.slice(0, branchLimit).map((intent) =>
+    const intentSegments = intents.slice(0, branchLimit).map((intent) =>
       buildIntentRepairSegment(intent, failedSegmentId, failureClass, missingGoalFields, { ...config, allIntents: intents })
     );
+    return windowRepair ? [windowRepair].concat(intentSegments).slice(0, branchLimit) : intentSegments;
   }
   const repairCandidates = collectRepairCandidates(simulator, frontier, failureClass, config);
   const fallback = buildFallbackRepairSegment(failedSegmentId, failureClass, missingGoalFields, frontier, repairCandidates, { ...config, simulator });
-  return fallback ? [fallback] : [];
+  return [windowRepair, fallback].filter(Boolean);
 }
 
 function cloneSpecWithInsertedSegment(spec, failedSegmentId, repairSegment) {
   const next = cloneJson(spec);
+  if (
+    repairSegment &&
+    repairSegment.generatedBy &&
+    repairSegment.generatedBy.mode === "adaptive-window-repair"
+  ) {
+    const fromId = repairSegment.generatedBy.replaceFromSegmentId;
+    const toId = repairSegment.generatedBy.replaceToSegmentId || failedSegmentId;
+    const fromIndex = (next.milestones || []).findIndex((milestone) => milestone.id === fromId);
+    const toIndex = (next.milestones || []).findIndex((milestone) => milestone.id === toId);
+    if (fromIndex < 0 || toIndex < fromIndex) return null;
+    const after = next.milestones[toIndex + 1] || null;
+    if (after && after.startFrom === toId) after.startFrom = repairSegment.id;
+    next.milestones.splice(fromIndex, toIndex - fromIndex + 1, repairSegment);
+    return next;
+  }
   const index = (next.milestones || []).findIndex((milestone) => milestone.id === failedSegmentId);
   if (index < 0) return null;
   const previous = next.milestones[index - 1] || null;

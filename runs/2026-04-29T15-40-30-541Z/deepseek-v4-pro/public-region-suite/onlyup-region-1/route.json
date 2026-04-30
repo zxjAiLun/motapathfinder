@@ -1,0 +1,10 @@
+{
+  "kind": "motapathfinder.route.v1",
+  "version": 1,
+  "taskId": "onlyup-region-1",
+  "decisions": [],
+  "metadata": {
+    "found": false,
+    "solver": "deepseek-v4-pro"
+  }
+}

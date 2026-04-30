@@ -4,7 +4,7 @@ const { getProgress, compareProgress } = require("./progress");
 const { estimateNextFloorDistance, getFloorOrder } = require("./score");
 const { cloneState, getDecisionDepth, listFloorMutationSummary } = require("./state");
 const { createCheckpointPool } = require("./floor-checkpoints");
-const { createChildNode, createRootNode, reconstructRoute } = require("./search-nodes");
+const { createChildNode, createRootNode, reconstructActionEntries, reconstructActionTrace } = require("./search-nodes");
 
 function stableArray(array) {
   return Array.isArray(array) ? array.slice().sort() : [];
@@ -334,12 +334,16 @@ function searchDP(simulator, initialState, options) {
   const maxActionsPerState = Number(config.maxActionsPerState || 256);
   const agendaMode = String(config.dpAgendaMode || config.agendaMode || "best-first");
   const stopOnFirstGoal = config.stopOnFirstGoal !== false;
+  const continueAfterGoal = config.continueAfterGoal === true;
   const maxRuntimeMs = Number(config.maxRuntimeMs || config.timeLimitMs || 0);
   const fifoEntries = [];
   const heap = agendaMode === "fifo"
     ? null
     : new BinaryHeap((left, right) => compareDpAgendaRank(left.rank, right.rank));
   const initialRoutePrefix = Array.isArray(initialState.route) ? initialState.route.slice() : [];
+  const initialRouteTracePrefix = Array.isArray(config.initialRouteTracePrefix)
+    ? config.initialRouteTracePrefix
+    : [];
   const rootState = cloneState(initialState);
   rootState.route = [];
   const nodes = new Map();
@@ -372,7 +376,7 @@ function searchDP(simulator, initialState, options) {
 
   const isActiveEntry = (entry) => {
     const active = bestByKey.get(entry.key);
-    return Boolean(active && active.nodeId === entry.nodeId && !isGoalState(entry.state));
+    return Boolean(active && active.nodeId === entry.nodeId && (continueAfterGoal || !isGoalState(entry.state)));
   };
 
   const enqueue = (state, sourceAction, parentNode) => {
@@ -445,7 +449,7 @@ function searchDP(simulator, initialState, options) {
     const active = bestByKey.get(entry.key);
     if (!active || active.nodeId !== entry.nodeId) continue;
     const state = entry.state;
-    if (isGoalState(state)) continue;
+    if (!continueAfterGoal && isGoalState(state)) continue;
     expansions += 1;
     let actions = [];
     try {
@@ -496,7 +500,8 @@ function searchDP(simulator, initialState, options) {
 
   const attachRouteToNodeState = (node) => {
     if (!node || !node.state) return null;
-    node.state.route = initialRoutePrefix.concat(reconstructRoute(nodes, node));
+    node.state.route = initialRoutePrefix.concat(reconstructActionEntries(nodes, node));
+    node.state.routeTrace = initialRouteTracePrefix.concat(reconstructActionTrace(nodes, node));
     return node.state;
   };
   const firstGoalState = attachRouteToNodeState(firstGoalNode);
@@ -614,6 +619,7 @@ function searchDP(simulator, initialState, options) {
         sameHpRejected,
         agendaMode,
         stopOnFirstGoal,
+        continueAfterGoal,
         keyMode: String(config.dpKeyMode || config.keyMode || "location"),
         targetFloorOrder: getFloorOrder(config.targetFloorId || simulator.stopFloorId),
         foundFirstGoal: Boolean(firstGoalState),

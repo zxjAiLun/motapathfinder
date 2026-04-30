@@ -1,0 +1,7 @@
+{
+  "kind": "motapathfinder.route.v1",
+  "taskId": "whiteisland-trial-smoke",
+  "solver": "mimo-v2.5-pro",
+  "decisions": [],
+  "found": false
+}
