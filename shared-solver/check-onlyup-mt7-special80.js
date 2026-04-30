@@ -19,6 +19,9 @@ const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1")
 const ROUTE_NAME = "onlyup-chaos-mt5-blueking";
 const START_ROUTE = path.join(__dirname, "routes", "latest", "segmented-mt7-right-exp-crystal.route.json");
 const LATEST_LEFT_SWORD_ROUTE = path.join(__dirname, "routes", "latest", "adaptive-mt7-left-sword.route.json");
+const LATEST_MT8_SUFFIX_ROUTE = path.join(__dirname, "routes", "latest", "adaptive-mt8-entry-from-mt6-window-suffix.route.json");
+const LATEST_MT8_WINDOW_ROUTE = path.join(__dirname, "routes", "latest", "adaptive-mt8-entry-from-mt6-window.route.json");
+const USER_BASELINE_ROUTE = path.join(__dirname, "fixtures", "onlyup-mt7-user-baseline.json");
 const ADAPTIVE_START_ROUTE = path.join(__dirname, "routes", "latest", "checkpoints", "onlyup-chaos-mt5-blueking", "mt7-bottom-double-fairy.route.json");
 const WINDOW_START_ROUTE = path.join(__dirname, "routes", "latest", "checkpoints", "onlyup-chaos-mt5-blueking", "mt6-first-center-guard.route.json");
 
@@ -79,6 +82,82 @@ function replayRoute(simulator, routeFile) {
     state = simulator.applyAction(state, action);
   }
   return state;
+}
+
+function replaySummaries(simulator, startState, summaries) {
+  let state = JSON.parse(JSON.stringify(startState));
+  for (const [index, summary] of summaries.entries()) {
+    const action = findAction(simulator, state, summary);
+    assert.ok(action, `user baseline action ${index + 1} is not replayable from ${state.floorId}: ${summary}`);
+    state = simulator.applyAction(state, action);
+  }
+  return state;
+}
+
+function heroSummary(stateOrSnapshot) {
+  const hero = (stateOrSnapshot && stateOrSnapshot.hero) || {};
+  return {
+    hp: Number(hero.hp || 0),
+    atk: Number(hero.atk || 0),
+    def: Number(hero.def || 0),
+    mdef: Number(hero.mdef || 0),
+    lv: Number(hero.lv || 0),
+    exp: Number(hero.exp || 0),
+  };
+}
+
+function routeFinalStateFromRecord(routeFile) {
+  const record = readRouteFile(routeFile);
+  const snapshot = record.final && record.final.snapshot;
+  assert.ok(snapshot && snapshot.hero, `route has no final snapshot: ${routeFile}`);
+  return {
+    floorId: snapshot.floorId || (record.final && record.final.floorId),
+    hero: snapshot.hero,
+    routeFile,
+  };
+}
+
+function compareRouteAgainstBaseline(candidate, baseline, compareConfig) {
+  const candidateHero = heroSummary(candidate);
+  const baselineHero = heroSummary(baseline);
+  if ((compareConfig || {}).mustReachSameFloor !== false) {
+    assert.equal(candidate.floorId, baseline.floorId, `candidate route should reach baseline floor ${baseline.floorId}, got ${candidate.floorId}`);
+  }
+  for (const field of ((compareConfig || {}).mustNotLoseFields || ["hp", "atk", "def", "mdef", "lv"])) {
+    assert.ok(
+      candidateHero[field] >= baselineHero[field],
+      `candidate route is worse than user baseline on ${field}: candidate=${candidateHero[field]}, baseline=${baselineHero[field]}, file=${candidate.routeFile || "in-memory"}`
+    );
+  }
+  if ((compareConfig || {}).sameLevelMustNotLoseExp !== false && candidateHero.lv === baselineHero.lv) {
+    assert.ok(
+      candidateHero.exp >= baselineHero.exp,
+      `candidate route is worse than user baseline on exp at same lv: candidate=${candidateHero.exp}, baseline=${baselineHero.exp}, file=${candidate.routeFile || "in-memory"}`
+    );
+  }
+}
+
+function checkUserBaselineOracle(simulator) {
+  const fixture = JSON.parse(fs.readFileSync(USER_BASELINE_ROUTE, "utf8"));
+  assert.equal(fixture.schema, "motapathfinder.baseline-route.v1");
+  const startRoute = path.resolve(__dirname, fixture.startRoute || "");
+  const startState = replayRoute(simulator, startRoute);
+  const baselineState = replaySummaries(simulator, startState, fixture.route || []);
+  assert.equal(baselineState.floorId, fixture.target && fixture.target.floorId, `user baseline should reach ${fixture.target && fixture.target.floorId}`);
+
+  const candidateRoute = fs.existsSync(LATEST_MT8_SUFFIX_ROUTE)
+    ? LATEST_MT8_SUFFIX_ROUTE
+    : LATEST_MT8_WINDOW_ROUTE;
+  assert.ok(fs.existsSync(candidateRoute), `missing latest MT8 route to compare against user baseline: ${candidateRoute}`);
+  const candidate = routeFinalStateFromRecord(candidateRoute);
+  compareRouteAgainstBaseline(candidate, baselineState, fixture.compare || {});
+  return {
+    fixtureId: fixture.id,
+    candidateRoute: path.relative(__dirname, candidateRoute),
+    baseline: heroSummary(baselineState),
+    candidate: heroSummary(candidate),
+    route: fixture.route,
+  };
 }
 
 function actionSurvivableMissing(threshold) {
@@ -315,6 +394,7 @@ function main() {
   const window = checkResourceTimingWindow(simulator);
   const adaptive = checkAdaptiveBranch(simulator);
   const latestOrdering = checkLatestLeftSwordOrdering();
+  const userBaseline = checkUserBaselineOracle(simulator);
   console.log(JSON.stringify({
     threshold: {
       enemyLabel: threshold.enemyLabel,
@@ -342,6 +422,7 @@ function main() {
       repairBranches: (adaptive.adaptive || {}).repairBranches || [],
     },
     latestOrdering,
+    userBaseline,
   }, null, 2));
 }
 

@@ -1,0 +1,37 @@
+{
+  "schema": "motapathfinder.baseline-route.v1",
+  "id": "onlyup-mt7-user-baseline-v1",
+  "label": "OnlyUp MT6/MT7 user baseline after mt6-first-center-guard",
+  "startRoute": "routes/latest/checkpoints/onlyup-chaos-mt5-blueking/mt6-first-center-guard.route.json",
+  "target": {
+    "floorId": "MT8"
+  },
+  "route": [
+    "battle:evilFairy@MT6:2,1",
+    "battle:silverSlime@MT6:6,8",
+    "battle:silverSlime@MT6:9,10",
+    "battle:yellowPriest@MT6:11,11",
+    "battle:evilFairy@MT6:8,11",
+    "changeFloor@MT6:6,12",
+    "battle:evilFairy@MT7:4,11",
+    "battle:evilFairy@MT7:8,11",
+    "battle:redSwordsman@MT7:3,10",
+    "changeFloor@MT7:6,12",
+    "battle:poisonZombie@MT6:10,5",
+    "changeFloor@MT6:6,12",
+    "battle:poisonZombie@MT7:1,11",
+    "battle:whiteSlimeman@MT7:9,10",
+    "battle:redSwordsman@MT7:10,8",
+    "floorFly:MT7@MT7:10,9",
+    "battle:poisonZombie@MT7:4,7",
+    "battle:octopus@MT7:3,6",
+    "battle:octopus@MT7:2,5",
+    "battle:princessEnemy@MT7:3,4",
+    "changeFloor@MT7:6,0"
+  ],
+  "compare": {
+    "mustReachSameFloor": true,
+    "mustNotLoseFields": ["hp", "atk", "def", "mdef", "lv"],
+    "sameLevelMustNotLoseExp": true
+  }
+}
