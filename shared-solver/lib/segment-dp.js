@@ -537,7 +537,7 @@ const BLOCKER_TILE_NUMBER = 1;
 
 function isTileBlocking(project, tileNumber) {
   const def = project.mapTilesByNumber[String(tileNumber)];
-  if (!def) return true;
+  if (!def) return false;
   if (def.cls && def.cls.indexOf("enemy") === 0) return false;
   if (def.trigger === "openDoor") return false;
   if (def.cls === "items") return false;
@@ -559,41 +559,29 @@ function protectPresentTiles(project, state, segment) {
       ? project.mapTilesByNumber[String(tileNum)]
       : getTileDefinitionAt(project, state, required.floorId, required.x, required.y);
     if (!tile) continue;
-    const isItem = tile.cls === "items";
-    if (isItem) {
-      const wasRemoved = floorState.removed[key];
-      const wasReplaced = floorState.replaced[key];
-      saved.push({ floorId: required.floorId, key, wasRemoved, wasReplaced, floorState, mode: "item" });
-      floorState.removed[key] = true;
-    } else {
-      if (!isTileBlocking(project, BLOCKER_TILE_NUMBER)) {
-        throw new Error(`protectPresentTiles: tile ${BLOCKER_TILE_NUMBER} is not a blocking tile`);
-      }
-      const wasReplaced = floorState.replaced[key];
-      saved.push({ floorId: required.floorId, key, wasReplaced, floorState, mode: "blocker" });
-      floorState.replaced[key] = BLOCKER_TILE_NUMBER;
+    if (!isTileBlocking(project, BLOCKER_TILE_NUMBER)) {
+      throw new Error(`protectPresentTiles: tile ${BLOCKER_TILE_NUMBER} is not a blocking tile`);
     }
+    const wasRemoved = floorState.removed[key];
+    const wasReplaced = floorState.replaced[key];
+    saved.push({ floorId: required.floorId, key, wasRemoved, wasReplaced, floorState });
+    delete floorState.removed[key];
+    floorState.replaced[key] = BLOCKER_TILE_NUMBER;
   }
   return saved;
 }
 
 function restorePresentTiles(saved) {
   for (const entry of saved) {
-    if (entry.mode === "item") {
-      if (entry.wasRemoved) {
-        entry.floorState.removed[entry.key] = true;
-      } else {
-        delete entry.floorState.removed[entry.key];
-      }
-      if (entry.wasReplaced !== undefined) {
-        entry.floorState.replaced[entry.key] = entry.wasReplaced;
-      }
+    if (entry.wasRemoved) {
+      entry.floorState.removed[entry.key] = true;
     } else {
-      if (entry.wasReplaced !== undefined) {
-        entry.floorState.replaced[entry.key] = entry.wasReplaced;
-      } else {
-        delete entry.floorState.replaced[entry.key];
-      }
+      delete entry.floorState.removed[entry.key];
+    }
+    if (entry.wasReplaced !== undefined) {
+      entry.floorState.replaced[entry.key] = entry.wasReplaced;
+    } else {
+      delete entry.floorState.replaced[entry.key];
     }
   }
 }
