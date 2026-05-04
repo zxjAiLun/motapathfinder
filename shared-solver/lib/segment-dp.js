@@ -495,6 +495,65 @@ function buildSegmentActionProvider(simulator, segment) {
   };
 }
 
+function closeStateForBattleFrontier(simulator, state) {
+  if (typeof simulator.stabilizeState !== "function") return state;
+  return simulator.stabilizeState(state);
+}
+
+function collapsePortalActions(actions) {
+  const battles = [];
+  const portalsByTarget = new Map();
+  const others = [];
+  for (const action of actions || []) {
+    if (!action) continue;
+    if (action.kind === "battle") {
+      battles.push(action);
+    } else if (action.kind === "changeFloor" || action.kind === "floorFly") {
+      const targetFloor = action.kind === "floorFly"
+        ? (action.targetFloorId || (action.target && action.target.floorId) || "?")
+        : (action.changeFloor && action.changeFloor.floorId || "?");
+      const existing = portalsByTarget.get(targetFloor);
+      if (!existing || (action.path || []).length < (existing.path || []).length) {
+        portalsByTarget.set(targetFloor, action);
+      }
+    } else {
+      others.push(action);
+    }
+  }
+  return [...battles, ...portalsByTarget.values(), ...others];
+}
+
+function presentTilesViolatedByClosure(project, state, segment) {
+  const goal = (segment || {}).goal || {};
+  for (const required of goal.presentTiles || []) {
+    if (getTileDefinitionAt(project, state, required.floorId, required.x, required.y) == null) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildBattleFrontierActionProvider(simulator, segment) {
+  return (unusedSimulator, state) => {
+    const policy = (segment || {}).actionPolicy || {};
+    const allowedKinds = new Set(policy.actionKinds || ["battle", "changeFloor", "floorFly"]);
+    const closedState = closeStateForBattleFrontier(simulator, state);
+    if (presentTilesViolatedByClosure(simulator.project, closedState, segment)) {
+      return [];
+    }
+    const primitive = (simulator.enumeratePrimitiveActions(closedState).actions || []);
+    let actions = primitive;
+    if (allowedKinds.has("floorFly") && typeof simulator.enumerateFloorFlyActions === "function") {
+      actions = actions.concat(simulator.enumerateFloorFlyActions(closedState));
+    }
+    const filtered = trimFloorFlyActions(actions, policy)
+      .filter((action) => isAllowedAction(action, closedState, segment, simulator))
+      .filter((action) => isResourceTimingAction(simulator, closedState, action, segment))
+      .map((action) => annotateSegmentAction(simulator, closedState, action, segment));
+    return collapsePortalActions(filtered);
+  };
+}
+
 function routeLength(state) {
   return Array.isArray((state || {}).route) ? state.route.length : 0;
 }
@@ -571,11 +630,31 @@ function selectGoalSkyline(simulator, states, segment, options) {
     const existing = byKey.get(key);
     if (!existing || compareCandidateStates(state, existing) < 0) byKey.set(key, state);
   });
+  const goal = (segment || {}).goal || {};
+  const actionSurvivableTarget = goal.actionSurvivable && goal.actionSurvivable.summary
+    ? goal.actionSurvivable.summary
+    : null;
   const records = Array.from(byKey.values()).map((state, index) => {
     const trace = Array.isArray(state.routeTrace)
       ? state.routeTrace.map((entry) => compactTraceEntry(simulator.project, entry)).filter(Boolean)
       : [];
     if (Object.prototype.hasOwnProperty.call(state, "routeTrace")) delete state.routeTrace;
+    let targetMargin = null;
+    if (actionSurvivableTarget) {
+      try {
+        const threshold = estimateBattleSurvivability(simulator, state, actionSurvivableTarget, { skipMinHp: true });
+        if (threshold && threshold.supported) {
+          targetMargin = {
+            survivable: threshold.survivable,
+            margin: number(threshold.currentHp, 0) - number(threshold.currentDamage, Number.POSITIVE_INFINITY),
+            special: threshold.special,
+            riskTags: threshold.riskTags,
+          };
+        }
+      } catch (error) {
+        targetMargin = null;
+      }
+    }
     return {
       id: `${segment.id || "segment"}#${index}`,
       state,
@@ -585,6 +664,7 @@ function selectGoalSkyline(simulator, states, segment, options) {
       effectiveHero: summarizeEffectiveHero(state),
       score: goalCandidateScore(state),
       tags: [],
+      targetMargin,
     };
   });
   const rolePickers = [
@@ -596,6 +676,24 @@ function selectGoalSkyline(simulator, states, segment, options) {
     ["highest-exp", (left, right) => right.hero.exp - left.hero.exp],
     ["shortest", (left, right) => left.route.length - right.route.length],
   ];
+  if (actionSurvivableTarget) {
+    rolePickers.push([
+      "best-target-margin",
+      (left, right) => {
+        const leftMargin = left.targetMargin ? left.targetMargin.margin : -Infinity;
+        const rightMargin = right.targetMargin ? right.targetMargin.margin : -Infinity;
+        return rightMargin - leftMargin;
+      },
+    ]);
+    rolePickers.push([
+      "target-survivable",
+      (left, right) => {
+        const leftOk = left.targetMargin && left.targetMargin.survivable ? 1 : 0;
+        const rightOk = right.targetMargin && right.targetMargin.survivable ? 1 : 0;
+        return rightOk - leftOk;
+      },
+    ]);
+  }
   const selected = [];
   const selectedIds = new Set();
   const compareGoalRecords = (left, right) => {
@@ -648,7 +746,27 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
     const existing = byKey.get(key);
     if (!existing || compareCandidateStates(candidate.state, existing.state) < 0) byKey.set(key, candidate);
   });
-  const records = Array.from(byKey.values()).map((candidate, index) => normalizeCandidateRecord(candidate, index, segment.id));
+  const goal = (segment || {}).goal || {};
+  const actionSurvivableTarget = goal.actionSurvivable && goal.actionSurvivable.summary
+    ? goal.actionSurvivable.summary
+    : null;
+  const records = Array.from(byKey.values()).map((candidate, index) => {
+    const record = normalizeCandidateRecord(candidate, index, segment.id);
+    if (actionSurvivableTarget) {
+      try {
+        const threshold = estimateBattleSurvivability(simulator, record.state, actionSurvivableTarget, { skipMinHp: true });
+        if (threshold && threshold.supported) {
+          record.targetMargin = {
+            survivable: threshold.survivable,
+            margin: number(threshold.currentHp, 0) - number(threshold.currentDamage, Number.POSITIVE_INFINITY),
+          };
+        }
+      } catch (error) {
+        record.targetMargin = null;
+      }
+    }
+    return record;
+  });
   const compareGoalRecords = (left, right) => {
     const tagDiff = right.tags.length - left.tags.length;
     if (tagDiff !== 0) return tagDiff;
@@ -665,6 +783,24 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
     ["highest-exp", (left, right) => right.hero.exp - left.hero.exp],
     ["shortest", (left, right) => left.route.length - right.route.length],
   ];
+  if (actionSurvivableTarget) {
+    rolePickers.push([
+      "best-target-margin",
+      (left, right) => {
+        const leftMargin = left.targetMargin ? left.targetMargin.margin : -Infinity;
+        const rightMargin = right.targetMargin ? right.targetMargin.margin : -Infinity;
+        return rightMargin - leftMargin;
+      },
+    ]);
+    rolePickers.push([
+      "target-survivable",
+      (left, right) => {
+        const leftOk = left.targetMargin && left.targetMargin.survivable ? 1 : 0;
+        const rightOk = right.targetMargin && right.targetMargin.survivable ? 1 : 0;
+        return rightOk - leftOk;
+      },
+    ]);
+  }
   const selected = [];
   const selectedIds = new Set();
   const keepCandidate = (record) => {
@@ -901,7 +1037,9 @@ function searchSegmentDP(simulator, startState, segment, options) {
     captureTrace,
     initialRouteTracePrefix: prefixTrace,
     goalSkylineLimit: number(dpConfig.goalSkylineLimit, 8),
-    actionProvider: buildSegmentActionProvider(simulator, segment),
+    actionProvider: dpConfig.actionProviderMode === "battle-frontier"
+      ? buildBattleFrontierActionProvider(simulator, segment)
+      : buildSegmentActionProvider(simulator, segment),
     goalPredicate: buildSegmentGoalPredicate(simulator.project, segment, simulator),
   });
   const baseDpDiagnostics = (result.diagnostics && result.diagnostics.dp) || {};
@@ -935,6 +1073,11 @@ function searchSegmentDP(simulator, startState, segment, options) {
       actionTrimmed: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionTrimmed,
       rejectedByHigherHp: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.rejectedByHigherHp,
       replacedLowerHp: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.replacedLowerHp,
+      actionsGeneratedByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsGeneratedByKind,
+      actionsKeptByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsKeptByKind,
+      actionsDominatedByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsDominatedByKind,
+      uniqueBattleTargets: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.uniqueBattleTargets,
+      uniquePortalEntries: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.uniquePortalEntries,
       failure: goalSkyline.length > 0 ? null : summarizeSegmentFailure(simulator.project, segment, result, simulator),
       goalSkyline: {
         primaryOutput: true,

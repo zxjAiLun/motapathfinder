@@ -11,7 +11,7 @@ const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
 const { fingerprintAction, readRouteFile } = require("./lib/route-store");
 const { scanResourceIntents } = require("./lib/resource-intent-scanner");
-const { searchSegmentDP } = require("./lib/segment-dp");
+const { searchSegmentDP, summarizeHero } = require("./lib/segment-dp");
 const { buildDominanceKey } = require("./lib/state-key");
 const { getTileDefinitionAt } = require("./lib/state");
 const { StaticSimulator } = require("./lib/simulator");
@@ -415,12 +415,69 @@ function checkResourceTimingWindow(simulator) {
   };
 }
 
+function checkBattleFrontierMode(simulator) {
+  const startState = replayRoute(simulator, WINDOW_START_ROUTE);
+  const segment = {
+    id: "test-battle-frontier",
+    label: "battle-frontier mode test",
+    goal: {
+      type: "heroAtLeast",
+      floorId: "MT7",
+      minHero: {
+        hp: 1,
+        atk: 5767,
+        def: 5535,
+        mdef: 30010,
+        lv: 9,
+      },
+      equipmentIncludes: ["I894"],
+      presentTiles: [
+        { floorId: "MT7", x: 1, y: 11, reason: "keep life-limit blocker" },
+        { floorId: "MT7", x: 0, y: 11, reason: "keep sword reward" },
+      ],
+      actionSurvivable: {
+        summary: "battle:poisonZombie@MT7:1,11",
+      },
+    },
+    actionPolicy: {
+      allowedFloors: ["MT6", "MT7"],
+      actionKinds: ["battle", "changeFloor"],
+      allowChangeFloors: ["MT7:6,12", "MT6:6,12", "MT6:6,0", "MT7:6,0"],
+      forbidUnsupportedEvents: true,
+    },
+    dp: {
+      keyMode: "region",
+      priorityMode: "default",
+      actionProviderMode: "battle-frontier",
+      enablePreviewScore: "required",
+      stopOnFirstGoal: false,
+      maxExpansions: 20000,
+      maxRuntimeMs: 60000,
+      goalSkylineLimit: 8,
+    },
+  };
+  const result = searchSegmentDP(simulator, startState, segment, { candidateLimit: 8 });
+  const diag = result.diagnostics || {};
+  const dpDiag = diag.dp || {};
+  return {
+    found: result.found,
+    expansions: dpDiag.expansions || 0,
+    actionsGeneratedByKind: diag.actionsGeneratedByKind || {},
+    actionsKeptByKind: diag.actionsKeptByKind || {},
+    uniqueBattleTargets: diag.uniqueBattleTargets || 0,
+    uniquePortalEntries: diag.uniquePortalEntries || 0,
+    frontierSize: dpDiag.frontierSize || 0,
+    hero: result.found && result.goalSkyline[0] ? summarizeHero(result.goalSkyline[0].state) : null,
+  };
+}
+
 function main() {
   const simulator = makeSimulator();
   const startState = replayRoute(simulator, START_ROUTE);
   const threshold = checkThreshold(simulator, startState);
   const intents = checkResourceIntent(simulator, startState, threshold);
   const window = checkResourceTimingWindow(simulator);
+  const battleFrontier = checkBattleFrontierMode(simulator);
   const adaptive = checkAdaptiveBranch(simulator);
   const latestOrdering = checkLatestLeftSwordOrdering();
   const userBaseline = checkUserBaselineOracle(simulator);
@@ -442,6 +499,14 @@ function main() {
       expansions: window.expansions,
       stoppedReason: window.stoppedReason,
       suffix: window.suffix,
+    },
+    battleFrontier: {
+      found: battleFrontier.found,
+      expansions: battleFrontier.expansions,
+      actionsGeneratedByKind: battleFrontier.actionsGeneratedByKind,
+      uniqueBattleTargets: battleFrontier.uniqueBattleTargets,
+      uniquePortalEntries: battleFrontier.uniquePortalEntries,
+      hero: battleFrontier.hero,
     },
     adaptive: {
       found: adaptive.found,

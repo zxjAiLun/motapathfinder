@@ -301,6 +301,9 @@ function emptyActionStats() {
   return {
     byActionType: {},
     byActionRole: {},
+    byKind: {},
+    uniqueBattleTargets: new Set(),
+    uniquePortalEntries: new Set(),
   };
 }
 
@@ -318,6 +321,17 @@ function recordAction(stats, action, field) {
   const type = actionType(action);
   if (!stats.byActionType[type]) stats.byActionType[type] = { generated: 0, kept: 0, dominated: 0, invalid: 0, expanded: 0 };
   stats.byActionType[type][field] = Number(stats.byActionType[type][field] || 0) + 1;
+  const kind = (action && action.kind) || "unknown";
+  if (!stats.byKind[kind]) stats.byKind[kind] = { generated: 0, kept: 0, dominated: 0, invalid: 0, expanded: 0 };
+  stats.byKind[kind][field] = Number(stats.byKind[kind][field] || 0) + 1;
+  if (field === "generated" || field === "expanded") {
+    if (kind === "battle" && action && action.summary) {
+      stats.uniqueBattleTargets.add(action.summary);
+    }
+    if ((kind === "changeFloor" || kind === "floorFly") && action && action.summary) {
+      stats.uniquePortalEntries.add(action.summary);
+    }
+  }
 }
 
 function selectGoalSkylineNodes(goalNodes, options) {
@@ -559,6 +573,17 @@ function searchDP(simulator, initialState, options) {
       },
       byActionType: actionStats.byActionType,
       byActionRole: actionStats.byActionRole,
+      actionsGeneratedByKind: Object.fromEntries(
+        Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.generated || 0])
+      ),
+      actionsKeptByKind: Object.fromEntries(
+        Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.kept || 0])
+      ),
+      actionsDominatedByKind: Object.fromEntries(
+        Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.dominated || 0])
+      ),
+      uniqueBattleTargets: actionStats.uniqueBattleTargets.size,
+      uniquePortalEntries: actionStats.uniquePortalEntries.size,
       byFloor: {},
       byStage: {},
       droppedProgressActions: { total: 0, byReason: {}, samples: [] },
