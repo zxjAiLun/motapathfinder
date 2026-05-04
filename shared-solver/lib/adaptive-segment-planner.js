@@ -2,7 +2,6 @@
 
 const { runMilestoneGraph, summarizeEffectiveHero, summarizeHero } = require("./segment-dp");
 const { scanResourceIntents } = require("./resource-intent-scanner");
-const { estimateBattleSurvivability } = require("./battle-thresholds");
 const { resolveRelativeFloor } = require("./floor-transitions");
 const { getTileDefinitionAt } = require("./state");
 
@@ -535,11 +534,15 @@ function buildWindowRepairSegment(result, spec, options) {
 }
 
 function buildConvergenceSplitSegments(simulator, result, intents, failedSegmentId, failureClass, missingGoalFields, config) {
-  if (failureClass !== "life-limit-hp-deficit" && failureClass !== "action-survivability-deficit") return [];
-  if (!intents || intents.length === 0) return [];
+  if (failureClass !== "life-limit-hp-deficit" && failureClass !== "action-survivability-deficit") return null;
+  if (!intents || intents.length === 0) return null;
   const maxSplits = Math.max(1, number(config.convergenceSplitLimit, 3));
   const maxExpansions = number(config.convergenceSplitMaxExpansions, Math.max(1500, number(config.repairMaxExpansions, 2500)));
   const maxRuntimeMs = number(config.convergenceSplitMaxRuntimeMs, Math.max(8000, number(config.repairMaxRuntimeMs, 10000)));
+  const failed = result && result.failedSegment;
+  const originalStartFrom = failed && failed.segmentId
+    ? ((result.segmentResults || []).find((s) => s.segmentId === failed.segmentId) || {}).startFrom || null
+    : null;
   const splits = [];
   for (const intent of intents) {
     if (splits.length >= maxSplits) break;
@@ -549,10 +552,12 @@ function buildConvergenceSplitSegments(simulator, result, intents, failedSegment
       if (record.tile) intentFloors.add(record.tile.floorId);
     }
     (intent.actionPolicy.allowedFloors || []).forEach((f) => intentFloors.add(f));
+    const prevId = splits.length > 0 ? splits[splits.length - 1].id : null;
     splits.push({
       id: `auto-convergence-${failedSegmentId || "segment"}-${splits.length + 1}-${intent.kind}`,
       label: `自动收敛点 ${intent.kind}`,
       generated: true,
+      startFrom: splits.length === 0 ? originalStartFrom : prevId,
       generatedBy: {
         mode: "convergence-split",
         failureClass,
@@ -576,7 +581,20 @@ function buildConvergenceSplitSegments(simulator, result, intents, failedSegment
       },
     });
   }
-  return splits;
+  return splits.length > 0 ? splits : null;
+}
+
+function cloneSpecWithInsertedSegmentChain(spec, failedSegmentId, chainSegments) {
+  const next = cloneJson(spec);
+  const index = (next.milestones || []).findIndex((milestone) => milestone.id === failedSegmentId);
+  if (index < 0) return null;
+  const failed = next.milestones[index];
+  const lastInChain = chainSegments[chainSegments.length - 1];
+  failed.startFrom = lastInChain.id;
+  for (let i = chainSegments.length - 1; i >= 0; i -= 1) {
+    next.milestones.splice(index, 0, chainSegments[i]);
+  }
+  return next;
 }
 
 function buildRepairSegments(simulator, result, options) {
@@ -609,9 +627,13 @@ function buildRepairSegments(simulator, result, options) {
     const branchLimit = Math.max(1, number(config.repairBranchLimit, 1));
     const convergenceSplits = config.enableConvergenceSplit !== false
       ? buildConvergenceSplitSegments(simulator, result, intents, failedSegmentId, failureClass, missingGoalFields, config)
-      : [];
-    if (convergenceSplits.length > 0) {
-      return convergenceSplits;
+      : null;
+    if (convergenceSplits) {
+      return [{
+        mode: "convergence-chain",
+        segments: convergenceSplits,
+        failedSegmentId,
+      }];
     }
     const intentSegments = intents.slice(0, branchLimit).map((intent) =>
       buildIntentRepairSegment(intent, failedSegmentId, failureClass, missingGoalFields, { ...config, allIntents: intents })
@@ -773,92 +795,11 @@ function retargetGraphConfigForRepair(graphConfig, repairSegment) {
   return config;
 }
 
-function preScanProactiveMilestones(simulator, initialState, spec, config) {
-  if (config.enableProactiveScan === false) return spec;
-  const milestones = (spec || {}).milestones || [];
-  const proactive = [];
-  for (const segment of milestones) {
-    const goal = segment.goal || {};
-    if (!goal.actionSurvivable || !goal.actionSurvivable.summary) continue;
-    const target = goal.actionSurvivable.summary;
-    try {
-      const threshold = estimateBattleSurvivability(simulator, initialState, target, { skipMinHp: true });
-      if (!threshold || !threshold.supported || threshold.survivable) continue;
-      const intents = scanResourceIntents(simulator, [{
-        id: "proactive-scan",
-        state: initialState,
-        route: Array.isArray(initialState.route) ? initialState.route.slice() : [],
-      }], {
-        failureClass: (threshold.riskTags || []).includes("life-limit") ? "life-limit-hp-deficit" : "action-survivability-deficit",
-        missingGoalFields: [{
-          field: "actionSurvivable",
-          expected: `hp > ${threshold.currentDamage}`,
-          actual: threshold.currentHp,
-          action: target,
-          damage: threshold.currentDamage,
-          riskTags: threshold.riskTags,
-          special: threshold.special,
-        }],
-      }, {
-        maxIntentRecords: config.proactiveIntentRecords || 16,
-        recordsPerIntent: 4,
-        maxIntents: 3,
-        intentDepth: config.proactiveIntentDepth || 1,
-        maxIntentNodes: 60,
-        targetBattle: { floorId: threshold.floorId, x: threshold.x, y: threshold.y, enemyId: threshold.enemyId },
-      });
-      for (const intent of intents) {
-        if (!intent.goal || (!intent.goal.minHero && !intent.goal.anyRemovedTiles)) continue;
-        proactive.push({
-          id: `proactive-${segment.id}-${intent.kind}`,
-          label: `主动扫描 ${intent.kind}（${segment.id}）`,
-          generated: true,
-          generatedBy: {
-            mode: "proactive-scan",
-            targetSegmentId: segment.id,
-            intentKind: intent.kind,
-            failureClass: (threshold.riskTags || []).includes("life-limit") ? "life-limit-hp-deficit" : "action-survivability-deficit",
-          },
-          goal: intent.goal,
-          actionPolicy: {
-            ...intent.actionPolicy,
-            forbidUnsupportedEvents: true,
-          },
-          dp: {
-            keyMode: "region",
-            priorityMode: "default",
-            stopOnFirstGoal: false,
-            maxExpansions: number(config.proactiveMaxExpansions, 2000),
-            maxRuntimeMs: number(config.proactiveMaxRuntimeMs, 8000),
-            goalSkylineLimit: number(config.proactiveGoalSkylineLimit, 4),
-          },
-        });
-      }
-    } catch (error) {
-      continue;
-    }
-  }
-  if (proactive.length === 0) return spec;
-  const next = cloneJson(spec);
-  const targetIndex = milestones.findIndex((m) => {
-    const g = m.goal || {};
-    return g.actionSurvivable && g.actionSurvivable.summary;
-  });
-  if (targetIndex < 0) return spec;
-  const targetSegment = next.milestones[targetIndex];
-  for (let i = proactive.length - 1; i >= 0; i -= 1) {
-    proactive[i].startFrom = i === 0 ? (targetSegment.startFrom || null) : proactive[i - 1].id;
-    next.milestones.splice(targetIndex, 0, proactive[i]);
-  }
-  targetSegment.startFrom = proactive[proactive.length - 1].id;
-  return next;
-}
-
 function runAdaptiveSegmentPlanner(simulator, initialState, milestoneSpec, options) {
   const config = options || {};
   let graphConfig = adaptiveGraphConfig(config);
   const maxRepairs = Math.max(0, number(config.maxAdaptiveRepairs, 2));
-  let spec = preScanProactiveMilestones(simulator, initialState, cloneJson(milestoneSpec), config);
+  let spec = cloneJson(milestoneSpec);
   const attempts = [];
   const insertedSegments = [];
   const repairBranches = [];
@@ -887,6 +828,32 @@ function runAdaptiveSegmentPlanner(simulator, initialState, milestoneSpec, optio
       };
     }
     const branches = [];
+    const firstRepair = repairSegments[0];
+    if (firstRepair && firstRepair.mode === "convergence-chain") {
+      const chainSegments = firstRepair.segments;
+      const nextSpec = cloneSpecWithInsertedSegmentChain(spec, failedSegmentId, chainSegments);
+      if (nextSpec) {
+        const branchResult = runMilestoneGraph(simulator, initialState, nextSpec, graphConfig);
+        chainSegments.forEach((seg) => insertedSegments.push(seg));
+        const branch = {
+          repairIndex,
+          branchIndex: 0,
+          repairSegment: chainSegments[0],
+          nextSpec,
+          graphConfig,
+          result: branchResult,
+        };
+        branch.score = scoreRepairBranch(branch, failedSegmentId);
+        repairBranches.push({
+          repairIndex,
+          branchIndex: 0,
+          insertedSegmentId: chainSegments.map((s) => s.id).join("->"),
+          found: Boolean(branchResult.found),
+          score: Math.round(branch.score),
+        });
+        branches.push(branch);
+      }
+    } else {
     repairSegments.forEach((repairSegment, branchIndex) => {
       const nextSpec = cloneSpecWithInsertedSegment(spec, failedSegmentId, repairSegment);
       if (!nextSpec) {
@@ -927,6 +894,7 @@ function runAdaptiveSegmentPlanner(simulator, initialState, milestoneSpec, optio
       repairBranches.push(summary);
       branches.push(branch);
     });
+    }
     if (branches.length === 0) {
       return {
         ...result,

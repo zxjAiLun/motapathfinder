@@ -153,8 +153,11 @@ class BinaryHeap {
   }
 }
 
-function isBetterForSameDpKey(left, right) {
+function isBetterForSameDpKey(left, right, dominanceConfig) {
   if (!right) return true;
+  if (dominanceConfig && typeof dominanceConfig.compare === "function") {
+    return dominanceConfig.compare(left, right);
+  }
   const hpDiff = heroHp(left) - heroHp(right);
   if (hpDiff !== 0) return hpDiff > 0;
   const leftDepth = getDecisionDepth(left);
@@ -410,7 +413,7 @@ function searchDP(simulator, initialState, options) {
     const existing = bestByKey.get(key);
     const existingState = existing && existing.state;
     const hpDiff = existingState ? heroHp(state) - heroHp(existingState) : null;
-    if (!isBetterForSameDpKey(state, existingState)) {
+    if (!isBetterForSameDpKey(state, existingState, config.dominanceConfig)) {
       if (hpDiff === 0) sameHpRejected += 1;
       else rejectedByHigherHp += 1;
       return false;
@@ -490,6 +493,9 @@ function searchDP(simulator, initialState, options) {
       actions = actions.filter((action) => config.actionFilter(action, state));
     }
     maxActionsGeneratedForState = Math.max(maxActionsGeneratedForState, actions.length);
+    for (const action of actions) {
+      recordAction(actionStats, action, "generated");
+    }
     if (actions.length > maxActionsPerState) {
       actionTrimmed += actions.length - maxActionsPerState;
       statesWithActionTrim += 1;
@@ -573,17 +579,6 @@ function searchDP(simulator, initialState, options) {
       },
       byActionType: actionStats.byActionType,
       byActionRole: actionStats.byActionRole,
-      actionsGeneratedByKind: Object.fromEntries(
-        Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.generated || 0])
-      ),
-      actionsKeptByKind: Object.fromEntries(
-        Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.kept || 0])
-      ),
-      actionsDominatedByKind: Object.fromEntries(
-        Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.dominated || 0])
-      ),
-      uniqueBattleTargets: actionStats.uniqueBattleTargets.size,
-      uniquePortalEntries: actionStats.uniquePortalEntries.size,
       byFloor: {},
       byStage: {},
       droppedProgressActions: { total: 0, byReason: {}, samples: [] },
@@ -652,6 +647,20 @@ function searchDP(simulator, initialState, options) {
         actionTrimmed,
         statesWithActionTrim,
         maxActionsGeneratedForState,
+        actionsGeneratedByKind: Object.fromEntries(
+          Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.generated || 0])
+        ),
+        actionsExpandedByKind: Object.fromEntries(
+          Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.expanded || 0])
+        ),
+        actionsKeptByKind: Object.fromEntries(
+          Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.kept || 0])
+        ),
+        actionsDominatedByKind: Object.fromEntries(
+          Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.dominated || 0])
+        ),
+        uniqueBattleTargets: actionStats.uniqueBattleTargets.size,
+        uniquePortalEntries: actionStats.uniquePortalEntries.size,
         acceptedStates: registered,
         newKeys,
         replacedLowerHp,

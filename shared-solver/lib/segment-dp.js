@@ -495,12 +495,18 @@ function buildSegmentActionProvider(simulator, segment) {
   };
 }
 
-function closeStateForBattleFrontier(simulator, state) {
-  if (typeof simulator.stabilizeState !== "function") return state;
-  return simulator.stabilizeState(state);
+function closeStateForBattleFrontier(simulator, state, segment) {
+  const closed = cloneState(state);
+  if (typeof simulator.stabilizeState !== "function") return closed;
+  const saved = protectPresentTiles(closed, segment);
+  try {
+    return simulator.stabilizeState(closed);
+  } finally {
+    restorePresentTiles(saved);
+  }
 }
 
-function collapsePortalActions(actions) {
+function deduplicatePortalActions(actions) {
   const battles = [];
   const portalsByTarget = new Map();
   const others = [];
@@ -523,34 +529,52 @@ function collapsePortalActions(actions) {
   return [...battles, ...portalsByTarget.values(), ...others];
 }
 
-function presentTilesViolatedByClosure(project, state, segment) {
+function protectPresentTiles(state, segment) {
   const goal = (segment || {}).goal || {};
+  const saved = [];
   for (const required of goal.presentTiles || []) {
-    if (getTileDefinitionAt(project, state, required.floorId, required.x, required.y) == null) {
-      return true;
+    const floorState = (state.floorStates || {})[required.floorId];
+    if (!floorState) continue;
+    const key = `${required.x},${required.y}`;
+    const wasRemoved = floorState.removed[key];
+    const wasReplaced = floorState.replaced[key];
+    saved.push({ floorId: required.floorId, key, wasRemoved, wasReplaced, floorState });
+    floorState.removed[key] = true;
+  }
+  return saved;
+}
+
+function restorePresentTiles(saved) {
+  for (const entry of saved) {
+    if (entry.wasRemoved) {
+      entry.floorState.removed[entry.key] = true;
+    } else {
+      delete entry.floorState.removed[entry.key];
+    }
+    if (entry.wasReplaced !== undefined) {
+      entry.floorState.replaced[entry.key] = entry.wasReplaced;
     }
   }
-  return false;
 }
+
+const FRONTIER_KINDS = new Set(["battle", "changeFloor", "floorFly"]);
 
 function buildBattleFrontierActionProvider(simulator, segment) {
   return (unusedSimulator, state) => {
     const policy = (segment || {}).actionPolicy || {};
-    const allowedKinds = new Set(policy.actionKinds || ["battle", "changeFloor", "floorFly"]);
-    const closedState = closeStateForBattleFrontier(simulator, state);
-    if (presentTilesViolatedByClosure(simulator.project, closedState, segment)) {
-      return [];
-    }
+    const closedState = closeStateForBattleFrontier(simulator, state, segment);
     const primitive = (simulator.enumeratePrimitiveActions(closedState).actions || []);
     let actions = primitive;
-    if (allowedKinds.has("floorFly") && typeof simulator.enumerateFloorFlyActions === "function") {
+    if (typeof simulator.enumerateFloorFlyActions === "function") {
       actions = actions.concat(simulator.enumerateFloorFlyActions(closedState));
     }
     const filtered = trimFloorFlyActions(actions, policy)
+      .filter((action) => FRONTIER_KINDS.has(action.kind))
       .filter((action) => isAllowedAction(action, closedState, segment, simulator))
       .filter((action) => isResourceTimingAction(simulator, closedState, action, segment))
-      .map((action) => annotateSegmentAction(simulator, closedState, action, segment));
-    return collapsePortalActions(filtered);
+      .map((action) => annotateSegmentAction(simulator, closedState, action, segment))
+      .map((action) => ({ ...action, travelState: cloneState(closedState) }));
+    return deduplicatePortalActions(filtered);
   };
 }
 
@@ -1024,6 +1048,42 @@ function searchSegmentDP(simulator, startState, segment, options) {
     : [];
   const seed = cloneStateWithoutRouteTrace(startState);
   seed.route = prefixRoute.slice();
+  const goal = (segment || {}).goal || {};
+  const actionSurvivableTarget = goal.actionSurvivable && goal.actionSurvivable.summary;
+  let dominanceConfig = null;
+  if (actionSurvivableTarget) {
+    dominanceConfig = {
+      targetSummary: actionSurvivableTarget,
+      compare: (left, right) => {
+        const leftHp = heroHp(left);
+        const rightHp = heroHp(right);
+        let leftMargin = null;
+        let rightMargin = null;
+        try {
+          const leftThreshold = estimateBattleSurvivability(simulator, left, actionSurvivableTarget, { skipMinHp: true });
+          if (leftThreshold && leftThreshold.supported) {
+            leftMargin = leftHp - number(leftThreshold.currentDamage, Number.POSITIVE_INFINITY);
+          }
+        } catch (error) { /* ignore */ }
+        try {
+          const rightThreshold = estimateBattleSurvivability(simulator, right, actionSurvivableTarget, { skipMinHp: true });
+          if (rightThreshold && rightThreshold.supported) {
+            rightMargin = rightHp - number(rightThreshold.currentDamage, Number.POSITIVE_INFINITY);
+          }
+        } catch (error) { /* ignore */ }
+        if (leftMargin != null && rightMargin != null && leftMargin !== rightMargin) {
+          return leftMargin > rightMargin;
+        }
+        if (leftHp !== rightHp) return leftHp > rightHp;
+        const leftDepth = getDecisionDepth(left);
+        const rightDepth = getDecisionDepth(right);
+        if (leftDepth !== rightDepth) return leftDepth < rightDepth;
+        const leftRoute = Array.isArray(left.route) ? left.route.length : leftDepth;
+        const rightRoute = Array.isArray(right.route) ? right.route.length : rightDepth;
+        return leftRoute < rightRoute;
+      },
+    };
+  }
   const result = searchDP(simulator, seed, {
     targetFloorId: segment.goal && segment.goal.floorId,
     maxExpansions,
@@ -1037,6 +1097,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     captureTrace,
     initialRouteTracePrefix: prefixTrace,
     goalSkylineLimit: number(dpConfig.goalSkylineLimit, 8),
+    dominanceConfig,
     actionProvider: dpConfig.actionProviderMode === "battle-frontier"
       ? buildBattleFrontierActionProvider(simulator, segment)
       : buildSegmentActionProvider(simulator, segment),
@@ -1074,6 +1135,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
       rejectedByHigherHp: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.rejectedByHigherHp,
       replacedLowerHp: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.replacedLowerHp,
       actionsGeneratedByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsGeneratedByKind,
+      actionsExpandedByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsExpandedByKind,
       actionsKeptByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsKeptByKind,
       actionsDominatedByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsDominatedByKind,
       uniqueBattleTargets: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.uniqueBattleTargets,

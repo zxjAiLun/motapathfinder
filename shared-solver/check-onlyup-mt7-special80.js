@@ -459,13 +459,17 @@ function checkBattleFrontierMode(simulator) {
   const result = searchSegmentDP(simulator, startState, segment, { candidateLimit: 8 });
   const diag = result.diagnostics || {};
   const dpDiag = diag.dp || {};
+  const expandedByKind = dpDiag.actionsExpandedByKind || {};
+  assert.equal(expandedByKind.pickup || 0, 0, "battle-frontier should not expand pickup actions");
+  assert.equal(expandedByKind.interactPickup || 0, 0, "battle-frontier should not expand interactPickup actions");
+  assert.ok(dpDiag.uniqueBattleTargets > 0, "battle-frontier should see battle targets");
   return {
     found: result.found,
     expansions: dpDiag.expansions || 0,
-    actionsGeneratedByKind: diag.actionsGeneratedByKind || {},
-    actionsKeptByKind: diag.actionsKeptByKind || {},
-    uniqueBattleTargets: diag.uniqueBattleTargets || 0,
-    uniquePortalEntries: diag.uniquePortalEntries || 0,
+    actionsGeneratedByKind: dpDiag.actionsGeneratedByKind || {},
+    actionsExpandedByKind: expandedByKind,
+    uniqueBattleTargets: dpDiag.uniqueBattleTargets || 0,
+    uniquePortalEntries: dpDiag.uniquePortalEntries || 0,
     frontierSize: dpDiag.frontierSize || 0,
     hero: result.found && result.goalSkyline[0] ? summarizeHero(result.goalSkyline[0].state) : null,
   };
@@ -476,8 +480,8 @@ function main() {
   const startState = replayRoute(simulator, START_ROUTE);
   const threshold = checkThreshold(simulator, startState);
   const intents = checkResourceIntent(simulator, startState, threshold);
-  const window = checkResourceTimingWindow(simulator);
   const battleFrontier = checkBattleFrontierMode(simulator);
+  const window = checkResourceTimingWindow(simulator);
   const adaptive = checkAdaptiveBranch(simulator);
   const latestOrdering = checkLatestLeftSwordOrdering();
   const userBaseline = checkUserBaselineOracle(simulator);
