@@ -11,6 +11,10 @@ function number(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function heroHp(state) {
+  return number(((state || {}).hero || {}).hp, 0);
+}
+
 function effectiveHeroValue(state, field) {
   const hero = (state || {}).hero || {};
   const flags = (state || {}).flags || {};
@@ -498,7 +502,7 @@ function buildSegmentActionProvider(simulator, segment) {
 function closeStateForBattleFrontier(simulator, state, segment) {
   const closed = cloneState(state);
   if (typeof simulator.stabilizeState !== "function") return closed;
-  const saved = protectPresentTiles(closed, segment);
+  const saved = protectPresentTiles(simulator.project, closed, segment);
   try {
     return simulator.stabilizeState(closed);
   } finally {
@@ -529,30 +533,53 @@ function deduplicatePortalActions(actions) {
   return [...battles, ...portalsByTarget.values(), ...others];
 }
 
-function protectPresentTiles(state, segment) {
+function protectPresentTiles(project, state, segment) {
   const goal = (segment || {}).goal || {};
   const saved = [];
   for (const required of goal.presentTiles || []) {
     const floorState = (state.floorStates || {})[required.floorId];
     if (!floorState) continue;
     const key = `${required.x},${required.y}`;
-    const wasRemoved = floorState.removed[key];
-    const wasReplaced = floorState.replaced[key];
-    saved.push({ floorId: required.floorId, key, wasRemoved, wasReplaced, floorState });
-    floorState.removed[key] = true;
+    if (floorState.removed[key]) continue;
+    const tileNum = Object.prototype.hasOwnProperty.call(floorState.replaced, key)
+      ? floorState.replaced[key]
+      : null;
+    const tile = tileNum != null
+      ? project.mapTilesByNumber[String(tileNum)]
+      : getTileDefinitionAt(project, state, required.floorId, required.x, required.y);
+    if (!tile) continue;
+    const isItem = tile.cls === "items";
+    if (isItem) {
+      const wasRemoved = floorState.removed[key];
+      const wasReplaced = floorState.replaced[key];
+      saved.push({ floorId: required.floorId, key, wasRemoved, wasReplaced, floorState, mode: "item" });
+      floorState.removed[key] = true;
+    } else {
+      const wasReplaced = floorState.replaced[key];
+      saved.push({ floorId: required.floorId, key, wasReplaced, floorState, mode: "blocker" });
+      floorState.replaced[key] = 1;
+    }
   }
   return saved;
 }
 
 function restorePresentTiles(saved) {
   for (const entry of saved) {
-    if (entry.wasRemoved) {
-      entry.floorState.removed[entry.key] = true;
+    if (entry.mode === "item") {
+      if (entry.wasRemoved) {
+        entry.floorState.removed[entry.key] = true;
+      } else {
+        delete entry.floorState.removed[entry.key];
+      }
+      if (entry.wasReplaced !== undefined) {
+        entry.floorState.replaced[entry.key] = entry.wasReplaced;
+      }
     } else {
-      delete entry.floorState.removed[entry.key];
-    }
-    if (entry.wasReplaced !== undefined) {
-      entry.floorState.replaced[entry.key] = entry.wasReplaced;
+      if (entry.wasReplaced !== undefined) {
+        entry.floorState.replaced[entry.key] = entry.wasReplaced;
+      } else {
+        delete entry.floorState.replaced[entry.key];
+      }
     }
   }
 }
@@ -573,7 +600,7 @@ function buildBattleFrontierActionProvider(simulator, segment) {
       .filter((action) => isAllowedAction(action, closedState, segment, simulator))
       .filter((action) => isResourceTimingAction(simulator, closedState, action, segment))
       .map((action) => annotateSegmentAction(simulator, closedState, action, segment))
-      .map((action) => ({ ...action, travelState: cloneState(closedState) }));
+      .map((action) => ({ ...action, travelState: cloneState(action.travelState || closedState) }));
     return deduplicatePortalActions(filtered);
   };
 }

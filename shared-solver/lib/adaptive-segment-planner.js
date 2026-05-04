@@ -539,10 +539,8 @@ function buildConvergenceSplitSegments(simulator, result, intents, failedSegment
   const maxSplits = Math.max(1, number(config.convergenceSplitLimit, 3));
   const maxExpansions = number(config.convergenceSplitMaxExpansions, Math.max(1500, number(config.repairMaxExpansions, 2500)));
   const maxRuntimeMs = number(config.convergenceSplitMaxRuntimeMs, Math.max(8000, number(config.repairMaxRuntimeMs, 10000)));
-  const failed = result && result.failedSegment;
-  const originalStartFrom = failed && failed.segmentId
-    ? ((result.segmentResults || []).find((s) => s.segmentId === failed.segmentId) || {}).startFrom || null
-    : null;
+  const failedSpecSegment = findFailedSpecSegment(config.currentSpec, failedSegmentId);
+  const originalStartFrom = failedSpecSegment && failedSpecSegment.startFrom || null;
   const splits = [];
   for (const intent of intents) {
     if (splits.length >= maxSplits) break;

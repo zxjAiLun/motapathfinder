@@ -463,6 +463,7 @@ function checkBattleFrontierMode(simulator) {
   assert.equal(expandedByKind.pickup || 0, 0, "battle-frontier should not expand pickup actions");
   assert.equal(expandedByKind.interactPickup || 0, 0, "battle-frontier should not expand interactPickup actions");
   assert.ok(dpDiag.uniqueBattleTargets > 0, "battle-frontier should see battle targets");
+  assert.ok(dpDiag.expansions <= 20000, `battle-frontier expansions should be bounded: ${dpDiag.expansions}`);
   return {
     found: result.found,
     expansions: dpDiag.expansions || 0,
