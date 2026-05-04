@@ -9,7 +9,7 @@ const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
 const { buildSolverSnapshot } = require("./lib/route-snapshot");
 const { buildDominanceKey } = require("./lib/state-key");
-const { buildRouteRecord, createStateFromSnapshot, readRouteFile, writeRouteFile } = require("./lib/route-store");
+const { buildRouteRecord, createStateFromSnapshot, fingerprintAction, readRouteFile, writeRouteFile } = require("./lib/route-store");
 const { StaticSimulator } = require("./lib/simulator");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
@@ -39,7 +39,7 @@ function routeCachePath(routeFile) {
   return `${routeFile}.state-cache.json`;
 }
 
-function readReplayCache(routeFile, projectRoot, rank) {
+function readReplayCache(routeFile, projectRoot, rank, captureTrace) {
   const cacheFile = routeCachePath(routeFile);
   if (!fs.existsSync(cacheFile)) return null;
   const routeStat = fs.statSync(routeFile);
@@ -48,16 +48,24 @@ function readReplayCache(routeFile, projectRoot, rank) {
   if (cache.source.routeFile !== routeFile) return null;
   if (cache.source.projectRoot !== projectRoot) return null;
   if (cache.source.rank !== rank) return null;
-  if (cache.source.traceVersion !== 2) return null;
+  const expectedTraceVersion = captureTrace ? 2 : 3;
+  if (cache.source.traceVersion !== expectedTraceVersion) return null;
   if (cache.source.size !== routeStat.size) return null;
   if (cache.source.mtimeMs !== routeStat.mtimeMs) return null;
-  if (!Array.isArray(cache.state.routeTrace)) return null;
+  if (captureTrace && !Array.isArray(cache.state.routeTrace)) return null;
   return cache.state;
 }
 
-function writeReplayCache(routeFile, projectRoot, rank, state) {
+function writeReplayCache(routeFile, projectRoot, rank, state, captureTrace) {
   const routeStat = fs.statSync(routeFile);
   const cacheFile = routeCachePath(routeFile);
+  const cacheState = captureTrace
+    ? state
+    : (() => {
+      const cloned = JSON.parse(JSON.stringify(state));
+      delete cloned.routeTrace;
+      return cloned;
+    })();
   fs.writeFileSync(cacheFile, `${JSON.stringify({
     schema: "motapathfinder.replay-state-cache.v1",
     createdAt: new Date().toISOString(),
@@ -67,9 +75,9 @@ function writeReplayCache(routeFile, projectRoot, rank, state) {
       rank,
       size: routeStat.size,
       mtimeMs: routeStat.mtimeMs,
-      traceVersion: 2,
+      traceVersion: captureTrace ? 2 : 3,
     },
-    state,
+    state: cacheState,
   })}\n`, "utf8");
 }
 
@@ -87,7 +95,50 @@ function makeSimulator(project, args) {
   });
 }
 
-function findAction(simulator, state, summary) {
+function samePath(left, right) {
+  const leftPath = Array.isArray(left) ? left : [];
+  const rightPath = Array.isArray(right) ? right : [];
+  if (leftPath.length !== rightPath.length) return false;
+  for (let index = 0; index < leftPath.length; index += 1) {
+    if (leftPath[index] !== rightPath[index]) return false;
+  }
+  return true;
+}
+
+function replayActionScore(simulator, state, action, expected) {
+  const summary = typeof expected === "string" ? expected : expected && expected.summary;
+  let score = action && action.summary === summary ? 1000000 : 0;
+  if (!action || !expected || typeof expected === "string") return score;
+  let fingerprint = null;
+  try {
+    fingerprint = fingerprintAction(action);
+  } catch (error) {
+    fingerprint = action.fingerprint || null;
+  }
+  if (expected.fingerprint && fingerprint === expected.fingerprint) score += 500000;
+  if (expected.kind && action.kind === expected.kind) score += 100000;
+  if (samePath(action.path, expected.path)) score += 50000;
+  if (expected.floorId && action.floorId === expected.floorId) score += 10000;
+  if (expected.target && action.target && expected.target.x === action.target.x && expected.target.y === action.target.y) score += 10000;
+  if (expected.stance && action.stance && expected.stance.x === action.stance.x && expected.stance.y === action.stance.y) score += 5000;
+  if (expected.direction && action.direction === expected.direction) score += 1000;
+  if (expected.enemyId && action.enemyId === expected.enemyId) score += 1000;
+  if (expected.itemId && action.itemId === expected.itemId) score += 1000;
+  if (expected.doorId && action.doorId === expected.doorId) score += 1000;
+  if (expected.targetFloorId && action.targetFloorId === expected.targetFloorId) score += 1000;
+  if (expected.postStateKey) {
+    try {
+      const postState = simulator.applyAction(state, action, { storeRoute: false });
+      if (buildDominanceKey(postState) === expected.postStateKey) score += 1000000;
+    } catch (error) {
+      score -= 1000000;
+    }
+  }
+  return score;
+}
+
+function findAction(simulator, state, expected) {
+  const summary = typeof expected === "string" ? expected : expected && expected.summary;
   const actions = [];
   try {
     actions.push(...(simulator.enumeratePrimitiveActions(state).actions || []));
@@ -109,7 +160,11 @@ function findAction(simulator, state, summary) {
     }
   } catch (error) {
   }
-  return actions.find((action) => action.summary === summary) || null;
+  const matching = actions.filter((action) => action && action.summary === summary);
+  if (matching.length <= 1) return matching[0] || null;
+  return matching
+    .map((action) => ({ action, score: replayActionScore(simulator, state, action, expected) }))
+    .sort((left, right) => right.score - left.score)[0].action;
 }
 
 function buildTraceSnapshot(project, state) {
@@ -129,7 +184,8 @@ function decisionTraceEntry(project, decision, preState, postState) {
   };
 }
 
-function replayRouteFile(simulator, routeFile, rank, useSnapshot, useCache, projectRoot) {
+function replayRouteFile(simulator, routeFile, rank, useSnapshot, useCache, projectRoot, captureTrace) {
+  const keepTrace = captureTrace === true;
   const record = readRouteFile(routeFile);
   if (useSnapshot && record.final && record.final.snapshot) {
     const state = createStateFromSnapshot(simulator.project, record.final.snapshot, {
@@ -138,36 +194,87 @@ function replayRouteFile(simulator, routeFile, rank, useSnapshot, useCache, proj
       decisionDepth: record.stats && record.stats.depth,
       notes: record.notes,
     });
-    state.routeTrace = (record.decisions || []).map((decision) => decisionTraceEntry(simulator.project, decision, null, null));
+    if (keepTrace) state.routeTrace = (record.decisions || []).map((decision) => decisionTraceEntry(simulator.project, decision, null, null));
     return state;
   }
   if (useCache) {
-    const cached = readReplayCache(routeFile, projectRoot || "", rank || "chaos");
+    const cached = readReplayCache(routeFile, projectRoot || "", rank || "chaos", keepTrace);
     if (cached) return cached;
   }
   let state = simulator.createInitialState({ rank: rank || "chaos" });
   let routeTrace = [];
   for (const decision of record.decisions || []) {
     const preState = state;
-    const action = findAction(simulator, state, decision.summary);
+    const action = findAction(simulator, state, decision);
     if (!action) throw new Error(`Unable to replay start route at ${decision.index}: ${decision.summary}`);
     if (Object.prototype.hasOwnProperty.call(state, "routeTrace")) delete state.routeTrace;
     state = simulator.applyAction(state, action);
-    routeTrace = routeTrace.concat(decisionTraceEntry(simulator.project, decision, preState, state));
+    if (keepTrace) routeTrace = routeTrace.concat(decisionTraceEntry(simulator.project, decision, preState, state));
   }
-  state.routeTrace = routeTrace;
-  if (useCache) writeReplayCache(routeFile, projectRoot || "", rank || "chaos", state);
+  if (keepTrace) state.routeTrace = routeTrace;
+  else if (Object.prototype.hasOwnProperty.call(state, "routeTrace")) delete state.routeTrace;
+  if (useCache) writeReplayCache(routeFile, projectRoot || "", rank || "chaos", state, keepTrace);
   return state;
 }
 
+function replaySummaries(simulator, startState, summaries) {
+  let state = JSON.parse(JSON.stringify(startState));
+  for (const [index, summary] of (summaries || []).entries()) {
+    const action = findAction(simulator, state, summary);
+    if (!action) throw new Error(`Unable to replay quality baseline at ${index + 1}: ${summary}`);
+    if (Object.prototype.hasOwnProperty.call(state, "routeTrace")) delete state.routeTrace;
+    state = simulator.applyAction(state, action);
+  }
+  if (Object.prototype.hasOwnProperty.call(state, "routeTrace")) delete state.routeTrace;
+  return state;
+}
+
+function heroQualityFloor(state) {
+  const hero = (state && state.hero) || {};
+  return {
+    hp: Number(hero.hp || 0),
+    atk: Number(hero.atk || 0),
+    def: Number(hero.def || 0),
+    mdef: Number(hero.mdef || 0),
+    lv: Number(hero.lv || 0),
+    exp: Number(hero.exp || 0),
+  };
+}
+
+function loadQualityBaseline(simulator, baselineArg, rank, projectRoot) {
+  if (!baselineArg) return null;
+  const baselineFile = path.isAbsolute(baselineArg)
+    ? baselineArg
+    : path.resolve(__dirname, baselineArg);
+  const fixture = JSON.parse(fs.readFileSync(baselineFile, "utf8"));
+  if (fixture.schema !== "motapathfinder.baseline-route.v1") {
+    throw new Error(`Unsupported quality baseline schema: ${fixture.schema || "missing"}`);
+  }
+  const startRoute = path.isAbsolute(fixture.startRoute || "")
+    ? fixture.startRoute
+    : path.resolve(__dirname, fixture.startRoute || "");
+  const startState = replayRouteFile(simulator, startRoute, rank, false, true, projectRoot, false);
+  const finalState = replaySummaries(simulator, startState, fixture.route || []);
+  return {
+    label: fixture.label || fixture.id || path.basename(baselineFile),
+    floorId: (fixture.target && fixture.target.floorId) || finalState.floorId,
+    minHero: heroQualityFloor(finalState),
+    mustReachSameFloor: !fixture.compare || fixture.compare.mustReachSameFloor !== false,
+    mustNotLoseFields: (fixture.compare && fixture.compare.mustNotLoseFields) || ["hp", "atk", "def", "mdef", "lv"],
+    sameLevelMustNotLoseExp: !fixture.compare || fixture.compare.sameLevelMustNotLoseExp !== false,
+    sourceFile: path.relative(__dirname, baselineFile),
+  };
+}
+
 function compactSegmentResult(segment) {
+  const failurePropagation = segment.failurePropagation || {};
   return {
     segmentId: segment.segmentId,
     label: segment.label,
     found: segment.found,
     startCandidatesTried: segment.startCandidatesTried,
     candidateCount: (segment.candidates || []).length,
-    failureClass: segment.failureClass || (segment.failurePropagation && segment.failurePropagation.failureClass),
+    failureClass: segment.failureClass || failurePropagation.failureClass || failurePropagation.primaryFailureClass,
     backtrack: segment.backtrack || null,
     candidates: (segment.candidates || []).map((candidate) => ({
       id: candidate.id,
@@ -204,7 +311,14 @@ function main() {
   const simulator = makeSimulator(project, args);
   const routeName = args["route-name"] || "onlyup-chaos-mt5-blueking";
   const spec = getMilestoneSpec(project, routeName);
+  const qualityFloor = loadQualityBaseline(
+    simulator,
+    args["quality-baseline"] || null,
+    rank,
+    projectRoot
+  );
   const startRoute = args["start-route"] ? path.resolve(args["start-route"]) : null;
+  const captureTrace = parseBoolean(args["capture-trace"], false);
   const initialState = startRoute
     ? replayRouteFile(
       simulator,
@@ -212,7 +326,8 @@ function main() {
       rank,
       parseBoolean(args["start-route-snapshot"], false),
       parseBoolean(args["start-route-cache"], true),
-      projectRoot
+      projectRoot,
+      captureTrace
     )
     : simulator.createInitialState({ rank });
   const result = runAdaptiveSegmentPlanner(simulator, initialState, spec, {
@@ -241,17 +356,24 @@ function main() {
     windowRepairMaxRuntimeMs: optionalNumber(args["window-repair-max-runtime-ms"]) || null,
     windowRepairKeyMode: args["window-repair-key-mode"] || null,
     windowRepairPriorityMode: args["window-repair-priority-mode"] || null,
+    windowRepairAgendaMode: args["window-repair-agenda-mode"] || null,
+    windowRepairLookahead: parseBoolean(args["window-repair-lookahead"], false),
+    windowRepairLookaheadActions: optionalNumber(args["window-repair-lookahead-actions"]) || null,
     enableWindowRepair: parseBoolean(args["window-repair"], true),
     enableFailureBacktracking: parseBoolean(args["failure-backtracking"], true),
     backtrackCandidateLimit: optionalNumber(args["backtrack-candidate-limit"]) || null,
     backtrackMaxExpansions: optionalNumber(args["backtrack-max-expansions"]) || null,
     backtrackMaxRuntimeMs: optionalNumber(args["backtrack-max-runtime-ms"]) || null,
+    qualityFloor,
+    captureTrace,
+    startCandidateLimit: optionalNumber(args["start-candidate-limit"]) || null,
   });
   const summary = {
     routeName,
     found: result.found,
     reachedMilestone: result.reachedMilestone,
     failedSegmentId: result.failedSegment && result.failedSegment.segmentId,
+    qualityFloor: result.qualityFloor || (qualityFloor ? { passed: false, floor: qualityFloor } : null),
     completedSegments: (result.segmentResults || []).filter((segment) => segment.found).map((segment) => segment.segmentId),
     insertedSegments: ((result.adaptive || {}).insertedSegments || []).map((segment) => ({
       id: segment.id,
@@ -259,19 +381,33 @@ function main() {
       generatedBy: segment.generatedBy,
       goal: segment.goal,
     })),
+    repairBranches: (result.adaptive || {}).repairBranches || [],
+    selectedBranch: (result.adaptive || {}).selectedBranch,
     attempts: (result.adaptive || {}).attempts || [],
     segments: (result.segmentResults || []).map(compactSegmentResult),
   };
   console.log(JSON.stringify(summary, null, 2));
 
   const out = args.out ? path.resolve(args.out) : null;
+  if (out && !result.found && parseBoolean(args["remove-stale-out"], true) && fs.existsSync(out)) {
+    fs.unlinkSync(out);
+    console.log(`Removed stale route output after failed run: ${out}`);
+  }
   if (out && result.found && result.finalCandidate && result.finalCandidate.state) {
     const finalState = result.finalCandidate.state;
-    finalState.route = Array.isArray(result.finalCandidate.route) ? result.finalCandidate.route.slice() : finalState.route;
-    finalState.routeTrace = Array.isArray(result.finalCandidate.trace) ? result.finalCandidate.trace.slice() : finalState.routeTrace;
+    const fullRoute = Array.isArray(result.finalCandidate.route) ? result.finalCandidate.route.slice() : (Array.isArray(finalState.route) ? finalState.route.slice() : []);
+    const fullTrace = Array.isArray(result.finalCandidate.trace) ? result.finalCandidate.trace.slice() : (Array.isArray(finalState.routeTrace) ? finalState.routeTrace.slice() : []);
+    const prefixLength = startRoute && Array.isArray(initialState.route) ? initialState.route.length : 0;
+    finalState.route = prefixLength > 0 ? fullRoute.slice(prefixLength) : fullRoute;
+    if (captureTrace) {
+      finalState.routeTrace = prefixLength > 0 ? fullTrace.slice(prefixLength) : fullTrace;
+    } else if (Object.prototype.hasOwnProperty.call(finalState, "routeTrace")) {
+      delete finalState.routeTrace;
+    }
     const routeRecord = buildRouteRecord({
       project,
       simulator,
+      initialState: startRoute ? initialState : undefined,
       finalState,
       options: {
         projectRoot,
@@ -280,6 +416,7 @@ function main() {
         rank,
         toFloor: finalState.floorId,
         goalType: "adaptive-milestone",
+        allowRouteMismatch: parseBoolean(args["allow-route-mismatch"], false),
         metadata: {
           kind: "adaptive-segment-dp",
           adaptiveSegmentDp: {
@@ -291,6 +428,7 @@ function main() {
             repairBranches: ((result.adaptive || {}).repairBranches || []),
             selectedBranch: (result.adaptive || {}).selectedBranch,
             candidateIds: (result.finalCandidates || []).map((candidate) => candidate.id),
+            qualityFloor,
           },
         },
       },

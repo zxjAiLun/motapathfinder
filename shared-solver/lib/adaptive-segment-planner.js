@@ -377,6 +377,7 @@ function shouldBuildWindowRepair(failureClass) {
     "life-limit-hp-deficit",
     "def-deficit",
     "target-action-unreachable",
+    "route-quality-floor-not-met",
   ].includes(failureClass);
 }
 
@@ -397,7 +398,7 @@ function changeFloorTargetAllowed(project, allowedFloors, key) {
 }
 
 function unionActionPolicy(segments, project) {
-  const sustainActionKinds = new Set(["battle", "pickup", "interactPickup", "equip", "changeFloor"]);
+  const sustainActionKinds = new Set(["battle", "pickup", "interactPickup", "equip", "changeFloor", "floorFly"]);
   const actionKinds = new Set(["battle", "pickup", "interactPickup", "equip", "changeFloor"]);
   const allowedFloors = new Set();
   const rawAllowChangeFloors = new Set();
@@ -425,8 +426,45 @@ function unionActionPolicy(segments, project) {
 
 function defaultRepairRollbackSegments(failureClass, config) {
   if (config && config.repairRollbackSegments != null) return number(config.repairRollbackSegments, 3);
-  if (failureClass === "life-limit-hp-deficit" || failureClass === "action-survivability-deficit") return 5;
+  if (failureClass === "route-quality-floor-not-met") return 7;
+  if (failureClass === "life-limit-hp-deficit") return 7;
+  if (failureClass === "action-survivability-deficit") return 5;
   return 3;
+}
+
+function qualityFloorHero(qualityFloor) {
+  return (qualityFloor && (qualityFloor.minHero || qualityFloor.hero)) || {};
+}
+
+function qualityFloorFields(qualityFloor) {
+  const configured = qualityFloor && qualityFloor.mustNotLoseFields;
+  return Array.isArray(configured) && configured.length > 0
+    ? configured
+    : ["hp", "atk", "def", "mdef", "lv"];
+}
+
+function mergeQualityFloorIntoGoal(goal, qualityFloor) {
+  const next = cloneJson(goal || {});
+  if (!qualityFloor) return next;
+  const qualityHero = qualityFloorHero(qualityFloor);
+  const minHero = { ...(next.minHero || {}) };
+  qualityFloorFields(qualityFloor).forEach((field) => {
+    const expected = Number(qualityHero[field] || 0);
+    if (expected > 0) minHero[field] = Math.max(Number(minHero[field] || 0), expected);
+  });
+  if (qualityFloor.mustReachSameFloor !== false && qualityFloor.floorId) {
+    next.floorId = next.floorId || qualityFloor.floorId;
+  }
+  next.minHero = minHero;
+  next.qualityFloor = {
+    label: qualityFloor.label || null,
+    sourceFile: qualityFloor.sourceFile || null,
+    minHero: cloneJson(qualityFloor.minHero || qualityFloor.hero || {}),
+    mustReachSameFloor: qualityFloor.mustReachSameFloor !== false,
+    mustNotLoseFields: qualityFloorFields(qualityFloor),
+    sameLevelMustNotLoseExp: qualityFloor.sameLevelMustNotLoseExp !== false,
+  };
+  return next;
 }
 
 function buildWindowRepairSegment(result, spec, options) {
@@ -448,6 +486,7 @@ function buildWindowRepairSegment(result, spec, options) {
   if (startIndex >= failedIndex) return null;
   const windowSegments = milestones.slice(startIndex, failedIndex + 1);
   const failedSpecSegment = milestones[failedIndex];
+  const qualityFloor = failureClass === "route-quality-floor-not-met" ? config.qualityFloor : null;
   return {
     id: `auto-window-${failedSegmentId || "segment"}-${number(config.repairIndex, 0) + 1}`,
     label: `自动合并窗口 ${windowSegments[0].id}..${failedSegmentId}`,
@@ -464,16 +503,31 @@ function buildWindowRepairSegment(result, spec, options) {
       reason: "downstream failure may require reordering sustain resources across multiple previous milestones",
     },
     startFrom: windowSegments[0].startFrom || null,
-    goal: cloneJson((failedSpecSegment || {}).goal || {}),
+    goal: mergeQualityFloorIntoGoal((failedSpecSegment || {}).goal || {}, qualityFloor),
     actionPolicy: unionActionPolicy(windowSegments, config.simulator && config.simulator.project),
     dp: {
       keyMode: config.windowRepairKeyMode || "region",
-      priorityMode: config.windowRepairPriorityMode || "default",
+      priorityMode: config.windowRepairPriorityMode ||
+        (failureClass === "life-limit-hp-deficit" || failureClass === "route-quality-floor-not-met" ? "resource-first" : "default"),
+      agendaMode: config.windowRepairAgendaMode ||
+        (failureClass === "life-limit-hp-deficit" || failureClass === "route-quality-floor-not-met" ? "fifo" : "best-first"),
       resourceTimingMode: "sustain-prep",
+      resourceLookahead: config.windowRepairLookahead === true,
+      resourceLookaheadActions: number(config.windowRepairLookaheadActions, 8),
       stopOnFirstGoal: false,
       maxActionsPerState: number(config.windowRepairMaxActionsPerState, 9999),
-      maxExpansions: number(config.windowRepairMaxExpansions, Math.max(6000, number(config.repairMaxExpansions, 2500) * 3)),
-      maxRuntimeMs: number(config.windowRepairMaxRuntimeMs, Math.max(18000, number(config.repairMaxRuntimeMs, 10000) * 2)),
+      maxExpansions: number(
+        config.windowRepairMaxExpansions,
+        failureClass === "route-quality-floor-not-met"
+          ? Math.max(9000, number(config.repairMaxExpansions, 2500) * 4)
+          : Math.max(6000, number(config.repairMaxExpansions, 2500) * 3)
+      ),
+      maxRuntimeMs: number(
+        config.windowRepairMaxRuntimeMs,
+        failureClass === "route-quality-floor-not-met"
+          ? Math.max(24000, number(config.repairMaxRuntimeMs, 10000) * 2)
+          : Math.max(18000, number(config.repairMaxRuntimeMs, 10000) * 2)
+      ),
       goalSkylineLimit: number(config.repairGoalSkylineLimit, config.candidateLimit || 8),
     },
   };
@@ -487,6 +541,9 @@ function buildRepairSegments(simulator, result, options) {
   const missingGoalFields = inferMissingGoalFields(result);
   const frontier = result && result.finalCandidates;
   const windowRepair = buildWindowRepairSegment(result, config.currentSpec, { ...config, simulator });
+  if (failureClass === "route-quality-floor-not-met") {
+    return windowRepair ? [windowRepair] : [];
+  }
   if (config.enableAutoSplit !== false && shouldAutoSplit(result)) {
     const splitSegment = buildAutoSplitSegment(result, config.currentSpec, config);
     if (splitSegment) return windowRepair ? [windowRepair, splitSegment] : [splitSegment];
@@ -552,7 +609,8 @@ function compactAdaptiveAttempt(index, result, insertedSegments) {
       segmentId: segment.segmentId,
       found: segment.found,
       candidateCount: (segment.candidates || []).length,
-      failureClass: segment.failureClass || (segment.failurePropagation && segment.failurePropagation.failureClass),
+      failureClass: segment.failureClass ||
+        (segment.failurePropagation && (segment.failurePropagation.failureClass || segment.failurePropagation.primaryFailureClass)),
     })),
   };
 }
@@ -560,9 +618,34 @@ function compactAdaptiveAttempt(index, result, insertedSegments) {
 function resultBestCandidateScore(result) {
   const candidates = result && result.finalCandidates;
   if (Array.isArray(candidates) && candidates.length > 0) {
-    return candidates.reduce((best, candidate) => Math.max(best, number(candidate && candidate.score, 0)), 0);
+    return candidates.reduce((best, candidate) => {
+      const hero = (candidate && candidate.hero) || summarizeHero(candidate && candidate.state);
+      const effectiveHero = (candidate && candidate.effectiveHero) || summarizeEffectiveHero(candidate && candidate.state);
+      const routeLength = Array.isArray(candidate && candidate.route) ? candidate.route.length : 0;
+      const score = number(hero.hp, 0) * 1000000 +
+        number(hero.lv, 0) * 100000000000 +
+        number(hero.exp, 0) * 10000000 +
+        number(effectiveHero.atk, 0) * 10000 +
+        number(effectiveHero.def, 0) * 8000 +
+        number(effectiveHero.mdef, 0) * 1000 -
+        routeLength;
+      return Math.max(best, score);
+    }, 0);
   }
-  return number(result && result.finalCandidate && result.finalCandidate.score, 0);
+  const candidate = result && result.finalCandidate;
+  if (candidate) {
+    const hero = candidate.hero || summarizeHero(candidate.state);
+    const effectiveHero = candidate.effectiveHero || summarizeEffectiveHero(candidate.state);
+    const routeLength = Array.isArray(candidate.route) ? candidate.route.length : 0;
+    return number(hero.hp, 0) * 1000000 +
+      number(hero.lv, 0) * 100000000000 +
+      number(hero.exp, 0) * 10000000 +
+      number(effectiveHero.atk, 0) * 10000 +
+      number(effectiveHero.def, 0) * 8000 +
+      number(effectiveHero.mdef, 0) * 1000 -
+      routeLength;
+  }
+  return 0;
 }
 
 function scoreRepairBranch(branch, failedSegmentId) {
@@ -572,13 +655,20 @@ function scoreRepairBranch(branch, failedSegmentId) {
   const originalSummary = (result.segmentResults || []).find((segment) => segment.segmentId === failedSegmentId);
   const intentKind = branch.repairSegment && branch.repairSegment.generatedBy && branch.repairSegment.generatedBy.intentKind;
   const failureClass = branch.repairSegment && branch.repairSegment.generatedBy && branch.repairSegment.generatedBy.failureClass;
+  const repairMode = branch.repairSegment && branch.repairSegment.generatedBy && branch.repairSegment.generatedBy.mode;
+  const foundRepair = Boolean(repairSummary && repairSummary.found);
   const intentPriority =
-    failureClass === "life-limit-hp-deficit" && intentKind === "blocked-hp-resource" ? 200000000000000 :
-      failureClass === "life-limit-hp-deficit" && intentKind === "life-limit-hp-prep" ? 150000000000000 :
+    foundRepair && failureClass === "life-limit-hp-deficit" && intentKind === "blocked-hp-resource" ? 200000000000000 :
+      foundRepair && failureClass === "life-limit-hp-deficit" && intentKind === "life-limit-hp-prep" ? 150000000000000 :
         0;
+  const windowPriority =
+    repairMode === "adaptive-window-repair" && (failureClass === "life-limit-hp-deficit" || failureClass === "route-quality-floor-not-met")
+      ? 120000000000000
+      : 0;
   return (result.found ? 1000000000000000 : 0) +
     (originalSummary && originalSummary.found ? 500000000000000 : 0) +
     (repairSummary && repairSummary.found ? 100000000000000 : 0) +
+    windowPriority +
     intentPriority +
     completed * 1000000000 +
     resultBestCandidateScore(result);
@@ -608,9 +698,32 @@ function adaptiveGraphConfig(config) {
   };
 }
 
+function retargetGraphConfigForRepair(graphConfig, repairSegment) {
+  const config = graphConfig || {};
+  if (
+    !repairSegment ||
+    !repairSegment.generatedBy ||
+    repairSegment.generatedBy.mode !== "adaptive-window-repair" ||
+    !config.toMilestoneId
+  ) {
+    return config;
+  }
+  const replacedIds = new Set(repairSegment.generatedBy.windowSegmentIds || []);
+  if (
+    replacedIds.has(config.toMilestoneId) ||
+    repairSegment.generatedBy.replaceToSegmentId === config.toMilestoneId
+  ) {
+    return {
+      ...config,
+      toMilestoneId: repairSegment.id,
+    };
+  }
+  return config;
+}
+
 function runAdaptiveSegmentPlanner(simulator, initialState, milestoneSpec, options) {
   const config = options || {};
-  const graphConfig = adaptiveGraphConfig(config);
+  let graphConfig = adaptiveGraphConfig(config);
   const maxRepairs = Math.max(0, number(config.maxAdaptiveRepairs, 2));
   let spec = cloneJson(milestoneSpec);
   const attempts = [];
@@ -653,7 +766,8 @@ function runAdaptiveSegmentPlanner(simulator, initialState, milestoneSpec, optio
         });
         return;
       }
-      const branchResult = runMilestoneGraph(simulator, initialState, nextSpec, graphConfig);
+      const branchGraphConfig = retargetGraphConfigForRepair(graphConfig, repairSegment);
+      const branchResult = runMilestoneGraph(simulator, initialState, nextSpec, branchGraphConfig);
       const repairSummary = (branchResult.segmentResults || []).find((segment) => segment.segmentId === repairSegment.id);
       const originalSummary = (branchResult.segmentResults || []).find((segment) => segment.segmentId === failedSegmentId);
       const branch = {
@@ -661,6 +775,7 @@ function runAdaptiveSegmentPlanner(simulator, initialState, milestoneSpec, optio
         branchIndex,
         repairSegment,
         nextSpec,
+        graphConfig: branchGraphConfig,
         result: branchResult,
       };
       branch.score = scoreRepairBranch(branch, failedSegmentId);
@@ -704,6 +819,7 @@ function runAdaptiveSegmentPlanner(simulator, initialState, milestoneSpec, optio
       return buildAdaptiveReturn(selected.result, selected.nextSpec, attempts, insertedSegments, repairBranches, selectedBranch);
     }
     spec = selected.nextSpec;
+    graphConfig = selected.graphConfig || graphConfig;
   }
   throw new Error("unreachable adaptive planner exit");
 }

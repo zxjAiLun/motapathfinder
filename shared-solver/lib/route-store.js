@@ -282,6 +282,38 @@ function listActionsBySummary(simulator, state, summary) {
   return actions;
 }
 
+function listAllActionsBySummary(simulator, state, summary) {
+  const actions = [];
+  const add = (list) => {
+    (list || []).forEach((action) => {
+      if (action && action.summary === summary) actions.push(action);
+    });
+  };
+  try {
+    add(simulator.enumerateActions(state));
+  } catch (error) {
+  }
+  if (typeof simulator.enumeratePrimitiveActions === "function") {
+    try {
+      add(simulator.enumeratePrimitiveActions(state).actions || []);
+    } catch (error) {
+    }
+  }
+  if (typeof simulator.enumerateInteractPickupActions === "function") {
+    try {
+      add(simulator.enumerateInteractPickupActions(state));
+    } catch (error) {
+    }
+  }
+  if (typeof simulator.enumerateFloorFlyActions === "function") {
+    try {
+      add(simulator.enumerateFloorFlyActions(state));
+    } catch (error) {
+    }
+  }
+  return actions;
+}
+
 function routeEntrySummary(entry) {
   return typeof entry === "string" ? entry : (entry && entry.summary);
 }
@@ -302,6 +334,45 @@ function countExpectedEmissionMatches(emitted, expectedRouteEntries, startIndex)
   return matches;
 }
 
+function samePath(left, right) {
+  const leftPath = Array.isArray(left) ? left : [];
+  const rightPath = Array.isArray(right) ? right : [];
+  if (leftPath.length !== rightPath.length) return false;
+  for (let index = 0; index < leftPath.length; index += 1) {
+    if (leftPath[index] !== rightPath[index]) return false;
+  }
+  return true;
+}
+
+function scoreActionReplayMatch(context, action, expected, expectedRouteEntries, startIndex) {
+  const normalized = normalizeAction(action);
+  let score = 0;
+  if (expected.summary && normalized.summary === expected.summary) score += 1000000;
+  if (expected.fingerprint && normalized.fingerprint === expected.fingerprint) score += 500000;
+  if (expected.kind && normalized.kind === expected.kind) score += 100000;
+  if (samePath(normalized.path, expected.path)) score += 50000;
+  if (expected.floorId && normalized.floorId === expected.floorId) score += 10000;
+  if (expected.target && normalized.target && expected.target.x === normalized.target.x && expected.target.y === normalized.target.y) score += 10000;
+  if (expected.stance && normalized.stance && expected.stance.x === normalized.stance.x && expected.stance.y === normalized.stance.y) score += 5000;
+  if (expected.direction && normalized.direction === expected.direction) score += 1000;
+  if (expected.enemyId && normalized.enemyId === expected.enemyId) score += 1000;
+  if (expected.itemId && normalized.itemId === expected.itemId) score += 1000;
+  if (expected.doorId && normalized.doorId === expected.doorId) score += 1000;
+  if (expected.targetFloorId && normalized.targetFloorId === expected.targetFloorId) score += 1000;
+
+  if (Array.isArray(expectedRouteEntries)) {
+    try {
+      const postState = context.simulator.applyAction(context.currentState, action);
+      const emitted = emittedRouteSummaries(context.currentState, postState);
+      const matched = countExpectedEmissionMatches(emitted, expectedRouteEntries, startIndex || 0);
+      score += matched * 100000 - Math.abs(emitted.length - matched);
+    } catch (error) {
+      score -= 1000000;
+    }
+  }
+  return score;
+}
+
 function selectActionBySummary(context, summary, expectedRouteEntries, startIndex) {
   const actions = listActionsBySummary(context.simulator, context.currentState, summary);
   if (actions.length <= 1 || !Array.isArray(expectedRouteEntries)) return actions[0] || null;
@@ -319,6 +390,64 @@ function selectActionBySummary(context, summary, expectedRouteEntries, startInde
     if (!best || score > best.score) best = { action, emitted, matched, score };
   }
   return best ? best.action : actions[0] || null;
+}
+
+function listReplayActions(context, expected) {
+  const summary = expected && expected.summary;
+  const actions = summary ? listAllActionsBySummary(context.simulator, context.currentState, summary) : [];
+  if (actions.length > 0) return actions;
+  const fallback = [];
+  const seen = new Set();
+  const add = (list) => {
+    (list || []).forEach((action) => {
+      if (!action) return;
+      const normalized = normalizeAction(action);
+      if (expected && expected.kind && normalized.kind !== expected.kind) return;
+      const key = normalized.fingerprint || `${normalized.kind}:${normalized.summary}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      fallback.push(action);
+    });
+  };
+  try {
+    add(context.simulator.enumerateActions(context.currentState));
+  } catch (error) {
+  }
+  if (typeof context.simulator.enumeratePrimitiveActions === "function") {
+    try {
+      add(context.simulator.enumeratePrimitiveActions(context.currentState).actions || []);
+    } catch (error) {
+    }
+  }
+  if (typeof context.simulator.enumerateInteractPickupActions === "function") {
+    try {
+      add(context.simulator.enumerateInteractPickupActions(context.currentState));
+    } catch (error) {
+    }
+  }
+  if (typeof context.simulator.enumerateFloorFlyActions === "function") {
+    try {
+      add(context.simulator.enumerateFloorFlyActions(context.currentState));
+    } catch (error) {
+    }
+  }
+  return fallback;
+}
+
+function selectStructuredReplayAction(context, entry) {
+  const expected = normalizeAction(entry.actionEntry);
+  const candidates = listReplayActions(context, expected);
+  let best = null;
+  for (const action of candidates) {
+    let score = Number.NEGATIVE_INFINITY;
+    try {
+      score = scoreActionReplayMatch(context, action, expected, null, 0);
+    } catch (error) {
+      continue;
+    }
+    if (!best || score > best.score) best = { action, score };
+  }
+  return best ? best.action : null;
 }
 
 function actionFingerprintForPlanEntry(action) {
@@ -432,7 +561,15 @@ function pushStructuredDecision(context, entry) {
       context.currentState = postState;
       return;
     }
-    pushDecision(context, entry.actionEntry);
+    const replayAction = selectStructuredReplayAction(context, entry);
+    if (!replayAction) {
+      if (normalized.path.length > 0) {
+        throw new Error(`Unable to reconstruct structured action with path while saving route: ${normalized.summary || normalized.kind}`);
+      }
+      pushDecision(context, entry.actionEntry);
+      return;
+    }
+    pushDecision(context, replayAction);
     return;
   }
   decisions.push({
@@ -535,18 +672,18 @@ function buildRouteRecord(input) {
       index += countSourceEntriesConsumed(emitted, routeEntries, index) - 1;
     }
   }
-  const finalSnapshot = structuredEntries.length > 0
-    ? buildSolverSnapshot(project, finalState, snapshotOptions)
-    : buildSolverSnapshot(project, context.currentState, snapshotOptions);
+  const finalSnapshot = buildSolverSnapshot(project, context.currentState, snapshotOptions);
   if (structuredEntries.length > 0 && decisions.length > 0) {
     decisions[decisions.length - 1].postSnapshot = finalSnapshot;
-    decisions[decisions.length - 1].postStateKey = buildDominanceKey(finalState);
+    decisions[decisions.length - 1].postStateKey = buildDominanceKey(context.currentState);
   }
   const expectedKey = buildDominanceKey(finalState);
-  const actualKey = structuredEntries.length > 0 ? expectedKey : buildDominanceKey(context.currentState);
+  const actualKey = buildDominanceKey(context.currentState);
   const notes = Array.isArray(finalState.notes) ? finalState.notes.slice() : [];
   if (expectedKey !== actualKey) {
-    notes.push(`route-store: reconstructed dominance key differs from source final key; source=${expectedKey}; reconstructed=${actualKey}`);
+    const message = `route-store: reconstructed dominance key differs from source final key; source=${expectedKey}; reconstructed=${actualKey}`;
+    if (options.allowRouteMismatch !== true) throw new Error(message);
+    notes.push(message);
   }
   const projectRoot = options.projectRoot || path.resolve(__dirname, "..", "..");
   return {
@@ -577,7 +714,7 @@ function buildRouteRecord(input) {
     final: {
       snapshot: finalSnapshot,
       stateKey: actualKey,
-      floorId: structuredEntries.length > 0 ? finalState.floorId : context.currentState.floorId,
+      floorId: context.currentState.floorId,
     },
     decisions,
     rawRoute: Array.isArray(finalState.route) ? finalState.route.slice() : [],

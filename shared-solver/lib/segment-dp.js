@@ -316,6 +316,71 @@ function actionSurvivablePrepScore(simulator, state, action, segment) {
   }
 }
 
+function resourceTimingLookaheadScore(simulator, state, action, segment) {
+  const dpConfig = (segment || {}).dp || {};
+  if (dpConfig.resourceLookahead !== true) return 0;
+  if (!action || action.kind === "changeFloor" || action.kind === "floorFly" || action.kind === "equip") return 0;
+  let preview = null;
+  try {
+    preview = simulator.applyAction(state, action, { storeRoute: false });
+  } catch (error) {
+    return 0;
+  }
+  const beforeHero = summarizeHero(state);
+  const beforeEffective = summarizeEffectiveHero(state);
+  let nextActions = [];
+  try {
+    nextActions = simulator.enumeratePrimitiveActions(preview).actions || [];
+  } catch (error) {
+    nextActions = [];
+  }
+  if (typeof simulator.enumerateInteractPickupActions === "function") {
+    try {
+      nextActions = nextActions.concat(simulator.enumerateInteractPickupActions(preview) || []);
+    } catch (error) {
+    }
+  }
+  const candidates = nextActions
+    .filter((nextAction) => nextAction && nextAction.summary !== action.summary)
+    .filter((nextAction) => nextAction.kind !== "changeFloor" && nextAction.kind !== "floorFly")
+    .filter((nextAction) => isAllowedAction(nextAction, preview, segment, simulator))
+    .map((nextAction) => ({
+      action: nextAction,
+      prepScore: actionSurvivablePrepScore(simulator, preview, nextAction, segment),
+      previewScore: segmentPreviewScore(simulator, preview, nextAction),
+      damage: number((nextAction.estimate || {}).damage, 0),
+    }))
+    .filter((record) => record.prepScore > 0 || record.previewScore > 0)
+    .sort((left, right) => (right.prepScore + right.previewScore) - (left.prepScore + left.previewScore) || left.damage - right.damage)
+    .slice(0, number(dpConfig.resourceLookaheadActions, 8));
+  let best = 0;
+  for (const record of candidates) {
+    let second = null;
+    try {
+      second = simulator.applyAction(preview, record.action, { storeRoute: false });
+    } catch (error) {
+      continue;
+    }
+    const afterHero = summarizeHero(second);
+    const afterEffective = summarizeEffectiveHero(second);
+    const hpDelta = number(afterHero.hp, 0) - number(beforeHero.hp, 0);
+    const atkDelta = number(afterEffective.atk, 0) - number(beforeEffective.atk, 0);
+    const defDelta = number(afterEffective.def, 0) - number(beforeEffective.def, 0);
+    const mdefDelta = number(afterEffective.mdef, 0) - number(beforeEffective.mdef, 0);
+    const expDelta = number(afterHero.exp, 0) - number(beforeHero.exp, 0);
+    const score =
+      hpDelta * 120 +
+      number(afterHero.hp, 0) * 3000 +
+      atkDelta * 30000 +
+      defDelta * 120000 +
+      mdefDelta * 5000 +
+      expDelta * 2500 +
+      (record.prepScore + record.previewScore) * 0.25;
+    if (score > best) best = score;
+  }
+  return Math.max(0, best);
+}
+
 function usesResourceTimingMode(segment) {
   const dpConfig = (segment || {}).dp || {};
   const policy = (segment || {}).actionPolicy || {};
@@ -335,12 +400,13 @@ function annotateSegmentAction(simulator, state, action, segment) {
   const goalScore = goalActionScore(simulator, state, action, segment);
   const dpConfig = (segment || {}).dp || {};
   const prepScore = actionSurvivablePrepScore(simulator, state, action, segment);
+  const lookaheadScore = resourceTimingLookaheadScore(simulator, state, action, segment);
   const previewScore = dpConfig.enablePreviewScore === false
     ? 0
     : dpConfig.enablePreviewScore === "required"
-      ? (goalScore > 0 || prepScore > 0 ? segmentPreviewScore(simulator, state, action) + prepScore : 0)
+      ? (goalScore > 0 || prepScore > 0 || lookaheadScore > 0 ? segmentPreviewScore(simulator, state, action) + prepScore + lookaheadScore : 0)
       : segmentPreviewScore(simulator, state, action);
-  const score = goalScore + previewScore + (dpConfig.enablePreviewScore === "required" ? 0 : prepScore);
+  const score = goalScore + previewScore + (dpConfig.enablePreviewScore === "required" ? 0 : prepScore + lookaheadScore);
   if (score === 0) return action;
   return {
     ...action,
@@ -444,6 +510,19 @@ function goalCandidateScore(state) {
     routeLength(state) * 10;
 }
 
+function candidateOutcomeScore(candidate) {
+  const state = candidate && candidate.state ? candidate.state : candidate;
+  const hero = summarizeHero(state);
+  const effective = summarizeEffectiveHero(state);
+  return hero.hp * 1000000 +
+    hero.lv * 100000000000 +
+    hero.exp * 10000000 +
+    effective.atk * 10000 +
+    effective.def * 8000 +
+    effective.mdef * 1000 -
+    routeLength(state);
+}
+
 function compareCandidateStates(left, right) {
   if (!right) return -1;
   if (!left) return 1;
@@ -510,24 +589,98 @@ function selectGoalSkyline(simulator, states, segment, options) {
   });
   const rolePickers = [
     ["highest-hp", (left, right) => summarizeHero(right.state).hp - summarizeHero(left.state).hp],
+    ["best-combat", (left, right) => right.score - left.score],
     ["highest-atk", (left, right) => right.effectiveHero.atk - left.effectiveHero.atk],
     ["highest-def", (left, right) => right.effectiveHero.def - left.effectiveHero.def],
     ["highest-mdef", (left, right) => right.effectiveHero.mdef - left.effectiveHero.mdef],
     ["highest-exp", (left, right) => right.hero.exp - left.hero.exp],
     ["shortest", (left, right) => left.route.length - right.route.length],
-    ["best-combat", (left, right) => right.score - left.score],
   ];
+  const selected = [];
+  const selectedIds = new Set();
+  const compareGoalRecords = (left, right) => {
+    const tagDiff = right.tags.length - left.tags.length;
+    if (tagDiff !== 0) return tagDiff;
+    const stateDiff = compareCandidateStates(left.state, right.state);
+    if (stateDiff !== 0) return stateDiff;
+    return candidateOutcomeScore(right) - candidateOutcomeScore(left);
+  };
+  const keepCandidate = (record) => {
+    if (!record || selectedIds.has(record.id) || selected.length >= limit) return;
+    selectedIds.add(record.id);
+    selected.push(record);
+  };
   rolePickers.forEach(([tag, compare]) => {
     const winner = records.slice().sort(compare)[0];
     if (winner) addTag(winner, tag);
   });
-  return records
-    .sort((left, right) => {
-      const tagDiff = right.tags.length - left.tags.length;
-      if (tagDiff !== 0) return tagDiff;
-      return compareCandidateStates(left.state, right.state);
-    })
-    .slice(0, limit);
+  if ((options || {}).preserveSkylineRoles === true) {
+    rolePickers.forEach(([, compare]) => keepCandidate(records.slice().sort(compare)[0]));
+  }
+  records
+    .sort(compareGoalRecords)
+    .forEach(keepCandidate);
+  return selected.slice(0, limit).sort(compareGoalRecords);
+}
+
+function normalizeCandidateRecord(candidate, index, fallbackSegmentId) {
+  const state = candidate && candidate.state;
+  return {
+    id: candidate && candidate.id ? candidate.id : `${fallbackSegmentId || "segment"}#${index}`,
+    state,
+    route: Array.isArray(candidate && candidate.route)
+      ? candidate.route.slice()
+      : (Array.isArray(state && state.route) ? state.route.slice() : []),
+    trace: Array.isArray(candidate && candidate.trace) ? candidate.trace.slice() : [],
+    hero: (candidate && candidate.hero) || summarizeHero(state),
+    effectiveHero: (candidate && candidate.effectiveHero) || summarizeEffectiveHero(state),
+    score: number(candidate && candidate.score, goalCandidateScore(state)),
+    tags: Array.isArray(candidate && candidate.tags) ? candidate.tags.slice() : [],
+  };
+}
+
+function selectCandidateSkyline(simulator, candidates, segment, options) {
+  const limit = Math.max(1, number((options || {}).candidateLimit || (segment.dp || {}).goalSkylineLimit, 8));
+  const keyMode = ((segment.dp || {}).keyMode || "region");
+  const byKey = new Map();
+  (candidates || []).filter((candidate) => candidate && candidate.state).forEach((candidate) => {
+    const key = buildDpStateKey(simulator, candidate.state, { dpKeyMode: keyMode });
+    const existing = byKey.get(key);
+    if (!existing || compareCandidateStates(candidate.state, existing.state) < 0) byKey.set(key, candidate);
+  });
+  const records = Array.from(byKey.values()).map((candidate, index) => normalizeCandidateRecord(candidate, index, segment.id));
+  const compareGoalRecords = (left, right) => {
+    const tagDiff = right.tags.length - left.tags.length;
+    if (tagDiff !== 0) return tagDiff;
+    const stateDiff = compareCandidateStates(left.state, right.state);
+    if (stateDiff !== 0) return stateDiff;
+    return candidateOutcomeScore(right) - candidateOutcomeScore(left);
+  };
+  const rolePickers = [
+    ["highest-hp", (left, right) => summarizeHero(right.state).hp - summarizeHero(left.state).hp],
+    ["best-combat", (left, right) => right.score - left.score],
+    ["highest-atk", (left, right) => right.effectiveHero.atk - left.effectiveHero.atk],
+    ["highest-def", (left, right) => right.effectiveHero.def - left.effectiveHero.def],
+    ["highest-mdef", (left, right) => right.effectiveHero.mdef - left.effectiveHero.mdef],
+    ["highest-exp", (left, right) => right.hero.exp - left.hero.exp],
+    ["shortest", (left, right) => left.route.length - right.route.length],
+  ];
+  const selected = [];
+  const selectedIds = new Set();
+  const keepCandidate = (record) => {
+    if (!record || selectedIds.has(record.id) || selected.length >= limit) return;
+    selectedIds.add(record.id);
+    selected.push(record);
+  };
+  rolePickers.forEach(([tag, compare]) => {
+    const winner = records.slice().sort(compare)[0];
+    if (winner) addTag(winner, tag);
+  });
+  if ((options || {}).preserveSkylineRoles === true) {
+    rolePickers.forEach(([, compare]) => keepCandidate(records.slice().sort(compare)[0]));
+  }
+  records.sort(compareGoalRecords).forEach(keepCandidate);
+  return selected.slice(0, limit).sort(compareGoalRecords);
 }
 
 function compactState(state) {
@@ -550,7 +703,7 @@ function classifySegmentFailure(missing, segment) {
   const preferredCandidateTags = [];
   const recommendedNext = [];
   const addClass = (failureClass, reason, tags, recommendation) => {
-    classes.push({ failureClass, reason });
+    classes.push({ failureClass, reason, recommendation });
     (tags || []).forEach((tag) => {
       if (!preferredCandidateTags.includes(tag)) preferredCandidateTags.push(tag);
     });
@@ -667,13 +820,29 @@ function classifySegmentFailure(missing, segment) {
     );
   }
 
-  const primary = classes[0];
+  const failurePriority = {
+    "life-limit-hp-deficit": 100,
+    "target-action-unreachable": 95,
+    "present-tile-overconstrained": 90,
+    "action-survivability-deficit": 85,
+    "floor-scope-mismatch": 80,
+    "target-tile-not-cleared": 75,
+    "hp-deficit": 70,
+    "def-deficit": 65,
+    "mdef-deficit": 60,
+    "atk-deficit": 55,
+    "equipment-missing": 50,
+    "budget-or-action-scope-exhausted": 10,
+  };
+  const primary = classes.slice().sort((left, right) =>
+    number(failurePriority[right.failureClass], 0) - number(failurePriority[left.failureClass], 0)
+  )[0];
   return {
     failureClass: primary.failureClass,
     failureReason: primary.reason,
     allFailureClasses: classes,
     preferredCandidateTags,
-    recommendedRepair: recommendedNext[0],
+    recommendedRepair: primary.recommendation || recommendedNext[0],
     recommendedNext,
     segmentId: segment && segment.id,
   };
@@ -713,7 +882,10 @@ function searchSegmentDP(simulator, startState, segment, options) {
   const maxRuntimeMs = number(dpConfig.maxRuntimeMs, 15000);
   const maxActionsPerState = number(dpConfig.maxActionsPerState, 9999);
   const prefixRoute = Array.isArray(config.prefixRoute) ? config.prefixRoute : (Array.isArray(startState.route) ? startState.route : []);
-  const prefixTrace = Array.isArray(config.prefixTrace) ? config.prefixTrace : (Array.isArray(startState.routeTrace) ? startState.routeTrace : []);
+  const captureTrace = config.captureTrace === true;
+  const prefixTrace = captureTrace
+    ? (Array.isArray(config.prefixTrace) ? config.prefixTrace : (Array.isArray(startState.routeTrace) ? startState.routeTrace : []))
+    : [];
   const seed = cloneStateWithoutRouteTrace(startState);
   seed.route = prefixRoute.slice();
   const result = searchDP(simulator, seed, {
@@ -726,6 +898,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     dpPriorityMode: dpConfig.priorityMode || dpConfig.dpPriorityMode || "default",
     stopOnFirstGoal: dpConfig.stopOnFirstGoal === true,
     continueAfterGoal: dpConfig.continueAfterGoal === true,
+    captureTrace,
     initialRouteTracePrefix: prefixTrace,
     goalSkylineLimit: number(dpConfig.goalSkylineLimit, 8),
     actionProvider: buildSegmentActionProvider(simulator, segment),
@@ -740,6 +913,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     : [result.bestGoalState || result.goalState].filter(Boolean);
   const goalSkyline = selectGoalSkyline(simulator, goalStates, segment, {
     candidateLimit: config.candidateLimit || dpConfig.goalSkylineLimit,
+    preserveSkylineRoles: config.preserveSkylineRoles === true || dpConfig.preserveSkylineRoles === true,
   });
   return {
     segmentId: segment.id,
@@ -804,13 +978,7 @@ function milestoneRangeError(milestoneSpec, fromMilestoneId, toMilestoneId) {
 }
 
 function mergeMilestoneFrontier(simulator, candidates, segment, options) {
-  const states = (candidates || []).map((candidate) => {
-    if (candidate && candidate.state && Array.isArray(candidate.trace)) {
-      candidate.state.routeTrace = candidate.trace;
-    }
-    return candidate && candidate.state;
-  }).filter(Boolean);
-  const selected = selectGoalSkyline(simulator, states, segment, options);
+  const selected = selectCandidateSkyline(simulator, candidates || [], segment, options);
   return selected.map((record, index) => ({
     id: `${segment.id}:candidate-${index}`,
     state: record.state,
@@ -877,10 +1045,11 @@ function segmentCandidateLimit(segment, config, overrides) {
 function segmentDpOverrides(segment, config, overrides) {
   const dpConfig = (segment || {}).dp || {};
   const repair = (overrides && overrides.dpOverrides) || {};
+  const generatedSegment = Boolean(segment && segment.generated);
   return {
-    ...(config && config.dpKeyMode ? { keyMode: config.dpKeyMode } : {}),
-    ...(config && config.maxExpansions ? { maxExpansions: config.maxExpansions } : {}),
-    ...(config && config.maxRuntimeMs ? { maxRuntimeMs: config.maxRuntimeMs } : {}),
+    ...(config && config.dpKeyMode && !generatedSegment ? { keyMode: config.dpKeyMode } : {}),
+    ...(config && config.maxExpansions && !generatedSegment ? { maxExpansions: config.maxExpansions } : {}),
+    ...(config && config.maxRuntimeMs && !generatedSegment ? { maxRuntimeMs: config.maxRuntimeMs } : {}),
     ...(config && config.stopOnFirstGoal != null ? { stopOnFirstGoal: config.stopOnFirstGoal } : {}),
     ...(repair.stopOnFirstGoal != null ? { stopOnFirstGoal: repair.stopOnFirstGoal } : {}),
     ...(repair.maxExpansions != null ? { maxExpansions: repair.maxExpansions } : {}),
@@ -922,14 +1091,21 @@ function buildMilestoneCheckpoint(segment, execution) {
 
 function runSegmentAgainstFrontier(simulator, segment, frontier, config, overrides) {
   const candidateLimit = segmentCandidateLimit(segment, config || {}, overrides || {});
+  const startLimit = numericOption(
+    overrides && overrides.startCandidateLimit,
+    numericOption(config && config.startCandidateLimit, (frontier || []).length || 1)
+  );
+  const inputFrontier = (frontier || []).slice(0, startLimit);
   const nextCandidates = [];
   const attempts = [];
-  for (const candidate of frontier || []) {
+  for (const candidate of inputFrontier) {
     const result = searchSegmentDP(simulator, candidate.state, segment, {
       candidateId: candidate.id,
       prefixRoute: candidate.route,
-      prefixTrace: candidate.trace,
+      prefixTrace: config && config.captureTrace === true ? candidate.trace : [],
       candidateLimit,
+      preserveSkylineRoles: Boolean((config || {}).qualityFloor || (overrides || {}).preserveSkylineRoles),
+      captureTrace: config && config.captureTrace === true,
       dpOverrides: segmentDpOverrides(segment, config || {}, overrides || {}),
     });
     attempts.push(result);
@@ -938,13 +1114,17 @@ function runSegmentAgainstFrontier(simulator, segment, frontier, config, overrid
       id: `${segment.id}:${candidate.id}:${goal.id}`,
     }));
   }
-  const merged = mergeMilestoneFrontier(simulator, nextCandidates, segment, { candidateLimit });
+  const merged = mergeMilestoneFrontier(simulator, nextCandidates, segment, {
+    candidateLimit,
+    preserveSkylineRoles: Boolean((config || {}).qualityFloor || (overrides || {}).preserveSkylineRoles),
+  });
   const failurePropagation = mergeFailurePropagation(attempts);
   const summary = {
     segmentId: segment.id,
     label: segment.label,
     found: merged.length > 0,
-    startCandidatesTried: (frontier || []).length,
+    startCandidatesTried: inputFrontier.length,
+    startCandidatesAvailable: (frontier || []).length,
     candidates: compactSegmentCandidates(merged),
     attempts: attempts.map((attempt) => ({
       startCandidateId: attempt.startCandidateId,
@@ -954,7 +1134,7 @@ function runSegmentAgainstFrontier(simulator, segment, frontier, config, overrid
     })),
     failurePropagation,
   };
-  return { segment, inputFrontier: frontier || [], merged, attempts, summary, candidateLimit };
+  return { segment, inputFrontier, merged, attempts, summary, candidateLimit };
 }
 
 function preferredTagScore(candidate, preferredTags) {
@@ -968,8 +1148,96 @@ function rankCandidatesByPreferredTags(candidates, preferredTags) {
   return (candidates || []).slice().sort((left, right) => {
     const tagDiff = preferredTagScore(right, preferredTags) - preferredTagScore(left, preferredTags);
     if (tagDiff !== 0) return tagDiff;
-    return (right.score || 0) - (left.score || 0);
+    const stateDiff = compareCandidateStates(left && left.state, right && right.state);
+    if (stateDiff !== 0) return stateDiff;
+    return candidateOutcomeScore(right) - candidateOutcomeScore(left);
   });
+}
+
+function qualityFloorHero(qualityFloor) {
+  return (qualityFloor && (qualityFloor.minHero || qualityFloor.hero)) || {};
+}
+
+function qualityFloorFields(qualityFloor) {
+  const configured = qualityFloor && qualityFloor.mustNotLoseFields;
+  return Array.isArray(configured) && configured.length > 0
+    ? configured
+    : ["hp", "atk", "def", "mdef", "lv"];
+}
+
+function qualityFloorMissing(candidate, qualityFloor) {
+  if (!qualityFloor || !candidate || !candidate.state) return [];
+  const state = candidate.state;
+  const hero = summarizeHero(state);
+  const expectedHero = qualityFloorHero(qualityFloor);
+  const missing = [];
+  const floorId = qualityFloor.floorId || qualityFloor.targetFloorId;
+  if (qualityFloor.mustReachSameFloor !== false && floorId && state.floorId !== floorId) {
+    missing.push({ field: "floorId", expected: floorId, actual: state.floorId });
+  }
+  qualityFloorFields(qualityFloor).forEach((field) => {
+    const expected = Number(expectedHero[field] || 0);
+    if (expected > 0 && Number(hero[field] || 0) < expected) {
+      missing.push({ field: `hero.${field}`, expected, actual: Number(hero[field] || 0) });
+    }
+  });
+  if (qualityFloor.sameLevelMustNotLoseExp !== false) {
+    const expectedLv = Number(expectedHero.lv || 0);
+    const expectedExp = Number(expectedHero.exp || 0);
+    if (expectedLv > 0 && expectedExp > 0 && Number(hero.lv || 0) === expectedLv && Number(hero.exp || 0) < expectedExp) {
+      missing.push({ field: "hero.exp", expected: expectedExp, actual: Number(hero.exp || 0), reason: "same-level exp should not regress below quality floor" });
+    }
+  }
+  return missing;
+}
+
+function candidateMeetsQualityFloor(candidate, qualityFloor) {
+  return qualityFloorMissing(candidate, qualityFloor).length === 0;
+}
+
+function rankFinalCandidates(candidates, qualityFloor) {
+  const ranked = (candidates || []).slice().sort((left, right) => {
+    const leftPass = candidateMeetsQualityFloor(left, qualityFloor);
+    const rightPass = candidateMeetsQualityFloor(right, qualityFloor);
+    if (leftPass !== rightPass) return leftPass ? -1 : 1;
+    const stateDiff = compareCandidateStates(left && left.state, right && right.state);
+    if (stateDiff !== 0) return stateDiff;
+    return candidateOutcomeScore(right) - candidateOutcomeScore(left);
+  });
+  return ranked;
+}
+
+function buildQualityFloorFailure(segment, candidates, qualityFloor) {
+  const ranked = rankFinalCandidates(candidates || [], null);
+  const best = ranked[0] || null;
+  const missing = best
+    ? qualityFloorMissing(best, qualityFloor)
+    : [{ field: "candidate", expected: "route meeting quality floor", actual: "none" }];
+  return {
+    segmentId: segment && segment.id,
+    label: segment && segment.label,
+    found: false,
+    failureClass: "route-quality-floor-not-met",
+    failureReason: `best route does not meet quality floor${qualityFloor && qualityFloor.label ? `: ${qualityFloor.label}` : ""}`,
+    bestSeen: best && compactState(best.state),
+    missingGoalFields: missing,
+    preferredCandidateTags: ["highest-hp", "highest-def", "best-combat"],
+    recommendedRepair: "expand previous skyline and prefer higher-HP sustain/resource timing candidates before accepting this milestone",
+    failurePropagation: {
+      failureClass: "route-quality-floor-not-met",
+      primaryFailureClass: "route-quality-floor-not-met",
+      reason: "candidate route is below an explicit route-quality baseline",
+      preferredCandidateTags: ["highest-hp", "highest-def", "best-combat"],
+      recommendedNext: [
+        "increase candidate limit for the previous milestone window",
+        "rerun the window with route-quality baseline enabled",
+        "preserve HP skyline candidates across floorFly/resource timing branches",
+      ],
+    },
+    startCandidatesTried: candidates.length,
+    candidates: compactSegmentCandidates(candidates),
+    qualityFloor,
+  };
 }
 
 function backtrackCandidateLimit(segment, config) {
@@ -1007,6 +1275,7 @@ function tryRepairFromPreviousMilestone(simulator, segments, segmentIndex, histo
   const expandedPrevious = runSegmentAgainstFrontier(simulator, previousSegment, previous.inputFrontier, config || {}, {
     candidateLimit: backtrackCandidateLimit(previousSegment, config || {}),
     dpOverrides: backtrackDpOverrides(previousSegment, config || {}),
+    preserveSkylineRoles: true,
   });
   expandedPrevious.summary.backtrack = {
     mode: "expanded-previous-segment",
@@ -1021,7 +1290,9 @@ function tryRepairFromPreviousMilestone(simulator, segments, segmentIndex, histo
 
   const rankedFrontier = rankCandidatesByPreferredTags(expandedPrevious.merged, preferredTags)
     .slice(0, backtrackCandidateLimit(currentSegment, config || {}));
-  const repairedCurrent = runSegmentAgainstFrontier(simulator, currentSegment, rankedFrontier, config || {}, {});
+  const repairedCurrent = runSegmentAgainstFrontier(simulator, currentSegment, rankedFrontier, config || {}, {
+    preserveSkylineRoles: true,
+  });
   repairedCurrent.summary.backtrack = {
     mode: "retry-current-segment",
     repairedFromSegment: previousSegment.id,
@@ -1069,7 +1340,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     id: "initial#0",
     state: initialFrontierState,
     route: Array.isArray(initialState.route) ? initialState.route.slice() : [],
-    trace: Array.isArray(initialState.routeTrace) ? initialState.routeTrace.slice() : [],
+    trace: config.captureTrace === true && Array.isArray(initialState.routeTrace) ? initialState.routeTrace.slice() : [],
     hero: summarizeHero(initialState),
     effectiveHero: summarizeEffectiveHero(initialState),
     tags: ["initial"],
@@ -1140,7 +1411,25 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     });
     frontier = execution.merged;
   }
+  frontier = rankFinalCandidates(frontier, config.qualityFloor || null);
   const final = frontier[0] || null;
+  if (final && config.qualityFloor && !candidateMeetsQualityFloor(final, config.qualityFloor)) {
+    const finalSegment = segments[segments.length - 1] || null;
+    const failedSummary = buildQualityFloorFailure(finalSegment, frontier, config.qualityFloor);
+    segmentResults.push(failedSummary);
+    return {
+      found: false,
+      reachedMilestone: finalSegment && (finalSegment.startFrom || null),
+      failedSegment: failedSummary,
+      finalCandidates: frontier,
+      segmentResults,
+      checkpointResults,
+      qualityFloor: {
+        passed: false,
+        floor: config.qualityFloor,
+      },
+    };
+  }
   return {
     found: Boolean(final),
     reachedMilestone: segments.length ? segments[segments.length - 1].id : null,
@@ -1149,6 +1438,10 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     finalCandidates: frontier,
     segmentResults,
     checkpointResults,
+    qualityFloor: config.qualityFloor ? {
+      passed: Boolean(final),
+      floor: config.qualityFloor,
+    } : null,
   };
 }
 

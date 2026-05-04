@@ -265,6 +265,17 @@ function buildDpAgendaRank(simulator, state, sourceAction, sequence, options) {
 }
 
 function compareDpAgendaRank(left, right) {
+  if (left.priorityMode === "resource-first" || right.priorityMode === "resource-first") {
+    const resourceHighWins = ["sourceActionRank", "hp", "atk", "def", "mdef", "lv", "exp", "bestFloorRank", "currentFloorRank", "finiteNextDistance"];
+    for (const field of resourceHighWins) {
+      const diff = Number(left[field] || 0) - Number(right[field] || 0);
+      if (diff !== 0) return diff;
+    }
+    if (left.nextDistance !== right.nextDistance) return right.nextDistance - left.nextDistance;
+    if (left.decisionDepth !== right.decisionDepth) return right.decisionDepth - left.decisionDepth;
+    if (left.routeLength !== right.routeLength) return right.routeLength - left.routeLength;
+    return right.sequence - left.sequence;
+  }
   const highWins = [
     "bestFloorRank",
     "finiteNextDistance",
@@ -341,7 +352,8 @@ function searchDP(simulator, initialState, options) {
     ? null
     : new BinaryHeap((left, right) => compareDpAgendaRank(left.rank, right.rank));
   const initialRoutePrefix = Array.isArray(initialState.route) ? initialState.route.slice() : [];
-  const initialRouteTracePrefix = Array.isArray(config.initialRouteTracePrefix)
+  const captureTrace = config.captureTrace === true;
+  const initialRouteTracePrefix = captureTrace && Array.isArray(config.initialRouteTracePrefix)
     ? config.initialRouteTracePrefix
     : [];
   const rootState = cloneState(initialState);
@@ -501,7 +513,11 @@ function searchDP(simulator, initialState, options) {
   const attachRouteToNodeState = (node) => {
     if (!node || !node.state) return null;
     node.state.route = initialRoutePrefix.concat(reconstructActionEntries(nodes, node));
-    node.state.routeTrace = initialRouteTracePrefix.concat(reconstructActionTrace(nodes, node));
+    if (captureTrace) {
+      node.state.routeTrace = initialRouteTracePrefix.concat(reconstructActionTrace(nodes, node));
+    } else if (Object.prototype.hasOwnProperty.call(node.state, "routeTrace")) {
+      delete node.state.routeTrace;
+    }
     return node.state;
   };
   const firstGoalState = attachRouteToNodeState(firstGoalNode);

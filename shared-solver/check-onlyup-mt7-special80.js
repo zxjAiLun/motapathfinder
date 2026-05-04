@@ -9,9 +9,10 @@ const { estimateBattleSurvivability } = require("./lib/battle-thresholds");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
-const { readRouteFile } = require("./lib/route-store");
+const { fingerprintAction, readRouteFile } = require("./lib/route-store");
 const { scanResourceIntents } = require("./lib/resource-intent-scanner");
 const { searchSegmentDP } = require("./lib/segment-dp");
+const { buildDominanceKey } = require("./lib/state-key");
 const { getTileDefinitionAt } = require("./lib/state");
 const { StaticSimulator } = require("./lib/simulator");
 
@@ -19,6 +20,8 @@ const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1")
 const ROUTE_NAME = "onlyup-chaos-mt5-blueking";
 const START_ROUTE = path.join(__dirname, "routes", "latest", "segmented-mt7-right-exp-crystal.route.json");
 const LATEST_LEFT_SWORD_ROUTE = path.join(__dirname, "routes", "latest", "adaptive-mt7-left-sword.route.json");
+const LATEST_MT8_QUALITY_ROUTE = path.join(__dirname, "routes", "latest", "adaptive-mt8-entry-quality-floor.route.json");
+const LATEST_MT8_QUALITY_WINDOW_ROUTE = path.join(__dirname, "routes", "latest", "adaptive-mt8-entry-from-quality-window.route.json");
 const LATEST_MT8_SUFFIX_ROUTE = path.join(__dirname, "routes", "latest", "adaptive-mt8-entry-from-mt6-window-suffix.route.json");
 const LATEST_MT8_WINDOW_ROUTE = path.join(__dirname, "routes", "latest", "adaptive-mt8-entry-from-mt6-window.route.json");
 const USER_BASELINE_ROUTE = path.join(__dirname, "fixtures", "onlyup-mt7-user-baseline.json");
@@ -42,12 +45,9 @@ function makeSimulator() {
 
 function enumerateAllActions(simulator, state) {
   const actions = [];
-  const seen = new Set();
   const add = (list) => {
     (list || []).forEach((action) => {
-      if (!action || !action.summary || seen.has(action.summary)) return;
-      seen.add(action.summary);
-      actions.push(action);
+      if (action && action.summary) actions.push(action);
     });
   };
   try {
@@ -69,15 +69,45 @@ function enumerateAllActions(simulator, state) {
   return actions;
 }
 
-function findAction(simulator, state, summary) {
-  return enumerateAllActions(simulator, state).find((action) => action.summary === summary) || null;
+function samePath(left, right) {
+  const leftPath = Array.isArray(left) ? left : [];
+  const rightPath = Array.isArray(right) ? right : [];
+  if (leftPath.length !== rightPath.length) return false;
+  for (let index = 0; index < leftPath.length; index += 1) {
+    if (leftPath[index] !== rightPath[index]) return false;
+  }
+  return true;
+}
+
+function findAction(simulator, state, expected) {
+  const summary = typeof expected === "string" ? expected : expected && expected.summary;
+  const matching = enumerateAllActions(simulator, state).filter((action) => action.summary === summary);
+  if (matching.length <= 1) return matching[0] || null;
+  return matching
+    .map((action) => {
+      let score = 0;
+      if (expected && typeof expected !== "string") {
+        if (expected.fingerprint && fingerprintAction(action) === expected.fingerprint) score += 500000;
+        if (samePath(action.path, expected.path)) score += 50000;
+        if (expected.postStateKey) {
+          try {
+            const postState = simulator.applyAction(state, action, { storeRoute: false });
+            if (buildDominanceKey(postState) === expected.postStateKey) score += 1000000;
+          } catch (error) {
+            score -= 1000000;
+          }
+        }
+      }
+      return { action, score };
+    })
+    .sort((left, right) => right.score - left.score)[0].action;
 }
 
 function replayRoute(simulator, routeFile) {
   const record = readRouteFile(routeFile);
   let state = simulator.createInitialState({ rank: "chaos" });
   for (const decision of record.decisions || []) {
-    const action = findAction(simulator, state, decision.summary);
+    const action = findAction(simulator, state, decision);
     assert.ok(action, `missing replay action ${decision.index}: ${decision.summary}`);
     state = simulator.applyAction(state, action);
   }
@@ -145,9 +175,8 @@ function checkUserBaselineOracle(simulator) {
   const baselineState = replaySummaries(simulator, startState, fixture.route || []);
   assert.equal(baselineState.floorId, fixture.target && fixture.target.floorId, `user baseline should reach ${fixture.target && fixture.target.floorId}`);
 
-  const candidateRoute = fs.existsSync(LATEST_MT8_SUFFIX_ROUTE)
-    ? LATEST_MT8_SUFFIX_ROUTE
-    : LATEST_MT8_WINDOW_ROUTE;
+  const candidateRoute = [LATEST_MT8_QUALITY_ROUTE, LATEST_MT8_QUALITY_WINDOW_ROUTE, LATEST_MT8_SUFFIX_ROUTE, LATEST_MT8_WINDOW_ROUTE]
+    .find((routeFile) => fs.existsSync(routeFile));
   assert.ok(fs.existsSync(candidateRoute), `missing latest MT8 route to compare against user baseline: ${candidateRoute}`);
   const candidate = routeFinalStateFromRecord(candidateRoute);
   compareRouteAgainstBaseline(candidate, baselineState, fixture.compare || {});

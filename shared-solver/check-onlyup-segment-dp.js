@@ -92,15 +92,21 @@ function loadMt5ThirdGateState(simulator) {
 }
 
 function assertNoMacroRoute(state, label) {
-  const route = (state.route || []).filter((step) => !String(step).startsWith("auto:"));
+  const route = (state.route || [])
+    .map((step) => String(step && (step.summary || step)))
+    .filter((step) => !step.startsWith("auto:"));
   for (const step of route) {
     assert.ok(
-      !String(step).startsWith("resourcePocket:") &&
-      !String(step).startsWith("resourceChain:") &&
-      !String(step).startsWith("resourceCluster:"),
+      !step.startsWith("resourcePocket:") &&
+      !step.startsWith("resourceChain:") &&
+      !step.startsWith("resourceCluster:"),
       `${label}: route should not contain macro action ${step}`
     );
   }
+}
+
+function routeSummaries(state) {
+  return (state.route || []).map((step) => String(step && (step.summary || step)));
 }
 
 function tileKey(tile) {
@@ -163,7 +169,7 @@ function checkMt5ThirdGateToBlueKing(simulator) {
   ]) {
     assert.ok(completedSegments.includes(segmentId), `MT5 segment graph should complete ${segmentId}`);
   }
-  const route = final.route || [];
+  const route = routeSummaries(final);
   for (const summary of [
     "battle:skeletonPresbyter@MT5:3,6",
     "battle:goldHornSlime@MT5:10,5",
@@ -184,8 +190,9 @@ function checkMt5ThirdGateToBlueKing(simulator) {
   assert.equal(mt6Result.found, true, `MT6 getNext segment should pass: ${JSON.stringify(mt6Result.failedSegment || null)}`);
   const mt6Final = mt6Result.finalCandidate && mt6Result.finalCandidate.state;
   assert.ok(mt6Final, "MT6 getNext segment should return a final candidate");
-  assert.ok((mt6Final.route || []).includes("getNext:weakWine@MT6:7,7"), "MT6 route should use getNext for the 7,7 weakWine pickup");
-  assert.ok(!(mt6Final.route || []).includes("pickup:weakWine@MT6:7,7"), "MT6 route should not step onto the 7,7 weakWine tile");
+  const mt6Route = routeSummaries(mt6Final);
+  assert.ok(mt6Route.includes("getNext:weakWine@MT6:7,7"), "MT6 route should use getNext for the 7,7 weakWine pickup");
+  assert.ok(!mt6Route.includes("pickup:weakWine@MT6:7,7"), "MT6 route should not step onto the 7,7 weakWine tile");
   assertNoMacroRoute(mt6Final, "MT6 getNext segment graph");
   const mt7Result = runMilestoneGraph(simulator, final, spec, {
     fromMilestoneId: "mt5-blueking-kill",
@@ -196,7 +203,7 @@ function checkMt5ThirdGateToBlueKing(simulator) {
   assert.equal(mt7Result.found, true, `MT6->MT7 segment graph should pass: ${JSON.stringify(mt7Result.failedSegment || null)}`);
   const mt7Final = mt7Result.finalCandidate && mt7Result.finalCandidate.state;
   assert.ok(mt7Final, "MT6->MT7 segment graph should return a final candidate");
-  const mt7Route = mt7Final.route || [];
+  const mt7Route = routeSummaries(mt7Final);
   const getNextIndex = mt7Route.indexOf("getNext:weakWine@MT6:7,7");
   const leftAttackIndex = mt7Route.indexOf("battle:whiteHornSlime@MT6:1,11");
   const rightAttackIndex = mt7Route.indexOf("battle:whiteHornSlime@MT6:10,8");
@@ -221,7 +228,7 @@ function checkMt5ThirdGateToBlueKing(simulator) {
   assert.ok(mt7RightExpFinal.hero.hp >= 298478, `expected MT7 right exp hp >= 298478, got ${mt7RightExpFinal.hero.hp}`);
   assert.ok(mt7RightExpFinal.hero.def >= 5535, `expected MT7 right exp def >= 5535, got ${mt7RightExpFinal.hero.def}`);
   assert.ok(mt7RightExpFinal.hero.exp >= 1855, `expected MT7 right exp exp >= 1855, got ${mt7RightExpFinal.hero.exp}`);
-  const mt7RightExpRoute = mt7RightExpFinal.route || [];
+  const mt7RightExpRoute = routeSummaries(mt7RightExpFinal);
   const mt6DefenseIndex = mt7RightExpRoute.indexOf("battle:evilFairy@MT6:2,1");
   const mt6SilverIndex = mt7RightExpRoute.indexOf("battle:silverSlime@MT6:9,10");
   const mt6PriestIndex = mt7RightExpRoute.indexOf("battle:yellowPriest@MT6:11,11");
