@@ -11,7 +11,7 @@ const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
 const { fingerprintAction, readRouteFile } = require("./lib/route-store");
 const { scanResourceIntents } = require("./lib/resource-intent-scanner");
-const { BLOCKER_TILE_NUMBER, isTileBlocking, searchSegmentDP, summarizeHero } = require("./lib/segment-dp");
+const { BLOCKER_TILE_NUMBER, closeStateForBattleFrontier, isTileBlocking, protectPresentTiles, restorePresentTiles, searchSegmentDP, summarizeHero } = require("./lib/segment-dp");
 const { buildDominanceKey } = require("./lib/state-key");
 const { getTileDefinitionAt } = require("./lib/state");
 const { StaticSimulator } = require("./lib/simulator");
@@ -415,6 +415,56 @@ function checkResourceTimingWindow(simulator) {
   };
 }
 
+function checkProtectedItemClosure(simulator) {
+  const startState = replayRoute(simulator, WINDOW_START_ROUTE);
+  const project = simulator.project;
+
+  const segment = {
+    id: "test-protected-item-closure",
+    goal: {
+      presentTiles: [
+        { floorId: "MT7", x: 0, y: 11, reason: "I616 sword" },
+        { floorId: "MT7", x: 1, y: 11, reason: "poisonZombie blocker" },
+      ],
+    },
+  };
+
+  const state = JSON.parse(JSON.stringify(startState));
+  if (!state.floorStates) state.floorStates = {};
+  if (!state.floorStates.MT7) state.floorStates.MT7 = { removed: {}, replaced: {} };
+
+  const mt7 = state.floorStates.MT7;
+  assert.equal(mt7.removed["0,11"], undefined, "I616 should not be removed initially");
+  assert.equal(mt7.replaced["0,11"], undefined, "I616 should not be replaced initially");
+
+  const tileBefore = getTileDefinitionAt(project, state, "MT7", 0, 11);
+  assert.ok(tileBefore, "I616 tile should exist at MT7:0,11");
+  assert.equal(tileBefore.cls, "items", "I616 should be an item");
+
+  const saved = protectPresentTiles(project, state, segment);
+
+  assert.equal(mt7.removed["0,11"], undefined, "protected item should NOT be marked removed");
+  assert.equal(mt7.replaced["0,11"], BLOCKER_TILE_NUMBER, "protected item should be replaced with blocker tile");
+
+  const tileDuring = getTileDefinitionAt(project, state, "MT7", 0, 11);
+  assert.ok(tileDuring, "protected position should have a tile during closure");
+  assert.equal(tileDuring.number, BLOCKER_TILE_NUMBER, "protected position should be blocker tile during closure");
+  assert.ok(isTileBlocking(project, tileDuring.number), "blocker tile should block traversal");
+
+  assert.equal(mt7.replaced["1,11"], BLOCKER_TILE_NUMBER, "protected enemy should be replaced with blocker tile");
+
+  restorePresentTiles(saved);
+
+  assert.equal(mt7.removed["0,11"], undefined, "I616 should not be removed after restore");
+  assert.equal(mt7.replaced["0,11"], undefined, "I616 should not be replaced after restore");
+
+  const tileAfter = getTileDefinitionAt(project, state, "MT7", 0, 11);
+  assert.ok(tileAfter, "I616 tile should exist after restore");
+  assert.equal(tileAfter.cls, "items", "I616 should be an item after restore");
+
+  console.log("PASS: protected item closure - item blocked during closure, restored after");
+}
+
 function checkBattleFrontierMode(simulator) {
   const startState = replayRoute(simulator, WINDOW_START_ROUTE);
   const segment = {
@@ -488,6 +538,10 @@ function checkBattleFrontierMode(simulator) {
       enemyId: "poisonZombie",
     });
     assert.equal(poisonThreshold.survivable, true, `battle-frontier final state should survive poisonZombie: ${JSON.stringify(poisonThreshold)}`);
+
+    const mt7State = (finalState.floorStates || {}).MT7 || { removed: {}, replaced: {} };
+    assert.ok(!mt7State.removed["0,11"], "I616 should not be picked up in battle-frontier route");
+    assert.ok(!route.some((s) => /I616@MT7:0,11/.test(s)), "route should not include pickup of protected I616");
   } else {
     assert.ok(
       dpDiag.stoppedReason === "time-limit" || dpDiag.frontierSize === 0,
@@ -520,6 +574,7 @@ function checkBlockerTileAssumption(project) {
 function main() {
   const simulator = makeSimulator();
   checkBlockerTileAssumption(simulator.project);
+  checkProtectedItemClosure(simulator);
   const startState = replayRoute(simulator, START_ROUTE);
   const threshold = checkThreshold(simulator, startState);
   const intents = checkResourceIntent(simulator, startState, threshold);
