@@ -4,7 +4,7 @@ const { buildDpStateKey, searchDP } = require("./dp-search");
 const { estimateBattleSurvivability } = require("./battle-thresholds");
 const { formatActionLabel } = require("./enemy-labels");
 const { buildSolverSnapshot } = require("./route-snapshot");
-const { getTileDefinitionAt, cloneState } = require("./state");
+const { cloneState, getDecisionDepth, getTileDefinitionAt } = require("./state");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -533,6 +533,17 @@ function deduplicatePortalActions(actions) {
   return [...battles, ...portalsByTarget.values(), ...others];
 }
 
+const BLOCKER_TILE_NUMBER = 1;
+
+function isTileBlocking(project, tileNumber) {
+  const def = project.mapTilesByNumber[String(tileNumber)];
+  if (!def) return true;
+  if (def.cls && def.cls.indexOf("enemy") === 0) return false;
+  if (def.trigger === "openDoor") return false;
+  if (def.cls === "items") return false;
+  return def.canPass !== true;
+}
+
 function protectPresentTiles(project, state, segment) {
   const goal = (segment || {}).goal || {};
   const saved = [];
@@ -555,9 +566,12 @@ function protectPresentTiles(project, state, segment) {
       saved.push({ floorId: required.floorId, key, wasRemoved, wasReplaced, floorState, mode: "item" });
       floorState.removed[key] = true;
     } else {
+      if (!isTileBlocking(project, BLOCKER_TILE_NUMBER)) {
+        throw new Error(`protectPresentTiles: tile ${BLOCKER_TILE_NUMBER} is not a blocking tile`);
+      }
       const wasReplaced = floorState.replaced[key];
       saved.push({ floorId: required.floorId, key, wasReplaced, floorState, mode: "blocker" });
-      floorState.replaced[key] = 1;
+      floorState.replaced[key] = BLOCKER_TILE_NUMBER;
     }
   }
   return saved;
@@ -1678,8 +1692,10 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
 }
 
 module.exports = {
+  BLOCKER_TILE_NUMBER,
   buildSegmentActionProvider,
   buildSegmentGoalPredicate,
+  isTileBlocking,
   runMilestoneGraph,
   searchSegmentDP,
   summarizeEffectiveHero,

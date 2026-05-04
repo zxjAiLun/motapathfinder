@@ -11,7 +11,7 @@ const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
 const { fingerprintAction, readRouteFile } = require("./lib/route-store");
 const { scanResourceIntents } = require("./lib/resource-intent-scanner");
-const { searchSegmentDP, summarizeHero } = require("./lib/segment-dp");
+const { BLOCKER_TILE_NUMBER, isTileBlocking, searchSegmentDP, summarizeHero } = require("./lib/segment-dp");
 const { buildDominanceKey } = require("./lib/state-key");
 const { getTileDefinitionAt } = require("./lib/state");
 const { StaticSimulator } = require("./lib/simulator");
@@ -287,7 +287,7 @@ function checkAdaptiveBranch(simulator) {
       (result.failedSegment.failurePropagation && result.failedSegment.failurePropagation.failureClass) ||
       (result.failedSegment.failurePropagation && result.failedSegment.failurePropagation.primaryFailureClass);
     assert.ok(
-      ["life-limit-hp-deficit", "target-action-unreachable", "budget-or-action-scope-exhausted", "hp-deficit"].includes(failureClass),
+      ["life-limit-hp-deficit", "target-action-unreachable", "budget-or-action-scope-exhausted", "hp-deficit", "action-survivability-deficit"].includes(failureClass),
       `unexpected failureClass: ${failureClass}`
     );
     const missing = JSON.stringify(result.failedSegment.missingGoalFields || result.failedSegment);
@@ -464,6 +464,37 @@ function checkBattleFrontierMode(simulator) {
   assert.equal(expandedByKind.interactPickup || 0, 0, "battle-frontier should not expand interactPickup actions");
   assert.ok(dpDiag.uniqueBattleTargets > 0, "battle-frontier should see battle targets");
   assert.ok(dpDiag.expansions <= 20000, `battle-frontier expansions should be bounded: ${dpDiag.expansions}`);
+  assert.ok(!dpDiag.expansionBudgetExhausted, "battle-frontier should finish without exhausting budget");
+
+  const portalExpanded = (expandedByKind.changeFloor || 0) + (expandedByKind.floorFly || 0);
+  assert.ok(portalExpanded <= 500, `battle-frontier portal expansions should be bounded: changeFloor=${expandedByKind.changeFloor || 0}, floorFly=${expandedByKind.floorFly || 0}`);
+
+  let hero = null;
+  let route = null;
+  if (result.found) {
+    const candidate = result.goalSkyline[0];
+    const finalState = candidate.state;
+    route = (candidate.route || []).map((entry) => String(entry && (entry.summary || entry)));
+    assert.ok(route.includes("battle:poisonZombie@MT7:1,11"), `battle-frontier route should include poisonZombie battle: ${route.join(" | ")}`);
+
+    hero = summarizeHero(finalState);
+    assert.ok(hero.atk >= 5767, `battle-frontier hero atk should meet goal: ${hero.atk}`);
+    assert.ok(hero.def >= 5535, `battle-frontier hero def should meet goal: ${hero.def}`);
+
+    const poisonThreshold = estimateBattleSurvivability(simulator, finalState, {
+      floorId: "MT7",
+      x: 1,
+      y: 11,
+      enemyId: "poisonZombie",
+    });
+    assert.equal(poisonThreshold.survivable, true, `battle-frontier final state should survive poisonZombie: ${JSON.stringify(poisonThreshold)}`);
+  } else {
+    assert.ok(
+      dpDiag.stoppedReason === "time-limit" || dpDiag.frontierSize === 0,
+      `battle-frontier should stop gracefully: stoppedReason=${dpDiag.stoppedReason}, frontierSize=${dpDiag.frontierSize}`
+    );
+  }
+
   return {
     found: result.found,
     expansions: dpDiag.expansions || 0,
@@ -472,12 +503,23 @@ function checkBattleFrontierMode(simulator) {
     uniqueBattleTargets: dpDiag.uniqueBattleTargets || 0,
     uniquePortalEntries: dpDiag.uniquePortalEntries || 0,
     frontierSize: dpDiag.frontierSize || 0,
-    hero: result.found && result.goalSkyline[0] ? summarizeHero(result.goalSkyline[0].state) : null,
+    hero,
+    route,
   };
+}
+
+function checkBlockerTileAssumption(project) {
+  assert.ok(isTileBlocking(project, BLOCKER_TILE_NUMBER), `tile ${BLOCKER_TILE_NUMBER} must be a blocking tile`);
+  const tile1 = project.mapTilesByNumber[String(BLOCKER_TILE_NUMBER)];
+  assert.ok(tile1, `tile ${BLOCKER_TILE_NUMBER} should exist in project data`);
+  assert.notEqual(tile1.cls, "items", `tile ${BLOCKER_TILE_NUMBER} should not be an item`);
+  assert.ok(!tile1.trigger || tile1.trigger !== "openDoor", `tile ${BLOCKER_TILE_NUMBER} should not be a door`);
+  assert.ok(tile1.canPass !== true, `tile ${BLOCKER_TILE_NUMBER} should not have canPass=true`);
 }
 
 function main() {
   const simulator = makeSimulator();
+  checkBlockerTileAssumption(simulator.project);
   const startState = replayRoute(simulator, START_ROUTE);
   const threshold = checkThreshold(simulator, startState);
   const intents = checkResourceIntent(simulator, startState, threshold);
@@ -512,6 +554,7 @@ function main() {
       uniqueBattleTargets: battleFrontier.uniqueBattleTargets,
       uniquePortalEntries: battleFrontier.uniquePortalEntries,
       hero: battleFrontier.hero,
+      route: battleFrontier.route,
     },
     adaptive: {
       found: adaptive.found,
