@@ -595,11 +595,12 @@ function enumerateMonsterTargets(simulator, state, segment) {
 
   for (const floorId of allowedFloors) {
     const floor = project.floorsById[floorId];
-    if (!floor || !Array.isArray(floor.map)) continue;
-    for (let y = 0; y < floor.map.length; y += 1) {
-      for (let x = 0; x < floor.map[y].length; x += 1) {
-        const tileNum = floor.map[y][x];
-        const tile = project.mapTilesByNumber[String(tileNum)];
+    if (!floor) continue;
+    const height = floor.height || (Array.isArray(floor.map) ? floor.map.length : 0);
+    const width = floor.width || 0;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const tile = getTileDefinitionAt(project, state, floorId, x, y);
         if (!tile || !tile.cls || tile.cls.indexOf("enemy") !== 0) continue;
         const enemyId = tile.id;
         if (!enemyId) continue;
@@ -664,40 +665,54 @@ function oracleFindFloorState(simulator, state, targetFloorId, segment, config) 
 }
 
 function tryReachAndBattle(simulator, state, target, segment, config) {
+  // First navigate to the target floor
   const closed = oracleFindFloorState(simulator, state, target.floorId, segment, config);
-  if (!closed) return { ok: false, reason: "unreachable" };
+  if (!closed) return { ok: false, reason: "unreachable-floor" };
 
-  const primitive = (simulator.enumeratePrimitiveActions(closed).actions || []);
-  const battleAction = primitive.find((action) =>
-    action.kind === "battle" &&
-    action.summary === target.summary
-  );
-  if (!battleAction) return { ok: false, reason: "battle-not-found" };
+  // If already on the target floor, use walk reachability to find the battle action
+  // The battle action requires the hero to be adjacent to the enemy
+  const reachability = simulator.getWalkReachability(closed);
+  const visited = reachability.visited || {};
 
-  try {
-    const postState = simulator.applyAction(closed, battleAction, { storeRoute: false });
-    return { ok: true, postState, battleAction };
-  } catch (error) {
-    return { ok: false, reason: "apply-failed", error: error.message };
+  // Search for a battle action from any reachable position
+  for (const node of Object.values(visited)) {
+    const nodeState = node.state;
+    const primitive = (simulator.enumeratePrimitiveActions(nodeState).actions || []);
+    const battleAction = primitive.find((action) =>
+      action.kind === "battle" &&
+      action.summary === target.summary
+    );
+    if (!battleAction) continue;
+
+    try {
+      const postState = simulator.applyAction(nodeState, battleAction, { storeRoute: false });
+      return { ok: true, postState, battleAction };
+    } catch (error) {
+      // Try next position
+      continue;
+    }
   }
+
+  return { ok: false, reason: "battle-not-reachable" };
 }
 
 function buildMonsterOnlyActionProvider(simulator, segment, config) {
   const policy = (segment || {}).actionPolicy || {};
   const goal = (segment || {}).goal || {};
+  const maxTargets = number((config || {}).maxMonsterTargets, 64);
 
   return (unusedSimulator, state) => {
-    // Enumerate all enemy tiles from allowed floors using map data (cheap)
     const project = simulator.project;
     const allowedFloors = policy.allowedFloors || Object.keys(project.floorsById || {});
     const targets = [];
     for (const floorId of allowedFloors) {
       const floor = project.floorsById[floorId];
-      if (!floor || !Array.isArray(floor.map)) continue;
-      for (let y = 0; y < floor.map.length; y += 1) {
-        for (let x = 0; x < floor.map[y].length; x += 1) {
-          const tileNum = floor.map[y][x];
-          const tile = project.mapTilesByNumber[String(tileNum)];
+      if (!floor) continue;
+      const height = floor.height || (Array.isArray(floor.map) ? floor.map.length : 0);
+      const width = floor.width || 0;
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const tile = getTileDefinitionAt(project, state, floorId, x, y);
           if (!tile || !tile.cls || tile.cls.indexOf("enemy") !== 0) continue;
           const enemyId = tile.id;
           if (!enemyId) continue;
@@ -715,7 +730,7 @@ function buildMonsterOnlyActionProvider(simulator, segment, config) {
         }
       }
     }
-    return targets;
+    return targets.slice(0, maxTargets);
   };
 }
 
@@ -1225,6 +1240,19 @@ function searchSegmentDP(simulator, startState, segment, options) {
       },
     };
   }
+  const actionProviderMode = String(dpConfig.actionProviderMode || segment.actionPolicy && segment.actionPolicy.actionProviderMode || "");
+  let actionProvider;
+  let actionApplier = null;
+  if (actionProviderMode === "monster-only") {
+    actionProvider = buildMonsterOnlyActionProvider(simulator, segment, dpConfig);
+    actionApplier = (state, target) => {
+      const result = tryReachAndBattle(simulator, state, target, segment, dpConfig);
+      if (!result.ok) throw new Error(`monster-only applier failed: ${result.reason}`);
+      return result.postState;
+    };
+  } else {
+    actionProvider = buildSegmentActionProvider(simulator, segment);
+  }
   const result = searchDP(simulator, seed, {
     targetFloorId: segment.goal && segment.goal.floorId,
     maxExpansions,
@@ -1239,7 +1267,8 @@ function searchSegmentDP(simulator, startState, segment, options) {
     initialRouteTracePrefix: prefixTrace,
     goalSkylineLimit: number(dpConfig.goalSkylineLimit, 8),
     dominanceConfig,
-    actionProvider: buildSegmentActionProvider(simulator, segment),
+    actionProvider,
+    actionApplier,
     goalPredicate: buildSegmentGoalPredicate(simulator.project, segment, simulator),
   });
   const baseDpDiagnostics = (result.diagnostics && result.diagnostics.dp) || {};

@@ -364,6 +364,7 @@ class StaticSimulator {
     this.enableResourcePocket = Boolean(config.enableResourcePocket);
     this.enableResourceChain = Boolean(config.enableResourceChain);
     this.enableResourceCluster = Boolean(config.enableResourceCluster);
+    this.regionSignatureMode = String(config.regionSignatureMode || "walk");
     this.searchGraphMode = normalizeSearchGraphMode(config.searchGraphMode || config.searchGraph, "hybrid");
     this.primitiveFallbackMode = config.primitiveFallbackMode || "auto";
     this.resourcePocketSearchOptions = config.resourcePocketSearchOptions || {};
@@ -1499,7 +1500,54 @@ class StaticSimulator {
     return `${floorId}|${loc.x},${loc.y}|r:${removed}|p:${replaced}`;
   }
 
-  buildReachableRegionSignature(state) {
+  buildRegionSignatureFromWalk(state) {
+    try {
+      const floor = this.project.floorsById[state.floorId];
+      const reachability = this.getWalkReachability(state);
+      const coordinates = Object.values(reachability.visited || {})
+        .map((node) => `${node.x},${node.y}`)
+        .sort();
+      const endpoints = [];
+      Object.values(reachability.visited || {}).forEach((node) => {
+        DIRECTIONS.forEach((direction) => {
+          const delta = DIRECTION_DELTAS[direction];
+          const x = node.x + delta.x;
+          const y = node.y + delta.y;
+          const key = coordinateKey(x, y);
+          const tile = getTileDefinitionAt(this.project, node.state, node.state.floorId, x, y);
+          const changeFloor = (floor.changeFloor || {})[key];
+          if (changeFloor) endpoints.push(`changeFloor:${x},${y}->${changeFloor.floorId || changeFloor.stair || ""}`);
+          if (!tile) return;
+          if (tile.cls === "items") endpoints.push(`pickup:${tile.id}@${x},${y}`);
+          else if (isEnemyTile(tile)) endpoints.push(`battle:${tile.id}@${x},${y}`);
+          else if (isDoorTile(tile)) endpoints.push(`door:${tile.id}@${x},${y}`);
+          else if ((floor.events || {})[key]) endpoints.push(`event:${x},${y}`);
+        });
+      });
+      const uniqueEndpoints = Array.from(new Set(endpoints)).sort();
+      return {
+        regionKey: coordinates.join("|"),
+        reachableEndpointsKey: uniqueEndpoints.join("|"),
+        counts: {
+          tiles: coordinates.length,
+          battles: uniqueEndpoints.filter((entry) => entry.startsWith("battle:")).length,
+          pickups: uniqueEndpoints.filter((entry) => entry.startsWith("pickup:")).length,
+          events: uniqueEndpoints.filter((entry) => entry.startsWith("event:")).length,
+          doors: uniqueEndpoints.filter((entry) => entry.startsWith("door:")).length,
+          changeFloors: uniqueEndpoints.filter((entry) => entry.startsWith("changeFloor:")).length,
+        },
+      };
+    } catch (error) {
+      const hero = state.hero || {};
+      return {
+        regionKey: `${state.floorId}:${hero.loc && hero.loc.x},${hero.loc && hero.loc.y}`,
+        reachableEndpointsKey: "",
+        counts: { tiles: 0, battles: 0, pickups: 0, events: 0, doors: 0, changeFloors: 0 },
+      };
+    }
+  }
+
+  buildRegionSignatureFromTopology(state) {
     const regionCacheKey = this.buildRegionSignatureCacheKey(state);
     const cached = this.cacheGet("regionSignature", regionCacheKey);
     if (cached) return cached;
@@ -1569,6 +1617,13 @@ class StaticSimulator {
         counts: { tiles: 0, battles: 0, pickups: 0, events: 0, doors: 0, changeFloors: 0 },
       };
     }
+  }
+
+  buildReachableRegionSignature(state) {
+    if (this.regionSignatureMode === "topology") {
+      return this.buildRegionSignatureFromTopology(state);
+    }
+    return this.buildRegionSignatureFromWalk(state);
   }
 
   buildPocketLocalMutationSignature(baseState, state) {

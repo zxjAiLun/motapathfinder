@@ -522,13 +522,13 @@ function checkBattleFrontierMode(simulator) {
     },
     actionPolicy: {
       allowedFloors: ["MT6", "MT7"],
-      actionKinds: ["battle", "pickup", "interactPickup", "equip", "changeFloor", "floorFly"],
+      actionKinds: ["battle"],
       allowChangeFloors: ["MT7:6,12", "MT6:6,12", "MT6:6,0", "MT7:6,0"],
-      maxFloorFlyPerTarget: 1,
       forbidUnsupportedEvents: true,
     },
     dp: {
       keyMode: "region",
+      actionProviderMode: "monster-only",
       priorityMode: "default",
       enablePreviewScore: "required",
       stopOnFirstGoal: false,
@@ -541,8 +541,11 @@ function checkBattleFrontierMode(simulator) {
   const diag = result.diagnostics || {};
   const dpDiag = diag.dp || {};
   const expandedByKind = dpDiag.actionsExpandedByKind || {};
-  assert.equal(expandedByKind.pickup || 0, 0, "battle-frontier should not expand pickup actions");
-  assert.equal(expandedByKind.interactPickup || 0, 0, "battle-frontier should not expand interactPickup actions");
+  assert.equal(expandedByKind.pickup || 0, 0, "monster-only should not expand pickup actions");
+  assert.equal(expandedByKind.interactPickup || 0, 0, "monster-only should not expand interactPickup actions");
+  assert.equal(expandedByKind.changeFloor || 0, 0, "monster-only should not expand changeFloor actions");
+  assert.equal(expandedByKind.floorFly || 0, 0, "monster-only should not expand floorFly actions");
+  assert.equal(expandedByKind.equip || 0, 0, "monster-only should not expand equip actions");
   assert.ok(dpDiag.uniqueBattleTargets > 0, "should see battle targets");
   assert.ok(dpDiag.expansions <= 20000, `expansions should be bounded: ${dpDiag.expansions}`);
   assert.ok(!dpDiag.expansionBudgetExhausted, "should finish without exhausting budget");
