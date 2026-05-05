@@ -583,7 +583,10 @@ function searchDP(simulator, initialState, options) {
         recordAction(actionStats, action, "expanded");
         let nextState;
         try {
-          nextState = simulator.applyAction(state, action, { storeRoute: false });
+          const applier = typeof config.actionApplier === "function"
+            ? config.actionApplier
+            : (s, a) => simulator.applyAction(s, a, { storeRoute: false });
+          nextState = applier(state, action);
         } catch (error) {
           invalid += 1;
           recordAction(actionStats, action, "invalid");

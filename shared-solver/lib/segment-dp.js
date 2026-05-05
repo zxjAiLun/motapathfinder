@@ -586,57 +586,136 @@ function restorePresentTiles(saved) {
   }
 }
 
-const BATTLE_KIND = new Set(["battle"]);
-
-function closeWithPortals(simulator, state, segment, config) {
-  const maxDepth = number((config || {}).maxPortalDepth, 10);
-  const project = simulator.project;
+function enumerateMonsterTargets(simulator, state, segment) {
   const policy = (segment || {}).actionPolicy || {};
+  const goal = (segment || {}).goal || {};
+  const allowedFloors = policy.allowedFloors || [];
+  const project = simulator.project;
+  const targets = [];
 
-  const queue = [{ seed: cloneState(state), depth: 0 }];
-  const visited = new Set();
-  const allBattles = [];
+  for (const floorId of allowedFloors) {
+    const floor = project.floorsById[floorId];
+    if (!floor || !Array.isArray(floor.map)) continue;
+    for (let y = 0; y < floor.map.length; y += 1) {
+      for (let x = 0; x < floor.map[y].length; x += 1) {
+        const tileNum = floor.map[y][x];
+        const tile = project.mapTilesByNumber[String(tileNum)];
+        if (!tile || !tile.cls || tile.cls.indexOf("enemy") !== 0) continue;
+        const enemyId = tile.id;
+        if (!enemyId) continue;
 
-  while (queue.length > 0) {
-    const { seed, depth } = queue.shift();
-    const closed = closeStateForBattleFrontier(simulator, seed, segment);
+        const preservedKey = `${floorId}:${x},${y}`;
+        const isProtected = (goal.presentTiles || []).some((p) =>
+          `${p.floorId}:${p.x},${p.y}` === preservedKey
+        );
+        if (isProtected) continue;
 
-    const hero = (closed.hero || {}).loc || {};
-    const floorKey = `${closed.floorId}:${hero.x},${hero.y}`;
-    if (visited.has(floorKey)) continue;
-    visited.add(floorKey);
-
-    const primitive = (simulator.enumeratePrimitiveActions(closed).actions || []);
-    let actions = primitive;
-    if (typeof simulator.enumerateFloorFlyActions === "function") {
-      actions = actions.concat(simulator.enumerateFloorFlyActions(closed));
-    }
-
-    const filtered = trimFloorFlyActions(actions, policy)
-      .filter((action) => isAllowedAction(action, closed, segment, simulator))
-      .filter((action) => isResourceTimingAction(simulator, closed, action, segment))
-      .map((action) => annotateSegmentAction(simulator, closed, action, segment));
-
-    for (const action of filtered) {
-      if (action.kind === "battle") {
-        allBattles.push({ ...action, travelState: cloneState(action.travelState || closed) });
-      } else if ((action.kind === "changeFloor" || action.kind === "floorFly") && depth < maxDepth) {
-        try {
-          const next = simulator.applyAction(closed, action, { storeRoute: false });
-          queue.push({ seed: next, depth: depth + 1 });
-        } catch (error) {
-          // skip invalid portal
-        }
+        const target = {
+          kind: "battle",
+          summary: `battle:${enemyId}@${floorId}:${x},${y}`,
+          floorId,
+          x,
+          y,
+          enemyId,
+          monsterTarget: true,
+        };
+        targets.push(target);
       }
     }
   }
 
-  return deduplicatePortalActions(allBattles);
+  return targets;
 }
 
-function buildBattleFrontierActionProvider(simulator, segment) {
+function oracleFindFloorState(simulator, state, targetFloorId, segment, config) {
+  const maxSteps = number((config || {}).maxPortalDepth, 10) * 50;
+  const policy = (segment || {}).actionPolicy || {};
+
+  // BFS including walking and portals to navigate to target floor
+  const queue = [{ state: cloneState(state), steps: 0 }];
+  const visited = new Set();
+  const posKey = (s) => `${s.floorId}:${(s.hero.loc || {}).x},${(s.hero.loc || {}).y}`;
+  visited.add(posKey(state));
+
+  while (queue.length > 0) {
+    const { state: current, steps } = queue.shift();
+
+    if (current.floorId === targetFloorId) {
+      return closeStateForBattleFrontier(simulator, current, segment);
+    }
+
+    if (steps >= maxSteps) continue;
+
+    const primitive = (simulator.enumeratePrimitiveActions(current).actions || []);
+    for (const action of primitive) {
+      if (action.kind === "changeFloor" || action.kind === "floorFly" || action.kind === "walk") {
+        try {
+          const next = simulator.applyAction(current, action, { storeRoute: false });
+          const key = posKey(next);
+          if (visited.has(key)) continue;
+          visited.add(key);
+          queue.push({ state: next, steps: steps + 1 });
+        } catch (error) { /* skip */ }
+      }
+    }
+  }
+
+  return null;
+}
+
+function tryReachAndBattle(simulator, state, target, segment, config) {
+  const closed = oracleFindFloorState(simulator, state, target.floorId, segment, config);
+  if (!closed) return { ok: false, reason: "unreachable" };
+
+  const primitive = (simulator.enumeratePrimitiveActions(closed).actions || []);
+  const battleAction = primitive.find((action) =>
+    action.kind === "battle" &&
+    action.summary === target.summary
+  );
+  if (!battleAction) return { ok: false, reason: "battle-not-found" };
+
+  try {
+    const postState = simulator.applyAction(closed, battleAction, { storeRoute: false });
+    return { ok: true, postState, battleAction };
+  } catch (error) {
+    return { ok: false, reason: "apply-failed", error: error.message };
+  }
+}
+
+function buildMonsterOnlyActionProvider(simulator, segment, config) {
+  const policy = (segment || {}).actionPolicy || {};
+  const goal = (segment || {}).goal || {};
+
   return (unusedSimulator, state) => {
-    return closeWithPortals(simulator, state, segment);
+    // Enumerate all enemy tiles from allowed floors using map data (cheap)
+    const project = simulator.project;
+    const allowedFloors = policy.allowedFloors || Object.keys(project.floorsById || {});
+    const targets = [];
+    for (const floorId of allowedFloors) {
+      const floor = project.floorsById[floorId];
+      if (!floor || !Array.isArray(floor.map)) continue;
+      for (let y = 0; y < floor.map.length; y += 1) {
+        for (let x = 0; x < floor.map[y].length; x += 1) {
+          const tileNum = floor.map[y][x];
+          const tile = project.mapTilesByNumber[String(tileNum)];
+          if (!tile || !tile.cls || tile.cls.indexOf("enemy") !== 0) continue;
+          const enemyId = tile.id;
+          if (!enemyId) continue;
+          const preservedKey = `${floorId}:${x},${y}`;
+          const isProtected = (goal.presentTiles || []).some((p) =>
+            `${p.floorId}:${p.x},${p.y}` === preservedKey
+          );
+          if (isProtected) continue;
+          targets.push({
+            kind: "battle",
+            summary: `battle:${enemyId}@${floorId}:${x},${y}`,
+            floorId, x, y, enemyId,
+            monsterTarget: true,
+          });
+        }
+      }
+    }
+    return targets;
   };
 }
 
@@ -1160,9 +1239,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     initialRouteTracePrefix: prefixTrace,
     goalSkylineLimit: number(dpConfig.goalSkylineLimit, 8),
     dominanceConfig,
-    actionProvider: dpConfig.actionProviderMode === "battle-frontier"
-      ? buildBattleFrontierActionProvider(simulator, segment)
-      : buildSegmentActionProvider(simulator, segment),
+    actionProvider: buildSegmentActionProvider(simulator, segment),
     goalPredicate: buildSegmentGoalPredicate(simulator.project, segment, simulator),
   });
   const baseDpDiagnostics = (result.diagnostics && result.diagnostics.dp) || {};
@@ -1726,5 +1803,9 @@ module.exports = {
     closeStateForBattleFrontier,
     protectPresentTiles,
     restorePresentTiles,
+    enumerateMonsterTargets,
+    oracleFindFloorState,
+    tryReachAndBattle,
+    buildMonsterOnlyActionProvider,
   },
 };

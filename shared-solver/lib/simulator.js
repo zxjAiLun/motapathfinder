@@ -19,13 +19,14 @@ const { GenericDoorResolver } = require("./door-resolver");
 const { compareScore, compareSearchRank, defaultScore, defaultSearchRank, getFloorOrder } = require("./score");
 const { buildStateKey } = require("./state-key");
 const { getFrontierFeatures, getScore, getSearchRank } = require("./search-cache");
-const { buildWalkReachability, stepOntoTile } = require("./step-simulator");
+const { buildWalkReachability, isTransitTile, stepOntoTile } = require("./step-simulator");
 const { ToolRegistry } = require("./tool-registry");
 const { syncProgress } = require("./progress");
 const {
   appendRouteStep,
   cloneState,
   createInitialState,
+  floorHasCoordinate,
   getDecisionDepth,
   getTileDefinitionAt,
   getInventoryCount,
@@ -409,6 +410,7 @@ class StaticSimulator {
     this.actionExpansionCacheLimit = Number(config.actionExpansionCacheLimit || 1024);
     this.actionExpansionCaches = {
       reachability: new Map(),
+      regionSignature: new Map(),
       primitiveActions: new Map(),
       resourceCluster: new Map(),
       resourcePreviewApply: new Map(),
@@ -609,8 +611,8 @@ class StaticSimulator {
     const scan = reachability || this.getWalkReachability(state);
     const actions = [];
     const flyTargets = new Set();
+    const hasFlyBlocker = hasEnemyLeft(this.project, state, "E1649");
     Object.values(scan.visited || {}).forEach((node) => {
-      const hasFlyBlocker = hasEnemyLeft(this.project, node.state, "E1649");
       Object.keys(node.state.visitedFloors || {}).forEach((targetFloorId) => {
         if (!canUseFloorFly(this.project, node.state, targetFloorId, { hasFlyBlocker })) return;
         const target = resolveFloorFlyTarget(this.project, node.state, targetFloorId);
@@ -1485,32 +1487,68 @@ class StaticSimulator {
     ].join("|");
   }
 
+  buildRegionSignatureCacheKey(state) {
+    const floorId = state.floorId;
+    const loc = (state.hero || {}).loc || {};
+    const floorState = ((state.floorStates || {})[floorId]) || {};
+    const removed = Object.keys(floorState.removed || {}).sort().join(",");
+    const replaced = Object.entries(floorState.replaced || {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join(",");
+    return `${floorId}|${loc.x},${loc.y}|r:${removed}|p:${replaced}`;
+  }
+
   buildReachableRegionSignature(state) {
+    const regionCacheKey = this.buildRegionSignatureCacheKey(state);
+    const cached = this.cacheGet("regionSignature", regionCacheKey);
+    if (cached) return cached;
+    const startedAt = Date.now();
     try {
       const floor = this.project.floorsById[state.floorId];
-      const reachability = this.getWalkReachability(state);
-      const coordinates = Object.values(reachability.visited || {})
-        .map((node) => `${node.x},${node.y}`)
-        .sort();
-      const endpoints = [];
-      Object.values(reachability.visited || {}).forEach((node) => {
+      const floorId = state.floorId;
+      const startX = state.hero.loc.x;
+      const startY = state.hero.loc.y;
+      const startKey = coordinateKey(startX, startY);
+      const visited = new Set();
+      const queue = [startKey];
+      visited.add(startKey);
+      while (queue.length > 0) {
+        const key = queue.shift();
+        const [cx, cy] = key.split(",").map(Number);
         DIRECTIONS.forEach((direction) => {
           const delta = DIRECTION_DELTAS[direction];
-          const x = node.x + delta.x;
-          const y = node.y + delta.y;
-          const key = coordinateKey(x, y);
-          const tile = getTileDefinitionAt(this.project, node.state, node.state.floorId, x, y);
-          const changeFloor = (floor.changeFloor || {})[key];
+          const nx = cx + delta.x;
+          const ny = cy + delta.y;
+          const nkey = coordinateKey(nx, ny);
+          if (visited.has(nkey)) return;
+          if (!floorHasCoordinate(this.project, floorId, nx, ny)) return;
+          if (!isTransitTile(this.project, state, floorId, nx, ny)) return;
+          visited.add(nkey);
+          queue.push(nkey);
+        });
+      }
+      const endpoints = [];
+      for (const key of visited) {
+        const [cx, cy] = key.split(",").map(Number);
+        DIRECTIONS.forEach((direction) => {
+          const delta = DIRECTION_DELTAS[direction];
+          const x = cx + delta.x;
+          const y = cy + delta.y;
+          const adjKey = coordinateKey(x, y);
+          const tile = getTileDefinitionAt(this.project, state, floorId, x, y);
+          const changeFloor = (floor.changeFloor || {})[adjKey];
           if (changeFloor) endpoints.push(`changeFloor:${x},${y}->${changeFloor.floorId || changeFloor.stair || ""}`);
           if (!tile) return;
           if (tile.cls === "items") endpoints.push(`pickup:${tile.id}@${x},${y}`);
           else if (isEnemyTile(tile)) endpoints.push(`battle:${tile.id}@${x},${y}`);
           else if (isDoorTile(tile)) endpoints.push(`door:${tile.id}@${x},${y}`);
-          else if ((floor.events || {})[key]) endpoints.push(`event:${x},${y}`);
+          else if ((floor.events || {})[adjKey]) endpoints.push(`event:${x},${y}`);
         });
-      });
+      }
+      const coordinates = Array.from(visited).sort();
       const uniqueEndpoints = Array.from(new Set(endpoints)).sort();
-      return {
+      const result = {
         regionKey: coordinates.join("|"),
         reachableEndpointsKey: uniqueEndpoints.join("|"),
         counts: {
@@ -1522,6 +1560,7 @@ class StaticSimulator {
           changeFloors: uniqueEndpoints.filter((entry) => entry.startsWith("changeFloor:")).length,
         },
       };
+      return this.cacheSet("regionSignature", regionCacheKey, result, null, Date.now() - startedAt);
     } catch (error) {
       const hero = state.hero || {};
       return {

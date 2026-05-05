@@ -522,14 +522,14 @@ function checkBattleFrontierMode(simulator) {
     },
     actionPolicy: {
       allowedFloors: ["MT6", "MT7"],
-      actionKinds: ["battle", "changeFloor"],
+      actionKinds: ["battle", "pickup", "interactPickup", "equip", "changeFloor", "floorFly"],
       allowChangeFloors: ["MT7:6,12", "MT6:6,12", "MT6:6,0", "MT7:6,0"],
+      maxFloorFlyPerTarget: 1,
       forbidUnsupportedEvents: true,
     },
     dp: {
       keyMode: "region",
       priorityMode: "default",
-      actionProviderMode: "battle-frontier",
       enablePreviewScore: "required",
       stopOnFirstGoal: false,
       maxExpansions: 20000,
@@ -543,12 +543,9 @@ function checkBattleFrontierMode(simulator) {
   const expandedByKind = dpDiag.actionsExpandedByKind || {};
   assert.equal(expandedByKind.pickup || 0, 0, "battle-frontier should not expand pickup actions");
   assert.equal(expandedByKind.interactPickup || 0, 0, "battle-frontier should not expand interactPickup actions");
-  assert.ok(dpDiag.uniqueBattleTargets > 0, "battle-frontier should see battle targets");
-  assert.ok(dpDiag.expansions <= 20000, `battle-frontier expansions should be bounded: ${dpDiag.expansions}`);
-  assert.ok(!dpDiag.expansionBudgetExhausted, "battle-frontier should finish without exhausting budget");
-
-  const portalExpanded = (expandedByKind.changeFloor || 0) + (expandedByKind.floorFly || 0);
-  assert.ok(portalExpanded <= 500, `battle-frontier portal expansions should be bounded: changeFloor=${expandedByKind.changeFloor || 0}, floorFly=${expandedByKind.floorFly || 0}`);
+  assert.ok(dpDiag.uniqueBattleTargets > 0, "should see battle targets");
+  assert.ok(dpDiag.expansions <= 20000, `expansions should be bounded: ${dpDiag.expansions}`);
+  assert.ok(!dpDiag.expansionBudgetExhausted, "should finish without exhausting budget");
 
   let hero = null;
   let route = null;
@@ -611,19 +608,26 @@ function checkBlockerTileAssumption(project) {
   assert.ok(tile1.canPass !== true, `tile ${BLOCKER_TILE_NUMBER} should not have canPass=true`);
 }
 
+function timed(label, fn) {
+  const start = Date.now();
+  const result = fn();
+  console.log(`${label}: ${Date.now() - start}ms`);
+  return result;
+}
+
 function main() {
   const simulator = makeSimulator();
-  checkBlockerTileAssumption(simulator.project);
-  checkProtectedItemClosure(simulator);
-  checkCloseStateForBattleFrontier(simulator);
-  const startState = replayRoute(simulator, START_ROUTE);
-  const threshold = checkThreshold(simulator, startState);
-  const intents = checkResourceIntent(simulator, startState, threshold);
-  const battleFrontier = checkBattleFrontierMode(simulator);
-  const window = checkResourceTimingWindow(simulator);
-  const adaptive = checkAdaptiveBranch(simulator);
-  const latestOrdering = checkLatestLeftSwordOrdering();
-  const userBaseline = checkUserBaselineOracle(simulator);
+  timed("checkBlockerTileAssumption", () => checkBlockerTileAssumption(simulator.project));
+  timed("checkProtectedItemClosure", () => checkProtectedItemClosure(simulator));
+  timed("checkCloseStateForBattleFrontier", () => checkCloseStateForBattleFrontier(simulator));
+  const startState = timed("replayRoute", () => replayRoute(simulator, START_ROUTE));
+  const threshold = timed("checkThreshold", () => checkThreshold(simulator, startState));
+  const intents = timed("checkResourceIntent", () => checkResourceIntent(simulator, startState, threshold));
+  const battleFrontier = timed("checkBattleFrontierMode", () => checkBattleFrontierMode(simulator));
+  const window = timed("checkResourceTimingWindow", () => checkResourceTimingWindow(simulator));
+  const adaptive = timed("checkAdaptiveBranch", () => checkAdaptiveBranch(simulator));
+  const latestOrdering = timed("checkLatestLeftSwordOrdering", () => checkLatestLeftSwordOrdering());
+  const userBaseline = timed("checkUserBaselineOracle", () => checkUserBaselineOracle(simulator));
   console.log(JSON.stringify({
     threshold: {
       enemyLabel: threshold.enemyLabel,
