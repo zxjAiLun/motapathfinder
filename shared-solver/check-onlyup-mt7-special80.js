@@ -11,8 +11,8 @@ const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
 const { fingerprintAction, readRouteFile } = require("./lib/route-store");
 const { scanResourceIntents } = require("./lib/resource-intent-scanner");
-const { BLOCKER_TILE_NUMBER, isTileBlocking, searchSegmentDP, summarizeHero, __testHooks } = require("./lib/segment-dp");
-const { closeStateForBattleFrontier, protectPresentTiles, restorePresentTiles } = __testHooks;
+const { searchSegmentDP, summarizeHero, __testHooks } = require("./lib/segment-dp");
+const { BLOCKER_TILE_NUMBER, isTileBlocking, closeStateForBattleFrontier, protectPresentTiles, restorePresentTiles } = __testHooks;
 const { buildDominanceKey } = require("./lib/state-key");
 const { getTileDefinitionAt } = require("./lib/state");
 const { StaticSimulator } = require("./lib/simulator");
@@ -571,6 +571,9 @@ function checkBattleFrontierMode(simulator) {
     hero = summarizeHero(finalState);
     assert.ok(hero.atk >= 5767, `battle-frontier hero atk should meet goal: ${hero.atk}`);
     assert.ok(hero.def >= 5535, `battle-frontier hero def should meet goal: ${hero.def}`);
+    assert.ok(hero.mdef >= 30010, `battle-frontier hero mdef should meet goal: ${hero.mdef}`);
+    assert.ok(hero.lv >= 9, `battle-frontier hero lv should meet goal: ${hero.lv}`);
+    assert.ok(hero.equipment.includes("I894"), `battle-frontier hero should have I894 equipped`);
 
     const poisonThreshold = estimateBattleSurvivability(simulator, finalState, {
       floorId: "MT7",

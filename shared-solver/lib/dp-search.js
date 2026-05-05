@@ -6,6 +6,11 @@ const { cloneState, getDecisionDepth, listFloorMutationSummary } = require("./st
 const { createCheckpointPool } = require("./floor-checkpoints");
 const { createChildNode, createRootNode, reconstructActionEntries, reconstructActionTrace } = require("./search-nodes");
 
+function number(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function stableArray(array) {
   return Array.isArray(array) ? array.slice().sort() : [];
 }
@@ -150,6 +155,57 @@ class BinaryHeap {
 
   activeCount(isActive) {
     return this.items.reduce((count, item) => count + (isActive(item) ? 1 : 0), 0);
+  }
+}
+
+class SkylineSet {
+  constructor(maxPerKey) {
+    this.maxPerKey = Math.max(1, maxPerKey || 1);
+    this.map = new Map();
+  }
+
+  get(key) {
+    const arr = this.map.get(key);
+    return arr && arr.length > 0 ? arr[0] : undefined;
+  }
+
+  getAll(key) {
+    return this.map.get(key) || [];
+  }
+
+  has(key) {
+    const arr = this.map.get(key);
+    return Boolean(arr && arr.length > 0);
+  }
+
+  isActive(key, nodeId) {
+    const arr = this.map.get(key);
+    return Boolean(arr && arr.some((n) => n.nodeId === nodeId));
+  }
+
+  add(key, node, compareFn) {
+    let arr = this.map.get(key);
+    if (!arr) {
+      arr = [node];
+      this.map.set(key, arr);
+      return true;
+    }
+    if (arr.length < this.maxPerKey) {
+      arr.push(node);
+      arr.sort((a, b) => compareFn(b.state, a.state));
+      return true;
+    }
+    const worst = arr[arr.length - 1];
+    if (compareFn(node.state, worst.state) > 0) {
+      arr[arr.length - 1] = node;
+      arr.sort((a, b) => compareFn(b.state, a.state));
+      return true;
+    }
+    return false;
+  }
+
+  get size() {
+    return this.map.size;
   }
 }
 
@@ -377,7 +433,8 @@ function searchDP(simulator, initialState, options) {
   rootState.route = [];
   const nodes = new Map();
   let nextNodeId = 1;
-  const bestByKey = new Map();
+  const skylineMax = number(config.dpSkylineMax, 1);
+  const bestByKey = skylineMax > 1 ? new SkylineSet(skylineMax) : new Map();
   const actionStats = emptyActionStats();
   const startedAt = Date.now();
   let expansions = 0;
@@ -404,20 +461,31 @@ function searchDP(simulator, initialState, options) {
     : (state) => simulator.isTerminal(state);
 
   const isActiveEntry = (entry) => {
-    const active = bestByKey.get(entry.key);
-    return Boolean(active && active.nodeId === entry.nodeId && (continueAfterGoal || !isGoalState(entry.state)));
+    if (bestByKey instanceof SkylineSet) {
+      if (!bestByKey.isActive(entry.key, entry.nodeId)) return false;
+    } else {
+      const active = bestByKey.get(entry.key);
+      if (!active || active.nodeId !== entry.nodeId) return false;
+    }
+    return continueAfterGoal || !isGoalState(entry.state);
   };
 
   const enqueue = (state, sourceAction, parentNode) => {
     const key = buildDpStateKey(simulator, state, config);
-    const existing = bestByKey.get(key);
-    const existingState = existing && existing.state;
-    const hpDiff = existingState ? heroHp(state) - heroHp(existingState) : null;
-    if (!isBetterForSameDpKey(state, existingState, config.dominanceConfig)) {
+    const dominated = bestByKey instanceof SkylineSet
+      ? bestByKey.getAll(key).every((n) => !isBetterForSameDpKey(state, n.state, config.dominanceConfig))
+      : !isBetterForSameDpKey(state, bestByKey.get(key) && bestByKey.get(key).state, config.dominanceConfig);
+    if (dominated) {
+      const existing = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);
+      const existingState = existing && existing.state;
+      const hpDiff = existingState ? heroHp(state) - heroHp(existingState) : null;
       if (hpDiff === 0) sameHpRejected += 1;
       else rejectedByHigherHp += 1;
       return false;
     }
+    const existing = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);
+    const existingState = existing && existing.state;
+    const hpDiff = existingState ? heroHp(state) - heroHp(existingState) : null;
     if (!existingState) newKeys += 1;
     else if (hpDiff > 0) replacedLowerHp += 1;
     else if (hpDiff === 0) sameHpShorterRoute += 1;
@@ -431,7 +499,11 @@ function searchDP(simulator, initialState, options) {
     node.rank = buildDpAgendaRank(simulator, state, sourceAction, sequence, config);
     sequence += 1;
     nodes.set(node.nodeId, node);
-    bestByKey.set(key, node);
+    if (bestByKey instanceof SkylineSet) {
+      bestByKey.add(key, node, compareDpBest);
+    } else {
+      bestByKey.set(key, node);
+    }
     if (heap) heap.push(node);
     else fifoEntries.push(node);
     registered += 1;
@@ -475,8 +547,12 @@ function searchDP(simulator, initialState, options) {
     if (stopOnFirstGoal && firstGoalNode) break;
     const entry = popNext();
     if (!entry) break;
-    const active = bestByKey.get(entry.key);
-    if (!active || active.nodeId !== entry.nodeId) continue;
+    if (bestByKey instanceof SkylineSet) {
+      if (!bestByKey.isActive(entry.key, entry.nodeId)) continue;
+    } else {
+      const active = bestByKey.get(entry.key);
+      if (!active || active.nodeId !== entry.nodeId) continue;
+    }
     const state = entry.state;
     if (!continueAfterGoal && isGoalState(state)) continue;
     expansions += 1;
@@ -524,6 +600,9 @@ function searchDP(simulator, initialState, options) {
     : fifoEntries.slice(cursor).filter(isActiveEntry).length;
   const goalSkylineNodes = selectGoalSkylineNodes(
     goalNodes.filter((node) => {
+      if (bestByKey instanceof SkylineSet) {
+        return bestByKey.isActive(node.key, node.nodeId) && isGoalState(node.state);
+      }
       const active = bestByKey.get(node.key);
       return Boolean(active && active.nodeId === node.nodeId && isGoalState(node.state));
     }),
@@ -618,7 +697,7 @@ function searchDP(simulator, initialState, options) {
         ignoredRouteLengthReplacements: 0,
         unsafeFloorDowngrades: 0,
         nonWhitelistedFloorDowngrades: 0,
-        representativesByKeyMax: 1,
+        representativesByKeyMax: skylineMax,
         byFloor: {},
         examples: [],
       },

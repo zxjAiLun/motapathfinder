@@ -586,24 +586,57 @@ function restorePresentTiles(saved) {
   }
 }
 
-const FRONTIER_KINDS = new Set(["battle", "changeFloor", "floorFly"]);
+const BATTLE_KIND = new Set(["battle"]);
+
+function closeWithPortals(simulator, state, segment, config) {
+  const maxDepth = number((config || {}).maxPortalDepth, 10);
+  const project = simulator.project;
+  const policy = (segment || {}).actionPolicy || {};
+
+  const queue = [{ seed: cloneState(state), depth: 0 }];
+  const visited = new Set();
+  const allBattles = [];
+
+  while (queue.length > 0) {
+    const { seed, depth } = queue.shift();
+    const closed = closeStateForBattleFrontier(simulator, seed, segment);
+
+    const hero = (closed.hero || {}).loc || {};
+    const floorKey = `${closed.floorId}:${hero.x},${hero.y}`;
+    if (visited.has(floorKey)) continue;
+    visited.add(floorKey);
+
+    const primitive = (simulator.enumeratePrimitiveActions(closed).actions || []);
+    let actions = primitive;
+    if (typeof simulator.enumerateFloorFlyActions === "function") {
+      actions = actions.concat(simulator.enumerateFloorFlyActions(closed));
+    }
+
+    const filtered = trimFloorFlyActions(actions, policy)
+      .filter((action) => isAllowedAction(action, closed, segment, simulator))
+      .filter((action) => isResourceTimingAction(simulator, closed, action, segment))
+      .map((action) => annotateSegmentAction(simulator, closed, action, segment));
+
+    for (const action of filtered) {
+      if (action.kind === "battle") {
+        allBattles.push({ ...action, travelState: cloneState(action.travelState || closed) });
+      } else if ((action.kind === "changeFloor" || action.kind === "floorFly") && depth < maxDepth) {
+        try {
+          const next = simulator.applyAction(closed, action, { storeRoute: false });
+          queue.push({ seed: next, depth: depth + 1 });
+        } catch (error) {
+          // skip invalid portal
+        }
+      }
+    }
+  }
+
+  return deduplicatePortalActions(allBattles);
+}
 
 function buildBattleFrontierActionProvider(simulator, segment) {
   return (unusedSimulator, state) => {
-    const policy = (segment || {}).actionPolicy || {};
-    const closedState = closeStateForBattleFrontier(simulator, state, segment);
-    const primitive = (simulator.enumeratePrimitiveActions(closedState).actions || []);
-    let actions = primitive;
-    if (typeof simulator.enumerateFloorFlyActions === "function") {
-      actions = actions.concat(simulator.enumerateFloorFlyActions(closedState));
-    }
-    const filtered = trimFloorFlyActions(actions, policy)
-      .filter((action) => FRONTIER_KINDS.has(action.kind))
-      .filter((action) => isAllowedAction(action, closedState, segment, simulator))
-      .filter((action) => isResourceTimingAction(simulator, closedState, action, segment))
-      .map((action) => annotateSegmentAction(simulator, closedState, action, segment))
-      .map((action) => ({ ...action, travelState: cloneState(action.travelState || closedState) }));
-    return deduplicatePortalActions(filtered);
+    return closeWithPortals(simulator, state, segment);
   };
 }
 
@@ -1680,16 +1713,16 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
 }
 
 module.exports = {
-  BLOCKER_TILE_NUMBER,
   buildSegmentActionProvider,
   buildSegmentGoalPredicate,
-  isTileBlocking,
   runMilestoneGraph,
   searchSegmentDP,
   summarizeEffectiveHero,
   summarizeHero,
   summarizeSegmentFailure,
   __testHooks: {
+    BLOCKER_TILE_NUMBER,
+    isTileBlocking,
     closeStateForBattleFrontier,
     protectPresentTiles,
     restorePresentTiles,
