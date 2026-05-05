@@ -11,7 +11,8 @@ const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
 const { fingerprintAction, readRouteFile } = require("./lib/route-store");
 const { scanResourceIntents } = require("./lib/resource-intent-scanner");
-const { BLOCKER_TILE_NUMBER, closeStateForBattleFrontier, isTileBlocking, protectPresentTiles, restorePresentTiles, searchSegmentDP, summarizeHero } = require("./lib/segment-dp");
+const { BLOCKER_TILE_NUMBER, isTileBlocking, searchSegmentDP, summarizeHero, __testHooks } = require("./lib/segment-dp");
+const { closeStateForBattleFrontier, protectPresentTiles, restorePresentTiles } = __testHooks;
 const { buildDominanceKey } = require("./lib/state-key");
 const { getTileDefinitionAt } = require("./lib/state");
 const { StaticSimulator } = require("./lib/simulator");
@@ -465,6 +466,36 @@ function checkProtectedItemClosure(simulator) {
   console.log("PASS: protected item closure - item blocked during closure, restored after");
 }
 
+function checkCloseStateForBattleFrontier(simulator) {
+  const startState = replayRoute(simulator, WINDOW_START_ROUTE);
+  const project = simulator.project;
+
+  const segment = {
+    id: "test-closure-level",
+    goal: {
+      presentTiles: [
+        { floorId: "MT7", x: 0, y: 11, reason: "I616 sword" },
+        { floorId: "MT7", x: 1, y: 11, reason: "poisonZombie blocker" },
+      ],
+    },
+  };
+
+  const closed = closeStateForBattleFrontier(simulator, startState, segment);
+
+  const tilePoison = getTileDefinitionAt(project, closed, "MT7", 1, 11);
+  assert.ok(tilePoison, "closure should preserve poisonZombie");
+  assert.ok(tilePoison.cls && tilePoison.cls.indexOf("enemy") === 0, `poisonZombie should be enemy: ${tilePoison.id}`);
+
+  const tileI616 = getTileDefinitionAt(project, closed, "MT7", 0, 11);
+  assert.ok(tileI616, "closure should preserve I616");
+  assert.equal(tileI616.cls, "items", "I616 should be item after closure");
+
+  const mt7Closed = (closed.floorStates || {}).MT7 || { removed: {}, replaced: {} };
+  assert.ok(!mt7Closed.removed["0,11"], "closure should not auto-pickup I616");
+
+  console.log("PASS: closeStateForBattleFrontier - protected tiles preserved after closure");
+}
+
 function checkBattleFrontierMode(simulator) {
   const startState = replayRoute(simulator, WINDOW_START_ROUTE);
   const segment = {
@@ -525,7 +556,17 @@ function checkBattleFrontierMode(simulator) {
     const candidate = result.goalSkyline[0];
     const finalState = candidate.state;
     route = (candidate.route || []).map((entry) => String(entry && (entry.summary || entry)));
-    assert.ok(route.includes("battle:poisonZombie@MT7:1,11"), `battle-frontier route should include poisonZombie battle: ${route.join(" | ")}`);
+
+    assert.ok(!route.includes("battle:poisonZombie@MT7:1,11"), "prep route should not consume protected poisonZombie");
+    assert.ok(!route.some((s) => /I616@MT7:0,11/.test(s)), "prep route should not pick up protected I616");
+
+    const tilePoison = getTileDefinitionAt(simulator.project, finalState, "MT7", 1, 11);
+    assert.ok(tilePoison, "protected poisonZombie should still be present");
+    assert.ok(tilePoison.cls && tilePoison.cls.indexOf("enemy") === 0, `protected poisonZombie should be enemy tile: ${tilePoison.id}`);
+
+    const tileI616 = getTileDefinitionAt(simulator.project, finalState, "MT7", 0, 11);
+    assert.ok(tileI616, "protected I616 should still be present");
+    assert.equal(tileI616.cls, "items", "protected I616 should be item tile");
 
     hero = summarizeHero(finalState);
     assert.ok(hero.atk >= 5767, `battle-frontier hero atk should meet goal: ${hero.atk}`);
@@ -538,10 +579,6 @@ function checkBattleFrontierMode(simulator) {
       enemyId: "poisonZombie",
     });
     assert.equal(poisonThreshold.survivable, true, `battle-frontier final state should survive poisonZombie: ${JSON.stringify(poisonThreshold)}`);
-
-    const mt7State = (finalState.floorStates || {}).MT7 || { removed: {}, replaced: {} };
-    assert.ok(!mt7State.removed["0,11"], "I616 should not be picked up in battle-frontier route");
-    assert.ok(!route.some((s) => /I616@MT7:0,11/.test(s)), "route should not include pickup of protected I616");
   } else {
     assert.ok(
       dpDiag.stoppedReason === "time-limit" || dpDiag.frontierSize === 0,
@@ -575,6 +612,7 @@ function main() {
   const simulator = makeSimulator();
   checkBlockerTileAssumption(simulator.project);
   checkProtectedItemClosure(simulator);
+  checkCloseStateForBattleFrontier(simulator);
   const startState = replayRoute(simulator, START_ROUTE);
   const threshold = checkThreshold(simulator, startState);
   const intents = checkResourceIntent(simulator, startState, threshold);

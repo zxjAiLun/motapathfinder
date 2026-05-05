@@ -1683,13 +1683,15 @@ module.exports = {
   BLOCKER_TILE_NUMBER,
   buildSegmentActionProvider,
   buildSegmentGoalPredicate,
-  closeStateForBattleFrontier,
   isTileBlocking,
-  protectPresentTiles,
-  restorePresentTiles,
   runMilestoneGraph,
   searchSegmentDP,
   summarizeEffectiveHero,
   summarizeHero,
   summarizeSegmentFailure,
+  __testHooks: {
+    closeStateForBattleFrontier,
+    protectPresentTiles,
+    restorePresentTiles,
+  },
 };
