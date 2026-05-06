@@ -581,20 +581,23 @@ function searchDP(simulator, initialState, options) {
       .forEach((action) => {
         generated += 1;
         recordAction(actionStats, action, "expanded");
-        let nextState;
+        let nextStates;
         try {
           const applier = typeof config.actionApplier === "function"
             ? config.actionApplier
             : (s, a) => simulator.applyAction(s, a, { storeRoute: false });
-          nextState = applier(state, action);
+          const result = applier(state, action);
+          nextStates = Array.isArray(result) ? result : [result];
         } catch (error) {
           invalid += 1;
           recordAction(actionStats, action, "invalid");
           return;
         }
-        const childNode = enqueue(nextState, action, entry);
-        if (childNode) recordAction(actionStats, action, "kept");
-        else recordAction(actionStats, action, "dominated");
+        for (const nextState of nextStates) {
+          const childNode = enqueue(nextState, action, entry);
+          if (childNode) recordAction(actionStats, action, "kept");
+          else recordAction(actionStats, action, "dominated");
+        }
       });
   }
 

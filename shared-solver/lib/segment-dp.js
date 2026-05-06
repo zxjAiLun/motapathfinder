@@ -628,53 +628,88 @@ function enumerateMonsterTargets(simulator, state, segment) {
   return targets;
 }
 
+function isAllowedPortalAction(action, state, policy) {
+  if (action.kind === "changeFloor") return isAllowedChangeFloor(action, state, policy);
+  if (action.kind === "floorFly") {
+    const targetFloor = action.targetFloorId || (action.target && action.target.floorId);
+    if (policy.allowedFloors && !policy.allowedFloors.includes(targetFloor)) return false;
+    return true;
+  }
+  return true;
+}
+
 function oracleFindFloorState(simulator, state, targetFloorId, segment, config) {
   const maxSteps = number((config || {}).maxPortalDepth, 10) * 50;
   const policy = (segment || {}).actionPolicy || {};
+  const goal = (segment || {}).goal || {};
 
-  // BFS including walking and portals to navigate to target floor
-  const queue = [{ state: cloneState(state), steps: 0 }];
+  // BFS including walking, portals, and floorFly to navigate to target floor
+  const queue = [{ state: cloneState(state), steps: 0, actions: [] }];
   const visited = new Set();
   const posKey = (s) => `${s.floorId}:${(s.hero.loc || {}).x},${(s.hero.loc || {}).y}`;
   visited.add(posKey(state));
 
   while (queue.length > 0) {
-    const { state: current, steps } = queue.shift();
+    const { state: current, steps, actions } = queue.shift();
 
     if (current.floorId === targetFloorId) {
-      return closeStateForBattleFrontier(simulator, current, segment);
+      const closed = closeStateForBattleFrontier(simulator, current, segment);
+      return { state: closed, travelActions: actions };
     }
 
     if (steps >= maxSteps) continue;
 
+    // Collect portal actions: primitive changeFloor + floorFly
+    let portalActions = [];
     const primitive = (simulator.enumeratePrimitiveActions(current).actions || []);
-    for (const action of primitive) {
-      if (action.kind === "changeFloor" || action.kind === "floorFly" || action.kind === "walk") {
-        try {
-          const next = simulator.applyAction(current, action, { storeRoute: false });
-          const key = posKey(next);
-          if (visited.has(key)) continue;
-          visited.add(key);
-          queue.push({ state: next, steps: steps + 1 });
-        } catch (error) { /* skip */ }
-      }
+    portalActions = portalActions.concat(primitive.filter((a) => a.kind === "changeFloor"));
+    if (typeof simulator.enumerateFloorFlyActions === "function") {
+      portalActions = portalActions.concat(simulator.enumerateFloorFlyActions(current));
+    }
+
+    for (const action of portalActions) {
+      if (!isAllowedPortalAction(action, current, policy)) continue;
+      // Check presentTiles: don't traverse through protected tiles
+      const actionTileKey = parseActionTileKey(action.summary);
+      const hitsProtected = (goal.presentTiles || []).some((p) =>
+        `${p.floorId}:${p.x},${p.y}` === actionTileKey
+      );
+      if (hitsProtected) continue;
+
+      try {
+        const next = simulator.applyAction(current, action, { storeRoute: false });
+        const key = posKey(next);
+        if (visited.has(key)) continue;
+        visited.add(key);
+        queue.push({ state: next, steps: steps + 1, actions: actions.concat(action) });
+      } catch (error) { /* skip */ }
     }
   }
 
   return null;
 }
 
-function tryReachAndBattle(simulator, state, target, segment, config) {
-  // First navigate to the target floor
-  const closed = oracleFindFloorState(simulator, state, target.floorId, segment, config);
-  if (!closed) return { ok: false, reason: "unreachable-floor" };
+function tryReachAndBattle(simulator, state, target, segment, config, oracleCache) {
+  // First navigate to the target floor (with optional memoization)
+  let floorResult;
+  if (oracleCache && oracleCache.has(target.floorId)) {
+    floorResult = oracleCache.get(target.floorId);
+  } else {
+    floorResult = oracleFindFloorState(simulator, state, target.floorId, segment, config);
+    if (oracleCache) oracleCache.set(target.floorId, floorResult);
+  }
+  if (!floorResult) return { ok: false, reason: "unreachable-floor" };
 
-  // If already on the target floor, use walk reachability to find the battle action
-  // The battle action requires the hero to be adjacent to the enemy
+  const closed = floorResult.state;
+  const travelActions = floorResult.travelActions;
+  const maxSuccessors = number((config || {}).maxSuccessorsPerTarget, 4);
+
+  // Use walk reachability to find the battle action from any reachable position
   const reachability = simulator.getWalkReachability(closed);
   const visited = reachability.visited || {};
 
-  // Search for a battle action from any reachable position
+  // Collect all valid postStates from different positions
+  const results = [];
   for (const node of Object.values(visited)) {
     const nodeState = node.state;
     const primitive = (simulator.enumeratePrimitiveActions(nodeState).actions || []);
@@ -686,14 +721,32 @@ function tryReachAndBattle(simulator, state, target, segment, config) {
 
     try {
       const postState = simulator.applyAction(nodeState, battleAction, { storeRoute: false });
-      return { ok: true, postState, battleAction };
+      // Build routePatch: travel actions + walk path + battle action
+      const walkPath = Array.isArray(node.path) ? node.path : [];
+      const routePatch = travelActions.concat(
+        walkPath.length > 0 ? [{ kind: "walk", path: walkPath }] : [],
+        battleAction
+      );
+      results.push({ postState, battleAction, routePatch, preHp: nodeState.hero ? nodeState.hero.hp : 0 });
     } catch (error) {
-      // Try next position
       continue;
     }
   }
 
-  return { ok: false, reason: "battle-not-reachable" };
+  if (results.length === 0) return { ok: false, reason: "battle-not-reachable" };
+  // Sort by pre-battle HP descending, cap to maxSuccessors
+  results.sort((a, b) => b.preHp - a.preHp);
+  return { ok: true, results: results.slice(0, maxSuccessors) };
+}
+
+function scoreMonsterTarget(target, state) {
+  // Prefer current floor targets (reachable without portal)
+  const currentFloor = state.floorId === target.floorId ? 1000 : 0;
+  // Prefer enemies that are closer to the goal floor (MT7 > MT6)
+  const floorOrder = { MT1: 1, MT2: 2, MT3: 3, MT4: 4, MT5: 5, MT6: 6, MT7: 7, MT8: 8, MT9: 9, MT10: 10, MT11: 11 };
+  const floorScore = (floorOrder[target.floorId] || 0) * 10;
+  // Prefer enemies on the same floor as the hero
+  return currentFloor + floorScore;
 }
 
 function buildMonsterOnlyActionProvider(simulator, segment, config) {
@@ -730,6 +783,7 @@ function buildMonsterOnlyActionProvider(simulator, segment, config) {
         }
       }
     }
+    targets.sort((a, b) => scoreMonsterTarget(b, state) - scoreMonsterTarget(a, state));
     return targets.slice(0, maxTargets);
   };
 }
@@ -1245,10 +1299,22 @@ function searchSegmentDP(simulator, startState, segment, options) {
   let actionApplier = null;
   if (actionProviderMode === "monster-only") {
     actionProvider = buildMonsterOnlyActionProvider(simulator, segment, dpConfig);
+    // Cache oracle results per floor within a single DP expansion (state is fixed)
+    let oracleCache = null;
+    let oracleCacheState = null;
     actionApplier = (state, target) => {
-      const result = tryReachAndBattle(simulator, state, target, segment, dpConfig);
+      // Reset cache if state changed (new DP expansion)
+      if (state !== oracleCacheState) {
+        oracleCache = new Map();
+        oracleCacheState = state;
+      }
+      const result = tryReachAndBattle(simulator, state, target, segment, dpConfig, oracleCache);
       if (!result.ok) throw new Error(`monster-only applier failed: ${result.reason}`);
-      return result.postState;
+      // Attach routePatch to each postState for route reconstruction
+      return result.results.map((r) => {
+        r.postState._routePatch = r.routePatch;
+        return r.postState;
+      });
     };
   } else {
     actionProvider = buildSegmentActionProvider(simulator, segment);

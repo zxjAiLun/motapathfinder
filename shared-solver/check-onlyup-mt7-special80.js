@@ -496,11 +496,11 @@ function checkCloseStateForBattleFrontier(simulator) {
   console.log("PASS: closeStateForBattleFrontier - protected tiles preserved after closure");
 }
 
-function checkBattleFrontierMode(simulator) {
+function checkMonsterOnlyMode(simulator) {
   const startState = replayRoute(simulator, WINDOW_START_ROUTE);
   const segment = {
-    id: "test-battle-frontier",
-    label: "battle-frontier mode test",
+    id: "test-monster-only",
+    label: "monster-only mode test",
     goal: {
       type: "heroAtLeast",
       floorId: "MT7",
@@ -626,7 +626,7 @@ function main() {
   const startState = timed("replayRoute", () => replayRoute(simulator, START_ROUTE));
   const threshold = timed("checkThreshold", () => checkThreshold(simulator, startState));
   const intents = timed("checkResourceIntent", () => checkResourceIntent(simulator, startState, threshold));
-  const battleFrontier = timed("checkBattleFrontierMode", () => checkBattleFrontierMode(simulator));
+  const battleFrontier = timed("checkMonsterOnlyMode", () => checkMonsterOnlyMode(simulator));
   const window = timed("checkResourceTimingWindow", () => checkResourceTimingWindow(simulator));
   const adaptive = timed("checkAdaptiveBranch", () => checkAdaptiveBranch(simulator));
   const latestOrdering = timed("checkLatestLeftSwordOrdering", () => checkLatestLeftSwordOrdering());

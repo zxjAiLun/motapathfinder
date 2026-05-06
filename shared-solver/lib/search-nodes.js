@@ -15,7 +15,7 @@ function createRootNode(state, stateKey) {
 
 function normalizeActionEntry(action) {
   if (!action) return null;
-  return {
+  const entry = {
     summary: action.summary || action.kind || "unknown",
     kind: action.kind || null,
     fingerprint: action.fingerprint || null,
@@ -39,6 +39,10 @@ function normalizeActionEntry(action) {
     plan: Array.isArray(action.plan) ? action.plan.slice() : null,
     planEntries: Array.isArray(action.planEntries) ? action.planEntries.slice() : null,
   };
+  if (Array.isArray(action._routePatch)) {
+    entry._routePatch = action._routePatch;
+  }
+  return entry;
 }
 
 function createChildNode(parentNode, state, stateKey, action, nodeId, order) {
@@ -58,7 +62,19 @@ function reconstructRoute(nodes, goalNodeOrId) {
   const route = [];
   let node = typeof goalNodeOrId === "object" ? goalNodeOrId : nodes.get(goalNodeOrId);
   while (node && node.parentId != null) {
-    if (node.actionEntry && node.actionEntry.summary) route.push(node.actionEntry.summary);
+    if (node.actionEntry && node.actionEntry.summary) {
+      // Check for _routePatch on actionEntry or on the postState (multi-successor)
+      const routePatch = Array.isArray(node.actionEntry._routePatch)
+        ? node.actionEntry._routePatch
+        : (node.state && Array.isArray(node.state._routePatch) ? node.state._routePatch : null);
+      if (routePatch) {
+        for (const patchEntry of routePatch) {
+          route.push(typeof patchEntry === "string" ? patchEntry : (patchEntry.summary || String(patchEntry)));
+        }
+      } else {
+        route.push(node.actionEntry.summary);
+      }
+    }
     node = nodes.get(node.parentId);
   }
   return route.reverse();
