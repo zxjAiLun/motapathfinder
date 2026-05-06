@@ -1292,24 +1292,42 @@ function searchSegmentDP(simulator, startState, segment, options) {
   const actionProviderMode = String(dpConfig.actionProviderMode || segment.actionPolicy && segment.actionPolicy.actionProviderMode || "");
   let actionProvider;
   let actionApplier = null;
+  let oracleDiagnostics = null;
   if (actionProviderMode === "monster-only") {
     actionProvider = buildMonsterOnlyActionProvider(simulator, segment, dpConfig);
     // Cache oracle results per floor within a single DP expansion (state is fixed)
     let oracleCache = null;
     let oracleCacheState = null;
+    const oracleStats = {
+      floorSearches: 0,
+      floorCacheHits: 0,
+      battleCandidates: 0,
+      successorsReturned: 0,
+      rejectedByReason: {},
+    };
+    oracleDiagnostics = oracleStats;
     actionApplier = (state, target) => {
       // Reset cache if state changed (new DP expansion)
       if (state !== oracleCacheState) {
         oracleCache = new Map();
         oracleCacheState = state;
       }
+      const cached = oracleCache.has(target.floorId);
       const result = tryReachAndBattle(simulator, state, target, segment, dpConfig, oracleCache);
-      if (!result.ok) throw new Error(`monster-only applier failed: ${result.reason}`);
+      if (cached) oracleStats.floorCacheHits += 1;
+      else oracleStats.floorSearches += 1;
+      if (!result.ok) {
+        oracleStats.rejectedByReason[result.reason] = (oracleStats.rejectedByReason[result.reason] || 0) + 1;
+        throw new Error(`monster-only applier failed: ${result.reason}`);
+      }
+      oracleStats.battleCandidates += result.results.length;
       // Attach routePatch to each postState for route reconstruction
-      return result.results.map((r) => {
+      const postStates = result.results.map((r) => {
         r.postState._routePatch = r.routePatch;
         return r.postState;
       });
+      oracleStats.successorsReturned += postStates.length;
+      return postStates;
     };
   } else {
     actionProvider = buildSegmentActionProvider(simulator, segment);
@@ -1369,6 +1387,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
       actionsDominatedByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsDominatedByKind,
       uniqueBattleTargets: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.uniqueBattleTargets,
       uniquePortalEntries: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.uniquePortalEntries,
+      oracle: oracleDiagnostics || null,
       failure: goalSkyline.length > 0 ? null : summarizeSegmentFailure(simulator.project, segment, result, simulator),
       goalSkyline: {
         primaryOutput: true,

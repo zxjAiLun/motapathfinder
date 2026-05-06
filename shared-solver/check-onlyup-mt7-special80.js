@@ -14,7 +14,7 @@ const { scanResourceIntents } = require("./lib/resource-intent-scanner");
 const { searchSegmentDP, summarizeHero, __testHooks } = require("./lib/segment-dp");
 const { BLOCKER_TILE_NUMBER, isTileBlocking, closeStateForBattleFrontier, protectPresentTiles, restorePresentTiles } = __testHooks;
 const { buildDominanceKey } = require("./lib/state-key");
-const { getTileDefinitionAt } = require("./lib/state");
+const { cloneState, getTileDefinitionAt } = require("./lib/state");
 const { StaticSimulator } = require("./lib/simulator");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
@@ -110,6 +110,16 @@ function replayRoute(simulator, routeFile) {
   for (const decision of record.decisions || []) {
     const action = findAction(simulator, state, decision);
     assert.ok(action, `missing replay action ${decision.index}: ${decision.summary}`);
+    state = simulator.applyAction(state, action);
+  }
+  return state;
+}
+
+function replayActionRoute(simulator, startState, route) {
+  let state = cloneState(startState);
+  for (const summary of route) {
+    const action = findAction(simulator, state, summary);
+    assert.ok(action, `route replay missing action: ${summary}`);
     state = simulator.applyAction(state, action);
   }
   return state;
@@ -582,6 +592,13 @@ function checkMonsterOnlyMode(simulator) {
       enemyId: "poisonZombie",
     });
     assert.equal(poisonThreshold.survivable, true, `battle-frontier final state should survive poisonZombie: ${JSON.stringify(poisonThreshold)}`);
+
+    // Route replay test: replay the route and verify it reaches the same state
+    const replayedState = replayActionRoute(simulator, startState, route);
+    assert.equal(replayedState.floorId, finalState.floorId, `route replay floor should match: ${replayedState.floorId} vs ${finalState.floorId}`);
+    assert.equal(replayedState.hero.hp, finalState.hero.hp, `route replay HP should match: ${replayedState.hero.hp} vs ${finalState.hero.hp}`);
+    assert.equal(replayedState.hero.atk, finalState.hero.atk, `route replay atk should match`);
+    assert.equal(replayedState.hero.def, finalState.hero.def, `route replay def should match`);
   } else {
     assert.ok(
       dpDiag.stoppedReason === "time-limit" || dpDiag.frontierSize === 0,
@@ -597,6 +614,7 @@ function checkMonsterOnlyMode(simulator) {
     uniqueBattleTargets: dpDiag.uniqueBattleTargets || 0,
     uniquePortalEntries: dpDiag.uniquePortalEntries || 0,
     frontierSize: dpDiag.frontierSize || 0,
+    oracle: dpDiag.oracle || null,
     hero,
     route,
   };
