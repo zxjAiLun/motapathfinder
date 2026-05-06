@@ -539,10 +539,18 @@ function searchDP(simulator, initialState, options) {
     return null;
   };
 
+  const maxHeapMb = Number(config.maxHeapMb || 0);
   while (expansions < maxExpansions) {
     if (maxRuntimeMs > 0 && Date.now() - startedAt >= maxRuntimeMs) {
       stoppedReason = "time-limit";
       break;
+    }
+    if (maxHeapMb > 0 && expansions % 100 === 0) {
+      const heapUsedMb = process.memoryUsage().heapUsed / 1024 / 1024;
+      if (heapUsedMb > maxHeapMb) {
+        stoppedReason = "memory-limit";
+        break;
+      }
     }
     if (stopOnFirstGoal && firstGoalNode) break;
     const entry = popNext();

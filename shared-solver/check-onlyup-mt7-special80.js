@@ -636,54 +636,67 @@ function timed(label, fn) {
   return result;
 }
 
+function shouldRun(name, args) {
+  const only = args.find((a) => a.startsWith("--only="));
+  const skip = args.filter((a) => a.startsWith("--skip=")).map((a) => a.slice(7));
+  const normalize = (s) => s.toLowerCase().replace(/-/g, "");
+  const lowerName = normalize(name);
+  if (only && !lowerName.includes(normalize(only.slice(7)))) return false;
+  if (skip.some((s) => lowerName.includes(normalize(s)))) return false;
+  return true;
+}
+
 function main() {
+  const args = process.argv.slice(2);
+  const run = (name) => shouldRun(name, args);
   const simulator = makeSimulator();
-  timed("checkBlockerTileAssumption", () => checkBlockerTileAssumption(simulator.project));
-  timed("checkProtectedItemClosure", () => checkProtectedItemClosure(simulator));
-  timed("checkCloseStateForBattleFrontier", () => checkCloseStateForBattleFrontier(simulator));
-  const startState = timed("replayRoute", () => replayRoute(simulator, START_ROUTE));
-  const threshold = timed("checkThreshold", () => checkThreshold(simulator, startState));
-  const intents = timed("checkResourceIntent", () => checkResourceIntent(simulator, startState, threshold));
-  const battleFrontier = timed("checkMonsterOnlyMode", () => checkMonsterOnlyMode(simulator));
-  const window = timed("checkResourceTimingWindow", () => checkResourceTimingWindow(simulator));
-  const adaptive = timed("checkAdaptiveBranch", () => checkAdaptiveBranch(simulator));
-  const latestOrdering = timed("checkLatestLeftSwordOrdering", () => checkLatestLeftSwordOrdering());
-  const userBaseline = timed("checkUserBaselineOracle", () => checkUserBaselineOracle(simulator));
+  if (run("checkBlockerTileAssumption")) timed("checkBlockerTileAssumption", () => checkBlockerTileAssumption(simulator.project));
+  if (run("checkProtectedItemClosure")) timed("checkProtectedItemClosure", () => checkProtectedItemClosure(simulator));
+  if (run("checkCloseStateForBattleFrontier")) timed("checkCloseStateForBattleFrontier", () => checkCloseStateForBattleFrontier(simulator));
+  const startState = run("replayRoute") ? timed("replayRoute", () => replayRoute(simulator, START_ROUTE)) : null;
+  const threshold = startState && run("checkThreshold") ? timed("checkThreshold", () => checkThreshold(simulator, startState)) : null;
+  const intents = startState && threshold && run("checkResourceIntent") ? timed("checkResourceIntent", () => checkResourceIntent(simulator, startState, threshold)) : null;
+  const battleFrontier = run("checkMonsterOnlyMode") ? timed("checkMonsterOnlyMode", () => checkMonsterOnlyMode(simulator)) : null;
+  const window = run("checkResourceTimingWindow") ? timed("checkResourceTimingWindow", () => checkResourceTimingWindow(simulator)) : null;
+  const adaptive = run("checkAdaptiveBranch") ? timed("checkAdaptiveBranch", () => checkAdaptiveBranch(simulator)) : null;
+  const latestOrdering = run("checkLatestLeftSwordOrdering") ? timed("checkLatestLeftSwordOrdering", () => checkLatestLeftSwordOrdering()) : null;
+  const userBaseline = run("checkUserBaselineOracle") ? timed("checkUserBaselineOracle", () => checkUserBaselineOracle(simulator)) : null;
   console.log(JSON.stringify({
-    threshold: {
+    threshold: threshold ? {
       enemyLabel: threshold.enemyLabel,
       currentHp: threshold.currentHp,
       currentDamage: threshold.currentDamage,
       minHpToSurvive: threshold.minHpToSurvive,
       riskTags: threshold.riskTags,
-    },
-    firstIntent: {
+    } : null,
+    firstIntent: intents && intents[0] ? {
       kind: intents[0].kind,
       goal: intents[0].goal,
       actionPolicy: intents[0].actionPolicy,
-    },
-    resourceTimingWindow: {
+    } : null,
+    resourceTimingWindow: window ? {
       hero: window.hero,
       expansions: window.expansions,
       stoppedReason: window.stoppedReason,
       suffix: window.suffix,
-    },
-    battleFrontier: {
+    } : null,
+    battleFrontier: battleFrontier ? {
       found: battleFrontier.found,
       expansions: battleFrontier.expansions,
       actionsGeneratedByKind: battleFrontier.actionsGeneratedByKind,
       uniqueBattleTargets: battleFrontier.uniqueBattleTargets,
       uniquePortalEntries: battleFrontier.uniquePortalEntries,
+      oracle: battleFrontier.oracle,
       hero: battleFrontier.hero,
       route: battleFrontier.route,
-    },
-    adaptive: {
+    } : null,
+    adaptive: adaptive ? {
       found: adaptive.found,
       reachedMilestone: adaptive.reachedMilestone,
       failedSegmentId: adaptive.failedSegment && adaptive.failedSegment.segmentId,
       insertedSegments: ((adaptive.adaptive || {}).insertedSegments || []).map((segment) => segment.id),
       repairBranches: (adaptive.adaptive || {}).repairBranches || [],
-    },
+    } : null,
     latestOrdering,
     userBaseline,
   }, null, 2));

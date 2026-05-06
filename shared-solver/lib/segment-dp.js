@@ -1321,9 +1321,11 @@ function searchSegmentDP(simulator, startState, segment, options) {
         throw new Error(`monster-only applier failed: ${result.reason}`);
       }
       oracleStats.battleCandidates += result.results.length;
-      // Attach routePatch to each postState for route reconstruction
+      // Attach compressed routePatch (summary strings only) to each postState
       const postStates = result.results.map((r) => {
-        r.postState._routePatch = r.routePatch;
+        r.postState._routePatch = r.routePatch
+          .map((entry) => typeof entry === "string" ? entry : (entry && entry.summary))
+          .filter(Boolean);
         return r.postState;
       });
       oracleStats.successorsReturned += postStates.length;
@@ -1377,6 +1379,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
         maxRuntimeMs,
         maxActionsPerState,
         expansionBudgetExhausted,
+        oracle: oracleDiagnostics || null,
       },
       actionTrimmed: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionTrimmed,
       rejectedByHigherHp: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.rejectedByHigherHp,
@@ -1387,7 +1390,6 @@ function searchSegmentDP(simulator, startState, segment, options) {
       actionsDominatedByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsDominatedByKind,
       uniqueBattleTargets: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.uniqueBattleTargets,
       uniquePortalEntries: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.uniquePortalEntries,
-      oracle: oracleDiagnostics || null,
       failure: goalSkyline.length > 0 ? null : summarizeSegmentFailure(simulator.project, segment, result, simulator),
       goalSkyline: {
         primaryOutput: true,
