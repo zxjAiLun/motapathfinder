@@ -5,6 +5,7 @@ const { estimateBattleSurvivability } = require("./battle-thresholds");
 const { formatActionLabel } = require("./enemy-labels");
 const { buildSolverSnapshot } = require("./route-snapshot");
 const { cloneState, getDecisionDepth, getTileDefinitionAt } = require("./state");
+const { getFloorOrder } = require("./floor-id");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -721,12 +722,8 @@ function tryReachAndBattle(simulator, state, target, segment, config, oracleCach
 
     try {
       const postState = simulator.applyAction(nodeState, battleAction, { storeRoute: false });
-      // Build routePatch: travel actions + walk path + battle action
-      const walkPath = Array.isArray(node.path) ? node.path : [];
-      const routePatch = travelActions.concat(
-        walkPath.length > 0 ? [{ kind: "walk", path: walkPath }] : [],
-        battleAction
-      );
+      // Build routePatch: travel actions + battle action (no walk pseudo action)
+      const routePatch = travelActions.concat(battleAction);
       results.push({ postState, battleAction, routePatch, preHp: nodeState.hero ? nodeState.hero.hp : 0 });
     } catch (error) {
       continue;
@@ -742,10 +739,8 @@ function tryReachAndBattle(simulator, state, target, segment, config, oracleCach
 function scoreMonsterTarget(target, state) {
   // Prefer current floor targets (reachable without portal)
   const currentFloor = state.floorId === target.floorId ? 1000 : 0;
-  // Prefer enemies that are closer to the goal floor (MT7 > MT6)
-  const floorOrder = { MT1: 1, MT2: 2, MT3: 3, MT4: 4, MT5: 5, MT6: 6, MT7: 7, MT8: 8, MT9: 9, MT10: 10, MT11: 11 };
-  const floorScore = (floorOrder[target.floorId] || 0) * 10;
-  // Prefer enemies on the same floor as the hero
+  // Prefer enemies on higher floors (closer to goal)
+  const floorScore = getFloorOrder(target.floorId) * 10;
   return currentFloor + floorScore;
 }
 

@@ -58,26 +58,28 @@ function createChildNode(parentNode, state, stateKey, action, nodeId, order) {
   };
 }
 
+function formatRouteEntry(entry) {
+  if (typeof entry === "string") return entry;
+  if (entry && entry.summary) return entry.summary;
+  return null;
+}
+
 function reconstructRoute(nodes, goalNodeOrId) {
-  const route = [];
+  const chunks = [];
   let node = typeof goalNodeOrId === "object" ? goalNodeOrId : nodes.get(goalNodeOrId);
   while (node && node.parentId != null) {
-    if (node.actionEntry && node.actionEntry.summary) {
-      // Check for _routePatch on actionEntry or on the postState (multi-successor)
-      const routePatch = Array.isArray(node.actionEntry._routePatch)
-        ? node.actionEntry._routePatch
-        : (node.state && Array.isArray(node.state._routePatch) ? node.state._routePatch : null);
-      if (routePatch) {
-        for (const patchEntry of routePatch) {
-          route.push(typeof patchEntry === "string" ? patchEntry : (patchEntry.summary || String(patchEntry)));
-        }
-      } else {
-        route.push(node.actionEntry.summary);
-      }
+    const routePatch = Array.isArray(node.actionEntry && node.actionEntry._routePatch)
+      ? node.actionEntry._routePatch
+      : (node.state && Array.isArray(node.state._routePatch) ? node.state._routePatch : null);
+    if (routePatch) {
+      const entries = routePatch.map(formatRouteEntry).filter(Boolean);
+      if (entries.length > 0) chunks.push(entries);
+    } else if (node.actionEntry && node.actionEntry.summary) {
+      chunks.push([node.actionEntry.summary]);
     }
     node = nodes.get(node.parentId);
   }
-  return route.reverse();
+  return chunks.reverse().flat();
 }
 
 function reconstructNodeChain(nodes, goalNodeOrId) {
