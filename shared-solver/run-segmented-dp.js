@@ -6,12 +6,22 @@ const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
 const { buildSolverSnapshot } = require("./lib/route-snapshot");
-const { buildRouteRecord, readRouteFile, writeRouteFile } = require("./lib/route-store");
+const {
+  buildRouteRecord,
+  readRouteFile,
+  writeRouteFile,
+} = require("./lib/route-store");
 const { runMilestoneGraph } = require("./lib/segment-dp");
+const { buildSolverDoctorReport } = require("./lib/solver-doctor");
 const { StaticSimulator } = require("./lib/simulator");
 const { buildDominanceKey } = require("./lib/state-key");
 
-const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
+const DEFAULT_PROJECT_ROOT = path.resolve(
+  __dirname,
+  "..",
+  "Only upV2.1",
+  "Only upV2.1",
+);
 
 function parseArgs(argv) {
   return argv.reduce((result, arg) => {
@@ -52,30 +62,28 @@ function findAction(simulator, state, summary) {
   const actions = [];
   try {
     actions.push(...(simulator.enumeratePrimitiveActions(state).actions || []));
-  } catch (error) {
-  }
+  } catch (error) {}
   try {
     actions.push(...(simulator.enumerateActions(state) || []));
-  } catch (error) {
-  }
+  } catch (error) {}
   try {
     if (typeof simulator.enumerateInteractPickupActions === "function") {
       actions.push(...(simulator.enumerateInteractPickupActions(state) || []));
     }
-  } catch (error) {
-  }
+  } catch (error) {}
   try {
     if (typeof simulator.enumerateFloorFlyActions === "function") {
       actions.push(...(simulator.enumerateFloorFlyActions(state) || []));
     }
-  } catch (error) {
-  }
+  } catch (error) {}
   return actions.find((action) => action.summary === summary) || null;
 }
 
 function buildTraceSnapshot(project, state) {
   if (!state) return null;
-  const snapshot = buildSolverSnapshot(project, state, { floorIds: [state.floorId].filter(Boolean) });
+  const snapshot = buildSolverSnapshot(project, state, {
+    floorIds: [state.floorId].filter(Boolean),
+  });
   snapshot.partial = true;
   return snapshot;
 }
@@ -83,10 +91,18 @@ function buildTraceSnapshot(project, state) {
 function decisionTraceEntry(project, decision, preState, postState) {
   return {
     actionEntry: decision,
-    preSnapshot: preState ? buildTraceSnapshot(project, preState) : (decision.preSnapshot || null),
-    postSnapshot: postState ? buildTraceSnapshot(project, postState) : (decision.postSnapshot || null),
-    preStateKey: preState ? buildDominanceKey(preState) : (decision.preStateKey || null),
-    postStateKey: postState ? buildDominanceKey(postState) : (decision.postStateKey || null),
+    preSnapshot: preState
+      ? buildTraceSnapshot(project, preState)
+      : decision.preSnapshot || null,
+    postSnapshot: postState
+      ? buildTraceSnapshot(project, postState)
+      : decision.postSnapshot || null,
+    preStateKey: preState
+      ? buildDominanceKey(preState)
+      : decision.preStateKey || null,
+    postStateKey: postState
+      ? buildDominanceKey(postState)
+      : decision.postStateKey || null,
   };
 }
 
@@ -97,10 +113,16 @@ function replayRouteFile(simulator, routeFile) {
   for (const decision of record.decisions || []) {
     const preState = state;
     const action = findAction(simulator, state, decision.summary);
-    if (!action) throw new Error(`Unable to replay start route at ${decision.index}: ${decision.summary}`);
-    if (Object.prototype.hasOwnProperty.call(state, "routeTrace")) delete state.routeTrace;
+    if (!action)
+      throw new Error(
+        `Unable to replay start route at ${decision.index}: ${decision.summary}`,
+      );
+    if (Object.prototype.hasOwnProperty.call(state, "routeTrace"))
+      delete state.routeTrace;
     state = simulator.applyAction(state, action);
-    routeTrace = routeTrace.concat(decisionTraceEntry(simulator.project, decision, preState, state));
+    routeTrace = routeTrace.concat(
+      decisionTraceEntry(simulator.project, decision, preState, state),
+    );
   }
   state.routeTrace = routeTrace;
   return state;
@@ -127,19 +149,40 @@ function sanitizeFilePart(value) {
   return String(value || "checkpoint").replace(/[^A-Za-z0-9_.-]+/g, "_");
 }
 
-function saveUniqueCheckpointRoutes({ args, project, projectRoot, simulator, routeName, spec, result, rank }) {
+function saveUniqueCheckpointRoutes({
+  args,
+  project,
+  projectRoot,
+  simulator,
+  routeName,
+  spec,
+  result,
+  rank,
+}) {
   if (!parseBoolean(args["save-unique-checkpoints"], true)) return [];
-  const checkpoints = (result.checkpointResults || []).filter((checkpoint) => checkpoint.uniqueFeasibleRoute);
+  const checkpoints = (result.checkpointResults || []).filter(
+    (checkpoint) => checkpoint.uniqueFeasibleRoute,
+  );
   if (checkpoints.length === 0) return [];
-  const checkpointDir = path.resolve(args["checkpoint-dir"] || path.join("routes", "latest", "checkpoints", routeName));
+  const checkpointDir = path.resolve(
+    args["checkpoint-dir"] ||
+      path.join("routes", "latest", "checkpoints", routeName),
+  );
   const written = [];
   checkpoints.forEach((checkpoint) => {
     const candidate = checkpoint.candidates && checkpoint.candidates[0];
     if (!candidate || !candidate.state) return;
     const finalState = candidate.state;
-    finalState.route = Array.isArray(candidate.route) ? candidate.route.slice() : finalState.route;
-    finalState.routeTrace = Array.isArray(candidate.trace) ? candidate.trace.slice() : finalState.routeTrace;
-    const filePath = path.join(checkpointDir, `${sanitizeFilePart(checkpoint.segmentId)}.route.json`);
+    finalState.route = Array.isArray(candidate.route)
+      ? candidate.route.slice()
+      : finalState.route;
+    finalState.routeTrace = Array.isArray(candidate.trace)
+      ? candidate.trace.slice()
+      : finalState.routeTrace;
+    const filePath = path.join(
+      checkpointDir,
+      `${sanitizeFilePart(checkpoint.segmentId)}.route.json`,
+    );
     const routeRecord = buildRouteRecord({
       project,
       simulator,
@@ -171,12 +214,16 @@ function saveUniqueCheckpointRoutes({ args, project, projectRoot, simulator, rou
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  const projectRoot = path.resolve(args["project-root"] || DEFAULT_PROJECT_ROOT);
+  const projectRoot = path.resolve(
+    args["project-root"] || DEFAULT_PROJECT_ROOT,
+  );
   const project = loadProject(projectRoot);
   const simulator = makeSimulator(project);
   const routeName = args["route-name"] || "onlyup-chaos-mt5-blueking";
   const spec = getMilestoneSpec(project, routeName);
-  const startRoute = args["start-route"] ? path.resolve(args["start-route"]) : null;
+  const startRoute = args["start-route"]
+    ? path.resolve(args["start-route"])
+    : null;
   const initialState = startRoute
     ? replayRouteFile(simulator, startRoute)
     : simulator.createInitialState({ rank: args.rank || "chaos" });
@@ -187,14 +234,24 @@ function main() {
     dpKeyMode: args["dp-key-mode"] || null,
     maxExpansions: optionalNumber(args["max-expansions"]),
     maxRuntimeMs: optionalNumber(args["max-runtime-ms"]),
-    stopOnFirstGoal: args["stop-on-first-goal"] == null ? null : parseBoolean(args["stop-on-first-goal"], false),
+    stopOnFirstGoal:
+      args["stop-on-first-goal"] == null
+        ? null
+        : parseBoolean(args["stop-on-first-goal"], false),
+    dpSkylineMax: optionalNumber(args["dp-skyline-max"]),
+    preserveSkylineRoles: parseBoolean(args["preserve-skyline-roles"], false),
+    goalSkylineLimit: optionalNumber(args["goal-skyline-limit"]),
   });
+  const doctor = buildSolverDoctorReport(result);
   const summary = {
     routeName,
     found: result.found,
     reachedMilestone: result.reachedMilestone,
     failedSegmentId: result.failedSegment && result.failedSegment.segmentId,
-    completedSegments: result.segmentResults.filter((segment) => segment.found).map((segment) => segment.segmentId),
+    doctor: result.found ? null : doctor,
+    completedSegments: result.segmentResults
+      .filter((segment) => segment.found)
+      .map((segment) => segment.segmentId),
     segments: result.segmentResults.map(compactSegmentResult),
     checkpoints: (result.checkpointResults || []).map((checkpoint) => ({
       segmentId: checkpoint.segmentId,
@@ -214,13 +271,24 @@ function main() {
     result,
     rank: args.rank || "chaos",
   });
-  checkpointFiles.forEach((filePath) => console.log(`Checkpoint written: ${filePath}`));
+  checkpointFiles.forEach((filePath) =>
+    console.log(`Checkpoint written: ${filePath}`),
+  );
 
   const out = args.out ? path.resolve(args.out) : null;
-  if (out && result.found && result.finalCandidate && result.finalCandidate.state) {
+  if (
+    out &&
+    result.found &&
+    result.finalCandidate &&
+    result.finalCandidate.state
+  ) {
     const finalState = result.finalCandidate.state;
-    finalState.route = Array.isArray(result.finalCandidate.route) ? result.finalCandidate.route.slice() : finalState.route;
-    finalState.routeTrace = Array.isArray(result.finalCandidate.trace) ? result.finalCandidate.trace.slice() : finalState.routeTrace;
+    finalState.route = Array.isArray(result.finalCandidate.route)
+      ? result.finalCandidate.route.slice()
+      : finalState.route;
+    finalState.routeTrace = Array.isArray(result.finalCandidate.trace)
+      ? result.finalCandidate.trace.slice()
+      : finalState.routeTrace;
     const routeRecord = buildRouteRecord({
       project,
       simulator,
@@ -240,9 +308,14 @@ function main() {
             finalMilestoneId: result.reachedMilestone,
             completedSegments: summary.completedSegments,
             segmentResults: summary.segments,
-            candidateIds: (result.finalCandidates || []).map((candidate) => candidate.id),
+            candidateIds: (result.finalCandidates || []).map(
+              (candidate) => candidate.id,
+            ),
             dpKeyMode: args["dp-key-mode"] || "segment-default",
-            stopOnFirstGoal: args["stop-on-first-goal"] == null ? false : parseBoolean(args["stop-on-first-goal"], false),
+            stopOnFirstGoal:
+              args["stop-on-first-goal"] == null
+                ? false
+                : parseBoolean(args["stop-on-first-goal"], false),
           },
         },
       },
@@ -251,7 +324,10 @@ function main() {
     console.log(`Route written: ${out}`);
   }
   if (result.failedSegment && parseBoolean(args["print-failures"], true)) {
-    console.log(`Segment failure: ${JSON.stringify(result.failedSegment, null, 2)}`);
+    console.log(doctor.line);
+    console.log(
+      `Segment failure: ${JSON.stringify(result.failedSegment, null, 2)}`,
+    );
   }
 }
 

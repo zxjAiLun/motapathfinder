@@ -10,6 +10,7 @@ const { loadProject } = require("./lib/project-loader");
 const { buildSolverSnapshot } = require("./lib/route-snapshot");
 const { buildDominanceKey } = require("./lib/state-key");
 const { buildRouteRecord, createStateFromSnapshot, fingerprintAction, readRouteFile, writeRouteFile } = require("./lib/route-store");
+const { buildSolverDoctorReport } = require("./lib/solver-doctor");
 const { StaticSimulator } = require("./lib/simulator");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
@@ -368,11 +369,13 @@ function main() {
     captureTrace,
     startCandidateLimit: optionalNumber(args["start-candidate-limit"]) || null,
   });
+  const doctor = buildSolverDoctorReport(result);
   const summary = {
     routeName,
     found: result.found,
     reachedMilestone: result.reachedMilestone,
     failedSegmentId: result.failedSegment && result.failedSegment.segmentId,
+    doctor: result.found ? null : doctor,
     qualityFloor: result.qualityFloor || (qualityFloor ? { passed: false, floor: qualityFloor } : null),
     completedSegments: (result.segmentResults || []).filter((segment) => segment.found).map((segment) => segment.segmentId),
     insertedSegments: ((result.adaptive || {}).insertedSegments || []).map((segment) => ({
@@ -445,6 +448,7 @@ function main() {
     console.log(`Effective spec written: ${specOut}`);
   }
   if (result.failedSegment && parseBoolean(args["print-failures"], true)) {
+    console.log(doctor.line);
     console.log(`Segment failure: ${JSON.stringify(result.failedSegment, null, 2)}`);
   }
 }

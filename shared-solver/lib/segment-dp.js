@@ -4,7 +4,11 @@ const { buildDpStateKey, searchDP } = require("./dp-search");
 const { estimateBattleSurvivability } = require("./battle-thresholds");
 const { formatActionLabel } = require("./enemy-labels");
 const { buildSolverSnapshot } = require("./route-snapshot");
-const { cloneState, getDecisionDepth, getTileDefinitionAt } = require("./state");
+const {
+  cloneState,
+  getDecisionDepth,
+  getTileDefinitionAt,
+} = require("./state");
 const { getFloorOrder } = require("./floor-id");
 const reachAndBattleOracle = require("./reach-and-battle-oracle");
 
@@ -20,7 +24,9 @@ function heroHp(state) {
 function effectiveHeroValue(state, field) {
   const hero = (state || {}).hero || {};
   const flags = (state || {}).flags || {};
-  return Math.floor(number(hero[field], 0) * number(flags[`__${field}_buff__`], 1));
+  return Math.floor(
+    number(hero[field], 0) * number(flags[`__${field}_buff__`], 1),
+  );
 }
 
 function summarizeHero(state) {
@@ -50,12 +56,19 @@ function summarizeEffectiveHero(state) {
 }
 
 function hasEquipment(state, itemId) {
-  return Array.isArray(((state || {}).hero || {}).equipment) && state.hero.equipment.includes(itemId);
+  return (
+    Array.isArray(((state || {}).hero || {}).equipment) &&
+    state.hero.equipment.includes(itemId)
+  );
 }
 
 function findPrimitiveAction(simulator, state, summary) {
   try {
-    return (simulator.enumeratePrimitiveActions(state).actions || []).find((action) => action.summary === summary) || null;
+    return (
+      (simulator.enumeratePrimitiveActions(state).actions || []).find(
+        (action) => action.summary === summary,
+      ) || null
+    );
   } catch (error) {
     return null;
   }
@@ -65,17 +78,29 @@ function checkMinFields(actual, expected, prefix, missing) {
   Object.entries(expected || {}).forEach(([field, value]) => {
     const got = number(actual[field], 0);
     if (got < Number(value)) {
-      missing.push({ field: `${prefix}.${field}`, expected: Number(value), actual: got });
+      missing.push({
+        field: `${prefix}.${field}`,
+        expected: Number(value),
+        actual: got,
+      });
     }
   });
 }
 
 function buildActionSurvivableMissing(simulator, state, summary, action) {
-  const threshold = estimateBattleSurvivability(simulator, state, action || summary);
+  const threshold = estimateBattleSurvivability(
+    simulator,
+    state,
+    action || summary,
+  );
   const currentHp = number((state.hero || {}).hp, 0);
-  const damage = threshold && threshold.supported
-    ? number(threshold.currentDamage, Number.POSITIVE_INFINITY)
-    : number(((action || {}).estimate || {}).damage, Number.POSITIVE_INFINITY);
+  const damage =
+    threshold && threshold.supported
+      ? number(threshold.currentDamage, Number.POSITIVE_INFINITY)
+      : number(
+          ((action || {}).estimate || {}).damage,
+          Number.POSITIVE_INFINITY,
+        );
   const entry = {
     field: "actionSurvivable",
     expected: Number.isFinite(damage) ? `hp > ${damage}` : summary,
@@ -106,15 +131,35 @@ function missingGoalFields(project, simulator, state, segment, options) {
   const goal = (segment || {}).goal || {};
   const missing = [];
   if (goal.floorId && state.floorId !== goal.floorId) {
-    missing.push({ field: "floorId", expected: goal.floorId, actual: state.floorId });
+    missing.push({
+      field: "floorId",
+      expected: goal.floorId,
+      actual: state.floorId,
+    });
   }
   checkMinFields(summarizeHero(state), goal.minHero, "hero", missing);
-  checkMinFields(summarizeEffectiveHero(state), goal.minEffectiveHero, "effectiveHero", missing);
+  checkMinFields(
+    summarizeEffectiveHero(state),
+    goal.minEffectiveHero,
+    "effectiveHero",
+    missing,
+  );
   (goal.equipmentIncludes || []).forEach((itemId) => {
-    if (!hasEquipment(state, itemId)) missing.push({ field: "equipment", expected: itemId, actual: summarizeHero(state).equipment });
+    if (!hasEquipment(state, itemId))
+      missing.push({
+        field: "equipment",
+        expected: itemId,
+        actual: summarizeHero(state).equipment,
+      });
   });
   if (goal.type === "bossDefeated" || goal.type === "tileRemoved") {
-    const tile = getTileDefinitionAt(project, state, goal.floorId, goal.x, goal.y);
+    const tile = getTileDefinitionAt(
+      project,
+      state,
+      goal.floorId,
+      goal.x,
+      goal.y,
+    );
     if (tile != null) {
       missing.push({
         field: "tileRemoved",
@@ -124,7 +169,13 @@ function missingGoalFields(project, simulator, state, segment, options) {
     }
   }
   (goal.removedTiles || []).forEach((required) => {
-    const tile = getTileDefinitionAt(project, state, required.floorId, required.x, required.y);
+    const tile = getTileDefinitionAt(
+      project,
+      state,
+      required.floorId,
+      required.x,
+      required.y,
+    );
     if (tile != null) {
       missing.push({
         field: "removedTiles",
@@ -134,19 +185,34 @@ function missingGoalFields(project, simulator, state, segment, options) {
     }
   });
   if (Array.isArray(goal.anyRemovedTiles) && goal.anyRemovedTiles.length > 0) {
-    const matched = goal.anyRemovedTiles.some((required) =>
-      getTileDefinitionAt(project, state, required.floorId, required.x, required.y) == null
+    const matched = goal.anyRemovedTiles.some(
+      (required) =>
+        getTileDefinitionAt(
+          project,
+          state,
+          required.floorId,
+          required.x,
+          required.y,
+        ) == null,
     );
     if (!matched) {
       missing.push({
         field: "anyRemovedTiles",
-        expected: goal.anyRemovedTiles.map((tile) => `${tile.floorId}:${tile.x},${tile.y}=removed`),
+        expected: goal.anyRemovedTiles.map(
+          (tile) => `${tile.floorId}:${tile.x},${tile.y}=removed`,
+        ),
         actual: "all-present",
       });
     }
   }
   (goal.presentTiles || []).forEach((required) => {
-    const tile = getTileDefinitionAt(project, state, required.floorId, required.x, required.y);
+    const tile = getTileDefinitionAt(
+      project,
+      state,
+      required.floorId,
+      required.x,
+      required.y,
+    );
     if (tile == null) {
       missing.push({
         field: "presentTiles",
@@ -156,33 +222,82 @@ function missingGoalFields(project, simulator, state, segment, options) {
     }
   });
   if (goal.actionSurvivable && goal.actionSurvivable.summary) {
-    if (actionTargetAlreadyRemovedByGoal(project, state, goal, goal.actionSurvivable.summary)) {
+    if (
+      actionTargetAlreadyRemovedByGoal(
+        project,
+        state,
+        goal,
+        goal.actionSurvivable.summary,
+      )
+    ) {
       return missing;
     }
-    const action = findPrimitiveAction(simulator, state, goal.actionSurvivable.summary);
+    const action = findPrimitiveAction(
+      simulator,
+      state,
+      goal.actionSurvivable.summary,
+    );
     if (!action) {
       if (!diagnostic) {
-        missing.push({ field: "actionSurvivable", expected: goal.actionSurvivable.summary, actual: "missing-action" });
+        missing.push({
+          field: "actionSurvivable",
+          expected: goal.actionSurvivable.summary,
+          actual: "missing-action",
+        });
       } else {
-        const threshold = estimateBattleSurvivability(simulator, state, goal.actionSurvivable.summary);
+        const threshold = estimateBattleSurvivability(
+          simulator,
+          state,
+          goal.actionSurvivable.summary,
+        );
         if (threshold && threshold.supported && !threshold.survivable) {
-          missing.push(buildActionSurvivableMissing(simulator, state, goal.actionSurvivable.summary, null));
-        } else {
-          missing.push({ field: "actionSurvivable", expected: goal.actionSurvivable.summary, actual: "missing-action" });
-        }
-      }
-    } else {
-      const damage = number((action.estimate || {}).damage, Number.POSITIVE_INFINITY);
-      if (goal.actionSurvivable.exactDamage != null && damage !== Number(goal.actionSurvivable.exactDamage)) {
-        missing.push({ field: "actionDamage", expected: Number(goal.actionSurvivable.exactDamage), actual: damage });
-      }
-      if (!(number((state.hero || {}).hp, 0) > damage)) {
-        if (diagnostic) {
-          missing.push(buildActionSurvivableMissing(simulator, state, goal.actionSurvivable.summary, action));
+          missing.push(
+            buildActionSurvivableMissing(
+              simulator,
+              state,
+              goal.actionSurvivable.summary,
+              null,
+            ),
+          );
         } else {
           missing.push({
             field: "actionSurvivable",
-            expected: Number.isFinite(damage) ? `hp > ${damage}` : goal.actionSurvivable.summary,
+            expected: goal.actionSurvivable.summary,
+            actual: "missing-action",
+          });
+        }
+      }
+    } else {
+      const damage = number(
+        (action.estimate || {}).damage,
+        Number.POSITIVE_INFINITY,
+      );
+      if (
+        goal.actionSurvivable.exactDamage != null &&
+        damage !== Number(goal.actionSurvivable.exactDamage)
+      ) {
+        missing.push({
+          field: "actionDamage",
+          expected: Number(goal.actionSurvivable.exactDamage),
+          actual: damage,
+        });
+      }
+      if (!(number((state.hero || {}).hp, 0) > damage)) {
+        if (diagnostic) {
+          missing.push(
+            buildActionSurvivableMissing(
+              simulator,
+              state,
+              goal.actionSurvivable.summary,
+              action,
+            ),
+          );
+        } else {
+          missing.push({
+            field: "actionSurvivable",
+            expected: Number.isFinite(damage)
+              ? `hp > ${damage}`
+              : goal.actionSurvivable.summary,
             actual: number((state.hero || {}).hp, 0),
             action: goal.actionSurvivable.summary,
             damage,
@@ -195,11 +310,15 @@ function missingGoalFields(project, simulator, state, segment, options) {
 }
 
 function buildSegmentGoalPredicate(project, segment, simulator) {
-  return (state) => missingGoalFields(project, simulator, state, segment, { diagnostic: false }).length === 0;
+  return (state) =>
+    missingGoalFields(project, simulator, state, segment, { diagnostic: false })
+      .length === 0;
 }
 
 function parseActionTileKey(summary) {
-  const match = /^[^@]+@([^:]+):(\d+),(\d+)(?:\b|$)/.exec(String(summary || ""));
+  const match = /^[^@]+@([^:]+):(\d+),(\d+)(?:\b|$)/.exec(
+    String(summary || ""),
+  );
   if (!match) return null;
   return `${match[1]}:${match[2]},${match[3]}`;
 }
@@ -211,20 +330,34 @@ function parseTileKeyParts(tileKey) {
 }
 
 function isRequiredTileStillPresent(project, state, required) {
-  return getTileDefinitionAt(project, state, required.floorId, required.x, required.y) != null;
+  return (
+    getTileDefinitionAt(
+      project,
+      state,
+      required.floorId,
+      required.x,
+      required.y,
+    ) != null
+  );
 }
 
 function actionTargetAlreadyRemovedByGoal(project, state, goal, summary) {
   const actionTileKey = parseActionTileKey(summary);
   if (!actionTileKey) return false;
   const requiredTiles = [];
-  if ((goal.type === "bossDefeated" || goal.type === "tileRemoved") && goal.floorId != null && goal.x != null && goal.y != null) {
+  if (
+    (goal.type === "bossDefeated" || goal.type === "tileRemoved") &&
+    goal.floorId != null &&
+    goal.x != null &&
+    goal.y != null
+  ) {
     requiredTiles.push({ floorId: goal.floorId, x: goal.x, y: goal.y });
   }
   (goal.removedTiles || []).forEach((tile) => requiredTiles.push(tile));
-  return requiredTiles.some((tile) =>
-    `${tile.floorId}:${tile.x},${tile.y}` === actionTileKey &&
-    getTileDefinitionAt(project, state, tile.floorId, tile.x, tile.y) == null
+  return requiredTiles.some(
+    (tile) =>
+      `${tile.floorId}:${tile.x},${tile.y}` === actionTileKey &&
+      getTileDefinitionAt(project, state, tile.floorId, tile.x, tile.y) == null,
   );
 }
 
@@ -234,34 +367,56 @@ function goalActionScore(simulator, state, action, segment) {
   const actionTileKey = parseActionTileKey(action && action.summary);
   for (const required of goal.removedTiles || []) {
     const requiredKey = `${required.floorId}:${required.x},${required.y}`;
-    if (actionTileKey === requiredKey && isRequiredTileStillPresent(simulator.project, state, required)) {
+    if (
+      actionTileKey === requiredKey &&
+      isRequiredTileStillPresent(simulator.project, state, required)
+    ) {
       score += 10000000;
     }
   }
   for (const required of goal.anyRemovedTiles || []) {
     const requiredKey = `${required.floorId}:${required.x},${required.y}`;
-    if (actionTileKey === requiredKey && isRequiredTileStillPresent(simulator.project, state, required)) {
+    if (
+      actionTileKey === requiredKey &&
+      isRequiredTileStillPresent(simulator.project, state, required)
+    ) {
       score += 8000000;
     }
   }
   for (const preserved of goal.presentTiles || []) {
     const preservedKey = `${preserved.floorId}:${preserved.x},${preserved.y}`;
-    if (actionTileKey === preservedKey && isRequiredTileStillPresent(simulator.project, state, preserved)) {
+    if (
+      actionTileKey === preservedKey &&
+      isRequiredTileStillPresent(simulator.project, state, preserved)
+    ) {
       score -= 10000000;
     }
   }
   for (const preferred of goal.preferredPresentTiles || []) {
     const preferredKey = `${preferred.floorId}:${preferred.x},${preferred.y}`;
-    if (actionTileKey === preferredKey && isRequiredTileStillPresent(simulator.project, state, preferred)) {
+    if (
+      actionTileKey === preferredKey &&
+      isRequiredTileStillPresent(simulator.project, state, preferred)
+    ) {
       score -= 1000000;
     }
   }
   if (action && action.kind === "equip") {
     for (const itemId of goal.equipmentIncludes || []) {
-      if (String(action.summary || "") === `equip:${itemId}` && !hasEquipment(state, itemId)) score += 12000000;
+      if (
+        String(action.summary || "") === `equip:${itemId}` &&
+        !hasEquipment(state, itemId)
+      )
+        score += 12000000;
     }
   }
-  if (action && action.kind === "changeFloor" && goal.floorId && action.changeFloor && action.changeFloor.floorId === goal.floorId) {
+  if (
+    action &&
+    action.kind === "changeFloor" &&
+    goal.floorId &&
+    action.changeFloor &&
+    action.changeFloor.floorId === goal.floorId
+  ) {
     score += 500000;
   }
   return score;
@@ -275,14 +430,18 @@ function segmentPreviewScore(simulator, state, action) {
     const afterHero = summarizeHero(preview);
     const beforeEffective = summarizeEffectiveHero(state);
     const afterEffective = summarizeEffectiveHero(preview);
-    const equipmentGain = afterHero.equipment.filter((itemId) => !beforeHero.equipment.includes(itemId)).length;
-    return Math.max(0,
-      (afterHero.hp - beforeHero.hp) +
-      (afterEffective.atk - beforeEffective.atk) * 50000 +
-      (afterEffective.def - beforeEffective.def) * 40000 +
-      (afterEffective.mdef - beforeEffective.mdef) * 5000 +
-      (afterHero.exp - beforeHero.exp) * 1500 +
-      equipmentGain * 300000
+    const equipmentGain = afterHero.equipment.filter(
+      (itemId) => !beforeHero.equipment.includes(itemId),
+    ).length;
+    return Math.max(
+      0,
+      afterHero.hp -
+        beforeHero.hp +
+        (afterEffective.atk - beforeEffective.atk) * 50000 +
+        (afterEffective.def - beforeEffective.def) * 40000 +
+        (afterEffective.mdef - beforeEffective.mdef) * 5000 +
+        (afterHero.exp - beforeHero.exp) * 1500 +
+        equipmentGain * 300000,
     );
   } catch (error) {
     return 0;
@@ -291,7 +450,8 @@ function segmentPreviewScore(simulator, state, action) {
 
 function actionSurvivablePrepScore(simulator, state, action, segment) {
   const goal = (segment || {}).goal || {};
-  if (!goal.actionSurvivable || !goal.actionSurvivable.summary || !action) return 0;
+  if (!goal.actionSurvivable || !goal.actionSurvivable.summary || !action)
+    return 0;
   if (action.kind === "changeFloor" || action.kind === "floorFly") return 0;
   try {
     const preview = simulator.applyAction(state, action, { storeRoute: false });
@@ -304,7 +464,9 @@ function actionSurvivablePrepScore(simulator, state, action, segment) {
     const defGain = afterEffective.def - beforeEffective.def;
     const mdefGain = afterEffective.mdef - beforeEffective.mdef;
     const expGain = afterHero.exp - beforeHero.exp;
-    const equipmentGain = afterHero.equipment.filter((itemId) => !beforeHero.equipment.includes(itemId)).length;
+    const equipmentGain = afterHero.equipment.filter(
+      (itemId) => !beforeHero.equipment.includes(itemId),
+    ).length;
     const positivePrep =
       hpGain > 0 ||
       atkGain > 0 ||
@@ -314,14 +476,15 @@ function actionSurvivablePrepScore(simulator, state, action, segment) {
       equipmentGain > 0;
     if (!positivePrep) return 0;
     const damage = number((action.estimate || {}).damage, 0);
-    return Math.max(0,
+    return Math.max(
+      0,
       hpGain * 8 +
-      atkGain * 30000 +
-      defGain * 140000 +
-      mdefGain * 5000 +
-      expGain * 2500 +
-      equipmentGain * 500000 -
-      Math.max(0, damage) * 0.2
+        atkGain * 30000 +
+        defGain * 140000 +
+        mdefGain * 5000 +
+        expGain * 2500 +
+        equipmentGain * 500000 -
+        Math.max(0, damage) * 0.2,
     );
   } catch (error) {
     return 0;
@@ -331,7 +494,13 @@ function actionSurvivablePrepScore(simulator, state, action, segment) {
 function resourceTimingLookaheadScore(simulator, state, action, segment) {
   const dpConfig = (segment || {}).dp || {};
   if (dpConfig.resourceLookahead !== true) return 0;
-  if (!action || action.kind === "changeFloor" || action.kind === "floorFly" || action.kind === "equip") return 0;
+  if (
+    !action ||
+    action.kind === "changeFloor" ||
+    action.kind === "floorFly" ||
+    action.kind === "equip"
+  )
+    return 0;
   let preview = null;
   try {
     preview = simulator.applyAction(state, action, { storeRoute: false });
@@ -348,37 +517,58 @@ function resourceTimingLookaheadScore(simulator, state, action, segment) {
   }
   if (typeof simulator.enumerateInteractPickupActions === "function") {
     try {
-      nextActions = nextActions.concat(simulator.enumerateInteractPickupActions(preview) || []);
-    } catch (error) {
-    }
+      nextActions = nextActions.concat(
+        simulator.enumerateInteractPickupActions(preview) || [],
+      );
+    } catch (error) {}
   }
   const candidates = nextActions
     .filter((nextAction) => nextAction && nextAction.summary !== action.summary)
-    .filter((nextAction) => nextAction.kind !== "changeFloor" && nextAction.kind !== "floorFly")
-    .filter((nextAction) => isAllowedAction(nextAction, preview, segment, simulator))
+    .filter(
+      (nextAction) =>
+        nextAction.kind !== "changeFloor" && nextAction.kind !== "floorFly",
+    )
+    .filter((nextAction) =>
+      isAllowedAction(nextAction, preview, segment, simulator),
+    )
     .map((nextAction) => ({
       action: nextAction,
-      prepScore: actionSurvivablePrepScore(simulator, preview, nextAction, segment),
+      prepScore: actionSurvivablePrepScore(
+        simulator,
+        preview,
+        nextAction,
+        segment,
+      ),
       previewScore: segmentPreviewScore(simulator, preview, nextAction),
       damage: number((nextAction.estimate || {}).damage, 0),
     }))
     .filter((record) => record.prepScore > 0 || record.previewScore > 0)
-    .sort((left, right) => (right.prepScore + right.previewScore) - (left.prepScore + left.previewScore) || left.damage - right.damage)
+    .sort(
+      (left, right) =>
+        right.prepScore +
+          right.previewScore -
+          (left.prepScore + left.previewScore) || left.damage - right.damage,
+    )
     .slice(0, number(dpConfig.resourceLookaheadActions, 8));
   let best = 0;
   for (const record of candidates) {
     let second = null;
     try {
-      second = simulator.applyAction(preview, record.action, { storeRoute: false });
+      second = simulator.applyAction(preview, record.action, {
+        storeRoute: false,
+      });
     } catch (error) {
       continue;
     }
     const afterHero = summarizeHero(second);
     const afterEffective = summarizeEffectiveHero(second);
     const hpDelta = number(afterHero.hp, 0) - number(beforeHero.hp, 0);
-    const atkDelta = number(afterEffective.atk, 0) - number(beforeEffective.atk, 0);
-    const defDelta = number(afterEffective.def, 0) - number(beforeEffective.def, 0);
-    const mdefDelta = number(afterEffective.mdef, 0) - number(beforeEffective.mdef, 0);
+    const atkDelta =
+      number(afterEffective.atk, 0) - number(beforeEffective.atk, 0);
+    const defDelta =
+      number(afterEffective.def, 0) - number(beforeEffective.def, 0);
+    const mdefDelta =
+      number(afterEffective.mdef, 0) - number(beforeEffective.mdef, 0);
     const expDelta = number(afterHero.exp, 0) - number(beforeHero.exp, 0);
     const score =
       hpDelta * 120 +
@@ -396,8 +586,10 @@ function resourceTimingLookaheadScore(simulator, state, action, segment) {
 function usesResourceTimingMode(segment) {
   const dpConfig = (segment || {}).dp || {};
   const policy = (segment || {}).actionPolicy || {};
-  return dpConfig.resourceTimingMode === "sustain-prep" ||
-    policy.resourceTimingMode === "sustain-prep";
+  return (
+    dpConfig.resourceTimingMode === "sustain-prep" ||
+    policy.resourceTimingMode === "sustain-prep"
+  );
 }
 
 function isResourceTimingAction(simulator, state, action, segment) {
@@ -411,14 +603,34 @@ function isResourceTimingAction(simulator, state, action, segment) {
 function annotateSegmentAction(simulator, state, action, segment) {
   const goalScore = goalActionScore(simulator, state, action, segment);
   const dpConfig = (segment || {}).dp || {};
-  const prepScore = actionSurvivablePrepScore(simulator, state, action, segment);
-  const lookaheadScore = resourceTimingLookaheadScore(simulator, state, action, segment);
-  const previewScore = dpConfig.enablePreviewScore === false
-    ? 0
-    : dpConfig.enablePreviewScore === "required"
-      ? (goalScore > 0 || prepScore > 0 || lookaheadScore > 0 ? segmentPreviewScore(simulator, state, action) + prepScore + lookaheadScore : 0)
-      : segmentPreviewScore(simulator, state, action);
-  const score = goalScore + previewScore + (dpConfig.enablePreviewScore === "required" ? 0 : prepScore + lookaheadScore);
+  const prepScore = actionSurvivablePrepScore(
+    simulator,
+    state,
+    action,
+    segment,
+  );
+  const lookaheadScore = resourceTimingLookaheadScore(
+    simulator,
+    state,
+    action,
+    segment,
+  );
+  const previewScore =
+    dpConfig.enablePreviewScore === false
+      ? 0
+      : dpConfig.enablePreviewScore === "required"
+        ? goalScore > 0 || prepScore > 0 || lookaheadScore > 0
+          ? segmentPreviewScore(simulator, state, action) +
+            prepScore +
+            lookaheadScore
+          : 0
+        : segmentPreviewScore(simulator, state, action);
+  const score =
+    goalScore +
+    previewScore +
+    (dpConfig.enablePreviewScore === "required"
+      ? 0
+      : prepScore + lookaheadScore);
   if (score === 0) return action;
   return {
     ...action,
@@ -439,27 +651,63 @@ function isAllowedChangeFloor(action, state, policy) {
   const changeKey = parseChangeFloorSummary(action.summary);
   if (changeKey && allowed.has(changeKey)) return true;
   const floorId = action.floorId || state.floorId;
-  if (policy.allowedFloors && !policy.allowedFloors.includes(floorId)) return false;
+  if (policy.allowedFloors && !policy.allowedFloors.includes(floorId))
+    return false;
   const targetFloor = action.changeFloor && action.changeFloor.floorId;
-  return !targetFloor || !policy.allowedFloors || policy.allowedFloors.includes(targetFloor);
+  return (
+    !targetFloor ||
+    !policy.allowedFloors ||
+    policy.allowedFloors.includes(targetFloor)
+  );
 }
 
 function isAllowedAction(action, state, segment, simulator) {
   const policy = (segment || {}).actionPolicy || {};
   const goal = (segment || {}).goal || {};
-  const allowedKinds = new Set(policy.actionKinds || ["battle", "pickup", "equip", "openDoor", "useTool", "changeFloor", "event"]);
+  const allowedKinds = new Set(
+    policy.actionKinds || [
+      "battle",
+      "pickup",
+      "equip",
+      "openDoor",
+      "useTool",
+      "changeFloor",
+      "event",
+    ],
+  );
   if (!action || !allowedKinds.has(action.kind)) return false;
-  if (action.kind === "resourcePocket" || action.kind === "resourceCluster" || action.kind === "resourceChain" || action.kind === "fightToLevelUp") return false;
-  if (action.kind === "event" && policy.forbidUnsupportedEvents !== false && (action.unsupported || action.hasStateChange === false)) return false;
+  if (
+    action.kind === "resourcePocket" ||
+    action.kind === "resourceCluster" ||
+    action.kind === "resourceChain" ||
+    action.kind === "fightToLevelUp"
+  )
+    return false;
+  if (
+    action.kind === "event" &&
+    policy.forbidUnsupportedEvents !== false &&
+    (action.unsupported || action.hasStateChange === false)
+  )
+    return false;
   const actionTileKey = parseActionTileKey(action.summary);
   for (const preserved of goal.presentTiles || []) {
     const preservedKey = `${preserved.floorId}:${preserved.x},${preserved.y}`;
-    if (actionTileKey === preservedKey && isRequiredTileStillPresent(simulator.project, state, preserved)) return false;
+    if (
+      actionTileKey === preservedKey &&
+      isRequiredTileStillPresent(simulator.project, state, preserved)
+    )
+      return false;
   }
-  if (action.kind === "changeFloor") return isAllowedChangeFloor(action, state, policy);
+  if (action.kind === "changeFloor")
+    return isAllowedChangeFloor(action, state, policy);
   if (action.kind === "floorFly") {
-    const targetFloor = action.targetFloorId || (action.target && action.target.floorId);
-    return !policy.allowedFloors || (policy.allowedFloors.includes(action.floorId || state.floorId) && policy.allowedFloors.includes(targetFloor));
+    const targetFloor =
+      action.targetFloorId || (action.target && action.target.floorId);
+    return (
+      !policy.allowedFloors ||
+      (policy.allowedFloors.includes(action.floorId || state.floorId) &&
+        policy.allowedFloors.includes(targetFloor))
+    );
   }
   const floorId = action.floorId || state.floorId;
   return !policy.allowedFloors || policy.allowedFloors.includes(floorId);
@@ -474,14 +722,17 @@ function trimFloorFlyActions(actions, policy) {
       kept.push(action);
       continue;
     }
-    const targetFloor = action.targetFloorId || (action.target && action.target.floorId) || "?";
+    const targetFloor =
+      action.targetFloorId || (action.target && action.target.floorId) || "?";
     if (!floorFlyGroups.has(targetFloor)) floorFlyGroups.set(targetFloor, []);
     floorFlyGroups.get(targetFloor).push(action);
   }
   floorFlyGroups.forEach((group) => {
     group
       .slice()
-      .sort((left, right) => (left.path || []).length - (right.path || []).length)
+      .sort(
+        (left, right) => (left.path || []).length - (right.path || []).length,
+      )
       .slice(0, maxPerTarget)
       .forEach((action) => kept.push(action));
   });
@@ -493,8 +744,14 @@ function actionTravelHp(action) {
 }
 
 function compareSegmentActionRepresentatives(left, right) {
-  const leftScore = number((((left || {}).estimate || {}).segmentPreviewScore), 0);
-  const rightScore = number((((right || {}).estimate || {}).segmentPreviewScore), 0);
+  const leftScore = number(
+    ((left || {}).estimate || {}).segmentPreviewScore,
+    0,
+  );
+  const rightScore = number(
+    ((right || {}).estimate || {}).segmentPreviewScore,
+    0,
+  );
   if (leftScore !== rightScore) return rightScore - leftScore;
   const leftDamage = number(((left || {}).estimate || {}).damage, 0);
   const rightDamage = number(((right || {}).estimate || {}).damage, 0);
@@ -514,7 +771,10 @@ function deduplicateSegmentActions(actions) {
       continue;
     }
     const existing = bySummary.get(summary);
-    if (!existing || compareSegmentActionRepresentatives(action, existing) < 0) {
+    if (
+      !existing ||
+      compareSegmentActionRepresentatives(action, existing) < 0
+    ) {
       bySummary.set(summary, action);
     }
   }
@@ -524,19 +784,39 @@ function deduplicateSegmentActions(actions) {
 function buildSegmentActionProvider(simulator, segment) {
   return (unusedSimulator, state) => {
     const policy = (segment || {}).actionPolicy || {};
-    const allowedKinds = new Set(policy.actionKinds || ["battle", "pickup", "equip", "openDoor", "useTool", "changeFloor", "event"]);
-    const primitive = (simulator.enumeratePrimitiveActions(state).actions || []);
+    const allowedKinds = new Set(
+      policy.actionKinds || [
+        "battle",
+        "pickup",
+        "equip",
+        "openDoor",
+        "useTool",
+        "changeFloor",
+        "event",
+      ],
+    );
+    const primitive = simulator.enumeratePrimitiveActions(state).actions || [];
     let actions = primitive;
-    if (allowedKinds.has("interactPickup") && typeof simulator.enumerateInteractPickupActions === "function") {
+    if (
+      allowedKinds.has("interactPickup") &&
+      typeof simulator.enumerateInteractPickupActions === "function"
+    ) {
       actions = actions.concat(simulator.enumerateInteractPickupActions(state));
     }
-    if (allowedKinds.has("floorFly") && typeof simulator.enumerateFloorFlyActions === "function") {
+    if (
+      allowedKinds.has("floorFly") &&
+      typeof simulator.enumerateFloorFlyActions === "function"
+    ) {
       actions = actions.concat(simulator.enumerateFloorFlyActions(state));
     }
     const filtered = trimFloorFlyActions(actions, policy)
       .filter((action) => isAllowedAction(action, state, segment, simulator))
-      .filter((action) => isResourceTimingAction(simulator, state, action, segment))
-      .map((action) => annotateSegmentAction(simulator, state, action, segment));
+      .filter((action) =>
+        isResourceTimingAction(simulator, state, action, segment),
+      )
+      .map((action) =>
+        annotateSegmentAction(simulator, state, action, segment),
+      );
     return deduplicateSegmentActions(filtered);
   };
 }
@@ -561,11 +841,17 @@ function deduplicatePortalActions(actions) {
     if (action.kind === "battle") {
       battles.push(action);
     } else if (action.kind === "changeFloor" || action.kind === "floorFly") {
-      const targetFloor = action.kind === "floorFly"
-        ? (action.targetFloorId || (action.target && action.target.floorId) || "?")
-        : (action.changeFloor && action.changeFloor.floorId || "?");
+      const targetFloor =
+        action.kind === "floorFly"
+          ? action.targetFloorId ||
+            (action.target && action.target.floorId) ||
+            "?"
+          : (action.changeFloor && action.changeFloor.floorId) || "?";
       const existing = portalsByTarget.get(targetFloor);
-      if (!existing || (action.path || []).length < (existing.path || []).length) {
+      if (
+        !existing ||
+        (action.path || []).length < (existing.path || []).length
+      ) {
         portalsByTarget.set(targetFloor, action);
       }
     } else {
@@ -594,19 +880,37 @@ function protectPresentTiles(project, state, segment) {
     if (!floorState) continue;
     const key = `${required.x},${required.y}`;
     if (floorState.removed[key]) continue;
-    const tileNum = Object.prototype.hasOwnProperty.call(floorState.replaced, key)
+    const tileNum = Object.prototype.hasOwnProperty.call(
+      floorState.replaced,
+      key,
+    )
       ? floorState.replaced[key]
       : null;
-    const tile = tileNum != null
-      ? project.mapTilesByNumber[String(tileNum)]
-      : getTileDefinitionAt(project, state, required.floorId, required.x, required.y);
+    const tile =
+      tileNum != null
+        ? project.mapTilesByNumber[String(tileNum)]
+        : getTileDefinitionAt(
+            project,
+            state,
+            required.floorId,
+            required.x,
+            required.y,
+          );
     if (!tile) continue;
     if (!isTileBlocking(project, BLOCKER_TILE_NUMBER)) {
-      throw new Error(`protectPresentTiles: tile ${BLOCKER_TILE_NUMBER} is not a blocking tile`);
+      throw new Error(
+        `protectPresentTiles: tile ${BLOCKER_TILE_NUMBER} is not a blocking tile`,
+      );
     }
     const wasRemoved = floorState.removed[key];
     const wasReplaced = floorState.replaced[key];
-    saved.push({ floorId: required.floorId, key, wasRemoved, wasReplaced, floorState });
+    saved.push({
+      floorId: required.floorId,
+      key,
+      wasRemoved,
+      wasReplaced,
+      floorState,
+    });
     delete floorState.removed[key];
     floorState.replaced[key] = BLOCKER_TILE_NUMBER;
   }
@@ -638,7 +942,8 @@ function enumerateMonsterTargets(simulator, state, segment) {
   for (const floorId of allowedFloors) {
     const floor = project.floorsById[floorId];
     if (!floor) continue;
-    const height = floor.height || (Array.isArray(floor.map) ? floor.map.length : 0);
+    const height =
+      floor.height || (Array.isArray(floor.map) ? floor.map.length : 0);
     const width = floor.width || 0;
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
@@ -648,8 +953,8 @@ function enumerateMonsterTargets(simulator, state, segment) {
         if (!enemyId) continue;
 
         const preservedKey = `${floorId}:${x},${y}`;
-        const isProtected = (goal.presentTiles || []).some((p) =>
-          `${p.floorId}:${p.x},${p.y}` === preservedKey
+        const isProtected = (goal.presentTiles || []).some(
+          (p) => `${p.floorId}:${p.x},${p.y}` === preservedKey,
         );
         if (isProtected) continue;
 
@@ -671,17 +976,32 @@ function enumerateMonsterTargets(simulator, state, segment) {
 }
 
 function isAllowedPortalAction(action, state, policy) {
-  if (action.kind === "changeFloor") return isAllowedChangeFloor(action, state, policy);
+  if (action.kind === "changeFloor")
+    return isAllowedChangeFloor(action, state, policy);
   if (action.kind === "floorFly") {
-    const targetFloor = action.targetFloorId || (action.target && action.target.floorId);
-    if (policy.allowedFloors && !policy.allowedFloors.includes(targetFloor)) return false;
+    const targetFloor =
+      action.targetFloorId || (action.target && action.target.floorId);
+    if (policy.allowedFloors && !policy.allowedFloors.includes(targetFloor))
+      return false;
     return true;
   }
   return true;
 }
 
-function oracleFindFloorState(simulator, state, targetFloorId, segment, config) {
-  const states = oracleFindFloorStates(simulator, state, targetFloorId, segment, config);
+function oracleFindFloorState(
+  simulator,
+  state,
+  targetFloorId,
+  segment,
+  config,
+) {
+  const states = oracleFindFloorStates(
+    simulator,
+    state,
+    targetFloorId,
+    segment,
+    config,
+  );
   return states[0] || null;
 }
 
@@ -697,7 +1017,9 @@ function floorResultIdentity(result) {
     mdef: number(hero.mdef, 0),
     lv: number(hero.lv, 0),
     exp: number(hero.exp, 0),
-    equipment: Array.isArray(hero.equipment) ? hero.equipment.slice().sort() : [],
+    equipment: Array.isArray(hero.equipment)
+      ? hero.equipment.slice().sort()
+      : [],
   });
 }
 
@@ -705,13 +1027,20 @@ function selectOracleFloorResults(results, maxEntries) {
   const candidates = results.map((result) => {
     const hero = summarizeHero(result.state);
     const effective = summarizeEffectiveHero(result.state);
-    const travelLength = Array.isArray(result.travelActions) ? result.travelActions.length : 0;
+    const travelLength = Array.isArray(result.travelActions)
+      ? result.travelActions.length
+      : 0;
     return {
       ...result,
       _roleScores: {
         highestHp: hero.hp,
         shortestTravel: -travelLength,
-        bestCombatStats: effective.atk * 100000 + effective.def * 80000 + effective.mdef * 8000 + hero.exp * 1000 + hero.hp,
+        bestCombatStats:
+          effective.atk * 100000 +
+          effective.def * 80000 +
+          effective.mdef * 8000 +
+          hero.exp * 1000 +
+          hero.hp,
         highestEffectiveDef: effective.def,
       },
     };
@@ -726,13 +1055,20 @@ function selectOracleFloorResults(results, maxEntries) {
     selected.push(candidate);
     return true;
   };
-  for (const role of ["highestHp", "shortestTravel", "bestCombatStats", "highestEffectiveDef"]) {
+  for (const role of [
+    "highestHp",
+    "shortestTravel",
+    "bestCombatStats",
+    "highestEffectiveDef",
+  ]) {
     candidates
       .slice()
       .sort((left, right) => {
         const diff = right._roleScores[role] - left._roleScores[role];
         if (diff !== 0) return diff;
-        return (left.travelActions || []).length - (right.travelActions || []).length;
+        return (
+          (left.travelActions || []).length - (right.travelActions || []).length
+        );
       })
       .some(add);
   }
@@ -747,7 +1083,13 @@ function selectOracleFloorResults(results, maxEntries) {
   return selected;
 }
 
-function oracleFindFloorStates(simulator, state, targetFloorId, segment, config) {
+function oracleFindFloorStates(
+  simulator,
+  state,
+  targetFloorId,
+  segment,
+  config,
+) {
   const maxSteps = number((config || {}).maxPortalDepth, 10) * 50;
   const maxEntries = number((config || {}).maxOracleFloorEntries, 4);
   const policy = (segment || {}).actionPolicy || {};
@@ -757,7 +1099,8 @@ function oracleFindFloorStates(simulator, state, targetFloorId, segment, config)
   const queue = [{ state: cloneState(state), steps: 0, actions: [] }];
   const visited = new Set();
   const results = [];
-  const posKey = (s) => `${s.floorId}:${(s.hero.loc || {}).x},${(s.hero.loc || {}).y}`;
+  const posKey = (s) =>
+    `${s.floorId}:${(s.hero.loc || {}).x},${(s.hero.loc || {}).y}`;
   visited.add(posKey(state));
 
   while (queue.length > 0) {
@@ -773,28 +1116,41 @@ function oracleFindFloorStates(simulator, state, targetFloorId, segment, config)
 
     // Collect portal actions: primitive changeFloor + floorFly
     let portalActions = [];
-    const primitive = (simulator.enumeratePrimitiveActions(current).actions || []);
-    portalActions = portalActions.concat(primitive.filter((a) => a.kind === "changeFloor"));
+    const primitive =
+      simulator.enumeratePrimitiveActions(current).actions || [];
+    portalActions = portalActions.concat(
+      primitive.filter((a) => a.kind === "changeFloor"),
+    );
     if (typeof simulator.enumerateFloorFlyActions === "function") {
-      portalActions = portalActions.concat(simulator.enumerateFloorFlyActions(current));
+      portalActions = portalActions.concat(
+        simulator.enumerateFloorFlyActions(current),
+      );
     }
 
     for (const action of portalActions) {
       if (!isAllowedPortalAction(action, current, policy)) continue;
       // Check presentTiles: don't traverse through protected tiles
       const actionTileKey = parseActionTileKey(action.summary);
-      const hitsProtected = (goal.presentTiles || []).some((p) =>
-        `${p.floorId}:${p.x},${p.y}` === actionTileKey
+      const hitsProtected = (goal.presentTiles || []).some(
+        (p) => `${p.floorId}:${p.x},${p.y}` === actionTileKey,
       );
       if (hitsProtected) continue;
 
       try {
-        const next = simulator.applyAction(current, action, { storeRoute: false });
+        const next = simulator.applyAction(current, action, {
+          storeRoute: false,
+        });
         const key = posKey(next);
         if (visited.has(key)) continue;
         visited.add(key);
-        queue.push({ state: next, steps: steps + 1, actions: actions.concat(action) });
-      } catch (error) { /* skip */ }
+        queue.push({
+          state: next,
+          steps: steps + 1,
+          actions: actions.concat(action),
+        });
+      } catch (error) {
+        /* skip */
+      }
     }
   }
 
@@ -806,9 +1162,17 @@ function battleMarginForGoal(simulator, state, segment) {
   const targetSummary = goal.actionSurvivable && goal.actionSurvivable.summary;
   if (!targetSummary) return Number.NEGATIVE_INFINITY;
   try {
-    const threshold = estimateBattleSurvivability(simulator, state, targetSummary, { skipMinHp: true });
+    const threshold = estimateBattleSurvivability(
+      simulator,
+      state,
+      targetSummary,
+      { skipMinHp: true },
+    );
     if (!threshold || !threshold.supported) return Number.NEGATIVE_INFINITY;
-    return number(((state || {}).hero || {}).hp, 0) - number(threshold.currentDamage, Number.POSITIVE_INFINITY);
+    return (
+      number(((state || {}).hero || {}).hp, 0) -
+      number(threshold.currentDamage, Number.POSITIVE_INFINITY)
+    );
   } catch (error) {
     return Number.NEGATIVE_INFINITY;
   }
@@ -826,16 +1190,26 @@ function successorIdentity(candidate) {
     mdef: number(hero.mdef, 0),
     lv: number(hero.lv, 0),
     exp: number(hero.exp, 0),
-    equipment: Array.isArray(hero.equipment) ? hero.equipment.slice().sort() : [],
+    equipment: Array.isArray(hero.equipment)
+      ? hero.equipment.slice().sort()
+      : [],
   });
 }
 
-function selectMonsterOnlySuccessors(simulator, results, segment, maxSuccessors, stats) {
+function selectMonsterOnlySuccessors(
+  simulator,
+  results,
+  segment,
+  maxSuccessors,
+  stats,
+) {
   const candidates = results.map((candidate) => {
     const state = candidate.postState;
     const hero = summarizeHero(state);
     const effective = summarizeEffectiveHero(state);
-    const routePatchLength = Array.isArray(candidate.routePatch) ? candidate.routePatch.length : 0;
+    const routePatchLength = Array.isArray(candidate.routePatch)
+      ? candidate.routePatch.length
+      : 0;
     return {
       ...candidate,
       _roleScores: {
@@ -843,7 +1217,12 @@ function selectMonsterOnlySuccessors(simulator, results, segment, maxSuccessors,
         bestTargetMargin: battleMarginForGoal(simulator, state, segment),
         highestEffectiveDef: effective.def,
         highestEffectiveMdef: effective.mdef,
-        highestCombatStats: effective.atk * 100000 + effective.def * 80000 + effective.mdef * 8000 + hero.exp * 1000 + hero.hp,
+        highestCombatStats:
+          effective.atk * 100000 +
+          effective.def * 80000 +
+          effective.mdef * 8000 +
+          hero.exp * 1000 +
+          hero.hp,
         shortestRoute: -routePatchLength,
       },
     };
@@ -889,27 +1268,49 @@ function selectMonsterOnlySuccessors(simulator, results, segment, maxSuccessors,
     if (!stats.successorSelectedByRole) stats.successorSelectedByRole = {};
     capped.forEach((candidate) => {
       const role = candidate._selectedRole || "unknown";
-      stats.successorSelectedByRole[role] = Number(stats.successorSelectedByRole[role] || 0) + 1;
+      stats.successorSelectedByRole[role] =
+        Number(stats.successorSelectedByRole[role] || 0) + 1;
     });
   }
   return capped;
 }
 
-function tryReachAndBattle(simulator, state, target, segment, config, oracleCache, stats) {
+function tryReachAndBattle(
+  simulator,
+  state,
+  target,
+  segment,
+  config,
+  oracleCache,
+  stats,
+) {
   // First navigate to the target floor (with optional memoization)
   let floorResults;
   if (oracleCache && oracleCache.has(target.floorId)) {
     floorResults = oracleCache.get(target.floorId);
   } else {
     const floorStartedAt = Date.now();
-    floorResults = oracleFindFloorStates(simulator, state, target.floorId, segment, config);
-    if (stats) stats.oracleFloorSearchMs = Number(stats.oracleFloorSearchMs || 0) + (Date.now() - floorStartedAt);
+    floorResults = oracleFindFloorStates(
+      simulator,
+      state,
+      target.floorId,
+      segment,
+      config,
+    );
+    if (stats)
+      stats.oracleFloorSearchMs =
+        Number(stats.oracleFloorSearchMs || 0) + (Date.now() - floorStartedAt);
     if (oracleCache) oracleCache.set(target.floorId, floorResults);
   }
-  if (!Array.isArray(floorResults) || floorResults.length === 0) return { ok: false, reason: "unreachable-floor" };
+  if (!Array.isArray(floorResults) || floorResults.length === 0)
+    return { ok: false, reason: "unreachable-floor" };
   if (stats) {
-    stats.floorEntriesReturned = Number(stats.floorEntriesReturned || 0) + floorResults.length;
-    stats.maxFloorEntriesReturned = Math.max(Number(stats.maxFloorEntriesReturned || 0), floorResults.length);
+    stats.floorEntriesReturned =
+      Number(stats.floorEntriesReturned || 0) + floorResults.length;
+    stats.maxFloorEntriesReturned = Math.max(
+      Number(stats.maxFloorEntriesReturned || 0),
+      floorResults.length,
+    );
   }
   const maxSuccessors = number((config || {}).maxSuccessorsPerTarget, 4);
 
@@ -922,42 +1323,68 @@ function tryReachAndBattle(simulator, state, target, segment, config, oracleCach
     // Use walk reachability to find the battle action from any reachable position
     const reachabilityStartedAt = Date.now();
     const reachability = simulator.getWalkReachability(closed);
-    if (stats) stats.oracleBattleReachabilityMs = Number(stats.oracleBattleReachabilityMs || 0) + (Date.now() - reachabilityStartedAt);
+    if (stats)
+      stats.oracleBattleReachabilityMs =
+        Number(stats.oracleBattleReachabilityMs || 0) +
+        (Date.now() - reachabilityStartedAt);
     const visited = reachability.visited || {};
     if (stats) {
       const visitedCount = Object.keys(visited).length;
-      stats.reachabilityNodes = Number(stats.reachabilityNodes || 0) + visitedCount;
-      stats.maxReachabilityNodes = Math.max(Number(stats.maxReachabilityNodes || 0), visitedCount);
+      stats.reachabilityNodes =
+        Number(stats.reachabilityNodes || 0) + visitedCount;
+      stats.maxReachabilityNodes = Math.max(
+        Number(stats.maxReachabilityNodes || 0),
+        visitedCount,
+      );
     }
 
     for (const node of Object.values(visited)) {
       const nodeState = node.state;
-      const primitive = (simulator.enumeratePrimitiveActions(nodeState).actions || []);
-      const battleAction = primitive.find((action) =>
-        action.kind === "battle" &&
-        action.summary === target.summary
+      const primitive =
+        simulator.enumeratePrimitiveActions(nodeState).actions || [];
+      const battleAction = primitive.find(
+        (action) =>
+          action.kind === "battle" && action.summary === target.summary,
       );
       if (!battleAction) continue;
 
       try {
-        const postState = simulator.applyAction(nodeState, battleAction, { storeRoute: false });
+        const postState = simulator.applyAction(nodeState, battleAction, {
+          storeRoute: false,
+        });
         // Build routePatch: travel actions + battle action (no walk pseudo action)
         const routePatch = travelActions.concat(battleAction);
-        results.push({ postState, battleAction, routePatch, preHp: nodeState.hero ? nodeState.hero.hp : 0 });
+        results.push({
+          postState,
+          battleAction,
+          routePatch,
+          preHp: nodeState.hero ? nodeState.hero.hp : 0,
+        });
       } catch (error) {
         continue;
       }
     }
   }
 
-  if (results.length === 0) return { ok: false, reason: "battle-not-reachable" };
+  if (results.length === 0)
+    return { ok: false, reason: "battle-not-reachable" };
   if (stats) {
-    stats.successorCandidatesBeforeCap = Number(stats.successorCandidatesBeforeCap || 0) + results.length;
+    stats.successorCandidatesBeforeCap =
+      Number(stats.successorCandidatesBeforeCap || 0) + results.length;
   }
-  const cappedResults = selectMonsterOnlySuccessors(simulator, results, segment, maxSuccessors, stats);
+  const cappedResults = selectMonsterOnlySuccessors(
+    simulator,
+    results,
+    segment,
+    maxSuccessors,
+    stats,
+  );
   if (stats) {
-    stats.successorCandidatesAfterCap = Number(stats.successorCandidatesAfterCap || 0) + cappedResults.length;
-    stats.successorCapDrops = Number(stats.successorCapDrops || 0) + Math.max(0, results.length - cappedResults.length);
+    stats.successorCandidatesAfterCap =
+      Number(stats.successorCandidatesAfterCap || 0) + cappedResults.length;
+    stats.successorCapDrops =
+      Number(stats.successorCapDrops || 0) +
+      Math.max(0, results.length - cappedResults.length);
   }
   return { ok: true, results: cappedResults };
 }
@@ -965,7 +1392,9 @@ function tryReachAndBattle(simulator, state, target, segment, config, oracleCach
 function scoreMonsterTarget(simulator, target, state, segment) {
   const threshold = (() => {
     try {
-      return estimateBattleSurvivability(simulator, state, target, { skipMinHp: true });
+      return estimateBattleSurvivability(simulator, state, target, {
+        skipMinHp: true,
+      });
     } catch (error) {
       return null;
     }
@@ -973,18 +1402,33 @@ function scoreMonsterTarget(simulator, target, state, segment) {
   // Prefer current floor targets (reachable without portal)
   const currentFloor = state.floorId === target.floorId ? 10000 : 0;
   const reachableNow = target.reachableNow ? 1000000 : 0;
-  const damage = threshold && threshold.supported ? number(threshold.currentDamage, 0) : 0;
+  const damage =
+    threshold && threshold.supported ? number(threshold.currentDamage, 0) : 0;
   const hp = number(((state || {}).hero || {}).hp, 0);
-  const survivable = threshold && threshold.supported && hp > damage ? 50000 : 0;
-  const lowDamage = threshold && threshold.supported ? Math.max(0, hp - damage) : 0;
+  const survivable =
+    threshold && threshold.supported && hp > damage ? 50000 : 0;
+  const lowDamage =
+    threshold && threshold.supported ? Math.max(0, hp - damage) : 0;
   const goal = (segment || {}).goal || {};
-  const goalTarget = parseTileKeyParts(parseActionTileKey(goal.actionSurvivable && goal.actionSurvivable.summary));
-  const distanceToGoalTarget = goalTarget && target.floorId === goalTarget.floorId
-    ? 1000 - Math.abs(target.x - goalTarget.x) - Math.abs(target.y - goalTarget.y)
-    : 0;
+  const goalTarget = parseTileKeyParts(
+    parseActionTileKey(goal.actionSurvivable && goal.actionSurvivable.summary),
+  );
+  const distanceToGoalTarget =
+    goalTarget && target.floorId === goalTarget.floorId
+      ? 1000 -
+        Math.abs(target.x - goalTarget.x) -
+        Math.abs(target.y - goalTarget.y)
+      : 0;
   // Prefer enemies on higher floors (closer to goal)
   const floorScore = getFloorOrder(target.floorId) * 10;
-  return reachableNow + survivable + currentFloor + lowDamage + distanceToGoalTarget + floorScore;
+  return (
+    reachableNow +
+    survivable +
+    currentFloor +
+    lowDamage +
+    distanceToGoalTarget +
+    floorScore
+  );
 }
 
 function buildMonsterOnlyActionProvider(simulator, segment, config, stats) {
@@ -994,18 +1438,22 @@ function buildMonsterOnlyActionProvider(simulator, segment, config, stats) {
 
   return (unusedSimulator, state) => {
     const project = simulator.project;
-    const allowedFloors = policy.allowedFloors || Object.keys(project.floorsById || {});
+    const allowedFloors =
+      policy.allowedFloors || Object.keys(project.floorsById || {});
     const reachableBattleSummaries = new Set();
     try {
       (simulator.enumeratePrimitiveActions(state).actions || [])
         .filter((action) => action.kind === "battle" && action.summary)
         .forEach((action) => reachableBattleSummaries.add(action.summary));
-    } catch (error) { /* ignore */ }
+    } catch (error) {
+      /* ignore */
+    }
     const targets = [];
     for (const floorId of allowedFloors) {
       const floor = project.floorsById[floorId];
       if (!floor) continue;
-      const height = floor.height || (Array.isArray(floor.map) ? floor.map.length : 0);
+      const height =
+        floor.height || (Array.isArray(floor.map) ? floor.map.length : 0);
       const width = floor.width || 0;
       for (let y = 0; y < height; y += 1) {
         for (let x = 0; x < width; x += 1) {
@@ -1014,31 +1462,52 @@ function buildMonsterOnlyActionProvider(simulator, segment, config, stats) {
           const enemyId = tile.id;
           if (!enemyId) continue;
           const preservedKey = `${floorId}:${x},${y}`;
-          const isProtected = (goal.presentTiles || []).some((p) =>
-            `${p.floorId}:${p.x},${p.y}` === preservedKey
+          const isProtected = (goal.presentTiles || []).some(
+            (p) => `${p.floorId}:${p.x},${p.y}` === preservedKey,
           );
           if (isProtected) continue;
           const summary = `battle:${enemyId}@${floorId}:${x},${y}`;
           targets.push({
             kind: "battle",
             summary,
-            floorId, x, y, enemyId,
+            floorId,
+            x,
+            y,
+            enemyId,
             reachableNow: reachableBattleSummaries.has(summary),
             monsterTarget: true,
           });
         }
       }
     }
-    targets.sort((a, b) => scoreMonsterTarget(simulator, b, state, segment) - scoreMonsterTarget(simulator, a, state, segment));
+    targets.sort(
+      (a, b) =>
+        scoreMonsterTarget(simulator, b, state, segment) -
+        scoreMonsterTarget(simulator, a, state, segment),
+    );
     const cappedTargets = targets.slice(0, maxTargets);
     if (stats) {
-      stats.targetsGenerated = Number(stats.targetsGenerated || 0) + targets.length;
-      stats.targetsAfterCap = Number(stats.targetsAfterCap || 0) + cappedTargets.length;
-      stats.reachableTargetsGenerated = Number(stats.reachableTargetsGenerated || 0) + targets.filter((target) => target.reachableNow).length;
-      stats.reachableTargetsAfterCap = Number(stats.reachableTargetsAfterCap || 0) + cappedTargets.filter((target) => target.reachableNow).length;
-      stats.targetCapDrops = Number(stats.targetCapDrops || 0) + Math.max(0, targets.length - cappedTargets.length);
-      stats.maxTargetsGeneratedForState = Math.max(Number(stats.maxTargetsGeneratedForState || 0), targets.length);
-      stats.maxTargetsAfterCapForState = Math.max(Number(stats.maxTargetsAfterCapForState || 0), cappedTargets.length);
+      stats.targetsGenerated =
+        Number(stats.targetsGenerated || 0) + targets.length;
+      stats.targetsAfterCap =
+        Number(stats.targetsAfterCap || 0) + cappedTargets.length;
+      stats.reachableTargetsGenerated =
+        Number(stats.reachableTargetsGenerated || 0) +
+        targets.filter((target) => target.reachableNow).length;
+      stats.reachableTargetsAfterCap =
+        Number(stats.reachableTargetsAfterCap || 0) +
+        cappedTargets.filter((target) => target.reachableNow).length;
+      stats.targetCapDrops =
+        Number(stats.targetCapDrops || 0) +
+        Math.max(0, targets.length - cappedTargets.length);
+      stats.maxTargetsGeneratedForState = Math.max(
+        Number(stats.maxTargetsGeneratedForState || 0),
+        targets.length,
+      );
+      stats.maxTargetsAfterCapForState = Math.max(
+        Number(stats.maxTargetsAfterCapForState || 0),
+        cappedTargets.length,
+      );
       if (targets.length > maxTargets) stats.statesWithTargetCap += 1;
     }
     return cappedTargets;
@@ -1052,25 +1521,29 @@ function routeLength(state) {
 function goalCandidateScore(state) {
   const hero = summarizeHero(state);
   const effective = summarizeEffectiveHero(state);
-  return hero.hp +
+  return (
+    hero.hp +
     effective.atk * 100000 +
     effective.def * 80000 +
     effective.mdef * 8000 +
     hero.exp * 1000 -
-    routeLength(state) * 10;
+    routeLength(state) * 10
+  );
 }
 
 function candidateOutcomeScore(candidate) {
   const state = candidate && candidate.state ? candidate.state : candidate;
   const hero = summarizeHero(state);
   const effective = summarizeEffectiveHero(state);
-  return hero.hp * 1000000 +
+  return (
+    hero.hp * 1000000 +
     hero.lv * 100000000000 +
     hero.exp * 10000000 +
     effective.atk * 10000 +
     effective.def * 8000 +
     effective.mdef * 1000 -
-    routeLength(state);
+    routeLength(state)
+  );
 }
 
 function compareCandidateStates(left, right) {
@@ -1081,7 +1554,8 @@ function compareCandidateStates(left, right) {
   const hpDiff = rightHero.hp - leftHero.hp;
   if (hpDiff !== 0) return hpDiff;
   for (const field of ["atk", "def", "mdef"]) {
-    const diff = effectiveHeroValue(right, field) - effectiveHeroValue(left, field);
+    const diff =
+      effectiveHeroValue(right, field) - effectiveHeroValue(left, field);
     if (diff !== 0) return diff;
   }
   if (rightHero.exp !== leftHero.exp) return rightHero.exp - leftHero.exp;
@@ -1094,15 +1568,19 @@ function addTag(record, tag) {
 
 function buildTraceSnapshot(project, state) {
   if (!state) return null;
-  const snapshot = buildSolverSnapshot(project, state, { floorIds: [state.floorId].filter(Boolean) });
+  const snapshot = buildSolverSnapshot(project, state, {
+    floorIds: [state.floorId].filter(Boolean),
+  });
   snapshot.partial = true;
   return snapshot;
 }
 
 function compactTraceEntry(project, entry) {
   if (!entry || !entry.actionEntry) return null;
-  const preSnapshot = entry.preSnapshot || buildTraceSnapshot(project, entry.preState);
-  const postSnapshot = entry.postSnapshot || buildTraceSnapshot(project, entry.postState);
+  const preSnapshot =
+    entry.preSnapshot || buildTraceSnapshot(project, entry.preState);
+  const postSnapshot =
+    entry.postSnapshot || buildTraceSnapshot(project, entry.postState);
   return {
     actionEntry: entry.actionEntry,
     preSnapshot,
@@ -1113,31 +1591,49 @@ function compactTraceEntry(project, entry) {
 }
 
 function selectGoalSkyline(simulator, states, segment, options) {
-  const limit = Math.max(1, number((options || {}).candidateLimit || (segment.dp || {}).goalSkylineLimit, 8));
-  const keyMode = ((segment.dp || {}).keyMode || "region");
+  const limit = Math.max(
+    1,
+    number(
+      (options || {}).candidateLimit || (segment.dp || {}).goalSkylineLimit,
+      8,
+    ),
+  );
+  const keyMode = (segment.dp || {}).keyMode || "region";
   const byKey = new Map();
   (states || []).filter(Boolean).forEach((state) => {
     const key = buildDpStateKey(simulator, state, { dpKeyMode: keyMode });
     const existing = byKey.get(key);
-    if (!existing || compareCandidateStates(state, existing) < 0) byKey.set(key, state);
+    if (!existing || compareCandidateStates(state, existing) < 0)
+      byKey.set(key, state);
   });
   const goal = (segment || {}).goal || {};
-  const actionSurvivableTarget = goal.actionSurvivable && goal.actionSurvivable.summary
-    ? goal.actionSurvivable.summary
-    : null;
+  const actionSurvivableTarget =
+    goal.actionSurvivable && goal.actionSurvivable.summary
+      ? goal.actionSurvivable.summary
+      : null;
   const records = Array.from(byKey.values()).map((state, index) => {
     const trace = Array.isArray(state.routeTrace)
-      ? state.routeTrace.map((entry) => compactTraceEntry(simulator.project, entry)).filter(Boolean)
+      ? state.routeTrace
+          .map((entry) => compactTraceEntry(simulator.project, entry))
+          .filter(Boolean)
       : [];
-    if (Object.prototype.hasOwnProperty.call(state, "routeTrace")) delete state.routeTrace;
+    if (Object.prototype.hasOwnProperty.call(state, "routeTrace"))
+      delete state.routeTrace;
     let targetMargin = null;
     if (actionSurvivableTarget) {
       try {
-        const threshold = estimateBattleSurvivability(simulator, state, actionSurvivableTarget, { skipMinHp: true });
+        const threshold = estimateBattleSurvivability(
+          simulator,
+          state,
+          actionSurvivableTarget,
+          { skipMinHp: true },
+        );
         if (threshold && threshold.supported) {
           targetMargin = {
             survivable: threshold.survivable,
-            margin: number(threshold.currentHp, 0) - number(threshold.currentDamage, Number.POSITIVE_INFINITY),
+            margin:
+              number(threshold.currentHp, 0) -
+              number(threshold.currentDamage, Number.POSITIVE_INFINITY),
             special: threshold.special,
             riskTags: threshold.riskTags,
           };
@@ -1159,11 +1655,24 @@ function selectGoalSkyline(simulator, states, segment, options) {
     };
   });
   const rolePickers = [
-    ["highest-hp", (left, right) => summarizeHero(right.state).hp - summarizeHero(left.state).hp],
+    [
+      "highest-hp",
+      (left, right) =>
+        summarizeHero(right.state).hp - summarizeHero(left.state).hp,
+    ],
     ["best-combat", (left, right) => right.score - left.score],
-    ["highest-atk", (left, right) => right.effectiveHero.atk - left.effectiveHero.atk],
-    ["highest-def", (left, right) => right.effectiveHero.def - left.effectiveHero.def],
-    ["highest-mdef", (left, right) => right.effectiveHero.mdef - left.effectiveHero.mdef],
+    [
+      "highest-atk",
+      (left, right) => right.effectiveHero.atk - left.effectiveHero.atk,
+    ],
+    [
+      "highest-def",
+      (left, right) => right.effectiveHero.def - left.effectiveHero.def,
+    ],
+    [
+      "highest-mdef",
+      (left, right) => right.effectiveHero.mdef - left.effectiveHero.mdef,
+    ],
     ["highest-exp", (left, right) => right.hero.exp - left.hero.exp],
     ["shortest", (left, right) => left.route.length - right.route.length],
   ];
@@ -1171,16 +1680,22 @@ function selectGoalSkyline(simulator, states, segment, options) {
     rolePickers.push([
       "best-target-margin",
       (left, right) => {
-        const leftMargin = left.targetMargin ? left.targetMargin.margin : -Infinity;
-        const rightMargin = right.targetMargin ? right.targetMargin.margin : -Infinity;
+        const leftMargin = left.targetMargin
+          ? left.targetMargin.margin
+          : -Infinity;
+        const rightMargin = right.targetMargin
+          ? right.targetMargin.margin
+          : -Infinity;
         return rightMargin - leftMargin;
       },
     ]);
     rolePickers.push([
       "target-survivable",
       (left, right) => {
-        const leftOk = left.targetMargin && left.targetMargin.survivable ? 1 : 0;
-        const rightOk = right.targetMargin && right.targetMargin.survivable ? 1 : 0;
+        const leftOk =
+          left.targetMargin && left.targetMargin.survivable ? 1 : 0;
+        const rightOk =
+          right.targetMargin && right.targetMargin.survivable ? 1 : 0;
         return rightOk - leftOk;
       },
     ]);
@@ -1195,7 +1710,8 @@ function selectGoalSkyline(simulator, states, segment, options) {
     return candidateOutcomeScore(right) - candidateOutcomeScore(left);
   };
   const keepCandidate = (record) => {
-    if (!record || selectedIds.has(record.id) || selected.length >= limit) return;
+    if (!record || selectedIds.has(record.id) || selected.length >= limit)
+      return;
     selectedIds.add(record.id);
     selected.push(record);
   };
@@ -1204,52 +1720,84 @@ function selectGoalSkyline(simulator, states, segment, options) {
     if (winner) addTag(winner, tag);
   });
   if ((options || {}).preserveSkylineRoles === true) {
-    rolePickers.forEach(([, compare]) => keepCandidate(records.slice().sort(compare)[0]));
+    rolePickers.forEach(([, compare]) =>
+      keepCandidate(records.slice().sort(compare)[0]),
+    );
   }
-  records
-    .sort(compareGoalRecords)
-    .forEach(keepCandidate);
+  records.sort(compareGoalRecords).forEach(keepCandidate);
   return selected.slice(0, limit).sort(compareGoalRecords);
 }
 
 function normalizeCandidateRecord(candidate, index, fallbackSegmentId) {
   const state = candidate && candidate.state;
   return {
-    id: candidate && candidate.id ? candidate.id : `${fallbackSegmentId || "segment"}#${index}`,
+    id:
+      candidate && candidate.id
+        ? candidate.id
+        : `${fallbackSegmentId || "segment"}#${index}`,
     state,
     route: Array.isArray(candidate && candidate.route)
       ? candidate.route.slice()
-      : (Array.isArray(state && state.route) ? state.route.slice() : []),
-    trace: Array.isArray(candidate && candidate.trace) ? candidate.trace.slice() : [],
+      : Array.isArray(state && state.route)
+        ? state.route.slice()
+        : [],
+    trace: Array.isArray(candidate && candidate.trace)
+      ? candidate.trace.slice()
+      : [],
     hero: (candidate && candidate.hero) || summarizeHero(state),
-    effectiveHero: (candidate && candidate.effectiveHero) || summarizeEffectiveHero(state),
+    effectiveHero:
+      (candidate && candidate.effectiveHero) || summarizeEffectiveHero(state),
     score: number(candidate && candidate.score, goalCandidateScore(state)),
-    tags: Array.isArray(candidate && candidate.tags) ? candidate.tags.slice() : [],
+    tags: Array.isArray(candidate && candidate.tags)
+      ? candidate.tags.slice()
+      : [],
   };
 }
 
 function selectCandidateSkyline(simulator, candidates, segment, options) {
-  const limit = Math.max(1, number((options || {}).candidateLimit || (segment.dp || {}).goalSkylineLimit, 8));
-  const keyMode = ((segment.dp || {}).keyMode || "region");
+  const limit = Math.max(
+    1,
+    number(
+      (options || {}).candidateLimit || (segment.dp || {}).goalSkylineLimit,
+      8,
+    ),
+  );
+  const keyMode = (segment.dp || {}).keyMode || "region";
   const byKey = new Map();
-  (candidates || []).filter((candidate) => candidate && candidate.state).forEach((candidate) => {
-    const key = buildDpStateKey(simulator, candidate.state, { dpKeyMode: keyMode });
-    const existing = byKey.get(key);
-    if (!existing || compareCandidateStates(candidate.state, existing.state) < 0) byKey.set(key, candidate);
-  });
+  (candidates || [])
+    .filter((candidate) => candidate && candidate.state)
+    .forEach((candidate) => {
+      const key = buildDpStateKey(simulator, candidate.state, {
+        dpKeyMode: keyMode,
+      });
+      const existing = byKey.get(key);
+      if (
+        !existing ||
+        compareCandidateStates(candidate.state, existing.state) < 0
+      )
+        byKey.set(key, candidate);
+    });
   const goal = (segment || {}).goal || {};
-  const actionSurvivableTarget = goal.actionSurvivable && goal.actionSurvivable.summary
-    ? goal.actionSurvivable.summary
-    : null;
+  const actionSurvivableTarget =
+    goal.actionSurvivable && goal.actionSurvivable.summary
+      ? goal.actionSurvivable.summary
+      : null;
   const records = Array.from(byKey.values()).map((candidate, index) => {
     const record = normalizeCandidateRecord(candidate, index, segment.id);
     if (actionSurvivableTarget) {
       try {
-        const threshold = estimateBattleSurvivability(simulator, record.state, actionSurvivableTarget, { skipMinHp: true });
+        const threshold = estimateBattleSurvivability(
+          simulator,
+          record.state,
+          actionSurvivableTarget,
+          { skipMinHp: true },
+        );
         if (threshold && threshold.supported) {
           record.targetMargin = {
             survivable: threshold.survivable,
-            margin: number(threshold.currentHp, 0) - number(threshold.currentDamage, Number.POSITIVE_INFINITY),
+            margin:
+              number(threshold.currentHp, 0) -
+              number(threshold.currentDamage, Number.POSITIVE_INFINITY),
           };
         }
       } catch (error) {
@@ -1266,11 +1814,24 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
     return candidateOutcomeScore(right) - candidateOutcomeScore(left);
   };
   const rolePickers = [
-    ["highest-hp", (left, right) => summarizeHero(right.state).hp - summarizeHero(left.state).hp],
+    [
+      "highest-hp",
+      (left, right) =>
+        summarizeHero(right.state).hp - summarizeHero(left.state).hp,
+    ],
     ["best-combat", (left, right) => right.score - left.score],
-    ["highest-atk", (left, right) => right.effectiveHero.atk - left.effectiveHero.atk],
-    ["highest-def", (left, right) => right.effectiveHero.def - left.effectiveHero.def],
-    ["highest-mdef", (left, right) => right.effectiveHero.mdef - left.effectiveHero.mdef],
+    [
+      "highest-atk",
+      (left, right) => right.effectiveHero.atk - left.effectiveHero.atk,
+    ],
+    [
+      "highest-def",
+      (left, right) => right.effectiveHero.def - left.effectiveHero.def,
+    ],
+    [
+      "highest-mdef",
+      (left, right) => right.effectiveHero.mdef - left.effectiveHero.mdef,
+    ],
     ["highest-exp", (left, right) => right.hero.exp - left.hero.exp],
     ["shortest", (left, right) => left.route.length - right.route.length],
   ];
@@ -1278,16 +1839,22 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
     rolePickers.push([
       "best-target-margin",
       (left, right) => {
-        const leftMargin = left.targetMargin ? left.targetMargin.margin : -Infinity;
-        const rightMargin = right.targetMargin ? right.targetMargin.margin : -Infinity;
+        const leftMargin = left.targetMargin
+          ? left.targetMargin.margin
+          : -Infinity;
+        const rightMargin = right.targetMargin
+          ? right.targetMargin.margin
+          : -Infinity;
         return rightMargin - leftMargin;
       },
     ]);
     rolePickers.push([
       "target-survivable",
       (left, right) => {
-        const leftOk = left.targetMargin && left.targetMargin.survivable ? 1 : 0;
-        const rightOk = right.targetMargin && right.targetMargin.survivable ? 1 : 0;
+        const leftOk =
+          left.targetMargin && left.targetMargin.survivable ? 1 : 0;
+        const rightOk =
+          right.targetMargin && right.targetMargin.survivable ? 1 : 0;
         return rightOk - leftOk;
       },
     ]);
@@ -1295,7 +1862,8 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
   const selected = [];
   const selectedIds = new Set();
   const keepCandidate = (record) => {
-    if (!record || selectedIds.has(record.id) || selected.length >= limit) return;
+    if (!record || selectedIds.has(record.id) || selected.length >= limit)
+      return;
     selectedIds.add(record.id);
     selected.push(record);
   };
@@ -1304,7 +1872,9 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
     if (winner) addTag(winner, tag);
   });
   if ((options || {}).preserveSkylineRoles === true) {
-    rolePickers.forEach(([, compare]) => keepCandidate(records.slice().sort(compare)[0]));
+    rolePickers.forEach(([, compare]) =>
+      keepCandidate(records.slice().sort(compare)[0]),
+    );
   }
   records.sort(compareGoalRecords).forEach(keepCandidate);
   return selected.slice(0, limit).sort(compareGoalRecords);
@@ -1321,7 +1891,9 @@ function compactState(state) {
 }
 
 function hasMissingField(missing, predicate) {
-  return (missing || []).some((entry) => predicate(String((entry || {}).field || ""), entry || {}));
+  return (missing || []).some((entry) =>
+    predicate(String((entry || {}).field || ""), entry || {}),
+  );
 }
 
 function classifySegmentFailure(missing, segment) {
@@ -1332,9 +1904,11 @@ function classifySegmentFailure(missing, segment) {
   const addClass = (failureClass, reason, tags, recommendation) => {
     classes.push({ failureClass, reason, recommendation });
     (tags || []).forEach((tag) => {
-      if (!preferredCandidateTags.includes(tag)) preferredCandidateTags.push(tag);
+      if (!preferredCandidateTags.includes(tag))
+        preferredCandidateTags.push(tag);
     });
-    if (recommendation && !recommendedNext.includes(recommendation)) recommendedNext.push(recommendation);
+    if (recommendation && !recommendedNext.includes(recommendation))
+      recommendedNext.push(recommendation);
   };
 
   if (hasMissingField(missingFields, (field) => field === "presentTiles")) {
@@ -1342,54 +1916,80 @@ function classifySegmentFailure(missing, segment) {
       "present-tile-overconstrained",
       "hard presentTiles constraint was violated before this milestone goal",
       ["best-combat", "shortest"],
-      "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource"
+      "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource",
     );
   }
 
-  if (hasMissingField(missingFields, (field, entry) => field === "actionSurvivable" && entry.actual === "missing-action")) {
+  if (
+    hasMissingField(
+      missingFields,
+      (field, entry) =>
+        field === "actionSurvivable" && entry.actual === "missing-action",
+    )
+  ) {
     addClass(
       "target-action-unreachable",
       "required target action is absent from the current primitive action set",
       ["shortest", "best-combat"],
-      "check allowedFloors, allowChangeFloors, presentTiles, and local action scope for this segment"
+      "check allowedFloors, allowChangeFloors, presentTiles, and local action scope for this segment",
     );
   }
 
-  if (hasMissingField(missingFields, (field) => field === "hero.atk" || field === "effectiveHero.atk")) {
+  if (
+    hasMissingField(
+      missingFields,
+      (field) => field === "hero.atk" || field === "effectiveHero.atk",
+    )
+  ) {
     addClass(
       "atk-deficit",
       "attack threshold is not met",
       ["highest-atk", "best-combat"],
-      "backtrack to the previous milestone and try highest-atk or best-combat candidates"
+      "backtrack to the previous milestone and try highest-atk or best-combat candidates",
     );
   }
 
-  if (hasMissingField(missingFields, (field) => field === "hero.def" || field === "effectiveHero.def")) {
+  if (
+    hasMissingField(
+      missingFields,
+      (field) => field === "hero.def" || field === "effectiveHero.def",
+    )
+  ) {
     addClass(
       "def-deficit",
       "defense threshold is not met",
       ["highest-def", "best-combat"],
-      "backtrack to the previous milestone and try highest-def or best-combat candidates"
+      "backtrack to the previous milestone and try highest-def or best-combat candidates",
     );
   }
 
-  if (hasMissingField(missingFields, (field) => field === "hero.mdef" || field === "effectiveHero.mdef")) {
+  if (
+    hasMissingField(
+      missingFields,
+      (field) => field === "hero.mdef" || field === "effectiveHero.mdef",
+    )
+  ) {
     addClass(
       "mdef-deficit",
       "magic-defense threshold is not met",
       ["highest-mdef", "best-combat"],
-      "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+      "backtrack to the previous milestone and try highest-mdef or best-combat candidates",
     );
   }
 
-  if (hasMissingField(missingFields, (field, entry) =>
-    field === "actionSurvivable" && (entry.riskTags || []).includes("life-limit")
-  )) {
+  if (
+    hasMissingField(
+      missingFields,
+      (field, entry) =>
+        field === "actionSurvivable" &&
+        (entry.riskTags || []).includes("life-limit"),
+    )
+  ) {
     addClass(
       "life-limit-hp-deficit",
       "life-limit battle threshold is not survivable at current HP",
       ["highest-hp", "highest-def", "best-combat"],
-      "scan HP/def sustain resources before retrying the life-limit battle"
+      "scan HP/def sustain resources before retrying the life-limit battle",
     );
   }
 
@@ -1398,16 +1998,22 @@ function classifySegmentFailure(missing, segment) {
       "hp-deficit",
       "HP threshold is not met",
       ["highest-hp"],
-      "backtrack to the previous milestone and try highest-hp candidates"
+      "backtrack to the previous milestone and try highest-hp candidates",
     );
   }
 
-  if (hasMissingField(missingFields, (field, entry) => field === "actionSurvivable" && entry.actual !== "missing-action")) {
+  if (
+    hasMissingField(
+      missingFields,
+      (field, entry) =>
+        field === "actionSurvivable" && entry.actual !== "missing-action",
+    )
+  ) {
     addClass(
       "action-survivability-deficit",
       "required action exists but current HP cannot survive it",
       ["highest-hp", "best-combat", "highest-def", "highest-atk"],
-      "backtrack to the previous milestone and try higher-HP or stronger-combat candidates"
+      "backtrack to the previous milestone and try higher-HP or stronger-combat candidates",
     );
   }
 
@@ -1416,16 +2022,24 @@ function classifySegmentFailure(missing, segment) {
       "equipment-missing",
       "required equipment is not equipped",
       ["best-combat", "shortest"],
-      "check whether equip actions or the required item pickup are allowed in this segment"
+      "check whether equip actions or the required item pickup are allowed in this segment",
     );
   }
 
-  if (hasMissingField(missingFields, (field) => field === "tileRemoved" || field === "removedTiles" || field === "anyRemovedTiles")) {
+  if (
+    hasMissingField(
+      missingFields,
+      (field) =>
+        field === "tileRemoved" ||
+        field === "removedTiles" ||
+        field === "anyRemovedTiles",
+    )
+  ) {
     addClass(
       "target-tile-not-cleared",
       "required tile remains present at the best seen state",
       ["best-combat", "highest-atk"],
-      "retry this segment with a candidate that has stronger combat or verify the target tile is reachable under the action policy"
+      "retry this segment with a candidate that has stronger combat or verify the target tile is reachable under the action policy",
     );
   }
 
@@ -1434,7 +2048,7 @@ function classifySegmentFailure(missing, segment) {
       "floor-scope-mismatch",
       "best seen state did not reach the target floor",
       ["shortest", "best-combat"],
-      "check allowedFloors and allowChangeFloors for the segment"
+      "check allowedFloors and allowChangeFloors for the segment",
     );
   }
 
@@ -1443,7 +2057,7 @@ function classifySegmentFailure(missing, segment) {
       "budget-or-action-scope-exhausted",
       "no goal state was found under the current segment budget and action policy",
       ["best-combat", "highest-hp"],
-      "increase segment budget, widen action scope, or rerun the previous milestone with location key"
+      "increase segment budget, widen action scope, or rerun the previous milestone with location key",
     );
   }
 
@@ -1461,9 +2075,13 @@ function classifySegmentFailure(missing, segment) {
     "equipment-missing": 50,
     "budget-or-action-scope-exhausted": 10,
   };
-  const primary = classes.slice().sort((left, right) =>
-    number(failurePriority[right.failureClass], 0) - number(failurePriority[left.failureClass], 0)
-  )[0];
+  const primary = classes
+    .slice()
+    .sort(
+      (left, right) =>
+        number(failurePriority[right.failureClass], 0) -
+        number(failurePriority[left.failureClass], 0),
+    )[0];
   return {
     failureClass: primary.failureClass,
     failureReason: primary.reason,
@@ -1476,8 +2094,11 @@ function classifySegmentFailure(missing, segment) {
 }
 
 function summarizeSegmentFailure(project, segment, result, simulator) {
-  const best = (result && (result.bestProgressState || result.bestSeenState)) || null;
-  const missing = best ? missingGoalFields(project, simulator, best, segment) : [{ field: "state", expected: "reachable", actual: "none" }];
+  const best =
+    (result && (result.bestProgressState || result.bestSeenState)) || null;
+  const missing = best
+    ? missingGoalFields(project, simulator, best, segment)
+    : [{ field: "state", expected: "reachable", actual: "none" }];
   const classification = classifySegmentFailure(missing, segment);
   return {
     failedSegmentId: segment.id,
@@ -1490,10 +2111,22 @@ function summarizeSegmentFailure(project, segment, result, simulator) {
     recommendedRepair: classification.recommendedRepair,
     failurePropagation: classification,
     diagnostics: {
-      actionTrimmed: result && result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionTrimmed,
+      actionTrimmed:
+        result &&
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.actionTrimmed,
       frontierRemaining: result && result.frontierSize,
-      rejectedByHigherHp: result && result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.rejectedByHigherHp,
-      replacedLowerHp: result && result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.replacedLowerHp,
+      rejectedByHigherHp:
+        result &&
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.rejectedByHigherHp,
+      replacedLowerHp:
+        result &&
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.replacedLowerHp,
     },
     recommendedNext: classification.recommendedNext,
   };
@@ -1508,15 +2141,24 @@ function searchSegmentDP(simulator, startState, segment, options) {
   const maxExpansions = number(dpConfig.maxExpansions, 8000);
   const maxRuntimeMs = number(dpConfig.maxRuntimeMs, 15000);
   const maxActionsPerState = number(dpConfig.maxActionsPerState, 9999);
-  const prefixRoute = Array.isArray(config.prefixRoute) ? config.prefixRoute : (Array.isArray(startState.route) ? startState.route : []);
+  const prefixRoute = Array.isArray(config.prefixRoute)
+    ? config.prefixRoute
+    : Array.isArray(startState.route)
+      ? startState.route
+      : [];
   const captureTrace = config.captureTrace === true;
   const prefixTrace = captureTrace
-    ? (Array.isArray(config.prefixTrace) ? config.prefixTrace : (Array.isArray(startState.routeTrace) ? startState.routeTrace : []))
+    ? Array.isArray(config.prefixTrace)
+      ? config.prefixTrace
+      : Array.isArray(startState.routeTrace)
+        ? startState.routeTrace
+        : []
     : [];
   const seed = cloneStateWithoutRouteTrace(startState);
   seed.route = prefixRoute.slice();
   const goal = (segment || {}).goal || {};
-  const actionSurvivableTarget = goal.actionSurvivable && goal.actionSurvivable.summary;
+  const actionSurvivableTarget =
+    goal.actionSurvivable && goal.actionSurvivable.summary;
   let dominanceConfig = null;
   if (actionSurvivableTarget) {
     dominanceConfig = {
@@ -1527,31 +2169,61 @@ function searchSegmentDP(simulator, startState, segment, options) {
         let leftMargin = null;
         let rightMargin = null;
         try {
-          const leftThreshold = estimateBattleSurvivability(simulator, left, actionSurvivableTarget, { skipMinHp: true });
+          const leftThreshold = estimateBattleSurvivability(
+            simulator,
+            left,
+            actionSurvivableTarget,
+            { skipMinHp: true },
+          );
           if (leftThreshold && leftThreshold.supported) {
-            leftMargin = leftHp - number(leftThreshold.currentDamage, Number.POSITIVE_INFINITY);
+            leftMargin =
+              leftHp -
+              number(leftThreshold.currentDamage, Number.POSITIVE_INFINITY);
           }
-        } catch (error) { /* ignore */ }
+        } catch (error) {
+          /* ignore */
+        }
         try {
-          const rightThreshold = estimateBattleSurvivability(simulator, right, actionSurvivableTarget, { skipMinHp: true });
+          const rightThreshold = estimateBattleSurvivability(
+            simulator,
+            right,
+            actionSurvivableTarget,
+            { skipMinHp: true },
+          );
           if (rightThreshold && rightThreshold.supported) {
-            rightMargin = rightHp - number(rightThreshold.currentDamage, Number.POSITIVE_INFINITY);
+            rightMargin =
+              rightHp -
+              number(rightThreshold.currentDamage, Number.POSITIVE_INFINITY);
           }
-        } catch (error) { /* ignore */ }
-        if (leftMargin != null && rightMargin != null && leftMargin !== rightMargin) {
+        } catch (error) {
+          /* ignore */
+        }
+        if (
+          leftMargin != null &&
+          rightMargin != null &&
+          leftMargin !== rightMargin
+        ) {
           return leftMargin > rightMargin;
         }
         if (leftHp !== rightHp) return leftHp > rightHp;
         const leftDepth = getDecisionDepth(left);
         const rightDepth = getDecisionDepth(right);
         if (leftDepth !== rightDepth) return leftDepth < rightDepth;
-        const leftRoute = Array.isArray(left.route) ? left.route.length : leftDepth;
-        const rightRoute = Array.isArray(right.route) ? right.route.length : rightDepth;
+        const leftRoute = Array.isArray(left.route)
+          ? left.route.length
+          : leftDepth;
+        const rightRoute = Array.isArray(right.route)
+          ? right.route.length
+          : rightDepth;
         return leftRoute < rightRoute;
       },
     };
   }
-  const actionProviderMode = String(dpConfig.actionProviderMode || segment.actionPolicy && segment.actionPolicy.actionProviderMode || "");
+  const actionProviderMode = String(
+    dpConfig.actionProviderMode ||
+      (segment.actionPolicy && segment.actionPolicy.actionProviderMode) ||
+      "",
+  );
   let actionProvider;
   let actionApplier = null;
   let oracleDiagnostics = null;
@@ -1589,7 +2261,12 @@ function searchSegmentDP(simulator, startState, segment, options) {
       rejectedByReason: {},
     };
     oracleDiagnostics = oracleStats;
-    actionProvider = reachAndBattleOracle.buildMonsterOnlyActionProvider(simulator, segment, dpConfig, oracleStats);
+    actionProvider = reachAndBattleOracle.buildMonsterOnlyActionProvider(
+      simulator,
+      segment,
+      dpConfig,
+      oracleStats,
+    );
     actionApplier = (state, target) => {
       // Reset cache if state changed (new DP expansion)
       if (state !== oracleCacheState) {
@@ -1597,29 +2274,46 @@ function searchSegmentDP(simulator, startState, segment, options) {
         oracleCacheState = state;
       }
       const cached = oracleCache.has(target.floorId);
-      const result = reachAndBattleOracle.tryReachAndBattle(simulator, state, target, segment, dpConfig, oracleCache, oracleStats);
+      const result = reachAndBattleOracle.tryReachAndBattle(
+        simulator,
+        state,
+        target,
+        segment,
+        dpConfig,
+        oracleCache,
+        oracleStats,
+      );
       if (cached) oracleStats.floorCacheHits += 1;
       else oracleStats.floorSearches += 1;
-      const floorLookups = oracleStats.floorSearches + oracleStats.floorCacheHits;
-      oracleStats.oracleCacheHitRate = floorLookups > 0 ? oracleStats.floorCacheHits / floorLookups : 0;
+      const floorLookups =
+        oracleStats.floorSearches + oracleStats.floorCacheHits;
+      oracleStats.oracleCacheHitRate =
+        floorLookups > 0 ? oracleStats.floorCacheHits / floorLookups : 0;
       if (!result.ok) {
-        oracleStats.rejectedByReason[result.reason] = (oracleStats.rejectedByReason[result.reason] || 0) + 1;
+        oracleStats.rejectedByReason[result.reason] =
+          (oracleStats.rejectedByReason[result.reason] || 0) + 1;
         throw new Error(`monster-only applier failed: ${result.reason}`);
       }
       oracleStats.battleCandidates += result.results.length;
       // Attach compressed routePatch (summary strings only) to each postState
       const postStates = result.results.map((r) => {
         r.postState._routePatch = r.routePatch
-          .map((entry) => typeof entry === "string" ? entry : (entry && entry.summary))
+          .map((entry) =>
+            typeof entry === "string" ? entry : entry && entry.summary,
+          )
           .filter(Boolean);
         oracleStats.routePatchTotalLength += r.postState._routePatch.length;
-        oracleStats.routePatchMaxLength = Math.max(oracleStats.routePatchMaxLength, r.postState._routePatch.length);
+        oracleStats.routePatchMaxLength = Math.max(
+          oracleStats.routePatchMaxLength,
+          r.postState._routePatch.length,
+        );
         return r.postState;
       });
       oracleStats.successorsReturned += postStates.length;
-      oracleStats.routePatchAvgLength = oracleStats.successorsReturned > 0
-        ? oracleStats.routePatchTotalLength / oracleStats.successorsReturned
-        : 0;
+      oracleStats.routePatchAvgLength =
+        oracleStats.successorsReturned > 0
+          ? oracleStats.routePatchTotalLength / oracleStats.successorsReturned
+          : 0;
       return postStates;
     };
   } else {
@@ -1633,29 +2327,42 @@ function searchSegmentDP(simulator, startState, segment, options) {
     maxHeapMb: number(dpConfig.maxHeapMb, 0),
     dpKeyMode: dpConfig.keyMode || dpConfig.dpKeyMode || "region",
     dpAgendaMode: dpConfig.agendaMode || "best-first",
-    dpPriorityMode: (usesResourceTimingMode(segment) && (!dpConfig.priorityMode || dpConfig.priorityMode === "default") && !dpConfig.dpPriorityMode)
-      ? "resource-first"
-      : (dpConfig.priorityMode || dpConfig.dpPriorityMode || "default"),
+    dpPriorityMode:
+      usesResourceTimingMode(segment) &&
+      (!dpConfig.priorityMode || dpConfig.priorityMode === "default") &&
+      !dpConfig.dpPriorityMode
+        ? "resource-first"
+        : dpConfig.priorityMode || dpConfig.dpPriorityMode || "default",
     stopOnFirstGoal: dpConfig.stopOnFirstGoal === true,
     continueAfterGoal: dpConfig.continueAfterGoal === true,
     captureTrace,
     initialRouteTracePrefix: prefixTrace,
     goalSkylineLimit: number(dpConfig.goalSkylineLimit, 8),
+    dpSkylineMax: number(dpConfig.dpSkylineMax, 1),
     dominanceConfig,
     actionProvider,
     actionApplier,
-    goalPredicate: buildSegmentGoalPredicate(simulator.project, segment, simulator),
+    goalPredicate: buildSegmentGoalPredicate(
+      simulator.project,
+      segment,
+      simulator,
+    ),
   });
   const baseDpDiagnostics = (result.diagnostics && result.diagnostics.dp) || {};
-  const expansionBudgetExhausted = Number(result.expansions || 0) >= maxExpansions &&
+  const expansionBudgetExhausted =
+    Number(result.expansions || 0) >= maxExpansions &&
     Number(result.frontierSize || 0) > 0 &&
     !baseDpDiagnostics.stoppedReason;
-  const goalStates = Array.isArray(result.goalSkylineStates) && result.goalSkylineStates.length > 0
-    ? result.goalSkylineStates
-    : [result.bestGoalState || result.goalState].filter(Boolean);
+  const goalStates =
+    Array.isArray(result.goalSkylineStates) &&
+    result.goalSkylineStates.length > 0
+      ? result.goalSkylineStates
+      : [result.bestGoalState || result.goalState].filter(Boolean);
   const goalSkyline = selectGoalSkyline(simulator, goalStates, segment, {
     candidateLimit: config.candidateLimit || dpConfig.goalSkylineLimit,
-    preserveSkylineRoles: config.preserveSkylineRoles === true || dpConfig.preserveSkylineRoles === true,
+    preserveSkylineRoles:
+      config.preserveSkylineRoles === true ||
+      dpConfig.preserveSkylineRoles === true,
   });
   return {
     segmentId: segment.id,
@@ -1675,16 +2382,51 @@ function searchSegmentDP(simulator, startState, segment, options) {
         expansionBudgetExhausted,
         oracle: oracleDiagnostics || null,
       },
-      actionTrimmed: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionTrimmed,
-      rejectedByHigherHp: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.rejectedByHigherHp,
-      replacedLowerHp: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.replacedLowerHp,
-      actionsGeneratedByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsGeneratedByKind,
-      actionsExpandedByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsExpandedByKind,
-      actionsKeptByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsKeptByKind,
-      actionsDominatedByKind: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.actionsDominatedByKind,
-      uniqueBattleTargets: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.uniqueBattleTargets,
-      uniquePortalEntries: result.diagnostics && result.diagnostics.dp && result.diagnostics.dp.uniquePortalEntries,
-      failure: goalSkyline.length > 0 ? null : summarizeSegmentFailure(simulator.project, segment, result, simulator),
+      actionTrimmed:
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.actionTrimmed,
+      rejectedByHigherHp:
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.rejectedByHigherHp,
+      replacedLowerHp:
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.replacedLowerHp,
+      actionsGeneratedByKind:
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.actionsGeneratedByKind,
+      actionsExpandedByKind:
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.actionsExpandedByKind,
+      actionsKeptByKind:
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.actionsKeptByKind,
+      actionsDominatedByKind:
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.actionsDominatedByKind,
+      uniqueBattleTargets:
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.uniqueBattleTargets,
+      uniquePortalEntries:
+        result.diagnostics &&
+        result.diagnostics.dp &&
+        result.diagnostics.dp.uniquePortalEntries,
+      failure:
+        goalSkyline.length > 0
+          ? null
+          : summarizeSegmentFailure(
+              simulator.project,
+              segment,
+              result,
+              simulator,
+            ),
       goalSkyline: {
         primaryOutput: true,
         count: goalSkyline.length,
@@ -1704,8 +2446,12 @@ function searchSegmentDP(simulator, startState, segment, options) {
 
 function milestoneRange(milestoneSpec, fromMilestoneId, toMilestoneId) {
   const milestones = milestoneSpec.milestones || [];
-  const fromIndex = fromMilestoneId ? milestones.findIndex((milestone) => milestone.id === fromMilestoneId) : -1;
-  const toIndex = toMilestoneId ? milestones.findIndex((milestone) => milestone.id === toMilestoneId) : -1;
+  const fromIndex = fromMilestoneId
+    ? milestones.findIndex((milestone) => milestone.id === fromMilestoneId)
+    : -1;
+  const toIndex = toMilestoneId
+    ? milestones.findIndex((milestone) => milestone.id === toMilestoneId)
+    : -1;
   if (fromMilestoneId && fromIndex < 0) return [];
   if (toMilestoneId && toIndex < 0) return [];
   const startIndex = fromMilestoneId ? fromIndex + 1 : 0;
@@ -1716,18 +2462,30 @@ function milestoneRange(milestoneSpec, fromMilestoneId, toMilestoneId) {
 
 function milestoneRangeError(milestoneSpec, fromMilestoneId, toMilestoneId) {
   const milestones = milestoneSpec.milestones || [];
-  const fromIndex = fromMilestoneId ? milestones.findIndex((milestone) => milestone.id === fromMilestoneId) : -1;
-  const toIndex = toMilestoneId ? milestones.findIndex((milestone) => milestone.id === toMilestoneId) : -1;
-  if (fromMilestoneId && fromIndex < 0) return `Unknown fromMilestoneId: ${fromMilestoneId}`;
-  if (toMilestoneId && toIndex < 0) return `Unknown toMilestoneId: ${toMilestoneId}`;
+  const fromIndex = fromMilestoneId
+    ? milestones.findIndex((milestone) => milestone.id === fromMilestoneId)
+    : -1;
+  const toIndex = toMilestoneId
+    ? milestones.findIndex((milestone) => milestone.id === toMilestoneId)
+    : -1;
+  if (fromMilestoneId && fromIndex < 0)
+    return `Unknown fromMilestoneId: ${fromMilestoneId}`;
+  if (toMilestoneId && toIndex < 0)
+    return `Unknown toMilestoneId: ${toMilestoneId}`;
   const startIndex = fromMilestoneId ? fromIndex + 1 : 0;
   const endIndex = toMilestoneId ? toIndex : milestones.length - 1;
-  if (startIndex > endIndex) return `Invalid milestone range: ${fromMilestoneId || "start"} is not before ${toMilestoneId || "end"}`;
+  if (startIndex > endIndex)
+    return `Invalid milestone range: ${fromMilestoneId || "start"} is not before ${toMilestoneId || "end"}`;
   return null;
 }
 
 function mergeMilestoneFrontier(simulator, candidates, segment, options) {
-  const selected = selectCandidateSkyline(simulator, candidates || [], segment, options);
+  const selected = selectCandidateSkyline(
+    simulator,
+    candidates || [],
+    segment,
+    options,
+  );
   return selected.map((record, index) => ({
     id: `${segment.id}:candidate-${index}`,
     state: record.state,
@@ -1742,7 +2500,10 @@ function mergeMilestoneFrontier(simulator, candidates, segment, options) {
 
 function mergeFailurePropagation(attempts) {
   const failures = (attempts || [])
-    .map((attempt) => attempt && attempt.diagnostics && attempt.diagnostics.failure)
+    .map(
+      (attempt) =>
+        attempt && attempt.diagnostics && attempt.diagnostics.failure,
+    )
     .filter(Boolean);
   if (failures.length === 0) return null;
   const classCounts = {};
@@ -1752,14 +2513,17 @@ function mergeFailurePropagation(attempts) {
     const failureClass = failure.failureClass || "unknown";
     classCounts[failureClass] = Number(classCounts[failureClass] || 0) + 1;
     (failure.preferredCandidateTags || []).forEach((tag) => {
-      if (!preferredCandidateTags.includes(tag)) preferredCandidateTags.push(tag);
+      if (!preferredCandidateTags.includes(tag))
+        preferredCandidateTags.push(tag);
     });
     (failure.recommendedNext || []).forEach((recommendation) => {
-      if (!recommendedNext.includes(recommendation)) recommendedNext.push(recommendation);
+      if (!recommendedNext.includes(recommendation))
+        recommendedNext.push(recommendation);
     });
   });
-  const primaryFailureClass = Object.entries(classCounts)
-    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0][0];
+  const primaryFailureClass = Object.entries(classCounts).sort(
+    (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
+  )[0][0];
   return {
     primaryFailureClass,
     classCounts,
@@ -1774,7 +2538,8 @@ function numericOption(value, fallback) {
 }
 
 function cloneStateWithoutRouteTrace(state) {
-  if (!state || !Object.prototype.hasOwnProperty.call(state, "routeTrace")) return cloneState(state);
+  if (!state || !Object.prototype.hasOwnProperty.call(state, "routeTrace"))
+    return cloneState(state);
   const routeTrace = state.routeTrace;
   delete state.routeTrace;
   try {
@@ -1787,7 +2552,10 @@ function cloneStateWithoutRouteTrace(state) {
 function segmentCandidateLimit(segment, config, overrides) {
   return numericOption(
     overrides && overrides.candidateLimit,
-    numericOption(config && config.candidateLimit, numericOption(segment && segment.dp && segment.dp.goalSkylineLimit, 8))
+    numericOption(
+      config && config.candidateLimit,
+      numericOption(segment && segment.dp && segment.dp.goalSkylineLimit, 8),
+    ),
   );
 }
 
@@ -1796,23 +2564,61 @@ function segmentDpOverrides(segment, config, overrides) {
   const repair = (overrides && overrides.dpOverrides) || {};
   const generatedSegment = Boolean(segment && segment.generated);
   return {
-    ...(config && config.dpKeyMode && !generatedSegment ? { keyMode: config.dpKeyMode } : {}),
-    ...(config && config.maxExpansions && !generatedSegment ? { maxExpansions: config.maxExpansions } : {}),
-    ...(config && config.maxRuntimeMs && !generatedSegment ? { maxRuntimeMs: config.maxRuntimeMs } : {}),
-    ...(config && config.stopOnFirstGoal != null ? { stopOnFirstGoal: config.stopOnFirstGoal } : {}),
-    ...(repair.stopOnFirstGoal != null ? { stopOnFirstGoal: repair.stopOnFirstGoal } : {}),
-    ...(repair.maxExpansions != null ? { maxExpansions: repair.maxExpansions } : {}),
-    ...(repair.maxRuntimeMs != null ? { maxRuntimeMs: repair.maxRuntimeMs } : {}),
+    ...(config && config.dpKeyMode && !generatedSegment
+      ? { keyMode: config.dpKeyMode }
+      : {}),
+    ...(config && config.maxExpansions && !generatedSegment
+      ? { maxExpansions: config.maxExpansions }
+      : {}),
+    ...(config && config.maxRuntimeMs && !generatedSegment
+      ? { maxRuntimeMs: config.maxRuntimeMs }
+      : {}),
+    ...(config && config.stopOnFirstGoal != null
+      ? { stopOnFirstGoal: config.stopOnFirstGoal }
+      : {}),
+    ...(config && config.goalSkylineLimit != null && !generatedSegment
+      ? { goalSkylineLimit: config.goalSkylineLimit }
+      : {}),
+    ...(config && config.dpSkylineMax != null && !generatedSegment
+      ? { dpSkylineMax: config.dpSkylineMax }
+      : {}),
+    ...(repair.stopOnFirstGoal != null
+      ? { stopOnFirstGoal: repair.stopOnFirstGoal }
+      : {}),
+    ...(repair.maxExpansions != null
+      ? { maxExpansions: repair.maxExpansions }
+      : {}),
+    ...(repair.maxRuntimeMs != null
+      ? { maxRuntimeMs: repair.maxRuntimeMs }
+      : {}),
     ...(repair.keyMode != null ? { keyMode: repair.keyMode } : {}),
     ...(repair.dpKeyMode != null ? { dpKeyMode: repair.dpKeyMode } : {}),
-    ...(repair.priorityMode != null ? { priorityMode: repair.priorityMode } : {}),
-    ...(repair.dpPriorityMode != null ? { dpPriorityMode: repair.dpPriorityMode } : {}),
-    ...(repair.goalSkylineLimit != null ? { goalSkylineLimit: repair.goalSkylineLimit } : {}),
-    ...(repair.maxActionsPerState != null ? { maxActionsPerState: repair.maxActionsPerState } : {}),
+    ...(repair.priorityMode != null
+      ? { priorityMode: repair.priorityMode }
+      : {}),
+    ...(repair.dpPriorityMode != null
+      ? { dpPriorityMode: repair.dpPriorityMode }
+      : {}),
+    ...(repair.goalSkylineLimit != null
+      ? { goalSkylineLimit: repair.goalSkylineLimit }
+      : {}),
+    ...(repair.dpSkylineMax != null
+      ? { dpSkylineMax: repair.dpSkylineMax }
+      : {}),
+    ...(repair.maxActionsPerState != null
+      ? { maxActionsPerState: repair.maxActionsPerState }
+      : {}),
     ...(repair.agendaMode != null ? { agendaMode: repair.agendaMode } : {}),
-    ...(repair.dpAgendaMode != null ? { dpAgendaMode: repair.dpAgendaMode } : {}),
+    ...(repair.dpAgendaMode != null
+      ? { dpAgendaMode: repair.dpAgendaMode }
+      : {}),
     ...(repair.maxRuntimeMs == null && overrides && overrides.expandRuntime
-      ? { maxRuntimeMs: Math.max(numericOption(dpConfig.maxRuntimeMs, 0), numericOption(dpConfig.maxRuntimeMs, 0) * 2) }
+      ? {
+          maxRuntimeMs: Math.max(
+            numericOption(dpConfig.maxRuntimeMs, 0),
+            numericOption(dpConfig.maxRuntimeMs, 0) * 2,
+          ),
+        }
       : {}),
   };
 }
@@ -1838,11 +2644,24 @@ function buildMilestoneCheckpoint(segment, execution) {
   };
 }
 
-function runSegmentAgainstFrontier(simulator, segment, frontier, config, overrides) {
-  const candidateLimit = segmentCandidateLimit(segment, config || {}, overrides || {});
+function runSegmentAgainstFrontier(
+  simulator,
+  segment,
+  frontier,
+  config,
+  overrides,
+) {
+  const candidateLimit = segmentCandidateLimit(
+    segment,
+    config || {},
+    overrides || {},
+  );
   const startLimit = numericOption(
     overrides && overrides.startCandidateLimit,
-    numericOption(config && config.startCandidateLimit, (frontier || []).length || 1)
+    numericOption(
+      config && config.startCandidateLimit,
+      (frontier || []).length || 1,
+    ),
   );
   const inputFrontier = (frontier || []).slice(0, startLimit);
   const nextCandidates = [];
@@ -1851,21 +2670,32 @@ function runSegmentAgainstFrontier(simulator, segment, frontier, config, overrid
     const result = searchSegmentDP(simulator, candidate.state, segment, {
       candidateId: candidate.id,
       prefixRoute: candidate.route,
-      prefixTrace: config && config.captureTrace === true ? candidate.trace : [],
+      prefixTrace:
+        config && config.captureTrace === true ? candidate.trace : [],
       candidateLimit,
-      preserveSkylineRoles: Boolean((config || {}).qualityFloor || (overrides || {}).preserveSkylineRoles),
+      preserveSkylineRoles: Boolean(
+        (config || {}).preserveSkylineRoles ||
+        (config || {}).qualityFloor ||
+        (overrides || {}).preserveSkylineRoles,
+      ),
       captureTrace: config && config.captureTrace === true,
       dpOverrides: segmentDpOverrides(segment, config || {}, overrides || {}),
     });
     attempts.push(result);
-    result.goalSkyline.forEach((goal) => nextCandidates.push({
-      ...goal,
-      id: `${segment.id}:${candidate.id}:${goal.id}`,
-    }));
+    result.goalSkyline.forEach((goal) =>
+      nextCandidates.push({
+        ...goal,
+        id: `${segment.id}:${candidate.id}:${goal.id}`,
+      }),
+    );
   }
   const merged = mergeMilestoneFrontier(simulator, nextCandidates, segment, {
     candidateLimit,
-    preserveSkylineRoles: Boolean((config || {}).qualityFloor || (overrides || {}).preserveSkylineRoles),
+    preserveSkylineRoles: Boolean(
+      (config || {}).preserveSkylineRoles ||
+      (config || {}).qualityFloor ||
+      (overrides || {}).preserveSkylineRoles,
+    ),
   });
   const failurePropagation = mergeFailurePropagation(attempts);
   const summary = {
@@ -1888,16 +2718,23 @@ function runSegmentAgainstFrontier(simulator, segment, frontier, config, overrid
 
 function preferredTagScore(candidate, preferredTags) {
   const tags = new Set((candidate && candidate.tags) || []);
-  return (preferredTags || []).reduce((score, tag, index) => (
-    score + (tags.has(tag) ? Math.max(1, preferredTags.length - index) : 0)
-  ), 0);
+  return (preferredTags || []).reduce(
+    (score, tag, index) =>
+      score + (tags.has(tag) ? Math.max(1, preferredTags.length - index) : 0),
+    0,
+  );
 }
 
 function rankCandidatesByPreferredTags(candidates, preferredTags) {
   return (candidates || []).slice().sort((left, right) => {
-    const tagDiff = preferredTagScore(right, preferredTags) - preferredTagScore(left, preferredTags);
+    const tagDiff =
+      preferredTagScore(right, preferredTags) -
+      preferredTagScore(left, preferredTags);
     if (tagDiff !== 0) return tagDiff;
-    const stateDiff = compareCandidateStates(left && left.state, right && right.state);
+    const stateDiff = compareCandidateStates(
+      left && left.state,
+      right && right.state,
+    );
     if (stateDiff !== 0) return stateDiff;
     return candidateOutcomeScore(right) - candidateOutcomeScore(left);
   });
@@ -1921,20 +2758,42 @@ function qualityFloorMissing(candidate, qualityFloor) {
   const expectedHero = qualityFloorHero(qualityFloor);
   const missing = [];
   const floorId = qualityFloor.floorId || qualityFloor.targetFloorId;
-  if (qualityFloor.mustReachSameFloor !== false && floorId && state.floorId !== floorId) {
-    missing.push({ field: "floorId", expected: floorId, actual: state.floorId });
+  if (
+    qualityFloor.mustReachSameFloor !== false &&
+    floorId &&
+    state.floorId !== floorId
+  ) {
+    missing.push({
+      field: "floorId",
+      expected: floorId,
+      actual: state.floorId,
+    });
   }
   qualityFloorFields(qualityFloor).forEach((field) => {
     const expected = Number(expectedHero[field] || 0);
     if (expected > 0 && Number(hero[field] || 0) < expected) {
-      missing.push({ field: `hero.${field}`, expected, actual: Number(hero[field] || 0) });
+      missing.push({
+        field: `hero.${field}`,
+        expected,
+        actual: Number(hero[field] || 0),
+      });
     }
   });
   if (qualityFloor.sameLevelMustNotLoseExp !== false) {
     const expectedLv = Number(expectedHero.lv || 0);
     const expectedExp = Number(expectedHero.exp || 0);
-    if (expectedLv > 0 && expectedExp > 0 && Number(hero.lv || 0) === expectedLv && Number(hero.exp || 0) < expectedExp) {
-      missing.push({ field: "hero.exp", expected: expectedExp, actual: Number(hero.exp || 0), reason: "same-level exp should not regress below quality floor" });
+    if (
+      expectedLv > 0 &&
+      expectedExp > 0 &&
+      Number(hero.lv || 0) === expectedLv &&
+      Number(hero.exp || 0) < expectedExp
+    ) {
+      missing.push({
+        field: "hero.exp",
+        expected: expectedExp,
+        actual: Number(hero.exp || 0),
+        reason: "same-level exp should not regress below quality floor",
+      });
     }
   }
   return missing;
@@ -1949,7 +2808,10 @@ function rankFinalCandidates(candidates, qualityFloor) {
     const leftPass = candidateMeetsQualityFloor(left, qualityFloor);
     const rightPass = candidateMeetsQualityFloor(right, qualityFloor);
     if (leftPass !== rightPass) return leftPass ? -1 : 1;
-    const stateDiff = compareCandidateStates(left && left.state, right && right.state);
+    const stateDiff = compareCandidateStates(
+      left && left.state,
+      right && right.state,
+    );
     if (stateDiff !== 0) return stateDiff;
     return candidateOutcomeScore(right) - candidateOutcomeScore(left);
   });
@@ -1961,7 +2823,13 @@ function buildQualityFloorFailure(segment, candidates, qualityFloor) {
   const best = ranked[0] || null;
   const missing = best
     ? qualityFloorMissing(best, qualityFloor)
-    : [{ field: "candidate", expected: "route meeting quality floor", actual: "none" }];
+    : [
+        {
+          field: "candidate",
+          expected: "route meeting quality floor",
+          actual: "none",
+        },
+      ];
   return {
     segmentId: segment && segment.id,
     label: segment && segment.label,
@@ -1971,7 +2839,8 @@ function buildQualityFloorFailure(segment, candidates, qualityFloor) {
     bestSeen: best && compactState(best.state),
     missingGoalFields: missing,
     preferredCandidateTags: ["highest-hp", "highest-def", "best-combat"],
-    recommendedRepair: "expand previous skyline and prefer higher-HP sustain/resource timing candidates before accepting this milestone",
+    recommendedRepair:
+      "expand previous skyline and prefer higher-HP sustain/resource timing candidates before accepting this milestone",
     failurePropagation: {
       failureClass: "route-quality-floor-not-met",
       primaryFailureClass: "route-quality-floor-not-met",
@@ -1990,8 +2859,15 @@ function buildQualityFloorFailure(segment, candidates, qualityFloor) {
 }
 
 function backtrackCandidateLimit(segment, config) {
-  const base = numericOption(config && config.candidateLimit, numericOption(segment && segment.dp && segment.dp.goalSkylineLimit, 4));
-  return Math.max(base + 1, numericOption(config && config.backtrackCandidateLimit, base * 2), 8);
+  const base = numericOption(
+    config && config.candidateLimit,
+    numericOption(segment && segment.dp && segment.dp.goalSkylineLimit, 4),
+  );
+  return Math.max(
+    base + 1,
+    numericOption(config && config.backtrackCandidateLimit, base * 2),
+    8,
+  );
 }
 
 function backtrackDpOverrides(segment, config) {
@@ -2001,31 +2877,53 @@ function backtrackDpOverrides(segment, config) {
     goalSkylineLimit: backtrackCandidateLimit(segment, config || {}),
     maxExpansions: numericOption(
       config && config.backtrackMaxExpansions,
-      Math.max(numericOption(dpConfig.maxExpansions, 1000), numericOption(dpConfig.maxExpansions, 1000) * 2)
+      Math.max(
+        numericOption(dpConfig.maxExpansions, 1000),
+        numericOption(dpConfig.maxExpansions, 1000) * 2,
+      ),
     ),
     maxRuntimeMs: numericOption(
       config && config.backtrackMaxRuntimeMs,
-      Math.max(numericOption(dpConfig.maxRuntimeMs, 5000), numericOption(dpConfig.maxRuntimeMs, 5000) * 2)
+      Math.max(
+        numericOption(dpConfig.maxRuntimeMs, 5000),
+        numericOption(dpConfig.maxRuntimeMs, 5000) * 2,
+      ),
     ),
   };
 }
 
-function tryRepairFromPreviousMilestone(simulator, segments, segmentIndex, history, failedExecution, config) {
+function tryRepairFromPreviousMilestone(
+  simulator,
+  segments,
+  segmentIndex,
+  history,
+  failedExecution,
+  config,
+) {
   if ((config || {}).enableFailureBacktracking === false) return null;
-  if (!Array.isArray(history) || history.length === 0 || segmentIndex <= 0) return null;
+  if (!Array.isArray(history) || history.length === 0 || segmentIndex <= 0)
+    return null;
   const previous = history[history.length - 1];
   if (!previous || previous.repairExpanded) return null;
   const failedSummary = failedExecution && failedExecution.summary;
-  const preferredTags = ((failedSummary || {}).failurePropagation || {}).preferredCandidateTags || [];
+  const preferredTags =
+    ((failedSummary || {}).failurePropagation || {}).preferredCandidateTags ||
+    [];
   if (preferredTags.length === 0) return null;
 
   const previousSegment = previous.segment;
   const currentSegment = segments[segmentIndex];
-  const expandedPrevious = runSegmentAgainstFrontier(simulator, previousSegment, previous.inputFrontier, config || {}, {
-    candidateLimit: backtrackCandidateLimit(previousSegment, config || {}),
-    dpOverrides: backtrackDpOverrides(previousSegment, config || {}),
-    preserveSkylineRoles: true,
-  });
+  const expandedPrevious = runSegmentAgainstFrontier(
+    simulator,
+    previousSegment,
+    previous.inputFrontier,
+    config || {},
+    {
+      candidateLimit: backtrackCandidateLimit(previousSegment, config || {}),
+      dpOverrides: backtrackDpOverrides(previousSegment, config || {}),
+      preserveSkylineRoles: true,
+    },
+  );
   expandedPrevious.summary.backtrack = {
     mode: "expanded-previous-segment",
     triggeredBySegment: currentSegment.id,
@@ -2037,11 +2935,19 @@ function tryRepairFromPreviousMilestone(simulator, segments, segmentIndex, histo
     return { found: false, expandedPrevious, repairedCurrent: null };
   }
 
-  const rankedFrontier = rankCandidatesByPreferredTags(expandedPrevious.merged, preferredTags)
-    .slice(0, backtrackCandidateLimit(currentSegment, config || {}));
-  const repairedCurrent = runSegmentAgainstFrontier(simulator, currentSegment, rankedFrontier, config || {}, {
-    preserveSkylineRoles: true,
-  });
+  const rankedFrontier = rankCandidatesByPreferredTags(
+    expandedPrevious.merged,
+    preferredTags,
+  ).slice(0, backtrackCandidateLimit(currentSegment, config || {}));
+  const repairedCurrent = runSegmentAgainstFrontier(
+    simulator,
+    currentSegment,
+    rankedFrontier,
+    config || {},
+    {
+      preserveSkylineRoles: true,
+    },
+  );
   repairedCurrent.summary.backtrack = {
     mode: "retry-current-segment",
     repairedFromSegment: previousSegment.id,
@@ -2060,39 +2966,73 @@ function configuredRepairStartFrom(segment) {
   return (segment && segment.repairStartFrom) || dp.repairStartFrom || null;
 }
 
-function tryRepairFromConfiguredMilestone(simulator, segments, segmentIndex, history, failedExecution, config) {
+function tryRepairFromConfiguredMilestone(
+  simulator,
+  segments,
+  segmentIndex,
+  history,
+  failedExecution,
+  config,
+) {
   if ((config || {}).enableFailureBacktracking === false) return null;
   if (!Array.isArray(history) || history.length === 0) return null;
   const currentSegment = segments[segmentIndex];
   const repairStartFrom = configuredRepairStartFrom(currentSegment);
   if (!repairStartFrom) return null;
-  const start = history.find((entry) => entry && entry.segment && entry.segment.id === repairStartFrom);
-  if (!start || !Array.isArray(start.merged) || start.merged.length === 0) return null;
+  const start = history.find(
+    (entry) => entry && entry.segment && entry.segment.id === repairStartFrom,
+  );
+  if (!start || !Array.isArray(start.merged) || start.merged.length === 0)
+    return null;
 
   const dpConfig = (currentSegment || {}).dp || {};
-  const repairedCurrent = runSegmentAgainstFrontier(simulator, currentSegment, start.merged, config || {}, {
-    candidateLimit: numericOption(dpConfig.repairCandidateLimit, numericOption(dpConfig.goalSkylineLimit, 8)),
-    startCandidateLimit: numericOption(dpConfig.repairStartCandidateLimit, start.merged.length),
-    preserveSkylineRoles: true,
-    dpOverrides: {
-      stopOnFirstGoal: false,
-      keyMode: dpConfig.keyMode,
-      dpKeyMode: dpConfig.dpKeyMode,
-      priorityMode: dpConfig.priorityMode,
-      dpPriorityMode: dpConfig.dpPriorityMode,
-      maxExpansions: numericOption(dpConfig.repairMaxExpansions, numericOption(dpConfig.maxExpansions, 0)),
-      maxRuntimeMs: numericOption(dpConfig.repairMaxRuntimeMs, numericOption(dpConfig.maxRuntimeMs, 0)),
-      goalSkylineLimit: numericOption(dpConfig.repairGoalSkylineLimit, numericOption(dpConfig.goalSkylineLimit, 8)),
-      maxActionsPerState: dpConfig.maxActionsPerState,
-      agendaMode: dpConfig.agendaMode,
-      dpAgendaMode: dpConfig.dpAgendaMode,
+  const repairedCurrent = runSegmentAgainstFrontier(
+    simulator,
+    currentSegment,
+    start.merged,
+    config || {},
+    {
+      candidateLimit: numericOption(
+        dpConfig.repairCandidateLimit,
+        numericOption(dpConfig.goalSkylineLimit, 8),
+      ),
+      startCandidateLimit: numericOption(
+        dpConfig.repairStartCandidateLimit,
+        start.merged.length,
+      ),
+      preserveSkylineRoles: true,
+      dpOverrides: {
+        stopOnFirstGoal: false,
+        keyMode: dpConfig.keyMode,
+        dpKeyMode: dpConfig.dpKeyMode,
+        priorityMode: dpConfig.priorityMode,
+        dpPriorityMode: dpConfig.dpPriorityMode,
+        maxExpansions: numericOption(
+          dpConfig.repairMaxExpansions,
+          numericOption(dpConfig.maxExpansions, 0),
+        ),
+        maxRuntimeMs: numericOption(
+          dpConfig.repairMaxRuntimeMs,
+          numericOption(dpConfig.maxRuntimeMs, 0),
+        ),
+        goalSkylineLimit: numericOption(
+          dpConfig.repairGoalSkylineLimit,
+          numericOption(dpConfig.goalSkylineLimit, 8),
+        ),
+        maxActionsPerState: dpConfig.maxActionsPerState,
+        agendaMode: dpConfig.agendaMode,
+        dpAgendaMode: dpConfig.dpAgendaMode,
+      },
     },
-  });
+  );
   repairedCurrent.summary.backtrack = {
     mode: "configured-milestone-window",
     repairedFromMilestone: repairStartFrom,
     triggeredBySegment: currentSegment.id,
-    failedSegment: failedExecution && failedExecution.summary && failedExecution.summary.segmentId,
+    failedSegment:
+      failedExecution &&
+      failedExecution.summary &&
+      failedExecution.summary.segmentId,
     startCandidateCount: start.merged.length,
     repairedCandidateCount: repairedCurrent.merged.length,
   };
@@ -2104,7 +3044,11 @@ function tryRepairFromConfiguredMilestone(simulator, segments, segmentIndex, his
 
 function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   const config = options || {};
-  const rangeError = milestoneRangeError(milestoneSpec, config.fromMilestoneId, config.toMilestoneId);
+  const rangeError = milestoneRangeError(
+    milestoneSpec,
+    config.fromMilestoneId,
+    config.toMilestoneId,
+  );
   if (rangeError) {
     return {
       found: false,
@@ -2121,7 +3065,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         failurePropagation: {
           primaryFailureClass: "invalid-milestone-range",
           failureClass: "invalid-milestone-range",
-          recommendedNext: ["choose a toMilestone that appears after fromMilestone in the route spec"],
+          recommendedNext: [
+            "choose a toMilestone that appears after fromMilestone in the route spec",
+          ],
         },
       },
       finalCandidates: [],
@@ -2129,28 +3075,58 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       checkpointResults: [],
     };
   }
-  const segments = milestoneRange(milestoneSpec, config.fromMilestoneId, config.toMilestoneId);
+  const segments = milestoneRange(
+    milestoneSpec,
+    config.fromMilestoneId,
+    config.toMilestoneId,
+  );
   const checkpointResults = [];
   const initialFrontierState = cloneStateWithoutRouteTrace(initialState);
-  let frontier = [{
-    id: "initial#0",
-    state: initialFrontierState,
-    route: Array.isArray(initialState.route) ? initialState.route.slice() : [],
-    trace: config.captureTrace === true && Array.isArray(initialState.routeTrace) ? initialState.routeTrace.slice() : [],
-    hero: summarizeHero(initialState),
-    effectiveHero: summarizeEffectiveHero(initialState),
-    tags: ["initial"],
-    score: goalCandidateScore(initialState),
-  }];
+  let frontier = [
+    {
+      id: "initial#0",
+      state: initialFrontierState,
+      route: Array.isArray(initialState.route)
+        ? initialState.route.slice()
+        : [],
+      trace:
+        config.captureTrace === true && Array.isArray(initialState.routeTrace)
+          ? initialState.routeTrace.slice()
+          : [],
+      hero: summarizeHero(initialState),
+      effectiveHero: summarizeEffectiveHero(initialState),
+      tags: ["initial"],
+      score: goalCandidateScore(initialState),
+    },
+  ];
   const segmentResults = [];
   const history = [];
-  for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+  for (
+    let segmentIndex = 0;
+    segmentIndex < segments.length;
+    segmentIndex += 1
+  ) {
     const segment = segments[segmentIndex];
-    const execution = runSegmentAgainstFrontier(simulator, segment, frontier, config, {});
+    const execution = runSegmentAgainstFrontier(
+      simulator,
+      segment,
+      frontier,
+      config,
+      {},
+    );
     if (execution.merged.length === 0) {
-      const configuredRepair = tryRepairFromConfiguredMilestone(simulator, segments, segmentIndex, history, execution, config);
+      const configuredRepair = tryRepairFromConfiguredMilestone(
+        simulator,
+        segments,
+        segmentIndex,
+        history,
+        execution,
+        config,
+      );
       if (configuredRepair && configuredRepair.found) {
-        checkpointResults.push(buildMilestoneCheckpoint(segment, configuredRepair.repairedCurrent));
+        checkpointResults.push(
+          buildMilestoneCheckpoint(segment, configuredRepair.repairedCurrent),
+        );
         segmentResults.push(configuredRepair.repairedCurrent.summary);
         history.push({
           segment,
@@ -2162,13 +3138,28 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         frontier = configuredRepair.repairedCurrent.merged;
         continue;
       }
-      const repair = tryRepairFromPreviousMilestone(simulator, segments, segmentIndex, history, execution, config);
+      const repair = tryRepairFromPreviousMilestone(
+        simulator,
+        segments,
+        segmentIndex,
+        history,
+        execution,
+        config,
+      );
       if (repair && repair.found) {
         if (checkpointResults.length > 0) checkpointResults.pop();
-        checkpointResults.push(buildMilestoneCheckpoint(repair.expandedPrevious.segment, repair.expandedPrevious));
-        checkpointResults.push(buildMilestoneCheckpoint(segment, repair.repairedCurrent));
+        checkpointResults.push(
+          buildMilestoneCheckpoint(
+            repair.expandedPrevious.segment,
+            repair.expandedPrevious,
+          ),
+        );
+        checkpointResults.push(
+          buildMilestoneCheckpoint(segment, repair.repairedCurrent),
+        );
         const previousIndex = segmentResults.length - 1;
-        if (previousIndex >= 0) segmentResults[previousIndex] = repair.expandedPrevious.summary;
+        if (previousIndex >= 0)
+          segmentResults[previousIndex] = repair.expandedPrevious.summary;
         segmentResults.push(repair.repairedCurrent.summary);
         history[history.length - 1] = {
           segment: repair.expandedPrevious.segment,
@@ -2204,7 +3195,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
           repaired: false,
           expandedPrevious: repair.expandedPrevious && {
             segmentId: repair.expandedPrevious.segment.id,
-            candidates: compactSegmentCandidates(repair.expandedPrevious.merged),
+            candidates: compactSegmentCandidates(
+              repair.expandedPrevious.merged,
+            ),
           },
           repairedCurrent: repair.repairedCurrent && {
             segmentId: repair.repairedCurrent.segment.id,
@@ -2234,9 +3227,17 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   }
   frontier = rankFinalCandidates(frontier, config.qualityFloor || null);
   const final = frontier[0] || null;
-  if (final && config.qualityFloor && !candidateMeetsQualityFloor(final, config.qualityFloor)) {
+  if (
+    final &&
+    config.qualityFloor &&
+    !candidateMeetsQualityFloor(final, config.qualityFloor)
+  ) {
     const finalSegment = segments[segments.length - 1] || null;
-    const failedSummary = buildQualityFloorFailure(finalSegment, frontier, config.qualityFloor);
+    const failedSummary = buildQualityFloorFailure(
+      finalSegment,
+      frontier,
+      config.qualityFloor,
+    );
     segmentResults.push(failedSummary);
     return {
       found: false,
@@ -2259,10 +3260,12 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     finalCandidates: frontier,
     segmentResults,
     checkpointResults,
-    qualityFloor: config.qualityFloor ? {
-      passed: Boolean(final),
-      floor: config.qualityFloor,
-    } : null,
+    qualityFloor: config.qualityFloor
+      ? {
+          passed: Boolean(final),
+          floor: config.qualityFloor,
+        }
+      : null,
   };
 }
 
@@ -2277,13 +3280,15 @@ module.exports = {
   __testHooks: {
     BLOCKER_TILE_NUMBER: reachAndBattleOracle.BLOCKER_TILE_NUMBER,
     isTileBlocking: reachAndBattleOracle.isTileBlocking,
-    closeStateForBattleFrontier: reachAndBattleOracle.closeStateForBattleFrontier,
+    closeStateForBattleFrontier:
+      reachAndBattleOracle.closeStateForBattleFrontier,
     protectPresentTiles: reachAndBattleOracle.protectPresentTiles,
     restorePresentTiles: reachAndBattleOracle.restorePresentTiles,
     enumerateMonsterTargets: reachAndBattleOracle.enumerateMonsterTargets,
     oracleFindFloorState: reachAndBattleOracle.oracleFindFloorState,
     oracleFindFloorStates: reachAndBattleOracle.oracleFindFloorStates,
     tryReachAndBattle: reachAndBattleOracle.tryReachAndBattle,
-    buildMonsterOnlyActionProvider: reachAndBattleOracle.buildMonsterOnlyActionProvider,
+    buildMonsterOnlyActionProvider:
+      reachAndBattleOracle.buildMonsterOnlyActionProvider,
   },
 };

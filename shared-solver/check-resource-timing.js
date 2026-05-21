@@ -40,6 +40,10 @@ function assertBefore(summaries, earlier, later) {
   );
 }
 
+function routeSummaries(route) {
+  return (route || []).map((entry) => typeof entry === "string" ? entry : entry && entry.summary);
+}
+
 function checkRegionTimingPolicies() {
   for (const specPath of REGION_SPECS) {
     const spec = readJson(specPath);
@@ -175,7 +179,7 @@ function checkLateResourceReplacesEarlySameKey() {
   });
   assert.ok(result.bestGoalState, "synthetic timing DP should find a goal");
   assert.equal(result.bestGoalState.hero.hp, 140, "late potion route should dominate early potion route at the same final key");
-  assert.deepEqual(result.bestGoalState.route, ["fightBeforePotion", "latePotion"]);
+  assert.deepEqual(routeSummaries(result.bestGoalState.route), ["fightBeforePotion", "latePotion"]);
   assert.ok(
     Number((((result.diagnostics || {}).dp || {}).replacedLowerHp) || 0) >= 1,
     "DP diagnostics should record replacedLowerHp when late resource timing dominates"

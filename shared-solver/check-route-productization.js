@@ -11,6 +11,7 @@ const { buildResourceChainOptions, buildResourceClusterSearchOptions, parseKeyVa
 const { createCheckpointPool } = require("./lib/floor-checkpoints");
 const { loadProject } = require("./lib/project-loader");
 const { summarizeConfluence, summarizePruning } = require("./lib/pruning-diagnostics");
+const { buildSolverDoctorReport } = require("./lib/solver-doctor");
 const { applyConfigDefaults, loadSolverConfig } = require("./lib/solver-config");
 const { createSearchProfile } = require("./lib/search-profiles");
 const { StaticSimulator } = require("./lib/simulator");
@@ -117,6 +118,41 @@ function testPruningOverview() {
     representativesByKeyMax: 3,
     byFloor: { MT1: { rejectedByHigherHp: 13 } },
   });
+}
+
+function testSolverDoctorReport() {
+  const report = buildSolverDoctorReport({
+    found: false,
+    failedSegment: {
+      segmentId: "mt7-special80",
+      failurePropagation: { primaryFailureClass: "budget-or-action-scope-exhausted" },
+      attempts: [
+        {
+          diagnostics: {
+            dp: {
+              actionTrimmed: 3,
+              expansionBudgetExhausted: true,
+              frontierSize: 42,
+              rejectedByHigherHp: 5,
+              sameHpRejected: 7,
+              uniqueBattleTargets: 9,
+              uniquePortalEntries: 2,
+            },
+          },
+        },
+      ],
+    },
+  });
+  assert.strictEqual(report.status, "failed");
+  assert.strictEqual(report.failedSegmentId, "mt7-special80");
+  assert.strictEqual(report.failureClass, "budget-or-action-scope-exhausted");
+  assert.strictEqual(report.likelyCause, "action cap may have dropped required actions");
+  assert.strictEqual(report.evidence.actionTrimmed, 3);
+  assert.strictEqual(report.evidence.expansionBudgetExhaustedAttempts, 1);
+  assert.strictEqual(report.evidence.frontierSizeMax, 42);
+  assert.ok(report.line.includes("Doctor: mt7-special80 failed as budget-or-action-scope-exhausted"));
+  assert.ok(report.line.includes("actionTrimmed=3"));
+  assert.ok(report.line.includes("rejectedByHigherHp=5"));
 }
 
 function testMacroGraph(project) {
@@ -269,9 +305,10 @@ function main() {
   testConfig(projectRoot, project);
   testPrimaryProfiles(project);
   testPruningOverview();
+  testSolverDoctorReport();
   testMacroGraph(project);
   testCheckpointStore(projectRoot, project);
-  console.log(JSON.stringify({ ok: true, checks: ["config", "profiles", "pruning", "macroGraph", "checkpointStore"] }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: ["config", "profiles", "pruning", "solverDoctor", "macroGraph", "checkpointStore"] }, null, 2));
 }
 
 if (require.main === module) {
