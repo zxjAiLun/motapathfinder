@@ -10,7 +10,7 @@ function compactObject(object) {
     Object.entries(object || {}).filter(([, value]) => {
       if (Array.isArray(value)) return value.length > 0;
       return Boolean(value);
-    })
+    }),
   );
 }
 
@@ -18,12 +18,103 @@ function unique(values) {
   return [...new Set((values || []).filter(Boolean))];
 }
 
+function mergeKindCounts(target, source) {
+  if (!source || typeof source !== "object") return;
+  Object.entries(source).forEach(([kind, count]) => {
+    target[kind] = (target[kind] || 0) + (Number(count) || 0);
+  });
+}
+
+function sumKindCounts(counts) {
+  return Object.values(counts || {}).reduce(
+    (sum, count) => sum + (Number(count) || 0),
+    0,
+  );
+}
+
+function buildDeficitDetail(failedSegment) {
+  const missing = (failedSegment && failedSegment.missingGoalFields) || [];
+  if (missing.length === 0) return null;
+  const parts = missing.map((entry) => {
+    const field = (entry && entry.field) || "?";
+    const expected = entry && entry.expected;
+    const actual = entry && entry.actual;
+    return `${field}: need ${expected}, have ${actual}`;
+  });
+  return parts.join("; ");
+}
+
+function buildCandidateQuality(failedSegment) {
+  const attempts = segmentAttempts(failedSegment);
+  const goalSkylines = attempts
+    .map(
+      (attempt) =>
+        (attempt && attempt.diagnostics && attempt.diagnostics.goalSkyline) ||
+        null,
+    )
+    .filter(Boolean);
+  if (goalSkylines.length === 0) return null;
+
+  let maxHp = -Infinity;
+  let maxAtk = -Infinity;
+  let maxDef = -Infinity;
+  let maxMdef = -Infinity;
+  let minRoute = Infinity;
+  let maxHpId = null;
+  let maxAtkId = null;
+  let maxDefId = null;
+  let maxMdefId = null;
+  let minRouteId = null;
+
+  goalSkylines.forEach((skyline) => {
+    (skyline.candidates || []).forEach((candidate) => {
+      const hero = (candidate && candidate.hero) || {};
+      const effective = (candidate && candidate.effectiveHero) || {};
+      const hp = Number(hero.hp || 0);
+      const atk = Number(effective.atk || hero.atk || 0);
+      const def = Number(effective.def || hero.def || 0);
+      const mdef = Number(effective.mdef || hero.mdef || 0);
+      const routeLen = Number(candidate.routeLength || 0);
+      if (hp > maxHp) {
+        maxHp = hp;
+        maxHpId = candidate.id;
+      }
+      if (atk > maxAtk) {
+        maxAtk = atk;
+        maxAtkId = candidate.id;
+      }
+      if (def > maxDef) {
+        maxDef = def;
+        maxDefId = candidate.id;
+      }
+      if (mdef > maxMdef) {
+        maxMdef = mdef;
+        maxMdefId = candidate.id;
+      }
+      if (routeLen > 0 && routeLen < minRoute) {
+        minRoute = routeLen;
+        minRouteId = candidate.id;
+      }
+    });
+  });
+
+  const parts = [];
+  if (maxHpId) parts.push(`bestHP=${maxHp}(${maxHpId})`);
+  if (maxAtkId) parts.push(`bestAtk=${maxAtk}`);
+  if (maxDefId) parts.push(`bestDef=${maxDef}`);
+  if (maxMdefId) parts.push(`bestMdef=${maxMdef}`);
+  if (minRouteId) parts.push(`shortestRoute=${minRoute}`);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
 function failureClassOf(segment) {
   const propagation = (segment && segment.failurePropagation) || {};
-  return (segment && segment.failureClass) ||
+  return (
+    (segment && segment.failureClass) ||
     propagation.failureClass ||
     propagation.primaryFailureClass ||
-    null;
+    null
+  );
 }
 
 function segmentAttempts(segment) {
@@ -36,15 +127,23 @@ function attemptDp(attempt) {
 }
 
 function sumAttemptMetric(attempts, name) {
-  return attempts.reduce((sum, attempt) => sum + number(attemptDp(attempt)[name]), 0);
+  return attempts.reduce(
+    (sum, attempt) => sum + number(attemptDp(attempt)[name]),
+    0,
+  );
 }
 
 function maxAttemptMetric(attempts, name) {
-  return attempts.reduce((max, attempt) => Math.max(max, number(attemptDp(attempt)[name])), 0);
+  return attempts.reduce(
+    (max, attempt) => Math.max(max, number(attemptDp(attempt)[name])),
+    0,
+  );
 }
 
 function expansionBudgetExhaustedCount(attempts) {
-  return attempts.filter((attempt) => Boolean(attemptDp(attempt).expansionBudgetExhausted)).length;
+  return attempts.filter((attempt) =>
+    Boolean(attemptDp(attempt).expansionBudgetExhausted),
+  ).length;
 }
 
 function stoppedReasons(attempts) {
@@ -53,40 +152,73 @@ function stoppedReasons(attempts) {
 
 function doctorRecommendation(failureClass, evidence) {
   const reasons = new Set(evidence.stoppedReasons || []);
-  if (reasons.has("time-limit")) return "raise maxRuntimeMs or narrow the segment after checking whether the frontier was still live";
-  if (reasons.has("memory-limit")) return "raise maxHeapMb or reduce the segment/action scope";
-  if (evidence.actionTrimmed > 0) return "raise maxActionsPerState or widen the action policy before treating this as impossible";
-  if (evidence.expansionBudgetExhaustedAttempts > 0) return "raise maxExpansions or split the milestone because the frontier was not exhausted";
-  if (failureClass === "target-action-unreachable" || failureClass === "floor-scope-mismatch") {
+  if (reasons.has("time-limit"))
+    return "raise maxRuntimeMs or narrow the segment after checking whether the frontier was still live";
+  if (reasons.has("memory-limit"))
+    return "raise maxHeapMb or reduce the segment/action scope";
+  if (evidence.actionTrimmed > 0)
+    return "raise maxActionsPerState or widen the action policy before treating this as impossible";
+  if (evidence.expansionBudgetExhaustedAttempts > 0)
+    return "raise maxExpansions or split the milestone because the frontier was not exhausted";
+  if (
+    failureClass === "target-action-unreachable" ||
+    failureClass === "floor-scope-mismatch"
+  ) {
     return "check allowedFloors, allowChangeFloors, presentTiles, and action scope";
   }
   if (failureClass === "present-tile-overconstrained") {
     return "relax non-essential presentTiles into preferredPresentTiles";
   }
-  if (failureClass === "life-limit-hp-deficit" || failureClass === "action-survivability-deficit" || failureClass === "hp-deficit") {
+  if (
+    failureClass === "life-limit-hp-deficit" ||
+    failureClass === "action-survivability-deficit" ||
+    failureClass === "hp-deficit"
+  ) {
     return "retry from prior milestones with higher HP/defense skyline candidates and larger candidateLimit";
   }
-  if (failureClass === "atk-deficit" || failureClass === "def-deficit" || failureClass === "mdef-deficit") {
+  if (
+    failureClass === "atk-deficit" ||
+    failureClass === "def-deficit" ||
+    failureClass === "mdef-deficit"
+  ) {
     return "retry from prior milestones with best-combat and stat-specific skyline candidates";
   }
-  if (failureClass === "route-quality-floor-not-met") return "backtrack earlier and preserve quality-floor skyline roles";
+  if (failureClass === "route-quality-floor-not-met")
+    return "backtrack earlier and preserve quality-floor skyline roles";
   return "inspect action scope and budget before concluding the segment is impossible";
 }
 
 function likelyCause(failureClass, evidence) {
-  if ((evidence.stoppedReasons || []).length > 0) return "runtime limit stopped the search";
-  if (evidence.actionTrimmed > 0) return "action cap may have dropped required actions";
-  if (evidence.expansionBudgetExhaustedAttempts > 0) return "expansion budget ended with live frontier";
-  if (failureClass === "target-action-unreachable" || failureClass === "floor-scope-mismatch" || failureClass === "present-tile-overconstrained") {
+  if ((evidence.stoppedReasons || []).length > 0)
+    return "runtime limit stopped the search";
+  if (evidence.actionTrimmed > 0)
+    return "action cap may have dropped required actions";
+  if (evidence.expansionBudgetExhaustedAttempts > 0)
+    return "expansion budget ended with live frontier";
+  if (
+    failureClass === "target-action-unreachable" ||
+    failureClass === "floor-scope-mismatch" ||
+    failureClass === "present-tile-overconstrained"
+  ) {
     return "goal is unreachable under the current action scope";
   }
-  if (failureClass === "life-limit-hp-deficit" || failureClass === "action-survivability-deficit" || failureClass === "hp-deficit") {
+  if (
+    failureClass === "life-limit-hp-deficit" ||
+    failureClass === "action-survivability-deficit" ||
+    failureClass === "hp-deficit"
+  ) {
     return "survivability candidate quality is too low";
   }
-  if (failureClass === "atk-deficit" || failureClass === "def-deficit" || failureClass === "mdef-deficit" || failureClass === "equipment-missing") {
+  if (
+    failureClass === "atk-deficit" ||
+    failureClass === "def-deficit" ||
+    failureClass === "mdef-deficit" ||
+    failureClass === "equipment-missing"
+  ) {
     return "required combat/resource state was not preserved";
   }
-  if (failureClass === "route-quality-floor-not-met") return "final candidate failed the configured quality floor";
+  if (failureClass === "route-quality-floor-not-met")
+    return "final candidate failed the configured quality floor";
   return "no goal state was found under the current segment policy";
 }
 
@@ -94,16 +226,40 @@ function buildDoctorLine(report) {
   if (!report || report.status === "solved") return "Doctor: solved.";
   const evidenceParts = [];
   const evidence = report.evidence || {};
-  if ((evidence.stoppedReasons || []).length > 0) evidenceParts.push(`stoppedReason=${evidence.stoppedReasons.join(",")}`);
-  if (evidence.actionTrimmed > 0) evidenceParts.push(`actionTrimmed=${evidence.actionTrimmed}`);
-  if (evidence.expansionBudgetExhaustedAttempts > 0) evidenceParts.push(`expansionBudgetExhausted=${evidence.expansionBudgetExhaustedAttempts}`);
-  if (evidence.frontierSizeMax > 0) evidenceParts.push(`frontierSizeMax=${evidence.frontierSizeMax}`);
-  if (evidence.rejectedByHigherHp > 0) evidenceParts.push(`rejectedByHigherHp=${evidence.rejectedByHigherHp}`);
-  if (evidence.sameHpRejected > 0) evidenceParts.push(`sameHpRejected=${evidence.sameHpRejected}`);
-  if (evidence.uniqueBattleTargetsMax > 0) evidenceParts.push(`uniqueBattleTargetsMax=${evidence.uniqueBattleTargetsMax}`);
-  if (evidence.uniquePortalEntriesMax > 0) evidenceParts.push(`uniquePortalEntriesMax=${evidence.uniquePortalEntriesMax}`);
-  const evidenceText = evidenceParts.length > 0 ? ` Evidence: ${evidenceParts.join(", ")}.` : "";
-  return `Doctor: ${report.failedSegmentId || "unknown segment"} failed as ${report.failureClass || "unknown"}; likely ${report.likelyCause}. ${report.recommendation}.${evidenceText}`;
+  if ((evidence.stoppedReasons || []).length > 0)
+    evidenceParts.push(`stoppedReason=${evidence.stoppedReasons.join(",")}`);
+  if (evidence.actionTrimmed > 0)
+    evidenceParts.push(`actionTrimmed=${evidence.actionTrimmed}`);
+  if (evidence.expansionBudgetExhaustedAttempts > 0)
+    evidenceParts.push(
+      `expansionBudgetExhausted=${evidence.expansionBudgetExhaustedAttempts}`,
+    );
+  if (evidence.frontierSizeMax > 0)
+    evidenceParts.push(`frontierSizeMax=${evidence.frontierSizeMax}`);
+  if (evidence.rejectedByHigherHp > 0)
+    evidenceParts.push(`rejectedByHigherHp=${evidence.rejectedByHigherHp}`);
+  if (evidence.sameHpRejected > 0)
+    evidenceParts.push(`sameHpRejected=${evidence.sameHpRejected}`);
+  if (evidence.uniqueBattleTargetsMax > 0)
+    evidenceParts.push(
+      `uniqueBattleTargetsMax=${evidence.uniqueBattleTargetsMax}`,
+    );
+  if (evidence.uniquePortalEntriesMax > 0)
+    evidenceParts.push(
+      `uniquePortalEntriesMax=${evidence.uniquePortalEntriesMax}`,
+    );
+  if (evidence.generatedActions > 0)
+    evidenceParts.push(`generatedActions=${evidence.generatedActions}`);
+  if (evidence.keptActions > 0)
+    evidenceParts.push(`keptActions=${evidence.keptActions}`);
+  if (evidence.dominatedActions > 0)
+    evidenceParts.push(`dominatedActions=${evidence.dominatedActions}`);
+  const evidenceText =
+    evidenceParts.length > 0 ? ` Evidence: ${evidenceParts.join(", ")}.` : "";
+  const deficitText = report.deficitDetail
+    ? ` Deficit: ${report.deficitDetail}.`
+    : "";
+  return `Doctor: ${report.failedSegmentId || "unknown segment"} failed as ${report.failureClass || "unknown"}; likely ${report.likelyCause}. ${report.recommendation}.${evidenceText}${deficitText}`;
 }
 
 function buildSolverDoctorReport(result) {
@@ -111,11 +267,34 @@ function buildSolverDoctorReport(result) {
   if (!failedSegment) {
     return {
       status: result && result.found === false ? "failed" : "solved",
-      line: result && result.found === false ? "Doctor: failed before a segment failure was available." : "Doctor: solved.",
+      line:
+        result && result.found === false
+          ? "Doctor: failed before a segment failure was available."
+          : "Doctor: solved.",
     };
   }
   const attempts = segmentAttempts(failedSegment);
   const failureClass = failureClassOf(failedSegment) || "unknown";
+
+  // Extract action scope diagnostics from attempt dp diagnostics
+  const actionsGeneratedByKind = {};
+  const actionsKeptByKind = {};
+  const actionsDominatedByKind = {};
+  attempts.forEach((attempt) => {
+    const dp = attemptDp(attempt);
+    mergeKindCounts(actionsGeneratedByKind, dp.actionsGeneratedByKind);
+    mergeKindCounts(actionsKeptByKind, dp.actionsKeptByKind);
+    mergeKindCounts(actionsDominatedByKind, dp.actionsDominatedByKind);
+  });
+  const generatedTotal = sumKindCounts(actionsGeneratedByKind);
+  const keptTotal = sumKindCounts(actionsKeptByKind);
+  const dominatedTotal = sumKindCounts(actionsDominatedByKind);
+
+  // Extract deficit detail from missing goal fields
+  const deficitDetail = buildDeficitDetail(failedSegment);
+
+  // Extract candidate quality from goal skyline
+  const candidateQuality = buildCandidateQuality(failedSegment);
   const evidence = compactObject({
     attempts: attempts.length,
     stoppedReasons: stoppedReasons(attempts),
@@ -126,13 +305,23 @@ function buildSolverDoctorReport(result) {
     sameHpRejected: sumAttemptMetric(attempts, "sameHpRejected"),
     uniqueBattleTargetsMax: maxAttemptMetric(attempts, "uniqueBattleTargets"),
     uniquePortalEntriesMax: maxAttemptMetric(attempts, "uniquePortalEntries"),
+    generatedActions: generatedTotal,
+    keptActions: keptTotal,
+    dominatedActions: dominatedTotal,
+    actionsGeneratedByKind,
+    actionsKeptByKind,
+    actionsDominatedByKind,
+    candidateQuality,
   });
   const report = {
     status: "failed",
-    failedSegmentId: failedSegment.segmentId || failedSegment.failedSegmentId || null,
+    failedSegmentId:
+      failedSegment.segmentId || failedSegment.failedSegmentId || null,
     failureClass,
     likelyCause: likelyCause(failureClass, evidence),
     recommendation: doctorRecommendation(failureClass, evidence),
+    deficitDetail,
+    candidateQuality,
     evidence,
   };
   report.line = buildDoctorLine(report);
