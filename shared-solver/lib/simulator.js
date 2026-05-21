@@ -493,6 +493,17 @@ class StaticSimulator {
     return stats;
   }
 
+  clearActionExpansionCaches() {
+    Object.values(this.actionExpansionCaches || {}).forEach((cache) => {
+      if (cache && typeof cache.clear === "function") cache.clear();
+      if (cache && cache.stats && typeof cache.stats === "object") {
+        Object.keys(cache.stats).forEach((key) => {
+          if (typeof cache.stats[key] === "number") cache.stats[key] = 0;
+        });
+      }
+    });
+  }
+
   getResourceClusterDiagnostics() {
     return cloneJson(this.resourceClusterStats || {});
   }

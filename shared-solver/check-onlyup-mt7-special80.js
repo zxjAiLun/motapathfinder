@@ -125,6 +125,24 @@ function replayActionRoute(simulator, startState, route) {
   return state;
 }
 
+function assertSameEquipment(left, right, label) {
+  const leftEquipment = Array.isArray(((left || {}).hero || {}).equipment) ? left.hero.equipment.slice().sort() : [];
+  const rightEquipment = Array.isArray(((right || {}).hero || {}).equipment) ? right.hero.equipment.slice().sort() : [];
+  assert.deepEqual(leftEquipment, rightEquipment, `${label} equipment should match`);
+}
+
+function assertSamePresentTiles(project, left, right, presentTiles, label) {
+  for (const present of presentTiles || []) {
+    const leftTile = getTileDefinitionAt(project, left, present.floorId, present.x, present.y);
+    const rightTile = getTileDefinitionAt(project, right, present.floorId, present.x, present.y);
+    assert.deepEqual(
+      leftTile ? { id: leftTile.id, cls: leftTile.cls } : null,
+      rightTile ? { id: rightTile.id, cls: rightTile.cls } : null,
+      `${label} present tile should match at ${present.floorId}:${present.x},${present.y}`
+    );
+  }
+}
+
 function replaySummaries(simulator, startState, summaries) {
   let state = JSON.parse(JSON.stringify(startState));
   for (const [index, summary] of summaries.entries()) {
@@ -544,6 +562,8 @@ function checkMonsterOnlyMode(simulator) {
       stopOnFirstGoal: false,
       maxExpansions: 20000,
       maxRuntimeMs: 60000,
+      maxHeapMb: 3072,
+      maxMonsterTargets: 16,
       goalSkylineLimit: 8,
     },
   };
@@ -599,9 +619,12 @@ function checkMonsterOnlyMode(simulator) {
     assert.equal(replayedState.hero.hp, finalState.hero.hp, `route replay HP should match: ${replayedState.hero.hp} vs ${finalState.hero.hp}`);
     assert.equal(replayedState.hero.atk, finalState.hero.atk, `route replay atk should match`);
     assert.equal(replayedState.hero.def, finalState.hero.def, `route replay def should match`);
+    assert.equal(replayedState.hero.mdef, finalState.hero.mdef, `route replay mdef should match`);
+    assertSameEquipment(replayedState, finalState, "route replay");
+    assertSamePresentTiles(simulator.project, replayedState, finalState, segment.goal.presentTiles, "route replay");
   } else {
     assert.ok(
-      dpDiag.stoppedReason === "time-limit" || dpDiag.frontierSize === 0,
+      dpDiag.stoppedReason === "time-limit" || dpDiag.stoppedReason === "memory-limit" || dpDiag.frontierSize === 0,
       `battle-frontier should stop gracefully: stoppedReason=${dpDiag.stoppedReason}, frontierSize=${dpDiag.frontierSize}`
     );
   }
@@ -609,6 +632,10 @@ function checkMonsterOnlyMode(simulator) {
   return {
     found: result.found,
     expansions: dpDiag.expansions || 0,
+    stoppedReason: dpDiag.stoppedReason || null,
+    maxHeapMb: dpDiag.maxHeapMb || null,
+    heapUsedMb: dpDiag.heapUsedMb || null,
+    rssMb: dpDiag.rssMb || null,
     actionsGeneratedByKind: dpDiag.actionsGeneratedByKind || {},
     actionsExpandedByKind: expandedByKind,
     uniqueBattleTargets: dpDiag.uniqueBattleTargets || 0,
@@ -636,31 +663,67 @@ function timed(label, fn) {
   return result;
 }
 
+function parseListOption(args, name) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === `--${name}` && args[index + 1] && !args[index + 1].startsWith("--")) {
+      values.push(args[index + 1]);
+      index += 1;
+    } else if (arg.startsWith(`--${name}=`)) {
+      values.push(arg.slice(name.length + 3));
+    }
+  }
+  return values.flatMap((value) => String(value).split(",")).filter(Boolean);
+}
+
 function shouldRun(name, args) {
-  const only = args.find((a) => a.startsWith("--only="));
-  const skip = args.filter((a) => a.startsWith("--skip=")).map((a) => a.slice(7));
   const normalize = (s) => s.toLowerCase().replace(/-/g, "");
+  const aliases = {
+    checkMonsterOnlyMode: ["monster-only", "monster"],
+    checkResourceTimingWindow: ["resource-window", "resource-timing", "timing-window"],
+    checkUserBaselineOracle: ["baseline-oracle", "user-baseline"],
+    checkAdaptiveBranch: ["adaptive-branch", "adaptive"],
+    checkLatestLeftSwordOrdering: ["latest-left-sword", "left-sword"],
+  };
+  const labels = [name].concat(aliases[name] || []).map(normalize);
+  const only = parseListOption(args, "only").map(normalize);
+  const skip = parseListOption(args, "skip").map(normalize);
   const lowerName = normalize(name);
-  if (only && !lowerName.includes(normalize(only.slice(7)))) return false;
-  if (skip.some((s) => lowerName.includes(normalize(s)))) return false;
+  const matches = (value) => labels.some((label) => label.includes(value) || value.includes(label)) || lowerName.includes(value);
+  if (only.length > 0 && !only.some(matches)) return false;
+  if (skip.some(matches)) return false;
   return true;
+}
+
+function runTimedCheck(simulator, name, fn) {
+  try {
+    return timed(name, fn);
+  } finally {
+    if (simulator && typeof simulator.clearActionExpansionCaches === "function") {
+      simulator.clearActionExpansionCaches();
+    }
+  }
 }
 
 function main() {
   const args = process.argv.slice(2);
   const run = (name) => shouldRun(name, args);
   const simulator = makeSimulator();
-  if (run("checkBlockerTileAssumption")) timed("checkBlockerTileAssumption", () => checkBlockerTileAssumption(simulator.project));
-  if (run("checkProtectedItemClosure")) timed("checkProtectedItemClosure", () => checkProtectedItemClosure(simulator));
-  if (run("checkCloseStateForBattleFrontier")) timed("checkCloseStateForBattleFrontier", () => checkCloseStateForBattleFrontier(simulator));
-  const startState = run("replayRoute") ? timed("replayRoute", () => replayRoute(simulator, START_ROUTE)) : null;
-  const threshold = startState && run("checkThreshold") ? timed("checkThreshold", () => checkThreshold(simulator, startState)) : null;
-  const intents = startState && threshold && run("checkResourceIntent") ? timed("checkResourceIntent", () => checkResourceIntent(simulator, startState, threshold)) : null;
-  const battleFrontier = run("checkMonsterOnlyMode") ? timed("checkMonsterOnlyMode", () => checkMonsterOnlyMode(simulator)) : null;
-  const window = run("checkResourceTimingWindow") ? timed("checkResourceTimingWindow", () => checkResourceTimingWindow(simulator)) : null;
-  const adaptive = run("checkAdaptiveBranch") ? timed("checkAdaptiveBranch", () => checkAdaptiveBranch(simulator)) : null;
-  const latestOrdering = run("checkLatestLeftSwordOrdering") ? timed("checkLatestLeftSwordOrdering", () => checkLatestLeftSwordOrdering()) : null;
-  const userBaseline = run("checkUserBaselineOracle") ? timed("checkUserBaselineOracle", () => checkUserBaselineOracle(simulator)) : null;
+  if (run("checkBlockerTileAssumption")) runTimedCheck(simulator, "checkBlockerTileAssumption", () => checkBlockerTileAssumption(simulator.project));
+  if (run("checkProtectedItemClosure")) runTimedCheck(simulator, "checkProtectedItemClosure", () => checkProtectedItemClosure(simulator));
+  if (run("checkCloseStateForBattleFrontier")) runTimedCheck(simulator, "checkCloseStateForBattleFrontier", () => checkCloseStateForBattleFrontier(simulator));
+  const startState = run("replayRoute") ? runTimedCheck(simulator, "replayRoute", () => replayRoute(simulator, START_ROUTE)) : null;
+  const deficitState = (run("checkThreshold") || run("checkResourceIntent"))
+    ? runTimedCheck(simulator, "replayDeficitRoute", () => replayRoute(simulator, ADAPTIVE_START_ROUTE))
+    : null;
+  const threshold = deficitState && run("checkThreshold") ? runTimedCheck(simulator, "checkThreshold", () => checkThreshold(simulator, deficitState)) : null;
+  const intents = deficitState && threshold && run("checkResourceIntent") ? runTimedCheck(simulator, "checkResourceIntent", () => checkResourceIntent(simulator, deficitState, threshold)) : null;
+  const battleFrontier = run("checkMonsterOnlyMode") ? runTimedCheck(simulator, "checkMonsterOnlyMode", () => checkMonsterOnlyMode(simulator)) : null;
+  const window = run("checkResourceTimingWindow") ? runTimedCheck(simulator, "checkResourceTimingWindow", () => checkResourceTimingWindow(simulator)) : null;
+  const adaptive = run("checkAdaptiveBranch") ? runTimedCheck(simulator, "checkAdaptiveBranch", () => checkAdaptiveBranch(simulator)) : null;
+  const latestOrdering = run("checkLatestLeftSwordOrdering") ? runTimedCheck(simulator, "checkLatestLeftSwordOrdering", () => checkLatestLeftSwordOrdering()) : null;
+  const userBaseline = run("checkUserBaselineOracle") ? runTimedCheck(simulator, "checkUserBaselineOracle", () => checkUserBaselineOracle(simulator)) : null;
   console.log(JSON.stringify({
     threshold: threshold ? {
       enemyLabel: threshold.enemyLabel,
@@ -683,6 +746,10 @@ function main() {
     battleFrontier: battleFrontier ? {
       found: battleFrontier.found,
       expansions: battleFrontier.expansions,
+      stoppedReason: battleFrontier.stoppedReason,
+      maxHeapMb: battleFrontier.maxHeapMb,
+      heapUsedMb: battleFrontier.heapUsedMb,
+      rssMb: battleFrontier.rssMb,
       actionsGeneratedByKind: battleFrontier.actionsGeneratedByKind,
       uniqueBattleTargets: battleFrontier.uniqueBattleTargets,
       uniquePortalEntries: battleFrontier.uniquePortalEntries,

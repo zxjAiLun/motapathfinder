@@ -1559,6 +1559,7 @@
       "id": "mt7-special80-ready",
       "label": "MT7 生命限制怪前 HP 准备",
       "startFrom": "mt7-bottom-double-fairy",
+      "repairStartFrom": "mt6-first-center-guard",
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT7",
@@ -1609,15 +1610,17 @@
           "MT6:6,0",
           "MT7:6,0"
         ],
-        "forbidUnsupportedEvents": true
+        "forbidUnsupportedEvents": true,
+        "resourceTimingMode": "sustain-prep"
       },
       "dp": {
-        "keyMode": "location",
-        "priorityMode": "combat-first",
+        "keyMode": "region",
+        "priorityMode": "default",
+        "resourceTimingMode": "sustain-prep",
         "enablePreviewScore": "required",
         "stopOnFirstGoal": false,
-        "maxExpansions": 3000,
-        "maxRuntimeMs": 12000,
+        "maxExpansions": 20000,
+        "maxRuntimeMs": 60000,
         "goalSkylineLimit": 8
       }
     },

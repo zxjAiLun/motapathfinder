@@ -16,6 +16,11 @@
 
 白色孤岛.zip
 
+# Tower runtime noise
+whiteisland（9）/
+**/_saves/
+**/replay-downloads/
+**/.tmp-*.js
 
 **/solver/checkpoints/*.checkpoint-skyline.json
 Only upV2.1/Only upV2.1/.venv-standard-server/

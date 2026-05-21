@@ -19,6 +19,7 @@ const {
   summarizeSegmentFailure,
 } = require("./lib/segment-dp");
 const { runAdaptiveSegmentPlanner } = require("./lib/adaptive-segment-planner");
+const { runProgressiveMonsterPlanner } = require("./lib/progressive-monster-planner");
 const {
   buildRegionMilestoneSpec,
   buildRegionProofClaim,
@@ -78,6 +79,7 @@ module.exports = {
   runSegmentDP: searchSegmentDP,
   runMilestoneGraph,
   runAdaptiveSegmentPlanner,
+  runProgressiveMonsterPlanner,
   loadRegionSpec,
   normalizeRegionSpec,
   validateRegionSpec,

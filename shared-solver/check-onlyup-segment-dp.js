@@ -450,8 +450,9 @@ function checkFailureBacktracking() {
   });
   assert.equal(withRepair.found, true, `synthetic graph should repair from previous milestone: ${JSON.stringify(withRepair.failedSegment || null)}`);
   assert.equal(withRepair.reachedMilestone, "gate");
+  const repairedRoute = (withRepair.finalCandidate.route || []).map((entry) => String(entry && (entry.summary || entry)));
   assert.ok(withRepair.finalCandidate.state.hero.atk >= 10, "repair should select the highest-atk prep candidate");
-  assert.ok((withRepair.finalCandidate.route || []).includes("pickup:zAtk@SYN:1,0"), "repair route should use the high-atk branch");
+  assert.ok(repairedRoute.includes("pickup:zAtk@SYN:1,0"), "repair route should use the high-atk branch");
   assert.ok((withRepair.segmentResults[0] || {}).backtrack, "previous segment should record backtrack expansion metadata");
   assert.ok((withRepair.segmentResults[1] || {}).backtrack, "current segment should record retry metadata");
   return {
@@ -462,7 +463,7 @@ function checkFailureBacktracking() {
     withRepair: {
       found: withRepair.found,
       reachedMilestone: withRepair.reachedMilestone,
-      route: withRepair.finalCandidate.route,
+      route: repairedRoute,
       backtrack: withRepair.segmentResults.map((segment) => segment.backtrack || null),
     },
   };

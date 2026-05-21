@@ -6,6 +6,7 @@ const { formatActionLabel } = require("./enemy-labels");
 const { buildSolverSnapshot } = require("./route-snapshot");
 const { cloneState, getDecisionDepth, getTileDefinitionAt } = require("./state");
 const { getFloorOrder } = require("./floor-id");
+const reachAndBattleOracle = require("./reach-and-battle-oracle");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -201,6 +202,12 @@ function parseActionTileKey(summary) {
   const match = /^[^@]+@([^:]+):(\d+),(\d+)(?:\b|$)/.exec(String(summary || ""));
   if (!match) return null;
   return `${match[1]}:${match[2]},${match[3]}`;
+}
+
+function parseTileKeyParts(tileKey) {
+  const match = /^([^:]+):(\d+),(\d+)$/.exec(String(tileKey || ""));
+  if (!match) return null;
+  return { floorId: match[1], x: Number(match[2]), y: Number(match[3]) };
 }
 
 function isRequiredTileStillPresent(project, state, required) {
@@ -481,6 +488,39 @@ function trimFloorFlyActions(actions, policy) {
   return kept;
 }
 
+function actionTravelHp(action) {
+  return number((((action || {}).travelState || {}).hero || {}).hp, 0);
+}
+
+function compareSegmentActionRepresentatives(left, right) {
+  const leftScore = number((((left || {}).estimate || {}).segmentPreviewScore), 0);
+  const rightScore = number((((right || {}).estimate || {}).segmentPreviewScore), 0);
+  if (leftScore !== rightScore) return rightScore - leftScore;
+  const leftDamage = number(((left || {}).estimate || {}).damage, 0);
+  const rightDamage = number(((right || {}).estimate || {}).damage, 0);
+  if (leftDamage !== rightDamage) return leftDamage - rightDamage;
+  const hpDiff = actionTravelHp(right) - actionTravelHp(left);
+  if (hpDiff !== 0) return hpDiff;
+  return ((left || {}).path || []).length - ((right || {}).path || []).length;
+}
+
+function deduplicateSegmentActions(actions) {
+  const bySummary = new Map();
+  const passthrough = [];
+  for (const action of actions || []) {
+    const summary = action && action.summary;
+    if (!summary) {
+      passthrough.push(action);
+      continue;
+    }
+    const existing = bySummary.get(summary);
+    if (!existing || compareSegmentActionRepresentatives(action, existing) < 0) {
+      bySummary.set(summary, action);
+    }
+  }
+  return passthrough.concat(Array.from(bySummary.values()));
+}
+
 function buildSegmentActionProvider(simulator, segment) {
   return (unusedSimulator, state) => {
     const policy = (segment || {}).actionPolicy || {};
@@ -493,10 +533,11 @@ function buildSegmentActionProvider(simulator, segment) {
     if (allowedKinds.has("floorFly") && typeof simulator.enumerateFloorFlyActions === "function") {
       actions = actions.concat(simulator.enumerateFloorFlyActions(state));
     }
-    return trimFloorFlyActions(actions, policy)
+    const filtered = trimFloorFlyActions(actions, policy)
       .filter((action) => isAllowedAction(action, state, segment, simulator))
       .filter((action) => isResourceTimingAction(simulator, state, action, segment))
       .map((action) => annotateSegmentAction(simulator, state, action, segment));
+    return deduplicateSegmentActions(filtered);
   };
 }
 
@@ -640,13 +681,82 @@ function isAllowedPortalAction(action, state, policy) {
 }
 
 function oracleFindFloorState(simulator, state, targetFloorId, segment, config) {
+  const states = oracleFindFloorStates(simulator, state, targetFloorId, segment, config);
+  return states[0] || null;
+}
+
+function floorResultIdentity(result) {
+  const state = result && result.state ? result.state : {};
+  const hero = state.hero || {};
+  return JSON.stringify({
+    floorId: state.floorId,
+    loc: hero.loc || null,
+    hp: number(hero.hp, 0),
+    atk: number(hero.atk, 0),
+    def: number(hero.def, 0),
+    mdef: number(hero.mdef, 0),
+    lv: number(hero.lv, 0),
+    exp: number(hero.exp, 0),
+    equipment: Array.isArray(hero.equipment) ? hero.equipment.slice().sort() : [],
+  });
+}
+
+function selectOracleFloorResults(results, maxEntries) {
+  const candidates = results.map((result) => {
+    const hero = summarizeHero(result.state);
+    const effective = summarizeEffectiveHero(result.state);
+    const travelLength = Array.isArray(result.travelActions) ? result.travelActions.length : 0;
+    return {
+      ...result,
+      _roleScores: {
+        highestHp: hero.hp,
+        shortestTravel: -travelLength,
+        bestCombatStats: effective.atk * 100000 + effective.def * 80000 + effective.mdef * 8000 + hero.exp * 1000 + hero.hp,
+        highestEffectiveDef: effective.def,
+      },
+    };
+  });
+  const selected = [];
+  const seen = new Set();
+  const add = (candidate) => {
+    if (!candidate || selected.length >= maxEntries) return false;
+    const key = floorResultIdentity(candidate);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    selected.push(candidate);
+    return true;
+  };
+  for (const role of ["highestHp", "shortestTravel", "bestCombatStats", "highestEffectiveDef"]) {
+    candidates
+      .slice()
+      .sort((left, right) => {
+        const diff = right._roleScores[role] - left._roleScores[role];
+        if (diff !== 0) return diff;
+        return (left.travelActions || []).length - (right.travelActions || []).length;
+      })
+      .some(add);
+  }
+  candidates
+    .slice()
+    .sort((left, right) => {
+      const leftHero = summarizeHero(left.state);
+      const rightHero = summarizeHero(right.state);
+      return rightHero.hp - leftHero.hp;
+    })
+    .forEach(add);
+  return selected;
+}
+
+function oracleFindFloorStates(simulator, state, targetFloorId, segment, config) {
   const maxSteps = number((config || {}).maxPortalDepth, 10) * 50;
+  const maxEntries = number((config || {}).maxOracleFloorEntries, 4);
   const policy = (segment || {}).actionPolicy || {};
   const goal = (segment || {}).goal || {};
 
   // BFS including walking, portals, and floorFly to navigate to target floor
   const queue = [{ state: cloneState(state), steps: 0, actions: [] }];
   const visited = new Set();
+  const results = [];
   const posKey = (s) => `${s.floorId}:${(s.hero.loc || {}).x},${(s.hero.loc || {}).y}`;
   visited.add(posKey(state));
 
@@ -655,7 +765,8 @@ function oracleFindFloorState(simulator, state, targetFloorId, segment, config) 
 
     if (current.floorId === targetFloorId) {
       const closed = closeStateForBattleFrontier(simulator, current, segment);
-      return { state: closed, travelActions: actions };
+      results.push({ state: closed, travelActions: actions });
+      continue;
     }
 
     if (steps >= maxSteps) continue;
@@ -687,64 +798,196 @@ function oracleFindFloorState(simulator, state, targetFloorId, segment, config) 
     }
   }
 
-  return null;
+  return selectOracleFloorResults(results, maxEntries);
 }
 
-function tryReachAndBattle(simulator, state, target, segment, config, oracleCache) {
-  // First navigate to the target floor (with optional memoization)
-  let floorResult;
-  if (oracleCache && oracleCache.has(target.floorId)) {
-    floorResult = oracleCache.get(target.floorId);
-  } else {
-    floorResult = oracleFindFloorState(simulator, state, target.floorId, segment, config);
-    if (oracleCache) oracleCache.set(target.floorId, floorResult);
+function battleMarginForGoal(simulator, state, segment) {
+  const goal = (segment || {}).goal || {};
+  const targetSummary = goal.actionSurvivable && goal.actionSurvivable.summary;
+  if (!targetSummary) return Number.NEGATIVE_INFINITY;
+  try {
+    const threshold = estimateBattleSurvivability(simulator, state, targetSummary, { skipMinHp: true });
+    if (!threshold || !threshold.supported) return Number.NEGATIVE_INFINITY;
+    return number(((state || {}).hero || {}).hp, 0) - number(threshold.currentDamage, Number.POSITIVE_INFINITY);
+  } catch (error) {
+    return Number.NEGATIVE_INFINITY;
   }
-  if (!floorResult) return { ok: false, reason: "unreachable-floor" };
+}
 
-  const closed = floorResult.state;
-  const travelActions = floorResult.travelActions;
+function successorIdentity(candidate) {
+  const state = candidate && candidate.postState ? candidate.postState : {};
+  const hero = state.hero || {};
+  return JSON.stringify({
+    floorId: state.floorId,
+    loc: hero.loc || null,
+    hp: number(hero.hp, 0),
+    atk: number(hero.atk, 0),
+    def: number(hero.def, 0),
+    mdef: number(hero.mdef, 0),
+    lv: number(hero.lv, 0),
+    exp: number(hero.exp, 0),
+    equipment: Array.isArray(hero.equipment) ? hero.equipment.slice().sort() : [],
+  });
+}
+
+function selectMonsterOnlySuccessors(simulator, results, segment, maxSuccessors, stats) {
+  const candidates = results.map((candidate) => {
+    const state = candidate.postState;
+    const hero = summarizeHero(state);
+    const effective = summarizeEffectiveHero(state);
+    const routePatchLength = Array.isArray(candidate.routePatch) ? candidate.routePatch.length : 0;
+    return {
+      ...candidate,
+      _roleScores: {
+        highestPostHp: hero.hp,
+        bestTargetMargin: battleMarginForGoal(simulator, state, segment),
+        highestEffectiveDef: effective.def,
+        highestEffectiveMdef: effective.mdef,
+        highestCombatStats: effective.atk * 100000 + effective.def * 80000 + effective.mdef * 8000 + hero.exp * 1000 + hero.hp,
+        shortestRoute: -routePatchLength,
+      },
+    };
+  });
+  const roles = [
+    "highestPostHp",
+    "bestTargetMargin",
+    "highestEffectiveDef",
+    "highestEffectiveMdef",
+    "highestCombatStats",
+    "shortestRoute",
+  ];
+  const selected = [];
+  const seen = new Set();
+  const add = (candidate, role) => {
+    if (!candidate || selected.length >= maxSuccessors) return;
+    const key = successorIdentity(candidate);
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidate._selectedRole = role;
+    selected.push(candidate);
+  };
+  for (const role of roles) {
+    candidates
+      .slice()
+      .sort((left, right) => {
+        const diff = right._roleScores[role] - left._roleScores[role];
+        if (diff !== 0) return diff;
+        return right.preHp - left.preHp;
+      })
+      .some((candidate) => {
+        const before = selected.length;
+        add(candidate, role);
+        return selected.length > before;
+      });
+  }
+  candidates
+    .slice()
+    .sort((left, right) => right.preHp - left.preHp)
+    .forEach((candidate) => add(candidate, "highestPreHpFallback"));
+  const capped = selected.slice(0, maxSuccessors);
+  if (stats) {
+    if (!stats.successorSelectedByRole) stats.successorSelectedByRole = {};
+    capped.forEach((candidate) => {
+      const role = candidate._selectedRole || "unknown";
+      stats.successorSelectedByRole[role] = Number(stats.successorSelectedByRole[role] || 0) + 1;
+    });
+  }
+  return capped;
+}
+
+function tryReachAndBattle(simulator, state, target, segment, config, oracleCache, stats) {
+  // First navigate to the target floor (with optional memoization)
+  let floorResults;
+  if (oracleCache && oracleCache.has(target.floorId)) {
+    floorResults = oracleCache.get(target.floorId);
+  } else {
+    const floorStartedAt = Date.now();
+    floorResults = oracleFindFloorStates(simulator, state, target.floorId, segment, config);
+    if (stats) stats.oracleFloorSearchMs = Number(stats.oracleFloorSearchMs || 0) + (Date.now() - floorStartedAt);
+    if (oracleCache) oracleCache.set(target.floorId, floorResults);
+  }
+  if (!Array.isArray(floorResults) || floorResults.length === 0) return { ok: false, reason: "unreachable-floor" };
+  if (stats) {
+    stats.floorEntriesReturned = Number(stats.floorEntriesReturned || 0) + floorResults.length;
+    stats.maxFloorEntriesReturned = Math.max(Number(stats.maxFloorEntriesReturned || 0), floorResults.length);
+  }
   const maxSuccessors = number((config || {}).maxSuccessorsPerTarget, 4);
-
-  // Use walk reachability to find the battle action from any reachable position
-  const reachability = simulator.getWalkReachability(closed);
-  const visited = reachability.visited || {};
 
   // Collect all valid postStates from different positions
   const results = [];
-  for (const node of Object.values(visited)) {
-    const nodeState = node.state;
-    const primitive = (simulator.enumeratePrimitiveActions(nodeState).actions || []);
-    const battleAction = primitive.find((action) =>
-      action.kind === "battle" &&
-      action.summary === target.summary
-    );
-    if (!battleAction) continue;
+  for (const floorResult of floorResults) {
+    const closed = floorResult.state;
+    const travelActions = floorResult.travelActions;
 
-    try {
-      const postState = simulator.applyAction(nodeState, battleAction, { storeRoute: false });
-      // Build routePatch: travel actions + battle action (no walk pseudo action)
-      const routePatch = travelActions.concat(battleAction);
-      results.push({ postState, battleAction, routePatch, preHp: nodeState.hero ? nodeState.hero.hp : 0 });
-    } catch (error) {
-      continue;
+    // Use walk reachability to find the battle action from any reachable position
+    const reachabilityStartedAt = Date.now();
+    const reachability = simulator.getWalkReachability(closed);
+    if (stats) stats.oracleBattleReachabilityMs = Number(stats.oracleBattleReachabilityMs || 0) + (Date.now() - reachabilityStartedAt);
+    const visited = reachability.visited || {};
+    if (stats) {
+      const visitedCount = Object.keys(visited).length;
+      stats.reachabilityNodes = Number(stats.reachabilityNodes || 0) + visitedCount;
+      stats.maxReachabilityNodes = Math.max(Number(stats.maxReachabilityNodes || 0), visitedCount);
+    }
+
+    for (const node of Object.values(visited)) {
+      const nodeState = node.state;
+      const primitive = (simulator.enumeratePrimitiveActions(nodeState).actions || []);
+      const battleAction = primitive.find((action) =>
+        action.kind === "battle" &&
+        action.summary === target.summary
+      );
+      if (!battleAction) continue;
+
+      try {
+        const postState = simulator.applyAction(nodeState, battleAction, { storeRoute: false });
+        // Build routePatch: travel actions + battle action (no walk pseudo action)
+        const routePatch = travelActions.concat(battleAction);
+        results.push({ postState, battleAction, routePatch, preHp: nodeState.hero ? nodeState.hero.hp : 0 });
+      } catch (error) {
+        continue;
+      }
     }
   }
 
   if (results.length === 0) return { ok: false, reason: "battle-not-reachable" };
-  // Sort by pre-battle HP descending, cap to maxSuccessors
-  results.sort((a, b) => b.preHp - a.preHp);
-  return { ok: true, results: results.slice(0, maxSuccessors) };
+  if (stats) {
+    stats.successorCandidatesBeforeCap = Number(stats.successorCandidatesBeforeCap || 0) + results.length;
+  }
+  const cappedResults = selectMonsterOnlySuccessors(simulator, results, segment, maxSuccessors, stats);
+  if (stats) {
+    stats.successorCandidatesAfterCap = Number(stats.successorCandidatesAfterCap || 0) + cappedResults.length;
+    stats.successorCapDrops = Number(stats.successorCapDrops || 0) + Math.max(0, results.length - cappedResults.length);
+  }
+  return { ok: true, results: cappedResults };
 }
 
-function scoreMonsterTarget(target, state) {
+function scoreMonsterTarget(simulator, target, state, segment) {
+  const threshold = (() => {
+    try {
+      return estimateBattleSurvivability(simulator, state, target, { skipMinHp: true });
+    } catch (error) {
+      return null;
+    }
+  })();
   // Prefer current floor targets (reachable without portal)
-  const currentFloor = state.floorId === target.floorId ? 1000 : 0;
+  const currentFloor = state.floorId === target.floorId ? 10000 : 0;
+  const reachableNow = target.reachableNow ? 1000000 : 0;
+  const damage = threshold && threshold.supported ? number(threshold.currentDamage, 0) : 0;
+  const hp = number(((state || {}).hero || {}).hp, 0);
+  const survivable = threshold && threshold.supported && hp > damage ? 50000 : 0;
+  const lowDamage = threshold && threshold.supported ? Math.max(0, hp - damage) : 0;
+  const goal = (segment || {}).goal || {};
+  const goalTarget = parseTileKeyParts(parseActionTileKey(goal.actionSurvivable && goal.actionSurvivable.summary));
+  const distanceToGoalTarget = goalTarget && target.floorId === goalTarget.floorId
+    ? 1000 - Math.abs(target.x - goalTarget.x) - Math.abs(target.y - goalTarget.y)
+    : 0;
   // Prefer enemies on higher floors (closer to goal)
   const floorScore = getFloorOrder(target.floorId) * 10;
-  return currentFloor + floorScore;
+  return reachableNow + survivable + currentFloor + lowDamage + distanceToGoalTarget + floorScore;
 }
 
-function buildMonsterOnlyActionProvider(simulator, segment, config) {
+function buildMonsterOnlyActionProvider(simulator, segment, config, stats) {
   const policy = (segment || {}).actionPolicy || {};
   const goal = (segment || {}).goal || {};
   const maxTargets = number((config || {}).maxMonsterTargets, 64);
@@ -752,6 +995,12 @@ function buildMonsterOnlyActionProvider(simulator, segment, config) {
   return (unusedSimulator, state) => {
     const project = simulator.project;
     const allowedFloors = policy.allowedFloors || Object.keys(project.floorsById || {});
+    const reachableBattleSummaries = new Set();
+    try {
+      (simulator.enumeratePrimitiveActions(state).actions || [])
+        .filter((action) => action.kind === "battle" && action.summary)
+        .forEach((action) => reachableBattleSummaries.add(action.summary));
+    } catch (error) { /* ignore */ }
     const targets = [];
     for (const floorId of allowedFloors) {
       const floor = project.floorsById[floorId];
@@ -769,17 +1018,30 @@ function buildMonsterOnlyActionProvider(simulator, segment, config) {
             `${p.floorId}:${p.x},${p.y}` === preservedKey
           );
           if (isProtected) continue;
+          const summary = `battle:${enemyId}@${floorId}:${x},${y}`;
           targets.push({
             kind: "battle",
-            summary: `battle:${enemyId}@${floorId}:${x},${y}`,
+            summary,
             floorId, x, y, enemyId,
+            reachableNow: reachableBattleSummaries.has(summary),
             monsterTarget: true,
           });
         }
       }
     }
-    targets.sort((a, b) => scoreMonsterTarget(b, state) - scoreMonsterTarget(a, state));
-    return targets.slice(0, maxTargets);
+    targets.sort((a, b) => scoreMonsterTarget(simulator, b, state, segment) - scoreMonsterTarget(simulator, a, state, segment));
+    const cappedTargets = targets.slice(0, maxTargets);
+    if (stats) {
+      stats.targetsGenerated = Number(stats.targetsGenerated || 0) + targets.length;
+      stats.targetsAfterCap = Number(stats.targetsAfterCap || 0) + cappedTargets.length;
+      stats.reachableTargetsGenerated = Number(stats.reachableTargetsGenerated || 0) + targets.filter((target) => target.reachableNow).length;
+      stats.reachableTargetsAfterCap = Number(stats.reachableTargetsAfterCap || 0) + cappedTargets.filter((target) => target.reachableNow).length;
+      stats.targetCapDrops = Number(stats.targetCapDrops || 0) + Math.max(0, targets.length - cappedTargets.length);
+      stats.maxTargetsGeneratedForState = Math.max(Number(stats.maxTargetsGeneratedForState || 0), targets.length);
+      stats.maxTargetsAfterCapForState = Math.max(Number(stats.maxTargetsAfterCapForState || 0), cappedTargets.length);
+      if (targets.length > maxTargets) stats.statesWithTargetCap += 1;
+    }
+    return cappedTargets;
   };
 }
 
@@ -1294,18 +1556,40 @@ function searchSegmentDP(simulator, startState, segment, options) {
   let actionApplier = null;
   let oracleDiagnostics = null;
   if (actionProviderMode === "monster-only") {
-    actionProvider = buildMonsterOnlyActionProvider(simulator, segment, dpConfig);
     // Cache oracle results per floor within a single DP expansion (state is fixed)
     let oracleCache = null;
     let oracleCacheState = null;
     const oracleStats = {
+      targetsGenerated: 0,
+      targetsAfterCap: 0,
+      reachableTargetsGenerated: 0,
+      reachableTargetsAfterCap: 0,
+      targetCapDrops: 0,
+      statesWithTargetCap: 0,
+      maxTargetsGeneratedForState: 0,
+      maxTargetsAfterCapForState: 0,
       floorSearches: 0,
       floorCacheHits: 0,
+      oracleCacheHitRate: 0,
+      oracleFloorSearchMs: 0,
+      floorEntriesReturned: 0,
+      maxFloorEntriesReturned: 0,
+      oracleBattleReachabilityMs: 0,
+      reachabilityNodes: 0,
+      maxReachabilityNodes: 0,
       battleCandidates: 0,
+      successorCandidatesBeforeCap: 0,
+      successorCandidatesAfterCap: 0,
+      successorCapDrops: 0,
+      successorSelectedByRole: {},
       successorsReturned: 0,
+      routePatchTotalLength: 0,
+      routePatchAvgLength: 0,
+      routePatchMaxLength: 0,
       rejectedByReason: {},
     };
     oracleDiagnostics = oracleStats;
+    actionProvider = reachAndBattleOracle.buildMonsterOnlyActionProvider(simulator, segment, dpConfig, oracleStats);
     actionApplier = (state, target) => {
       // Reset cache if state changed (new DP expansion)
       if (state !== oracleCacheState) {
@@ -1313,9 +1597,11 @@ function searchSegmentDP(simulator, startState, segment, options) {
         oracleCacheState = state;
       }
       const cached = oracleCache.has(target.floorId);
-      const result = tryReachAndBattle(simulator, state, target, segment, dpConfig, oracleCache);
+      const result = reachAndBattleOracle.tryReachAndBattle(simulator, state, target, segment, dpConfig, oracleCache, oracleStats);
       if (cached) oracleStats.floorCacheHits += 1;
       else oracleStats.floorSearches += 1;
+      const floorLookups = oracleStats.floorSearches + oracleStats.floorCacheHits;
+      oracleStats.oracleCacheHitRate = floorLookups > 0 ? oracleStats.floorCacheHits / floorLookups : 0;
       if (!result.ok) {
         oracleStats.rejectedByReason[result.reason] = (oracleStats.rejectedByReason[result.reason] || 0) + 1;
         throw new Error(`monster-only applier failed: ${result.reason}`);
@@ -1326,9 +1612,14 @@ function searchSegmentDP(simulator, startState, segment, options) {
         r.postState._routePatch = r.routePatch
           .map((entry) => typeof entry === "string" ? entry : (entry && entry.summary))
           .filter(Boolean);
+        oracleStats.routePatchTotalLength += r.postState._routePatch.length;
+        oracleStats.routePatchMaxLength = Math.max(oracleStats.routePatchMaxLength, r.postState._routePatch.length);
         return r.postState;
       });
       oracleStats.successorsReturned += postStates.length;
+      oracleStats.routePatchAvgLength = oracleStats.successorsReturned > 0
+        ? oracleStats.routePatchTotalLength / oracleStats.successorsReturned
+        : 0;
       return postStates;
     };
   } else {
@@ -1339,9 +1630,12 @@ function searchSegmentDP(simulator, startState, segment, options) {
     maxExpansions,
     maxActionsPerState,
     maxRuntimeMs,
+    maxHeapMb: number(dpConfig.maxHeapMb, 0),
     dpKeyMode: dpConfig.keyMode || dpConfig.dpKeyMode || "region",
     dpAgendaMode: dpConfig.agendaMode || "best-first",
-    dpPriorityMode: dpConfig.priorityMode || dpConfig.dpPriorityMode || "default",
+    dpPriorityMode: (usesResourceTimingMode(segment) && (!dpConfig.priorityMode || dpConfig.priorityMode === "default") && !dpConfig.dpPriorityMode)
+      ? "resource-first"
+      : (dpConfig.priorityMode || dpConfig.dpPriorityMode || "default"),
     stopOnFirstGoal: dpConfig.stopOnFirstGoal === true,
     continueAfterGoal: dpConfig.continueAfterGoal === true,
     captureTrace,
@@ -1761,6 +2055,53 @@ function tryRepairFromPreviousMilestone(simulator, segments, segmentIndex, histo
   };
 }
 
+function configuredRepairStartFrom(segment) {
+  const dp = (segment || {}).dp || {};
+  return (segment && segment.repairStartFrom) || dp.repairStartFrom || null;
+}
+
+function tryRepairFromConfiguredMilestone(simulator, segments, segmentIndex, history, failedExecution, config) {
+  if ((config || {}).enableFailureBacktracking === false) return null;
+  if (!Array.isArray(history) || history.length === 0) return null;
+  const currentSegment = segments[segmentIndex];
+  const repairStartFrom = configuredRepairStartFrom(currentSegment);
+  if (!repairStartFrom) return null;
+  const start = history.find((entry) => entry && entry.segment && entry.segment.id === repairStartFrom);
+  if (!start || !Array.isArray(start.merged) || start.merged.length === 0) return null;
+
+  const dpConfig = (currentSegment || {}).dp || {};
+  const repairedCurrent = runSegmentAgainstFrontier(simulator, currentSegment, start.merged, config || {}, {
+    candidateLimit: numericOption(dpConfig.repairCandidateLimit, numericOption(dpConfig.goalSkylineLimit, 8)),
+    startCandidateLimit: numericOption(dpConfig.repairStartCandidateLimit, start.merged.length),
+    preserveSkylineRoles: true,
+    dpOverrides: {
+      stopOnFirstGoal: false,
+      keyMode: dpConfig.keyMode,
+      dpKeyMode: dpConfig.dpKeyMode,
+      priorityMode: dpConfig.priorityMode,
+      dpPriorityMode: dpConfig.dpPriorityMode,
+      maxExpansions: numericOption(dpConfig.repairMaxExpansions, numericOption(dpConfig.maxExpansions, 0)),
+      maxRuntimeMs: numericOption(dpConfig.repairMaxRuntimeMs, numericOption(dpConfig.maxRuntimeMs, 0)),
+      goalSkylineLimit: numericOption(dpConfig.repairGoalSkylineLimit, numericOption(dpConfig.goalSkylineLimit, 8)),
+      maxActionsPerState: dpConfig.maxActionsPerState,
+      agendaMode: dpConfig.agendaMode,
+      dpAgendaMode: dpConfig.dpAgendaMode,
+    },
+  });
+  repairedCurrent.summary.backtrack = {
+    mode: "configured-milestone-window",
+    repairedFromMilestone: repairStartFrom,
+    triggeredBySegment: currentSegment.id,
+    failedSegment: failedExecution && failedExecution.summary && failedExecution.summary.segmentId,
+    startCandidateCount: start.merged.length,
+    repairedCandidateCount: repairedCurrent.merged.length,
+  };
+  return {
+    found: repairedCurrent.merged.length > 0,
+    repairedCurrent,
+  };
+}
+
 function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   const config = options || {};
   const rangeError = milestoneRangeError(milestoneSpec, config.fromMilestoneId, config.toMilestoneId);
@@ -1807,6 +2148,20 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     const segment = segments[segmentIndex];
     const execution = runSegmentAgainstFrontier(simulator, segment, frontier, config, {});
     if (execution.merged.length === 0) {
+      const configuredRepair = tryRepairFromConfiguredMilestone(simulator, segments, segmentIndex, history, execution, config);
+      if (configuredRepair && configuredRepair.found) {
+        checkpointResults.push(buildMilestoneCheckpoint(segment, configuredRepair.repairedCurrent));
+        segmentResults.push(configuredRepair.repairedCurrent.summary);
+        history.push({
+          segment,
+          inputFrontier: configuredRepair.repairedCurrent.inputFrontier,
+          merged: configuredRepair.repairedCurrent.merged,
+          summary: configuredRepair.repairedCurrent.summary,
+          repairExpanded: true,
+        });
+        frontier = configuredRepair.repairedCurrent.merged;
+        continue;
+      }
       const repair = tryRepairFromPreviousMilestone(simulator, segments, segmentIndex, history, execution, config);
       if (repair && repair.found) {
         if (checkpointResults.length > 0) checkpointResults.pop();
@@ -1832,6 +2187,17 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         continue;
       }
       const failedSummary = execution.summary;
+      if (configuredRepair) {
+        failedSummary.backtrack = {
+          attempted: true,
+          repaired: false,
+          mode: "configured-milestone-window",
+          repairedCurrent: configuredRepair.repairedCurrent && {
+            segmentId: configuredRepair.repairedCurrent.segment.id,
+            found: configuredRepair.repairedCurrent.merged.length > 0,
+          },
+        };
+      }
       if (repair) {
         failedSummary.backtrack = {
           attempted: true,
@@ -1909,14 +2275,15 @@ module.exports = {
   summarizeHero,
   summarizeSegmentFailure,
   __testHooks: {
-    BLOCKER_TILE_NUMBER,
-    isTileBlocking,
-    closeStateForBattleFrontier,
-    protectPresentTiles,
-    restorePresentTiles,
-    enumerateMonsterTargets,
-    oracleFindFloorState,
-    tryReachAndBattle,
-    buildMonsterOnlyActionProvider,
+    BLOCKER_TILE_NUMBER: reachAndBattleOracle.BLOCKER_TILE_NUMBER,
+    isTileBlocking: reachAndBattleOracle.isTileBlocking,
+    closeStateForBattleFrontier: reachAndBattleOracle.closeStateForBattleFrontier,
+    protectPresentTiles: reachAndBattleOracle.protectPresentTiles,
+    restorePresentTiles: reachAndBattleOracle.restorePresentTiles,
+    enumerateMonsterTargets: reachAndBattleOracle.enumerateMonsterTargets,
+    oracleFindFloorState: reachAndBattleOracle.oracleFindFloorState,
+    oracleFindFloorStates: reachAndBattleOracle.oracleFindFloorStates,
+    tryReachAndBattle: reachAndBattleOracle.tryReachAndBattle,
+    buildMonsterOnlyActionProvider: reachAndBattleOracle.buildMonsterOnlyActionProvider,
   },
 };

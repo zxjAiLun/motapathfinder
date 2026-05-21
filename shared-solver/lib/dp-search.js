@@ -325,7 +325,7 @@ function buildDpAgendaRank(simulator, state, sourceAction, sequence, options) {
 
 function compareDpAgendaRank(left, right) {
   if (left.priorityMode === "resource-first" || right.priorityMode === "resource-first") {
-    const resourceHighWins = ["sourceActionRank", "hp", "atk", "def", "mdef", "lv", "exp", "bestFloorRank", "currentFloorRank", "finiteNextDistance"];
+    const resourceHighWins = ["sourceActionRank", "atk", "def", "mdef", "lv", "exp", "hp", "bestFloorRank", "currentFloorRank", "finiteNextDistance"];
     for (const field of resourceHighWins) {
       const diff = Number(left[field] || 0) - Number(right[field] || 0);
       if (diff !== 0) return diff;
@@ -540,13 +540,23 @@ function searchDP(simulator, initialState, options) {
   };
 
   const maxHeapMb = Number(config.maxHeapMb || 0);
+  let maxHeapUsedMb = 0;
+  let maxRssMb = 0;
+  const recordMemoryUsage = () => {
+    const memory = process.memoryUsage();
+    const heapUsedMb = memory.heapUsed / 1024 / 1024;
+    const rssMb = memory.rss / 1024 / 1024;
+    maxHeapUsedMb = Math.max(maxHeapUsedMb, heapUsedMb);
+    maxRssMb = Math.max(maxRssMb, rssMb);
+    return { heapUsedMb, rssMb };
+  };
   while (expansions < maxExpansions) {
     if (maxRuntimeMs > 0 && Date.now() - startedAt >= maxRuntimeMs) {
       stoppedReason = "time-limit";
       break;
     }
     if (maxHeapMb > 0 && expansions % 100 === 0) {
-      const heapUsedMb = process.memoryUsage().heapUsed / 1024 / 1024;
+      const { heapUsedMb } = recordMemoryUsage();
       if (heapUsedMb > maxHeapMb) {
         stoppedReason = "memory-limit";
         break;
@@ -612,6 +622,7 @@ function searchDP(simulator, initialState, options) {
   const frontierSize = heap
     ? heap.activeCount(isActiveEntry)
     : fifoEntries.slice(cursor).filter(isActiveEntry).length;
+  recordMemoryUsage();
   const goalSkylineNodes = selectGoalSkylineNodes(
     goalNodes.filter((node) => {
       if (bestByKey instanceof SkylineSet) {
@@ -731,6 +742,9 @@ function searchDP(simulator, initialState, options) {
         keys: bestByKey.size,
         stoppedReason,
         maxRuntimeMs,
+        maxHeapMb,
+        heapUsedMb: Number(maxHeapUsedMb.toFixed(1)),
+        rssMb: Number(maxRssMb.toFixed(1)),
         maxExpansions,
         expansions,
         frontierSize,
