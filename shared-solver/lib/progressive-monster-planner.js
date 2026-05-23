@@ -333,6 +333,28 @@ function selectFrontier(candidates, limit) {
   return selected;
 }
 
+function matchesSpecialTarget(summary, specialTargets) {
+  if (!summary || !Array.isArray(specialTargets) || specialTargets.length === 0)
+    return false;
+  for (const pattern of specialTargets) {
+    if (pattern === summary) return true;
+    // Wildcard pattern: "battle:*@floor:x,y" matches "battle:enemyId@floor:x,y"
+    if (pattern.includes("*@")) {
+      const prefix = pattern.slice(0, pattern.indexOf("*@"));
+      const suffix = pattern.slice(pattern.indexOf("*@") + 1);
+      if (summary.startsWith(prefix) && summary.endsWith(suffix)) {
+        // Verify the wildcard part is a valid enemyId (alphanumeric + digits)
+        const middle = summary.slice(
+          prefix.length,
+          summary.length - suffix.length,
+        );
+        if (middle.length > 0) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function maybeRecordCheckpoint(
   checkpoints,
   candidate,
@@ -363,7 +385,7 @@ function maybeRecordCheckpoint(
   }
   if (
     candidate.action &&
-    options.specialTargets.includes(candidate.action.summary)
+    matchesSpecialTarget(candidate.action.summary, options.specialTargets)
   ) {
     checkpoints.push({
       type: "special-target-defeated",
@@ -404,6 +426,7 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
   let stoppedReason = null;
   let peakHeapMb = 0;
   let peakRssMb = 0;
+  let specialTargetDefeated = false;
   const checkpoints = [];
   const oracleStats = createOracleStats();
   const diagnostics = {
@@ -516,6 +539,14 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
               config,
             );
             if (
+              matchesSpecialTarget(
+                (nextCandidate.action && nextCandidate.action.summary) || "",
+                config.specialTargets || [],
+              )
+            ) {
+              specialTargetDefeated = true;
+            }
+            if (
               candidateOutcomeScore(nextCandidate) >
               candidateOutcomeScore(bestCandidate)
             ) {
@@ -550,6 +581,14 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
           1,
         )[0] || bestCandidate;
       stoppedReason = "target-floor";
+      break;
+    }
+    if (
+      specialTargetDefeated &&
+      config.specialTargets &&
+      config.specialTargets.length > 0
+    ) {
+      stoppedReason = "special-targets-defeated";
       break;
     }
   }

@@ -1,16 +1,16 @@
 "use strict";
 
 /**
- * Progressive Planner → Milestone Suggestion Bridge (v2)
+ * Progressive Planner → Milestone Suggestion Bridge (v3)
  *
- * Fixes from v1:
- *  1. special-target checkpoints generate tileRemoval goals with removedTiles
- *  2. All checkpoint types include floorId + effectiveHero
- *  3. validateMilestones() validates each independently (not as a chain)
- *  4. minHero/minEffectiveHero are complete (hp/atk/def/mdef/lv/exp)
- *  5. allowedFloors defaults to floor range derived from from/to milestones
- *  6. start-route replay enumerates full action sources
- *  7. Validation results written to output JSON
+ * Changes from v2:
+ *  - inferSpecialTargetsFromMilestone() extracts battle summaries from goal specs
+ *  - Inferred special targets merged with CLI --special-targets (deduped)
+ *  - Planner continues past targetFloorId until special-target checkpoints appear
+ *  - Removed unused imports (buildRouteRecord, writeRouteFile)
+ *  - Clear error on reversed --from / --to order
+ *  - Focused invariant: --to=mt7-special80 without --special-targets must
+ *    produce a candidate milestone with tileRemoved goal
  */
 
 const path = require("node:path");
@@ -21,11 +21,7 @@ const {
 } = require("./lib/progressive-monster-planner");
 const { getMilestoneSpec, getMilestoneById } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
-const {
-  buildRouteRecord,
-  writeRouteFile,
-  readRouteFile,
-} = require("./lib/route-store");
+const { readRouteFile } = require("./lib/route-store");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { StaticSimulator } = require("./lib/simulator");
 const { runMilestoneGraph } = require("./lib/segment-dp");
@@ -81,10 +77,6 @@ function makeSimulator(project) {
   });
 }
 
-/**
- * Find an action matching a summary string, using the full action enumeration
- * pattern from run-segmented-dp.js (primitive + interactPickup + floorFly).
- */
 function findAction(simulator, state, summary) {
   const actions = [];
   try {
@@ -131,6 +123,25 @@ function replayRouteFile(simulator, routeFile) {
 }
 
 // =========================================================================
+// Milestone ordering check
+// =========================================================================
+
+function milestoneIndexOf(milestones, milestoneId) {
+  return milestones.findIndex((m) => m.id === milestoneId);
+}
+
+function checkMilestoneOrder(milestones, fromId, toId) {
+  if (!fromId || !toId) return null;
+  const fromIdx = milestoneIndexOf(milestones, fromId);
+  const toIdx = milestoneIndexOf(milestones, toId);
+  if (fromIdx < 0) return `Unknown --from milestone: ${fromId}`;
+  if (toIdx < 0) return `Unknown --to milestone: ${toId}`;
+  if (fromIdx >= toIdx)
+    return `Invalid order: --from=${fromId} (index ${fromIdx}) must appear before --to=${toId} (index ${toIdx}) in the milestone route`;
+  return null;
+}
+
+// =========================================================================
 // Floor range derivation
 // =========================================================================
 
@@ -140,15 +151,13 @@ function deriveFloorRange(project, routeName, fromMilestoneId, toMilestoneId) {
   const floorOrder = project.floorOrder || [];
 
   const fromIndex = fromMilestoneId
-    ? milestones.findIndex((m) => m.id === fromMilestoneId)
+    ? milestoneIndexOf(milestones, fromMilestoneId)
     : -1;
   const toIndex = toMilestoneId
-    ? milestones.findIndex((m) => m.id === toMilestoneId)
+    ? milestoneIndexOf(milestones, toMilestoneId)
     : -1;
-
   if (fromIndex < 0 && toIndex < 0) return null;
 
-  // Collect floor IDs from milestones in range
   const start = fromIndex >= 0 ? fromIndex : 0;
   const end = toIndex >= 0 ? toIndex : milestones.length - 1;
   const relevantFloorIds = new Set();
@@ -160,25 +169,21 @@ function deriveFloorRange(project, routeName, fromMilestoneId, toMilestoneId) {
 
   if (relevantFloorIds.size === 0) return null;
 
-  // Expand to include all floors between min and max in floor order
   const ordered = floorOrder.filter((fid) => relevantFloorIds.has(fid));
   if (ordered.length > 0) {
     const minIdx = floorOrder.indexOf(ordered[0]);
     const maxIdx = floorOrder.indexOf(ordered[ordered.length - 1]);
-    if (minIdx >= 0 && maxIdx >= 0) {
-      return floorOrder.slice(minIdx, maxIdx + 1);
-    }
+    if (minIdx >= 0 && maxIdx >= 0) return floorOrder.slice(minIdx, maxIdx + 1);
   }
 
   return [...relevantFloorIds];
 }
 
 // =========================================================================
-// Battle summary parser
+// Special target inference from milestone goal
 // =========================================================================
 
 function parseBattleSummary(summary) {
-  // Format: "battle:enemyId@floorId:x,y"
   const match = /^battle:([^@]+)@([^:]+):(\d+),(\d+)$/.exec(
     String(summary || ""),
   );
@@ -189,6 +194,49 @@ function parseBattleSummary(summary) {
     x: Number(match[3]),
     y: Number(match[4]),
   };
+}
+
+/**
+ * Extract battle target summaries from a milestone's goal definition.
+ * Sources checked (in order):
+ *  1. goal.actionSurvivable.summary  (e.g. "battle:poisonZombie@MT7:1,11")
+ *  2. goal.removedTiles[]           → synthesizes battle:??@floor:x,y
+ *  3. goal.type === "tileRemoved"   → synthesizes from goal.floorId/x/y
+ *
+ * Returns deduplicated array of battle summary strings.
+ */
+function inferSpecialTargetsFromMilestone(milestone) {
+  if (!milestone || !milestone.goal) return [];
+  const goal = milestone.goal;
+  const targets = new Set();
+
+  // Source 1: actionSurvivable.summary
+  if (goal.actionSurvivable && goal.actionSurvivable.summary) {
+    const parsed = parseBattleSummary(goal.actionSurvivable.summary);
+    if (parsed) targets.add(goal.actionSurvivable.summary);
+  }
+
+  // Source 2: removedTiles array
+  (goal.removedTiles || []).forEach((tile) => {
+    if (tile && tile.floorId != null && tile.x != null && tile.y != null) {
+      // We don't know the enemyId, but the planner's specialTargets match
+      // is done by full summary string. We'll use a wildcard match pattern
+      // that the planner can check.
+      targets.add(`battle:*@${tile.floorId}:${tile.x},${tile.y}`);
+    }
+  });
+
+  // Source 3: type=tileRemoved on goal itself
+  if (
+    goal.type === "tileRemoved" &&
+    goal.floorId != null &&
+    goal.x != null &&
+    goal.y != null
+  ) {
+    targets.add(`battle:*@${goal.floorId}:${goal.x},${goal.y}`);
+  }
+
+  return [...targets];
 }
 
 // =========================================================================
@@ -244,7 +292,6 @@ function checkpointToMilestone(checkpoint, existingMilestoneIds) {
     minEffectiveHero: buildMinEffectiveHero(checkpoint.effectiveHero),
   };
 
-  // For special-target-defeated: parse battle summary and add tileRemoval
   if (checkpoint.type === "special-target-defeated" && checkpoint.target) {
     const parsed = parseBattleSummary(checkpoint.target);
     if (parsed) {
@@ -258,7 +305,7 @@ function checkpointToMilestone(checkpoint, existingMilestoneIds) {
     }
   }
 
-  const milestone = {
+  return {
     id,
     label:
       checkpoint.type === "entered-floor"
@@ -293,12 +340,10 @@ function checkpointToMilestone(checkpoint, existingMilestoneIds) {
       candidateId: checkpoint.candidateId,
     },
   };
-
-  return milestone;
 }
 
 // =========================================================================
-// Validation — each milestone validated independently from same start
+// Validation — each milestone independently from same start state
 // =========================================================================
 
 function validateMilestones(
@@ -308,13 +353,8 @@ function validateMilestones(
   config,
 ) {
   const results = [];
-
   for (const milestone of candidateMilestones) {
-    const spec = {
-      routeName: "auto-validated",
-      milestones: [milestone],
-    };
-
+    const spec = { routeName: "auto-validated", milestones: [milestone] };
     const result = runMilestoneGraph(simulator, initialState, spec, {
       candidateLimit: config.candidateLimit || 16,
       dpKeyMode: config.dpKeyMode || "location",
@@ -325,7 +365,6 @@ function validateMilestones(
       dpSkylineMax: config.dpSkylineMax || 3,
       goalSkylineLimit: config.goalSkylineLimit || 16,
     });
-
     const doctor = result.found ? null : buildSolverDoctorReport(result);
     results.push({
       milestoneId: milestone.id,
@@ -344,8 +383,41 @@ function validateMilestones(
       goalSummary: milestone.goal,
     });
   }
-
   return results;
+}
+
+// =========================================================================
+// Focused check: ensure special-target-derived milestone has tileRemoved
+// =========================================================================
+
+function assertTileRemovalGoalPresent(candidateMilestones, inferredTargets) {
+  if (inferredTargets.length === 0) return true; // Nothing to check
+  const tileRemovalMilestones = candidateMilestones.filter(
+    (m) =>
+      m.goal &&
+      m.goal.type === "tileRemoved" &&
+      Array.isArray(m.goal.removedTiles) &&
+      m.goal.removedTiles.length > 0,
+  );
+  if (tileRemovalMilestones.length > 0) return true;
+
+  console.error("FOCUSED CHECK FAILED:");
+  console.error(
+    `  Inferred special targets: ${JSON.stringify(inferredTargets)}`,
+  );
+  console.error(
+    "  Expected at least one candidate milestone with goal.type='tileRemoved' + removedTiles.",
+  );
+  console.error(
+    "  This means the planner did not produce a special-target-defeated checkpoint.",
+  );
+  console.error(
+    "  Possible causes: planner stopped too early (reached targetFloorId before defeating target),",
+  );
+  console.error(
+    "  or the inferred targets don't match actual battle summaries in the game.",
+  );
+  return false;
 }
 
 // =========================================================================
@@ -361,6 +433,17 @@ function main() {
   const simulator = makeSimulator(project);
   const routeName = args["route-name"] || "onlyup-chaos-mt5-blueking";
   const spec = getMilestoneSpec(project, routeName);
+
+  // --- Check milestone order ---
+  const orderError = checkMilestoneOrder(
+    spec.milestones || [],
+    args["from"],
+    args["to"],
+  );
+  if (orderError) {
+    console.error(orderError);
+    process.exit(1);
+  }
 
   // --- Resolve start state ---
   let initialState;
@@ -390,14 +473,29 @@ function main() {
     initialState = simulator.createInitialState({ rank: "chaos" });
   }
 
-  // --- Resolve target floor ---
+  // --- Resolve target floor and special targets ---
   let targetFloorId = null;
+  const inferredTargets = [];
   if (args["to"]) {
     const toMilestone = getMilestoneById(project, routeName, args["to"]);
-    if (toMilestone && toMilestone.goal && toMilestone.goal.floorId) {
-      targetFloorId = toMilestone.goal.floorId;
+    if (toMilestone) {
+      if (toMilestone.goal && toMilestone.goal.floorId) {
+        targetFloorId = toMilestone.goal.floorId;
+      }
+      inferredTargets.push(...inferSpecialTargetsFromMilestone(toMilestone));
     }
   }
+
+  // Merge with CLI special-targets (dedup)
+  const cliTargets = args["special-targets"]
+    ? String(args["special-targets"])
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+  const allSpecialTargets = [...new Set([...cliTargets, ...inferredTargets])];
+
+  const hasInferredTargets = inferredTargets.length > 0;
 
   // --- Derive allowed floors ---
   const userAllowed = args["allowed-floors"]
@@ -417,17 +515,27 @@ function main() {
   if (!allowedFloors && parseBoolean(args["require-allowed-floors"], true)) {
     console.error("Cannot derive allowed floors from from/to milestones.");
     console.error(
-      "Pass --allowed-floors=MT5,MT6,MT7 or set --require-allowed-floors=0 to scan all floors.",
+      "Pass --allowed-floors=MT5,MT6,MT7 or set --require-allowed-floors=0.",
     );
     process.exit(1);
   }
 
-  console.log(`=== Progressive Planner → Milestone Suggestion (v2) ===`);
+  console.log(`=== Progressive Planner → Milestone Suggestion (v3) ===`);
   console.log(`From: ${args["from"] || "start"}, To: ${args["to"] || "auto"}`);
   console.log(`Target floor: ${targetFloorId || "auto-detect"}`);
   console.log(
     `Allowed floors: ${allowedFloors ? allowedFloors.join(",") : "all"}`,
   );
+  console.log(
+    `CLI special targets: ${cliTargets.length > 0 ? cliTargets.join(",") : "none"}`,
+  );
+  console.log(
+    `Inferred special targets: ${inferredTargets.length > 0 ? inferredTargets.join(",") : "none"}`,
+  );
+  if (hasInferredTargets)
+    console.log(
+      `  (planner will continue past targetFloorId until special targets appear)`,
+    );
   console.log(
     `Start state floor: ${initialState.floorId}, HP: ${(initialState.hero || {}).hp}\n`,
   );
@@ -439,13 +547,11 @@ function main() {
     maxTargetsPerState: optionalNumber(args["planner-targets"]) || 12,
     maxSuccessorsPerTarget: optionalNumber(args["planner-successors"]) || 2,
     maxRuntimeMs: optionalNumber(args["planner-runtime-ms"]) || 60000,
-    targetFloorId,
+    // When inferred special targets exist, pass them AND suppress early stop at targetFloorId
+    targetFloorId: hasInferredTargets ? null : targetFloorId,
     allowedFloors: allowedFloors || undefined,
-    specialTargets: args["special-targets"]
-      ? String(args["special-targets"])
-          .split(",")
-          .map((s) => s.trim())
-      : [],
+    specialTargets: allSpecialTargets,
+    noProgressRounds: optionalNumber(args["planner-no-progress"]) || 5,
   });
 
   console.log(
@@ -454,18 +560,21 @@ function main() {
   console.log(
     `  rounds=${plannerResult.diagnostics.rounds}, states=${plannerResult.diagnostics.statesExpanded}`,
   );
-  console.log(`  checkpoints=${plannerResult.checkpoints.length}\n`);
+  console.log(`  checkpoints=${plannerResult.checkpoints.length}`);
+  const specCheckpoints = plannerResult.checkpoints.filter(
+    (c) => c.type === "special-target-defeated",
+  );
+  console.log(`  special-target checkpoints: ${specCheckpoints.length}`);
+  specCheckpoints.forEach((c) => console.log(`    - ${c.target}`));
+  console.log();
 
   // --- Convert checkpoints to candidate milestones ---
   const existingMilestoneIds = new Set(
     (spec.milestones || []).map((m) => m.id),
   );
-  const candidateMilestones = [];
-
-  plannerResult.checkpoints.forEach((checkpoint) => {
-    const milestone = checkpointToMilestone(checkpoint, existingMilestoneIds);
-    candidateMilestones.push(milestone);
-  });
+  const candidateMilestones = plannerResult.checkpoints.map((cp) =>
+    checkpointToMilestone(cp, existingMilestoneIds),
+  );
 
   console.log(`Generated ${candidateMilestones.length} candidate milestones:`);
   candidateMilestones.forEach((milestone) => {
@@ -490,6 +599,25 @@ function main() {
     if (Object.keys(eh).length > 0) parts.push(`eff:${JSON.stringify(eh)}`);
     if (parts.length > 0) console.log(`    ${parts.join(", ")}`);
   });
+
+  // --- Focused check ---
+  if (hasInferredTargets) {
+    const ok = assertTileRemovalGoalPresent(
+      candidateMilestones,
+      inferredTargets,
+    );
+    if (!ok) {
+      console.error(
+        "\nFOCUSED CHECK FAILED: No tileRemoval milestone for inferred special targets.",
+      );
+      console.error("The planner output may be incomplete.");
+      process.exitCode = 1;
+    } else {
+      console.log(
+        "\n✓ Focused check passed: tileRemoval milestone(s) present for inferred special targets.",
+      );
+    }
+  }
 
   // --- Optionally validate with segment DP ---
   let validation = null;
@@ -533,15 +661,32 @@ function main() {
   const out = args.out ? path.resolve(args.out) : null;
   if (out) {
     const output = {
-      generatedBy: "progressive-to-milestone-v2",
+      generatedBy: "progressive-to-milestone-v3",
       timestamp: new Date().toISOString(),
       fromMilestone: args["from"] || "start",
       toMilestone: args["to"] || "auto",
       allowedFloors: allowedFloors || [],
+      cliSpecialTargets: cliTargets,
+      inferredSpecialTargets: inferredTargets,
+      allSpecialTargets,
       plannerDiagnostics: plannerResult.diagnostics,
       candidateMilestones,
       bestRoute: plannerResult.bestRoute || [],
       validation: validation || undefined,
+      focusedCheck: hasInferredTargets
+        ? {
+            inferredTargets,
+            tileRemovalMilestonesFound: candidateMilestones
+              .filter(
+                (m) =>
+                  m.goal &&
+                  m.goal.type === "tileRemoved" &&
+                  Array.isArray(m.goal.removedTiles) &&
+                  m.goal.removedTiles.length > 0,
+              )
+              .map((m) => m.id),
+          }
+        : undefined,
     };
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, JSON.stringify(output, null, 2), "utf8");
