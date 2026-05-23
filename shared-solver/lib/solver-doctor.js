@@ -33,19 +33,40 @@ function sumKindCounts(counts) {
 }
 
 function buildDeficitDetail(failedSegment) {
-  const missing = (failedSegment && failedSegment.missingGoalFields) || [];
-  if (missing.length === 0) return null;
-  const parts = missing.map((entry) => {
-    const field = (entry && entry.field) || "?";
-    const expected = entry && entry.expected;
-    const actual = entry && entry.actual;
-    return `${field}: need ${expected}, have ${actual}`;
-  });
-  return parts.join("; ");
+  // Primary: missingGoalFields on the failed segment itself
+  const primary = (failedSegment && failedSegment.missingGoalFields) || [];
+  if (primary.length > 0) {
+    const parts = primary.map((entry) => {
+      const field = (entry && entry.field) || "?";
+      const expected = entry && entry.expected;
+      const actual = entry && entry.actual;
+      return `${field}: need ${expected}, have ${actual}`;
+    });
+    return parts.join("; ");
+  }
+  // Fallback: search attempts for failure.missingGoalFields
+  const attempts = segmentAttempts(failedSegment);
+  for (const attempt of attempts) {
+    const failure =
+      (attempt && attempt.diagnostics && attempt.diagnostics.failure) || null;
+    const missing = (failure && failure.missingGoalFields) || [];
+    if (missing.length > 0) {
+      const parts = missing.map((entry) => {
+        const field = (entry && entry.field) || "?";
+        const expected = entry && entry.expected;
+        const actual = entry && entry.actual;
+        return `${field}: need ${expected}, have ${actual}`;
+      });
+      return parts.join("; ");
+    }
+  }
+  return null;
 }
 
 function buildCandidateQuality(failedSegment) {
   const attempts = segmentAttempts(failedSegment);
+
+  // Primary: goalSkyline candidates from attempts
   const goalSkylines = attempts
     .map(
       (attempt) =>
@@ -53,57 +74,65 @@ function buildCandidateQuality(failedSegment) {
         null,
     )
     .filter(Boolean);
-  if (goalSkylines.length === 0) return null;
+
+  // If no goal skyline, fallback to bestSeen / bestProgress from diagnostics.failure
+  let bestSeenHero = null;
+  let bestSeenEffective = null;
+  if (goalSkylines.length === 0) {
+    for (const attempt of attempts) {
+      const failure =
+        (attempt && attempt.diagnostics && attempt.diagnostics.failure) || null;
+      if (failure && failure.bestSeen) {
+        bestSeenHero = failure.bestSeen.hero || bestSeenHero;
+        bestSeenEffective = failure.bestSeen.effectiveHero || bestSeenEffective;
+      }
+      const dp = attemptDp(attempt);
+      if (dp.bestSeenState && dp.bestSeenState.hero) {
+        bestSeenHero = bestSeenHero || dp.bestSeenState.hero;
+      }
+    }
+  }
+
+  if (goalSkylines.length === 0 && !bestSeenHero) return null;
 
   let maxHp = -Infinity;
   let maxAtk = -Infinity;
   let maxDef = -Infinity;
   let maxMdef = -Infinity;
   let minRoute = Infinity;
-  let maxHpId = null;
-  let maxAtkId = null;
-  let maxDefId = null;
-  let maxMdefId = null;
-  let minRouteId = null;
 
-  goalSkylines.forEach((skyline) => {
-    (skyline.candidates || []).forEach((candidate) => {
-      const hero = (candidate && candidate.hero) || {};
-      const effective = (candidate && candidate.effectiveHero) || {};
-      const hp = Number(hero.hp || 0);
-      const atk = Number(effective.atk || hero.atk || 0);
-      const def = Number(effective.def || hero.def || 0);
-      const mdef = Number(effective.mdef || hero.mdef || 0);
-      const routeLen = Number(candidate.routeLength || 0);
-      if (hp > maxHp) {
-        maxHp = hp;
-        maxHpId = candidate.id;
-      }
-      if (atk > maxAtk) {
-        maxAtk = atk;
-        maxAtkId = candidate.id;
-      }
-      if (def > maxDef) {
-        maxDef = def;
-        maxDefId = candidate.id;
-      }
-      if (mdef > maxMdef) {
-        maxMdef = mdef;
-        maxMdefId = candidate.id;
-      }
-      if (routeLen > 0 && routeLen < minRoute) {
-        minRoute = routeLen;
-        minRouteId = candidate.id;
-      }
+  if (goalSkylines.length > 0) {
+    goalSkylines.forEach((skyline) => {
+      (skyline.candidates || []).forEach((candidate) => {
+        const hero = (candidate && candidate.hero) || {};
+        const effective = (candidate && candidate.effectiveHero) || {};
+        const hp = Number(hero.hp || 0);
+        const atk = Number(effective.atk || hero.atk || 0);
+        const def = Number(effective.def || hero.def || 0);
+        const mdef = Number(effective.mdef || hero.mdef || 0);
+        const routeLen = Number(candidate.routeLength || 0);
+        if (hp > maxHp) maxHp = hp;
+        if (atk > maxAtk) maxAtk = atk;
+        if (def > maxDef) maxDef = def;
+        if (mdef > maxMdef) maxMdef = mdef;
+        if (routeLen > 0 && routeLen < minRoute) minRoute = routeLen;
+      });
     });
-  });
+  } else if (bestSeenHero) {
+    const h = bestSeenHero;
+    const e = bestSeenEffective || {};
+    maxHp = Number(h.hp || 0);
+    maxAtk = Number(e.atk || h.atk || 0);
+    maxDef = Number(e.def || h.def || 0);
+    maxMdef = Number(e.mdef || h.mdef || 0);
+  }
 
   const parts = [];
-  if (maxHpId) parts.push(`bestHP=${maxHp}(${maxHpId})`);
-  if (maxAtkId) parts.push(`bestAtk=${maxAtk}`);
-  if (maxDefId) parts.push(`bestDef=${maxDef}`);
-  if (maxMdefId) parts.push(`bestMdef=${maxMdef}`);
-  if (minRouteId) parts.push(`shortestRoute=${minRoute}`);
+  if (maxHp > -Infinity) parts.push(`bestHP=${maxHp}`);
+  if (maxAtk > -Infinity) parts.push(`bestAtk=${maxAtk}`);
+  if (maxDef > -Infinity) parts.push(`bestDef=${maxDef}`);
+  if (maxMdef > -Infinity) parts.push(`bestMdef=${maxMdef}`);
+  if (minRoute < Infinity) parts.push(`shortestRoute=${minRoute}`);
   return parts.length > 0 ? parts.join(", ") : null;
 }
 

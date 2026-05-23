@@ -30,7 +30,9 @@ function summarizeHero(state) {
 function effectiveHeroValue(state, field) {
   const hero = (state || {}).hero || {};
   const flags = (state || {}).flags || {};
-  return Math.floor(number(hero[field], 0) * number(flags[`__${field}_buff__`], 1));
+  return Math.floor(
+    number(hero[field], 0) * number(flags[`__${field}_buff__`], 1),
+  );
 }
 
 function summarizeEffectiveHero(state) {
@@ -46,7 +48,8 @@ function summarizeEffectiveHero(state) {
 }
 
 function routeLength(candidateOrState) {
-  if (Array.isArray(candidateOrState && candidateOrState.route)) return candidateOrState.route.length;
+  if (Array.isArray(candidateOrState && candidateOrState.route))
+    return candidateOrState.route.length;
   return getDecisionDepth(candidateOrState || {});
 }
 
@@ -54,10 +57,11 @@ function normalizeFloors(value, targetFloorId) {
   const floors = Array.isArray(value)
     ? value.slice()
     : String(value || "")
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-  if (targetFloorId && !floors.includes(targetFloorId)) floors.push(targetFloorId);
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+  if (targetFloorId && !floors.includes(targetFloorId))
+    floors.push(targetFloorId);
   return floors;
 }
 
@@ -66,8 +70,14 @@ function normalizeOptions(options) {
   return {
     maxRounds: Math.max(1, number(config.maxRounds, 100)),
     beamWidth: Math.max(1, number(config.beamWidth || config.beam, 32)),
-    maxTargetsPerState: Math.max(1, number(config.maxTargetsPerState || config.maxTargets, 24)),
-    maxSuccessorsPerTarget: Math.max(1, number(config.maxSuccessorsPerTarget || config.maxSuccessors, 3)),
+    maxTargetsPerState: Math.max(
+      1,
+      number(config.maxTargetsPerState || config.maxTargets, 24),
+    ),
+    maxSuccessorsPerTarget: Math.max(
+      1,
+      number(config.maxSuccessorsPerTarget || config.maxSuccessors, 3),
+    ),
     maxRuntimeMs: Math.max(0, number(config.maxRuntimeMs, 180000)),
     maxHeapMb: Math.max(0, number(config.maxHeapMb, 3072)),
     allowedFloors: normalizeFloors(config.allowedFloors, config.targetFloorId),
@@ -75,8 +85,13 @@ function normalizeOptions(options) {
     noProgressRounds: Math.max(1, number(config.noProgressRounds, 5)),
     maxOracleFloorEntries: Math.max(1, number(config.maxOracleFloorEntries, 4)),
     maxPortalDepth: Math.max(1, number(config.maxPortalDepth, 10)),
-    checkpointScoreDelta: Math.max(1, number(config.checkpointScoreDelta, 1000000)),
-    specialTargets: Array.isArray(config.specialTargets) ? config.specialTargets.slice() : [],
+    checkpointScoreDelta: Math.max(
+      1,
+      number(config.checkpointScoreDelta, 1000000),
+    ),
+    specialTargets: Array.isArray(config.specialTargets)
+      ? config.specialTargets.slice()
+      : [],
   };
 }
 
@@ -95,26 +110,30 @@ function evaluateProgressState(simulator, state, context) {
   const routePenalty = routeLength(state) * 100;
   const newFloorBonus = context && context.enteredNewFloor ? 1000000 : 0;
   const targetFloorBonus = context && context.targetFloorReached ? 10000000 : 0;
-  return hero.hp * 0.01 +
+  return (
+    hero.hp * 0.01 +
     effectiveCombatScore(effective) +
     hero.lv * 500000 +
     hero.exp * 1000 +
     floorProgressScore(state) +
     newFloorBonus +
     targetFloorBonus -
-    routePenalty;
+    routePenalty
+  );
 }
 
 function candidateOutcomeScore(candidate) {
   const state = candidate && candidate.state;
   const hero = summarizeHero(state);
   const effective = summarizeEffectiveHero(state);
-  return number(candidate && candidate.score, 0) +
+  return (
+    number(candidate && candidate.score, 0) +
     hero.hp * 0.05 +
     effectiveCombatScore(effective) +
     hero.lv * 1000000 +
     hero.exp * 2000 -
-    routeLength(candidate) * 25;
+    routeLength(candidate) * 25
+  );
 }
 
 function progressKey(simulator, state) {
@@ -127,27 +146,44 @@ function dominates(left, right) {
   const rightHero = summarizeHero(right.state);
   const leftEffective = summarizeEffectiveHero(left.state);
   const rightEffective = summarizeEffectiveHero(right.state);
-  return leftHero.hp >= rightHero.hp &&
+  return (
+    leftHero.hp >= rightHero.hp &&
     leftEffective.atk >= rightEffective.atk &&
     leftEffective.def >= rightEffective.def &&
     leftEffective.mdef >= rightEffective.mdef &&
-    routeLength(left) <= routeLength(right);
+    routeLength(left) <= routeLength(right)
+  );
 }
 
 function selectRepresentatives(candidates, limit) {
   const selected = [];
   const add = (candidate) => {
-    if (!candidate || selected.includes(candidate) || selected.length >= limit) return;
+    if (!candidate || selected.includes(candidate) || selected.length >= limit)
+      return;
     selected.push(candidate);
   };
   const by = (compare) => candidates.slice().sort(compare)[0];
   add(by((left, right) => right.score - left.score));
-  add(by((left, right) => summarizeHero(right.state).hp - summarizeHero(left.state).hp));
-  add(by((left, right) => effectiveCombatScore(summarizeEffectiveHero(right.state)) - effectiveCombatScore(summarizeEffectiveHero(left.state))));
+  add(
+    by(
+      (left, right) =>
+        summarizeHero(right.state).hp - summarizeHero(left.state).hp,
+    ),
+  );
+  add(
+    by(
+      (left, right) =>
+        effectiveCombatScore(summarizeEffectiveHero(right.state)) -
+        effectiveCombatScore(summarizeEffectiveHero(left.state)),
+    ),
+  );
   add(by((left, right) => routeLength(left) - routeLength(right)));
   candidates
     .slice()
-    .sort((left, right) => candidateOutcomeScore(right) - candidateOutcomeScore(left))
+    .sort(
+      (left, right) =>
+        candidateOutcomeScore(right) - candidateOutcomeScore(left),
+    )
     .forEach(add);
   return selected;
 }
@@ -168,7 +204,9 @@ class StateArchive {
       this.rejectedDominated += 1;
       return false;
     }
-    const filtered = bucket.filter((existing) => !dominates(candidate, existing));
+    const filtered = bucket.filter(
+      (existing) => !dominates(candidate, existing),
+    );
     filtered.push(candidate);
     this.byKey.set(key, selectRepresentatives(filtered, this.bucketLimit));
     this.accepted += 1;
@@ -192,7 +230,9 @@ function makeRootCandidate(simulator, state) {
 
 function routePatchSummaries(routePatch) {
   return (routePatch || [])
-    .map((entry) => typeof entry === "string" ? entry : (entry && entry.summary))
+    .map((entry) =>
+      typeof entry === "string" ? entry : entry && entry.summary,
+    )
     .filter(Boolean);
 }
 
@@ -201,7 +241,8 @@ function makeSegment(options) {
     id: "progressive-monster-planner",
     goal: {},
     actionPolicy: {
-      allowedFloors: options.allowedFloors.length > 0 ? options.allowedFloors : undefined,
+      allowedFloors:
+        options.allowedFloors.length > 0 ? options.allowedFloors : undefined,
       actionKinds: ["battle"],
       allowChangeFloors: [],
     },
@@ -266,40 +307,71 @@ function selectFrontier(candidates, limit) {
   const sorted = (compare) => candidates.slice().sort(compare);
   [
     sorted((left, right) => right.score - left.score),
-    sorted((left, right) => summarizeHero(right.state).hp - summarizeHero(left.state).hp),
-    sorted((left, right) => effectiveCombatScore(summarizeEffectiveHero(right.state)) - effectiveCombatScore(summarizeEffectiveHero(left.state))),
+    sorted(
+      (left, right) =>
+        summarizeHero(right.state).hp - summarizeHero(left.state).hp,
+    ),
+    sorted(
+      (left, right) =>
+        effectiveCombatScore(summarizeEffectiveHero(right.state)) -
+        effectiveCombatScore(summarizeEffectiveHero(left.state)),
+    ),
     sorted((left, right) => routeLength(left) - routeLength(right)),
-    sorted((left, right) => getFloorOrder(right.state.floorId) - getFloorOrder(left.state.floorId)),
-    sorted((left, right) => candidateOutcomeScore(right) - candidateOutcomeScore(left)),
-  ].forEach((group) => group.forEach((candidate) => addCandidate(selected, candidate, seen, limit)));
+    sorted(
+      (left, right) =>
+        getFloorOrder(right.state.floorId) - getFloorOrder(left.state.floorId),
+    ),
+    sorted(
+      (left, right) =>
+        candidateOutcomeScore(right) - candidateOutcomeScore(left),
+    ),
+  ].forEach((group) =>
+    group.forEach((candidate) =>
+      addCandidate(selected, candidate, seen, limit),
+    ),
+  );
   return selected;
 }
 
-function maybeRecordCheckpoint(checkpoints, candidate, previous, bestScore, options) {
+function maybeRecordCheckpoint(
+  checkpoints,
+  candidate,
+  previous,
+  bestScore,
+  options,
+) {
   if (previous && previous.state.floorId !== candidate.state.floorId) {
     checkpoints.push({
       type: "entered-floor",
       floorId: candidate.state.floorId,
       candidateId: candidate.id,
       hero: summarizeHero(candidate.state),
+      effectiveHero: summarizeEffectiveHero(candidate.state),
       routeLength: candidate.route.length,
     });
   }
   if (candidate.score >= bestScore + options.checkpointScoreDelta) {
     checkpoints.push({
       type: "best-score",
+      floorId: candidate.state.floorId,
       candidateId: candidate.id,
       score: candidate.score,
       hero: summarizeHero(candidate.state),
+      effectiveHero: summarizeEffectiveHero(candidate.state),
       routeLength: candidate.route.length,
     });
   }
-  if (candidate.action && options.specialTargets.includes(candidate.action.summary)) {
+  if (
+    candidate.action &&
+    options.specialTargets.includes(candidate.action.summary)
+  ) {
     checkpoints.push({
       type: "special-target-defeated",
+      floorId: candidate.state.floorId,
       target: candidate.action.summary,
       candidateId: candidate.id,
       hero: summarizeHero(candidate.state),
+      effectiveHero: summarizeEffectiveHero(candidate.state),
       routeLength: candidate.route.length,
     });
   }
@@ -307,8 +379,13 @@ function maybeRecordCheckpoint(checkpoints, candidate, previous, bestScore, opti
 
 function shouldStop(found, round, noProgress, options, startedAt, peakHeapMb) {
   if (found) return "target-floor";
-  if (options.maxRuntimeMs > 0 && Date.now() - startedAt >= options.maxRuntimeMs) return "time-limit";
-  if (options.maxHeapMb > 0 && peakHeapMb >= options.maxHeapMb) return "memory-limit";
+  if (
+    options.maxRuntimeMs > 0 &&
+    Date.now() - startedAt >= options.maxRuntimeMs
+  )
+    return "time-limit";
+  if (options.maxHeapMb > 0 && peakHeapMb >= options.maxHeapMb)
+    return "memory-limit";
   if (round >= options.maxRounds) return "round-limit";
   if (noProgress >= options.noProgressRounds) return "no-progress";
   return null;
@@ -344,35 +421,59 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
     oracle: oracleStats,
   };
   const segment = makeSegment(config);
-  const targetProvider = buildMonsterOnlyActionProvider(simulator, segment, {
-    maxMonsterTargets: config.maxTargetsPerState,
-  }, oracleStats);
+  const targetProvider = buildMonsterOnlyActionProvider(
+    simulator,
+    segment,
+    {
+      maxMonsterTargets: config.maxTargetsPerState,
+    },
+    oracleStats,
+  );
 
   for (let round = 1; round <= config.maxRounds; round += 1) {
     diagnostics.rounds = round;
     const recentMemory = memoryMb();
     peakHeapMb = Math.max(peakHeapMb, recentMemory.heapUsedMb);
     peakRssMb = Math.max(peakRssMb, recentMemory.rssMb);
-    stoppedReason = shouldStop(false, round - 1, noProgress, config, startedAt, peakHeapMb);
+    stoppedReason = shouldStop(
+      false,
+      round - 1,
+      noProgress,
+      config,
+      startedAt,
+      peakHeapMb,
+    );
     if (stoppedReason) break;
 
     const next = [];
     for (const candidate of frontier) {
       diagnostics.statesExpanded += 1;
       const oracleCache = new Map();
-      const targets = targetProvider(simulator, candidate.state).slice(0, config.maxTargetsPerState);
+      const targets = targetProvider(simulator, candidate.state).slice(
+        0,
+        config.maxTargetsPerState,
+      );
       diagnostics.targetsConsidered += targets.length;
       for (const target of targets) {
         const cached = oracleCache.has(target.floorId);
-        const result = tryReachAndBattle(simulator, candidate.state, target, segment, {
-          maxSuccessorsPerTarget: config.maxSuccessorsPerTarget,
-          maxOracleFloorEntries: config.maxOracleFloorEntries,
-          maxPortalDepth: config.maxPortalDepth,
-        }, oracleCache, oracleStats);
+        const result = tryReachAndBattle(
+          simulator,
+          candidate.state,
+          target,
+          segment,
+          {
+            maxSuccessorsPerTarget: config.maxSuccessorsPerTarget,
+            maxOracleFloorEntries: config.maxOracleFloorEntries,
+            maxPortalDepth: config.maxPortalDepth,
+          },
+          oracleCache,
+          oracleStats,
+        );
         if (cached) oracleStats.floorCacheHits += 1;
         else oracleStats.floorSearches += 1;
         if (!result.ok) {
-          oracleStats.rejectedByReason[result.reason] = Number(oracleStats.rejectedByReason[result.reason] || 0) + 1;
+          oracleStats.rejectedByReason[result.reason] =
+            Number(oracleStats.rejectedByReason[result.reason] || 0) + 1;
           continue;
         }
         oracleStats.battleCandidates += result.results.length;
@@ -380,17 +481,25 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
         for (const successor of result.results) {
           const patch = routePatchSummaries(successor.routePatch);
           oracleStats.routePatchTotalLength += patch.length;
-          oracleStats.routePatchMaxLength = Math.max(oracleStats.routePatchMaxLength, patch.length);
+          oracleStats.routePatchMaxLength = Math.max(
+            oracleStats.routePatchMaxLength,
+            patch.length,
+          );
           const state = successor.postState;
           state.route = candidate.route.concat(patch);
           state._routePatch = patch;
           const enteredNewFloor = candidate.state.floorId !== state.floorId;
-          const targetFloorReached = Boolean(config.targetFloorId && state.floorId === config.targetFloorId);
+          const targetFloorReached = Boolean(
+            config.targetFloorId && state.floorId === config.targetFloorId,
+          );
           const nextCandidate = {
             id: `r${round}:${next.length}:${patch[patch.length - 1] || target.summary}`,
             state,
             route: state.route.slice(),
-            score: evaluateProgressState(simulator, state, { enteredNewFloor, targetFloorReached }),
+            score: evaluateProgressState(simulator, state, {
+              enteredNewFloor,
+              targetFloorReached,
+            }),
             round,
             action: target,
             parentId: candidate.id,
@@ -399,8 +508,17 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
           if (archive.accept(nextCandidate)) {
             diagnostics.successorsAccepted += 1;
             next.push(nextCandidate);
-            maybeRecordCheckpoint(checkpoints, nextCandidate, candidate, bestScore, config);
-            if (candidateOutcomeScore(nextCandidate) > candidateOutcomeScore(bestCandidate)) {
+            maybeRecordCheckpoint(
+              checkpoints,
+              nextCandidate,
+              candidate,
+              bestScore,
+              config,
+            );
+            if (
+              candidateOutcomeScore(nextCandidate) >
+              candidateOutcomeScore(bestCandidate)
+            ) {
               bestCandidate = nextCandidate;
               bestScore = Math.max(bestScore, nextCandidate.score);
             }
@@ -417,8 +535,20 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
       noProgress = 0;
       frontier = selectFrontier(next, config.beamWidth);
     }
-    if (frontier.some((candidate) => config.targetFloorId && candidate.state.floorId === config.targetFloorId)) {
-      bestCandidate = selectFrontier(frontier.filter((candidate) => candidate.state.floorId === config.targetFloorId), 1)[0] || bestCandidate;
+    if (
+      frontier.some(
+        (candidate) =>
+          config.targetFloorId &&
+          candidate.state.floorId === config.targetFloorId,
+      )
+    ) {
+      bestCandidate =
+        selectFrontier(
+          frontier.filter(
+            (candidate) => candidate.state.floorId === config.targetFloorId,
+          ),
+          1,
+        )[0] || bestCandidate;
       stoppedReason = "target-floor";
       break;
     }
@@ -427,21 +557,41 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
   const finalMemory = memoryMb();
   peakHeapMb = Math.max(peakHeapMb, finalMemory.heapUsedMb);
   peakRssMb = Math.max(peakRssMb, finalMemory.rssMb);
-  stoppedReason = stoppedReason || shouldStop(Boolean(config.targetFloorId && bestCandidate.state.floorId === config.targetFloorId), diagnostics.rounds, noProgress, config, startedAt, peakHeapMb) || "complete";
+  stoppedReason =
+    stoppedReason ||
+    shouldStop(
+      Boolean(
+        config.targetFloorId &&
+        bestCandidate.state.floorId === config.targetFloorId,
+      ),
+      diagnostics.rounds,
+      noProgress,
+      config,
+      startedAt,
+      peakHeapMb,
+    ) ||
+    "complete";
   diagnostics.stoppedReason = stoppedReason;
   diagnostics.heapUsedMb = Number(peakHeapMb.toFixed(1));
   diagnostics.rssMb = Number(peakRssMb.toFixed(1));
   diagnostics.archiveKeys = archive.byKey.size;
   diagnostics.archiveAccepted = archive.accepted;
   diagnostics.archiveRejectedDominated = archive.rejectedDominated;
-  const floorLookups = Number(oracleStats.floorSearches || 0) + Number(oracleStats.floorCacheHits || 0);
-  oracleStats.oracleCacheHitRate = floorLookups > 0 ? oracleStats.floorCacheHits / floorLookups : 0;
-  oracleStats.routePatchAvgLength = oracleStats.successorsReturned > 0
-    ? oracleStats.routePatchTotalLength / oracleStats.successorsReturned
-    : 0;
+  const floorLookups =
+    Number(oracleStats.floorSearches || 0) +
+    Number(oracleStats.floorCacheHits || 0);
+  oracleStats.oracleCacheHitRate =
+    floorLookups > 0 ? oracleStats.floorCacheHits / floorLookups : 0;
+  oracleStats.routePatchAvgLength =
+    oracleStats.successorsReturned > 0
+      ? oracleStats.routePatchTotalLength / oracleStats.successorsReturned
+      : 0;
 
   return {
-    found: Boolean(config.targetFloorId && bestCandidate.state.floorId === config.targetFloorId),
+    found: Boolean(
+      config.targetFloorId &&
+      bestCandidate.state.floorId === config.targetFloorId,
+    ),
     bestCandidate,
     bestState: bestCandidate.state,
     bestRoute: bestCandidate.route,
