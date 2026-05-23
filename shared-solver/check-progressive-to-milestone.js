@@ -199,44 +199,70 @@ function parseBattleSummary(summary) {
 /**
  * Extract battle target summaries from a milestone's goal definition.
  * Sources checked (in order):
- *  1. goal.actionSurvivable.summary  (e.g. "battle:poisonZombie@MT7:1,11")
- *  2. goal.removedTiles[]           → synthesizes battle:??@floor:x,y
- *  3. goal.type === "tileRemoved"   → synthesizes from goal.floorId/x/y
+ *  1. goal.actionSurvivable.summary  (exact, e.g. "battle:poisonZombie@MT7:1,11")
+ *  2. goal.type === "tileRemoved"   → looks up enemy at floor:x,y, generates exact summary
+ *  3. goal.removedTiles[]           → looks up enemy at each tile, generates exact summaries
+ *
+ * When the enemyId can be determined from project data, generates exact battle summary.
+ * Falls back to wildcard "battle:*@floor:x,y" only if the tile lookup fails.
  *
  * Returns deduplicated array of battle summary strings.
  */
-function inferSpecialTargetsFromMilestone(milestone) {
+function inferSpecialTargetsFromMilestone(milestone, project) {
   if (!milestone || !milestone.goal) return [];
   const goal = milestone.goal;
   const targets = new Set();
 
-  // Source 1: actionSurvivable.summary
+  function addExactOrWildcard(floorId, x, y) {
+    if (floorId == null || x == null || y == null) return;
+    const enemyId = lookupEnemyAtTile(project, floorId, x, y);
+    if (enemyId) {
+      targets.add(`battle:${enemyId}@${floorId}:${x},${y}`);
+    } else {
+      targets.add(`battle:*@${floorId}:${x},${y}`);
+    }
+  }
+
+  // Source 1: actionSurvivable.summary (already exact)
   if (goal.actionSurvivable && goal.actionSurvivable.summary) {
     const parsed = parseBattleSummary(goal.actionSurvivable.summary);
     if (parsed) targets.add(goal.actionSurvivable.summary);
   }
 
-  // Source 2: removedTiles array
-  (goal.removedTiles || []).forEach((tile) => {
-    if (tile && tile.floorId != null && tile.x != null && tile.y != null) {
-      // We don't know the enemyId, but the planner's specialTargets match
-      // is done by full summary string. We'll use a wildcard match pattern
-      // that the planner can check.
-      targets.add(`battle:*@${tile.floorId}:${tile.x},${tile.y}`);
-    }
-  });
-
-  // Source 3: type=tileRemoved on goal itself
+  // Source 2: type=tileRemoved on goal itself
   if (
     goal.type === "tileRemoved" &&
     goal.floorId != null &&
     goal.x != null &&
     goal.y != null
   ) {
-    targets.add(`battle:*@${goal.floorId}:${goal.x},${goal.y}`);
+    addExactOrWildcard(goal.floorId, goal.x, goal.y);
   }
 
+  // Source 3: removedTiles array
+  (goal.removedTiles || []).forEach((tile) => {
+    if (tile && tile.floorId != null && tile.x != null && tile.y != null) {
+      addExactOrWildcard(tile.floorId, tile.x, tile.y);
+    }
+  });
+
   return [...targets];
+}
+
+/** Look up the enemy ID at a given tile position in project data */
+function lookupEnemyAtTile(project, floorId, x, y) {
+  try {
+    const floors = project.floorsById || {};
+    const floor = floors[floorId];
+    if (!floor || !floor.map) return null;
+    const row = floor.map[y];
+    if (!row || x >= row.length) return null;
+    const tile = row[x];
+    if (tile && tile.cls === "enemys" && tile.id) return tile.id;
+    return null;
+  } catch (e) {
+    return null;
+  }
 }
 
 // =========================================================================
@@ -391,31 +417,46 @@ function validateMilestones(
 // =========================================================================
 
 function assertTileRemovalGoalPresent(candidateMilestones, inferredTargets) {
-  if (inferredTargets.length === 0) return true; // Nothing to check
-  const tileRemovalMilestones = candidateMilestones.filter(
-    (m) =>
-      m.goal &&
-      m.goal.type === "tileRemoved" &&
-      Array.isArray(m.goal.removedTiles) &&
-      m.goal.removedTiles.length > 0,
-  );
-  if (tileRemovalMilestones.length > 0) return true;
+  if (inferredTargets.length === 0) return true;
+
+  // Collect all tileRemoval milestones' removedTiles into a set of "floorId:x,y" keys
+  const removedKeys = new Set();
+  candidateMilestones
+    .filter(
+      (m) =>
+        m.goal &&
+        m.goal.type === "tileRemoved" &&
+        Array.isArray(m.goal.removedTiles) &&
+        m.goal.removedTiles.length > 0,
+    )
+    .forEach((m) => {
+      m.goal.removedTiles.forEach((tile) => {
+        if (tile && tile.floorId != null && tile.x != null && tile.y != null) {
+          removedKeys.add(`${tile.floorId}:${tile.x},${tile.y}`);
+        }
+      });
+    });
+
+  // Each inferred target should map to at least one removed location
+  const missing = [];
+  for (const target of inferredTargets) {
+    const parsed = parseBattleSummary(target);
+    if (!parsed) continue;
+    const key = `${parsed.floorId}:${parsed.x},${parsed.y}`;
+    if (!removedKeys.has(key)) missing.push(target);
+  }
+
+  if (missing.length === 0) return true;
 
   console.error("FOCUSED CHECK FAILED:");
   console.error(
     `  Inferred special targets: ${JSON.stringify(inferredTargets)}`,
   );
   console.error(
-    "  Expected at least one candidate milestone with goal.type='tileRemoved' + removedTiles.",
+    `  Missing tileRemoval milestones for: ${JSON.stringify(missing)}`,
   );
   console.error(
-    "  This means the planner did not produce a special-target-defeated checkpoint.",
-  );
-  console.error(
-    "  Possible causes: planner stopped too early (reached targetFloorId before defeating target),",
-  );
-  console.error(
-    "  or the inferred targets don't match actual battle summaries in the game.",
+    "  Planner did not produce checkpoints for all inferred targets.",
   );
   return false;
 }
@@ -482,7 +523,9 @@ function main() {
       if (toMilestone.goal && toMilestone.goal.floorId) {
         targetFloorId = toMilestone.goal.floorId;
       }
-      inferredTargets.push(...inferSpecialTargetsFromMilestone(toMilestone));
+      inferredTargets.push(
+        ...inferSpecialTargetsFromMilestone(toMilestone, project),
+      );
     }
   }
 
@@ -566,6 +609,19 @@ function main() {
   );
   console.log(`  special-target checkpoints: ${specCheckpoints.length}`);
   specCheckpoints.forEach((c) => console.log(`    - ${c.target}`));
+  const stDiag = plannerResult.diagnostics.specialTargets;
+  if (stDiag && stDiag.required && stDiag.required.length > 0) {
+    console.log(`  special-target tracker:`);
+    console.log(`    required: ${JSON.stringify(stDiag.required)}`);
+    console.log(`    defeated: ${JSON.stringify(stDiag.defeated)}`);
+    if (stDiag.missing && stDiag.missing.length > 0) {
+      console.log(`    missing: ${JSON.stringify(stDiag.missing)}`);
+    }
+    const oracle = plannerResult.diagnostics.oracle || {};
+    console.log(
+      `    visible: ${oracle.specialTargetVisible || 0}, afterCap: ${oracle.specialTargetAfterCap || 0}, capDrops: ${oracle.specialTargetCapDrops || 0}`,
+    );
+  }
   console.log();
 
   // --- Convert checkpoints to candidate milestones ---
@@ -670,6 +726,8 @@ function main() {
       inferredSpecialTargets: inferredTargets,
       allSpecialTargets,
       plannerDiagnostics: plannerResult.diagnostics,
+      specialTargetDiagnostics:
+        plannerResult.diagnostics.specialTargets || null,
       candidateMilestones,
       bestRoute: plannerResult.bestRoute || [],
       validation: validation || undefined,

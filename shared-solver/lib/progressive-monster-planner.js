@@ -284,6 +284,9 @@ function createOracleStats() {
     routePatchAvgLength: 0,
     routePatchMaxLength: 0,
     rejectedByReason: {},
+    specialTargetVisible: 0,
+    specialTargetAfterCap: 0,
+    specialTargetCapDrops: 0,
   };
 }
 
@@ -333,26 +336,62 @@ function selectFrontier(candidates, limit) {
   return selected;
 }
 
-function matchesSpecialTarget(summary, specialTargets) {
+function findMatchingPattern(summary, specialTargets) {
   if (!summary || !Array.isArray(specialTargets) || specialTargets.length === 0)
-    return false;
+    return null;
   for (const pattern of specialTargets) {
-    if (pattern === summary) return true;
+    if (pattern === summary) return pattern;
     // Wildcard pattern: "battle:*@floor:x,y" matches "battle:enemyId@floor:x,y"
     if (pattern.includes("*@")) {
       const prefix = pattern.slice(0, pattern.indexOf("*@"));
       const suffix = pattern.slice(pattern.indexOf("*@") + 1);
       if (summary.startsWith(prefix) && summary.endsWith(suffix)) {
-        // Verify the wildcard part is a valid enemyId (alphanumeric + digits)
         const middle = summary.slice(
           prefix.length,
           summary.length - suffix.length,
         );
-        if (middle.length > 0) return true;
+        if (middle.length > 0) return pattern;
       }
     }
   }
-  return false;
+  return null;
+}
+
+function matchesSpecialTarget(summary, specialTargets) {
+  return findMatchingPattern(summary, specialTargets) !== null;
+}
+
+class SpecialTargetTracker {
+  constructor(patterns) {
+    this.patterns = [...(patterns || [])];
+    this.defeated = new Map();
+  }
+
+  record(summary) {
+    const pattern = findMatchingPattern(summary, this.patterns);
+    if (!pattern) return false;
+    if (!this.defeated.has(pattern)) {
+      this.defeated.set(pattern, summary);
+      return true;
+    }
+    return false;
+  }
+
+  allDefeated() {
+    if (this.patterns.length === 0) return false;
+    return this.patterns.every((p) => this.defeated.has(p));
+  }
+
+  summary() {
+    return {
+      required: this.patterns,
+      defeated: [...this.defeated.entries()].map(([pattern, summary]) => ({
+        pattern,
+        summary,
+      })),
+      missing: this.patterns.filter((p) => !this.defeated.has(p)),
+    };
+  }
 }
 
 function maybeRecordCheckpoint(
@@ -426,7 +465,7 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
   let stoppedReason = null;
   let peakHeapMb = 0;
   let peakRssMb = 0;
-  let specialTargetDefeated = false;
+  const specialTracker = new SpecialTargetTracker(config.specialTargets || []);
   const checkpoints = [];
   const oracleStats = createOracleStats();
   const diagnostics = {
@@ -472,10 +511,38 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
     for (const candidate of frontier) {
       diagnostics.statesExpanded += 1;
       const oracleCache = new Map();
-      const targets = targetProvider(simulator, candidate.state).slice(
-        0,
-        config.maxTargetsPerState,
-      );
+      // Get all targets, then prioritize special targets before capping
+      const allTargets = targetProvider(simulator, candidate.state);
+      const specialPatterns = config.specialTargets || [];
+      let specialVisible = 0;
+      let specialAfterCap = 0;
+      if (specialPatterns.length > 0) {
+        specialVisible = allTargets.filter((t) =>
+          matchesSpecialTarget(t.summary, specialPatterns),
+        ).length;
+        // Push special targets to front (stable sort: special first)
+        allTargets.sort((a, b) => {
+          const aSpec = matchesSpecialTarget(a.summary, specialPatterns)
+            ? 0
+            : 1;
+          const bSpec = matchesSpecialTarget(b.summary, specialPatterns)
+            ? 0
+            : 1;
+          return aSpec - bSpec;
+        });
+      }
+      const targets = allTargets.slice(0, config.maxTargetsPerState);
+      if (specialPatterns.length > 0) {
+        specialAfterCap = targets.filter((t) =>
+          matchesSpecialTarget(t.summary, specialPatterns),
+        ).length;
+        oracleStats.specialTargetVisible += specialVisible;
+        oracleStats.specialTargetAfterCap += specialAfterCap;
+        oracleStats.specialTargetCapDrops += Math.max(
+          0,
+          specialVisible - specialAfterCap,
+        );
+      }
       diagnostics.targetsConsidered += targets.length;
       for (const target of targets) {
         const cached = oracleCache.has(target.floorId);
@@ -538,14 +605,9 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
               bestScore,
               config,
             );
-            if (
-              matchesSpecialTarget(
-                (nextCandidate.action && nextCandidate.action.summary) || "",
-                config.specialTargets || [],
-              )
-            ) {
-              specialTargetDefeated = true;
-            }
+            specialTracker.record(
+              (nextCandidate.action && nextCandidate.action.summary) || "",
+            );
             if (
               candidateOutcomeScore(nextCandidate) >
               candidateOutcomeScore(bestCandidate)
@@ -583,11 +645,7 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
       stoppedReason = "target-floor";
       break;
     }
-    if (
-      specialTargetDefeated &&
-      config.specialTargets &&
-      config.specialTargets.length > 0
-    ) {
+    if (specialTracker.allDefeated()) {
       stoppedReason = "special-targets-defeated";
       break;
     }
@@ -616,6 +674,7 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
   diagnostics.archiveKeys = archive.byKey.size;
   diagnostics.archiveAccepted = archive.accepted;
   diagnostics.archiveRejectedDominated = archive.rejectedDominated;
+  diagnostics.specialTargets = specialTracker.summary();
   const floorLookups =
     Number(oracleStats.floorSearches || 0) +
     Number(oracleStats.floorCacheHits || 0);
@@ -649,5 +708,7 @@ module.exports = {
     selectFrontier,
     summarizeEffectiveHero,
     summarizeHero,
+    SpecialTargetTracker,
+    findMatchingPattern,
   },
 };
