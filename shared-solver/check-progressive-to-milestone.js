@@ -1,16 +1,15 @@
 "use strict";
 
 /**
- * Progressive Planner → Milestone Suggestion Bridge (v3)
+ * Progressive Planner → Milestone Suggestion Bridge (v4)
  *
- * Changes from v2:
- *  - inferSpecialTargetsFromMilestone() extracts battle summaries from goal specs
- *  - Inferred special targets merged with CLI --special-targets (deduped)
- *  - Planner continues past targetFloorId until special-target checkpoints appear
- *  - Removed unused imports (buildRouteRecord, writeRouteFile)
- *  - Clear error on reversed --from / --to order
- *  - Focused invariant: --to=mt7-special80 without --special-targets must
- *    produce a candidate milestone with tileRemoved goal
+ * Changes from v3:
+ *  - Special target priority pushed down into reach-and-battle-oracle
+ *    (before internal targets.sort + slice, not after return)
+ *  - Per-pattern SpecialTargetTracker: only stop when ALL required patterns defeated
+ *  - inferSpecialTargetsFromMilestone() resolves enemyId from project tile data
+ *  - assertTileRemovalGoalPresent checks each inferred target individually
+ *  - Archive diagnostics: specialTargetGenerated/Accepted/RejectedByArchive
  */
 
 const path = require("node:path");
@@ -620,6 +619,9 @@ function main() {
     const oracle = plannerResult.diagnostics.oracle || {};
     console.log(
       `    visible: ${oracle.specialTargetVisible || 0}, afterCap: ${oracle.specialTargetAfterCap || 0}, capDrops: ${oracle.specialTargetCapDrops || 0}`,
+    );
+    console.log(
+      `    generated: ${plannerResult.diagnostics.specialTargetGenerated || 0}, accepted: ${plannerResult.diagnostics.specialTargetAccepted || 0}, rejectedByArchive: ${plannerResult.diagnostics.specialTargetRejectedByArchive || 0}`,
     );
   }
   console.log();

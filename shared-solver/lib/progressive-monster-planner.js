@@ -488,9 +488,14 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
     segment,
     {
       maxMonsterTargets: config.maxTargetsPerState,
+      specialTargets: config.specialTargets || [],
     },
     oracleStats,
   );
+
+  let specialTargetGenerated = 0;
+  let specialTargetAccepted = 0;
+  let specialTargetRejectedByArchive = 0;
 
   for (let round = 1; round <= config.maxRounds; round += 1) {
     diagnostics.rounds = round;
@@ -511,38 +516,8 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
     for (const candidate of frontier) {
       diagnostics.statesExpanded += 1;
       const oracleCache = new Map();
-      // Get all targets, then prioritize special targets before capping
-      const allTargets = targetProvider(simulator, candidate.state);
-      const specialPatterns = config.specialTargets || [];
-      let specialVisible = 0;
-      let specialAfterCap = 0;
-      if (specialPatterns.length > 0) {
-        specialVisible = allTargets.filter((t) =>
-          matchesSpecialTarget(t.summary, specialPatterns),
-        ).length;
-        // Push special targets to front (stable sort: special first)
-        allTargets.sort((a, b) => {
-          const aSpec = matchesSpecialTarget(a.summary, specialPatterns)
-            ? 0
-            : 1;
-          const bSpec = matchesSpecialTarget(b.summary, specialPatterns)
-            ? 0
-            : 1;
-          return aSpec - bSpec;
-        });
-      }
-      const targets = allTargets.slice(0, config.maxTargetsPerState);
-      if (specialPatterns.length > 0) {
-        specialAfterCap = targets.filter((t) =>
-          matchesSpecialTarget(t.summary, specialPatterns),
-        ).length;
-        oracleStats.specialTargetVisible += specialVisible;
-        oracleStats.specialTargetAfterCap += specialAfterCap;
-        oracleStats.specialTargetCapDrops += Math.max(
-          0,
-          specialVisible - specialAfterCap,
-        );
-      }
+      // Targets are already prioritized by oracle (special targets first)
+      const targets = targetProvider(simulator, candidate.state);
       diagnostics.targetsConsidered += targets.length;
       for (const target of targets) {
         const cached = oracleCache.has(target.floorId);
@@ -595,8 +570,15 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
             parentId: candidate.id,
             tags: [],
           };
+          const isSpecial = matchesSpecialTarget(
+            target.summary,
+            config.specialTargets || [],
+          );
+          if (isSpecial) specialTargetGenerated += 1;
+
           if (archive.accept(nextCandidate)) {
             diagnostics.successorsAccepted += 1;
+            if (isSpecial) specialTargetAccepted += 1;
             next.push(nextCandidate);
             maybeRecordCheckpoint(
               checkpoints,
@@ -617,6 +599,7 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
             }
           } else {
             diagnostics.successorsRejected += 1;
+            if (isSpecial) specialTargetRejectedByArchive += 1;
           }
         }
       }
@@ -675,6 +658,9 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
   diagnostics.archiveAccepted = archive.accepted;
   diagnostics.archiveRejectedDominated = archive.rejectedDominated;
   diagnostics.specialTargets = specialTracker.summary();
+  diagnostics.specialTargetGenerated = specialTargetGenerated;
+  diagnostics.specialTargetAccepted = specialTargetAccepted;
+  diagnostics.specialTargetRejectedByArchive = specialTargetRejectedByArchive;
   const floorLookups =
     Number(oracleStats.floorSearches || 0) +
     Number(oracleStats.floorCacheHits || 0);
