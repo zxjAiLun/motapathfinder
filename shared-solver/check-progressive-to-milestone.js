@@ -719,7 +719,7 @@ function main() {
   const out = args.out ? path.resolve(args.out) : null;
   if (out) {
     const output = {
-      generatedBy: "progressive-to-milestone-v3",
+      generatedBy: "progressive-to-milestone-v4",
       timestamp: new Date().toISOString(),
       fromMilestone: args["from"] || "start",
       toMilestone: args["to"] || "auto",

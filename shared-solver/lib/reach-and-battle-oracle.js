@@ -707,15 +707,20 @@ function buildMonsterOnlyActionProvider(simulator, segment, config, stats) {
       }
     }
 
-    // Prioritize special targets before sort/cap: push them to front
+    // Prioritize special targets: sort each group independently, specials first
     const specialPatterns = (config || {}).specialTargets || [];
     let specialVisible = 0;
     let specialAfterCap = 0;
+
+    const byScore = (a, b) =>
+      scoreMonsterTarget(simulator, b, state, segment) -
+      scoreMonsterTarget(simulator, a, state, segment);
+
     if (specialPatterns.length > 0) {
       specialVisible = targets.filter((t) =>
         matchesSpecialTarget(t.summary, specialPatterns),
       ).length;
-      // Stable partition: special targets first, rest retain relative order
+      // Partition, sort each group independently, then concat (specials first)
       const special = [];
       const rest = [];
       for (const target of targets) {
@@ -725,15 +730,13 @@ function buildMonsterOnlyActionProvider(simulator, segment, config, stats) {
           rest.push(target);
         }
       }
+      special.sort(byScore);
+      rest.sort(byScore);
       targets.length = 0;
       targets.push(...special, ...rest);
+    } else {
+      targets.sort(byScore);
     }
-
-    targets.sort(
-      (a, b) =>
-        scoreMonsterTarget(simulator, b, state, segment) -
-        scoreMonsterTarget(simulator, a, state, segment),
-    );
     const cappedTargets = targets.slice(0, maxTargets);
 
     if (specialPatterns.length > 0) {
