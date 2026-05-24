@@ -27,3 +27,6 @@ Only upV2.1/Only upV2.1/.venv-standard-server/
 Only upV2.1/Only upV2.1/__pycache__/
 docs/dsv4
 docs/mimov2.5pro
+
+# Generated run artifacts
+routes/generated/

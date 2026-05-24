@@ -558,6 +558,15 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
         oracleStats.oracleBattleReachabilityMs =
           Number(oracleStats.oracleBattleReachabilityMs || 0) +
           (batchResult.diagnostics.totalReachMs || 0);
+        oracleStats.portalStatesExpanded =
+          Number(oracleStats.portalStatesExpanded || 0) +
+          (batchResult.diagnostics.portalStatesExpanded || 0);
+        oracleStats.portalActionsConsidered =
+          Number(oracleStats.portalActionsConsidered || 0) +
+          (batchResult.diagnostics.portalActionsConsidered || 0);
+        oracleStats.portalApplyMs =
+          Number(oracleStats.portalApplyMs || 0) +
+          (batchResult.diagnostics.portalApplyMs || 0);
       }
 
       if (!batchResult.ok) {
@@ -694,6 +703,9 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
     totalFloorMs: Number(oracleStats.totalFloorMs || 0),
     totalReachMs: Number(oracleStats.totalReachMs || 0),
     totalBattleMs: Number(oracleStats.totalBattleMs || 0),
+    portalStatesExpanded: Number(oracleStats.portalStatesExpanded || 0),
+    portalActionsConsidered: Number(oracleStats.portalActionsConsidered || 0),
+    portalApplyMs: Number(oracleStats.portalApplyMs || 0),
   };
   const floorLookups =
     Number(oracleStats.floorSearches || 0) +

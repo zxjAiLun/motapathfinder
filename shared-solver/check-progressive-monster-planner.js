@@ -611,6 +611,96 @@ function checkTargetedBattleMatcher() {
   };
 }
 
+function checkBatchVsLegacyCompatibility() {
+  const base = makeSyntheticSimulator();
+  const simulator = {
+    ...base,
+    getWalkReachability(state) {
+      return {
+        visited: {
+          "0,0": {
+            state: { ...state, hero: { ...state.hero, loc: { x: 0, y: 0 } } },
+          },
+          "1,0": {
+            state: { ...state, hero: { ...state.hero, loc: { x: 1, y: 0 } } },
+          },
+        },
+      };
+    },
+  };
+  const initialState = makeInitialState();
+  const segment = { goal: {}, actionPolicy: { allowedFloors: ["SYN"] } };
+  const target = {
+    kind: "battle",
+    summary: "battle:atkBat@SYN:2,0",
+    floorId: "SYN",
+    x: 2,
+    y: 0,
+    enemyId: "atkBat",
+  };
+
+  const legacy = reachOracle.tryReachAndBattle(
+    simulator,
+    initialState,
+    target,
+    segment,
+    { maxSuccessorsPerTarget: 1 },
+    new Map(),
+    {},
+  );
+  assert.equal(legacy.ok, true, "legacy should reach target");
+  assert.ok(legacy.results.length >= 1, "legacy should have results");
+
+  const batch = reachOracle.tryReachAndBattleBatch(
+    simulator,
+    initialState,
+    [target],
+    segment,
+    { maxSuccessorsPerTarget: 1 },
+    {},
+  );
+  assert.equal(batch.ok, true, "batch should reach target");
+  assert.ok(batch.results.length >= 1, "batch should have results");
+
+  const legacyBest = legacy.results[0];
+  const batchBest = batch.results[0];
+
+  const legacyPatch = (legacyBest.routePatch || []).map((a) => a.summary || a);
+  const batchPatch = (batchBest.routePatch || []).map((a) => a.summary || a);
+  assert.deepEqual(
+    legacyPatch,
+    batchPatch,
+    "routePatch summaries must match legacy vs batch",
+  );
+
+  const lh = legacyBest.postState.hero || {};
+  const bh = batchBest.postState.hero || {};
+  assert.equal(lh.hp, bh.hp, "postState.hp must match");
+  assert.equal(lh.atk, bh.atk, "postState.atk must match");
+  assert.equal(lh.def, bh.def, "postState.def must match");
+
+  const lRemoved =
+    (legacyBest.postState.floorStates || {}).SYN &&
+    (legacyBest.postState.floorStates.SYN.removed || {});
+  const bRemoved =
+    (batchBest.postState.floorStates || {}).SYN &&
+    (batchBest.postState.floorStates.SYN.removed || {});
+  assert.deepEqual(
+    Object.keys(lRemoved || {}).sort(),
+    Object.keys(bRemoved || {}).sort(),
+    "removedTiles must match legacy vs batch",
+  );
+
+  return {
+    legacyPatch,
+    batchPatch,
+    legacyHp: lh.hp,
+    batchHp: bh.hp,
+    legacyAtk: lh.atk,
+    batchAtk: bh.atk,
+  };
+}
+
 function main() {
   const synthetic = checkSyntheticSmoke();
   const oracle = checkOracleCompatibility();
@@ -618,9 +708,18 @@ function main() {
   const specialPriority = checkSpecialTargetPriority();
   const batchCap = checkBatchPerTargetCap();
   const battleMatcher = checkTargetedBattleMatcher();
+  const legacyCompat = checkBatchVsLegacyCompatibility();
   console.log(
     JSON.stringify(
-      { synthetic, oracle, archive, specialPriority, batchCap, battleMatcher },
+      {
+        synthetic,
+        oracle,
+        archive,
+        specialPriority,
+        batchCap,
+        battleMatcher,
+        legacyCompat,
+      },
       null,
       2,
     ),

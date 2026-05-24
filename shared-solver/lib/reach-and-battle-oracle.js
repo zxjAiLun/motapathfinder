@@ -326,8 +326,14 @@ function oracleFindFloorStates(
     `${s.floorId}:${(s.hero.loc || {}).x},${(s.hero.loc || {}).y}`;
   visited.add(posKey(state));
 
+  let portalStatesExpanded = 0;
+  let portalPrimitiveEnumerations = 0;
+  let portalActionsConsidered = 0;
+  let portalApplyMs = 0;
+
   while (queue.length > 0) {
     const { state: current, steps, actions } = queue.shift();
+    portalStatesExpanded += 1;
 
     if (current.floorId === targetFloorId) {
       const closed = closeStateForBattleFrontier(simulator, current, segment);
@@ -337,17 +343,16 @@ function oracleFindFloorStates(
 
     if (steps >= maxSteps) continue;
 
-    let portalActions = [];
-    const primitive =
-      simulator.enumeratePrimitiveActions(current).actions || [];
-    portalActions = portalActions.concat(
-      primitive.filter((a) => a.kind === "changeFloor"),
-    );
+    // Targeted portal discovery: check floor.changeFloor directly
+    let portalActions = discoverChangeFloorActions(simulator, current);
+
+    // Also add floorFly (specialized function, kept as-is)
     if (typeof simulator.enumerateFloorFlyActions === "function") {
       portalActions = portalActions.concat(
         simulator.enumerateFloorFlyActions(current),
       );
     }
+    portalActionsConsidered += portalActions.length;
 
     for (const action of portalActions) {
       if (!isAllowedPortalAction(action, current, policy)) continue;
@@ -357,10 +362,12 @@ function oracleFindFloorStates(
       );
       if (hitsProtected) continue;
 
+      const t0 = Date.now();
       try {
         const next = simulator.applyAction(current, action, {
           storeRoute: false,
         });
+        portalApplyMs += Date.now() - t0;
         const key = posKey(next);
         if (visited.has(key)) continue;
         visited.add(key);
@@ -369,11 +376,72 @@ function oracleFindFloorStates(
           steps: steps + 1,
           actions: actions.concat(action),
         });
-      } catch (error) {}
+      } catch (error) {
+        portalApplyMs += Date.now() - t0;
+      }
     }
   }
 
-  return selectOracleFloorResults(results, maxEntries);
+  const selected = selectOracleFloorResults(results, maxEntries);
+  // Attach portal diagnostics
+  selected._portalDiagnostics = {
+    portalStatesExpanded,
+    portalPrimitiveEnumerations,
+    portalActionsConsidered,
+    portalApplyMs,
+  };
+  return selected;
+}
+
+/**
+ * Discover changeFloor actions directly from floor data, without calling
+ * enumeratePrimitiveActions().  Checks the hero's position and 4 adjacent
+ * tiles for stairs/portals defined in floor.changeFloor.
+ */
+function discoverChangeFloorActions(simulator, state) {
+  const project = simulator.project;
+  const floor = project.floorsById[state.floorId];
+  if (!floor || !floor.changeFloor) return [];
+  const changeFloor = floor.changeFloor;
+  const loc = (state.hero && state.hero.loc) || {};
+  const hx = Number(loc.x);
+  const hy = Number(loc.y);
+  if (isNaN(hx) || isNaN(hy)) return [];
+
+  const actions = [];
+  // Check hero's current tile and 4 adjacent tiles
+  const positions = [
+    [hx, hy],
+    [hx, hy - 1],
+    [hx, hy + 1],
+    [hx - 1, hy],
+    [hx + 1, hy],
+  ];
+  const DIR_MAP = {
+    "0,-1": "up",
+    "0,1": "down",
+    "-1,0": "left",
+    "1,0": "right",
+  };
+
+  for (const [tx, ty] of positions) {
+    const key = `${tx},${ty}`;
+    const stair = changeFloor[key];
+    if (!stair) continue;
+
+    const direction = DIR_MAP[`${tx - hx},${ty - hy}`] || "up";
+    actions.push({
+      kind: "changeFloor",
+      floorId: state.floorId,
+      stance: { x: hx, y: hy },
+      direction,
+      x: tx,
+      y: ty,
+      changeFloor: stair,
+      summary: `changeFloor@${state.floorId}:${tx},${ty}`,
+    });
+  }
+  return actions;
 }
 
 function battleMarginForGoal(simulator, state, segment) {
@@ -657,6 +725,25 @@ function tryReachAndBattleBatch(
         config,
       );
       portalFloorSearches += 1;
+      // Collect portal diagnostics from the floor search
+      if (floorEntries._portalDiagnostics) {
+        if (stats) {
+          stats.portalStatesExpanded =
+            Number(stats.portalStatesExpanded || 0) +
+            (floorEntries._portalDiagnostics.portalStatesExpanded || 0);
+          stats.portalPrimitiveEnumerations =
+            Number(stats.portalPrimitiveEnumerations || 0) +
+            (floorEntries._portalDiagnostics.portalPrimitiveEnumerations || 0);
+          stats.portalActionsConsidered =
+            Number(stats.portalActionsConsidered || 0) +
+            (floorEntries._portalDiagnostics.portalActionsConsidered || 0);
+          stats.portalApplyMs =
+            Number(stats.portalApplyMs || 0) +
+            (floorEntries._portalDiagnostics.portalApplyMs || 0);
+        }
+        // Clean up non-array property so it doesn't interfere
+        delete floorEntries._portalDiagnostics;
+      }
     }
     totalFloorMs += Date.now() - t0;
 
@@ -839,6 +926,14 @@ function tryReachAndBattleBatch(
       battleMatchNodes: Number(stats ? stats.battleMatchNodes || 0 : 0),
       battleTargetChecks: Number(stats ? stats.battleTargetChecks || 0 : 0),
       battleEvaluateCalls: Number(stats ? stats.battleEvaluateCalls || 0 : 0),
+      portalStatesExpanded: Number(stats ? stats.portalStatesExpanded || 0 : 0),
+      portalPrimitiveEnumerations: Number(
+        stats ? stats.portalPrimitiveEnumerations || 0 : 0,
+      ),
+      portalActionsConsidered: Number(
+        stats ? stats.portalActionsConsidered || 0 : 0,
+      ),
+      portalApplyMs: Number(stats ? stats.portalApplyMs || 0 : 0),
     },
   };
 }
@@ -1040,4 +1135,5 @@ module.exports = {
   selectMonsterOnlySuccessors,
   tryReachAndBattle,
   tryReachAndBattleBatch,
+  discoverChangeFloorActions,
 };

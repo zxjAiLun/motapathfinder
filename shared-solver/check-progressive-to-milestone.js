@@ -642,6 +642,16 @@ function main() {
         " battleMs=" +
         (perf.totalBattleMs || 0),
     );
+    if (perf.portalStatesExpanded > 0) {
+      console.log(
+        "  portal: statesExpanded=" +
+          (perf.portalStatesExpanded || 0) +
+          " actionsConsidered=" +
+          (perf.portalActionsConsidered || 0) +
+          " applyMs=" +
+          (perf.portalApplyMs || 0),
+      );
+    }
   }
   console.log();
 
