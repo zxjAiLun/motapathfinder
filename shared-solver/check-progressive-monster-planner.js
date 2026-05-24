@@ -325,13 +325,98 @@ function checkSpecialTargetPriority() {
   };
 }
 
+function checkBatchPerTargetCap() {
+  // Verify: with 2 targets on same floor and maxSuccessorsPerTarget=1,
+  // batch returns 1 successor per target (2 total), NOT 1 total.
+  // Also verify reachabilityCalls=1 (shared across targets).
+  const simulator = makeSyntheticSimulator();
+  const initialState = makeInitialState();
+  const segment = {
+    goal: {},
+    actionPolicy: { allowedFloors: ["SYN"] },
+  };
+  const targets = [
+    {
+      kind: "battle",
+      summary: "battle:hpBat@SYN:1,0",
+      floorId: "SYN",
+      x: 1,
+      y: 0,
+      enemyId: "hpBat",
+    },
+    {
+      kind: "battle",
+      summary: "battle:atkBat@SYN:2,0",
+      floorId: "SYN",
+      x: 2,
+      y: 0,
+      enemyId: "atkBat",
+    },
+  ];
+  const stats = {};
+  const result = reachOracle.tryReachAndBattleBatch(
+    simulator,
+    initialState,
+    targets,
+    segment,
+    { maxSuccessorsPerTarget: 1 },
+    stats,
+  );
+
+  assert.equal(result.ok, true, "batch should reach both targets");
+  assert.ok(
+    result.results.length >= 2,
+    "should have at least 2 successors (1 per target)",
+  );
+
+  // Each target should have at least 1 successor
+  const perTarget = new Map();
+  for (const r of result.results) {
+    const key = (r.target && r.target.summary) || "?";
+    perTarget.set(key, (perTarget.get(key) || 0) + 1);
+  }
+  assert.ok(
+    perTarget.has("battle:hpBat@SYN:1,0"),
+    "hpBat should have a successor",
+  );
+  assert.ok(
+    perTarget.has("battle:atkBat@SYN:2,0"),
+    "atkBat should have a successor",
+  );
+
+  // Both targets on same floor: reachabilityCalls must be 1
+  assert.equal(
+    result.diagnostics.reachabilityCalls,
+    1,
+    "same-floor batch should call walk reachability exactly once",
+  );
+  assert.equal(
+    result.diagnostics.currentFloorFastPaths,
+    1,
+    "current floor should use fast path",
+  );
+
+  return {
+    totalResults: result.results.length,
+    targetsWithResults: perTarget.size,
+    reachabilityCalls: result.diagnostics.reachabilityCalls,
+    fastPaths: result.diagnostics.currentFloorFastPaths,
+    portalSearches: result.diagnostics.portalFloorSearches,
+  };
+}
+
 function main() {
   const synthetic = checkSyntheticSmoke();
   const oracle = checkOracleCompatibility();
   const archive = checkArchivePruning();
   const specialPriority = checkSpecialTargetPriority();
+  const batchCap = checkBatchPerTargetCap();
   console.log(
-    JSON.stringify({ synthetic, oracle, archive, specialPriority }, null, 2),
+    JSON.stringify(
+      { synthetic, oracle, archive, specialPriority, batchCap },
+      null,
+      2,
+    ),
   );
 }
 

@@ -620,7 +620,6 @@ function tryReachAndBattleBatch(
     (config || {}).maxSuccessorsPerTarget,
     4,
   );
-  const policy = (segment || {}).actionPolicy || {};
 
   // Group targets by floorId
   const byFloor = new Map();
@@ -635,7 +634,8 @@ function tryReachAndBattleBatch(
   let totalFloorMs = 0;
   let totalReachMs = 0;
   let totalBattleMs = 0;
-  let floorSearches = 0;
+  let currentFloorFastPaths = 0;
+  let portalFloorSearches = 0;
   let reachabilityCalls = 0;
 
   for (const [floorId, floorTargets] of byFloor) {
@@ -647,6 +647,7 @@ function tryReachAndBattleBatch(
     if (isCurrentFloor) {
       const closed = closeStateForBattleFrontier(simulator, state, segment);
       floorEntries = [{ state: closed, travelActions: [] }];
+      currentFloorFastPaths += 1;
     } else {
       floorEntries = oracleFindFloorStates(
         simulator,
@@ -655,9 +656,9 @@ function tryReachAndBattleBatch(
         segment,
         config,
       );
+      portalFloorSearches += 1;
     }
     totalFloorMs += Date.now() - t0;
-    floorSearches += 1;
 
     if (stats) {
       stats.floorEntriesReturned =
@@ -729,14 +730,15 @@ function tryReachAndBattleBatch(
     }
   }
 
-  // Apply successor selection (same as before)
+  // Apply per-target successor selection (preserve maxSuccessorsPerTarget semantics)
   if (allResults.length === 0)
     return {
       ok: false,
       reason: "battle-not-reachable",
       results: [],
       diagnostics: {
-        floorSearches,
+        currentFloorFastPaths,
+        portalFloorSearches,
         reachabilityCalls,
         totalFloorMs,
         totalReachMs,
@@ -744,36 +746,48 @@ function tryReachAndBattleBatch(
       },
     };
 
-  if (stats) {
-    stats.successorCandidatesBeforeCap =
-      Number(stats.successorCandidatesBeforeCap || 0) + allResults.length;
-    stats.floorSearches = Number(stats.floorSearches || 0) + floorSearches;
-    stats.reachabilityCalls =
-      Number(stats.reachabilityCalls || 0) + reachabilityCalls;
-    stats.totalFloorMs = Number(stats.totalFloorMs || 0) + totalFloorMs;
-    stats.totalReachMs = Number(stats.totalReachMs || 0) + totalReachMs;
-    stats.totalBattleMs = Number(stats.totalBattleMs || 0) + totalBattleMs;
+  // Group results by target summary for per-target successor selection
+  const byTarget = new Map();
+  for (const result of allResults) {
+    const key = (result.target && result.target.summary) || "?";
+    const bucket = byTarget.get(key) || [];
+    bucket.push(result);
+    if (!byTarget.has(key)) byTarget.set(key, bucket);
   }
 
-  const cappedResults = selectMonsterOnlySuccessors(
-    simulator,
-    allResults,
-    segment,
-    maxSuccessorsPerTarget,
-    stats,
-  );
+  const selectedByTarget = [];
+  let totalBeforeCap = 0;
+  let totalAfterCap = 0;
+  for (const group of byTarget.values()) {
+    totalBeforeCap += group.length;
+    const selected = selectMonsterOnlySuccessors(
+      simulator,
+      group,
+      segment,
+      maxSuccessorsPerTarget,
+      stats,
+    );
+    selectedByTarget.push(...selected);
+    totalAfterCap += selected.length;
+  }
+
+  // Stats: write only non-perf counters; perf counters returned in diagnostics only
   if (stats) {
+    stats.successorCandidatesBeforeCap =
+      Number(stats.successorCandidatesBeforeCap || 0) + totalBeforeCap;
     stats.successorCandidatesAfterCap =
-      Number(stats.successorCandidatesAfterCap || 0) + cappedResults.length;
+      Number(stats.successorCandidatesAfterCap || 0) + totalAfterCap;
     stats.successorCapDrops =
       Number(stats.successorCapDrops || 0) +
-      Math.max(0, allResults.length - cappedResults.length);
+      Math.max(0, totalBeforeCap - totalAfterCap);
   }
+
   return {
     ok: true,
-    results: cappedResults,
+    results: selectedByTarget,
     diagnostics: {
-      floorSearches,
+      currentFloorFastPaths,
+      portalFloorSearches,
       reachabilityCalls,
       totalFloorMs,
       totalReachMs,

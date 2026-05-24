@@ -627,9 +627,11 @@ function main() {
   const perf = plannerResult.diagnostics.perf;
   if (perf) {
     console.log(
-      "  perf: floorSearches=" +
-        (perf.totalFloorSearches || 0) +
-        " reachabilityCalls=" +
+      "  perf: fastPaths=" +
+        (perf.currentFloorFastPaths || 0) +
+        " portalSearches=" +
+        (perf.portalFloorSearches || 0) +
+        " reachCalls=" +
         (perf.totalReachabilityCalls || 0),
     );
     console.log(

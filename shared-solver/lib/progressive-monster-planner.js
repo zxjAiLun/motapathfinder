@@ -532,11 +532,14 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
         oracleStats,
       );
 
-      // Collect batch perf diagnostics
+      // Collect batch perf diagnostics (batch returns them, planner accumulates)
       if (batchResult.diagnostics) {
-        oracleStats.floorSearches =
-          Number(oracleStats.floorSearches || 0) +
-          (batchResult.diagnostics.floorSearches || 0);
+        oracleStats.currentFloorFastPaths =
+          Number(oracleStats.currentFloorFastPaths || 0) +
+          (batchResult.diagnostics.currentFloorFastPaths || 0);
+        oracleStats.portalFloorSearches =
+          Number(oracleStats.portalFloorSearches || 0) +
+          (batchResult.diagnostics.portalFloorSearches || 0);
         oracleStats.reachabilityCalls =
           Number(oracleStats.reachabilityCalls || 0) +
           (batchResult.diagnostics.reachabilityCalls || 0);
@@ -685,7 +688,8 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
   diagnostics.specialTargetAccepted = specialTargetAccepted;
   diagnostics.specialTargetRejectedByArchive = specialTargetRejectedByArchive;
   diagnostics.perf = {
-    totalFloorSearches: Number(oracleStats.floorSearches || 0),
+    currentFloorFastPaths: Number(oracleStats.currentFloorFastPaths || 0),
+    portalFloorSearches: Number(oracleStats.portalFloorSearches || 0),
     totalReachabilityCalls: Number(oracleStats.reachabilityCalls || 0),
     totalFloorMs: Number(oracleStats.totalFloorMs || 0),
     totalReachMs: Number(oracleStats.totalReachMs || 0),
