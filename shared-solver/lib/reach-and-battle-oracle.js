@@ -599,6 +599,189 @@ function tryReachAndBattle(
   return { ok: true, results: cappedResults };
 }
 
+// =========================================================================
+// Batch reach-and-battle: one floor traversal + one walk BFS per floor entry,
+// matching multiple targets against the same reachability.
+// =========================================================================
+
+function tryReachAndBattleBatch(
+  simulator,
+  state,
+  targets,
+  segment,
+  config,
+  stats,
+) {
+  if (!Array.isArray(targets) || targets.length === 0) {
+    return { ok: false, reason: "no-targets", results: [] };
+  }
+
+  const maxSuccessorsPerTarget = number(
+    (config || {}).maxSuccessorsPerTarget,
+    4,
+  );
+  const policy = (segment || {}).actionPolicy || {};
+
+  // Group targets by floorId
+  const byFloor = new Map();
+  for (const target of targets) {
+    const fid = target.floorId || state.floorId;
+    const bucket = byFloor.get(fid) || [];
+    bucket.push(target);
+    if (!byFloor.has(fid)) byFloor.set(fid, bucket);
+  }
+
+  const allResults = [];
+  let totalFloorMs = 0;
+  let totalReachMs = 0;
+  let totalBattleMs = 0;
+  let floorSearches = 0;
+  let reachabilityCalls = 0;
+
+  for (const [floorId, floorTargets] of byFloor) {
+    const isCurrentFloor = floorId === state.floorId;
+
+    // --- Fast path: current floor skips portal BFS ---
+    let floorEntries;
+    const t0 = Date.now();
+    if (isCurrentFloor) {
+      const closed = closeStateForBattleFrontier(simulator, state, segment);
+      floorEntries = [{ state: closed, travelActions: [] }];
+    } else {
+      floorEntries = oracleFindFloorStates(
+        simulator,
+        state,
+        floorId,
+        segment,
+        config,
+      );
+    }
+    totalFloorMs += Date.now() - t0;
+    floorSearches += 1;
+
+    if (stats) {
+      stats.floorEntriesReturned =
+        Number(stats.floorEntriesReturned || 0) + floorEntries.length;
+      stats.maxFloorEntriesReturned = Math.max(
+        Number(stats.maxFloorEntriesReturned || 0),
+        floorEntries.length,
+      );
+    }
+
+    if (!Array.isArray(floorEntries) || floorEntries.length === 0) continue;
+
+    // Build a set of target summaries for quick lookup
+    const targetSummaries = new Set(floorTargets.map((t) => t.summary));
+
+    for (const floorEntry of floorEntries) {
+      const closed = floorEntry.state;
+      const travelActions = floorEntry.travelActions || [];
+
+      const t1 = Date.now();
+      const reachability = simulator.getWalkReachability(closed);
+      totalReachMs += Date.now() - t1;
+      reachabilityCalls += 1;
+
+      const visited = reachability.visited || {};
+      if (stats) {
+        const vc = Object.keys(visited).length;
+        stats.reachabilityNodes = Number(stats.reachabilityNodes || 0) + vc;
+        stats.maxReachabilityNodes = Math.max(
+          Number(stats.maxReachabilityNodes || 0),
+          vc,
+        );
+      }
+
+      const t2 = Date.now();
+      // Enumerate all battle actions reachable from this position
+      for (const node of Object.values(visited)) {
+        const nodeState = node.state;
+        const primitive =
+          simulator.enumeratePrimitiveActions(nodeState).actions || [];
+        const battleActions = primitive.filter(
+          (action) =>
+            action.kind === "battle" && targetSummaries.has(action.summary),
+        );
+
+        for (const battleAction of battleActions) {
+          // Find which target this matches
+          const matchedTarget = floorTargets.find(
+            (t) => t.summary === battleAction.summary,
+          );
+          if (!matchedTarget) continue;
+
+          try {
+            const postState = simulator.applyAction(nodeState, battleAction, {
+              storeRoute: false,
+            });
+            const routePatch = travelActions.concat(battleAction);
+            allResults.push({
+              postState,
+              battleAction,
+              routePatch,
+              preHp: nodeState.hero ? nodeState.hero.hp : 0,
+              target: matchedTarget,
+            });
+          } catch (error) {}
+        }
+      }
+      totalBattleMs += Date.now() - t2;
+    }
+  }
+
+  // Apply successor selection (same as before)
+  if (allResults.length === 0)
+    return {
+      ok: false,
+      reason: "battle-not-reachable",
+      results: [],
+      diagnostics: {
+        floorSearches,
+        reachabilityCalls,
+        totalFloorMs,
+        totalReachMs,
+        totalBattleMs,
+      },
+    };
+
+  if (stats) {
+    stats.successorCandidatesBeforeCap =
+      Number(stats.successorCandidatesBeforeCap || 0) + allResults.length;
+    stats.floorSearches = Number(stats.floorSearches || 0) + floorSearches;
+    stats.reachabilityCalls =
+      Number(stats.reachabilityCalls || 0) + reachabilityCalls;
+    stats.totalFloorMs = Number(stats.totalFloorMs || 0) + totalFloorMs;
+    stats.totalReachMs = Number(stats.totalReachMs || 0) + totalReachMs;
+    stats.totalBattleMs = Number(stats.totalBattleMs || 0) + totalBattleMs;
+  }
+
+  const cappedResults = selectMonsterOnlySuccessors(
+    simulator,
+    allResults,
+    segment,
+    maxSuccessorsPerTarget,
+    stats,
+  );
+  if (stats) {
+    stats.successorCandidatesAfterCap =
+      Number(stats.successorCandidatesAfterCap || 0) + cappedResults.length;
+    stats.successorCapDrops =
+      Number(stats.successorCapDrops || 0) +
+      Math.max(0, allResults.length - cappedResults.length);
+  }
+  return {
+    ok: true,
+    results: cappedResults,
+    diagnostics: {
+      floorSearches,
+      reachabilityCalls,
+      totalFloorMs,
+      totalReachMs,
+      totalBattleMs,
+    },
+  };
+}
+
 function scoreMonsterTarget(simulator, target, state, segment) {
   const threshold = (() => {
     try {
@@ -795,4 +978,5 @@ module.exports = {
   restorePresentTiles,
   selectMonsterOnlySuccessors,
   tryReachAndBattle,
+  tryReachAndBattleBatch,
 };

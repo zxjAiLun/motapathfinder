@@ -624,6 +624,23 @@ function main() {
       `    generated: ${plannerResult.diagnostics.specialTargetGenerated || 0}, accepted: ${plannerResult.diagnostics.specialTargetAccepted || 0}, rejectedByArchive: ${plannerResult.diagnostics.specialTargetRejectedByArchive || 0}`,
     );
   }
+  const perf = plannerResult.diagnostics.perf;
+  if (perf) {
+    console.log(
+      "  perf: floorSearches=" +
+        (perf.totalFloorSearches || 0) +
+        " reachabilityCalls=" +
+        (perf.totalReachabilityCalls || 0),
+    );
+    console.log(
+      "  perf: floorMs=" +
+        (perf.totalFloorMs || 0) +
+        " reachMs=" +
+        (perf.totalReachMs || 0) +
+        " battleMs=" +
+        (perf.totalBattleMs || 0),
+    );
+  }
   console.log();
 
   // --- Convert checkpoints to candidate milestones ---
