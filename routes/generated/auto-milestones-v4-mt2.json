@@ -1,0 +1,91 @@
+{
+  "generatedBy": "progressive-to-milestone-v4",
+  "timestamp": "2026-05-23T16:48:06.366Z",
+  "fromMilestone": "start",
+  "toMilestone": "mt2-entry",
+  "allowedFloors": [
+    "MT1",
+    "MT2"
+  ],
+  "cliSpecialTargets": [],
+  "inferredSpecialTargets": [],
+  "allSpecialTargets": [],
+  "plannerDiagnostics": {
+    "rounds": 5,
+    "statesExpanded": 14,
+    "targetsConsidered": 42,
+    "successorsAccepted": 22,
+    "successorsRejected": 16,
+    "stoppedReason": "round-limit",
+    "maxHeapMb": 3072,
+    "heapUsedMb": 121.1,
+    "rssMb": 237.9,
+    "archiveKeys": 22,
+    "rejectedByReason": {
+      "battle-not-reachable": 4
+    },
+    "oracle": {
+      "targetsGenerated": 581,
+      "targetsAfterCap": 42,
+      "reachableTargetsGenerated": 46,
+      "reachableTargetsAfterCap": 38,
+      "targetCapDrops": 539,
+      "statesWithTargetCap": 14,
+      "maxTargetsGeneratedForState": 47,
+      "maxTargetsAfterCapForState": 3,
+      "floorSearches": 14,
+      "floorCacheHits": 28,
+      "oracleCacheHitRate": 0.6666666666666666,
+      "oracleFloorSearchMs": 10,
+      "floorEntriesReturned": 42,
+      "maxFloorEntriesReturned": 1,
+      "oracleBattleReachabilityMs": 15,
+      "reachabilityNodes": 1017,
+      "maxReachabilityNodes": 38,
+      "battleCandidates": 38,
+      "successorCandidatesBeforeCap": 962,
+      "successorCandidatesAfterCap": 38,
+      "successorCapDrops": 924,
+      "successorSelectedByRole": {
+        "highestPostHp": 38
+      },
+      "successorsReturned": 38,
+      "routePatchTotalLength": 38,
+      "routePatchAvgLength": 1,
+      "routePatchMaxLength": 1,
+      "rejectedByReason": {
+        "battle-not-reachable": 4
+      },
+      "specialTargetVisible": 0,
+      "specialTargetAfterCap": 0,
+      "specialTargetCapDrops": 0
+    },
+    "archiveAccepted": 23,
+    "archiveRejectedDominated": 16,
+    "specialTargets": {
+      "required": [],
+      "defeated": [],
+      "missing": []
+    },
+    "specialTargetGenerated": 0,
+    "specialTargetAccepted": 0,
+    "specialTargetRejectedByArchive": 0
+  },
+  "specialTargetDiagnostics": {
+    "required": [],
+    "defeated": [],
+    "missing": []
+  },
+  "candidateMilestones": [],
+  "bestRoute": [
+    "auto:pickup:greenGem@MT1:7,6",
+    "auto:pickup:I600@MT1:5,6",
+    "auto:pickup:redGem@MT1:7,8",
+    "auto:pickup:redPotion@MT1:5,8",
+    "battle:blackSlime@MT1:8,7",
+    "battle:redSlime@MT1:9,6",
+    "battle:blackSlime@MT1:3,10",
+    "battle:slimelord@MT1:9,4",
+    "battle:bat@MT1:4,11"
+  ]
+}

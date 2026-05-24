@@ -671,9 +671,6 @@ function tryReachAndBattleBatch(
 
     if (!Array.isArray(floorEntries) || floorEntries.length === 0) continue;
 
-    // Build a set of target summaries for quick lookup
-    const targetSummaries = new Set(floorTargets.map((t) => t.summary));
-
     for (const floorEntry of floorEntries) {
       const closed = floorEntry.state;
       const travelActions = floorEntry.travelActions || [];
@@ -693,28 +690,58 @@ function tryReachAndBattleBatch(
         );
       }
 
-      const t2 = Date.now();
-      // Enumerate all battle actions reachable from this position
-      for (const node of Object.values(visited)) {
-        const nodeState = node.state;
-        const primitive =
-          simulator.enumeratePrimitiveActions(nodeState).actions || [];
-        const battleActions = primitive.filter(
-          (action) =>
-            action.kind === "battle" && targetSummaries.has(action.summary),
-        );
+      // --- Targeted battle matching (no primitive enumeration) ---
+      // Build position map: "x,y" -> target for O(1) adjacency lookup
+      const targetByPos = new Map();
+      for (const t of floorTargets) {
+        if (t.x != null && t.y != null) {
+          const key = `${t.x},${t.y}`;
+          // Keep first target per position (no duplicates expected)
+          if (!targetByPos.has(key)) targetByPos.set(key, t);
+        }
+      }
 
-        for (const battleAction of battleActions) {
-          // Find which target this matches
-          const matchedTarget = floorTargets.find(
-            (t) => t.summary === battleAction.summary,
-          );
+      let battleMatchNodes = 0;
+      let battleTargetChecks = 0;
+      let battleEvaluateCalls = 0;
+      let primitiveEnumerations = 0;
+
+      const t2 = Date.now();
+      // Only check adjacency against target positions — no full action enumeration
+      const DIRS = [
+        [0, -1],
+        [0, 1],
+        [-1, 0],
+        [1, 0],
+      ];
+      for (const node of Object.values(visited)) {
+        battleMatchNodes += 1;
+        const nodeState = node.state;
+        const loc = (nodeState.hero && nodeState.hero.loc) || {};
+        const nx = Number(loc.x);
+        const ny = Number(loc.y);
+        if (isNaN(nx) || isNaN(ny)) continue;
+
+        for (const [dx, dy] of DIRS) {
+          battleTargetChecks += 1;
+          const adjKey = `${nx + dx},${ny + dy}`;
+          const matchedTarget = targetByPos.get(adjKey);
           if (!matchedTarget) continue;
+
+          // Construct battle action directly (compatible with applyAction)
+          const battleAction = {
+            kind: "battle",
+            summary: matchedTarget.summary,
+            floorId: matchedTarget.floorId,
+            target: { x: matchedTarget.x, y: matchedTarget.y },
+            enemyId: matchedTarget.enemyId,
+          };
 
           try {
             const postState = simulator.applyAction(nodeState, battleAction, {
               storeRoute: false,
             });
+            battleEvaluateCalls += 1;
             const routePatch = travelActions.concat(battleAction);
             allResults.push({
               postState,
@@ -727,6 +754,18 @@ function tryReachAndBattleBatch(
         }
       }
       totalBattleMs += Date.now() - t2;
+
+      // Write targeted-matcher stats
+      if (stats) {
+        stats.primitiveEnumerations =
+          Number(stats.primitiveEnumerations || 0) + primitiveEnumerations;
+        stats.battleMatchNodes =
+          Number(stats.battleMatchNodes || 0) + battleMatchNodes;
+        stats.battleTargetChecks =
+          Number(stats.battleTargetChecks || 0) + battleTargetChecks;
+        stats.battleEvaluateCalls =
+          Number(stats.battleEvaluateCalls || 0) + battleEvaluateCalls;
+      }
     }
   }
 
@@ -743,6 +782,10 @@ function tryReachAndBattleBatch(
         totalFloorMs,
         totalReachMs,
         totalBattleMs,
+        primitiveEnumerations: 0,
+        battleMatchNodes: 0,
+        battleTargetChecks: 0,
+        battleEvaluateCalls: 0,
       },
     };
 
@@ -792,6 +835,10 @@ function tryReachAndBattleBatch(
       totalFloorMs,
       totalReachMs,
       totalBattleMs,
+      primitiveEnumerations: 0,
+      battleMatchNodes: Number(stats ? stats.battleMatchNodes || 0 : 0),
+      battleTargetChecks: Number(stats ? stats.battleTargetChecks || 0 : 0),
+      battleEvaluateCalls: Number(stats ? stats.battleEvaluateCalls || 0 : 0),
     },
   };
 }

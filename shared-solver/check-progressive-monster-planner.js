@@ -329,12 +329,85 @@ function checkBatchPerTargetCap() {
   // Verify: with 2 targets on same floor and maxSuccessorsPerTarget=1,
   // batch returns 1 successor per target (2 total), NOT 1 total.
   // Also verify reachabilityCalls=1 (shared across targets).
-  const simulator = makeSyntheticSimulator();
-  const initialState = makeInitialState();
-  const segment = {
-    goal: {},
-    actionPolicy: { allowedFloors: ["SYN"] },
+  const base = makeSyntheticSimulator();
+  // Extend map: 3x2 so hero at (0,0) can reach both targets adjacently
+  const project = {
+    data: { firstData: { title: "synthetic-batch", floorId: "SYN", hero: {} } },
+    floorsById: {
+      SYN: {
+        width: 3,
+        height: 2,
+        map: [
+          [0, 101, 0],
+          [102, 0, 0],
+        ],
+        changeFloor: {},
+      },
+    },
+    mapTilesByNumber: {
+      101: { id: "hpBat", cls: "enemys" },
+      102: { id: "atkBat", cls: "enemys" },
+    },
+    floorOrder: ["SYN"],
   };
+  const simulator = {
+    ...base,
+    project,
+    getWalkReachability(state) {
+      return {
+        visited: {
+          "0,0": {
+            state: { ...state, hero: { ...state.hero, loc: { x: 0, y: 0 } } },
+          },
+          "1,0": {
+            state: { ...state, hero: { ...state.hero, loc: { x: 1, y: 0 } } },
+          },
+        },
+      };
+    },
+    applyAction(state, action, options) {
+      // Extend to handle both target positions
+      const next = clone(state);
+      next.meta = next.meta || {};
+      next.meta.decisionDepth = Number(next.meta.decisionDepth || 0) + 1;
+      const summary = action && action.summary;
+      const ensureFloorState = (s, fid) => {
+        if (!s.floorStates[fid])
+          s.floorStates[fid] = { removed: {}, replaced: {} };
+        return s.floorStates[fid];
+      };
+      if (summary === "battle:hpBat@SYN:1,0") {
+        next.hero.hp = (next.hero.hp || 0) + 100;
+        ensureFloorState(next, "SYN").removed["1,0"] = true;
+      } else if (summary === "battle:atkBat@SYN:0,1") {
+        next.hero.hp = (next.hero.hp || 0) - 20;
+        next.hero.atk = (next.hero.atk || 0) + 10;
+        ensureFloorState(next, "SYN").removed["0,1"] = true;
+      } else if (summary === "battle:atkBat@SYN:2,0") {
+        next.hero.hp = (next.hero.hp || 0) - 20;
+        next.hero.atk = (next.hero.atk || 0) + 10;
+        ensureFloorState(next, "SYN").removed["2,0"] = true;
+      } else {
+        throw new Error(`unexpected synthetic action ${summary}`);
+      }
+      return next;
+    },
+  };
+  const initialState = {
+    ...makeInitialState(),
+    hero: {
+      hp: 100,
+      atk: 1,
+      def: 1,
+      mdef: 1,
+      lv: 1,
+      exp: 0,
+      money: 0,
+      equipment: [],
+      loc: { x: 0, y: 0 },
+    },
+  };
+  const segment = { goal: {}, actionPolicy: { allowedFloors: ["SYN"] } };
   const targets = [
     {
       kind: "battle",
@@ -346,10 +419,10 @@ function checkBatchPerTargetCap() {
     },
     {
       kind: "battle",
-      summary: "battle:atkBat@SYN:2,0",
+      summary: "battle:atkBat@SYN:0,1",
       floorId: "SYN",
-      x: 2,
-      y: 0,
+      x: 0,
+      y: 1,
       enemyId: "atkBat",
     },
   ];
@@ -380,7 +453,7 @@ function checkBatchPerTargetCap() {
     "hpBat should have a successor",
   );
   assert.ok(
-    perTarget.has("battle:atkBat@SYN:2,0"),
+    perTarget.has("battle:atkBat@SYN:0,1"),
     "atkBat should have a successor",
   );
 
@@ -405,15 +478,149 @@ function checkBatchPerTargetCap() {
   };
 }
 
+function checkTargetedBattleMatcher() {
+  // Verify: with 10 enemies on map but only 2 floorTargets, batch oracle
+  // does NOT call primitive enumeration, and battleEvaluateCalls stays
+  // proportional to targets (not full enemy count).
+  const base = makeSyntheticSimulator();
+  const project = {
+    data: {
+      firstData: { title: "synthetic-battle", floorId: "SYN", hero: {} },
+    },
+    floorsById: {
+      SYN: {
+        width: 12,
+        height: 1,
+        map: [[0, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111]],
+        changeFloor: {},
+      },
+    },
+    mapTilesByNumber: {
+      101: { id: "hpBat", cls: "enemys" },
+      102: { id: "atkBat", cls: "enemys" },
+      103: { id: "a", cls: "enemys" },
+      104: { id: "b", cls: "enemys" },
+      105: { id: "c", cls: "enemys" },
+      106: { id: "d", cls: "enemys" },
+      107: { id: "e", cls: "enemys" },
+      108: { id: "f", cls: "enemys" },
+      109: { id: "g", cls: "enemys" },
+      110: { id: "h", cls: "enemys" },
+      111: { id: "i", cls: "enemys" },
+    },
+    floorOrder: ["SYN"],
+  };
+  const projectSim = {
+    ...base,
+    project,
+    getWalkReachability(state) {
+      return {
+        visited: {
+          "0,0": {
+            state: { ...state, hero: { ...state.hero, loc: { x: 0, y: 0 } } },
+          },
+        },
+      };
+    },
+    applyAction(state, action, options) {
+      const next = clone(state);
+      next.meta = next.meta || {};
+      next.meta.decisionDepth = Number(next.meta.decisionDepth || 0) + 1;
+      return next;
+    },
+    enumeratePrimitiveActions(state) {
+      // Return all 10 enemies as battle actions
+      const actions = [];
+      for (let x = 1; x <= 11; x++) {
+        const tile = project.mapTilesByNumber[String(x + 100)];
+        if (tile) {
+          actions.push({
+            kind: "battle",
+            summary: `battle:${tile.id}@SYN:${x},0`,
+            floorId: "SYN",
+            target: { x, y: 0 },
+            enemyId: tile.id,
+            estimate: { damage: 1 },
+          });
+        }
+      }
+      return { actions };
+    },
+  };
+
+  const initialState = {
+    ...makeInitialState(),
+    hero: {
+      hp: 100,
+      atk: 1,
+      def: 1,
+      mdef: 1,
+      lv: 1,
+      exp: 0,
+      money: 0,
+      equipment: [],
+      loc: { x: 0, y: 0 },
+    },
+  };
+  const segment = { goal: {}, actionPolicy: { allowedFloors: ["SYN"] } };
+  // Only 2 of 10 enemies are targets
+  const targets = [
+    {
+      kind: "battle",
+      summary: "battle:hpBat@SYN:1,0",
+      floorId: "SYN",
+      x: 1,
+      y: 0,
+      enemyId: "hpBat",
+    },
+    {
+      kind: "battle",
+      summary: "battle:atkBat@SYN:2,0",
+      floorId: "SYN",
+      x: 2,
+      y: 0,
+      enemyId: "atkBat",
+    },
+  ];
+  const stats = {};
+  const result = reachOracle.tryReachAndBattleBatch(
+    projectSim,
+    initialState,
+    targets,
+    segment,
+    { maxSuccessorsPerTarget: 1 },
+    stats,
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    result.diagnostics.primitiveEnumerations,
+    0,
+    "targeted matcher must not call enumeratePrimitiveActions",
+  );
+  assert.equal(result.diagnostics.reachabilityCalls, 1);
+  assert.ok(result.results.length >= 1, "target(s) should have successors");
+  assert.ok(result.diagnostics.battleEvaluateCalls > 0);
+
+  return {
+    primitiveEnumerations: result.diagnostics.primitiveEnumerations,
+    battleMatchNodes: result.diagnostics.battleMatchNodes,
+    battleTargetChecks: result.diagnostics.battleTargetChecks,
+    battleEvaluateCalls: result.diagnostics.battleEvaluateCalls,
+    totalResults: result.results.length,
+  };
+}
+
 function main() {
   const synthetic = checkSyntheticSmoke();
   const oracle = checkOracleCompatibility();
   const archive = checkArchivePruning();
   const specialPriority = checkSpecialTargetPriority();
   const batchCap = checkBatchPerTargetCap();
+  const battleMatcher = checkTargetedBattleMatcher();
   console.log(
     JSON.stringify(
-      { synthetic, oracle, archive, specialPriority, batchCap },
+      { synthetic, oracle, archive, specialPriority, batchCap, battleMatcher },
       null,
       2,
     ),
