@@ -701,6 +701,82 @@ function checkBatchVsLegacyCompatibility() {
   };
 }
 
+function checkPortalDiscoveryCompatibility() {
+  // Verify: legacy enumeratePrimitiveActions changeFloor vs fast
+  // discoverChangeFloorActions must produce matching summaries.
+  const base = makeSyntheticSimulator();
+  const changeFloorMap = { "1,0": { floorId: "NEXT", stair: "downFloor" } };
+  const project = {
+    data: { firstData: { title: "portal-test", floorId: "SYN", hero: {} } },
+    floorsById: {
+      SYN: {
+        width: 3,
+        height: 1,
+        map: [[0, 0, 0]],
+        changeFloor: changeFloorMap,
+      },
+      NEXT: { width: 1, height: 1, map: [[0]], changeFloor: {} },
+    },
+    mapTilesByNumber: {},
+    floorOrder: ["SYN", "NEXT"],
+  };
+  const simulator = {
+    ...base,
+    project,
+    enumeratePrimitiveActions(state) {
+      // Simulate legacy: return a changeFloor action at adjacent tile
+      const loc = (state.hero && state.hero.loc) || {};
+      const actions = [];
+      if (loc.x === 0 && loc.y === 0 && changeFloorMap["1,0"]) {
+        actions.push({
+          kind: "changeFloor",
+          floorId: state.floorId,
+          stance: { x: 0, y: 0 },
+          direction: "right",
+          x: 1,
+          y: 0,
+          changeFloor: changeFloorMap["1,0"],
+          summary: "changeFloor@SYN:1,0",
+        });
+      }
+      return { actions };
+    },
+  };
+  const state = {
+    ...makeInitialState(),
+    hero: {
+      hp: 100,
+      atk: 1,
+      def: 1,
+      mdef: 1,
+      lv: 1,
+      exp: 0,
+      money: 0,
+      equipment: [],
+      loc: { x: 0, y: 0 },
+    },
+  };
+
+  // Legacy: via enumeratePrimitiveActions
+  const legacy = simulator
+    .enumeratePrimitiveActions(state)
+    .actions.filter((a) => a.kind === "changeFloor")
+    .map((a) => a.summary);
+
+  // Fast: via discoverChangeFloorActions
+  const fast = reachOracle
+    .discoverChangeFloorActions(simulator, state)
+    .map((a) => a.summary);
+
+  assert.deepEqual(
+    legacy.sort(),
+    fast.sort(),
+    "fast portal discovery must match legacy changeFloor summaries",
+  );
+
+  return { legacy, fast };
+}
+
 function main() {
   const synthetic = checkSyntheticSmoke();
   const oracle = checkOracleCompatibility();
@@ -709,6 +785,7 @@ function main() {
   const batchCap = checkBatchPerTargetCap();
   const battleMatcher = checkTargetedBattleMatcher();
   const legacyCompat = checkBatchVsLegacyCompatibility();
+  const portalCompat = checkPortalDiscoveryCompatibility();
   console.log(
     JSON.stringify(
       {
@@ -719,6 +796,7 @@ function main() {
         batchCap,
         battleMatcher,
         legacyCompat,
+        portalCompat,
       },
       null,
       2,

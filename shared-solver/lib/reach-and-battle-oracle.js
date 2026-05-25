@@ -343,8 +343,18 @@ function oracleFindFloorStates(
 
     if (steps >= maxSteps) continue;
 
-    // Targeted portal discovery: check floor.changeFloor directly
-    let portalActions = discoverChangeFloorActions(simulator, current);
+    // Portal discovery: "fast" uses direct floor.changeFloor lookup,
+    // "legacy" (default) uses enumeratePrimitiveActions for safety.
+    const discoveryMode = (config || {}).portalDiscoveryMode || "legacy";
+    let portalActions;
+    if (discoveryMode === "fast") {
+      portalActions = discoverChangeFloorActions(simulator, current);
+    } else {
+      const primitive =
+        simulator.enumeratePrimitiveActions(current).actions || [];
+      portalPrimitiveEnumerations += 1;
+      portalActions = primitive.filter((a) => a.kind === "changeFloor");
+    }
 
     // Also add floorFly (specialized function, kept as-is)
     if (typeof simulator.enumerateFloorFlyActions === "function") {
@@ -705,6 +715,13 @@ function tryReachAndBattleBatch(
   let currentFloorFastPaths = 0;
   let portalFloorSearches = 0;
   let reachabilityCalls = 0;
+  // Local perf counters (NOT read from global stats — returned as diagnostics)
+  let localBattleMatchNodes = 0;
+  let localBattleTargetChecks = 0;
+  let localBattleEvaluateCalls = 0;
+  let localPortalStatesExpanded = 0;
+  let localPortalActionsConsidered = 0;
+  let localPortalApplyMs = 0;
 
   for (const [floorId, floorTargets] of byFloor) {
     const isCurrentFloor = floorId === state.floorId;
@@ -727,21 +744,23 @@ function tryReachAndBattleBatch(
       portalFloorSearches += 1;
       // Collect portal diagnostics from the floor search
       if (floorEntries._portalDiagnostics) {
+        const pd = floorEntries._portalDiagnostics;
         if (stats) {
           stats.portalStatesExpanded =
             Number(stats.portalStatesExpanded || 0) +
-            (floorEntries._portalDiagnostics.portalStatesExpanded || 0);
+            (pd.portalStatesExpanded || 0);
           stats.portalPrimitiveEnumerations =
             Number(stats.portalPrimitiveEnumerations || 0) +
-            (floorEntries._portalDiagnostics.portalPrimitiveEnumerations || 0);
+            (pd.portalPrimitiveEnumerations || 0);
           stats.portalActionsConsidered =
             Number(stats.portalActionsConsidered || 0) +
-            (floorEntries._portalDiagnostics.portalActionsConsidered || 0);
+            (pd.portalActionsConsidered || 0);
           stats.portalApplyMs =
-            Number(stats.portalApplyMs || 0) +
-            (floorEntries._portalDiagnostics.portalApplyMs || 0);
+            Number(stats.portalApplyMs || 0) + (pd.portalApplyMs || 0);
         }
-        // Clean up non-array property so it doesn't interfere
+        localPortalStatesExpanded += pd.portalStatesExpanded || 0;
+        localPortalActionsConsidered += pd.portalActionsConsidered || 0;
+        localPortalApplyMs += pd.portalApplyMs || 0;
         delete floorEntries._portalDiagnostics;
       }
     }
@@ -842,7 +861,7 @@ function tryReachAndBattleBatch(
       }
       totalBattleMs += Date.now() - t2;
 
-      // Write targeted-matcher stats
+      // Write targeted-matcher stats to shared stats AND local counters
       if (stats) {
         stats.primitiveEnumerations =
           Number(stats.primitiveEnumerations || 0) + primitiveEnumerations;
@@ -853,6 +872,9 @@ function tryReachAndBattleBatch(
         stats.battleEvaluateCalls =
           Number(stats.battleEvaluateCalls || 0) + battleEvaluateCalls;
       }
+      localBattleMatchNodes += battleMatchNodes;
+      localBattleTargetChecks += battleTargetChecks;
+      localBattleEvaluateCalls += battleEvaluateCalls;
     }
   }
 
@@ -870,9 +892,13 @@ function tryReachAndBattleBatch(
         totalReachMs,
         totalBattleMs,
         primitiveEnumerations: 0,
-        battleMatchNodes: 0,
-        battleTargetChecks: 0,
-        battleEvaluateCalls: 0,
+        battleMatchNodes: localBattleMatchNodes,
+        battleTargetChecks: localBattleTargetChecks,
+        battleEvaluateCalls: localBattleEvaluateCalls,
+        portalStatesExpanded: localPortalStatesExpanded,
+        portalPrimitiveEnumerations: 0,
+        portalActionsConsidered: localPortalActionsConsidered,
+        portalApplyMs: localPortalApplyMs,
       },
     };
 
@@ -923,17 +949,13 @@ function tryReachAndBattleBatch(
       totalReachMs,
       totalBattleMs,
       primitiveEnumerations: 0,
-      battleMatchNodes: Number(stats ? stats.battleMatchNodes || 0 : 0),
-      battleTargetChecks: Number(stats ? stats.battleTargetChecks || 0 : 0),
-      battleEvaluateCalls: Number(stats ? stats.battleEvaluateCalls || 0 : 0),
-      portalStatesExpanded: Number(stats ? stats.portalStatesExpanded || 0 : 0),
-      portalPrimitiveEnumerations: Number(
-        stats ? stats.portalPrimitiveEnumerations || 0 : 0,
-      ),
-      portalActionsConsidered: Number(
-        stats ? stats.portalActionsConsidered || 0 : 0,
-      ),
-      portalApplyMs: Number(stats ? stats.portalApplyMs || 0 : 0),
+      battleMatchNodes: localBattleMatchNodes,
+      battleTargetChecks: localBattleTargetChecks,
+      battleEvaluateCalls: localBattleEvaluateCalls,
+      portalStatesExpanded: localPortalStatesExpanded,
+      portalPrimitiveEnumerations: 0,
+      portalActionsConsidered: localPortalActionsConsidered,
+      portalApplyMs: localPortalApplyMs,
     },
   };
 }
