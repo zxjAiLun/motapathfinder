@@ -594,6 +594,7 @@ function main() {
     allowedFloors: allowedFloors || undefined,
     specialTargets: allSpecialTargets,
     noProgressRounds: optionalNumber(args["planner-no-progress"]) || 5,
+    portalDiscoveryMode: args["portal-discovery-mode"] || "legacy",
   });
 
   console.log(
@@ -646,6 +647,8 @@ function main() {
       console.log(
         "  portal: statesExpanded=" +
           (perf.portalStatesExpanded || 0) +
+          " primitiveEnums=" +
+          (perf.portalPrimitiveEnumerations || 0) +
           " actionsConsidered=" +
           (perf.portalActionsConsidered || 0) +
           " applyMs=" +

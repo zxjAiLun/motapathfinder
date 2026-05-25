@@ -722,6 +722,7 @@ function tryReachAndBattleBatch(
   let localPortalStatesExpanded = 0;
   let localPortalActionsConsidered = 0;
   let localPortalApplyMs = 0;
+  let localPortalPrimitiveEnumerations = 0;
 
   for (const [floorId, floorTargets] of byFloor) {
     const isCurrentFloor = floorId === state.floorId;
@@ -742,25 +743,13 @@ function tryReachAndBattleBatch(
         config,
       );
       portalFloorSearches += 1;
-      // Collect portal diagnostics from the floor search
+      // Collect portal diagnostics locally only (planner accumulates from return value)
       if (floorEntries._portalDiagnostics) {
         const pd = floorEntries._portalDiagnostics;
-        if (stats) {
-          stats.portalStatesExpanded =
-            Number(stats.portalStatesExpanded || 0) +
-            (pd.portalStatesExpanded || 0);
-          stats.portalPrimitiveEnumerations =
-            Number(stats.portalPrimitiveEnumerations || 0) +
-            (pd.portalPrimitiveEnumerations || 0);
-          stats.portalActionsConsidered =
-            Number(stats.portalActionsConsidered || 0) +
-            (pd.portalActionsConsidered || 0);
-          stats.portalApplyMs =
-            Number(stats.portalApplyMs || 0) + (pd.portalApplyMs || 0);
-        }
         localPortalStatesExpanded += pd.portalStatesExpanded || 0;
         localPortalActionsConsidered += pd.portalActionsConsidered || 0;
         localPortalApplyMs += pd.portalApplyMs || 0;
+        localPortalPrimitiveEnumerations += pd.portalPrimitiveEnumerations || 0;
         delete floorEntries._portalDiagnostics;
       }
     }
@@ -896,7 +885,7 @@ function tryReachAndBattleBatch(
         battleTargetChecks: localBattleTargetChecks,
         battleEvaluateCalls: localBattleEvaluateCalls,
         portalStatesExpanded: localPortalStatesExpanded,
-        portalPrimitiveEnumerations: 0,
+        portalPrimitiveEnumerations: localPortalPrimitiveEnumerations,
         portalActionsConsidered: localPortalActionsConsidered,
         portalApplyMs: localPortalApplyMs,
       },
@@ -953,7 +942,7 @@ function tryReachAndBattleBatch(
       battleTargetChecks: localBattleTargetChecks,
       battleEvaluateCalls: localBattleEvaluateCalls,
       portalStatesExpanded: localPortalStatesExpanded,
-      portalPrimitiveEnumerations: 0,
+      portalPrimitiveEnumerations: localPortalPrimitiveEnumerations,
       portalActionsConsidered: localPortalActionsConsidered,
       portalApplyMs: localPortalApplyMs,
     },

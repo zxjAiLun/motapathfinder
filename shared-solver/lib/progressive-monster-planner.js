@@ -92,6 +92,7 @@ function normalizeOptions(options) {
     specialTargets: Array.isArray(config.specialTargets)
       ? config.specialTargets.slice()
       : [],
+    portalDiscoveryMode: String(config.portalDiscoveryMode || "legacy"),
   };
 }
 
@@ -528,6 +529,7 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
           maxSuccessorsPerTarget: config.maxSuccessorsPerTarget,
           maxOracleFloorEntries: config.maxOracleFloorEntries,
           maxPortalDepth: config.maxPortalDepth,
+          portalDiscoveryMode: config.portalDiscoveryMode,
         },
         oracleStats,
       );
@@ -567,6 +569,9 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
         oracleStats.portalApplyMs =
           Number(oracleStats.portalApplyMs || 0) +
           (batchResult.diagnostics.portalApplyMs || 0);
+        oracleStats.portalPrimitiveEnumerations =
+          Number(oracleStats.portalPrimitiveEnumerations || 0) +
+          (batchResult.diagnostics.portalPrimitiveEnumerations || 0);
       }
 
       if (!batchResult.ok) {
@@ -704,6 +709,9 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
     totalReachMs: Number(oracleStats.totalReachMs || 0),
     totalBattleMs: Number(oracleStats.totalBattleMs || 0),
     portalStatesExpanded: Number(oracleStats.portalStatesExpanded || 0),
+    portalPrimitiveEnumerations: Number(
+      oracleStats.portalPrimitiveEnumerations || 0,
+    ),
     portalActionsConsidered: Number(oracleStats.portalActionsConsidered || 0),
     portalApplyMs: Number(oracleStats.portalApplyMs || 0),
   };
