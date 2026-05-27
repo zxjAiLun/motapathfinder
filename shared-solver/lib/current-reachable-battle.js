@@ -5,6 +5,7 @@ const {
   closeStateForBattleFrontier,
   selectMonsterOnlySuccessors,
 } = require("./reach-and-battle-oracle");
+const { getTileDefinitionAt } = require("./state");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -59,6 +60,96 @@ function routePatchSummaries(routePatch) {
     .filter(Boolean);
 }
 
+let targetCacheByProject = new WeakMap();
+const targetCacheStats = {
+  hits: 0,
+  misses: 0,
+  floorScans: 0,
+};
+
+function sortedObjectSignature(value) {
+  const object = value || {};
+  return Object.keys(object)
+    .sort()
+    .map((key) => `${key}=${JSON.stringify(object[key])}`)
+    .join(",");
+}
+
+function floorMutationSignature(state, floorId) {
+  const floorState = ((state || {}).floorStates || {})[floorId] || {};
+  return [
+    `removed:${sortedObjectSignature(floorState.removed)}`,
+    `replaced:${sortedObjectSignature(floorState.replaced)}`,
+  ].join("|");
+}
+
+function cacheForProject(project) {
+  let cache = targetCacheByProject.get(project);
+  if (!cache) {
+    cache = new Map();
+    targetCacheByProject.set(project, cache);
+  }
+  return cache;
+}
+
+function cachedCurrentFloorEnemyTargets(simulator, state) {
+  const project = simulator.project;
+  const floorId = state.floorId;
+  const floor = project.floorsById[floorId];
+  if (!floor) {
+    return { targets: [], diagnostics: { targetCacheHit: false, floorTargetScan: false } };
+  }
+  const cache = cacheForProject(project);
+  const cacheKey = `${floorId}|${floorMutationSignature(state, floorId)}`;
+  if (cache.has(cacheKey)) {
+    targetCacheStats.hits += 1;
+    return {
+      targets: cache.get(cacheKey).map((target) => ({ ...target })),
+      diagnostics: { targetCacheHit: true, floorTargetScan: false },
+    };
+  }
+
+  targetCacheStats.misses += 1;
+  targetCacheStats.floorScans += 1;
+  const height =
+    floor.height || (Array.isArray(floor.map) ? floor.map.length : 0);
+  const width = floor.width || 0;
+  const targets = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const tile = getTileDefinitionAt(project, state, floorId, x, y);
+      if (!tile || !tile.cls || tile.cls.indexOf("enemy") !== 0) continue;
+      const enemyId = tile.id;
+      if (!enemyId) continue;
+      targets.push({
+        kind: "battle",
+        summary: `battle:${enemyId}@${floorId}:${x},${y}`,
+        floorId,
+        x,
+        y,
+        enemyId,
+        monsterTarget: true,
+      });
+    }
+  }
+  cache.set(cacheKey, targets.map((target) => ({ ...target })));
+  return {
+    targets,
+    diagnostics: { targetCacheHit: false, floorTargetScan: true },
+  };
+}
+
+function clearTargetCache() {
+  targetCacheByProject = new WeakMap();
+  targetCacheStats.hits = 0;
+  targetCacheStats.misses = 0;
+  targetCacheStats.floorScans = 0;
+}
+
+function getTargetCacheStats() {
+  return { ...targetCacheStats };
+}
+
 // =========================================================================
 // Current-Reachable Battle Successor Enumeration
 //
@@ -86,11 +177,15 @@ function enumerateCurrentReachableBattleSuccessors(
 
   if (targetByPos.size === 0) return { ok: true, results: [], diagnostics: {} };
 
-  // Current-floor fast path
-  const closed = closeStateForBattleFrontier(simulator, state, {
-    goal: {},
-    actionPolicy: {},
-  });
+  // Current-floor fast path. The progressive planner works from already
+  // stabilized states; avoid an extra clone/stabilize pass unless a caller
+  // explicitly asks for the legacy closing behavior.
+  const closed = config.closeBeforeReachability === true
+    ? closeStateForBattleFrontier(simulator, state, {
+      goal: {},
+      actionPolicy: {},
+    })
+    : state;
   const reachability = simulator.getWalkReachability(closed);
   const visited = reachability.visited || {};
 
@@ -194,32 +289,50 @@ function enumerateMobilitySuccessors(simulator, state, options) {
   // changeFloor: respect portalDiscoveryMode for safety
   if (discoveryMode === "fast") {
     const { discoverChangeFloorActions } = require("./reach-and-battle-oracle");
-    actions = actions.concat(discoverChangeFloorActions(simulator, state));
+    const reachability = simulator.getWalkReachability(state);
+    const discovered = [];
+    Object.values(reachability.visited || {}).forEach((node) => {
+      const nodeState = node.state || state;
+      discoverChangeFloorActions(simulator, nodeState).forEach((action) => {
+        discovered.push({ action, applyState: nodeState });
+      });
+    });
+    actions = actions.concat(discovered);
   } else {
     const primitive = simulator.enumeratePrimitiveActions(state).actions || [];
-    actions = actions.concat(primitive.filter((a) => a.kind === "changeFloor"));
+    actions = actions.concat(
+      primitive
+        .filter((a) => a.kind === "changeFloor")
+        .map((action) => ({ action, applyState: state })),
+    );
   }
 
   // floorFly
   if (typeof simulator.enumerateFloorFlyActions === "function") {
-    actions = actions.concat(simulator.enumerateFloorFlyActions(state));
+    actions = actions.concat(
+      simulator
+        .enumerateFloorFlyActions(state)
+        .map((action) => ({ action, applyState: state })),
+    );
   }
 
   // Dedup by summary
   const seen = new Set();
   const unique = [];
-  for (const action of actions) {
+  for (const entry of actions) {
+    const action = entry.action || entry;
     const summary = action.summary || "";
     if (seen.has(summary)) continue;
     seen.add(summary);
-    unique.push(action);
+    unique.push({ action, applyState: entry.applyState || state });
   }
   actions = unique;
 
   const results = [];
-  for (const action of actions) {
+  for (const entry of actions) {
+    const action = entry.action;
     try {
-      const postState = simulator.applyAction(state, action, {
+      const postState = simulator.applyAction(entry.applyState || state, action, {
         storeRoute: false,
       });
       results.push({
@@ -246,56 +359,25 @@ function enumerateMobilitySuccessors(simulator, state, options) {
 
 function fetchCurrentFloorTargets(simulator, state, segment, options) {
   const config = options || {};
-  const policy = (segment || {}).actionPolicy || {};
   const goal = (segment || {}).goal || {};
-  const project = simulator.project;
-  const floor = project.floorsById[state.floorId];
-  if (!floor) return [];
-
-  const height =
-    floor.height || (Array.isArray(floor.map) ? floor.map.length : 0);
-  const width = floor.width || 0;
-  const reachableBattleSummaries = new Set();
-  try {
-    (simulator.enumeratePrimitiveActions(state).actions || [])
-      .filter((a) => a.kind === "battle" && a.summary)
-      .forEach((a) => reachableBattleSummaries.add(a.summary));
-  } catch (e) {}
-
-  const targets = [];
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const { getTileDefinitionAt } = require("./state");
-      const tile = getTileDefinitionAt(project, state, state.floorId, x, y);
-      if (!tile || !tile.cls || tile.cls.indexOf("enemy") !== 0) continue;
-      const enemyId = tile.id;
-      if (!enemyId) continue;
-
-      const preservedKey = `${state.floorId}:${x},${y}`;
-      const isProtected = (goal.presentTiles || []).some(
-        (p) => `${p.floorId}:${p.x},${p.y}` === preservedKey,
-      );
-      if (isProtected) continue;
-
-      const summary = `battle:${enemyId}@${state.floorId}:${x},${y}`;
-      targets.push({
-        kind: "battle",
-        summary,
-        floorId: state.floorId,
-        x,
-        y,
-        enemyId,
-        reachableNow: reachableBattleSummaries.has(summary),
-        monsterTarget: true,
-      });
-    }
+  const cached = cachedCurrentFloorEnemyTargets(simulator, state);
+  if (config.diagnostics) {
+    config.diagnostics.targetCacheHits = Number(config.diagnostics.targetCacheHits || 0) + (cached.diagnostics.targetCacheHit ? 1 : 0);
+    config.diagnostics.targetCacheMisses = Number(config.diagnostics.targetCacheMisses || 0) + (cached.diagnostics.targetCacheHit ? 0 : 1);
+    config.diagnostics.floorTargetScans = Number(config.diagnostics.floorTargetScans || 0) + (cached.diagnostics.floorTargetScan ? 1 : 0);
   }
 
-  // Score sort + special target prioritization
-  const {
-    scoreMonsterTarget,
-    matchesSpecialTarget,
-  } = require("./reach-and-battle-oracle");
+  const targets = cached.targets.filter((target) => {
+    const preservedKey = `${target.floorId}:${target.x},${target.y}`;
+    return !(goal.presentTiles || []).some(
+      (p) => `${p.floorId}:${p.x},${p.y}` === preservedKey,
+    );
+  });
+
+  // Special target prioritization only. Avoid floor-wide battle scoring here:
+  // current-reachable mode should first find reachable adjacent enemies, then
+  // evaluate only those battle successors.
+  const { matchesSpecialTarget } = require("./reach-and-battle-oracle");
   const specialPatterns = config.specialTargets || [];
   if (specialPatterns.length > 0) {
     const special = [];
@@ -304,33 +386,8 @@ function fetchCurrentFloorTargets(simulator, state, segment, options) {
       if (matchesSpecialTarget(t.summary, specialPatterns)) special.push(t);
       else rest.push(t);
     }
-    special.sort(
-      (a, b) =>
-        scoreMonsterTarget(simulator, b, state, {
-          goal,
-          actionPolicy: policy,
-        }) -
-        scoreMonsterTarget(simulator, a, state, { goal, actionPolicy: policy }),
-    );
-    rest.sort(
-      (a, b) =>
-        scoreMonsterTarget(simulator, b, state, {
-          goal,
-          actionPolicy: policy,
-        }) -
-        scoreMonsterTarget(simulator, a, state, { goal, actionPolicy: policy }),
-    );
     targets.length = 0;
     targets.push(...special, ...rest);
-  } else {
-    targets.sort(
-      (a, b) =>
-        scoreMonsterTarget(simulator, b, state, {
-          goal,
-          actionPolicy: policy,
-        }) -
-        scoreMonsterTarget(simulator, a, state, { goal, actionPolicy: policy }),
-    );
   }
 
   const maxTargets = number(config.maxTargetsPerState, 24);
@@ -341,4 +398,9 @@ module.exports = {
   enumerateCurrentReachableBattleSuccessors,
   enumerateMobilitySuccessors,
   fetchCurrentFloorTargets,
+  __testHooks: {
+    clearTargetCache,
+    floorMutationSignature,
+    getTargetCacheStats,
+  },
 };

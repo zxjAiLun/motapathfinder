@@ -6,8 +6,13 @@ const {
   runProgressiveMonsterPlanner,
   __testHooks,
 } = require("./lib/progressive-monster-planner");
+const currentReachable = require("./lib/current-reachable-battle");
 const reachOracle = require("./lib/reach-and-battle-oracle");
 const { __testHooks: segmentHooks } = require("./lib/segment-dp");
+const {
+  buildResourceIntentMilestones,
+  validateMilestones,
+} = require("./check-progressive-to-milestone");
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -868,6 +873,168 @@ function checkPortalDedupSafety() {
   };
 }
 
+function checkCurrentReachableTargetCache() {
+  currentReachable.__testHooks.clearTargetCache();
+  const simulator = makeSyntheticSimulator();
+  const initialState = makeInitialState();
+  const segment = { goal: {}, actionPolicy: { allowedFloors: ["SYN"] } };
+  const first = currentReachable.fetchCurrentFloorTargets(
+    simulator,
+    initialState,
+    segment,
+    { maxTargetsPerState: 4 },
+  );
+  const second = currentReachable.fetchCurrentFloorTargets(
+    simulator,
+    initialState,
+    segment,
+    { maxTargetsPerState: 4 },
+  );
+  const mutated = clone(initialState);
+  mutated.floorStates.SYN.removed["1,0"] = true;
+  const third = currentReachable.fetchCurrentFloorTargets(
+    simulator,
+    mutated,
+    segment,
+    { maxTargetsPerState: 4 },
+  );
+  const stats = currentReachable.__testHooks.getTargetCacheStats();
+  assert.equal(first.length, 2, "first scan should see both targets");
+  assert.equal(second.length, 2, "cached scan should preserve both targets");
+  assert.equal(third.length, 1, "mutation signature should invalidate target cache");
+  assert.equal(stats.floorScans, 2, "same floor/mutation should scan once, new mutation scans again");
+  assert.ok(stats.hits >= 1, "second same-state fetch should hit cache");
+  return stats;
+}
+
+function checkCurrentReachableSpecialTargetPriority() {
+  currentReachable.__testHooks.clearTargetCache();
+  const simulator = makeSyntheticSimulator();
+  const initialState = makeInitialState();
+  const targets = currentReachable.fetchCurrentFloorTargets(
+    simulator,
+    initialState,
+    { goal: {}, actionPolicy: { allowedFloors: ["SYN"] } },
+    {
+      maxTargetsPerState: 1,
+      specialTargets: ["battle:atkBat@SYN:2,0"],
+    },
+  );
+  assert.equal(targets.length, 1, "target cap should apply");
+  assert.equal(
+    targets[0].summary,
+    "battle:atkBat@SYN:2,0",
+    "current-reachable target fetch should preserve special target before cap",
+  );
+  return { targetSummary: targets[0].summary };
+}
+
+function makeIntentSimulator() {
+  const base = makeSyntheticSimulator();
+  const project = {
+    data: { firstData: { title: "intent-test", floorId: "SYN", hero: {} } },
+    floorsById: {
+      SYN: { width: 2, height: 1, map: [[0, 201]], changeFloor: {}, ratio: 1 },
+    },
+    mapTilesByNumber: {
+      201: { id: "redPotion", cls: "items" },
+    },
+    itemsById: {
+      redPotion: { itemEffect: "core.status.hero.hp += 100;" },
+    },
+    enemysById: {},
+    floorOrder: ["SYN"],
+  };
+  return {
+    ...base,
+    project,
+    enumeratePrimitiveActions() {
+      return {
+        actions: [{
+          kind: "pickup",
+          summary: "pickup:redPotion@SYN:1,0",
+          floorId: "SYN",
+          x: 1,
+          y: 0,
+          itemId: "redPotion",
+          target: { x: 1, y: 0 },
+        }],
+      };
+    },
+    applyAction(state, action) {
+      if (action.summary !== "pickup:redPotion@SYN:1,0") {
+        return base.applyAction(state, action);
+      }
+      const next = clone(state);
+      next.hero.hp += 100;
+      next.meta.decisionDepth = Number(next.meta.decisionDepth || 0) + 1;
+      next.route = (next.route || []).concat(action.summary);
+      return next;
+    },
+  };
+}
+
+function checkResourceIntentBridge() {
+  const simulator = makeIntentSimulator();
+  const initialState = makeInitialState();
+  const plannerResult = {
+    frontier: [{ id: "frontier#0", state: initialState, route: [] }],
+    diagnostics: {
+      stoppedReason: "no-progress",
+      specialTargets: { required: [], missing: [] },
+    },
+    bestState: initialState,
+  };
+  const result = buildResourceIntentMilestones(simulator, plannerResult, {
+    existingMilestoneIds: new Set(),
+    failure: {
+      failureClass: "hp-deficit",
+      missingGoalFields: [{ field: "hero.hp", expected: 200, actual: 100 }],
+    },
+  });
+  assert.ok(result.intents.length >= 1, "bridge should emit at least one resource intent");
+  assert.ok(result.milestones.length >= 1, "bridge should convert intent to candidate milestone");
+  assert.equal(
+    result.milestones[0]._meta.source,
+    "resource-intent",
+    "resource intent milestone should carry source metadata",
+  );
+  return {
+    intentCount: result.intents.length,
+    milestoneId: result.milestones[0].id,
+    topIntentKind: result.diagnostics.topIntentKind,
+  };
+}
+
+function checkValidationDoctorLine() {
+  const simulator = makeSyntheticSimulator();
+  const initialState = makeInitialState();
+  const validation = validateMilestones(
+    simulator,
+    initialState,
+    [{
+      id: "impossible-floor",
+      label: "Impossible floor",
+      goal: { floorId: "NOPE" },
+      actionPolicy: { actionKinds: ["battle"], forbidUnsupportedEvents: true },
+      dp: { maxExpansions: 4, maxRuntimeMs: 100 },
+      _meta: { source: "resource-intent", generatedBy: "test" },
+    }],
+    { maxExpansions: 4, maxRuntimeMs: 100 },
+  );
+  assert.equal(validation.length, 1);
+  assert.equal(validation[0].found, false, "impossible milestone should fail validation");
+  assert.equal(validation[0].source, "resource-intent");
+  assert.ok(
+    validation[0].doctor && validation[0].doctor.line,
+    "failed validation should include solver doctor line",
+  );
+  return {
+    source: validation[0].source,
+    doctor: validation[0].doctor.line,
+  };
+}
+
 function main() {
   const synthetic = checkSyntheticSmoke();
   const oracle = checkOracleCompatibility();
@@ -878,6 +1045,10 @@ function main() {
   const legacyCompat = checkBatchVsLegacyCompatibility();
   const portalCompat = checkPortalDiscoveryCompatibility();
   const portalDedup = checkPortalDedupSafety();
+  const currentCache = checkCurrentReachableTargetCache();
+  const currentSpecialPriority = checkCurrentReachableSpecialTargetPriority();
+  const resourceIntentBridge = checkResourceIntentBridge();
+  const validationDoctor = checkValidationDoctorLine();
   console.log(
     JSON.stringify(
       {
@@ -890,6 +1061,10 @@ function main() {
         legacyCompat,
         portalCompat,
         portalDedup,
+        currentCache,
+        currentSpecialPriority,
+        resourceIntentBridge,
+        validationDoctor,
       },
       null,
       2,

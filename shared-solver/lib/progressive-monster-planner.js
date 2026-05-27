@@ -98,6 +98,7 @@ function normalizeOptions(options) {
       ? config.specialTargets.slice()
       : [],
     portalDiscoveryMode: String(config.portalDiscoveryMode || "legacy"),
+    mobilityDiscoveryMode: String(config.mobilityDiscoveryMode || "legacy"),
     targetScope: String(config.targetScope || "current-reachable"),
     maxMobilitySuccessorsPerState: Math.max(
       0,
@@ -561,6 +562,53 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
     }
   }
 
+  function appendMobilitySuccessors(candidate, round, next, maxMob, onlyTargetFloor) {
+    const mobResult = enumerateMobilitySuccessors(
+      simulator,
+      candidate.state,
+      { portalDiscoveryMode: config.mobilityDiscoveryMode },
+    );
+    oracleStats.mobilityActionsConsidered =
+      Number(oracleStats.mobilityActionsConsidered || 0) +
+      ((mobResult.diagnostics &&
+        mobResult.diagnostics.mobilityActionsConsidered) ||
+        mobResult.results.length);
+    let mobAccepted = 0;
+    let acceptedTargetFloor = false;
+    for (const successor of mobResult.results) {
+      if (mobAccepted >= maxMob) break;
+      const state = successor.postState;
+      if (onlyTargetFloor && config.targetFloorId && state.floorId !== config.targetFloorId) {
+        continue;
+      }
+      const patch = routePatchSummaries(successor.routePatch);
+      state.route = candidate.route.concat(patch);
+      state._routePatch = patch;
+      const nextCandidate = buildNextCandidate(
+        round,
+        next.length,
+        patch,
+        successor.action || {},
+        state,
+        candidate,
+        config,
+      );
+      if (archive.accept(nextCandidate)) {
+        diagnostics.successorsAccepted += 1;
+        next.push(nextCandidate);
+        mobilitySuccessors += 1;
+        mobAccepted += 1;
+        if (config.targetFloorId && state.floorId === config.targetFloorId) {
+          acceptedTargetFloor = true;
+        }
+        recordCandidate(nextCandidate, candidate);
+      } else {
+        diagnostics.successorsRejected += 1;
+      }
+    }
+    return { accepted: mobAccepted, acceptedTargetFloor };
+  }
+
   for (let round = 1; round <= config.maxRounds; round += 1) {
     diagnostics.rounds = round;
     const recentMemory = memoryMb();
@@ -633,6 +681,16 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
         }
       } else {
         // Current-reachable-first (default)
+        let candidateBattleAccepted = 0;
+        const maxMob = number(config.maxMobilitySuccessorsPerState, 2);
+        if (
+          maxMob > 0 &&
+          config.targetFloorId &&
+          (config.specialTargets || []).length === 0
+        ) {
+          const mobility = appendMobilitySuccessors(candidate, round, next, maxMob, true);
+          if (mobility.acceptedTargetFloor) continue;
+        }
         const currentTargets = fetchCurrentFloorTargets(
           simulator,
           candidate.state,
@@ -640,6 +698,7 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
           {
             maxTargetsPerState: config.maxTargetsPerState,
             specialTargets: config.specialTargets || [],
+            diagnostics: oracleStats,
           },
         );
         diagnostics.targetsConsidered += currentTargets.length;
@@ -695,6 +754,7 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
               if (isSpecial) specialTargetAccepted += 1;
               next.push(nextCandidate);
               battleSuccessors += 1;
+              candidateBattleAccepted += 1;
               recordCandidate(nextCandidate, candidate);
             } else {
               diagnostics.successorsRejected += 1;
@@ -703,46 +763,12 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
           }
         }
 
-        // Mobility lane: always generate a small number (max 2) of mobility successors,
-        // not just when no battle progress. This prevents starvation of floor transitions.
-        const maxMob = number(config.maxMobilitySuccessorsPerState, 2);
-        if (maxMob > 0) {
-          const mobResult = enumerateMobilitySuccessors(
-            simulator,
-            candidate.state,
-            { portalDiscoveryMode: config.portalDiscoveryMode || "legacy" },
-          );
-          oracleStats.mobilityActionsConsidered =
-            Number(oracleStats.mobilityActionsConsidered || 0) +
-            ((mobResult.diagnostics &&
-              mobResult.diagnostics.mobilityActionsConsidered) ||
-              mobResult.results.length);
-          let mobAccepted = 0;
-          for (const successor of mobResult.results) {
-            if (mobAccepted >= maxMob) break;
-            const patch = routePatchSummaries(successor.routePatch);
-            const state = successor.postState;
-            state.route = candidate.route.concat(patch);
-            state._routePatch = patch;
-            const nextCandidate = buildNextCandidate(
-              round,
-              next.length,
-              patch,
-              successor.action || {},
-              state,
-              candidate,
-              config,
-            );
-            if (archive.accept(nextCandidate)) {
-              diagnostics.successorsAccepted += 1;
-              next.push(nextCandidate);
-              mobilitySuccessors += 1;
-              mobAccepted += 1;
-              recordCandidate(nextCandidate, candidate);
-            } else {
-              diagnostics.successorsRejected += 1;
-            }
-          }
+        // Mobility lane: generate a small number (max 2) only after battle
+        // successors fail for this candidate, or while recovering from a
+        // no-progress round. This keeps mobility independent from monster
+        // targets without paying portal/floorFly enumeration for every state.
+        if (maxMob > 0 && (candidateBattleAccepted === 0 || noProgress > 0)) {
+          appendMobilitySuccessors(candidate, round, next, maxMob, false);
         }
       }
     }
@@ -806,6 +832,7 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
   diagnostics.battleSuccessors = battleSuccessors;
   diagnostics.mobilitySuccessors = mobilitySuccessors;
   diagnostics.targetScope = config.targetScope;
+  diagnostics.mobilityDiscoveryMode = config.mobilityDiscoveryMode;
   diagnostics.perf = {
     currentFloorFastPaths: Number(oracleStats.currentFloorFastPaths || 0),
     portalFloorSearches: Number(oracleStats.portalFloorSearches || 0),
@@ -836,6 +863,9 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
     mobilityActionsConsidered: Number(
       oracleStats.mobilityActionsConsidered || 0,
     ),
+    currentTargetCacheHits: Number(oracleStats.targetCacheHits || 0),
+    currentTargetCacheMisses: Number(oracleStats.targetCacheMisses || 0),
+    currentFloorTargetScans: Number(oracleStats.floorTargetScans || 0),
   };
   const floorLookups =
     Number(oracleStats.floorSearches || 0) +

@@ -25,6 +25,7 @@ const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { StaticSimulator } = require("./lib/simulator");
 const { runMilestoneGraph } = require("./lib/segment-dp");
 const { buildSolverDoctorReport } = require("./lib/solver-doctor");
+const { scanResourceIntents } = require("./lib/resource-intent-scanner");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(
   __dirname,
@@ -295,6 +296,24 @@ function buildMinEffectiveHero(effectiveHero) {
   return result;
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value || {}));
+}
+
+function hasGoalContent(goal) {
+  if (!goal) return false;
+  return Boolean(
+    goal.floorId ||
+      goal.type ||
+      goal.actionSurvivable ||
+      goal.minHero && Object.keys(goal.minHero).length > 0 ||
+      goal.minEffectiveHero && Object.keys(goal.minEffectiveHero).length > 0 ||
+      goal.equipment && Object.keys(goal.equipment).length > 0 ||
+      Array.isArray(goal.removedTiles) && goal.removedTiles.length > 0 ||
+      Array.isArray(goal.anyRemovedTiles) && goal.anyRemovedTiles.length > 0,
+  );
+}
+
 function checkpointToMilestone(checkpoint, existingMilestoneIds) {
   const baseId =
     checkpoint.type === "entered-floor"
@@ -361,8 +380,121 @@ function checkpointToMilestone(checkpoint, existingMilestoneIds) {
     },
     _meta: {
       generatedBy: "progressive-monster-planner",
+      source: "checkpoint",
       checkpointType: checkpoint.type,
       candidateId: checkpoint.candidateId,
+    },
+  };
+}
+
+function synthesizeProgressiveFailure(plannerResult, options) {
+  const config = options || {};
+  const special = ((plannerResult || {}).diagnostics || {}).specialTargets || {};
+  const missingSpecial = Array.isArray(special.missing) ? special.missing[0] : null;
+  if (missingSpecial) {
+    return {
+      failureClass: "target-action-unreachable",
+      missingGoalFields: [{
+        field: "actionSurvivable",
+        action: missingSpecial,
+        expected: "reachable",
+        actual: "missing-action",
+      }],
+    };
+  }
+  if (config.targetFloorId) {
+    return {
+      failureClass: "floor-scope-mismatch",
+      missingGoalFields: [{
+        field: "floorId",
+        expected: config.targetFloorId,
+        actual: ((plannerResult || {}).bestState || {}).floorId || "unknown",
+      }],
+    };
+  }
+  return {
+    failureClass: "budget-or-action-scope-exhausted",
+    missingGoalFields: [],
+  };
+}
+
+function intentToMilestone(intent, existingMilestoneIds, index) {
+  const baseId = `auto-intent-${sanitizeId(intent.kind)}-${index + 1}`;
+  let id = baseId;
+  let counter = 1;
+  while (existingMilestoneIds.has(id)) {
+    id = `${baseId}-${counter}`;
+    counter++;
+  }
+  existingMilestoneIds.add(id);
+  const goal = cloneJson(intent.goal);
+  if (!hasGoalContent(goal)) return null;
+  return {
+    id,
+    label: `Auto intent: ${intent.kind}`,
+    goal,
+    actionPolicy: cloneJson(intent.actionPolicy) || {
+      actionKinds: [
+        "battle",
+        "pickup",
+        "equip",
+        "openDoor",
+        "useTool",
+        "changeFloor",
+        "floorFly",
+        "event",
+      ],
+      forbidUnsupportedEvents: true,
+    },
+    dp: {
+      keyMode: "location",
+      stopOnFirstGoal: false,
+      goalSkylineLimit: 16,
+      dpSkylineMax: 3,
+      maxExpansions: 8000,
+      maxRuntimeMs: 15000,
+    },
+    _meta: {
+      generatedBy: "progressive-resource-intent",
+      source: "resource-intent",
+      intentKind: intent.kind,
+      score: Math.round(Number(intent.score || 0)),
+      records: (intent.records || []).slice(0, 3).map((record) => ({
+        actionSummary: record.actionSummary,
+        actionKind: record.actionKind,
+        tile: record.tile,
+        blockerBattle: record.blockerBattle,
+        blockedResource: record.blockedResource,
+      })),
+    },
+  };
+}
+
+function buildResourceIntentMilestones(simulator, plannerResult, options) {
+  const config = options || {};
+  const frontier = (plannerResult && plannerResult.frontier) || [];
+  const failure = config.failure || synthesizeProgressiveFailure(plannerResult, config);
+  const intents = scanResourceIntents(simulator, frontier, failure, {
+    intentDepth: config.intentDepth || 2,
+    maxIntentNodes: config.maxIntentNodes || 120,
+    maxIntentRecords: config.maxIntentRecords || 24,
+    recordsPerIntent: config.recordsPerIntent || 6,
+    maxIntents: config.maxIntents || 6,
+    includeBlockedResources: true,
+  });
+  const existingMilestoneIds = config.existingMilestoneIds || new Set();
+  const milestones = intents
+    .map((intent, index) => intentToMilestone(intent, existingMilestoneIds, index))
+    .filter(Boolean);
+  return {
+    failure,
+    intents,
+    milestones,
+    diagnostics: {
+      resourceIntentCount: intents.length,
+      topIntentKind: intents[0] && intents[0].kind,
+      topIntentScore: intents[0] ? Math.round(Number(intents[0].score || 0)) : 0,
+      topIntentGoal: intents[0] ? intents[0].goal : null,
     },
   };
 }
@@ -394,6 +526,8 @@ function validateMilestones(
     results.push({
       milestoneId: milestone.id,
       label: milestone.label,
+      source: milestone._meta && milestone._meta.source || "checkpoint",
+      generatedBy: milestone._meta && milestone._meta.generatedBy,
       found: result.found,
       doctor: doctor
         ? {
@@ -583,6 +717,7 @@ function main() {
   );
 
   // --- Run progressive planner ---
+  const startedAt = Date.now();
   const plannerResult = runProgressiveMonsterPlanner(simulator, initialState, {
     maxRounds: optionalNumber(args["planner-rounds"]) || 50,
     beamWidth: optionalNumber(args["planner-beam"]) || 16,
@@ -595,6 +730,7 @@ function main() {
     specialTargets: allSpecialTargets,
     noProgressRounds: optionalNumber(args["planner-no-progress"]) || 5,
     portalDiscoveryMode: args["portal-discovery-mode"] || "legacy",
+    mobilityDiscoveryMode: args["mobility-discovery-mode"] || "legacy",
     targetScope: args["target-scope"] || "current-reachable",
     maxMobilitySuccessorsPerState: optionalNumber(
       args["planner-mobility-successors"],
@@ -605,7 +741,10 @@ function main() {
     `Planner: found=${plannerResult.found}, stopped=${plannerResult.diagnostics.stoppedReason}`,
   );
   console.log(
-    `  rounds=${plannerResult.diagnostics.rounds}, states=${plannerResult.diagnostics.statesExpanded}`,
+    `  rounds=${plannerResult.diagnostics.rounds}, states=${plannerResult.diagnostics.statesExpanded}, wallMs=${Date.now() - startedAt}`,
+  );
+  console.log(
+    `  successors: battle=${plannerResult.diagnostics.battleSuccessors || 0}, mobility=${plannerResult.diagnostics.mobilitySuccessors || 0}`,
   );
   console.log(`  checkpoints=${plannerResult.checkpoints.length}`);
   const specCheckpoints = plannerResult.checkpoints.filter(
@@ -641,6 +780,14 @@ function main() {
           (perf.currentBattleTargetChecks || 0) +
           " evalCalls=" +
           (perf.currentBattleEvaluateCalls || 0),
+      );
+      console.log(
+        "  current-reachable-cache: hits=" +
+          (perf.currentTargetCacheHits || 0) +
+          " misses=" +
+          (perf.currentTargetCacheMisses || 0) +
+          " floorScans=" +
+          (perf.currentFloorTargetScans || 0),
       );
     }
     console.log(
@@ -690,13 +837,50 @@ function main() {
   const existingMilestoneIds = new Set(
     (spec.milestones || []).map((m) => m.id),
   );
-  const candidateMilestones = plannerResult.checkpoints.map((cp) =>
+  const checkpointMilestones = plannerResult.checkpoints.map((cp) =>
     checkpointToMilestone(cp, existingMilestoneIds),
   );
+  let resourceIntentResult = null;
+  if (
+    parseBoolean(args["suggest-resource-intents"], false) &&
+    (
+      plannerResult.diagnostics.stoppedReason === "no-progress" ||
+      plannerResult.diagnostics.stoppedReason === "round-limit" ||
+      (
+        plannerResult.diagnostics.specialTargets &&
+        Array.isArray(plannerResult.diagnostics.specialTargets.missing) &&
+        plannerResult.diagnostics.specialTargets.missing.length > 0
+      )
+    )
+  ) {
+    resourceIntentResult = buildResourceIntentMilestones(simulator, plannerResult, {
+      existingMilestoneIds,
+      targetFloorId,
+      intentDepth: optionalNumber(args["intent-depth"]) || 2,
+      maxIntentNodes: optionalNumber(args["max-intent-nodes"]) || 120,
+      maxIntentRecords: optionalNumber(args["max-intent-records"]) || 24,
+      recordsPerIntent: optionalNumber(args["records-per-intent"]) || 6,
+      maxIntents: optionalNumber(args["max-intents"]) || 6,
+    });
+  }
+  const candidateMilestones = checkpointMilestones.concat(
+    resourceIntentResult ? resourceIntentResult.milestones : [],
+  );
+
+  if (resourceIntentResult) {
+    const diag = resourceIntentResult.diagnostics;
+    console.log(`Resource intents: count=${diag.resourceIntentCount}`);
+    if (diag.topIntentKind) {
+      console.log(
+        `  top=${diag.topIntentKind}, score=${diag.topIntentScore}, goal=${JSON.stringify(diag.topIntentGoal)}`,
+      );
+    }
+  }
 
   console.log(`Generated ${candidateMilestones.length} candidate milestones:`);
   candidateMilestones.forEach((milestone) => {
-    console.log(`  - ${milestone.id}: ${milestone.label}`);
+    const source = milestone._meta && milestone._meta.source || "checkpoint";
+    console.log(`  - ${milestone.id}: ${milestone.label} [source=${source}]`);
     if (milestone.goal.floorId)
       console.log(`    floorId=${milestone.goal.floorId}`);
     if (milestone.goal.type) console.log(`    type=${milestone.goal.type}`);
@@ -764,11 +948,11 @@ function main() {
       if (result.found) {
         passed++;
         console.log(
-          `  ✓ ${result.milestoneId}: passed (${result.candidateCount} candidates)`,
+          `  ✓ ${result.milestoneId} [source=${result.source}]: passed (${result.candidateCount} candidates)`,
         );
       } else {
         failed++;
-        console.log(`  ✗ ${result.milestoneId}: FAILED`);
+        console.log(`  ✗ ${result.milestoneId} [source=${result.source}]: FAILED`);
         if (result.doctor) console.log(`    ${result.doctor.line}`);
       }
     });
@@ -788,6 +972,10 @@ function main() {
       inferredSpecialTargets: inferredTargets,
       allSpecialTargets,
       plannerDiagnostics: plannerResult.diagnostics,
+      resourceIntentDiagnostics:
+        resourceIntentResult && resourceIntentResult.diagnostics,
+      resourceIntentFailure:
+        resourceIntentResult && resourceIntentResult.failure,
       specialTargetDiagnostics:
         plannerResult.diagnostics.specialTargets || null,
       candidateMilestones,
@@ -814,4 +1002,14 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  buildResourceIntentMilestones,
+  checkpointToMilestone,
+  inferSpecialTargetsFromMilestone,
+  synthesizeProgressiveFailure,
+  validateMilestones,
+};
