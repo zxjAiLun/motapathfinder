@@ -562,7 +562,7 @@ function main() {
     process.exit(1);
   }
 
-  console.log(`=== Progressive Planner → Milestone Suggestion (v3) ===`);
+  console.log(`=== Progressive Planner → Milestone Suggestion (v4) ===`);
   console.log(`From: ${args["from"] || "start"}, To: ${args["to"] || "auto"}`);
   console.log(`Target floor: ${targetFloorId || "auto-detect"}`);
   console.log(
@@ -628,6 +628,18 @@ function main() {
   }
   const perf = plannerResult.diagnostics.perf;
   if (perf) {
+    if (perf.currentReachabilityCalls > 0) {
+      console.log(
+        "  current-reachable: calls=" +
+          (perf.currentReachabilityCalls || 0) +
+          " matchNodes=" +
+          (perf.currentBattleMatchNodes || 0) +
+          " targetChecks=" +
+          (perf.currentBattleTargetChecks || 0) +
+          " evalCalls=" +
+          (perf.currentBattleEvaluateCalls || 0),
+      );
+    }
     console.log(
       "  perf: fastPaths=" +
         (perf.currentFloorFastPaths || 0) +

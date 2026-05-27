@@ -644,6 +644,23 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
           currentTargets,
           { maxSuccessorsPerTarget: config.maxSuccessorsPerTarget },
         );
+        // Accumulate current-reachable perf
+        if (battleResult.diagnostics) {
+          oracleStats.currentReachabilityCalls =
+            Number(oracleStats.currentReachabilityCalls || 0) + 1;
+          oracleStats.currentBattleMatchNodes =
+            Number(oracleStats.currentBattleMatchNodes || 0) +
+            (battleResult.diagnostics.battleMatchNodes || 0);
+          oracleStats.currentBattleTargetChecks =
+            Number(oracleStats.currentBattleTargetChecks || 0) +
+            (battleResult.diagnostics.battleTargetChecks || 0);
+          oracleStats.currentBattleEvaluateCalls =
+            Number(oracleStats.currentBattleEvaluateCalls || 0) +
+            (battleResult.diagnostics.battleEvaluateCalls || 0);
+          oracleStats.currentReachabilityNodes =
+            Number(oracleStats.currentReachabilityNodes || 0) +
+            (battleResult.diagnostics.reachabilityNodes || 0);
+        }
 
         if (battleResult.ok && battleResult.results.length > 0) {
           for (const successor of battleResult.results) {
@@ -679,19 +696,23 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
           }
         }
 
-        // Mobility successors (changeFloor/floorFly) — only when no battle progress
-        if (
-          battleResult.results.length === 0 &&
-          (!config.maxBattleOnlyRounds ||
-            round <= config.maxBattleOnlyRounds ||
-            noProgress > 0)
-        ) {
+        // Mobility lane: always generate a small number (max 2) of mobility successors,
+        // not just when no battle progress. This prevents starvation of floor transitions.
+        const maxMob = number(config.maxMobilitySuccessorsPerState, 2);
+        if (maxMob > 0) {
           const mobResult = enumerateMobilitySuccessors(
             simulator,
             candidate.state,
-            {},
+            { portalDiscoveryMode: config.portalDiscoveryMode || "legacy" },
           );
+          oracleStats.mobilityActionsConsidered =
+            Number(oracleStats.mobilityActionsConsidered || 0) +
+            ((mobResult.diagnostics &&
+              mobResult.diagnostics.mobilityActionsConsidered) ||
+              mobResult.results.length);
+          let mobAccepted = 0;
           for (const successor of mobResult.results) {
+            if (mobAccepted >= maxMob) break;
             const patch = routePatchSummaries(successor.routePatch);
             const state = successor.postState;
             state.route = candidate.route.concat(patch);
@@ -709,6 +730,8 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
               diagnostics.successorsAccepted += 1;
               next.push(nextCandidate);
               mobilitySuccessors += 1;
+              mobAccepted += 1;
+              recordCandidate(nextCandidate, candidate);
             } else {
               diagnostics.successorsRejected += 1;
             }
@@ -794,6 +817,18 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
     portalApplyFailures: Number(oracleStats.portalApplyFailures || 0),
     portalDuplicateSkips: Number(oracleStats.portalDuplicateSkips || 0),
     portalVisitedSkips: Number(oracleStats.portalVisitedSkips || 0),
+    currentReachabilityCalls: Number(oracleStats.currentReachabilityCalls || 0),
+    currentBattleMatchNodes: Number(oracleStats.currentBattleMatchNodes || 0),
+    currentBattleTargetChecks: Number(
+      oracleStats.currentBattleTargetChecks || 0,
+    ),
+    currentBattleEvaluateCalls: Number(
+      oracleStats.currentBattleEvaluateCalls || 0,
+    ),
+    currentReachabilityNodes: Number(oracleStats.currentReachabilityNodes || 0),
+    mobilityActionsConsidered: Number(
+      oracleStats.mobilityActionsConsidered || 0,
+    ),
   };
   const floorLookups =
     Number(oracleStats.floorSearches || 0) +

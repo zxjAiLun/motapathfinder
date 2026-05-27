@@ -32,7 +32,9 @@ function summarizeHero(state) {
 function effectiveHeroValue(state, field) {
   const hero = (state || {}).hero || {};
   const flags = (state || {}).flags || {};
-  return Math.floor(number(hero[field], 0) * number(flags[`__${field}_buff__`], 1));
+  return Math.floor(
+    number(hero[field], 0) * number(flags[`__${field}_buff__`], 1),
+  );
 }
 
 function summarizeEffectiveHero(state) {
@@ -55,7 +57,9 @@ function routeLength(candidateOrState) {
 
 function routePatchSummaries(routePatch) {
   return (routePatch || [])
-    .map((entry) => typeof entry === "string" ? entry : entry && entry.summary)
+    .map((entry) =>
+      typeof entry === "string" ? entry : entry && entry.summary,
+    )
     .filter(Boolean);
 }
 
@@ -66,7 +70,12 @@ function routePatchSummaries(routePatch) {
 // No portal BFS, no floorFly, no all-floor scanning.
 // =========================================================================
 
-function enumerateCurrentReachableBattleSuccessors(simulator, state, targets, options) {
+function enumerateCurrentReachableBattleSuccessors(
+  simulator,
+  state,
+  targets,
+  options,
+) {
   const config = options || {};
   const maxSuccessorsPerTarget = number(config.maxSuccessorsPerTarget, 4);
 
@@ -82,7 +91,10 @@ function enumerateCurrentReachableBattleSuccessors(simulator, state, targets, op
   if (targetByPos.size === 0) return { ok: true, results: [], diagnostics: {} };
 
   // Current-floor fast path
-  const closed = closeStateForBattleFrontier(simulator, state, { goal: {}, actionPolicy: {} });
+  const closed = closeStateForBattleFrontier(simulator, state, {
+    goal: {},
+    actionPolicy: {},
+  });
   const reachability = simulator.getWalkReachability(closed);
   const visited = reachability.visited || {};
 
@@ -91,7 +103,12 @@ function enumerateCurrentReachableBattleSuccessors(simulator, state, targets, op
   let battleTargetChecks = 0;
   let battleEvaluateCalls = 0;
 
-  const DIRS = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  const DIRS = [
+    [0, -1],
+    [0, 1],
+    [-1, 0],
+    [1, 0],
+  ];
 
   for (const node of Object.values(visited)) {
     battleMatchNodes += 1;
@@ -116,7 +133,9 @@ function enumerateCurrentReachableBattleSuccessors(simulator, state, targets, op
       };
 
       try {
-        const postState = simulator.applyAction(nodeState, battleAction, { storeRoute: false });
+        const postState = simulator.applyAction(nodeState, battleAction, {
+          storeRoute: false,
+        });
         battleEvaluateCalls += 1;
         allResults.push({
           postState,
@@ -140,7 +159,13 @@ function enumerateCurrentReachableBattleSuccessors(simulator, state, targets, op
 
   const selectedByTarget = [];
   for (const group of byTarget.values()) {
-    const selected = selectMonsterOnlySuccessors(simulator, group, { goal: {}, actionPolicy: {} }, maxSuccessorsPerTarget, null);
+    const selected = selectMonsterOnlySuccessors(
+      simulator,
+      group,
+      { goal: {}, actionPolicy: {} },
+      maxSuccessorsPerTarget,
+      null,
+    );
     selectedByTarget.push(...selected);
   }
 
@@ -167,11 +192,17 @@ function enumerateCurrentReachableBattleSuccessors(simulator, state, targets, op
 
 function enumerateMobilitySuccessors(simulator, state, options) {
   const config = options || {};
+  const discoveryMode = config.portalDiscoveryMode || "legacy";
 
   let actions = [];
-  // changeFloor via direct floor data lookup (fast mode)
-  const { discoverChangeFloorActions } = require("./reach-and-battle-oracle");
-  actions = actions.concat(discoverChangeFloorActions(simulator, state));
+  // changeFloor: respect portalDiscoveryMode for safety
+  if (discoveryMode === "fast") {
+    const { discoverChangeFloorActions } = require("./reach-and-battle-oracle");
+    actions = actions.concat(discoverChangeFloorActions(simulator, state));
+  } else {
+    const primitive = simulator.enumeratePrimitiveActions(state).actions || [];
+    actions = actions.concat(primitive.filter((a) => a.kind === "changeFloor"));
+  }
 
   // floorFly
   if (typeof simulator.enumerateFloorFlyActions === "function") {
@@ -192,7 +223,9 @@ function enumerateMobilitySuccessors(simulator, state, options) {
   const results = [];
   for (const action of actions) {
     try {
-      const postState = simulator.applyAction(state, action, { storeRoute: false });
+      const postState = simulator.applyAction(state, action, {
+        storeRoute: false,
+      });
       results.push({
         postState,
         action,
@@ -202,7 +235,13 @@ function enumerateMobilitySuccessors(simulator, state, options) {
     } catch (error) {}
   }
 
-  return { results, diagnostics: { mobilityActionsConsidered: actions.length, mobilitySuccessors: results.length } };
+  return {
+    results,
+    diagnostics: {
+      mobilityActionsConsidered: actions.length,
+      mobilitySuccessors: results.length,
+    },
+  };
 }
 
 // =========================================================================
@@ -217,7 +256,8 @@ function fetchCurrentFloorTargets(simulator, state, segment, options) {
   const floor = project.floorsById[state.floorId];
   if (!floor) return [];
 
-  const height = floor.height || (Array.isArray(floor.map) ? floor.map.length : 0);
+  const height =
+    floor.height || (Array.isArray(floor.map) ? floor.map.length : 0);
   const width = floor.width || 0;
   const reachableBattleSummaries = new Set();
   try {
@@ -236,7 +276,9 @@ function fetchCurrentFloorTargets(simulator, state, segment, options) {
       if (!enemyId) continue;
 
       const preservedKey = `${state.floorId}:${x},${y}`;
-      const isProtected = (goal.presentTiles || []).some((p) => `${p.floorId}:${p.x},${p.y}` === preservedKey);
+      const isProtected = (goal.presentTiles || []).some(
+        (p) => `${p.floorId}:${p.x},${p.y}` === preservedKey,
+      );
       if (isProtected) continue;
 
       const summary = `battle:${enemyId}@${state.floorId}:${x},${y}`;
@@ -244,7 +286,9 @@ function fetchCurrentFloorTargets(simulator, state, segment, options) {
         kind: "battle",
         summary,
         floorId: state.floorId,
-        x, y, enemyId,
+        x,
+        y,
+        enemyId,
         reachableNow: reachableBattleSummaries.has(summary),
         monsterTarget: true,
       });
@@ -252,7 +296,10 @@ function fetchCurrentFloorTargets(simulator, state, segment, options) {
   }
 
   // Score sort + special target prioritization
-  const { scoreMonsterTarget, matchesSpecialTarget } = require("./reach-and-battle-oracle");
+  const {
+    scoreMonsterTarget,
+    matchesSpecialTarget,
+  } = require("./reach-and-battle-oracle");
   const specialPatterns = config.specialTargets || [];
   if (specialPatterns.length > 0) {
     const special = [];
@@ -261,12 +308,33 @@ function fetchCurrentFloorTargets(simulator, state, segment, options) {
       if (matchesSpecialTarget(t.summary, specialPatterns)) special.push(t);
       else rest.push(t);
     }
-    special.sort((a, b) => scoreMonsterTarget(simulator, b, state, { goal, actionPolicy: policy }) - scoreMonsterTarget(simulator, a, state, { goal, actionPolicy: policy }));
-    rest.sort((a, b) => scoreMonsterTarget(simulator, b, state, { goal, actionPolicy: policy }) - scoreMonsterTarget(simulator, a, state, { goal, actionPolicy: policy }));
+    special.sort(
+      (a, b) =>
+        scoreMonsterTarget(simulator, b, state, {
+          goal,
+          actionPolicy: policy,
+        }) -
+        scoreMonsterTarget(simulator, a, state, { goal, actionPolicy: policy }),
+    );
+    rest.sort(
+      (a, b) =>
+        scoreMonsterTarget(simulator, b, state, {
+          goal,
+          actionPolicy: policy,
+        }) -
+        scoreMonsterTarget(simulator, a, state, { goal, actionPolicy: policy }),
+    );
     targets.length = 0;
     targets.push(...special, ...rest);
   } else {
-    targets.sort((a, b) => scoreMonsterTarget(simulator, b, state, { goal, actionPolicy: policy }) - scoreMonsterTarget(simulator, a, state, { goal, actionPolicy: policy }));
+    targets.sort(
+      (a, b) =>
+        scoreMonsterTarget(simulator, b, state, {
+          goal,
+          actionPolicy: policy,
+        }) -
+        scoreMonsterTarget(simulator, a, state, { goal, actionPolicy: policy }),
+    );
   }
 
   const maxTargets = number(config.maxTargetsPerState, 24);
