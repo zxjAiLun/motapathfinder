@@ -596,6 +596,9 @@ function main() {
     noProgressRounds: optionalNumber(args["planner-no-progress"]) || 5,
     portalDiscoveryMode: args["portal-discovery-mode"] || "legacy",
     targetScope: args["target-scope"] || "current-reachable",
+    maxMobilitySuccessorsPerState: optionalNumber(
+      args["planner-mobility-successors"],
+    ),
   });
 
   console.log(

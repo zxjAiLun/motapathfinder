@@ -99,6 +99,13 @@ function normalizeOptions(options) {
       : [],
     portalDiscoveryMode: String(config.portalDiscoveryMode || "legacy"),
     targetScope: String(config.targetScope || "current-reachable"),
+    maxMobilitySuccessorsPerState: Math.max(
+      0,
+      number(
+        config.maxMobilitySuccessorsPerState || config.maxMobilitySuccessors,
+        2,
+      ),
+    ),
   };
 }
 
@@ -840,10 +847,18 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
       ? oracleStats.routePatchTotalLength / oracleStats.successorsReturned
       : 0;
 
+  const specialTargetsComplete = specialTracker.allDefeated();
+  diagnostics.targetAchieved = Boolean(
+    config.targetFloorId &&
+    bestCandidate.state.floorId === config.targetFloorId,
+  );
+  diagnostics.specialTargetsComplete = specialTargetsComplete;
+
   return {
     found: Boolean(
-      config.targetFloorId &&
-      bestCandidate.state.floorId === config.targetFloorId,
+      (config.targetFloorId &&
+        bestCandidate.state.floorId === config.targetFloorId) ||
+      specialTargetsComplete,
     ),
     bestCandidate,
     bestState: bestCandidate.state,
