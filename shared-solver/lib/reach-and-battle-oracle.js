@@ -369,9 +369,12 @@ function oracleFindFloorStates(
       );
     }
 
-    // Dedup by summary + group floorFly by target floor (keep shortest path)
+    // Dedup portal actions. Default "summary": dedup by action.summary only.
+    // Aggressive "target-floor": also merge floorFly by target floor (shortest path).
+    const dedupMode = (config || {}).portalDedupMode || "summary";
+    const isTargetFloorDedup = dedupMode === "target-floor";
     const seen = new Set();
-    const flyByTarget = new Map();
+    const flyByTarget = isTargetFloorDedup ? new Map() : null;
     const deduped = [];
     for (const action of portalActions) {
       const summary = action.summary || "";
@@ -380,7 +383,7 @@ function oracleFindFloorStates(
         continue;
       }
       seen.add(summary);
-      if (action.kind === "floorFly") {
+      if (isTargetFloorDedup && action.kind === "floorFly") {
         const tf =
           action.targetFloorId ||
           (action.target && action.target.floorId) ||
@@ -399,15 +402,16 @@ function oracleFindFloorStates(
         deduped.push(action);
       }
     }
-    // Update fly entries in deduped to the shortest path version
-    for (let i = 0; i < deduped.length; i++) {
-      if (deduped[i].kind === "floorFly") {
-        const tf =
-          deduped[i].targetFloorId ||
-          (deduped[i].target && deduped[i].target.floorId) ||
-          "?";
-        const best = flyByTarget.get(tf);
-        if (best && best !== deduped[i]) deduped[i] = best;
+    if (isTargetFloorDedup) {
+      for (let i = 0; i < deduped.length; i++) {
+        if (deduped[i].kind === "floorFly") {
+          const tf =
+            deduped[i].targetFloorId ||
+            (deduped[i].target && deduped[i].target.floorId) ||
+            "?";
+          const best = flyByTarget.get(tf);
+          if (best && best !== deduped[i]) deduped[i] = best;
+        }
       }
     }
     portalActions = deduped;
@@ -920,16 +924,10 @@ function tryReachAndBattleBatch(
       }
       totalBattleMs += Date.now() - t2;
 
-      // Write targeted-matcher stats to shared stats AND local counters
+      // Write only non-perf counters to shared stats; perf stays local
       if (stats) {
         stats.primitiveEnumerations =
           Number(stats.primitiveEnumerations || 0) + primitiveEnumerations;
-        stats.battleMatchNodes =
-          Number(stats.battleMatchNodes || 0) + battleMatchNodes;
-        stats.battleTargetChecks =
-          Number(stats.battleTargetChecks || 0) + battleTargetChecks;
-        stats.battleEvaluateCalls =
-          Number(stats.battleEvaluateCalls || 0) + battleEvaluateCalls;
       }
       localBattleMatchNodes += battleMatchNodes;
       localBattleTargetChecks += battleTargetChecks;

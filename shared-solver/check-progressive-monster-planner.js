@@ -777,6 +777,97 @@ function checkPortalDiscoveryCompatibility() {
   return { legacy, fast };
 }
 
+function checkPortalDedupSafety() {
+  // Verify: default "summary" mode does NOT merge floorFly actions
+  // with the same target floor but different summaries/landing positions.
+  const base = makeSyntheticSimulator();
+  const project = {
+    data: { firstData: { title: "fly-test", floorId: "SYN" } },
+    floorsById: {
+      SYN: { width: 1, height: 1, map: [[0]], changeFloor: {} },
+      T1: { width: 1, height: 1, map: [[0]], changeFloor: {} },
+    },
+    mapTilesByNumber: {},
+    floorOrder: ["SYN", "T1"],
+  };
+  const simulator = {
+    ...base,
+    project,
+    enumerateFloorFlyActions(state) {
+      return [
+        {
+          kind: "floorFly",
+          summary: "fly@T1-3,7",
+          targetFloorId: "T1",
+          path: ["a"],
+          stance: { x: 3, y: 7 },
+        },
+        {
+          kind: "floorFly",
+          summary: "fly@T1-5,9",
+          targetFloorId: "T1",
+          path: ["b"],
+          stance: { x: 5, y: 9 },
+        },
+      ];
+    },
+  };
+  const state = {
+    ...makeInitialState(),
+    hero: {
+      hp: 100,
+      atk: 1,
+      def: 1,
+      mdef: 1,
+      lv: 1,
+      exp: 0,
+      money: 0,
+      equipment: [],
+      loc: { x: 0, y: 0 },
+    },
+  };
+  const segment = { goal: {}, actionPolicy: {} };
+
+  // Default mode ("summary"): both should survive (different summaries)
+  const r1 = reachOracle.oracleFindFloorStates(
+    simulator,
+    state,
+    "T1",
+    segment,
+    { portalDedupMode: "summary", maxPortalDepth: 1, maxOracleFloorEntries: 2 },
+  );
+  assert.ok(r1._portalDiagnostics, "should have portal diagnostics");
+  // Both actions have different summaries — neither should be skipped
+  assert.equal(
+    r1._portalDiagnostics.portalDuplicateSkips,
+    0,
+    "summary mode: no duplicate skips for different summaries",
+  );
+
+  // Aggressive target-floor mode: only shortest-path fly survives
+  const r2 = reachOracle.oracleFindFloorStates(
+    simulator,
+    state,
+    "T1",
+    segment,
+    {
+      portalDedupMode: "target-floor",
+      maxPortalDepth: 1,
+      maxOracleFloorEntries: 2,
+    },
+  );
+  // At least one dedup skip should occur (same target floor)
+  assert.ok(
+    r2._portalDiagnostics.portalDuplicateSkips >= 1,
+    "target-floor mode: should dedup same-target-floor fly actions",
+  );
+
+  return {
+    summaryDupSkips: r1._portalDiagnostics.portalDuplicateSkips,
+    targetFloorDupSkips: r2._portalDiagnostics.portalDuplicateSkips,
+  };
+}
+
 function main() {
   const synthetic = checkSyntheticSmoke();
   const oracle = checkOracleCompatibility();
@@ -786,6 +877,7 @@ function main() {
   const battleMatcher = checkTargetedBattleMatcher();
   const legacyCompat = checkBatchVsLegacyCompatibility();
   const portalCompat = checkPortalDiscoveryCompatibility();
+  const portalDedup = checkPortalDedupSafety();
   console.log(
     JSON.stringify(
       {
@@ -797,6 +889,7 @@ function main() {
         battleMatcher,
         legacyCompat,
         portalCompat,
+        portalDedup,
       },
       null,
       2,
