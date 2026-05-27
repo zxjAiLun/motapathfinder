@@ -85,61 +85,57 @@ DP key 必须覆盖：
 
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
-| `lib/dp-search.js` | 已落地 | canonical DP、HP dominance、goal skyline |
-| `lib/milestone-spec.js` | 已落地 | 从 `shared-solver/milestones/*.json` 加载 milestone |
-| `lib/segment-dp.js` | 已落地 | segment goal、action policy、skyline、failure report、有限上一段回退 |
-| `run-segmented-dp.js` | 已落地 | 跑 milestone graph 并保存 route |
-| `lib/adaptive-segment-planner.js` | 部分落地 | 已有 repair plan 雏形，仍需更强闭环 |
-| `lib/resource-intent-scanner.js` | 部分落地 | 已能扫描资源 intent，需继续接入 planner |
-| `lib/region-spec.js` | 已落地 | 统一 RegionSpec schema 与 proof claim |
-| `run-region-dp.js` | 已落地 | 统一区域 DP 入口 |
-| `route-store.js` | 已落地 | route record 构建，保存 primitive decision |
-| `route-gui.js` / `replay-session.js` | 已落地 | GUI/live replay 验证 |
+| `lib/dp-search.js` | ✅ 已落地 | canonical DP、HP dominance、goal skyline、dpSkylineMax |
+| `lib/milestone-spec.js` | ✅ 已落地 | 从 `shared-solver/milestones/*.json` 加载 milestone，统一 BASE_DP |
+| `lib/segment-dp.js` | ✅ 已落地 | segment goal、action policy、skyline、failure report、有限上一段回退；dpSkylineMax/goalSkylineLimit/preserveSkylineRoles 穿透 |
+| `run-segmented-dp.js` | ✅ 已落地 | 跑 milestone graph 并保存 route；CLI 支持卡血保守模式参数 |
+| `lib/adaptive-segment-planner.js` | 🔶 部分落地 | 已有 repair plan 雏形，仍需更强闭环 |
+| `lib/resource-intent-scanner.js` | 🔶 部分落地 | 已能扫描资源 intent，需继续接入 planner |
+| `lib/region-spec.js` | ✅ 已落地 | 统一 RegionSpec schema 与 proof claim |
+| `run-region-dp.js` | ✅ 已落地 | 统一区域 DP 入口 |
+| `route-store.js` | ✅ 已落地 | route record 构建，保存 primitive decision |
+| `route-gui.js` / `replay-session.js` | ✅ 已落地 | GUI/live replay 验证 |
+| `lib/solver-doctor.js` | ✅ 增强 | failureClass、deficitDetail、candidateQuality、action scope 统计（generated/kept/dominated by kind） |
+| `lib/progressive-monster-planner.js` | ✅ v4 | current-reachable-first 架构；SpecialTargetTracker per-pattern；mobility lane |
+| `lib/current-reachable-battle.js` | ✅ 新模块 | enumerateCurrentReachableBattleSuccessors + enumerateMobilitySuccessors + fetchCurrentFloorTargets |
+| `lib/reach-and-battle-oracle.js` | ✅ 优化 | targeted battle matcher；batch oracle；fast portal discovery (opt-in)；portal dedup；perf diagnostics |
+| `check-progressive-to-milestone.js` | ✅ v4 bridge | progressive planner → milestone suggestion；special target inference；segment DP validation；focused checks |
+| `check-state-key-audit.js` | ✅ | direction-sensitive items/flags/visitedFloors/DP keyMode 审计 |
+| `check-onlyup-floorfly-dedup-safety.js` | ✅ | OnlyUp floorFly dedup 安全审计（确认 target-floor 模式不安全） |
+| `check-progressive-monster-planner.js` | ✅ | synthetic smoke + special target priority + batch cap + targeted matcher + legacy compat + portal compat + portal dedup safety（9 tests） |
 
 ## 4. 近期路线
 
-### P0：结构稳定
+### P0：结构稳定 ✅ 基本完成
 
 目标：
 
-- 固化 `shared-solver/` 为唯一 canonical solver。
-- 继续生成 JS 清单和 entrypoint 文档。
-- 阻止塔内 `solver/**` 继续扩张。
+- ✅ 固化 `shared-solver/` 为唯一 canonical solver。
+- ✅ `routes/generated/` 加入 `.gitignore`。
+- ✅ 塔内 `solver/**` 冻结。
+- ✅ `whiteisland（9）/`、`_saves/`、`replay-downloads/`、`.tmp-*.js` 加入 `.gitignore`。
+- ✅ `core.filemode=false` / `core.autocrlf=false` 消除 Windows 噪音。
 
-验收：
-
-```bash
-npm run audit:js --prefix shared-solver
-npm run check:no-tower-solver-js --prefix shared-solver
-npm run check:public-layer-boundaries --prefix shared-solver
-```
-
-### P1：Segment DP 成为主线
+### P1：Segment DP 成为主线 ✅ 基本完成
 
 目标：
 
-- Only Up 到 `MT5 blueKing（织光仙子）` 的 milestone graph 继续作为回归主线。
-- 每段保留 3–8 个 skyline candidate。
-- 失败报告必须包含 `failedSegmentId`、`missingGoalFields`、`failureClass`、`recommendedRepair`。
+- ✅ Only Up 到 MT5 blueKing 的 milestone graph 作为回归基线。
+- ✅ 每段保留 3–8 个 skyline candidate。
+- ✅ 失败报告包含 `failedSegmentId`、`missingGoalFields`、`failureClass`、`recommendedRepair`。
+- ✅ CLI 支持卡血保守模式：`--dp-skyline-max=3 --preserve-skyline-roles=1 --goal-skyline-limit=16`。
 
-验收：
+### P1.5：Progressive Planner 自动里程碑 ✅
 
-```bash
-npm run check:onlyup:segments --prefix shared-solver
-npm run run:onlyup:segmented --prefix shared-solver
-```
+目标：
 
-回放命令：
-
-```bash
-node shared-solver/route-gui.js \
-  --project-root="Only upV2.1/Only upV2.1" \
-  --route-file="shared-solver/routes/latest/segmented-mt5-blueking.route.json" \
-  --live=1 \
-  --headless=0 \
-  --runtime-auto-battle=1 \
-  --runtime-auto-pickup=1
-```
+- ✅ current-reachable-first 架构：planner 只判断当前层打哪个怪。
+- ✅ mobility lane：changeFloor/floorFly 作为独立 macro successor。
+- ✅ SpecialTargetTracker per-pattern 追踪。
+- ✅ Bridge：checkpoint → candidate milestone → segment DP 验证。
+- ✅ State key 审计：方向敏感性、flags、visitedFloors、DP keyMode。
+- ✅ floorFly dedup 安全审计：OnlyUp 确认 target-floor 模式不安全。
+- 🔶 真实 OnlyUp 自动 milestone 生成仍需性能提升（当前 MT1-MT2 56 states/20s）。
 
 ### P2：Adaptive planner 闭环
 
