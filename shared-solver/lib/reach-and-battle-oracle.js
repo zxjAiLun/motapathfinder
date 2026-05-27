@@ -1225,4 +1225,6 @@ module.exports = {
   tryReachAndBattle,
   tryReachAndBattleBatch,
   discoverChangeFloorActions,
+  scoreMonsterTarget,
+  matchesSpecialTarget,
 };

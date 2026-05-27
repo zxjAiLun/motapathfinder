@@ -595,6 +595,7 @@ function main() {
     specialTargets: allSpecialTargets,
     noProgressRounds: optionalNumber(args["planner-no-progress"]) || 5,
     portalDiscoveryMode: args["portal-discovery-mode"] || "legacy",
+    targetScope: args["target-scope"] || "current-reachable",
   });
 
   console.log(

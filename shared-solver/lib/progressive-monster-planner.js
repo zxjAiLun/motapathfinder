@@ -7,6 +7,11 @@ const {
   buildMonsterOnlyActionProvider,
   tryReachAndBattleBatch,
 } = require("./reach-and-battle-oracle");
+const {
+  enumerateCurrentReachableBattleSuccessors,
+  enumerateMobilitySuccessors,
+  fetchCurrentFloorTargets,
+} = require("./current-reachable-battle");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -93,6 +98,7 @@ function normalizeOptions(options) {
       ? config.specialTargets.slice()
       : [],
     portalDiscoveryMode: String(config.portalDiscoveryMode || "legacy"),
+    targetScope: String(config.targetScope || "current-reachable"),
   };
 }
 
@@ -497,6 +503,56 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
   let specialTargetGenerated = 0;
   let specialTargetAccepted = 0;
   let specialTargetRejectedByArchive = 0;
+  let battleSuccessors = 0;
+  let mobilitySuccessors = 0;
+
+  function buildNextCandidate(
+    round,
+    idx,
+    patch,
+    matchedTarget,
+    state,
+    candidate,
+    cfg,
+  ) {
+    const enteredNewFloor = candidate.state.floorId !== state.floorId;
+    const targetFloorReached = Boolean(
+      cfg.targetFloorId && state.floorId === cfg.targetFloorId,
+    );
+    return {
+      id: `r${round}:${idx}:${patch[patch.length - 1] || matchedTarget.summary || ""}`,
+      state,
+      route: state.route.slice(),
+      score: evaluateProgressState(simulator, state, {
+        enteredNewFloor,
+        targetFloorReached,
+      }),
+      round,
+      action: matchedTarget,
+      parentId: candidate.id,
+      tags: [],
+    };
+  }
+
+  function recordCandidate(nextCandidate, parentCandidate) {
+    maybeRecordCheckpoint(
+      checkpoints,
+      nextCandidate,
+      parentCandidate,
+      bestScore,
+      config,
+    );
+    specialTracker.record(
+      (nextCandidate.action && nextCandidate.action.summary) || "",
+    );
+    if (
+      candidateOutcomeScore(nextCandidate) >
+      candidateOutcomeScore(bestCandidate)
+    ) {
+      bestCandidate = nextCandidate;
+      bestScore = Math.max(bestScore, nextCandidate.score);
+    }
+  }
 
   for (let round = 1; round <= config.maxRounds; round += 1) {
     diagnostics.rounds = round;
@@ -514,148 +570,149 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
     if (stoppedReason) break;
 
     const next = [];
+
     for (const candidate of frontier) {
       diagnostics.statesExpanded += 1;
-      const targets = targetProvider(simulator, candidate.state);
-      diagnostics.targetsConsidered += targets.length;
 
-      // Batch: one floor traversal + one walk BFS per floor entry for all targets
-      const batchResult = tryReachAndBattleBatch(
-        simulator,
-        candidate.state,
-        targets,
-        segment,
-        {
-          maxSuccessorsPerTarget: config.maxSuccessorsPerTarget,
-          maxOracleFloorEntries: config.maxOracleFloorEntries,
-          maxPortalDepth: config.maxPortalDepth,
-          portalDiscoveryMode: config.portalDiscoveryMode,
-        },
-        oracleStats,
-      );
-
-      // Collect batch perf diagnostics (batch returns them, planner accumulates)
-      if (batchResult.diagnostics) {
-        oracleStats.currentFloorFastPaths =
-          Number(oracleStats.currentFloorFastPaths || 0) +
-          (batchResult.diagnostics.currentFloorFastPaths || 0);
-        oracleStats.portalFloorSearches =
-          Number(oracleStats.portalFloorSearches || 0) +
-          (batchResult.diagnostics.portalFloorSearches || 0);
-        oracleStats.reachabilityCalls =
-          Number(oracleStats.reachabilityCalls || 0) +
-          (batchResult.diagnostics.reachabilityCalls || 0);
-        oracleStats.totalFloorMs =
-          Number(oracleStats.totalFloorMs || 0) +
-          (batchResult.diagnostics.totalFloorMs || 0);
-        oracleStats.totalReachMs =
-          Number(oracleStats.totalReachMs || 0) +
-          (batchResult.diagnostics.totalReachMs || 0);
-        oracleStats.totalBattleMs =
-          Number(oracleStats.totalBattleMs || 0) +
-          (batchResult.diagnostics.totalBattleMs || 0);
-        oracleStats.oracleFloorSearchMs =
-          Number(oracleStats.oracleFloorSearchMs || 0) +
-          (batchResult.diagnostics.totalFloorMs || 0);
-        oracleStats.oracleBattleReachabilityMs =
-          Number(oracleStats.oracleBattleReachabilityMs || 0) +
-          (batchResult.diagnostics.totalReachMs || 0);
-        oracleStats.portalStatesExpanded =
-          Number(oracleStats.portalStatesExpanded || 0) +
-          (batchResult.diagnostics.portalStatesExpanded || 0);
-        oracleStats.portalActionsConsidered =
-          Number(oracleStats.portalActionsConsidered || 0) +
-          (batchResult.diagnostics.portalActionsConsidered || 0);
-        oracleStats.portalApplyMs =
-          Number(oracleStats.portalApplyMs || 0) +
-          (batchResult.diagnostics.portalApplyMs || 0);
-        oracleStats.portalPrimitiveEnumerations =
-          Number(oracleStats.portalPrimitiveEnumerations || 0) +
-          (batchResult.diagnostics.portalPrimitiveEnumerations || 0);
-        oracleStats.portalApplyAttempts =
-          Number(oracleStats.portalApplyAttempts || 0) +
-          (batchResult.diagnostics.portalApplyAttempts || 0);
-        oracleStats.portalApplySuccesses =
-          Number(oracleStats.portalApplySuccesses || 0) +
-          (batchResult.diagnostics.portalApplySuccesses || 0);
-        oracleStats.portalApplyFailures =
-          Number(oracleStats.portalApplyFailures || 0) +
-          (batchResult.diagnostics.portalApplyFailures || 0);
-        oracleStats.portalDuplicateSkips =
-          Number(oracleStats.portalDuplicateSkips || 0) +
-          (batchResult.diagnostics.portalDuplicateSkips || 0);
-        oracleStats.portalVisitedSkips =
-          Number(oracleStats.portalVisitedSkips || 0) +
-          (batchResult.diagnostics.portalVisitedSkips || 0);
-      }
-
-      if (!batchResult.ok) {
-        oracleStats.rejectedByReason[batchResult.reason] =
-          Number(oracleStats.rejectedByReason[batchResult.reason] || 0) + 1;
-        continue;
-      }
-
-      oracleStats.battleCandidates += batchResult.results.length;
-      oracleStats.successorsReturned += batchResult.results.length;
-
-      for (const successor of batchResult.results) {
-        const patch = routePatchSummaries(successor.routePatch);
-        oracleStats.routePatchTotalLength += patch.length;
-        oracleStats.routePatchMaxLength = Math.max(
-          oracleStats.routePatchMaxLength,
-          patch.length,
+      if (config.targetScope === "cross-floor-oracle") {
+        // Legacy cross-floor batch oracle (experimental)
+        const targets = targetProvider(simulator, candidate.state);
+        diagnostics.targetsConsidered += targets.length;
+        const batchResult = tryReachAndBattleBatch(
+          simulator,
+          candidate.state,
+          targets,
+          segment,
+          {
+            maxSuccessorsPerTarget: config.maxSuccessorsPerTarget,
+            maxOracleFloorEntries: config.maxOracleFloorEntries,
+            maxPortalDepth: config.maxPortalDepth,
+            portalDiscoveryMode: config.portalDiscoveryMode,
+          },
+          oracleStats,
         );
-        const state = successor.postState;
-        const matchedTarget = successor.target || {};
-        state.route = candidate.route.concat(patch);
-        state._routePatch = patch;
-        const enteredNewFloor = candidate.state.floorId !== state.floorId;
-        const targetFloorReached = Boolean(
-          config.targetFloorId && state.floorId === config.targetFloorId,
-        );
-        const nextCandidate = {
-          id: `r${round}:${next.length}:${patch[patch.length - 1] || matchedTarget.summary}`,
-          state,
-          route: state.route.slice(),
-          score: evaluateProgressState(simulator, state, {
-            enteredNewFloor,
-            targetFloorReached,
-          }),
-          round,
-          action: matchedTarget,
-          parentId: candidate.id,
-          tags: [],
-        };
-        const isSpecial = matchesSpecialTarget(
-          matchedTarget.summary,
-          config.specialTargets || [],
-        );
-        if (isSpecial) specialTargetGenerated += 1;
-
-        if (archive.accept(nextCandidate)) {
-          diagnostics.successorsAccepted += 1;
-          if (isSpecial) specialTargetAccepted += 1;
-          next.push(nextCandidate);
-          maybeRecordCheckpoint(
-            checkpoints,
-            nextCandidate,
-            candidate,
-            bestScore,
-            config,
-          );
-          specialTracker.record(
-            (nextCandidate.action && nextCandidate.action.summary) || "",
-          );
-          if (
-            candidateOutcomeScore(nextCandidate) >
-            candidateOutcomeScore(bestCandidate)
-          ) {
-            bestCandidate = nextCandidate;
-            bestScore = Math.max(bestScore, nextCandidate.score);
+        if (batchResult.ok && batchResult.results.length > 0) {
+          for (const successor of batchResult.results) {
+            const patch = routePatchSummaries(successor.routePatch);
+            const state = successor.postState;
+            const matchedTarget = successor.target || {};
+            state.route = candidate.route.concat(patch);
+            state._routePatch = patch;
+            const nextCandidate = buildNextCandidate(
+              round,
+              next.length,
+              patch,
+              matchedTarget,
+              state,
+              candidate,
+              config,
+            );
+            const isSpecial = matchesSpecialTarget(
+              matchedTarget.summary,
+              config.specialTargets || [],
+            );
+            if (isSpecial) specialTargetGenerated += 1;
+            if (archive.accept(nextCandidate)) {
+              diagnostics.successorsAccepted += 1;
+              if (isSpecial) specialTargetAccepted += 1;
+              next.push(nextCandidate);
+              battleSuccessors += 1;
+              recordCandidate(nextCandidate, candidate);
+            } else {
+              diagnostics.successorsRejected += 1;
+              if (isSpecial) specialTargetRejectedByArchive += 1;
+            }
           }
-        } else {
-          diagnostics.successorsRejected += 1;
-          if (isSpecial) specialTargetRejectedByArchive += 1;
+        }
+      } else {
+        // Current-reachable-first (default)
+        const currentTargets = fetchCurrentFloorTargets(
+          simulator,
+          candidate.state,
+          segment,
+          {
+            maxTargetsPerState: config.maxTargetsPerState,
+            specialTargets: config.specialTargets || [],
+          },
+        );
+        diagnostics.targetsConsidered += currentTargets.length;
+
+        // Battle successors from current floor
+        const battleResult = enumerateCurrentReachableBattleSuccessors(
+          simulator,
+          candidate.state,
+          currentTargets,
+          { maxSuccessorsPerTarget: config.maxSuccessorsPerTarget },
+        );
+
+        if (battleResult.ok && battleResult.results.length > 0) {
+          for (const successor of battleResult.results) {
+            const patch = routePatchSummaries(successor.routePatch);
+            const state = successor.postState;
+            const matchedTarget = successor.target || {};
+            state.route = candidate.route.concat(patch);
+            state._routePatch = patch;
+            const nextCandidate = buildNextCandidate(
+              round,
+              next.length,
+              patch,
+              matchedTarget,
+              state,
+              candidate,
+              config,
+            );
+            const isSpecial = matchesSpecialTarget(
+              matchedTarget.summary,
+              config.specialTargets || [],
+            );
+            if (isSpecial) specialTargetGenerated += 1;
+            if (archive.accept(nextCandidate)) {
+              diagnostics.successorsAccepted += 1;
+              if (isSpecial) specialTargetAccepted += 1;
+              next.push(nextCandidate);
+              battleSuccessors += 1;
+              recordCandidate(nextCandidate, candidate);
+            } else {
+              diagnostics.successorsRejected += 1;
+              if (isSpecial) specialTargetRejectedByArchive += 1;
+            }
+          }
+        }
+
+        // Mobility successors (changeFloor/floorFly) — only when no battle progress
+        if (
+          battleResult.results.length === 0 &&
+          (!config.maxBattleOnlyRounds ||
+            round <= config.maxBattleOnlyRounds ||
+            noProgress > 0)
+        ) {
+          const mobResult = enumerateMobilitySuccessors(
+            simulator,
+            candidate.state,
+            {},
+          );
+          for (const successor of mobResult.results) {
+            const patch = routePatchSummaries(successor.routePatch);
+            const state = successor.postState;
+            state.route = candidate.route.concat(patch);
+            state._routePatch = patch;
+            const nextCandidate = buildNextCandidate(
+              round,
+              next.length,
+              patch,
+              successor.action || {},
+              state,
+              candidate,
+              config,
+            );
+            if (archive.accept(nextCandidate)) {
+              diagnostics.successorsAccepted += 1;
+              next.push(nextCandidate);
+              mobilitySuccessors += 1;
+            } else {
+              diagnostics.successorsRejected += 1;
+            }
+          }
         }
       }
     }
@@ -716,6 +773,9 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
   diagnostics.specialTargetGenerated = specialTargetGenerated;
   diagnostics.specialTargetAccepted = specialTargetAccepted;
   diagnostics.specialTargetRejectedByArchive = specialTargetRejectedByArchive;
+  diagnostics.battleSuccessors = battleSuccessors;
+  diagnostics.mobilitySuccessors = mobilitySuccessors;
+  diagnostics.targetScope = config.targetScope;
   diagnostics.perf = {
     currentFloorFastPaths: Number(oracleStats.currentFloorFastPaths || 0),
     portalFloorSearches: Number(oracleStats.portalFloorSearches || 0),
