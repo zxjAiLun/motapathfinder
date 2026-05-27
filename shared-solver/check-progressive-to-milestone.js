@@ -654,6 +654,18 @@ function main() {
           " applyMs=" +
           (perf.portalApplyMs || 0),
       );
+      console.log(
+        "  portal: applyAttempts=" +
+          (perf.portalApplyAttempts || 0) +
+          " success=" +
+          (perf.portalApplySuccesses || 0) +
+          " fail=" +
+          (perf.portalApplyFailures || 0) +
+          " dupSkips=" +
+          (perf.portalDuplicateSkips || 0) +
+          " visitedSkips=" +
+          (perf.portalVisitedSkips || 0),
+      );
     }
   }
   console.log();

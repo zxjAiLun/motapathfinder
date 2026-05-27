@@ -330,6 +330,12 @@ function oracleFindFloorStates(
   let portalPrimitiveEnumerations = 0;
   let portalActionsConsidered = 0;
   let portalApplyMs = 0;
+  // Detailed portal BFS counters
+  let portalApplyAttempts = 0;
+  let portalApplySuccesses = 0;
+  let portalApplyFailures = 0;
+  let portalDuplicateSkips = 0;
+  let portalVisitedSkips = 0;
 
   while (queue.length > 0) {
     const { state: current, steps, actions } = queue.shift();
@@ -362,6 +368,49 @@ function oracleFindFloorStates(
         simulator.enumerateFloorFlyActions(current),
       );
     }
+
+    // Dedup by summary + group floorFly by target floor (keep shortest path)
+    const seen = new Set();
+    const flyByTarget = new Map();
+    const deduped = [];
+    for (const action of portalActions) {
+      const summary = action.summary || "";
+      if (seen.has(summary)) {
+        portalDuplicateSkips += 1;
+        continue;
+      }
+      seen.add(summary);
+      if (action.kind === "floorFly") {
+        const tf =
+          action.targetFloorId ||
+          (action.target && action.target.floorId) ||
+          "?";
+        const existing = flyByTarget.get(tf);
+        if (existing) {
+          const newLen = (action.path || []).length;
+          const oldLen = (existing.path || []).length;
+          if (newLen < oldLen) flyByTarget.set(tf, action);
+          portalDuplicateSkips += 1;
+        } else {
+          flyByTarget.set(tf, action);
+          deduped.push(action);
+        }
+      } else {
+        deduped.push(action);
+      }
+    }
+    // Update fly entries in deduped to the shortest path version
+    for (let i = 0; i < deduped.length; i++) {
+      if (deduped[i].kind === "floorFly") {
+        const tf =
+          deduped[i].targetFloorId ||
+          (deduped[i].target && deduped[i].target.floorId) ||
+          "?";
+        const best = flyByTarget.get(tf);
+        if (best && best !== deduped[i]) deduped[i] = best;
+      }
+    }
+    portalActions = deduped;
     portalActionsConsidered += portalActions.length;
 
     for (const action of portalActions) {
@@ -372,14 +421,19 @@ function oracleFindFloorStates(
       );
       if (hitsProtected) continue;
 
+      portalApplyAttempts += 1;
       const t0 = Date.now();
       try {
         const next = simulator.applyAction(current, action, {
           storeRoute: false,
         });
         portalApplyMs += Date.now() - t0;
+        portalApplySuccesses += 1;
         const key = posKey(next);
-        if (visited.has(key)) continue;
+        if (visited.has(key)) {
+          portalVisitedSkips += 1;
+          continue;
+        }
         visited.add(key);
         queue.push({
           state: next,
@@ -388,6 +442,7 @@ function oracleFindFloorStates(
         });
       } catch (error) {
         portalApplyMs += Date.now() - t0;
+        portalApplyFailures += 1;
       }
     }
   }
@@ -399,6 +454,11 @@ function oracleFindFloorStates(
     portalPrimitiveEnumerations,
     portalActionsConsidered,
     portalApplyMs,
+    portalApplyAttempts,
+    portalApplySuccesses,
+    portalApplyFailures,
+    portalDuplicateSkips,
+    portalVisitedSkips,
   };
   return selected;
 }
@@ -723,6 +783,11 @@ function tryReachAndBattleBatch(
   let localPortalActionsConsidered = 0;
   let localPortalApplyMs = 0;
   let localPortalPrimitiveEnumerations = 0;
+  let localPortalApplyAttempts = 0;
+  let localPortalApplySuccesses = 0;
+  let localPortalApplyFailures = 0;
+  let localPortalDuplicateSkips = 0;
+  let localPortalVisitedSkips = 0;
 
   for (const [floorId, floorTargets] of byFloor) {
     const isCurrentFloor = floorId === state.floorId;
@@ -750,6 +815,11 @@ function tryReachAndBattleBatch(
         localPortalActionsConsidered += pd.portalActionsConsidered || 0;
         localPortalApplyMs += pd.portalApplyMs || 0;
         localPortalPrimitiveEnumerations += pd.portalPrimitiveEnumerations || 0;
+        localPortalApplyAttempts += pd.portalApplyAttempts || 0;
+        localPortalApplySuccesses += pd.portalApplySuccesses || 0;
+        localPortalApplyFailures += pd.portalApplyFailures || 0;
+        localPortalDuplicateSkips += pd.portalDuplicateSkips || 0;
+        localPortalVisitedSkips += pd.portalVisitedSkips || 0;
         delete floorEntries._portalDiagnostics;
       }
     }
@@ -888,10 +958,15 @@ function tryReachAndBattleBatch(
         portalPrimitiveEnumerations: localPortalPrimitiveEnumerations,
         portalActionsConsidered: localPortalActionsConsidered,
         portalApplyMs: localPortalApplyMs,
+        portalApplyAttempts: localPortalApplyAttempts,
+        portalApplySuccesses: localPortalApplySuccesses,
+        portalApplyFailures: localPortalApplyFailures,
+        portalDuplicateSkips: localPortalDuplicateSkips,
+        portalVisitedSkips: localPortalVisitedSkips,
       },
     };
 
-  // Group results by target summary for per-target successor selection
+  // Group results by target summary for per-target successor selection (failure path)
   const byTarget = new Map();
   for (const result of allResults) {
     const key = (result.target && result.target.summary) || "?";
@@ -945,6 +1020,11 @@ function tryReachAndBattleBatch(
       portalPrimitiveEnumerations: localPortalPrimitiveEnumerations,
       portalActionsConsidered: localPortalActionsConsidered,
       portalApplyMs: localPortalApplyMs,
+      portalApplyAttempts: localPortalApplyAttempts,
+      portalApplySuccesses: localPortalApplySuccesses,
+      portalApplyFailures: localPortalApplyFailures,
+      portalDuplicateSkips: localPortalDuplicateSkips,
+      portalVisitedSkips: localPortalVisitedSkips,
     },
   };
 }

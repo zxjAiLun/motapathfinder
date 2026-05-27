@@ -572,6 +572,21 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
         oracleStats.portalPrimitiveEnumerations =
           Number(oracleStats.portalPrimitiveEnumerations || 0) +
           (batchResult.diagnostics.portalPrimitiveEnumerations || 0);
+        oracleStats.portalApplyAttempts =
+          Number(oracleStats.portalApplyAttempts || 0) +
+          (batchResult.diagnostics.portalApplyAttempts || 0);
+        oracleStats.portalApplySuccesses =
+          Number(oracleStats.portalApplySuccesses || 0) +
+          (batchResult.diagnostics.portalApplySuccesses || 0);
+        oracleStats.portalApplyFailures =
+          Number(oracleStats.portalApplyFailures || 0) +
+          (batchResult.diagnostics.portalApplyFailures || 0);
+        oracleStats.portalDuplicateSkips =
+          Number(oracleStats.portalDuplicateSkips || 0) +
+          (batchResult.diagnostics.portalDuplicateSkips || 0);
+        oracleStats.portalVisitedSkips =
+          Number(oracleStats.portalVisitedSkips || 0) +
+          (batchResult.diagnostics.portalVisitedSkips || 0);
       }
 
       if (!batchResult.ok) {
@@ -714,6 +729,11 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
     ),
     portalActionsConsidered: Number(oracleStats.portalActionsConsidered || 0),
     portalApplyMs: Number(oracleStats.portalApplyMs || 0),
+    portalApplyAttempts: Number(oracleStats.portalApplyAttempts || 0),
+    portalApplySuccesses: Number(oracleStats.portalApplySuccesses || 0),
+    portalApplyFailures: Number(oracleStats.portalApplyFailures || 0),
+    portalDuplicateSkips: Number(oracleStats.portalDuplicateSkips || 0),
+    portalVisitedSkips: Number(oracleStats.portalVisitedSkips || 0),
   };
   const floorLookups =
     Number(oracleStats.floorSearches || 0) +
