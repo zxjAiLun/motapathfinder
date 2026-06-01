@@ -920,13 +920,113 @@ function checkCurrentReachableSpecialTargetPriority() {
       specialTargets: ["battle:atkBat@SYN:2,0"],
     },
   );
-  assert.equal(targets.length, 1, "target cap should apply");
+  assert.equal(
+    targets.length,
+    2,
+    "current-floor fetch should not cap before reachability matching",
+  );
   assert.equal(
     targets[0].summary,
     "battle:atkBat@SYN:2,0",
-    "current-reachable target fetch should preserve special target before cap",
+    "current-reachable target fetch should preserve special target priority",
   );
   return { targetSummary: targets[0].summary };
+}
+
+function checkCurrentReachableCapAfterReachability() {
+  currentReachable.__testHooks.clearTargetCache();
+  const simulator = makeSyntheticSimulator();
+  simulator.project.floorsById.SYN = {
+    width: 4,
+    height: 2,
+    map: [
+      [101, 101, 0, 102],
+      [0, 0, 0, 0],
+    ],
+    changeFloor: {},
+  };
+  simulator.getWalkReachability = (state) => ({
+    visited: { "3,1": { state } },
+  });
+  simulator.applyAction = (state, action) => {
+    if (action.summary !== "battle:atkBat@SYN:3,0") {
+      throw new Error(`unexpected cap test action ${action.summary}`);
+    }
+    const next = clone(state);
+    next.hero.hp -= 20;
+    next.hero.atk += 10;
+    next.meta.decisionDepth = Number(next.meta.decisionDepth || 0) + 1;
+    next.floorStates.SYN.removed["3,0"] = true;
+    return next;
+  };
+  const initialState = makeInitialState();
+  initialState.hero.loc = { x: 3, y: 1 };
+  const targets = currentReachable.fetchCurrentFloorTargets(
+    simulator,
+    initialState,
+    { goal: {}, actionPolicy: { allowedFloors: ["SYN"] } },
+    { maxTargetsPerState: 1 },
+  );
+  assert.equal(
+    targets.length,
+    3,
+    "floor target fetch should return all floor candidates despite planner cap",
+  );
+  const result = currentReachable.enumerateCurrentReachableBattleSuccessors(
+    simulator,
+    initialState,
+    targets,
+    {
+      maxReachableTargetsPerState: 1,
+      maxSuccessorsPerTarget: 1,
+    },
+  );
+  assert.equal(result.results.length, 1);
+  assert.equal(
+    result.results[0].battleAction.summary,
+    "battle:atkBat@SYN:3,0",
+    "reachable target cap should be applied after adjacency matching",
+  );
+  return {
+    floorTargets: targets.length,
+    reachableTargets: result.diagnostics.reachableTargets,
+    selected: result.results[0].battleAction.summary,
+  };
+}
+
+function checkCurrentReachableTargetCacheOff() {
+  currentReachable.__testHooks.clearTargetCache();
+  const simulator = makeSyntheticSimulator();
+  const initialState = makeInitialState();
+  const segment = { goal: {}, actionPolicy: { allowedFloors: ["SYN"] } };
+  currentReachable.fetchCurrentFloorTargets(
+    simulator,
+    initialState,
+    segment,
+    { targetCacheMode: "off" },
+  );
+  currentReachable.fetchCurrentFloorTargets(
+    simulator,
+    initialState,
+    segment,
+    { targetCacheMode: "off" },
+  );
+  const stats = currentReachable.__testHooks.getTargetCacheStats();
+  assert.equal(stats.hits, 0, "targetCacheMode=off should not hit cache");
+  assert.equal(stats.floorScans, 2, "targetCacheMode=off should rescan each call");
+  return stats;
+}
+
+function checkMobilityLimitAllowsZero() {
+  const normalized = __testHooks.normalizeOptions({
+    maxMobilitySuccessorsPerState: 0,
+  });
+  assert.equal(
+    normalized.maxMobilitySuccessorsPerState,
+    0,
+    "maxMobilitySuccessorsPerState=0 should disable mobility lane",
+  );
+  return { maxMobilitySuccessorsPerState: normalized.maxMobilitySuccessorsPerState };
 }
 
 function makeIntentSimulator() {
@@ -1047,6 +1147,9 @@ function main() {
   const portalDedup = checkPortalDedupSafety();
   const currentCache = checkCurrentReachableTargetCache();
   const currentSpecialPriority = checkCurrentReachableSpecialTargetPriority();
+  const currentCapAfterReachability = checkCurrentReachableCapAfterReachability();
+  const currentCacheOff = checkCurrentReachableTargetCacheOff();
+  const mobilityLimitZero = checkMobilityLimitAllowsZero();
   const resourceIntentBridge = checkResourceIntentBridge();
   const validationDoctor = checkValidationDoctorLine();
   console.log(
@@ -1063,6 +1166,9 @@ function main() {
         portalDedup,
         currentCache,
         currentSpecialPriority,
+        currentCapAfterReachability,
+        currentCacheOff,
+        mobilityLimitZero,
         resourceIntentBridge,
         validationDoctor,
       },

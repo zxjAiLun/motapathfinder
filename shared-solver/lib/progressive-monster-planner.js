@@ -72,6 +72,12 @@ function normalizeFloors(value, targetFloorId) {
 
 function normalizeOptions(options) {
   const config = options || {};
+  const mobilityLimit =
+    config.maxMobilitySuccessorsPerState != null
+      ? config.maxMobilitySuccessorsPerState
+      : config.maxMobilitySuccessors != null
+        ? config.maxMobilitySuccessors
+        : 2;
   return {
     maxRounds: Math.max(1, number(config.maxRounds, 100)),
     beamWidth: Math.max(1, number(config.beamWidth || config.beam, 32)),
@@ -99,13 +105,11 @@ function normalizeOptions(options) {
       : [],
     portalDiscoveryMode: String(config.portalDiscoveryMode || "legacy"),
     mobilityDiscoveryMode: String(config.mobilityDiscoveryMode || "legacy"),
+    targetCacheMode: String(config.targetCacheMode || "mutation"),
     targetScope: String(config.targetScope || "current-reachable"),
     maxMobilitySuccessorsPerState: Math.max(
       0,
-      number(
-        config.maxMobilitySuccessorsPerState || config.maxMobilitySuccessors,
-        2,
-      ),
+      number(mobilityLimit, 2),
     ),
   };
 }
@@ -696,8 +700,8 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
           candidate.state,
           segment,
           {
-            maxTargetsPerState: config.maxTargetsPerState,
             specialTargets: config.specialTargets || [],
+            targetCacheMode: config.targetCacheMode,
             diagnostics: oracleStats,
           },
         );
@@ -708,7 +712,10 @@ function runProgressiveMonsterPlanner(simulator, initialState, options) {
           simulator,
           candidate.state,
           currentTargets,
-          { maxSuccessorsPerTarget: config.maxSuccessorsPerTarget },
+          {
+            maxReachableTargetsPerState: config.maxTargetsPerState,
+            maxSuccessorsPerTarget: config.maxSuccessorsPerTarget,
+          },
         );
         // Accumulate current-reachable perf
         if (battleResult.diagnostics) {
@@ -905,6 +912,7 @@ module.exports = {
     StateArchive,
     dominates,
     evaluateProgressState,
+    normalizeOptions,
     selectFrontier,
     summarizeEffectiveHero,
     summarizeHero,

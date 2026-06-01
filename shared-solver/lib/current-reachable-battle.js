@@ -92,25 +92,11 @@ function cacheForProject(project) {
   return cache;
 }
 
-function cachedCurrentFloorEnemyTargets(simulator, state) {
+function scanCurrentFloorEnemyTargets(simulator, state) {
   const project = simulator.project;
   const floorId = state.floorId;
   const floor = project.floorsById[floorId];
-  if (!floor) {
-    return { targets: [], diagnostics: { targetCacheHit: false, floorTargetScan: false } };
-  }
-  const cache = cacheForProject(project);
-  const cacheKey = `${floorId}|${floorMutationSignature(state, floorId)}`;
-  if (cache.has(cacheKey)) {
-    targetCacheStats.hits += 1;
-    return {
-      targets: cache.get(cacheKey).map((target) => ({ ...target })),
-      diagnostics: { targetCacheHit: true, floorTargetScan: false },
-    };
-  }
-
-  targetCacheStats.misses += 1;
-  targetCacheStats.floorScans += 1;
+  if (!floor) return [];
   const height =
     floor.height || (Array.isArray(floor.map) ? floor.map.length : 0);
   const width = floor.width || 0;
@@ -132,6 +118,38 @@ function cachedCurrentFloorEnemyTargets(simulator, state) {
       });
     }
   }
+  return targets;
+}
+
+function cachedCurrentFloorEnemyTargets(simulator, state, options) {
+  const config = options || {};
+  const project = simulator.project;
+  const floorId = state.floorId;
+  const floor = project.floorsById[floorId];
+  if (!floor) {
+    return { targets: [], diagnostics: { targetCacheHit: false, floorTargetScan: false } };
+  }
+  if (config.targetCacheMode === "off") {
+    targetCacheStats.floorScans += 1;
+    return {
+      targets: scanCurrentFloorEnemyTargets(simulator, state),
+      diagnostics: { targetCacheHit: false, floorTargetScan: true },
+    };
+  }
+
+  const cache = cacheForProject(project);
+  const cacheKey = `${floorId}|${floorMutationSignature(state, floorId)}`;
+  if (cache.has(cacheKey)) {
+    targetCacheStats.hits += 1;
+    return {
+      targets: cache.get(cacheKey).map((target) => ({ ...target })),
+      diagnostics: { targetCacheHit: true, floorTargetScan: false },
+    };
+  }
+
+  targetCacheStats.misses += 1;
+  targetCacheStats.floorScans += 1;
+  const targets = scanCurrentFloorEnemyTargets(simulator, state);
   cache.set(cacheKey, targets.map((target) => ({ ...target })));
   return {
     targets,
@@ -165,13 +183,24 @@ function enumerateCurrentReachableBattleSuccessors(
 ) {
   const config = options || {};
   const maxSuccessorsPerTarget = number(config.maxSuccessorsPerTarget, 4);
+  const maxReachableTargets = Math.max(
+    1,
+    number(
+      config.maxReachableTargetsPerState != null
+        ? config.maxReachableTargetsPerState
+        : config.maxTargetsPerState,
+      targets.length || 1,
+    ),
+  );
 
   // Build position map for quick adjacency lookup
   const targetByPos = new Map();
+  const targetOrder = new Map();
   for (const t of targets) {
     if (t.x != null && t.y != null && t.floorId === state.floorId) {
       const key = `${t.x},${t.y}`;
       if (!targetByPos.has(key)) targetByPos.set(key, t);
+      if (!targetOrder.has(t.summary)) targetOrder.set(t.summary, targetOrder.size);
     }
   }
 
@@ -189,7 +218,7 @@ function enumerateCurrentReachableBattleSuccessors(
   const reachability = simulator.getWalkReachability(closed);
   const visited = reachability.visited || {};
 
-  const allResults = [];
+  const matchesByTarget = new Map();
   let battleMatchNodes = 0;
   let battleTargetChecks = 0;
   let battleEvaluateCalls = 0;
@@ -214,6 +243,33 @@ function enumerateCurrentReachableBattleSuccessors(
       const adjKey = `${nx + dx},${ny + dy}`;
       const matchedTarget = targetByPos.get(adjKey);
       if (!matchedTarget) continue;
+      const summary = matchedTarget.summary;
+      const bucket = matchesByTarget.get(summary) || {
+        target: matchedTarget,
+        matches: [],
+      };
+      bucket.matches.push({ nodeState, matchedTarget });
+      if (!matchesByTarget.has(summary)) matchesByTarget.set(summary, bucket);
+    }
+  }
+
+  const selectedTargetEntries = Array.from(matchesByTarget.values())
+    .sort((a, b) => {
+      const aOrder = targetOrder.has(a.target.summary)
+        ? targetOrder.get(a.target.summary)
+        : Number.MAX_SAFE_INTEGER;
+      const bOrder = targetOrder.has(b.target.summary)
+        ? targetOrder.get(b.target.summary)
+        : Number.MAX_SAFE_INTEGER;
+      return aOrder - bOrder;
+    })
+    .slice(0, maxReachableTargets);
+
+  const allResults = [];
+  for (const entry of selectedTargetEntries) {
+    for (const match of entry.matches) {
+      const nodeState = match.nodeState;
+      const matchedTarget = match.matchedTarget;
 
       const battleAction = {
         kind: "battle",
@@ -270,6 +326,8 @@ function enumerateCurrentReachableBattleSuccessors(
       reachabilityNodes: Object.keys(visited).length,
       currentFloorTargets: targetByPos.size,
       totalFloorTargets: targets.length,
+      reachableTargets: matchesByTarget.size,
+      reachableTargetsSelected: selectedTargetEntries.length,
     },
   };
 }
@@ -360,7 +418,7 @@ function enumerateMobilitySuccessors(simulator, state, options) {
 function fetchCurrentFloorTargets(simulator, state, segment, options) {
   const config = options || {};
   const goal = (segment || {}).goal || {};
-  const cached = cachedCurrentFloorEnemyTargets(simulator, state);
+  const cached = cachedCurrentFloorEnemyTargets(simulator, state, config);
   if (config.diagnostics) {
     config.diagnostics.targetCacheHits = Number(config.diagnostics.targetCacheHits || 0) + (cached.diagnostics.targetCacheHit ? 1 : 0);
     config.diagnostics.targetCacheMisses = Number(config.diagnostics.targetCacheMisses || 0) + (cached.diagnostics.targetCacheHit ? 0 : 1);
@@ -390,8 +448,14 @@ function fetchCurrentFloorTargets(simulator, state, segment, options) {
     targets.push(...special, ...rest);
   }
 
-  const maxTargets = number(config.maxTargetsPerState, 24);
-  return targets.slice(0, maxTargets);
+  if (config.maxFloorTargetsPerState != null) {
+    const maxFloorTargets = Math.max(
+      0,
+      number(config.maxFloorTargetsPerState, targets.length),
+    );
+    return targets.slice(0, maxFloorTargets);
+  }
+  return targets;
 }
 
 module.exports = {

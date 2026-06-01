@@ -731,6 +731,7 @@ function main() {
     noProgressRounds: optionalNumber(args["planner-no-progress"]) || 5,
     portalDiscoveryMode: args["portal-discovery-mode"] || "legacy",
     mobilityDiscoveryMode: args["mobility-discovery-mode"] || "legacy",
+    targetCacheMode: args["target-cache-mode"] || "mutation",
     targetScope: args["target-scope"] || "current-reachable",
     maxMobilitySuccessorsPerState: optionalNumber(
       args["planner-mobility-successors"],
