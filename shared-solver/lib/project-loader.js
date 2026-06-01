@@ -50,6 +50,7 @@ function loadProject(projectRoot) {
   const data = loadGeneratedObject(path.join(projectDir, "data.js"), "data_");
   const itemsById = loadGeneratedObject(path.join(projectDir, "items.js"), "items_");
   const enemysById = loadGeneratedObject(path.join(projectDir, "enemys.js"), "enemys_");
+  const icons = loadGeneratedObject(path.join(projectDir, "icons.js"), "icons_");
   const mapTilesByNumber = loadGeneratedObject(path.join(projectDir, "maps.js"), "maps_");
   const floorsById = loadFloors(path.join(projectDir, "floors"));
 
@@ -63,6 +64,7 @@ function loadProject(projectRoot) {
     floorsById,
     itemsById,
     enemysById,
+    icons,
     mapTilesByNumber,
     mapNumbersById: buildIdToNumberIndex(mapTilesByNumber),
   };

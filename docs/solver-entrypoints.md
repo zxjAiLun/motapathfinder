@@ -55,6 +55,7 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 
 ### Core Checks & Tests
 - `shared-solver/check-progressive-monster-planner.js` — synthetic tests: smoke, special target priority, batch cap, targeted matcher, legacy-batch compat, portal compat, portal dedup safety
+- `shared-solver/check-route-debugger.js` — route debugger regression: solver-side timeline, static HTML render, step-state export
 - `shared-solver/check-state-key-audit.js` — state key audit: direction-sensitive items, flags, visitedFloors, DP key modes
 - `shared-solver/check-onlyup-floorfly-dedup-safety.js` — OnlyUp floorFly dedup safety audit
 - `shared-solver/check-progressive-to-milestone.js` — progressive planner → milestone suggestion bridge (v4)
@@ -79,12 +80,15 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-stage-acceptance.js`
 - `shared-solver/check-whiteisland-trial-resource-order.js`
 - `shared-solver/export-h5-segment.js`
+- `shared-solver/debug-route-timeline.js` — replay a route with `StaticSimulator` and write a random-access solver timeline JSON
+- `shared-solver/export-route-state.js` — replay a route to step N and export the full solver state JSON
 - `shared-solver/export-route-report.js`
 - `shared-solver/find-route-bruteforce.js`
 - `shared-solver/print-route.js`
 - `shared-solver/profile-search.js`
 - `shared-solver/record-perf-baseline.js`
 - `shared-solver/route-gui.js`
+- `shared-solver/render-route-debugger.js` — render a timeline JSON as a local static Route Debugger HTML page
 - `shared-solver/run-adaptive-segment-dp.js`
 - `shared-solver/run-mt1-mt11.js`
 - `shared-solver/run-progressive-monster-planner.js`
