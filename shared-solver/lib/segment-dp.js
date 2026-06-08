@@ -2357,7 +2357,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     Array.isArray(result.goalSkylineStates) &&
     result.goalSkylineStates.length > 0
       ? result.goalSkylineStates
-      : [result.bestGoalState || result.goalState].filter(Boolean);
+      : [result.bestGoalState || result.goalState || result.firstGoalState].filter(Boolean);
   const goalSkyline = selectGoalSkyline(simulator, goalStates, segment, {
     candidateLimit: config.candidateLimit || dpConfig.goalSkylineLimit,
     preserveSkylineRoles:
