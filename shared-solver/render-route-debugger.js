@@ -28,7 +28,10 @@ function relativeAssetBase(timeline, outFile) {
 }
 
 function embeddedJson(value) {
-  return JSON.stringify(value).replace(/</g, "\\u003c");
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
 }
 
 function toPosixPath(value) {
@@ -281,6 +284,7 @@ function renderHtml(timeline, options) {
       font-size: 11px;
       white-space: nowrap;
     }
+    .pill.warn { color: #ff8d8d; border-color: #ff8d8d; }
     .candidateTable {
       width: 100%;
       border-collapse: collapse;
@@ -520,10 +524,24 @@ function renderHtml(timeline, options) {
 
     function renderHero(step) {
       const hero = step.hero || {};
+      const delta = (step.delta && step.delta.hero) || [];
+      const deltaByKey = {};
+      delta.forEach((row) => { if (row && row.key) deltaByKey[row.key] = row.delta; });
+      function cell(field) {
+        const d = deltaByKey[field];
+        const sign = d == null ? "" : (Number(d) > 0 ? " (+" + d + ")" : " (" + d + ")");
+        const cls = d == null ? "" : (Number(d) > 0 ? "deltaPos" : (Number(d) < 0 ? "deltaNeg" : ""));
+        return '<div><b>' + esc(field) + '</b><span class="' + cls + '">' + esc(hero[field]) + esc(sign) + '</span></div>';
+      }
       const fields = ["hp", "hpmax", "atk", "def", "mdef", "money", "exp", "lv", "mana", "manamax"];
-      document.getElementById("hero").innerHTML = fields.map((field) =>
-        "<div><b>" + esc(field) + "</b>" + esc(hero[field]) + "</div>"
-      ).join("") + "<div><b>loc</b>" + esc(hero.loc) + "</div>";
+      const keys = (step.delta && step.delta.inventory) || [];
+      const keyLines = keys
+        .filter((row) => /Key|key|Potion|药水|钥匙|瓶|gem|钥匙|state|bigKey/i.test(row.key || ""))
+        .map((row) => '<div><b>' + esc(row.key) + '</b>' + esc(row.before) + ' → ' + esc(row.after) + '</div>')
+        .join("");
+      document.getElementById("hero").innerHTML = fields.map(cell).join("") +
+        '<div><b>loc</b>' + esc(JSON.stringify(hero.loc || null)) + '</div>' +
+        (keyLines ? '<div class="invKeys"><b>钥匙/瓶</b>' + keyLines + '</div>' : '');
     }
 
     function currentTargetInfo(step) {
@@ -586,11 +604,17 @@ function renderHtml(timeline, options) {
         document.getElementById("diff").innerHTML = '<p class="muted">No diff for this step.</p>';
         return;
       }
-      document.getElementById("diff").innerHTML = '<table class="diffTable"><thead><tr><th>Category</th><th>Key</th><th>Before</th><th>After</th><th>Delta</th></tr></thead><tbody>' + renderDiffRows(rows) + '</tbody></table>';
+      const flagRows = (delta.flags || []).filter((row) => !/^__/.test(row.key || ""));
+      const flagNote = flagRows.length
+        ? '<div class="flagNote">' + flagRows.map((row) =>
+            '<span class="pill">' + esc(row.key) + ' ' + esc(row.before) + ' → ' + esc(row.after) + '</span>'
+          ).join("") + '</div>'
+        : "";
+      document.getElementById("diff").innerHTML = flagNote + '<table class="diffTable"><thead><tr><th>Category</th><th>Key</th><th>Before</th><th>After</th><th>Delta</th></tr></thead><tbody>' + renderDiffRows(rows) + '</tbody></table>';
     }
 
     function renderCandidates(step) {
-      const inspector = step.actionInspector || null;
+      const inspector = step.preInspector || step.actionInspector || null;
       const target = document.getElementById("candidates");
       if (!inspector) {
         target.innerHTML = '<p class="muted">Action inspector disabled.</p>';
@@ -603,7 +627,9 @@ function renderHtml(timeline, options) {
       const summary = '<div class="candidateSummary">' +
         '<span class="pill">shown ' + esc(inspector.shownActions) + ' / ' + esc(inspector.totalActions) + '</span>' +
         (inspector.truncated ? '<span class="pill">truncated</span>' : '') +
-        (inspector.plannedNextSummary ? '<span class="pill">next: ' + esc(inspector.plannedNextSummary) + '</span>' : '') +
+        (inspector.plannedNextSummary
+          ? '<span class="pill ' + (inspector.plannedFoundInCandidates ? "" : "warn") + '">已选: ' + esc(inspector.plannedNextSummary) + (inspector.plannedFoundInCandidates ? "" : " (不在候选)") + '</span>'
+          : '') +
         categoryHtml +
         '</div>';
       if (inspector.error || inspector.unavailable) {
@@ -612,15 +638,21 @@ function renderHtml(timeline, options) {
       }
       const rows = (inspector.candidates || []).map((candidate) => {
         const flags = [
-          candidate.plannedNext ? "next" : "",
+          candidate.plannedNext ? "picked" : "",
           candidate.lethal ? "lethal" : "",
           candidate.supported === false ? "unsupported" : "",
+          candidate.pathLength === 0 ? "no-path" : "",
         ].filter(Boolean).join(",");
         const damageClass = candidate.lethal || candidate.supported === false ? "bad" : "";
         const tile = candidate.tile
           ? (candidate.tile.name || candidate.tile.id || "")
           : "";
-        return '<tr class="' + (candidate.plannedNext ? "planned" : "") + '">' +
+        const reasonText = candidate.reason ? esc(candidate.reason) : "";
+        const tooltipParts = [];
+        if (candidate.targetLabel) tooltipParts.push("target: " + candidate.targetLabel);
+        if (candidate.summary) tooltipParts.push("summary: " + candidate.summary);
+        if (reasonText) tooltipParts.push("reason: " + reasonText);
+        return '<tr class="' + (candidate.plannedNext ? "planned" : "") + '" title="' + esc(tooltipParts.join(' || ')) + '">' +
           '<td>#' + esc(candidate.index) + '</td>' +
           '<td>' + esc(candidate.kind) + '</td>' +
           '<td>' + esc(candidate.category) + '</td>' +

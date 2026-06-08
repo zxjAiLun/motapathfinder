@@ -56,6 +56,7 @@ function main() {
     snapshotFloorIds: floorIds.length > 0 ? floorIds : undefined,
     battleOverlay: args["battle-overlay"] || "visible",
     actionInspector: args["action-inspector"] || "visible",
+    actionInspectorMode: args["action-inspector-mode"] || (args["action-inspector-pre"] ? "pre" : "post"),
     candidateLimit: args["candidate-limit"],
     stopOnError: args["stop-on-error"] !== "0",
     includeStack: args["include-stack"] === "1",

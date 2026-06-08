@@ -509,6 +509,7 @@ function buildActionInspector(project, simulator, state, options, battleOverlay)
     shownActions: candidates.length,
     truncated: limit > 0 && actions.length > limit,
     plannedNextSummary: plannedNextAction ? plannedNextAction.summary || plannedKey : null,
+    plannedFoundInCandidates: candidates.some((c) => c.plannedNext),
     categories,
     candidates,
     error,
@@ -670,10 +671,31 @@ function buildRouteTimeline(project, simulator, routeRecord, options) {
     const action = selectReplayAction(simulator, state, decision);
     const displayAction = normalizeReplayAction(decision);
     const preSnapshot = buildSolverSnapshot(project, state, { floorIds });
+    let preInspectorStep = null;
+    if (config.actionInspectorMode === "pre" || config.actionInspector === "pre") {
+      try {
+        preInspectorStep = buildTimelineStep(project, state, {
+          index,
+          summary: decision.summary || action.summary || action.kind || `step-${index}`,
+          action: displayAction,
+          delta: null,
+          simulator,
+          battleOverlay: config.battleOverlay,
+          actionInspector: config.actionInspector,
+          candidateLimit: config.candidateLimit,
+          plannedNextAction: displayAction,
+          isPreInspector: true,
+          snapshotFloorIds: floorIds,
+          routeTailLimit: config.routeTailLimit,
+        });
+      } catch (error) {
+        preInspectorStep = null;
+      }
+    }
     try {
       state = simulator.applyAction(state, action);
       const postSnapshot = buildSolverSnapshot(project, state, { floorIds });
-      steps.push(buildTimelineStep(project, state, {
+      const postStep = buildTimelineStep(project, state, {
         index,
         summary: decision.summary || action.summary || action.kind || `step-${index}`,
         action: displayAction,
@@ -682,10 +704,14 @@ function buildRouteTimeline(project, simulator, routeRecord, options) {
         battleOverlay: config.battleOverlay,
         actionInspector: config.actionInspector,
         candidateLimit: config.candidateLimit,
-        plannedNextAction: decisions[index] ? normalizeReplayAction(decisions[index]) : null,
+        plannedNextAction: displayAction,
         snapshotFloorIds: floorIds,
         routeTailLimit: config.routeTailLimit,
-      }));
+      });
+      if (preInspectorStep && preInspectorStep.actionInspector) {
+        postStep.preInspector = preInspectorStep.actionInspector;
+      }
+      steps.push(postStep);
     } catch (error) {
       steps.push(buildTimelineStep(project, state, {
         index,
