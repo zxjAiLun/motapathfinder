@@ -60,6 +60,7 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-state-key-audit.js` — state key audit: direction-sensitive items, flags, visitedFloors, DP key modes
 - `shared-solver/check-onlyup-floorfly-dedup-safety.js` — OnlyUp floorFly dedup safety audit
 - `shared-solver/check-progressive-to-milestone.js` — progressive planner → milestone suggestion bridge (v4); accepts `--start-state=<exported-state.json>` and `--planner-archive-key-mode=state|region` (default `state` for fast current-reachable planning)
+- `shared-solver/check-route-audit.js` — route-audit regression: identify expensive picks, emit repair milestones, classify verification reasons
 - `shared-solver/audit-state-dependencies.js`
 - `shared-solver/check-adaptive-onlyup.js`
 - `shared-solver/check-auto-stabilize.js`
@@ -90,6 +91,7 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/record-perf-baseline.js`
 - `shared-solver/route-gui.js` — live route GUI; accepts `--baseline-route=<route.json>` to highlight the first route divergence
 - `shared-solver/render-route-debugger.js` — render a timeline JSON as a local static Route Debugger HTML page
+- `shared-solver/route-audit.js` — audit a route timeline for expensive battle picks; emits candidate repair milestones and (optionally) segment DP verification per milestone
 - `shared-solver/run-adaptive-segment-dp.js`
 - `shared-solver/run-mt1-mt11.js`
 - `shared-solver/run-progressive-monster-planner.js`
