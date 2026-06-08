@@ -15,6 +15,10 @@ const { runMilestoneGraph } = require("./lib/segment-dp");
 const { buildSolverDoctorReport } = require("./lib/solver-doctor");
 const { StaticSimulator } = require("./lib/simulator");
 const { buildDominanceKey } = require("./lib/state-key");
+const {
+  loadStartState,
+  summarizeStartState,
+} = require("./lib/start-state-loader");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(
   __dirname,
@@ -149,11 +153,35 @@ function sanitizeFilePart(value) {
   return String(value || "checkpoint").replace(/[^A-Za-z0-9_.-]+/g, "_");
 }
 
+function routePrefixLength(initialState) {
+  return Array.isArray((initialState || {}).route)
+    ? initialState.route.length
+    : 0;
+}
+
+function tracePrefixLength(initialState) {
+  return Array.isArray((initialState || {}).routeTrace)
+    ? initialState.routeTrace.length
+    : 0;
+}
+
+function applyCandidateRouteFromStart(finalState, candidate, initialState) {
+  const prefixLength = routePrefixLength(initialState);
+  const tracePrefix = tracePrefixLength(initialState);
+  finalState.route = Array.isArray(candidate.route)
+    ? candidate.route.slice(prefixLength)
+    : finalState.route;
+  finalState.routeTrace = Array.isArray(candidate.trace)
+    ? candidate.trace.slice(tracePrefix)
+    : finalState.routeTrace;
+}
+
 function saveUniqueCheckpointRoutes({
   args,
   project,
   projectRoot,
   simulator,
+  initialState,
   routeName,
   spec,
   result,
@@ -173,12 +201,7 @@ function saveUniqueCheckpointRoutes({
     const candidate = checkpoint.candidates && checkpoint.candidates[0];
     if (!candidate || !candidate.state) return;
     const finalState = candidate.state;
-    finalState.route = Array.isArray(candidate.route)
-      ? candidate.route.slice()
-      : finalState.route;
-    finalState.routeTrace = Array.isArray(candidate.trace)
-      ? candidate.trace.slice()
-      : finalState.routeTrace;
+    applyCandidateRouteFromStart(finalState, candidate, initialState);
     const filePath = path.join(
       checkpointDir,
       `${sanitizeFilePart(checkpoint.segmentId)}.route.json`,
@@ -186,6 +209,7 @@ function saveUniqueCheckpointRoutes({
     const routeRecord = buildRouteRecord({
       project,
       simulator,
+      initialState,
       finalState,
       options: {
         projectRoot,
@@ -221,12 +245,27 @@ function main() {
   const simulator = makeSimulator(project);
   const routeName = args["route-name"] || "onlyup-chaos-mt5-blueking";
   const spec = getMilestoneSpec(project, routeName);
+  const startStateFile = args["start-state"]
+    ? path.resolve(args["start-state"])
+    : null;
   const startRoute = args["start-route"]
     ? path.resolve(args["start-route"])
     : null;
-  const initialState = startRoute
-    ? replayRouteFile(simulator, startRoute)
-    : simulator.createInitialState({ rank: args.rank || "chaos" });
+  if (startStateFile && startRoute) {
+    throw new Error("Pass only one of --start-state or --start-route.");
+  }
+  const loadedStart = startStateFile
+    ? loadStartState(project, startStateFile, { rank: args.rank || "chaos" })
+    : null;
+  const initialState = loadedStart
+    ? loadedStart.state
+    : startRoute
+      ? replayRouteFile(simulator, startRoute)
+      : simulator.createInitialState({ rank: args.rank || "chaos" });
+  if (loadedStart) {
+    console.log(`Start state: ${summarizeStartState(initialState)}`);
+    console.log(`Start state file: ${loadedStart.file}`);
+  }
   const result = runMilestoneGraph(simulator, initialState, spec, {
     fromMilestoneId: args["from-milestone"] || null,
     toMilestoneId: args["to-milestone"] || null,
@@ -266,6 +305,7 @@ function main() {
     project,
     projectRoot,
     simulator,
+    initialState,
     routeName,
     spec,
     result,
@@ -283,15 +323,11 @@ function main() {
     result.finalCandidate.state
   ) {
     const finalState = result.finalCandidate.state;
-    finalState.route = Array.isArray(result.finalCandidate.route)
-      ? result.finalCandidate.route.slice()
-      : finalState.route;
-    finalState.routeTrace = Array.isArray(result.finalCandidate.trace)
-      ? result.finalCandidate.trace.slice()
-      : finalState.routeTrace;
+    applyCandidateRouteFromStart(finalState, result.finalCandidate, initialState);
     const routeRecord = buildRouteRecord({
       project,
       simulator,
+      initialState,
       finalState,
       options: {
         projectRoot,

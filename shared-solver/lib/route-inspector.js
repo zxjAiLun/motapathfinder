@@ -3,7 +3,9 @@
 const path = require("path");
 
 function asObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
 }
 
 function cloneSmall(value) {
@@ -12,7 +14,9 @@ function cloneSmall(value) {
 }
 
 function sortedKeys(...objects) {
-  return Array.from(new Set(objects.flatMap((object) => Object.keys(asObject(object))))).sort();
+  return Array.from(
+    new Set(objects.flatMap((object) => Object.keys(asObject(object)))),
+  ).sort();
 }
 
 function numberDelta(preValue, postValue) {
@@ -26,33 +30,46 @@ function formatTarget(target) {
   return `${target.floorId || ""} ${target.x},${target.y}`.trim();
 }
 
-
 function lookupName(project, category, id) {
   if (!project || !id) return null;
-  if (category === "enemy") return ((project.enemysById || {})[id] || {}).name || null;
-  if (category === "item") return ((project.itemsById || {})[id] || {}).name || null;
-  if (category === "door") return ((project.itemsById || {})[id] || {}).name || id;
+  if (category === "enemy")
+    return ((project.enemysById || {})[id] || {}).name || null;
+  if (category === "item")
+    return ((project.itemsById || {})[id] || {}).name || null;
+  if (category === "door")
+    return ((project.itemsById || {})[id] || {}).name || id;
   return null;
 }
 
-
 function lookupMapBlock(project, floorId, target) {
-  if (!project || !floorId || !target || target.x == null || target.y == null) return null;
+  if (!project || !floorId || !target || target.x == null || target.y == null)
+    return null;
   const floor = (project.floorsById || {})[floorId];
   if (!floor || !Array.isArray(floor.map)) return null;
   const row = floor.map[Number(target.y)];
   if (!Array.isArray(row)) return null;
   const number = row[Number(target.x)];
-  const block = (project.mapTilesByNumber || {})[String(number)] || (project.mapTilesByNumber || {})[number] || null;
+  const block =
+    (project.mapTilesByNumber || {})[String(number)] ||
+    (project.mapTilesByNumber || {})[number] ||
+    null;
   if (!block) return null;
   return { number, cls: block.cls || null, id: block.id || null };
 }
 
 function buildMapThing(project, decision) {
-  const block = lookupMapBlock(project, decisionFloor(decision), decision.target);
+  const block = lookupMapBlock(
+    project,
+    decisionFloor(decision),
+    decision.target,
+  );
   if (!block) return null;
-  const enemyName = block.cls === "enemys" || block.cls === "enemy48" ? lookupName(project, "enemy", block.id) : null;
-  const itemName = block.cls === "items" ? lookupName(project, "item", block.id) : null;
+  const enemyName =
+    block.cls === "enemys" || block.cls === "enemy48"
+      ? lookupName(project, "enemy", block.id)
+      : null;
+  const itemName =
+    block.cls === "items" ? lookupName(project, "item", block.id) : null;
   return Object.assign({}, block, { name: enemyName || itemName || null });
 }
 
@@ -77,12 +94,18 @@ function buildThingLabel(decision, project) {
     const name = lookupName(project, "item", decision.tool);
     return name ? `${name} (${decision.tool})` : decision.tool;
   }
-  if (decision.doorId) return lookupName(project, "door", decision.doorId) || decision.doorId;
+  if (decision.doorId)
+    return lookupName(project, "door", decision.doorId) || decision.doorId;
   return "";
 }
 
 function decisionFloor(decision) {
-  return (decision.target && decision.target.floorId) || (decision.stance && decision.stance.floorId) || decision.floorId || "";
+  return (
+    (decision.target && decision.target.floorId) ||
+    (decision.stance && decision.stance.floorId) ||
+    decision.floorId ||
+    ""
+  );
 }
 
 function buildRouteSummary(routeRecord, routeFile, project) {
@@ -98,12 +121,14 @@ function buildRouteSummary(routeRecord, routeFile, project) {
     goal: cloneSmall(routeRecord.goal || {}),
     stats: cloneSmall(routeRecord.stats || {}),
     start: {
-      floorId: startSnapshot.floorId || (routeRecord.start || {}).floorId || null,
+      floorId:
+        startSnapshot.floorId || (routeRecord.start || {}).floorId || null,
       hero: cloneSmall(startSnapshot.hero || {}),
       stateKey: (routeRecord.start || {}).stateKey || null,
     },
     final: {
-      floorId: (routeRecord.final || {}).floorId || finalSnapshot.floorId || null,
+      floorId:
+        (routeRecord.final || {}).floorId || finalSnapshot.floorId || null,
       hero: cloneSmall(finalSnapshot.hero || {}),
       stateKey: (routeRecord.final || {}).stateKey || null,
     },
@@ -118,8 +143,13 @@ function buildDecisionRows(routeRecord, project) {
     const preHero = asObject((decision.preSnapshot || {}).hero);
     const postHero = asObject((decision.postSnapshot || {}).hero);
     const mapThing = buildMapThing(project, decision);
-    const resolvedEnemyId = decision.kind === "battle" && mapThing && mapThing.id ? mapThing.id : (decision.enemyId || null);
-    const resolvedEnemyName = resolvedEnemyId ? lookupName(project, "enemy", resolvedEnemyId) : null;
+    const resolvedEnemyId =
+      decision.kind === "battle" && mapThing && mapThing.id
+        ? mapThing.id
+        : decision.enemyId || null;
+    const resolvedEnemyName = resolvedEnemyId
+      ? lookupName(project, "enemy", resolvedEnemyId)
+      : null;
     return {
       index: decision.index || offset + 1,
       kind: decision.kind || "unknown",
@@ -144,13 +174,28 @@ function buildDecisionRows(routeRecord, project) {
       equipName: lookupName(project, "item", decision.equipId) || null,
       thingLabel: buildThingLabel(decision, project),
       mapThing,
-      thingMismatch: decision.enemyId && mapThing && mapThing.id !== decision.enemyId ? true : false,
+      thingMismatch:
+        decision.enemyId && mapThing && mapThing.id !== decision.enemyId
+          ? true
+          : false,
       estimate: cloneSmall(decision.estimate || {}),
       scoreBreakdown: cloneSmall(decision.scoreBreakdown || null),
-      damage: decision.estimate && decision.estimate.damage != null ? decision.estimate.damage : null,
-      exp: decision.estimate && decision.estimate.exp != null ? decision.estimate.exp : null,
-      hpDelta: postHero.hp != null || preHero.hp != null ? numberDelta(preHero.hp, postHero.hp) : null,
-      score: decision.estimate && decision.estimate.score != null ? decision.estimate.score : null,
+      damage:
+        decision.estimate && decision.estimate.damage != null
+          ? decision.estimate.damage
+          : null,
+      exp:
+        decision.estimate && decision.estimate.exp != null
+          ? decision.estimate.exp
+          : null,
+      hpDelta:
+        postHero.hp != null || preHero.hp != null
+          ? numberDelta(preHero.hp, postHero.hp)
+          : null,
+      score:
+        decision.estimate && decision.estimate.score != null
+          ? decision.estimate.score
+          : null,
     };
   });
 }
@@ -162,7 +207,12 @@ function diffPrimitiveMap(pre, post, category) {
     const oldValue = before[key];
     const newValue = after[key];
     if (JSON.stringify(oldValue) === JSON.stringify(newValue)) return rows;
-    rows.push({ category, key, before: oldValue == null ? null : oldValue, after: newValue == null ? null : newValue });
+    rows.push({
+      category,
+      key,
+      before: oldValue == null ? null : oldValue,
+      after: newValue == null ? null : newValue,
+    });
     return rows;
   }, []);
 }
@@ -170,30 +220,72 @@ function diffPrimitiveMap(pre, post, category) {
 function diffHero(preSnapshot, postSnapshot) {
   const preHero = asObject((preSnapshot || {}).hero);
   const postHero = asObject((postSnapshot || {}).hero);
-  const fields = ["hp", "hpmax", "mana", "manamax", "atk", "def", "mdef", "money", "exp", "lv"];
+  const fields = [
+    "hp",
+    "hpmax",
+    "mana",
+    "manamax",
+    "atk",
+    "def",
+    "mdef",
+    "money",
+    "exp",
+    "lv",
+  ];
   const rows = [];
   fields.forEach((field) => {
     if (JSON.stringify(preHero[field]) !== JSON.stringify(postHero[field])) {
-      rows.push({ category: "hero", key: field, before: preHero[field] == null ? null : preHero[field], after: postHero[field] == null ? null : postHero[field], delta: numberDelta(preHero[field], postHero[field]) });
+      rows.push({
+        category: "hero",
+        key: field,
+        before: preHero[field] == null ? null : preHero[field],
+        after: postHero[field] == null ? null : postHero[field],
+        delta: numberDelta(preHero[field], postHero[field]),
+      });
     }
   });
-  if (JSON.stringify(preHero.loc || null) !== JSON.stringify(postHero.loc || null)) {
-    rows.push({ category: "hero", key: "loc", before: cloneSmall(preHero.loc || null), after: cloneSmall(postHero.loc || null) });
+  if (
+    JSON.stringify(preHero.loc || null) !== JSON.stringify(postHero.loc || null)
+  ) {
+    rows.push({
+      category: "hero",
+      key: "loc",
+      before: cloneSmall(preHero.loc || null),
+      after: cloneSmall(postHero.loc || null),
+    });
   }
-  if (JSON.stringify(preHero.equipment || []) !== JSON.stringify(postHero.equipment || [])) {
-    rows.push({ category: "hero", key: "equipment", before: cloneSmall(preHero.equipment || []), after: cloneSmall(postHero.equipment || []) });
+  if (
+    JSON.stringify(preHero.equipment || []) !==
+    JSON.stringify(postHero.equipment || [])
+  ) {
+    rows.push({
+      category: "hero",
+      key: "equipment",
+      before: cloneSmall(preHero.equipment || []),
+      after: cloneSmall(postHero.equipment || []),
+    });
   }
   return rows;
 }
 
 function diffInventory(preSnapshot, postSnapshot) {
-  const rows = diffPrimitiveMap((preSnapshot || {}).inventory, (postSnapshot || {}).inventory, "inventory");
-  rows.forEach((row) => { row.delta = numberDelta(row.before, row.after); });
+  const rows = diffPrimitiveMap(
+    (preSnapshot || {}).inventory,
+    (postSnapshot || {}).inventory,
+    "inventory",
+  );
+  rows.forEach((row) => {
+    row.delta = numberDelta(row.before, row.after);
+  });
   return rows;
 }
 
 function diffFlags(preSnapshot, postSnapshot) {
-  return diffPrimitiveMap((preSnapshot || {}).flags, (postSnapshot || {}).flags, "flags");
+  return diffPrimitiveMap(
+    (preSnapshot || {}).flags,
+    (postSnapshot || {}).flags,
+    "flags",
+  );
 }
 
 function toSet(items) {
@@ -201,11 +293,15 @@ function toSet(items) {
 }
 
 function setAdded(beforeSet, afterSet) {
-  return Array.from(afterSet).filter((item) => !beforeSet.has(item)).sort();
+  return Array.from(afterSet)
+    .filter((item) => !beforeSet.has(item))
+    .sort();
 }
 
 function setRemoved(beforeSet, afterSet) {
-  return Array.from(beforeSet).filter((item) => !afterSet.has(item)).sort();
+  return Array.from(beforeSet)
+    .filter((item) => !afterSet.has(item))
+    .sort();
 }
 
 function diffFloors(preSnapshot, postSnapshot) {
@@ -250,7 +346,11 @@ function rowKindFor(label, value) {
   const numeric = Number(value || 0);
   if (/damage|cost|hpDelta/i.test(label) && numeric < 0) return "cost";
   if (/damage|cost/i.test(label) && numeric > 0) return "cost";
-  if (/exp|money|atkDelta|defDelta|mdefDelta|lvDelta|gain/i.test(label) && numeric > 0) return "gain";
+  if (
+    /exp|money|atkDelta|defDelta|mdefDelta|lvDelta|gain/i.test(label) &&
+    numeric > 0
+  )
+    return "gain";
   if (/removed|replaced|mutation/i.test(label)) return "mutation";
   return "neutral";
 }
@@ -265,23 +365,48 @@ function buildScore(decision, diff) {
   const scoreBreakdown = cloneSmall(decision.scoreBreakdown || null);
   const rows = [];
   if (scoreBreakdown) {
-    Object.keys(scoreBreakdown).sort().forEach((key) => pushScoreRow(rows, key, scoreBreakdown[key], rowKindFor(key, scoreBreakdown[key])));
+    Object.keys(scoreBreakdown)
+      .sort()
+      .forEach((key) =>
+        pushScoreRow(
+          rows,
+          key,
+          scoreBreakdown[key],
+          rowKindFor(key, scoreBreakdown[key]),
+        ),
+      );
   }
-  Object.keys(estimate || {}).sort().forEach((key) => {
-    const value = estimate[key];
-    if (Array.isArray(value) || (value && typeof value === "object")) {
-      pushScoreRow(rows, key, JSON.stringify(value), "neutral");
-    } else {
-      pushScoreRow(rows, key, value, rowKindFor(key, value));
-    }
-  });
+  Object.keys(estimate || {})
+    .sort()
+    .forEach((key) => {
+      const value = estimate[key];
+      if (Array.isArray(value) || (value && typeof value === "object")) {
+        pushScoreRow(rows, key, JSON.stringify(value), "neutral");
+      } else {
+        pushScoreRow(rows, key, value, rowKindFor(key, value));
+      }
+    });
   const heroDeltas = {};
   (diff.hero || []).forEach((row) => {
     if (row.delta != null) heroDeltas[`${row.key}Delta`] = row.delta;
   });
-  ["hpDelta", "atkDelta", "defDelta", "mdefDelta", "expDelta", "lvDelta", "moneyDelta"].forEach((key) => pushScoreRow(rows, key, heroDeltas[key], rowKindFor(key, heroDeltas[key])));
-  const removedTiles = (diff.floors || []).filter((row) => row.key === "removed").reduce((sum, row) => sum + Math.max(0, Number(row.delta || 0)), 0);
-  const replacedTiles = (diff.floors || []).filter((row) => row.key === "replaced").reduce((sum, row) => sum + Math.max(0, Number(row.delta || 0)), 0);
+  [
+    "hpDelta",
+    "atkDelta",
+    "defDelta",
+    "mdefDelta",
+    "expDelta",
+    "lvDelta",
+    "moneyDelta",
+  ].forEach((key) =>
+    pushScoreRow(rows, key, heroDeltas[key], rowKindFor(key, heroDeltas[key])),
+  );
+  const removedTiles = (diff.floors || [])
+    .filter((row) => row.key === "removed")
+    .reduce((sum, row) => sum + Math.max(0, Number(row.delta || 0)), 0);
+  const replacedTiles = (diff.floors || [])
+    .filter((row) => row.key === "replaced")
+    .reduce((sum, row) => sum + Math.max(0, Number(row.delta || 0)), 0);
   pushScoreRow(rows, "removedTiles", removedTiles || null, "mutation");
   pushScoreRow(rows, "replacedTiles", replacedTiles || null, "mutation");
   return { estimate, scoreBreakdown, displayRows: rows };
@@ -289,27 +414,45 @@ function buildScore(decision, diff) {
 
 function buildStepDetail(routeRecord, index, project) {
   const stepIndex = Number(index);
-  if (!Number.isInteger(stepIndex) || stepIndex < 1 || stepIndex > (routeRecord.decisions || []).length) {
+  if (
+    !Number.isInteger(stepIndex) ||
+    stepIndex < 1 ||
+    stepIndex > (routeRecord.decisions || []).length
+  ) {
     const error = new Error(`Step index out of range: ${index}`);
     error.statusCode = 404;
     throw error;
   }
   const decision = routeRecord.decisions[stepIndex - 1];
-  const diff = buildSnapshotDiff(decision.preSnapshot || {}, decision.postSnapshot || {});
+  const diff = buildSnapshotDiff(
+    decision.preSnapshot || {},
+    decision.postSnapshot || {},
+  );
   const displayDecision = cloneSmall(decision);
   displayDecision.mapThing = buildMapThing(project, decision);
-  const resolvedEnemyId = decision.kind === "battle" && displayDecision.mapThing && displayDecision.mapThing.id
-    ? displayDecision.mapThing.id
-    : decision.enemyId;
-  displayDecision.itemName = lookupName(project, "item", decision.itemId) || null;
+  const resolvedEnemyId =
+    decision.kind === "battle" &&
+    displayDecision.mapThing &&
+    displayDecision.mapThing.id
+      ? displayDecision.mapThing.id
+      : decision.enemyId;
+  displayDecision.itemName =
+    lookupName(project, "item", decision.itemId) || null;
   displayDecision.routeEnemyId = decision.enemyId || null;
   displayDecision.enemyId = resolvedEnemyId || null;
-  displayDecision.enemyName = lookupName(project, "enemy", resolvedEnemyId) || null;
-  displayDecision.doorName = lookupName(project, "door", decision.doorId) || null;
+  displayDecision.enemyName =
+    lookupName(project, "enemy", resolvedEnemyId) || null;
+  displayDecision.doorName =
+    lookupName(project, "door", decision.doorId) || null;
   displayDecision.toolName = lookupName(project, "item", decision.tool) || null;
-  displayDecision.equipName = lookupName(project, "item", decision.equipId) || null;
+  displayDecision.equipName =
+    lookupName(project, "item", decision.equipId) || null;
   displayDecision.thingLabel = buildThingLabel(decision, project);
-  displayDecision.thingMismatch = Boolean(decision.enemyId && displayDecision.mapThing && displayDecision.mapThing.id !== decision.enemyId);
+  displayDecision.thingMismatch = Boolean(
+    decision.enemyId &&
+    displayDecision.mapThing &&
+    displayDecision.mapThing.id !== decision.enemyId,
+  );
   return {
     decision: displayDecision,
     preSnapshot: cloneSmall(decision.preSnapshot || {}),
@@ -319,9 +462,72 @@ function buildStepDetail(routeRecord, index, project) {
   };
 }
 
+/**
+ * Compare two route records step-by-step and find the first divergence.
+ * Returns { divergedAt, totalCommon, details } or null if identical.
+ */
+function findDivergence(solverRecord, baselineRecord) {
+  const solverDecisions = solverRecord.decisions || [];
+  const baselineDecisions = baselineRecord.decisions || [];
+  const maxCommon = Math.min(solverDecisions.length, baselineDecisions.length);
+
+  let divergedAt = null;
+  for (let i = 0; i < maxCommon; i++) {
+    const s = solverDecisions[i];
+    const b = baselineDecisions[i];
+    // Compare by summary (the canonical action identity)
+    if ((s.summary || "") !== (b.summary || "")) {
+      divergedAt = i + 1;
+      break;
+    }
+  }
+
+  if (
+    divergedAt == null &&
+    solverDecisions.length !== baselineDecisions.length
+  ) {
+    divergedAt = maxCommon + 1;
+  }
+
+  if (divergedAt == null) return null;
+
+  const solverDivergent = solverDecisions[divergedAt - 1] || null;
+  const baselineDivergent = baselineDecisions[divergedAt - 1] || null;
+
+  return {
+    divergedAt,
+    totalCommon: divergedAt - 1,
+    solverLength: solverDecisions.length,
+    baselineLength: baselineDecisions.length,
+    solverDecision: solverDivergent
+      ? {
+          index: divergedAt,
+          kind: solverDivergent.kind || "unknown",
+          summary: solverDivergent.summary || "",
+          floorId: solverDivergent.floorId || "",
+          target: solverDivergent.target || null,
+          enemyId: solverDivergent.enemyId || null,
+          itemId: solverDivergent.itemId || null,
+        }
+      : null,
+    baselineDecision: baselineDivergent
+      ? {
+          index: divergedAt,
+          kind: baselineDivergent.kind || "unknown",
+          summary: baselineDivergent.summary || "",
+          floorId: baselineDivergent.floorId || "",
+          target: baselineDivergent.target || null,
+          enemyId: baselineDivergent.enemyId || null,
+          itemId: baselineDivergent.itemId || null,
+        }
+      : null,
+  };
+}
+
 module.exports = {
   buildDecisionRows,
   buildRouteSummary,
   buildSnapshotDiff,
   buildStepDetail,
+  findDivergence,
 };

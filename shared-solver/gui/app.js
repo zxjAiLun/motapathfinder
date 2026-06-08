@@ -13,18 +13,29 @@ const state = {
 const $ = (id) => document.getElementById(id);
 
 function escapeHtml(value) {
-  return String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
+  return String(value == null ? "" : value).replace(
+    /[&<>"']/g,
+    (char) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        char
+      ],
+  );
 }
 
 async function fetchJson(url, options) {
   const response = await fetch(url, options);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) throw new Error(data.error || response.statusText);
+  if (!response.ok || data.ok === false)
+    throw new Error(data.error || response.statusText);
   return data;
 }
 
 function postJson(url, body) {
-  return fetchJson(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  return fetchJson(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
 }
 
 async function loadRoute() {
@@ -48,6 +59,15 @@ function renderTopbar() {
   const source = route.source || {};
   const finalHero = (route.final || {}).hero || {};
   const session = state.session || {};
+  const baseline = route.baseline || null;
+  const divergence =
+    baseline && baseline.divergence ? baseline.divergence : null;
+  const baselineLabel =
+    divergence && !divergence.identical
+      ? `<span class="badge error">⚠ 第 ${divergence.divergedAt} 步分叉</span>`
+      : divergence && divergence.identical
+        ? '<span class="badge ok">✓ 路线一致</span>'
+        : "";
   $("topbar").innerHTML = `
     <strong>${escapeHtml(route.routeFile || "Route")}</strong>
     <span>Goal: ${escapeHtml((route.goal || {}).floorId || "-")}</span>
@@ -57,6 +77,7 @@ function renderTopbar() {
     <span class="badge ${escapeHtml(session.state || "idle")}">${escapeHtml(session.state || "idle")}</span>
     <span>Current: ${escapeHtml(session.currentStep || 1)} / ${escapeHtml(session.totalSteps || route.decisionCount)}</span>
     ${session.browserUrl ? `<span class="muted">Runtime: ${escapeHtml(session.browserUrl)}</span>` : ""}
+    ${baselineLabel}
   `;
 }
 
@@ -83,15 +104,20 @@ function renderControls() {
     $("btn-step").onclick = stepOnce;
     $("btn-restart").onclick = restart;
     $("btn-jump").onclick = jumpToSelected;
-    $("speed").onchange = (event) => { state.speedDelayMs = Number(event.target.value); };
+    $("speed").onchange = (event) => {
+      state.speedDelayMs = Number(event.target.value);
+    };
     $("from-step").onchange = (event) => loadStep(Number(event.target.value));
     state.controlsRendered = true;
   }
 
   const session = state.session || { state: "idle" };
-  const isRunning = session.state === "running" || session.state === "pausing" || session.busy;
+  const isRunning =
+    session.state === "running" || session.state === "pausing" || session.busy;
   const isPaused = session.state === "paused";
-  const canStart = ["idle", "closed", "failed"].includes(session.state || "idle") && !session.busy;
+  const canStart =
+    ["idle", "closed", "failed"].includes(session.state || "idle") &&
+    !session.busy;
 
   $("btn-start").disabled = !canStart;
   $("btn-play").disabled = !isPaused || !!session.busy;
@@ -112,37 +138,72 @@ function renderControls() {
 function rowStatus(index) {
   const statuses = (state.session || {}).stepStatuses || {};
   if (statuses[String(index)]) return statuses[String(index)];
-  if ((state.session || {}).currentStep === index && ["running", "pausing"].includes((state.session || {}).state)) return "running";
+  if (
+    (state.session || {}).currentStep === index &&
+    ["running", "pausing"].includes((state.session || {}).state)
+  )
+    return "running";
   return "pending";
 }
 
 function renderTimeline() {
   const route = state.route;
   if (!route) return;
-  const rows = (route.decisions || []).map((decision) => {
-    const status = rowStatus(decision.index);
-    const selected = decision.index === state.selectedStep ? "selected" : "";
-    const item = decision.thingLabel || decision.enemyId || decision.itemId || decision.tool || decision.equipId || decision.doorId || "";
-    return `<tr class="${selected}" data-step="${decision.index}">
+  const baseline = route.baseline || null;
+  const divergence =
+    baseline && baseline.divergence ? baseline.divergence : null;
+  const divergedAt =
+    divergence && !divergence.identical ? divergence.divergedAt : -1;
+
+  const rows = (route.decisions || [])
+    .map((decision) => {
+      const status = rowStatus(decision.index);
+      const afterDivergence =
+        divergedAt > 0 && decision.index >= divergedAt
+          ? " after-divergence"
+          : "";
+      const selected = decision.index === state.selectedStep ? " selected" : "";
+      const isDiverged = decision.index === divergedAt ? " diverged-row" : "";
+      const item =
+        decision.thingLabel ||
+        decision.enemyId ||
+        decision.itemId ||
+        decision.tool ||
+        decision.equipId ||
+        decision.doorId ||
+        "";
+      return `<tr class="${selected}${afterDivergence}${isDiverged}" data-step="${decision.index}">
       <td><span class="status-dot ${escapeHtml(status)}">${escapeHtml(status)}</span></td>
       <td>#${String(decision.index).padStart(3, "0")}</td>
       <td>${escapeHtml(decision.kind)}</td>
       <td>${escapeHtml(decision.floorId)}</td>
       <td>${escapeHtml(decision.targetLabel)}</td>
-      <td title="${escapeHtml(decision.mapThing ? `map=${decision.mapThing.id || ''} ${decision.mapThing.name || ''}` : '')}">${decision.thingMismatch ? '⚠️ ' : ''}${escapeHtml(item)}</td>
+      <td title="${escapeHtml(decision.mapThing ? `map=${decision.mapThing.id || ""} ${decision.mapThing.name || ""}` : "")}">${decision.thingMismatch ? "⚠️ " : ""}${escapeHtml(item)}</td>
       <td>${escapeHtml(decision.damage == null ? "" : decision.damage)}</td>
       <td>${escapeHtml(decision.exp == null ? "" : decision.exp)}</td>
       <td>${escapeHtml(decision.hpDelta == null ? "" : decision.hpDelta)}</td>
       <td>${escapeHtml(decision.score == null ? "" : decision.score)}</td>
       <td class="summary-cell" title="${escapeHtml(decision.summary)}">${escapeHtml(decision.summary)}</td>
     </tr>`;
-  }).join("");
-  $("timeline").innerHTML = `<table><thead><tr><th>Status</th><th>#</th><th>Kind</th><th>Floor</th><th>Target</th><th>Thing</th><th>Dmg</th><th>Exp</th><th>HPΔ</th><th>Score</th><th>Summary</th></tr></thead><tbody>${rows}</tbody></table>`;
-  $("timeline").querySelectorAll("tr[data-step]").forEach((row) => {
-    const step = Number(row.dataset.step);
-    row.onclick = () => loadStep(step);
-    row.ondblclick = () => jumpToStep(step);
-  });
+    })
+    .join("");
+
+  const baselineHtml =
+    divergence && !divergence.identical
+      ? `<div style="margin:4px 0;font-size:13px;" class="card"><span class="badge error">⚠ 第 ${divergence.divergedAt} 步与基线分叉</span> 基线选了 <code>${escapeHtml((divergence.baselineDecision || {}).summary || "?")}</code>，求解器选了 <code>${escapeHtml((divergence.solverDecision || {}).summary || "?")}</code></div>`
+      : divergence && divergence.identical
+        ? `<div style="margin:4px 0;font-size:13px;" class="card"><span class="badge ok">✓ 与基线路线完全一致</span></div>`
+        : "";
+
+  $("timeline").innerHTML =
+    `${baselineHtml}<table><thead><tr><th>Status</th><th>#</th><th>Kind</th><th>Floor</th><th>Target</th><th>Thing</th><th>Dmg</th><th>Exp</th><th>HPΔ</th><th>Score</th><th>Summary</th></tr></thead><tbody>${rows}</tbody></table>`;
+  $("timeline")
+    .querySelectorAll("tr[data-step]")
+    .forEach((row) => {
+      const step = Number(row.dataset.step);
+      row.onclick = () => loadStep(step);
+      row.ondblclick = () => jumpToStep(step);
+    });
 }
 
 function tableForRows(rows) {
@@ -154,7 +215,12 @@ function renderDetails() {
   const detail = state.stepDetail;
   if (!detail) return;
   const mismatch = (state.session || {}).lastMismatch;
-  const scoreRows = (((detail.score || {}).displayRows) || []).map((row) => `<tr><td>${escapeHtml(row.label)}</td><td class="kind-${escapeHtml(row.kind)}">${escapeHtml(row.value)}</td><td>${escapeHtml(row.kind)}</td></tr>`).join("");
+  const scoreRows = ((detail.score || {}).displayRows || [])
+    .map(
+      (row) =>
+        `<tr><td>${escapeHtml(row.label)}</td><td class="kind-${escapeHtml(row.kind)}">${escapeHtml(row.value)}</td><td>${escapeHtml(row.kind)}</td></tr>`,
+    )
+    .join("");
   $("details").innerHTML = `
     ${mismatch ? `<div class="card"><h3 class="error">Mismatch</h3><div class="card-body"><pre class="json-block">${escapeHtml(JSON.stringify(mismatch, null, 2))}</pre></div></div>` : ""}
     <div class="card"><h3>Action</h3><pre class="json-block">${escapeHtml(JSON.stringify(detail.decision, null, 2))}</pre></div>
@@ -167,7 +233,11 @@ function renderDetails() {
 }
 
 function renderRuntime() {
-  $("runtime-status").textContent = JSON.stringify(state.session || {}, null, 2);
+  $("runtime-status").textContent = JSON.stringify(
+    state.session || {},
+    null,
+    2,
+  );
 }
 
 function renderAll() {
@@ -181,16 +251,28 @@ function renderAll() {
 async function refreshSessionStatus() {
   try {
     state.session = await fetchJson("/api/session/status");
-    if (["running", "pausing"].includes(state.session.state) && state.session.currentStep) {
-      state.selectedStep = Math.min(state.session.currentStep, (state.route || {}).decisionCount || state.session.currentStep);
+    if (
+      ["running", "pausing"].includes(state.session.state) &&
+      state.session.currentStep
+    ) {
+      state.selectedStep = Math.min(
+        state.session.currentStep,
+        (state.route || {}).decisionCount || state.session.currentStep,
+      );
     }
-    if (state.session.state === "failed" && state.session.lastMismatch && state.session.lastMismatch.step) {
+    if (
+      state.session.state === "failed" &&
+      state.session.lastMismatch &&
+      state.session.lastMismatch.step
+    ) {
       state.selectedStep = state.session.lastMismatch.step;
       await loadStep(state.selectedStep).catch(() => null);
     }
     renderAll();
   } catch (error) {
-    state.session = Object.assign({}, state.session, { lastError: { message: error.message } });
+    state.session = Object.assign({}, state.session, {
+      lastError: { message: error.message },
+    });
     renderAll();
   }
 }
@@ -202,17 +284,47 @@ function ensurePolling() {
 
 async function startLive() {
   const fromStep = Number($("from-step").value || state.selectedStep || 1);
-  state.session = await postJson("/api/session/start", { fromStep, stepDelayMs: state.speedDelayMs, liveOptions: { headless: "0" } });
+  state.session = await postJson("/api/session/start", {
+    fromStep,
+    stepDelayMs: state.speedDelayMs,
+    liveOptions: { headless: "0" },
+  });
   ensurePolling();
   renderAll();
 }
-async function play() { await postJson("/api/session/play", { stepDelayMs: state.speedDelayMs }); ensurePolling(); await refreshSessionStatus(); }
-async function pause() { state.session = await postJson("/api/session/pause", {}); renderAll(); }
-async function stepOnce() { state.session = await postJson("/api/session/step", { stepDelayMs: state.speedDelayMs }); ensurePolling(); await refreshSessionStatus(); }
-async function restart() { state.session = await postJson("/api/session/restart", {}); ensurePolling(); await refreshSessionStatus(); }
-async function jumpToStep(step) { state.session = await postJson("/api/session/jump", { step }); ensurePolling(); await refreshSessionStatus(); }
-async function jumpToSelected() { await jumpToStep(state.selectedStep); }
+async function play() {
+  await postJson("/api/session/play", { stepDelayMs: state.speedDelayMs });
+  ensurePolling();
+  await refreshSessionStatus();
+}
+async function pause() {
+  state.session = await postJson("/api/session/pause", {});
+  renderAll();
+}
+async function stepOnce() {
+  state.session = await postJson("/api/session/step", {
+    stepDelayMs: state.speedDelayMs,
+  });
+  ensurePolling();
+  await refreshSessionStatus();
+}
+async function restart() {
+  state.session = await postJson("/api/session/restart", {});
+  ensurePolling();
+  await refreshSessionStatus();
+}
+async function jumpToStep(step) {
+  state.session = await postJson("/api/session/jump", { step });
+  ensurePolling();
+  await refreshSessionStatus();
+}
+async function jumpToSelected() {
+  await jumpToStep(state.selectedStep);
+}
 
-loadRoute().then(refreshSessionStatus).then(ensurePolling).catch((error) => {
-  document.body.innerHTML = `<pre class="json-block error">${escapeHtml(error.stack || error.message)}</pre>`;
-});
+loadRoute()
+  .then(refreshSessionStatus)
+  .then(ensurePolling)
+  .catch((error) => {
+    document.body.innerHTML = `<pre class="json-block error">${escapeHtml(error.stack || error.message)}</pre>`;
+  });

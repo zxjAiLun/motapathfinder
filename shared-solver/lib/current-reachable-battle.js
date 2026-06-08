@@ -183,6 +183,11 @@ function enumerateCurrentReachableBattleSuccessors(
 ) {
   const config = options || {};
   const maxSuccessorsPerTarget = number(config.maxSuccessorsPerTarget, 4);
+  const targetFloorId = config.targetFloorId || null;
+  const maxMobilityResults = Math.max(
+    1,
+    number(config.maxMobilityResults, 2),
+  );
   const maxReachableTargets = Math.max(
     1,
     number(
@@ -215,13 +220,20 @@ function enumerateCurrentReachableBattleSuccessors(
       actionPolicy: {},
     })
     : state;
+  const reachStartedAt = Date.now();
   const reachability = simulator.getWalkReachability(closed);
+  const reachabilityMs = Date.now() - reachStartedAt;
   const visited = reachability.visited || {};
 
   const matchesByTarget = new Map();
+  const mobilityBySummary = new Map();
   let battleMatchNodes = 0;
   let battleTargetChecks = 0;
   let battleEvaluateCalls = 0;
+  let battleApplyMs = 0;
+  let reachableMobilityChecks = 0;
+  let reachableMobilityApplyCalls = 0;
+  let reachableMobilityApplyMs = 0;
 
   const DIRS = [
     [0, -1],
@@ -237,6 +249,56 @@ function enumerateCurrentReachableBattleSuccessors(
     const nx = Number(loc.x);
     const ny = Number(loc.y);
     if (isNaN(nx) || isNaN(ny)) continue;
+
+    if (targetFloorId) {
+      const floor = simulator.project.floorsById[nodeState.floorId];
+      const changeFloor = (floor && floor.changeFloor) || {};
+      const positions = [[0, 0], ...DIRS];
+      for (const [dx, dy] of positions) {
+        reachableMobilityChecks += 1;
+        const tx = nx + dx;
+        const ty = ny + dy;
+        const stair = changeFloor[`${tx},${ty}`];
+        if (!stair || stair.floorId !== targetFloorId) continue;
+        const summary = `changeFloor@${nodeState.floorId}:${tx},${ty}`;
+        if (mobilityBySummary.has(summary)) continue;
+        if (mobilityBySummary.size >= maxMobilityResults) continue;
+        const direction =
+          dx === 0 && dy === -1
+            ? "up"
+            : dx === 0 && dy === 1
+              ? "down"
+              : dx === -1 && dy === 0
+                ? "left"
+                : dx === 1 && dy === 0
+                  ? "right"
+                  : ((nodeState.hero && nodeState.hero.loc && nodeState.hero.loc.direction) || "up");
+        const action = {
+          kind: "changeFloor",
+          floorId: nodeState.floorId,
+          stance: { x: nx, y: ny },
+          direction,
+          x: tx,
+          y: ty,
+          changeFloor: stair,
+          summary,
+        };
+        try {
+          const applyStartedAt = Date.now();
+          const postState = simulator.applyAction(nodeState, action, {
+            storeRoute: false,
+          });
+          reachableMobilityApplyMs += Date.now() - applyStartedAt;
+          reachableMobilityApplyCalls += 1;
+          mobilityBySummary.set(summary, {
+            postState,
+            action,
+            routePatch: [action],
+            kind: "mobility",
+          });
+        } catch (error) {}
+      }
+    }
 
     for (const [dx, dy] of DIRS) {
       battleTargetChecks += 1;
@@ -280,9 +342,11 @@ function enumerateCurrentReachableBattleSuccessors(
       };
 
       try {
+        const applyStartedAt = Date.now();
         const postState = simulator.applyAction(nodeState, battleAction, {
           storeRoute: false,
         });
+        battleApplyMs += Date.now() - applyStartedAt;
         battleEvaluateCalls += 1;
         allResults.push({
           postState,
@@ -319,15 +383,22 @@ function enumerateCurrentReachableBattleSuccessors(
   return {
     ok: true,
     results: selectedByTarget,
+    mobilityResults: Array.from(mobilityBySummary.values()),
     diagnostics: {
       battleMatchNodes,
       battleTargetChecks,
       battleEvaluateCalls,
+      battleApplyMs,
+      reachabilityMs,
       reachabilityNodes: Object.keys(visited).length,
       currentFloorTargets: targetByPos.size,
       totalFloorTargets: targets.length,
       reachableTargets: matchesByTarget.size,
       reachableTargetsSelected: selectedTargetEntries.length,
+      reachableMobilityChecks,
+      reachableMobilityApplyCalls,
+      reachableMobilityApplyMs,
+      reachableMobilityTargets: mobilityBySummary.size,
     },
   };
 }
@@ -342,6 +413,24 @@ function enumerateCurrentReachableBattleSuccessors(
 function enumerateMobilitySuccessors(simulator, state, options) {
   const config = options || {};
   const discoveryMode = config.portalDiscoveryMode || "legacy";
+  const targetFloorId = config.targetFloorId || null;
+  const onlyTargetFloor = Boolean(config.onlyTargetFloor);
+
+  function actionTargetFloor(action) {
+    if (!action) return null;
+    if (action.kind === "changeFloor") {
+      return action.changeFloor && action.changeFloor.floorId;
+    }
+    if (action.kind === "floorFly") {
+      return action.targetFloorId || (action.target && action.target.floorId);
+    }
+    return null;
+  }
+
+  function keepAction(action) {
+    if (!onlyTargetFloor || !targetFloorId) return true;
+    return actionTargetFloor(action) === targetFloorId;
+  }
 
   let actions = [];
   // changeFloor: respect portalDiscoveryMode for safety
@@ -352,6 +441,7 @@ function enumerateMobilitySuccessors(simulator, state, options) {
     Object.values(reachability.visited || {}).forEach((node) => {
       const nodeState = node.state || state;
       discoverChangeFloorActions(simulator, nodeState).forEach((action) => {
+        if (!keepAction(action)) return;
         discovered.push({ action, applyState: nodeState });
       });
     });
@@ -361,6 +451,7 @@ function enumerateMobilitySuccessors(simulator, state, options) {
     actions = actions.concat(
       primitive
         .filter((a) => a.kind === "changeFloor")
+        .filter(keepAction)
         .map((action) => ({ action, applyState: state })),
     );
   }
@@ -370,6 +461,7 @@ function enumerateMobilitySuccessors(simulator, state, options) {
     actions = actions.concat(
       simulator
         .enumerateFloorFlyActions(state)
+        .filter(keepAction)
         .map((action) => ({ action, applyState: state })),
     );
   }

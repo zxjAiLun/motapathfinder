@@ -10,6 +10,7 @@ const { loadProject } = require("./lib/project-loader");
 const { readRouteFile } = require("./lib/route-store");
 const { buildRouteTimeline, exportRouteState } = require("./lib/route-debugger");
 const { StaticSimulator } = require("./lib/simulator");
+const { loadStartState } = require("./lib/start-state-loader");
 const { renderHtml } = require("./render-route-debugger");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
@@ -47,6 +48,12 @@ function checkTimeline() {
   assert.ok(timeline.steps[0].battleOverlay.enemyCount > 0, "battle overlay should list current-floor enemies");
   const firstBattleOverlay = Object.values(timeline.steps[0].battleOverlay.enemies)[0];
   assert.ok(firstBattleOverlay.display, "battle overlay should include display damage text");
+  assert.ok(timeline.steps[0].actionInspector, "timeline should include action inspector data");
+  assert.ok(timeline.steps[0].actionInspector.totalActions > 0, "action inspector should enumerate candidates");
+  assert.ok(
+    timeline.steps[0].actionInspector.candidates.some((candidate) => candidate.plannedNext),
+    "action inspector should mark the next route action",
+  );
   assert.equal(timeline.map.tiles.redGem.name, "初始红宝石");
   assert.ok(timeline.map.tiles.blackSlime.sprite, "timeline should expose tile sprite metadata");
   assert.equal(timeline.map.tiles.autotile59.wallLike, true);
@@ -67,6 +74,8 @@ function checkRenderAndExport() {
   assert.ok(html.includes("初始红宝石"));
   assert.ok(html.includes("materials/enemys.png"));
   assert.ok(html.includes("damageBadge"));
+  assert.ok(html.includes("candidateTable"));
+  assert.ok(html.includes("候选动作"));
   assert.ok(!html.includes("autotiles/autotile59.png"));
   assert.ok(html.includes("主角属性"));
   assert.ok(html.includes("当前 Action"));
@@ -88,6 +97,9 @@ function checkRenderAndExport() {
   const outFile = path.join(tmpDir, "state.json");
   fs.writeFileSync(outFile, `${JSON.stringify(exported, null, 2)}\n`, "utf8");
   assert.ok(fs.existsSync(outFile));
+  const loaded = loadStartState(project, outFile, { rank: "chaos" });
+  assert.equal(loaded.state.floorId, exported.state.floorId);
+  assert.equal(loaded.state.hero.hp, exported.state.hero.hp);
   return { exportedStep: exported.step, floorId: exported.state.floorId, hp: exported.state.hero.hp };
 }
 

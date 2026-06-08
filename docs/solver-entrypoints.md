@@ -55,10 +55,11 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 
 ### Core Checks & Tests
 - `shared-solver/check-progressive-monster-planner.js` — synthetic tests: smoke, special target priority, batch cap, targeted matcher, legacy-batch compat, portal compat, portal dedup safety
+- `shared-solver/check-route-gui-compare.js` — route GUI baseline comparison regression: first divergence detection and `/api/route/compare`
 - `shared-solver/check-route-debugger.js` — route debugger regression: solver-side timeline, static HTML render, step-state export
 - `shared-solver/check-state-key-audit.js` — state key audit: direction-sensitive items, flags, visitedFloors, DP key modes
 - `shared-solver/check-onlyup-floorfly-dedup-safety.js` — OnlyUp floorFly dedup safety audit
-- `shared-solver/check-progressive-to-milestone.js` — progressive planner → milestone suggestion bridge (v4)
+- `shared-solver/check-progressive-to-milestone.js` — progressive planner → milestone suggestion bridge (v4); accepts `--start-state=<exported-state.json>` and `--planner-archive-key-mode=state|region` (default `state` for fast current-reachable planning)
 - `shared-solver/audit-state-dependencies.js`
 - `shared-solver/check-adaptive-onlyup.js`
 - `shared-solver/check-auto-stabilize.js`
@@ -80,14 +81,14 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-stage-acceptance.js`
 - `shared-solver/check-whiteisland-trial-resource-order.js`
 - `shared-solver/export-h5-segment.js`
-- `shared-solver/debug-route-timeline.js` — replay a route with `StaticSimulator` and write a random-access solver timeline JSON
-- `shared-solver/export-route-state.js` — replay a route to step N and export the full solver state JSON
+- `shared-solver/debug-route-timeline.js` — replay a route with `StaticSimulator` and write a random-access solver timeline JSON; `--action-inspector=visible|off` controls per-step candidate action capture
+- `shared-solver/export-route-state.js` — replay a route to step N and export the full solver state JSON for `--start-state`
 - `shared-solver/export-route-report.js`
 - `shared-solver/find-route-bruteforce.js`
 - `shared-solver/print-route.js`
 - `shared-solver/profile-search.js`
 - `shared-solver/record-perf-baseline.js`
-- `shared-solver/route-gui.js`
+- `shared-solver/route-gui.js` — live route GUI; accepts `--baseline-route=<route.json>` to highlight the first route divergence
 - `shared-solver/render-route-debugger.js` — render a timeline JSON as a local static Route Debugger HTML page
 - `shared-solver/run-adaptive-segment-dp.js`
 - `shared-solver/run-mt1-mt11.js`
@@ -95,12 +96,18 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/run-region-dp.js`
 - `shared-solver/run-route.js`
 - `shared-solver/run-search.js`
-- `shared-solver/run-segmented-dp.js`
+- `shared-solver/run-segmented-dp.js` — segment DP runner; accepts `--start-state=<exported-state.json>` for debugger-to-DP continuation
 - `shared-solver/run-whiteisland-trial-topk.js`
 - `shared-solver/search-mt5-blueking-checkpoint-dp.js`
 - `shared-solver/search-mt5-blueking-local.js`
 - `shared-solver/verify-mt1-mt3-live.js`
 - `shared-solver/verify-route-live.js`
+
+Focused MT1-MT2 progressive planner benchmark:
+
+```bash
+node shared-solver/check-progressive-to-milestone.js --from=mt1-gate-1559 --to=mt2-entry --planner-rounds=50 --planner-beam=16 --planner-targets=12 --validate=0
+```
 
 ## Legacy Solver Copies
 

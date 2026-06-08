@@ -26,6 +26,10 @@ const { StaticSimulator } = require("./lib/simulator");
 const { runMilestoneGraph } = require("./lib/segment-dp");
 const { buildSolverDoctorReport } = require("./lib/solver-doctor");
 const { scanResourceIntents } = require("./lib/resource-intent-scanner");
+const {
+  loadStartState,
+  summarizeStartState,
+} = require("./lib/start-state-loader");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(
   __dirname,
@@ -621,11 +625,24 @@ function main() {
 
   // --- Resolve start state ---
   let initialState;
+  let startSource = "initial";
+  const startStateFile = args["start-state"]
+    ? path.resolve(args["start-state"])
+    : null;
   const startRoute = args["start-route"]
     ? path.resolve(args["start-route"])
     : null;
-  if (startRoute) {
+  if (startStateFile && startRoute) {
+    console.error("Pass only one of --start-state or --start-route.");
+    process.exit(1);
+  }
+  if (startStateFile) {
+    const loaded = loadStartState(project, startStateFile, { rank: "chaos" });
+    initialState = loaded.state;
+    startSource = `state:${loaded.file}`;
+  } else if (startRoute) {
     initialState = replayRouteFile(simulator, startRoute);
+    startSource = `route:${startRoute}`;
   } else if (args["from"]) {
     const reachResult = runMilestoneGraph(
       simulator,
@@ -643,6 +660,7 @@ function main() {
       process.exit(1);
     }
     initialState = reachResult.finalCandidate.state;
+    startSource = `milestone:${args["from"]}`;
   } else {
     initialState = simulator.createInitialState({ rank: "chaos" });
   }
@@ -713,7 +731,10 @@ function main() {
       `  (planner will continue past targetFloorId until special targets appear)`,
     );
   console.log(
-    `Start state floor: ${initialState.floorId}, HP: ${(initialState.hero || {}).hp}\n`,
+    `Start source: ${startSource}`,
+  );
+  console.log(
+    `Start state: ${summarizeStartState(initialState)}\n`,
   );
 
   // --- Run progressive planner ---
@@ -733,6 +754,7 @@ function main() {
     mobilityDiscoveryMode: args["mobility-discovery-mode"] || "legacy",
     targetCacheMode: args["target-cache-mode"] || "mutation",
     targetScope: args["target-scope"] || "current-reachable",
+    archiveKeyMode: args["planner-archive-key-mode"] || "state",
     maxMobilitySuccessorsPerState: optionalNumber(
       args["planner-mobility-successors"],
     ),
@@ -780,7 +802,21 @@ function main() {
           " targetChecks=" +
           (perf.currentBattleTargetChecks || 0) +
           " evalCalls=" +
-          (perf.currentBattleEvaluateCalls || 0),
+          (perf.currentBattleEvaluateCalls || 0) +
+          " reachMs=" +
+          (perf.currentReachabilityMs || 0) +
+          " battleApplyMs=" +
+          (perf.currentBattleApplyMs || 0),
+      );
+      console.log(
+        "  current-reachable-mobility: checks=" +
+          (perf.currentReachableMobilityChecks || 0) +
+          " applyCalls=" +
+          (perf.currentReachableMobilityApplyCalls || 0) +
+          " applyMs=" +
+          (perf.currentReachableMobilityApplyMs || 0) +
+          " targets=" +
+          (perf.currentReachableMobilityTargets || 0),
       );
       console.log(
         "  current-reachable-cache: hits=" +
@@ -789,6 +825,14 @@ function main() {
           (perf.currentTargetCacheMisses || 0) +
           " floorScans=" +
           (perf.currentFloorTargetScans || 0),
+      );
+      console.log(
+        "  archive-perf: acceptCalls=" +
+          (perf.archiveAcceptCalls || 0) +
+          " keyMs=" +
+          (perf.archiveKeyMs || 0) +
+          " selectMs=" +
+          (perf.archiveSelectMs || 0),
       );
     }
     console.log(

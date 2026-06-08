@@ -873,6 +873,66 @@ function checkPortalDedupSafety() {
   };
 }
 
+function checkMobilityTargetFloorFilter() {
+  const base = makeSyntheticSimulator();
+  const state = makeInitialState();
+  const applied = [];
+  const simulator = {
+    ...base,
+    enumeratePrimitiveActions() {
+      return {
+        actions: [
+          {
+            kind: "changeFloor",
+            floorId: "SYN",
+            stance: { x: 0, y: 0 },
+            x: 1,
+            y: 0,
+            changeFloor: { floorId: "T1" },
+            summary: "changeFloor@SYN:1,0",
+          },
+          {
+            kind: "changeFloor",
+            floorId: "SYN",
+            stance: { x: 0, y: 0 },
+            x: 2,
+            y: 0,
+            changeFloor: { floorId: "T2" },
+            summary: "changeFloor@SYN:2,0",
+          },
+        ],
+      };
+    },
+    enumerateFloorFlyActions() {
+      return [
+        { kind: "floorFly", targetFloorId: "T2", summary: "floorFly:T2" },
+      ];
+    },
+    applyAction(current, action) {
+      applied.push(action.summary);
+      const next = clone(current);
+      next.floorId = action.changeFloor
+        ? action.changeFloor.floorId
+        : action.targetFloorId;
+      next.route = (next.route || []).concat(action.summary);
+      return next;
+    },
+  };
+  const result = currentReachable.enumerateMobilitySuccessors(
+    simulator,
+    state,
+    { targetFloorId: "T1", onlyTargetFloor: true },
+  );
+  assert.deepEqual(
+    applied,
+    ["changeFloor@SYN:1,0"],
+    "target-floor mobility should not apply unrelated mobility actions",
+  );
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0].postState.floorId, "T1");
+  return { applied, results: result.results.length };
+}
+
 function checkCurrentReachableTargetCache() {
   currentReachable.__testHooks.clearTargetCache();
   const simulator = makeSyntheticSimulator();
@@ -1150,6 +1210,7 @@ function main() {
   const currentCapAfterReachability = checkCurrentReachableCapAfterReachability();
   const currentCacheOff = checkCurrentReachableTargetCacheOff();
   const mobilityLimitZero = checkMobilityLimitAllowsZero();
+  const mobilityTargetFloorFilter = checkMobilityTargetFloorFilter();
   const resourceIntentBridge = checkResourceIntentBridge();
   const validationDoctor = checkValidationDoctorLine();
   console.log(
@@ -1169,6 +1230,7 @@ function main() {
         currentCapAfterReachability,
         currentCacheOff,
         mobilityLimitZero,
+        mobilityTargetFloorFilter,
         resourceIntentBridge,
         validationDoctor,
       },

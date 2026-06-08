@@ -264,6 +264,43 @@ function renderHtml(timeline, options) {
       vertical-align: top;
     }
     .diffTable th { color: var(--muted); font-weight: 600; }
+    .candidateSummary {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid #394653;
+      border-radius: 999px;
+      background: #151a1f;
+      color: #dbe5ed;
+      padding: 2px 7px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .candidateTable {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    .candidateTable th, .candidateTable td {
+      border-bottom: 1px solid #2c3540;
+      padding: 4px 5px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .candidateTable th { color: var(--muted); font-weight: 600; }
+    .candidateTable .planned { background: rgba(215, 169, 40, .16); }
+    .candidateTable .bad { color: #ff8d8d; }
+    .candidateTable .summaryCell {
+      max-width: 170px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .deltaPos { color: #74d39b; }
     .deltaNeg { color: #f08b8b; }
     pre {
@@ -328,6 +365,10 @@ function renderHtml(timeline, options) {
       <section class="panel">
         <h2>Step Diff</h2>
         <div id="diff" class="panelBody"></div>
+      </section>
+      <section class="panel">
+        <h2>候选动作</h2>
+        <div id="candidates" class="panelBody"></div>
       </section>
       <aside class="panel">
         <h2>Route Actions</h2>
@@ -548,6 +589,50 @@ function renderHtml(timeline, options) {
       document.getElementById("diff").innerHTML = '<table class="diffTable"><thead><tr><th>Category</th><th>Key</th><th>Before</th><th>After</th><th>Delta</th></tr></thead><tbody>' + renderDiffRows(rows) + '</tbody></table>';
     }
 
+    function renderCandidates(step) {
+      const inspector = step.actionInspector || null;
+      const target = document.getElementById("candidates");
+      if (!inspector) {
+        target.innerHTML = '<p class="muted">Action inspector disabled.</p>';
+        return;
+      }
+      const categories = inspector.categories || {};
+      const categoryHtml = Object.keys(categories).sort().map((key) =>
+        '<span class="pill">' + esc(key) + ': ' + esc(categories[key]) + '</span>'
+      ).join("");
+      const summary = '<div class="candidateSummary">' +
+        '<span class="pill">shown ' + esc(inspector.shownActions) + ' / ' + esc(inspector.totalActions) + '</span>' +
+        (inspector.truncated ? '<span class="pill">truncated</span>' : '') +
+        (inspector.plannedNextSummary ? '<span class="pill">next: ' + esc(inspector.plannedNextSummary) + '</span>' : '') +
+        categoryHtml +
+        '</div>';
+      if (inspector.error || inspector.unavailable) {
+        target.innerHTML = summary + '<p class="muted">' + esc(inspector.error || inspector.unavailable) + '</p>';
+        return;
+      }
+      const rows = (inspector.candidates || []).map((candidate) => {
+        const flags = [
+          candidate.plannedNext ? "next" : "",
+          candidate.lethal ? "lethal" : "",
+          candidate.supported === false ? "unsupported" : "",
+        ].filter(Boolean).join(",");
+        const damageClass = candidate.lethal || candidate.supported === false ? "bad" : "";
+        const tile = candidate.tile
+          ? (candidate.tile.name || candidate.tile.id || "")
+          : "";
+        return '<tr class="' + (candidate.plannedNext ? "planned" : "") + '">' +
+          '<td>#' + esc(candidate.index) + '</td>' +
+          '<td>' + esc(candidate.kind) + '</td>' +
+          '<td>' + esc(candidate.category) + '</td>' +
+          '<td title="' + esc(candidate.targetLabel) + '">' + esc(tile || candidate.targetLabel) + '</td>' +
+          '<td class="' + damageClass + '">' + esc(candidate.damage == null ? "" : candidate.damage) + '</td>' +
+          '<td>' + esc(flags) + '</td>' +
+          '<td class="summaryCell" title="' + esc(candidate.summary) + '">' + esc(candidate.summary) + '</td>' +
+        '</tr>';
+      }).join("");
+      target.innerHTML = summary + '<table class="candidateTable"><thead><tr><th>#</th><th>Kind</th><th>Cat</th><th>Target</th><th>Dmg</th><th>Flags</th><th>Summary</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
     function renderRouteList(activeIndex) {
       routeList.innerHTML = steps.map((step, index) =>
         '<div class="routeRow ' + (index === activeIndex ? "active" : "") + '" data-step="' + index + '"><span class="muted">#' + index + '</span><code>' + esc(step.summary) + '</code></div>'
@@ -568,6 +653,7 @@ function renderHtml(timeline, options) {
       document.getElementById("flags").textContent = pretty(step.flagsSummary);
       document.getElementById("keys").textContent = "stateKey:\\n" + step.stateKey + "\\n\\ndominanceKey:\\n" + step.dominanceKey + "\\n\\nrouteTail:\\n" + pretty(step.routeTail);
       renderDiff(step);
+      renderCandidates(step);
       renderRouteList(bounded);
     }
 

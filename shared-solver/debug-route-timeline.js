@@ -55,6 +55,8 @@ function main() {
     routeFile,
     snapshotFloorIds: floorIds.length > 0 ? floorIds : undefined,
     battleOverlay: args["battle-overlay"] || "visible",
+    actionInspector: args["action-inspector"] || "visible",
+    candidateLimit: args["candidate-limit"],
     stopOnError: args["stop-on-error"] !== "0",
     includeStack: args["include-stack"] === "1",
   });

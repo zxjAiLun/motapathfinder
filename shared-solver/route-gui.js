@@ -8,7 +8,11 @@ const { spawn } = require("child_process");
 const { URL } = require("url");
 
 const { readRouteFile } = require("./lib/route-store");
-const { buildRouteSummary, buildStepDetail } = require("./lib/route-inspector");
+const {
+  buildRouteSummary,
+  buildStepDetail,
+  findDivergence,
+} = require("./lib/route-inspector");
 const { ReplaySession } = require("./lib/replay-session");
 const { loadProject } = require("./lib/project-loader");
 const { parseKeyValueArgs, resolveProjectRoot } = require("./lib/cli-options");
@@ -23,8 +27,10 @@ const MIME_TYPES = {
 
 function parseBoolean(value, fallback) {
   if (value == null) return fallback;
-  if (value === true || value === "1" || value === "true" || value === "on") return true;
-  if (value === false || value === "0" || value === "false" || value === "off") return false;
+  if (value === true || value === "1" || value === "true" || value === "on")
+    return true;
+  if (value === false || value === "0" || value === "false" || value === "off")
+    return false;
   return fallback;
 }
 
@@ -46,7 +52,9 @@ function resolveRouteFile(inputPath, projectRoot) {
 }
 
 function sendJson(response, statusCode, payload) {
-  response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
+  response.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+  });
   response.end(JSON.stringify(payload, null, 2));
 }
 
@@ -63,7 +71,8 @@ function readJsonBody(request) {
     let body = "";
     request.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 1024 * 1024) reject(new Error("Request body too large."));
+      if (body.length > 1024 * 1024)
+        reject(new Error("Request body too large."));
     });
     request.on("end", () => {
       if (!body.trim()) {
@@ -82,7 +91,8 @@ function readJsonBody(request) {
 }
 
 function serveStatic(requestPath, response) {
-  const relative = requestPath === "/" ? "index.html" : requestPath.replace(/^\/gui\//, "");
+  const relative =
+    requestPath === "/" ? "index.html" : requestPath.replace(/^\/gui\//, "");
   const normalized = path.normalize(relative).replace(/^([.][.][\/\\])+/, "");
   const filePath = path.resolve(GUI_DIR, normalized);
   if (!filePath.startsWith(GUI_DIR + path.sep) && filePath !== GUI_DIR) {
@@ -96,7 +106,11 @@ function serveStatic(requestPath, response) {
       response.end(error.code === "ENOENT" ? "Not Found" : "Server Error");
       return;
     }
-    response.writeHead(200, { "Content-Type": MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream" });
+    response.writeHead(200, {
+      "Content-Type":
+        MIME_TYPES[path.extname(filePath).toLowerCase()] ||
+        "application/octet-stream",
+    });
     response.end(content);
   });
 }
@@ -119,24 +133,65 @@ function openBrowser(url) {
   child.unref();
 }
 
-function createGuiServer({ routeRecord, routeFile, session, project, debug }) {
+function createGuiServer({
+  routeRecord,
+  routeFile,
+  session,
+  project,
+  debug,
+  baselineRecord,
+  baselineFile,
+}) {
   const routeSummary = buildRouteSummary(routeRecord, routeFile, project);
+  const baselineSummary = baselineRecord
+    ? buildRouteSummary(baselineRecord, baselineFile, project)
+    : null;
+  const divergence =
+    baselineSummary && routeSummary
+      ? findDivergence(routeRecord, baselineRecord)
+      : null;
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url || "/", "http://127.0.0.1");
     try {
-      if (request.method === "GET" && (url.pathname === "/" || url.pathname.startsWith("/gui/"))) {
+      if (
+        request.method === "GET" &&
+        (url.pathname === "/" || url.pathname.startsWith("/gui/"))
+      ) {
         serveStatic(url.pathname, response);
         return;
       }
 
       if (request.method === "GET" && url.pathname === "/api/route") {
-        sendJson(response, 200, routeSummary);
+        sendJson(response, 200, {
+          ...routeSummary,
+          baseline: baselineSummary
+            ? {
+                divergence: divergence || { identical: true },
+                summary: baselineSummary,
+              }
+            : null,
+        });
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/route/compare") {
+        sendJson(response, 200, {
+          ok: true,
+          baselineFile: baselineFile || null,
+          divergence: divergence || { identical: true },
+          solverSummary: routeSummary,
+          baselineSummary,
+        });
         return;
       }
 
       const stepMatch = url.pathname.match(/^\/api\/route\/step\/(\d+)$/);
       if (request.method === "GET" && stepMatch) {
-        sendJson(response, 200, buildStepDetail(routeRecord, Number(stepMatch[1]), project));
+        sendJson(
+          response,
+          200,
+          buildStepDetail(routeRecord, Number(stepMatch[1]), project),
+        );
         return;
       }
 
@@ -145,10 +200,20 @@ function createGuiServer({ routeRecord, routeFile, session, project, debug }) {
         return;
       }
 
-      if (request.method === "POST" && url.pathname.startsWith("/api/session/")) {
+      if (
+        request.method === "POST" &&
+        url.pathname.startsWith("/api/session/")
+      ) {
         const body = await readJsonBody(request);
         if (url.pathname === "/api/session/start") {
-          sendJson(response, 200, await session.start({ fromStep: body.fromStep, liveOptions: body.liveOptions || {} }));
+          sendJson(
+            response,
+            200,
+            await session.start({
+              fromStep: body.fromStep,
+              liveOptions: body.liveOptions || {},
+            }),
+          );
           return;
         }
         if (url.pathname === "/api/session/play") {
@@ -161,7 +226,11 @@ function createGuiServer({ routeRecord, routeFile, session, project, debug }) {
           return;
         }
         if (url.pathname === "/api/session/step") {
-          sendJson(response, 200, await session.step({ stepDelayMs: body.stepDelayMs }));
+          sendJson(
+            response,
+            200,
+            await session.step({ stepDelayMs: body.stepDelayMs }),
+          );
           return;
         }
         if (url.pathname === "/api/session/restart") {
@@ -209,6 +278,10 @@ async function main() {
   const port = parseNumber(args.port, 0);
   const open = parseBoolean(args.open, true);
   const fromStep = parseNumber(args["from-step"], 1);
+  const baselineFile = args["baseline-route"]
+    ? resolveRouteFile(args["baseline-route"], projectRoot)
+    : null;
+  const baselineRecord = baselineFile ? readRouteFile(baselineFile) : null;
   const liveOptions = {
     browser: args.browser,
     headless: args.headless != null ? args.headless : "0",
@@ -224,7 +297,15 @@ async function main() {
     projectRoot,
     liveOptions,
   });
-  const server = createGuiServer({ routeRecord, routeFile, session, project, debug: parseBoolean(args.debug, false) });
+  const server = createGuiServer({
+    routeRecord,
+    routeFile,
+    session,
+    project,
+    debug: parseBoolean(args.debug, false),
+    baselineRecord,
+    baselineFile,
+  });
   const address = await listen(server, host, port);
   const guiUrl = `http://${host}:${address.port}/`;
   console.log(`Route GUI: ${guiUrl}`);

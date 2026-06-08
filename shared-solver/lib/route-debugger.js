@@ -407,6 +407,114 @@ function buildBattleOverlay(project, simulator, state, options) {
   };
 }
 
+function candidateKind(action) {
+  const kind = action && action.kind ? String(action.kind) : "unknown";
+  if (kind === "battle") return "battle";
+  if (kind === "changeFloor" || kind === "floorFly" || kind === "portal") return "mobility";
+  if (kind === "pickup" || kind === "interactPickup") return "resource";
+  if (kind === "openDoor" || kind === "useTool" || kind === "event") return "interaction";
+  if (kind === "equip") return "equipment";
+  return kind;
+}
+
+function tileLabelAt(project, state, target) {
+  if (!target || target.x == null || target.y == null) return null;
+  const floorId = target.floorId || state.floorId;
+  const tile = getTileDefinitionAt(project, state, floorId, target.x, target.y);
+  if (!tile) return null;
+  const item = tile.cls === "items" ? (project.itemsById || {})[tile.id] : null;
+  const enemy = isEnemyTile(tile) ? (project.enemysById || {})[tile.id] : null;
+  return {
+    id: tile.id || null,
+    cls: tile.cls || null,
+    name: tile.name || (item && item.name) || (enemy && enemy.name) || null,
+  };
+}
+
+function summarizeCandidate(project, state, action, index, plannedKey, battleOverlay) {
+  const normalized = normalizeReplayAction(action);
+  const target = actionTarget(normalized);
+  const key = actionFingerprint(normalized);
+  const targetKey = target && (target.floorId || state.floorId) === state.floorId
+    ? `${target.x},${target.y}`
+    : null;
+  const battle = targetKey && battleOverlay && battleOverlay.enemies
+    ? battleOverlay.enemies[targetKey] || null
+    : null;
+  const tile = tileLabelAt(project, state, target);
+  return {
+    index,
+    kind: normalized.kind || "unknown",
+    category: candidateKind(normalized),
+    summary: normalized.summary || key || normalized.kind || "unknown",
+    fingerprint: key || null,
+    plannedNext: plannedKey ? key === plannedKey || normalized.summary === plannedKey : false,
+    target,
+    targetLabel: target ? `${target.floorId || state.floorId}:${target.x},${target.y}` : "",
+    tile,
+    enemyId: normalized.enemyId || (battle && battle.enemyId) || null,
+    itemId: normalized.itemId || null,
+    tool: normalized.tool || null,
+    equipId: normalized.equipId || null,
+    pathLength: Array.isArray(normalized.path) ? normalized.path.length : null,
+    damage: battle && battle.damage != null ? battle.damage : null,
+    lethal: battle ? Boolean(battle.lethal) : null,
+    supported: battle ? Boolean(battle.supported) : null,
+    reason: battle && battle.reason ? battle.reason : null,
+  };
+}
+
+function buildActionInspector(project, simulator, state, options, battleOverlay) {
+  const config = options || {};
+  const mode = String(config.actionInspector || "visible");
+  if (mode === "off" || mode === "0" || mode === "false") return null;
+  if (!simulator) {
+    return {
+      mode,
+      unavailable: "simulator is not available",
+      totalActions: 0,
+      shownActions: 0,
+      truncated: false,
+      categories: {},
+      candidates: [],
+    };
+  }
+  const plannedNextAction = config.plannedNextAction || null;
+  const plannedKey = plannedNextAction
+    ? actionFingerprint(normalizeReplayAction(plannedNextAction)) || plannedNextAction.summary || null
+    : null;
+  let actions = [];
+  let error = null;
+  try {
+    actions = listReplayCandidates(simulator, state);
+  } catch (caught) {
+    error = caught && caught.message ? caught.message : String(caught);
+  }
+  const candidateLimit = config.candidateLimit != null
+    ? config.candidateLimit
+    : config.actionCandidateLimit != null
+      ? config.actionCandidateLimit
+      : 80;
+  const limit = Math.max(0, Number(candidateLimit));
+  const candidates = actions
+    .slice(0, limit || actions.length)
+    .map((action, index) => summarizeCandidate(project, state, action, index, plannedKey, battleOverlay));
+  const categories = candidates.reduce((counts, candidate) => {
+    counts[candidate.category] = Number(counts[candidate.category] || 0) + 1;
+    return counts;
+  }, {});
+  return {
+    mode,
+    totalActions: actions.length,
+    shownActions: candidates.length,
+    truncated: limit > 0 && actions.length > limit,
+    plannedNextSummary: plannedNextAction ? plannedNextAction.summary || plannedKey : null,
+    categories,
+    candidates,
+    error,
+  };
+}
+
 function buildTimelineStep(project, state, options) {
   const config = options || {};
   const snapshot = buildSolverSnapshot(project, state, {
@@ -414,6 +522,7 @@ function buildTimelineStep(project, state, options) {
   });
   const floorId = state.floorId;
   const hero = compactHero(state.hero);
+  const battleOverlay = buildBattleOverlay(project, config.simulator, state, config);
   return {
     index: config.index,
     summary: config.summary,
@@ -429,7 +538,8 @@ function buildTimelineStep(project, state, options) {
     currentFloorMutation: snapshotFloorMutation(snapshot, floorId),
     mutations: floorMutationsSummary(state),
     snapshot,
-    battleOverlay: buildBattleOverlay(project, config.simulator, state, config),
+    battleOverlay,
+    actionInspector: buildActionInspector(project, config.simulator, state, config, battleOverlay),
     target: actionTarget(config.action),
     delta: config.delta || null,
     error: config.error || null,
@@ -540,6 +650,7 @@ function buildRouteTimeline(project, simulator, routeRecord, options) {
   const config = options || {};
   const floorIds = config.snapshotFloorIds || snapshotFloorIds(project, routeRecord);
   const steps = [];
+  const decisions = routeRecord.decisions || [];
   let state = initialStateForRoute(project, simulator, routeRecord, config);
   const startedAt = Date.now();
   steps.push(buildTimelineStep(project, state, {
@@ -547,11 +658,13 @@ function buildRouteTimeline(project, simulator, routeRecord, options) {
     summary: "start",
     simulator,
     battleOverlay: config.battleOverlay,
+    actionInspector: config.actionInspector,
+    candidateLimit: config.candidateLimit,
+    plannedNextAction: decisions[0] ? normalizeReplayAction(decisions[0]) : null,
     snapshotFloorIds: floorIds,
     routeTailLimit: config.routeTailLimit,
   }));
 
-  const decisions = routeRecord.decisions || [];
   for (const decision of decisions) {
     const index = steps.length;
     const action = selectReplayAction(simulator, state, decision);
@@ -567,6 +680,9 @@ function buildRouteTimeline(project, simulator, routeRecord, options) {
         delta: buildStepDelta(preSnapshot, postSnapshot),
         simulator,
         battleOverlay: config.battleOverlay,
+        actionInspector: config.actionInspector,
+        candidateLimit: config.candidateLimit,
+        plannedNextAction: decisions[index] ? normalizeReplayAction(decisions[index]) : null,
         snapshotFloorIds: floorIds,
         routeTailLimit: config.routeTailLimit,
       }));
@@ -578,6 +694,9 @@ function buildRouteTimeline(project, simulator, routeRecord, options) {
         delta: null,
         simulator,
         battleOverlay: config.battleOverlay,
+        actionInspector: config.actionInspector,
+        candidateLimit: config.candidateLimit,
+        plannedNextAction: displayAction,
         error: {
           message: error && error.message ? error.message : String(error),
           stack: config.includeStack ? String(error && error.stack ? error.stack : "") : null,
