@@ -33,10 +33,13 @@ function main() {
       "",
       "Options:",
       "  --project-root=<dir>       tower project root (default Only upV2.1/Only upV2.1)",
-      "  --max-runtime-ms=<n>       per-repair milestone DP budget (default 6000)",
-      "  --max-expansions=<n>       per-repair milestone DP expansion cap (default 3000)",
+      "  --max-runtime-ms=<n>       per-round milestone DP budget (default 1500)",
+      "  --max-expansions=<n>       per-round milestone DP expansion cap (default 800)",
+      "  --max-depth=<n>            recursion depth for sequential blocker clearing (default 3)",
+      "  --blocker-radius=<n>       radius used to discover blockers around the cheaper target (default 4)",
       "  --max-blockers-per-step=<n> cap blocker candidates considered per step (default 1)",
-      "  --out=<file>               write repaired route.json",
+      "  --out=<file>               write repair report",
+      "  --out-route=<file>         write re-priced route.json (only when repairedCount > 0)",
     ].join("\n"));
     return;
   }
@@ -72,9 +75,12 @@ function main() {
       cheaper,
     });
   }
+  const maxDepth = parseOptionalNumber(args["max-depth"]) || 3;
   const result = tryRepairRoute(simulator, project, route, timeline, repairEntries, {
-    maxExpansions: parseOptionalNumber(args["max-expansions"]) || 3000,
-    maxRuntimeMs: parseOptionalNumber(args["max-runtime-ms"]) || 6000,
+    maxExpansions: parseOptionalNumber(args["max-expansions"]) || 800,
+    maxRuntimeMs: parseOptionalNumber(args["max-runtime-ms"]) || 1500,
+    maxDepth,
+    blockerRadius: parseOptionalNumber(args["blocker-radius"]) || 4,
   });
   let repairedRoute = route;
   for (const repair of result.repairedSteps) {

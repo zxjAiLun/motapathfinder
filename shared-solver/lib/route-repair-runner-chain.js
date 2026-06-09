@@ -26,9 +26,28 @@ function runRepairMilestoneChain(simulator, startState, milestones, options) {
     }
     const dpDiag = (result && result.diagnostics && result.diagnostics.dp) || {};
     totalExpansions += Number(dpDiag.expansions || 0);
-    const finalState = (result && result.goalSkyline && result.goalSkyline[0])
+    let finalState = (result && result.goalSkyline && result.goalSkyline[0])
       || (result && result.bestSeen)
       || null;
+    const expanded = Number(dpDiag.expansions || 0) > 0;
+    if (finalState && !expanded) {
+      // start-survivable: chain did not actually mutate state. Try to apply
+      // the goal actionSurvivable summary directly so the post-state reflects
+      // the blocker being cleared.
+      const goalSummary = milestone && milestone.goal && milestone.goal.actionSurvivable && milestone.goal.actionSurvivable.summary;
+      if (goalSummary) {
+        try {
+          const primitive = simulator.enumeratePrimitiveActions(state);
+          const candidate = (primitive.actions || []).find((a) => a && a.summary === goalSummary);
+          if (candidate) {
+            finalState = simulator.applyAction(state, candidate, { storeRoute: false });
+            totalExpansions += 1;
+          }
+        } catch (error) {
+          /* fall through */
+        }
+      }
+    }
     if (!finalState) {
       history.push({
         milestoneId: milestone.id,

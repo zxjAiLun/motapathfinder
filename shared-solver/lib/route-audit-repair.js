@@ -146,7 +146,7 @@ function buildBlockerRepairMilestone(simulator, intent, blocker, finding, option
     },
     dp: {
       keyMode: "region",
-      stopOnFirstGoal: true,
+      stopOnFirstGoal: false,
       goalSkylineLimit: 8,
       dpSkylineMax: 1,
       maxExpansions: 4000,

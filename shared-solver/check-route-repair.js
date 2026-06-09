@@ -141,8 +141,9 @@ function checkTryRepairRouteClassification() {
     });
   }
   const result = tryRepairRoute(simulator, project, route, timeline, entries, {
-    maxExpansions: 1500,
-    maxRuntimeMs: 3000,
+    maxExpansions: 600,
+    maxRuntimeMs: 1500,
+    maxDepth: 2,
   });
   assert.ok(result.results.length > 0, "tryRepairRoute should return at least one attempt");
   const allowed = new Set([
@@ -155,6 +156,12 @@ function checkTryRepairRouteClassification() {
   ]);
   for (const attempt of result.results) {
     assert.ok(allowed.has(attempt.status), `unexpected status: ${attempt.status}`);
+    assert.ok(Array.isArray(attempt.rounds), "recursive attempts should expose rounds");
+    for (const round of attempt.rounds) {
+      assert.ok(typeof round.roundIndex === "number", "round should expose roundIndex");
+      assert.ok(typeof round.reachable === "boolean", "round should expose reachable");
+      assert.ok(typeof round.finalHp === "number", "round should expose finalHp");
+    }
   }
   return {
     attemptCount: result.results.length,
@@ -162,6 +169,7 @@ function checkTryRepairRouteClassification() {
       acc[r.status] = (acc[r.status] || 0) + 1;
       return acc;
     }, {}),
+    totalRounds: result.results.reduce((sum, r) => sum + (r.rounds ? r.rounds.length : 0), 0),
   };
 }
 
