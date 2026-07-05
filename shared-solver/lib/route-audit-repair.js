@@ -92,7 +92,7 @@ function synthesizeFailureForBlocker(blocker, finding) {
         actual: "door-blocker",
       };
   return {
-    failureClass: blocker.kind === "enemy" ? "target-action-unreachable" : "target-tile-not-cleared",
+    failureClass: blocker.kind === "enemy" ? "hp-deficit" : "target-tile-not-cleared",
     missingGoalFields: [reasonField],
     targetBlocker: blocker,
     cheaper: finding && finding.cheaper,

@@ -9,6 +9,7 @@ const { StaticSimulator } = require("./lib/simulator");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { planBlockerRepairs, summarizePlan } = require("./lib/route-audit-repair");
 const { tryRepairRoute, replaceStepSummary } = require("./lib/route-repair-runner");
+const { runIterativeRouteRepair } = require("./lib/iterative-route-repair");
 const { parseKeyValueArgs } = require("./lib/cli-options");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(
@@ -24,15 +25,27 @@ function parseOptionalNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function writeJson(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
 function main() {
   const args = parseKeyValueArgs(process.argv.slice(2));
-  if (args.help || args.h || !args["audit"] || !args["timeline"] || !args["route"]) {
+  const mode = args.mode || "sequential";
+  const missingRequired = !args.route || (mode === "independent" && (!args.audit || !args.timeline));
+  if (args.help || args.h || missingRequired) {
     console.log([
       "Usage:",
-      "  node shared-solver/route-repair.js --route=<file> --timeline=<file> --audit=<file> [--out=<file>]",
+      "  node shared-solver/route-repair.js --route=<file> [--out=<file>] [--out-route=<file>]",
+      "  node shared-solver/route-repair.js --mode=independent --route=<file> --timeline=<file> --audit=<file>",
       "",
       "Options:",
       "  --project-root=<dir>       tower project root (default Only upV2.1/Only upV2.1)",
+      "  --mode=<name>              sequential (default) or independent",
+      "  --max-repairs=<n>          accepted sequential repairs (default 20)",
+      "  --min-damage-delta=<n>     audit threshold for sequential mode (default 1000)",
+      "  --min-savings-ratio=<n>    audit savings ratio for sequential mode (default 0.15)",
       "  --max-runtime-ms=<n>       per-round milestone DP budget (default 1500)",
       "  --max-expansions=<n>       per-round milestone DP expansion cap (default 800)",
       "  --max-depth=<n>            recursion depth for sequential blocker clearing (default 3)",
@@ -44,16 +57,56 @@ function main() {
     return;
   }
   const routeFile = path.resolve(args.route);
-  const timelineFile = path.resolve(args.timeline);
-  const auditFile = path.resolve(args.audit);
   const projectRoot = path.resolve(args["project-root"] || DEFAULT_PROJECT_ROOT);
   const route = readRouteFile(routeFile);
-  const timeline = JSON.parse(fs.readFileSync(timelineFile, "utf8"));
-  const audit = JSON.parse(fs.readFileSync(auditFile, "utf8"));
   const project = loadProject(projectRoot);
   const simulator = new StaticSimulator(project, {
     battleResolver: new FunctionBackedBattleResolver(project),
   });
+  if (mode !== "independent") {
+    const iterative = runIterativeRouteRepair(project, simulator, route, {
+      projectRoot,
+      maxRepairs: parseOptionalNumber(args["max-repairs"]) || 20,
+      maxExpansions: parseOptionalNumber(args["max-expansions"]) || 800,
+      maxRuntimeMs: parseOptionalNumber(args["max-runtime-ms"]) || 1500,
+      maxDepth: parseOptionalNumber(args["max-depth"]) || 3,
+      blockerRadius: parseOptionalNumber(args["blocker-radius"]) || 4,
+      minDamageDelta: parseOptionalNumber(args["min-damage-delta"]) || 1000,
+      minSavingsRatio: parseOptionalNumber(args["min-savings-ratio"]) || 0.15,
+      candidateLimit: parseOptionalNumber(args["candidate-limit"]) || 200,
+    });
+    const summary = {
+      kind: "iterative-route-repair",
+      mode: "sequential",
+      route: routeFile,
+      projectRoot,
+      iterations: iterative.iterations,
+      acceptedCount: iterative.acceptedCount,
+      baselineFinalHp: iterative.initialFinalHp,
+      candidateFinalHp: iterative.finalFinalHp,
+      finalRouteVerified: iterative.finalRouteVerified,
+      replayFailure: iterative.replayFailure,
+      stoppedReason: iterative.stoppedReason,
+    };
+    if (args.out) {
+      const outFile = path.resolve(args.out);
+      writeJson(outFile, summary);
+      console.log(`Repair report written: ${outFile}`);
+    } else {
+      console.log(JSON.stringify(summary, null, 2));
+    }
+    if (args["out-route"] && iterative.acceptedCount > 0 && iterative.finalRouteVerified) {
+      const outRouteFile = path.resolve(args["out-route"]);
+      fs.mkdirSync(path.dirname(outRouteFile), { recursive: true });
+      writeRouteFile(outRouteFile, iterative.route);
+      console.log(`Repaired route written: ${outRouteFile}`);
+    }
+    return;
+  }
+  const timelineFile = path.resolve(args.timeline);
+  const auditFile = path.resolve(args.audit);
+  const timeline = JSON.parse(fs.readFileSync(timelineFile, "utf8"));
+  const audit = JSON.parse(fs.readFileSync(auditFile, "utf8"));
   const repairs = planBlockerRepairs(simulator, project, timeline, audit, {
     maxIntents: parseOptionalNumber(args["max-intents"]) || 1,
   });
@@ -101,15 +154,16 @@ function main() {
       return acc;
     }, {}),
   };
-  const json = JSON.stringify(summary, null, 2);
   if (args.out) {
-    fs.writeFileSync(path.resolve(args.out), `${json}\n`);
-    console.log(`Repair report written: ${path.resolve(args.out)}`);
+    const outFile = path.resolve(args.out);
+    writeJson(outFile, summary);
+    console.log(`Repair report written: ${outFile}`);
   } else {
-    console.log(json);
+    console.log(JSON.stringify(summary, null, 2));
   }
   if (args["out-route"] && result.repairedSteps.length > 0) {
     const outRouteFile = path.resolve(args["out-route"]);
+    fs.mkdirSync(path.dirname(outRouteFile), { recursive: true });
     writeRouteFile(outRouteFile, repairedRoute);
     console.log(`Repaired route written: ${outRouteFile}`);
   }

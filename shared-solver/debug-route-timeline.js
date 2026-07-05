@@ -25,6 +25,55 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function attachRepairReport(timeline, report) {
+  if (!report) return timeline;
+  const summary = {
+    acceptedCount: Number(report.acceptedCount || 0),
+    baselineFinalHp: report.baselineFinalHp,
+    finalFinalHp: report.candidateFinalHp,
+    finalRouteVerified: Boolean(report.finalRouteVerified),
+    stoppedReason: report.stoppedReason || null,
+  };
+  const attempts = [];
+  for (const iteration of report.iterations || []) {
+    for (const attempt of iteration.candidateAttempts || []) {
+      const annotation = {
+        iterationIndex: iteration.iterationIndex,
+        sourceStepIndex: attempt.sourceStepIndex,
+        originalSummary: attempt.originalSummary,
+        cheaperSummary: attempt.patch && attempt.patch.cheaperSummary,
+        patchActions: attempt.patch ? (attempt.patch.actions || []).map((action) => action.summary) : [],
+        accepted: Boolean(attempt.accepted),
+        rejectedReason: attempt.rejectedReason || null,
+        baselineFinalHp: iteration.baselineFinalHp,
+        candidateFinalHp: attempt.candidateFinalHp,
+        replayFailure: attempt.replayFailure || null,
+        outputStartStep: attempt.outputStartStep || null,
+        outputActionCount: attempt.outputActionCount || 0,
+      };
+      attempts.push(annotation);
+      const stepIndex = annotation.accepted && annotation.outputStartStep
+        ? annotation.outputStartStep
+        : annotation.sourceStepIndex;
+      const step = timeline.steps && timeline.steps[stepIndex];
+      if (step) {
+        if (!Array.isArray(step.repairAnnotations)) step.repairAnnotations = [];
+        step.repairAnnotations.push(annotation);
+      }
+      if (annotation.accepted && annotation.outputStartStep && annotation.outputActionCount > 1) {
+        for (let offset = 1; offset < annotation.outputActionCount; offset += 1) {
+          const patchStep = timeline.steps && timeline.steps[annotation.outputStartStep + offset];
+          if (!patchStep) continue;
+          if (!Array.isArray(patchStep.repairAnnotations)) patchStep.repairAnnotations = [];
+          patchStep.repairAnnotations.push({ ...annotation, patchActionOffset: offset });
+        }
+      }
+    }
+  }
+  timeline.repair = { summary, attempts };
+  return timeline;
+}
+
 function makeSimulator(project) {
   return new StaticSimulator(project, {
     stopFloorId: null,
@@ -61,6 +110,10 @@ function main() {
     stopOnError: args["stop-on-error"] !== "0",
     includeStack: args["include-stack"] === "1",
   });
+  if (args["repair-report"]) {
+    const repairReport = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), args["repair-report"]), "utf8"));
+    attachRepairReport(timeline, repairReport);
+  }
   writeJson(outFile, timeline);
   console.log(`Route timeline written: ${outFile}`);
   console.log(
@@ -78,5 +131,6 @@ if (require.main === module) {
 }
 
 module.exports = {
+  attachRepairReport,
   main,
 };

@@ -11,7 +11,14 @@ const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { buildRouteTimeline } = require("./lib/route-debugger");
 const { auditRouteForExpensivePicks } = require("./lib/route-audit");
 const { planBlockerRepairs, findBlockerCandidates } = require("./lib/route-audit-repair");
-const { tryRepairRoute, replayPreState, replaceStepSummary } = require("./lib/route-repair-runner");
+const {
+  buildCheaperCheck,
+  tryRepairRoute,
+  tryRepairRouteRecursive,
+  replayPreState,
+  replaceStepSummary,
+} = require("./lib/route-repair-runner");
+const { applyPatchAndReplay, runIterativeRouteRepair } = require("./lib/iterative-route-repair");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
 const ROUTE_FILE = path.resolve(__dirname, "routes", "fixtures", "mt1-mt2-hp3834.route.json");
@@ -157,6 +164,9 @@ function checkTryRepairRouteClassification() {
   for (const attempt of result.results) {
     assert.ok(allowed.has(attempt.status), `unexpected status: ${attempt.status}`);
     assert.ok(Array.isArray(attempt.rounds), "recursive attempts should expose rounds");
+    if (attempt.status === "repaired") {
+      assert.ok(attempt.patch && attempt.patch.actions.length > 0, "repaired attempt should expose an action patch");
+    }
     for (const round of attempt.rounds) {
       assert.ok(typeof round.roundIndex === "number", "round should expose roundIndex");
       assert.ok(typeof round.reachable === "boolean", "round should expose reachable");
@@ -173,12 +183,87 @@ function checkTryRepairRouteClassification() {
   };
 }
 
+function buildAuditContext() {
+  const timeline = makeTimeline();
+  const project = loadProject(PROJECT_ROOT);
+  const simulator = makeSimulator(project);
+  const route = readRouteFile(ROUTE_FILE);
+  const audit = auditRouteForExpensivePicks(simulator, project, timeline, {
+    minDamageDelta: 500,
+    minSavingsRatio: 0.2,
+    maxIntents: 1,
+  });
+  return { timeline, project, simulator, route, audit };
+}
+
+function checkBattleActionDefinesReachability() {
+  const { timeline, project, simulator, route, audit } = buildAuditContext();
+  const finding = (audit.findings || []).find((entry) => entry.cheaper && entry.cheaper[0]);
+  assert.ok(finding, "fixture should expose a cheaper battle finding");
+  const state = replayPreState(project, simulator, route, finding.stepIndex);
+  const summary = finding.cheaper[0].summary;
+  const check = buildCheaperCheck(simulator, state, summary);
+  assert.ok(check.action, "cheaper battle should be present in primitive actions");
+  assert.equal(check.reachable, true, "matching battle action should define reachability");
+  const walk = simulator.getWalkReachability(state);
+  const parsed = check.parsed;
+  assert.equal(Boolean(walk.visited && walk.visited[`${parsed.x},${parsed.y}`]), false, "enemy tile itself should not be walk visited");
+  return { stepIndex: finding.stepIndex, summary };
+}
+
+function checkSequentialPatchReplay() {
+  const { timeline, project, simulator, route, audit } = buildAuditContext();
+  const finding = (audit.findings || []).find((entry) => entry.stepIndex === 20)
+    || (audit.findings || [])[0];
+  assert.ok(finding, "fixture should expose a repair candidate");
+  const attempt = tryRepairRouteRecursive(simulator, project, route, timeline, {
+    stepIndex: finding.stepIndex,
+    cheaper: finding.cheaper,
+  }, { maxDepth: 2, maxExpansions: 600, maxRuntimeMs: 1500 });
+  assert.equal(attempt.status, "repaired", "candidate should be locally repairable");
+  const replay = applyPatchAndReplay(project, simulator, route, attempt.patch, { projectRoot: PROJECT_ROOT });
+  assert.equal(replay.ok, true, "reordered patch should fully replay");
+  const decision = replay.route.decisions[finding.stepIndex - 1];
+  assert.equal(decision.summary, attempt.patch.cheaperSummary, "rebuilt route should contain the cheaper action");
+  assert.ok(decision.fingerprint, "rebuilt decision should include fingerprint");
+  assert.ok(Array.isArray(decision.path), "rebuilt decision should include path");
+  assert.ok(decision.target && decision.target.x != null, "rebuilt decision should include target");
+  assert.ok(decision.enemyId, "rebuilt battle decision should include enemyId");
+  const summaries = replay.route.decisions.map((entry) => entry.summary);
+  assert.equal(summaries.filter((summary) => summary === attempt.patch.cheaperSummary).length, 1, "reorder should not duplicate the cheaper battle");
+  assert.ok(summaries.includes(attempt.patch.originalSummary), "reorder should preserve the original picked battle later");
+  return { stepIndex: finding.stepIndex, displaced: replay.displacedStepIndices };
+}
+
+function checkSequentialAcceptancePolicy() {
+  const { project, simulator, route } = buildAuditContext();
+  const before = JSON.stringify(route);
+  const result = runIterativeRouteRepair(project, simulator, route, {
+    projectRoot: PROJECT_ROOT,
+    maxRepairs: 1,
+    maxDepth: 2,
+    maxExpansions: 600,
+    maxRuntimeMs: 1500,
+    minDamageDelta: 500,
+    minSavingsRatio: 0.2,
+  });
+  assert.equal(result.finalRouteVerified, true, "baseline/final route should be replay verified");
+  assert.equal(result.acceptedCount, 0, "fixture candidates should not be accepted without final HP improvement");
+  assert.equal(JSON.stringify(route), before, "rejected attempts must not mutate the source route");
+  const reasons = result.iterations.flatMap((iteration) => iteration.candidateAttempts.map((attempt) => attempt.rejectedReason));
+  assert.ok(reasons.includes("final-hp-not-improved"), "full replay without HP improvement should be rejected");
+  return { acceptedCount: result.acceptedCount, stoppedReason: result.stoppedReason };
+}
+
 function main() {
   const blockers = checkFindBlockerCandidates();
   const plan = checkPlanBlockerRepairsEmitsMilestones();
   const replace = checkReplaceStepSummary();
   const classify = checkTryRepairRouteClassification();
-  console.log(JSON.stringify({ blockers, plan, replace, classify }, null, 2));
+  const battleReachability = checkBattleActionDefinesReachability();
+  const sequentialPatch = checkSequentialPatchReplay();
+  const sequentialPolicy = checkSequentialAcceptancePolicy();
+  console.log(JSON.stringify({ blockers, plan, replace, classify, battleReachability, sequentialPatch, sequentialPolicy }, null, 2));
 }
 
 if (require.main === module) {

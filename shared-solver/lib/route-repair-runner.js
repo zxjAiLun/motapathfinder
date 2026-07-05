@@ -1,13 +1,12 @@
 "use strict";
 
 const { searchSegmentDP } = require("./segment-dp");
-const { createStateFromSnapshot } = require("./route-store");
+const { createStateFromSnapshot, normalizeAction } = require("./route-store");
 const { parseBattleSummary } = require("./battle-thresholds");
 const { runRepairMilestoneChain } = require("./route-repair-runner-chain");
 const {
   findBlockerCandidates,
   buildBlockerRepairMilestone,
-  planBlockerRepairs,
 } = require("./route-audit-repair");
 const { scanResourceIntents } = require("./resource-intent-scanner");
 
@@ -97,20 +96,22 @@ function buildCheaperCheck(simulator, state, cheaperSummary) {
   if (!parsed) {
     return { reachable: false, action: null, parsed: null, error: "unparseable-cheaper" };
   }
-  let reachable = false;
-  try {
-    const reach = simulator.getWalkReachability(state);
-    const targetKey = `${parsed.x},${parsed.y}`;
-    reachable = Boolean(reach.visited && reach.visited[targetKey]);
-  } catch (error) {
-    reachable = false;
-  }
   let action = null;
   try {
     const primitive = simulator.enumeratePrimitiveActions(state);
     action = (primitive.actions || []).find((a) => a && a.summary === cheaperSummary) || null;
   } catch (error) {
     action = null;
+  }
+  let reachable = Boolean(action);
+  if (!reachable) {
+    try {
+      const reach = simulator.getWalkReachability(state);
+      const targetKey = `${parsed.x},${parsed.y}`;
+      reachable = Boolean(reach.visited && reach.visited[targetKey]);
+    } catch (error) {
+      reachable = false;
+    }
   }
   return { reachable, action, parsed, error: null };
 }
@@ -125,6 +126,7 @@ function tryApplyCheaper(simulator, state, cheaperSummary) {
     return {
       ok: true,
       next,
+      action: check.action,
       finalHp: Number((next.hero || {}).hp || 0),
       finalFloor: next.floorId,
     };
@@ -236,7 +238,17 @@ function tryRepairRouteRecursive(simulator, project, routeRecord, timeline, entr
   }
   const rounds = [];
   const usedBlockerKeys = new Set();
+  const patchActions = [];
   let totalExpansions = 0;
+  const targetBattle = parseBattleSummary(cheaperSummary);
+  if (!targetBattle) {
+    return {
+      stepIndex,
+      status: "no-cheaper-record",
+      rounds: [{ roundIndex: 0, reachable: false, stopReason: "cheaper-unparseable" }],
+      totalExpansions: 0,
+    };
+  }
   for (let roundIndex = 0; roundIndex < maxDepth; roundIndex += 1) {
     const check = buildCheaperCheck(simulator, currentState, cheaperSummary);
     if (check.reachable) {
@@ -258,30 +270,39 @@ function tryRepairRouteRecursive(simulator, project, routeRecord, timeline, entr
         cheaperApplied: apply.ok
           ? { summary: cheaperSummary, finalHp: apply.finalHp, finalFloor: apply.finalFloor }
           : { summary: cheaperSummary, error: apply.reason },
+        patch: apply.ok
+          ? {
+              sourceStepIndex: stepIndex,
+              originalSummary: routeRecord.decisions[stepIndex - 1] && routeRecord.decisions[stepIndex - 1].summary,
+              actions: patchActions.concat([apply.action]).map(normalizeAction),
+              cheaperSummary,
+            }
+          : null,
       };
     }
-    if (!entry.cheaper || !entry.cheaper[0]) {
-      rounds.push({ roundIndex, reachable: false, stopReason: "no-cheaper-record" });
-      return { stepIndex, status: "no-cheaper-record", rounds, totalExpansions };
-    }
-    const targetBattle = parseBattleSummary(cheaperSummary);
-    if (!targetBattle) {
-      rounds.push({ roundIndex, reachable: false, stopReason: "cheaper-unparseable" });
-      return { stepIndex, status: "no-cheaper-record", rounds, totalExpansions };
-    }
-    const blockers = findBlockerCandidates(simulator, currentState, targetBattle, {
+    const allBlockers = findBlockerCandidates(simulator, currentState, targetBattle, {
       blockerRadius: number(config.blockerRadius, 4),
-    })
+    });
+    const blockers = allBlockers
       .filter((b) => !usedBlockerKeys.has(`${b.kind}:${b.enemyId || b.doorId}@${b.floorId}:${b.x},${b.y}`));
+    const candidateBlockersBefore = blockers.map((b) => ({ kind: b.kind, id: b.enemyId || b.doorId, floorId: b.floorId, x: b.x, y: b.y }));
     if (blockers.length === 0) {
+      const preCheck = buildCheaperCheck(simulator, currentState, cheaperSummary);
+      const remainingBlockersAfter = allBlockers
+        .filter((b) => !usedBlockerKeys.has(`${b.kind}:${b.enemyId || b.doorId}@${b.floorId}:${b.x},${b.y}`));
       rounds.push({
         roundIndex,
         reachable: false,
         stopReason: "no-more-blockers",
-        rawBlockerCount: findBlockerCandidates(simulator, currentState, targetBattle, { blockerRadius: number(config.blockerRadius, 4) }).length,
+        rawBlockerCount: allBlockers.length,
         usedBlockerCount: usedBlockerKeys.size,
         finalFloor: currentState.floorId,
         finalHp: Number((currentState.hero || {}).hp || 0),
+        cheaperTarget: { floorId: targetBattle.floorId, x: targetBattle.x, y: targetBattle.y },
+        cheaperReachableAfter: preCheck.reachable,
+        cheaperActionAvailableAfter: Boolean(preCheck.action),
+        remainingBlockersAfter: remainingBlockersAfter.map((b) => ({ kind: b.kind, id: b.enemyId || b.doorId, floorId: b.floorId, x: b.x, y: b.y })),
+        allBlockers: allBlockers.map((b) => ({ kind: b.kind, id: b.enemyId || b.doorId, floorId: b.floorId, x: b.x, y: b.y })),
       });
       return {
         stepIndex,
@@ -292,9 +313,18 @@ function tryRepairRouteRecursive(simulator, project, routeRecord, timeline, entr
     }
     const blockersThisRound = blockers.slice(0, Math.max(1, number(config.maxBlockersPerRound, 1)));
     const milestones = [];
+    const roundBlockers = [];
+    const blockerKeysThisRound = [];
     for (const blocker of blockersThisRound) {
       const key = `${blocker.kind}:${blocker.enemyId || blocker.doorId}@${blocker.floorId}:${blocker.x},${blocker.y}`;
-      usedBlockerKeys.add(key);
+      blockerKeysThisRound.push(key);
+      roundBlockers.push({
+        kind: blocker.kind,
+        id: blocker.enemyId || blocker.doorId,
+        floorId: blocker.floorId,
+        x: blocker.x,
+        y: blocker.y,
+      });
       const milestone = buildRoundMilestone(simulator, blocker, {
         currentState,
         finding: entry,
@@ -307,6 +337,9 @@ function tryRepairRouteRecursive(simulator, project, routeRecord, timeline, entr
       if (milestone) milestones.push(milestone);
     }
     if (milestones.length === 0) {
+      const preCheck = buildCheaperCheck(simulator, currentState, cheaperSummary);
+      const noIntentRemaining = allBlockers
+        .filter((b) => !usedBlockerKeys.has(`${b.kind}:${b.enemyId || b.doorId}@${b.floorId}:${b.x},${b.y}`));
       rounds.push({
         roundIndex,
         reachable: false,
@@ -314,6 +347,13 @@ function tryRepairRouteRecursive(simulator, project, routeRecord, timeline, entr
         blockerCount: blockersThisRound.length,
         finalFloor: currentState.floorId,
         finalHp: Number((currentState.hero || {}).hp || 0),
+        cheaperTarget: { floorId: targetBattle.floorId, x: targetBattle.x, y: targetBattle.y },
+        cheaperReachableAfter: preCheck.reachable,
+        cheaperActionAvailableAfter: Boolean(preCheck.action),
+        remainingBlockersAfter: noIntentRemaining.map((b) => ({ kind: b.kind, id: b.enemyId || b.doorId, floorId: b.floorId, x: b.x, y: b.y })),
+        attemptedBlockers: roundBlockers,
+        roundBlockers,
+        candidateBlockersBefore,
       });
       return { stepIndex, status: "still-unreachable", rounds, totalExpansions };
     }
@@ -323,6 +363,11 @@ function tryRepairRouteRecursive(simulator, project, routeRecord, timeline, entr
     });
     totalExpansions += chainResult.totalExpansions || 0;
     if (!chainResult.finalState) {
+      const preCheck = buildCheaperCheck(simulator, currentState, cheaperSummary);
+      const chainFailedRemaining = findBlockerCandidates(simulator, currentState, targetBattle, {
+        blockerRadius: number(config.blockerRadius, 4),
+      })
+        .filter((b) => !usedBlockerKeys.has(`${b.kind}:${b.enemyId || b.doorId}@${b.floorId}:${b.x},${b.y}`));
       rounds.push({
         roundIndex,
         reachable: false,
@@ -331,25 +376,59 @@ function tryRepairRouteRecursive(simulator, project, routeRecord, timeline, entr
         chainHistory: chainResult.history,
         finalFloor: currentState.floorId,
         finalHp: Number((currentState.hero || {}).hp || 0),
+        cheaperTarget: { floorId: targetBattle.floorId, x: targetBattle.x, y: targetBattle.y },
+        cheaperReachableAfter: preCheck.reachable,
+        cheaperActionAvailableAfter: Boolean(preCheck.action),
+        remainingBlockersAfter: chainFailedRemaining.map((b) => ({ kind: b.kind, id: b.enemyId || b.doorId, floorId: b.floorId, x: b.x, y: b.y })),
+        attemptedBlockers: roundBlockers,
+        roundBlockers,
+        candidateBlockersBefore,
       });
       return { stepIndex, status: "no-repair-route", rounds, totalExpansions };
     }
+    const postState = ensureFloorStates(chainResult.finalState);
+    patchActions.push(...(chainResult.actions || []));
+    for (const key of blockerKeysThisRound) {
+      usedBlockerKeys.add(key);
+    }
+    const postCheck = buildCheaperCheck(simulator, postState, cheaperSummary);
+    const remainingBlockersAfter = findBlockerCandidates(simulator, postState, targetBattle, {
+      blockerRadius: number(config.blockerRadius, 4),
+    })
+      .filter((b) => !usedBlockerKeys.has(`${b.kind}:${b.enemyId || b.doorId}@${b.floorId}:${b.x},${b.y}`))
+      .map((b) => ({ kind: b.kind, id: b.enemyId || b.doorId, floorId: b.floorId, x: b.x, y: b.y }));
     rounds.push({
       roundIndex,
       reachable: false,
       blockerCount: milestones.length,
-      finalFloor: chainResult.finalState.floorId,
-      finalHp: Number((chainResult.finalState.hero || {}).hp || 0),
+      finalFloor: postState.floorId,
+      finalHp: Number((postState.hero || {}).hp || 0),
       chainHistory: chainResult.history,
+      roundBlockers,
+      cheaperTarget: { floorId: targetBattle.floorId, x: targetBattle.x, y: targetBattle.y },
+      cheaperReachableAfter: postCheck.reachable,
+      cheaperActionAvailableAfter: Boolean(postCheck.action),
+      remainingBlockersAfter,
+      candidateBlockersBefore,
     });
-    currentState = ensureFloorStates(chainResult.finalState);
+    currentState = postState;
   }
+  const finalAllBlockers = findBlockerCandidates(simulator, currentState, targetBattle, {
+    blockerRadius: number(config.blockerRadius, 4),
+  });
+  const finalRemaining = finalAllBlockers
+    .filter((b) => !usedBlockerKeys.has(`${b.kind}:${b.enemyId || b.doorId}@${b.floorId}:${b.x},${b.y}`));
+  const finalCheck = buildCheaperCheck(simulator, currentState, cheaperSummary);
   rounds.push({
     roundIndex: rounds.length,
     reachable: false,
     stopReason: "max-depth-reached",
     finalFloor: currentState.floorId,
     finalHp: Number((currentState.hero || {}).hp || 0),
+    cheaperTarget: { floorId: targetBattle.floorId, x: targetBattle.x, y: targetBattle.y },
+    cheaperReachableAfter: finalCheck.reachable,
+    cheaperActionAvailableAfter: Boolean(finalCheck.action),
+    remainingBlockersAfter: finalRemaining.map((b) => ({ kind: b.kind, id: b.enemyId || b.doorId, floorId: b.floorId, x: b.x, y: b.y })),
   });
   return { stepIndex, status: "still-unreachable", rounds, totalExpansions };
 }
@@ -364,7 +443,8 @@ function tryRepairRoute(simulator, project, routeRecord, timeline, repairEntries
   const repairedSteps = results
     .filter((r) => r.status === "repaired" && r.cheaperApplied && r.cheaperApplied.summary)
     .map((r) => ({ stepIndex: r.stepIndex, newSummary: r.cheaperApplied.summary }));
-  return { results, repairedSteps };
+  const patches = results.filter((r) => r.status === "repaired" && r.patch).map((r) => r.patch);
+  return { results, repairedSteps, patches };
 }
 
 module.exports = {

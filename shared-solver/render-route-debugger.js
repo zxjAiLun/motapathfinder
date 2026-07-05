@@ -80,6 +80,7 @@ function renderHtml(timeline, options) {
       z-index: 5;
     }
     header h1 { font-size: 15px; margin: 0; font-weight: 650; }
+    .repairHeader { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     button, input {
       background: var(--panel2);
       color: var(--text);
@@ -307,6 +308,10 @@ function renderHtml(timeline, options) {
     }
     .deltaPos { color: #74d39b; }
     .deltaNeg { color: #f08b8b; }
+    .routeRow.repairAccepted { border-left: 3px solid var(--gain); }
+    .routeRow.repairRejected { border-left: 3px solid var(--loss); }
+    .repairLine { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 6px; margin-bottom: 5px; }
+    .repairLine b { color: var(--muted); }
     pre {
       margin: 0;
       white-space: pre-wrap;
@@ -329,6 +334,7 @@ function renderHtml(timeline, options) {
     <input id="slider" type="range" min="0" value="0">
     <label>Step <input id="stepInput" type="number" min="0" value="0"></label>
     <span id="stepCount" class="muted"></span>
+    <span id="repairHeader" class="repairHeader"></span>
   </header>
   <main>
     <div class="leftCol">
@@ -366,6 +372,10 @@ function renderHtml(timeline, options) {
         <h2>当前 Action</h2>
         <div id="actionDetails" class="panelBody actionBox"></div>
       </section>
+      <section id="repairPanel" class="panel" hidden>
+        <h2>Route Repair</h2>
+        <div id="repairDetails" class="panelBody"></div>
+      </section>
       <section class="panel">
         <h2>Step Diff</h2>
         <div id="diff" class="panelBody"></div>
@@ -390,6 +400,15 @@ function renderHtml(timeline, options) {
     slider.max = Math.max(0, steps.length - 1);
     input.max = Math.max(0, steps.length - 1);
     document.getElementById("stepCount").textContent = "/ " + Math.max(0, steps.length - 1);
+    const repairSummary = timeline.repair && timeline.repair.summary;
+    if (repairSummary) {
+      document.getElementById("repairHeader").innerHTML =
+        '<span class="pill">accepted ' + esc(repairSummary.acceptedCount) + '</span>' +
+        '<span class="pill">HP ' + esc(repairSummary.baselineFinalHp) + ' → ' + esc(repairSummary.finalFinalHp) + '</span>' +
+        '<span class="pill ' + (repairSummary.finalRouteVerified ? '' : 'warn') + '">' +
+          (repairSummary.finalRouteVerified ? 'verified' : 'unverified') + '</span>' +
+        '<span class="pill">' + esc(repairSummary.stoppedReason || '') + '</span>';
+    }
 
     function text(value) {
       if (value == null) return "";
@@ -665,9 +684,35 @@ function renderHtml(timeline, options) {
       target.innerHTML = summary + '<table class="candidateTable"><thead><tr><th>#</th><th>Kind</th><th>Cat</th><th>Target</th><th>Dmg</th><th>Flags</th><th>Summary</th></tr></thead><tbody>' + rows + '</tbody></table>';
     }
 
+    function renderRepair(step) {
+      const annotations = step.repairAnnotations || [];
+      const panel = document.getElementById("repairPanel");
+      const target = document.getElementById("repairDetails");
+      if (!annotations.length) {
+        panel.hidden = true;
+        target.innerHTML = "";
+        return;
+      }
+      panel.hidden = false;
+      target.innerHTML = annotations.map((entry) => {
+        const status = entry.accepted ? "accepted" : "rejected: " + (entry.rejectedReason || "unknown");
+        return '<div class="repairEntry">' +
+          '<div class="repairLine"><b>status</b><span>' + esc(status) + '</span></div>' +
+          '<div class="repairLine"><b>original</b><code>' + esc(entry.originalSummary) + '</code></div>' +
+          '<div class="repairLine"><b>replacement</b><code>' + esc(entry.cheaperSummary) + '</code></div>' +
+          '<div class="repairLine"><b>patch</b><span>' + esc((entry.patchActions || []).join(" → ")) + '</span></div>' +
+          '<div class="repairLine"><b>final HP</b><span>' + esc(entry.baselineFinalHp) + ' → ' + esc(entry.candidateFinalHp) + '</span></div>' +
+          (entry.replayFailure ? '<div class="repairLine"><b>replay</b><span>' + esc(entry.replayFailure) + '</span></div>' : '') +
+        '</div>';
+      }).join("");
+    }
+
     function renderRouteList(activeIndex) {
       routeList.innerHTML = steps.map((step, index) =>
-        '<div class="routeRow ' + (index === activeIndex ? "active" : "") + '" data-step="' + index + '"><span class="muted">#' + index + '</span><code>' + esc(step.summary) + '</code></div>'
+        '<div class="routeRow ' + (index === activeIndex ? "active " : "") +
+          ((step.repairAnnotations || []).some((entry) => entry.accepted) ? "repairAccepted" :
+            ((step.repairAnnotations || []).length ? "repairRejected" : "")) +
+          '" data-step="' + index + '"><span class="muted">#' + index + '</span><code>' + esc(step.summary) + '</code></div>'
       ).join("");
     }
 
@@ -686,6 +731,7 @@ function renderHtml(timeline, options) {
       document.getElementById("keys").textContent = "stateKey:\\n" + step.stateKey + "\\n\\ndominanceKey:\\n" + step.dominanceKey + "\\n\\nrouteTail:\\n" + pretty(step.routeTail);
       renderDiff(step);
       renderCandidates(step);
+      renderRepair(step);
       renderRouteList(bounded);
     }
 
@@ -712,6 +758,10 @@ function main() {
   const timeline = readJson(timelineFile);
   if (!timeline || timeline.schema !== "motapathfinder.routeTimeline.v1") {
     throw new Error(`Unsupported timeline schema in ${timelineFile}`);
+  }
+  if (args["repair-report"]) {
+    const { attachRepairReport } = require("./debug-route-timeline");
+    attachRepairReport(timeline, readJson(path.resolve(process.cwd(), args["repair-report"])));
   }
   writeText(outFile, renderHtml(timeline, {
     assetBase: args["asset-base"] || relativeAssetBase(timeline, outFile),

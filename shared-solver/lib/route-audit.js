@@ -248,12 +248,17 @@ function summarizeRepairResult(simulator, startState, segment, options) {
     /* ignore */
   }
   try {
-    const reachability = simulator.getWalkReachability(startState);
     const goalSummary = segment && segment.goal && segment.goal.actionSurvivable && segment.goal.actionSurvivable.summary;
     const parsed = goalSummary ? parseBattleSummary(goalSummary) : null;
     if (parsed) {
-      const targetKey = `${parsed.x},${parsed.y}`;
-      startReachable = Boolean(reachability && reachability.visited && reachability.visited[targetKey]);
+      const primitive = simulator.enumeratePrimitiveActions(startState);
+      const action = (primitive.actions || []).find((candidate) => candidate && candidate.summary === goalSummary);
+      startReachable = Boolean(action);
+      if (!startReachable) {
+        const reachability = simulator.getWalkReachability(startState);
+        const targetKey = `${parsed.x},${parsed.y}`;
+        startReachable = Boolean(reachability && reachability.visited && reachability.visited[targetKey]);
+      }
     }
   } catch (error) {
     /* ignore */
@@ -266,7 +271,7 @@ function summarizeRepairResult(simulator, startState, segment, options) {
       maxRuntimeMs: config.maxRuntimeMs,
     });
   } catch (error) {
-    return { found: false, error: error && error.message ? error.message : String(error), startSurvivable };
+    return { found: false, error: error && error.message ? error.message : String(error), startSurvivable, startReachable };
   }
   const dpDiag = (result && result.diagnostics && result.diagnostics.dp) || {};
   const finalState = result && (result.bestGoalState || result.firstGoalState);
@@ -274,6 +279,7 @@ function summarizeRepairResult(simulator, startState, segment, options) {
     return {
       found: false,
       startSurvivable,
+      startReachable,
       stoppedReason: dpDiag.stoppedReason,
       expansions: dpDiag.expansions,
       frontierSize: dpDiag.frontierSize,
@@ -284,6 +290,7 @@ function summarizeRepairResult(simulator, startState, segment, options) {
   return {
     found: true,
     startSurvivable,
+    startReachable,
     finalHp: Number((finalState.hero || {}).hp || 0),
     finalFloor: finalState.floorId,
     routeLength: Array.isArray(finalState.route) ? finalState.route.length : 0,
