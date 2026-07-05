@@ -44,6 +44,10 @@ function main() {
       "  --project-root=<dir>       tower project root (default Only upV2.1/Only upV2.1)",
       "  --mode=<name>              sequential (default) or independent",
       "  --max-repairs=<n>          accepted sequential repairs (default 20)",
+      "  --suffix-bridge=0|1        repair unavailable suffix actions with segment DP (default 1)",
+      "  --max-suffix-bridges=<n>   bridge attempts per candidate (default 3)",
+      "  --suffix-max-expansions=<n> per-bridge expansion cap (default 2000)",
+      "  --suffix-max-runtime-ms=<n> per-bridge runtime budget (default 3000)",
       "  --min-damage-delta=<n>     audit threshold for sequential mode (default 1000)",
       "  --min-savings-ratio=<n>    audit savings ratio for sequential mode (default 0.15)",
       "  --max-runtime-ms=<n>       per-round milestone DP budget (default 1500)",
@@ -74,6 +78,10 @@ function main() {
       minDamageDelta: parseOptionalNumber(args["min-damage-delta"]) || 1000,
       minSavingsRatio: parseOptionalNumber(args["min-savings-ratio"]) || 0.15,
       candidateLimit: parseOptionalNumber(args["candidate-limit"]) || 200,
+      suffixBridge: args["suffix-bridge"] !== "0" && args["suffix-bridge"] !== "false",
+      maxSuffixBridges: parseOptionalNumber(args["max-suffix-bridges"]) || 3,
+      suffixMaxExpansions: parseOptionalNumber(args["suffix-max-expansions"]) || 2000,
+      suffixMaxRuntimeMs: parseOptionalNumber(args["suffix-max-runtime-ms"]) || 3000,
     });
     const summary = {
       kind: "iterative-route-repair",

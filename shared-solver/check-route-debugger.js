@@ -124,6 +124,15 @@ function checkRepairAnnotations() {
         patch: { cheaperSummary: "battle:new@MT1:2,1", actions: [{ summary: "battle:new@MT1:2,1" }] },
         accepted: true,
         candidateFinalHp: 125,
+        firstReplayFailure: { reason: "action-unavailable", stepIndex: 6, summary: "battle:bridge@MT1:5,1" },
+        suffixBridges: [{
+          failureStepIndex: 6,
+          expectedSummary: "battle:bridge@MT1:5,1",
+          status: "found",
+          actions: [{ summary: "pickup:redGem@MT1:4,1" }],
+          consumedFutureSteps: [8],
+        }],
+        skippedSatisfiedSteps: [{ stepIndex: 8, reason: "consumed-by-bridge" }],
         outputStartStep: 3,
         outputActionCount: 1,
       }, {
@@ -138,11 +147,13 @@ function checkRepairAnnotations() {
   });
   assert.equal(timeline.repair.summary.acceptedCount, 1);
   assert.equal(timeline.steps[3].repairAnnotations[0].accepted, true);
+  assert.equal(timeline.steps[3].repairAnnotations[0].suffixBridges.length, 1);
   assert.equal(timeline.steps[4].repairAnnotations[0].rejectedReason, "final-hp-not-improved");
   const html = renderHtml(timeline, { assetBase: "../../../Only upV2.1/Only upV2.1/project" });
   assert.ok(html.includes("repairHeader"));
   assert.ok(html.includes("repairAccepted"));
   assert.ok(html.includes("Route Repair"));
+  assert.ok(html.includes("bridge actions"));
   assert.ok(html.includes("final-hp-not-improved"));
   return { accepted: 1, rejected: 1 };
 }

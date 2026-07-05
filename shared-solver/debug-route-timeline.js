@@ -48,6 +48,9 @@ function attachRepairReport(timeline, report) {
         baselineFinalHp: iteration.baselineFinalHp,
         candidateFinalHp: attempt.candidateFinalHp,
         replayFailure: attempt.replayFailure || null,
+        firstReplayFailure: attempt.firstReplayFailure || null,
+        suffixBridges: attempt.suffixBridges || [],
+        skippedSatisfiedSteps: attempt.skippedSatisfiedSteps || [],
         outputStartStep: attempt.outputStartStep || null,
         outputActionCount: attempt.outputActionCount || 0,
       };

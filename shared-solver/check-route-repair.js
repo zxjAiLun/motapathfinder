@@ -18,7 +18,7 @@ const {
   replayPreState,
   replaceStepSummary,
 } = require("./lib/route-repair-runner");
-const { applyPatchAndReplay, runIterativeRouteRepair } = require("./lib/iterative-route-repair");
+const { applyPatchAndReplay, consumeFutureMatches, decisionSatisfied, runIterativeRouteRepair } = require("./lib/iterative-route-repair");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
 const ROUTE_FILE = path.resolve(__dirname, "routes", "fixtures", "mt1-mt2-hp3834.route.json");
@@ -246,6 +246,7 @@ function checkSequentialAcceptancePolicy() {
     maxRuntimeMs: 1500,
     minDamageDelta: 500,
     minSavingsRatio: 0.2,
+    suffixBridge: false,
   });
   assert.equal(result.finalRouteVerified, true, "baseline/final route should be replay verified");
   assert.equal(result.acceptedCount, 0, "fixture candidates should not be accepted without final HP improvement");
@@ -253,6 +254,50 @@ function checkSequentialAcceptancePolicy() {
   const reasons = result.iterations.flatMap((iteration) => iteration.candidateAttempts.map((attempt) => attempt.rejectedReason));
   assert.ok(reasons.includes("final-hp-not-improved"), "full replay without HP improvement should be rejected");
   return { acceptedCount: result.acceptedCount, stoppedReason: result.stoppedReason };
+}
+
+function checkSatisfiedDecisionAndBridgeLimit() {
+  const removedState = {
+    floorStates: { MT1: { removed: { "2,5": true }, replaced: {} } },
+    hero: { equipment: ["I893"] },
+  };
+  assert.equal(decisionSatisfied(removedState, {
+    kind: "battle",
+    summary: "battle:skeletonCaptain@MT1:2,5",
+    floorId: "MT1",
+    target: { floorId: "MT1", x: 2, y: 5 },
+  }).satisfied, true, "removed battle target should satisfy the suffix decision");
+  assert.equal(decisionSatisfied(removedState, {
+    kind: "equip",
+    summary: "equip:I893",
+    equipId: "I893",
+  }).satisfied, true, "already-equipped item should satisfy the suffix decision");
+  const consumed = new Set();
+  const consumedSteps = consumeFutureMatches([
+    { kind: "battle", summary: "battle:a@MT1:1,1" },
+    { kind: "battle", summary: "battle:b@MT1:2,1" },
+  ], 0, [{ kind: "battle", summary: "battle:b@MT1:2,1" }], consumed);
+  assert.deepEqual(consumedSteps, [2], "bridge action should consume the first matching suffix decision");
+  assert.equal(consumed.has(1), true);
+
+  const { timeline, project, simulator, route, audit } = buildAuditContext();
+  const finding = (audit.findings || []).find((entry) => entry.stepIndex === 11);
+  const attempt = tryRepairRouteRecursive(simulator, project, route, timeline, {
+    stepIndex: finding.stepIndex,
+    cheaper: finding.cheaper,
+  }, { maxDepth: 2, maxExpansions: 600, maxRuntimeMs: 1500 });
+  const before = JSON.stringify(route);
+  const replay = applyPatchAndReplay(project, simulator, route, attempt.patch, {
+    projectRoot: PROJECT_ROOT,
+    suffixBridge: true,
+    maxSuffixBridges: 0,
+  });
+  assert.equal(replay.ok, false, "bridge limit fixture should remain rejected");
+  assert.equal(replay.failure.reason, "suffix-bridge-limit");
+  assert.equal(replay.firstReplayFailure.reason, "action-unavailable");
+  assert.equal(replay.suffixBridges.length, 0);
+  assert.equal(JSON.stringify(route), before, "bridge failure must not mutate the source route");
+  return { failureStep: replay.failure.stepIndex, reason: replay.failure.reason };
 }
 
 function main() {
@@ -263,7 +308,8 @@ function main() {
   const battleReachability = checkBattleActionDefinesReachability();
   const sequentialPatch = checkSequentialPatchReplay();
   const sequentialPolicy = checkSequentialAcceptancePolicy();
-  console.log(JSON.stringify({ blockers, plan, replace, classify, battleReachability, sequentialPatch, sequentialPolicy }, null, 2));
+  const suffixBridge = checkSatisfiedDecisionAndBridgeLimit();
+  console.log(JSON.stringify({ blockers, plan, replace, classify, battleReachability, sequentialPatch, sequentialPolicy, suffixBridge }, null, 2));
 }
 
 if (require.main === module) {

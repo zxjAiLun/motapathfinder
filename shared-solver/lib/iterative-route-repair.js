@@ -4,6 +4,7 @@ const { buildRouteRecord, createStateFromSnapshot, normalizeAction } = require("
 const { buildRouteTimeline } = require("./route-debugger");
 const { auditRouteForExpensivePicks } = require("./route-audit");
 const { tryRepairRouteRecursive } = require("./route-repair-runner");
+const { searchSegmentDP } = require("./segment-dp");
 
 function actionKey(action) {
   const normalized = normalizeAction(action || {});
@@ -33,6 +34,18 @@ function listReplayActions(simulator, state) {
     } catch (error) {
     }
   }
+  if (typeof simulator.enumerateInteractPickupActions === "function") {
+    try {
+      add(simulator.enumerateInteractPickupActions(state));
+    } catch (error) {
+    }
+  }
+  if (typeof simulator.enumerateFloorFlyActions === "function") {
+    try {
+      add(simulator.enumerateFloorFlyActions(state));
+    } catch (error) {
+    }
+  }
   return actions;
 }
 
@@ -44,6 +57,132 @@ function resolveReplayAction(simulator, state, expected) {
     || null;
 }
 
+function decisionTarget(expected) {
+  const normalized = normalizeAction(expected || {});
+  const target = normalized.target || {};
+  const floorId = target.floorId || normalized.floorId || null;
+  const x = target.x == null ? normalized.x : target.x;
+  const y = target.y == null ? normalized.y : target.y;
+  return { normalized, floorId, x, y };
+}
+
+function decisionSatisfied(state, expected) {
+  const { normalized, floorId, x, y } = decisionTarget(expected);
+  if (["battle", "openDoor", "pickup", "interactPickup"].includes(normalized.kind)
+    && floorId && x != null && y != null) {
+    const floorState = state && state.floorStates && state.floorStates[floorId];
+    if (floorState && floorState.removed && floorState.removed[`${x},${y}`]) {
+      return { satisfied: true, reason: "target-already-removed" };
+    }
+  }
+  if (normalized.kind === "equip" && normalized.equipId) {
+    const equipment = (state && state.hero && state.hero.equipment) || [];
+    if (equipment.includes(normalized.equipId)) {
+      return { satisfied: true, reason: "already-equipped" };
+    }
+  }
+  return { satisfied: false, reason: null };
+}
+
+function bridgeAllowedFloors(project, state, expected) {
+  const order = project.floorOrder || [];
+  const target = decisionTarget(expected);
+  const floors = new Set([state && state.floorId, target.floorId].filter(Boolean));
+  for (const floorId of Array.from(floors)) {
+    const index = order.indexOf(floorId);
+    if (index < 0) continue;
+    if (order[index - 1]) floors.add(order[index - 1]);
+    if (order[index + 1]) floors.add(order[index + 1]);
+  }
+  return Array.from(floors);
+}
+
+function runSuffixBridge(project, simulator, state, expected, options) {
+  const config = options || {};
+  const normalized = normalizeAction(expected || {});
+  const segment = {
+    id: `route-repair-suffix:${normalized.summary || normalized.kind}`,
+    label: `Reconnect suffix at ${normalized.summary || normalized.kind}`,
+    startFrom: "previous",
+    goal: {
+      type: "suffixBridge",
+      floorId: normalized.floorId || state.floorId,
+      actionSurvivable: { summary: normalized.summary },
+    },
+    actionPolicy: {
+      actionKinds: ["battle", "pickup", "interactPickup", "equip", "openDoor", "useTool", "changeFloor", "floorFly", "event"],
+      allowedFloors: bridgeAllowedFloors(project, state, normalized),
+      allowChangeFloors: [],
+      forbidUnsupportedEvents: true,
+    },
+    dp: {
+      keyMode: "region",
+      stopOnFirstGoal: false,
+      goalSkylineLimit: 8,
+      dpSkylineMax: 1,
+      maxExpansions: Number(config.suffixMaxExpansions || 2000),
+      maxRuntimeMs: Number(config.suffixMaxRuntimeMs || 3000),
+    },
+  };
+  let result;
+  try {
+    result = searchSegmentDP(simulator, state, segment, {
+      captureTrace: true,
+      prefixTrace: [],
+      maxExpansions: segment.dp.maxExpansions,
+      maxRuntimeMs: segment.dp.maxRuntimeMs,
+    });
+  } catch (error) {
+    return { ok: false, error: error && error.message ? error.message : String(error), actions: [] };
+  }
+  const dp = (result && result.diagnostics && result.diagnostics.dp) || {};
+  const goalCandidate = result && result.goalSkyline && result.goalSkyline[0];
+  const finalState = (result && result.bestGoalState)
+    || (result && result.firstGoalState)
+    || (goalCandidate && goalCandidate.state)
+    || null;
+  if (!finalState) {
+    return {
+      ok: false,
+      actions: [],
+      expansions: Number(dp.expansions || 0),
+      stoppedReason: dp.stoppedReason || null,
+      frontierSize: dp.frontierSize,
+    };
+  }
+  const trace = Array.isArray(goalCandidate && goalCandidate.trace)
+    ? goalCandidate.trace
+    : Array.isArray(finalState.routeTrace)
+      ? finalState.routeTrace
+      : [];
+  const actions = trace.map((entry) => entry && entry.actionEntry).filter(Boolean);
+  return {
+    ok: true,
+    finalState,
+    actions,
+    expansions: Number(dp.expansions || 0),
+    stoppedReason: dp.stoppedReason || null,
+  };
+}
+
+function consumeFutureMatches(entries, startIndex, actions, consumedIndices) {
+  const consumed = [];
+  for (const bridgeAction of actions || []) {
+    const normalized = normalizeAction(bridgeAction);
+    for (let cursor = startIndex; cursor < entries.length; cursor += 1) {
+      if (consumedIndices.has(cursor)) continue;
+      const expected = normalizeAction(entries[cursor] || {});
+      if ((normalized.summary && expected.summary === normalized.summary)
+        || (normalized.fingerprint && expected.fingerprint === normalized.fingerprint)) {
+        consumedIndices.add(cursor);
+        consumed.push(cursor + 1);
+        break;
+      }
+    }
+  }
+  return consumed;
+}
+
 function replayActionEntries(project, simulator, routeRecord, entries, options) {
   const config = options || {};
   const snapshot = routeRecord && routeRecord.start && routeRecord.start.snapshot;
@@ -51,18 +190,100 @@ function replayActionEntries(project, simulator, routeRecord, entries, options) 
   const initialState = createStateFromSnapshot(project, snapshot, { rank: (routeRecord.source || {}).rank || "chaos" });
   let state = initialState;
   const resolvedActions = [];
+  const consumedIndices = new Set();
+  const skippedSatisfiedSteps = [];
+  const suffixBridges = [];
+  let firstReplayFailure = null;
+  const suffixBridgeEnabled = config.suffixBridge !== false && config.suffixBridge !== 0 && config.suffixBridge !== "0";
+  const maxSuffixBridges = Math.max(0, Number(config.maxSuffixBridges == null ? 3 : config.maxSuffixBridges));
   for (let index = 0; index < entries.length; index += 1) {
+    if (consumedIndices.has(index)) {
+      skippedSatisfiedSteps.push({ stepIndex: index + 1, summary: entries[index] && entries[index].summary, reason: "consumed-by-bridge" });
+      continue;
+    }
     const expected = entries[index];
-    const action = resolveReplayAction(simulator, state, expected);
+    let action = resolveReplayAction(simulator, state, expected);
     if (!action) {
-      return {
-        ok: false,
-        failure: {
-          reason: "action-unavailable",
-          stepIndex: index + 1,
-          summary: expected && expected.summary,
-        },
+      const satisfied = decisionSatisfied(state, expected);
+      if (satisfied.satisfied) {
+        skippedSatisfiedSteps.push({ stepIndex: index + 1, summary: expected && expected.summary, reason: satisfied.reason });
+        continue;
+      }
+      const currentReplayFailure = {
+        reason: "action-unavailable",
+        stepIndex: index + 1,
+        summary: expected && expected.summary,
       };
+      if (!firstReplayFailure) firstReplayFailure = currentReplayFailure;
+      if (!suffixBridgeEnabled) {
+        return {
+          ok: false,
+          failure: currentReplayFailure,
+          failureState: state,
+          resolvedActions,
+          remainingEntries: entries.slice(index),
+          skippedSatisfiedSteps,
+          suffixBridges,
+          firstReplayFailure,
+        };
+      }
+      if (suffixBridges.length >= maxSuffixBridges) {
+        return {
+          ok: false,
+          failure: { ...currentReplayFailure, reason: "suffix-bridge-limit" },
+          failureState: state,
+          resolvedActions,
+          remainingEntries: entries.slice(index),
+          skippedSatisfiedSteps,
+          suffixBridges,
+          firstReplayFailure,
+        };
+      }
+      const bridge = runSuffixBridge(project, simulator, state, expected, config);
+      const bridgeReport = {
+        failureStepIndex: index + 1,
+        expectedSummary: expected && expected.summary,
+        status: bridge.ok ? "found" : "failed",
+        actions: (bridge.actions || []).map((entry) => normalizeAction(entry)),
+        consumedFutureSteps: [],
+        expansions: bridge.expansions || 0,
+        stoppedReason: bridge.stoppedReason || null,
+        error: bridge.error || null,
+      };
+      suffixBridges.push(bridgeReport);
+      if (!bridge.ok) {
+        return {
+          ok: false,
+          failure: { ...currentReplayFailure, reason: "suffix-bridge-failed", bridge: bridgeReport },
+          failureState: state,
+          resolvedActions,
+          remainingEntries: entries.slice(index),
+          skippedSatisfiedSteps,
+          suffixBridges,
+          firstReplayFailure,
+        };
+      }
+      state = bridge.finalState;
+      resolvedActions.push(...bridge.actions);
+      bridgeReport.consumedFutureSteps = consumeFutureMatches(entries, index + 1, bridge.actions, consumedIndices);
+      const afterBridgeSatisfied = decisionSatisfied(state, expected);
+      if (afterBridgeSatisfied.satisfied) {
+        skippedSatisfiedSteps.push({ stepIndex: index + 1, summary: expected && expected.summary, reason: afterBridgeSatisfied.reason });
+        continue;
+      }
+      action = resolveReplayAction(simulator, state, expected);
+      if (!action) {
+        return {
+          ok: false,
+          failure: { ...currentReplayFailure, reason: "suffix-bridge-target-unavailable", bridge: bridgeReport },
+          failureState: state,
+          resolvedActions,
+          remainingEntries: entries.slice(index),
+          skippedSatisfiedSteps,
+          suffixBridges,
+          firstReplayFailure,
+        };
+      }
     }
     try {
       state = simulator.applyAction(state, action);
@@ -80,7 +301,7 @@ function replayActionEntries(project, simulator, routeRecord, entries, options) 
     }
   }
   if (config.rebuildRoute === false) {
-    return { ok: true, route: routeRecord, finalState: state, actions: resolvedActions };
+    return { ok: true, route: routeRecord, finalState: state, actions: resolvedActions, skippedSatisfiedSteps, suffixBridges, firstReplayFailure };
   }
   let rebuilt;
   try {
@@ -102,22 +323,36 @@ function replayActionEntries(project, simulator, routeRecord, entries, options) 
       },
     });
   } catch (error) {
-    return { ok: false, failure: { reason: "route-rebuild-failed", error: error.message } };
+    return {
+      ok: false,
+      failure: { reason: "route-rebuild-failed", error: error.message },
+      firstReplayFailure,
+      skippedSatisfiedSteps,
+      suffixBridges,
+    };
   }
   const verification = replayActionEntries(project, simulator, rebuilt, rebuilt.decisions || [], {
     ...config,
     rebuildRoute: false,
+    suffixBridge: false,
   });
   if (!verification.ok) {
-    return { ok: false, failure: { reason: "rebuilt-route-replay-failed", detail: verification.failure } };
+    return {
+      ok: false,
+      failure: { reason: "rebuilt-route-replay-failed", detail: verification.failure },
+      firstReplayFailure,
+      skippedSatisfiedSteps,
+      suffixBridges,
+    };
   }
-  return { ok: true, route: rebuilt, finalState: verification.finalState, actions: resolvedActions };
+  return { ok: true, route: rebuilt, finalState: verification.finalState, actions: resolvedActions, skippedSatisfiedSteps, suffixBridges, firstReplayFailure };
 }
 
 function replayRouteRecord(project, simulator, routeRecord, options) {
   return replayActionEntries(project, simulator, routeRecord, routeRecord.decisions || [], {
     ...(options || {}),
     rebuildRoute: false,
+    suffixBridge: false,
   });
 }
 
@@ -244,6 +479,9 @@ function runIterativeRouteRepair(project, simulator, routeRecord, options) {
         repairStatus: attempt.status,
         patch: summarizePatch(attempt.patch),
         replayFailure: null,
+        firstReplayFailure: null,
+        suffixBridges: [],
+        skippedSatisfiedSteps: [],
         candidateFinalHp: null,
         accepted: false,
         rejectedReason: null,
@@ -254,9 +492,14 @@ function runIterativeRouteRepair(project, simulator, routeRecord, options) {
         continue;
       }
       const replay = applyPatchAndReplay(project, simulator, currentRoute, attempt.patch, config);
+      report.firstReplayFailure = replay.firstReplayFailure || (replay.ok ? null : replay.failure);
+      report.suffixBridges = replay.suffixBridges || [];
+      report.skippedSatisfiedSteps = replay.skippedSatisfiedSteps || [];
       if (!replay.ok) {
         report.replayFailure = replay.failure;
-        report.rejectedReason = "full-replay-failed";
+        report.rejectedReason = replay.failure && String(replay.failure.reason || "").startsWith("suffix-bridge")
+          ? replay.failure.reason
+          : "full-replay-failed";
         iteration.candidateAttempts.push(report);
         continue;
       }
@@ -313,7 +556,10 @@ function runIterativeRouteRepair(project, simulator, routeRecord, options) {
 
 module.exports = {
   applyPatchAndReplay,
+  consumeFutureMatches,
+  decisionSatisfied,
   replayRouteRecord,
   resolveReplayAction,
+  runSuffixBridge,
   runIterativeRouteRepair,
 };

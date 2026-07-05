@@ -701,6 +701,16 @@ function renderHtml(timeline, options) {
           '<div class="repairLine"><b>original</b><code>' + esc(entry.originalSummary) + '</code></div>' +
           '<div class="repairLine"><b>replacement</b><code>' + esc(entry.cheaperSummary) + '</code></div>' +
           '<div class="repairLine"><b>patch</b><span>' + esc((entry.patchActions || []).join(" → ")) + '</span></div>' +
+          '<div class="repairLine"><b>bridges</b><span>' + esc((entry.suffixBridges || []).length) + '</span></div>' +
+          ((entry.suffixBridges || []).length
+            ? '<div class="repairLine"><b>bridge actions</b><span>' + esc(entry.suffixBridges.map((bridge) =>
+                (bridge.expectedSummary || "") + ": " + (bridge.actions || []).map((action) => action.summary).join(" → ") +
+                (bridge.consumedFutureSteps && bridge.consumedFutureSteps.length ? " [consume " + bridge.consumedFutureSteps.join(",") + "]" : "")
+              ).join(" | ")) + '</span></div>'
+            : '') +
+          ((entry.skippedSatisfiedSteps || []).length
+            ? '<div class="repairLine"><b>skipped</b><span>' + esc(entry.skippedSatisfiedSteps.map((step) => "#" + step.stepIndex + " " + step.reason).join(", ")) + '</span></div>'
+            : '') +
           '<div class="repairLine"><b>final HP</b><span>' + esc(entry.baselineFinalHp) + ' → ' + esc(entry.candidateFinalHp) + '</span></div>' +
           (entry.replayFailure ? '<div class="repairLine"><b>replay</b><span>' + esc(entry.replayFailure) + '</span></div>' : '') +
         '</div>';
