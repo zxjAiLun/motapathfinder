@@ -312,6 +312,7 @@ function renderHtml(timeline, options) {
     .routeRow.repairRejected { border-left: 3px solid var(--loss); }
     .repairLine { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 6px; margin-bottom: 5px; }
     .repairLine b { color: var(--muted); }
+    .repairLine span, .repairLine code { min-width: 0; overflow-wrap: anywhere; }
     pre {
       margin: 0;
       white-space: pre-wrap;
@@ -706,6 +707,21 @@ function renderHtml(timeline, options) {
             ? '<div class="repairLine"><b>bridge actions</b><span>' + esc(entry.suffixBridges.map((bridge) =>
                 (bridge.expectedSummary || "") + ": " + (bridge.actions || []).map((action) => action.summary).join(" → ") +
                 (bridge.consumedFutureSteps && bridge.consumedFutureSteps.length ? " [consume " + bridge.consumedFutureSteps.join(",") + "]" : "")
+              ).join(" | ")) + '</span></div>'
+            : '') +
+          ((entry.suffixBridges || []).some((bridge) => (bridge.candidates || []).length)
+            ? '<div class="repairLine"><b>bridge candidates</b><span>' + esc(entry.suffixBridges.flatMap((bridge) =>
+                (bridge.candidates || []).map((candidate) =>
+                  candidate.id + " " +
+                  (candidate.selected ? "selected" : candidate.shortlisted ? "shortlisted" : candidate.status) +
+                  (candidate.tags && candidate.tags.length ? " roles=" + candidate.tags.join(",") : "") +
+                  " progress=" + candidate.shortProgress +
+                  " hp=" + candidate.shortHp +
+                  (candidate.actions && candidate.actions.length ? " trace=" + candidate.actions.map((action) => action.summary).join(" → ") : "") +
+                  (candidate.fullReplayStatus ? " " + candidate.fullReplayStatus : "") +
+                  (candidate.finalHp == null ? "" : " finalHp=" + candidate.finalHp) +
+                  (candidate.eliminatedReason ? " reason=" + candidate.eliminatedReason : "")
+                )
               ).join(" | ")) + '</span></div>'
             : '') +
           ((entry.skippedSatisfiedSteps || []).length

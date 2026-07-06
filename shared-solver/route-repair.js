@@ -48,6 +48,10 @@ function main() {
       "  --max-suffix-bridges=<n>   bridge attempts per candidate (default 3)",
       "  --suffix-max-expansions=<n> per-bridge expansion cap (default 2000)",
       "  --suffix-max-runtime-ms=<n> per-bridge runtime budget (default 3000)",
+      "  --suffix-goal-skyline-limit=<n> bridge skyline candidates (default 4)",
+      "  --suffix-finalists=<n>     candidates receiving full suffix replay (default 2)",
+      "  --suffix-lookahead-steps=<n> strict short replay length (default 8)",
+      "  --suffix-max-search-nodes=<n> candidate node budget per route patch (default 16)",
       "  --min-damage-delta=<n>     audit threshold for sequential mode (default 1000)",
       "  --min-savings-ratio=<n>    audit savings ratio for sequential mode (default 0.15)",
       "  --max-runtime-ms=<n>       per-round milestone DP budget (default 1500)",
@@ -82,6 +86,10 @@ function main() {
       maxSuffixBridges: parseOptionalNumber(args["max-suffix-bridges"]) || 3,
       suffixMaxExpansions: parseOptionalNumber(args["suffix-max-expansions"]) || 2000,
       suffixMaxRuntimeMs: parseOptionalNumber(args["suffix-max-runtime-ms"]) || 3000,
+      suffixGoalSkylineLimit: parseOptionalNumber(args["suffix-goal-skyline-limit"]) || 4,
+      suffixFinalists: parseOptionalNumber(args["suffix-finalists"]) || 2,
+      suffixLookaheadSteps: parseOptionalNumber(args["suffix-lookahead-steps"]) || 8,
+      suffixMaxSearchNodes: parseOptionalNumber(args["suffix-max-search-nodes"]) || 16,
     });
     const summary = {
       kind: "iterative-route-repair",

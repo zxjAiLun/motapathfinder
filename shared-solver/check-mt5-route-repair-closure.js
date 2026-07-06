@@ -52,6 +52,10 @@ function main() {
     `step 67 should attempt a suffix bridge: ${JSON.stringify(candidate.failure || null)}`,
   );
   assert.equal(candidate.suffixBridges[0].failureStepIndex, 71, "step 67 should reconnect at the original step 71 failure");
+  assert.ok(candidate.suffixBridges[0].candidates.length >= 2, "step 67 should preserve multiple bridge skyline candidates");
+  assert.ok(candidate.suffixBridges[0].candidates.length <= 4, "bridge skyline should respect the balanced limit");
+  assert.ok(candidate.suffixBridges[0].candidates.filter((entry) => entry.shortlisted).length <= 2, "only two bridge candidates may receive full replay");
+  assert.ok(candidate.suffixBridges[0].searchNodesUsed <= 16, "bridge search should respect the global node limit");
   if (candidate.ok) {
     const replay = replayRouteRecord(project, simulator, candidate.route, { projectRoot: PROJECT_ROOT });
     assert.equal(replay.ok, true, "successful mt5 candidate must replay independently");
@@ -66,6 +70,8 @@ function main() {
       actionCount: bridge.actions.length,
       expansions: bridge.expansions,
       stoppedReason: bridge.stoppedReason,
+      candidateCount: bridge.candidates.length,
+      selectedCandidateId: bridge.selectedCandidateId,
     })),
     failure: candidate.failure || null,
   }, null, 2));

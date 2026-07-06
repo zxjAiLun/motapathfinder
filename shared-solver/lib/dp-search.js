@@ -396,6 +396,7 @@ function recordAction(stats, action, field) {
 function selectGoalSkylineNodes(goalNodes, options) {
   const config = options || {};
   const limit = Math.max(1, Number(config.goalSkylineLimit || 8));
+  const preserveGoalArchive = config.preserveGoalArchive === true;
   const sorted = (goalNodes || [])
     .filter(Boolean)
     .slice()
@@ -403,7 +404,9 @@ function selectGoalSkylineNodes(goalNodes, options) {
   const selected = [];
   const seenKeys = new Set();
   for (const node of sorted) {
-    const key = node.key || node.stateKey || `node:${node.nodeId}`;
+    const key = preserveGoalArchive
+      ? `goal:${node.nodeId}`
+      : node.key || node.stateKey || `node:${node.nodeId}`;
     if (seenKeys.has(key)) continue;
     seenKeys.add(key);
     selected.push(node);
@@ -472,8 +475,14 @@ function searchDP(simulator, initialState, options) {
 
   const enqueue = (state, sourceAction, parentNode) => {
     const key = buildDpStateKey(simulator, state, config);
+    const existingSkyline = bestByKey instanceof SkylineSet ? bestByKey.getAll(key) : null;
+    const preserveAlternative = existingSkyline &&
+      config.preserveSkylineAlternatives === true &&
+      existingSkyline.length < skylineMax;
     const dominated = bestByKey instanceof SkylineSet
-      ? bestByKey.getAll(key).every((n) => !isBetterForSameDpKey(state, n.state, config.dominanceConfig))
+      ? !preserveAlternative && existingSkyline.every((n) =>
+          !isBetterForSameDpKey(state, n.state, config.dominanceConfig)
+        )
       : !isBetterForSameDpKey(state, bestByKey.get(key) && bestByKey.get(key).state, config.dominanceConfig);
     if (dominated) {
       const existing = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);
@@ -625,11 +634,13 @@ function searchDP(simulator, initialState, options) {
   recordMemoryUsage();
   const goalSkylineNodes = selectGoalSkylineNodes(
     goalNodes.filter((node) => {
+      if (!isGoalState(node.state)) return false;
+      if (config.preserveGoalArchive === true) return true;
       if (bestByKey instanceof SkylineSet) {
-        return bestByKey.isActive(node.key, node.nodeId) && isGoalState(node.state);
+        return bestByKey.isActive(node.key, node.nodeId);
       }
       const active = bestByKey.get(node.key);
-      return Boolean(active && active.nodeId === node.nodeId && isGoalState(node.state));
+      return Boolean(active && active.nodeId === node.nodeId);
     }),
     config
   );

@@ -8,6 +8,7 @@ const { loadProject } = require("./lib/project-loader");
 const { readRouteFile } = require("./lib/route-store");
 const { StaticSimulator } = require("./lib/simulator");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
+const { searchDP } = require("./lib/dp-search");
 const { buildRouteTimeline } = require("./lib/route-debugger");
 const { auditRouteForExpensivePicks } = require("./lib/route-audit");
 const { planBlockerRepairs, findBlockerCandidates } = require("./lib/route-audit-repair");
@@ -18,7 +19,14 @@ const {
   replayPreState,
   replaceStepSummary,
 } = require("./lib/route-repair-runner");
-const { applyPatchAndReplay, consumeFutureMatches, decisionSatisfied, runIterativeRouteRepair } = require("./lib/iterative-route-repair");
+const {
+  applyPatchAndReplay,
+  collectBridgeCandidates,
+  consumeFutureMatches,
+  decisionSatisfied,
+  runIterativeRouteRepair,
+  selectBridgeFinalists,
+} = require("./lib/iterative-route-repair");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
 const ROUTE_FILE = path.resolve(__dirname, "routes", "fixtures", "mt1-mt2-hp3834.route.json");
@@ -300,6 +308,80 @@ function checkSatisfiedDecisionAndBridgeLimit() {
   return { failureStep: replay.failure.stepIndex, reason: replay.failure.reason };
 }
 
+function checkBridgeCandidateRanking() {
+  const candidate = (id, progress, hp, atk, actionCount) => ({
+    id,
+    viable: true,
+    shortProgress: progress,
+    previewContext: { state: { hero: { hp, atk, def: 0, mdef: 0 } } },
+    actions: Array.from({ length: actionCount }, (_, index) => ({
+      kind: "battle",
+      summary: `battle:${id}-${index}@SYN:${index},0`,
+    })),
+  });
+  const candidates = [
+    candidate("first", 6, 100, 20, 1),
+    candidate("farther", 8, 40, 5, 3),
+    candidate("healthier", 8, 90, 5, 2),
+    candidate("stronger", 8, 90, 30, 4),
+  ];
+  const finalists = selectBridgeFinalists(candidates, 2);
+  assert.deepEqual(finalists.map((entry) => entry.id), ["stronger", "healthier"], "ranking should prefer progress, HP, then combat");
+  assert.notEqual(finalists[0].id, candidates[0].id, "first skyline must not be selected by position alone");
+  return { finalists: finalists.map((entry) => entry.id) };
+}
+
+function checkBridgeSkylinePreservation() {
+  const simulator = {
+    stopFloorId: "SYN",
+    getActionFingerprint: (action) => action.summary,
+  };
+  const initialState = {
+    floorId: "SYN",
+    hero: { hp: 100, atk: 1, def: 1, mdef: 0, loc: { x: 0, y: 0 } },
+    inventory: {},
+    flags: {},
+    visitedFloors: { SYN: true },
+    floorStates: {},
+    route: [],
+    meta: { decisionDepth: 0, stageIndex: 0, floorOrder: 0 },
+  };
+  const result = searchDP(simulator, initialState, {
+    dpKeyMode: "location",
+    dpSkylineMax: 4,
+    preserveSkylineAlternatives: true,
+    preserveGoalArchive: true,
+    goalSkylineLimit: 4,
+    stopOnFirstGoal: false,
+    captureTrace: true,
+    maxExpansions: 10,
+    actionProvider: (unused, state) => state.goal
+      ? []
+      : [1, 2, 3, 4].map((index) => ({ kind: "event", summary: `event:goal-${index}`, index })),
+    actionApplier: (state, action) => ({
+      ...state,
+      goal: true,
+      hero: { ...state.hero, hp: 100 - action.index, loc: { x: 1, y: 0 } },
+      meta: { ...state.meta, decisionDepth: 1 },
+    }),
+    goalPredicate: (state) => state.goal === true,
+  });
+  assert.equal(result.goalSkylineStates.length, 4, "skyline alternatives should fill the configured capacity");
+  const state = result.goalSkylineStates[0];
+  const trace = state.routeTrace;
+  const candidates = collectBridgeCandidates([
+    { id: "first", state, trace },
+    { id: "duplicate", state, trace },
+    {
+      id: "alternate-trace",
+      state,
+      trace: [{ actionEntry: { kind: "event", summary: "event:alternate" } }],
+    },
+  ], 4);
+  assert.deepEqual(candidates.map((entry) => entry.id), ["first", "alternate-trace"], "dedupe should use state key and action trace");
+  return { skylineCount: result.goalSkylineStates.length, dedupedCount: candidates.length };
+}
+
 function main() {
   const blockers = checkFindBlockerCandidates();
   const plan = checkPlanBlockerRepairsEmitsMilestones();
@@ -309,7 +391,9 @@ function main() {
   const sequentialPatch = checkSequentialPatchReplay();
   const sequentialPolicy = checkSequentialAcceptancePolicy();
   const suffixBridge = checkSatisfiedDecisionAndBridgeLimit();
-  console.log(JSON.stringify({ blockers, plan, replace, classify, battleReachability, sequentialPatch, sequentialPolicy, suffixBridge }, null, 2));
+  const bridgeRanking = checkBridgeCandidateRanking();
+  const bridgeSkyline = checkBridgeSkylinePreservation();
+  console.log(JSON.stringify({ blockers, plan, replace, classify, battleReachability, sequentialPatch, sequentialPolicy, suffixBridge, bridgeRanking, bridgeSkyline }, null, 2));
 }
 
 if (require.main === module) {

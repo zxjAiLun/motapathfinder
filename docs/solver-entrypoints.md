@@ -94,7 +94,7 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/route-gui.js` — live route GUI; accepts `--baseline-route=<route.json>` to highlight the first route divergence
 - `shared-solver/render-route-debugger.js` — render a timeline JSON as a local static Route Debugger HTML page
 - `shared-solver/route-audit.js` — audit a route timeline for expensive battle picks; emits candidate repair milestones and (optionally) segment DP verification per milestone
-- `shared-solver/route-repair.js` — iteratively audit the current route, build a real action patch, reorder matching later actions, and accept one patch at a time only after full replay preserves progress and improves final HP. Sequential mode repairs unavailable suffix actions with bounded segment-DP bridges by default; tune with `--suffix-bridge`, `--max-suffix-bridges`, `--suffix-max-expansions`, and `--suffix-max-runtime-ms`. `--mode=independent` retains the legacy per-step diagnostic mode.
+- `shared-solver/route-repair.js` — iteratively audit the current route, build a real action patch, reorder matching later actions, and accept one patch at a time only after full replay preserves progress and improves final HP. Sequential mode keeps multiple segment-DP suffix skylines, screens them with strict short replay, then fully replays the finalists. Tune with the `--suffix-*` bridge, skyline, lookahead, finalist, and node-budget flags. `--mode=independent` retains the legacy per-step diagnostic mode.
 - `shared-solver/run-adaptive-segment-dp.js`
 - `shared-solver/run-mt1-mt11.js`
 - `shared-solver/run-progressive-monster-planner.js`

@@ -131,6 +131,25 @@ function checkRepairAnnotations() {
           status: "found",
           actions: [{ summary: "pickup:redGem@MT1:4,1" }],
           consumedFutureSteps: [8],
+          selectedCandidateId: "bridge#1",
+          candidates: [{
+            id: "bridge#0",
+            status: "short-blocked",
+            shortProgress: 3,
+            shortHp: 80,
+            shortlisted: false,
+            selected: false,
+            eliminatedReason: "not-shortlisted",
+          }, {
+            id: "bridge#1",
+            status: "shortlisted",
+            shortProgress: 8,
+            shortHp: 120,
+            shortlisted: true,
+            selected: true,
+            fullReplayStatus: "completed",
+            finalHp: 125,
+          }],
         }],
         skippedSatisfiedSteps: [{ stepIndex: 8, reason: "consumed-by-bridge" }],
         outputStartStep: 3,
@@ -154,6 +173,8 @@ function checkRepairAnnotations() {
   assert.ok(html.includes("repairAccepted"));
   assert.ok(html.includes("Route Repair"));
   assert.ok(html.includes("bridge actions"));
+  assert.ok(html.includes("bridge candidates"));
+  assert.ok(html.includes("not-shortlisted"));
   assert.ok(html.includes("final-hp-not-improved"));
   return { accepted: 1, rejected: 1 };
 }

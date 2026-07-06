@@ -1591,17 +1591,24 @@ function compactTraceEntry(project, entry) {
 }
 
 function selectGoalSkyline(simulator, states, segment, options) {
+  const config = options || {};
   const limit = Math.max(
     1,
     number(
-      (options || {}).candidateLimit || (segment.dp || {}).goalSkylineLimit,
+      config.candidateLimit || (segment.dp || {}).goalSkylineLimit,
       8,
     ),
   );
   const keyMode = (segment.dp || {}).keyMode || "region";
   const byKey = new Map();
   (states || []).filter(Boolean).forEach((state) => {
-    const key = buildDpStateKey(simulator, state, { dpKeyMode: keyMode });
+    const stateKey = buildDpStateKey(simulator, state, { dpKeyMode: keyMode });
+    const traceKey = config.preserveGoalArchive === true && Array.isArray(state.routeTrace)
+      ? state.routeTrace.map((entry) =>
+          (entry && (entry.fingerprint || entry.summary || entry.kind)) || "unknown"
+        ).join("\n")
+      : null;
+    const key = traceKey == null ? stateKey : `${stateKey}\ntrace:${traceKey}`;
     const existing = byKey.get(key);
     if (!existing || compareCandidateStates(state, existing) < 0)
       byKey.set(key, state);
@@ -1719,7 +1726,7 @@ function selectGoalSkyline(simulator, states, segment, options) {
     const winner = records.slice().sort(compare)[0];
     if (winner) addTag(winner, tag);
   });
-  if ((options || {}).preserveSkylineRoles === true) {
+  if (config.preserveSkylineRoles === true) {
     rolePickers.forEach(([, compare]) =>
       keepCandidate(records.slice().sort(compare)[0]),
     );
@@ -2339,6 +2346,8 @@ function searchSegmentDP(simulator, startState, segment, options) {
     initialRouteTracePrefix: prefixTrace,
     goalSkylineLimit: number(dpConfig.goalSkylineLimit, 8),
     dpSkylineMax: number(dpConfig.dpSkylineMax, 1),
+    preserveGoalArchive: dpConfig.preserveGoalArchive === true,
+    preserveSkylineAlternatives: dpConfig.preserveSkylineAlternatives === true,
     dominanceConfig,
     actionProvider,
     actionApplier,
@@ -2363,6 +2372,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     preserveSkylineRoles:
       config.preserveSkylineRoles === true ||
       dpConfig.preserveSkylineRoles === true,
+    preserveGoalArchive: dpConfig.preserveGoalArchive === true,
   });
   return {
     segmentId: segment.id,
