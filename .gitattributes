@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# Imported tower snapshots retain their original line endings and byte layout.
+"Only upV2.1/**" !text !eol
+"whiteisland（9）/**" !text !eol
