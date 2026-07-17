@@ -1,0 +1,24 @@
+{
+  "id": "window-mt5",
+  "label": "MT4-MT5 window optimization (steps 60-80)",
+  "routeFile": "routes/latest/mt5-problem-before-9-10.route.json",
+  "windowStart": 60,
+  "windowEnd": 80,
+  "floors": ["MT4", "MT5"],
+  "goal": {
+    "floorId": "MT5",
+    "minHero": {
+      "atk": 1097,
+      "def": 915,
+      "mdef": 6310,
+      "lv": 7,
+      "exp": 315
+    },
+    "equipmentIncludes": ["I893"]
+  },
+  "stageThresholds": [
+    { "minHero": { "lv": 7 } },
+    { "minHero": { "atk": 907, "def": 775, "mdef": 5910, "lv": 7 } },
+    null
+  ]
+}

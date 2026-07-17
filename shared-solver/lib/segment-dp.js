@@ -1,7 +1,15 @@
 "use strict";
 
-const { buildDpStateKey, searchDP } = require("./dp-search");
+const { buildDpStateKey, compareDpBest, searchDP } = require("./dp-search");
 const { estimateBattleSurvivability } = require("./battle-thresholds");
+const {
+  annotateStateResourceTiming,
+  buildResourceTimingOptions,
+  compareResourceTimingStates,
+  getTiming,
+  hasTimingConflict,
+  resourceTimingRoles,
+} = require("./resource-timing-model");
 const { formatActionLabel } = require("./enemy-labels");
 const { buildSolverSnapshot } = require("./route-snapshot");
 const {
@@ -221,6 +229,43 @@ function missingGoalFields(project, simulator, state, segment, options) {
       });
     }
   });
+  if (goal.resourceDeferral) {
+    const deferral = goal.resourceDeferral;
+    const resourceSummary = deferral.resourceSummary || deferral.summary;
+    if (resourceSummary && /^battle:/.test(resourceSummary)) {
+      const threshold = estimateBattleSurvivability(simulator, state, resourceSummary, {
+        skipMinHp: true,
+      });
+      if (!threshold || !threshold.supported) {
+        missing.push({
+          field: "resourceDeferral",
+          expected: resourceSummary,
+          actual: "unsupported-resource-target",
+        });
+      } else {
+        const maxDamage = deferral.maxDamage != null
+          ? Number(deferral.maxDamage)
+          : Number.POSITIVE_INFINITY;
+        if (Number(threshold.currentDamage) > maxDamage) {
+          missing.push({
+            field: "resourceDeferral.damage",
+            expected: `<= ${maxDamage}`,
+            actual: threshold.currentDamage,
+            baselineDamage: deferral.baselineDamage,
+            saving: Number(deferral.baselineDamage || 0) - Number(threshold.currentDamage || 0),
+          });
+        }
+        if (deferral.requireSurvivable !== false && !threshold.survivable) {
+          missing.push({
+            field: "resourceDeferral.survivable",
+            expected: `hp > ${threshold.currentDamage}`,
+            actual: number((state.hero || {}).hp, 0),
+            damage: threshold.currentDamage,
+          });
+        }
+      }
+    }
+  }
   if (goal.actionSurvivable && goal.actionSurvivable.summary) {
     if (
       actionTargetAlreadyRemovedByGoal(
@@ -327,6 +372,28 @@ function parseTileKeyParts(tileKey) {
   const match = /^([^:]+):(\d+),(\d+)$/.exec(String(tileKey || ""));
   if (!match) return null;
   return { floorId: match[1], x: Number(match[2]), y: Number(match[3]) };
+}
+
+function segmentProtectedTiles(segment) {
+  const goal = (segment || {}).goal || {};
+  const policy = (segment || {}).actionPolicy || {};
+  const byKey = new Map();
+  [...(goal.presentTiles || []), ...(policy.protectedTiles || [])].forEach(
+    (tile) => {
+      if (!tile || tile.floorId == null || tile.x == null || tile.y == null)
+        return;
+      byKey.set(`${tile.floorId}:${tile.x},${tile.y}`, tile);
+    },
+  );
+  return Array.from(byKey.values());
+}
+
+function actionTargetsProtectedTile(action, segment) {
+  const actionTileKey = parseActionTileKey(action && action.summary);
+  if (!actionTileKey) return false;
+  return segmentProtectedTiles(segment).some(
+    (tile) => `${tile.floorId}:${tile.x},${tile.y}` === actionTileKey,
+  );
 }
 
 function isRequiredTileStillPresent(project, state, required) {
@@ -689,6 +756,7 @@ function isAllowedAction(action, state, segment, simulator) {
     (action.unsupported || action.hasStateChange === false)
   )
     return false;
+  if (actionTargetsProtectedTile(action, segment)) return false;
   const actionTileKey = parseActionTileKey(action.summary);
   for (const preserved of goal.presentTiles || []) {
     const preservedKey = `${preserved.floorId}:${preserved.x},${preserved.y}`;
@@ -873,9 +941,8 @@ function isTileBlocking(project, tileNumber) {
 }
 
 function protectPresentTiles(project, state, segment) {
-  const goal = (segment || {}).goal || {};
   const saved = [];
-  for (const required of goal.presentTiles || []) {
+  for (const required of segmentProtectedTiles(segment)) {
     const floorState = (state.floorStates || {})[required.floorId];
     if (!floorState) continue;
     const key = `${required.x},${required.y}`;
@@ -953,7 +1020,7 @@ function enumerateMonsterTargets(simulator, state, segment) {
         if (!enemyId) continue;
 
         const preservedKey = `${floorId}:${x},${y}`;
-        const isProtected = (goal.presentTiles || []).some(
+        const isProtected = segmentProtectedTiles(segment).some(
           (p) => `${p.floorId}:${p.x},${p.y}` === preservedKey,
         );
         if (isProtected) continue;
@@ -1131,7 +1198,7 @@ function oracleFindFloorStates(
       if (!isAllowedPortalAction(action, current, policy)) continue;
       // Check presentTiles: don't traverse through protected tiles
       const actionTileKey = parseActionTileKey(action.summary);
-      const hitsProtected = (goal.presentTiles || []).some(
+      const hitsProtected = segmentProtectedTiles(segment).some(
         (p) => `${p.floorId}:${p.x},${p.y}` === actionTileKey,
       );
       if (hitsProtected) continue;
@@ -1462,7 +1529,7 @@ function buildMonsterOnlyActionProvider(simulator, segment, config, stats) {
           const enemyId = tile.id;
           if (!enemyId) continue;
           const preservedKey = `${floorId}:${x},${y}`;
-          const isProtected = (goal.presentTiles || []).some(
+          const isProtected = segmentProtectedTiles(segment).some(
             (p) => `${p.floorId}:${p.x},${p.y}` === preservedKey,
           );
           if (isProtected) continue;
@@ -2163,6 +2230,18 @@ function searchSegmentDP(simulator, startState, segment, options) {
     : [];
   const seed = cloneStateWithoutRouteTrace(startState);
   seed.route = prefixRoute.slice();
+  const resourceTimingOptions = buildResourceTimingOptions(
+    dpConfig,
+    segment,
+    config,
+  );
+  const resourceTimingRequested =
+    dpConfig.resourceTimingModel != null ||
+    config.resourceTimingModel != null ||
+    dpConfig.resourceTimingPolicy != null ||
+    config.resourceTimingEnabled === true;
+  const resourceTimingEnabled = resourceTimingRequested && resourceTimingOptions.model !== "off";
+  const resourceTimingCache = new Map();
   const goal = (segment || {}).goal || {};
   const actionSurvivableTarget =
     goal.actionSurvivable && goal.actionSurvivable.summary;
@@ -2224,6 +2303,29 @@ function searchSegmentDP(simulator, startState, segment, options) {
           : rightDepth;
         return leftRoute < rightRoute;
       },
+    };
+  }
+  const originalDominanceCompare = dominanceConfig && typeof dominanceConfig.compare === "function"
+    ? dominanceConfig.compare
+    : null;
+  const baseDominanceCompare = originalDominanceCompare
+    ? (left, right) => (originalDominanceCompare(left, right) ? 1 : -1)
+    : compareDpBest;
+  const resourceTimingDominance = resourceTimingEnabled
+    ? {
+        compare: (left, right) => compareResourceTimingStates(
+          left,
+          right,
+          baseDominanceCompare,
+          resourceTimingOptions,
+        ),
+        hasConflict: (left, right) => hasTimingConflict(left, right, resourceTimingOptions),
+      }
+    : null;
+  if (resourceTimingDominance) {
+    dominanceConfig = {
+      ...(dominanceConfig || {}),
+      ...resourceTimingDominance,
     };
   }
   const actionProviderMode = String(
@@ -2345,10 +2447,34 @@ function searchSegmentDP(simulator, startState, segment, options) {
     captureTrace,
     initialRouteTracePrefix: prefixTrace,
     goalSkylineLimit: number(dpConfig.goalSkylineLimit, 8),
-    dpSkylineMax: number(dpConfig.dpSkylineMax, 1),
+    landmarkArchiveLimit: number(dpConfig.landmarkArchiveLimit, 0),
+    dpSkylineMax: resourceTimingEnabled
+      ? Math.max(
+        number(dpConfig.dpSkylineMax, resourceTimingOptions.skylineMax),
+        resourceTimingOptions.skylineMax,
+      )
+      : number(dpConfig.dpSkylineMax, 1),
     preserveGoalArchive: dpConfig.preserveGoalArchive === true,
     preserveSkylineAlternatives: dpConfig.preserveSkylineAlternatives === true,
     dominanceConfig,
+    skylineCompare: resourceTimingEnabled
+      ? (left, right) => compareResourceTimingStates(
+        left,
+        right,
+        baseDominanceCompare,
+        resourceTimingOptions,
+      )
+      : null,
+    skylineRoles: resourceTimingEnabled ? resourceTimingRoles : null,
+    stateAnnotator: resourceTimingEnabled
+      ? (nextState) => annotateStateResourceTiming(
+        simulator,
+        nextState,
+        segment,
+        resourceTimingOptions,
+        { cache: resourceTimingCache },
+      )
+      : null,
     actionProvider,
     actionApplier,
     goalPredicate: buildSegmentGoalPredicate(
@@ -2381,6 +2507,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     goalSkyline,
     bestSeen: result.bestSeenState,
     bestProgress: result.bestProgressState,
+    landmarkArchive: result.landmarkArchive || [],
     diagnostics: {
       dp: {
         ...baseDpDiagnostics,
@@ -2391,6 +2518,16 @@ function searchSegmentDP(simulator, startState, segment, options) {
         maxActionsPerState,
         expansionBudgetExhausted,
         oracle: oracleDiagnostics || null,
+        resourceTiming: resourceTimingEnabled
+          ? {
+              model: resourceTimingOptions.model,
+              targetLimit: resourceTimingOptions.targetLimit,
+              resourceLimit: resourceTimingOptions.resourceLimit,
+              thresholdLimit: resourceTimingOptions.thresholdLimit,
+              skylineMax: resourceTimingOptions.skylineMax,
+              analyzedStates: resourceTimingCache.size,
+            }
+          : { model: "off" },
       },
       actionTrimmed:
         result.diagnostics &&
@@ -2592,6 +2729,24 @@ function segmentDpOverrides(segment, config, overrides) {
     ...(config && config.dpSkylineMax != null && !generatedSegment
       ? { dpSkylineMax: config.dpSkylineMax }
       : {}),
+    ...(config && config.resourceTimingModel != null
+      ? { resourceTimingModel: config.resourceTimingModel }
+      : {}),
+    ...(config && config.resourceTimingTargetLimit != null
+      ? { resourceTimingTargetLimit: config.resourceTimingTargetLimit }
+      : {}),
+    ...(config && config.resourceTimingResourceLimit != null
+      ? { resourceTimingResourceLimit: config.resourceTimingResourceLimit }
+      : {}),
+    ...(config && config.resourceTimingThresholdLimit != null
+      ? { resourceTimingThresholdLimit: config.resourceTimingThresholdLimit }
+      : {}),
+    ...(config && config.resourceTimingSkylineMax != null
+      ? { resourceTimingSkylineMax: config.resourceTimingSkylineMax }
+      : {}),
+    ...(config && config.resourceTimingCalculateThresholds != null
+      ? { resourceTimingCalculateThresholds: config.resourceTimingCalculateThresholds }
+      : {}),
     ...(repair.stopOnFirstGoal != null
       ? { stopOnFirstGoal: repair.stopOnFirstGoal }
       : {}),
@@ -2640,6 +2795,14 @@ function compactSegmentCandidates(candidates) {
     effectiveHero: candidate.effectiveHero,
     tags: candidate.tags,
     routeLength: candidate.route.length,
+    resourceTiming: getTiming(candidate.state)
+      ? {
+          retainedOptionValue: getTiming(candidate.state).retainedOptionValue,
+          projectedDamageSaving: getTiming(candidate.state).projectedDamageSaving,
+          newlySurvivableTargets: getTiming(candidate.state).newlySurvivableTargets,
+          roles: getTiming(candidate.state).roles,
+        }
+      : null,
   }));
 }
 
@@ -2676,7 +2839,32 @@ function runSegmentAgainstFrontier(
   const inputFrontier = (frontier || []).slice(0, startLimit);
   const nextCandidates = [];
   const attempts = [];
-  for (const candidate of inputFrontier) {
+  for (const [candidateIndex, candidate] of inputFrontier.entries()) {
+    const remainingRuntimeMs = config && config.deadlineMs
+      ? Math.max(0, number(config.deadlineMs, 0) - Date.now())
+      : null;
+    if (remainingRuntimeMs != null && remainingRuntimeMs <= 0) break;
+    const heapUsedMb = process.memoryUsage().heapUsed / 1024 / 1024;
+    if (
+      config &&
+      config.maxHeapMb &&
+      heapUsedMb >= number(config.maxHeapMb, Number.POSITIVE_INFINITY)
+    ) break;
+    const dpOverrides = segmentDpOverrides(segment, config || {}, overrides || {});
+    if (remainingRuntimeMs != null) {
+      const remainingCandidates = Math.max(1, inputFrontier.length - candidateIndex);
+      const fairCandidateRuntimeMs = Math.max(
+        1,
+        Math.floor(remainingRuntimeMs / remainingCandidates),
+      );
+      dpOverrides.maxRuntimeMs = Math.max(1, Math.min(
+        number(dpOverrides.maxRuntimeMs, fairCandidateRuntimeMs),
+        fairCandidateRuntimeMs,
+      ));
+    }
+    if (config && config.maxHeapMb) {
+      dpOverrides.maxHeapMb = number(config.maxHeapMb, 1024);
+    }
     const result = searchSegmentDP(simulator, candidate.state, segment, {
       candidateId: candidate.id,
       prefixRoute: candidate.route,
@@ -2689,7 +2877,7 @@ function runSegmentAgainstFrontier(
         (overrides || {}).preserveSkylineRoles,
       ),
       captureTrace: config && config.captureTrace === true,
-      dpOverrides: segmentDpOverrides(segment, config || {}, overrides || {}),
+      dpOverrides,
     });
     attempts.push(result);
     result.goalSkyline.forEach((goal) =>
@@ -2698,6 +2886,7 @@ function runSegmentAgainstFrontier(
         id: `${segment.id}:${candidate.id}:${goal.id}`,
       }),
     );
+    if (typeof global.gc === "function") global.gc();
   }
   const merged = mergeMilestoneFrontier(simulator, nextCandidates, segment, {
     candidateLimit,
@@ -3300,5 +3489,7 @@ module.exports = {
     tryReachAndBattle: reachAndBattleOracle.tryReachAndBattle,
     buildMonsterOnlyActionProvider:
       reachAndBattleOracle.buildMonsterOnlyActionProvider,
+    actionTargetsProtectedTile,
+    isAllowedAction,
   },
 };

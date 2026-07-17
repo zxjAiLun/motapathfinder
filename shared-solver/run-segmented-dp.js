@@ -1,5 +1,6 @@
 "use strict";
 
+const fs = require("node:fs");
 const path = require("node:path");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
@@ -110,11 +111,17 @@ function decisionTraceEntry(project, decision, preState, postState) {
   };
 }
 
-function replayRouteFile(simulator, routeFile) {
+function replayRouteFile(simulator, routeFile, options) {
+  const config = options || {};
+  const maxDecisions = optionalNumber(config.maxDecisions);
   let state = simulator.createInitialState({ rank: "chaos" });
   let routeTrace = [];
   const record = readRouteFile(routeFile);
-  for (const decision of record.decisions || []) {
+  const decisions = (record.decisions || []).slice(
+    0,
+    maxDecisions == null ? undefined : maxDecisions,
+  );
+  for (const decision of decisions) {
     const preState = state;
     const action = findAction(simulator, state, decision.summary);
     if (!action)
@@ -145,7 +152,94 @@ function compactSegmentResult(segment) {
       effectiveHero: candidate.effectiveHero,
       tags: candidate.tags,
       routeLength: candidate.routeLength,
+      resourceTiming: candidate.resourceTiming || null,
     })),
+    attempts: (segment.attempts || []).map((attempt) => ({
+      startCandidateId: attempt.startCandidateId,
+      found: attempt.found,
+      goalCount: attempt.goalCount,
+      resourceTiming: attempt.diagnostics && attempt.diagnostics.dp
+        ? attempt.diagnostics.dp.resourceTiming || { model: "off" }
+        : { model: "off" },
+    })),
+    failurePropagation: segment.failurePropagation || null,
+  };
+}
+
+function writeJsonFile(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+}
+
+function compactCandidate(candidate) {
+  if (!candidate) return null;
+  return {
+    id: candidate.id || null,
+    hero: candidate.hero || null,
+    effectiveHero: candidate.effectiveHero || null,
+    tags: candidate.tags || [],
+    routeLength: candidate.routeLength || null,
+    score: candidate.score || null,
+  };
+}
+
+function buildSegmentedReport({
+  args,
+  projectRoot,
+  routeName,
+  spec,
+  startRoute,
+  startRouteStep,
+  startStateFile,
+  initialState,
+  result,
+  doctor,
+  summary,
+}) {
+  return {
+    kind: "segmented-dp-diagnosis",
+    routeName,
+    projectRoot,
+    startRoute,
+    startRouteStep,
+    startStateFile,
+    fromMilestone: args["from-milestone"] || null,
+    toMilestone: args["to-milestone"] || null,
+    found: result.found,
+    reachedMilestone: result.reachedMilestone,
+    failedSegmentId: result.failedSegment && result.failedSegment.segmentId,
+    doctor: result.found ? null : doctor,
+    initialState: {
+      floorId: initialState.floorId,
+      hero: initialState.hero,
+      routeLength: Array.isArray(initialState.route) ? initialState.route.length : 0,
+      traceLength: Array.isArray(initialState.routeTrace) ? initialState.routeTrace.length : 0,
+    },
+    dp: {
+      candidateLimit: optionalNumber(args["candidate-limit"]) || 8,
+      dpKeyMode: args["dp-key-mode"] || null,
+      maxExpansions: optionalNumber(args["max-expansions"]),
+      maxRuntimeMs: optionalNumber(args["max-runtime-ms"]),
+      stopOnFirstGoal:
+        args["stop-on-first-goal"] == null
+          ? null
+          : parseBoolean(args["stop-on-first-goal"], false),
+      dpSkylineMax: optionalNumber(args["dp-skyline-max"]),
+      preserveSkylineRoles: parseBoolean(args["preserve-skyline-roles"], false),
+      goalSkylineLimit: optionalNumber(args["goal-skyline-limit"]),
+    },
+    summary,
+    milestones: (spec.milestones || []).map((milestone) => ({
+      id: milestone.id,
+      label: milestone.label,
+      goal: milestone.goal,
+      actionPolicy: milestone.actionPolicy,
+      dp: milestone.dp,
+    })),
+    segmentResults: result.segmentResults || [],
+    failedSegment: result.failedSegment || null,
+    checkpoints: result.checkpointResults || [],
+    finalCandidates: (result.finalCandidates || []).map(compactCandidate),
   };
 }
 
@@ -251,6 +345,7 @@ function main() {
   const startRoute = args["start-route"]
     ? path.resolve(args["start-route"])
     : null;
+  const startRouteStep = optionalNumber(args["start-route-step"]);
   if (startStateFile && startRoute) {
     throw new Error("Pass only one of --start-state or --start-route.");
   }
@@ -260,7 +355,9 @@ function main() {
   const initialState = loadedStart
     ? loadedStart.state
     : startRoute
-      ? replayRouteFile(simulator, startRoute)
+      ? replayRouteFile(simulator, startRoute, {
+          maxDecisions: startRouteStep,
+        })
       : simulator.createInitialState({ rank: args.rank || "chaos" });
   if (loadedStart) {
     console.log(`Start state: ${summarizeStartState(initialState)}`);
@@ -280,6 +377,12 @@ function main() {
     dpSkylineMax: optionalNumber(args["dp-skyline-max"]),
     preserveSkylineRoles: parseBoolean(args["preserve-skyline-roles"], false),
     goalSkylineLimit: optionalNumber(args["goal-skyline-limit"]),
+    resourceTimingModel: args["resource-timing-model"] || "breakpoint-v1",
+    resourceTimingTargetLimit: optionalNumber(args["resource-timing-target-limit"]) || 16,
+    resourceTimingResourceLimit: optionalNumber(args["resource-timing-resource-limit"]) || 4,
+    resourceTimingThresholdLimit: optionalNumber(args["resource-timing-threshold-limit"]) || 3,
+    resourceTimingSkylineMax: optionalNumber(args["resource-timing-skyline-max"]) || 4,
+    resourceTimingCalculateThresholds: parseBoolean(args["resource-timing-calculate-thresholds"], false),
   });
   const doctor = buildSolverDoctorReport(result);
   const summary = {
@@ -299,6 +402,27 @@ function main() {
     })),
   };
   console.log(JSON.stringify(summary, null, 2));
+
+  const report = args.report ? path.resolve(args.report) : null;
+  if (report) {
+    writeJsonFile(
+      report,
+      buildSegmentedReport({
+        args,
+        projectRoot,
+        routeName,
+        spec,
+        startRoute,
+        startRouteStep,
+        startStateFile,
+        initialState,
+        result,
+        doctor,
+        summary,
+      }),
+    );
+    console.log(`Report written: ${report}`);
+  }
 
   const checkpointFiles = saveUniqueCheckpointRoutes({
     args,

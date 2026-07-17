@@ -10,7 +10,8 @@ const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { planBlockerRepairs, summarizePlan } = require("./lib/route-audit-repair");
 const { tryRepairRoute, replaceStepSummary } = require("./lib/route-repair-runner");
 const { runIterativeRouteRepair } = require("./lib/iterative-route-repair");
-const { parseKeyValueArgs } = require("./lib/cli-options");
+const { runRouteWindowRepair } = require("./lib/route-window-repair");
+const { parseBooleanFlag, parseKeyValueArgs } = require("./lib/cli-options");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(
   __dirname,
@@ -19,10 +20,19 @@ const DEFAULT_PROJECT_ROOT = path.resolve(
   "Only upV2.1",
 );
 
+const WINDOW_PROFILE_FILES = {
+  mt5: path.resolve(__dirname, "profiles", "window-mt5.json"),
+};
+
 function parseOptionalNumber(value) {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function numberArg(args, name, fallback) {
+  const parsed = parseOptionalNumber(args[name]);
+  return parsed == null ? fallback : parsed;
 }
 
 function writeJson(filePath, value) {
@@ -33,16 +43,17 @@ function writeJson(filePath, value) {
 function main() {
   const args = parseKeyValueArgs(process.argv.slice(2));
   const mode = args.mode || "sequential";
-  const missingRequired = !args.route || (mode === "independent" && (!args.audit || !args.timeline));
+  const missingRequired = !args.route || (mode === "independent" && (!args.audit || !args.timeline)) || (mode === "window" && !args["window-profile"]);
   if (args.help || args.h || missingRequired) {
     console.log([
       "Usage:",
       "  node shared-solver/route-repair.js --route=<file> [--out=<file>] [--out-route=<file>]",
       "  node shared-solver/route-repair.js --mode=independent --route=<file> --timeline=<file> --audit=<file>",
+      "  node shared-solver/route-repair.js --mode=window --route=<file> --window-profile=<name|json>",
       "",
       "Options:",
       "  --project-root=<dir>       tower project root (default Only upV2.1/Only upV2.1)",
-      "  --mode=<name>              sequential (default) or independent",
+      "  --mode=<name>              sequential (default), independent, or window",
       "  --max-repairs=<n>          accepted sequential repairs (default 20)",
       "  --suffix-bridge=0|1        repair unavailable suffix actions with segment DP (default 1)",
       "  --max-suffix-bridges=<n>   bridge attempts per candidate (default 3)",
@@ -59,6 +70,21 @@ function main() {
       "  --max-depth=<n>            recursion depth for sequential blocker clearing (default 3)",
       "  --blocker-radius=<n>       radius used to discover blockers around the cheaper target (default 4)",
       "  --max-blockers-per-step=<n> cap blocker candidates considered per step (default 1)",
+      "  --window-profile=<name|json>  window profile name (mt5) or JSON object",
+      "  --window-max-expansions=<n>   per-stage DP expansion cap (default 12000)",
+      "  --window-max-runtime-ms=<n>   per-stage DP runtime budget (default 30000)",
+      "  --window-candidate-limit=<n>  candidates preserved per stage (default 4)",
+      "  --window-goal-skyline-limit=<n> goal skyline slots per stage (default 8)",
+      "  --disable-floor-fly        omit floorFly from actionKinds (force changeFloor)",
+      "  --enable-floor-fly-final-stage  re-enable floorFly for the last DP stage only",
+      "  --max-floor-fly-per-target=<n> deprioritize floorFly: keep only N per target (default 1)",
+      "  --window-preserve-prefix=<n> keep first N baseline window actions before DP",
+      "  --window-baseline-local-probe=0|1  try bounded swaps in the baseline window (default 1)",
+      "  --window-baseline-local-depth=<n> baseline-local swap depth (default 3)",
+      "  --window-baseline-local-beam=<n> baseline-local beam width (default 1)",
+      "  --window-local-probe=0|1  try bounded insert/swap repair when direct candidates fail (default 1)",
+      "  --window-local-probe-candidate-limit=<n> raw final candidates probed (default 32)",
+      "  --window-local-probe-swap-candidate-limit=<n> insertion seeds receiving swap probes (default 4)",
       "  --out=<file>               write repair report",
       "  --out-route=<file>         write re-priced route.json (only when repairedCount > 0)",
     ].join("\n"));
@@ -71,6 +97,153 @@ function main() {
   const simulator = new StaticSimulator(project, {
     battleResolver: new FunctionBackedBattleResolver(project),
   });
+  if (mode === "window") {
+    const profileArg = args["window-profile"];
+    let profile = null;
+    // 1. Built-in alias → load from file
+    if (WINDOW_PROFILE_FILES[profileArg]) {
+      const aliasPath = WINDOW_PROFILE_FILES[profileArg];
+      if (!fs.existsSync(aliasPath)) {
+        console.error(`Built-in profile '${profileArg}' file missing: ${aliasPath}`);
+        process.exitCode = 1;
+        return;
+      }
+      try {
+        profile = JSON.parse(fs.readFileSync(aliasPath, "utf8"));
+      } catch (error) {
+        console.error(`Failed to parse built-in profile file: ${aliasPath}: ${error.message}`);
+        process.exitCode = 1;
+        return;
+      }
+    }
+    // 2. File path
+    if (!profile) {
+      const profilePath = path.resolve(profileArg);
+      if (fs.existsSync(profilePath)) {
+        try {
+          profile = JSON.parse(fs.readFileSync(profilePath, "utf8"));
+        } catch (error) {
+          console.error(`Failed to parse window profile file: ${profilePath}: ${error.message}`);
+          process.exitCode = 1;
+          return;
+        }
+      }
+    }
+    // 3. Inline JSON
+    if (!profile) {
+      try {
+        profile = JSON.parse(profileArg);
+      } catch (error) {
+        console.error(`Unknown window profile: ${profileArg} (not a built-in name, file path, or JSON)`);
+        process.exitCode = 1;
+        return;
+      }
+    }
+    const baselineHpArg = parseOptionalNumber(args["window-baseline-hp"]);
+    const windowResult = runRouteWindowRepair(project, simulator, route, profile, {
+      projectRoot,
+      windowStart: numberArg(args, "window-start", profile.windowStart),
+      windowEnd: numberArg(args, "window-end", profile.windowEnd),
+      baselineHp: baselineHpArg != null ? baselineHpArg : null,
+      windowMaxExpansions: numberArg(args, "window-max-expansions", 12000),
+      windowMaxRuntimeMs: numberArg(args, "window-max-runtime-ms", 30000),
+      windowCandidateLimit: numberArg(args, "window-candidate-limit", 4),
+      windowGoalSkylineLimit: numberArg(args, "window-goal-skyline-limit", 8),
+      windowFloors: profile.floors,
+      disableFloorFly: parseBooleanFlag(args["disable-floor-fly"], false),
+      enableFloorFlyFinalStage: parseBooleanFlag(args["enable-floor-fly-final-stage"], false),
+      maxFloorFlyPerTarget: parseOptionalNumber(args["max-floor-fly-per-target"]),
+      preserveWindowPrefix: numberArg(args, "window-preserve-prefix", 0),
+      baselineLocalProbe: parseBooleanFlag(args["window-baseline-local-probe"], true),
+      baselineLocalProbeLimit: numberArg(args, "window-baseline-local-probe-limit", 40),
+      baselineLocalProbeDepth: numberArg(args, "window-baseline-local-depth", 3),
+      baselineLocalProbeBeamWidth: numberArg(args, "window-baseline-local-beam", 1),
+      localProbe: parseBooleanFlag(args["window-local-probe"], true),
+      localProbeCandidateLimit: numberArg(args, "window-local-probe-candidate-limit", 32),
+      localProbeInsertionLimit: numberArg(args, "window-local-probe-insertion-limit", 40),
+      localProbeInsertionSeedLimit: numberArg(args, "window-local-probe-seed-limit", 3),
+      localProbeSwapLimit: numberArg(args, "window-local-probe-swap-limit", 60),
+      localProbeSwapCandidateLimit: numberArg(args, "window-local-probe-swap-candidate-limit", 4),
+    });
+    const windowReport = {
+      kind: "window-repair",
+      mode: "window",
+      route: routeFile,
+      projectRoot,
+      profile: profile.id,
+      windowStart: windowResult.windowStart,
+      windowEnd: windowResult.windowEnd,
+      preserveWindowPrefix: numberArg(args, "window-preserve-prefix", 0),
+      ok: windowResult.ok,
+      baselineHp: windowResult.baselineHp,
+      finalHp: windowResult.finalHp,
+      stoppedReason: windowResult.stoppedReason,
+      farthestStage: windowResult.farthestStage,
+      stageResults: windowResult.stageResults,
+      validations: (windowResult.validations || []).map((entry) => ({
+        candidateId: entry.candidateId,
+        hero: entry.hero || null,
+        effectiveHero: entry.effectiveHero || null,
+        tags: entry.tags || [],
+        baselineMatchCount: entry.baselineMatchCount || 0,
+        baselineMobilityMatchCount: entry.baselineMobilityMatchCount || 0,
+        baselinePortalMatchCount: entry.baselinePortalMatchCount || 0,
+        windowActionCount: entry.windowActionCount || 0,
+        actionTrace: entry.actionTrace || [],
+        fullReplayOk: entry.fullReplayOk,
+        replayFailure: entry.replayFailure || null,
+        goalFailures: entry.goalFailures || [],
+        finalHp: entry.finalHp,
+        baselineHp: entry.baselineHp,
+        hpImproved: entry.hpImproved,
+        accepted: entry.accepted,
+        rejectedReason: entry.rejectedReason,
+        localProbe: entry.localProbe || false,
+        baselineLocalProbe: entry.baselineLocalProbe || false,
+        sourceCandidateId: entry.sourceCandidateId || null,
+        probeType: entry.probeType || null,
+        probe: entry.probe || null,
+      })),
+      baselineLocalProbeAttempts: windowResult.baselineLocalProbeAttempts || [],
+      localProbeAttempts: windowResult.localProbeAttempts || [],
+      accepted: windowResult.accepted,
+      rebuildError: windowResult.rebuildError,
+      strictReplayOk: windowResult.strictReplayOk,
+      strictFinalHp: windowResult.strictFinalHp,
+      strictGoalFailures: windowResult.strictGoalFailures,
+      debugTrace: windowResult.debugTrace || [],
+      windowRepair: {
+        finalGoal: windowResult.finalGoal,
+        stages: (windowResult.stageResults || []).map((stage) => ({
+          stageIndex: stage.stageIndex,
+          found: stage.found,
+          candidateCount: stage.candidateCount,
+          skylineCount: stage.skylineCount,
+          expansions: stage.expansions,
+          stoppedReason: stage.stoppedReason,
+          candidates: stage.candidates,
+        })),
+        bestCandidateHp: windowResult.bestCandidateHp || null,
+        acceptedId: windowResult.accepted ? windowResult.accepted.candidateId : null,
+        baselineLocalProbeAttempts: windowResult.baselineLocalProbeAttempts || [],
+        localProbeAttempts: windowResult.localProbeAttempts || [],
+      },
+    };
+    if (args.out) {
+      const outFile = path.resolve(args.out);
+      writeJson(outFile, windowReport);
+      console.log(`Window repair report written: ${outFile}`);
+    } else {
+      console.log(JSON.stringify(windowReport, null, 2));
+    }
+    if (args["out-route"] && windowResult.ok && windowResult.route) {
+      const outRouteFile = path.resolve(args["out-route"]);
+      fs.mkdirSync(path.dirname(outRouteFile), { recursive: true });
+      writeRouteFile(outRouteFile, windowResult.route);
+      console.log(`Repaired route written: ${outRouteFile}`);
+    }
+    return;
+  }
   if (mode !== "independent") {
     const iterative = runIterativeRouteRepair(project, simulator, route, {
       projectRoot,

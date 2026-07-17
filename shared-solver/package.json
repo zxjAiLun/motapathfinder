@@ -14,7 +14,7 @@
     "watch:mt5:progress": "npm run verify:mt5:progress:live -- --headless=0 --step-delay-ms=500 --keep-open=1 --start-delay-ms=3000",
     "check:core": "node check-core-regressions.js",
     "check:state-deps": "npm run check:key-audit",
-    "check:static": "npm run check:core && npm run check:cluster && npm run check:confluence && npm run check:pocket && npm run check:mt2-local-order && npm run check:onlyup:key-states && npm run check:onlyup:segments && npm run check:milestone:audit && npm run check:region-specs && npm run check:resource-timing && npm run check:no-tower-solver-js && npm run check:mt2-branch && npm run check:auto-stabilize && npm run check:floor-scout && npm run check:checkpoint-repair && npm run check:productization && npm run check:key-audit && npm run check:stage:short",
+    "check:static": "npm run check:core && npm run check:cluster && npm run check:confluence && npm run check:pocket && npm run check:mt2-local-order && npm run check:onlyup:key-states && npm run check:onlyup:segments && npm run check:milestone:audit && npm run check:region-specs && npm run check:resource-timing && npm run check:resource-timing-model && npm run check:resource-deferral && npm run check:no-tower-solver-js && npm run check:mt2-branch && npm run check:auto-stabilize && npm run check:floor-scout && npm run check:checkpoint-repair && npm run check:productization && npm run check:key-audit && npm run check:stage:short",
     "check:live:progress": "npm run verify:mt3:progress:live && npm run verify:mt5:progress:live",
     "check:validation": "npm run check:static && npm run check:live:progress",
     "check:key-audit": "node audit-state-dependencies.js",
@@ -43,6 +43,8 @@
     "check:milestone:audit": "node check-milestone-audit.js",
     "check:region-specs": "node check-region-specs.js",
     "check:resource-timing": "node check-resource-timing.js",
+    "check:resource-timing-model": "node check-resource-timing-model.js",
+    "check:resource-deferral": "node check-resource-deferral.js",
     "audit:js": "node ../tools/audit-js-files.js",
     "check:no-tower-solver-js": "node ../tools/audit-js-files.js --check-no-tower-solver-js",
     "check:public-layer-boundaries": "node ../tools/check-agent-boundaries.js --public-layer-dev",
@@ -73,7 +75,17 @@
     "gui:route": "node route-gui.js --route-file=routes/latest/mt1-mt3.route.json",
     "gui:route:live": "node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --headless=0",
     "gui:stage-mt5": "node route-gui.js --route-file=routes/latest/stage-mt5-best.route.json --live=1 --headless=0",
-    "check:whiteisland:resource-order": "node check-whiteisland-trial-resource-order.js"
+    "check:whiteisland:resource-order": "node check-whiteisland-trial-resource-order.js",
+    "check:window-repair": "node check-window-repair.js",
+    "check:window-repair:closure": "node check-mt5-window-repair-closure.js",
+    "check:mt5-51533-next": "node check-mt5-51533-next.js",
+    "check:auto-decompose": "node check-auto-milestone-decomposition.js",
+    "run:auto-decompose:mt5": "node run-adaptive-segment-dp.js --route-name=onlyup-mt5-51533-prefix59-i894 --start-route=routes/generated/window-repair-mt5.route.json --start-route-step=59 --to-milestone=mt5-i894-equipped-from-51533 --auto-decompose=1 --global-runtime-ms=600000 --global-max-heap-mb=1024 --decompose-max-nodes=64 --decompose-branch-width=3 --decompose-max-depth=24 --decompose-report=routes/generated/auto-decompose-mt5.report.json --out-generated-spec=routes/generated/auto-decompose-mt5.spec.json --out=routes/generated/auto-decompose-mt5.route.json --capture-trace=1",
+    "run:window-repair:mt5": "node route-repair.js --mode=window --route=routes/latest/mt5-problem-before-9-10.route.json --window-profile=mt5 --disable-floor-fly --enable-floor-fly-final-stage --max-floor-fly-per-target=1 --window-preserve-prefix=2 --window-candidate-limit=2 --window-goal-skyline-limit=4 --window-max-expansions=1000 --window-max-runtime-ms=3000 --window-local-probe=0 --out=routes/generated/window-repair-mt5.json --out-route=routes/generated/window-repair-mt5.route.json",
+    "run:mt5-51533-to-i894": "npm run run:window-repair:mt5 && node run-segmented-dp.js --route-name=onlyup-mt5-51533-next --start-route=routes/generated/window-repair-mt5.route.json --to-milestone=mt5-i894-equipped-from-51533 --candidate-limit=8 --goal-skyline-limit=8 --dp-skyline-max=4 --preserve-skyline-roles=1 --max-expansions=3000 --max-runtime-ms=8000 --save-unique-checkpoints=0 --report=routes/generated/mt5-51533-to-i894.diagnosis.json --out=routes/generated/mt5-51533-to-i894.route.json",
+    "run:mt5-51533-prefix59-to-i894": "npm run run:window-repair:mt5 && node run-segmented-dp.js --route-name=onlyup-mt5-51533-prefix59-i894 --start-route=routes/generated/window-repair-mt5.route.json --start-route-step=59 --to-milestone=mt5-i894-equipped-from-51533 --candidate-limit=8 --goal-skyline-limit=8 --dp-skyline-max=4 --preserve-skyline-roles=1 --max-expansions=20000 --max-runtime-ms=60000 --save-unique-checkpoints=0 --report=routes/generated/mt5-51533-prefix59-to-i894.diagnosis.json --out=routes/generated/mt5-51533-prefix59-to-i894.route.json",
+    "diagnose:mt5-51533-audit": "node debug-route-timeline.js --route=routes/generated/window-repair-mt5.route.json --out=routes/generated/window-repair-mt5.timeline.json --snapshot-floors=MT4,MT5 --action-inspector-mode=pre && node route-audit.js --timeline=routes/generated/window-repair-mt5.timeline.json --out=routes/generated/window-repair-mt5.audit.json --verify=1",
+    "diagnose:window-repair:mt5": "node diagnose-window-repair.js --route=routes/latest/mt5-problem-before-9-10.route.json --report=routes/generated/window-repair-mt5-final-fly.json --out=routes/generated/window-repair-mt5-final-fly.diagnosis.json"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

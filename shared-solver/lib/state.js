@@ -196,14 +196,18 @@ function listFloorMutationSummary(floorStates) {
     .sort()
     .map((floorId) => {
       const floorState = floorStates[floorId];
+      const removed = Object.keys(floorState.removed || {}).sort();
+      const replaced = Object.entries(floorState.replaced || {})
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, value]) => `${key}=${value}`);
+      if (removed.length === 0 && replaced.length === 0) return null;
       return {
         floorId,
-        removed: Object.keys(floorState.removed || {}).sort(),
-        replaced: Object.entries(floorState.replaced || {})
-          .sort(([left], [right]) => left.localeCompare(right))
-          .map(([key, value]) => `${key}=${value}`),
+        removed,
+        replaced,
       };
-    });
+    })
+    .filter(Boolean);
 }
 
 module.exports = {

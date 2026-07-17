@@ -2,10 +2,12 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
 const { runAdaptiveSegmentPlanner } = require("./lib/adaptive-segment-planner");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
+const { runMilestoneDecomposer } = require("./lib/milestone-decomposer");
 const { loadProject } = require("./lib/project-loader");
 const { buildSolverSnapshot } = require("./lib/route-snapshot");
 const { buildDominanceKey } = require("./lib/state-key");
@@ -185,10 +187,12 @@ function decisionTraceEntry(project, decision, preState, postState) {
   };
 }
 
-function replayRouteFile(simulator, routeFile, rank, useSnapshot, useCache, projectRoot, captureTrace) {
+function replayRouteFile(simulator, routeFile, rank, useSnapshot, useCache, projectRoot, captureTrace, maxDecisions) {
   const keepTrace = captureTrace === true;
   const record = readRouteFile(routeFile);
-  if (useSnapshot && record.final && record.final.snapshot) {
+  const limit = optionalNumber(maxDecisions);
+  const partialReplay = limit != null;
+  if (!partialReplay && useSnapshot && record.final && record.final.snapshot) {
     const state = createStateFromSnapshot(simulator.project, record.final.snapshot, {
       rank: rank || "chaos",
       route: Array.isArray(record.rawRoute) ? record.rawRoute : [],
@@ -198,13 +202,14 @@ function replayRouteFile(simulator, routeFile, rank, useSnapshot, useCache, proj
     if (keepTrace) state.routeTrace = (record.decisions || []).map((decision) => decisionTraceEntry(simulator.project, decision, null, null));
     return state;
   }
-  if (useCache) {
+  if (!partialReplay && useCache) {
     const cached = readReplayCache(routeFile, projectRoot || "", rank || "chaos", keepTrace);
     if (cached) return cached;
   }
   let state = simulator.createInitialState({ rank: rank || "chaos" });
   let routeTrace = [];
-  for (const decision of record.decisions || []) {
+  const decisions = (record.decisions || []).slice(0, partialReplay ? limit : undefined);
+  for (const decision of decisions) {
     const preState = state;
     const action = findAction(simulator, state, decision);
     if (!action) throw new Error(`Unable to replay start route at ${decision.index}: ${decision.summary}`);
@@ -214,7 +219,7 @@ function replayRouteFile(simulator, routeFile, rank, useSnapshot, useCache, proj
   }
   if (keepTrace) state.routeTrace = routeTrace;
   else if (Object.prototype.hasOwnProperty.call(state, "routeTrace")) delete state.routeTrace;
-  if (useCache) writeReplayCache(routeFile, projectRoot || "", rank || "chaos", state, keepTrace);
+  if (!partialReplay && useCache) writeReplayCache(routeFile, projectRoot || "", rank || "chaos", state, keepTrace);
   return state;
 }
 
@@ -303,8 +308,64 @@ function guiCommand(projectRootArg, outPath) {
   ].join("\n");
 }
 
+function writeJsonFile(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+}
+
+function autoDecomposeOptions(args, routeName) {
+  return {
+    routeName: `${routeName}-auto-decomposed`,
+    globalRuntimeMs: optionalNumber(args["global-runtime-ms"]) || 600000,
+    globalMaxHeapMb: optionalNumber(args["global-max-heap-mb"]) || 1024,
+    maxNodes: optionalNumber(args["decompose-max-nodes"]) || 64,
+    branchWidth: optionalNumber(args["decompose-branch-width"]) || 3,
+    maxDepth: optionalNumber(args["decompose-max-depth"]) || 24,
+    maxLandmarks: optionalNumber(args["decompose-max-landmarks"]) || 24,
+    probeLandmarks: optionalNumber(args["decompose-probe-landmarks"]) || 6,
+    candidateLimit: optionalNumber(args["candidate-limit"]) || 4,
+    cacheEnabled: parseBoolean(args["decompose-cache"], true),
+    cacheDirectory: path.resolve(
+      args["decompose-cache-dir"] || "routes/generated/segment-decomposition-cache",
+    ),
+    minimize: parseBoolean(args["decompose-minimize"], true),
+    allowedFloors: args["decompose-allowed-floors"]
+      ? args["decompose-allowed-floors"].split(",").map((value) => value.trim()).filter(Boolean)
+      : null,
+    resourceTimingModel: args["resource-timing-model"] || "breakpoint-v2",
+    resourceTimingTargetLimit: optionalNumber(args["resource-timing-target-limit"]) || 16,
+    resourceTimingResourceLimit: optionalNumber(args["resource-timing-resource-limit"]) || 4,
+    resourceTimingThresholdLimit: optionalNumber(args["resource-timing-threshold-limit"]) || 3,
+    resourceTimingSkylineMax: optionalNumber(args["resource-timing-skyline-max"]) || 4,
+    resourceTimingCalculateThresholds: parseBoolean(args["resource-timing-calculate-thresholds"], false),
+    resourceDeferralEnabled: parseBoolean(args["resource-deferral"], true),
+    resourceDeferralLimit: optionalNumber(args["resource-deferral-limit"]) || 2,
+    resourceDeferralMaxExpansions: optionalNumber(args["resource-deferral-max-expansions"]) || 600,
+    resourceDeferralMaxRuntimeMs: optionalNumber(args["resource-deferral-max-runtime-ms"]) || 5000,
+    resourceDeferralMinSaving: optionalNumber(args["resource-deferral-min-saving"]) || 5000,
+  };
+}
+
+function reexecWithGarbageCollection(args) {
+  if (!parseBoolean(args["auto-decompose"], false)) return false;
+  if (typeof global.gc === "function") return false;
+  if (process.env.MOTAPATHFINDER_GC_REEXEC === "1") return false;
+  const child = spawnSync(
+    process.execPath,
+    ["--expose-gc", __filename, ...process.argv.slice(2)],
+    {
+      stdio: "inherit",
+      env: { ...process.env, MOTAPATHFINDER_GC_REEXEC: "1" },
+    },
+  );
+  if (child.error) throw child.error;
+  process.exitCode = child.status == null ? 1 : child.status;
+  return true;
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (reexecWithGarbageCollection(args)) return;
   const projectRootArg = args["project-root"] || "../Only upV2.1/Only upV2.1";
   const projectRoot = path.resolve(projectRootArg);
   const rank = args.rank || "chaos";
@@ -319,6 +380,7 @@ function main() {
     projectRoot
   );
   const startRoute = args["start-route"] ? path.resolve(args["start-route"]) : null;
+  const startRouteStep = optionalNumber(args["start-route-step"]);
   const captureTrace = parseBoolean(args["capture-trace"], false);
   const initialState = startRoute
     ? replayRouteFile(
@@ -328,10 +390,26 @@ function main() {
       parseBoolean(args["start-route-snapshot"], false),
       parseBoolean(args["start-route-cache"], true),
       projectRoot,
-      captureTrace
+      captureTrace,
+      startRouteStep,
     )
     : simulator.createInitialState({ rank });
-  const result = runAdaptiveSegmentPlanner(simulator, initialState, spec, {
+  const autoDecompose = parseBoolean(args["auto-decompose"], false);
+  const targetMilestoneId = args["to-milestone"] || null;
+  const targetSegment = targetMilestoneId
+    ? (spec.milestones || []).find((milestone) => milestone.id === targetMilestoneId)
+    : (spec.milestones || [])[spec.milestones.length - 1];
+  if (autoDecompose && !targetSegment) {
+    throw new Error(`Unable to resolve auto-decompose target milestone: ${targetMilestoneId || "last"}`);
+  }
+  const result = autoDecompose
+    ? runMilestoneDecomposer(
+      simulator,
+      initialState,
+      targetSegment,
+      autoDecomposeOptions(args, routeName),
+    )
+    : runAdaptiveSegmentPlanner(simulator, initialState, spec, {
     fromMilestoneId: args["from-milestone"] || null,
     toMilestoneId: args["to-milestone"] || null,
     candidateLimit: optionalNumber(args["candidate-limit"]) || 8,
@@ -368,11 +446,28 @@ function main() {
     qualityFloor,
     captureTrace,
     startCandidateLimit: optionalNumber(args["start-candidate-limit"]) || null,
+    resourceTimingModel: args["resource-timing-model"] || "breakpoint-v1",
+    resourceTimingTargetLimit: optionalNumber(args["resource-timing-target-limit"]) || 16,
+    resourceTimingResourceLimit: optionalNumber(args["resource-timing-resource-limit"]) || 4,
+    resourceTimingThresholdLimit: optionalNumber(args["resource-timing-threshold-limit"]) || 3,
+    resourceTimingSkylineMax: optionalNumber(args["resource-timing-skyline-max"]) || 4,
+    resourceTimingCalculateThresholds: parseBoolean(args["resource-timing-calculate-thresholds"], false),
+    resourceDeferralEnabled: parseBoolean(args["resource-deferral"], false),
+    resourceDeferralLimit: optionalNumber(args["resource-deferral-limit"]) || 2,
+    resourceDeferralMaxExpansions: optionalNumber(args["resource-deferral-max-expansions"]) || 600,
+    resourceDeferralMaxRuntimeMs: optionalNumber(args["resource-deferral-max-runtime-ms"]) || 5000,
+    resourceDeferralMinSaving: optionalNumber(args["resource-deferral-min-saving"]) || 5000,
   });
   const doctor = buildSolverDoctorReport(result);
   const summary = {
     routeName,
     found: result.found,
+    generatedProfileVerified: autoDecompose
+      ? result.generatedProfileVerified === true
+      : null,
+    profileValidationFailure: result.profileValidationFailure
+      ? result.profileValidationFailure.segmentId
+      : null,
     reachedMilestone: result.reachedMilestone,
     failedSegmentId: result.failedSegment && result.failedSegment.segmentId,
     doctor: result.found ? null : doctor,
@@ -388,6 +483,7 @@ function main() {
     selectedBranch: (result.adaptive || {}).selectedBranch,
     attempts: (result.adaptive || {}).attempts || [],
     segments: (result.segmentResults || []).map(compactSegmentResult),
+    decomposition: result.decomposition || null,
   };
   console.log(JSON.stringify(summary, null, 2));
 
@@ -401,7 +497,12 @@ function main() {
     const fullRoute = Array.isArray(result.finalCandidate.route) ? result.finalCandidate.route.slice() : (Array.isArray(finalState.route) ? finalState.route.slice() : []);
     const fullTrace = Array.isArray(result.finalCandidate.trace) ? result.finalCandidate.trace.slice() : (Array.isArray(finalState.routeTrace) ? finalState.routeTrace.slice() : []);
     const prefixLength = startRoute && Array.isArray(initialState.route) ? initialState.route.length : 0;
-    finalState.route = prefixLength > 0 ? fullRoute.slice(prefixLength) : fullRoute;
+    const writeFullRoute = autoDecompose && startRouteStep != null;
+    finalState.route = writeFullRoute
+      ? fullRoute
+      : prefixLength > 0
+        ? fullRoute.slice(prefixLength)
+        : fullRoute;
     if (captureTrace) {
       finalState.routeTrace = prefixLength > 0 ? fullTrace.slice(prefixLength) : fullTrace;
     } else if (Object.prototype.hasOwnProperty.call(finalState, "routeTrace")) {
@@ -410,7 +511,11 @@ function main() {
     const routeRecord = buildRouteRecord({
       project,
       simulator,
-      initialState: startRoute ? initialState : undefined,
+      initialState: writeFullRoute
+        ? simulator.createInitialState({ rank })
+        : startRoute
+          ? initialState
+          : undefined,
       finalState,
       options: {
         projectRoot,
@@ -432,6 +537,7 @@ function main() {
             selectedBranch: (result.adaptive || {}).selectedBranch,
             candidateIds: (result.finalCandidates || []).map((candidate) => candidate.id),
             qualityFloor,
+            decomposition: result.decomposition || null,
           },
         },
       },
@@ -441,11 +547,26 @@ function main() {
     console.log("GUI replay:");
     console.log(guiCommand(projectRootArg, out));
   }
-  if (args["save-effective-spec"] && result.effectiveSpec) {
-    const specOut = path.resolve(args["save-effective-spec"]);
-    fs.mkdirSync(path.dirname(specOut), { recursive: true });
-    fs.writeFileSync(specOut, `${JSON.stringify(result.effectiveSpec, null, 2)}\n`, "utf8");
+  const effectiveSpecPath = args["out-generated-spec"] || args["save-effective-spec"];
+  if (effectiveSpecPath && result.effectiveSpec) {
+    const specOut = path.resolve(effectiveSpecPath);
+    writeJsonFile(specOut, result.effectiveSpec);
     console.log(`Effective spec written: ${specOut}`);
+  }
+  const decompositionReport = args["decompose-report"];
+  if (decompositionReport) {
+    const reportOut = path.resolve(decompositionReport);
+    writeJsonFile(reportOut, {
+      kind: "milestone-decomposition-report",
+      routeName,
+      startRoute,
+      startRouteStep,
+      targetMilestoneId: targetSegment && targetSegment.id,
+      found: result.found,
+      decomposition: result.decomposition || null,
+      summary,
+    });
+    console.log(`Decomposition report written: ${reportOut}`);
   }
   if (result.failedSegment && parseBoolean(args["print-failures"], true)) {
     console.log(doctor.line);

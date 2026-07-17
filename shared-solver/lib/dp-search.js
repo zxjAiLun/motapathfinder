@@ -183,7 +183,7 @@ class SkylineSet {
     return Boolean(arr && arr.some((n) => n.nodeId === nodeId));
   }
 
-  add(key, node, compareFn) {
+  add(key, node, compareFn, roleFn) {
     let arr = this.map.get(key);
     if (!arr) {
       arr = [node];
@@ -195,6 +195,25 @@ class SkylineSet {
       arr.sort((a, b) => compareFn(b.state, a.state));
       return true;
     }
+    if (typeof roleFn === "function") {
+      const incomingRoles = new Set(roleFn(node.state) || []);
+      const roleCounts = new Map();
+      arr.forEach((item) => {
+        (roleFn(item.state) || []).forEach((role) => roleCounts.set(role, Number(roleCounts.get(role) || 0) + 1));
+      });
+      const replaceable = arr.filter((item) =>
+        (roleFn(item.state) || []).every((role) => Number(roleCounts.get(role) || 0) > 1),
+      );
+      const hasNewRole = Array.from(incomingRoles).some((role) => Number(roleCounts.get(role) || 0) === 0);
+      if (hasNewRole && replaceable.length > 0) {
+        const worstReplaceable = replaceable
+          .slice()
+          .sort((left, right) => compareFn(right.state, left.state))[replaceable.length - 1];
+        arr[arr.indexOf(worstReplaceable)] = node;
+        arr.sort((a, b) => compareFn(b.state, a.state));
+        return true;
+      }
+    }
     const worst = arr[arr.length - 1];
     if (compareFn(node.state, worst.state) > 0) {
       arr[arr.length - 1] = node;
@@ -202,6 +221,11 @@ class SkylineSet {
       return true;
     }
     return false;
+  }
+
+  replace(key, node) {
+    this.map.set(key, [node]);
+    return true;
   }
 
   get size() {
@@ -212,7 +236,8 @@ class SkylineSet {
 function isBetterForSameDpKey(left, right, dominanceConfig) {
   if (!right) return true;
   if (dominanceConfig && typeof dominanceConfig.compare === "function") {
-    return dominanceConfig.compare(left, right);
+    const comparison = dominanceConfig.compare(left, right);
+    return typeof comparison === "number" ? comparison > 0 : comparison === true;
   }
   const hpDiff = heroHp(left) - heroHp(right);
   if (hpDiff !== 0) return hpDiff > 0;
@@ -434,6 +459,13 @@ function searchDP(simulator, initialState, options) {
     : [];
   const rootState = cloneState(initialState);
   rootState.route = [];
+  if (typeof config.stateAnnotator === "function") {
+    try {
+      config.stateAnnotator(rootState, null, null);
+    } catch (error) {
+      // Timing annotations are diagnostic and must not make the search fail.
+    }
+  }
   const nodes = new Map();
   let nextNodeId = 1;
   const skylineMax = number(config.dpSkylineMax, 1);
@@ -457,6 +489,8 @@ function searchDP(simulator, initialState, options) {
   const goalNodes = [];
   let bestSeenNode = null;
   let bestProgressNode = null;
+  const landmarkArchiveLimit = Math.max(0, number(config.landmarkArchiveLimit, 0));
+  const landmarkArchiveByKey = new Map();
   let sequence = 0;
   let stoppedReason = null;
   const isGoalState = typeof config.goalPredicate === "function"
@@ -473,15 +507,84 @@ function searchDP(simulator, initialState, options) {
     return continueAfterGoal || !isGoalState(entry.state);
   };
 
+  const archiveLandmark = (node, sourceAction, parentNode) => {
+    if (landmarkArchiveLimit <= 0 || !node || !sourceAction) return;
+    const kind = sourceAction.kind || "unknown";
+    const floorChanged = Boolean(parentNode && parentNode.state.floorId !== node.state.floorId);
+    const beforeHero = (parentNode && parentNode.state && parentNode.state.hero) || {};
+    const afterHero = (node.state && node.state.hero) || {};
+    const statGain =
+      Math.max(0, number(afterHero.atk, 0) - number(beforeHero.atk, 0)) * 100000 +
+      Math.max(0, number(afterHero.def, 0) - number(beforeHero.def, 0)) * 120000 +
+      Math.max(0, number(afterHero.mdef, 0) - number(beforeHero.mdef, 0)) * 10000 +
+      Math.max(0, number(afterHero.hp, 0) - number(beforeHero.hp, 0));
+    const irreversible = ["battle", "pickup", "equip", "openDoor", "event", "changeFloor", "floorFly"].includes(kind);
+    if (!irreversible && !floorChanged && statGain <= 0) return;
+    const role = floorChanged || kind === "changeFloor" || kind === "floorFly"
+      ? "mobility"
+      : kind === "equip"
+        ? "equipment"
+        : statGain > 0
+          ? "resource-gain"
+          : "irreversible";
+    const key = `${role}|${node.state.floorId}|${sourceAction.summary || kind}`;
+    const score =
+      (role === "mobility" ? 1000000000000 : 0) +
+      (role === "equipment" ? 900000000000 : 0) +
+      statGain +
+      heroHp(node.state);
+    const existing = landmarkArchiveByKey.get(key);
+    if (!existing || score > existing.score) {
+      landmarkArchiveByKey.set(key, {
+        node,
+        role,
+        actionSummary: sourceAction.summary || null,
+        score,
+      });
+    }
+    if (irreversible) {
+      const survivalKey = `survival|${node.state.floorId}`;
+      const survivalScore = heroHp(node.state);
+      const survivalExisting = landmarkArchiveByKey.get(survivalKey);
+      if (!survivalExisting || survivalScore > survivalExisting.score) {
+        landmarkArchiveByKey.set(survivalKey, {
+          node,
+          role: "survival",
+          actionSummary: sourceAction.summary || null,
+          score: survivalScore,
+        });
+      }
+    }
+    if (landmarkArchiveByKey.size > landmarkArchiveLimit * 3) {
+      const kept = Array.from(landmarkArchiveByKey.entries())
+        .sort((left, right) => right[1].score - left[1].score)
+        .slice(0, landmarkArchiveLimit * 2);
+      landmarkArchiveByKey.clear();
+      kept.forEach(([entryKey, record]) => landmarkArchiveByKey.set(entryKey, record));
+    }
+  };
+
   const enqueue = (state, sourceAction, parentNode) => {
     const key = buildDpStateKey(simulator, state, config);
     const existingSkyline = bestByKey instanceof SkylineSet ? bestByKey.getAll(key) : null;
+    const timingConflict = existingSkyline &&
+      config.dominanceConfig &&
+      typeof config.dominanceConfig.hasConflict === "function" &&
+      existingSkyline.some((candidate) => config.dominanceConfig.hasConflict(state, candidate.state));
+    const adaptiveTiming = Boolean(
+      config.dominanceConfig &&
+      typeof config.dominanceConfig.hasConflict === "function",
+    );
     const preserveAlternative = existingSkyline &&
-      config.preserveSkylineAlternatives === true &&
+      (config.preserveSkylineAlternatives === true || timingConflict === true) &&
       existingSkyline.length < skylineMax;
     const dominated = bestByKey instanceof SkylineSet
-      ? !preserveAlternative && existingSkyline.every((n) =>
-          !isBetterForSameDpKey(state, n.state, config.dominanceConfig)
+      ? existingSkyline.length > 0 && !preserveAlternative && (
+          adaptiveTiming && timingConflict
+            ? existingSkyline.every((n) => !isBetterForSameDpKey(state, n.state, config.dominanceConfig))
+            : adaptiveTiming
+              ? !isBetterForSameDpKey(state, existingSkyline[0].state, config.dominanceConfig)
+              : existingSkyline.every((n) => !isBetterForSameDpKey(state, n.state, config.dominanceConfig))
         )
       : !isBetterForSameDpKey(state, bestByKey.get(key) && bestByKey.get(key).state, config.dominanceConfig);
     if (dominated) {
@@ -508,8 +611,18 @@ function searchDP(simulator, initialState, options) {
     node.rank = buildDpAgendaRank(simulator, state, sourceAction, sequence, config);
     sequence += 1;
     nodes.set(node.nodeId, node);
+    archiveLandmark(node, actionForEntry, parentNode);
     if (bestByKey instanceof SkylineSet) {
-      bestByKey.add(key, node, compareDpBest);
+      if (existingSkyline.length > 0 && adaptiveTiming && timingConflict !== true) {
+        bestByKey.replace(key, node);
+      } else {
+        bestByKey.add(
+          key,
+          node,
+          typeof config.skylineCompare === "function" ? config.skylineCompare : compareDpBest,
+          config.skylineRoles,
+        );
+      }
     } else {
       bestByKey.set(key, node);
     }
@@ -621,6 +734,13 @@ function searchDP(simulator, initialState, options) {
           return;
         }
         for (const nextState of nextStates) {
+          if (typeof config.stateAnnotator === "function") {
+            try {
+              config.stateAnnotator(nextState, state, action);
+            } catch (error) {
+              // Timing annotations are diagnostic and must not make the search fail.
+            }
+          }
           const childNode = enqueue(nextState, action, entry);
           if (childNode) recordAction(actionStats, action, "kept");
           else recordAction(actionStats, action, "dominated");
@@ -662,6 +782,27 @@ function searchDP(simulator, initialState, options) {
     .filter(Boolean);
   const bestSeenState = attachRouteToNodeState(bestSeenNode);
   const bestProgressState = attachRouteToNodeState(bestProgressNode);
+  const rankedLandmarks = Array.from(landmarkArchiveByKey.values())
+    .sort((left, right) => right.score - left.score || String(left.actionSummary || "").localeCompare(String(right.actionSummary || "")));
+  const roleLandmarks = new Map();
+  rankedLandmarks.forEach((record) => {
+    if (!roleLandmarks.has(record.role)) roleLandmarks.set(record.role, record);
+  });
+  const selectedLandmarks = Array.from(roleLandmarks.values());
+  const selectedLandmarkRecords = new Set(selectedLandmarks);
+  rankedLandmarks.forEach((record) => {
+    if (selectedLandmarks.length >= landmarkArchiveLimit || selectedLandmarkRecords.has(record)) return;
+    selectedLandmarks.push(record);
+    selectedLandmarkRecords.add(record);
+  });
+  const landmarkArchive = selectedLandmarks
+    .slice(0, landmarkArchiveLimit)
+    .map((record) => ({
+      role: record.role,
+      actionSummary: record.actionSummary,
+      score: record.score,
+      state: attachRouteToNodeState(record.node),
+    }));
   const expansionBudgetExhausted = expansions >= maxExpansions &&
     frontierSize > 0 &&
     !stoppedReason &&
@@ -675,6 +816,7 @@ function searchDP(simulator, initialState, options) {
     goalSkylineStates,
     bestSeenState,
     bestProgressState,
+    landmarkArchive,
     fallbackState: null,
     route: bestGoalState ? bestGoalState.route : null,
     fallbackRoute: null,
@@ -794,6 +936,7 @@ function searchDP(simulator, initialState, options) {
         foundBestGoal: Boolean(bestGoalState),
         goalSkylineLimit: Math.max(1, Number(config.goalSkylineLimit || 8)),
         goalSkylineCount: goalSkylineStates.length,
+        landmarkArchiveCount: landmarkArchive.length,
         firstGoal: firstGoalState ? {
           floorId: firstGoalState.floorId,
           hp: heroHp(firstGoalState),

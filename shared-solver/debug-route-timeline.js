@@ -25,8 +25,113 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function attachWindowRepairReport(timeline, report) {
+  const windowStart = Number(report.windowStart || 1);
+  const windowEnd = Number(report.windowEnd || windowStart);
+  const startIndex = windowStart - 1;
+  const summary = {
+    kind: "window-repair",
+    profile: report.profile || null,
+    windowStart,
+    windowEnd,
+    ok: Boolean(report.ok),
+    baselineHp: report.baselineHp,
+    finalHp: report.finalHp,
+    stoppedReason: report.stoppedReason || null,
+    farthestStage: report.farthestStage,
+    bestCandidateHp: (report.windowRepair && report.windowRepair.bestCandidateHp) || null,
+    acceptedId: (report.windowRepair && report.windowRepair.acceptedId) || null,
+    strictReplayOk: report.strictReplayOk,
+    strictFinalHp: report.strictFinalHp,
+  };
+  const stages = (report.stageResults || []).map((stage) => ({
+    stageIndex: stage.stageIndex,
+    segmentId: stage.segmentId,
+    found: stage.found,
+    rawCandidateCount: stage.rawCandidateCount,
+    candidateCount: stage.candidateCount,
+    skylineCount: stage.skylineCount,
+    expansions: stage.expansions,
+    frontierSize: stage.frontierSize,
+    stoppedReason: stage.stoppedReason,
+    candidates: (stage.candidates || []).map((c) => ({
+      id: c.id,
+      hp: (c.hero || {}).hp || null,
+      atk: (c.effectiveHero || c.hero || {}).atk || null,
+      routeLength: c.routeLength,
+      baselineMatchCount: c.baselineMatchCount || 0,
+      baselineMobilityMatchCount: c.baselineMobilityMatchCount || 0,
+      baselinePortalMatchCount: c.baselinePortalMatchCount || 0,
+      tags: c.tags || [],
+    })),
+  }));
+  const validations = (report.validations || []).map((entry) => ({
+    candidateId: entry.candidateId,
+    fullReplayOk: entry.fullReplayOk,
+    replayFailure: entry.replayFailure || null,
+    goalFailures: entry.goalFailures || [],
+    finalHp: entry.finalHp,
+    baselineHp: entry.baselineHp,
+    hpImproved: entry.hpImproved,
+    accepted: entry.accepted,
+    rejectedReason: entry.rejectedReason,
+    localProbe: entry.localProbe || false,
+    baselineLocalProbe: entry.baselineLocalProbe || false,
+    sourceCandidateId: entry.sourceCandidateId || null,
+    probeType: entry.probeType || null,
+    probe: entry.probe || null,
+    actionTrace: entry.actionTrace || [],
+    windowActionCount: entry.windowActionCount || 0,
+    baselineMatchCount: entry.baselineMatchCount || 0,
+    baselineMobilityMatchCount: entry.baselineMobilityMatchCount || 0,
+    baselinePortalMatchCount: entry.baselinePortalMatchCount || 0,
+    tags: entry.tags || [],
+  }));
+  // Attach validation annotations to timeline steps in the window range.
+  for (const validation of validations) {
+    if (!Array.isArray(validation.actionTrace)) continue;
+    for (let offset = 0; offset < validation.actionTrace.length; offset++) {
+      const stepIndex = startIndex + offset;
+      const step = timeline.steps && timeline.steps[stepIndex];
+      if (!step) continue;
+      if (!Array.isArray(step.repairAnnotations)) step.repairAnnotations = [];
+      step.repairAnnotations.push({
+        kind: "window-repair",
+        candidateId: validation.candidateId,
+        accepted: validation.accepted,
+        rejectedReason: validation.rejectedReason,
+        baselineHp: validation.baselineHp,
+        finalHp: validation.finalHp,
+        replayFailure: validation.replayFailure,
+        goalFailures: validation.goalFailures,
+        localProbe: validation.localProbe,
+        baselineLocalProbe: validation.baselineLocalProbe,
+        sourceCandidateId: validation.sourceCandidateId,
+        probeType: validation.probeType,
+        probe: validation.probe,
+        baselineMatchCount: validation.baselineMatchCount,
+        baselineMobilityMatchCount: validation.baselineMobilityMatchCount,
+        baselinePortalMatchCount: validation.baselinePortalMatchCount,
+        actionSummary: validation.actionTrace[offset],
+        tags: validation.tags,
+      });
+    }
+  }
+  timeline.repair = {
+    summary,
+    windowStages: stages,
+    windowValidations: validations,
+    debugTrace: report.debugTrace || [],
+    windowRepair: report.windowRepair || null,
+  };
+  return timeline;
+}
+
 function attachRepairReport(timeline, report) {
   if (!report) return timeline;
+  if (report.kind === "window-repair") {
+    return attachWindowRepairReport(timeline, report);
+  }
   const summary = {
     acceptedCount: Number(report.acceptedCount || 0),
     baselineFinalHp: report.baselineFinalHp,
@@ -135,5 +240,6 @@ if (require.main === module) {
 
 module.exports = {
   attachRepairReport,
+  attachWindowRepairReport,
   main,
 };

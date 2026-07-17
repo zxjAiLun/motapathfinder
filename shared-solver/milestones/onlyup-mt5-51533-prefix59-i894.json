@@ -1,0 +1,1484 @@
+{
+  "routeName": "onlyup-mt5-51533-prefix59-i894",
+  "milestones": [
+    {
+      "id": "mt4-prefix59-left-open",
+      "label": "MT4 prefix59 left opener",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 24000,
+          "atk": 587,
+          "def": 355,
+          "mdef": 4210
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 7
+          },
+          {
+            "floorId": "MT4",
+            "x": 6,
+            "y": 6
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 6,
+            "y": 8,
+            "reason": "Reserve poisonBat for planned MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 3,
+            "reason": "Reserve skeletonKing for planned MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          },
+          {
+            "floorId": "MT4",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve HP-positive priest for MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 2,
+            "y": 5,
+            "reason": "Keep this priest until MT4:11,11 auto chain consumes it."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT4"
+        ],
+        "allowChangeFloors": []
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      }
+    },
+    {
+      "id": "mt4-prefix59-right-poison",
+      "label": "MT4 prefix59 right poison skeleton",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 18000,
+          "atk": 587,
+          "def": 405,
+          "mdef": 4210
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 8
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 6,
+            "y": 8,
+            "reason": "Reserve poisonBat for planned MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 3,
+            "reason": "Reserve skeletonKing for planned MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          },
+          {
+            "floorId": "MT4",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve HP-positive priest for MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 2,
+            "y": 5,
+            "reason": "Keep this priest until MT4:11,11 auto chain consumes it."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT4"
+        ],
+        "allowChangeFloors": []
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt4-prefix59-left-open"
+    },
+    {
+      "id": "mt4-prefix59-left-poison",
+      "label": "MT4 prefix59 left poison skeleton",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 30000,
+          "atk": 587,
+          "def": 405,
+          "mdef": 4210
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 2,
+            "y": 8
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 6,
+            "y": 8,
+            "reason": "Reserve poisonBat for planned MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 3,
+            "reason": "Reserve skeletonKing for planned MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          },
+          {
+            "floorId": "MT4",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve HP-positive priest for MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 2,
+            "y": 5,
+            "reason": "Keep this priest until MT4:11,11 auto chain consumes it."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT4"
+        ],
+        "allowChangeFloors": []
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt4-prefix59-right-poison"
+    },
+    {
+      "id": "mt4-prefix59-bottom-stat",
+      "label": "MT4 prefix59 bottom stat before MT5",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 40000,
+          "atk": 757,
+          "def": 725,
+          "mdef": 4910
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 3,
+            "y": 10
+          },
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 6,
+            "y": 8,
+            "reason": "Reserve poisonBat for planned MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 3,
+            "reason": "Reserve skeletonKing for planned MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          },
+          {
+            "floorId": "MT4",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve HP-positive priest for MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 2,
+            "y": 5,
+            "reason": "Keep this priest until MT4:11,11 auto chain consumes it."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT4"
+        ],
+        "allowChangeFloors": []
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt4-prefix59-left-poison"
+    },
+    {
+      "id": "mt5-early-enter-from-prefix59",
+      "label": "MT5 prefix59 early entry",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 40000,
+          "atk": 777,
+          "def": 745,
+          "mdef": 4910
+        },
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 6,
+            "y": 8,
+            "reason": "Reserve poisonBat for planned MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 3,
+            "reason": "Reserve skeletonKing for planned MT4 return."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          },
+          {
+            "floorId": "MT4",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve HP-positive priest for MT4 return."
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT4",
+            "x": 2,
+            "y": 5,
+            "reason": "Keep this priest until MT4:11,11 auto chain consumes it."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt4-prefix59-bottom-stat"
+    },
+    {
+      "id": "mt4-return-priest-after-early-mt5",
+      "label": "MT4 return clear HP priest",
+      "startFrom": "mt5-early-enter-from-prefix59",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 90000,
+          "atk": 877,
+          "def": 745,
+          "mdef": 5910
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 11,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 6,
+            "y": 8,
+            "reason": "Next MT4 return target."
+          },
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 3,
+            "reason": "Reserve skeletonKing after poisonBat."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      }
+    },
+    {
+      "id": "mt4-return-poisonbat-after-priest",
+      "label": "MT4 return clear poison bat",
+      "startFrom": "mt4-return-priest-after-early-mt5",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 90000,
+          "atk": 927,
+          "def": 745,
+          "mdef": 5910
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 6,
+            "y": 8
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 3,
+            "reason": "Reserve skeletonKing after poisonBat."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      }
+    },
+    {
+      "id": "mt4-return-king-before-mt5-bottom",
+      "label": "MT4 return clear skeleton king before MT5 bottom",
+      "startFrom": "mt4-return-poisonbat-after-priest",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 70000,
+          "atk": 927,
+          "def": 795,
+          "mdef": 5910
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 3
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "Reserve MT5 bottom chain."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      }
+    },
+    {
+      "id": "mt5-bottom-left-king-before-presbyter",
+      "label": "MT5 clear bottom left king",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 60000,
+          "atk": 927,
+          "def": 795,
+          "mdef": 6110
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10,
+            "reason": "Next MT5 bottom stat target."
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11,
+            "reason": "Reserve right king after MT5:3,10."
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve devilWarrior after right king."
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "Reserve skeletonKnight after MT5:11,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt4-return-king-before-mt5-bottom"
+    },
+    {
+      "id": "mt5-bottom-presbyter-before-right-king",
+      "label": "MT5 clear bottom presbyter",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 30000,
+          "atk": 977,
+          "def": 795,
+          "mdef": 6110
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11,
+            "reason": "Reserve right king after MT5:3,10."
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve devilWarrior after right king."
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "Reserve skeletonKnight after MT5:11,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt5-bottom-left-king-before-presbyter"
+    },
+    {
+      "id": "mt5-bottom-right-king-before-heavy",
+      "label": "MT5 clear bottom right king",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 100000,
+          "atk": 977,
+          "def": 795,
+          "mdef": 6110
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve devilWarrior after right king."
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "Reserve skeletonKnight after MT5:11,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt5-bottom-presbyter-before-right-king"
+    },
+    {
+      "id": "mt5-heavy-before-left-knight",
+      "label": "MT5 clear bottom devil warrior",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 1,
+          "atk": 977,
+          "def": 895,
+          "mdef": 6110
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "Clear this before taking the MT4:8,3 HP swing."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt5-bottom-right-king-before-heavy"
+    },
+    {
+      "id": "mt5-left-knight-before-mt4-heal",
+      "label": "MT5 clear left skeleton knight before MT4 heal",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 1,
+          "atk": 1077,
+          "def": 895,
+          "mdef": 6110
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve late HP swing until after MT5:1,11."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt5-heavy-before-left-knight"
+    },
+    {
+      "id": "mt4-heal-before-late-stat",
+      "label": "MT4 late HP swing before stat battle",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 90000,
+          "atk": 1077,
+          "def": 895,
+          "mdef": 6110
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve late stat battle before I894 upper entry."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt5-left-knight-before-mt4-heal"
+    },
+    {
+      "id": "mt5-mt4-late-stat-before-i894",
+      "label": "MT4 late stat before I894 upper entry",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 50000,
+          "atk": 1097,
+          "def": 915,
+          "mdef": 6310
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5
+          }
+        ],
+        "presentTiles": []
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt4-heal-before-late-stat"
+    },
+    {
+      "id": "mt5-i894-upper-entry-from-51533",
+      "label": "MT5 I894 upper entry",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 90000,
+          "atk": 1297,
+          "def": 1165,
+          "mdef": 6310
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 10
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 6
+          }
+        ],
+        "presentTiles": []
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt5-mt4-late-stat-before-i894"
+    },
+    {
+      "id": "mt5-i894-equipped-from-51533",
+      "label": "MT5 equip I894 from prefix59",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 14404
+        },
+        "minEffectiveHero": {
+          "atk": 2075,
+          "def": 2024,
+          "mdef": 13296
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 6
+          },
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 10,
+            "y": 5
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 5
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 7
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 3
+          },
+          {
+            "floorId": "MT5",
+            "x": 6,
+            "y": 7
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 6000,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      },
+      "startFrom": "mt5-i894-upper-entry-from-51533"
+    }
+  ]
+}

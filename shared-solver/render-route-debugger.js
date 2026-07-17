@@ -696,6 +696,35 @@ function renderHtml(timeline, options) {
       }
       panel.hidden = false;
       target.innerHTML = annotations.map((entry) => {
+        if (entry.kind === "window-repair") {
+          const status = entry.accepted ? "accepted" : "rejected: " + (entry.rejectedReason || "unknown");
+          const goalFailures = (entry.goalFailures || []).map((failure) =>
+            failure.field + "=" + (failure.actual == null ? "" : failure.actual) + " expected " + failure.expected
+          ).join(", ");
+          const replayFailure = entry.replayFailure
+            ? (entry.replayFailure.reason || entry.replayFailure)
+            : "";
+          const probe = entry.probe || {};
+          const probeSwaps = Array.isArray(probe.swaps)
+            ? probe.swaps.map((swap) => "[" + swap.join(",") + "]").join(" ")
+            : (Array.isArray(probe.swap) ? "[" + probe.swap.join(",") + "]" : "");
+          const probeText = entry.probeType
+            ? entry.probeType + (probeSwaps ? " " + probeSwaps : "")
+            : "";
+          return '<div class="repairEntry">' +
+            '<div class="repairLine"><b>window candidate</b><span>' + esc(entry.candidateId || "") + '</span></div>' +
+            '<div class="repairLine"><b>status</b><span>' + esc(status) + '</span></div>' +
+            (probeText ? '<div class="repairLine"><b>probe</b><span>' + esc(probeText) + '</span></div>' : '') +
+            '<div class="repairLine"><b>action</b><code>' + esc(entry.actionSummary || "") + '</code></div>' +
+            '<div class="repairLine"><b>final HP</b><span>' + esc(entry.baselineHp) + ' → ' + esc(entry.finalHp) + '</span></div>' +
+            '<div class="repairLine"><b>baseline match</b><span>' + esc(entry.baselineMatchCount || 0) + ' / mobility ' + esc(entry.baselineMobilityMatchCount || 0) + ' / portal ' + esc(entry.baselinePortalMatchCount || 0) + '</span></div>' +
+            ((entry.tags || []).length
+              ? '<div class="repairLine"><b>roles</b><span>' + esc(entry.tags.join(", ")) + '</span></div>'
+              : '') +
+            (replayFailure ? '<div class="repairLine"><b>replay</b><span>' + esc(replayFailure) + '</span></div>' : '') +
+            (goalFailures ? '<div class="repairLine"><b>goal</b><span>' + esc(goalFailures) + '</span></div>' : '') +
+          '</div>';
+        }
         const status = entry.accepted ? "accepted" : "rejected: " + (entry.rejectedReason || "unknown");
         return '<div class="repairEntry">' +
           '<div class="repairLine"><b>status</b><span>' + esc(status) + '</span></div>' +

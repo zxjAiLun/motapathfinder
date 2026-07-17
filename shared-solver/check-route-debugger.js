@@ -179,11 +179,168 @@ function checkRepairAnnotations() {
   return { accepted: 1, rejected: 1 };
 }
 
+function checkWindowRepairAnnotations() {
+  const project = loadProject(PROJECT_ROOT);
+  const simulator = makeSimulator(project);
+  const routeRecord = readRouteFile(ROUTE_FILE);
+  const timeline = buildRouteTimeline(project, simulator, routeRecord, { routeFile: ROUTE_FILE });
+  attachRepairReport(timeline, {
+    kind: "window-repair",
+    mode: "window",
+    profile: "test-profile",
+    windowStart: 3,
+    windowEnd: 6,
+    ok: false,
+    baselineHp: 100,
+    finalHp: null,
+    stoppedReason: "no-accepted-candidate",
+    farthestStage: 2,
+    stageResults: [
+      {
+        stageIndex: 0,
+        segmentId: "stage-1",
+        found: true,
+        rawCandidateCount: 2,
+        candidateCount: 2,
+        skylineCount: 2,
+        expansions: 50,
+        frontierSize: 10,
+        stoppedReason: "time-limit",
+        candidates: [
+          { id: "stage-1-candidate-1", hero: { hp: 90, atk: 10 }, effectiveHero: { atk: 15 }, routeLength: 5, tags: ["highest-hp"] },
+          { id: "stage-1-candidate-2", hero: { hp: 85, atk: 12 }, effectiveHero: { atk: 18 }, routeLength: 4, tags: ["shortest"] },
+        ],
+      },
+      {
+        stageIndex: 1,
+        segmentId: "stage-2",
+        found: true,
+        rawCandidateCount: 4,
+        candidateCount: 2,
+        skylineCount: 4,
+        expansions: 100,
+        frontierSize: 5,
+        stoppedReason: "time-limit",
+        candidates: [
+          { id: "stage-2-candidate-1", hero: { hp: 80, atk: 20 }, effectiveHero: { atk: 25 }, routeLength: 7, tags: ["highest-hp"] },
+        ],
+      },
+    ],
+    validations: [
+      {
+        candidateId: "stage-3-candidate-1",
+        hero: { hp: 70 },
+        effectiveHero: { atk: 30 },
+        tags: ["highest-hp", "baseline-local-probe"],
+        windowActionCount: 3,
+        actionTrace: ["battle:enemyA@MT1:1,1", "battle:enemyB@MT1:2,1", "changeFloor@MT1:3,1"],
+        fullReplayOk: true,
+        replayFailure: null,
+        goalFailures: [],
+        finalHp: 130,
+        baselineHp: 100,
+        hpImproved: true,
+        accepted: true,
+        rejectedReason: null,
+        localProbe: true,
+        baselineLocalProbe: true,
+        sourceCandidateId: "baseline",
+        probeType: "baseline-swap-chain",
+        probe: { swaps: [[7, 8], [5, 7], [6, 7]] },
+        baselineMatchCount: 2,
+        baselineMobilityMatchCount: 1,
+      },
+      {
+        candidateId: "stage-3-candidate-2",
+        hero: { hp: 55 },
+        effectiveHero: { atk: 28 },
+        tags: [],
+        windowActionCount: 2,
+        actionTrace: ["battle:enemyA@MT1:1,1", "battle:enemyC@MT1:4,1"],
+        fullReplayOk: false,
+        replayFailure: { reason: "action-unavailable", summary: "battle:missing@MT1:5,1" },
+        goalFailures: [{ field: "hero.atk", expected: 30, actual: 28 }],
+        finalHp: null,
+        baselineHp: 100,
+        hpImproved: false,
+        accepted: false,
+        rejectedReason: "full-replay-failed",
+        baselineMatchCount: 1,
+        baselineMobilityMatchCount: 0,
+      },
+    ],
+    accepted: null,
+    rebuildError: null,
+    strictReplayOk: false,
+    strictFinalHp: null,
+    debugTrace: [
+      { marker: "window-start", floorId: "MT1", heroHp: 100, prefixRouteLength: 5, windowStart: 3, windowEnd: 6 },
+      { marker: "stage-complete", stageIndex: 0, candidateCount: 2, bestCandidateHp: 90 },
+      { marker: "validation-complete", candidateCount: 2, acceptedCount: 0, bestValidationHp: 70 },
+    ],
+    windowRepair: {
+      finalGoal: { floorId: "MT2", minHero: { atk: 30 } },
+      bestCandidateHp: 70,
+      acceptedId: null,
+    },
+  });
+  // Assert summary structure
+  assert.equal(timeline.repair.summary.kind, "window-repair");
+  assert.equal(timeline.repair.summary.windowStart, 3);
+  assert.equal(timeline.repair.summary.windowEnd, 6);
+  assert.equal(timeline.repair.summary.baselineHp, 100);
+  assert.equal(timeline.repair.summary.stoppedReason, "no-accepted-candidate");
+  assert.equal(timeline.repair.summary.bestCandidateHp, 70);
+  // Assert window stages
+  assert.ok(Array.isArray(timeline.repair.windowStages));
+  assert.equal(timeline.repair.windowStages.length, 2);
+  assert.equal(timeline.repair.windowStages[0].stageIndex, 0);
+  assert.equal(timeline.repair.windowStages[0].candidateCount, 2);
+  assert.equal(timeline.repair.windowStages[0].candidates[0].id, "stage-1-candidate-1");
+  // Assert window validations
+  assert.ok(Array.isArray(timeline.repair.windowValidations));
+  assert.equal(timeline.repair.windowValidations.length, 2);
+  assert.equal(timeline.repair.windowValidations[0].candidateId, "stage-3-candidate-1");
+  assert.equal(timeline.repair.windowValidations[0].fullReplayOk, true);
+  assert.equal(timeline.repair.windowValidations[0].accepted, true);
+  assert.equal(timeline.repair.windowValidations[0].probeType, "baseline-swap-chain");
+  assert.deepEqual(timeline.repair.windowValidations[0].probe.swaps, [[7, 8], [5, 7], [6, 7]]);
+  assert.equal(timeline.repair.windowValidations[1].replayFailure.reason, "action-unavailable");
+  assert.equal(timeline.repair.windowValidations[1].goalFailures[0].field, "hero.atk");
+  // Assert debug trace
+  assert.ok(Array.isArray(timeline.repair.debugTrace));
+  assert.equal(timeline.repair.debugTrace.length, 3);
+  assert.equal(timeline.repair.debugTrace[0].marker, "window-start");
+  assert.equal(timeline.repair.debugTrace[2].marker, "validation-complete");
+  // Assert step annotations in window range (0-based startIndex=2)
+  const step2 = timeline.steps[2];
+  assert.ok(step2 && Array.isArray(step2.repairAnnotations), "step at window start should have repair annotations");
+  const windowAnnotations = step2.repairAnnotations.filter((a) => a.kind === "window-repair");
+  assert.equal(windowAnnotations.length, 2, "two candidates should annotate the window start step");
+  assert.equal(windowAnnotations[0].candidateId, "stage-3-candidate-1");
+  assert.equal(windowAnnotations[0].actionSummary, "battle:enemyA@MT1:1,1");
+  assert.equal(windowAnnotations[0].probeType, "baseline-swap-chain");
+  assert.deepEqual(windowAnnotations[0].probe.swaps, [[7, 8], [5, 7], [6, 7]]);
+  assert.equal(windowAnnotations[0].baselineHp, 100);
+  assert.equal(windowAnnotations[0].baselineMatchCount, 2);
+  assert.equal(windowAnnotations[0].baselineMobilityMatchCount, 1);
+  assert.equal(windowAnnotations[1].goalFailures[0].field, "hero.atk");
+  const html = renderHtml(timeline, { assetBase: "../../../Only upV2.1/Only upV2.1/project" });
+  assert.ok(html.includes("window candidate"), "HTML renderer should include window repair fields");
+  assert.ok(html.includes("baseline-swap-chain"), "HTML renderer should include local probe type");
+  assert.ok(html.includes('"swaps":[[7,8],[5,7],[6,7]]'), "HTML should embed swap chain data");
+  assert.ok(html.includes("baseline match"), "HTML renderer should include baseline-match field");
+  assert.ok(html.includes("stage-3-candidate-1"), "HTML should embed/render window candidate id");
+  assert.ok(html.includes("battle:enemyA@MT1:1,1"), "HTML should embed/render window action summary");
+  return { stages: timeline.repair.windowStages.length, validations: timeline.repair.windowValidations.length };
+}
+
 function main() {
   const timeline = checkTimeline();
   const renderAndExport = checkRenderAndExport();
   const repairAnnotations = checkRepairAnnotations();
-  console.log(JSON.stringify({ timeline, renderAndExport, repairAnnotations }, null, 2));
+  const windowRepair = checkWindowRepairAnnotations();
+  console.log(JSON.stringify({ timeline, renderAndExport, repairAnnotations, windowRepair }, null, 2));
 }
 
 if (require.main === module) {

@@ -8,6 +8,7 @@
 
 ## 配套文档
 
+- `docs/auto-decomposition-handoff.md`：自动因果拆段当前实现、MT5 I894 进度、HY3 后续计划与代码 review 门禁。
 - `docs/solver-architecture.md`：当前 solver 架构方向。
 - `docs/development-boundaries.md`：写入边界与检查命令。
 - `docs/public-api.md`：`shared-solver/public.js` 稳定 API。
@@ -24,4 +25,3 @@ npm run check:public-layer-boundaries --prefix shared-solver
 npm run check:region-specs --prefix shared-solver
 npm run check:resource-timing --prefix shared-solver
 ```
-

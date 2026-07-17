@@ -1,0 +1,96 @@
+{
+  "routeName": "onlyup-mt5-51533-next",
+  "milestones": [
+    {
+      "id": "mt5-i894-equipped-from-51533",
+      "label": "MT5 51533 to I894 equipped",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 14404
+        },
+        "minEffectiveHero": {
+          "atk": 2075,
+          "def": 2024,
+          "mdef": 13296
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 6
+          },
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 10,
+            "y": 5
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 5
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 7
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 3
+          },
+          {
+            "floorId": "MT5",
+            "x": 6,
+            "y": 7
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "allowedFloors": [
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": true,
+        "stopOnFirstGoal": false,
+        "maxExpansions": 3000,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "dpSkylineMax": 4,
+        "preserveSkylineRoles": true
+      }
+    }
+  ]
+}
