@@ -10,6 +10,8 @@
  */
 
 const { buildDpStateKey } = require("./dp-search");
+const { buildSegmentActionProvider } = require("./segment-dp");
+const { resolveRecordedAction } = require("./route-store");
 const {
   getTiming,
   resourceTimingRoles,
@@ -58,44 +60,57 @@ function isBetterForSameDpKey(left, right) {
   return leftRoute < rightRoute;
 }
 
-function enumerateVisibleActions(simulator, state) {
+function enumerateVisibleActions(simulator, state, options) {
+  const config = options || {};
   const bySummary = new Map();
+  const byFingerprint = new Map();
   const pushAll = (actions) => {
     for (const action of actions || []) {
       if (!action || !action.summary) continue;
       if (!bySummary.has(action.summary)) bySummary.set(action.summary, action);
+      const fingerprint = action.fingerprint || `${action.kind || "action"}|${action.summary}`;
+      if (!byFingerprint.has(fingerprint)) byFingerprint.set(fingerprint, action);
     }
   };
 
-  try {
-    pushAll((simulator.enumeratePrimitiveActions(state) || {}).actions || []);
-  } catch (error) {
-    // Primitive enumeration can throw on unsupported events; keep going.
-  }
-  try {
-    pushAll(simulator.enumerateActions(state) || []);
-  } catch (error) {
-    // ignore
-  }
-  try {
-    if (typeof simulator.enumerateInteractPickupActions === "function") {
-      pushAll(simulator.enumerateInteractPickupActions(state) || []);
+  if (typeof config.actionProvider === "function") {
+    try {
+      const provided = config.actionProvider(simulator, state);
+      pushAll(Array.isArray(provided) ? provided : ((provided && provided.actions) || []));
+    } catch (error) {
+      // A provider failure is represented as an empty visible action set.
     }
-  } catch (error) {
-    // ignore
-  }
-  try {
-    if (typeof simulator.enumerateFloorFlyActions === "function") {
-      pushAll(simulator.enumerateFloorFlyActions(state) || []);
+  } else {
+    try {
+      pushAll((simulator.enumeratePrimitiveActions(state) || {}).actions || []);
+    } catch (error) {
+      // Primitive enumeration can throw on unsupported events; keep going.
     }
-  } catch (error) {
-    // ignore
+    try {
+      pushAll(simulator.enumerateActions(state) || []);
+    } catch (error) {
+      // ignore
+    }
+    try {
+      if (typeof simulator.enumerateInteractPickupActions === "function") {
+        pushAll(simulator.enumerateInteractPickupActions(state) || []);
+      }
+    } catch (error) {
+      // ignore
+    }
+    try {
+      if (typeof simulator.enumerateFloorFlyActions === "function") {
+        pushAll(simulator.enumerateFloorFlyActions(state) || []);
+      }
+    } catch (error) {
+      // ignore
+    }
   }
 
   return {
     bySummary,
     summaries: Array.from(bySummary.keys()).sort(),
-    actions: Array.from(bySummary.values()),
+    actions: Array.from(byFingerprint.values()),
   };
 }
 
@@ -175,6 +190,14 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
   const forceKeepTeacher = config.forceKeepTeacher !== false;
   const enableResourceTiming = config.enableResourceTiming === true;
   const dpKeyOptions = config.dpKeyOptions || { keyMode: "location" };
+  const actionProvider = typeof config.actionProvider === "function"
+    ? config.actionProvider
+    : config.segment
+      ? buildSegmentActionProvider(simulator, config.segment)
+      : null;
+  const actionProviderMode = actionProvider
+    ? (config.segment ? "segment-provider" : "custom-provider")
+    : "visible-actions";
 
   let state = config.initialState
     ? config.initialState
@@ -183,15 +206,16 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
   // Replay prefix before fromStep without auditing.
   for (let index = 0; index < fromStep; index += 1) {
     const decision = decisions[index];
-    const visible = enumerateVisibleActions(simulator, state);
-    const action = findTeacherAction(visible, decision);
+    const resolved = resolveRecordedAction(simulator, state, decision, { actionProvider });
+    const action = resolved.action;
     if (!action) {
       return {
         version: AUDIT_VERSION,
         ok: false,
-        error: `prefix-action-missing@${index}:${decision && decision.summary}`,
+        error: `prefix-action-missing@${index}:${decision && decision.summary}:${resolved.reason}`,
         fromStep,
         toStep,
+        actionProviderMode,
         steps: [],
         summary: null,
       };
@@ -240,14 +264,17 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
     const teacherSummary = decision && decision.summary;
     const before = state;
     const beforeHero = heroSummary(before);
-    const visible = enumerateVisibleActions(simulator, before);
-    const teacherAction = findTeacherAction(visible, decision);
+    const visible = enumerateVisibleActions(simulator, before, { actionProvider });
+    const resolved = resolveRecordedAction(simulator, before, decision, { actionProvider });
+    const teacherAction = resolved.action;
 
     const step = {
       step: index,
       teacherSummary: teacherSummary || null,
       teacherKind: (decision && decision.kind) || (teacherAction && teacherAction.kind) || null,
       teacherActionGenerated: Boolean(teacherAction),
+      teacherActionMatch: resolved.matchType || null,
+      teacherActionCandidateCount: resolved.candidates || 0,
       visibleActionCount: visible.summaries.length,
       teacherSuccessorValid: false,
       teacherSuccessorHero: null,
@@ -255,6 +282,7 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
       dpKeyCollision: false,
       wouldBeRejectedWithoutForce: false,
       prunedBy: null,
+      hypotheticalPrunedBy: null,
       pruneReason: null,
       competitor: null,
       resourceTimingRoles: [],
@@ -319,6 +347,7 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
         step.wouldBeRejectedWithoutForce = true;
         step.prunedByPrior = true;
         step.prunedBy = `prior@step${prior.step}`;
+        step.hypotheticalPrunedBy = step.prunedBy;
         step.pruneReason = number((after.hero || {}).hp, 0) < number((prior.state.hero || {}).hp, 0)
           ? "hp-dominated-by-prior"
           : "same-or-worse-than-prior";
@@ -334,7 +363,8 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
     const siblingDominators = [];
     let siblingIndex = 0;
     for (const action of visible.actions) {
-      if (action.summary === teacherSummary) continue;
+      if (action === teacherAction) continue;
+      if (teacherAction && action.fingerprint && teacherAction.fingerprint && action.fingerprint === teacherAction.fingerprint) continue;
       if (siblingIndex >= siblingLimit) break;
       siblingIndex += 1;
       let siblingState;
@@ -380,6 +410,7 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
       if (!step.wouldBeRejectedWithoutForce) {
         step.wouldBeRejectedWithoutForce = true;
         step.prunedBy = `sibling:${siblingDominators[0].summary}`;
+        step.hypotheticalPrunedBy = step.prunedBy;
         step.pruneReason = "hp-dominated-by-sibling";
         step.competitor = siblingDominators[0];
       }
@@ -407,6 +438,7 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
       if (!result.accepted) {
         step.wouldBeRejectedWithoutForce = true;
         step.prunedBy = result.previous ? `prior@step${result.previous.step}` : "unknown";
+        step.hypotheticalPrunedBy = step.prunedBy;
         step.pruneReason = step.pruneReason || "rejected-without-force";
         step.competitor = competitorRecord(result.previous);
         step.issueClass = step.issueClass || "dominance-key-collision";
@@ -446,11 +478,13 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
     ok: !firstHardFailure,
     fromStep,
     toStep,
+    actionProviderMode,
     decisionCount: decisions.length,
     forceKeepTeacher,
     enableResourceTiming,
     keyMode: String(dpKeyOptions.keyMode || dpKeyOptions.dpKeyMode || "location"),
     firstDivergenceStep: firstDivergence ? firstDivergence.step : null,
+    firstPotentialDivergenceStep: firstDivergence ? firstDivergence.step : null,
     firstDivergence: firstDivergence
       ? {
           step: firstDivergence.step,
@@ -458,6 +492,7 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
           issueClass: firstDivergence.issueClass,
           pruneReason: firstDivergence.pruneReason,
           prunedBy: firstDivergence.prunedBy,
+          hypotheticalPrunedBy: firstDivergence.hypotheticalPrunedBy,
           competitor: firstDivergence.competitor,
           teacherHero: firstDivergence.teacherSuccessorHero,
         }
@@ -475,7 +510,11 @@ function formatDivergenceReport(report, options) {
   const maxSteps = Math.max(0, number(config.maxSteps, 40));
   const lines = [];
   lines.push(`Teacher divergence audit ${report.version}`);
-  lines.push(`ok=${report.ok} keyMode=${report.keyMode} steps=${report.counts && report.counts.stepsAudited}`);
+  lines.push(
+    `ok=${report.ok} keyMode=${report.keyMode} ` +
+    `actionProvider=${report.actionProviderMode || "visible-actions"} ` +
+    `steps=${report.counts && report.counts.stepsAudited}`,
+  );
   lines.push(
     `missingActions=${report.counts.teacherActionsMissing} ` +
     `invalidSuccessors=${report.counts.successorInvalid} ` +
@@ -487,11 +526,12 @@ function formatDivergenceReport(report, options) {
   if (report.firstDivergence) {
     const item = report.firstDivergence;
     lines.push(
-      `firstDivergence: step ${item.step} class=${item.issueClass} ` +
-      `action=${item.teacherSummary} reason=${item.pruneReason || "-"} prunedBy=${item.prunedBy || "-"}`,
+      `firstPotentialDivergence: step ${item.step} class=${item.issueClass} ` +
+      `action=${item.teacherSummary} reason=${item.pruneReason || "-"} ` +
+      `hypotheticalPrunedBy=${item.hypotheticalPrunedBy || item.prunedBy || "-"}`,
     );
   } else {
-    lines.push("firstDivergence: none");
+    lines.push("firstPotentialDivergence: none");
   }
   const interesting = (report.steps || []).filter((step) => step.issueClass || step.wouldBeRejectedWithoutForce);
   for (const step of interesting.slice(0, maxSteps)) {

@@ -173,7 +173,7 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
   } else if (DECOMPOSITION.has(file)) {
     add(file, {
       layer: file === "teacher-divergence-audit.js" ? "diagnostics" : "planning/decomposition",
-      status: file === "teacher-divergence-audit.js" ? "canonical" : "experimental",
+      status: file === "teacher-divergence-audit.js" ? "supporting" : "experimental",
       role: file === "teacher-divergence-audit.js" ? "diagnostics" : "candidate-generator",
       correctnessSource: false,
       tests: {
@@ -487,7 +487,7 @@ const manifest = {
       "search/exploration",
       "experiments",
     ],
-    unlistedLibFile: "warn",
+    unlistedLibFile: "error",
     notes: [
       "correctnessSource=true means the module participates in the trusted semantic or DP correctness path.",
       "experimental/exploration modules may generate candidates or diagnostics but must not be cited as proof that a route is impossible.",

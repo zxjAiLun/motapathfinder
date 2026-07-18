@@ -50,12 +50,18 @@ function main(argv) {
   const forceKeepTeacher = !parseBooleanFlag(args["no-force-keep-teacher"], false);
   const quiet = parseBooleanFlag(args.quiet, false);
   const maxReportSteps = parseOptionalNumber(args["max-report-steps"]) || 40;
+  const segmentFile = resolveMaybe(args["segment-file"]);
 
   if (!fs.existsSync(routePath)) {
     throw new Error(`route not found: ${routePath}`);
   }
 
   const project = loadProject(projectRoot);
+  let segment = null;
+  if (segmentFile) {
+    if (!fs.existsSync(segmentFile)) throw new Error(`segment file not found: ${segmentFile}`);
+    segment = JSON.parse(fs.readFileSync(segmentFile, "utf8"));
+  }
   const simulator = new StaticSimulator(project, {
     stopFloorId,
     battleResolver: new FunctionBackedBattleResolver(project),
@@ -75,11 +81,13 @@ function main(argv) {
     forceKeepTeacher,
     enableResourceTiming,
     dpKeyOptions: { keyMode },
+    segment,
   });
 
   report.meta = {
     projectRoot,
     routePath,
+    segmentFile,
     generatedAt: new Date().toISOString(),
     note: "test-side diagnostics only; do not feed teacher actions into production search",
   };

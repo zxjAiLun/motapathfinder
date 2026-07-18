@@ -19,6 +19,8 @@ const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { loadProject } = require("./lib/project-loader");
 const { readRouteFile } = require("./lib/route-store");
 const { StaticSimulator } = require("./lib/simulator");
+const { fingerprintAction, resolveRecordedAction } = require("./lib/route-store");
+const { buildDominanceKey } = require("./lib/state-key");
 const {
   formatDivergenceReport,
   runTeacherDivergenceAudit,
@@ -185,6 +187,75 @@ function checkSyntheticDominanceDivergence() {
   return report;
 }
 
+function checkRecordedActionResolution() {
+  const initialState = makeSyntheticState(50, []);
+  const first = {
+    kind: "pickup",
+    summary: "pickup:shared@SYNTHETIC:2,1",
+    floorId: "SYNTHETIC",
+    target: { x: 2, y: 1 },
+    itemId: "A",
+  };
+  const second = { ...first, itemId: "B" };
+  const simulator = {
+    enumeratePrimitiveActions: () => ({ actions: [first, second] }),
+    applyAction: (state, action) => ({
+      ...makeSyntheticState(50, (state.route || []).concat(action.itemId)),
+      inventory: { [action.itemId]: 1 },
+    }),
+  };
+  const expectedPostState = simulator.applyAction(initialState, second);
+  const resolved = resolveRecordedAction(
+    simulator,
+    initialState,
+    {
+      ...first,
+      fingerprint: fingerprintAction(first),
+      postStateKey: buildDominanceKey(expectedPostState),
+    },
+  );
+  assert.equal(resolved.action, second, "postStateKey must outrank a conflicting fingerprint");
+  assert.equal(resolved.matchType, "postStateKey");
+  assert.equal(resolved.candidates, 2);
+  return resolved;
+}
+
+function checkSegmentProviderFiltering() {
+  const initialState = makeSyntheticState(50, []);
+  const simulator = {
+    project: { floorsById: { SYNTHETIC: {} } },
+    createInitialState: () => initialState,
+    enumeratePrimitiveActions: (state) => ({
+      actions: state.route.length > 0
+        ? []
+        : [
+            { summary: "pickup:allowed@SYNTHETIC:2,1", kind: "pickup", floorId: "SYNTHETIC" },
+            { summary: "battle:filtered@SYNTHETIC:2,1", kind: "battle", floorId: "SYNTHETIC" },
+          ],
+    }),
+    applyAction: (state, action) => makeSyntheticState(
+      50,
+      (state.route || []).concat(action.summary),
+    ),
+  };
+  const report = runTeacherDivergenceAudit(
+    simulator,
+    { decisions: [{ summary: "pickup:allowed@SYNTHETIC:2,1", kind: "pickup" }] },
+    {
+      segment: {
+        actionPolicy: {
+          actionKinds: ["pickup"],
+          allowedFloors: ["SYNTHETIC"],
+        },
+      },
+      forceKeepTeacher: true,
+    },
+  );
+  assert.equal(report.actionProviderMode, "segment-provider");
+  assert.equal(report.steps[0].visibleActionCount, 1, "segment provider must filter disallowed action kinds");
+  return report;
+}
+
 function checkNoProductionTeacherImport() {
   const libDir = path.join(__dirname, "lib");
   const offenders = fs
@@ -201,6 +272,8 @@ function main() {
   const project = loadProject(PROJECT_ROOT);
   checkNoProductionTeacherImport();
   const synthetic = checkSyntheticDominanceDivergence();
+  const resolver = checkRecordedActionResolution();
+  const segment = checkSegmentProviderFiltering();
   const fixtureReport = checkTrackedFixture(project);
   const mt5 = checkOptionalMt5Teacher(project);
 
@@ -208,6 +281,10 @@ function main() {
   console.log(
     `check-teacher-divergence: synthetic ok siblingDominated=${synthetic.counts.siblingDominated} ` +
     `forcedRetentions=${synthetic.counts.forcedRetentions}`,
+  );
+  console.log(
+    `check-teacher-divergence: resolver ok match=${resolver.matchType} ` +
+    `segmentProvider=${segment.actionProviderMode}`,
   );
   console.log(formatDivergenceReport(fixtureReport, { maxSteps: 8 }));
   if (mt5.skipped) {
@@ -245,6 +322,8 @@ module.exports = {
   checkTrackedFixture,
   checkOptionalMt5Teacher,
   checkSyntheticDominanceDivergence,
+  checkRecordedActionResolution,
+  checkSegmentProviderFiltering,
   checkNoProductionTeacherImport,
   FIXTURE_ROUTE,
   MT5_TEACHER_ROUTE,

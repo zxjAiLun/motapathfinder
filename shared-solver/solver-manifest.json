@@ -13,7 +13,7 @@
       "search/exploration",
       "experiments"
     ],
-    "unlistedLibFile": "warn",
+    "unlistedLibFile": "error",
     "notes": [
       "correctnessSource=true means the module participates in the trusted semantic or DP correctness path.",
       "experimental/exploration modules may generate candidates or diagnostics but must not be cited as proof that a route is impossible.",
@@ -1255,7 +1255,7 @@
       "id": "teacher-divergence-audit",
       "path": "shared-solver/lib/teacher-divergence-audit.js",
       "layer": "diagnostics",
-      "status": "canonical",
+      "status": "supporting",
       "role": "diagnostics",
       "correctnessSource": false,
       "tests": {

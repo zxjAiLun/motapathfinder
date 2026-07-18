@@ -63,9 +63,12 @@ npm run audit:js --prefix shared-solver
 npm run check:manifest --prefix shared-solver
 npm run check:teacher-divergence --prefix shared-solver
 npm run check:mt5-51533-next-smoke --prefix shared-solver
+npm run check:static --prefix shared-solver
+npm run check:local-regressions --prefix shared-solver
+npm run check:static:legacy --prefix shared-solver
 ```
 
-测试分级（unit / unit-plus-micro / integration-local / local-regression / diagnostic / smoke / smoke-wrapper / closure）记录在 `shared-solver/solver-manifest.json` 的 `tests` 字段；smoke 允许 `found=false`，不要把 smoke 或 diagnostic 绿当成路线已闭环。closure 必须拒绝 `found=false` 并要求 strict replay。
+测试分级（unit / unit-plus-micro / integration-local / local-regression / diagnostic / smoke / smoke-wrapper / closure）记录在 `shared-solver/solver-manifest.json` 的 `tests` 字段；`check:static`（clean）和 `check:local-regressions` 由 manifest 的 `cleanCheckout` 驱动，`check:static:legacy` 保留旧的完整本地回归聚合。smoke 允许 `found=false`，不要把 smoke 或 diagnostic 绿当成路线已闭环。closure 的 strict replay 字段目前是 metadata contract，仍需测试代码自身断言 replay 成功。
 
 Teacher divergence audit 是测试侧的 teacher-forced 诊断：它逐步确认 teacher action 是否可生成、successor 是否有效，以及 teacher 是否会被同 key 的 sibling/prior dominance 淘汰。它可以定位首次分叉原因，但不会向生产搜索提供 teacher action，也不证明目标路线已经自动搜索闭环。
 

@@ -314,6 +314,174 @@ function listAllActionsBySummary(simulator, state, summary) {
   return actions;
 }
 
+function listRecordedActionCandidates(simulator, state, actionProvider) {
+  if (typeof actionProvider === "function") {
+    try {
+      const provided = actionProvider(simulator, state);
+      return Array.isArray(provided) ? provided : ((provided && provided.actions) || []);
+    } catch (error) {
+      return [];
+    }
+  }
+  const actions = [];
+  const seen = new Set();
+  const add = (list) => {
+    (list || []).forEach((action) => {
+      if (!action) return;
+      let key;
+      try {
+        key = action.fingerprint || fingerprintAction(normalizeAction(action));
+      } catch (error) {
+        key = action.summary || action.kind || "unknown";
+      }
+      if (seen.has(key)) return;
+      seen.add(key);
+      actions.push(action);
+    });
+  };
+  try {
+    add(simulator.enumerateActions(state));
+  } catch (error) {
+  }
+  if (typeof simulator.enumeratePrimitiveActions === "function") {
+    try {
+      add(simulator.enumeratePrimitiveActions(state).actions || []);
+    } catch (error) {
+    }
+  }
+  if (typeof simulator.enumerateInteractPickupActions === "function") {
+    try {
+      add(simulator.enumerateInteractPickupActions(state));
+    } catch (error) {
+    }
+  }
+  if (typeof simulator.enumerateFloorFlyActions === "function") {
+    try {
+      add(simulator.enumerateFloorFlyActions(state));
+    } catch (error) {
+    }
+  }
+  return actions;
+}
+
+function samePoint(left, right) {
+  return Boolean(
+    left &&
+    right &&
+    left.x != null &&
+    right.x != null &&
+    Number(left.x) === Number(right.x) &&
+    Number(left.y) === Number(right.y),
+  );
+}
+
+/**
+ * Resolve one recorded decision against actions visible in the current state.
+ * Post-state key and fingerprint are stronger evidence than a summary; summary
+ * remains only as a compatibility fallback for old route records.
+ */
+function resolveRecordedAction(simulator, state, decision, options) {
+  const config = options || {};
+  if (!decision) return { action: null, reason: "missing-decision", candidates: 0 };
+  let expected;
+  try {
+    expected = normalizeAction(decision);
+  } catch (error) {
+    expected = { ...decision };
+  }
+  const expectedFingerprint = decision.fingerprint || expected.fingerprint || null;
+  const expectedPostStateKey = decision.postStateKey || null;
+  const candidates = listRecordedActionCandidates(simulator, state, config.actionProvider);
+  const keyBuilder = typeof config.postStateKeyBuilder === "function"
+    ? config.postStateKeyBuilder
+    : (nextState) => buildDominanceKey(nextState);
+  const directCandidates = candidates.filter((action) => {
+    try {
+      const normalized = normalizeAction(action);
+      return Boolean(
+        (expectedFingerprint && normalized.fingerprint === expectedFingerprint) ||
+        (expected.summary && normalized.summary === expected.summary) ||
+        (expected.path && expected.path.length > 0 && samePath(normalized.path, expected.path)) ||
+        (expected.target && samePoint(normalized.target, expected.target)) ||
+        (expected.stance && samePoint(normalized.stance, expected.stance)),
+      );
+    } catch (error) {
+      return false;
+    }
+  });
+  const candidatesToScore = expectedPostStateKey && directCandidates.length > 0
+    ? directCandidates
+    : candidates;
+  let best = null;
+
+  for (const action of candidatesToScore) {
+    let normalized;
+    try {
+      normalized = normalizeAction(action);
+    } catch (error) {
+      continue;
+    }
+    const postKeyMatches = Boolean(expectedPostStateKey) && (() => {
+      try {
+        const postState = simulator.applyAction(state, action);
+        return keyBuilder(postState) === expectedPostStateKey;
+      } catch (error) {
+        return false;
+      }
+    })();
+    const fingerprintMatches = Boolean(expectedFingerprint) && normalized.fingerprint === expectedFingerprint;
+    const pathMatches = samePath(normalized.path, expected.path);
+    const structuralMatches = Boolean(
+      (expected.target && samePoint(normalized.target, expected.target)) ||
+      (expected.stance && samePoint(normalized.stance, expected.stance)) ||
+      (expected.direction && normalized.direction === expected.direction),
+    );
+    const summaryMatches = Boolean(expected.summary) && normalized.summary === expected.summary;
+    const kindMatches = Boolean(expected.kind) && normalized.kind === expected.kind;
+    let score = 0;
+    let matchType = "none";
+    if (postKeyMatches) {
+      score += 1000000000000;
+      matchType = "postStateKey";
+    } else if (fingerprintMatches) {
+      score += 1000000000;
+      matchType = "fingerprint";
+    } else if (pathMatches && expected.path && expected.path.length > 0) {
+      score += 1000000;
+      matchType = "path";
+    } else if (structuralMatches) {
+      score += 10000;
+      matchType = "target-stance-direction";
+    } else if (summaryMatches) {
+      score += 100;
+      matchType = "summary";
+    }
+    if (kindMatches) score += 10;
+    if (score === 0) continue;
+    if (!best || score > best.score) {
+      best = {
+        action,
+        normalizedAction: normalized,
+        score,
+        matchType,
+        postKeyMatches,
+        fingerprintMatches,
+        pathMatches,
+        structuralMatches,
+        summaryMatches,
+      };
+    }
+  }
+  if (!best) {
+    return {
+      action: null,
+      reason: candidates.length > 0 ? "recorded-action-not-matched" : "no-visible-actions",
+      candidates: candidates.length,
+    };
+  }
+  return { ...best, candidates: candidates.length };
+}
+
 function routeEntrySummary(entry) {
   return typeof entry === "string" ? entry : (entry && entry.summary);
 }
@@ -727,7 +895,9 @@ module.exports = {
   buildRouteRecord,
   createStateFromSnapshot,
   fingerprintAction,
+  listRecordedActionCandidates,
   normalizeAction,
   readRouteFile,
+  resolveRecordedAction,
   writeRouteFile,
 };
