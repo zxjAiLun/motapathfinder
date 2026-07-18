@@ -1,5 +1,11 @@
 "use strict";
 
+/**
+ * TEST GRADE: unit
+ * Synthetic resource-timing model checks. Not OnlyUp full-route closure.
+ * See solver-manifest.json tests entry.
+ */
+
 const assert = require("node:assert");
 
 const {

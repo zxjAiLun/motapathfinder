@@ -1,5 +1,11 @@
 "use strict";
 
+/**
+ * TEST GRADE: integration-local
+ * Depends on ignored routes/latest fixture; not clean-checkout safe.
+ * See solver-manifest.json tests entry.
+ */
+
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");

@@ -10,6 +10,100 @@ const docsDir = path.join(repoRoot, "docs");
 const inventoryPath = path.join(docsDir, "js-inventory.md");
 const entrypointsPath = path.join(docsDir, "solver-entrypoints.md");
 const legacyBaselinePath = path.join(docsDir, "legacy-tower-solver-js-baseline.json");
+const solverManifestPath = path.join(repoRoot, "shared-solver", "solver-manifest.json");
+
+let cachedSolverManifest = null;
+
+function loadSolverManifest() {
+  if (cachedSolverManifest) return cachedSolverManifest;
+  if (!fs.existsSync(solverManifestPath)) {
+    cachedSolverManifest = null;
+    return null;
+  }
+  cachedSolverManifest = JSON.parse(fs.readFileSync(solverManifestPath, "utf8"));
+  return cachedSolverManifest;
+}
+
+function globToRegExp(pattern) {
+  const escaped = String(pattern)
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*\*/g, "{{GLOBSTAR}}")
+    .replace(/\*/g, "[^/]*")
+    .replace(/{{GLOBSTAR}}/g, ".*");
+  return new RegExp(`^${escaped}$`);
+}
+
+function matchPathRule(relPath, rule) {
+  if (!rule || !rule.match) return false;
+  return globToRegExp(rule.match).test(relPath);
+}
+
+function lookupManifestEntry(relPath) {
+  const manifest = loadSolverManifest();
+  if (!manifest) return null;
+  if (manifest.modules && manifest.modules[relPath]) {
+    return { kind: "module", entry: manifest.modules[relPath] };
+  }
+  if (manifest.tests && manifest.tests[relPath]) {
+    return { kind: "test", entry: manifest.tests[relPath] };
+  }
+  if (Array.isArray(manifest.pathRules)) {
+    for (const rule of manifest.pathRules) {
+      if (matchPathRule(relPath, rule)) return { kind: "pathRule", entry: rule };
+    }
+  }
+  return null;
+}
+
+function manifestRecommendedAction(relPath, category) {
+  const hit = lookupManifestEntry(relPath);
+  if (!hit) return null;
+  const entry = hit.entry || {};
+  if (entry.recommendedAction) return entry.recommendedAction;
+  if (hit.kind === "test") {
+    const grade = entry.grade || "ungraded";
+    const allowsNotFound = entry.allowsNotFound ? "allows found=false" : "expects success semantics per script";
+    return `test grade=${grade}; ${allowsNotFound}`;
+  }
+  const status = entry.status || "supporting";
+  const role = entry.role || "supporting";
+  const correctness = entry.correctnessSource === true ? "correctness-source" : "not-correctness-source";
+  if (status === "archive-candidate") {
+    return "archive to _archive/experiments/pre-canonical/; do not treat as canonical";
+  }
+  if (status === "experimental") {
+    return `experimental ${role}; ${correctness}; candidate-generator only`;
+  }
+  if (status === "exploration") {
+    return `exploration ${role}; never treat miss as proof of no route`;
+  }
+  if (status === "canonical" && entry.correctnessSource === true) {
+    return "keep as canonical correctness implementation";
+  }
+  if (status === "canonical") {
+    return `keep as canonical ${role || category}`;
+  }
+  return `keep as ${status} ${role}; ${correctness}`;
+}
+
+function manifestCategory(relPath, fallback) {
+  const hit = lookupManifestEntry(relPath);
+  if (!hit) return fallback;
+  const entry = hit.entry || {};
+  if (hit.kind === "test") return "solver test";
+  if (entry.status === "archive-candidate") return "archive candidate";
+  if (entry.status === "experimental") return "experimental solver";
+  if (entry.status === "exploration") return "exploration solver";
+  if (entry.layer === "cli" || entry.role === "cli") return "solver cli";
+  if (entry.layer === "tests" || entry.role === "test") return "solver test";
+  if (entry.layer && String(entry.layer).startsWith("tools")) return "solver tool";
+  if (entry.layer === "diagnostics" || entry.role === "diagnostics") return "solver diagnostics";
+  if (entry.layer === "public" || entry.role === "public-api") return "solver public api";
+  if (entry.correctnessSource === true) return "canonical solver core";
+  if (entry.status === "canonical") return "canonical solver support";
+  if (entry.status === "supporting") return "solver support";
+  return fallback;
+}
 
 const EXCLUDED_DIRS = new Set([
   ".git",
@@ -66,7 +160,9 @@ function classifyFile(relPath) {
   if (relPath.startsWith("tools/")) return "repo tools";
   if (relPath.startsWith("benchmarks/")) return "benchmark harness";
   if (relPath.startsWith("agents/")) return "agent sandbox";
-  if (relPath.startsWith("shared-solver/")) return "canonical solver";
+  if (relPath.startsWith("shared-solver/")) {
+    return manifestCategory(relPath, "canonical solver");
+  }
   if (isLegacyTowerSolverPath(relPath)) return "legacy solver candidate";
   if (relPath.startsWith("routes/") || relPath.includes("/routes/")) return "suspicious route js";
   if (relPath.startsWith("logs/") || relPath.includes("/logs/")) return "suspicious log js";
@@ -86,10 +182,35 @@ function isLegacyTowerSolverPath(relPath) {
   return LEGACY_TOWER_SOLVER_ROOTS.some((root) => relPath.startsWith(root));
 }
 
-function recommendedAction(category) {
+function recommendedAction(category, relPath) {
+  if (relPath) {
+    const fromManifest = manifestRecommendedAction(relPath, category);
+    if (fromManifest) return fromManifest;
+  }
   switch (category) {
     case "canonical solver":
+    case "canonical solver core":
       return "keep as canonical implementation";
+    case "canonical solver support":
+      return "keep as canonical support module";
+    case "experimental solver":
+      return "experimental; candidate-generator only; not a correctness proof";
+    case "exploration solver":
+      return "exploration only; never treat miss as proof of no route";
+    case "archive candidate":
+      return "archive to _archive/experiments/pre-canonical/; do not treat as canonical";
+    case "solver test":
+      return "keep as regression/check script; consult solver-manifest test grade";
+    case "solver cli":
+      return "keep as CLI orchestration; no reusable logic growth";
+    case "solver tool":
+      return "keep as solver tooling";
+    case "solver diagnostics":
+      return "keep as diagnostics";
+    case "solver public api":
+      return "stable public API surface for agents; keep thin";
+    case "solver support":
+      return "keep as supporting solver module";
     case "legacy solver candidate":
       return "freeze; archive later; do not add or edit solver JS here";
     case "tower project data/runtime":
@@ -187,6 +308,7 @@ function collectInventory() {
     const duplicateOf = byHash.has(hash) ? byHash.get(hash) : null;
     if (!byHash.has(hash)) byHash.set(hash, relPath);
 
+    const manifestHit = lookupManifestEntry(relPath);
     rows.push({
       path: relPath,
       category,
@@ -195,7 +317,10 @@ function collectInventory() {
       dependencies,
       resolvedDeps,
       isDuplicateOf: duplicateOf,
-      recommendedAction: recommendedAction(category),
+      recommendedAction: recommendedAction(category, relPath),
+      manifestStatus: manifestHit && manifestHit.entry ? (manifestHit.entry.status || manifestHit.entry.grade || "-") : "-",
+      manifestLayer: manifestHit && manifestHit.entry ? (manifestHit.entry.layer || (manifestHit.kind === "test" ? "tests" : "-")) : "-",
+      correctnessSource: manifestHit && manifestHit.entry && manifestHit.entry.correctnessSource === true,
     });
   }
 
@@ -230,10 +355,14 @@ function writeInventory(rows) {
   lines.push("");
   lines.push("Generated by `node tools/audit-js-files.js`.");
   lines.push("");
+  lines.push("Categories for `shared-solver/**` are refined by `shared-solver/solver-manifest.json` when present.");
+  lines.push("Do not treat `experimental` / `exploration` / `archive-candidate` as correctness proof sources.");
+  lines.push("");
   lines.push("## Summary");
   lines.push("");
   lines.push(`- Total JS files: ${rows.length}`);
   lines.push(`- Excluded directories: ${[...EXCLUDED_DIRS].sort().map((name) => `\`${name}\``).join(", ")}`);
+  lines.push(`- Solver manifest: ${fs.existsSync(solverManifestPath) ? "`shared-solver/solver-manifest.json`" : "missing"}`);
   lines.push("");
   lines.push("| Category | Count |");
   lines.push("| --- | ---: |");
@@ -243,12 +372,14 @@ function writeInventory(rows) {
   lines.push("");
   lines.push("## Files");
   lines.push("");
-  lines.push("| Path | Category | SHA-256 | Imported By | Exports | Duplicate Of | Recommended Action |");
-  lines.push("| --- | --- | --- | --- | --- | --- | --- |");
+  lines.push("| Path | Category | Status | Layer | SHA-256 | Imported By | Exports | Duplicate Of | Recommended Action |");
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const row of rows) {
     lines.push([
       escapeCell(row.path),
       escapeCell(row.category),
+      escapeCell(row.manifestStatus || "-"),
+      escapeCell(row.manifestLayer || "-"),
       escapeCell(row.sha256.slice(0, 16)),
       compactList(row.importedBy),
       compactList(row.exports, 6),
@@ -288,12 +419,15 @@ function writeEntrypoints(rows) {
   lines.push("## Policy");
   lines.push("");
   lines.push("- `shared-solver/` is the canonical solver implementation.");
+  lines.push("- Module identity lives in `shared-solver/solver-manifest.json` (status/layer/correctnessSource/test grade).");
   lines.push("- `shared-solver/public.js` is the stable API for external agents; see `docs/public-api.md`.");
   lines.push("- Public-layer write boundaries are documented in `docs/development-boundaries.md`.");
   lines.push("- Region/segment canonical DP is the correctness path; `linear-main` / beam / macro search is auxiliary exploration. See `docs/solver-architecture.md`.");
+  lines.push("- Experimental modules (`resource-timing`, `resource-deferral`, `milestone-decomposer`) are candidate generators, not impossibility proofs.");
   lines.push("- Tower `solver/` directories are legacy copies and are frozen.");
   lines.push("- Tower project/runtime JavaScript under `project/`, `libs/`, `extensions/`, `_server/`, and `main.js` is not solver code and should remain in place.");
   lines.push("- New solver work should land in `shared-solver/`, `tools/`, or documented agent sandboxes, not inside tower `solver/` directories.");
+  lines.push("- Smoke-grade checks may pass with `found=false`; only closure-grade checks assert found + strict replay.");
   lines.push("");
   lines.push("## Tower Wrappers");
   lines.push("");
@@ -347,10 +481,13 @@ function writeEntrypoints(rows) {
   lines.push("## Checks");
   lines.push("");
   lines.push("- Regenerate inventory: `node tools/audit-js-files.js`");
+  lines.push("- Check solver manifest coverage: `node tools/audit-js-files.js --check-manifest`");
   lines.push("- Freeze legacy tower solver JS: `npm run check:no-tower-solver-js --prefix shared-solver`");
   lines.push("- Check public-layer writes: `npm run check:public-layer-boundaries --prefix shared-solver`");
   lines.push("- Check strict agent output writes: `npm run check:agent-boundaries --prefix shared-solver -- --agent=<agent-name>`");
+  lines.push("- Teacher divergence audit: `npm run check:teacher-divergence --prefix shared-solver`");
   lines.push("- Refresh legacy baseline only after intentional archive/freeze reset: `node tools/audit-js-files.js --refresh-legacy-baseline`");
+  lines.push("- Refresh solver manifest module list: `node shared-solver/scripts/generate-solver-manifest.js`");
   lines.push("");
   lines.push("## Shared-Solver Module Boundaries");
   lines.push("");
@@ -443,10 +580,113 @@ function checkNoTowerSolverJs() {
   }
 }
 
+function checkSolverManifest() {
+  const manifest = loadSolverManifest();
+  if (!manifest) {
+    console.error(`Missing solver manifest: ${relativePath(solverManifestPath)}`);
+    process.exit(1);
+  }
+
+  const libDir = path.join(repoRoot, "shared-solver", "lib");
+  const libFiles = fs.existsSync(libDir)
+    ? fs.readdirSync(libDir).filter((name) => name.endsWith(".js")).map((name) => `shared-solver/lib/${name}`)
+    : [];
+  const moduleKeys = new Set(Object.keys(manifest.modules || {}));
+  const testEntries = manifest.tests || {};
+  const missing = libFiles.filter((filePath) => !moduleKeys.has(filePath));
+  const stale = [...moduleKeys].filter((filePath) => !fs.existsSync(path.join(repoRoot, filePath)));
+  const sharedSolverDir = path.join(repoRoot, "shared-solver");
+  const checkFiles = fs.existsSync(sharedSolverDir)
+    ? fs.readdirSync(sharedSolverDir)
+      .filter((name) => /^check-.*\.js$/.test(name))
+      .map((name) => `shared-solver/${name}`)
+    : [];
+  const missingTests = checkFiles.filter((filePath) => !Object.prototype.hasOwnProperty.call(testEntries, filePath));
+  const staleTests = Object.keys(testEntries).filter((filePath) => !fs.existsSync(path.join(repoRoot, filePath)));
+  const allowedGrades = new Set([
+    "unit",
+    "unit-plus-micro",
+    "integration-local",
+    "local-regression",
+    "diagnostic",
+    "smoke",
+    "smoke-wrapper",
+    "closure",
+  ]);
+  const invalidTests = [];
+  for (const [filePath, entry] of Object.entries(testEntries)) {
+    if (!entry || !allowedGrades.has(entry.grade)) {
+      invalidTests.push(`${filePath}: invalid grade=${entry && entry.grade}`);
+      continue;
+    }
+    for (const field of ["allowsNotFound", "requiresStrictReplay", "cleanCheckout"]) {
+      if (typeof entry[field] !== "boolean") {
+        invalidTests.push(`${filePath}: ${field} must be boolean`);
+      }
+    }
+    if (entry.grade === "closure" && (entry.allowsNotFound || !entry.requiresStrictReplay)) {
+      invalidTests.push(`${filePath}: closure must require strict replay and reject found=false`);
+    }
+  }
+
+  const tmpFiles = [];
+  if (fs.existsSync(sharedSolverDir)) {
+    for (const name of fs.readdirSync(sharedSolverDir)) {
+      if (name.startsWith(".tmp-") && name.endsWith(".js")) {
+        tmpFiles.push(`shared-solver/${name}`);
+      }
+    }
+  }
+
+  let failed = false;
+  if (missing.length > 0) {
+    failed = true;
+    console.error("Solver manifest missing lib modules:");
+    for (const filePath of missing) console.error(`  - ${filePath}`);
+  }
+  if (stale.length > 0) {
+    failed = true;
+    console.error("Solver manifest points at missing files:");
+    for (const filePath of stale) console.error(`  - ${filePath}`);
+  }
+  if (missingTests.length > 0) {
+    failed = true;
+    console.error("Solver manifest missing check grades:");
+    for (const filePath of missingTests) console.error(`  - ${filePath}`);
+  }
+  if (staleTests.length > 0) {
+    failed = true;
+    console.error("Solver manifest points at missing tests:");
+    for (const filePath of staleTests) console.error(`  - ${filePath}`);
+  }
+  if (invalidTests.length > 0) {
+    failed = true;
+    console.error("Solver manifest has invalid test metadata:");
+    for (const issue of invalidTests) console.error(`  - ${issue}`);
+  }
+  if (tmpFiles.length > 0) {
+    console.log(`Note: ${tmpFiles.length} shared-solver/.tmp-*.js archive candidates present (gitignored).`);
+  }
+
+  if (failed) {
+    console.error("");
+    console.error("Refresh with: node shared-solver/scripts/generate-solver-manifest.js");
+    process.exit(1);
+  }
+
+  console.log(
+    `Solver manifest check passed (${moduleKeys.size} modules, ${Object.keys(testEntries).length} graded tests).`,
+  );
+}
+
 function main() {
   const args = new Set(process.argv.slice(2));
   if (args.has("--check-no-tower-solver-js")) {
     checkNoTowerSolverJs();
+    return;
+  }
+  if (args.has("--check-manifest")) {
+    checkSolverManifest();
     return;
   }
 
@@ -462,6 +702,11 @@ function main() {
   }
   console.log(`Wrote ${relativePath(inventoryPath)}`);
   console.log(`Wrote ${relativePath(entrypointsPath)}`);
+  if (fs.existsSync(solverManifestPath)) {
+    console.log(`Using ${relativePath(solverManifestPath)}`);
+  } else {
+    console.log("Warning: shared-solver/solver-manifest.json missing; categories fall back to coarse rules.");
+  }
 }
 
 if (require.main === module) main();

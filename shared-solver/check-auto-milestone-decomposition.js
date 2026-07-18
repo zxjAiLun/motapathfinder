@@ -1,5 +1,12 @@
 "use strict";
 
+/**
+ * TEST GRADE: unit-plus-micro
+ * Serialization/budget/branch/minimizer checks plus a tiny direct-goal case.
+ * Not a 51533→I894 closure test.
+ * See solver-manifest.json tests entry.
+ */
+
 const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");

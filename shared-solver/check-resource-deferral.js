@@ -1,5 +1,13 @@
 "use strict";
 
+/**
+ * TEST GRADE: local-regression
+ * Real OnlyUp teacher prefix + hand-written atk/def threshold.
+ * Proves local deferral, not automatic full-route closure.
+ * Depends on local generated teacher route (not clean-checkout safe).
+ * See solver-manifest.json tests entry.
+ */
+
 const assert = require("node:assert");
 const path = require("node:path");
 

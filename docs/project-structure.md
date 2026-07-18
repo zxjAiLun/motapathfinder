@@ -41,7 +41,8 @@ npm run audit:js --prefix shared-solver
 
 | Pattern | Category | 处理 |
 | --- | --- | --- |
-| `shared-solver/**/*.js` | canonical solver | 保留并维护 |
+| `shared-solver/**/*.js` | refined by `shared-solver/solver-manifest.json` (core / support / experimental / exploration / test / cli / archive-candidate) | 按 manifest status 维护；experimental/exploration 不是正确性证明 |
+| `shared-solver/solver-manifest.json` | module identity | 新增 lib 模块后运行 `npm run manifest:refresh --prefix shared-solver` 并 `npm run check:manifest --prefix shared-solver` |
 | `*/solver/**/*.js` | legacy solver candidate | 冻结；后续归档 |
 | `*/project/**/*.js` | tower project data/runtime | 不动，属于 h5mota 项目 |
 | `*/libs/**/*.js` | tower runtime/library | 不动，属于 h5mota 项目 |
@@ -55,6 +56,18 @@ npm run audit:js --prefix shared-solver
 - `docs/js-inventory.md`
 - `docs/solver-entrypoints.md`
 - `docs/legacy-tower-solver-js-baseline.json`
+
+相关检查：
+
+```bash
+npm run check:manifest --prefix shared-solver
+npm run check:teacher-divergence --prefix shared-solver
+npm run check:mt5-51533-next-smoke --prefix shared-solver
+```
+
+测试分级（unit / unit-plus-micro / integration-local / local-regression / diagnostic / smoke / smoke-wrapper / closure）记录在 `shared-solver/solver-manifest.json` 的 `tests` 字段；smoke 允许 `found=false`，不要把 smoke 或 diagnostic 绿当成路线已闭环。closure 必须拒绝 `found=false` 并要求 strict replay。
+
+Teacher divergence audit 是测试侧的 teacher-forced 诊断：它逐步确认 teacher action 是否可生成、successor 是否有效，以及 teacher 是否会被同 key 的 sibling/prior dominance 淘汰。它可以定位首次分叉原因，但不会向生产搜索提供 teacher action，也不证明目标路线已经自动搜索闭环。
 
 ## 4. Canonical 入口
 
@@ -148,4 +161,3 @@ npm run check:agent-boundaries --prefix shared-solver -- --agent=<agent-name>
 - `shared-solver/README.md` 仍保留早期 macro/top-k 叙述，需要逐步改成“canonical DP 为主、beam 为辅助”。
 - 旧塔内 `solver/**` 文件仍存在，后续应按冻结策略归档。
 - `routes/`、`logs/`、`runs/` 中生成物需要按任务清理，避免提交大体积临时输出。
-
