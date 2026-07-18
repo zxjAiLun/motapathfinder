@@ -7,7 +7,7 @@ Do not treat `experimental` / `exploration` / `archive-candidate` as correctness
 
 ## Summary
 
-- Total JS files: 526
+- Total JS files: 527
 - Excluded directories: `.cache`, `.git`, `.venv`, `.venv-standard-server`, `__pycache__`, `_archive`, `node_modules`, `replay-downloads`, `venv`
 - Solver manifest: `shared-solver/solver-manifest.json`
 
@@ -25,7 +25,7 @@ Do not treat `experimental` / `exploration` / `archive-candidate` as correctness
 | solver cli | 9 |
 | solver diagnostics | 9 |
 | solver public api | 1 |
-| solver test | 37 |
+| solver test | 38 |
 | solver tool | 17 |
 | tower project data/runtime | 220 |
 
@@ -242,8 +242,9 @@ Do not treat `experimental` / `exploration` / `archive-candidate` as correctness
 | shared-solver/check-auto-stabilize.js | solver test | local-regression | tests | 5f0da1a2806732de | - | - | - | test grade=local-regression; expects success semantics per script |
 | shared-solver/check-checkpoint-repair.js | solver test | local-regression | tests | b9c3d6acdf0183a0 | - | - | - | test grade=local-regression; expects success semantics per script |
 | shared-solver/check-confluence-dominance.js | solver test | local-regression | tests | 0d888960199a912a | - | - | - | test grade=local-regression; expects success semantics per script |
-| shared-solver/check-core-regressions.js | solver test | local-regression | tests | 514bd02f013fcdd1 | - | - | - | test grade=local-regression; expects success semantics per script |
+| shared-solver/check-core-regressions.js | solver test | unit-plus-micro | tests | 514bd02f013fcdd1 | - | - | - | test grade=unit-plus-micro; expects success semantics per script |
 | shared-solver/check-floor-scout.js | solver test | local-regression | tests | 168cf403b3719b2a | - | - | - | test grade=local-regression; expects success semantics per script |
+| shared-solver/check-manifest-runner.js | solver test | unit | tests | f1730cfede0d4b6b | - | module.exports | - | test grade=unit; expects success semantics per script |
 | shared-solver/check-milestone-audit.js | solver test | diagnostic | tests | fbeb439924990687 | - | module.exports | - | test grade=diagnostic; expects success semantics per script |
 | shared-solver/check-mt2-local-order.js | solver test | local-regression | tests | 00056c2d12e0f9c4 | - | - | - | test grade=local-regression; expects success semantics per script |
 | shared-solver/check-mt2-resource-branch.js | solver test | local-regression | tests | ceb993a61f01e339 | - | - | - | test grade=local-regression; expects success semantics per script |
@@ -271,7 +272,7 @@ Do not treat `experimental` / `exploration` / `archive-candidate` as correctness
 | shared-solver/check-route-repair.js | solver test | local-regression | tests | eb406b6427f0d32f | - | module.exports | - | test grade=local-regression; expects success semantics per script |
 | shared-solver/check-stage-acceptance.js | solver test | local-regression | tests | 5b9f204ffa15e275 | - | - | - | test grade=local-regression; expects success semantics per script |
 | shared-solver/check-state-key-audit.js | solver test | diagnostic | tests | 78e6d7ac279636c8 | - | - | - | test grade=diagnostic; expects success semantics per script |
-| shared-solver/check-teacher-divergence.js | solver test | diagnostic | tests | 56c0f7fc6bf1ae14 | - | module.exports | - | test grade=diagnostic; allows found=false |
+| shared-solver/check-teacher-divergence.js | solver test | diagnostic | tests | 1dd801cacb3a051d | - | module.exports | - | test grade=diagnostic; allows found=false |
 | shared-solver/check-whiteisland-trial-resource-order.js | solver test | local-regression | tests | b855f5db4b323192 | - | - | - | test grade=local-regression; expects success semantics per script |
 | shared-solver/check-window-repair.js | solver test | local-regression | tests | 4e7d469b99dcba9e | - | module.exports | - | test grade=local-regression; expects success semantics per script |
 | shared-solver/debug-route-timeline.js | solver tool | supporting | tools/debug | 657b78f70e9bc695 | shared-solver/check-route-debugger.js<br>shared-solver/render-route-debugger.js | module.exports | - | keep as debug tool; not a correctness search |
@@ -336,7 +337,7 @@ Do not treat `experimental` / `exploration` / `archive-candidate` as correctness
 | shared-solver/lib/route-repair-runner-chain.js | canonical solver support | canonical | route | be7431d7aec93904 | shared-solver/lib/route-repair-runner.js | module.exports | - | keep as canonical route-replay |
 | shared-solver/lib/route-repair-runner.js | canonical solver support | canonical | route | 092d859dba770a79 | shared-solver/check-mt5-route-repair-closure.js<br>shared-solver/check-route-repair.js<br>shared-solver/lib/iterative-route-repair.js<br>shared-solver/route-repair.js | module.exports | - | keep as canonical route-replay |
 | shared-solver/lib/route-snapshot.js | canonical solver support | canonical | route | 4941dedd6d58a212 | shared-solver/lib/live-replay.js<br>shared-solver/lib/replay-session.js<br>shared-solver/lib/route-debugger.js<br>shared-solver/lib/route-store.js<br>… +3 | module.exports | Only upV2.1/Only upV2.1/solver/lib/route-snapshot.js | keep as canonical route-replay |
-| shared-solver/lib/route-store.js | canonical solver support | canonical | route | 79fbd2e0f7e94c31 | shared-solver/.tmp-continue-from-hp3779.js<br>shared-solver/.tmp-continue-from-route.js<br>shared-solver/.tmp-enum-i893-focused.js<br>shared-solver/.tmp-enum-i893.js<br>… +54 | module.exports | - | keep as canonical route-replay |
+| shared-solver/lib/route-store.js | canonical solver support | canonical | route | 2f49d2498b5018d2 | shared-solver/.tmp-continue-from-hp3779.js<br>shared-solver/.tmp-continue-from-route.js<br>shared-solver/.tmp-enum-i893-focused.js<br>shared-solver/.tmp-enum-i893.js<br>… +54 | module.exports | - | keep as canonical route-replay |
 | shared-solver/lib/route-window-repair.js | canonical solver support | canonical | route | 65b4799063ffd8c6 | shared-solver/check-mt5-window-repair-closure.js<br>shared-solver/check-window-repair.js<br>shared-solver/diagnose-window-repair.js<br>shared-solver/route-repair.js | module.exports | - | keep as canonical route-replay |
 | shared-solver/lib/score.js | exploration solver | exploration | search/exploration | 5689c9c36b8abdd1 | shared-solver/.tmp-save-i893-short.js<br>shared-solver/.tmp-search-hp3779-to-i893.js<br>shared-solver/.tmp-search-i893.js<br>shared-solver/.tmp-search-mt4-after-dark.js<br>… +14 | module.exports | - | exploration exploration-search; never treat miss as proof of no route |
 | shared-solver/lib/search-cache.js | exploration solver | exploration | search/exploration | 1add9e132dcce311 | shared-solver/lib/score.js<br>shared-solver/lib/search-profiles.js<br>shared-solver/lib/search.js<br>shared-solver/lib/simulator.js<br>… +2 | module.exports | Only upV2.1/Only upV2.1/solver/lib/search-cache.js | exploration exploration-search; never treat miss as proof of no route |
@@ -353,7 +354,7 @@ Do not treat `experimental` / `exploration` / `archive-candidate` as correctness
 | shared-solver/lib/state-key.js | canonical solver core | canonical | domain | f5be4802f9926744 | shared-solver/.tmp-enum-i893-focused.js<br>shared-solver/.tmp-enum-i893.js<br>shared-solver/.tmp-save-i893-short.js<br>shared-solver/.tmp-search-hp3779-to-i893.js<br>… +28 | module.exports | - | keep as canonical correctness implementation |
 | shared-solver/lib/state.js | canonical solver core | canonical | domain | 712f898837000cd9 | shared-solver/check-core-regressions.js<br>shared-solver/check-milestone-audit.js<br>shared-solver/check-mt2-local-order.js<br>shared-solver/check-onlyup-floorfly-dedup-safety.js<br>… +54 | module.exports | - | keep as canonical correctness implementation |
 | shared-solver/lib/step-simulator.js | canonical solver core | canonical | simulation | 6f80e22290634d84 | shared-solver/check-core-regressions.js<br>shared-solver/lib/simulator.js | module.exports | - | keep as canonical correctness implementation |
-| shared-solver/lib/teacher-divergence-audit.js | solver diagnostics | supporting | diagnostics | b4cbb71365a87287 | shared-solver/check-teacher-divergence.js<br>shared-solver/run-teacher-divergence.js | module.exports | - | keep as supporting diagnostics; not-correctness-source |
+| shared-solver/lib/teacher-divergence-audit.js | solver diagnostics | supporting | diagnostics | 581674cbcefd3c82 | shared-solver/check-teacher-divergence.js<br>shared-solver/run-teacher-divergence.js | module.exports | - | keep as supporting diagnostics; not-correctness-source |
 | shared-solver/lib/tool-registry.js | canonical solver core | canonical | simulation | 97a0e36ecc989f63 | shared-solver/lib/simulator.js | module.exports | Only upV2.1/Only upV2.1/solver/lib/tool-registry.js | keep as canonical correctness implementation |
 | shared-solver/lib/updown-candidate-policy.js | exploration solver | exploration | search/exploration | 9fe0d57f6bb6b5ff | shared-solver/lib/route-store.js<br>shared-solver/lib/search-profiles.js<br>shared-solver/verify-mt1-mt3-live.js | module.exports | Only upV2.1/Only upV2.1/solver/lib/updown-candidate-policy.js | exploration exploration-search; never treat miss as proof of no route |
 | shared-solver/lib/worker-pool.js | exploration solver | exploration | search/exploration | 9331c1793d87e52c | shared-solver/lib/exhaustive-parallel.js<br>shared-solver/lib/search.js | module.exports | Only upV2.1/Only upV2.1/solver/lib/worker-pool.js | exploration exploration-search; never treat miss as proof of no route |
@@ -374,8 +375,8 @@ Do not treat `experimental` / `exploration` / `archive-candidate` as correctness
 | shared-solver/run-segmented-dp.js | solver cli | supporting | cli | a40b94f4d62fe2d1 | - | - | - | keep as CLI orchestration; no reusable logic growth |
 | shared-solver/run-teacher-divergence.js | solver cli | supporting | cli | 71ae196ddd05547f | - | module.exports | - | keep as CLI orchestration; no reusable logic growth |
 | shared-solver/run-whiteisland-trial-topk.js | solver cli | supporting | cli | 7355d34af1b5c416 | - | - | - | keep as CLI orchestration; no reusable logic growth |
-| shared-solver/scripts/generate-solver-manifest.js | solver tool | supporting | tools/manifest | c775130ef0aa493f | - | - | - | keep as manifest/inventory tooling; regenerate and validate before changing module identity |
-| shared-solver/scripts/run-manifest-checks.js | solver tool | supporting | tools/manifest | d4e3e129da081790 | - | module.exports | - | keep as manifest/inventory tooling; regenerate and validate before changing module identity |
+| shared-solver/scripts/generate-solver-manifest.js | solver tool | supporting | tools/manifest | 2c66c899c5ec5b30 | - | - | - | keep as manifest/inventory tooling; regenerate and validate before changing module identity |
+| shared-solver/scripts/run-manifest-checks.js | solver tool | supporting | tools/manifest | c3de1acfc1c3ca39 | shared-solver/check-manifest-runner.js | module.exports | - | keep as manifest/inventory tooling; regenerate and validate before changing module identity |
 | shared-solver/search-mt5-blueking-checkpoint-dp.js | exploration solver | exploration | experiments/search | 585c200d8218d226 | - | - | - | exploration/local search helper; not global correctness proof |
 | shared-solver/search-mt5-blueking-local.js | exploration solver | exploration | experiments/search | 3add5344ee2ad9a5 | - | - | - | exploration/local search helper; not global correctness proof |
 | shared-solver/verify-mt1-mt3-live.js | solver tool | supporting | tools/route | dfa6acf4ae3535fa | shared-solver/verify-route-live.js | module.exports | Only upV2.1/Only upV2.1/solver/verify-mt1-mt3-live.js | keep as live verification CLI |

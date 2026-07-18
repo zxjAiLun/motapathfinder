@@ -64,6 +64,7 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-confluence-dominance.js`
 - `shared-solver/check-core-regressions.js`
 - `shared-solver/check-floor-scout.js`
+- `shared-solver/check-manifest-runner.js`
 - `shared-solver/check-milestone-audit.js`
 - `shared-solver/check-mt2-local-order.js`
 - `shared-solver/check-mt2-resource-branch.js`

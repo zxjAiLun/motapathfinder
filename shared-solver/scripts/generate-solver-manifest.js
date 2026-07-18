@@ -269,6 +269,13 @@ const TEST_OVERRIDES = {
     cleanCheckout: true,
     notes: "synthetic resource timing unit checks",
   },
+  "shared-solver/check-core-regressions.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "canonical core regression suite; no ignored route dependency",
+  },
   "shared-solver/check-resource-timing.js": {
     grade: "integration-local",
     allowsNotFound: false,
@@ -296,6 +303,13 @@ const TEST_OVERRIDES = {
     requiresStrictReplay: false,
     cleanCheckout: true,
     notes: "teacher-forced divergence audit; tracked fixture always; MT5 teacher optional if present",
+  },
+  "shared-solver/check-manifest-runner.js": {
+    grade: "unit",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "manifest suite selection and fail-fast semantics; no tower/project load",
   },
 };
 
@@ -495,6 +509,18 @@ const manifest = {
     ],
   },
   pathRules,
+  suites: {
+    static: {
+      requiredChecks: [
+        "shared-solver/check-core-regressions.js",
+        "shared-solver/check-resource-timing-model.js",
+        "shared-solver/check-auto-milestone-decomposition.js",
+        "shared-solver/check-teacher-divergence.js",
+        "shared-solver/check-manifest-runner.js",
+      ],
+      requiredCommands: ["check:no-tower-solver-js"],
+    },
+  },
   modules,
   tests,
 };

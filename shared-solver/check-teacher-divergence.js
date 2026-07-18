@@ -20,7 +20,7 @@ const { loadProject } = require("./lib/project-loader");
 const { readRouteFile } = require("./lib/route-store");
 const { StaticSimulator } = require("./lib/simulator");
 const { fingerprintAction, resolveRecordedAction } = require("./lib/route-store");
-const { buildDominanceKey } = require("./lib/state-key");
+const { buildDominanceKey, buildStateKey } = require("./lib/state-key");
 const {
   formatDivergenceReport,
   runTeacherDivergenceAudit,
@@ -79,6 +79,8 @@ function assertReportShape(report, label) {
   assert.ok(report.counts, `${label}: missing counts`);
   assert.ok(Array.isArray(report.steps), `${label}: steps must be an array`);
   assert.equal(typeof report.ok, "boolean", `${label}: ok must be boolean`);
+  assert.equal(report.analysisMode, "teacher-forced-local", `${label}: analysis mode must be explicit`);
+  assert.equal(report.pruningSemantics, "hypothetical", `${label}: pruning semantics must be explicit`);
   assert.ok(report.counts.stepsAudited > 0, `${label}: expected audited steps`);
 }
 
@@ -182,7 +184,8 @@ function checkSyntheticDominanceDivergence() {
   assert.equal(report.counts.siblingDominated, 1, "teacher must be dominated by stronger same-key sibling");
   assert.equal(report.counts.wouldBeRejected, 1, "audit must report would-be dominance rejection");
   assert.equal(report.counts.forcedRetentions, 1, "teacher must be retained in force mode");
-  assert.equal(report.steps[0].prunedBy, "sibling:sibling:consume-resource");
+  assert.equal(report.steps[0].hypotheticalPrunedBy, "sibling:sibling:consume-resource");
+  assert.equal(report.steps[0].prunedBy, report.steps[0].hypotheticalPrunedBy);
   assert.equal(Object.prototype.hasOwnProperty.call(report.steps[0], "teacherAction"), false);
   return report;
 }
@@ -196,12 +199,15 @@ function checkRecordedActionResolution() {
     target: { x: 2, y: 1 },
     itemId: "A",
   };
-  const second = { ...first, itemId: "B" };
+  const second = { ...first, itemId: "B", path: ["correct"] };
   const simulator = {
     enumeratePrimitiveActions: () => ({ actions: [first, second] }),
     applyAction: (state, action) => ({
-      ...makeSyntheticState(50, (state.route || []).concat(action.itemId)),
-      inventory: { [action.itemId]: 1 },
+      ...makeSyntheticState(
+        action.itemId === "B" ? 40 : 10,
+        (state.route || []).concat(action.itemId),
+      ),
+      flags: { selectedItem: action.itemId },
     }),
   };
   const expectedPostState = simulator.applyAction(initialState, second);
@@ -210,14 +216,65 @@ function checkRecordedActionResolution() {
     initialState,
     {
       ...first,
-      fingerprint: fingerprintAction(first),
+      fingerprint: fingerprintAction(second),
+      path: second.path,
       postStateKey: buildDominanceKey(expectedPostState),
     },
   );
   assert.equal(resolved.action, second, "postStateKey must outrank a conflicting fingerprint");
-  assert.equal(resolved.matchType, "postStateKey");
+  assert.equal(resolved.matchType, "postDominanceKey");
   assert.equal(resolved.candidates, 2);
-  return resolved;
+
+  const exactResolved = resolveRecordedAction(
+    simulator,
+    initialState,
+    { ...first, postExactStateKey: buildStateKey(expectedPostState) },
+    { candidates: [first, second] },
+  );
+  assert.equal(exactResolved.action, second, "exact post-state identity must distinguish HP variants sharing a dominance key");
+
+  const outsideDirect = { ...second, summary: "pickup:renamed@SYNTHETIC:2,1" };
+  const outsideState = simulator.applyAction(initialState, outsideDirect);
+  const outsideResolved = resolveRecordedAction(
+    simulator,
+    initialState,
+    { ...first, postStateKey: buildDominanceKey(outsideState) },
+    { candidates: [first, outsideDirect] },
+  );
+  assert.equal(outsideResolved.action, outsideDirect, "post dominance key must inspect candidates outside weak direct matches");
+
+  const structuralBase = {
+    kind: "battle",
+    summary: "battle:enemy@SYNTHETIC:3,3",
+    floorId: "SYNTHETIC",
+    target: { floorId: "SYNTHETIC", x: 3, y: 3 },
+    stance: { floorId: "SYNTHETIC", x: 3, y: 2 },
+    direction: "down",
+  };
+  const wrongStance = { ...structuralBase, fingerprint: "wrong-stance", stance: { floorId: "SYNTHETIC", x: 2, y: 3 } };
+  const wrongDirection = { ...structuralBase, fingerprint: "wrong-direction", direction: "left" };
+  const structuralResolved = resolveRecordedAction(
+    simulator,
+    initialState,
+    structuralBase,
+    { candidates: [wrongStance, wrongDirection, structuralBase] },
+  );
+  assert.equal(structuralResolved.action, structuralBase, "all provided structural fields must match");
+
+  const ambiguous = resolveRecordedAction(
+    simulator,
+    initialState,
+    { kind: "pickup", summary: "pickup:ambiguous@SYNTHETIC:2,1" },
+    {
+      candidates: [
+        { kind: "pickup", summary: "pickup:ambiguous@SYNTHETIC:2,1", fingerprint: "a" },
+        { kind: "pickup", summary: "pickup:ambiguous@SYNTHETIC:2,1", fingerprint: "b" },
+      ],
+    },
+  );
+  assert.equal(ambiguous.action, null);
+  assert.equal(ambiguous.reason, "ambiguous-recorded-action");
+  return { resolved, exactResolved, outsideResolved, structuralResolved, ambiguous };
 }
 
 function checkSegmentProviderFiltering() {
@@ -256,6 +313,76 @@ function checkSegmentProviderFiltering() {
   return report;
 }
 
+function checkProviderFailuresAndPrefixPolicy() {
+  const initialState = makeSyntheticState(50, []);
+  const throwing = runTeacherDivergenceAudit(
+    {
+      createInitialState: () => initialState,
+      enumeratePrimitiveActions: () => ({ actions: [] }),
+      applyAction: () => initialState,
+    },
+    { decisions: [{ summary: "pickup:missing@SYNTHETIC:2,1", kind: "pickup" }] },
+    {
+      actionProvider: () => { throw new Error("provider exploded"); },
+      forceKeepTeacher: true,
+    },
+  );
+  assert.equal(throwing.ok, false);
+  assert.equal(throwing.steps[0].issueClass, "action-provider-error");
+  assert.notEqual(throwing.steps[0].issueClass, "action-modeling");
+
+  const enumerationFailure = runTeacherDivergenceAudit(
+    {
+      createInitialState: () => initialState,
+      enumeratePrimitiveActions: () => { throw new Error("enumerator exploded"); },
+      applyAction: () => initialState,
+    },
+    { decisions: [{ summary: "pickup:missing@SYNTHETIC:2,1", kind: "pickup" }] },
+    { forceKeepTeacher: true },
+  );
+  assert.equal(enumerationFailure.ok, false);
+  assert.equal(enumerationFailure.steps[0].issueClass, "action-enumeration-error");
+
+  const prefixSimulator = {
+    project: { floorsById: { SYNTHETIC: { width: 4, height: 4, map: [] } } },
+    createInitialState: () => initialState,
+    enumeratePrimitiveActions: (state) => ({
+      actions: state.route.length === 0
+        ? [{ summary: "battle:prefix@SYNTHETIC:2,1", kind: "battle", floorId: "SYNTHETIC" }]
+        : [{ summary: "pickup:window@SYNTHETIC:2,1", kind: "pickup", floorId: "SYNTHETIC" }],
+    }),
+    applyAction: (state, action) => makeSyntheticState(
+      50,
+      (state.route || []).concat(action.summary),
+    ),
+  };
+  const prefixReport = runTeacherDivergenceAudit(
+    prefixSimulator,
+    {
+      decisions: [
+        { summary: "battle:prefix@SYNTHETIC:2,1", kind: "battle", floorId: "SYNTHETIC" },
+        { summary: "pickup:window@SYNTHETIC:2,1", kind: "pickup", floorId: "SYNTHETIC" },
+      ],
+    },
+    {
+      fromStep: 1,
+      forceKeepTeacher: true,
+      segment: { actionPolicy: { actionKinds: ["pickup"], allowedFloors: ["SYNTHETIC"] } },
+    },
+  );
+  assert.equal(prefixReport.ok, true, "prefix replay must be unrestricted before segment policy starts");
+  assert.equal(prefixReport.steps[0].teacherActionMatch != null, true);
+
+  const monsterOnly = runTeacherDivergenceAudit(
+    prefixSimulator,
+    { decisions: [{ summary: "battle:prefix@SYNTHETIC:2,1", kind: "battle" }] },
+    { segment: { actionPolicy: { actionProviderMode: "monster-only" } } },
+  );
+  assert.equal(monsterOnly.ok, false);
+  assert.equal(monsterOnly.error, "unsupported-action-provider-mode:monster-only");
+  return { throwing, enumerationFailure, prefixReport, monsterOnly };
+}
+
 function checkNoProductionTeacherImport() {
   const libDir = path.join(__dirname, "lib");
   const offenders = fs
@@ -274,6 +401,7 @@ function main() {
   const synthetic = checkSyntheticDominanceDivergence();
   const resolver = checkRecordedActionResolution();
   const segment = checkSegmentProviderFiltering();
+  const provider = checkProviderFailuresAndPrefixPolicy();
   const fixtureReport = checkTrackedFixture(project);
   const mt5 = checkOptionalMt5Teacher(project);
 
@@ -283,8 +411,9 @@ function main() {
     `forcedRetentions=${synthetic.counts.forcedRetentions}`,
   );
   console.log(
-    `check-teacher-divergence: resolver ok match=${resolver.matchType} ` +
-    `segmentProvider=${segment.actionProviderMode}`,
+    `check-teacher-divergence: resolver ok match=${resolver.resolved.matchType} ` +
+    `segmentProvider=${segment.actionProviderMode} ` +
+    `providerFailure=${provider.throwing.steps[0].issueClass}`,
   );
   console.log(formatDivergenceReport(fixtureReport, { maxSteps: 8 }));
   if (mt5.skipped) {
@@ -324,6 +453,7 @@ module.exports = {
   checkSyntheticDominanceDivergence,
   checkRecordedActionResolution,
   checkSegmentProviderFiltering,
+  checkProviderFailuresAndPrefixPolicy,
   checkNoProductionTeacherImport,
   FIXTURE_ROUTE,
   MT5_TEACHER_ROUTE,

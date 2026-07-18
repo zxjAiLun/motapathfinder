@@ -11,7 +11,10 @@
 
 const { buildDpStateKey } = require("./dp-search");
 const { buildSegmentActionProvider } = require("./segment-dp");
-const { resolveRecordedAction } = require("./route-store");
+const {
+  enumerateRecordedActionCandidates,
+  resolveRecordedAction,
+} = require("./route-store");
 const {
   getTiming,
   resourceTimingRoles,
@@ -21,7 +24,7 @@ const {
 } = require("./resource-timing-model");
 const { getDecisionDepth } = require("./state");
 
-const AUDIT_VERSION = "teacher-divergence.v1";
+const AUDIT_VERSION = "teacher-divergence.v1.1";
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -73,44 +76,18 @@ function enumerateVisibleActions(simulator, state, options) {
     }
   };
 
-  if (typeof config.actionProvider === "function") {
-    try {
-      const provided = config.actionProvider(simulator, state);
-      pushAll(Array.isArray(provided) ? provided : ((provided && provided.actions) || []));
-    } catch (error) {
-      // A provider failure is represented as an empty visible action set.
-    }
-  } else {
-    try {
-      pushAll((simulator.enumeratePrimitiveActions(state) || {}).actions || []);
-    } catch (error) {
-      // Primitive enumeration can throw on unsupported events; keep going.
-    }
-    try {
-      pushAll(simulator.enumerateActions(state) || []);
-    } catch (error) {
-      // ignore
-    }
-    try {
-      if (typeof simulator.enumerateInteractPickupActions === "function") {
-        pushAll(simulator.enumerateInteractPickupActions(state) || []);
-      }
-    } catch (error) {
-      // ignore
-    }
-    try {
-      if (typeof simulator.enumerateFloorFlyActions === "function") {
-        pushAll(simulator.enumerateFloorFlyActions(state) || []);
-      }
-    } catch (error) {
-      // ignore
-    }
-  }
+  const candidateResult = enumerateRecordedActionCandidates(
+    simulator,
+    state,
+    config.actionProvider,
+  );
+  pushAll(candidateResult.actions);
 
   return {
     bySummary,
     summaries: Array.from(bySummary.keys()).sort(),
     actions: Array.from(byFingerprint.values()),
+    errors: candidateResult.errors || [],
   };
 }
 
@@ -157,6 +134,9 @@ function competitorRecord(entry) {
 }
 
 function classifyStepIssue(step) {
+  if (step.actionProviderErrors && step.actionProviderErrors.length > 0) return "action-provider-error";
+  if (step.actionEnumerationErrors && step.actionEnumerationErrors.length > 0) return "action-enumeration-error";
+  if (step.pruneReason === "ambiguous-recorded-action") return "ambiguous-recorded-action";
   if (!step.teacherActionGenerated) return "action-modeling";
   if (!step.teacherSuccessorValid) return "successor-invalid";
   if (step.prunedBySibling) return "dominance-sibling";
@@ -190,13 +170,47 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
   const forceKeepTeacher = config.forceKeepTeacher !== false;
   const enableResourceTiming = config.enableResourceTiming === true;
   const dpKeyOptions = config.dpKeyOptions || { keyMode: "location" };
-  const actionProvider = typeof config.actionProvider === "function"
+  const requestedProviderMode = String(
+    config.actionProviderMode ||
+      (config.segment && config.segment.actionPolicy && config.segment.actionPolicy.actionProviderMode) ||
+      "",
+  );
+  const customActionProvider = typeof config.actionProvider === "function";
+  if (requestedProviderMode === "monster-only" && !customActionProvider) {
+    return {
+      version: AUDIT_VERSION,
+      analysisMode: "teacher-forced-local",
+      pruningSemantics: "hypothetical",
+      ok: false,
+      error: "unsupported-action-provider-mode:monster-only",
+      fromStep,
+      toStep,
+      actionProviderMode: "unsupported:monster-only",
+      decisionCount: decisions.length,
+      counts: {
+        stepsAudited: 0,
+        teacherActionsMissing: 0,
+        successorInvalid: 0,
+        dpKeyCollisions: 0,
+        wouldBeRejected: 0,
+        siblingDominated: 0,
+        resourceTimingConflicts: 0,
+        forcedRetentions: 0,
+        actionProviderErrors: 0,
+        actionEnumerationErrors: 0,
+      },
+      steps: [],
+    };
+  }
+  const actionProvider = customActionProvider
     ? config.actionProvider
     : config.segment
       ? buildSegmentActionProvider(simulator, config.segment)
       : null;
   const actionProviderMode = actionProvider
-    ? (config.segment ? "segment-provider" : "custom-provider")
+    ? (customActionProvider
+      ? (requestedProviderMode === "monster-only" ? "custom-provider:monster-only" : "custom-provider")
+      : "segment-provider")
     : "visible-actions";
 
   let state = config.initialState
@@ -206,11 +220,16 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
   // Replay prefix before fromStep without auditing.
   for (let index = 0; index < fromStep; index += 1) {
     const decision = decisions[index];
-    const resolved = resolveRecordedAction(simulator, state, decision, { actionProvider });
+    const resolved = resolveRecordedAction(simulator, state, decision, {
+      actionProvider: null,
+      project: simulator.project,
+    });
     const action = resolved.action;
     if (!action) {
       return {
         version: AUDIT_VERSION,
+        analysisMode: "teacher-forced-local",
+        pruningSemantics: "hypothetical",
         ok: false,
         error: `prefix-action-missing@${index}:${decision && decision.summary}:${resolved.reason}`,
         fromStep,
@@ -265,7 +284,11 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
     const before = state;
     const beforeHero = heroSummary(before);
     const visible = enumerateVisibleActions(simulator, before, { actionProvider });
-    const resolved = resolveRecordedAction(simulator, before, decision, { actionProvider });
+    const resolved = resolveRecordedAction(simulator, before, decision, {
+      candidates: visible.actions,
+      candidateErrors: visible.errors,
+      project: simulator.project,
+    });
     const teacherAction = resolved.action;
 
     const step = {
@@ -276,6 +299,10 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
       teacherActionMatch: resolved.matchType || null,
       teacherActionCandidateCount: resolved.candidates || 0,
       visibleActionCount: visible.summaries.length,
+      actionProviderErrors: visible.errors
+        .filter((error) => error && error.source === "action-provider"),
+      actionEnumerationErrors: visible.errors
+        .filter((error) => error && error.source !== "action-provider"),
       teacherSuccessorValid: false,
       teacherSuccessorHero: null,
       dpKey: null,
@@ -294,8 +321,14 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
     };
 
     if (!teacherAction) {
-      step.issueClass = "action-modeling";
-      step.pruneReason = "teacher-action-not-generated";
+      step.issueClass = classifyStepIssue(step);
+      step.pruneReason = resolved.reason === "action-provider-error"
+        ? "action-provider-threw"
+        : resolved.reason === "action-enumeration-error"
+          ? "action-enumeration-threw"
+          : resolved.reason === "ambiguous-recorded-action"
+            ? "ambiguous-recorded-action"
+            : "teacher-action-not-generated";
       steps.push(step);
       if (!firstDivergence) firstDivergence = step;
       if (!firstHardFailure) firstHardFailure = step;
@@ -447,7 +480,11 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
 
     steps.push(step);
     if (step.issueClass && !firstDivergence) firstDivergence = step;
-    if ((step.issueClass === "action-modeling" || step.issueClass === "successor-invalid") && !firstHardFailure) {
+    if ((step.issueClass === "action-modeling" ||
+      step.issueClass === "action-provider-error" ||
+      step.issueClass === "action-enumeration-error" ||
+      step.issueClass === "ambiguous-recorded-action" ||
+      step.issueClass === "successor-invalid") && !firstHardFailure) {
       firstHardFailure = step;
     }
 
@@ -464,6 +501,8 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
     siblingDominated: steps.filter((step) => step.prunedBySibling).length,
     resourceTimingConflicts: steps.filter((step) => step.resourceTimingConflict).length,
     forcedRetentions: steps.filter((step) => step.forced).length,
+    actionProviderErrors: steps.filter((step) => step.issueClass === "action-provider-error").length,
+    actionEnumerationErrors: steps.filter((step) => step.issueClass === "action-enumeration-error").length,
   };
 
   const issueBreakdown = {};
@@ -475,6 +514,8 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
   const finalState = state;
   return {
     version: AUDIT_VERSION,
+    analysisMode: "teacher-forced-local",
+    pruningSemantics: "hypothetical",
     ok: !firstHardFailure,
     fromStep,
     toStep,

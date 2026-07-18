@@ -154,7 +154,7 @@ npm run check:no-tower-solver-js --prefix shared-solver
 npm run check:agent-boundaries --prefix shared-solver -- --agent=<agent-name>
 ```
 
-`check:static` 已接入结构与边界相关轻量检查；完整 live replay 不进入默认静态检查，避免拖慢本地开发。
+`check:static` 由 `solver-manifest.suites.static` 固定选择 core、resource-timing、auto-decomposition、teacher-divergence 和 manifest-runner checks，并显式执行 `check:no-tower-solver-js` 的 147-file freeze；完整 live replay 不进入默认静态检查，避免拖慢本地开发。suite 的 required checks 必须仍标记为 `cleanCheckout=true`，防止门禁覆盖范围静默缩水。
 
 ## 8. 当前结构债务
 

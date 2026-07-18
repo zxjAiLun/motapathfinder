@@ -5,7 +5,7 @@ const path = require("path");
 const childProcess = require("child_process");
 
 const { createInitialState, ensureFloorState, getDecisionDepth } = require("./state");
-const { buildDominanceKey } = require("./state-key");
+const { buildDominanceKey, buildStateKey } = require("./state-key");
 const { isDecisionStep } = require("./updown-candidate-policy");
 const { buildSolverSnapshot } = require("./route-snapshot");
 
@@ -314,13 +314,25 @@ function listAllActionsBySummary(simulator, state, summary) {
   return actions;
 }
 
-function listRecordedActionCandidates(simulator, state, actionProvider) {
+function enumerateRecordedActionCandidates(simulator, state, actionProvider) {
+  const errors = [];
   if (typeof actionProvider === "function") {
     try {
       const provided = actionProvider(simulator, state);
-      return Array.isArray(provided) ? provided : ((provided && provided.actions) || []);
+      const providedActions = Array.isArray(provided)
+        ? provided
+        : ((provided && provided.actions) || []);
+      return {
+        actions: providedActions,
+        errors: errors.concat((provided && provided.errors) || []),
+      };
     } catch (error) {
-      return [];
+      errors.push({
+        source: "action-provider",
+        name: error && error.name ? error.name : "Error",
+        message: error && error.message ? error.message : String(error),
+      });
+      return { actions: [], errors };
     }
   }
   const actions = [];
@@ -330,7 +342,7 @@ function listRecordedActionCandidates(simulator, state, actionProvider) {
       if (!action) return;
       let key;
       try {
-        key = action.fingerprint || fingerprintAction(normalizeAction(action));
+        key = action.fingerprint || `${fingerprintAction(normalizeAction(action))}|${action.summary || ""}`;
       } catch (error) {
         key = action.summary || action.kind || "unknown";
       }
@@ -339,29 +351,39 @@ function listRecordedActionCandidates(simulator, state, actionProvider) {
       actions.push(action);
     });
   };
-  try {
-    add(simulator.enumerateActions(state));
-  } catch (error) {
+  if (typeof simulator.enumerateActions === "function") {
+    try {
+      add(simulator.enumerateActions(state));
+    } catch (error) {
+      errors.push({ source: "enumerateActions", name: error.name || "Error", message: error.message || String(error) });
+    }
   }
   if (typeof simulator.enumeratePrimitiveActions === "function") {
     try {
       add(simulator.enumeratePrimitiveActions(state).actions || []);
     } catch (error) {
+      errors.push({ source: "enumeratePrimitiveActions", name: error.name || "Error", message: error.message || String(error) });
     }
   }
   if (typeof simulator.enumerateInteractPickupActions === "function") {
     try {
       add(simulator.enumerateInteractPickupActions(state));
     } catch (error) {
+      errors.push({ source: "enumerateInteractPickupActions", name: error.name || "Error", message: error.message || String(error) });
     }
   }
   if (typeof simulator.enumerateFloorFlyActions === "function") {
     try {
       add(simulator.enumerateFloorFlyActions(state));
     } catch (error) {
+      errors.push({ source: "enumerateFloorFlyActions", name: error.name || "Error", message: error.message || String(error) });
     }
   }
-  return actions;
+  return { actions, errors };
+}
+
+function listRecordedActionCandidates(simulator, state, actionProvider) {
+  return enumerateRecordedActionCandidates(simulator, state, actionProvider).actions;
 }
 
 function samePoint(left, right) {
@@ -370,15 +392,36 @@ function samePoint(left, right) {
     right &&
     left.x != null &&
     right.x != null &&
+    (!left.floorId || !right.floorId || left.floorId === right.floorId) &&
     Number(left.x) === Number(right.x) &&
     Number(left.y) === Number(right.y),
   );
 }
 
+function compareTuples(left, right) {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index] > right[index] ? 1 : -1;
+  }
+  return 0;
+}
+
+function snapshotMatches(project, state, expectedSnapshot) {
+  if (!project || !state || !expectedSnapshot || expectedSnapshot.partial) return false;
+  try {
+    const floorIds = Object.keys(expectedSnapshot.floors || {});
+    const actual = buildSolverSnapshot(project, state, { floorIds });
+    return JSON.stringify(actual) === JSON.stringify(expectedSnapshot);
+  } catch (error) {
+    return false;
+  }
+}
+
 /**
  * Resolve one recorded decision against actions visible in the current state.
- * Post-state key and fingerprint are stronger evidence than a summary; summary
- * remains only as a compatibility fallback for old route records.
+ * Exact post-state identity is primary; postDominanceKey is coarse evidence,
+ * and summary remains only as a compatibility fallback for old route records.
+ * Structured route reconstruction still uses its legacy matcher until this
+ * resolver's ambiguity contract is adopted by that write path.
  */
 function resolveRecordedAction(simulator, state, decision, options) {
   const config = options || {};
@@ -390,86 +433,134 @@ function resolveRecordedAction(simulator, state, decision, options) {
     expected = { ...decision };
   }
   const expectedFingerprint = decision.fingerprint || expected.fingerprint || null;
-  const expectedPostStateKey = decision.postStateKey || null;
-  const candidates = listRecordedActionCandidates(simulator, state, config.actionProvider);
-  const keyBuilder = typeof config.postStateKeyBuilder === "function"
+  const expectedPostDominanceKey = decision.postDominanceKey || decision.postStateKey || null;
+  const expectedPostExactStateKey = decision.postExactStateKey || null;
+  const expectedPostSnapshot = decision.postSnapshot || null;
+  const candidateResult = Array.isArray(config.candidates)
+    ? {
+        actions: config.candidates,
+        errors: Array.isArray(config.candidateErrors) ? config.candidateErrors : [],
+      }
+    : enumerateRecordedActionCandidates(simulator, state, config.actionProvider);
+  const candidates = candidateResult.actions;
+  const enumerationErrors = candidateResult.errors || [];
+  if (enumerationErrors.length > 0) {
+    const providerError = enumerationErrors.some((error) => error && error.source === "action-provider");
+    return {
+      action: null,
+      reason: providerError ? "action-provider-error" : "action-enumeration-error",
+      errorType: providerError ? "action-provider-error" : "action-enumeration-error",
+      errors: enumerationErrors,
+      candidates: candidates.length,
+    };
+  }
+  const dominanceKeyBuilder = typeof config.postStateKeyBuilder === "function"
     ? config.postStateKeyBuilder
     : (nextState) => buildDominanceKey(nextState);
-  const directCandidates = candidates.filter((action) => {
-    try {
-      const normalized = normalizeAction(action);
-      return Boolean(
-        (expectedFingerprint && normalized.fingerprint === expectedFingerprint) ||
-        (expected.summary && normalized.summary === expected.summary) ||
-        (expected.path && expected.path.length > 0 && samePath(normalized.path, expected.path)) ||
-        (expected.target && samePoint(normalized.target, expected.target)) ||
-        (expected.stance && samePoint(normalized.stance, expected.stance)),
-      );
-    } catch (error) {
-      return false;
-    }
-  });
-  const candidatesToScore = expectedPostStateKey && directCandidates.length > 0
-    ? directCandidates
-    : candidates;
+  const exactStateKeyBuilder = typeof config.postExactStateKeyBuilder === "function"
+    ? config.postExactStateKeyBuilder
+    : (nextState) => buildStateKey(nextState);
+  const hasPostEvidence = Boolean(
+    expectedPostDominanceKey || expectedPostExactStateKey || expectedPostSnapshot,
+  );
   let best = null;
+  const tied = [];
 
-  for (const action of candidatesToScore) {
+  for (const action of candidates) {
     let normalized;
     try {
       normalized = normalizeAction(action);
     } catch (error) {
       continue;
     }
-    const postKeyMatches = Boolean(expectedPostStateKey) && (() => {
+    let postState = null;
+    let applyError = null;
+    if (hasPostEvidence) {
       try {
-        const postState = simulator.applyAction(state, action);
-        return keyBuilder(postState) === expectedPostStateKey;
+        postState = simulator.applyAction(state, action);
+      } catch (error) {
+        applyError = error;
+      }
+    }
+    const postDominanceKeyMatches = Boolean(expectedPostDominanceKey && postState) && (() => {
+      try {
+        return dominanceKeyBuilder(postState) === expectedPostDominanceKey;
       } catch (error) {
         return false;
       }
     })();
+    const postExactStateKeyMatches = Boolean(expectedPostExactStateKey && postState) && (() => {
+      try {
+        return exactStateKeyBuilder(postState) === expectedPostExactStateKey;
+      } catch (error) {
+        return false;
+      }
+    })();
+    const postSnapshotMatches = snapshotMatches(config.project || simulator.project, postState, expectedPostSnapshot);
     const fingerprintMatches = Boolean(expectedFingerprint) && normalized.fingerprint === expectedFingerprint;
-    const pathMatches = samePath(normalized.path, expected.path);
-    const structuralMatches = Boolean(
-      (expected.target && samePoint(normalized.target, expected.target)) ||
-      (expected.stance && samePoint(normalized.stance, expected.stance)) ||
-      (expected.direction && normalized.direction === expected.direction),
-    );
+    const pathMatches = Array.isArray(expected.path) && expected.path.length > 0 && samePath(normalized.path, expected.path);
+    const structuralFields = [];
+    if (expected.target) structuralFields.push(samePoint(normalized.target, expected.target));
+    if (expected.stance) structuralFields.push(samePoint(normalized.stance, expected.stance));
+    if (expected.direction) structuralFields.push(normalized.direction === expected.direction);
+    const structuralMatches = structuralFields.length > 0 && structuralFields.every(Boolean);
+    const structuralMatchCount = structuralMatches ? structuralFields.length : 0;
+    if (structuralFields.length > 0 && !structuralMatches) continue;
     const summaryMatches = Boolean(expected.summary) && normalized.summary === expected.summary;
     const kindMatches = Boolean(expected.kind) && normalized.kind === expected.kind;
-    let score = 0;
-    let matchType = "none";
-    if (postKeyMatches) {
-      score += 1000000000000;
-      matchType = "postStateKey";
-    } else if (fingerprintMatches) {
-      score += 1000000000;
-      matchType = "fingerprint";
-    } else if (pathMatches && expected.path && expected.path.length > 0) {
-      score += 1000000;
-      matchType = "path";
-    } else if (structuralMatches) {
-      score += 10000;
-      matchType = "target-stance-direction";
-    } else if (summaryMatches) {
-      score += 100;
-      matchType = "summary";
+    const tuple = [
+      postExactStateKeyMatches || postSnapshotMatches ? 1 : 0,
+      postDominanceKeyMatches ? 1 : 0,
+      fingerprintMatches ? 1 : 0,
+      pathMatches ? 1 : 0,
+      structuralMatchCount,
+      summaryMatches ? 1 : 0,
+      kindMatches ? 1 : 0,
+    ];
+    if (tuple.every((value) => value === 0)) continue;
+    const matchType = postExactStateKeyMatches || postSnapshotMatches
+      ? "postExactState"
+      : postDominanceKeyMatches
+        ? "postDominanceKey"
+        : fingerprintMatches
+          ? "fingerprint"
+          : pathMatches
+            ? "path"
+            : structuralMatches
+              ? "target-stance-direction"
+              : summaryMatches
+                ? "summary"
+                : "kind";
+    const candidate = {
+      action,
+      normalizedAction: normalized,
+      tuple,
+      matchType,
+      postExactStateKeyMatches,
+      postDominanceKeyMatches,
+      postSnapshotMatches,
+      fingerprintMatches,
+      pathMatches,
+      structuralMatches,
+      summaryMatches,
+      applyError: applyError ? {
+        name: applyError.name || "Error",
+        message: applyError.message || String(applyError),
+      } : null,
+    };
+    if (!best) {
+      best = candidate;
+      tied.length = 0;
+      tied.push(candidate);
+      continue;
     }
-    if (kindMatches) score += 10;
-    if (score === 0) continue;
-    if (!best || score > best.score) {
-      best = {
-        action,
-        normalizedAction: normalized,
-        score,
-        matchType,
-        postKeyMatches,
-        fingerprintMatches,
-        pathMatches,
-        structuralMatches,
-        summaryMatches,
-      };
+    const comparison = compareTuples(tuple, best.tuple);
+    if (comparison > 0) {
+      best = candidate;
+      tied.length = 0;
+      tied.push(candidate);
+    } else if (comparison === 0) {
+      tied.push(candidate);
     }
   }
   if (!best) {
@@ -479,7 +570,27 @@ function resolveRecordedAction(simulator, state, decision, options) {
       candidates: candidates.length,
     };
   }
-  return { ...best, candidates: candidates.length };
+  if (tied.length > 1) {
+    return {
+      action: null,
+      reason: "ambiguous-recorded-action",
+      ambiguous: true,
+      candidates: candidates.length,
+      matches: tied.map((candidate) => ({
+        fingerprint: candidate.normalizedAction.fingerprint,
+        summary: candidate.normalizedAction.summary,
+        tuple: candidate.tuple,
+      })),
+    };
+  }
+  return {
+    ...best,
+    score: best.tuple,
+    postDominanceKey: best.postDominanceKeyMatches ? expectedPostDominanceKey : null,
+    postStateKey: best.postDominanceKeyMatches ? expectedPostDominanceKey : null,
+    postExactStateKey: best.postExactStateKeyMatches ? expectedPostExactStateKey : null,
+    candidates: candidates.length,
+  };
 }
 
 function routeEntrySummary(entry) {
@@ -697,6 +808,10 @@ function pushDecision(context, action) {
     ...normalized,
     preStateKey: buildDominanceKey(preState),
     postStateKey: buildDominanceKey(postState),
+    preDominanceKey: buildDominanceKey(preState),
+    postDominanceKey: buildDominanceKey(postState),
+    preExactStateKey: buildStateKey(preState),
+    postExactStateKey: buildStateKey(postState),
     preSnapshot,
     postSnapshot,
   });
@@ -722,7 +837,11 @@ function pushStructuredDecision(context, entry) {
         index: decisions.length + 1,
         ...normalized,
         preStateKey: entry.preStateKey || (preState ? buildDominanceKey(preState) : null),
-        postStateKey: entry.postStateKey || buildDominanceKey(postState),
+        postStateKey: entry.postStateKey || entry.postDominanceKey || buildDominanceKey(postState),
+        preDominanceKey: entry.preDominanceKey || entry.preStateKey || (preState ? buildDominanceKey(preState) : null),
+        postDominanceKey: entry.postDominanceKey || entry.postStateKey || buildDominanceKey(postState),
+        preExactStateKey: entry.preExactStateKey || (preState ? buildStateKey(preState) : null),
+        postExactStateKey: entry.postExactStateKey || buildStateKey(postState),
         preSnapshot,
         postSnapshot,
       });
@@ -744,7 +863,11 @@ function pushStructuredDecision(context, entry) {
     index: decisions.length + 1,
     ...normalized,
     preStateKey: entry.preStateKey || (preState ? buildDominanceKey(preState) : null),
-    postStateKey: entry.postStateKey || buildDominanceKey(postState),
+    postStateKey: entry.postStateKey || entry.postDominanceKey || buildDominanceKey(postState),
+    preDominanceKey: entry.preDominanceKey || entry.preStateKey || (preState ? buildDominanceKey(preState) : null),
+    postDominanceKey: entry.postDominanceKey || entry.postStateKey || buildDominanceKey(postState),
+    preExactStateKey: entry.preExactStateKey || (preState ? buildStateKey(preState) : null),
+    postExactStateKey: entry.postExactStateKey || buildStateKey(postState),
     preSnapshot,
     postSnapshot,
   });
@@ -895,6 +1018,7 @@ module.exports = {
   buildRouteRecord,
   createStateFromSnapshot,
   fingerprintAction,
+  enumerateRecordedActionCandidates,
   listRecordedActionCandidates,
   normalizeAction,
   readRouteFile,

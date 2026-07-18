@@ -166,6 +166,20 @@
       "recommendedAction": "keep as route GUI assets"
     }
   ],
+  "suites": {
+    "static": {
+      "requiredChecks": [
+        "shared-solver/check-core-regressions.js",
+        "shared-solver/check-resource-timing-model.js",
+        "shared-solver/check-auto-milestone-decomposition.js",
+        "shared-solver/check-teacher-divergence.js",
+        "shared-solver/check-manifest-runner.js"
+      ],
+      "requiredCommands": [
+        "check:no-tower-solver-js"
+      ]
+    }
+  },
   "modules": {
     "shared-solver/lib/adaptive-segment-planner.js": {
       "id": "adaptive-segment-planner",
@@ -1350,11 +1364,11 @@
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-core-regressions.js": {
-      "grade": "local-regression",
+      "grade": "unit-plus-micro",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
-      "cleanCheckout": false,
-      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+      "cleanCheckout": true,
+      "notes": "canonical core regression suite; no ignored route dependency"
     },
     "shared-solver/check-floor-scout.js": {
       "grade": "local-regression",
@@ -1362,6 +1376,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-manifest-runner.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "manifest suite selection and fail-fast semantics; no tower/project load"
     },
     "shared-solver/check-milestone-audit.js": {
       "grade": "diagnostic",

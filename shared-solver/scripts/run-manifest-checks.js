@@ -19,6 +19,10 @@ function hasFlag(args, name) {
   return args.includes(name);
 }
 
+function shouldContinueOnFailure(args) {
+  return hasFlag(args, "--continue-on-failure");
+}
+
 function readManifest() {
   if (!fs.existsSync(manifestPath)) {
     throw new Error(`solver manifest not found: ${manifestPath}`);
@@ -27,6 +31,10 @@ function readManifest() {
 }
 
 function selectTests(manifest, args) {
+  const suiteArg = args.find((arg) => arg.startsWith("--suite="));
+  const suiteName = suiteArg ? suiteArg.slice("--suite=".length) : null;
+  const suite = suiteName ? (manifest.suites || {})[suiteName] : null;
+  if (suiteName && !suite) throw new Error(`manifest suite not found: ${suiteName}`);
   const entries = Object.entries(manifest.tests || {})
     .filter(([filePath]) => filePath.startsWith("shared-solver/check-"))
     .sort(([left], [right]) => left.localeCompare(right));
@@ -35,6 +43,22 @@ function selectTests(manifest, args) {
   if (cleanOnly && localOnly) throw new Error("--clean-only and --local-only are mutually exclusive");
   const gradeArg = args.find((arg) => arg.startsWith("--grade="));
   const grade = gradeArg ? gradeArg.slice("--grade=".length) : null;
+  if (suite) {
+    const requiredChecks = Array.isArray(suite.requiredChecks) ? suite.requiredChecks : [];
+    const requiredCommands = Array.isArray(suite.requiredCommands) ? suite.requiredCommands : [];
+    if (requiredChecks.length === 0) throw new Error(`manifest suite has no requiredChecks: ${suiteName}`);
+    if (requiredCommands.length === 0) throw new Error(`manifest suite has no requiredCommands: ${suiteName}`);
+    if (localOnly) throw new Error(`manifest suite cannot be combined with --local-only: ${suiteName}`);
+    const byPath = new Map(entries);
+    for (const requiredPath of requiredChecks) {
+      const entry = byPath.get(requiredPath);
+      if (!entry) throw new Error(`manifest suite check missing: ${requiredPath}`);
+      if (entry.cleanCheckout !== true) {
+        throw new Error(`manifest suite check is not clean-checkout safe: ${requiredPath}`);
+      }
+    }
+    return requiredChecks.map((requiredPath) => [requiredPath, byPath.get(requiredPath)]);
+  }
   return entries.filter(([, entry]) => {
     if (cleanOnly && entry.cleanCheckout !== true) return false;
     if (localOnly && entry.cleanCheckout === true) return false;
@@ -65,7 +89,7 @@ function main(argv) {
 
   const selected = selectTests(manifest, args);
   if (selected.length === 0) throw new Error("manifest test selection is empty");
-  const failFast = !hasFlag(args, "--continue-on-failure=0");
+  const continueOnFailure = shouldContinueOnFailure(args);
   const failures = [];
   console.log(`manifest-checks: selected=${selected.length}`);
   for (const [filePath, entry] of selected) {
@@ -79,7 +103,7 @@ function main(argv) {
     if (result.error || result.status !== 0) {
       failures.push({ filePath, grade: entry.grade, status: result.status, error: result.error && result.error.message });
       console.error(`manifest-checks: failed ${filePath}`);
-      if (failFast) break;
+      if (!continueOnFailure) break;
     }
   }
   if (failures.length > 0) {
@@ -100,4 +124,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { main, selectTests };
+module.exports = { main, selectTests, shouldContinueOnFailure };
