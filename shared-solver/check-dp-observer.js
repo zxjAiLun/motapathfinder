@@ -50,6 +50,7 @@ function makeSimulator() {
       },
     },
     createInitialState: () => makeState(50, []),
+    getActionFingerprint: (action) => `fp:${action.summary}`,
     enumeratePrimitiveActions: (state) => state.route.length > 0
       ? { actions: [] }
       : {
@@ -132,6 +133,17 @@ function checkEventCoverage(observed) {
     .map((event) => event.successorId)
     .filter(Boolean);
   assert.equal(new Set(multiSuccessors).size, 2, "multi-successor action needs independent successor ids");
+  const generatedBattle = observed.events.find((event) => event.eventType === "candidateGenerated");
+  assert.equal(generatedBattle.action.fingerprint, `fp:${generatedBattle.action.summary}`);
+  const eviction = observed.events.find((event) => event.eventType === "skylineEvicted");
+  assert(eviction, "synthetic search should exercise skyline eviction");
+  const evictedInsertion = observed.events.find((event) => event.eventType === "skylineInserted" && event.nodeId === eviction.evictedNodeId);
+  const replacementInsertion = observed.events.find((event) => event.eventType === "skylineInserted" && event.nodeId === eviction.replacementNodeId);
+  assert(evictedInsertion, "eviction should identify the previously inserted node");
+  assert(replacementInsertion, "eviction should identify the replacement node");
+  assert.equal(eviction.exactStateKey, evictedInsertion.exactStateKey);
+  assert.equal(eviction.replacementExactStateKey, replacementInsertion.exactStateKey);
+  assert.notEqual(eviction.exactStateKey, eviction.replacementExactStateKey);
 }
 
 function checkTrimAndBudget() {
@@ -158,6 +170,51 @@ function checkEventFilter() {
   assert(result.bestGoalState, "event filtering must not change the search result");
   assert(filtered.length > 0, "event filter should retain matching events");
   assert(filtered.every((event) => event.eventType === "candidateRejected" && event.reasonCode === "dominance-rejected"));
+}
+
+function checkSkylineCapacityRejection() {
+  const events = [];
+  const simulator = {
+    project: {
+      floorsById: {
+        SYNTHETIC: { floorId: "SYNTHETIC", width: 3, height: 3, map: [[0, 0, 0], [0, 0, 0], [0, 0, 0]], changeFloor: {} },
+      },
+    },
+    getActionFingerprint: (action) => `fp:${action.summary}`,
+    enumeratePrimitiveActions: (state) => state.route.length > 0
+      ? { actions: [] }
+      : {
+          actions: [
+            { kind: "battle", summary: "battle:a-low@SYNTHETIC:2,1" },
+            { kind: "battle", summary: "battle:b-mid@SYNTHETIC:2,1" },
+            { kind: "battle", summary: "battle:z-goal@SYNTHETIC:2,1" },
+          ],
+        },
+    applyAction: (state, action) => {
+      const next = makeState(action.summary.includes("z-goal") ? 100 : action.summary.includes("b-mid") ? 70 : 60, state.route.concat(action.summary));
+      next.hero.loc = { x: 2, y: 1, direction: "down" };
+      return next;
+    },
+  };
+  const result = searchDP(simulator, makeState(50, []), {
+    maxExpansions: 1,
+    maxActionsPerState: 10,
+    // dpSkylineMax=1 uses the legacy single-state Map; 2 exercises SkylineSet.add(false).
+    dpSkylineMax: 2,
+    stopOnFirstGoal: false,
+    goalPredicate: (state) => state.hero.hp >= 100,
+    dominanceConfig: { compare: () => 1 },
+    skylineCompare: () => -1,
+    observer: { includeExactStateKey: true, onEvent: (event) => events.push(event) },
+  });
+  const rejected = events.find((event) => event.eventType === "candidateRejected" && event.reasonCode === "skyline-capacity-rejected");
+  assert(rejected, "skyline capacity rejection should be observed");
+  assert.equal(rejected.action.summary, "battle:z-goal@SYNTHETIC:2,1");
+  assert(!events.some((event) => event.eventType === "skylineInserted" && event.action && event.action.summary === rejected.action.summary));
+  assert(!events.some((event) => event.eventType === "goalAccepted" && event.action && event.action.summary === rejected.action.summary));
+  assert.equal(result.bestGoalState, null, "capacity-rejected goal must not be returned");
+  assert.equal(result.diagnostics.dp.actionsKeptByKind.battle, 2);
+  assert.equal(result.diagnostics.dp.actionsDominatedByKind.battle, 1);
 }
 
 function checkProviderError() {
@@ -190,6 +247,7 @@ function main() {
   checkEventCoverage(observed);
   checkTrimAndBudget();
   checkEventFilter();
+  checkSkylineCapacityRejection();
   checkProviderError();
   checkObserverCallbackFailure();
   console.log(`check-dp-observer: ok events=${observed.events.length}`);
@@ -203,6 +261,7 @@ module.exports = {
   checkEventCoverage,
   checkTrimAndBudget,
   checkEventFilter,
+  checkSkylineCapacityRejection,
   checkProviderError,
   checkObserverCallbackFailure,
 };

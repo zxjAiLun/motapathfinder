@@ -442,6 +442,7 @@ function selectGoalSkylineNodes(goalNodes, options) {
 }
 
 const DP_OBSERVER_EVENT_VERSION = "dp-observer.v1";
+const observerExactStateKeyCache = new WeakMap();
 
 function compactObserverHero(state) {
   const hero = (state && state.hero) || {};
@@ -458,13 +459,39 @@ function compactObserverHero(state) {
   };
 }
 
-function compactObserverAction(action) {
+function compactObserverAction(simulator, action) {
   if (!action) return null;
+  let fingerprint = action.fingerprint || null;
+  if (!fingerprint && simulator && typeof simulator.getActionFingerprint === "function") {
+    try {
+      fingerprint = simulator.getActionFingerprint(action);
+    } catch (error) {
+      fingerprint = null;
+    }
+  }
   return {
     kind: action.kind || null,
     summary: action.summary || null,
-    fingerprint: action.fingerprint || null,
+    fingerprint,
   };
+}
+
+function observerExactStateKey(state) {
+  if (!state || typeof state !== "object") return null;
+  const cached = observerExactStateKeyCache.get(state);
+  if (cached) return cached;
+  try {
+    const key = buildStateKey(state);
+    observerExactStateKeyCache.set(state, key);
+    return key;
+  } catch (error) {
+    return null;
+  }
+}
+
+function observerIncludesExactStateKey(config) {
+  return config.observerIncludeExactStateKey === true ||
+    (config.observer && config.observer.includeExactStateKey === true);
 }
 
 function observerRoles(config, state) {
@@ -486,14 +513,8 @@ function observerStatePayload(simulator, state, node, config, extra) {
     decisionDepth: getDecisionDepth(state),
     skylineRoles: observerRoles(config, state),
   };
-  const includeExact = config.observerIncludeExactStateKey === true ||
-    (config.observer && config.observer.includeExactStateKey === true);
-  if (includeExact && state) {
-    try {
-      payload.exactStateKey = buildStateKey(state);
-    } catch (error) {
-      payload.exactStateKey = null;
-    }
+  if (observerIncludesExactStateKey(config) && state) {
+    payload.exactStateKey = observerExactStateKey(state);
   }
   void simulator;
   return payload;
@@ -517,7 +538,15 @@ function createDpObserver(config) {
     get errorCount() {
       return errors;
     },
-    emit(eventType, payload) {
+    emit(eventType, payloadOrFactory) {
+      if (eventTypes && !eventTypes.includes(eventType)) return;
+      let payload;
+      try {
+        payload = typeof payloadOrFactory === "function" ? payloadOrFactory() : payloadOrFactory;
+      } catch (error) {
+        errors += 1;
+        return;
+      }
       const event = {
         eventVersion: DP_OBSERVER_EVENT_VERSION,
         eventType,
@@ -531,7 +560,6 @@ function createDpObserver(config) {
           return;
         }
       }
-      if (eventTypes && !eventTypes.includes(eventType)) return;
       const handler = typeof configured === "function"
         ? callback
         : (configured && typeof configured[`on${eventType[0].toUpperCase()}${eventType.slice(1)}`] === "function"
@@ -607,7 +635,13 @@ function searchDP(simulator, initialState, options) {
 
   const emitStateEvent = (eventType, state, node, extra) => {
     if (!observer) return;
-    observer.emit(eventType, observerStatePayload(simulator, state, node, config, extra));
+    observer.emit(eventType, () => observerStatePayload(
+      simulator,
+      state,
+      node,
+      config,
+      typeof extra === "function" ? extra() : extra,
+    ));
   };
 
   const isActiveEntry = (entry) => {
@@ -706,12 +740,14 @@ function searchDP(simulator, initialState, options) {
       const hpDiff = existingState ? heroHp(state) - heroHp(existingState) : null;
       if (hpDiff === 0) sameHpRejected += 1;
       else rejectedByHigherHp += 1;
-      emitStateEvent("candidateRejected", state, { key }, {
-        reasonCode: "dominance-rejected",
-        action: compactObserverAction(sourceAction),
-        candidateId: sourceAction && sourceAction.__observerCandidateId || null,
-        successorId: sourceAction && sourceAction.__observerSuccessorId || null,
-      });
+      if (observer) {
+        emitStateEvent("candidateRejected", state, { key }, () => ({
+          reasonCode: "dominance-rejected",
+          action: compactObserverAction(simulator, sourceAction),
+          candidateId: sourceAction && sourceAction.__observerCandidateId || null,
+          successorId: sourceAction && sourceAction.__observerSuccessorId || null,
+        }));
+      }
       return false;
     }
     const existing = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);
@@ -729,8 +765,6 @@ function searchDP(simulator, initialState, options) {
     node.key = key;
     node.rank = buildDpAgendaRank(simulator, state, sourceAction, sequence, config);
     sequence += 1;
-    nodes.set(node.nodeId, node);
-    archiveLandmark(node, actionForEntry, parentNode);
     let skylineInserted = true;
     const beforeSkylineIds = bestByKey instanceof SkylineSet
       ? (existingSkyline || []).map((candidate) => candidate.nodeId)
@@ -752,36 +786,54 @@ function searchDP(simulator, initialState, options) {
     const afterSkylineIds = bestByKey instanceof SkylineSet
       ? bestByKey.getAll(key).map((candidate) => candidate.nodeId)
       : [node.nodeId];
-    if (observer) {
-      beforeSkylineIds
-        .filter((nodeId) => !afterSkylineIds.includes(nodeId))
-        .forEach((nodeId) => observer.emit("skylineEvicted", observerStatePayload(simulator, state, node, config, {
-          reasonCode: "skyline-replaced",
-          key,
-          evictedNodeId: nodeId,
-          action: compactObserverAction(sourceAction),
-          candidateId: sourceAction && sourceAction.__observerCandidateId || null,
-          successorId: sourceAction && sourceAction.__observerSuccessorId || null,
-        })));
-      if (!skylineInserted) {
-        observer.emit("candidateRejected", observerStatePayload(simulator, state, { key }, config, {
+    if (!skylineInserted) {
+      if (observer) {
+        observer.emit("candidateRejected", () => observerStatePayload(simulator, state, { key }, config, {
           reasonCode: "skyline-capacity-rejected",
           key,
-          action: compactObserverAction(sourceAction),
+          action: compactObserverAction(simulator, sourceAction),
           candidateId: sourceAction && sourceAction.__observerCandidateId || null,
           successorId: sourceAction && sourceAction.__observerSuccessorId || null,
         }));
-      } else {
-        emitStateEvent("skylineInserted", state, node, {
-          reasonCode: "skyline-inserted",
-          key,
-          action: compactObserverAction(sourceAction),
-          nodeId: node.nodeId,
-          parentId: node.parentId,
-          candidateId: sourceAction && sourceAction.__observerCandidateId || null,
-          successorId: sourceAction && sourceAction.__observerSuccessorId || null,
-        });
       }
+      return false;
+    }
+    nodes.set(node.nodeId, node);
+    archiveLandmark(node, actionForEntry, parentNode);
+    if (observer) {
+      beforeSkylineIds
+        .filter((nodeId) => !afterSkylineIds.includes(nodeId))
+        .forEach((nodeId) => {
+          const evictedNode = nodes.get(nodeId);
+          observer.emit("skylineEvicted", () => observerStatePayload(
+            simulator,
+            evictedNode ? evictedNode.state : state,
+            evictedNode || { key },
+            config,
+            {
+              reasonCode: "skyline-replaced",
+              key,
+              evictedNodeId: nodeId,
+              replacementNodeId: node.nodeId,
+              replacementExactStateKey: observerIncludesExactStateKey(config)
+                ? observerExactStateKey(state)
+                : null,
+              replacementHero: compactObserverHero(state),
+              action: compactObserverAction(simulator, sourceAction),
+              candidateId: sourceAction && sourceAction.__observerCandidateId || null,
+              successorId: sourceAction && sourceAction.__observerSuccessorId || null,
+            },
+          ));
+        });
+      emitStateEvent("skylineInserted", state, node, () => ({
+        reasonCode: "skyline-inserted",
+        key,
+        action: compactObserverAction(simulator, sourceAction),
+        nodeId: node.nodeId,
+        parentId: node.parentId,
+        candidateId: sourceAction && sourceAction.__observerCandidateId || null,
+        successorId: sourceAction && sourceAction.__observerSuccessorId || null,
+      }));
     }
     if (heap) heap.push(node);
     else fifoEntries.push(node);
@@ -795,10 +847,12 @@ function searchDP(simulator, initialState, options) {
       if (!firstGoalNode) firstGoalNode = node;
       goalNodes.push(node);
       if (!bestGoalNode || compareGoalStates(state, bestGoalNode.state) > 0) bestGoalNode = node;
-      emitStateEvent("goalAccepted", state, node, {
-        reasonCode: "goal-predicate-accepted",
-        action: compactObserverAction(sourceAction),
-      });
+      if (observer) {
+        emitStateEvent("goalAccepted", state, node, () => ({
+          reasonCode: "goal-predicate-accepted",
+          action: compactObserverAction(simulator, sourceAction),
+        }));
+      }
     }
     return node;
   };
@@ -870,7 +924,7 @@ function searchDP(simulator, initialState, options) {
         : simulator.enumeratePrimitiveActions(state).actions;
     } catch (error) {
       invalid += 1;
-      if (observer) observer.emit("actionProviderError", observerStatePayload(simulator, state, entry, config, {
+      if (observer) observer.emit("actionProviderError", () => observerStatePayload(simulator, state, entry, config, {
         reasonCode: "action-provider-error",
         error: { name: error && error.name || "Error", message: error && error.message || String(error) },
       }));
@@ -880,7 +934,7 @@ function searchDP(simulator, initialState, options) {
       actions = actions.filter((action) => config.actionFilter(action, state));
     }
     maxActionsGeneratedForState = Math.max(maxActionsGeneratedForState, actions.length);
-    if (observer) observer.emit("actionSetGenerated", observerStatePayload(simulator, state, entry, config, {
+    if (observer) observer.emit("actionSetGenerated", () => observerStatePayload(simulator, state, entry, config, {
       reasonCode: "action-set-generated",
       actionCount: actions.length,
       selectedActionCount: Math.min(actions.length, maxActionsPerState),
@@ -900,10 +954,10 @@ function searchDP(simulator, initialState, options) {
     if (observer && sortedActions.length > maxActionsPerState) {
       sortedActions.slice(maxActionsPerState).forEach((action, index) => observer.emit(
         "candidateRejected",
-        observerStatePayload(simulator, state, entry, config, {
+        () => observerStatePayload(simulator, state, entry, config, {
           reasonCode: "action-trimmed",
           candidateId: `${entry.nodeId}:trimmed:${index}`,
-          action: compactObserverAction(action),
+          action: compactObserverAction(simulator, action),
         }),
       ));
     }
@@ -913,10 +967,10 @@ function searchDP(simulator, initialState, options) {
         generated += 1;
         recordAction(actionStats, action, "expanded");
         const candidateId = `${entry.nodeId}:${actionIndex}`;
-        if (observer) observer.emit("candidateGenerated", observerStatePayload(simulator, state, entry, config, {
+        if (observer) observer.emit("candidateGenerated", () => observerStatePayload(simulator, state, entry, config, {
           reasonCode: "candidate-generated",
           candidateId,
-          action: compactObserverAction(action),
+          action: compactObserverAction(simulator, action),
         }));
         let nextStates;
         try {
@@ -928,10 +982,10 @@ function searchDP(simulator, initialState, options) {
         } catch (error) {
           invalid += 1;
           recordAction(actionStats, action, "invalid");
-          if (observer) observer.emit("candidateRejected", observerStatePayload(simulator, state, entry, config, {
+          if (observer) observer.emit("candidateRejected", () => observerStatePayload(simulator, state, entry, config, {
             reasonCode: "action-apply-error",
             candidateId,
-            action: compactObserverAction(action),
+            action: compactObserverAction(simulator, action),
             error: { name: error && error.name || "Error", message: error && error.message || String(error) },
           }));
           return;
@@ -964,20 +1018,20 @@ function searchDP(simulator, initialState, options) {
     );
     if (budgetReason) observer.emit(
       "budgetStopped",
-      observerStatePayload(
-        simulator,
-        bestSeenNode ? bestSeenNode.state : initialState,
-        bestSeenNode,
-        config,
-        {
-          reasonCode: budgetReason,
-          expansions,
-          frontierSize,
-          maxExpansions,
-          maxRuntimeMs,
-          maxHeapMb,
-        },
-      ),
+      () => observerStatePayload(
+          simulator,
+          bestSeenNode ? bestSeenNode.state : initialState,
+          bestSeenNode,
+          config,
+          {
+            reasonCode: budgetReason,
+            expansions,
+            frontierSize,
+            maxExpansions,
+            maxRuntimeMs,
+            maxHeapMb,
+          },
+        ),
     );
   }
   const goalSkylineNodes = selectGoalSkylineNodes(
