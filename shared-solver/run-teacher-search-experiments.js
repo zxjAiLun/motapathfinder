@@ -72,6 +72,10 @@ function runOne(simulator, route, segment, options) {
     fromStep,
     toStep,
     searchOptions: { dpOverrides },
+    captureDominanceWitnessStates: options.captureDominanceWitnesses,
+    continuationAudit: options.continuationAudit
+      ? { windows: options.continuationWindows, maxWitnesses: 1 }
+      : null,
   });
 }
 
@@ -87,6 +91,15 @@ function buildExperimentOptions(args, overrides) {
     priorityMode: args["search-priority-mode"] || null,
     keyMode: args["search-key-mode"] || null,
     dpSkylineMax: parseOptionalNumber(args["search-dp-skyline-max"]),
+    captureDominanceWitnesses: parseBooleanFlag(args["capture-dominance-witnesses"], false),
+    continuationAudit: parseBooleanFlag(args["continuation-audit"], false),
+    continuationWindows: String(args["continuation-windows"] || "1,3,until-failure")
+      .split(",")
+      .map((value) => {
+        const parsed = Number(value.trim());
+        return Number.isFinite(parsed) ? parsed : value.trim();
+      })
+      .filter((value) => value !== ""),
   };
   return { ...base, ...(overrides || {}) };
 }

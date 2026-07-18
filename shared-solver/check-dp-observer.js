@@ -86,6 +86,7 @@ function collectEvents(options) {
     dpSkylineMax: 1,
     stopOnFirstGoal: false,
     goalPredicate: (state) => state.hero.hp >= 90,
+    observerCaptureDominanceWitnesses: true,
     observer,
     ...(options || {}),
   });
@@ -165,6 +166,17 @@ function checkEventCoverage(observed) {
   assert.equal(eviction.exactStateKey, evictedInsertion.exactStateKey);
   assert.equal(eviction.replacementExactStateKey, replacementInsertion.exactStateKey);
   assert.notEqual(eviction.exactStateKey, eviction.replacementExactStateKey);
+  const dominance = observed.events.find(
+    (event) => event.eventType === "candidateRejected" && event.reasonCode === "dominance-rejected",
+  );
+  assert(dominance, "synthetic search should exercise dominance rejection");
+  assert(Array.isArray(dominance.dominanceWitnesses));
+  assert(dominance.dominanceWitnesses.length > 0, "dominance rejection needs a witness");
+  assert(dominance.dominanceComparison, "dominance rejection needs comparison details");
+  assert.equal(typeof dominance.dominanceComparison.mode, "string");
+  assert(dominance.dominanceStateDiff, "dominance rejection needs compact state diff");
+  assert(dominance.dominanceWitnesses[0].action, "dominance witness needs the blocking action");
+  assert(Array.isArray(dominance.dominanceWitnesses[0].skylineRoles));
 }
 
 function checkTrimAndBudget() {

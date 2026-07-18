@@ -476,6 +476,155 @@ function compactObserverAction(simulator, action) {
   };
 }
 
+function jsonDiagnosticValue(value) {
+  if (value == null) return value;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (error) {
+    return String(value);
+  }
+}
+
+function compactObjectDiff(candidate, witness) {
+  const left = candidate && typeof candidate === "object" ? candidate : {};
+  const right = witness && typeof witness === "object" ? witness : {};
+  const added = {};
+  const removed = {};
+  const changed = {};
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  keys.forEach((key) => {
+    const leftValue = left[key];
+    const rightValue = right[key];
+    if (JSON.stringify(leftValue) === JSON.stringify(rightValue)) return;
+    if (rightValue === undefined) added[key] = jsonDiagnosticValue(leftValue);
+    else if (leftValue === undefined) removed[key] = jsonDiagnosticValue(rightValue);
+    else changed[key] = {
+      candidate: jsonDiagnosticValue(leftValue),
+      witness: jsonDiagnosticValue(rightValue),
+    };
+  });
+  return { added, removed, changed };
+}
+
+function compactArrayDiff(candidate, witness) {
+  const left = Array.isArray(candidate) ? candidate : [];
+  const right = Array.isArray(witness) ? witness : [];
+  const leftKeys = new Set(left.map((value) => JSON.stringify(value)));
+  const rightKeys = new Set(right.map((value) => JSON.stringify(value)));
+  return {
+    added: left.filter((value) => !rightKeys.has(JSON.stringify(value))).map(jsonDiagnosticValue),
+    removed: right.filter((value) => !leftKeys.has(JSON.stringify(value))).map(jsonDiagnosticValue),
+  };
+}
+
+function normalizedVisitedFloors(state) {
+  const visited = state && state.visitedFloors;
+  if (Array.isArray(visited)) return visited.slice().sort();
+  return Object.keys(visited || {}).filter((floorId) => visited[floorId]).sort();
+}
+
+function compactDominanceStateDiff(candidate, witness) {
+  const candidateHero = (candidate && candidate.hero) || {};
+  const witnessHero = (witness && witness.hero) || {};
+  const diff = {};
+  if ((candidate && candidate.floorId) !== (witness && witness.floorId)) {
+    diff.floorId = { candidate: candidate && candidate.floorId, witness: witness && witness.floorId };
+  }
+  const candidateLoc = candidateHero.loc || null;
+  const witnessLoc = witnessHero.loc || null;
+  if (JSON.stringify(candidateLoc) !== JSON.stringify(witnessLoc)) {
+    diff.loc = { candidate: jsonDiagnosticValue(candidateLoc), witness: jsonDiagnosticValue(witnessLoc) };
+  }
+  const heroDiff = compactObjectDiff(
+    Object.fromEntries(["hp", "atk", "def", "mdef", "lv", "exp", "money", "mana"].map((field) => [field, candidateHero[field]])),
+    Object.fromEntries(["hp", "atk", "def", "mdef", "lv", "exp", "money", "mana"].map((field) => [field, witnessHero[field]])),
+  );
+  const equipmentDiff = compactArrayDiff(candidateHero.equipment, witnessHero.equipment);
+  if (Object.keys(heroDiff.added).length || Object.keys(heroDiff.removed).length || Object.keys(heroDiff.changed).length || equipmentDiff.added.length || equipmentDiff.removed.length) {
+    diff.hero = { ...heroDiff, equipment: equipmentDiff };
+  }
+  const inventoryDiff = compactObjectDiff(candidate && candidate.inventory, witness && witness.inventory);
+  if (Object.keys(inventoryDiff.added).length || Object.keys(inventoryDiff.removed).length || Object.keys(inventoryDiff.changed).length) {
+    diff.inventory = inventoryDiff;
+  }
+  const flagsDiff = compactObjectDiff(candidate && candidate.flags, witness && witness.flags);
+  if (Object.keys(flagsDiff.added).length || Object.keys(flagsDiff.removed).length || Object.keys(flagsDiff.changed).length) {
+    diff.flags = flagsDiff;
+  }
+  const visitedDiff = compactArrayDiff(
+    normalizedVisitedFloors(candidate),
+    normalizedVisitedFloors(witness),
+  );
+  if (visitedDiff.added.length || visitedDiff.removed.length) diff.visitedFloors = visitedDiff;
+  const mutationDiff = compactObjectDiff(
+    Object.fromEntries(listFloorMutationSummary((candidate && candidate.floorStates) || {}).map((entry) => [entry.floorId, entry])),
+    Object.fromEntries(listFloorMutationSummary((witness && witness.floorStates) || {}).map((entry) => [entry.floorId, entry])),
+  );
+  if (Object.keys(mutationDiff.added).length || Object.keys(mutationDiff.removed).length || Object.keys(mutationDiff.changed).length) {
+    diff.floorMutations = mutationDiff;
+  }
+  return diff;
+}
+
+function dominanceComparison(candidate, witness, dominanceConfig) {
+  const candidateHero = (candidate && candidate.hero) || {};
+  const witnessHero = (witness && witness.hero) || {};
+  const candidateDepth = getDecisionDepth(candidate);
+  const witnessDepth = getDecisionDepth(witness);
+  const candidateRoute = routeLengthOfState(candidate);
+  const witnessRoute = routeLengthOfState(witness);
+  const comparison = {
+    mode: dominanceConfig && dominanceConfig.mode || "default-hp-depth-route",
+    hpDiff: heroHp(candidate) - heroHp(witness),
+    atkDiff: effectiveHeroValue(candidate, "atk") - effectiveHeroValue(witness, "atk"),
+    defDiff: effectiveHeroValue(candidate, "def") - effectiveHeroValue(witness, "def"),
+    mdefDiff: effectiveHeroValue(candidate, "mdef") - effectiveHeroValue(witness, "mdef"),
+    lvDiff: Number(candidateHero.lv || 0) - Number(witnessHero.lv || 0),
+    expDiff: Number(candidateHero.exp || 0) - Number(witnessHero.exp || 0),
+    decisionDepthDiff: candidateDepth - witnessDepth,
+    routeLengthDiff: candidateRoute - witnessRoute,
+    targetMarginDiff: null,
+    firstDecidingField: null,
+  };
+  if (dominanceConfig && typeof dominanceConfig.describeComparison === "function") {
+    try {
+      const described = dominanceConfig.describeComparison(candidate, witness) || {};
+      const base = described.base;
+      Object.assign(comparison, described);
+      if (base && typeof base === "object") {
+        comparison.baseComparison = base;
+        if (base.targetMarginDiff != null) comparison.targetMarginDiff = base.targetMarginDiff;
+        if (base.targetMarginCandidate != null) comparison.targetMarginCandidate = base.targetMarginCandidate;
+        if (base.targetMarginWitness != null) comparison.targetMarginWitness = base.targetMarginWitness;
+      }
+    } catch (error) {
+      comparison.descriptionError = error && error.message ? error.message : String(error);
+    }
+  }
+  if (!comparison.firstDecidingField) {
+    if (comparison.targetMarginDiff != null && comparison.targetMarginDiff !== 0) comparison.firstDecidingField = "targetMargin";
+    else if (comparison.hpDiff !== 0) comparison.firstDecidingField = "hp";
+    else if (comparison.decisionDepthDiff !== 0) comparison.firstDecidingField = "decisionDepth";
+    else if (comparison.routeLengthDiff !== 0) comparison.firstDecidingField = "routeLength";
+    else comparison.firstDecidingField = comparison.mode === "default-hp-depth-route" ? null : "custom";
+  }
+  return comparison;
+}
+
+function compactDominanceWitness(simulator, node, config) {
+  if (!node || !node.state) return null;
+  return {
+    nodeId: node.nodeId,
+    exactStateKey: observerIncludesExactStateKey(config) ? observerExactStateKey(node.state) : null,
+    hero: compactObserverHero(node.state),
+    decisionDepth: getDecisionDepth(node.state),
+    routeLength: routeLengthOfState(node.state),
+    agendaRank: compactObserverAgendaRank(node.rank),
+    action: compactObserverAction(simulator, node.actionEntry || node.action),
+    skylineRoles: observerRoles(config, node.state),
+  };
+}
+
 function observerExactStateKey(state) {
   if (!state || typeof state !== "object") return null;
   const cached = observerExactStateKeyCache.get(state);
@@ -770,11 +919,42 @@ function searchDP(simulator, initialState, options) {
       if (hpDiff === 0) sameHpRejected += 1;
       else rejectedByHigherHp += 1;
       if (observer) {
+        const captureDominanceWitnesses = config.observerCaptureDominanceWitnesses === true ||
+          config.observerCaptureWitnessStates === true;
+        const witnessNodes = captureDominanceWitnesses
+          ? bestByKey instanceof SkylineSet
+            ? adaptiveTiming && timingConflict
+              ? existingSkyline
+                .filter((node) => !isBetterForSameDpKey(state, node.state, config.dominanceConfig))
+                .slice(0, 4)
+              : adaptiveTiming
+                ? existingSkyline.slice(0, 1)
+                : existingSkyline
+                  .filter((node) => !isBetterForSameDpKey(state, node.state, config.dominanceConfig))
+                  .slice(0, 4)
+            : existing
+              ? [existing]
+              : []
+          : [];
+        const dominanceWitnesses = witnessNodes
+          .map((node) => compactDominanceWitness(simulator, node, config))
+          .filter(Boolean);
+        const firstWitness = witnessNodes[0] && witnessNodes[0].state;
         emitStateEvent("candidateRejected", state, { key }, () => ({
           reasonCode: "dominance-rejected",
           action: compactObserverAction(simulator, sourceAction),
           candidateId: sourceAction && sourceAction.__observerCandidateId || null,
           successorId: sourceAction && sourceAction.__observerSuccessorId || null,
+          dominanceWitnesses,
+          dominanceComparison: firstWitness
+            ? dominanceComparison(state, firstWitness, config.dominanceConfig)
+            : null,
+          dominanceStateDiff: firstWitness
+            ? compactDominanceStateDiff(state, firstWitness)
+            : null,
+          dominanceWitnessStates: config.observerCaptureWitnessStates
+            ? witnessNodes.map((node) => node.state)
+            : undefined,
         }));
       }
       return false;
@@ -870,6 +1050,7 @@ function searchDP(simulator, initialState, options) {
               successorId: sourceAction && sourceAction.__observerSuccessorId || null,
             },
           ));
+          if (observerAgendaMeta) observerAgendaMeta.delete(nodeId);
         });
       emitStateEvent("skylineInserted", state, node, () => ({
         reasonCode: "skyline-inserted",
@@ -965,7 +1146,7 @@ function searchDP(simulator, initialState, options) {
     emitStateEvent("agendaPopped", entry.state, entry, {
       nodeId: entry.nodeId,
       parentId: entry.parentId,
-      action: compactObserverAction(simulator, entry.action),
+      action: compactObserverAction(simulator, entry.actionEntry || entry.action),
       agendaSize: heap ? heap.length : Math.max(0, fifoEntries.length - cursor),
       reasonCode: "agenda-pop",
       agendaRank,
@@ -975,6 +1156,7 @@ function searchDP(simulator, initialState, options) {
       queueAgeExpansions,
       queueAgeMs,
     });
+    if (observerAgendaMeta) observerAgendaMeta.delete(entry.nodeId);
     if (bestByKey instanceof SkylineSet) {
       if (!bestByKey.isActive(entry.key, entry.nodeId)) continue;
     } else {

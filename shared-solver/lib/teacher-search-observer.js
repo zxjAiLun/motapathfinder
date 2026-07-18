@@ -13,9 +13,10 @@ const {
   createStateFromSnapshot,
   resolveRecordedAction,
 } = require("./route-store");
+const { runTeacherContinuationAudit } = require("./teacher-dominance-audit");
 const { buildStateKey } = require("./state-key");
 
-const OBSERVER_VERSION = "teacher-search-observer.v1.2";
+const OBSERVER_VERSION = "teacher-search-observer.v1.3";
 
 const OUTCOMES = Object.freeze([
   "teacher-pre-state-not-reached",
@@ -171,6 +172,7 @@ function buildTeacherStepIndex(simulator, routeRecord, options) {
     const postExactStateKey = exactStateKey(after) || decision.postExactStateKey || null;
     steps.push({
       step: index,
+      decision,
       summary: decision.summary || (action && action.summary) || null,
       kind: decision.kind || (action && action.kind) || null,
       actionFingerprint: fingerprint,
@@ -212,6 +214,10 @@ function createRecord(step) {
     actionTrimmed: false,
     actionApplyError: false,
     postDominanceRejected: false,
+    dominanceWitnesses: [],
+    dominanceComparison: null,
+    dominanceStateDiff: null,
+    dominanceContinuationAudits: [],
     postSkylineRejected: false,
     postInserted: false,
     postEvicted: false,
@@ -549,7 +555,43 @@ function createTeacherSearchObserver(teacherIndex, options) {
       } else if (event.reasonCode === "action-apply-error") {
         mark(preMatches(event, true), "actionApplyError", event);
       } else if (event.reasonCode === "dominance-rejected") {
-        mark(postMatches(event, true), "postDominanceRejected", event);
+        const records = postMatches(event, true);
+        mark(records, "postDominanceRejected", event);
+        records.forEach((record) => {
+          if (record.dominanceWitnesses.length === 0) {
+            record.dominanceWitnesses = Array.isArray(event.dominanceWitnesses)
+              ? event.dominanceWitnesses.slice(0, 4)
+              : [];
+            record.dominanceComparison = event.dominanceComparison || null;
+            record.dominanceStateDiff = event.dominanceStateDiff || null;
+            const auditConfig = config.continuationAudit;
+            if (auditConfig && config.simulator && Array.isArray(event.dominanceWitnessStates)) {
+              const windows = Array.isArray(auditConfig.windows)
+                ? auditConfig.windows
+                : [1, 3, "until-failure"];
+              const maxWitnesses = Math.max(1, number(auditConfig.maxWitnesses, 1));
+              event.dominanceWitnessStates
+                .slice(0, maxWitnesses)
+                .forEach((witnessState) => {
+                  windows.forEach((window) => {
+                    record.dominanceContinuationAudits.push(
+                      runTeacherContinuationAudit(
+                        config.simulator,
+                        teacherIndex,
+                        witnessState,
+                        {
+                          startStep: record.step + 1,
+                          window,
+                          stopOnFailure: auditConfig.stopOnFailure !== false,
+                          goalPredicate: auditConfig.goalPredicate,
+                        },
+                      ),
+                    );
+                  });
+                });
+            }
+          }
+        });
       } else if (event.reasonCode === "skyline-capacity-rejected") {
         mark(postMatches(event, true), "postSkylineRejected", event);
       }
@@ -699,9 +741,24 @@ function createTeacherSearchObserver(teacherIndex, options) {
 
 function runTeacherSearchObservation(simulator, startState, segment, options) {
   const config = options || {};
-  const collector = createTeacherSearchObserver(config.teacherIndex, config);
-  const result = searchSegmentDP(simulator, startState, segment, {
+  const collector = createTeacherSearchObserver(config.teacherIndex, {
+    ...config,
+    simulator,
+  });
+  const searchOptions = {
     ...(config.searchOptions || {}),
+    dpOverrides: {
+      ...((config.searchOptions && config.searchOptions.dpOverrides) || {}),
+      ...(config.continuationAudit || config.captureDominanceWitnessStates
+        ? {
+            observerCaptureWitnessStates: true,
+            observerCaptureDominanceWitnesses: true,
+          }
+        : {}),
+    },
+  };
+  const result = searchSegmentDP(simulator, startState, segment, {
+    ...searchOptions,
     observer: collector.observer,
   });
   const dp = result && result.diagnostics && result.diagnostics.dp;

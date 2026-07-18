@@ -83,6 +83,15 @@ function main(argv) {
   const searchPriorityMode = args["search-priority-mode"] || null;
   const searchKeyMode = args["search-key-mode"] || null;
   const searchDpSkylineMax = parseOptionalNumber(args["search-dp-skyline-max"]);
+  const continuationAuditEnabled = parseBooleanFlag(args["continuation-audit"], false);
+  const captureDominanceWitnesses = parseBooleanFlag(args["capture-dominance-witnesses"], continuationAuditEnabled);
+  const continuationWindows = String(args["continuation-windows"] || "1,3,until-failure")
+    .split(",")
+    .map((value) => {
+      const parsed = Number(value.trim());
+      return Number.isFinite(parsed) ? parsed : value.trim();
+    })
+    .filter((value) => value !== "");
 
   if (!fs.existsSync(routePath)) {
     throw new Error(`route not found: ${routePath}`);
@@ -134,11 +143,19 @@ function main(argv) {
     if (searchPriorityMode) dpOverrides.priorityMode = searchPriorityMode;
     if (searchKeyMode) dpOverrides.keyMode = searchKeyMode;
     if (searchDpSkylineMax != null) dpOverrides.dpSkylineMax = searchDpSkylineMax;
+    if (captureDominanceWitnesses) {
+      dpOverrides.observerCaptureWitnessStates = true;
+      dpOverrides.observerCaptureDominanceWitnesses = true;
+    }
     const observation = runTeacherSearchObservation(simulator, startState, segment, {
       teacherIndex,
       fromStep: startIndex,
       toStep: toStep == null ? undefined : toStep,
       searchOptions: { dpOverrides },
+      captureDominanceWitnessStates: captureDominanceWitnesses,
+      continuationAudit: continuationAuditEnabled
+        ? { windows: continuationWindows, maxWitnesses: 1 }
+        : null,
     });
     report = mergeTeacherSearchObservation(report, observation);
   }

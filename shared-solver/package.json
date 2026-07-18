@@ -48,6 +48,7 @@
     "check:resource-deferral": "node check-resource-deferral.js",
     "check:teacher-divergence": "node check-teacher-divergence.js",
     "check:teacher-search-observer": "node check-teacher-search-observer.js",
+    "check:teacher-dominance-audit": "node check-teacher-dominance-audit.js",
     "check:dp-observer": "node check-dp-observer.js",
     "check:route-store-exact": "node check-route-store-exact.js",
     "run:teacher-divergence": "node run-teacher-divergence.js",

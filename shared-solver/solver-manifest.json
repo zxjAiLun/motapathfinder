@@ -176,6 +176,7 @@
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
         "shared-solver/check-teacher-search-observer.js",
+        "shared-solver/check-teacher-dominance-audit.js",
         "shared-solver/check-route-store-exact.js"
       ],
       "requiredCommands": [
@@ -1284,6 +1285,22 @@
       },
       "notes": "teacher-forced step audit; test-side only; never feeds teacher actions into production search"
     },
+    "shared-solver/lib/teacher-dominance-audit.js": {
+      "id": "teacher-dominance-audit",
+      "path": "shared-solver/lib/teacher-dominance-audit.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "diagnostics",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "dominance witness continuation diagnostics; never feeds teacher actions into production search"
+    },
     "shared-solver/lib/teacher-search-observer.js": {
       "id": "teacher-search-observer",
       "path": "shared-solver/lib/teacher-search-observer.js",
@@ -1612,6 +1629,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "teacher-forced divergence audit; tracked fixture always; MT5 teacher optional if present"
+    },
+    "shared-solver/check-teacher-dominance-audit.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "synthetic dominance witness continuation audit; diagnostics-only"
     },
     "shared-solver/check-teacher-search-observer.js": {
       "grade": "unit",

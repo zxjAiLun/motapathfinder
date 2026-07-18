@@ -2249,6 +2249,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
   if (actionSurvivableTarget) {
     dominanceConfig = {
       targetSummary: actionSurvivableTarget,
+      mode: "action-survivable",
       compare: (left, right) => {
         const leftHp = heroHp(left);
         const rightHp = heroHp(right);
@@ -2303,6 +2304,33 @@ function searchSegmentDP(simulator, startState, segment, options) {
           : rightDepth;
         return leftRoute < rightRoute;
       },
+      describeComparison: (left, right) => {
+        const margin = (state) => {
+          try {
+            const threshold = estimateBattleSurvivability(
+              simulator,
+              state,
+              actionSurvivableTarget,
+              { skipMinHp: true },
+            );
+            return threshold && threshold.supported
+              ? number(state && state.hero && state.hero.hp, 0) - number(threshold.currentDamage, Number.POSITIVE_INFINITY)
+              : null;
+          } catch (error) {
+            return null;
+          }
+        };
+        const candidateMargin = margin(left);
+        const witnessMargin = margin(right);
+        return {
+          mode: "action-survivable",
+          targetMarginDiff: candidateMargin != null && witnessMargin != null
+            ? candidateMargin - witnessMargin
+            : null,
+          targetMarginCandidate: candidateMargin,
+          targetMarginWitness: witnessMargin,
+        };
+      },
     };
   }
   const originalDominanceCompare = dominanceConfig && typeof dominanceConfig.compare === "function"
@@ -2311,8 +2339,12 @@ function searchSegmentDP(simulator, startState, segment, options) {
   const baseDominanceCompare = originalDominanceCompare
     ? (left, right) => (originalDominanceCompare(left, right) ? 1 : -1)
     : compareDpBest;
+  const baseDominanceDescribe = dominanceConfig && typeof dominanceConfig.describeComparison === "function"
+    ? dominanceConfig.describeComparison
+    : null;
   const resourceTimingDominance = resourceTimingEnabled
     ? {
+        mode: "resource-timing",
         compare: (left, right) => compareResourceTimingStates(
           left,
           right,
@@ -2320,6 +2352,17 @@ function searchSegmentDP(simulator, startState, segment, options) {
           resourceTimingOptions,
         ),
         hasConflict: (left, right) => hasTimingConflict(left, right, resourceTimingOptions),
+        describeComparison: (left, right) => ({
+          mode: "resource-timing",
+          timingConflict: hasTimingConflict(left, right, resourceTimingOptions),
+          timingRoles: {
+            candidate: resourceTimingRoles(left),
+            witness: resourceTimingRoles(right),
+          },
+          base: baseDominanceDescribe
+            ? baseDominanceDescribe(left, right)
+            : null,
+        }),
       }
     : null;
   if (resourceTimingDominance) {
@@ -2443,6 +2486,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
         ? "resource-first"
         : dpConfig.priorityMode || dpConfig.dpPriorityMode || "default",
     actionProviderMode: actionProviderMode || "segment-provider",
+    observerCaptureWitnessStates: dpConfig.observerCaptureWitnessStates === true || config.observerCaptureWitnessStates === true,
     stopOnFirstGoal: dpConfig.stopOnFirstGoal === true,
     continueAfterGoal: dpConfig.continueAfterGoal === true,
     captureTrace,

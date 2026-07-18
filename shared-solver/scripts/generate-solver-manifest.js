@@ -49,6 +49,7 @@ const DECOMPOSITION = new Set([
   "landmarks.js",
   "teacher-divergence-audit.js",
   "teacher-search-observer.js",
+  "teacher-dominance-audit.js",
 ]);
 const EXPLORATION = new Set([
   "search.js",
@@ -172,14 +173,19 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
         : "expensive skyline annotator; timing score must not define correctness dominance",
     });
   } else if (DECOMPOSITION.has(file)) {
+    const diagnosticModule = [
+      "teacher-divergence-audit.js",
+      "teacher-search-observer.js",
+      "teacher-dominance-audit.js",
+    ].includes(file);
     add(file, {
-      layer: ["teacher-divergence-audit.js", "teacher-search-observer.js"].includes(file)
+      layer: diagnosticModule
         ? "diagnostics"
         : "planning/decomposition",
-      status: ["teacher-divergence-audit.js", "teacher-search-observer.js"].includes(file)
+      status: diagnosticModule
         ? "supporting"
         : "experimental",
-      role: ["teacher-divergence-audit.js", "teacher-search-observer.js"].includes(file)
+      role: diagnosticModule
         ? "diagnostics"
         : "candidate-generator",
       correctnessSource: false,
@@ -194,6 +200,8 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
         ? "teacher-forced step audit; test-side only; never feeds teacher actions into production search"
         : file === "teacher-search-observer.js"
           ? "real search event diagnostics; synthetic contract plus manual teacher fixture runs; never feeds teacher actions into production search"
+        : file === "teacher-dominance-audit.js"
+          ? "dominance witness continuation diagnostics; never feeds teacher actions into production search"
         : "auto milestone decomposition; proof not yet closed into checkpoint schedule",
     });
   } else if (EXPLORATION.has(file)) {
@@ -333,6 +341,13 @@ const TEST_OVERRIDES = {
     requiresStrictReplay: false,
     cleanCheckout: true,
     notes: "synthetic real-search teacher observer outcome contract",
+  },
+  "shared-solver/check-teacher-dominance-audit.js": {
+    grade: "unit",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "synthetic dominance witness continuation audit; diagnostics-only",
   },
   "shared-solver/check-route-store-exact.js": {
     grade: "unit",
@@ -549,6 +564,7 @@ const manifest = {
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
         "shared-solver/check-teacher-search-observer.js",
+        "shared-solver/check-teacher-dominance-audit.js",
         "shared-solver/check-route-store-exact.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],

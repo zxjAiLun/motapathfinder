@@ -456,6 +456,67 @@ function checkSegmentForwarding() {
   assert.equal(observation.searchConfig.actionProviderMode, "segment-provider");
 }
 
+function checkDominanceContinuationIntegration() {
+  const pre0 = makeState(50, [1, 1]);
+  const post0 = makeState(45, [2, 1], ["battle:first"]);
+  const post1 = makeState(40, [3, 1], ["battle:first", "battle:second"]);
+  const index = {
+    steps: [
+      {
+        step: 0,
+        decision: { kind: "battle", summary: "battle:first", fingerprint: "fp:first" },
+        summary: "battle:first",
+        actionFingerprint: "fp:first",
+        preExactStateKey: buildStateKey(pre0),
+        postExactStateKey: buildStateKey(post0),
+      },
+      {
+        step: 1,
+        decision: { kind: "battle", summary: "battle:second", fingerprint: "fp:second" },
+        summary: "battle:second",
+        actionFingerprint: "fp:second",
+        preExactStateKey: buildStateKey(post0),
+        postExactStateKey: buildStateKey(post1),
+      },
+    ],
+    decisionCount: 2,
+  };
+  const simulator = {
+    project: {},
+    getActionFingerprint: (actionEntry) => actionEntry.fingerprint || `fp:${actionEntry.summary}`,
+    enumeratePrimitiveActions: (state) => ({
+      actions: state.route.length === 1
+        ? [{ kind: "battle", summary: "battle:second", fingerprint: "fp:second" }]
+        : [],
+    }),
+    applyAction: (state, actionEntry) => makeState(
+      state.hero.hp - 5,
+      [3, 1],
+      state.route.concat(actionEntry.summary),
+    ),
+  };
+  const collector = createTeacherSearchObserver(index, {
+    fromStep: 0,
+    toStep: 2,
+    simulator,
+    continuationAudit: { windows: [1], maxWitnesses: 1 },
+  });
+  collector.observer.onEvent(event("candidateRejected", post0, {
+    reasonCode: "dominance-rejected",
+    action: action("battle:first", "fp:first", "1:0", "1:0:0"),
+    dominanceWitnesses: [{ nodeId: 9, action: action("battle:first", "fp:first") }],
+    dominanceWitnessStates: [post0],
+  }));
+  const report = collector.finalize({ diagnostics: { dp: {} }, frontierSize: 1 });
+  const audits = report.steps[0].dominanceContinuationAudits;
+  assert.equal(report.steps[0].outcome, "teacher-post-dominance-rejected");
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].success, true);
+  assert.equal(audits[0].steps[0].actionResolved, true);
+  assert.equal(audits[0].steps[0].actionApplicable, true);
+  assert.equal(audits[0].steps[0].teacherActionFingerprint, "fp:second");
+}
+
 function main() {
   checkTeacherStepSurvived();
   checkPostInsertedOutcome();
@@ -466,6 +527,7 @@ function main() {
   checkPreNodeLineageAndCompetition();
   checkLegacyIndexUpgrade();
   checkSegmentForwarding();
+  checkDominanceContinuationIntegration();
   console.log("check-teacher-search-observer: ok");
 }
 
@@ -482,4 +544,5 @@ module.exports = {
   checkPreNodeLineageAndCompetition,
   checkLegacyIndexUpgrade,
   checkSegmentForwarding,
+  checkDominanceContinuationIntegration,
 };
