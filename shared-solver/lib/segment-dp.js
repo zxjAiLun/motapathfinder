@@ -2442,6 +2442,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
       !dpConfig.dpPriorityMode
         ? "resource-first"
         : dpConfig.priorityMode || dpConfig.dpPriorityMode || "default",
+    actionProviderMode: actionProviderMode || "segment-provider",
     stopOnFirstGoal: dpConfig.stopOnFirstGoal === true,
     continueAfterGoal: dpConfig.continueAfterGoal === true,
     captureTrace,

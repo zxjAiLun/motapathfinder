@@ -15,7 +15,7 @@ const {
 } = require("./route-store");
 const { buildStateKey } = require("./state-key");
 
-const OBSERVER_VERSION = "teacher-search-observer.v1.1";
+const OBSERVER_VERSION = "teacher-search-observer.v1.2";
 
 const OUTCOMES = Object.freeze([
   "teacher-pre-state-not-reached",
@@ -220,9 +220,20 @@ function createRecord(step) {
     budgetPending: false,
     candidateIds: [],
     successorIds: [],
+    teacherPreNodeIds: [],
+    poppedTeacherPreNodeIds: [],
+    pendingTeacherPreNodeIds: [],
+    teacherPreNodeDetails: [],
     teacherPostNodeIds: [],
     poppedTeacherPostNodeIds: [],
     evictedBeforePopNodeIds: [],
+    teacherPostNodeDetails: [],
+    competitionSamples: {
+      earliest: [],
+      latest: [],
+      closestRank: [],
+    },
+    popsWhilePending: 0,
     evidence: [],
     outcome: null,
   };
@@ -242,6 +253,136 @@ function rememberEvidence(record, event) {
 
 function addUnique(list, value) {
   if (value != null && !list.includes(value)) list.push(value);
+}
+
+function agendaRankFields(rank) {
+  if (!rank || typeof rank !== "object") return [];
+  if (rank.priorityMode === "resource-first") {
+    return [
+      "sourceActionRank", "atk", "def", "mdef", "lv", "exp", "hp",
+      "bestFloorRank", "currentFloorRank", "finiteNextDistance",
+      "nextDistance", "decisionDepth", "routeLength", "sequence",
+    ];
+  }
+  return [
+    "bestFloorRank", "finiteNextDistance", "nextDistance",
+    ...(rank.priorityMode === "combat-first"
+      ? ["currentFloorRank", "sourceActionRank", "atk", "def", "mdef", "lv", "exp", "hp"]
+      : ["currentFloorRank", "sourceActionRank", "hp", "atk", "def", "mdef", "lv", "exp"]),
+    "decisionDepth", "routeLength", "sequence",
+  ];
+}
+
+function rankDifferenceReason(teacherRank, competitorRank) {
+  if (!teacherRank || !competitorRank) return null;
+  for (const field of agendaRankFields(teacherRank)) {
+    const teacher = teacherRank[field];
+    const competitor = competitorRank[field];
+    if (teacher !== competitor) return { field, teacher, competitor };
+  }
+  return null;
+}
+
+function rankDifferenceDistance(reason) {
+  if (!reason) return Number.POSITIVE_INFINITY;
+  const teacher = Number(reason.teacher);
+  const competitor = Number(reason.competitor);
+  if (!Number.isFinite(teacher) || !Number.isFinite(competitor)) return Number.POSITIVE_INFINITY;
+  return Math.abs(teacher - competitor);
+}
+
+function compactCompetitionSample(event, reason) {
+  return {
+    nodeId: event.nodeId == null ? null : event.nodeId,
+    parentId: event.parentId == null ? null : event.parentId,
+    floorId: event.floorId || null,
+    hero: event.hero || null,
+    decisionDepth: event.decisionDepth == null ? null : event.decisionDepth,
+    action: event.action || null,
+    agendaRank: event.agendaRank || null,
+    poppedAtExpansion: event.popExpansion == null ? null : event.popExpansion,
+    rankDifferenceReason: reason,
+  };
+}
+
+function addCompetitionSample(record, event, teacherRank) {
+  if (!record || !event || event.nodeId == null) return;
+  const reason = rankDifferenceReason(teacherRank, event.agendaRank);
+  const sample = compactCompetitionSample(event, reason);
+  const distance = rankDifferenceDistance(reason);
+  const samples = record.competitionSamples;
+  if (samples.earliest.length < 4) samples.earliest.push(sample);
+  samples.latest.push(sample);
+  if (samples.latest.length > 4) samples.latest.shift();
+  samples.closestRank.push({ sample, distance });
+  samples.closestRank.sort((left, right) => left.distance - right.distance);
+  if (samples.closestRank.length > 4) samples.closestRank.length = 4;
+  record.popsWhilePending += 1;
+}
+
+function finalizeCompetitionSamples(samples) {
+  return {
+    earliest: samples.earliest.slice(),
+    latest: samples.latest.slice(),
+    closestRank: samples.closestRank.map((entry) => entry && entry.sample ? entry.sample : entry),
+  };
+}
+
+function buildSearchConfig(segment, searchOptions, dp) {
+  const overrides = (searchOptions && searchOptions.dpOverrides) || {};
+  const segmentDp = (segment && segment.dp) || {};
+  const policy = (segment && segment.actionPolicy) || {};
+  return {
+    agendaMode: dp && dp.agendaMode != null
+      ? dp.agendaMode
+      : overrides.agendaMode || segmentDp.agendaMode || "best-first",
+    priorityMode: dp && dp.priorityMode != null
+      ? dp.priorityMode
+      : overrides.dpPriorityMode || overrides.priorityMode || segmentDp.dpPriorityMode || segmentDp.priorityMode || "default",
+    keyMode: dp && dp.keyMode != null
+      ? dp.keyMode
+      : overrides.dpKeyMode || overrides.keyMode || segmentDp.dpKeyMode || segmentDp.keyMode || "region",
+    dpSkylineMax: dp && dp.dpSkylineMax != null
+      ? dp.dpSkylineMax
+      : overrides.dpSkylineMax || segmentDp.dpSkylineMax || 1,
+    maxExpansions: dp && dp.maxExpansions != null
+      ? dp.maxExpansions
+      : overrides.maxExpansions || segmentDp.maxExpansions || null,
+    maxRuntimeMs: dp && dp.maxRuntimeMs != null
+      ? dp.maxRuntimeMs
+      : overrides.maxRuntimeMs || segmentDp.maxRuntimeMs || null,
+    maxActionsPerState: dp && dp.maxActionsPerState != null
+      ? dp.maxActionsPerState
+      : overrides.maxActionsPerState || segmentDp.maxActionsPerState || null,
+    maxHeapMb: dp && dp.maxHeapMb != null
+      ? dp.maxHeapMb
+      : overrides.maxHeapMb || segmentDp.maxHeapMb || null,
+    actionProviderMode: dp && dp.actionProviderMode != null
+      ? dp.actionProviderMode
+      : overrides.actionProviderMode || segmentDp.actionProviderMode || policy.actionProviderMode || "primitive",
+  };
+}
+
+function compactTeacherNodeDetail(meta) {
+  if (!meta) return null;
+  return {
+    nodeId: meta.nodeId,
+    parentId: meta.parentId,
+    floorId: meta.floorId,
+    hero: meta.hero,
+    decisionDepth: meta.decisionDepth,
+    action: meta.action,
+    agendaRank: meta.agendaRank,
+    enqueueExpansion: meta.enqueueExpansion,
+    expansionsCompletedAtEnqueue: meta.expansionsCompletedAtEnqueue,
+    enqueueElapsedMs: meta.enqueueElapsedMs,
+    agendaSizeAfterInsert: meta.agendaSizeAfterInsert,
+    popExpansion: meta.popExpansion,
+    expansionsCompletedBeforePop: meta.expansionsCompletedBeforePop,
+    popElapsedMs: meta.popElapsedMs,
+    queueAgeExpansions: meta.queueAgeExpansions,
+    queueAgeMs: meta.queueAgeMs,
+  };
 }
 
 function createTeacherSearchObserver(teacherIndex, options) {
@@ -264,6 +405,7 @@ function createTeacherSearchObserver(teacherIndex, options) {
     addIndex(byPostExact, step.postExactStateKey, step);
   });
   const activeByExact = new Map();
+  const nodeMetaById = new Map();
   const budgetStops = [];
   let eventCount = 0;
 
@@ -275,7 +417,11 @@ function createTeacherSearchObserver(teacherIndex, options) {
   );
 
   const preMatches = (event, requireAction) => (byPreExact.get(event.exactStateKey) || [])
-    .filter((step) => !requireAction || actionMatches(event.action, step));
+    .filter((step) => {
+      if (requireAction && !actionMatches(event.action, step)) return false;
+      if (event.nodeId == null || step.teacherPreNodeIds.length === 0) return true;
+      return step.teacherPreNodeIds.includes(event.nodeId);
+    });
   const postMatches = (event, requireAction) => (byPostExact.get(event.exactStateKey) || [])
     .filter((step) => !requireAction || actionMatches(event.action, step));
 
@@ -311,9 +457,88 @@ function createTeacherSearchObserver(teacherIndex, options) {
     else activeByExact.set(event.exactStateKey, current);
   };
 
+  const rememberNode = (event) => {
+    if (!event || event.nodeId == null) return;
+    const previous = nodeMetaById.get(event.nodeId) || {};
+    nodeMetaById.set(event.nodeId, {
+      ...previous,
+      nodeId: event.nodeId,
+      parentId: event.parentId == null
+        ? previous.parentId == null ? null : previous.parentId
+        : event.parentId,
+      floorId: event.floorId || previous.floorId || null,
+      hero: event.hero || previous.hero || null,
+      decisionDepth: event.decisionDepth == null
+        ? previous.decisionDepth == null ? null : previous.decisionDepth
+        : event.decisionDepth,
+      action: event.action || previous.action || null,
+      agendaRank: event.agendaRank || previous.agendaRank || null,
+      enqueueExpansion: event.enqueueExpansion == null ? previous.enqueueExpansion : event.enqueueExpansion,
+      expansionsCompletedAtEnqueue: event.expansionsCompletedAtEnqueue == null
+        ? previous.expansionsCompletedAtEnqueue
+        : event.expansionsCompletedAtEnqueue,
+      enqueueElapsedMs: event.enqueueElapsedMs == null ? previous.enqueueElapsedMs : event.enqueueElapsedMs,
+      agendaSizeAfterInsert: event.agendaSizeAfterInsert == null
+        ? previous.agendaSizeAfterInsert
+        : event.agendaSizeAfterInsert,
+      popExpansion: event.popExpansion == null ? previous.popExpansion : event.popExpansion,
+      expansionsCompletedBeforePop: event.expansionsCompletedBeforePop == null
+        ? previous.expansionsCompletedBeforePop
+        : event.expansionsCompletedBeforePop,
+      popElapsedMs: event.popElapsedMs == null ? previous.popElapsedMs : event.popElapsedMs,
+      queueAgeExpansions: event.queueAgeExpansions == null
+        ? previous.queueAgeExpansions
+        : event.queueAgeExpansions,
+      queueAgeMs: event.queueAgeMs == null ? previous.queueAgeMs : event.queueAgeMs,
+    });
+  };
+
+  const activeTeacherPreNodeIds = (record) => {
+    const active = activeByExact.get(record.preExactStateKey);
+    if (!active) return [];
+    return record.teacherPreNodeIds.filter((nodeId) => active.has(nodeId));
+  };
+
+  const attachNodeDetail = (record, field, nodeId) => {
+    if (!record || nodeId == null) return;
+    const detail = compactTeacherNodeDetail(nodeMetaById.get(nodeId));
+    if (!detail) return;
+    const list = record[field];
+    const existing = list.find((entry) => entry.nodeId === nodeId);
+    if (existing) Object.assign(existing, detail);
+    else list.push(detail);
+  };
+
+  const associateTeacherPreNode = (records, nodeId) => {
+    if (nodeId == null) return;
+    records.forEach((record) => {
+      addUnique(record.teacherPreNodeIds, nodeId);
+      attachNodeDetail(record, "teacherPreNodeDetails", nodeId);
+    });
+  };
+
+  const associateTeacherPostNode = (records, nodeId) => {
+    if (nodeId == null) return;
+    records.forEach((record) => {
+      addUnique(record.teacherPostNodeIds, nodeId);
+      attachNodeDetail(record, "teacherPostNodeDetails", nodeId);
+    });
+  };
+
   const onEvent = (event) => {
     eventCount += 1;
     if (!event || !event.eventType) return;
+    rememberNode(event);
+    if (event.nodeId != null) {
+      steps.forEach((record) => {
+        if (record.teacherPreNodeIds.includes(event.nodeId)) {
+          attachNodeDetail(record, "teacherPreNodeDetails", event.nodeId);
+        }
+        if (record.teacherPostNodeIds.includes(event.nodeId)) {
+          attachNodeDetail(record, "teacherPostNodeDetails", event.nodeId);
+        }
+      });
+    }
     if (event.eventType === "candidateGenerated") {
       mark(preMatches(event, true), "actionGenerated", event);
       return;
@@ -338,8 +563,14 @@ function createTeacherSearchObserver(teacherIndex, options) {
       const records = postMatches(event, true);
       mark(records, "postInserted", event);
       records.forEach((record) => {
-        addUnique(record.teacherPostNodeIds, event.nodeId);
+        associateTeacherPostNode([record], event.nodeId);
+        const nextRecords = (byPreExact.get(event.exactStateKey) || [])
+          .filter((next) => next.step === record.step + 1);
+        associateTeacherPreNode(nextRecords, event.nodeId);
       });
+      if (event.parentId == null && !event.action) {
+        associateTeacherPreNode(byPreExact.get(event.exactStateKey) || [], event.nodeId);
+      }
       updateActive(event, true);
       return;
     }
@@ -358,10 +589,19 @@ function createTeacherSearchObserver(teacherIndex, options) {
       return;
     }
     if (event.eventType === "agendaPopped") {
-      preMatches(event, false).forEach((record) => {
+      const preRecords = preMatches(event, false);
+      preRecords.forEach((record) => {
+        associateTeacherPreNode([record], event.nodeId);
         record.preReached = true;
         record.preExpanded = true;
+        addUnique(record.poppedTeacherPreNodeIds, event.nodeId);
         rememberEvidence(record, event);
+      });
+      steps.forEach((record) => {
+        const pendingNodeIds = activeTeacherPreNodeIds(record);
+        if (pendingNodeIds.length === 0 || pendingNodeIds.includes(event.nodeId)) return;
+        const teacherMeta = nodeMetaById.get(pendingNodeIds[0]);
+        addCompetitionSample(record, event, teacherMeta && teacherMeta.agendaRank);
       });
       postMatches(event, false)
         .filter((record) => record.teacherPostNodeIds.includes(event.nodeId))
@@ -385,7 +625,9 @@ function createTeacherSearchObserver(teacherIndex, options) {
       });
       if (number(event.frontierSize, 0) > 0) {
         steps.forEach((record) => {
-          if (!record.preExpanded && activeByExact.has(record.preExactStateKey)) {
+          const pendingNodeIds = activeTeacherPreNodeIds(record);
+          record.pendingTeacherPreNodeIds = pendingNodeIds.slice();
+          if (!record.preExpanded && pendingNodeIds.length > 0) {
             record.budgetPending = true;
             rememberEvidence(record, event);
           }
@@ -396,6 +638,8 @@ function createTeacherSearchObserver(teacherIndex, options) {
 
   const finalize = (searchResult) => {
     steps.forEach((record) => {
+      record.pendingTeacherPreNodeIds = activeTeacherPreNodeIds(record);
+      record.competitionSamples = finalizeCompetitionSamples(record.competitionSamples);
       if (record.postEvicted) record.outcome = "teacher-post-evicted";
       else if (record.postDominanceRejected) record.outcome = "teacher-post-dominance-rejected";
       else if (record.postSkylineRejected) record.outcome = "teacher-post-skyline-rejected";
@@ -463,6 +707,7 @@ function runTeacherSearchObservation(simulator, startState, segment, options) {
   const dp = result && result.diagnostics && result.diagnostics.dp;
   return {
     ...collector.finalize(result),
+    searchConfig: buildSearchConfig(segment, config.searchOptions, dp),
     stoppedReason: dp && dp.stoppedReason || null,
     expansions: dp && dp.expansions || 0,
     frontierSize: dp && dp.frontierSize || 0,

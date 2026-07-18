@@ -507,6 +507,7 @@ function observerRoles(config, state) {
 function observerStatePayload(simulator, state, node, config, extra) {
   const payload = {
     ...(extra || {}),
+    nodeId: node && node.nodeId == null ? null : node && node.nodeId,
     floorId: state && state.floorId,
     dpKey: node && (node.key || node.stateKey) || null,
     hero: compactObserverHero(state),
@@ -518,6 +519,32 @@ function observerStatePayload(simulator, state, node, config, extra) {
   }
   void simulator;
   return payload;
+}
+
+const OBSERVER_AGENDA_RANK_FIELDS = [
+  "priorityMode",
+  "bestFloorRank",
+  "finiteNextDistance",
+  "nextDistance",
+  "currentFloorRank",
+  "hp",
+  "atk",
+  "def",
+  "mdef",
+  "lv",
+  "exp",
+  "sourceActionRank",
+  "decisionDepth",
+  "routeLength",
+  "sequence",
+];
+
+function compactObserverAgendaRank(rank) {
+  if (!rank || typeof rank !== "object") return null;
+  return OBSERVER_AGENDA_RANK_FIELDS.reduce((copy, field) => {
+    if (rank[field] !== undefined) copy[field] = rank[field];
+    return copy;
+  }, {});
 }
 
 function createDpObserver(config) {
@@ -585,6 +612,7 @@ function searchDP(simulator, initialState, options) {
   const continueAfterGoal = config.continueAfterGoal === true;
   const maxRuntimeMs = Number(config.maxRuntimeMs || config.timeLimitMs || 0);
   const fifoEntries = [];
+  let cursor = 0;
   const heap = agendaMode === "fifo"
     ? null
     : new BinaryHeap((left, right) => compareDpAgendaRank(left.rank, right.rank));
@@ -606,6 +634,7 @@ function searchDP(simulator, initialState, options) {
   let nextNodeId = 1;
   const skylineMax = number(config.dpSkylineMax, 1);
   const bestByKey = skylineMax > 1 ? new SkylineSet(skylineMax) : new Map();
+  const observerAgendaMeta = observer ? new Map() : null;
   const actionStats = emptyActionStats();
   const startedAt = Date.now();
   let expansions = 0;
@@ -800,6 +829,23 @@ function searchDP(simulator, initialState, options) {
     }
     nodes.set(node.nodeId, node);
     archiveLandmark(node, actionForEntry, parentNode);
+    let enqueueExpansion = null;
+    let enqueueElapsedMs = null;
+    let agendaSizeAfterInsert = null;
+    let agendaRank = null;
+    if (observer) {
+      enqueueExpansion = expansions;
+      enqueueElapsedMs = Date.now() - startedAt;
+      agendaSizeAfterInsert = heap
+        ? heap.length + 1
+        : Math.max(0, fifoEntries.length - cursor) + 1;
+      agendaRank = compactObserverAgendaRank(node.rank);
+      observerAgendaMeta.set(node.nodeId, {
+        agendaRank,
+        enqueueExpansion,
+        enqueueElapsedMs,
+      });
+    }
     if (observer) {
       beforeSkylineIds
         .filter((nodeId) => !afterSkylineIds.includes(nodeId))
@@ -833,6 +879,11 @@ function searchDP(simulator, initialState, options) {
         parentId: node.parentId,
         candidateId: sourceAction && sourceAction.__observerCandidateId || null,
         successorId: sourceAction && sourceAction.__observerSuccessorId || null,
+        agendaRank,
+        enqueueExpansion,
+        expansionsCompletedAtEnqueue: enqueueExpansion,
+        enqueueElapsedMs,
+        agendaSizeAfterInsert,
       }));
     }
     if (heap) heap.push(node);
@@ -859,7 +910,6 @@ function searchDP(simulator, initialState, options) {
 
   enqueue(rootState);
 
-  let cursor = 0;
   const popNext = () => {
     if (heap) {
       while (heap.length > 0) {
@@ -902,11 +952,28 @@ function searchDP(simulator, initialState, options) {
     if (stopOnFirstGoal && firstGoalNode) break;
     const entry = popNext();
     if (!entry) break;
+    const popExpansion = observer ? expansions : null;
+    const popElapsedMs = observer ? Date.now() - startedAt : null;
+    const enqueueMeta = observerAgendaMeta && observerAgendaMeta.get(entry.nodeId);
+    const queueAgeExpansions = enqueueMeta
+      ? popExpansion - enqueueMeta.enqueueExpansion
+      : null;
+    const queueAgeMs = enqueueMeta
+      ? popElapsedMs - enqueueMeta.enqueueElapsedMs
+      : null;
+    const agendaRank = observer ? compactObserverAgendaRank(entry.rank) : null;
     emitStateEvent("agendaPopped", entry.state, entry, {
       nodeId: entry.nodeId,
       parentId: entry.parentId,
+      action: compactObserverAction(simulator, entry.action),
       agendaSize: heap ? heap.length : Math.max(0, fifoEntries.length - cursor),
       reasonCode: "agenda-pop",
+      agendaRank,
+      popExpansion,
+      expansionsCompletedBeforePop: popExpansion,
+      popElapsedMs,
+      queueAgeExpansions,
+      queueAgeMs,
     });
     if (bestByKey instanceof SkylineSet) {
       if (!bestByKey.isActive(entry.key, entry.nodeId)) continue;
@@ -1175,6 +1242,9 @@ function searchDP(simulator, initialState, options) {
       },
       dp: {
         keys: bestByKey.size,
+        priorityMode: String(config.dpPriorityMode || "default"),
+        dpSkylineMax: skylineMax,
+        actionProviderMode: config.actionProviderMode || "primitive",
         stoppedReason,
         maxRuntimeMs,
         maxHeapMb,

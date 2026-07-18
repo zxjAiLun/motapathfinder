@@ -79,6 +79,10 @@ function main(argv) {
   const searchMaxRuntimeMs = parseOptionalNumber(args["search-max-runtime-ms"]);
   const searchMaxActionsPerState = parseOptionalNumber(args["search-max-actions-per-state"]);
   const searchMaxHeapMb = parseOptionalNumber(args["search-max-heap-mb"]);
+  const searchAgendaMode = args["search-agenda-mode"] || null;
+  const searchPriorityMode = args["search-priority-mode"] || null;
+  const searchKeyMode = args["search-key-mode"] || null;
+  const searchDpSkylineMax = parseOptionalNumber(args["search-dp-skyline-max"]);
 
   if (!fs.existsSync(routePath)) {
     throw new Error(`route not found: ${routePath}`);
@@ -126,6 +130,10 @@ function main(argv) {
     if (searchMaxRuntimeMs != null) dpOverrides.maxRuntimeMs = searchMaxRuntimeMs;
     if (searchMaxActionsPerState != null) dpOverrides.maxActionsPerState = searchMaxActionsPerState;
     if (searchMaxHeapMb != null) dpOverrides.maxHeapMb = searchMaxHeapMb;
+    if (searchAgendaMode) dpOverrides.agendaMode = searchAgendaMode;
+    if (searchPriorityMode) dpOverrides.priorityMode = searchPriorityMode;
+    if (searchKeyMode) dpOverrides.keyMode = searchKeyMode;
+    if (searchDpSkylineMax != null) dpOverrides.dpSkylineMax = searchDpSkylineMax;
     const observation = runTeacherSearchObservation(simulator, startState, segment, {
       teacherIndex,
       fromStep: startIndex,

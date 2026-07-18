@@ -51,6 +51,7 @@
     "check:dp-observer": "node check-dp-observer.js",
     "check:route-store-exact": "node check-route-store-exact.js",
     "run:teacher-divergence": "node run-teacher-divergence.js",
+    "run:teacher-search-experiments": "node run-teacher-search-experiments.js",
     "check:manifest": "node ../tools/audit-js-files.js --check-manifest",
     "manifest:refresh": "node scripts/generate-solver-manifest.js",
     "check:static:clean": "npm run check:manifest && npm run check:no-tower-solver-js && node scripts/run-manifest-checks.js --suite=static --clean-only",

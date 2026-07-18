@@ -128,6 +128,27 @@ function checkEventCoverage(observed) {
     assert.ok(event.hero && event.hero.hp != null);
     assert.equal(typeof event.exactStateKey, "string");
   });
+  const inserted = observed.events.filter((event) => event.eventType === "skylineInserted");
+  assert(inserted.length > 0, "synthetic search should insert agenda nodes");
+  inserted.forEach((event) => {
+    assert(event.agendaRank && typeof event.agendaRank === "object");
+    assert.equal(typeof event.enqueueExpansion, "number");
+    assert.equal(typeof event.expansionsCompletedAtEnqueue, "number");
+    assert.equal(typeof event.enqueueElapsedMs, "number");
+    assert.equal(typeof event.agendaSizeAfterInsert, "number");
+  });
+  const popped = observed.events.filter((event) => event.eventType === "agendaPopped");
+  assert(popped.length > 0, "synthetic search should pop agenda nodes");
+  popped.forEach((event) => {
+    assert(event.agendaRank && typeof event.agendaRank === "object");
+    assert.equal(typeof event.popExpansion, "number");
+    assert.equal(typeof event.expansionsCompletedBeforePop, "number");
+    assert.equal(typeof event.popElapsedMs, "number");
+    assert.equal(typeof event.queueAgeExpansions, "number");
+    assert.equal(typeof event.queueAgeMs, "number");
+    assert(event.queueAgeExpansions >= 0, "queue age cannot be negative");
+    assert(event.queueAgeMs >= 0, "queue time age cannot be negative");
+  });
   const multiSuccessors = observed.events
     .filter((event) => event.action && /c-multi/.test(event.action.summary || ""))
     .map((event) => event.successorId)
