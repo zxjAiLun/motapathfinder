@@ -15,12 +15,13 @@ const {
 } = require("./route-store");
 const { buildStateKey } = require("./state-key");
 
-const OBSERVER_VERSION = "teacher-search-observer.v1";
+const OBSERVER_VERSION = "teacher-search-observer.v1.1";
 
 const OUTCOMES = Object.freeze([
   "teacher-pre-state-not-reached",
   "teacher-pre-state-pending-at-budget",
   "teacher-action-not-generated",
+  "teacher-action-provider-error",
   "teacher-action-trimmed",
   "teacher-action-apply-error",
   "teacher-post-dominance-rejected",
@@ -207,6 +208,7 @@ function createRecord(step) {
     preReached: false,
     preExpanded: false,
     actionGenerated: false,
+    actionProviderError: false,
     actionTrimmed: false,
     actionApplyError: false,
     postDominanceRejected: false,
@@ -218,6 +220,9 @@ function createRecord(step) {
     budgetPending: false,
     candidateIds: [],
     successorIds: [],
+    teacherPostNodeIds: [],
+    poppedTeacherPostNodeIds: [],
+    evictedBeforePopNodeIds: [],
     evidence: [],
     outcome: null,
   };
@@ -236,7 +241,7 @@ function rememberEvidence(record, event) {
 }
 
 function addUnique(list, value) {
-  if (value && !list.includes(value)) list.push(value);
+  if (value != null && !list.includes(value)) list.push(value);
 }
 
 function createTeacherSearchObserver(teacherIndex, options) {
@@ -325,13 +330,30 @@ function createTeacherSearchObserver(teacherIndex, options) {
       }
       return;
     }
+    if (event.eventType === "actionProviderError") {
+      mark(preMatches(event, false), "actionProviderError", event);
+      return;
+    }
     if (event.eventType === "skylineInserted") {
-      mark(postMatches(event, true), "postInserted", event);
+      const records = postMatches(event, true);
+      mark(records, "postInserted", event);
+      records.forEach((record) => {
+        addUnique(record.teacherPostNodeIds, event.nodeId);
+      });
       updateActive(event, true);
       return;
     }
     if (event.eventType === "skylineEvicted") {
-      mark(postMatches(event, false), "postEvicted", event);
+      postMatches(event, false).forEach((record) => {
+        const evictedNodeId = event.evictedNodeId;
+        if (!record.teacherPostNodeIds.includes(evictedNodeId)) return;
+        if (record.poppedTeacherPostNodeIds.includes(evictedNodeId)) return;
+        record.postEvicted = true;
+        addUnique(record.evictedBeforePopNodeIds, evictedNodeId);
+        rememberEvidence(record, event);
+        addUnique(record.candidateIds, event.candidateId);
+        addUnique(record.successorIds, event.successorId);
+      });
       updateActive(event, false);
       return;
     }
@@ -341,10 +363,13 @@ function createTeacherSearchObserver(teacherIndex, options) {
         record.preExpanded = true;
         rememberEvidence(record, event);
       });
-      postMatches(event, false).forEach((record) => {
-        record.postPopped = true;
-        rememberEvidence(record, event);
-      });
+      postMatches(event, false)
+        .filter((record) => record.teacherPostNodeIds.includes(event.nodeId))
+        .forEach((record) => {
+          record.postPopped = true;
+          addUnique(record.poppedTeacherPostNodeIds, event.nodeId);
+          rememberEvidence(record, event);
+        });
       updateActive(event, false);
       return;
     }
@@ -374,6 +399,7 @@ function createTeacherSearchObserver(teacherIndex, options) {
       if (record.postEvicted) record.outcome = "teacher-post-evicted";
       else if (record.postDominanceRejected) record.outcome = "teacher-post-dominance-rejected";
       else if (record.postSkylineRejected) record.outcome = "teacher-post-skyline-rejected";
+      else if (record.actionProviderError) record.outcome = "teacher-action-provider-error";
       else if (record.actionApplyError) record.outcome = "teacher-action-apply-error";
       else if (record.actionTrimmed) record.outcome = "teacher-action-trimmed";
       else if (record.actionGenerated && record.postInserted) record.outcome = "teacher-step-survived";
@@ -384,6 +410,7 @@ function createTeacherSearchObserver(teacherIndex, options) {
     });
     const divergenceOutcomes = new Set([
       "teacher-action-not-generated",
+      "teacher-action-provider-error",
       "teacher-action-trimmed",
       "teacher-action-apply-error",
       "teacher-post-dominance-rejected",

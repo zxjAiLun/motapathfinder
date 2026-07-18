@@ -163,6 +163,28 @@ function checkEvictionAndBudget() {
   assert.equal(evicted.steps[0].outcome, "teacher-post-evicted");
   assert.equal(evicted.firstObservedSearchDivergenceStep, 0);
 
+  const poppedThenEvicted = runCase([
+    event("skylineInserted", post, {
+      nodeId: 2,
+      action: action("battle:teacher", "fp:teacher", "1:0", "1:0:0"),
+    }),
+    event("agendaPopped", post, { nodeId: 2 }),
+    event("skylineEvicted", post, { evictedNodeId: 2, replacementNodeId: 3 }),
+  ], index);
+  assert.equal(poppedThenEvicted.steps[0].outcome, "teacher-post-inserted");
+  assert.deepEqual(poppedThenEvicted.steps[0].poppedTeacherPostNodeIds, [2]);
+  assert.deepEqual(poppedThenEvicted.steps[0].evictedBeforePopNodeIds, []);
+
+  const providerError = runCase([
+    event("agendaPopped", pre, { nodeId: 1 }),
+    event("actionProviderError", pre, {
+      reasonCode: "action-provider-error",
+      error: { name: "Error", message: "synthetic provider failure" },
+    }),
+  ], index);
+  assert.equal(providerError.steps[0].outcome, "teacher-action-provider-error");
+  assert.equal(providerError.firstObservedSearchDivergenceStep, 0);
+
   const pending = runCase([
     event("skylineInserted", pre, { nodeId: 1 }),
     event("budgetStopped", pre, { reasonCode: "expansion-limit", frontierSize: 1, expansions: 1 }),
