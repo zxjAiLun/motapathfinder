@@ -1,6 +1,7 @@
 "use strict";
 
 const { resolveRecordedAction } = require("./route-store");
+const { cloneState } = require("./state");
 const { buildStateKey } = require("./state-key");
 
 function number(value, fallback) {
@@ -71,7 +72,7 @@ function runTeacherContinuationAudit(simulator, teacherIndex, witnessState, opti
   const maxStep = typeof window === "number"
     ? Math.min(allSteps.length, startStep + window)
     : allSteps.length;
-  let state = witnessState;
+  let state = cloneState(witnessState);
   const steps = [];
   let failureStep = null;
   let goalReachedAt = null;

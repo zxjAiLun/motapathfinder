@@ -454,6 +454,9 @@ function checkSegmentForwarding() {
   assert.equal(observation.searchConfig.maxExpansions, 2);
   assert.equal(observation.searchConfig.maxRuntimeMs, 1000);
   assert.equal(observation.searchConfig.actionProviderMode, "segment-provider");
+  assert.equal(typeof observation.timing.searchElapsedMs, "number");
+  assert.equal(typeof observation.timing.continuationAuditElapsedMs, "number");
+  assert.equal(typeof observation.timing.totalElapsedMs, "number");
 }
 
 function checkDominanceContinuationIntegration() {
@@ -481,6 +484,7 @@ function checkDominanceContinuationIntegration() {
     ],
     decisionCount: 2,
   };
+  let applyCalls = 0;
   const simulator = {
     project: {},
     getActionFingerprint: (actionEntry) => actionEntry.fingerprint || `fp:${actionEntry.summary}`,
@@ -489,11 +493,14 @@ function checkDominanceContinuationIntegration() {
         ? [{ kind: "battle", summary: "battle:second", fingerprint: "fp:second" }]
         : [],
     }),
-    applyAction: (state, actionEntry) => makeState(
-      state.hero.hp - 5,
-      [3, 1],
-      state.route.concat(actionEntry.summary),
-    ),
+    applyAction: (state, actionEntry) => {
+      applyCalls += 1;
+      return makeState(
+        state.hero.hp - 5,
+        [3, 1],
+        state.route.concat(actionEntry.summary),
+      );
+    },
   };
   const collector = createTeacherSearchObserver(index, {
     fromStep: 0,
@@ -507,6 +514,7 @@ function checkDominanceContinuationIntegration() {
     dominanceWitnesses: [{ nodeId: 9, action: action("battle:first", "fp:first") }],
     dominanceWitnessStates: [post0],
   }));
+  assert.equal(applyCalls, 0, "continuation must not run from the observer callback");
   const report = collector.finalize({ diagnostics: { dp: {} }, frontierSize: 1 });
   const audits = report.steps[0].dominanceContinuationAudits;
   assert.equal(report.steps[0].outcome, "teacher-post-dominance-rejected");
@@ -515,6 +523,7 @@ function checkDominanceContinuationIntegration() {
   assert.equal(audits[0].steps[0].actionResolved, true);
   assert.equal(audits[0].steps[0].actionApplicable, true);
   assert.equal(audits[0].steps[0].teacherActionFingerprint, "fp:second");
+  assert(applyCalls > 0, "continuation should run during finalize after search events");
 }
 
 function main() {

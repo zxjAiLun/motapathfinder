@@ -85,6 +85,7 @@ function main(argv) {
   const searchDpSkylineMax = parseOptionalNumber(args["search-dp-skyline-max"]);
   const continuationAuditEnabled = parseBooleanFlag(args["continuation-audit"], false);
   const captureDominanceWitnesses = parseBooleanFlag(args["capture-dominance-witnesses"], continuationAuditEnabled);
+  const dominanceTargetStep = parseOptionalNumber(args["dominance-target-step"]);
   const continuationWindows = String(args["continuation-windows"] || "1,3,until-failure")
     .split(",")
     .map((value) => {
@@ -144,7 +145,8 @@ function main(argv) {
     if (searchKeyMode) dpOverrides.keyMode = searchKeyMode;
     if (searchDpSkylineMax != null) dpOverrides.dpSkylineMax = searchDpSkylineMax;
     if (captureDominanceWitnesses) {
-      dpOverrides.observerCaptureWitnessStates = true;
+      dpOverrides.observerCaptureMode = continuationAuditEnabled ? "targeted-state" : "compact";
+      dpOverrides.observerCaptureWitnessStates = continuationAuditEnabled;
       dpOverrides.observerCaptureDominanceWitnesses = true;
     }
     const observation = runTeacherSearchObservation(simulator, startState, segment, {
@@ -152,7 +154,9 @@ function main(argv) {
       fromStep: startIndex,
       toStep: toStep == null ? undefined : toStep,
       searchOptions: { dpOverrides },
-      captureDominanceWitnessStates: captureDominanceWitnesses,
+      captureDominanceWitnesses,
+      captureDominanceWitnessStates: continuationAuditEnabled,
+      dominanceTargetStep,
       continuationAudit: continuationAuditEnabled
         ? { windows: continuationWindows, maxWitnesses: 1 }
         : null,

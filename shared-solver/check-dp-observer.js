@@ -177,6 +177,85 @@ function checkEventCoverage(observed) {
   assert(dominance.dominanceStateDiff, "dominance rejection needs compact state diff");
   assert(dominance.dominanceWitnesses[0].action, "dominance witness needs the blocking action");
   assert(Array.isArray(dominance.dominanceWitnesses[0].skylineRoles));
+  assert.equal(dominance.dominanceWitnessStates, undefined, "compact capture must not retain raw state");
+  assert.equal(observed.result.diagnostics.dp.observerCaptureMode, "compact");
+  assert.equal(typeof observed.result.diagnostics.dp.observerCaptureElapsedMs, "number");
+  assert.equal(typeof observed.result.diagnostics.dp.wallMs, "number");
+}
+
+function checkTargetedCaptureFilter() {
+  const noCaptureEvents = [];
+  const noCaptureResult = searchDP(makeSimulator(), makeState(50, []), {
+    maxExpansions: 12,
+    maxActionsPerState: 10,
+    dpSkylineMax: 1,
+    stopOnFirstGoal: false,
+    goalPredicate: (state) => state.hero.hp >= 90,
+    observerCaptureMode: "compact",
+    observer: {
+      shouldCaptureDominanceWitness: () => false,
+      onEvent: (event) => noCaptureEvents.push(event),
+    },
+  });
+  const noCaptureDominanceEvents = noCaptureEvents.filter(
+    (event) => event.eventType === "candidateRejected" && event.reasonCode === "dominance-rejected",
+  );
+  assert(noCaptureResult.bestGoalState, "disabled capture must not change the search result");
+  assert(noCaptureDominanceEvents.length > 0);
+  noCaptureDominanceEvents.forEach((event) => {
+    assert.equal(event.dominanceWitnesses.length, 0);
+    assert.equal(event.dominanceStateDiff, null);
+    assert.equal(event.dominanceWitnessStates, undefined);
+  });
+
+  const throwingResult = searchDP(makeSimulator(), makeState(50, []), {
+    maxExpansions: 12,
+    maxActionsPerState: 10,
+    dpSkylineMax: 1,
+    stopOnFirstGoal: false,
+    goalPredicate: (state) => state.hero.hp >= 90,
+    observerCaptureMode: "compact",
+    observer: {
+      shouldCaptureDominanceWitness() {
+        throw new Error("synthetic capture predicate failure");
+      },
+      onEvent() {},
+    },
+  });
+  assert(throwingResult.bestGoalState, "capture predicate failure must not change the search result");
+  assert(throwingResult.diagnostics.dp.observerErrors > 0);
+
+  const events = [];
+  let predicateCalls = 0;
+  let captured = 0;
+  const result = searchDP(makeSimulator(), makeState(50, []), {
+    maxExpansions: 12,
+    maxActionsPerState: 10,
+    dpSkylineMax: 1,
+    stopOnFirstGoal: false,
+    goalPredicate: (state) => state.hero.hp >= 90,
+    observerCaptureMode: "targeted-state",
+    observer: {
+      includeExactStateKey: true,
+      shouldCaptureDominanceWitness(meta) {
+        predicateCalls += 1;
+        return meta && meta.action && meta.action.summary && captured === 0;
+      },
+      onEvent(event) {
+        if (event.reasonCode === "dominance-rejected" && event.dominanceWitnesses.length > 0) captured += 1;
+        events.push(event);
+      },
+    },
+  });
+  const dominanceEvents = events.filter(
+    (event) => event.eventType === "candidateRejected" && event.reasonCode === "dominance-rejected",
+  );
+  assert(result.bestGoalState, "targeted capture must not change the search result");
+  assert(predicateCalls > 0, "targeted capture predicate should be called");
+  assert.equal(dominanceEvents.filter((event) => event.dominanceWitnesses.length > 0).length, 1);
+  assert(dominanceEvents.some((event) => event.dominanceWitnessStates));
+  assert.equal(result.diagnostics.dp.observerCaptureMode, "targeted-state");
+  assert(result.diagnostics.dp.observerCaptureElapsedMs >= 0);
 }
 
 function checkTrimAndBudget() {
@@ -283,6 +362,7 @@ function main() {
   checkSkylineCapacityRejection();
   checkProviderError();
   checkObserverCallbackFailure();
+  checkTargetedCaptureFilter();
   console.log(`check-dp-observer: ok events=${observed.events.length}`);
 }
 
@@ -297,4 +377,5 @@ module.exports = {
   checkSkylineCapacityRejection,
   checkProviderError,
   checkObserverCallbackFailure,
+  checkTargetedCaptureFilter,
 };

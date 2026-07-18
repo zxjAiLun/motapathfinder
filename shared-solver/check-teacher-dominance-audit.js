@@ -128,9 +128,30 @@ function checkExactPostMismatch() {
   assert.equal(report.steps[0].failureReason, "teacher-post-exact-mismatch");
 }
 
+function checkWitnessClone() {
+  const teacher = buildTeacherIndex();
+  const original = makeState([]);
+  const simulator = {
+    ...makeSimulator(),
+    applyAction: (state, action) => {
+      state.route.push(action.summary);
+      state.hero.loc = { x: state.route.length, y: 1, direction: "right" };
+      return state;
+    },
+  };
+  const report = runTeacherContinuationAudit(simulator, teacher, original, {
+    startStep: 0,
+    window: 1,
+  });
+  assert.equal(report.success, true);
+  assert.equal(original.route.length, 0, "continuation must not mutate the witness input");
+  assert.equal(original.hero.loc.x, 0, "continuation must isolate witness hero state");
+}
+
 function main() {
   checkContinuationWindows();
   checkExactPostMismatch();
+  checkWitnessClone();
   console.log("check-teacher-dominance-audit: ok");
 }
 
@@ -139,5 +160,6 @@ if (require.main === module) main();
 module.exports = {
   checkContinuationWindows,
   checkExactPostMismatch,
+  checkWitnessClone,
   main,
 };

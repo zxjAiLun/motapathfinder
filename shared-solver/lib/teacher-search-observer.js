@@ -13,6 +13,7 @@ const {
   createStateFromSnapshot,
   resolveRecordedAction,
 } = require("./route-store");
+const { cloneState } = require("./state");
 const { runTeacherContinuationAudit } = require("./teacher-dominance-audit");
 const { buildStateKey } = require("./state-key");
 
@@ -366,6 +367,9 @@ function buildSearchConfig(segment, searchOptions, dp) {
     actionProviderMode: dp && dp.actionProviderMode != null
       ? dp.actionProviderMode
       : overrides.actionProviderMode || segmentDp.actionProviderMode || policy.actionProviderMode || "primitive",
+    observerCaptureMode: dp && dp.observerCaptureMode != null
+      ? dp.observerCaptureMode
+      : overrides.observerCaptureMode || "off",
   };
 }
 
@@ -412,8 +416,11 @@ function createTeacherSearchObserver(teacherIndex, options) {
   });
   const activeByExact = new Map();
   const nodeMetaById = new Map();
+  const captureReservations = new Set();
+  const pendingContinuationStates = new Map();
   const budgetStops = [];
   let eventCount = 0;
+  let continuationAuditsCompleted = false;
 
   const actionMatches = (eventAction, step) => Boolean(
     eventAction &&
@@ -430,6 +437,36 @@ function createTeacherSearchObserver(teacherIndex, options) {
     });
   const postMatches = (event, requireAction) => (byPostExact.get(event.exactStateKey) || [])
     .filter((step) => !requireAction || actionMatches(event.action, step));
+
+  const captureMode = ["off", "compact", "targeted-state"].includes(config.dominanceCaptureMode)
+    ? config.dominanceCaptureMode
+    : config.continuationAudit || config.captureDominanceWitnessStates
+      ? "targeted-state"
+      : config.captureDominanceWitnesses
+        ? "compact"
+        : "off";
+  const targetStep = config.dominanceTargetStep == null
+    ? null
+    : number(config.dominanceTargetStep, null);
+
+  const shouldCaptureDominanceWitness = (meta) => {
+    if (captureMode === "off") return false;
+    const actionFp = actionFingerprint(config.simulator, meta && meta.action);
+    if (!actionFp) return false;
+    const candidateSteps = steps.filter((step) => (
+      (targetStep == null || step.step === targetStep) &&
+      step.actionFingerprint === actionFp &&
+      !captureReservations.has(step.step) &&
+      !step.dominanceWitnesses.length
+    ));
+    if (candidateSteps.length === 0) return false;
+    const candidateExact = exactStateKey(meta && meta.state);
+    if (!candidateExact) return false;
+    const matchingSteps = candidateSteps.filter((step) => step.postExactStateKey === candidateExact);
+    if (matchingSteps.length === 0) return false;
+    matchingSteps.forEach((step) => captureReservations.add(step.step));
+    return true;
+  };
 
   const mark = (records, field, event) => {
     records.forEach((record) => {
@@ -566,29 +603,11 @@ function createTeacherSearchObserver(teacherIndex, options) {
             record.dominanceStateDiff = event.dominanceStateDiff || null;
             const auditConfig = config.continuationAudit;
             if (auditConfig && config.simulator && Array.isArray(event.dominanceWitnessStates)) {
-              const windows = Array.isArray(auditConfig.windows)
-                ? auditConfig.windows
-                : [1, 3, "until-failure"];
-              const maxWitnesses = Math.max(1, number(auditConfig.maxWitnesses, 1));
-              event.dominanceWitnessStates
-                .slice(0, maxWitnesses)
-                .forEach((witnessState) => {
-                  windows.forEach((window) => {
-                    record.dominanceContinuationAudits.push(
-                      runTeacherContinuationAudit(
-                        config.simulator,
-                        teacherIndex,
-                        witnessState,
-                        {
-                          startStep: record.step + 1,
-                          window,
-                          stopOnFailure: auditConfig.stopOnFailure !== false,
-                          goalPredicate: auditConfig.goalPredicate,
-                        },
-                      ),
-                    );
-                  });
-                });
+              pendingContinuationStates.set(record.step, {
+                states: event.dominanceWitnessStates
+                  .slice(0, Math.max(1, number(auditConfig.maxWitnesses, 1)))
+                  .map((witnessState) => cloneState(witnessState)),
+              });
             }
           }
         });
@@ -712,6 +731,56 @@ function createTeacherSearchObserver(teacherIndex, options) {
       if (outcomeCounts[record.outcome] != null) outcomeCounts[record.outcome] += 1;
     });
     const dp = searchResult && searchResult.diagnostics && searchResult.diagnostics.dp;
+    let continuationAuditElapsedMs = 0;
+    if (!continuationAuditsCompleted && config.continuationAudit && config.simulator) {
+      const continuationStartedAt = Date.now();
+      const auditConfig = config.continuationAudit;
+      const windows = Array.isArray(auditConfig.windows)
+        ? auditConfig.windows
+        : [1, 3, "until-failure"];
+      pendingContinuationStates.forEach((pending, step) => {
+        const record = steps.find((candidate) => candidate.step === step);
+        if (!record) return;
+        pending.states.forEach((witnessState) => {
+          windows.forEach((window) => {
+            try {
+              record.dominanceContinuationAudits.push(
+                runTeacherContinuationAudit(
+                  config.simulator,
+                  teacherIndex,
+                  witnessState,
+                  {
+                    startStep: record.step + 1,
+                    window,
+                    stopOnFailure: auditConfig.stopOnFailure !== false,
+                    goalPredicate: auditConfig.goalPredicate,
+                  },
+                ),
+              );
+            } catch (error) {
+              record.dominanceContinuationAudits.push({
+                startStep: record.step + 1,
+                window,
+                success: false,
+                failureStep: record.step + 1,
+                failureReason: error && error.message ? error.message : String(error),
+                steps: [],
+              });
+            }
+          });
+        });
+      });
+      continuationAuditElapsedMs = Date.now() - continuationStartedAt;
+      continuationAuditsCompleted = true;
+    }
+    const searchWallMs = dp && Number.isFinite(dp.wallMs)
+      ? dp.wallMs
+      : dp && dp.perf && Number.isFinite(dp.perf.wallMs)
+        ? dp.perf.wallMs
+      : null;
+    const observerCaptureElapsedMs = dp && Number.isFinite(dp.observerCaptureElapsedMs)
+      ? dp.observerCaptureElapsedMs
+      : 0;
     return {
       version: OBSERVER_VERSION,
       fromStep,
@@ -726,6 +795,17 @@ function createTeacherSearchObserver(teacherIndex, options) {
       firstObservedSearchDivergenceStep: firstObserved ? firstObserved.step : null,
       firstInconclusiveStep: firstInconclusive ? firstInconclusive.step : null,
       outcomeCounts,
+      timing: {
+        searchElapsedMs: searchWallMs == null
+          ? null
+          : Math.max(0, searchWallMs - observerCaptureElapsedMs),
+        searchWallMs,
+        observerCaptureElapsedMs,
+        continuationAuditElapsedMs,
+        totalElapsedMs: searchWallMs == null
+          ? continuationAuditElapsedMs
+          : searchWallMs + continuationAuditElapsedMs,
+      },
       steps,
     };
   };
@@ -734,6 +814,7 @@ function createTeacherSearchObserver(teacherIndex, options) {
     observer: {
       includeExactStateKey: true,
       onEvent,
+      shouldCaptureDominanceWitness,
     },
     finalize,
   };
@@ -745,14 +826,22 @@ function runTeacherSearchObservation(simulator, startState, segment, options) {
     ...config,
     simulator,
   });
+  const requestedCaptureMode = config.dominanceCaptureMode || (
+    config.continuationAudit || config.captureDominanceWitnessStates
+      ? "targeted-state"
+      : config.captureDominanceWitnesses
+        ? "compact"
+        : null
+  );
   const searchOptions = {
     ...(config.searchOptions || {}),
     dpOverrides: {
       ...((config.searchOptions && config.searchOptions.dpOverrides) || {}),
-      ...(config.continuationAudit || config.captureDominanceWitnessStates
+      ...(requestedCaptureMode
         ? {
-            observerCaptureWitnessStates: true,
-            observerCaptureDominanceWitnesses: true,
+            observerCaptureMode: requestedCaptureMode,
+            observerCaptureWitnessStates: requestedCaptureMode === "targeted-state",
+            observerCaptureDominanceWitnesses: requestedCaptureMode !== "off",
           }
         : {}),
     },

@@ -2486,6 +2486,8 @@ function searchSegmentDP(simulator, startState, segment, options) {
         ? "resource-first"
         : dpConfig.priorityMode || dpConfig.dpPriorityMode || "default",
     actionProviderMode: actionProviderMode || "segment-provider",
+    observerCaptureMode: dpConfig.observerCaptureMode || config.observerCaptureMode || "off",
+    observerCaptureDominanceWitnesses: dpConfig.observerCaptureDominanceWitnesses === true || config.observerCaptureDominanceWitnesses === true,
     observerCaptureWitnessStates: dpConfig.observerCaptureWitnessStates === true || config.observerCaptureWitnessStates === true,
     stopOnFirstGoal: dpConfig.stopOnFirstGoal === true,
     continueAfterGoal: dpConfig.continueAfterGoal === true,

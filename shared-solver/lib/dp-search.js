@@ -476,6 +476,15 @@ function compactObserverAction(simulator, action) {
   };
 }
 
+function observerDominanceCaptureMode(config) {
+  if (config && ["off", "compact", "targeted-state"].includes(config.observerCaptureMode)) {
+    return config.observerCaptureMode;
+  }
+  if (config && config.observerCaptureWitnessStates === true) return "targeted-state";
+  if (config && config.observerCaptureDominanceWitnesses === true) return "compact";
+  return "off";
+}
+
 function jsonDiagnosticValue(value) {
   if (value == null) return value;
   try {
@@ -748,6 +757,19 @@ function createDpObserver(config) {
         errors += 1;
       }
     },
+    shouldCaptureDominanceWitness(meta) {
+      const predicate = typeof configured === "object" &&
+        typeof configured.shouldCaptureDominanceWitness === "function"
+        ? configured.shouldCaptureDominanceWitness.bind(configured)
+        : null;
+      if (!predicate) return true;
+      try {
+        return predicate(meta) !== false;
+      } catch (error) {
+        errors += 1;
+        return false;
+      }
+    },
   };
 }
 
@@ -786,6 +808,7 @@ function searchDP(simulator, initialState, options) {
   const observerAgendaMeta = observer ? new Map() : null;
   const actionStats = emptyActionStats();
   const startedAt = Date.now();
+  let observerCaptureElapsedMs = 0;
   let expansions = 0;
   let generated = 0;
   let registered = 0;
@@ -919,8 +942,20 @@ function searchDP(simulator, initialState, options) {
       if (hpDiff === 0) sameHpRejected += 1;
       else rejectedByHigherHp += 1;
       if (observer) {
-        const captureDominanceWitnesses = config.observerCaptureDominanceWitnesses === true ||
-          config.observerCaptureWitnessStates === true;
+        const captureMode = observerDominanceCaptureMode(config);
+        let captureDominanceWitnesses = false;
+        if (captureMode !== "off") {
+          const captureStartedAt = Date.now();
+          captureDominanceWitnesses = observer.shouldCaptureDominanceWitness({
+            dpKey: key,
+            state,
+            action: sourceAction,
+            candidateId: sourceAction && sourceAction.__observerCandidateId || null,
+            successorId: sourceAction && sourceAction.__observerSuccessorId || null,
+          });
+          observerCaptureElapsedMs += Date.now() - captureStartedAt;
+        }
+        const witnessCaptureStartedAt = captureDominanceWitnesses ? Date.now() : null;
         const witnessNodes = captureDominanceWitnesses
           ? bestByKey instanceof SkylineSet
             ? adaptiveTiming && timingConflict
@@ -952,10 +987,14 @@ function searchDP(simulator, initialState, options) {
           dominanceStateDiff: firstWitness
             ? compactDominanceStateDiff(state, firstWitness)
             : null,
-          dominanceWitnessStates: config.observerCaptureWitnessStates
-            ? witnessNodes.map((node) => node.state)
+          dominanceWitnessStates: captureDominanceWitnesses &&
+            observerDominanceCaptureMode(config) === "targeted-state"
+            ? witnessNodes.map((node) => cloneState(node.state))
             : undefined,
         }));
+        if (witnessCaptureStartedAt != null) {
+          observerCaptureElapsedMs += Date.now() - witnessCaptureStartedAt;
+        }
       }
       return false;
     }
@@ -1430,6 +1469,7 @@ function searchDP(simulator, initialState, options) {
         stoppedReason,
         maxRuntimeMs,
         maxHeapMb,
+        wallMs: Date.now() - startedAt,
         heapUsedMb: Number(maxHeapUsedMb.toFixed(1)),
         rssMb: Number(maxRssMb.toFixed(1)),
         maxExpansions,
@@ -1441,6 +1481,8 @@ function searchDP(simulator, initialState, options) {
         actionTrimmed,
         statesWithActionTrim,
         maxActionsGeneratedForState,
+        observerCaptureMode: observerDominanceCaptureMode(config),
+        observerCaptureElapsedMs,
         actionsGeneratedByKind: Object.fromEntries(
           Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.generated || 0])
         ),
