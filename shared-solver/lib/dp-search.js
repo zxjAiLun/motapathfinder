@@ -3,6 +3,7 @@
 const { getProgress, compareProgress } = require("./progress");
 const { estimateNextFloorDistance, getFloorOrder } = require("./score");
 const { cloneState, getDecisionDepth, listFloorMutationSummary } = require("./state");
+const { buildStateKey } = require("./state-key");
 const { createCheckpointPool } = require("./floor-checkpoints");
 const { createChildNode, createRootNode, reconstructActionEntries, reconstructActionTrace } = require("./search-nodes");
 
@@ -440,8 +441,115 @@ function selectGoalSkylineNodes(goalNodes, options) {
   return selected;
 }
 
+const DP_OBSERVER_EVENT_VERSION = "dp-observer.v1";
+
+function compactObserverHero(state) {
+  const hero = (state && state.hero) || {};
+  return {
+    hp: Number(hero.hp || 0),
+    hpmax: Number(hero.hpmax || 0),
+    atk: Number(hero.atk || 0),
+    def: Number(hero.def || 0),
+    mdef: Number(hero.mdef || 0),
+    lv: Number(hero.lv || 0),
+    exp: Number(hero.exp || 0),
+    money: Number(hero.money || 0),
+    loc: hero.loc ? { x: hero.loc.x, y: hero.loc.y } : null,
+  };
+}
+
+function compactObserverAction(action) {
+  if (!action) return null;
+  return {
+    kind: action.kind || null,
+    summary: action.summary || null,
+    fingerprint: action.fingerprint || null,
+  };
+}
+
+function observerRoles(config, state) {
+  if (typeof config.skylineRoles !== "function") return [];
+  try {
+    const roles = config.skylineRoles(state);
+    return Array.isArray(roles) ? roles.slice() : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function observerStatePayload(simulator, state, node, config, extra) {
+  const payload = {
+    ...(extra || {}),
+    floorId: state && state.floorId,
+    dpKey: node && (node.key || node.stateKey) || null,
+    hero: compactObserverHero(state),
+    decisionDepth: getDecisionDepth(state),
+    skylineRoles: observerRoles(config, state),
+  };
+  const includeExact = config.observerIncludeExactStateKey === true ||
+    (config.observer && config.observer.includeExactStateKey === true);
+  if (includeExact && state) {
+    try {
+      payload.exactStateKey = buildStateKey(state);
+    } catch (error) {
+      payload.exactStateKey = null;
+    }
+  }
+  void simulator;
+  return payload;
+}
+
+function createDpObserver(config) {
+  const configured = config && config.observer;
+  if (!configured) return null;
+  let callback = null;
+  if (typeof configured === "function") callback = configured;
+  else if (configured && typeof configured.onEvent === "function") callback = configured.onEvent.bind(configured);
+  if (!callback && (!configured || typeof configured !== "object")) return null;
+  const eventFilter = typeof configured === "object" && typeof configured.eventFilter === "function"
+    ? configured.eventFilter.bind(configured)
+    : null;
+  const eventTypes = typeof configured === "object" && Array.isArray(configured.eventTypes)
+    ? configured.eventTypes.slice()
+    : null;
+  let errors = 0;
+  return {
+    get errorCount() {
+      return errors;
+    },
+    emit(eventType, payload) {
+      const event = {
+        eventVersion: DP_OBSERVER_EVENT_VERSION,
+        eventType,
+        ...payload,
+      };
+      if (eventFilter) {
+        try {
+          if (!eventFilter(event)) return;
+        } catch (error) {
+          errors += 1;
+          return;
+        }
+      }
+      if (eventTypes && !eventTypes.includes(eventType)) return;
+      const handler = typeof configured === "function"
+        ? callback
+        : (configured && typeof configured[`on${eventType[0].toUpperCase()}${eventType.slice(1)}`] === "function"
+          ? configured[`on${eventType[0].toUpperCase()}${eventType.slice(1)}`].bind(configured)
+          : callback);
+      if (!handler) return;
+      try {
+        handler(event);
+      } catch (error) {
+        errors += 1;
+      }
+    },
+  };
+}
+
 function searchDP(simulator, initialState, options) {
   const config = options || {};
+  const observer = createDpObserver(config);
   const maxExpansions = Number(config.maxExpansions || 1000);
   const maxActionsPerState = Number(config.maxActionsPerState || 256);
   const agendaMode = String(config.dpAgendaMode || config.agendaMode || "best-first");
@@ -496,6 +604,11 @@ function searchDP(simulator, initialState, options) {
   const isGoalState = typeof config.goalPredicate === "function"
     ? config.goalPredicate
     : (state) => simulator.isTerminal(state);
+
+  const emitStateEvent = (eventType, state, node, extra) => {
+    if (!observer) return;
+    observer.emit(eventType, observerStatePayload(simulator, state, node, config, extra));
+  };
 
   const isActiveEntry = (entry) => {
     if (bestByKey instanceof SkylineSet) {
@@ -593,6 +706,12 @@ function searchDP(simulator, initialState, options) {
       const hpDiff = existingState ? heroHp(state) - heroHp(existingState) : null;
       if (hpDiff === 0) sameHpRejected += 1;
       else rejectedByHigherHp += 1;
+      emitStateEvent("candidateRejected", state, { key }, {
+        reasonCode: "dominance-rejected",
+        action: compactObserverAction(sourceAction),
+        candidateId: sourceAction && sourceAction.__observerCandidateId || null,
+        successorId: sourceAction && sourceAction.__observerSuccessorId || null,
+      });
       return false;
     }
     const existing = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);
@@ -612,11 +731,15 @@ function searchDP(simulator, initialState, options) {
     sequence += 1;
     nodes.set(node.nodeId, node);
     archiveLandmark(node, actionForEntry, parentNode);
+    let skylineInserted = true;
+    const beforeSkylineIds = bestByKey instanceof SkylineSet
+      ? (existingSkyline || []).map((candidate) => candidate.nodeId)
+      : (existing ? [existing.nodeId] : []);
     if (bestByKey instanceof SkylineSet) {
       if (existingSkyline.length > 0 && adaptiveTiming && timingConflict !== true) {
         bestByKey.replace(key, node);
       } else {
-        bestByKey.add(
+        skylineInserted = bestByKey.add(
           key,
           node,
           typeof config.skylineCompare === "function" ? config.skylineCompare : compareDpBest,
@@ -625,6 +748,40 @@ function searchDP(simulator, initialState, options) {
       }
     } else {
       bestByKey.set(key, node);
+    }
+    const afterSkylineIds = bestByKey instanceof SkylineSet
+      ? bestByKey.getAll(key).map((candidate) => candidate.nodeId)
+      : [node.nodeId];
+    if (observer) {
+      beforeSkylineIds
+        .filter((nodeId) => !afterSkylineIds.includes(nodeId))
+        .forEach((nodeId) => observer.emit("skylineEvicted", observerStatePayload(simulator, state, node, config, {
+          reasonCode: "skyline-replaced",
+          key,
+          evictedNodeId: nodeId,
+          action: compactObserverAction(sourceAction),
+          candidateId: sourceAction && sourceAction.__observerCandidateId || null,
+          successorId: sourceAction && sourceAction.__observerSuccessorId || null,
+        })));
+      if (!skylineInserted) {
+        observer.emit("candidateRejected", observerStatePayload(simulator, state, { key }, config, {
+          reasonCode: "skyline-capacity-rejected",
+          key,
+          action: compactObserverAction(sourceAction),
+          candidateId: sourceAction && sourceAction.__observerCandidateId || null,
+          successorId: sourceAction && sourceAction.__observerSuccessorId || null,
+        }));
+      } else {
+        emitStateEvent("skylineInserted", state, node, {
+          reasonCode: "skyline-inserted",
+          key,
+          action: compactObserverAction(sourceAction),
+          nodeId: node.nodeId,
+          parentId: node.parentId,
+          candidateId: sourceAction && sourceAction.__observerCandidateId || null,
+          successorId: sourceAction && sourceAction.__observerSuccessorId || null,
+        });
+      }
     }
     if (heap) heap.push(node);
     else fifoEntries.push(node);
@@ -638,6 +795,10 @@ function searchDP(simulator, initialState, options) {
       if (!firstGoalNode) firstGoalNode = node;
       goalNodes.push(node);
       if (!bestGoalNode || compareGoalStates(state, bestGoalNode.state) > 0) bestGoalNode = node;
+      emitStateEvent("goalAccepted", state, node, {
+        reasonCode: "goal-predicate-accepted",
+        action: compactObserverAction(sourceAction),
+      });
     }
     return node;
   };
@@ -687,6 +848,12 @@ function searchDP(simulator, initialState, options) {
     if (stopOnFirstGoal && firstGoalNode) break;
     const entry = popNext();
     if (!entry) break;
+    emitStateEvent("agendaPopped", entry.state, entry, {
+      nodeId: entry.nodeId,
+      parentId: entry.parentId,
+      agendaSize: heap ? heap.length : Math.max(0, fifoEntries.length - cursor),
+      reasonCode: "agenda-pop",
+    });
     if (bestByKey instanceof SkylineSet) {
       if (!bestByKey.isActive(entry.key, entry.nodeId)) continue;
     } else {
@@ -703,12 +870,25 @@ function searchDP(simulator, initialState, options) {
         : simulator.enumeratePrimitiveActions(state).actions;
     } catch (error) {
       invalid += 1;
+      if (observer) observer.emit("actionProviderError", observerStatePayload(simulator, state, entry, config, {
+        reasonCode: "action-provider-error",
+        error: { name: error && error.name || "Error", message: error && error.message || String(error) },
+      }));
       continue;
     }
     if (typeof config.actionFilter === "function") {
       actions = actions.filter((action) => config.actionFilter(action, state));
     }
     maxActionsGeneratedForState = Math.max(maxActionsGeneratedForState, actions.length);
+    if (observer) observer.emit("actionSetGenerated", observerStatePayload(simulator, state, entry, config, {
+      reasonCode: "action-set-generated",
+      actionCount: actions.length,
+      selectedActionCount: Math.min(actions.length, maxActionsPerState),
+      trimmedCount: Math.max(0, actions.length - maxActionsPerState),
+      maxActionsPerState,
+      expansions,
+      frontierSize: heap ? heap.length : Math.max(0, fifoEntries.length - cursor),
+    }));
     for (const action of actions) {
       recordAction(actionStats, action, "generated");
     }
@@ -716,11 +896,28 @@ function searchDP(simulator, initialState, options) {
       actionTrimmed += actions.length - maxActionsPerState;
       statesWithActionTrim += 1;
     }
-    sortDpActions(actions)
+    const sortedActions = sortDpActions(actions);
+    if (observer && sortedActions.length > maxActionsPerState) {
+      sortedActions.slice(maxActionsPerState).forEach((action, index) => observer.emit(
+        "candidateRejected",
+        observerStatePayload(simulator, state, entry, config, {
+          reasonCode: "action-trimmed",
+          candidateId: `${entry.nodeId}:trimmed:${index}`,
+          action: compactObserverAction(action),
+        }),
+      ));
+    }
+    sortedActions
       .slice(0, maxActionsPerState)
-      .forEach((action) => {
+      .forEach((action, actionIndex) => {
         generated += 1;
         recordAction(actionStats, action, "expanded");
+        const candidateId = `${entry.nodeId}:${actionIndex}`;
+        if (observer) observer.emit("candidateGenerated", observerStatePayload(simulator, state, entry, config, {
+          reasonCode: "candidate-generated",
+          candidateId,
+          action: compactObserverAction(action),
+        }));
         let nextStates;
         try {
           const applier = typeof config.actionApplier === "function"
@@ -731,9 +928,15 @@ function searchDP(simulator, initialState, options) {
         } catch (error) {
           invalid += 1;
           recordAction(actionStats, action, "invalid");
+          if (observer) observer.emit("candidateRejected", observerStatePayload(simulator, state, entry, config, {
+            reasonCode: "action-apply-error",
+            candidateId,
+            action: compactObserverAction(action),
+            error: { name: error && error.name || "Error", message: error && error.message || String(error) },
+          }));
           return;
         }
-        for (const nextState of nextStates) {
+        nextStates.forEach((nextState, successorIndex) => {
           if (typeof config.stateAnnotator === "function") {
             try {
               config.stateAnnotator(nextState, state, action);
@@ -741,10 +944,13 @@ function searchDP(simulator, initialState, options) {
               // Timing annotations are diagnostic and must not make the search fail.
             }
           }
-          const childNode = enqueue(nextState, action, entry);
+          const observedAction = observer
+            ? { ...action, __observerCandidateId: candidateId, __observerSuccessorId: `${candidateId}:${successorIndex}` }
+            : action;
+          const childNode = enqueue(nextState, observedAction, entry);
           if (childNode) recordAction(actionStats, action, "kept");
           else recordAction(actionStats, action, "dominated");
-        }
+        });
       });
   }
 
@@ -752,6 +958,28 @@ function searchDP(simulator, initialState, options) {
     ? heap.activeCount(isActiveEntry)
     : fifoEntries.slice(cursor).filter(isActiveEntry).length;
   recordMemoryUsage();
+  if (observer) {
+    const budgetReason = stoppedReason || (
+      expansions >= maxExpansions && frontierSize > 0 ? "expansion-limit" : null
+    );
+    if (budgetReason) observer.emit(
+      "budgetStopped",
+      observerStatePayload(
+        simulator,
+        bestSeenNode ? bestSeenNode.state : initialState,
+        bestSeenNode,
+        config,
+        {
+          reasonCode: budgetReason,
+          expansions,
+          frontierSize,
+          maxExpansions,
+          maxRuntimeMs,
+          maxHeapMb,
+        },
+      ),
+    );
+  }
   const goalSkylineNodes = selectGoalSkylineNodes(
     goalNodes.filter((node) => {
       if (!isGoalState(node.state)) return false;
@@ -936,6 +1164,8 @@ function searchDP(simulator, initialState, options) {
         foundBestGoal: Boolean(bestGoalState),
         goalSkylineLimit: Math.max(1, Number(config.goalSkylineLimit || 8)),
         goalSkylineCount: goalSkylineStates.length,
+        observerEnabled: Boolean(observer),
+        observerErrors: observer ? observer.errorCount : 0,
         landmarkArchiveCount: landmarkArchive.length,
         firstGoal: firstGoalState ? {
           floorId: firstGoalState.floorId,

@@ -311,6 +311,20 @@ const TEST_OVERRIDES = {
     cleanCheckout: true,
     notes: "manifest suite selection and fail-fast semantics; no tower/project load",
   },
+  "shared-solver/check-dp-observer.js": {
+    grade: "unit",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "synthetic searchDP observer contract; no tower/project load",
+  },
+  "shared-solver/check-route-store-exact.js": {
+    grade: "unit",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "synthetic exact final-state route reconstruction check",
+  },
 };
 
 function autoGradeTest(fileName) {
@@ -517,6 +531,8 @@ const manifest = {
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
+        "shared-solver/check-dp-observer.js",
+        "shared-solver/check-route-store-exact.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],
     },

@@ -173,7 +173,9 @@
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-teacher-divergence.js",
-        "shared-solver/check-manifest-runner.js"
+        "shared-solver/check-manifest-runner.js",
+        "shared-solver/check-dp-observer.js",
+        "shared-solver/check-route-store-exact.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -1370,6 +1372,13 @@
       "cleanCheckout": true,
       "notes": "canonical core regression suite; no ignored route dependency"
     },
+    "shared-solver/check-dp-observer.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "synthetic searchDP observer contract; no tower/project load"
+    },
     "shared-solver/check-floor-scout.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
@@ -1558,6 +1567,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-route-store-exact.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "synthetic exact final-state route reconstruction check"
     },
     "shared-solver/check-stage-acceptance.js": {
       "grade": "local-regression",

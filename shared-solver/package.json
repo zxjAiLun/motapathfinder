@@ -47,6 +47,8 @@
     "check:resource-timing-model": "node check-resource-timing-model.js",
     "check:resource-deferral": "node check-resource-deferral.js",
     "check:teacher-divergence": "node check-teacher-divergence.js",
+    "check:dp-observer": "node check-dp-observer.js",
+    "check:route-store-exact": "node check-route-store-exact.js",
     "run:teacher-divergence": "node run-teacher-divergence.js",
     "check:manifest": "node ../tools/audit-js-files.js --check-manifest",
     "manifest:refresh": "node scripts/generate-solver-manifest.js",

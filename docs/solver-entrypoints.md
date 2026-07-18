@@ -63,6 +63,7 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-checkpoint-repair.js`
 - `shared-solver/check-confluence-dominance.js`
 - `shared-solver/check-core-regressions.js`
+- `shared-solver/check-dp-observer.js`
 - `shared-solver/check-floor-scout.js`
 - `shared-solver/check-manifest-runner.js`
 - `shared-solver/check-milestone-audit.js`
@@ -90,6 +91,7 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-route-productization.js`
 - `shared-solver/check-route-record.js`
 - `shared-solver/check-route-repair.js`
+- `shared-solver/check-route-store-exact.js`
 - `shared-solver/check-stage-acceptance.js`
 - `shared-solver/check-state-key-audit.js`
 - `shared-solver/check-teacher-divergence.js`

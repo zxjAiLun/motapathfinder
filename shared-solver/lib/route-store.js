@@ -927,6 +927,29 @@ function countSourceEntriesConsumed(emitted, sourceEntries, sourceIndex) {
   return Math.max(1, matched);
 }
 
+function strictReplayRecordedDecisions(project, simulator, initialState, decisions) {
+  let state = initialState;
+  for (let index = 0; index < decisions.length; index += 1) {
+    const decision = decisions[index];
+    if (decision.preExactStateKey && buildStateKey(state) !== decision.preExactStateKey) {
+      throw new Error(`route-store: strict replay pre-state mismatch at decision ${index + 1}`);
+    }
+    const resolved = resolveRecordedAction(simulator, state, decision, { project });
+    if (!resolved.action) {
+      throw new Error(`route-store: strict replay action mismatch at decision ${index + 1}: ${resolved.reason}`);
+    }
+    try {
+      state = simulator.applyAction(state, resolved.action);
+    } catch (error) {
+      throw new Error(`route-store: strict replay apply failed at decision ${index + 1}: ${error && error.message ? error.message : String(error)}`);
+    }
+    if (decision.postExactStateKey && buildStateKey(state) !== decision.postExactStateKey) {
+      throw new Error(`route-store: strict replay post-state mismatch at decision ${index + 1}`);
+    }
+  }
+  return state;
+}
+
 function buildRouteRecord(input) {
   const { project, simulator, finalState } = input;
   const options = input.options || {};
@@ -967,14 +990,30 @@ function buildRouteRecord(input) {
   if (structuredEntries.length > 0 && decisions.length > 0) {
     decisions[decisions.length - 1].postSnapshot = finalSnapshot;
     decisions[decisions.length - 1].postStateKey = buildDominanceKey(context.currentState);
+    decisions[decisions.length - 1].postDominanceKey = buildDominanceKey(context.currentState);
+    decisions[decisions.length - 1].postExactStateKey = buildStateKey(context.currentState);
   }
   const expectedKey = buildDominanceKey(finalState);
   const actualKey = buildDominanceKey(context.currentState);
+  const expectedExactStateKey = buildStateKey(finalState);
+  const actualExactStateKey = buildStateKey(context.currentState);
   const notes = Array.isArray(finalState.notes) ? finalState.notes.slice() : [];
   if (expectedKey !== actualKey) {
     const message = `route-store: reconstructed dominance key differs from source final key; source=${expectedKey}; reconstructed=${actualKey}`;
     if (options.allowRouteMismatch !== true) throw new Error(message);
     notes.push(message);
+  }
+  if (expectedExactStateKey !== actualExactStateKey) {
+    throw new Error(
+      `route-store: reconstructed exact state differs from source final state; source=${expectedExactStateKey}; reconstructed=${actualExactStateKey}`,
+    );
+  }
+  const strictFinalState = strictReplayRecordedDecisions(project, simulator, initialState, decisions);
+  const strictFinalExactStateKey = buildStateKey(strictFinalState);
+  if (strictFinalExactStateKey !== expectedExactStateKey) {
+    throw new Error(
+      `route-store: strict replay final exact state differs from source final state; source=${expectedExactStateKey}; replay=${strictFinalExactStateKey}`,
+    );
   }
   const projectRoot = options.projectRoot || path.resolve(__dirname, "..", "..");
   return {
@@ -1001,10 +1040,14 @@ function buildRouteRecord(input) {
     start: {
       snapshot: buildSolverSnapshot(project, initialState, snapshotOptions),
       stateKey: buildDominanceKey(initialState),
+      dominanceKey: buildDominanceKey(initialState),
+      exactStateKey: buildStateKey(initialState),
     },
     final: {
       snapshot: finalSnapshot,
       stateKey: actualKey,
+      dominanceKey: actualKey,
+      exactStateKey: actualExactStateKey,
       floorId: context.currentState.floorId,
     },
     decisions,
