@@ -2479,6 +2479,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     maxHeapMb: number(dpConfig.maxHeapMb, 0),
     dpKeyMode: dpConfig.keyMode || dpConfig.dpKeyMode || "region",
     dpAgendaMode: dpConfig.agendaMode || "best-first",
+    fairnessEvery: number(dpConfig.fairnessEvery, 32),
     dpPriorityMode:
       usesResourceTimingMode(segment) &&
       (!dpConfig.priorityMode || dpConfig.priorityMode === "default") &&
@@ -2778,6 +2779,9 @@ function segmentDpOverrides(segment, config, overrides) {
     ...(config && config.dpSkylineMax != null && !generatedSegment
       ? { dpSkylineMax: config.dpSkylineMax }
       : {}),
+    ...(config && config.fairnessEvery != null && !generatedSegment
+      ? { fairnessEvery: config.fairnessEvery }
+      : {}),
     ...(config && config.resourceTimingModel != null
       ? { resourceTimingModel: config.resourceTimingModel }
       : {}),
@@ -2825,6 +2829,9 @@ function segmentDpOverrides(segment, config, overrides) {
     ...(repair.agendaMode != null ? { agendaMode: repair.agendaMode } : {}),
     ...(repair.dpAgendaMode != null
       ? { dpAgendaMode: repair.dpAgendaMode }
+      : {}),
+    ...(repair.fairnessEvery != null
+      ? { fairnessEvery: repair.fairnessEvery }
       : {}),
     ...(repair.maxRuntimeMs == null && overrides && overrides.expandRuntime
       ? {
@@ -3270,6 +3277,7 @@ function tryRepairFromConfiguredMilestone(
         maxActionsPerState: dpConfig.maxActionsPerState,
         agendaMode: dpConfig.agendaMode,
         dpAgendaMode: dpConfig.dpAgendaMode,
+        fairnessEvery: dpConfig.fairnessEvery,
       },
     },
   );

@@ -343,6 +343,13 @@ function buildSearchConfig(segment, searchOptions, dp) {
     agendaMode: dp && dp.agendaMode != null
       ? dp.agendaMode
       : overrides.agendaMode || segmentDp.agendaMode || "best-first",
+    fairnessEvery: dp && dp.fairnessEvery != null
+      ? dp.fairnessEvery
+      : overrides.fairnessEvery != null
+        ? overrides.fairnessEvery
+        : segmentDp.fairnessEvery != null
+          ? segmentDp.fairnessEvery
+          : 32,
     priorityMode: dp && dp.priorityMode != null
       ? dp.priorityMode
       : overrides.dpPriorityMode || overrides.priorityMode || segmentDp.dpPriorityMode || segmentDp.priorityMode || "default",
@@ -854,6 +861,7 @@ function runTeacherSearchObservation(simulator, startState, segment, options) {
   return {
     ...collector.finalize(result),
     searchConfig: buildSearchConfig(segment, config.searchOptions, dp),
+    agendaFairness: dp && dp.agendaFairness ? dp.agendaFairness : null,
     stoppedReason: dp && dp.stoppedReason || null,
     expansions: dp && dp.expansions || 0,
     frontierSize: dp && dp.frontierSize || 0,

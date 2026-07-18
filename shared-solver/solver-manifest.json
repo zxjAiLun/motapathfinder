@@ -177,6 +177,7 @@
         "shared-solver/check-dp-observer.js",
         "shared-solver/check-teacher-search-observer.js",
         "shared-solver/check-teacher-dominance-audit.js",
+        "shared-solver/check-hybrid-fair-agenda.js",
         "shared-solver/check-route-store-exact.js"
       ],
       "requiredCommands": [
@@ -1419,6 +1420,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-hybrid-fair-agenda.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "synthetic hybrid-fair agenda contract; no tower/project load"
     },
     "shared-solver/check-manifest-runner.js": {
       "grade": "unit",

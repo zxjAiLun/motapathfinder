@@ -779,11 +779,28 @@ function searchDP(simulator, initialState, options) {
   const maxExpansions = Number(config.maxExpansions || 1000);
   const maxActionsPerState = Number(config.maxActionsPerState || 256);
   const agendaMode = String(config.dpAgendaMode || config.agendaMode || "best-first");
+  const fairnessEvery = Math.max(1, Math.floor(number(config.fairnessEvery, 32)));
+  const fairnessEnabled = agendaMode === "hybrid-fair";
   const stopOnFirstGoal = config.stopOnFirstGoal !== false;
   const continueAfterGoal = config.continueAfterGoal === true;
   const maxRuntimeMs = Number(config.maxRuntimeMs || config.timeLimitMs || 0);
   const fifoEntries = [];
   let cursor = 0;
+  const fairEntries = fairnessEnabled ? [] : null;
+  let fairCursor = 0;
+  const expandedNodeIds = fairnessEnabled ? new Set() : null;
+  const fairEnqueueExpansions = fairnessEnabled ? new Map() : null;
+  const agendaFairness = {
+    enabled: fairnessEnabled,
+    fairnessEvery,
+    bestPops: 0,
+    fairPops: 0,
+    fairFallbacks: 0,
+    bestFallbacks: 0,
+    skippedInactive: 0,
+    skippedAlreadyExpanded: 0,
+    maxFairQueueAgeExpansions: 0,
+  };
   const heap = agendaMode === "fifo"
     ? null
     : new BinaryHeap((left, right) => compareDpAgendaRank(left.rank, right.rank));
@@ -1108,6 +1125,10 @@ function searchDP(simulator, initialState, options) {
     }
     if (heap) heap.push(node);
     else fifoEntries.push(node);
+    if (fairEntries) {
+      fairEntries.push(node);
+      fairEnqueueExpansions.set(node.nodeId, expansions);
+    }
     registered += 1;
     if (!bestSeenNode || compareDpBest(state, bestSeenNode.state) > 0) bestSeenNode = node;
     const progressDiff = bestProgressNode ? compareProgress(state, bestProgressNode.state) : 1;
@@ -1131,17 +1152,74 @@ function searchDP(simulator, initialState, options) {
   enqueue(rootState);
 
   const popNext = () => {
+    const popBest = () => {
+      while (heap && heap.length > 0) {
+        const entry = heap.pop();
+        if (!isActiveEntry(entry)) {
+          if (fairnessEnabled) agendaFairness.skippedInactive += 1;
+          continue;
+        }
+        if (expandedNodeIds && expandedNodeIds.has(entry.nodeId)) {
+          agendaFairness.skippedAlreadyExpanded += 1;
+          continue;
+        }
+        return { entry, popSource: "best-first" };
+      }
+      return null;
+    };
+
+    const popFair = () => {
+      while (fairEntries && fairCursor < fairEntries.length) {
+        const entry = fairEntries[fairCursor];
+        fairCursor += 1;
+        if (!isActiveEntry(entry)) {
+          agendaFairness.skippedInactive += 1;
+          continue;
+        }
+        if (expandedNodeIds && expandedNodeIds.has(entry.nodeId)) {
+          agendaFairness.skippedAlreadyExpanded += 1;
+          continue;
+        }
+        return { entry, popSource: "fair-oldest" };
+      }
+      return null;
+    };
+
+    if (fairnessEnabled) {
+      const fairDue = (expansions + 1) % fairnessEvery === 0;
+      if (fairDue) {
+        const fairResult = popFair();
+        if (fairResult) {
+          agendaFairness.fairPops += 1;
+          return fairResult;
+        }
+        agendaFairness.fairFallbacks += 1;
+      }
+      const bestResult = popBest();
+      if (bestResult) {
+        agendaFairness.bestPops += 1;
+        return bestResult;
+      }
+      if (!fairDue) agendaFairness.bestFallbacks += 1;
+      const fairResult = popFair();
+      if (fairResult) {
+        agendaFairness.fairPops += 1;
+        return fairResult;
+      }
+      return null;
+    }
+
     if (heap) {
       while (heap.length > 0) {
         const entry = heap.pop();
-        if (isActiveEntry(entry)) return entry;
+        if (isActiveEntry(entry)) return { entry, popSource: "best-first" };
       }
       return null;
     }
     while (cursor < fifoEntries.length) {
       const entry = fifoEntries[cursor];
       cursor += 1;
-      if (isActiveEntry(entry)) return entry;
+      if (isActiveEntry(entry)) return { entry, popSource: "fifo" };
     }
     return null;
   };
@@ -1170,9 +1248,11 @@ function searchDP(simulator, initialState, options) {
       }
     }
     if (stopOnFirstGoal && firstGoalNode) break;
-    const entry = popNext();
-    if (!entry) break;
+    const selected = popNext();
+    if (!selected) break;
+    const entry = selected.entry;
     const popExpansion = observer ? expansions : null;
+    const expansionOrdinal = expansions + 1;
     const popElapsedMs = observer ? Date.now() - startedAt : null;
     const enqueueMeta = observerAgendaMeta && observerAgendaMeta.get(entry.nodeId);
     const queueAgeExpansions = enqueueMeta
@@ -1182,6 +1262,17 @@ function searchDP(simulator, initialState, options) {
       ? popElapsedMs - enqueueMeta.enqueueElapsedMs
       : null;
     const agendaRank = observer ? compactObserverAgendaRank(entry.rank) : null;
+    if (fairnessEnabled && selected.popSource === "fair-oldest") {
+      const enqueueExpansion = fairEnqueueExpansions.get(entry.nodeId);
+      const fairQueueAge = enqueueExpansion == null
+        ? 0
+        : Math.max(0, expansions - enqueueExpansion);
+      agendaFairness.maxFairQueueAgeExpansions = Math.max(
+        agendaFairness.maxFairQueueAgeExpansions,
+        fairQueueAge,
+      );
+    }
+    if (expandedNodeIds) expandedNodeIds.add(entry.nodeId);
     emitStateEvent("agendaPopped", entry.state, entry, {
       nodeId: entry.nodeId,
       parentId: entry.parentId,
@@ -1194,6 +1285,9 @@ function searchDP(simulator, initialState, options) {
       popElapsedMs,
       queueAgeExpansions,
       queueAgeMs,
+      popSource: selected.popSource,
+      fairnessEvery: fairnessEnabled ? fairnessEvery : 0,
+      expansionOrdinal,
     });
     if (observerAgendaMeta) observerAgendaMeta.delete(entry.nodeId);
     if (bestByKey instanceof SkylineSet) {
@@ -1296,8 +1390,10 @@ function searchDP(simulator, initialState, options) {
       });
   }
 
+  const frontierIsActive = (entry) => isActiveEntry(entry) &&
+    (!expandedNodeIds || !expandedNodeIds.has(entry.nodeId));
   const frontierSize = heap
-    ? heap.activeCount(isActiveEntry)
+    ? heap.activeCount(frontierIsActive)
     : fifoEntries.slice(cursor).filter(isActiveEntry).length;
   recordMemoryUsage();
   if (observer) {
@@ -1483,6 +1579,7 @@ function searchDP(simulator, initialState, options) {
         maxActionsGeneratedForState,
         observerCaptureMode: observerDominanceCaptureMode(config),
         observerCaptureElapsedMs,
+        agendaFairness,
         actionsGeneratedByKind: Object.fromEntries(
           Object.entries(actionStats.byKind).map(([kind, stats]) => [kind, stats.generated || 0])
         ),
@@ -1504,6 +1601,7 @@ function searchDP(simulator, initialState, options) {
         rejectedByHigherHp,
         sameHpRejected,
         agendaMode,
+        fairnessEvery,
         stopOnFirstGoal,
         continueAfterGoal,
         keyMode: String(config.dpKeyMode || config.keyMode || "location"),

@@ -67,6 +67,7 @@ function runOne(simulator, route, segment, options) {
   if (options.priorityMode) dpOverrides.priorityMode = options.priorityMode;
   if (options.keyMode) dpOverrides.keyMode = options.keyMode;
   if (options.dpSkylineMax != null) dpOverrides.dpSkylineMax = options.dpSkylineMax;
+  if (options.fairnessEvery != null) dpOverrides.fairnessEvery = options.fairnessEvery;
   return runTeacherSearchObservation(simulator, startState, segment, {
     teacherIndex,
     fromStep,
@@ -90,6 +91,7 @@ function buildExperimentOptions(args, overrides) {
     maxActionsPerState: optionalNumber(args, "search-max-actions-per-state", 256),
     maxHeapMb: optionalNumber(args, "search-max-heap-mb", 0),
     agendaMode: args["search-agenda-mode"] || null,
+    fairnessEvery: optionalNumber(args, "search-fairness-every", 32),
     priorityMode: args["search-priority-mode"] || null,
     keyMode: args["search-key-mode"] || null,
     dpSkylineMax: parseOptionalNumber(args["search-dp-skyline-max"]),
@@ -125,6 +127,16 @@ function buildMatrix(args) {
           maxRuntimeMs: Math.max(base.maxRuntimeMs, 60000),
         },
       },
+      { id: "fifo", options: { ...base, agendaMode: "fifo" } },
+    ];
+  }
+  if (mode === "fairness-matrix") {
+    return [
+      { id: "best-first", options: { ...base, agendaMode: "best-first" } },
+      ...[64, 32, 16, 8].map((fairnessEvery) => ({
+        id: `hybrid-fair-${fairnessEvery}`,
+        options: { ...base, agendaMode: "hybrid-fair", fairnessEvery },
+      })),
       { id: "fifo", options: { ...base, agendaMode: "fifo" } },
     ];
   }

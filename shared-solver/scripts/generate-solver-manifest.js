@@ -335,6 +335,13 @@ const TEST_OVERRIDES = {
     cleanCheckout: true,
     notes: "synthetic searchDP observer contract; no tower/project load",
   },
+  "shared-solver/check-hybrid-fair-agenda.js": {
+    grade: "unit",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "synthetic hybrid-fair agenda contract; no tower/project load",
+  },
   "shared-solver/check-teacher-search-observer.js": {
     grade: "unit",
     allowsNotFound: false,
@@ -565,6 +572,7 @@ const manifest = {
         "shared-solver/check-dp-observer.js",
         "shared-solver/check-teacher-search-observer.js",
         "shared-solver/check-teacher-dominance-audit.js",
+        "shared-solver/check-hybrid-fair-agenda.js",
         "shared-solver/check-route-store-exact.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],
