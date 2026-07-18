@@ -2477,6 +2477,8 @@ function searchSegmentDP(simulator, startState, segment, options) {
       : null,
     actionProvider,
     actionApplier,
+    observer: config.observer,
+    observerIncludeExactStateKey: config.observerIncludeExactStateKey === true,
     goalPredicate: buildSegmentGoalPredicate(
       simulator.project,
       segment,

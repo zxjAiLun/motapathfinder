@@ -48,6 +48,7 @@ const DECOMPOSITION = new Set([
   "milestone-decomposer.js",
   "landmarks.js",
   "teacher-divergence-audit.js",
+  "teacher-search-observer.js",
 ]);
 const EXPLORATION = new Set([
   "search.js",
@@ -172,19 +173,27 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
     });
   } else if (DECOMPOSITION.has(file)) {
     add(file, {
-      layer: file === "teacher-divergence-audit.js" ? "diagnostics" : "planning/decomposition",
-      status: file === "teacher-divergence-audit.js" ? "supporting" : "experimental",
-      role: file === "teacher-divergence-audit.js" ? "diagnostics" : "candidate-generator",
+      layer: ["teacher-divergence-audit.js", "teacher-search-observer.js"].includes(file)
+        ? "diagnostics"
+        : "planning/decomposition",
+      status: ["teacher-divergence-audit.js", "teacher-search-observer.js"].includes(file)
+        ? "supporting"
+        : "experimental",
+      role: ["teacher-divergence-audit.js", "teacher-search-observer.js"].includes(file)
+        ? "diagnostics"
+        : "candidate-generator",
       correctnessSource: false,
       tests: {
         unit: true,
-        realFixture: true,
+        realFixture: file === "teacher-divergence-audit.js",
         segmentClosure: false,
         fullClosure: false,
         cleanCheckout: true,
       },
       notes: file === "teacher-divergence-audit.js"
         ? "teacher-forced step audit; test-side only; never feeds teacher actions into production search"
+        : file === "teacher-search-observer.js"
+          ? "real search event diagnostics; synthetic contract plus manual teacher fixture runs; never feeds teacher actions into production search"
         : "auto milestone decomposition; proof not yet closed into checkpoint schedule",
     });
   } else if (EXPLORATION.has(file)) {
@@ -317,6 +326,13 @@ const TEST_OVERRIDES = {
     requiresStrictReplay: false,
     cleanCheckout: true,
     notes: "synthetic searchDP observer contract; no tower/project load",
+  },
+  "shared-solver/check-teacher-search-observer.js": {
+    grade: "unit",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "synthetic real-search teacher observer outcome contract",
   },
   "shared-solver/check-route-store-exact.js": {
     grade: "unit",
@@ -532,6 +548,7 @@ const manifest = {
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
+        "shared-solver/check-teacher-search-observer.js",
         "shared-solver/check-route-store-exact.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],

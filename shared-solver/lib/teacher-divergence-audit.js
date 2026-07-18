@@ -526,6 +526,8 @@ function runTeacherDivergenceAudit(simulator, routeRecord, options) {
     keyMode: String(dpKeyOptions.keyMode || dpKeyOptions.dpKeyMode || "location"),
     firstDivergenceStep: firstDivergence ? firstDivergence.step : null,
     firstPotentialDivergenceStep: firstDivergence ? firstDivergence.step : null,
+    firstObservedSearchDivergenceStep: null,
+    firstInconclusiveStep: null,
     firstDivergence: firstDivergence
       ? {
           step: firstDivergence.step,
@@ -564,6 +566,12 @@ function formatDivergenceReport(report, options) {
     `siblingDominated=${report.counts.siblingDominated} ` +
     `timingConflicts=${report.counts.resourceTimingConflicts}`,
   );
+  if (report.firstObservedSearchDivergenceStep != null || report.firstInconclusiveStep != null) {
+    lines.push(
+      `firstObservedSearchDivergence=${report.firstObservedSearchDivergenceStep == null ? "none" : report.firstObservedSearchDivergenceStep} ` +
+      `firstInconclusive=${report.firstInconclusiveStep == null ? "none" : report.firstInconclusiveStep}`,
+    );
+  }
   if (report.firstDivergence) {
     const item = report.firstDivergence;
     lines.push(
@@ -591,10 +599,24 @@ function formatDivergenceReport(report, options) {
   return lines.join("\n");
 }
 
+function mergeTeacherSearchObservation(report, observation) {
+  return {
+    ...(report || {}),
+    teacherSearch: observation || null,
+    firstObservedSearchDivergenceStep: observation
+      ? observation.firstObservedSearchDivergenceStep
+      : null,
+    firstInconclusiveStep: observation
+      ? observation.firstInconclusiveStep
+      : null,
+  };
+}
+
 module.exports = {
   AUDIT_VERSION,
   runTeacherDivergenceAudit,
   formatDivergenceReport,
+  mergeTeacherSearchObservation,
   enumerateVisibleActions,
   findTeacherAction,
   isBetterForSameDpKey,

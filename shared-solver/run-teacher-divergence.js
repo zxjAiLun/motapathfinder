@@ -25,12 +25,34 @@ const { readRouteFile } = require("./lib/route-store");
 const { StaticSimulator } = require("./lib/simulator");
 const {
   formatDivergenceReport,
+  mergeTeacherSearchObservation,
   runTeacherDivergenceAudit,
 } = require("./lib/teacher-divergence-audit");
+const {
+  buildTeacherStepIndex,
+  runTeacherSearchObservation,
+} = require("./lib/teacher-search-observer");
 
 function resolveMaybe(value) {
   if (!value) return null;
   return path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
+}
+
+function loadSegmentFile(filePath, segmentId) {
+  const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!segmentId) return parsed;
+  const candidates = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed.milestones)
+      ? parsed.milestones
+      : Array.isArray(parsed.segments)
+        ? parsed.segments
+        : [];
+  const segment = candidates.find((entry) => entry && entry.id === segmentId);
+  if (!segment) {
+    throw new Error(`segment id not found in ${filePath}: ${segmentId}`);
+  }
+  return segment;
 }
 
 function main(argv) {
@@ -51,6 +73,12 @@ function main(argv) {
   const quiet = parseBooleanFlag(args.quiet, false);
   const maxReportSteps = parseOptionalNumber(args["max-report-steps"]) || 40;
   const segmentFile = resolveMaybe(args["segment-file"]);
+  const segmentId = args["segment-id"] || null;
+  const observeSearch = parseBooleanFlag(args["observe-search"], false);
+  const searchMaxExpansions = parseOptionalNumber(args["search-max-expansions"]);
+  const searchMaxRuntimeMs = parseOptionalNumber(args["search-max-runtime-ms"]);
+  const searchMaxActionsPerState = parseOptionalNumber(args["search-max-actions-per-state"]);
+  const searchMaxHeapMb = parseOptionalNumber(args["search-max-heap-mb"]);
 
   if (!fs.existsSync(routePath)) {
     throw new Error(`route not found: ${routePath}`);
@@ -60,7 +88,7 @@ function main(argv) {
   let segment = null;
   if (segmentFile) {
     if (!fs.existsSync(segmentFile)) throw new Error(`segment file not found: ${segmentFile}`);
-    segment = JSON.parse(fs.readFileSync(segmentFile, "utf8"));
+    segment = loadSegmentFile(segmentFile, segmentId);
   }
   const simulator = new StaticSimulator(project, {
     stopFloorId,
@@ -74,7 +102,7 @@ function main(argv) {
     searchGraphMode: "primitive",
   });
   const route = readRouteFile(routePath);
-  const report = runTeacherDivergenceAudit(simulator, route, {
+  let report = runTeacherDivergenceAudit(simulator, route, {
     fromStep: fromStep == null ? 0 : fromStep,
     toStep: toStep == null ? undefined : toStep,
     siblingLimit: siblingLimit == null ? 12 : siblingLimit,
@@ -84,10 +112,36 @@ function main(argv) {
     segment,
   });
 
+  if (observeSearch) {
+    if (!segment) throw new Error("--observe-search=1 requires --segment-file=...");
+    const startIndex = fromStep == null ? 0 : Math.max(0, fromStep);
+    const teacherIndex = buildTeacherStepIndex(simulator, route, {
+      fromStep: startIndex,
+      toStep: toStep == null ? undefined : toStep,
+    });
+    const startState = teacherIndex.statesBefore[startIndex];
+    if (!startState) throw new Error(`teacher pre-state unavailable at step ${startIndex}`);
+    const dpOverrides = {};
+    if (searchMaxExpansions != null) dpOverrides.maxExpansions = searchMaxExpansions;
+    if (searchMaxRuntimeMs != null) dpOverrides.maxRuntimeMs = searchMaxRuntimeMs;
+    if (searchMaxActionsPerState != null) dpOverrides.maxActionsPerState = searchMaxActionsPerState;
+    if (searchMaxHeapMb != null) dpOverrides.maxHeapMb = searchMaxHeapMb;
+    const observation = runTeacherSearchObservation(simulator, startState, segment, {
+      teacherIndex,
+      fromStep: startIndex,
+      toStep: toStep == null ? undefined : toStep,
+      searchOptions: { dpOverrides },
+    });
+    report = mergeTeacherSearchObservation(report, observation);
+  }
+
   report.meta = {
     projectRoot,
     routePath,
     segmentFile,
+    segmentId,
+    segment: segment ? { id: segment.id || null, label: segment.label || null } : null,
+    observeSearch,
     generatedAt: new Date().toISOString(),
     note: "test-side diagnostics only; do not feed teacher actions into production search",
   };

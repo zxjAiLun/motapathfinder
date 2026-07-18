@@ -95,6 +95,7 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-stage-acceptance.js`
 - `shared-solver/check-state-key-audit.js`
 - `shared-solver/check-teacher-divergence.js`
+- `shared-solver/check-teacher-search-observer.js`
 - `shared-solver/check-whiteisland-trial-resource-order.js`
 - `shared-solver/check-window-repair.js`
 - `shared-solver/export-h5-segment.js`

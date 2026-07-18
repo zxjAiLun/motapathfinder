@@ -175,6 +175,7 @@
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
+        "shared-solver/check-teacher-search-observer.js",
         "shared-solver/check-route-store-exact.js"
       ],
       "requiredCommands": [
@@ -582,7 +583,7 @@
       "correctnessSource": false,
       "tests": {
         "unit": true,
-        "realFixture": true,
+        "realFixture": false,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
@@ -613,7 +614,7 @@
       "correctnessSource": false,
       "tests": {
         "unit": true,
-        "realFixture": true,
+        "realFixture": false,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
@@ -1283,6 +1284,22 @@
       },
       "notes": "teacher-forced step audit; test-side only; never feeds teacher actions into production search"
     },
+    "shared-solver/lib/teacher-search-observer.js": {
+      "id": "teacher-search-observer",
+      "path": "shared-solver/lib/teacher-search-observer.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "diagnostics",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "real search event diagnostics; synthetic contract plus manual teacher fixture runs; never feeds teacher actions into production search"
+    },
     "shared-solver/lib/tool-registry.js": {
       "id": "tool-registry",
       "path": "shared-solver/lib/tool-registry.js",
@@ -1595,6 +1612,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "teacher-forced divergence audit; tracked fixture always; MT5 teacher optional if present"
+    },
+    "shared-solver/check-teacher-search-observer.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "synthetic real-search teacher observer outcome contract"
     },
     "shared-solver/check-whiteisland-trial-resource-order.js": {
       "grade": "local-regression",
