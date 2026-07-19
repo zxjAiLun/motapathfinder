@@ -523,7 +523,94 @@ function checkDominanceContinuationIntegration() {
   assert.equal(audits[0].steps[0].actionResolved, true);
   assert.equal(audits[0].steps[0].actionApplicable, true);
   assert.equal(audits[0].steps[0].teacherActionFingerprint, "fp:second");
+  assert.equal(report.firstBenignDominanceStep, 0);
+  assert.equal(report.firstHardDivergenceStep, null);
   assert(applyCalls > 0, "continuation should run during finalize after search events");
+}
+
+function checkFairnessTargetSummary() {
+  const pre0 = makeState(50, [1, 1]);
+  const pre1 = makeState(40, [2, 1], ["battle:first"]);
+  const post1 = makeState(30, [3, 1], ["battle:first", "battle:target"]);
+  const index = {
+    steps: [
+      {
+        step: 0,
+        summary: "battle:first",
+        actionFingerprint: "fp:first",
+        preExactStateKey: buildStateKey(pre0),
+        postExactStateKey: buildStateKey(pre1),
+      },
+      {
+        step: 1,
+        summary: "battle:target",
+        actionFingerprint: "fp:target",
+        preExactStateKey: buildStateKey(pre1),
+        postExactStateKey: buildStateKey(post1),
+      },
+    ],
+    decisionCount: 2,
+  };
+  const collector = createTeacherSearchObserver(index, {
+    fromStep: 0,
+    toStep: 2,
+    fairnessTargetStep: 1,
+  });
+  collector.observer.onEvent(event("skylineInserted", pre0, {
+    nodeId: 1,
+    parentId: null,
+    fairQueueOrdinal: 0,
+    fairCursorAtEnqueue: 0,
+    fairPopsAtEnqueue: 0,
+    olderEntriesAheadAtEnqueue: 0,
+    enqueueExpansion: 0,
+  }));
+  collector.observer.onEvent(event("agendaPopped", pre0, {
+    nodeId: 1,
+    popSource: "best-first",
+    expansionOrdinal: 1,
+  }));
+  collector.observer.onEvent(event("skylineInserted", pre1, {
+    nodeId: 2,
+    parentId: 1,
+    action: action("battle:first", "fp:first", "1:0", "1:0:0"),
+    fairQueueOrdinal: 1,
+    fairCursorAtEnqueue: 0,
+    fairPopsAtEnqueue: 0,
+    olderEntriesAheadAtEnqueue: 0,
+    enqueueExpansion: 1,
+  }));
+  collector.observer.onEvent(event("budgetStopped", pre1, {
+    reasonCode: "expansion-limit",
+    frontierSize: 1,
+    expansions: 1,
+    fairCursor: 0,
+    fairPops: 0,
+    fairnessEvery: 4,
+  }));
+  const report = collector.finalize({
+    diagnostics: {
+      dp: {
+        agendaFairness: {
+          enabled: true,
+          fairnessEvery: 4,
+          fairPops: 0,
+          fairCursor: 0,
+        },
+      },
+    },
+    expansions: 1,
+    frontierSize: 1,
+  });
+  assert.equal(report.targetStepSummary.step, 1);
+  assert.equal(report.targetStepSummary.preReached, true);
+  assert.equal(report.targetStepSummary.preExpanded, false);
+  assert.equal(report.targetStepSummary.fairnessAudit.fairQueueOrdinal, 1);
+  assert.equal(report.targetStepSummary.fairnessAudit.fairCursorAtStop, 0);
+  assert.equal(report.targetStepSummary.fairnessAudit.fairPopsAfterEnqueue, 0);
+  assert.equal(report.targetStepSummary.fairnessAudit.estimatedFairPopOrdinal, 4);
+  assert.equal(report.targetStepSummary.fairnessAudit.poppedBy, null);
+  assert.equal(report.firstInconclusiveStep, 1);
 }
 
 function main() {
@@ -537,6 +624,7 @@ function main() {
   checkLegacyIndexUpgrade();
   checkSegmentForwarding();
   checkDominanceContinuationIntegration();
+  checkFairnessTargetSummary();
   console.log("check-teacher-search-observer: ok");
 }
 
@@ -554,4 +642,5 @@ module.exports = {
   checkLegacyIndexUpgrade,
   checkSegmentForwarding,
   checkDominanceContinuationIntegration,
+  checkFairnessTargetSummary,
 };

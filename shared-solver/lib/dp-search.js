@@ -790,6 +790,7 @@ function searchDP(simulator, initialState, options) {
   let fairCursor = 0;
   const expandedNodeIds = fairnessEnabled ? new Set() : null;
   const fairEnqueueExpansions = fairnessEnabled ? new Map() : null;
+  const fairQueueMeta = fairnessEnabled ? new Map() : null;
   const agendaFairness = {
     enabled: fairnessEnabled,
     fairnessEvery,
@@ -1069,6 +1070,10 @@ function searchDP(simulator, initialState, options) {
     let enqueueElapsedMs = null;
     let agendaSizeAfterInsert = null;
     let agendaRank = null;
+    let fairQueueOrdinal = null;
+    let fairCursorAtEnqueue = null;
+    let fairPopsAtEnqueue = null;
+    let olderEntriesAheadAtEnqueue = null;
     if (observer) {
       enqueueExpansion = expansions;
       enqueueElapsedMs = Date.now() - startedAt;
@@ -1080,6 +1085,21 @@ function searchDP(simulator, initialState, options) {
         agendaRank,
         enqueueExpansion,
         enqueueElapsedMs,
+      });
+    }
+    if (fairEntries) {
+      fairQueueOrdinal = fairEntries.length;
+      fairCursorAtEnqueue = fairCursor;
+      fairPopsAtEnqueue = agendaFairness.fairPops;
+      olderEntriesAheadAtEnqueue = fairEntries
+        .slice(fairCursor)
+        .filter((entry) => isActiveEntry(entry) && !expandedNodeIds.has(entry.nodeId))
+        .length;
+      fairQueueMeta.set(node.nodeId, {
+        fairQueueOrdinal,
+        fairCursorAtEnqueue,
+        fairPopsAtEnqueue,
+        olderEntriesAheadAtEnqueue,
       });
     }
     if (observer) {
@@ -1121,6 +1141,10 @@ function searchDP(simulator, initialState, options) {
         expansionsCompletedAtEnqueue: enqueueExpansion,
         enqueueElapsedMs,
         agendaSizeAfterInsert,
+        fairQueueOrdinal,
+        fairCursorAtEnqueue,
+        fairPopsAtEnqueue,
+        olderEntriesAheadAtEnqueue,
       }));
     }
     if (heap) heap.push(node);
@@ -1262,6 +1286,7 @@ function searchDP(simulator, initialState, options) {
       ? popElapsedMs - enqueueMeta.enqueueElapsedMs
       : null;
     const agendaRank = observer ? compactObserverAgendaRank(entry.rank) : null;
+    const fairMeta = fairQueueMeta && fairQueueMeta.get(entry.nodeId);
     if (fairnessEnabled && selected.popSource === "fair-oldest") {
       const enqueueExpansion = fairEnqueueExpansions.get(entry.nodeId);
       const fairQueueAge = enqueueExpansion == null
@@ -1288,6 +1313,9 @@ function searchDP(simulator, initialState, options) {
       popSource: selected.popSource,
       fairnessEvery: fairnessEnabled ? fairnessEvery : 0,
       expansionOrdinal,
+      fairQueueOrdinal: fairMeta ? fairMeta.fairQueueOrdinal : null,
+      fairCursorAtPop: fairnessEnabled ? fairCursor : null,
+      fairPopsAtPop: fairnessEnabled ? agendaFairness.fairPops : null,
     });
     if (observerAgendaMeta) observerAgendaMeta.delete(entry.nodeId);
     if (bestByKey instanceof SkylineSet) {
@@ -1390,6 +1418,11 @@ function searchDP(simulator, initialState, options) {
       });
   }
 
+  agendaFairness.fairCursor = fairnessEnabled ? fairCursor : 0;
+  agendaFairness.fairQueueLength = fairnessEnabled ? fairEntries.length : 0;
+  agendaFairness.fairActiveUnexpanded = fairnessEnabled
+    ? fairEntries.filter((entry) => isActiveEntry(entry) && !expandedNodeIds.has(entry.nodeId)).length
+    : 0;
   const frontierIsActive = (entry) => isActiveEntry(entry) &&
     (!expandedNodeIds || !expandedNodeIds.has(entry.nodeId));
   const frontierSize = heap
@@ -1414,6 +1447,9 @@ function searchDP(simulator, initialState, options) {
             maxExpansions,
             maxRuntimeMs,
             maxHeapMb,
+            fairCursor: fairnessEnabled ? fairCursor : null,
+            fairPops: fairnessEnabled ? agendaFairness.fairPops : null,
+            fairnessEvery: fairnessEnabled ? fairnessEvery : 0,
           },
         ),
     );

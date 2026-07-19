@@ -88,7 +88,7 @@ function buildStarvationOptions(events, providerCalls, overrides) {
           hotAction("hot-1"),
         ];
       }
-      if (state.route[0] !== "old" && state.route.length < 6) {
+      if (state.route[0] !== "old" && state.route.length < 20) {
         return [hotAction(`hot-${state.route.length + 1}`)];
       }
       return [];
@@ -98,13 +98,13 @@ function buildStarvationOptions(events, providerCalls, overrides) {
   };
 }
 
-function runStarvation(mode, fairnessEvery) {
+function runStarvation(mode, fairnessEvery, overrides) {
   const events = [];
   const providerCalls = {};
   const result = searchDP(makeSimulator(), makeState([], 50), buildStarvationOptions(
     events,
     providerCalls,
-    { agendaMode: mode, fairnessEvery },
+    { agendaMode: mode, fairnessEvery, ...(overrides || {}) },
   ));
   return { result, events, providerCalls };
 }
@@ -143,6 +143,13 @@ function checkStarvationAndCadence() {
   assert(fairness.fairPops >= 1, "hybrid should record a fair pop");
   assert(fairness.bestPops >= 1, "hybrid should retain best-first pops");
   assert(fairness.maxFairQueueAgeExpansions >= 0);
+
+  const cadence = runStarvation("hybrid-fair", 4, { maxExpansions: 13 });
+  const fairOrdinals = cadence.events
+    .filter((event) => event.eventType === "agendaPopped" && event.popSource === "fair-oldest")
+    .map((event) => event.expansionOrdinal);
+  assert.deepEqual(fairOrdinals.slice(0, 3), [4, 8, 12],
+    "fairness cadence must fire at every fourth valid expansion");
 }
 
 function checkStaleFairEntries() {
@@ -180,6 +187,8 @@ function checkStaleFairEntries() {
     .filter(Boolean);
   assert(!popped.includes("low"), "skyline-evicted node must not be expanded");
   assert(result.expansions >= 2, "stale fair entries must not stop the search early");
+  assert.equal(typeof fairness.fairFallbacks, "number");
+  assert.equal(typeof fairness.bestFallbacks, "number");
 }
 
 function checkLegacyModesAndObserverParity() {

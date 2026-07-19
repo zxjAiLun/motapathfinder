@@ -75,7 +75,9 @@ function runOne(simulator, route, segment, options) {
     searchOptions: { dpOverrides },
     captureDominanceWitnesses: options.captureDominanceWitnesses,
     captureDominanceWitnessStates: options.continuationAudit,
+    dominanceCaptureMode: options.dominanceCaptureMode,
     dominanceTargetStep: options.dominanceTargetStep,
+    fairnessTargetStep: options.fairnessTargetStep,
     continuationAudit: options.continuationAudit
       ? { windows: options.continuationWindows, maxWitnesses: 1 }
       : null,
@@ -92,10 +94,12 @@ function buildExperimentOptions(args, overrides) {
     maxHeapMb: optionalNumber(args, "search-max-heap-mb", 0),
     agendaMode: args["search-agenda-mode"] || null,
     fairnessEvery: optionalNumber(args, "search-fairness-every", 32),
+    fairnessTargetStep: parseOptionalNumber(args["fairness-target-step"]),
     priorityMode: args["search-priority-mode"] || null,
     keyMode: args["search-key-mode"] || null,
     dpSkylineMax: parseOptionalNumber(args["search-dp-skyline-max"]),
     captureDominanceWitnesses: parseBooleanFlag(args["capture-dominance-witnesses"], false),
+    dominanceCaptureMode: args["dominance-capture-mode"] || null,
     continuationAudit: parseBooleanFlag(args["continuation-audit"], false),
     dominanceTargetStep: parseOptionalNumber(args["dominance-target-step"]),
     continuationWindows: String(args["continuation-windows"] || "1,3,until-failure")
@@ -134,6 +138,16 @@ function buildMatrix(args) {
     return [
       { id: "best-first", options: { ...base, agendaMode: "best-first" } },
       ...[64, 32, 16, 8].map((fairnessEvery) => ({
+        id: `hybrid-fair-${fairnessEvery}`,
+        options: { ...base, agendaMode: "hybrid-fair", fairnessEvery },
+      })),
+      { id: "fifo", options: { ...base, agendaMode: "fifo" } },
+    ];
+  }
+  if (mode === "fairness-target-matrix") {
+    return [
+      { id: "best-first", options: { ...base, agendaMode: "best-first" } },
+      ...[16, 8, 4, 2, 1].map((fairnessEvery) => ({
         id: `hybrid-fair-${fairnessEvery}`,
         options: { ...base, agendaMode: "hybrid-fair", fairnessEvery },
       })),

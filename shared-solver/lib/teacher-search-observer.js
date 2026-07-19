@@ -17,7 +17,7 @@ const { cloneState } = require("./state");
 const { runTeacherContinuationAudit } = require("./teacher-dominance-audit");
 const { buildStateKey } = require("./state-key");
 
-const OBSERVER_VERSION = "teacher-search-observer.v1.3";
+const OBSERVER_VERSION = "teacher-search-observer.v1.4";
 
 const OUTCOMES = Object.freeze([
   "teacher-pre-state-not-reached",
@@ -240,6 +240,18 @@ function createRecord(step) {
       latest: [],
       closestRank: [],
     },
+    fairnessAudit: {
+      enqueueExpansion: null,
+      fairQueueOrdinal: null,
+      fairCursorAtEnqueue: null,
+      fairPopsAtEnqueue: null,
+      olderEntriesAheadAtEnqueue: null,
+      fairCursorAtStop: null,
+      fairPopsAfterEnqueue: null,
+      olderActiveEntriesAheadAtStop: null,
+      estimatedFairPopOrdinal: null,
+      poppedBy: null,
+    },
     popsWhilePending: 0,
     evidence: [],
     outcome: null,
@@ -399,6 +411,14 @@ function compactTeacherNodeDetail(meta) {
     popElapsedMs: meta.popElapsedMs,
     queueAgeExpansions: meta.queueAgeExpansions,
     queueAgeMs: meta.queueAgeMs,
+    fairQueueOrdinal: meta.fairQueueOrdinal,
+    fairCursorAtEnqueue: meta.fairCursorAtEnqueue,
+    fairPopsAtEnqueue: meta.fairPopsAtEnqueue,
+    olderEntriesAheadAtEnqueue: meta.olderEntriesAheadAtEnqueue,
+    fairCursorAtPop: meta.fairCursorAtPop,
+    fairPopsAtPop: meta.fairPopsAtPop,
+    popSource: meta.popSource,
+    expansionOrdinal: meta.expansionOrdinal,
   };
 }
 
@@ -422,10 +442,12 @@ function createTeacherSearchObserver(teacherIndex, options) {
     addIndex(byPostExact, step.postExactStateKey, step);
   });
   const activeByExact = new Map();
+  const activeNodeIds = new Set();
   const nodeMetaById = new Map();
   const captureReservations = new Set();
   const pendingContinuationStates = new Map();
   const budgetStops = [];
+  let lastBudgetStop = null;
   let eventCount = 0;
   let continuationAuditsCompleted = false;
 
@@ -455,6 +477,9 @@ function createTeacherSearchObserver(teacherIndex, options) {
   const targetStep = config.dominanceTargetStep == null
     ? null
     : number(config.dominanceTargetStep, null);
+  const fairnessTargetStep = config.fairnessTargetStep == null
+    ? null
+    : number(config.fairnessTargetStep, null);
 
   const shouldCaptureDominanceWitness = (meta) => {
     if (captureMode === "off") return false;
@@ -494,6 +519,7 @@ function createTeacherSearchObserver(teacherIndex, options) {
         : event.evictedNodeId;
     const current = activeByExact.get(event.exactStateKey) || new Set();
     if (add) {
+      if (nodeId != null) activeNodeIds.add(nodeId);
       current.add(nodeId == null ? event.exactStateKey : nodeId);
       activeByExact.set(event.exactStateKey, current);
       return;
@@ -502,6 +528,7 @@ function createTeacherSearchObserver(teacherIndex, options) {
       activeByExact.delete(event.exactStateKey);
       return;
     }
+    activeNodeIds.delete(nodeId);
     current.delete(nodeId);
     if (current.size === 0) activeByExact.delete(event.exactStateKey);
     else activeByExact.set(event.exactStateKey, current);
@@ -540,6 +567,28 @@ function createTeacherSearchObserver(teacherIndex, options) {
         ? previous.queueAgeExpansions
         : event.queueAgeExpansions,
       queueAgeMs: event.queueAgeMs == null ? previous.queueAgeMs : event.queueAgeMs,
+      fairQueueOrdinal: event.fairQueueOrdinal == null
+        ? previous.fairQueueOrdinal
+        : event.fairQueueOrdinal,
+      fairCursorAtEnqueue: event.fairCursorAtEnqueue == null
+        ? previous.fairCursorAtEnqueue
+        : event.fairCursorAtEnqueue,
+      fairPopsAtEnqueue: event.fairPopsAtEnqueue == null
+        ? previous.fairPopsAtEnqueue
+        : event.fairPopsAtEnqueue,
+      olderEntriesAheadAtEnqueue: event.olderEntriesAheadAtEnqueue == null
+        ? previous.olderEntriesAheadAtEnqueue
+        : event.olderEntriesAheadAtEnqueue,
+      fairCursorAtPop: event.fairCursorAtPop == null
+        ? previous.fairCursorAtPop
+        : event.fairCursorAtPop,
+      fairPopsAtPop: event.fairPopsAtPop == null
+        ? previous.fairPopsAtPop
+        : event.fairPopsAtPop,
+      popSource: event.popSource == null ? previous.popSource : event.popSource,
+      expansionOrdinal: event.expansionOrdinal == null
+        ? previous.expansionOrdinal
+        : event.expansionOrdinal,
     });
   };
 
@@ -563,6 +612,7 @@ function createTeacherSearchObserver(teacherIndex, options) {
     if (nodeId == null) return;
     records.forEach((record) => {
       addUnique(record.teacherPreNodeIds, nodeId);
+      record.preReached = true;
       attachNodeDetail(record, "teacherPreNodeDetails", nodeId);
     });
   };
@@ -686,11 +736,15 @@ function createTeacherSearchObserver(teacherIndex, options) {
       return;
     }
     if (event.eventType === "budgetStopped") {
-      budgetStops.push({
+      lastBudgetStop = {
         reasonCode: event.reasonCode || null,
         frontierSize: number(event.frontierSize, 0),
         expansions: number(event.expansions, 0),
-      });
+        fairCursor: event.fairCursor == null ? null : number(event.fairCursor, 0),
+        fairPops: event.fairPops == null ? null : number(event.fairPops, 0),
+        fairnessEvery: event.fairnessEvery == null ? null : number(event.fairnessEvery, 0),
+      };
+      budgetStops.push(lastBudgetStop);
       if (number(event.frontierSize, 0) > 0) {
         steps.forEach((record) => {
           const pendingNodeIds = activeTeacherPreNodeIds(record);
@@ -780,6 +834,94 @@ function createTeacherSearchObserver(teacherIndex, options) {
       continuationAuditElapsedMs = Date.now() - continuationStartedAt;
       continuationAuditsCompleted = true;
     }
+    const dpFairness = dp && dp.agendaFairness ? dp.agendaFairness : null;
+    let targetStepSummary = null;
+    if (fairnessTargetStep != null) {
+      const targetRecord = steps.find((record) => record.step === fairnessTargetStep);
+      if (targetRecord) {
+        const targetPreMeta = targetRecord.teacherPreNodeIds
+          .map((nodeId) => nodeMetaById.get(nodeId))
+          .filter(Boolean)
+          .sort((left, right) => {
+            const leftOrdinal = left.fairQueueOrdinal == null ? Number.POSITIVE_INFINITY : left.fairQueueOrdinal;
+            const rightOrdinal = right.fairQueueOrdinal == null ? Number.POSITIVE_INFINITY : right.fairQueueOrdinal;
+            return leftOrdinal - rightOrdinal || left.nodeId - right.nodeId;
+          })[0] || null;
+        const poppedMeta = targetRecord.teacherPreNodeIds
+          .map((nodeId) => nodeMetaById.get(nodeId))
+          .filter((meta) => meta && meta.popExpansion != null)
+          .sort((left, right) => left.popExpansion - right.popExpansion)[0] || null;
+        const fairnessEvery = dpFairness && dpFairness.enabled
+          ? number(dpFairness.fairnessEvery, 0)
+          : 0;
+        const fairPopsAtStop = lastBudgetStop && lastBudgetStop.fairPops != null
+          ? lastBudgetStop.fairPops
+          : dpFairness && dpFairness.fairPops != null
+            ? dpFairness.fairPops
+            : null;
+        const fairCursorAtStop = lastBudgetStop && lastBudgetStop.fairCursor != null
+          ? lastBudgetStop.fairCursor
+          : dpFairness && dpFairness.fairCursor != null
+            ? dpFairness.fairCursor
+            : null;
+        const targetOrdinal = targetPreMeta && targetPreMeta.fairQueueOrdinal;
+        const olderActiveEntriesAheadAtStop = targetOrdinal == null
+          ? null
+          : Array.from(activeNodeIds)
+            .filter((nodeId) => !targetRecord.teacherPreNodeIds.includes(nodeId))
+            .map((nodeId) => nodeMetaById.get(nodeId))
+            .filter((meta) => meta && meta.fairQueueOrdinal != null && meta.fairQueueOrdinal < targetOrdinal)
+            .length;
+        const enqueueExpansion = targetPreMeta && targetPreMeta.enqueueExpansion;
+        const fairPopsAtEnqueue = targetPreMeta && targetPreMeta.fairPopsAtEnqueue;
+        const estimatedFairPopOrdinal = poppedMeta && poppedMeta.expansionOrdinal != null
+          ? poppedMeta.expansionOrdinal
+          : fairnessEvery > 0 && enqueueExpansion != null
+            ? Math.ceil((enqueueExpansion + 1) / fairnessEvery) * fairnessEvery
+            : null;
+        targetRecord.fairnessAudit = {
+          enqueueExpansion: enqueueExpansion == null ? null : enqueueExpansion,
+          fairQueueOrdinal: targetOrdinal == null ? null : targetOrdinal,
+          fairCursorAtEnqueue: targetPreMeta && targetPreMeta.fairCursorAtEnqueue,
+          fairPopsAtEnqueue: fairPopsAtEnqueue == null ? null : fairPopsAtEnqueue,
+          olderEntriesAheadAtEnqueue: targetPreMeta && targetPreMeta.olderEntriesAheadAtEnqueue,
+          fairCursorAtStop,
+          fairPopsAfterEnqueue: fairPopsAtStop == null || fairPopsAtEnqueue == null
+            ? null
+            : Math.max(0, fairPopsAtStop - fairPopsAtEnqueue),
+          olderActiveEntriesAheadAtStop,
+          estimatedFairPopOrdinal,
+          poppedBy: poppedMeta && poppedMeta.popSource || null,
+        };
+        targetStepSummary = {
+          step: targetRecord.step,
+          outcome: targetRecord.outcome,
+          teacherPreNodeIds: targetRecord.teacherPreNodeIds.slice(),
+          preReached: targetRecord.preReached,
+          preExpanded: targetRecord.preExpanded,
+          actionGenerated: targetRecord.actionGenerated,
+          postInserted: targetRecord.postInserted,
+          popSource: poppedMeta && poppedMeta.popSource || null,
+          expansionOrdinal: poppedMeta && poppedMeta.expansionOrdinal == null
+            ? null
+            : poppedMeta && poppedMeta.expansionOrdinal,
+          fairnessAudit: { ...targetRecord.fairnessAudit },
+        };
+      }
+    }
+    const isBenignDominance = (record) => record.outcome === "teacher-post-dominance-rejected" &&
+      record.dominanceContinuationAudits.length > 0 &&
+      record.dominanceContinuationAudits.every((audit) => audit && audit.success === true);
+    const firstBenignDominance = steps.find((record) => isBenignDominance(record));
+    const firstHard = steps.find(
+      (record) => divergenceOutcomes.has(record.outcome) && !isBenignDominance(record),
+    );
+    const furthestTeacherPreReached = steps
+      .filter((record) => record.preReached)
+      .sort((left, right) => right.step - left.step)[0];
+    const furthestTeacherPreExpanded = steps
+      .filter((record) => record.preExpanded)
+      .sort((left, right) => right.step - left.step)[0];
     const searchWallMs = dp && Number.isFinite(dp.wallMs)
       ? dp.wallMs
       : dp && dp.perf && Number.isFinite(dp.perf.wallMs)
@@ -801,6 +943,11 @@ function createTeacherSearchObserver(teacherIndex, options) {
       foundGoal: Boolean(searchResult && (searchResult.bestGoalState || searchResult.goalState)),
       firstObservedSearchDivergenceStep: firstObserved ? firstObserved.step : null,
       firstInconclusiveStep: firstInconclusive ? firstInconclusive.step : null,
+      firstHardDivergenceStep: firstHard ? firstHard.step : null,
+      firstBenignDominanceStep: firstBenignDominance ? firstBenignDominance.step : null,
+      furthestTeacherPreReachedStep: furthestTeacherPreReached ? furthestTeacherPreReached.step : null,
+      furthestTeacherPreExpandedStep: furthestTeacherPreExpanded ? furthestTeacherPreExpanded.step : null,
+      targetStepSummary,
       outcomeCounts,
       timing: {
         searchElapsedMs: searchWallMs == null
