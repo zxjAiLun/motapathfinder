@@ -13,6 +13,7 @@ const { syncProgress } = require("./lib/progress");
 const { buildStateKey } = require("./lib/state-key");
 const {
   buildTeacherStepIndex,
+  classifyDominance,
   createTeacherSearchObserver,
   runTeacherSearchObservation,
 } = require("./lib/teacher-search-observer");
@@ -523,9 +524,29 @@ function checkDominanceContinuationIntegration() {
   assert.equal(audits[0].steps[0].actionResolved, true);
   assert.equal(audits[0].steps[0].actionApplicable, true);
   assert.equal(audits[0].steps[0].teacherActionFingerprint, "fp:second");
-  assert.equal(report.firstBenignDominanceStep, 0);
-  assert.equal(report.firstHardDivergenceStep, null);
+  assert.equal(report.steps[0].dominanceClassification, "unclassified");
+  assert.equal(report.firstConfirmedBenignDominanceStep, null);
+  assert.equal(report.firstConfirmedHardDivergenceStep, null);
+  assert.equal(report.firstUnclassifiedDominanceStep, 0);
   assert(applyCalls > 0, "continuation should run during finalize after search events");
+}
+
+function checkDominanceClassification() {
+  const base = { outcome: "teacher-post-dominance-rejected" };
+  assert.equal(classifyDominance(base), "unclassified");
+  assert.equal(classifyDominance({
+    ...base,
+    dominanceContinuationAudits: [{ window: 1, success: true }],
+  }), "unclassified");
+  assert.equal(classifyDominance({
+    ...base,
+    dominanceContinuationAudits: [{ window: "until-failure", success: true }],
+  }), "confirmed-benign");
+  assert.equal(classifyDominance({
+    ...base,
+    dominanceContinuationAudits: [{ window: 1, success: false }],
+  }), "confirmed-hard");
+  assert.equal(classifyDominance({ outcome: "teacher-step-survived" }), "not-applicable");
 }
 
 function checkFairnessTargetSummary() {
@@ -565,6 +586,14 @@ function checkFairnessTargetSummary() {
     olderEntriesAheadAtEnqueue: 0,
     enqueueExpansion: 0,
   }));
+  collector.observer.onEvent(event("skylineInserted", pre0, {
+    nodeId: 3,
+    parentId: null,
+    fairQueueOrdinal: 1,
+    fairCursorAtEnqueue: 0,
+    fairPopsAtEnqueue: 0,
+    enqueueExpansion: 0,
+  }));
   collector.observer.onEvent(event("agendaPopped", pre0, {
     nodeId: 1,
     popSource: "best-first",
@@ -574,10 +603,9 @@ function checkFairnessTargetSummary() {
     nodeId: 2,
     parentId: 1,
     action: action("battle:first", "fp:first", "1:0", "1:0:0"),
-    fairQueueOrdinal: 1,
+    fairQueueOrdinal: 2,
     fairCursorAtEnqueue: 0,
     fairPopsAtEnqueue: 0,
-    olderEntriesAheadAtEnqueue: 0,
     enqueueExpansion: 1,
   }));
   collector.observer.onEvent(event("budgetStopped", pre1, {
@@ -605,10 +633,16 @@ function checkFairnessTargetSummary() {
   assert.equal(report.targetStepSummary.step, 1);
   assert.equal(report.targetStepSummary.preReached, true);
   assert.equal(report.targetStepSummary.preExpanded, false);
-  assert.equal(report.targetStepSummary.fairnessAudit.fairQueueOrdinal, 1);
+  assert.equal(report.targetStepSummary.selectedTeacherPreNodeId, 2);
+  assert.equal(report.targetStepSummary.selectedNodeStatus, "pending");
+  assert.equal(report.targetStepSummary.fairnessAudit.fairQueueOrdinal, 2);
+  assert.equal(report.targetStepSummary.fairnessAudit.olderEntriesAheadAtEnqueue, 1);
   assert.equal(report.targetStepSummary.fairnessAudit.fairCursorAtStop, 0);
   assert.equal(report.targetStepSummary.fairnessAudit.fairPopsAfterEnqueue, 0);
-  assert.equal(report.targetStepSummary.fairnessAudit.estimatedFairPopOrdinal, 4);
+  assert.equal(report.targetStepSummary.fairnessAudit.earliestPossibleFairExpansion, 4);
+  assert.equal(report.targetStepSummary.fairnessAudit.fifoUpperBoundFairExpansion, 3);
+  assert.equal(report.targetStepSummary.fairnessAudit.actualPopExpansion, null);
+  assert.equal(report.targetStepSummary.fairnessAudit.olderActiveEntriesAheadAtStop, 1);
   assert.equal(report.targetStepSummary.fairnessAudit.poppedBy, null);
   assert.equal(report.firstInconclusiveStep, 1);
 }
@@ -624,6 +658,7 @@ function main() {
   checkLegacyIndexUpgrade();
   checkSegmentForwarding();
   checkDominanceContinuationIntegration();
+  checkDominanceClassification();
   checkFairnessTargetSummary();
   console.log("check-teacher-search-observer: ok");
 }
@@ -642,5 +677,6 @@ module.exports = {
   checkLegacyIndexUpgrade,
   checkSegmentForwarding,
   checkDominanceContinuationIntegration,
+  checkDominanceClassification,
   checkFairnessTargetSummary,
 };

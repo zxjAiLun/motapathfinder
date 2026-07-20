@@ -790,7 +790,7 @@ function searchDP(simulator, initialState, options) {
   let fairCursor = 0;
   const expandedNodeIds = fairnessEnabled ? new Set() : null;
   const fairEnqueueExpansions = fairnessEnabled ? new Map() : null;
-  const fairQueueMeta = fairnessEnabled ? new Map() : null;
+  const fairQueueOrdinals = fairnessEnabled ? new Map() : null;
   const agendaFairness = {
     enabled: fairnessEnabled,
     fairnessEvery,
@@ -1073,7 +1073,6 @@ function searchDP(simulator, initialState, options) {
     let fairQueueOrdinal = null;
     let fairCursorAtEnqueue = null;
     let fairPopsAtEnqueue = null;
-    let olderEntriesAheadAtEnqueue = null;
     if (observer) {
       enqueueExpansion = expansions;
       enqueueElapsedMs = Date.now() - startedAt;
@@ -1091,16 +1090,7 @@ function searchDP(simulator, initialState, options) {
       fairQueueOrdinal = fairEntries.length;
       fairCursorAtEnqueue = fairCursor;
       fairPopsAtEnqueue = agendaFairness.fairPops;
-      olderEntriesAheadAtEnqueue = fairEntries
-        .slice(fairCursor)
-        .filter((entry) => isActiveEntry(entry) && !expandedNodeIds.has(entry.nodeId))
-        .length;
-      fairQueueMeta.set(node.nodeId, {
-        fairQueueOrdinal,
-        fairCursorAtEnqueue,
-        fairPopsAtEnqueue,
-        olderEntriesAheadAtEnqueue,
-      });
+      fairQueueOrdinals.set(node.nodeId, fairQueueOrdinal);
     }
     if (observer) {
       beforeSkylineIds
@@ -1144,7 +1134,6 @@ function searchDP(simulator, initialState, options) {
         fairQueueOrdinal,
         fairCursorAtEnqueue,
         fairPopsAtEnqueue,
-        olderEntriesAheadAtEnqueue,
       }));
     }
     if (heap) heap.push(node);
@@ -1286,7 +1275,6 @@ function searchDP(simulator, initialState, options) {
       ? popElapsedMs - enqueueMeta.enqueueElapsedMs
       : null;
     const agendaRank = observer ? compactObserverAgendaRank(entry.rank) : null;
-    const fairMeta = fairQueueMeta && fairQueueMeta.get(entry.nodeId);
     if (fairnessEnabled && selected.popSource === "fair-oldest") {
       const enqueueExpansion = fairEnqueueExpansions.get(entry.nodeId);
       const fairQueueAge = enqueueExpansion == null
@@ -1313,7 +1301,7 @@ function searchDP(simulator, initialState, options) {
       popSource: selected.popSource,
       fairnessEvery: fairnessEnabled ? fairnessEvery : 0,
       expansionOrdinal,
-      fairQueueOrdinal: fairMeta ? fairMeta.fairQueueOrdinal : null,
+      fairQueueOrdinal: fairQueueOrdinals ? fairQueueOrdinals.get(entry.nodeId) : null,
       fairCursorAtPop: fairnessEnabled ? fairCursor : null,
       fairPopsAtPop: fairnessEnabled ? agendaFairness.fairPops : null,
     });
