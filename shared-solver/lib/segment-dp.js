@@ -2782,6 +2782,12 @@ function segmentDpOverrides(segment, config, overrides) {
     ...(config && config.fairnessEvery != null && !generatedSegment
       ? { fairnessEvery: config.fairnessEvery }
       : {}),
+    ...(config && config.agendaMode != null && !generatedSegment
+      ? { agendaMode: config.agendaMode }
+      : {}),
+    ...(config && config.maxActionsPerState != null && !generatedSegment
+      ? { maxActionsPerState: config.maxActionsPerState }
+      : {}),
     ...(config && config.resourceTimingModel != null
       ? { resourceTimingModel: config.resourceTimingModel }
       : {}),

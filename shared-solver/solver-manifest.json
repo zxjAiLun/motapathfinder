@@ -178,6 +178,7 @@
         "shared-solver/check-teacher-search-observer.js",
         "shared-solver/check-teacher-dominance-audit.js",
         "shared-solver/check-hybrid-fair-agenda.js",
+        "shared-solver/check-agenda-policy-evaluation.js",
         "shared-solver/check-route-store-exact.js"
       ],
       "requiredCommands": [
@@ -197,6 +198,21 @@
         "unit": true,
         "realFixture": true,
         "segmentClosure": true,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/agenda-policy-evaluation.js": {
+      "id": "agenda-policy-evaluation",
+      "path": "shared-solver/lib/agenda-policy-evaluation.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "diagnostics",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
       }
@@ -1371,6 +1387,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-agenda-policy-evaluation.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "synthetic agenda policy matrix and aggregation checks; no tower/project load"
     },
     "shared-solver/check-auto-milestone-decomposition.js": {
       "grade": "unit-plus-micro",

@@ -840,6 +840,7 @@ function searchDP(simulator, initialState, options) {
   let maxActionsGeneratedForState = 0;
   let invalid = 0;
   let firstGoalNode = null;
+  let firstGoalExpansion = null;
   let bestGoalNode = null;
   const goalNodes = [];
   let bestSeenNode = null;
@@ -1149,7 +1150,10 @@ function searchDP(simulator, initialState, options) {
       bestProgressNode = node;
     }
     if (isGoalState(state)) {
-      if (!firstGoalNode) firstGoalNode = node;
+      if (!firstGoalNode) {
+        firstGoalNode = node;
+        firstGoalExpansion = expansions + 1;
+      }
       goalNodes.push(node);
       if (!bestGoalNode || compareGoalStates(state, bestGoalNode.state) > 0) bestGoalNode = node;
       if (observer) {
@@ -1631,6 +1635,7 @@ function searchDP(simulator, initialState, options) {
         keyMode: String(config.dpKeyMode || config.keyMode || "location"),
         targetFloorOrder: getFloorOrder(config.targetFloorId || simulator.stopFloorId),
         foundFirstGoal: Boolean(firstGoalState),
+        firstGoalExpansion,
         foundBestGoal: Boolean(bestGoalState),
         goalSkylineLimit: Math.max(1, Number(config.goalSkylineLimit || 8)),
         goalSkylineCount: goalSkylineStates.length,

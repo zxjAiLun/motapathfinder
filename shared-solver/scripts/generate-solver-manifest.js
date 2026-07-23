@@ -99,6 +99,7 @@ const DIAG = new Set([
   "cli-options.js",
   "solver-config.js",
   "floor-id.js",
+  "agenda-policy-evaluation.js",
 ]);
 
 const modules = {};
@@ -342,6 +343,13 @@ const TEST_OVERRIDES = {
     cleanCheckout: true,
     notes: "synthetic hybrid-fair agenda contract; no tower/project load",
   },
+  "shared-solver/check-agenda-policy-evaluation.js": {
+    grade: "unit",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "synthetic agenda policy matrix and aggregation checks; no tower/project load",
+  },
   "shared-solver/check-teacher-search-observer.js": {
     grade: "unit",
     allowsNotFound: false,
@@ -573,6 +581,7 @@ const manifest = {
         "shared-solver/check-teacher-search-observer.js",
         "shared-solver/check-teacher-dominance-audit.js",
         "shared-solver/check-hybrid-fair-agenda.js",
+        "shared-solver/check-agenda-policy-evaluation.js",
         "shared-solver/check-route-store-exact.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],
