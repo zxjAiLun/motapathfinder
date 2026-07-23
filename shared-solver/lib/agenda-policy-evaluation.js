@@ -1,5 +1,13 @@
 "use strict";
 
+const { buildSolverSnapshot } = require("./route-snapshot");
+const {
+  createStateFromSnapshot,
+  resolveRecordedAction,
+} = require("./route-store");
+const { syncProgress } = require("./progress");
+const { buildStateKey } = require("./state-key");
+
 const DEFAULT_POLICIES = Object.freeze([
   Object.freeze({ id: "best-first", agendaMode: "best-first", fairnessEvery: null }),
   Object.freeze({ id: "hybrid-fair-16", agendaMode: "hybrid-fair", fairnessEvery: 16 }),
@@ -14,6 +22,7 @@ function number(value, fallback = 0) {
 }
 
 function finiteOrNull(value) {
+  if (value == null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -114,6 +123,7 @@ function buildSegmentedChildArgs(config, policy, budgetPlan, reportPath, outPath
     `--max-actions-per-state=${config.maxActionsPerState}`,
     `--max-expansions=${budgetPlan.maxExpansions}`,
     `--max-runtime-ms=${budgetPlan.maxRuntimeMs}`,
+    `--budget-scope=${config.budgetScope || "per-attempt"}`,
     `--report=${reportPath}`,
     `--print-failures=0`,
   ];
@@ -129,6 +139,257 @@ function buildSegmentedChildArgs(config, policy, budgetPlan, reportPath, outPath
   if (config.toMilestone) args.push(`--to-milestone=${config.toMilestone}`);
   if (outPath) args.push(`--out=${outPath}`);
   return args;
+}
+
+function compactReplayState(state) {
+  if (!state) return null;
+  return {
+    floorId: state.floorId || null,
+    hero: state.hero || null,
+    inventory: state.inventory || null,
+    flags: state.flags || null,
+    stateKey: buildStateKey(state),
+  };
+}
+
+function exactStateKeyFromSnapshot(project, snapshot) {
+  if (!snapshot) return null;
+  try {
+    const state = createStateFromSnapshot(project, snapshot, { rank: "chaos" });
+    syncProgress(state);
+    return buildStateKey(state);
+  } catch (error) {
+    return null;
+  }
+}
+
+function strictReplayFailure(result, step, reason, expectedStateKey, actualStateKey, error) {
+  return {
+    performed: true,
+    valid: false,
+    stepsAttempted: result.stepsAttempted,
+    stepsCompleted: result.stepsCompleted,
+    failureStep: step,
+    failureReason: reason,
+    expectedStateKey: expectedStateKey || null,
+    actualStateKey: actualStateKey || null,
+    finalState: compactReplayState(result.state),
+    error: error ? String(error.message || error) : null,
+  };
+}
+
+function strictReplayRoute(project, simulator, routeRecord) {
+  const record = routeRecord || {};
+  const startSnapshot = record.start && record.start.snapshot;
+  if (!startSnapshot) {
+    return {
+      performed: true,
+      valid: false,
+      stepsAttempted: 0,
+      stepsCompleted: 0,
+      failureStep: null,
+      failureReason: "missing-start-snapshot",
+      expectedStateKey: record.start && (record.start.exactStateKey || record.start.stateKey) || null,
+      actualStateKey: null,
+      finalState: null,
+      error: null,
+    };
+  }
+  let state;
+  try {
+    state = createStateFromSnapshot(project, startSnapshot, {
+      rank: record.source && record.source.rank || "chaos",
+      route: [],
+      decisionDepth: 0,
+    });
+    syncProgress(state);
+  } catch (error) {
+    return {
+      performed: true,
+      valid: false,
+      stepsAttempted: (record.decisions || []).length,
+      stepsCompleted: 0,
+      failureStep: null,
+      failureReason: "start-snapshot-restore-failed",
+      expectedStateKey: record.start && (record.start.exactStateKey || record.start.stateKey) || null,
+      actualStateKey: null,
+      finalState: null,
+      error: String(error.message || error),
+    };
+  }
+  const result = {
+    state,
+    stepsAttempted: Array.isArray(record.decisions) ? record.decisions.length : 0,
+    stepsCompleted: 0,
+  };
+  const decisions = Array.isArray(record.decisions) ? record.decisions : [];
+  const startExpected = record.start && (
+    record.start.exactStateKey || exactStateKeyFromSnapshot(project, startSnapshot)
+  );
+  if (startExpected && buildStateKey(state) !== startExpected) {
+    return strictReplayFailure(
+      result,
+      null,
+      "start-exact-state-mismatch",
+      startExpected,
+      buildStateKey(state),
+    );
+  }
+  for (let index = 0; index < decisions.length; index += 1) {
+    const decision = decisions[index] || {};
+    const step = decision.index == null ? index + 1 : decision.index;
+    const actualPreStateKey = buildStateKey(state);
+    const expectedPreStateKey = decision.preExactStateKey ||
+      exactStateKeyFromSnapshot(project, decision.preSnapshot);
+    const expectedPostStateKey = decision.postExactStateKey ||
+      exactStateKeyFromSnapshot(project, decision.postSnapshot);
+    const effectiveDecision = {
+      ...decision,
+      preExactStateKey: expectedPreStateKey,
+      postExactStateKey: expectedPostStateKey,
+    };
+    if (!expectedPreStateKey) {
+      return strictReplayFailure(
+        result,
+        step,
+        "missing-pre-exact-state-key",
+        null,
+        actualPreStateKey,
+      );
+    }
+    if (actualPreStateKey !== expectedPreStateKey) {
+      return strictReplayFailure(
+        result,
+        step,
+        "pre-exact-state-mismatch",
+        expectedPreStateKey,
+        actualPreStateKey,
+      );
+    }
+    let resolved;
+    try {
+      resolved = resolveRecordedAction(simulator, state, effectiveDecision, { project });
+    } catch (error) {
+      return strictReplayFailure(
+        result,
+        step,
+        "action-resolution-error",
+        expectedPostStateKey,
+        actualPreStateKey,
+        error,
+      );
+    }
+    if (!resolved || !resolved.action) {
+      return strictReplayFailure(
+        result,
+        step,
+        `action-unavailable:${resolved && resolved.reason || "unknown"}`,
+        expectedPostStateKey,
+        actualPreStateKey,
+      );
+    }
+    try {
+      state = simulator.applyAction(state, resolved.action);
+    } catch (error) {
+      result.state = state;
+      return strictReplayFailure(
+        result,
+        step,
+        "action-apply-error",
+        expectedPostStateKey,
+        actualPreStateKey,
+        error,
+      );
+    }
+    result.state = state;
+    const actualPostStateKey = buildStateKey(state);
+    if (!expectedPostStateKey) {
+      return strictReplayFailure(
+        result,
+        step,
+        "missing-post-exact-state-key",
+        null,
+        actualPostStateKey,
+      );
+    }
+    if (actualPostStateKey !== expectedPostStateKey) {
+      return strictReplayFailure(
+        result,
+        step,
+        "post-exact-state-mismatch",
+        expectedPostStateKey,
+        actualPostStateKey,
+      );
+    }
+    result.stepsCompleted += 1;
+  }
+  const expectedFinal = record.final || {};
+  const actualFinalStateKey = buildStateKey(state);
+  const expectedFinalStateKey = expectedFinal.exactStateKey || expectedFinal.stateKey ||
+    exactStateKeyFromSnapshot(project, expectedFinal.snapshot);
+  if (!expectedFinalStateKey) {
+    return strictReplayFailure(
+      result,
+      null,
+      "missing-final-state-key",
+      null,
+      actualFinalStateKey,
+    );
+  }
+  if (actualFinalStateKey !== expectedFinalStateKey) {
+    return strictReplayFailure(
+      result,
+      null,
+      "final-exact-state-mismatch",
+      expectedFinalStateKey,
+      actualFinalStateKey,
+    );
+  }
+  const expectedFinalSnapshot = expectedFinal.snapshot;
+  if (!expectedFinalSnapshot) {
+    return strictReplayFailure(
+      result,
+      null,
+      "missing-final-snapshot",
+      expectedFinalStateKey,
+      actualFinalStateKey,
+    );
+  }
+  try {
+    const actualSnapshot = buildSolverSnapshot(project, state, {
+      floorIds: Object.keys(expectedFinalSnapshot.floors || {}),
+    });
+    if (JSON.stringify(actualSnapshot) !== JSON.stringify(expectedFinalSnapshot)) {
+      return strictReplayFailure(
+        result,
+        null,
+        "final-snapshot-mismatch",
+        expectedFinalStateKey,
+        actualFinalStateKey,
+      );
+    }
+  } catch (error) {
+    return strictReplayFailure(
+      result,
+      null,
+      "final-snapshot-compare-error",
+      expectedFinalStateKey,
+      actualFinalStateKey,
+      error,
+    );
+  }
+  return {
+    performed: true,
+    valid: true,
+    stepsAttempted: result.stepsAttempted,
+    stepsCompleted: result.stepsCompleted,
+    failureStep: null,
+    failureReason: null,
+    expectedStateKey: expectedFinalStateKey,
+    actualStateKey: actualFinalStateKey,
+    finalState: compactReplayState(state),
+    error: null,
+  };
 }
 
 function attemptDiagnostics(report) {
@@ -180,9 +441,40 @@ function aggregateAttemptMetrics(attempts) {
     fairFallbacks: sum(fairness.map((item) => item.fairFallbacks)),
     bestFallbacks: sum(fairness.map((item) => item.bestFallbacks)),
     maxFairQueueAgeExpansions: max(fairness.map((item) => item.maxFairQueueAgeExpansions)),
-    firstGoalExpansion: firstGoalExpansions.length > 0
+    minLocalFirstGoalExpansion: firstGoalExpansions.length > 0
       ? Math.min(...firstGoalExpansions)
       : null,
+  };
+}
+
+function firstGoalSummary(attempts) {
+  let cumulativeExpansions = 0;
+  let cumulativeWallMs = 0;
+  for (let index = 0; index < (attempts || []).length; index += 1) {
+    const attempt = attempts[index];
+    const diagnostics = attempt.diagnostics || {};
+    const localExpansions = number(diagnostics.expansions);
+    const localWallMs = number(diagnostics.wallMs);
+    const firstGoal = finiteOrNull(diagnostics.firstGoalExpansion);
+    if (firstGoal != null) {
+      return {
+        attemptsBeforeFirstGoal: index,
+        cumulativeExpansionsToFirstGoal: cumulativeExpansions + firstGoal,
+        cumulativeWallMsToFirstGoal: cumulativeWallMs + number(
+          diagnostics.firstGoalElapsedMs,
+          localWallMs,
+        ),
+        minLocalFirstGoalExpansion: firstGoal,
+      };
+    }
+    cumulativeExpansions += localExpansions;
+    cumulativeWallMs += localWallMs;
+  }
+  return {
+    attemptsBeforeFirstGoal: null,
+    cumulativeExpansionsToFirstGoal: null,
+    cumulativeWallMsToFirstGoal: null,
+    minLocalFirstGoalExpansion: null,
   };
 }
 
@@ -195,17 +487,58 @@ function aggregateSegmentReport(report) {
     const segmentAttempts = attempts.filter(
       (attempt) => attempt.segmentId === segment.segmentId,
     );
+    const firstGoal = firstGoalSummary(segmentAttempts);
     return {
       segmentId: segment.segmentId,
       label: segment.label || null,
       found: Boolean(segment.found),
       attempts: segmentAttempts.length,
-      metrics: aggregateAttemptMetrics(segmentAttempts),
+      finalHp: segment.candidates && segment.candidates[0] && segment.candidates[0].hero
+        ? number(segment.candidates[0].hero.hp, null)
+        : null,
+      metrics: {
+        ...aggregateAttemptMetrics(segmentAttempts),
+        ...firstGoal,
+      },
       stoppedReasons: stoppedReasonsForAttempts(segmentAttempts),
       progress: segment.failurePropagation || null,
     };
   });
   const metrics = aggregateAttemptMetrics(attempts);
+  const finalSegment = segmentMetrics[segmentMetrics.length - 1] || null;
+  const finalSegmentIndex = segmentMetrics.length - 1;
+  const segmentsToFinal = finalSegmentIndex >= 0
+    ? segmentMetrics.slice(0, finalSegmentIndex + 1)
+    : [];
+  const finalGoalKnown = Boolean(
+    finalSegment &&
+    segmentsToFinal.every((segment) =>
+      segment.metrics.cumulativeExpansionsToFirstGoal != null &&
+      segment.metrics.cumulativeWallMsToFirstGoal != null,
+    ),
+  );
+  const cumulativeExpansionsToFinal = finalGoalKnown
+    ? sum(segmentsToFinal.map(
+      (segment) => segment.metrics.cumulativeExpansionsToFirstGoal,
+    ))
+    : null;
+  const cumulativeWallMsToFinal = finalGoalKnown
+    ? sum(segmentsToFinal.map(
+      (segment) => segment.metrics.cumulativeWallMsToFirstGoal,
+    ))
+    : null;
+  metrics.attemptsBeforeFirstGoal = finalSegment && finalSegment.metrics
+    ? finalSegment.metrics.attemptsBeforeFirstGoal
+    : null;
+  metrics.cumulativeFirstGoalExpansion = cumulativeExpansionsToFinal;
+  metrics.cumulativeFirstGoalWallMs = cumulativeWallMsToFinal;
+  metrics.attemptsToFinalRequestedMilestone = finalGoalKnown
+    ? sum(segmentsToFinal.map(
+      (segment) => segment.metrics.attemptsBeforeFirstGoal + 1,
+    ))
+    : null;
+  metrics.expansionsToFinalRequestedMilestone = cumulativeExpansionsToFinal;
+  metrics.wallMsToFinalRequestedMilestone = cumulativeWallMsToFinal;
   return {
     found: Boolean(report && report.found),
     reachedMilestone: report && report.reachedMilestone || null,
@@ -241,6 +574,10 @@ function normalizeFirstGoalExpansion(value) {
   return Number.isFinite(value) ? value : null;
 }
 
+function nullableDelta(left, right) {
+  return left == null || right == null ? null : number(left) - number(right);
+}
+
 function buildRegressionFromBaseline(current, baseline) {
   if (!baseline) return null;
   const currentMetrics = current.metrics || {};
@@ -249,11 +586,40 @@ function buildRegressionFromBaseline(current, baseline) {
     foundDelta: Number(current.found) - Number(baseline.found),
     replayValidDelta: Number(Boolean(current.strictReplay && current.strictReplay.valid)) -
       Number(Boolean(baseline.strictReplay && baseline.strictReplay.valid)),
-    finalHpDelta: number(current.finalState && current.finalState.hero && current.finalState.hero.hp) -
-      number(baseline.finalState && baseline.finalState.hero && baseline.finalState.hero.hp),
+    finalHpDelta: nullableDelta(
+      current.finalState && current.finalState.hero && current.finalState.hero.hp,
+      baseline.finalState && baseline.finalState.hero && baseline.finalState.hero.hp,
+    ),
     expansionsDelta: number(currentMetrics.expansions) - number(baselineMetrics.expansions),
     wallMsDelta: number(currentMetrics.wallMs) - number(baselineMetrics.wallMs),
   };
+}
+
+function buildSegmentRegressionFromBaseline(currentSegments, baselineSegments) {
+  const baselineById = new Map(
+    (baselineSegments || []).map((segment) => [segment.segmentId, segment]),
+  );
+  return Object.fromEntries(
+    (currentSegments || []).map((segment) => {
+      const baseline = baselineById.get(segment.segmentId);
+      if (!baseline) {
+        return [segment.segmentId, { baselineMissing: true }];
+      }
+      const currentMetrics = segment.metrics || {};
+      const baselineMetrics = baseline.metrics || {};
+      return [segment.segmentId, {
+        foundDelta: Number(segment.found) - Number(Boolean(baseline && baseline.found)),
+        expansionsDelta: number(currentMetrics.expansions) - number(baselineMetrics.expansions),
+        wallMsDelta: number(currentMetrics.wallMs) - number(baselineMetrics.wallMs),
+        firstGoalExpansionDelta: nullableDelta(
+          currentMetrics.cumulativeExpansionsToFirstGoal,
+          baselineMetrics.cumulativeExpansionsToFirstGoal,
+        ),
+        frontierSizeDelta: nullableDelta(currentMetrics.frontierSize, baselineMetrics.frontierSize),
+        finalHpDelta: nullableDelta(segment.finalHp, baseline.finalHp),
+      }];
+    }),
+  );
 }
 
 function aggregateRepeats(runs) {
@@ -266,7 +632,9 @@ function aggregateRepeats(runs) {
     "frontierSize",
     "heapUsedMb",
     "rssMb",
-    "firstGoalExpansion",
+    "attemptsToFinalRequestedMilestone",
+    "expansionsToFinalRequestedMilestone",
+    "wallMsToFinalRequestedMilestone",
   ];
   const metrics = {};
   numericFields.forEach((field) => {
@@ -289,9 +657,12 @@ module.exports = {
   aggregateSegmentReport,
   buildBudgetPlan,
   buildRegressionFromBaseline,
+  buildSegmentRegressionFromBaseline,
   buildSegmentedChildArgs,
   getPolicyMatrix,
   median,
   range,
   normalizeFirstGoalExpansion,
+  nullableDelta,
+  strictReplayRoute,
 };

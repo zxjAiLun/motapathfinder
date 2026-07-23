@@ -230,7 +230,9 @@ function buildSegmentedReport({
       agendaMode: args["agenda-mode"] || null,
       fairnessEvery: optionalNumber(args["fairness-every"]),
       maxActionsPerState: optionalNumber(args["max-actions-per-state"]),
+      budgetScope: args["budget-scope"] || "per-attempt",
     },
+    budget: result.budget || null,
     summary,
     milestones: (spec.milestones || []).map((milestone) => ({
       id: milestone.id,
@@ -383,6 +385,7 @@ function main() {
     agendaMode: args["agenda-mode"] || null,
     fairnessEvery: optionalNumber(args["fairness-every"]),
     maxActionsPerState: optionalNumber(args["max-actions-per-state"]),
+    budgetScope: args["budget-scope"] || "per-attempt",
     resourceTimingModel: args["resource-timing-model"] || "breakpoint-v1",
     resourceTimingTargetLimit: optionalNumber(args["resource-timing-target-limit"]) || 16,
     resourceTimingResourceLimit: optionalNumber(args["resource-timing-resource-limit"]) || 4,

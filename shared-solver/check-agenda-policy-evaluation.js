@@ -9,16 +9,28 @@
 
 const assert = require("node:assert");
 
+const { buildSolverSnapshot } = require("./lib/route-snapshot");
+const { createStateFromSnapshot } = require("./lib/route-store");
+const { syncProgress } = require("./lib/progress");
+const { buildStateKey } = require("./lib/state-key");
+const {
+  __testHooks: segmentDpTestHooks,
+} = require("./lib/segment-dp");
 const {
   aggregateRepeats,
   aggregateSegmentReport,
   buildBudgetPlan,
   buildRegressionFromBaseline,
+  buildSegmentRegressionFromBaseline,
   buildSegmentedChildArgs,
   getPolicyMatrix,
   median,
   range,
+  strictReplayRoute,
 } = require("./lib/agenda-policy-evaluation");
+const {
+  classifyRun,
+} = require("./run-agenda-policy-evaluation");
 
 function makeReport(overrides) {
   return {
@@ -85,6 +97,7 @@ function makeReport(overrides) {
                 bestFallbacks: 0,
                 maxFairQueueAgeExpansions: 5,
                 firstGoalExpansion: 6,
+                firstGoalElapsedMs: 7,
                 completeWithinActionSet: false,
                 stoppedReason: null,
                 agendaFairness: {
@@ -166,13 +179,228 @@ function checkAggregation() {
   assert.equal(aggregate.metrics.fairPops, 2);
   assert.equal(aggregate.metrics.bestPops, 8);
   assert.equal(aggregate.metrics.frontierSize, 5);
-  assert.equal(aggregate.metrics.firstGoalExpansion, 6);
+  assert.equal(aggregate.metrics.minLocalFirstGoalExpansion, 6);
+  assert.equal(aggregate.metrics.cumulativeFirstGoalExpansion, 10);
+  assert.equal(aggregate.metrics.cumulativeFirstGoalWallMs, 19);
+  assert.equal(aggregate.metrics.expansionsToFinalRequestedMilestone, 10);
   assert.equal(aggregate.segments.length, 1);
   assert.equal(aggregate.segments[0].metrics.expansions, 10);
+  assert.equal(aggregate.segments[0].metrics.cumulativeExpansionsToFirstGoal, 10);
+  assert.equal(aggregate.segments[0].metrics.cumulativeWallMsToFirstGoal, 19);
   assert.equal(aggregate.segments[0].found, false);
   assert.deepEqual(aggregate.stoppedReasons, ["expansion-limit"]);
   assert.equal(aggregate.completeWithinActionSet, false);
   assert.equal(aggregate.progress.hero.hp, 80);
+}
+
+function makeReplayFixture(options) {
+  const config = options || {};
+  const project = {
+    floorsById: {
+      SYNTHETIC: {
+        floorId: "SYNTHETIC",
+        width: 3,
+        height: 3,
+        map: [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+        changeFloor: {},
+      },
+    },
+    mapNumbersById: {},
+    data: { firstData: { title: "Synthetic" } },
+  };
+  const makeState = (routeState) => {
+    const state = JSON.parse(JSON.stringify(routeState));
+    syncProgress(state);
+    return state;
+  };
+  const simulator = {
+    project,
+    enumerateActions: (state) => config.unavailable || state.hero.loc.x !== 1
+      ? []
+      : [{
+          kind: "battle",
+          summary: "battle:test@SYNTHETIC:2,1",
+          floorId: "SYNTHETIC",
+          target: { floorId: "SYNTHETIC", x: 2, y: 1 },
+          stance: { floorId: "SYNTHETIC", x: 1, y: 1 },
+          direction: "right",
+          enemyId: "test",
+          path: ["right"],
+        }],
+    applyAction: (state, action) => {
+      if (config.applyError) throw new Error("synthetic apply failure");
+      const next = makeState(state);
+      next.hero.loc.x = 2;
+      next.hero.hp -= 1;
+      next.route = (state.route || []).concat(action.summary);
+      return next;
+    },
+  };
+  const initial = makeState({
+    floorId: "SYNTHETIC",
+    hero: {
+      hp: 10,
+      hpmax: 100,
+      mana: 0,
+      manamax: 0,
+      atk: 1,
+      def: 1,
+      mdef: 0,
+      money: 0,
+      exp: 0,
+      lv: 1,
+      loc: { x: 1, y: 1, direction: "right" },
+      equipment: [],
+      followers: [],
+    },
+    inventory: {},
+    flags: {},
+    visitedFloors: { SYNTHETIC: true },
+    floorStates: { SYNTHETIC: { removed: {}, replaced: {} } },
+    route: [],
+    notes: [],
+    meta: { decisionDepth: 0 },
+  });
+  const startSnapshot = buildSolverSnapshot(project, initial, { floorIds: [] });
+  const restored = createStateFromSnapshot(project, startSnapshot, { rank: "chaos" });
+  syncProgress(restored);
+  const action = {
+    kind: "battle",
+    summary: "battle:test@SYNTHETIC:2,1",
+    floorId: "SYNTHETIC",
+    target: { floorId: "SYNTHETIC", x: 2, y: 1 },
+    stance: { floorId: "SYNTHETIC", x: 1, y: 1 },
+    direction: "right",
+    enemyId: "test",
+    path: ["right"],
+  };
+  const finalState = simulator.applyAction(restored, action);
+  const decision = {
+    index: 1,
+    kind: action.kind,
+    summary: action.summary,
+    floorId: action.floorId,
+    target: action.target,
+    stance: action.stance,
+    direction: action.direction,
+    enemyId: action.enemyId,
+    path: action.path,
+    preExactStateKey: buildStateKey(restored),
+    postExactStateKey: buildStateKey(finalState),
+  };
+  const fingerprint = require("./lib/route-store").fingerprintAction(action);
+  decision.fingerprint = fingerprint;
+  if (config.badPre) decision.preExactStateKey = "bad-pre";
+  if (config.badPost) decision.postExactStateKey = "bad-post";
+  return {
+    project,
+    simulator,
+    record: {
+      schema: "motapathfinder.route.v1",
+      source: { rank: "chaos" },
+      start: { snapshot: startSnapshot, exactStateKey: buildStateKey(restored) },
+      decisions: [decision],
+      final: {
+        snapshot: buildSolverSnapshot(project, finalState, { floorIds: [] }),
+        exactStateKey: buildStateKey(finalState),
+      },
+    },
+  };
+}
+
+function checkStrictReplay() {
+  const validFixture = makeReplayFixture();
+  const valid = strictReplayRoute(
+    validFixture.project,
+    validFixture.simulator,
+    validFixture.record,
+  );
+  assert.equal(valid.valid, true);
+  assert.equal(valid.performed, true);
+  assert.equal(valid.stepsAttempted, 1);
+  assert.equal(valid.stepsCompleted, 1);
+  assert.equal(valid.finalState.hero.hp, 9);
+
+  const unavailable = makeReplayFixture({ unavailable: true });
+  const unavailableResult = strictReplayRoute(
+    unavailable.project,
+    unavailable.simulator,
+    unavailable.record,
+  );
+  assert.equal(unavailableResult.valid, false);
+  assert.match(unavailableResult.failureReason, /^action-unavailable/);
+  assert.equal(unavailableResult.stepsCompleted, 0);
+
+  const badPre = makeReplayFixture({ badPre: true });
+  assert.equal(strictReplayRoute(badPre.project, badPre.simulator, badPre.record).failureReason,
+    "pre-exact-state-mismatch");
+  const badPost = makeReplayFixture({ badPost: true });
+  assert.equal(strictReplayRoute(badPost.project, badPost.simulator, badPost.record).failureReason,
+    "post-exact-state-mismatch");
+
+  const legacy = makeReplayFixture();
+  delete legacy.record.start.exactStateKey;
+  delete legacy.record.decisions[0].preExactStateKey;
+  delete legacy.record.decisions[0].postExactStateKey;
+  legacy.record.decisions[0].preSnapshot = buildSolverSnapshot(
+    legacy.project,
+    createStateFromSnapshot(legacy.project, legacy.record.start.snapshot, { rank: "chaos" }),
+    { floorIds: [] },
+  );
+  legacy.record.decisions[0].postSnapshot = buildSolverSnapshot(
+    legacy.project,
+    legacy.simulator.applyAction(
+      createStateFromSnapshot(legacy.project, legacy.record.start.snapshot, { rank: "chaos" }),
+      legacy.record.decisions[0],
+    ),
+    { floorIds: [] },
+  );
+  delete legacy.record.final.exactStateKey;
+  assert.equal(
+    strictReplayRoute(legacy.project, legacy.simulator, legacy.record).valid,
+    true,
+  );
+}
+
+function checkGlobalBudgetAndFailureClassification() {
+  assert.deepEqual(segmentDpTestHooks.allocateGlobalAttemptBudget({
+    remainingExpansions: 500,
+    remainingRuntimeMs: 20000,
+    remainingCandidates: 2,
+    segmentMaxExpansions: 1000,
+    segmentMaxRuntimeMs: 60000,
+  }), { maxExpansions: 250, maxRuntimeMs: 10000 });
+  let remainingExpansions = 500;
+  let remainingRuntimeMs = 20000;
+  for (let candidate = 0; candidate < 8; candidate += 1) {
+    const allocation = segmentDpTestHooks.allocateGlobalAttemptBudget({
+      remainingExpansions,
+      remainingRuntimeMs,
+      remainingCandidates: 8 - candidate,
+      segmentMaxExpansions: 1000,
+      segmentMaxRuntimeMs: 60000,
+    });
+    remainingExpansions -= allocation.maxExpansions;
+    remainingRuntimeMs -= allocation.maxRuntimeMs;
+  }
+  assert.equal(remainingExpansions, 0);
+  assert.equal(remainingRuntimeMs, 0);
+  assert.deepEqual(segmentDpTestHooks.allocateGlobalAttemptBudget({
+    remainingExpansions: 250,
+    remainingRuntimeMs: 10000,
+    remainingCandidates: 1,
+    segmentMaxExpansions: 1000,
+    segmentMaxRuntimeMs: 60000,
+  }), { maxExpansions: 250, maxRuntimeMs: 10000 });
+  const base = {
+    found: false,
+    strictReplay: { performed: false, valid: false },
+    process: { status: 0 },
+  };
+  assert.equal(classifyRun({ ...base, reportStatus: "missing" }), "missing-child-report");
+  assert.equal(classifyRun({ ...base, reportStatus: "invalid" }), "invalid-child-report");
+  assert.equal(classifyRun({ ...base, reportStatus: "valid", process: { status: 1 } }), "child-process-error");
+  assert.equal(classifyRun({ ...base, reportStatus: "valid", found: true }), "strict-replay-failure");
 }
 
 function checkRepeatAndRegression() {
@@ -206,6 +434,40 @@ function checkRepeatAndRegression() {
     expansionsDelta: 20,
     wallMsDelta: 20,
   });
+  const currentSegments = [{
+    segmentId: "s1",
+    found: true,
+    finalHp: 80,
+    metrics: {
+      expansions: 30,
+      wallMs: 40,
+      cumulativeExpansionsToFirstGoal: 12,
+      cumulativeWallMsToFirstGoal: 16,
+      frontierSize: 4,
+    },
+  }];
+  const baselineSegments = [{
+    segmentId: "s1",
+    found: true,
+    finalHp: 90,
+    metrics: {
+      expansions: 20,
+      wallMs: 30,
+      cumulativeExpansionsToFirstGoal: 10,
+      cumulativeWallMsToFirstGoal: 12,
+      frontierSize: 3,
+    },
+  }];
+  assert.deepEqual(buildSegmentRegressionFromBaseline(currentSegments, baselineSegments), {
+    s1: {
+      foundDelta: 0,
+      expansionsDelta: 10,
+      wallMsDelta: 10,
+      firstGoalExpansionDelta: 2,
+      frontierSizeDelta: 1,
+      finalHpDelta: -10,
+    },
+  });
 }
 
 function main() {
@@ -213,7 +475,9 @@ function main() {
   checkBudgetAndArgs();
   checkAggregation();
   checkRepeatAndRegression();
-  console.log("check-agenda-policy-evaluation: 4/4 passed");
+  checkStrictReplay();
+  checkGlobalBudgetAndFailureClassification();
+  console.log("check-agenda-policy-evaluation: 6/6 passed");
 }
 
 if (require.main === module) main();
@@ -223,5 +487,7 @@ module.exports = {
   checkBudgetAndArgs,
   checkPolicyMatrix,
   checkRepeatAndRegression,
+  checkStrictReplay,
+  checkGlobalBudgetAndFailureClassification,
   main,
 };

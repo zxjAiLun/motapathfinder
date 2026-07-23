@@ -2879,6 +2879,31 @@ function buildMilestoneCheckpoint(segment, execution) {
   };
 }
 
+function allocateGlobalAttemptBudget(options) {
+  const config = options || {};
+  const remainingCandidates = Math.max(1, number(config.remainingCandidates, 1));
+  const allocation = {};
+  if (config.remainingExpansions != null) {
+    allocation.maxExpansions = Math.max(
+      1,
+      Math.min(
+        number(config.segmentMaxExpansions, config.remainingExpansions),
+        Math.floor(number(config.remainingExpansions, 0) / remainingCandidates) || 1,
+      ),
+    );
+  }
+  if (config.remainingRuntimeMs != null) {
+    allocation.maxRuntimeMs = Math.max(
+      1,
+      Math.min(
+        number(config.segmentMaxRuntimeMs, config.remainingRuntimeMs),
+        Math.floor(number(config.remainingRuntimeMs, 0) / remainingCandidates) || 1,
+      ),
+    );
+  }
+  return allocation;
+}
+
 function runSegmentAgainstFrontier(
   simulator,
   segment,
@@ -2899,12 +2924,33 @@ function runSegmentAgainstFrontier(
     ),
   );
   const inputFrontier = (frontier || []).slice(0, startLimit);
+  const globalBudget = config && config.globalBudget;
   const nextCandidates = [];
   const attempts = [];
   for (const [candidateIndex, candidate] of inputFrontier.entries()) {
-    const remainingRuntimeMs = config && config.deadlineMs
+    const configuredRemainingRuntimeMs = config && config.deadlineMs
       ? Math.max(0, number(config.deadlineMs, 0) - Date.now())
       : null;
+    const globalRemainingRuntimeMs = globalBudget && globalBudget.requestedRuntimeMs > 0
+      ? Math.max(0, globalBudget.deadlineMs - Date.now())
+      : null;
+    const remainingRuntimeMs = configuredRemainingRuntimeMs == null
+      ? globalRemainingRuntimeMs
+      : globalRemainingRuntimeMs == null
+        ? configuredRemainingRuntimeMs
+        : Math.min(configuredRemainingRuntimeMs, globalRemainingRuntimeMs);
+    const globalRemainingExpansions = globalBudget && globalBudget.requestedExpansions > 0
+      ? Math.max(0, globalBudget.requestedExpansions - globalBudget.consumedExpansions)
+      : null;
+    if (globalBudget && (
+      (globalRemainingExpansions != null && globalRemainingExpansions <= 0) ||
+      (globalRemainingRuntimeMs != null && globalRemainingRuntimeMs <= 0)
+    )) {
+      globalBudget.stoppedReason = globalRemainingRuntimeMs != null && globalRemainingRuntimeMs <= 0
+        ? "time-limit"
+        : "expansion-limit";
+      break;
+    }
     if (remainingRuntimeMs != null && remainingRuntimeMs <= 0) break;
     const heapUsedMb = process.memoryUsage().heapUsed / 1024 / 1024;
     if (
@@ -2913,9 +2959,18 @@ function runSegmentAgainstFrontier(
       heapUsedMb >= number(config.maxHeapMb, Number.POSITIVE_INFINITY)
     ) break;
     const dpOverrides = segmentDpOverrides(segment, config || {}, overrides || {});
+    const remainingCandidates = Math.max(1, inputFrontier.length - candidateIndex);
+    const globalAllocation = allocateGlobalAttemptBudget({
+      remainingExpansions: globalRemainingExpansions,
+      remainingRuntimeMs,
+      remainingCandidates,
+      segmentMaxExpansions: dpOverrides.maxExpansions,
+      segmentMaxRuntimeMs: dpOverrides.maxRuntimeMs,
+    });
+    if (globalAllocation.maxExpansions != null)
+      dpOverrides.maxExpansions = globalAllocation.maxExpansions;
     if (remainingRuntimeMs != null) {
-      const remainingCandidates = Math.max(1, inputFrontier.length - candidateIndex);
-      const fairCandidateRuntimeMs = Math.max(
+      const fairCandidateRuntimeMs = globalAllocation.maxRuntimeMs || Math.max(
         1,
         Math.floor(remainingRuntimeMs / remainingCandidates),
       );
@@ -2942,6 +2997,14 @@ function runSegmentAgainstFrontier(
       dpOverrides,
     });
     attempts.push(result);
+    if (globalBudget) {
+      const dp = result && result.diagnostics && result.diagnostics.dp;
+      globalBudget.consumedExpansions += number(dp && dp.expansions, 0);
+      globalBudget.consumedWallMs = Math.max(
+        globalBudget.consumedWallMs,
+        Date.now() - globalBudget.startedAt,
+      );
+    }
     result.goalSkyline.forEach((goal) =>
       nextCandidates.push({
         ...goal,
@@ -2963,7 +3026,7 @@ function runSegmentAgainstFrontier(
     segmentId: segment.id,
     label: segment.label,
     found: merged.length > 0,
-    startCandidatesTried: inputFrontier.length,
+    startCandidatesTried: attempts.length,
     startCandidatesAvailable: (frontier || []).length,
     candidates: compactSegmentCandidates(merged),
     attempts: attempts.map((attempt) => ({
@@ -3304,15 +3367,66 @@ function tryRepairFromConfiguredMilestone(
   };
 }
 
+function createGlobalBudget(config) {
+  if (!config || config.budgetScope !== "global-run") return null;
+  const startedAt = Date.now();
+  const requestedRuntimeMs = Math.max(0, number(config.maxRuntimeMs, 0));
+  return {
+    scope: "global-run",
+    startedAt,
+    deadlineMs: requestedRuntimeMs > 0 ? startedAt + requestedRuntimeMs : Number.POSITIVE_INFINITY,
+    requestedExpansions: Math.max(0, number(config.maxExpansions, 0)),
+    requestedRuntimeMs,
+    consumedExpansions: 0,
+    consumedWallMs: 0,
+    stoppedReason: null,
+  };
+}
+
+function summarizeGlobalBudget(budget) {
+  if (!budget) return null;
+  const consumedWallMs = Math.max(
+    budget.consumedWallMs,
+    Date.now() - budget.startedAt,
+  );
+  if (!budget.stoppedReason) {
+    if (
+      budget.requestedRuntimeMs > 0 &&
+      consumedWallMs >= budget.requestedRuntimeMs
+    ) {
+      budget.stoppedReason = "time-limit";
+    } else if (
+      budget.requestedExpansions > 0 &&
+      budget.consumedExpansions >= budget.requestedExpansions
+    ) {
+      budget.stoppedReason = "expansion-limit";
+    }
+  }
+  return {
+    scope: budget.scope,
+    requestedExpansions: budget.requestedExpansions,
+    requestedRuntimeMs: budget.requestedRuntimeMs,
+    consumedExpansions: budget.consumedExpansions,
+    consumedWallMs,
+    stoppedReason: budget.stoppedReason,
+  };
+}
+
 function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   const config = options || {};
+  const globalBudget = config.globalBudget || createGlobalBudget(config);
+  const graphConfig = globalBudget ? { ...config, globalBudget } : config;
+  const finishResult = (result) => ({
+    ...result,
+    budget: summarizeGlobalBudget(globalBudget),
+  });
   const rangeError = milestoneRangeError(
     milestoneSpec,
     config.fromMilestoneId,
     config.toMilestoneId,
   );
   if (rangeError) {
-    return {
+    return finishResult({
       found: false,
       reachedMilestone: config.fromMilestoneId || null,
       failedSegment: {
@@ -3335,7 +3449,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       finalCandidates: [],
       segmentResults: [],
       checkpointResults: [],
-    };
+    });
   }
   const segments = milestoneRange(
     milestoneSpec,
@@ -3373,7 +3487,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       simulator,
       segment,
       frontier,
-      config,
+      graphConfig,
       {},
     );
     if (execution.merged.length === 0) {
@@ -3383,7 +3497,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         segmentIndex,
         history,
         execution,
-        config,
+        graphConfig,
       );
       if (configuredRepair && configuredRepair.found) {
         checkpointResults.push(
@@ -3406,7 +3520,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         segmentIndex,
         history,
         execution,
-        config,
+        graphConfig,
       );
       if (repair && repair.found) {
         if (checkpointResults.length > 0) checkpointResults.pop();
@@ -3468,14 +3582,14 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         };
       }
       segmentResults.push(failedSummary);
-      return {
+      return finishResult({
         found: false,
         reachedMilestone: segment.startFrom || null,
         failedSegment: segmentResults[segmentResults.length - 1],
         finalCandidates: frontier,
         segmentResults,
         checkpointResults,
-      };
+      });
     }
     segmentResults.push(execution.summary);
     checkpointResults.push(buildMilestoneCheckpoint(segment, execution));
@@ -3501,7 +3615,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       config.qualityFloor,
     );
     segmentResults.push(failedSummary);
-    return {
+    return finishResult({
       found: false,
       reachedMilestone: finalSegment && (finalSegment.startFrom || null),
       failedSegment: failedSummary,
@@ -3512,9 +3626,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         passed: false,
         floor: config.qualityFloor,
       },
-    };
+    });
   }
-  return {
+  return finishResult({
     found: Boolean(final),
     reachedMilestone: segments.length ? segments[segments.length - 1].id : null,
     failedSegment: null,
@@ -3528,7 +3642,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
           floor: config.qualityFloor,
         }
       : null,
-  };
+  });
 }
 
 module.exports = {
@@ -3540,6 +3654,7 @@ module.exports = {
   summarizeHero,
   summarizeSegmentFailure,
   __testHooks: {
+    allocateGlobalAttemptBudget,
     BLOCKER_TILE_NUMBER: reachAndBattleOracle.BLOCKER_TILE_NUMBER,
     isTileBlocking: reachAndBattleOracle.isTileBlocking,
     closeStateForBattleFrontier:

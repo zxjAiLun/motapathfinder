@@ -4,13 +4,20 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
+const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
+const { loadProject } = require("./lib/project-loader");
+const { StaticSimulator } = require("./lib/simulator");
+
 const {
   aggregateRepeats,
   aggregateSegmentReport,
+  buildSegmentRegressionFromBaseline,
   buildBudgetPlan,
   buildRegressionFromBaseline,
   buildSegmentedChildArgs,
   getPolicyMatrix,
+  range,
+  strictReplayRoute,
 } = require("./lib/agenda-policy-evaluation");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(
@@ -63,29 +70,50 @@ function safeFilePart(value) {
   return String(value || "run").replace(/[^A-Za-z0-9_.-]+/g, "_");
 }
 
-function readJson(filePath) {
-  if (!fs.existsSync(filePath)) return null;
+function readJsonResult(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return { exists: false, valid: false, value: null, error: "file-missing" };
+  }
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const value = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return {
+        exists: true,
+        valid: false,
+        value: null,
+        error: "report-not-object",
+      };
+    }
+    return {
+      exists: true,
+      valid: true,
+      value,
+      error: null,
+    };
   } catch (error) {
-    return null;
+    return {
+      exists: true,
+      valid: false,
+      value: null,
+      error: String(error.message || error),
+    };
   }
 }
 
-function routeFinalState(routeFile) {
-  const route = readJson(routeFile);
-  if (!route) return null;
-  const final = route.final || {};
-  const snapshot = final.snapshot || route.snapshot || null;
-  return snapshot
-    ? {
-        floorId: snapshot.floorId || route.floorId || null,
-        hero: snapshot.hero || null,
-        inventory: snapshot.inventory || null,
-        flags: snapshot.flags || null,
-        stateKey: final.stateKey || route.stateKey || null,
-      }
-    : null;
+function makeReplayContext(projectRoot) {
+  const project = loadProject(projectRoot);
+  const simulator = new StaticSimulator(project, {
+    stopFloorId: "MT6",
+    battleResolver: new FunctionBackedBattleResolver(project),
+    autoPickupEnabled: true,
+    autoBattleEnabled: true,
+    enableFightToLevelUp: false,
+    enableResourcePocket: false,
+    enableResourceCluster: false,
+    enableResourceChain: false,
+    searchGraphMode: "primitive",
+  });
+  return { project, simulator };
 }
 
 function buildSearchConfig(config, policy, budgetPlan, report) {
@@ -105,6 +133,7 @@ function buildSearchConfig(config, policy, budgetPlan, report) {
     maxActionsPerState: number(config.maxActionsPerState, 256),
     maxHeapMb: first.maxHeapMb || null,
     actionProviderMode: first.actionProviderMode || null,
+    budgetScope: config.budgetScope || "per-attempt",
     budgetKind: budgetPlan.kind,
     budgetValue: budgetPlan.value,
   };
@@ -118,32 +147,61 @@ function buildRunEntry({
   reportPath,
   outPath,
   child,
-  report,
+  reportResult,
+  replayContext,
   startedAt,
 }) {
+  const report = reportResult.value;
   const aggregate = aggregateSegmentReport(report);
-  const finalState = routeFinalState(outPath);
-  const routeExists = Boolean(finalState);
-  const strictReplay = {
-    valid: Boolean(child.status === 0 && report && report.found && routeExists),
-    performed: Boolean(report && report.found),
-    routeFile: routeExists ? outPath : null,
-    error:
-      child.status !== 0
-        ? child.error
-          ? child.error.message
-          : `child exited with status ${child.status}`
-        : report && report.found && !routeExists
-          ? "segmented report found but route output is missing"
-          : null,
-  };
+  const routeResult = readJsonResult(outPath);
+  let strictReplay;
+  if (routeResult.valid) {
+    try {
+      strictReplay = strictReplayRoute(
+        replayContext.project,
+        replayContext.simulator,
+        routeResult.value,
+      );
+      strictReplay.routeFile = outPath;
+    } catch (error) {
+      strictReplay = {
+        performed: true,
+        valid: false,
+        stepsAttempted: 0,
+        stepsCompleted: 0,
+        failureStep: null,
+        failureReason: "strict-replay-runner-error",
+        expectedStateKey: null,
+        actualStateKey: null,
+        finalState: null,
+        error: String(error.message || error),
+        routeFile: outPath,
+      };
+    }
+  } else {
+    strictReplay = {
+      performed: false,
+      valid: false,
+      stepsAttempted: 0,
+      stepsCompleted: 0,
+      failureStep: null,
+      failureReason: routeResult.error === "file-missing"
+        ? "route-file-missing"
+        : "route-file-invalid",
+      expectedStateKey: null,
+      actualStateKey: null,
+      finalState: null,
+      error: routeResult.error === "file-missing" ? null : routeResult.error,
+      routeFile: null,
+    };
+  }
+  const finalState = strictReplay.finalState;
   const firstAttempt = (report && report.segmentResults || [])
     .flatMap((segment) => segment.attempts || [])
     .find((attempt) => attempt.diagnostics && attempt.diagnostics.dp);
   const dp = firstAttempt && firstAttempt.diagnostics.dp;
   return {
     policy: policy.id,
-    budget: budgetPlan,
     repeat,
     found: aggregate.found,
     reachedMilestone: aggregate.reachedMilestone,
@@ -151,11 +209,28 @@ function buildRunEntry({
     segmentMetrics: aggregate.segments,
     strictReplay,
     finalState,
+    finalHp: finalState && finalState.hero ? Number(finalState.hero.hp || 0) : null,
+    budget: {
+      ...budgetPlan,
+      scope: report && report.budget && report.budget.scope
+        ? report.budget.scope
+        : config.budgetScope || "per-attempt",
+      requestedExpansions: report && report.budget
+        ? report.budget.requestedExpansions
+        : budgetPlan.maxExpansions,
+      requestedRuntimeMs: report && report.budget
+        ? report.budget.requestedRuntimeMs
+        : budgetPlan.maxRuntimeMs,
+      consumedExpansions: report && report.budget
+        ? report.budget.consumedExpansions
+        : aggregate.metrics.expansions,
+      consumedWallMs: report && report.budget
+        ? report.budget.consumedWallMs
+        : aggregate.metrics.wallMs,
+      stoppedReason: report && report.budget ? report.budget.stoppedReason : null,
+    },
     metrics: {
       ...aggregate.metrics,
-      firstGoalExpansion: Number.isFinite(aggregate.metrics.firstGoalExpansion)
-        ? aggregate.metrics.firstGoalExpansion
-        : null,
     },
     progress: aggregate.progress,
     stoppedReasons: aggregate.stoppedReasons,
@@ -171,11 +246,25 @@ function buildRunEntry({
       stderrTail: String(child.stderr || "").slice(-2000),
     },
     reportFile: fs.existsSync(reportPath) ? reportPath : null,
+    reportStatus: reportResult.valid
+      ? "valid"
+      : reportResult.error === "file-missing"
+        ? "missing"
+        : "invalid",
     diagnosticsVersion: dp && dp.observerVersion ? dp.observerVersion : null,
   };
 }
 
-function runOne(config, policy, budgetPlan, repeat, outputDir) {
+function classifyRun(run) {
+  if (run.process.status !== 0) return "child-process-error";
+  if (run.reportStatus === "missing") return "missing-child-report";
+  if (run.reportStatus === "invalid") return "invalid-child-report";
+  if (run.strictReplay.performed && !run.strictReplay.valid) return "strict-replay-failure";
+  if (run.found && !run.strictReplay.performed) return "strict-replay-failure";
+  return run.found ? "completed" : "completed-with-search-failures";
+}
+
+function runOne(config, policy, budgetPlan, repeat, outputDir, replayContext) {
   const base = `${safeFilePart(config.mode)}-${safeFilePart(policy.id)}-${budgetPlan.kind}-${budgetPlan.value}-r${repeat}`;
   const reportPath = path.join(outputDir, `${base}.json`);
   const outPath = path.join(outputDir, `${base}.route.json`);
@@ -208,7 +297,8 @@ function runOne(config, policy, budgetPlan, repeat, outputDir) {
     reportPath,
     outPath,
     child,
-    report: readJson(reportPath),
+    reportResult: readJsonResult(reportPath),
+    replayContext,
     startedAt,
   });
 }
@@ -222,6 +312,7 @@ function addRegressions(runs) {
   });
   return runs.map((run) => ({
     ...run,
+    runStatus: classifyRun(run),
     regressionFromBaseline:
       run.policy === "best-first"
         ? null
@@ -229,7 +320,44 @@ function addRegressions(runs) {
             run,
             baselineByKey.get(`${run.budget.kind}:${run.budget.value}:r${run.repeat}`),
           ),
+    segmentRegressionFromBaseline:
+      run.policy === "best-first"
+        ? null
+        : buildSegmentRegressionFromBaseline(
+            run.segmentMetrics,
+            (baselineByKey.get(`${run.budget.kind}:${run.budget.value}:r${run.repeat}`) || {}).segmentMetrics,
+          ),
   }));
+}
+
+function aggregateSegmentRepeats(entries) {
+  const byId = new Map();
+  (entries || []).forEach((entry) => {
+    (entry.segmentMetrics || []).forEach((segment) => {
+      if (!byId.has(segment.segmentId)) byId.set(segment.segmentId, []);
+      byId.get(segment.segmentId).push(segment);
+    });
+  });
+  return Object.fromEntries(Array.from(byId.entries()).map(([segmentId, segments]) => [
+    segmentId,
+    {
+      label: segments[0].label || null,
+      foundCount: segments.filter((segment) => segment.found).length,
+      repeats: segments.length,
+      metrics: {
+        expansions: aggregateRepeats(segments.map((segment) => ({ metrics: segment.metrics }))).metrics.expansions,
+        wallMs: aggregateRepeats(segments.map((segment) => ({ metrics: segment.metrics }))).metrics.wallMs,
+        cumulativeExpansionsToFirstGoal: range(segments.map(
+          (segment) => segment.metrics.cumulativeExpansionsToFirstGoal,
+        )),
+        cumulativeWallMsToFirstGoal: range(segments.map(
+          (segment) => segment.metrics.cumulativeWallMsToFirstGoal,
+        )),
+        frontierSize: range(segments.map((segment) => segment.metrics.frontierSize)),
+        finalHp: range(segments.map((segment) => segment.finalHp)),
+      },
+    },
+  ]));
 }
 
 function buildMatrix(runs) {
@@ -247,13 +375,16 @@ function buildMatrix(runs) {
       summaries[policy][budget] = {
         budget: entries[0].budget,
         repeats: aggregateRepeats(entries),
+        segmentRepeats: aggregateSegmentRepeats(entries),
         runs: entries.map((entry) => ({
           repeat: entry.repeat,
           found: entry.found,
           strictReplay: entry.strictReplay,
+          runStatus: entry.runStatus,
           segmentMetrics: entry.segmentMetrics,
           metrics: entry.metrics,
           regressionFromBaseline: entry.regressionFromBaseline,
+          segmentRegressionFromBaseline: entry.segmentRegressionFromBaseline,
         })),
       };
     });
@@ -288,6 +419,7 @@ function main() {
     stopOnFirstGoal: parseBoolean(args["stop-on-first-goal"], false),
     maxActionsPerState: number(args["max-actions-per-state"], 256),
     dpKeyMode: args["dp-key-mode"] || null,
+    budgetScope: args["budget-scope"] || "global-run",
   };
   const kind = args["budget-kind"] || "expansions";
   if (kind !== "expansions" && kind !== "time") {
@@ -307,6 +439,7 @@ function main() {
     path.join(__dirname, "routes", "generated", "agenda-policy-evaluation"),
   );
   fs.mkdirSync(outputDir, { recursive: true });
+  const replayContext = makeReplayContext(config.projectRoot);
 
   const runs = [];
   for (const budget of budgets) {
@@ -319,7 +452,7 @@ function main() {
         console.log(
           `Evaluating ${policy.id} ${budgetPlan.kind}=${budgetPlan.value} repeat=${repeat}`,
         );
-        runs.push(runOne(config, policy, budgetPlan, repeat, outputDir));
+        runs.push(runOne(config, policy, budgetPlan, repeat, outputDir, replayContext));
       }
     }
   }
@@ -347,9 +480,17 @@ function main() {
     runs: normalizedRuns,
     matrix,
     summaries,
-    stoppedReason: normalizedRuns.some((run) => run.process.error)
+    stoppedReason: normalizedRuns.some((run) => run.runStatus === "child-process-error")
       ? "child-process-error"
-      : "completed",
+      : normalizedRuns.some((run) => run.runStatus === "missing-child-report")
+        ? "missing-child-report"
+        : normalizedRuns.some((run) => run.runStatus === "invalid-child-report")
+          ? "invalid-child-report"
+          : normalizedRuns.some((run) => run.runStatus === "strict-replay-failure")
+            ? "strict-replay-failure"
+            : normalizedRuns.some((run) => run.runStatus === "completed-with-search-failures")
+              ? "completed-with-search-failures"
+              : "completed",
   };
   const reportPath = resolvePath(
     args["out-report"],
@@ -371,9 +512,10 @@ module.exports = {
   addRegressions,
   aggregateRepeats,
   buildMatrix,
+  aggregateSegmentRepeats,
+  classifyRun,
   buildRunEntry,
   main,
   parseArgs,
   parseList,
-  routeFinalState,
 };
