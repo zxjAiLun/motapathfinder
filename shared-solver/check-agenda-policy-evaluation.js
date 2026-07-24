@@ -17,6 +17,7 @@ const {
   __testHooks: segmentDpTestHooks,
 } = require("./lib/segment-dp");
 const {
+  aggregateLedgerCosts,
   aggregateRepeats,
   aggregateSegmentReport,
   buildBudgetPlan,
@@ -627,6 +628,97 @@ function checkBaselineOnlySegmentRegression() {
   assert.equal(regression.s3.expansionsDelta, undefined, "no numeric delta for missing segment");
 }
 
+function checkLeaveLocSnapshotRoundtrip() {
+  const project = {
+    floorsById: {
+      F1: { floorId: "F1", width: 3, height: 3, map: [[0,0,0],[0,0,0],[0,0,0]], changeFloor: {} },
+    },
+    mapNumbersById: {},
+    data: { firstData: { title: "Test" } },
+  };
+  const state = {
+    floorId: "F1",
+    hero: {
+      hp: 100, hpmax: 100, mana: 0, manamax: 0, atk: 10, def: 5, mdef: 3,
+      money: 50, exp: 20, lv: 2,
+      loc: { x: 1, y: 1, direction: "up" },
+      equipment: [], followers: [],
+    },
+    inventory: { I100: 2 },
+    flags: {
+      __leaveLoc__: { F0: { x: 3, y: 5, direction: "down" } },
+      __atk_buff__: 1.5,
+      autoBattle: 1,
+    },
+    visitedFloors: { F1: true },
+    floorStates: { F1: { removed: {}, replaced: {} } },
+    route: [],
+  };
+  syncProgress(state);
+  const snapshot = buildSolverSnapshot(project, state);
+  assert(snapshot.flags.__leaveLoc__, "__leaveLoc__ must be preserved in snapshot");
+  assert.deepEqual(snapshot.flags.__leaveLoc__, { F0: { x: 3, y: 5, direction: "down" } });
+  assert.equal(snapshot.flags.__atk_buff__, 1.5, "_buff__ flags preserved");
+  assert.equal(snapshot.flags.autoBattle, 1, "normal flags preserved");
+  const restored = createStateFromSnapshot(project, snapshot, { rank: "chaos" });
+  syncProgress(restored);
+  assert.deepEqual(restored.flags.__leaveLoc__, state.flags.__leaveLoc__);
+  assert.equal(buildStateKey(restored), buildStateKey(state), "exact state key must match after roundtrip");
+  const transientState = JSON.parse(JSON.stringify(state));
+  transientState.flags.__temporary__ = "should-be-excluded";
+  const transientSnapshot = buildSolverSnapshot(project, transientState);
+  assert.equal(transientSnapshot.flags.__temporary__, undefined, "other __ flags excluded from snapshot");
+  const emptyLeaveState = JSON.parse(JSON.stringify(state));
+  emptyLeaveState.flags.__leaveLoc__ = {};
+  const emptySnapshot = buildSolverSnapshot(project, emptyLeaveState);
+  assert.equal(emptySnapshot.flags.__leaveLoc__, undefined, "empty __leaveLoc__ not written");
+}
+
+function checkLedgerCosts() {
+  const ledger = [
+    { segmentId: "s1", phase: "initial", startCandidateId: "a#0", found: false, goalCount: 0,
+      diagnostics: { dp: { expansions: 100, wallMs: 500, firstGoalExpansion: null } } },
+    { segmentId: "s1", phase: "configured-repair", startCandidateId: "b#0", found: true, goalCount: 2,
+      diagnostics: { dp: { expansions: 80, wallMs: 300, firstGoalExpansion: 30, firstGoalElapsedMs: 100 } } },
+    { segmentId: "s2", phase: "initial", startCandidateId: "c#0", found: true, goalCount: 1,
+      diagnostics: { dp: { expansions: 50, wallMs: 200, firstGoalExpansion: 20, firstGoalElapsedMs: 80 } } },
+  ];
+  const costs = aggregateLedgerCosts(ledger);
+  assert.equal(costs.totalExpansions, 230);
+  assert.equal(costs.totalWallMs, 1000);
+  assert.equal(costs.attemptCount, 3);
+  assert.equal(costs.repairOverhead, 80, "only non-initial phase counts as overhead");
+  assert.equal(costs.byPhase["initial"].expansions, 150);
+  assert.equal(costs.byPhase["configured-repair"].expansions, 80);
+  assert.equal(costs.bySegment["s1"].expansions, 180);
+  assert.equal(costs.bySegment["s2"].expansions, 50);
+  assert.equal(costs.expansionsToFirstGoal, 130, "100 (prior) + 30 (firstGoalExpansion)");
+  assert.equal(costs.wallMsToFirstGoal, 600, "500 (prior) + 100 (firstGoalElapsedMs)");
+  assert.equal(aggregateLedgerCosts([]), null);
+  assert.equal(aggregateLedgerCosts(null), null);
+}
+
+function checkLedgerConsistencyClassification() {
+  const base = {
+    found: true,
+    strictReplay: { performed: true, valid: true },
+    process: { status: 0 },
+    reportStatus: "valid",
+  };
+  assert.equal(
+    classifyRun({ ...base, ledgerConsistency: { match: true } }),
+    "completed",
+  );
+  assert.equal(
+    classifyRun({ ...base, ledgerConsistency: { match: false, delta: 600 } }),
+    "ledger-consistency-failure",
+  );
+  assert.equal(
+    classifyRun({ ...base, ledgerConsistency: null }),
+    "completed",
+  );
+}
+
 function main() {
   checkPolicyMatrix();
   checkBudgetAndArgs();
@@ -637,7 +729,10 @@ function main() {
   checkMultiSegmentCumulative();
   checkNullHandlingInRange();
   checkBaselineOnlySegmentRegression();
-  console.log("check-agenda-policy-evaluation: 9/9 passed");
+  checkLeaveLocSnapshotRoundtrip();
+  checkLedgerCosts();
+  checkLedgerConsistencyClassification();
+  console.log("check-agenda-policy-evaluation: 12/12 passed");
 }
 
 if (require.main === module) main();
@@ -652,5 +747,8 @@ module.exports = {
   checkMultiSegmentCumulative,
   checkNullHandlingInRange,
   checkBaselineOnlySegmentRegression,
+  checkLeaveLocSnapshotRoundtrip,
+  checkLedgerCosts,
+  checkLedgerConsistencyClassification,
   main,
 };

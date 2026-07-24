@@ -668,8 +668,67 @@ function aggregateRepeats(runs) {
   };
 }
 
+function aggregateLedgerCosts(ledger) {
+  const entries = ledger || [];
+  if (entries.length === 0) return null;
+  let totalExpansions = 0;
+  let totalWallMs = 0;
+  const byPhase = {};
+  const bySegment = {};
+  for (const entry of entries) {
+    const dp = entry.diagnostics && entry.diagnostics.dp || {};
+    const exp = number(dp.expansions);
+    const wall = number(dp.wallMs);
+    totalExpansions += exp;
+    totalWallMs += wall;
+    const phase = entry.phase || "unknown";
+    if (!byPhase[phase]) byPhase[phase] = { expansions: 0, wallMs: 0, attempts: 0 };
+    byPhase[phase].expansions += exp;
+    byPhase[phase].wallMs += wall;
+    byPhase[phase].attempts += 1;
+    const segId = entry.segmentId || "unknown";
+    if (!bySegment[segId]) bySegment[segId] = { expansions: 0, wallMs: 0, attempts: 0 };
+    bySegment[segId].expansions += exp;
+    bySegment[segId].wallMs += wall;
+    bySegment[segId].attempts += 1;
+  }
+  const repairOverhead = entries
+    .filter((entry) => entry.phase !== "initial")
+    .reduce((total, entry) => {
+      const dp = entry.diagnostics && entry.diagnostics.dp || {};
+      return total + number(dp.expansions);
+    }, 0);
+  const firstGoalEntry = entries.find((entry) => {
+    const dp = entry.diagnostics && entry.diagnostics.dp || {};
+    return dp.firstGoalExpansion != null;
+  });
+  let expansionsToFirstGoal = null;
+  let wallMsToFirstGoal = null;
+  if (firstGoalEntry) {
+    const idx = entries.indexOf(firstGoalEntry);
+    const dp = firstGoalEntry.diagnostics && firstGoalEntry.diagnostics.dp || {};
+    expansionsToFirstGoal = sum(
+      entries.slice(0, idx).map((e) => number(e.diagnostics && e.diagnostics.dp && e.diagnostics.dp.expansions)),
+    ) + number(dp.firstGoalExpansion);
+    wallMsToFirstGoal = sum(
+      entries.slice(0, idx).map((e) => number(e.diagnostics && e.diagnostics.dp && e.diagnostics.dp.wallMs)),
+    ) + number(dp.firstGoalElapsedMs, dp.wallMs);
+  }
+  return {
+    totalExpansions,
+    totalWallMs,
+    byPhase,
+    bySegment,
+    repairOverhead,
+    expansionsToFirstGoal,
+    wallMsToFirstGoal,
+    attemptCount: entries.length,
+  };
+}
+
 module.exports = {
   DEFAULT_POLICIES,
+  aggregateLedgerCosts,
   aggregateRepeats,
   aggregateSegmentReport,
   buildBudgetPlan,

@@ -3516,8 +3516,10 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         execution,
         graphConfig,
       );
-      if (configuredRepair && configuredRepair.found) {
+      if (configuredRepair && configuredRepair.repairedCurrent) {
         appendLedger(configuredRepair.repairedCurrent, "configured-repair");
+      }
+      if (configuredRepair && configuredRepair.found) {
         checkpointResults.push(
           buildMilestoneCheckpoint(segment, configuredRepair.repairedCurrent),
         );
@@ -3540,9 +3542,13 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         execution,
         graphConfig,
       );
-      if (repair && repair.found) {
+      if (repair && repair.expandedPrevious) {
         appendLedger(repair.expandedPrevious, "expanded-previous");
+      }
+      if (repair && repair.repairedCurrent) {
         appendLedger(repair.repairedCurrent, "retry-current");
+      }
+      if (repair && repair.found) {
         if (checkpointResults.length > 0) checkpointResults.pop();
         checkpointResults.push(
           buildMilestoneCheckpoint(

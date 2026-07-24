@@ -9,6 +9,7 @@ const { loadProject } = require("./lib/project-loader");
 const { StaticSimulator } = require("./lib/simulator");
 
 const {
+  aggregateLedgerCosts,
   aggregateRepeats,
   aggregateSegmentReport,
   buildSegmentRegressionFromBaseline,
@@ -273,6 +274,7 @@ function buildRunEntry({
         delta: ledgerExpansions - budgetExpansions,
       };
     })(),
+    ledgerCosts: aggregateLedgerCosts(report && report.evaluationAttemptLedger || []),
   };
 }
 
@@ -282,6 +284,7 @@ function classifyRun(run) {
   if (run.reportStatus === "invalid") return "invalid-child-report";
   if (run.strictReplay.performed && !run.strictReplay.valid) return "strict-replay-failure";
   if (run.found && !run.strictReplay.performed) return "strict-replay-failure";
+  if (run.ledgerConsistency && !run.ledgerConsistency.match) return "ledger-consistency-failure";
   return run.found ? "completed" : "completed-with-search-failures";
 }
 
@@ -479,9 +482,19 @@ function main() {
   }
   const normalizedRuns = addRegressions(runs);
   const { matrix, summaries } = buildMatrix(normalizedRuns);
+  const gitResult = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: __dirname,
+    encoding: "utf8",
+    windowsHide: true,
+  });
   const report = {
     schema: "agenda-policy-evaluation.v1",
     generatedAt: new Date().toISOString(),
+    provenance: {
+      solverCommit: gitResult.status === 0 ? gitResult.stdout.trim() : null,
+      nodeVersion: process.version,
+      platform: process.platform,
+    },
     mode,
     input: {
       routeName: config.routeName,
