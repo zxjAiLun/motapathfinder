@@ -31,6 +31,9 @@ const {
 } = require("./lib/agenda-policy-evaluation");
 const {
   classifyRun,
+  applyLedgerBackedMetrics,
+  buildMatrix,
+  determineStoppedReason,
 } = require("./run-agenda-policy-evaluation");
 
 function makeReport(overrides) {
@@ -694,8 +697,62 @@ function checkLedgerCosts() {
   assert.equal(costs.bySegment["s2"].expansions, 50);
   assert.equal(costs.expansionsToFirstGoal, 130, "100 (prior) + 30 (firstGoalExpansion)");
   assert.equal(costs.wallMsToFirstGoal, 600, "500 (prior) + 100 (firstGoalElapsedMs)");
+  const finalCosts = aggregateLedgerCosts(ledger, { finalSegmentId: "s2" });
+  assert.equal(finalCosts.expansionsToFinalRequestedMilestone, 200);
+  assert.equal(finalCosts.wallMsToFinalRequestedMilestone, 880);
+  assert.equal(finalCosts.attemptsToFinalRequestedMilestone, 3);
+  assert.equal(finalCosts.finalRequestedMilestoneGoal.segmentId, "s2");
+  assert.equal(finalCosts.bySegment.s1.expansionsToFirstGoal, 130);
+  assert.equal(finalCosts.bySegment.s2.expansionsToFirstGoal, 20);
+  const chronology = aggregateLedgerCosts([
+    { segmentId: "s1", phase: "initial", diagnostics: { dp: { expansions: 500, wallMs: 100, firstGoalExpansion: 20, firstGoalElapsedMs: 10 } } },
+    { segmentId: "s2", phase: "initial", diagnostics: { dp: { expansions: 30, wallMs: 20, firstGoalExpansion: 30, firstGoalElapsedMs: 12 } } },
+  ], { finalSegmentId: "s2" });
+  assert.equal(chronology.expansionsToFirstGoal, 20);
+  assert.equal(chronology.expansionsToFinalRequestedMilestone, 530);
+  assert.equal(chronology.wallMsToFinalRequestedMilestone, 112);
   assert.equal(aggregateLedgerCosts([]), null);
   assert.equal(aggregateLedgerCosts(null), null);
+}
+
+function checkLedgerBackedProjection() {
+  const aggregate = {
+    metrics: {
+      expansions: 120,
+      wallMs: 12,
+      expansionsToFinalRequestedMilestone: 120,
+      wallMsToFinalRequestedMilestone: 12,
+      attemptsToFinalRequestedMilestone: 1,
+    },
+    segments: [{
+      segmentId: "s1",
+      found: true,
+      attempts: 1,
+      finalHp: 90,
+      metrics: {
+        expansions: 120,
+        wallMs: 12,
+        cumulativeExpansionsToFirstGoal: 120,
+        cumulativeWallMsToFirstGoal: 12,
+      },
+    }],
+  };
+  const ledgerCosts = aggregateLedgerCosts([{
+    segmentId: "s1",
+    phase: "initial",
+    diagnostics: { dp: { expansions: 200, wallMs: 20, firstGoalExpansion: 200, firstGoalElapsedMs: 20 } },
+  }], { finalSegmentId: "s1" });
+  const projected = applyLedgerBackedMetrics(aggregate, ledgerCosts);
+  assert.equal(projected.metrics.expansions, 200);
+  assert.equal(projected.metrics.wallMs, 20);
+  assert.equal(projected.metrics.expansionsToFinalRequestedMilestone, 200);
+  assert.equal(projected.segmentMetrics[0].metrics.expansions, 200);
+  assert.equal(projected.segmentMetrics[0].metrics.wallMs, 20);
+  const repeats = aggregateRepeats([{ metrics: projected.metrics, found: true }]);
+  assert.deepEqual(repeats.metrics.expansions, { min: 200, max: 200, median: 200, sampleCount: 1, missingCount: 0 });
+  const baseline = { found: true, strictReplay: { valid: true }, finalState: { hero: { hp: 90 } }, metrics: { expansions: 150, wallMs: 15 } };
+  const current = { found: true, strictReplay: { valid: true }, finalState: { hero: { hp: 90 } }, metrics: projected.metrics };
+  assert.equal(buildRegressionFromBaseline(current, baseline).expansionsDelta, 50);
 }
 
 function checkLedgerConsistencyClassification() {
@@ -717,6 +774,28 @@ function checkLedgerConsistencyClassification() {
     classifyRun({ ...base, ledgerConsistency: null }),
     "completed",
   );
+  assert.equal(
+    classifyRun({ ...base, provenance: { commitStable: false }, ledgerConsistency: { match: true } }),
+    "provenance-mismatch",
+  );
+  assert.equal(
+    determineStoppedReason([{ runStatus: "ledger-consistency-failure" }]),
+    "ledger-consistency-failure",
+  );
+  const matrix = buildMatrix([{
+    policy: "best-first",
+    budget: { kind: "expansions", value: 1 },
+    repeat: 1,
+    found: true,
+    strictReplay: { valid: true },
+    runStatus: "completed",
+    metrics: { expansions: 200, wallMs: 20 },
+    segmentMetrics: [],
+    ledgerCosts: { totalExpansions: 200 },
+    ledgerConsistency: { match: true },
+  }]);
+  assert.equal(matrix.summaries["best-first"]["expansions:1"].runs[0].ledgerCosts.totalExpansions, 200);
+  assert.equal(matrix.summaries["best-first"]["expansions:1"].runs[0].ledgerConsistency.match, true);
 }
 
 function main() {
@@ -731,8 +810,9 @@ function main() {
   checkBaselineOnlySegmentRegression();
   checkLeaveLocSnapshotRoundtrip();
   checkLedgerCosts();
+  checkLedgerBackedProjection();
   checkLedgerConsistencyClassification();
-  console.log("check-agenda-policy-evaluation: 12/12 passed");
+  console.log("check-agenda-policy-evaluation: 13/13 passed");
 }
 
 if (require.main === module) main();
@@ -749,6 +829,7 @@ module.exports = {
   checkBaselineOnlySegmentRegression,
   checkLeaveLocSnapshotRoundtrip,
   checkLedgerCosts,
+  checkLedgerBackedProjection,
   checkLedgerConsistencyClassification,
   main,
 };

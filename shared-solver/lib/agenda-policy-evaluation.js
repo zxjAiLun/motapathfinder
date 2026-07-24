@@ -668,13 +668,24 @@ function aggregateRepeats(runs) {
   };
 }
 
-function aggregateLedgerCosts(ledger) {
+function aggregateLedgerCosts(ledger, options) {
   const entries = ledger || [];
   if (entries.length === 0) return null;
+  const config = options || {};
+  const finalSegmentId = config.finalSegmentId ||
+    entries[entries.length - 1].segmentId || null;
   let totalExpansions = 0;
   let totalWallMs = 0;
   const byPhase = {};
   const bySegment = {};
+  let firstGoal = null;
+  let finalRequestedMilestoneGoal = null;
+  let expansionsBeforeFirstGoal = 0;
+  let wallMsBeforeFirstGoal = 0;
+  let expansionsBeforeFinalGoal = 0;
+  let wallMsBeforeFinalGoal = 0;
+  let attemptsBeforeFinalGoal = 0;
+  const segmentProgress = new Map();
   for (const entry of entries) {
     const dp = entry.diagnostics && entry.diagnostics.dp || {};
     const exp = number(dp.expansions);
@@ -687,10 +698,71 @@ function aggregateLedgerCosts(ledger) {
     byPhase[phase].wallMs += wall;
     byPhase[phase].attempts += 1;
     const segId = entry.segmentId || "unknown";
-    if (!bySegment[segId]) bySegment[segId] = { expansions: 0, wallMs: 0, attempts: 0 };
+    if (!bySegment[segId]) {
+      bySegment[segId] = {
+        expansions: 0,
+        wallMs: 0,
+        attempts: 0,
+        expansionsToFirstGoal: null,
+        wallMsToFirstGoal: null,
+        attemptsToFirstGoal: null,
+        firstGoal: null,
+      };
+      segmentProgress.set(segId, {
+        expansions: 0,
+        wallMs: 0,
+        attempts: 0,
+      });
+    }
     bySegment[segId].expansions += exp;
     bySegment[segId].wallMs += wall;
     bySegment[segId].attempts += 1;
+    const progress = segmentProgress.get(segId);
+    const firstGoalExpansion = finiteOrNull(dp.firstGoalExpansion);
+    if (firstGoalExpansion != null) {
+      const firstGoalElapsedMs = dp.firstGoalElapsedMs == null
+        ? wall
+        : number(dp.firstGoalElapsedMs);
+      const segmentGoal = {
+        expansions: progress.expansions + firstGoalExpansion,
+        wallMs: progress.wallMs + firstGoalElapsedMs,
+        attempts: progress.attempts + 1,
+        segmentId: segId,
+        phase: entry.phase || "unknown",
+      };
+      if (!bySegment[segId].firstGoal) {
+        bySegment[segId].expansionsToFirstGoal = segmentGoal.expansions;
+        bySegment[segId].wallMsToFirstGoal = segmentGoal.wallMs;
+        bySegment[segId].attemptsToFirstGoal = segmentGoal.attempts;
+        bySegment[segId].firstGoal = segmentGoal;
+      }
+      if (!firstGoal) {
+        firstGoal = {
+          ...segmentGoal,
+          expansions: expansionsBeforeFirstGoal + firstGoalExpansion,
+          wallMs: wallMsBeforeFirstGoal + firstGoalElapsedMs,
+        };
+      }
+      if (segId === finalSegmentId && !finalRequestedMilestoneGoal) {
+        finalRequestedMilestoneGoal = {
+          segmentId: segId,
+          phase: entry.phase || "unknown",
+          attempts: attemptsBeforeFinalGoal + 1,
+          expansions: expansionsBeforeFinalGoal + firstGoalExpansion,
+          wallMs: wallMsBeforeFinalGoal + firstGoalElapsedMs,
+        };
+      }
+    }
+    progress.expansions += exp;
+    progress.wallMs += wall;
+    progress.attempts += 1;
+    expansionsBeforeFirstGoal += exp;
+    wallMsBeforeFirstGoal += wall;
+    if (!finalRequestedMilestoneGoal) {
+      expansionsBeforeFinalGoal += exp;
+      wallMsBeforeFinalGoal += wall;
+      attemptsBeforeFinalGoal += 1;
+    }
   }
   const repairOverhead = entries
     .filter((entry) => entry.phase !== "initial")
@@ -698,30 +770,25 @@ function aggregateLedgerCosts(ledger) {
       const dp = entry.diagnostics && entry.diagnostics.dp || {};
       return total + number(dp.expansions);
     }, 0);
-  const firstGoalEntry = entries.find((entry) => {
-    const dp = entry.diagnostics && entry.diagnostics.dp || {};
-    return dp.firstGoalExpansion != null;
-  });
-  let expansionsToFirstGoal = null;
-  let wallMsToFirstGoal = null;
-  if (firstGoalEntry) {
-    const idx = entries.indexOf(firstGoalEntry);
-    const dp = firstGoalEntry.diagnostics && firstGoalEntry.diagnostics.dp || {};
-    expansionsToFirstGoal = sum(
-      entries.slice(0, idx).map((e) => number(e.diagnostics && e.diagnostics.dp && e.diagnostics.dp.expansions)),
-    ) + number(dp.firstGoalExpansion);
-    wallMsToFirstGoal = sum(
-      entries.slice(0, idx).map((e) => number(e.diagnostics && e.diagnostics.dp && e.diagnostics.dp.wallMs)),
-    ) + number(dp.firstGoalElapsedMs, dp.wallMs);
-  }
   return {
     totalExpansions,
     totalWallMs,
     byPhase,
     bySegment,
     repairOverhead,
-    expansionsToFirstGoal,
-    wallMsToFirstGoal,
+    firstGoal,
+    finalRequestedMilestoneGoal,
+    expansionsToFirstGoal: firstGoal ? firstGoal.expansions : null,
+    wallMsToFirstGoal: firstGoal ? firstGoal.wallMs : null,
+    expansionsToFinalRequestedMilestone: finalRequestedMilestoneGoal
+      ? finalRequestedMilestoneGoal.expansions
+      : null,
+    wallMsToFinalRequestedMilestone: finalRequestedMilestoneGoal
+      ? finalRequestedMilestoneGoal.wallMs
+      : null,
+    attemptsToFinalRequestedMilestone: finalRequestedMilestoneGoal
+      ? finalRequestedMilestoneGoal.attempts
+      : null,
     attemptCount: entries.length,
   };
 }

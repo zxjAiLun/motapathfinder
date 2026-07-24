@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
@@ -27,6 +28,17 @@ const DEFAULT_PROJECT_ROOT = path.resolve(
   "Only upV2.1",
   "Only upV2.1",
 );
+
+function readSolverCommit() {
+  const result = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: __dirname,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+const SOLVER_COMMIT = readSolverCommit();
 
 function parseArgs(argv) {
   return argv.reduce((result, arg) => {
@@ -198,6 +210,9 @@ function buildSegmentedReport({
 }) {
   return {
     kind: "segmented-dp-diagnosis",
+    provenance: {
+      solverCommit: SOLVER_COMMIT,
+    },
     routeName,
     projectRoot,
     startRoute,

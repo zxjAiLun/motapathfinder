@@ -71,6 +71,15 @@ function safeFilePart(value) {
   return String(value || "run").replace(/[^A-Za-z0-9_.-]+/g, "_");
 }
 
+function readGitCommit() {
+  const result = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: __dirname,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
 function readJsonResult(filePath) {
   if (!fs.existsSync(filePath)) {
     return { exists: false, valid: false, value: null, error: "file-missing" };
@@ -140,6 +149,56 @@ function buildSearchConfig(config, policy, budgetPlan, report) {
   };
 }
 
+function applyLedgerBackedMetrics(aggregate, ledgerCosts) {
+  if (!ledgerCosts) {
+    return {
+      metrics: aggregate.metrics,
+      segmentMetrics: aggregate.segments,
+    };
+  }
+  const metrics = {
+    ...aggregate.metrics,
+    expansions: ledgerCosts.totalExpansions,
+    wallMs: ledgerCosts.totalWallMs,
+    expansionsToFinalRequestedMilestone:
+      ledgerCosts.expansionsToFinalRequestedMilestone ??
+      aggregate.metrics.expansionsToFinalRequestedMilestone,
+    wallMsToFinalRequestedMilestone:
+      ledgerCosts.wallMsToFinalRequestedMilestone ??
+      aggregate.metrics.wallMsToFinalRequestedMilestone,
+    attemptsToFinalRequestedMilestone:
+      ledgerCosts.attemptsToFinalRequestedMilestone ??
+      aggregate.metrics.attemptsToFinalRequestedMilestone,
+    cumulativeFirstGoalExpansion:
+      ledgerCosts.expansionsToFinalRequestedMilestone ??
+      aggregate.metrics.cumulativeFirstGoalExpansion,
+    cumulativeFirstGoalWallMs:
+      ledgerCosts.wallMsToFinalRequestedMilestone ??
+      aggregate.metrics.cumulativeFirstGoalWallMs,
+  };
+  const segmentMetrics = aggregate.segments.map((segment) => {
+    const cost = ledgerCosts.bySegment[segment.segmentId];
+    if (!cost) return segment;
+    return {
+      ...segment,
+      attempts: cost.attempts,
+      metrics: {
+        ...segment.metrics,
+        expansions: cost.expansions,
+        wallMs: cost.wallMs,
+        attempts: cost.attempts,
+        cumulativeExpansionsToFirstGoal:
+          cost.expansionsToFirstGoal ??
+          segment.metrics.cumulativeExpansionsToFirstGoal,
+        cumulativeWallMsToFirstGoal:
+          cost.wallMsToFirstGoal ??
+          segment.metrics.cumulativeWallMsToFirstGoal,
+      },
+    };
+  });
+  return { metrics, segmentMetrics };
+}
+
 function buildRunEntry({
   config,
   policy,
@@ -151,9 +210,16 @@ function buildRunEntry({
   reportResult,
   replayContext,
   startedAt,
+  runProvenance,
 }) {
   const report = reportResult.value;
   const aggregate = aggregateSegmentReport(report);
+  const ledger = report && report.evaluationAttemptLedger || [];
+  const finalSegmentId = aggregate.segments.length > 0
+    ? aggregate.segments[aggregate.segments.length - 1].segmentId
+    : null;
+  const ledgerCosts = aggregateLedgerCosts(ledger, { finalSegmentId });
+  const ledgerProjection = applyLedgerBackedMetrics(aggregate, ledgerCosts);
   const routeResult = readJsonResult(outPath);
   let strictReplay;
   if (routeResult.valid) {
@@ -204,13 +270,26 @@ function buildRunEntry({
     .flatMap((segment) => segment.attempts || [])
     .find((attempt) => attempt.diagnostics && attempt.diagnostics.dp);
   const dp = firstAttempt && firstAttempt.diagnostics.dp;
+  const childSolverCommit = report && report.provenance
+    ? report.provenance.solverCommit || null
+    : null;
+  const observedCommits = [
+    runProvenance && runProvenance.startedCommit,
+    childSolverCommit,
+    runProvenance && runProvenance.finishedCommit,
+  ].filter(Boolean);
+  const commitStable = observedCommits.length > 1
+    ? observedCommits.every((commit) => commit === observedCommits[0])
+    : runProvenance && runProvenance.commitStable != null
+      ? runProvenance.commitStable
+      : null;
   return {
     policy: policy.id,
     repeat,
     found: aggregate.found,
     reachedMilestone: aggregate.reachedMilestone,
     failedSegmentId: aggregate.failedSegmentId,
-    segmentMetrics: aggregate.segments,
+    segmentMetrics: ledgerProjection.segmentMetrics,
     strictReplay,
     finalState,
     finalHp: finalState && finalState.hero ? Number(finalState.hero.hp || 0) : null,
@@ -227,14 +306,14 @@ function buildRunEntry({
         : budgetPlan.maxRuntimeMs,
       consumedExpansions: report && report.budget
         ? report.budget.consumedExpansions
-        : aggregate.metrics.expansions,
+        : ledgerProjection.metrics.expansions,
       consumedWallMs: report && report.budget
         ? report.budget.consumedWallMs
-        : aggregate.metrics.wallMs,
+        : ledgerProjection.metrics.wallMs,
       stoppedReason: report && report.budget ? report.budget.stoppedReason : null,
     },
     metrics: {
-      ...aggregate.metrics,
+      ...ledgerProjection.metrics,
     },
     progress: aggregate.progress,
     stoppedReasons: aggregate.stoppedReasons,
@@ -249,6 +328,12 @@ function buildRunEntry({
       stdoutTail: String(child.stdout || "").slice(-2000),
       stderrTail: String(child.stderr || "").slice(-2000),
     },
+    provenance: {
+      startedCommit: runProvenance && runProvenance.startedCommit || null,
+      solverCommit: childSolverCommit,
+      finishedCommit: runProvenance && runProvenance.finishedCommit || null,
+      commitStable,
+    },
     reportFile: fs.existsSync(reportPath) ? reportPath : null,
     reportStatus: reportResult.valid
       ? "valid"
@@ -256,7 +341,7 @@ function buildRunEntry({
         ? "missing"
         : "invalid",
     diagnosticsVersion: dp && dp.observerVersion ? dp.observerVersion : null,
-    evaluationAttemptLedger: report && report.evaluationAttemptLedger || [],
+    evaluationAttemptLedger: ledger,
     ledgerConsistency: (() => {
       const ledger = report && report.evaluationAttemptLedger || [];
       if (ledger.length === 0) return null;
@@ -266,7 +351,7 @@ function buildRunEntry({
       );
       const budgetExpansions = report && report.budget
         ? number(report.budget.consumedExpansions, 0)
-        : aggregate.metrics.expansions;
+        : ledgerProjection.metrics.expansions;
       return {
         ledgerExpansions,
         budgetExpansions,
@@ -274,7 +359,7 @@ function buildRunEntry({
         delta: ledgerExpansions - budgetExpansions,
       };
     })(),
-    ledgerCosts: aggregateLedgerCosts(report && report.evaluationAttemptLedger || []),
+    ledgerCosts,
   };
 }
 
@@ -284,8 +369,21 @@ function classifyRun(run) {
   if (run.reportStatus === "invalid") return "invalid-child-report";
   if (run.strictReplay.performed && !run.strictReplay.valid) return "strict-replay-failure";
   if (run.found && !run.strictReplay.performed) return "strict-replay-failure";
+  if (run.provenance && run.provenance.commitStable === false) return "provenance-mismatch";
   if (run.ledgerConsistency && !run.ledgerConsistency.match) return "ledger-consistency-failure";
   return run.found ? "completed" : "completed-with-search-failures";
+}
+
+function determineStoppedReason(runs) {
+  const statuses = new Set((runs || []).map((run) => run.runStatus));
+  if (statuses.has("child-process-error")) return "child-process-error";
+  if (statuses.has("missing-child-report")) return "missing-child-report";
+  if (statuses.has("invalid-child-report")) return "invalid-child-report";
+  if (statuses.has("strict-replay-failure")) return "strict-replay-failure";
+  if (statuses.has("provenance-mismatch")) return "provenance-mismatch";
+  if (statuses.has("ledger-consistency-failure")) return "ledger-consistency-failure";
+  if (statuses.has("completed-with-search-failures")) return "completed-with-search-failures";
+  return "completed";
 }
 
 function runOne(config, policy, budgetPlan, repeat, outputDir, replayContext) {
@@ -303,6 +401,7 @@ function runOne(config, policy, budgetPlan, repeat, outputDir, replayContext) {
     outPath,
   );
   const startedAt = Date.now();
+  const startedCommit = readGitCommit();
   const child = spawnSync(
     process.execPath,
     [path.join(__dirname, "run-segmented-dp.js"), ...args],
@@ -313,6 +412,7 @@ function runOne(config, policy, budgetPlan, repeat, outputDir, replayContext) {
       windowsHide: true,
     },
   );
+  const finishedCommit = readGitCommit();
   return buildRunEntry({
     config,
     policy,
@@ -324,6 +424,13 @@ function runOne(config, policy, budgetPlan, repeat, outputDir, replayContext) {
     reportResult: readJsonResult(reportPath),
     replayContext,
     startedAt,
+    runProvenance: {
+      startedCommit,
+      finishedCommit,
+      commitStable: startedCommit && finishedCommit
+        ? startedCommit === finishedCommit
+        : null,
+    },
   });
 }
 
@@ -384,6 +491,48 @@ function aggregateSegmentRepeats(entries) {
   ]));
 }
 
+function aggregateLedgerRepeats(entries) {
+  const ledgerEntries = (entries || []).filter((entry) => entry.ledgerCosts);
+  if (ledgerEntries.length === 0) return null;
+  return {
+    totalExpansions: range(ledgerEntries.map(
+      (entry) => entry.ledgerCosts.totalExpansions,
+    )),
+    totalWallMs: range(ledgerEntries.map(
+      (entry) => entry.ledgerCosts.totalWallMs,
+    )),
+    expansionsToFirstGoal: range(ledgerEntries.map(
+      (entry) => entry.ledgerCosts.expansionsToFirstGoal,
+    )),
+    wallMsToFirstGoal: range(ledgerEntries.map(
+      (entry) => entry.ledgerCosts.wallMsToFirstGoal,
+    )),
+    expansionsToFinalRequestedMilestone: range(ledgerEntries.map(
+      (entry) => entry.ledgerCosts.expansionsToFinalRequestedMilestone,
+    )),
+    wallMsToFinalRequestedMilestone: range(ledgerEntries.map(
+      (entry) => entry.ledgerCosts.wallMsToFinalRequestedMilestone,
+    )),
+    attemptsToFinalRequestedMilestone: range(ledgerEntries.map(
+      (entry) => entry.ledgerCosts.attemptsToFinalRequestedMilestone,
+    )),
+  };
+}
+
+function summarizeLedgerConsistency(entries) {
+  const values = (entries || [])
+    .map((entry) => entry.ledgerConsistency)
+    .filter(Boolean);
+  if (values.length === 0) return null;
+  const mismatchCount = values.filter((value) => !value.match).length;
+  return {
+    count: values.length,
+    matchCount: values.length - mismatchCount,
+    mismatchCount,
+    allMatch: mismatchCount === 0,
+  };
+}
+
 function buildMatrix(runs) {
   const matrix = {};
   runs.forEach((run) => {
@@ -400,6 +549,8 @@ function buildMatrix(runs) {
         budget: entries[0].budget,
         repeats: aggregateRepeats(entries),
         segmentRepeats: aggregateSegmentRepeats(entries),
+        ledgerCosts: aggregateLedgerRepeats(entries),
+        ledgerConsistency: summarizeLedgerConsistency(entries),
         runs: entries.map((entry) => ({
           repeat: entry.repeat,
           found: entry.found,
@@ -407,6 +558,9 @@ function buildMatrix(runs) {
           runStatus: entry.runStatus,
           segmentMetrics: entry.segmentMetrics,
           metrics: entry.metrics,
+          ledgerCosts: entry.ledgerCosts,
+          ledgerConsistency: entry.ledgerConsistency,
+          provenance: entry.provenance,
           regressionFromBaseline: entry.regressionFromBaseline,
           segmentRegressionFromBaseline: entry.segmentRegressionFromBaseline,
         })),
@@ -464,6 +618,7 @@ function main() {
   );
   fs.mkdirSync(outputDir, { recursive: true });
   const replayContext = makeReplayContext(config.projectRoot);
+  const startedCommit = readGitCommit();
 
   const runs = [];
   for (const budget of budgets) {
@@ -482,16 +637,18 @@ function main() {
   }
   const normalizedRuns = addRegressions(runs);
   const { matrix, summaries } = buildMatrix(normalizedRuns);
-  const gitResult = spawnSync("git", ["rev-parse", "HEAD"], {
-    cwd: __dirname,
-    encoding: "utf8",
-    windowsHide: true,
-  });
+  const finishedCommit = readGitCommit();
+  const commitStable = startedCommit && finishedCommit
+    ? startedCommit === finishedCommit
+    : null;
   const report = {
     schema: "agenda-policy-evaluation.v1",
     generatedAt: new Date().toISOString(),
     provenance: {
-      solverCommit: gitResult.status === 0 ? gitResult.stdout.trim() : null,
+      solverCommit: finishedCommit,
+      startedCommit,
+      finishedCommit,
+      commitStable,
       nodeVersion: process.version,
       platform: process.platform,
     },
@@ -514,17 +671,7 @@ function main() {
     runs: normalizedRuns,
     matrix,
     summaries,
-    stoppedReason: normalizedRuns.some((run) => run.runStatus === "child-process-error")
-      ? "child-process-error"
-      : normalizedRuns.some((run) => run.runStatus === "missing-child-report")
-        ? "missing-child-report"
-        : normalizedRuns.some((run) => run.runStatus === "invalid-child-report")
-          ? "invalid-child-report"
-          : normalizedRuns.some((run) => run.runStatus === "strict-replay-failure")
-            ? "strict-replay-failure"
-            : normalizedRuns.some((run) => run.runStatus === "completed-with-search-failures")
-              ? "completed-with-search-failures"
-              : "completed",
+    stoppedReason: determineStoppedReason(normalizedRuns),
   };
   const reportPath = resolvePath(
     args["out-report"],
@@ -548,6 +695,8 @@ module.exports = {
   buildMatrix,
   aggregateSegmentRepeats,
   classifyRun,
+  determineStoppedReason,
+  applyLedgerBackedMetrics,
   buildRunEntry,
   main,
   parseArgs,
