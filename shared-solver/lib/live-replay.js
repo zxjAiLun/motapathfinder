@@ -679,6 +679,13 @@ async function captureRuntimeSnapshot(page, options) {
     const flags = Object.keys(hero.flags || {})
       .sort()
       .reduce((result, key) => {
+        if (key === "__leaveLoc__") {
+          const value = hero.flags[key];
+          if (value != null && typeof value === "object" && Object.keys(value).length > 0) {
+            result[key] = value;
+          }
+          return result;
+        }
         if (key.startsWith("__") && !key.endsWith("_buff__")) return result;
         const value = hero.flags[key];
         if (value == null || value === 0) return result;
