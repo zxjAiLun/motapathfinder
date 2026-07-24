@@ -36,10 +36,15 @@ function max(values) {
   return finite.length > 0 ? Math.max(...finite) : 0;
 }
 
-function median(values) {
-  const sorted = (values || [])
+function finiteValues(values) {
+  return (values || [])
+    .filter((value) => value != null && value !== "")
     .map(Number)
-    .filter(Number.isFinite)
+    .filter(Number.isFinite);
+}
+
+function median(values) {
+  const sorted = finiteValues(values)
     .sort((left, right) => left - right);
   if (sorted.length === 0) return null;
   const middle = Math.floor(sorted.length / 2);
@@ -49,11 +54,15 @@ function median(values) {
 }
 
 function range(values) {
-  const finite = (values || []).map(Number).filter(Number.isFinite);
+  const raw = values || [];
+  const finite = finiteValues(raw);
+  const missingCount = raw.length - finite.length;
   return {
     min: finite.length > 0 ? Math.min(...finite) : null,
     max: finite.length > 0 ? Math.max(...finite) : null,
     median: median(finite),
+    sampleCount: finite.length,
+    missingCount,
   };
 }
 
@@ -507,25 +516,21 @@ function aggregateSegmentReport(report) {
   const metrics = aggregateAttemptMetrics(attempts);
   const finalSegment = segmentMetrics[segmentMetrics.length - 1] || null;
   const finalSegmentIndex = segmentMetrics.length - 1;
-  const segmentsToFinal = finalSegmentIndex >= 0
-    ? segmentMetrics.slice(0, finalSegmentIndex + 1)
+  const priorSegments = finalSegmentIndex > 0
+    ? segmentMetrics.slice(0, finalSegmentIndex)
     : [];
   const finalGoalKnown = Boolean(
     finalSegment &&
-    segmentsToFinal.every((segment) =>
-      segment.metrics.cumulativeExpansionsToFirstGoal != null &&
-      segment.metrics.cumulativeWallMsToFirstGoal != null,
-    ),
+    finalSegment.metrics.cumulativeExpansionsToFirstGoal != null &&
+    finalSegment.metrics.cumulativeWallMsToFirstGoal != null,
   );
   const cumulativeExpansionsToFinal = finalGoalKnown
-    ? sum(segmentsToFinal.map(
-      (segment) => segment.metrics.cumulativeExpansionsToFirstGoal,
-    ))
+    ? sum(priorSegments.map((segment) => segment.metrics.expansions)) +
+      finalSegment.metrics.cumulativeExpansionsToFirstGoal
     : null;
   const cumulativeWallMsToFinal = finalGoalKnown
-    ? sum(segmentsToFinal.map(
-      (segment) => segment.metrics.cumulativeWallMsToFirstGoal,
-    ))
+    ? sum(priorSegments.map((segment) => segment.metrics.wallMs)) +
+      finalSegment.metrics.cumulativeWallMsToFirstGoal
     : null;
   metrics.attemptsBeforeFirstGoal = finalSegment && finalSegment.metrics
     ? finalSegment.metrics.attemptsBeforeFirstGoal
@@ -533,9 +538,8 @@ function aggregateSegmentReport(report) {
   metrics.cumulativeFirstGoalExpansion = cumulativeExpansionsToFinal;
   metrics.cumulativeFirstGoalWallMs = cumulativeWallMsToFinal;
   metrics.attemptsToFinalRequestedMilestone = finalGoalKnown
-    ? sum(segmentsToFinal.map(
-      (segment) => segment.metrics.attemptsBeforeFirstGoal + 1,
-    ))
+    ? sum(priorSegments.map((segment) => segment.attempts)) +
+      finalSegment.metrics.attemptsBeforeFirstGoal + 1
     : null;
   metrics.expansionsToFinalRequestedMilestone = cumulativeExpansionsToFinal;
   metrics.wallMsToFinalRequestedMilestone = cumulativeWallMsToFinal;
@@ -599,16 +603,31 @@ function buildSegmentRegressionFromBaseline(currentSegments, baselineSegments) {
   const baselineById = new Map(
     (baselineSegments || []).map((segment) => [segment.segmentId, segment]),
   );
+  const currentById = new Map(
+    (currentSegments || []).map((segment) => [segment.segmentId, segment]),
+  );
+  const allSegmentIds = [...new Set([
+    ...(currentSegments || []).map((segment) => segment.segmentId),
+    ...(baselineSegments || []).map((segment) => segment.segmentId),
+  ])];
   return Object.fromEntries(
-    (currentSegments || []).map((segment) => {
-      const baseline = baselineById.get(segment.segmentId);
-      if (!baseline) {
-        return [segment.segmentId, { baselineMissing: true }];
+    allSegmentIds.map((segmentId) => {
+      const current = currentById.get(segmentId);
+      const baseline = baselineById.get(segmentId);
+      if (!current && baseline) {
+        return [segmentId, {
+          currentMissing: true,
+          baselineFound: Boolean(baseline.found),
+          foundDelta: 0 - Number(Boolean(baseline.found)),
+        }];
       }
-      const currentMetrics = segment.metrics || {};
+      if (!baseline) {
+        return [segmentId, { baselineMissing: true }];
+      }
+      const currentMetrics = current.metrics || {};
       const baselineMetrics = baseline.metrics || {};
-      return [segment.segmentId, {
-        foundDelta: Number(segment.found) - Number(Boolean(baseline && baseline.found)),
+      return [segmentId, {
+        foundDelta: Number(current.found) - Number(Boolean(baseline.found)),
         expansionsDelta: number(currentMetrics.expansions) - number(baselineMetrics.expansions),
         wallMsDelta: number(currentMetrics.wallMs) - number(baselineMetrics.wallMs),
         firstGoalExpansionDelta: nullableDelta(
@@ -616,7 +635,7 @@ function buildSegmentRegressionFromBaseline(currentSegments, baselineSegments) {
           baselineMetrics.cumulativeExpansionsToFirstGoal,
         ),
         frontierSizeDelta: nullableDelta(currentMetrics.frontierSize, baselineMetrics.frontierSize),
-        finalHpDelta: nullableDelta(segment.finalHp, baseline.finalHp),
+        finalHpDelta: nullableDelta(current.finalHp, baseline.finalHp),
       }];
     }),
   );

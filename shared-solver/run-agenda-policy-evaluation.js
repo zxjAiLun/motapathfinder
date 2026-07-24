@@ -195,6 +195,9 @@ function buildRunEntry({
       routeFile: null,
     };
   }
+  strictReplay.scope = config.mode === "full-milestone"
+    ? "full-route"
+    : "generated-suffix-from-start-snapshot";
   const finalState = strictReplay.finalState;
   const firstAttempt = (report && report.segmentResults || [])
     .flatMap((segment) => segment.attempts || [])

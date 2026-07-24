@@ -406,7 +406,7 @@ function checkGlobalBudgetAndFailureClassification() {
 function checkRepeatAndRegression() {
   assert.equal(median([1, 3, 5]), 3);
   assert.equal(median([1, 3, 5, 7]), 4);
-  assert.deepEqual(range([5, 1, 9]), { min: 1, max: 9, median: 5 });
+  assert.deepEqual(range([5, 1, 9]), { min: 1, max: 9, median: 5, sampleCount: 3, missingCount: 0 });
   const runs = [
     { found: true, strictReplay: { valid: true }, metrics: { expansions: 10, wallMs: 20 } },
     { found: false, strictReplay: { valid: false }, metrics: { expansions: 30, wallMs: 40 } },
@@ -414,7 +414,7 @@ function checkRepeatAndRegression() {
   const repeats = aggregateRepeats(runs);
   assert.equal(repeats.count, 2);
   assert.equal(repeats.foundCount, 1);
-  assert.deepEqual(repeats.metrics.expansions, { min: 10, max: 30, median: 20 });
+  assert.deepEqual(repeats.metrics.expansions, { min: 10, max: 30, median: 20, sampleCount: 2, missingCount: 0 });
   const baseline = {
     found: true,
     strictReplay: { valid: true },
@@ -470,6 +470,154 @@ function checkRepeatAndRegression() {
   });
 }
 
+function checkMultiSegmentCumulative() {
+  const report = {
+    found: true,
+    reachedMilestone: "synthetic-milestone",
+    failedSegmentId: null,
+    failedSegment: null,
+    segmentResults: [
+      {
+        segmentId: "seg-a",
+        found: true,
+        attempts: [
+          {
+            startCandidateId: "a#0",
+            found: true,
+            goalCount: 3,
+            diagnostics: {
+              dp: {
+                expansions: 500,
+                wallMs: 1000,
+                acceptedStates: 100,
+                rejectedByHigherHp: 0,
+                sameHpRejected: 0,
+                replacedLowerHp: 0,
+                actionTrimmed: 0,
+                frontierSize: 10,
+                heapUsedMb: 50,
+                rssMb: 80,
+                fairPops: 0,
+                firstGoalExpansion: 20,
+                firstGoalElapsedMs: 40,
+                completeWithinActionSet: true,
+                stoppedReason: null,
+                agendaFairness: {
+                  fairPops: 0, bestPops: 500, fairFallbacks: 0,
+                  bestFallbacks: 0, maxFairQueueAgeExpansions: 0,
+                },
+              },
+            },
+          },
+        ],
+      },
+      {
+        segmentId: "seg-b",
+        found: true,
+        attempts: [
+          {
+            startCandidateId: "b#0",
+            found: true,
+            goalCount: 1,
+            diagnostics: {
+              dp: {
+                expansions: 80,
+                wallMs: 200,
+                acceptedStates: 20,
+                rejectedByHigherHp: 0,
+                sameHpRejected: 0,
+                replacedLowerHp: 0,
+                actionTrimmed: 0,
+                frontierSize: 5,
+                heapUsedMb: 30,
+                rssMb: 60,
+                fairPops: 0,
+                firstGoalExpansion: 30,
+                firstGoalElapsedMs: 60,
+                completeWithinActionSet: true,
+                stoppedReason: null,
+                agendaFairness: {
+                  fairPops: 0, bestPops: 80, fairFallbacks: 0,
+                  bestFallbacks: 0, maxFairQueueAgeExpansions: 0,
+                },
+              },
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const aggregate = aggregateSegmentReport(report);
+  assert.equal(aggregate.segments[0].metrics.cumulativeExpansionsToFirstGoal, 20);
+  assert.equal(aggregate.segments[0].metrics.expansions, 500);
+  assert.equal(aggregate.segments[1].metrics.cumulativeExpansionsToFirstGoal, 30);
+  assert.equal(
+    aggregate.metrics.expansionsToFinalRequestedMilestone,
+    530,
+    "prior segment total (500) + final segment first-goal (30) = 530, not 20+30=50",
+  );
+  assert.equal(
+    aggregate.metrics.wallMsToFinalRequestedMilestone,
+    1060,
+    "prior segment wallMs (1000) + final segment first-goal wallMs (60) = 1060",
+  );
+  assert.equal(
+    aggregate.metrics.attemptsToFinalRequestedMilestone,
+    2,
+    "prior segment attempts (1) + final segment attemptsBeforeFirstGoal (0) + 1 = 2",
+  );
+}
+
+function checkNullHandlingInRange() {
+  assert.deepEqual(range([120, null, 130]), {
+    min: 120, max: 130, median: 125, sampleCount: 2, missingCount: 1,
+  });
+  assert.deepEqual(range([null, null, null]), {
+    min: null, max: null, median: null, sampleCount: 0, missingCount: 3,
+  });
+  assert.deepEqual(range(["", 5, null, 10]), {
+    min: 5, max: 10, median: 7.5, sampleCount: 2, missingCount: 2,
+  });
+  assert.equal(median([null, 3, null, 7]), 5);
+  assert.equal(median([null, null]), null);
+}
+
+function checkBaselineOnlySegmentRegression() {
+  const currentSegments = [
+    {
+      segmentId: "s1", found: true, finalHp: 80,
+      metrics: { expansions: 30, wallMs: 40, cumulativeExpansionsToFirstGoal: 12, cumulativeWallMsToFirstGoal: 16, frontierSize: 4 },
+    },
+    {
+      segmentId: "s2", found: true, finalHp: 70,
+      metrics: { expansions: 50, wallMs: 60, cumulativeExpansionsToFirstGoal: 20, cumulativeWallMsToFirstGoal: 25, frontierSize: 6 },
+    },
+  ];
+  const baselineSegments = [
+    {
+      segmentId: "s1", found: true, finalHp: 90,
+      metrics: { expansions: 20, wallMs: 30, cumulativeExpansionsToFirstGoal: 10, cumulativeWallMsToFirstGoal: 12, frontierSize: 3 },
+    },
+    {
+      segmentId: "s2", found: true, finalHp: 85,
+      metrics: { expansions: 40, wallMs: 50, cumulativeExpansionsToFirstGoal: 18, cumulativeWallMsToFirstGoal: 22, frontierSize: 5 },
+    },
+    {
+      segmentId: "s3", found: true, finalHp: 60,
+      metrics: { expansions: 100, wallMs: 120, cumulativeExpansionsToFirstGoal: 50, cumulativeWallMsToFirstGoal: 60, frontierSize: 8 },
+    },
+  ];
+  const regression = buildSegmentRegressionFromBaseline(currentSegments, baselineSegments);
+  assert.equal(regression.s1.foundDelta, 0);
+  assert.equal(regression.s1.expansionsDelta, 10);
+  assert.equal(regression.s2.foundDelta, 0);
+  assert(regression.s3, "baseline-only segment s3 must appear in regression");
+  assert.equal(regression.s3.currentMissing, true);
+  assert.equal(regression.s3.baselineFound, true);
+  assert.equal(regression.s3.foundDelta, -1);
+  assert.equal(regression.s3.expansionsDelta, undefined, "no numeric delta for missing segment");
+}
+
 function main() {
   checkPolicyMatrix();
   checkBudgetAndArgs();
@@ -477,7 +625,10 @@ function main() {
   checkRepeatAndRegression();
   checkStrictReplay();
   checkGlobalBudgetAndFailureClassification();
-  console.log("check-agenda-policy-evaluation: 6/6 passed");
+  checkMultiSegmentCumulative();
+  checkNullHandlingInRange();
+  checkBaselineOnlySegmentRegression();
+  console.log("check-agenda-policy-evaluation: 9/9 passed");
 }
 
 if (require.main === module) main();
@@ -489,5 +640,8 @@ module.exports = {
   checkRepeatAndRegression,
   checkStrictReplay,
   checkGlobalBudgetAndFailureClassification,
+  checkMultiSegmentCumulative,
+  checkNullHandlingInRange,
+  checkBaselineOnlySegmentRegression,
   main,
 };
