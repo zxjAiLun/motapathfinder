@@ -415,6 +415,15 @@ function checkRepeatAndRegression() {
   assert.equal(repeats.count, 2);
   assert.equal(repeats.foundCount, 1);
   assert.deepEqual(repeats.metrics.expansions, { min: 10, max: 30, median: 20, sampleCount: 2, missingCount: 0 });
+  const runsWithNull = [
+    { found: true, strictReplay: { valid: true }, metrics: { expansions: 10, wallMs: 20, expansionsToFinalRequestedMilestone: 120 } },
+    { found: false, strictReplay: { valid: false }, metrics: { expansions: 30, wallMs: 40, expansionsToFinalRequestedMilestone: null } },
+    { found: true, strictReplay: { valid: true }, metrics: { expansions: 20, wallMs: 30, expansionsToFinalRequestedMilestone: 130 } },
+  ];
+  const repeatsWithNull = aggregateRepeats(runsWithNull);
+  assert.deepEqual(repeatsWithNull.metrics.expansionsToFinalRequestedMilestone, {
+    min: 120, max: 130, median: 125, sampleCount: 2, missingCount: 1,
+  });
   const baseline = {
     found: true,
     strictReplay: { valid: true },

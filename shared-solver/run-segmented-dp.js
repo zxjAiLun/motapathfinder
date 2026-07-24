@@ -242,6 +242,7 @@ function buildSegmentedReport({
       dp: milestone.dp,
     })),
     segmentResults: result.segmentResults || [],
+    evaluationAttemptLedger: result.evaluationAttemptLedger || [],
     failedSegment: result.failedSegment || null,
     checkpoints: result.checkpointResults || [],
     finalCandidates: (result.finalCandidates || []).map(compactCandidate),

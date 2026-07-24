@@ -3449,6 +3449,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       finalCandidates: [],
       segmentResults: [],
       checkpointResults: [],
+      evaluationAttemptLedger: [],
     });
   }
   const segments = milestoneRange(
@@ -3476,6 +3477,21 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     },
   ];
   const segmentResults = [];
+  const evaluationAttemptLedger = [];
+  const appendLedger = (execution, phase) => {
+    const summary = execution && execution.summary;
+    if (!summary) return;
+    (summary.attempts || []).forEach((attempt) => {
+      evaluationAttemptLedger.push({
+        segmentId: summary.segmentId,
+        phase,
+        startCandidateId: attempt.startCandidateId,
+        found: attempt.found,
+        goalCount: attempt.goalCount,
+        diagnostics: attempt.diagnostics,
+      });
+    });
+  };
   const history = [];
   for (
     let segmentIndex = 0;
@@ -3490,6 +3506,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       graphConfig,
       {},
     );
+    appendLedger(execution, "initial");
     if (execution.merged.length === 0) {
       const configuredRepair = tryRepairFromConfiguredMilestone(
         simulator,
@@ -3500,6 +3517,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         graphConfig,
       );
       if (configuredRepair && configuredRepair.found) {
+        appendLedger(configuredRepair.repairedCurrent, "configured-repair");
         checkpointResults.push(
           buildMilestoneCheckpoint(segment, configuredRepair.repairedCurrent),
         );
@@ -3523,6 +3541,8 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         graphConfig,
       );
       if (repair && repair.found) {
+        appendLedger(repair.expandedPrevious, "expanded-previous");
+        appendLedger(repair.repairedCurrent, "retry-current");
         if (checkpointResults.length > 0) checkpointResults.pop();
         checkpointResults.push(
           buildMilestoneCheckpoint(
@@ -3589,6 +3609,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         finalCandidates: frontier,
         segmentResults,
         checkpointResults,
+        evaluationAttemptLedger,
       });
     }
     segmentResults.push(execution.summary);
@@ -3622,6 +3643,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       finalCandidates: frontier,
       segmentResults,
       checkpointResults,
+      evaluationAttemptLedger,
       qualityFloor: {
         passed: false,
         floor: config.qualityFloor,
@@ -3636,6 +3658,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     finalCandidates: frontier,
     segmentResults,
     checkpointResults,
+    evaluationAttemptLedger,
     qualityFloor: config.qualityFloor
       ? {
           passed: Boolean(final),

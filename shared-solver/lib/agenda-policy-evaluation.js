@@ -657,9 +657,7 @@ function aggregateRepeats(runs) {
   ];
   const metrics = {};
   numericFields.forEach((field) => {
-    const values = list
-      .map((run) => run.metrics && run.metrics[field])
-      .filter((value) => value != null);
+    const values = list.map((run) => run.metrics && run.metrics[field]);
     metrics[field] = range(values);
   });
   return {

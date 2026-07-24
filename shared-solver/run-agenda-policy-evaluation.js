@@ -255,6 +255,24 @@ function buildRunEntry({
         ? "missing"
         : "invalid",
     diagnosticsVersion: dp && dp.observerVersion ? dp.observerVersion : null,
+    evaluationAttemptLedger: report && report.evaluationAttemptLedger || [],
+    ledgerConsistency: (() => {
+      const ledger = report && report.evaluationAttemptLedger || [];
+      if (ledger.length === 0) return null;
+      const ledgerExpansions = ledger.reduce(
+        (total, entry) => total + number(entry.diagnostics && entry.diagnostics.dp && entry.diagnostics.dp.expansions, 0),
+        0,
+      );
+      const budgetExpansions = report && report.budget
+        ? number(report.budget.consumedExpansions, 0)
+        : aggregate.metrics.expansions;
+      return {
+        ledgerExpansions,
+        budgetExpansions,
+        match: ledgerExpansions === budgetExpansions,
+        delta: ledgerExpansions - budgetExpansions,
+      };
+    })(),
   };
 }
 
