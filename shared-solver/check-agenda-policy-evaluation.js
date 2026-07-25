@@ -34,6 +34,7 @@ const {
   applyLedgerBackedMetrics,
   buildMatrix,
   determineStoppedReason,
+  hasMatrixProvenanceMismatch,
 } = require("./run-agenda-policy-evaluation");
 
 function makeReport(overrides) {
@@ -705,8 +706,8 @@ function checkLedgerCosts() {
   assert.equal(finalCosts.bySegment.s1.expansionsToFirstGoal, 130);
   assert.equal(finalCosts.bySegment.s2.expansionsToFirstGoal, 20);
   const chronology = aggregateLedgerCosts([
-    { segmentId: "s1", phase: "initial", diagnostics: { dp: { expansions: 500, wallMs: 100, firstGoalExpansion: 20, firstGoalElapsedMs: 10 } } },
-    { segmentId: "s2", phase: "initial", diagnostics: { dp: { expansions: 30, wallMs: 20, firstGoalExpansion: 30, firstGoalElapsedMs: 12 } } },
+    { segmentId: "s1", phase: "initial", found: true, goalCount: 1, diagnostics: { dp: { expansions: 500, wallMs: 100, firstGoalExpansion: 20, firstGoalElapsedMs: 10 } } },
+    { segmentId: "s2", phase: "initial", found: true, goalCount: 1, diagnostics: { dp: { expansions: 30, wallMs: 20, firstGoalExpansion: 30, firstGoalElapsedMs: 12 } } },
   ], { finalSegmentId: "s2" });
   assert.equal(chronology.expansionsToFirstGoal, 20);
   assert.equal(chronology.expansionsToFinalRequestedMilestone, 530);
@@ -740,6 +741,8 @@ function checkLedgerBackedProjection() {
   const ledgerCosts = aggregateLedgerCosts([{
     segmentId: "s1",
     phase: "initial",
+    found: true,
+    goalCount: 1,
     diagnostics: { dp: { expansions: 200, wallMs: 20, firstGoalExpansion: 200, firstGoalElapsedMs: 20 } },
   }], { finalSegmentId: "s1" });
   const projected = applyLedgerBackedMetrics(aggregate, ledgerCosts);
@@ -753,6 +756,89 @@ function checkLedgerBackedProjection() {
   const baseline = { found: true, strictReplay: { valid: true }, finalState: { hero: { hp: 90 } }, metrics: { expansions: 150, wallMs: 15 } };
   const current = { found: true, strictReplay: { valid: true }, finalState: { hero: { hp: 90 } }, metrics: projected.metrics };
   assert.equal(buildRegressionFromBaseline(current, baseline).expansionsDelta, 50);
+}
+
+function checkRequestedMilestoneLedgerSemantics() {
+  const s2Only = aggregateLedgerCosts([{
+    segmentId: "s2",
+    phase: "initial",
+    found: true,
+    goalCount: 1,
+    diagnostics: { dp: { expansions: 40, wallMs: 8, firstGoalExpansion: 12, firstGoalElapsedMs: 3 } },
+  }], { finalSegmentId: "s3" });
+  assert.equal(s2Only.finalRequestedMilestoneGoal, null);
+  assert.equal(s2Only.expansionsToFinalRequestedMilestone, null);
+  assert.equal(s2Only.wallMsToFinalRequestedMilestone, null);
+  assert.equal(s2Only.attemptsToFinalRequestedMilestone, null);
+
+  const oldAggregate = {
+    metrics: {
+      expansions: 99,
+      wallMs: 9,
+      expansionsToFinalRequestedMilestone: 99,
+      wallMsToFinalRequestedMilestone: 9,
+      attemptsToFinalRequestedMilestone: 1,
+      cumulativeFirstGoalExpansion: 99,
+      cumulativeFirstGoalWallMs: 9,
+    },
+    segments: [{
+      segmentId: "s2",
+      metrics: {
+        expansions: 40,
+        wallMs: 8,
+        cumulativeExpansionsToFirstGoal: 40,
+        cumulativeWallMsToFirstGoal: 8,
+      },
+    }],
+  };
+  const projected = applyLedgerBackedMetrics(oldAggregate, s2Only);
+  assert.equal(projected.metrics.expansionsToFinalRequestedMilestone, null);
+  assert.equal(projected.metrics.wallMsToFinalRequestedMilestone, null);
+  assert.equal(projected.metrics.attemptsToFinalRequestedMilestone, null);
+  assert.equal(projected.metrics.cumulativeFirstGoalExpansion, null);
+  assert.equal(projected.metrics.cumulativeFirstGoalWallMs, null);
+
+  const transientThenRepair = aggregateLedgerCosts([
+    {
+      segmentId: "s1",
+      phase: "initial",
+      found: true,
+      goalCount: 1,
+      diagnostics: { dp: { expansions: 500, wallMs: 100, firstGoalExpansion: null } },
+    },
+    {
+      segmentId: "s3",
+      phase: "initial",
+      found: false,
+      goalCount: 0,
+      diagnostics: { dp: { expansions: 30, wallMs: 20, firstGoalExpansion: 30, firstGoalElapsedMs: 12 } },
+    },
+    {
+      segmentId: "s3",
+      phase: "configured-repair",
+      found: true,
+      goalCount: 1,
+      diagnostics: { dp: { expansions: 40, wallMs: 30, firstGoalExpansion: 10, firstGoalElapsedMs: 5 } },
+    },
+  ], { finalSegmentId: "s3" });
+  assert.equal(transientThenRepair.expansionsToFinalRequestedMilestone, 540);
+  assert.equal(transientThenRepair.wallMsToFinalRequestedMilestone, 125);
+  assert.equal(transientThenRepair.attemptsToFinalRequestedMilestone, 3);
+  assert.equal(transientThenRepair.finalRequestedMilestoneGoal.phase, "configured-repair");
+
+  assert.equal(
+    hasMatrixProvenanceMismatch("A", "B", [
+      { provenance: { solverCommit: "A", commitStable: true } },
+      { provenance: { solverCommit: "B", commitStable: true } },
+    ]),
+    true,
+  );
+  assert.equal(
+    determineStoppedReason([
+      { runStatus: "completed" },
+    ], { matrixProvenanceMismatch: true }),
+    "provenance-mismatch",
+  );
 }
 
 function checkLedgerConsistencyClassification() {
@@ -811,8 +897,9 @@ function main() {
   checkLeaveLocSnapshotRoundtrip();
   checkLedgerCosts();
   checkLedgerBackedProjection();
+  checkRequestedMilestoneLedgerSemantics();
   checkLedgerConsistencyClassification();
-  console.log("check-agenda-policy-evaluation: 13/13 passed");
+  console.log("check-agenda-policy-evaluation: 14/14 passed");
 }
 
 if (require.main === module) main();
@@ -830,6 +917,7 @@ module.exports = {
   checkLeaveLocSnapshotRoundtrip,
   checkLedgerCosts,
   checkLedgerBackedProjection,
+  checkRequestedMilestoneLedgerSemantics,
   checkLedgerConsistencyClassification,
   main,
 };

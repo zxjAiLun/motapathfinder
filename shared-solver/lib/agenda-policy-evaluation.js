@@ -743,7 +743,12 @@ function aggregateLedgerCosts(ledger, options) {
           wallMs: wallMsBeforeFirstGoal + firstGoalElapsedMs,
         };
       }
-      if (segId === finalSegmentId && !finalRequestedMilestoneGoal) {
+      const retainedGoal = entry.found === true || Number(entry.goalCount || 0) > 0;
+      if (
+        segId === finalSegmentId &&
+        retainedGoal &&
+        !finalRequestedMilestoneGoal
+      ) {
         finalRequestedMilestoneGoal = {
           segmentId: segId,
           phase: entry.phase || "unknown",

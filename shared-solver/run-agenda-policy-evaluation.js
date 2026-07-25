@@ -161,20 +161,15 @@ function applyLedgerBackedMetrics(aggregate, ledgerCosts) {
     expansions: ledgerCosts.totalExpansions,
     wallMs: ledgerCosts.totalWallMs,
     expansionsToFinalRequestedMilestone:
-      ledgerCosts.expansionsToFinalRequestedMilestone ??
-      aggregate.metrics.expansionsToFinalRequestedMilestone,
+      ledgerCosts.expansionsToFinalRequestedMilestone,
     wallMsToFinalRequestedMilestone:
-      ledgerCosts.wallMsToFinalRequestedMilestone ??
-      aggregate.metrics.wallMsToFinalRequestedMilestone,
+      ledgerCosts.wallMsToFinalRequestedMilestone,
     attemptsToFinalRequestedMilestone:
-      ledgerCosts.attemptsToFinalRequestedMilestone ??
-      aggregate.metrics.attemptsToFinalRequestedMilestone,
+      ledgerCosts.attemptsToFinalRequestedMilestone,
     cumulativeFirstGoalExpansion:
-      ledgerCosts.expansionsToFinalRequestedMilestone ??
-      aggregate.metrics.cumulativeFirstGoalExpansion,
+      ledgerCosts.expansionsToFinalRequestedMilestone,
     cumulativeFirstGoalWallMs:
-      ledgerCosts.wallMsToFinalRequestedMilestone ??
-      aggregate.metrics.cumulativeFirstGoalWallMs,
+      ledgerCosts.wallMsToFinalRequestedMilestone,
   };
   const segmentMetrics = aggregate.segments.map((segment) => {
     const cost = ledgerCosts.bySegment[segment.segmentId];
@@ -187,12 +182,8 @@ function applyLedgerBackedMetrics(aggregate, ledgerCosts) {
         expansions: cost.expansions,
         wallMs: cost.wallMs,
         attempts: cost.attempts,
-        cumulativeExpansionsToFirstGoal:
-          cost.expansionsToFirstGoal ??
-          segment.metrics.cumulativeExpansionsToFirstGoal,
-        cumulativeWallMsToFirstGoal:
-          cost.wallMsToFirstGoal ??
-          segment.metrics.cumulativeWallMsToFirstGoal,
+        cumulativeExpansionsToFirstGoal: cost.expansionsToFirstGoal,
+        cumulativeWallMsToFirstGoal: cost.wallMsToFirstGoal,
       },
     };
   });
@@ -215,9 +206,11 @@ function buildRunEntry({
   const report = reportResult.value;
   const aggregate = aggregateSegmentReport(report);
   const ledger = report && report.evaluationAttemptLedger || [];
-  const finalSegmentId = aggregate.segments.length > 0
-    ? aggregate.segments[aggregate.segments.length - 1].segmentId
-    : null;
+  const finalSegmentId = config.toMilestone ||
+    (report && report.toMilestone) ||
+    (aggregate.segments.length > 0
+      ? aggregate.segments[aggregate.segments.length - 1].segmentId
+      : null);
   const ledgerCosts = aggregateLedgerCosts(ledger, { finalSegmentId });
   const ledgerProjection = applyLedgerBackedMetrics(aggregate, ledgerCosts);
   const routeResult = readJsonResult(outPath);
@@ -374,7 +367,10 @@ function classifyRun(run) {
   return run.found ? "completed" : "completed-with-search-failures";
 }
 
-function determineStoppedReason(runs) {
+function determineStoppedReason(runs, options) {
+  if (options && options.matrixProvenanceMismatch) {
+    return "provenance-mismatch";
+  }
   const statuses = new Set((runs || []).map((run) => run.runStatus));
   if (statuses.has("child-process-error")) return "child-process-error";
   if (statuses.has("missing-child-report")) return "missing-child-report";
@@ -384,6 +380,22 @@ function determineStoppedReason(runs) {
   if (statuses.has("ledger-consistency-failure")) return "ledger-consistency-failure";
   if (statuses.has("completed-with-search-failures")) return "completed-with-search-failures";
   return "completed";
+}
+
+function hasMatrixProvenanceMismatch(startedCommit, finishedCommit, runs) {
+  if (
+    startedCommit &&
+    finishedCommit &&
+    startedCommit !== finishedCommit
+  ) {
+    return true;
+  }
+  return (runs || []).some(
+    (run) => startedCommit &&
+      run.provenance &&
+      run.provenance.solverCommit &&
+      run.provenance.solverCommit !== startedCommit,
+  );
 }
 
 function runOne(config, policy, budgetPlan, repeat, outputDir, replayContext) {
@@ -641,6 +653,20 @@ function main() {
   const commitStable = startedCommit && finishedCommit
     ? startedCommit === finishedCommit
     : null;
+  const matrixProvenanceMismatch = hasMatrixProvenanceMismatch(
+    startedCommit,
+    finishedCommit,
+    normalizedRuns,
+  );
+  const runsWithMatrixProvenance = normalizedRuns.map((run) => ({
+    ...run,
+    matrixCommitMismatch: Boolean(
+      startedCommit &&
+      run.provenance &&
+      run.provenance.solverCommit &&
+      run.provenance.solverCommit !== startedCommit,
+    ),
+  }));
   const report = {
     schema: "agenda-policy-evaluation.v1",
     generatedAt: new Date().toISOString(),
@@ -668,10 +694,12 @@ function main() {
       repeats,
     },
     searchDefaults: config,
-    runs: normalizedRuns,
+    runs: runsWithMatrixProvenance,
     matrix,
     summaries,
-    stoppedReason: determineStoppedReason(normalizedRuns),
+    stoppedReason: determineStoppedReason(runsWithMatrixProvenance, {
+      matrixProvenanceMismatch,
+    }),
   };
   const reportPath = resolvePath(
     args["out-report"],
@@ -698,6 +726,7 @@ module.exports = {
   determineStoppedReason,
   applyLedgerBackedMetrics,
   buildRunEntry,
+  hasMatrixProvenanceMismatch,
   main,
   parseArgs,
   parseList,
