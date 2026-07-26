@@ -230,6 +230,18 @@ function resolveSnapshotFloors(project, initialState, finalState, options) {
   return Array.from(new Set([initialState.floorId, finalState.floorId])).filter(Boolean);
 }
 
+function resolveStartSnapshotFloors(project, initialState, options) {
+  const configured = options && options.startSnapshotFloors;
+  if (Array.isArray(configured) && configured.length > 0) return configured;
+  const floorIds = [
+    ...Object.keys((initialState && initialState.visitedFloors) || {}),
+    ...Object.keys((initialState && initialState.floorStates) || {}),
+    initialState && initialState.floorId,
+  ];
+  return Array.from(new Set(floorIds.filter(Boolean)))
+    .filter((floorId) => project.floorsById[floorId]);
+}
+
 function inferStructuredSnapshotFloors(entries) {
   const list = Array.isArray(entries) ? entries : [];
   for (const entry of list) {
@@ -957,6 +969,9 @@ function buildRouteRecord(input) {
   const structuredSource = input.nodes || input.actionEntries || finalState.routeTrace || [];
   const snapshotFloors = inferStructuredSnapshotFloors(structuredSource) || resolveSnapshotFloors(project, initialState, finalState, options);
   const snapshotOptions = { floorIds: snapshotFloors };
+  const startSnapshotOptions = {
+    floorIds: resolveStartSnapshotFloors(project, initialState, options),
+  };
   const decisions = [];
   const context = {
     project,
@@ -1038,7 +1053,7 @@ function buildRouteRecord(input) {
       routeLength: Array.isArray(finalState.route) ? finalState.route.length : 0,
     },
     start: {
-      snapshot: buildSolverSnapshot(project, initialState, snapshotOptions),
+      snapshot: buildSolverSnapshot(project, initialState, startSnapshotOptions),
       stateKey: buildDominanceKey(initialState),
       dominanceKey: buildDominanceKey(initialState),
       exactStateKey: buildStateKey(initialState),

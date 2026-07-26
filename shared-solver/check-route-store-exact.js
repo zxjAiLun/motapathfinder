@@ -89,11 +89,42 @@ function checkExactFinalMismatch() {
   );
 }
 
+function checkStartSnapshotDoesNotMarkUnvisitedFloors() {
+  const project = makeProject();
+  project.floorsById.EXTRA = {
+    floorId: "EXTRA",
+    width: 3,
+    height: 3,
+    map: [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+  };
+  const simulator = {
+    project,
+    createInitialState: () => makeState(50, []),
+    enumeratePrimitiveActions: () => ({ actions: [] }),
+    applyAction: (state) => state,
+  };
+  const initialState = makeState(50, []);
+  const routeRecord = buildRouteRecord({
+    project,
+    simulator,
+    initialState,
+    finalState: initialState,
+    options: {
+      snapshotFloors: ["SYNTHETIC", "EXTRA"],
+      toFloor: "EXTRA",
+    },
+  });
+  assert.deepEqual(Object.keys(routeRecord.start.snapshot.floors), ["SYNTHETIC"]);
+  assert.deepEqual(Object.keys(routeRecord.final.snapshot.floors), ["SYNTHETIC", "EXTRA"]);
+  assert.deepEqual(JSON.parse(routeRecord.start.exactStateKey).visitedFloors, ["SYNTHETIC"]);
+}
+
 function main() {
   checkExactFinalMismatch();
+  checkStartSnapshotDoesNotMarkUnvisitedFloors();
   console.log("check-route-store-exact: ok");
 }
 
 if (require.main === module) main();
 
-module.exports = { main, checkExactFinalMismatch };
+module.exports = { main, checkExactFinalMismatch, checkStartSnapshotDoesNotMarkUnvisitedFloors };
