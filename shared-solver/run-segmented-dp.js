@@ -173,6 +173,9 @@ function compactSegmentResult(segment) {
       resourceTiming: attempt.diagnostics && attempt.diagnostics.dp
         ? attempt.diagnostics.dp.resourceTiming || { model: "off" }
         : { model: "off" },
+      memory: attempt.diagnostics && attempt.diagnostics.dp
+        ? attempt.diagnostics.dp.memory || null
+        : null,
     })),
     failurePropagation: segment.failurePropagation || null,
   };
@@ -235,6 +238,10 @@ function buildSegmentedReport({
       dpKeyMode: args["dp-key-mode"] || null,
       maxExpansions: optionalNumber(args["max-expansions"]),
       maxRuntimeMs: optionalNumber(args["max-runtime-ms"]),
+      maxHeapMb: optionalNumber(args["max-heap-mb"]),
+      maxRssMb: optionalNumber(args["max-rss-mb"]),
+      memoryCheckIntervalExpansions: optionalNumber(args["memory-check-interval-expansions"]),
+      childOldSpaceMb: optionalNumber(args["child-old-space-mb"]),
       stopOnFirstGoal:
         args["stop-on-first-goal"] == null
           ? null
@@ -248,6 +255,7 @@ function buildSegmentedReport({
       budgetScope: args["budget-scope"] || "per-attempt",
     },
     budget: result.budget || null,
+    memory: result.memory || null,
     summary,
     milestones: (spec.milestones || []).map((milestone) => ({
       id: milestone.id,
@@ -391,6 +399,9 @@ function main() {
     dpKeyMode: args["dp-key-mode"] || null,
     maxExpansions: optionalNumber(args["max-expansions"]),
     maxRuntimeMs: optionalNumber(args["max-runtime-ms"]),
+    maxHeapMb: optionalNumber(args["max-heap-mb"]),
+    maxRssMb: optionalNumber(args["max-rss-mb"]),
+    memoryCheckIntervalExpansions: optionalNumber(args["memory-check-interval-expansions"]) || 1,
     stopOnFirstGoal:
       args["stop-on-first-goal"] == null
         ? null

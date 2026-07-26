@@ -183,8 +183,8 @@ function doctorRecommendation(failureClass, evidence) {
   const reasons = new Set(evidence.stoppedReasons || []);
   if (reasons.has("time-limit"))
     return "raise maxRuntimeMs or narrow the segment after checking whether the frontier was still live";
-  if (reasons.has("memory-limit"))
-    return "raise maxHeapMb or reduce the segment/action scope";
+  if (reasons.has("heap-limit") || reasons.has("rss-limit"))
+    return "raise maxHeapMb/maxRssMb or reduce the segment/action scope";
   if (evidence.actionTrimmed > 0)
     return "raise maxActionsPerState or widen the action policy before treating this as impossible";
   if (evidence.expansionBudgetExhaustedAttempts > 0)

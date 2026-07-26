@@ -10,6 +10,7 @@ const { StaticSimulator } = require("./lib/simulator");
 
 const {
   aggregateLedgerCosts,
+  aggregateMemoryReport,
   aggregateRepeats,
   aggregateSegmentReport,
   buildSegmentRegressionFromBaseline,
@@ -110,6 +111,13 @@ function readJsonResult(filePath) {
   }
 }
 
+function isChildMemoryLimit(child) {
+  const stderr = String(child && child.stderr || "");
+  const error = String(child && child.error && child.error.message || "");
+  const output = `${stderr}\n${error}`;
+  return /JavaScript heap out of memory|heap out of memory|Allocation failed - JavaScript heap out of memory|CALL_AND_RETRY_LAST Allocation failed|Mark-Compact.*allocation failed/i.test(output);
+}
+
 function makeReplayContext(projectRoot) {
   const project = loadProject(projectRoot);
   const simulator = new StaticSimulator(project, {
@@ -141,7 +149,11 @@ function buildSearchConfig(config, policy, budgetPlan, report) {
     maxExpansions: budgetPlan.maxExpansions,
     maxRuntimeMs: budgetPlan.maxRuntimeMs,
     maxActionsPerState: number(config.maxActionsPerState, 256),
-    maxHeapMb: first.maxHeapMb || null,
+    maxHeapMb: first.maxHeapMb != null ? first.maxHeapMb : config.maxHeapMb,
+    maxRssMb: first.maxRssMb != null ? first.maxRssMb : config.maxRssMb,
+    memoryCheckIntervalExpansions: first.memoryCheckIntervalExpansions || config.memoryCheckIntervalExpansions || 1,
+    childOldSpaceMb: config.childOldSpaceMb,
+    memory: report && report.memory ? report.memory : null,
     actionProviderMode: first.actionProviderMode || null,
     budgetScope: config.budgetScope || "per-attempt",
     budgetKind: budgetPlan.kind,
@@ -205,6 +217,15 @@ function buildRunEntry({
 }) {
   const report = reportResult.value;
   const aggregate = aggregateSegmentReport(report);
+  const childMemoryLimited = isChildMemoryLimit(child);
+  const memory = {
+    ...aggregateMemoryReport(report, config),
+    childMemoryLimitedCount: childMemoryLimited ? 1 : 0,
+    childMemoryLimited,
+    searchCompletion: childMemoryLimited || aggregate.searchCompletion === "memory-limited"
+      ? "memory-limited"
+      : "completed",
+  };
   const ledger = report && report.evaluationAttemptLedger || [];
   const finalSegmentId = config.toMilestone ||
     (report && report.toMilestone) ||
@@ -286,6 +307,7 @@ function buildRunEntry({
     strictReplay,
     finalState,
     finalHp: finalState && finalState.hero ? Number(finalState.hero.hp || 0) : null,
+    childMemoryLimited,
     budget: {
       ...budgetPlan,
       scope: report && report.budget && report.budget.scope
@@ -304,10 +326,17 @@ function buildRunEntry({
         ? report.budget.consumedWallMs
         : ledgerProjection.metrics.wallMs,
       stoppedReason: report && report.budget ? report.budget.stoppedReason : null,
+      maxHeapMb: report && report.memory ? report.memory.maxHeapMb : config.maxHeapMb,
+      maxRssMb: report && report.memory ? report.memory.maxRssMb : config.maxRssMb,
+      memoryCheckIntervalExpansions: report && report.memory
+        ? report.memory.memoryCheckIntervalExpansions
+        : config.memoryCheckIntervalExpansions,
+      childOldSpaceMb: config.childOldSpaceMb,
     },
     metrics: {
       ...ledgerProjection.metrics,
     },
+    memory,
     progress: aggregate.progress,
     stoppedReasons: aggregate.stoppedReasons,
     completeWithinActionSet: aggregate.completeWithinActionSet,
@@ -357,6 +386,7 @@ function buildRunEntry({
 }
 
 function classifyRun(run) {
+  if (run.childMemoryLimited) return "child-memory-limit";
   if (run.process.status !== 0) return "child-process-error";
   if (run.reportStatus === "missing") return "missing-child-report";
   if (run.reportStatus === "invalid") return "invalid-child-report";
@@ -364,6 +394,11 @@ function classifyRun(run) {
   if (run.found && !run.strictReplay.performed) return "strict-replay-failure";
   if (run.provenance && run.provenance.commitStable === false) return "provenance-mismatch";
   if (run.ledgerConsistency && !run.ledgerConsistency.match) return "ledger-consistency-failure";
+  if (run.memory && run.memory.searchCompletion === "memory-limited") {
+    return run.found && run.strictReplay.performed && run.strictReplay.valid
+      ? "completed-memory-limited"
+      : "memory-limited";
+  }
   return run.found ? "completed" : "completed-with-search-failures";
 }
 
@@ -372,12 +407,14 @@ function determineStoppedReason(runs, options) {
     return "provenance-mismatch";
   }
   const statuses = new Set((runs || []).map((run) => run.runStatus));
+  if (statuses.has("child-memory-limit")) return "child-memory-limit";
   if (statuses.has("child-process-error")) return "child-process-error";
   if (statuses.has("missing-child-report")) return "missing-child-report";
   if (statuses.has("invalid-child-report")) return "invalid-child-report";
   if (statuses.has("strict-replay-failure")) return "strict-replay-failure";
   if (statuses.has("provenance-mismatch")) return "provenance-mismatch";
   if (statuses.has("ledger-consistency-failure")) return "ledger-consistency-failure";
+  if (statuses.has("completed-memory-limited") || statuses.has("memory-limited")) return "memory-limited";
   if (statuses.has("completed-with-search-failures")) return "completed-with-search-failures";
   return "completed";
 }
@@ -414,9 +451,12 @@ function runOne(config, policy, budgetPlan, repeat, outputDir, replayContext) {
   );
   const startedAt = Date.now();
   const startedCommit = readGitCommit();
+  const nodeOptions = config.childOldSpaceMb != null && number(config.childOldSpaceMb, 0) > 0
+    ? [`--max-old-space-size=${Math.floor(number(config.childOldSpaceMb, 0))}`]
+    : [];
   const child = spawnSync(
     process.execPath,
-    [path.join(__dirname, "run-segmented-dp.js"), ...args],
+    [...nodeOptions, path.join(__dirname, "run-segmented-dp.js"), ...args],
     {
       cwd: __dirname,
       encoding: "utf8",
@@ -545,6 +585,17 @@ function summarizeLedgerConsistency(entries) {
   };
 }
 
+function summarizeMemoryRepeats(entries) {
+  const list = entries || [];
+  return {
+    heapLimitedCount: list.filter((entry) => entry.memory && entry.memory.searchCompletion === "memory-limited" && entry.memory.heapLimitedCount > 0).length,
+    rssLimitedCount: list.filter((entry) => entry.memory && entry.memory.searchCompletion === "memory-limited" && entry.memory.rssLimitedCount > 0).length,
+    childMemoryLimitedCount: list.filter((entry) => entry.childMemoryLimited || (entry.memory && entry.memory.childMemoryLimited)).length,
+    peakHeapUsedMb: range(list.map((entry) => entry.memory && entry.memory.peakHeapUsedMb)),
+    peakRssMb: range(list.map((entry) => entry.memory && entry.memory.peakRssMb)),
+  };
+}
+
 function buildMatrix(runs) {
   const matrix = {};
   runs.forEach((run) => {
@@ -563,6 +614,7 @@ function buildMatrix(runs) {
         segmentRepeats: aggregateSegmentRepeats(entries),
         ledgerCosts: aggregateLedgerRepeats(entries),
         ledgerConsistency: summarizeLedgerConsistency(entries),
+        memory: summarizeMemoryRepeats(entries),
         runs: entries.map((entry) => ({
           repeat: entry.repeat,
           found: entry.found,
@@ -570,6 +622,7 @@ function buildMatrix(runs) {
           runStatus: entry.runStatus,
           segmentMetrics: entry.segmentMetrics,
           metrics: entry.metrics,
+          memory: entry.memory,
           ledgerCosts: entry.ledgerCosts,
           ledgerConsistency: entry.ledgerConsistency,
           provenance: entry.provenance,
@@ -610,6 +663,10 @@ function main() {
     maxActionsPerState: number(args["max-actions-per-state"], 256),
     dpKeyMode: args["dp-key-mode"] || null,
     budgetScope: args["budget-scope"] || "global-run",
+    maxHeapMb: args["max-heap-mb"] == null ? null : number(args["max-heap-mb"], null),
+    maxRssMb: args["max-rss-mb"] == null ? null : number(args["max-rss-mb"], null),
+    memoryCheckIntervalExpansions: number(args["memory-check-interval-expansions"], 1),
+    childOldSpaceMb: args["child-old-space-mb"] == null ? null : number(args["child-old-space-mb"], null),
   };
   const kind = args["budget-kind"] || "expansions";
   if (kind !== "expansions" && kind !== "time") {
@@ -694,6 +751,12 @@ function main() {
       repeats,
     },
     searchDefaults: config,
+    memory: {
+      maxHeapMb: config.maxHeapMb,
+      maxRssMb: config.maxRssMb,
+      memoryCheckIntervalExpansions: config.memoryCheckIntervalExpansions,
+      childOldSpaceMb: config.childOldSpaceMb,
+    },
     runs: runsWithMatrixProvenance,
     matrix,
     summaries,
@@ -727,6 +790,8 @@ module.exports = {
   applyLedgerBackedMetrics,
   buildRunEntry,
   hasMatrixProvenanceMismatch,
+  isChildMemoryLimit,
+  summarizeMemoryRepeats,
   main,
   parseArgs,
   parseList,

@@ -16,6 +16,7 @@ const { buildStateKey } = require("./lib/state-key");
 const {
   __testHooks: segmentDpTestHooks,
 } = require("./lib/segment-dp");
+const { searchDP } = require("./lib/dp-search");
 const {
   aggregateLedgerCosts,
   aggregateRepeats,
@@ -35,6 +36,7 @@ const {
   buildMatrix,
   determineStoppedReason,
   hasMatrixProvenanceMismatch,
+  isChildMemoryLimit,
 } = require("./run-agenda-policy-evaluation");
 
 function makeReport(overrides) {
@@ -162,6 +164,10 @@ function checkBudgetAndArgs() {
       startRouteStep: 113,
       fromMilestone: "from",
       toMilestone: "to",
+      maxHeapMb: 1400,
+      maxRssMb: 1800,
+      memoryCheckIntervalExpansions: 1,
+      childOldSpaceMb: 1600,
     },
     { id: "hybrid-fair-8", agendaMode: "hybrid-fair", fairnessEvery: 8 },
     buildBudgetPlan("expansions", 500, {}),
@@ -172,7 +178,173 @@ function checkBudgetAndArgs() {
   assert(args.includes("--fairness-every=8"));
   assert(args.includes("--max-expansions=500"));
   assert(args.includes("--max-actions-per-state=256"));
+  assert(args.includes("--max-heap-mb=1400"));
+  assert(args.includes("--max-rss-mb=1800"));
+  assert(args.includes("--memory-check-interval-expansions=1"));
+  assert(args.includes("--child-old-space-mb=1600"));
   assert(args.includes("--out=C:/out.route.json"));
+}
+
+function makeMemorySearchSimulator() {
+  const action = {
+    kind: "event",
+    summary: "event:advance@F1:1,1",
+    floorId: "F1",
+    x: 1,
+    y: 1,
+  };
+  const project = {
+    floorsById: {
+      F1: {
+        floorId: "F1",
+        width: 3,
+        height: 3,
+        map: [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+        changeFloor: {},
+      },
+    },
+  };
+  return {
+    project,
+    stopFloorId: "F1",
+    getActionFingerprint: (value) => value.summary,
+    enumeratePrimitiveActions: (state) => ({
+      actions: state.step === 0 ? [action] : [],
+    }),
+    applyAction: (state) => ({
+      ...state,
+      step: 1,
+      hero: { ...state.hero, hp: 200 },
+      route: [],
+    }),
+    isTerminal: (state) => state.step === 1,
+  };
+}
+
+function makeMemorySearchState() {
+  return {
+    floorId: "F1",
+    step: 0,
+    hero: {
+      hp: 100,
+      hpmax: 200,
+      atk: 1,
+      def: 1,
+      mdef: 1,
+      lv: 1,
+      exp: 0,
+      money: 0,
+      mana: 0,
+      equipment: [],
+      followers: [],
+      loc: { x: 1, y: 1 },
+    },
+    inventory: {},
+    flags: {},
+    visitedFloors: { F1: true },
+    floorStates: {},
+    route: [],
+  };
+}
+
+function mb(value) {
+  return value * 1024 * 1024;
+}
+
+function checkMemoryBudgetSearch() {
+  const simulator = makeMemorySearchSimulator();
+  const before = searchDP(simulator, makeMemorySearchState(), {
+    maxExpansions: 10,
+    maxRuntimeMs: 1000,
+    maxHeapMb: 100,
+    maxRssMb: 0,
+    memoryCheckIntervalExpansions: 1,
+    memoryUsageProvider: () => ({ heapUsed: mb(101), rss: mb(20) }),
+    goalPredicate: (state) => state.step === 1,
+  });
+  assert.equal(before.expansions, 0);
+  assert.equal(before.foundGoal, false);
+  assert.equal(before.diagnostics.dp.stoppedReason, "heap-limit");
+  assert.equal(before.diagnostics.dp.memory.stoppedAtPhase, "before-expansion");
+  assert.equal(before.diagnostics.dp.memory.stoppedAtExpansion, 0);
+
+  let actionProviderCalls = 0;
+  const afterAction = searchDP(simulator, makeMemorySearchState(), {
+    maxExpansions: 10,
+    maxRuntimeMs: 1000,
+    maxHeapMb: 100,
+    memoryCheckIntervalExpansions: 1,
+    memoryUsageProvider: () => {
+      actionProviderCalls += 1;
+      return { heapUsed: mb(actionProviderCalls === 1 ? 10 : 101), rss: mb(20) };
+    },
+    goalPredicate: (state) => state.step === 1,
+  });
+  assert.equal(afterAction.diagnostics.dp.stoppedReason, "heap-limit");
+  assert.equal(afterAction.diagnostics.dp.memory.stoppedAtPhase, "after-action-provider");
+  assert.equal(afterAction.diagnostics.generated, 0);
+
+  let successorSamples = 0;
+  const afterSuccessor = searchDP(simulator, makeMemorySearchState(), {
+    maxExpansions: 10,
+    maxRuntimeMs: 1000,
+    maxHeapMb: 0,
+    maxRssMb: 100,
+    memoryCheckIntervalExpansions: 1,
+    memoryUsageProvider: () => {
+      successorSamples += 1;
+      return {
+        heapUsed: mb(10),
+        rss: mb(successorSamples === 3 ? 101 : 20),
+      };
+    },
+    goalPredicate: (state) => state.step === 1,
+    stopOnFirstGoal: false,
+  });
+  assert.equal(afterSuccessor.foundGoal, true, "goal skyline must survive a post-enqueue memory stop");
+  assert.equal(afterSuccessor.route.length, 1);
+  assert.equal(afterSuccessor.diagnostics.dp.stoppedReason, "rss-limit");
+  assert.equal(afterSuccessor.diagnostics.dp.memory.stoppedAtPhase, "after-successor-enqueue");
+  assert.equal(afterSuccessor.diagnostics.dp.memory.rssOvershootMb, 1);
+}
+
+function checkMemoryRepairAndChildClassification() {
+  const simulator = makeMemorySearchSimulator();
+  let calls = 0;
+  const result = require("./lib/segment-dp").runMilestoneGraph(
+    simulator,
+    makeMemorySearchState(),
+    {
+      milestones: [
+        { id: "s1", label: "first", goal: { floorId: "F1", minHero: { hp: 200 } } },
+        {
+          id: "s2",
+          label: "second",
+          repairStartFrom: "s1",
+          goal: { floorId: "F1", minHero: { hp: 300 } },
+        },
+      ],
+    },
+    {
+      maxExpansions: 10,
+      maxRuntimeMs: 1000,
+      maxHeapMb: 100,
+      memoryCheckIntervalExpansions: 1,
+      memoryUsageProvider: () => {
+        calls += 1;
+        return { heapUsed: mb(calls <= 4 ? 10 : 101), rss: mb(20) };
+      },
+      enableFailureBacktracking: true,
+      budgetScope: "per-attempt",
+    },
+  );
+  assert.equal(result.found, false);
+  assert.equal(result.memory.searchCompletion, "memory-limited");
+  assert.equal(result.segmentResults[1].memory.limited, true);
+  assert.equal(result.evaluationAttemptLedger.some((entry) => entry.phase !== "initial"), false);
+
+  assert.equal(isChildMemoryLimit({ status: 1, stderr: "FATAL ERROR: JavaScript heap out of memory" }), true);
+  assert.equal(isChildMemoryLimit({ status: 1, stderr: "ordinary child failure" }), false);
 }
 
 function checkAggregation() {
@@ -406,6 +578,18 @@ function checkGlobalBudgetAndFailureClassification() {
   assert.equal(classifyRun({ ...base, reportStatus: "invalid" }), "invalid-child-report");
   assert.equal(classifyRun({ ...base, reportStatus: "valid", process: { status: 1 } }), "child-process-error");
   assert.equal(classifyRun({ ...base, reportStatus: "valid", found: true }), "strict-replay-failure");
+  assert.equal(classifyRun({
+    ...base,
+    reportStatus: "valid",
+    found: true,
+    strictReplay: { performed: true, valid: true },
+    memory: { searchCompletion: "memory-limited" },
+  }), "completed-memory-limited");
+  assert.equal(classifyRun({
+    ...base,
+    reportStatus: "valid",
+    childMemoryLimited: true,
+  }), "child-memory-limit");
 }
 
 function checkRepeatAndRegression() {
@@ -884,6 +1068,34 @@ function checkLedgerConsistencyClassification() {
   assert.equal(matrix.summaries["best-first"]["expansions:1"].runs[0].ledgerConsistency.match, true);
 }
 
+function checkMemoryMatrixSummary() {
+  const matrix = buildMatrix([{
+    policy: "best-first",
+    budget: { kind: "expansions", value: 500 },
+    repeat: 1,
+    found: true,
+    strictReplay: { performed: true, valid: true },
+    runStatus: "completed-memory-limited",
+    metrics: { expansions: 10, wallMs: 20 },
+    segmentMetrics: [],
+    memory: {
+      searchCompletion: "memory-limited",
+      heapLimitedCount: 1,
+      rssLimitedCount: 0,
+      childMemoryLimited: false,
+      peakHeapUsedMb: 101,
+      peakRssMb: 120,
+    },
+    childMemoryLimited: false,
+  }]);
+  const summary = matrix.summaries["best-first"]["expansions:500"].memory;
+  assert.equal(summary.heapLimitedCount, 1);
+  assert.equal(summary.rssLimitedCount, 0);
+  assert.equal(summary.childMemoryLimitedCount, 0);
+  assert.equal(summary.peakHeapUsedMb.max, 101);
+  assert.equal(summary.peakRssMb.max, 120);
+}
+
 function main() {
   checkPolicyMatrix();
   checkBudgetAndArgs();
@@ -891,6 +1103,8 @@ function main() {
   checkRepeatAndRegression();
   checkStrictReplay();
   checkGlobalBudgetAndFailureClassification();
+  checkMemoryBudgetSearch();
+  checkMemoryRepairAndChildClassification();
   checkMultiSegmentCumulative();
   checkNullHandlingInRange();
   checkBaselineOnlySegmentRegression();
@@ -899,7 +1113,8 @@ function main() {
   checkLedgerBackedProjection();
   checkRequestedMilestoneLedgerSemantics();
   checkLedgerConsistencyClassification();
-  console.log("check-agenda-policy-evaluation: 14/14 passed");
+  checkMemoryMatrixSummary();
+  console.log("check-agenda-policy-evaluation: 17/17 passed");
 }
 
 if (require.main === module) main();
@@ -911,6 +1126,8 @@ module.exports = {
   checkRepeatAndRegression,
   checkStrictReplay,
   checkGlobalBudgetAndFailureClassification,
+  checkMemoryBudgetSearch,
+  checkMemoryRepairAndChildClassification,
   checkMultiSegmentCumulative,
   checkNullHandlingInRange,
   checkBaselineOnlySegmentRegression,
@@ -919,5 +1136,6 @@ module.exports = {
   checkLedgerBackedProjection,
   checkRequestedMilestoneLedgerSemantics,
   checkLedgerConsistencyClassification,
+  checkMemoryMatrixSummary,
   main,
 };

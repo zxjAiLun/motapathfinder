@@ -2477,6 +2477,9 @@ function searchSegmentDP(simulator, startState, segment, options) {
     maxActionsPerState,
     maxRuntimeMs,
     maxHeapMb: number(dpConfig.maxHeapMb, 0),
+    maxRssMb: number(dpConfig.maxRssMb, 0),
+    memoryCheckIntervalExpansions: number(dpConfig.memoryCheckIntervalExpansions, 1),
+    memoryUsageProvider: dpConfig.memoryUsageProvider || config.memoryUsageProvider,
     dpKeyMode: dpConfig.keyMode || dpConfig.dpKeyMode || "region",
     dpAgendaMode: dpConfig.agendaMode || "best-first",
     fairnessEvery: number(dpConfig.fairnessEvery, 32),
@@ -2618,12 +2621,37 @@ function searchSegmentDP(simulator, startState, segment, options) {
       failure:
         goalSkyline.length > 0
           ? null
-          : summarizeSegmentFailure(
-              simulator.project,
-              segment,
-              result,
-              simulator,
-            ),
+          : baseDpDiagnostics.stoppedReason === "heap-limit" ||
+              baseDpDiagnostics.stoppedReason === "rss-limit"
+            ? {
+                failedSegmentId: segment.id,
+                label: segment.label,
+                bestSeen: compactState(result.bestProgressState || result.bestSeenState),
+                missingGoalFields: [],
+                failureClass: "memory-limited",
+                failureReason: `search stopped after ${baseDpDiagnostics.stoppedReason}`,
+                preferredCandidateTags: [],
+                recommendedRepair: null,
+                failurePropagation: {
+                  failureClass: "memory-limited",
+                  primaryFailureClass: "memory-limited",
+                  reason: `search stopped after ${baseDpDiagnostics.stoppedReason}`,
+                  preferredCandidateTags: [],
+                  recommendedNext: [
+                    "raise the soft memory cap or reduce the segment scope before retrying",
+                  ],
+                },
+                diagnostics: {
+                  frontierRemaining: result.frontierSize,
+                  memory: baseDpDiagnostics.memory || null,
+                },
+              }
+            : summarizeSegmentFailure(
+                simulator.project,
+                segment,
+                result,
+                simulator,
+              ),
       goalSkyline: {
         primaryOutput: true,
         count: goalSkyline.length,
@@ -2769,6 +2797,18 @@ function segmentDpOverrides(segment, config, overrides) {
       : {}),
     ...(config && config.maxRuntimeMs && !generatedSegment
       ? { maxRuntimeMs: config.maxRuntimeMs }
+      : {}),
+    ...(config && config.maxHeapMb != null
+      ? { maxHeapMb: config.maxHeapMb }
+      : {}),
+    ...(config && config.maxRssMb != null
+      ? { maxRssMb: config.maxRssMb }
+      : {}),
+    ...(config && config.memoryCheckIntervalExpansions != null
+      ? { memoryCheckIntervalExpansions: config.memoryCheckIntervalExpansions }
+      : {}),
+    ...(config && typeof config.memoryUsageProvider === "function"
+      ? { memoryUsageProvider: config.memoryUsageProvider }
       : {}),
     ...(config && config.stopOnFirstGoal != null
       ? { stopOnFirstGoal: config.stopOnFirstGoal }
@@ -2927,6 +2967,8 @@ function runSegmentAgainstFrontier(
   const globalBudget = config && config.globalBudget;
   const nextCandidates = [];
   const attempts = [];
+  let memoryLimited = false;
+  let memoryStopReason = null;
   for (const [candidateIndex, candidate] of inputFrontier.entries()) {
     const configuredRemainingRuntimeMs = config && config.deadlineMs
       ? Math.max(0, number(config.deadlineMs, 0) - Date.now())
@@ -2952,12 +2994,11 @@ function runSegmentAgainstFrontier(
       break;
     }
     if (remainingRuntimeMs != null && remainingRuntimeMs <= 0) break;
-    const heapUsedMb = process.memoryUsage().heapUsed / 1024 / 1024;
-    if (
-      config &&
-      config.maxHeapMb &&
-      heapUsedMb >= number(config.maxHeapMb, Number.POSITIVE_INFINITY)
-    ) break;
+    if (globalBudget && ["heap-limit", "rss-limit"].includes(globalBudget.stoppedReason)) {
+      memoryLimited = true;
+      memoryStopReason = globalBudget.stoppedReason;
+      break;
+    }
     const dpOverrides = segmentDpOverrides(segment, config || {}, overrides || {});
     const remainingCandidates = Math.max(1, inputFrontier.length - candidateIndex);
     const globalAllocation = allocateGlobalAttemptBudget({
@@ -2979,8 +3020,11 @@ function runSegmentAgainstFrontier(
         fairCandidateRuntimeMs,
       ));
     }
-    if (config && config.maxHeapMb) {
-      dpOverrides.maxHeapMb = number(config.maxHeapMb, 1024);
+    if (config && config.maxHeapMb != null) {
+      dpOverrides.maxHeapMb = number(config.maxHeapMb, 0);
+    }
+    if (config && config.maxRssMb != null) {
+      dpOverrides.maxRssMb = number(config.maxRssMb, 0);
     }
     const result = searchSegmentDP(simulator, candidate.state, segment, {
       candidateId: candidate.id,
@@ -2997,8 +3041,13 @@ function runSegmentAgainstFrontier(
       dpOverrides,
     });
     attempts.push(result);
+    const dp = result && result.diagnostics && result.diagnostics.dp;
+    if (dp && ["heap-limit", "rss-limit"].includes(dp.stoppedReason)) {
+      memoryLimited = true;
+      memoryStopReason = dp.stoppedReason;
+      if (globalBudget) globalBudget.stoppedReason = dp.stoppedReason;
+    }
     if (globalBudget) {
-      const dp = result && result.diagnostics && result.diagnostics.dp;
       globalBudget.consumedExpansions += number(dp && dp.expansions, 0);
       globalBudget.consumedWallMs = Math.max(
         globalBudget.consumedWallMs,
@@ -3012,6 +3061,7 @@ function runSegmentAgainstFrontier(
       }),
     );
     if (typeof global.gc === "function") global.gc();
+    if (memoryLimited) break;
   }
   const merged = mergeMilestoneFrontier(simulator, nextCandidates, segment, {
     candidateLimit,
@@ -3036,8 +3086,25 @@ function runSegmentAgainstFrontier(
       diagnostics: attempt.diagnostics,
     })),
     failurePropagation,
+    memory: {
+      limited: memoryLimited,
+      stoppedReason: memoryStopReason,
+      attemptCount: attempts.filter((attempt) => {
+        const reason = attempt && attempt.diagnostics && attempt.diagnostics.dp && attempt.diagnostics.dp.stoppedReason;
+        return reason === "heap-limit" || reason === "rss-limit";
+      }).length,
+    },
   };
-  return { segment, inputFrontier, merged, attempts, summary, candidateLimit };
+  return {
+    segment,
+    inputFrontier,
+    merged,
+    attempts,
+    summary,
+    candidateLimit,
+    memoryLimited,
+    memoryStopReason,
+  };
 }
 
 function preferredTagScore(candidate, preferredTags) {
@@ -3258,6 +3325,9 @@ function tryRepairFromPreviousMilestone(
   if (expandedPrevious.merged.length === 0) {
     return { found: false, expandedPrevious, repairedCurrent: null };
   }
+  if (expandedPrevious.memoryLimited) {
+    return { found: false, expandedPrevious, repairedCurrent: null };
+  }
 
   const rankedFrontier = rankCandidatesByPreferredTags(
     expandedPrevious.merged,
@@ -3412,6 +3482,48 @@ function summarizeGlobalBudget(budget) {
   };
 }
 
+function summarizeMemoryAttempts(attempts, config) {
+  const diagnostics = (attempts || [])
+    .map((entry) => entry && entry.diagnostics && entry.diagnostics.dp)
+    .filter(Boolean);
+  const memory = diagnostics
+    .map((dp) => dp.memory || {})
+    .filter((entry) => Object.keys(entry).length > 0);
+  const heapLimitedCount = diagnostics.filter((dp) => dp.stoppedReason === "heap-limit").length;
+  const rssLimitedCount = diagnostics.filter((dp) => dp.stoppedReason === "rss-limit").length;
+  const peakHeapUsedMb = memory.reduce(
+    (peak, entry) => Math.max(peak, number(entry.peakHeapUsedMb, 0), number(entry.heapUsedMb, 0)),
+    0,
+  );
+  const peakRssMb = memory.reduce(
+    (peak, entry) => Math.max(peak, number(entry.peakRssMb, 0), number(entry.rssMb, 0)),
+    0,
+  );
+  const stopped = diagnostics.find((dp) => dp.stoppedReason === "heap-limit" || dp.stoppedReason === "rss-limit");
+  const firstMemory = memory[0] || {};
+  return {
+    maxHeapMb: config && config.maxHeapMb != null
+      ? number(config.maxHeapMb, 0)
+      : number(firstMemory.maxHeapMb, 0),
+    maxRssMb: config && config.maxRssMb != null
+      ? number(config.maxRssMb, 0)
+      : number(firstMemory.maxRssMb, 0),
+    memoryCheckIntervalExpansions: config && config.memoryCheckIntervalExpansions != null
+      ? number(config.memoryCheckIntervalExpansions, 1)
+      : number(firstMemory.memoryCheckIntervalExpansions, 1),
+    peakHeapUsedMb,
+    peakRssMb,
+    heapLimitedCount,
+    rssLimitedCount,
+    stoppedReason: stopped ? stopped.stoppedReason : null,
+    stoppedAtExpansion: stopped && stopped.memory ? stopped.memory.stoppedAtExpansion : null,
+    stoppedAtPhase: stopped && stopped.memory ? stopped.memory.stoppedAtPhase : null,
+    searchCompletion: heapLimitedCount > 0 || rssLimitedCount > 0
+      ? "memory-limited"
+      : "completed",
+  };
+}
+
 function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   const config = options || {};
   const globalBudget = config.globalBudget || createGlobalBudget(config);
@@ -3419,6 +3531,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   const finishResult = (result) => ({
     ...result,
     budget: summarizeGlobalBudget(globalBudget),
+    memory: summarizeMemoryAttempts(result.evaluationAttemptLedger, config),
   });
   const rangeError = milestoneRangeError(
     milestoneSpec,
@@ -3508,6 +3621,32 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     );
     appendLedger(execution, "initial");
     if (execution.merged.length === 0) {
+      if (execution.memoryLimited) {
+        const memoryFailure = {
+          ...execution.summary,
+          found: false,
+          failureClass: "memory-limited",
+          failureReason: `search stopped after ${execution.memoryStopReason}`,
+          failurePropagation: {
+            primaryFailureClass: "memory-limited",
+            failureClass: "memory-limited",
+            reason: `search stopped after ${execution.memoryStopReason}`,
+            recommendedNext: [
+              "raise the soft memory cap or reduce the segment scope before retrying",
+            ],
+          },
+        };
+        segmentResults.push(memoryFailure);
+        return finishResult({
+          found: false,
+          reachedMilestone: segment.startFrom || null,
+          failedSegment: memoryFailure,
+          finalCandidates: frontier,
+          segmentResults,
+          checkpointResults,
+          evaluationAttemptLedger,
+        });
+      }
       const configuredRepair = tryRepairFromConfiguredMilestone(
         simulator,
         segments,
@@ -3533,6 +3672,32 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         });
         frontier = configuredRepair.repairedCurrent.merged;
         continue;
+      }
+      if (configuredRepair && configuredRepair.repairedCurrent && configuredRepair.repairedCurrent.memoryLimited) {
+        const memoryFailure = {
+          ...configuredRepair.repairedCurrent.summary,
+          found: false,
+          failureClass: "memory-limited",
+          failureReason: `search stopped after ${configuredRepair.repairedCurrent.memoryStopReason}`,
+          failurePropagation: {
+            primaryFailureClass: "memory-limited",
+            failureClass: "memory-limited",
+            reason: `search stopped after ${configuredRepair.repairedCurrent.memoryStopReason}`,
+            recommendedNext: [
+              "raise the soft memory cap before attempting another repair phase",
+            ],
+          },
+        };
+        segmentResults.push(memoryFailure);
+        return finishResult({
+          found: false,
+          reachedMilestone: segment.startFrom || null,
+          failedSegment: memoryFailure,
+          finalCandidates: frontier,
+          segmentResults,
+          checkpointResults,
+          evaluationAttemptLedger,
+        });
       }
       const repair = tryRepairFromPreviousMilestone(
         simulator,
@@ -3579,6 +3744,37 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         frontier = repair.repairedCurrent.merged;
         continue;
       }
+      if (
+        repair &&
+        ((repair.expandedPrevious && repair.expandedPrevious.memoryLimited) ||
+          (repair.repairedCurrent && repair.repairedCurrent.memoryLimited))
+      ) {
+        const memoryExecution = repair.repairedCurrent || repair.expandedPrevious;
+        const memoryFailure = {
+          ...memoryExecution.summary,
+          found: false,
+          failureClass: "memory-limited",
+          failureReason: `search stopped after ${memoryExecution.memoryStopReason}`,
+          failurePropagation: {
+            primaryFailureClass: "memory-limited",
+            failureClass: "memory-limited",
+            reason: `search stopped after ${memoryExecution.memoryStopReason}`,
+            recommendedNext: [
+              "raise the soft memory cap before attempting another repair phase",
+            ],
+          },
+        };
+        segmentResults.push(memoryFailure);
+        return finishResult({
+          found: false,
+          reachedMilestone: segment.startFrom || null,
+          failedSegment: memoryFailure,
+          finalCandidates: frontier,
+          segmentResults,
+          checkpointResults,
+          evaluationAttemptLedger,
+        });
+      }
       const failedSummary = execution.summary;
       if (configuredRepair) {
         failedSummary.backtrack = {
@@ -3619,6 +3815,29 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       });
     }
     segmentResults.push(execution.summary);
+    if (execution.memoryLimited && execution.merged.length > 0 && segmentIndex < segments.length - 1) {
+      return finishResult({
+        found: false,
+        reachedMilestone: segment.id,
+        failedSegment: {
+          ...execution.summary,
+          failureClass: "memory-limited",
+          failureReason: `search stopped after ${execution.memoryStopReason}`,
+          failurePropagation: {
+            primaryFailureClass: "memory-limited",
+            failureClass: "memory-limited",
+            reason: `search stopped after ${execution.memoryStopReason}`,
+            recommendedNext: [
+              "raise the soft memory cap or reduce the segment scope before continuing the milestone graph",
+            ],
+          },
+        },
+        finalCandidates: execution.merged,
+        segmentResults,
+        checkpointResults,
+        evaluationAttemptLedger,
+      });
+    }
     checkpointResults.push(buildMilestoneCheckpoint(segment, execution));
     history.push({
       segment,

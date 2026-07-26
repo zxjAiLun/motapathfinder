@@ -624,7 +624,7 @@ function checkMonsterOnlyMode(simulator) {
     assertSamePresentTiles(simulator.project, replayedState, finalState, segment.goal.presentTiles, "route replay");
   } else {
     assert.ok(
-      dpDiag.stoppedReason === "time-limit" || dpDiag.stoppedReason === "memory-limit" || dpDiag.frontierSize === 0,
+      dpDiag.stoppedReason === "time-limit" || dpDiag.stoppedReason === "heap-limit" || dpDiag.stoppedReason === "rss-limit" || dpDiag.frontierSize === 0,
       `battle-frontier should stop gracefully: stoppedReason=${dpDiag.stoppedReason}, frontierSize=${dpDiag.frontierSize}`
     );
   }

@@ -1244,28 +1244,71 @@ function searchDP(simulator, initialState, options) {
   };
 
   const maxHeapMb = Number(config.maxHeapMb || 0);
+  const maxRssMb = Number(config.maxRssMb || 0);
+  const memoryCheckIntervalExpansions = Math.max(
+    1,
+    Math.floor(number(config.memoryCheckIntervalExpansions, 1)),
+  );
+  const memoryUsageProvider = typeof config.memoryUsageProvider === "function"
+    ? config.memoryUsageProvider
+    : () => process.memoryUsage();
   let maxHeapUsedMb = 0;
-  let maxRssMb = 0;
-  const recordMemoryUsage = () => {
-    const memory = process.memoryUsage();
-    const heapUsedMb = memory.heapUsed / 1024 / 1024;
-    const rssMb = memory.rss / 1024 / 1024;
-    maxHeapUsedMb = Math.max(maxHeapUsedMb, heapUsedMb);
-    maxRssMb = Math.max(maxRssMb, rssMb);
+  let peakRssMb = 0;
+  let stopHeapUsedMb = null;
+  let stopRssMb = null;
+  let stoppedAtExpansion = null;
+  let stoppedAtPhase = null;
+  let memorySampleCount = 0;
+  let memoryStoppedReason = null;
+  const readMemoryUsage = () => {
+    let memory;
+    try {
+      memory = memoryUsageProvider() || {};
+    } catch (error) {
+      memory = process.memoryUsage();
+    }
+    const heapUsedMb = Number(memory.heapUsed || 0) / 1024 / 1024;
+    const rssMb = Number(memory.rss || 0) / 1024 / 1024;
     return { heapUsedMb, rssMb };
+  };
+  const recordMemoryUsage = (phase, expansion, shouldStop = true) => {
+    const usage = readMemoryUsage();
+    const { heapUsedMb, rssMb } = usage;
+    memorySampleCount += 1;
+    maxHeapUsedMb = Math.max(maxHeapUsedMb, heapUsedMb);
+    peakRssMb = Math.max(peakRssMb, rssMb);
+    if (shouldStop && !memoryStoppedReason) {
+      if (maxHeapMb > 0 && heapUsedMb >= maxHeapMb) {
+        memoryStoppedReason = "heap-limit";
+      } else if (maxRssMb > 0 && rssMb >= maxRssMb) {
+        memoryStoppedReason = "rss-limit";
+      }
+      if (memoryStoppedReason) {
+        stopHeapUsedMb = heapUsedMb;
+        stopRssMb = rssMb;
+        stoppedAtExpansion = expansion;
+        stoppedAtPhase = phase;
+      }
+    }
+    return usage;
+  };
+  const memoryCheckDue = (expansionOrdinal) =>
+    expansionOrdinal <= 0 || expansionOrdinal % memoryCheckIntervalExpansions === 0;
+  const stopForMemoryIfNeeded = (phase, expansion, expansionOrdinal, force = false) => {
+    if (!force && !memoryCheckDue(expansionOrdinal)) return false;
+    recordMemoryUsage(phase, expansion, true);
+    if (memoryStoppedReason) {
+      stoppedReason = memoryStoppedReason;
+      return true;
+    }
+    return false;
   };
   while (expansions < maxExpansions) {
     if (maxRuntimeMs > 0 && Date.now() - startedAt >= maxRuntimeMs) {
       stoppedReason = "time-limit";
       break;
     }
-    if (maxHeapMb > 0 && expansions % 100 === 0) {
-      const { heapUsedMb } = recordMemoryUsage();
-      if (heapUsedMb > maxHeapMb) {
-        stoppedReason = "memory-limit";
-        break;
-      }
-    }
+    if (stopForMemoryIfNeeded("before-expansion", expansions, expansions + 1, expansions === 0)) break;
     if (stopOnFirstGoal && firstGoalNode) break;
     const selected = popNext();
     if (!selected) break;
@@ -1332,11 +1375,13 @@ function searchDP(simulator, initialState, options) {
         reasonCode: "action-provider-error",
         error: { name: error && error.name || "Error", message: error && error.message || String(error) },
       }));
+      if (stopForMemoryIfNeeded("after-action-provider", expansions, expansions)) break;
       continue;
     }
     if (typeof config.actionFilter === "function") {
       actions = actions.filter((action) => config.actionFilter(action, state));
     }
+    if (stopForMemoryIfNeeded("after-action-provider", expansions, expansions)) break;
     maxActionsGeneratedForState = Math.max(maxActionsGeneratedForState, actions.length);
     if (observer) observer.emit("actionSetGenerated", () => observerStatePayload(simulator, state, entry, config, {
       reasonCode: "action-set-generated",
@@ -1365,9 +1410,11 @@ function searchDP(simulator, initialState, options) {
         }),
       ));
     }
+    let stopAfterSuccessorBatch = false;
     sortedActions
       .slice(0, maxActionsPerState)
       .forEach((action, actionIndex) => {
+        if (stopAfterSuccessorBatch) return;
         generated += 1;
         recordAction(actionStats, action, "expanded");
         const candidateId = `${entry.nodeId}:${actionIndex}`;
@@ -1395,6 +1442,7 @@ function searchDP(simulator, initialState, options) {
           return;
         }
         nextStates.forEach((nextState, successorIndex) => {
+          if (stopAfterSuccessorBatch) return;
           if (typeof config.stateAnnotator === "function") {
             try {
               config.stateAnnotator(nextState, state, action);
@@ -1409,7 +1457,11 @@ function searchDP(simulator, initialState, options) {
           if (childNode) recordAction(actionStats, action, "kept");
           else recordAction(actionStats, action, "dominated");
         });
+        if (stopForMemoryIfNeeded("after-successor-enqueue", expansions, expansions)) {
+          stopAfterSuccessorBatch = true;
+        }
       });
+    if (stopAfterSuccessorBatch) break;
   }
 
   agendaFairness.fairCursor = fairnessEnabled ? fairCursor : 0;
@@ -1422,7 +1474,7 @@ function searchDP(simulator, initialState, options) {
   const frontierSize = heap
     ? heap.activeCount(frontierIsActive)
     : fifoEntries.slice(cursor).filter(isActiveEntry).length;
-  recordMemoryUsage();
+  recordMemoryUsage("between-attempts", expansions, !memoryStoppedReason);
   if (observer) {
     const budgetReason = stoppedReason || (
       expansions >= maxExpansions && frontierSize > 0 ? "expansion-limit" : null
@@ -1441,6 +1493,27 @@ function searchDP(simulator, initialState, options) {
             maxExpansions,
             maxRuntimeMs,
             maxHeapMb,
+            maxRssMb,
+            memoryCheckIntervalExpansions,
+            memory: {
+              maxHeapMb,
+              maxRssMb,
+              memoryCheckIntervalExpansions,
+              peakHeapUsedMb: maxHeapUsedMb,
+              peakRssMb,
+              stopHeapUsedMb,
+              stopRssMb,
+              stoppedReason: memoryStoppedReason,
+              stoppedAtExpansion,
+              stoppedAtPhase,
+              sampleCount: memorySampleCount,
+              heapOvershootMb: stopHeapUsedMb == null || maxHeapMb <= 0
+                ? 0
+                : Math.max(0, stopHeapUsedMb - maxHeapMb),
+              rssOvershootMb: stopRssMb == null || maxRssMb <= 0
+                ? 0
+                : Math.max(0, stopRssMb - maxRssMb),
+            },
             fairCursor: fairnessEnabled ? fairCursor : null,
             fairPops: fairnessEnabled ? agendaFairness.fairPops : null,
             fairnessEvery: fairnessEnabled ? fairnessEvery : 0,
@@ -1595,9 +1668,30 @@ function searchDP(simulator, initialState, options) {
         stoppedReason,
         maxRuntimeMs,
         maxHeapMb,
+        maxRssMb,
+        memoryCheckIntervalExpansions,
         wallMs: Date.now() - startedAt,
         heapUsedMb: Number(maxHeapUsedMb.toFixed(1)),
-        rssMb: Number(maxRssMb.toFixed(1)),
+        rssMb: Number(peakRssMb.toFixed(1)),
+        memory: {
+          maxHeapMb,
+          maxRssMb,
+          memoryCheckIntervalExpansions,
+          peakHeapUsedMb: Number(maxHeapUsedMb.toFixed(1)),
+          peakRssMb: Number(peakRssMb.toFixed(1)),
+          stopHeapUsedMb: stopHeapUsedMb == null ? null : Number(stopHeapUsedMb.toFixed(1)),
+          stopRssMb: stopRssMb == null ? null : Number(stopRssMb.toFixed(1)),
+          stoppedReason: memoryStoppedReason,
+          stoppedAtExpansion,
+          stoppedAtPhase,
+          sampleCount: memorySampleCount,
+          heapOvershootMb: stopHeapUsedMb == null || maxHeapMb <= 0
+            ? 0
+            : Number(Math.max(0, stopHeapUsedMb - maxHeapMb).toFixed(1)),
+          rssOvershootMb: stopRssMb == null || maxRssMb <= 0
+            ? 0
+            : Number(Math.max(0, stopRssMb - maxRssMb).toFixed(1)),
+        },
         maxExpansions,
         expansions,
         frontierSize,

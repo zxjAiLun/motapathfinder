@@ -132,6 +132,7 @@ function buildSegmentedChildArgs(config, policy, budgetPlan, reportPath, outPath
     `--max-actions-per-state=${config.maxActionsPerState}`,
     `--max-expansions=${budgetPlan.maxExpansions}`,
     `--max-runtime-ms=${budgetPlan.maxRuntimeMs}`,
+    `--memory-check-interval-expansions=${config.memoryCheckIntervalExpansions == null ? 1 : config.memoryCheckIntervalExpansions}`,
     `--budget-scope=${config.budgetScope || "per-attempt"}`,
     `--report=${reportPath}`,
     `--print-failures=0`,
@@ -146,6 +147,9 @@ function buildSegmentedChildArgs(config, policy, budgetPlan, reportPath, outPath
   }
   if (config.fromMilestone) args.push(`--from-milestone=${config.fromMilestone}`);
   if (config.toMilestone) args.push(`--to-milestone=${config.toMilestone}`);
+  if (config.maxHeapMb != null) args.push(`--max-heap-mb=${config.maxHeapMb}`);
+  if (config.maxRssMb != null) args.push(`--max-rss-mb=${config.maxRssMb}`);
+  if (config.childOldSpaceMb != null) args.push(`--child-old-space-mb=${config.childOldSpaceMb}`);
   if (outPath) args.push(`--out=${outPath}`);
   return args;
 }
@@ -443,8 +447,18 @@ function aggregateAttemptMetrics(attempts) {
     replacedLowerHp: sum(list.map((attempt) => attempt.diagnostics.replacedLowerHp)),
     actionTrimmed: sum(list.map((attempt) => attempt.diagnostics.actionTrimmed)),
     frontierSize: max(list.map((attempt) => attempt.diagnostics.frontierSize)),
-    heapUsedMb: max(list.map((attempt) => attempt.diagnostics.heapUsedMb)),
-    rssMb: max(list.map((attempt) => attempt.diagnostics.rssMb)),
+    heapUsedMb: max(list.map((attempt) => attempt.diagnostics.memory && attempt.diagnostics.memory.peakHeapUsedMb != null
+      ? attempt.diagnostics.memory.peakHeapUsedMb
+      : attempt.diagnostics.heapUsedMb)),
+    rssMb: max(list.map((attempt) => attempt.diagnostics.memory && attempt.diagnostics.memory.peakRssMb != null
+      ? attempt.diagnostics.memory.peakRssMb
+      : attempt.diagnostics.rssMb)),
+    peakHeapUsedMb: max(list.map((attempt) => attempt.diagnostics.memory && attempt.diagnostics.memory.peakHeapUsedMb != null
+      ? attempt.diagnostics.memory.peakHeapUsedMb
+      : attempt.diagnostics.heapUsedMb)),
+    peakRssMb: max(list.map((attempt) => attempt.diagnostics.memory && attempt.diagnostics.memory.peakRssMb != null
+      ? attempt.diagnostics.memory.peakRssMb
+      : attempt.diagnostics.rssMb)),
     fairPops: sum(fairness.map((item) => item.fairPops)),
     bestPops: sum(fairness.map((item) => item.bestPops)),
     fairFallbacks: sum(fairness.map((item) => item.fairFallbacks)),
@@ -453,6 +467,58 @@ function aggregateAttemptMetrics(attempts) {
     minLocalFirstGoalExpansion: firstGoalExpansions.length > 0
       ? Math.min(...firstGoalExpansions)
       : null,
+  };
+}
+
+function aggregateMemoryReport(report, options) {
+  const attempts = attemptDiagnostics(report);
+  const diagnostics = attempts.map((attempt) => attempt.diagnostics || {});
+  const heapLimitedCount = diagnostics.filter((dp) => dp.stoppedReason === "heap-limit").length;
+  const rssLimitedCount = diagnostics.filter((dp) => dp.stoppedReason === "rss-limit").length;
+  const peakHeapUsedMb = Math.max(
+    max(diagnostics.map((dp) => dp.memory && dp.memory.peakHeapUsedMb != null
+      ? dp.memory.peakHeapUsedMb
+      : dp.heapUsedMb)),
+    number((report && report.memory || {}).peakHeapUsedMb, 0),
+  );
+  const peakRssMb = Math.max(
+    max(diagnostics.map((dp) => dp.memory && dp.memory.peakRssMb != null
+      ? dp.memory.peakRssMb
+      : dp.rssMb)),
+    number((report && report.memory || {}).peakRssMb, 0),
+  );
+  const firstMemory = diagnostics.find((dp) => dp.memory) || {};
+  const requested = (report && report.memory) || {};
+  return {
+    maxHeapMb: requested.maxHeapMb != null
+      ? requested.maxHeapMb
+      : options && options.maxHeapMb != null
+        ? options.maxHeapMb
+        : firstMemory.memory && firstMemory.memory.maxHeapMb != null
+          ? firstMemory.memory.maxHeapMb
+          : null,
+    maxRssMb: requested.maxRssMb != null
+      ? requested.maxRssMb
+      : options && options.maxRssMb != null
+        ? options.maxRssMb
+        : firstMemory.memory && firstMemory.memory.maxRssMb != null
+          ? firstMemory.memory.maxRssMb
+          : null,
+    memoryCheckIntervalExpansions: requested.memoryCheckIntervalExpansions != null
+      ? requested.memoryCheckIntervalExpansions
+      : options && options.memoryCheckIntervalExpansions != null
+        ? options.memoryCheckIntervalExpansions
+        : firstMemory.memory && firstMemory.memory.memoryCheckIntervalExpansions != null
+          ? firstMemory.memory.memoryCheckIntervalExpansions
+          : 1,
+    peakHeapUsedMb,
+    peakRssMb,
+    heapLimitedCount,
+    rssLimitedCount,
+    childMemoryLimitedCount: 0,
+    searchCompletion: heapLimitedCount > 0 || rssLimitedCount > 0
+      ? "memory-limited"
+      : "completed",
   };
 }
 
@@ -514,6 +580,7 @@ function aggregateSegmentReport(report) {
     };
   });
   const metrics = aggregateAttemptMetrics(attempts);
+  const memory = aggregateMemoryReport(report);
   const finalSegment = segmentMetrics[segmentMetrics.length - 1] || null;
   const finalSegmentIndex = segmentMetrics.length - 1;
   const priorSegments = finalSegmentIndex > 0
@@ -559,6 +626,8 @@ function aggregateSegmentReport(report) {
       firstGoalExpansion: finiteOrNull(attempt.diagnostics.firstGoalExpansion),
     })),
     metrics,
+    memory,
+    searchCompletion: memory.searchCompletion,
     stoppedReasons: stoppedReasonsForAttempts(attempts),
     completeWithinActionSet: attempts.every(
       (attempt) => attempt.diagnostics.completeWithinActionSet !== false,
@@ -801,6 +870,7 @@ function aggregateLedgerCosts(ledger, options) {
 module.exports = {
   DEFAULT_POLICIES,
   aggregateLedgerCosts,
+  aggregateMemoryReport,
   aggregateRepeats,
   aggregateSegmentReport,
   buildBudgetPlan,
