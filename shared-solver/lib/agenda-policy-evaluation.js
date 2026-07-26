@@ -852,6 +852,29 @@ function aggregateLedgerCosts(ledger, options) {
       const dp = entry.diagnostics && entry.diagnostics.dp || {};
       return total + number(dp.expansions);
     }, 0);
+  const assertExpansionInvariant = (label, value, limit) => {
+    if (value == null || value <= limit) return;
+    throw new Error(
+      `ledger invariant failed: ${label}=${value} exceeds totalExpansions=${limit}`,
+    );
+  };
+  for (const [segmentId, segment] of Object.entries(bySegment)) {
+    assertExpansionInvariant(
+      `${segmentId}.expansionsToFirstGoal`,
+      segment.expansionsToFirstGoal,
+      segment.expansions,
+    );
+  }
+  assertExpansionInvariant(
+    "expansionsToFirstGoal",
+    firstGoal ? firstGoal.expansions : null,
+    totalExpansions,
+  );
+  assertExpansionInvariant(
+    "expansionsToFinalRequestedMilestone",
+    finalRequestedMilestoneGoal ? finalRequestedMilestoneGoal.expansions : null,
+    totalExpansions,
+  );
   return {
     totalExpansions,
     totalWallMs,

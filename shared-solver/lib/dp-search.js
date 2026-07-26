@@ -1153,7 +1153,7 @@ function searchDP(simulator, initialState, options) {
     if (isGoalState(state)) {
       if (!firstGoalNode) {
         firstGoalNode = node;
-        firstGoalExpansion = expansions + 1;
+        firstGoalExpansion = expansions;
         firstGoalElapsedMs = Date.now() - startedAt;
       }
       goalNodes.push(node);

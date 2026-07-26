@@ -249,6 +249,50 @@ function makeMemorySearchState() {
   };
 }
 
+function makeGoalSearchSimulator(targetStep) {
+  const project = {
+    floorsById: {
+      F1: {
+        floorId: "F1",
+        width: targetStep + 2,
+        height: 3,
+        map: [
+          Array(targetStep + 2).fill(0),
+          Array(targetStep + 2).fill(0),
+          Array(targetStep + 2).fill(0),
+        ],
+        changeFloor: {},
+      },
+    },
+  };
+  return {
+    project,
+    stopFloorId: "F1",
+    getActionFingerprint: (action) => action.summary,
+    enumeratePrimitiveActions: (state) => ({
+      actions: state.step < targetStep
+        ? [{
+            kind: "event",
+            summary: `event:advance-${state.step}@F1:${state.step + 2},1`,
+            floorId: "F1",
+            x: state.step + 2,
+            y: 1,
+          }]
+        : [],
+    }),
+    applyAction: (state) => ({
+      ...state,
+      step: state.step + 1,
+      hero: {
+        ...state.hero,
+        loc: { ...state.hero.loc, x: state.hero.loc.x + 1 },
+      },
+      route: [],
+    }),
+    isTerminal: (state) => state.step >= targetStep,
+  };
+}
+
 function mb(value) {
   return value * 1024 * 1024;
 }
@@ -334,6 +378,35 @@ function checkMemoryBudgetSearch() {
   assert.equal(afterSuccessor.diagnostics.dp.stoppedReason, "rss-limit");
   assert.equal(afterSuccessor.diagnostics.dp.memory.stoppedAtPhase, "after-successor-enqueue");
   assert.equal(afterSuccessor.diagnostics.dp.memory.rssOvershootMb, 1);
+}
+
+function checkFirstGoalExpansionAccounting() {
+  const rootGoal = searchDP(makeGoalSearchSimulator(0), makeMemorySearchState(), {
+    maxExpansions: 10,
+    maxRuntimeMs: 1000,
+    stopOnFirstGoal: true,
+    goalPredicate: (state) => state.step === 0,
+  });
+  assert.equal(rootGoal.expansions, 0, "root goal must cost zero expansions");
+  assert.equal(rootGoal.diagnostics.dp.firstGoalExpansion, 0);
+
+  const firstExpansionGoal = searchDP(makeGoalSearchSimulator(1), makeMemorySearchState(), {
+    maxExpansions: 10,
+    maxRuntimeMs: 1000,
+    stopOnFirstGoal: true,
+    goalPredicate: (state) => state.step === 1,
+  });
+  assert.equal(firstExpansionGoal.expansions, 1);
+  assert.equal(firstExpansionGoal.diagnostics.dp.firstGoalExpansion, 1);
+
+  const nthGoal = searchDP(makeGoalSearchSimulator(3), makeMemorySearchState(), {
+    maxExpansions: 10,
+    maxRuntimeMs: 1000,
+    stopOnFirstGoal: true,
+    goalPredicate: (state) => state.step === 3,
+  });
+  assert.equal(nthGoal.diagnostics.dp.firstGoalExpansion, 3);
+  assert(nthGoal.diagnostics.dp.firstGoalExpansion <= nthGoal.expansions);
 }
 
 function checkMemoryRepairAndChildClassification() {
@@ -1043,6 +1116,36 @@ function checkLedgerCosts() {
   assert.equal(chronology.expansionsToFirstGoal, 20);
   assert.equal(chronology.expansionsToFinalRequestedMilestone, 530);
   assert.equal(chronology.wallMsToFinalRequestedMilestone, 112);
+  const multiSegment = aggregateLedgerCosts([
+    {
+      segmentId: "segment-1",
+      phase: "initial",
+      found: true,
+      goalCount: 1,
+      diagnostics: { dp: { expansions: 11, wallMs: 11, firstGoalExpansion: 11 } },
+    },
+    {
+      segmentId: "segment-2",
+      phase: "initial",
+      found: true,
+      goalCount: 1,
+      diagnostics: { dp: { expansions: 2, wallMs: 2, firstGoalExpansion: 2 } },
+    },
+  ], { finalSegmentId: "segment-2" });
+  assert.equal(multiSegment.totalExpansions, 13);
+  assert.equal(multiSegment.expansionsToFirstGoal, 11);
+  assert.equal(multiSegment.expansionsToFinalRequestedMilestone, 13);
+  assert(multiSegment.expansionsToFinalRequestedMilestone <= multiSegment.totalExpansions);
+  assert.throws(
+    () => aggregateLedgerCosts([{
+      segmentId: "invalid",
+      phase: "initial",
+      found: true,
+      goalCount: 1,
+      diagnostics: { dp: { expansions: 2, wallMs: 1, firstGoalExpansion: 3 } },
+    }]),
+    /ledger invariant failed/,
+  );
   assert.equal(aggregateLedgerCosts([]), null);
   assert.equal(aggregateLedgerCosts(null), null);
 }
@@ -1251,6 +1354,7 @@ function main() {
   checkStrictReplay();
   checkGlobalBudgetAndFailureClassification();
   checkMemoryBudgetSearch();
+  checkFirstGoalExpansionAccounting();
   checkMemoryRepairAndChildClassification();
   checkRetainedRepairMemoryStops();
   checkMultiSegmentCumulative();
@@ -1262,7 +1366,7 @@ function main() {
   checkRequestedMilestoneLedgerSemantics();
   checkLedgerConsistencyClassification();
   checkMemoryMatrixSummary();
-  console.log("check-agenda-policy-evaluation: 18/18 passed");
+  console.log("check-agenda-policy-evaluation: 19/19 passed");
 }
 
 if (require.main === module) main();
@@ -1275,6 +1379,7 @@ module.exports = {
   checkStrictReplay,
   checkGlobalBudgetAndFailureClassification,
   checkMemoryBudgetSearch,
+  checkFirstGoalExpansionAccounting,
   checkMemoryRepairAndChildClassification,
   checkRetainedRepairMemoryStops,
   checkMultiSegmentCumulative,
