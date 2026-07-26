@@ -233,11 +233,11 @@ function resolveSnapshotFloors(project, initialState, finalState, options) {
 function resolveStartSnapshotFloors(project, initialState, options) {
   const configured = options && options.startSnapshotFloors;
   if (Array.isArray(configured) && configured.length > 0) return configured;
-  const floorIds = [
-    ...Object.keys((initialState && initialState.visitedFloors) || {}),
-    ...Object.keys((initialState && initialState.floorStates) || {}),
-    initialState && initialState.floorId,
-  ];
+  const visitedFloors = Object.keys((initialState && initialState.visitedFloors) || {});
+  const floorIds = visitedFloors.length > 0
+    ? visitedFloors
+    : Object.keys((initialState && initialState.floorStates) || {});
+  floorIds.push(initialState && initialState.floorId);
   return Array.from(new Set(floorIds.filter(Boolean)))
     .filter((floorId) => project.floorsById[floorId]);
 }
