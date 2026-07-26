@@ -20,6 +20,7 @@
 | stopOnFirstGoal | `false` |
 | DP key | `region` |
 | Report status | all 5 runs `valid` |
+| Top-level stoppedReason | `completed-with-search-failures` |
 
 ## Policy results
 

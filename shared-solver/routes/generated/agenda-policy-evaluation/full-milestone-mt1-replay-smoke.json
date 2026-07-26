@@ -1,0 +1,1521 @@
+{
+  "schema": "agenda-policy-evaluation.v1",
+  "generatedAt": "2026-07-26T15:34:13.790Z",
+  "provenance": {
+    "solverCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+    "startedCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+    "finishedCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+    "commitStable": true,
+    "nodeVersion": "v22.12.0",
+    "platform": "win32"
+  },
+  "mode": "full-milestone",
+  "input": {
+    "routeName": "onlyup-chaos-mt5-blueking",
+    "projectRoot": "E:\\AUbuntuProject\\project\\motapathfind\\Only upV2.1\\Only upV2.1",
+    "startRoute": null,
+    "startRouteStep": null,
+    "fromMilestone": null,
+    "toMilestone": "mt1-gate-1559"
+  },
+  "policies": [
+    {
+      "id": "best-first",
+      "agendaMode": "best-first",
+      "fairnessEvery": null
+    }
+  ],
+  "budgetPlan": {
+    "kind": "time",
+    "budgets": [
+      30000
+    ],
+    "repeats": 1
+  },
+  "searchDefaults": {
+    "mode": "full-milestone",
+    "routeName": "onlyup-chaos-mt5-blueking",
+    "projectRoot": "E:\\AUbuntuProject\\project\\motapathfind\\Only upV2.1\\Only upV2.1",
+    "startRoute": null,
+    "startRouteStep": null,
+    "fromMilestone": null,
+    "toMilestone": "mt1-gate-1559",
+    "candidateLimit": 8,
+    "goalSkylineLimit": 8,
+    "dpSkylineMax": 4,
+    "preserveSkylineRoles": true,
+    "stopOnFirstGoal": true,
+    "maxActionsPerState": 256,
+    "dpKeyMode": null,
+    "budgetScope": "global-run",
+    "maxHeapMb": 1400,
+    "maxRssMb": 1800,
+    "memoryCheckIntervalExpansions": 1,
+    "memoryCheckIntervalActions": 1,
+    "childOldSpaceMb": 1600
+  },
+  "memory": {
+    "maxHeapMb": 1400,
+    "maxRssMb": 1800,
+    "memoryCheckIntervalExpansions": 1,
+    "memoryCheckIntervalActions": 1,
+    "childOldSpaceMb": 1600
+  },
+  "runs": [
+    {
+      "policy": "best-first",
+      "repeat": 1,
+      "found": true,
+      "reachedMilestone": "mt1-gate-1559",
+      "failedSegmentId": null,
+      "segmentMetrics": [
+        {
+          "segmentId": "mt1-gate-1559",
+          "label": "MT1 1559 生存门槛",
+          "found": true,
+          "attempts": 1,
+          "finalHp": 2208,
+          "metrics": {
+            "expansions": 11,
+            "wallMs": 15263,
+            "acceptedStates": 31,
+            "rejectedByHigherHp": 4,
+            "sameHpRejected": 2,
+            "replacedLowerHp": 6,
+            "actionTrimmed": 0,
+            "frontierSize": 14,
+            "heapUsedMb": 67.1,
+            "rssMb": 127.4,
+            "peakHeapUsedMb": 67.1,
+            "peakRssMb": 127.4,
+            "fairPops": 0,
+            "bestPops": 0,
+            "fairFallbacks": 0,
+            "bestFallbacks": 0,
+            "maxFairQueueAgeExpansions": 0,
+            "minLocalFirstGoalExpansion": 12,
+            "attemptsBeforeFirstGoal": 0,
+            "cumulativeExpansionsToFirstGoal": 12,
+            "cumulativeWallMsToFirstGoal": 15019,
+            "attempts": 1
+          },
+          "stoppedReasons": [],
+          "progress": null
+        }
+      ],
+      "strictReplay": {
+        "performed": true,
+        "valid": true,
+        "stepsAttempted": 7,
+        "stepsCompleted": 7,
+        "failureStep": null,
+        "failureReason": null,
+        "expectedStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+        "actualStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+        "finalState": {
+          "floorId": "MT1",
+          "hero": {
+            "hp": 2208,
+            "hpmax": 9999,
+            "mana": 0,
+            "manamax": -1,
+            "atk": 19,
+            "def": 10,
+            "mdef": 130,
+            "money": 0,
+            "exp": 6,
+            "lv": 3,
+            "loc": {
+              "x": 3,
+              "y": 5,
+              "direction": "left"
+            },
+            "equipment": [],
+            "steps": 25,
+            "statistics": {
+              "battleDamage": 1893,
+              "battle": 19,
+              "money": 0,
+              "exp": 19
+            }
+          },
+          "inventory": {
+            "I600": 1,
+            "book": 1,
+            "fly": 1
+          },
+          "flags": {
+            "autoBattle": 1,
+            "shiqu": 1,
+            "hatred": 38
+          },
+          "stateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+        },
+        "error": null,
+        "routeFile": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-30000-r1.route.json",
+        "scope": "full-route"
+      },
+      "finalState": {
+        "floorId": "MT1",
+        "hero": {
+          "hp": 2208,
+          "hpmax": 9999,
+          "mana": 0,
+          "manamax": -1,
+          "atk": 19,
+          "def": 10,
+          "mdef": 130,
+          "money": 0,
+          "exp": 6,
+          "lv": 3,
+          "loc": {
+            "x": 3,
+            "y": 5,
+            "direction": "left"
+          },
+          "equipment": [],
+          "steps": 25,
+          "statistics": {
+            "battleDamage": 1893,
+            "battle": 19,
+            "money": 0,
+            "exp": 19
+          }
+        },
+        "inventory": {
+          "I600": 1,
+          "book": 1,
+          "fly": 1
+        },
+        "flags": {
+          "autoBattle": 1,
+          "shiqu": 1,
+          "hatred": 38
+        },
+        "stateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+      },
+      "finalHp": 2208,
+      "childMemoryLimited": false,
+      "budget": {
+        "kind": "time",
+        "value": 30000,
+        "maxExpansions": 1000000,
+        "maxRuntimeMs": 30000,
+        "scope": "global-run",
+        "requestedExpansions": 1000000,
+        "requestedRuntimeMs": 30000,
+        "consumedExpansions": 11,
+        "consumedWallMs": 15368,
+        "stoppedReason": null,
+        "maxHeapMb": 1400,
+        "maxRssMb": 1800,
+        "memoryCheckIntervalExpansions": 1,
+        "memoryCheckIntervalActions": 1,
+        "childOldSpaceMb": 1600
+      },
+      "metrics": {
+        "expansions": 11,
+        "wallMs": 15263,
+        "acceptedStates": 31,
+        "rejectedByHigherHp": 4,
+        "sameHpRejected": 2,
+        "replacedLowerHp": 6,
+        "actionTrimmed": 0,
+        "frontierSize": 14,
+        "heapUsedMb": 67.1,
+        "rssMb": 127.4,
+        "peakHeapUsedMb": 67.1,
+        "peakRssMb": 127.4,
+        "fairPops": 0,
+        "bestPops": 0,
+        "fairFallbacks": 0,
+        "bestFallbacks": 0,
+        "maxFairQueueAgeExpansions": 0,
+        "minLocalFirstGoalExpansion": 12,
+        "attemptsBeforeFirstGoal": 0,
+        "cumulativeFirstGoalExpansion": 12,
+        "cumulativeFirstGoalWallMs": 15019,
+        "attemptsToFinalRequestedMilestone": 1,
+        "expansionsToFinalRequestedMilestone": 12,
+        "wallMsToFinalRequestedMilestone": 15019
+      },
+      "memory": {
+        "maxHeapMb": 1400,
+        "maxRssMb": 1800,
+        "memoryCheckIntervalExpansions": 1,
+        "memoryCheckIntervalActions": 1,
+        "peakHeapUsedMb": 67.1,
+        "peakRssMb": 127.4,
+        "heapLimitedCount": 0,
+        "rssLimitedCount": 0,
+        "childMemoryLimitedCount": 0,
+        "searchCompletion": "completed",
+        "childMemoryLimited": false
+      },
+      "progress": null,
+      "stoppedReasons": [],
+      "completeWithinActionSet": true,
+      "attempts": [
+        {
+          "segmentId": "mt1-gate-1559",
+          "startCandidateId": "initial#0",
+          "found": true,
+          "goalCount": 1,
+          "stoppedReason": null,
+          "expansions": 11,
+          "frontierSize": 14,
+          "firstGoalExpansion": 12
+        }
+      ],
+      "searchConfig": {
+        "agendaMode": "best-first",
+        "fairnessEvery": null,
+        "priorityMode": "default",
+        "keyMode": "region",
+        "dpSkylineMax": 4,
+        "maxExpansions": 1000000,
+        "maxRuntimeMs": 30000,
+        "maxActionsPerState": 256,
+        "maxHeapMb": 1400,
+        "maxRssMb": 1800,
+        "memoryCheckIntervalExpansions": 1,
+        "memoryCheckIntervalActions": 1,
+        "childOldSpaceMb": 1600,
+        "memory": {
+          "maxHeapMb": 1400,
+          "maxRssMb": 1800,
+          "memoryCheckIntervalExpansions": 1,
+          "memoryCheckIntervalActions": 1,
+          "peakHeapUsedMb": 67.1,
+          "peakRssMb": 127.4,
+          "heapLimitedCount": 0,
+          "rssLimitedCount": 0,
+          "stoppedReason": null,
+          "stoppedAtExpansion": null,
+          "stoppedAtPhase": null,
+          "searchCompletion": "completed"
+        },
+        "actionProviderMode": "segment-provider",
+        "budgetScope": "global-run",
+        "budgetKind": "time",
+        "budgetValue": 30000
+      },
+      "process": {
+        "status": 0,
+        "signal": null,
+        "error": null,
+        "wallMs": 28354,
+        "stdoutTail": "        ],\n          \"routeLength\": 11,\n          \"resourceTiming\": {\n            \"retainedOptionValue\": 259625,\n            \"projectedDamageSaving\": 3466,\n            \"newlySurvivableTargets\": 0,\n            \"roles\": [\n              \"retained-resource-option\",\n              \"future-combat-saving\"\n            ]\n          }\n        }\n      ],\n      \"attempts\": [\n        {\n          \"startCandidateId\": \"initial#0\",\n          \"found\": true,\n          \"goalCount\": 1,\n          \"resourceTiming\": {\n            \"model\": \"breakpoint-v1\",\n            \"targetLimit\": 16,\n            \"resourceLimit\": 4,\n            \"thresholdLimit\": 3,\n            \"skylineMax\": 4,\n            \"analyzedStates\": 37\n          },\n          \"memory\": {\n            \"maxHeapMb\": 1400,\n            \"maxRssMb\": 1800,\n            \"memoryCheckIntervalExpansions\": 1,\n            \"memoryCheckIntervalActions\": 1,\n            \"memoryLimitsEnabled\": true,\n            \"successorCheckGranularity\": \"action-batch\",\n            \"peakHeapUsedMb\": 67.1,\n            \"peakRssMb\": 127.4,\n            \"stopHeapUsedMb\": null,\n            \"stopRssMb\": null,\n            \"stoppedReason\": null,\n            \"stoppedAtExpansion\": null,\n            \"stoppedAtPhase\": null,\n            \"sampleCount\": 60,\n            \"heapOvershootMb\": 0,\n            \"rssOvershootMb\": 0\n          }\n        }\n      ],\n      \"failurePropagation\": null\n    }\n  ],\n  \"checkpoints\": [\n    {\n      \"segmentId\": \"mt1-gate-1559\",\n      \"uniqueFeasibleRoute\": true,\n      \"candidateCount\": 1\n    }\n  ]\n}\nReport written: E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-30000-r1.json\nCheckpoint written: E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\latest\\checkpoints\\onlyup-chaos-mt5-blueking\\mt1-gate-1559.route.json\nRoute written: E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-30000-r1.route.json\n",
+        "stderrTail": ""
+      },
+      "provenance": {
+        "startedCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+        "solverCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+        "finishedCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+        "commitStable": true
+      },
+      "reportFile": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-30000-r1.json",
+      "reportStatus": "valid",
+      "diagnosticsVersion": null,
+      "evaluationAttemptLedger": [
+        {
+          "segmentId": "mt1-gate-1559",
+          "phase": "initial",
+          "startCandidateId": "initial#0",
+          "found": true,
+          "goalCount": 1,
+          "diagnostics": {
+            "dp": {
+              "keys": 24,
+              "priorityMode": "default",
+              "dpSkylineMax": 4,
+              "actionProviderMode": "segment-provider",
+              "stoppedReason": null,
+              "maxRuntimeMs": 29999,
+              "maxHeapMb": 1400,
+              "maxRssMb": 1800,
+              "memoryCheckIntervalExpansions": 1,
+              "memoryCheckIntervalActions": 1,
+              "memoryLimitsEnabled": true,
+              "wallMs": 15263,
+              "heapUsedMb": 67.1,
+              "rssMb": 127.4,
+              "memory": {
+                "maxHeapMb": 1400,
+                "maxRssMb": 1800,
+                "memoryCheckIntervalExpansions": 1,
+                "memoryCheckIntervalActions": 1,
+                "memoryLimitsEnabled": true,
+                "successorCheckGranularity": "action-batch",
+                "peakHeapUsedMb": 67.1,
+                "peakRssMb": 127.4,
+                "stopHeapUsedMb": null,
+                "stopRssMb": null,
+                "stoppedReason": null,
+                "stoppedAtExpansion": null,
+                "stoppedAtPhase": null,
+                "sampleCount": 60,
+                "heapOvershootMb": 0,
+                "rssOvershootMb": 0
+              },
+              "maxExpansions": 1000000,
+              "expansions": 11,
+              "frontierSize": 14,
+              "expansionBudgetExhausted": false,
+              "completeWithinActionSet": true,
+              "maxActionsPerState": 256,
+              "actionTrimmed": 0,
+              "statesWithActionTrim": 0,
+              "maxActionsGeneratedForState": 6,
+              "observerCaptureMode": "off",
+              "observerCaptureElapsedMs": 0,
+              "agendaFairness": {
+                "enabled": false,
+                "fairnessEvery": 32,
+                "bestPops": 0,
+                "fairPops": 0,
+                "fairFallbacks": 0,
+                "bestFallbacks": 0,
+                "skippedInactive": 0,
+                "skippedAlreadyExpanded": 0,
+                "maxFairQueueAgeExpansions": 0,
+                "fairCursor": 0,
+                "fairQueueLength": 0,
+                "fairActiveUnexpanded": 0
+              },
+              "actionsGeneratedByKind": {
+                "battle": 36
+              },
+              "actionsExpandedByKind": {
+                "battle": 36
+              },
+              "actionsKeptByKind": {
+                "battle": 30
+              },
+              "actionsDominatedByKind": {
+                "battle": 6
+              },
+              "uniqueBattleTargets": 19,
+              "uniquePortalEntries": 0,
+              "acceptedStates": 31,
+              "newKeys": 24,
+              "replacedLowerHp": 6,
+              "sameHpShorterRoute": 0,
+              "rejectedByHigherHp": 4,
+              "sameHpRejected": 2,
+              "agendaMode": "best-first",
+              "fairnessEvery": 32,
+              "stopOnFirstGoal": true,
+              "continueAfterGoal": false,
+              "keyMode": "region",
+              "targetFloorOrder": 1,
+              "foundFirstGoal": true,
+              "firstGoalExpansion": 12,
+              "firstGoalElapsedMs": 15019,
+              "foundBestGoal": true,
+              "goalSkylineLimit": 8,
+              "goalSkylineCount": 1,
+              "observerEnabled": false,
+              "observerErrors": 0,
+              "landmarkArchiveCount": 0,
+              "firstGoal": {
+                "floorId": "MT1",
+                "hp": 2208,
+                "routeLength": 11,
+                "decisionDepth": 7
+              },
+              "bestGoal": {
+                "floorId": "MT1",
+                "hp": 2208,
+                "routeLength": 11,
+                "decisionDepth": 7
+              },
+              "oracle": null,
+              "resourceTiming": {
+                "model": "breakpoint-v1",
+                "targetLimit": 16,
+                "resourceLimit": 4,
+                "thresholdLimit": 3,
+                "skylineMax": 4,
+                "analyzedStates": 37
+              }
+            },
+            "actionTrimmed": 0,
+            "rejectedByHigherHp": 4,
+            "replacedLowerHp": 6,
+            "actionsGeneratedByKind": {
+              "battle": 36
+            },
+            "actionsExpandedByKind": {
+              "battle": 36
+            },
+            "actionsKeptByKind": {
+              "battle": 30
+            },
+            "actionsDominatedByKind": {
+              "battle": 6
+            },
+            "uniqueBattleTargets": 19,
+            "uniquePortalEntries": 0,
+            "failure": null,
+            "goalSkyline": {
+              "primaryOutput": true,
+              "count": 1,
+              "candidates": [
+                {
+                  "id": "mt1-gate-1559#0",
+                  "tags": [
+                    "highest-hp",
+                    "best-combat",
+                    "highest-atk",
+                    "highest-def",
+                    "highest-mdef",
+                    "highest-exp",
+                    "shortest",
+                    "best-target-margin",
+                    "target-survivable"
+                  ],
+                  "hero": {
+                    "hp": 2208,
+                    "atk": 19,
+                    "def": 10,
+                    "mdef": 130,
+                    "lv": 3,
+                    "exp": 6,
+                    "money": 0,
+                    "equipment": []
+                  },
+                  "effectiveHero": {
+                    "hp": 2208,
+                    "atk": 19,
+                    "def": 10,
+                    "mdef": 130,
+                    "lv": 3,
+                    "exp": 6
+                  },
+                  "routeLength": 11
+                }
+              ]
+            },
+            "actionScope": {
+              "actionKinds": [
+                "battle",
+                "pickup",
+                "equip",
+                "openDoor",
+                "useTool",
+                "changeFloor",
+                "event"
+              ],
+              "forbidUnsupportedEvents": true,
+              "allowedFloors": [
+                "MT1"
+              ]
+            }
+          }
+        }
+      ],
+      "ledgerConsistency": {
+        "ledgerExpansions": 11,
+        "budgetExpansions": 11,
+        "match": true,
+        "delta": 0
+      },
+      "ledgerCosts": {
+        "totalExpansions": 11,
+        "totalWallMs": 15263,
+        "byPhase": {
+          "initial": {
+            "expansions": 11,
+            "wallMs": 15263,
+            "attempts": 1
+          }
+        },
+        "bySegment": {
+          "mt1-gate-1559": {
+            "expansions": 11,
+            "wallMs": 15263,
+            "attempts": 1,
+            "expansionsToFirstGoal": 12,
+            "wallMsToFirstGoal": 15019,
+            "attemptsToFirstGoal": 1,
+            "firstGoal": {
+              "expansions": 12,
+              "wallMs": 15019,
+              "attempts": 1,
+              "segmentId": "mt1-gate-1559",
+              "phase": "initial"
+            }
+          }
+        },
+        "repairOverhead": 0,
+        "firstGoal": {
+          "expansions": 12,
+          "wallMs": 15019,
+          "attempts": 1,
+          "segmentId": "mt1-gate-1559",
+          "phase": "initial"
+        },
+        "finalRequestedMilestoneGoal": {
+          "segmentId": "mt1-gate-1559",
+          "phase": "initial",
+          "attempts": 1,
+          "expansions": 12,
+          "wallMs": 15019
+        },
+        "expansionsToFirstGoal": 12,
+        "wallMsToFirstGoal": 15019,
+        "expansionsToFinalRequestedMilestone": 12,
+        "wallMsToFinalRequestedMilestone": 15019,
+        "attemptsToFinalRequestedMilestone": 1,
+        "attemptCount": 1
+      },
+      "runStatus": "completed",
+      "regressionFromBaseline": null,
+      "segmentRegressionFromBaseline": null,
+      "matrixCommitMismatch": false
+    }
+  ],
+  "matrix": {
+    "best-first": {
+      "time:30000": [
+        {
+          "policy": "best-first",
+          "repeat": 1,
+          "found": true,
+          "reachedMilestone": "mt1-gate-1559",
+          "failedSegmentId": null,
+          "segmentMetrics": [
+            {
+              "segmentId": "mt1-gate-1559",
+              "label": "MT1 1559 生存门槛",
+              "found": true,
+              "attempts": 1,
+              "finalHp": 2208,
+              "metrics": {
+                "expansions": 11,
+                "wallMs": 15263,
+                "acceptedStates": 31,
+                "rejectedByHigherHp": 4,
+                "sameHpRejected": 2,
+                "replacedLowerHp": 6,
+                "actionTrimmed": 0,
+                "frontierSize": 14,
+                "heapUsedMb": 67.1,
+                "rssMb": 127.4,
+                "peakHeapUsedMb": 67.1,
+                "peakRssMb": 127.4,
+                "fairPops": 0,
+                "bestPops": 0,
+                "fairFallbacks": 0,
+                "bestFallbacks": 0,
+                "maxFairQueueAgeExpansions": 0,
+                "minLocalFirstGoalExpansion": 12,
+                "attemptsBeforeFirstGoal": 0,
+                "cumulativeExpansionsToFirstGoal": 12,
+                "cumulativeWallMsToFirstGoal": 15019,
+                "attempts": 1
+              },
+              "stoppedReasons": [],
+              "progress": null
+            }
+          ],
+          "strictReplay": {
+            "performed": true,
+            "valid": true,
+            "stepsAttempted": 7,
+            "stepsCompleted": 7,
+            "failureStep": null,
+            "failureReason": null,
+            "expectedStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+            "actualStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+            "finalState": {
+              "floorId": "MT1",
+              "hero": {
+                "hp": 2208,
+                "hpmax": 9999,
+                "mana": 0,
+                "manamax": -1,
+                "atk": 19,
+                "def": 10,
+                "mdef": 130,
+                "money": 0,
+                "exp": 6,
+                "lv": 3,
+                "loc": {
+                  "x": 3,
+                  "y": 5,
+                  "direction": "left"
+                },
+                "equipment": [],
+                "steps": 25,
+                "statistics": {
+                  "battleDamage": 1893,
+                  "battle": 19,
+                  "money": 0,
+                  "exp": 19
+                }
+              },
+              "inventory": {
+                "I600": 1,
+                "book": 1,
+                "fly": 1
+              },
+              "flags": {
+                "autoBattle": 1,
+                "shiqu": 1,
+                "hatred": 38
+              },
+              "stateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+            },
+            "error": null,
+            "routeFile": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-30000-r1.route.json",
+            "scope": "full-route"
+          },
+          "finalState": {
+            "floorId": "MT1",
+            "hero": {
+              "hp": 2208,
+              "hpmax": 9999,
+              "mana": 0,
+              "manamax": -1,
+              "atk": 19,
+              "def": 10,
+              "mdef": 130,
+              "money": 0,
+              "exp": 6,
+              "lv": 3,
+              "loc": {
+                "x": 3,
+                "y": 5,
+                "direction": "left"
+              },
+              "equipment": [],
+              "steps": 25,
+              "statistics": {
+                "battleDamage": 1893,
+                "battle": 19,
+                "money": 0,
+                "exp": 19
+              }
+            },
+            "inventory": {
+              "I600": 1,
+              "book": 1,
+              "fly": 1
+            },
+            "flags": {
+              "autoBattle": 1,
+              "shiqu": 1,
+              "hatred": 38
+            },
+            "stateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+          },
+          "finalHp": 2208,
+          "childMemoryLimited": false,
+          "budget": {
+            "kind": "time",
+            "value": 30000,
+            "maxExpansions": 1000000,
+            "maxRuntimeMs": 30000,
+            "scope": "global-run",
+            "requestedExpansions": 1000000,
+            "requestedRuntimeMs": 30000,
+            "consumedExpansions": 11,
+            "consumedWallMs": 15368,
+            "stoppedReason": null,
+            "maxHeapMb": 1400,
+            "maxRssMb": 1800,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "childOldSpaceMb": 1600
+          },
+          "metrics": {
+            "expansions": 11,
+            "wallMs": 15263,
+            "acceptedStates": 31,
+            "rejectedByHigherHp": 4,
+            "sameHpRejected": 2,
+            "replacedLowerHp": 6,
+            "actionTrimmed": 0,
+            "frontierSize": 14,
+            "heapUsedMb": 67.1,
+            "rssMb": 127.4,
+            "peakHeapUsedMb": 67.1,
+            "peakRssMb": 127.4,
+            "fairPops": 0,
+            "bestPops": 0,
+            "fairFallbacks": 0,
+            "bestFallbacks": 0,
+            "maxFairQueueAgeExpansions": 0,
+            "minLocalFirstGoalExpansion": 12,
+            "attemptsBeforeFirstGoal": 0,
+            "cumulativeFirstGoalExpansion": 12,
+            "cumulativeFirstGoalWallMs": 15019,
+            "attemptsToFinalRequestedMilestone": 1,
+            "expansionsToFinalRequestedMilestone": 12,
+            "wallMsToFinalRequestedMilestone": 15019
+          },
+          "memory": {
+            "maxHeapMb": 1400,
+            "maxRssMb": 1800,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "peakHeapUsedMb": 67.1,
+            "peakRssMb": 127.4,
+            "heapLimitedCount": 0,
+            "rssLimitedCount": 0,
+            "childMemoryLimitedCount": 0,
+            "searchCompletion": "completed",
+            "childMemoryLimited": false
+          },
+          "progress": null,
+          "stoppedReasons": [],
+          "completeWithinActionSet": true,
+          "attempts": [
+            {
+              "segmentId": "mt1-gate-1559",
+              "startCandidateId": "initial#0",
+              "found": true,
+              "goalCount": 1,
+              "stoppedReason": null,
+              "expansions": 11,
+              "frontierSize": 14,
+              "firstGoalExpansion": 12
+            }
+          ],
+          "searchConfig": {
+            "agendaMode": "best-first",
+            "fairnessEvery": null,
+            "priorityMode": "default",
+            "keyMode": "region",
+            "dpSkylineMax": 4,
+            "maxExpansions": 1000000,
+            "maxRuntimeMs": 30000,
+            "maxActionsPerState": 256,
+            "maxHeapMb": 1400,
+            "maxRssMb": 1800,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "childOldSpaceMb": 1600,
+            "memory": {
+              "maxHeapMb": 1400,
+              "maxRssMb": 1800,
+              "memoryCheckIntervalExpansions": 1,
+              "memoryCheckIntervalActions": 1,
+              "peakHeapUsedMb": 67.1,
+              "peakRssMb": 127.4,
+              "heapLimitedCount": 0,
+              "rssLimitedCount": 0,
+              "stoppedReason": null,
+              "stoppedAtExpansion": null,
+              "stoppedAtPhase": null,
+              "searchCompletion": "completed"
+            },
+            "actionProviderMode": "segment-provider",
+            "budgetScope": "global-run",
+            "budgetKind": "time",
+            "budgetValue": 30000
+          },
+          "process": {
+            "status": 0,
+            "signal": null,
+            "error": null,
+            "wallMs": 28354,
+            "stdoutTail": "        ],\n          \"routeLength\": 11,\n          \"resourceTiming\": {\n            \"retainedOptionValue\": 259625,\n            \"projectedDamageSaving\": 3466,\n            \"newlySurvivableTargets\": 0,\n            \"roles\": [\n              \"retained-resource-option\",\n              \"future-combat-saving\"\n            ]\n          }\n        }\n      ],\n      \"attempts\": [\n        {\n          \"startCandidateId\": \"initial#0\",\n          \"found\": true,\n          \"goalCount\": 1,\n          \"resourceTiming\": {\n            \"model\": \"breakpoint-v1\",\n            \"targetLimit\": 16,\n            \"resourceLimit\": 4,\n            \"thresholdLimit\": 3,\n            \"skylineMax\": 4,\n            \"analyzedStates\": 37\n          },\n          \"memory\": {\n            \"maxHeapMb\": 1400,\n            \"maxRssMb\": 1800,\n            \"memoryCheckIntervalExpansions\": 1,\n            \"memoryCheckIntervalActions\": 1,\n            \"memoryLimitsEnabled\": true,\n            \"successorCheckGranularity\": \"action-batch\",\n            \"peakHeapUsedMb\": 67.1,\n            \"peakRssMb\": 127.4,\n            \"stopHeapUsedMb\": null,\n            \"stopRssMb\": null,\n            \"stoppedReason\": null,\n            \"stoppedAtExpansion\": null,\n            \"stoppedAtPhase\": null,\n            \"sampleCount\": 60,\n            \"heapOvershootMb\": 0,\n            \"rssOvershootMb\": 0\n          }\n        }\n      ],\n      \"failurePropagation\": null\n    }\n  ],\n  \"checkpoints\": [\n    {\n      \"segmentId\": \"mt1-gate-1559\",\n      \"uniqueFeasibleRoute\": true,\n      \"candidateCount\": 1\n    }\n  ]\n}\nReport written: E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-30000-r1.json\nCheckpoint written: E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\latest\\checkpoints\\onlyup-chaos-mt5-blueking\\mt1-gate-1559.route.json\nRoute written: E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-30000-r1.route.json\n",
+            "stderrTail": ""
+          },
+          "provenance": {
+            "startedCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+            "solverCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+            "finishedCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+            "commitStable": true
+          },
+          "reportFile": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-30000-r1.json",
+          "reportStatus": "valid",
+          "diagnosticsVersion": null,
+          "evaluationAttemptLedger": [
+            {
+              "segmentId": "mt1-gate-1559",
+              "phase": "initial",
+              "startCandidateId": "initial#0",
+              "found": true,
+              "goalCount": 1,
+              "diagnostics": {
+                "dp": {
+                  "keys": 24,
+                  "priorityMode": "default",
+                  "dpSkylineMax": 4,
+                  "actionProviderMode": "segment-provider",
+                  "stoppedReason": null,
+                  "maxRuntimeMs": 29999,
+                  "maxHeapMb": 1400,
+                  "maxRssMb": 1800,
+                  "memoryCheckIntervalExpansions": 1,
+                  "memoryCheckIntervalActions": 1,
+                  "memoryLimitsEnabled": true,
+                  "wallMs": 15263,
+                  "heapUsedMb": 67.1,
+                  "rssMb": 127.4,
+                  "memory": {
+                    "maxHeapMb": 1400,
+                    "maxRssMb": 1800,
+                    "memoryCheckIntervalExpansions": 1,
+                    "memoryCheckIntervalActions": 1,
+                    "memoryLimitsEnabled": true,
+                    "successorCheckGranularity": "action-batch",
+                    "peakHeapUsedMb": 67.1,
+                    "peakRssMb": 127.4,
+                    "stopHeapUsedMb": null,
+                    "stopRssMb": null,
+                    "stoppedReason": null,
+                    "stoppedAtExpansion": null,
+                    "stoppedAtPhase": null,
+                    "sampleCount": 60,
+                    "heapOvershootMb": 0,
+                    "rssOvershootMb": 0
+                  },
+                  "maxExpansions": 1000000,
+                  "expansions": 11,
+                  "frontierSize": 14,
+                  "expansionBudgetExhausted": false,
+                  "completeWithinActionSet": true,
+                  "maxActionsPerState": 256,
+                  "actionTrimmed": 0,
+                  "statesWithActionTrim": 0,
+                  "maxActionsGeneratedForState": 6,
+                  "observerCaptureMode": "off",
+                  "observerCaptureElapsedMs": 0,
+                  "agendaFairness": {
+                    "enabled": false,
+                    "fairnessEvery": 32,
+                    "bestPops": 0,
+                    "fairPops": 0,
+                    "fairFallbacks": 0,
+                    "bestFallbacks": 0,
+                    "skippedInactive": 0,
+                    "skippedAlreadyExpanded": 0,
+                    "maxFairQueueAgeExpansions": 0,
+                    "fairCursor": 0,
+                    "fairQueueLength": 0,
+                    "fairActiveUnexpanded": 0
+                  },
+                  "actionsGeneratedByKind": {
+                    "battle": 36
+                  },
+                  "actionsExpandedByKind": {
+                    "battle": 36
+                  },
+                  "actionsKeptByKind": {
+                    "battle": 30
+                  },
+                  "actionsDominatedByKind": {
+                    "battle": 6
+                  },
+                  "uniqueBattleTargets": 19,
+                  "uniquePortalEntries": 0,
+                  "acceptedStates": 31,
+                  "newKeys": 24,
+                  "replacedLowerHp": 6,
+                  "sameHpShorterRoute": 0,
+                  "rejectedByHigherHp": 4,
+                  "sameHpRejected": 2,
+                  "agendaMode": "best-first",
+                  "fairnessEvery": 32,
+                  "stopOnFirstGoal": true,
+                  "continueAfterGoal": false,
+                  "keyMode": "region",
+                  "targetFloorOrder": 1,
+                  "foundFirstGoal": true,
+                  "firstGoalExpansion": 12,
+                  "firstGoalElapsedMs": 15019,
+                  "foundBestGoal": true,
+                  "goalSkylineLimit": 8,
+                  "goalSkylineCount": 1,
+                  "observerEnabled": false,
+                  "observerErrors": 0,
+                  "landmarkArchiveCount": 0,
+                  "firstGoal": {
+                    "floorId": "MT1",
+                    "hp": 2208,
+                    "routeLength": 11,
+                    "decisionDepth": 7
+                  },
+                  "bestGoal": {
+                    "floorId": "MT1",
+                    "hp": 2208,
+                    "routeLength": 11,
+                    "decisionDepth": 7
+                  },
+                  "oracle": null,
+                  "resourceTiming": {
+                    "model": "breakpoint-v1",
+                    "targetLimit": 16,
+                    "resourceLimit": 4,
+                    "thresholdLimit": 3,
+                    "skylineMax": 4,
+                    "analyzedStates": 37
+                  }
+                },
+                "actionTrimmed": 0,
+                "rejectedByHigherHp": 4,
+                "replacedLowerHp": 6,
+                "actionsGeneratedByKind": {
+                  "battle": 36
+                },
+                "actionsExpandedByKind": {
+                  "battle": 36
+                },
+                "actionsKeptByKind": {
+                  "battle": 30
+                },
+                "actionsDominatedByKind": {
+                  "battle": 6
+                },
+                "uniqueBattleTargets": 19,
+                "uniquePortalEntries": 0,
+                "failure": null,
+                "goalSkyline": {
+                  "primaryOutput": true,
+                  "count": 1,
+                  "candidates": [
+                    {
+                      "id": "mt1-gate-1559#0",
+                      "tags": [
+                        "highest-hp",
+                        "best-combat",
+                        "highest-atk",
+                        "highest-def",
+                        "highest-mdef",
+                        "highest-exp",
+                        "shortest",
+                        "best-target-margin",
+                        "target-survivable"
+                      ],
+                      "hero": {
+                        "hp": 2208,
+                        "atk": 19,
+                        "def": 10,
+                        "mdef": 130,
+                        "lv": 3,
+                        "exp": 6,
+                        "money": 0,
+                        "equipment": []
+                      },
+                      "effectiveHero": {
+                        "hp": 2208,
+                        "atk": 19,
+                        "def": 10,
+                        "mdef": 130,
+                        "lv": 3,
+                        "exp": 6
+                      },
+                      "routeLength": 11
+                    }
+                  ]
+                },
+                "actionScope": {
+                  "actionKinds": [
+                    "battle",
+                    "pickup",
+                    "equip",
+                    "openDoor",
+                    "useTool",
+                    "changeFloor",
+                    "event"
+                  ],
+                  "forbidUnsupportedEvents": true,
+                  "allowedFloors": [
+                    "MT1"
+                  ]
+                }
+              }
+            }
+          ],
+          "ledgerConsistency": {
+            "ledgerExpansions": 11,
+            "budgetExpansions": 11,
+            "match": true,
+            "delta": 0
+          },
+          "ledgerCosts": {
+            "totalExpansions": 11,
+            "totalWallMs": 15263,
+            "byPhase": {
+              "initial": {
+                "expansions": 11,
+                "wallMs": 15263,
+                "attempts": 1
+              }
+            },
+            "bySegment": {
+              "mt1-gate-1559": {
+                "expansions": 11,
+                "wallMs": 15263,
+                "attempts": 1,
+                "expansionsToFirstGoal": 12,
+                "wallMsToFirstGoal": 15019,
+                "attemptsToFirstGoal": 1,
+                "firstGoal": {
+                  "expansions": 12,
+                  "wallMs": 15019,
+                  "attempts": 1,
+                  "segmentId": "mt1-gate-1559",
+                  "phase": "initial"
+                }
+              }
+            },
+            "repairOverhead": 0,
+            "firstGoal": {
+              "expansions": 12,
+              "wallMs": 15019,
+              "attempts": 1,
+              "segmentId": "mt1-gate-1559",
+              "phase": "initial"
+            },
+            "finalRequestedMilestoneGoal": {
+              "segmentId": "mt1-gate-1559",
+              "phase": "initial",
+              "attempts": 1,
+              "expansions": 12,
+              "wallMs": 15019
+            },
+            "expansionsToFirstGoal": 12,
+            "wallMsToFirstGoal": 15019,
+            "expansionsToFinalRequestedMilestone": 12,
+            "wallMsToFinalRequestedMilestone": 15019,
+            "attemptsToFinalRequestedMilestone": 1,
+            "attemptCount": 1
+          },
+          "runStatus": "completed",
+          "regressionFromBaseline": null,
+          "segmentRegressionFromBaseline": null
+        }
+      ]
+    }
+  },
+  "summaries": {
+    "best-first": {
+      "time:30000": {
+        "budget": {
+          "kind": "time",
+          "value": 30000,
+          "maxExpansions": 1000000,
+          "maxRuntimeMs": 30000,
+          "scope": "global-run",
+          "requestedExpansions": 1000000,
+          "requestedRuntimeMs": 30000,
+          "consumedExpansions": 11,
+          "consumedWallMs": 15368,
+          "stoppedReason": null,
+          "maxHeapMb": 1400,
+          "maxRssMb": 1800,
+          "memoryCheckIntervalExpansions": 1,
+          "memoryCheckIntervalActions": 1,
+          "childOldSpaceMb": 1600
+        },
+        "repeats": {
+          "count": 1,
+          "foundCount": 1,
+          "replayValidCount": 1,
+          "metrics": {
+            "expansions": {
+              "min": 11,
+              "max": 11,
+              "median": 11,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "wallMs": {
+              "min": 15263,
+              "max": 15263,
+              "median": 15263,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "fairPops": {
+              "min": 0,
+              "max": 0,
+              "median": 0,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "bestPops": {
+              "min": 0,
+              "max": 0,
+              "median": 0,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "frontierSize": {
+              "min": 14,
+              "max": 14,
+              "median": 14,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "heapUsedMb": {
+              "min": 67.1,
+              "max": 67.1,
+              "median": 67.1,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "rssMb": {
+              "min": 127.4,
+              "max": 127.4,
+              "median": 127.4,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "attemptsToFinalRequestedMilestone": {
+              "min": 1,
+              "max": 1,
+              "median": 1,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "expansionsToFinalRequestedMilestone": {
+              "min": 12,
+              "max": 12,
+              "median": 12,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "wallMsToFinalRequestedMilestone": {
+              "min": 15019,
+              "max": 15019,
+              "median": 15019,
+              "sampleCount": 1,
+              "missingCount": 0
+            }
+          }
+        },
+        "segmentRepeats": {
+          "mt1-gate-1559": {
+            "label": "MT1 1559 生存门槛",
+            "foundCount": 1,
+            "repeats": 1,
+            "metrics": {
+              "expansions": {
+                "min": 11,
+                "max": 11,
+                "median": 11,
+                "sampleCount": 1,
+                "missingCount": 0
+              },
+              "wallMs": {
+                "min": 15263,
+                "max": 15263,
+                "median": 15263,
+                "sampleCount": 1,
+                "missingCount": 0
+              },
+              "cumulativeExpansionsToFirstGoal": {
+                "min": 12,
+                "max": 12,
+                "median": 12,
+                "sampleCount": 1,
+                "missingCount": 0
+              },
+              "cumulativeWallMsToFirstGoal": {
+                "min": 15019,
+                "max": 15019,
+                "median": 15019,
+                "sampleCount": 1,
+                "missingCount": 0
+              },
+              "frontierSize": {
+                "min": 14,
+                "max": 14,
+                "median": 14,
+                "sampleCount": 1,
+                "missingCount": 0
+              },
+              "finalHp": {
+                "min": 2208,
+                "max": 2208,
+                "median": 2208,
+                "sampleCount": 1,
+                "missingCount": 0
+              }
+            }
+          }
+        },
+        "ledgerCosts": {
+          "totalExpansions": {
+            "min": 11,
+            "max": 11,
+            "median": 11,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "totalWallMs": {
+            "min": 15263,
+            "max": 15263,
+            "median": 15263,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "expansionsToFirstGoal": {
+            "min": 12,
+            "max": 12,
+            "median": 12,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "wallMsToFirstGoal": {
+            "min": 15019,
+            "max": 15019,
+            "median": 15019,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "expansionsToFinalRequestedMilestone": {
+            "min": 12,
+            "max": 12,
+            "median": 12,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "wallMsToFinalRequestedMilestone": {
+            "min": 15019,
+            "max": 15019,
+            "median": 15019,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "attemptsToFinalRequestedMilestone": {
+            "min": 1,
+            "max": 1,
+            "median": 1,
+            "sampleCount": 1,
+            "missingCount": 0
+          }
+        },
+        "ledgerConsistency": {
+          "count": 1,
+          "matchCount": 1,
+          "mismatchCount": 0,
+          "allMatch": true
+        },
+        "memory": {
+          "heapLimitedCount": 0,
+          "rssLimitedCount": 0,
+          "childMemoryLimitedCount": 0,
+          "peakHeapUsedMb": {
+            "min": 67.1,
+            "max": 67.1,
+            "median": 67.1,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "peakRssMb": {
+            "min": 127.4,
+            "max": 127.4,
+            "median": 127.4,
+            "sampleCount": 1,
+            "missingCount": 0
+          }
+        },
+        "runs": [
+          {
+            "repeat": 1,
+            "found": true,
+            "strictReplay": {
+              "performed": true,
+              "valid": true,
+              "stepsAttempted": 7,
+              "stepsCompleted": 7,
+              "failureStep": null,
+              "failureReason": null,
+              "expectedStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+              "actualStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+              "finalState": {
+                "floorId": "MT1",
+                "hero": {
+                  "hp": 2208,
+                  "hpmax": 9999,
+                  "mana": 0,
+                  "manamax": -1,
+                  "atk": 19,
+                  "def": 10,
+                  "mdef": 130,
+                  "money": 0,
+                  "exp": 6,
+                  "lv": 3,
+                  "loc": {
+                    "x": 3,
+                    "y": 5,
+                    "direction": "left"
+                  },
+                  "equipment": [],
+                  "steps": 25,
+                  "statistics": {
+                    "battleDamage": 1893,
+                    "battle": 19,
+                    "money": 0,
+                    "exp": 19
+                  }
+                },
+                "inventory": {
+                  "I600": 1,
+                  "book": 1,
+                  "fly": 1
+                },
+                "flags": {
+                  "autoBattle": 1,
+                  "shiqu": 1,
+                  "hatred": 38
+                },
+                "stateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+              },
+              "error": null,
+              "routeFile": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-30000-r1.route.json",
+              "scope": "full-route"
+            },
+            "runStatus": "completed",
+            "segmentMetrics": [
+              {
+                "segmentId": "mt1-gate-1559",
+                "label": "MT1 1559 生存门槛",
+                "found": true,
+                "attempts": 1,
+                "finalHp": 2208,
+                "metrics": {
+                  "expansions": 11,
+                  "wallMs": 15263,
+                  "acceptedStates": 31,
+                  "rejectedByHigherHp": 4,
+                  "sameHpRejected": 2,
+                  "replacedLowerHp": 6,
+                  "actionTrimmed": 0,
+                  "frontierSize": 14,
+                  "heapUsedMb": 67.1,
+                  "rssMb": 127.4,
+                  "peakHeapUsedMb": 67.1,
+                  "peakRssMb": 127.4,
+                  "fairPops": 0,
+                  "bestPops": 0,
+                  "fairFallbacks": 0,
+                  "bestFallbacks": 0,
+                  "maxFairQueueAgeExpansions": 0,
+                  "minLocalFirstGoalExpansion": 12,
+                  "attemptsBeforeFirstGoal": 0,
+                  "cumulativeExpansionsToFirstGoal": 12,
+                  "cumulativeWallMsToFirstGoal": 15019,
+                  "attempts": 1
+                },
+                "stoppedReasons": [],
+                "progress": null
+              }
+            ],
+            "metrics": {
+              "expansions": 11,
+              "wallMs": 15263,
+              "acceptedStates": 31,
+              "rejectedByHigherHp": 4,
+              "sameHpRejected": 2,
+              "replacedLowerHp": 6,
+              "actionTrimmed": 0,
+              "frontierSize": 14,
+              "heapUsedMb": 67.1,
+              "rssMb": 127.4,
+              "peakHeapUsedMb": 67.1,
+              "peakRssMb": 127.4,
+              "fairPops": 0,
+              "bestPops": 0,
+              "fairFallbacks": 0,
+              "bestFallbacks": 0,
+              "maxFairQueueAgeExpansions": 0,
+              "minLocalFirstGoalExpansion": 12,
+              "attemptsBeforeFirstGoal": 0,
+              "cumulativeFirstGoalExpansion": 12,
+              "cumulativeFirstGoalWallMs": 15019,
+              "attemptsToFinalRequestedMilestone": 1,
+              "expansionsToFinalRequestedMilestone": 12,
+              "wallMsToFinalRequestedMilestone": 15019
+            },
+            "memory": {
+              "maxHeapMb": 1400,
+              "maxRssMb": 1800,
+              "memoryCheckIntervalExpansions": 1,
+              "memoryCheckIntervalActions": 1,
+              "peakHeapUsedMb": 67.1,
+              "peakRssMb": 127.4,
+              "heapLimitedCount": 0,
+              "rssLimitedCount": 0,
+              "childMemoryLimitedCount": 0,
+              "searchCompletion": "completed",
+              "childMemoryLimited": false
+            },
+            "ledgerCosts": {
+              "totalExpansions": 11,
+              "totalWallMs": 15263,
+              "byPhase": {
+                "initial": {
+                  "expansions": 11,
+                  "wallMs": 15263,
+                  "attempts": 1
+                }
+              },
+              "bySegment": {
+                "mt1-gate-1559": {
+                  "expansions": 11,
+                  "wallMs": 15263,
+                  "attempts": 1,
+                  "expansionsToFirstGoal": 12,
+                  "wallMsToFirstGoal": 15019,
+                  "attemptsToFirstGoal": 1,
+                  "firstGoal": {
+                    "expansions": 12,
+                    "wallMs": 15019,
+                    "attempts": 1,
+                    "segmentId": "mt1-gate-1559",
+                    "phase": "initial"
+                  }
+                }
+              },
+              "repairOverhead": 0,
+              "firstGoal": {
+                "expansions": 12,
+                "wallMs": 15019,
+                "attempts": 1,
+                "segmentId": "mt1-gate-1559",
+                "phase": "initial"
+              },
+              "finalRequestedMilestoneGoal": {
+                "segmentId": "mt1-gate-1559",
+                "phase": "initial",
+                "attempts": 1,
+                "expansions": 12,
+                "wallMs": 15019
+              },
+              "expansionsToFirstGoal": 12,
+              "wallMsToFirstGoal": 15019,
+              "expansionsToFinalRequestedMilestone": 12,
+              "wallMsToFinalRequestedMilestone": 15019,
+              "attemptsToFinalRequestedMilestone": 1,
+              "attemptCount": 1
+            },
+            "ledgerConsistency": {
+              "ledgerExpansions": 11,
+              "budgetExpansions": 11,
+              "match": true,
+              "delta": 0
+            },
+            "provenance": {
+              "startedCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+              "solverCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+              "finishedCommit": "3cbec28859ed0b11e5be7c5c94d48d74bf39aab2",
+              "commitStable": true
+            },
+            "regressionFromBaseline": null,
+            "segmentRegressionFromBaseline": null
+          }
+        ]
+      }
+    }
+  },
+  "stoppedReason": "completed"
+}
