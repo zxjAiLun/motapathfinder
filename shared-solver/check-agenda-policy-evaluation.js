@@ -167,6 +167,7 @@ function checkBudgetAndArgs() {
       maxHeapMb: 1400,
       maxRssMb: 1800,
       memoryCheckIntervalExpansions: 1,
+      memoryCheckIntervalActions: 2,
       childOldSpaceMb: 1600,
     },
     { id: "hybrid-fair-8", agendaMode: "hybrid-fair", fairnessEvery: 8 },
@@ -181,6 +182,7 @@ function checkBudgetAndArgs() {
   assert(args.includes("--max-heap-mb=1400"));
   assert(args.includes("--max-rss-mb=1800"));
   assert(args.includes("--memory-check-interval-expansions=1"));
+  assert(args.includes("--memory-check-interval-actions=2"));
   assert(args.includes("--child-old-space-mb=1600"));
   assert(args.includes("--out=C:/out.route.json"));
 }
@@ -253,12 +255,36 @@ function mb(value) {
 
 function checkMemoryBudgetSearch() {
   const simulator = makeMemorySearchSimulator();
+  let disabledSamples = 0;
+  const disabled = searchDP(simulator, makeMemorySearchState(), {
+    maxExpansions: 1,
+    maxRuntimeMs: 1000,
+    maxHeapMb: 0,
+    maxRssMb: 0,
+    memoryCheckIntervalExpansions: 1,
+    memoryCheckIntervalActions: 1,
+    memoryUsageProvider: () => {
+      disabledSamples += 1;
+      return { heapUsed: mb(10), rss: mb(20) };
+    },
+    actionProvider: () => Array.from({ length: 5 }, (_, index) => ({
+      kind: "event",
+      summary: `event:multi-${index}@F1:1,1`,
+      floorId: "F1",
+    })),
+    actionApplier: (state) => ({ ...state, step: 1, route: [] }),
+    goalPredicate: () => false,
+  });
+  assert.equal(disabled.diagnostics.dp.memory.memoryLimitsEnabled, false);
+  assert(disabledSamples <= 3, `disabled caps must sample per expansion, got ${disabledSamples}`);
+
   const before = searchDP(simulator, makeMemorySearchState(), {
     maxExpansions: 10,
     maxRuntimeMs: 1000,
     maxHeapMb: 100,
     maxRssMb: 0,
     memoryCheckIntervalExpansions: 1,
+    memoryCheckIntervalActions: 1,
     memoryUsageProvider: () => ({ heapUsed: mb(101), rss: mb(20) }),
     goalPredicate: (state) => state.step === 1,
   });
@@ -274,6 +300,7 @@ function checkMemoryBudgetSearch() {
     maxRuntimeMs: 1000,
     maxHeapMb: 100,
     memoryCheckIntervalExpansions: 1,
+    memoryCheckIntervalActions: 1,
     memoryUsageProvider: () => {
       actionProviderCalls += 1;
       return { heapUsed: mb(actionProviderCalls === 1 ? 10 : 101), rss: mb(20) };
@@ -290,12 +317,13 @@ function checkMemoryBudgetSearch() {
     maxRuntimeMs: 1000,
     maxHeapMb: 0,
     maxRssMb: 100,
-    memoryCheckIntervalExpansions: 1,
+    memoryCheckIntervalExpansions: 99,
+    memoryCheckIntervalActions: 1,
     memoryUsageProvider: () => {
       successorSamples += 1;
       return {
         heapUsed: mb(10),
-        rss: mb(successorSamples === 3 ? 101 : 20),
+        rss: mb(successorSamples === 2 ? 101 : 20),
       };
     },
     goalPredicate: (state) => state.step === 1,
@@ -345,6 +373,125 @@ function checkMemoryRepairAndChildClassification() {
 
   assert.equal(isChildMemoryLimit({ status: 1, stderr: "FATAL ERROR: JavaScript heap out of memory" }), true);
   assert.equal(isChildMemoryLimit({ status: 1, stderr: "ordinary child failure" }), false);
+}
+
+function runRetainedRepairMemoryGraph(options) {
+  const config = options || {};
+  let primitiveCalls = 0;
+  let memorySamples = 0;
+  const simulator = makeMemorySearchSimulator();
+  simulator.enumeratePrimitiveActions = () => {
+    primitiveCalls += 1;
+    if (primitiveCalls === 2) return { actions: [] };
+    return {
+      actions: [{
+        kind: "event",
+        summary: "event:advance@F1:1,1",
+        floorId: "F1",
+      }],
+    };
+  };
+  simulator.applyAction = (state) => ({
+    ...state,
+    step: 1,
+    hero: { ...state.hero, hp: Number(state.hero.hp || 0) + 100 },
+    route: [],
+  });
+  const milestones = [
+    {
+      id: "s1",
+      label: "first",
+      goal: { floorId: "F1", minHero: { hp: 200 } },
+      dp: { maxExpansions: 10 },
+    },
+    {
+      id: "s2",
+      label: "second",
+      ...(config.configured ? { repairStartFrom: "s1" } : {}),
+      dp: { repairMaxExpansions: 10 },
+      goal: { floorId: "F1", minHero: { hp: 300 } },
+    },
+  ];
+  if (config.includeFollowingSegment) {
+    milestones.push({
+      id: "s3",
+      label: "following",
+      goal: { floorId: "F1", minHero: { hp: 400 } },
+    });
+  }
+  const highSample = config.configured ? 12 : 17;
+  const result = require("./lib/segment-dp").runMilestoneGraph(
+    simulator,
+    makeMemorySearchState(),
+    { milestones },
+    {
+      maxExpansions: 20,
+      maxRuntimeMs: 10000,
+      maxHeapMb: 100,
+      maxRssMb: 0,
+      memoryCheckIntervalExpansions: 1,
+      memoryCheckIntervalActions: 1,
+      memoryUsageProvider: () => {
+        memorySamples += 1;
+        return {
+          heapUsed: mb(memorySamples >= highSample ? 101 : 10),
+          rss: mb(20),
+        };
+      },
+      enableFailureBacktracking: true,
+      budgetScope: config.budgetScope,
+    },
+  );
+  return { result, primitiveCalls, memorySamples };
+}
+
+function checkRetainedRepairMemoryStops() {
+  ["per-attempt", "global-run"].forEach((budgetScope) => {
+    const configured = runRetainedRepairMemoryGraph({
+      budgetScope,
+      configured: true,
+      includeFollowingSegment: true,
+    });
+    assert.equal(configured.result.found, false);
+    assert.equal(configured.result.reachedMilestone, "s2");
+    assert.equal(configured.result.memory.searchCompletion, "memory-limited");
+    assert.equal(configured.result.segmentResults.some((segment) => segment.segmentId === "s3"), false);
+    assert.equal(configured.result.evaluationAttemptLedger.some((entry) => entry.segmentId === "s3"), false);
+    assert(configured.result.finalCandidates[0].route.length >= 2, "configured repair must retain its goal route");
+    assert(configured.result.evaluationAttemptLedger.some((entry) => entry.phase === "configured-repair"));
+    if (budgetScope === "global-run") {
+      assert.equal(configured.result.budget.stoppedReason, "heap-limit");
+    } else {
+      assert.equal(configured.result.budget, null);
+    }
+
+    const retry = runRetainedRepairMemoryGraph({
+      budgetScope,
+      configured: false,
+      includeFollowingSegment: true,
+    });
+    assert.equal(retry.result.found, false);
+    assert.equal(retry.result.reachedMilestone, "s2");
+    assert.equal(retry.result.memory.searchCompletion, "memory-limited");
+    assert.equal(retry.result.segmentResults.some((segment) => segment.segmentId === "s3"), false);
+    assert.equal(retry.result.evaluationAttemptLedger.some((entry) => entry.segmentId === "s3"), false);
+    assert(retry.result.finalCandidates[0].route.length >= 2, "retry-current must retain its goal route");
+    assert(retry.result.evaluationAttemptLedger.some((entry) => entry.phase === "retry-current"));
+    if (budgetScope === "global-run") {
+      assert.equal(retry.result.budget.stoppedReason, "heap-limit");
+    } else {
+      assert.equal(retry.result.budget, null);
+    }
+  });
+
+  const final = runRetainedRepairMemoryGraph({
+    budgetScope: "per-attempt",
+    configured: true,
+    includeFollowingSegment: false,
+  });
+  assert.equal(final.result.found, true, "final retained repair goal must remain a valid result");
+  assert.equal(final.result.memory.searchCompletion, "memory-limited");
+  assert(final.result.finalCandidate.state.route.length >= 2);
 }
 
 function checkAggregation() {
@@ -1105,6 +1252,7 @@ function main() {
   checkGlobalBudgetAndFailureClassification();
   checkMemoryBudgetSearch();
   checkMemoryRepairAndChildClassification();
+  checkRetainedRepairMemoryStops();
   checkMultiSegmentCumulative();
   checkNullHandlingInRange();
   checkBaselineOnlySegmentRegression();
@@ -1114,7 +1262,7 @@ function main() {
   checkRequestedMilestoneLedgerSemantics();
   checkLedgerConsistencyClassification();
   checkMemoryMatrixSummary();
-  console.log("check-agenda-policy-evaluation: 17/17 passed");
+  console.log("check-agenda-policy-evaluation: 18/18 passed");
 }
 
 if (require.main === module) main();
@@ -1128,6 +1276,7 @@ module.exports = {
   checkGlobalBudgetAndFailureClassification,
   checkMemoryBudgetSearch,
   checkMemoryRepairAndChildClassification,
+  checkRetainedRepairMemoryStops,
   checkMultiSegmentCumulative,
   checkNullHandlingInRange,
   checkBaselineOnlySegmentRegression,

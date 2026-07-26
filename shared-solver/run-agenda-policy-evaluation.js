@@ -152,6 +152,7 @@ function buildSearchConfig(config, policy, budgetPlan, report) {
     maxHeapMb: first.maxHeapMb != null ? first.maxHeapMb : config.maxHeapMb,
     maxRssMb: first.maxRssMb != null ? first.maxRssMb : config.maxRssMb,
     memoryCheckIntervalExpansions: first.memoryCheckIntervalExpansions || config.memoryCheckIntervalExpansions || 1,
+    memoryCheckIntervalActions: first.memoryCheckIntervalActions || config.memoryCheckIntervalActions || 1,
     childOldSpaceMb: config.childOldSpaceMb,
     memory: report && report.memory ? report.memory : null,
     actionProviderMode: first.actionProviderMode || null,
@@ -331,6 +332,9 @@ function buildRunEntry({
       memoryCheckIntervalExpansions: report && report.memory
         ? report.memory.memoryCheckIntervalExpansions
         : config.memoryCheckIntervalExpansions,
+      memoryCheckIntervalActions: report && report.memory
+        ? report.memory.memoryCheckIntervalActions
+        : config.memoryCheckIntervalActions,
       childOldSpaceMb: config.childOldSpaceMb,
     },
     metrics: {
@@ -666,6 +670,7 @@ function main() {
     maxHeapMb: args["max-heap-mb"] == null ? null : number(args["max-heap-mb"], null),
     maxRssMb: args["max-rss-mb"] == null ? null : number(args["max-rss-mb"], null),
     memoryCheckIntervalExpansions: number(args["memory-check-interval-expansions"], 1),
+    memoryCheckIntervalActions: number(args["memory-check-interval-actions"], 1),
     childOldSpaceMb: args["child-old-space-mb"] == null ? null : number(args["child-old-space-mb"], null),
   };
   const kind = args["budget-kind"] || "expansions";
@@ -755,6 +760,7 @@ function main() {
       maxHeapMb: config.maxHeapMb,
       maxRssMb: config.maxRssMb,
       memoryCheckIntervalExpansions: config.memoryCheckIntervalExpansions,
+      memoryCheckIntervalActions: config.memoryCheckIntervalActions,
       childOldSpaceMb: config.childOldSpaceMb,
     },
     runs: runsWithMatrixProvenance,

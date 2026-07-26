@@ -241,6 +241,7 @@ function buildSegmentedReport({
       maxHeapMb: optionalNumber(args["max-heap-mb"]),
       maxRssMb: optionalNumber(args["max-rss-mb"]),
       memoryCheckIntervalExpansions: optionalNumber(args["memory-check-interval-expansions"]),
+      memoryCheckIntervalActions: optionalNumber(args["memory-check-interval-actions"]),
       childOldSpaceMb: optionalNumber(args["child-old-space-mb"]),
       stopOnFirstGoal:
         args["stop-on-first-goal"] == null
@@ -402,6 +403,7 @@ function main() {
     maxHeapMb: optionalNumber(args["max-heap-mb"]),
     maxRssMb: optionalNumber(args["max-rss-mb"]),
     memoryCheckIntervalExpansions: optionalNumber(args["memory-check-interval-expansions"]) || 1,
+    memoryCheckIntervalActions: optionalNumber(args["memory-check-interval-actions"]) || 1,
     stopOnFirstGoal:
       args["stop-on-first-goal"] == null
         ? null

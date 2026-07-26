@@ -2479,6 +2479,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     maxHeapMb: number(dpConfig.maxHeapMb, 0),
     maxRssMb: number(dpConfig.maxRssMb, 0),
     memoryCheckIntervalExpansions: number(dpConfig.memoryCheckIntervalExpansions, 1),
+    memoryCheckIntervalActions: number(dpConfig.memoryCheckIntervalActions, 1),
     memoryUsageProvider: dpConfig.memoryUsageProvider || config.memoryUsageProvider,
     dpKeyMode: dpConfig.keyMode || dpConfig.dpKeyMode || "region",
     dpAgendaMode: dpConfig.agendaMode || "best-first",
@@ -2806,6 +2807,9 @@ function segmentDpOverrides(segment, config, overrides) {
       : {}),
     ...(config && config.memoryCheckIntervalExpansions != null
       ? { memoryCheckIntervalExpansions: config.memoryCheckIntervalExpansions }
+      : {}),
+    ...(config && config.memoryCheckIntervalActions != null
+      ? { memoryCheckIntervalActions: config.memoryCheckIntervalActions }
       : {}),
     ...(config && typeof config.memoryUsageProvider === "function"
       ? { memoryUsageProvider: config.memoryUsageProvider }
@@ -3511,6 +3515,9 @@ function summarizeMemoryAttempts(attempts, config) {
     memoryCheckIntervalExpansions: config && config.memoryCheckIntervalExpansions != null
       ? number(config.memoryCheckIntervalExpansions, 1)
       : number(firstMemory.memoryCheckIntervalExpansions, 1),
+    memoryCheckIntervalActions: config && config.memoryCheckIntervalActions != null
+      ? number(config.memoryCheckIntervalActions, 1)
+      : number(firstMemory.memoryCheckIntervalActions, 1),
     peakHeapUsedMb,
     peakRssMb,
     heapLimitedCount,
@@ -3605,6 +3612,55 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       });
     });
   };
+  const memoryLimitedSummary = (execution) => ({
+    ...(execution && execution.summary || {}),
+    found: Boolean(execution && execution.merged && execution.merged.length > 0),
+    failureClass: "memory-limited",
+    failureReason: `search stopped after ${execution && execution.memoryStopReason}`,
+    failurePropagation: {
+      primaryFailureClass: "memory-limited",
+      failureClass: "memory-limited",
+      reason: `search stopped after ${execution && execution.memoryStopReason}`,
+      recommendedNext: [
+        "raise the soft memory cap before attempting another segment or repair phase",
+      ],
+    },
+  });
+  const upsertSegmentSummary = (summary) => {
+    const index = segmentResults.findIndex((entry) => entry.segmentId === summary.segmentId);
+    if (index >= 0) segmentResults[index] = summary;
+    else segmentResults.push(summary);
+  };
+  const upsertCheckpoint = (execution) => {
+    if (!execution || !execution.merged || execution.merged.length === 0) return;
+    const checkpoint = buildMilestoneCheckpoint(execution.segment, execution);
+    const index = checkpointResults.findIndex((entry) => entry.segmentId === checkpoint.segmentId);
+    if (index >= 0) checkpointResults[index] = checkpoint;
+    else checkpointResults.push(checkpoint);
+  };
+  const finishMemoryLimited = (execution, executionSegmentIndex, fallbackCandidates) => {
+    const summary = memoryLimitedSummary(execution);
+    upsertSegmentSummary(summary);
+    upsertCheckpoint(execution);
+    const retainedCandidates = (execution && execution.merged) || [];
+    const finalSegment = executionSegmentIndex >= segments.length - 1;
+    const found = finalSegment && retainedCandidates.length > 0;
+    const finalCandidates = retainedCandidates.length > 0
+      ? rankFinalCandidates(retainedCandidates, config.qualityFloor || null)
+      : (fallbackCandidates || []);
+    return finishResult({
+      found,
+      reachedMilestone: retainedCandidates.length > 0
+        ? execution.segment.id
+        : execution.segment.startFrom || null,
+      failedSegment: found ? null : summary,
+      finalCandidate: found ? finalCandidates[0] : null,
+      finalCandidates,
+      segmentResults,
+      checkpointResults,
+      evaluationAttemptLedger,
+    });
+  };
   const history = [];
   for (
     let segmentIndex = 0;
@@ -3622,30 +3678,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     appendLedger(execution, "initial");
     if (execution.merged.length === 0) {
       if (execution.memoryLimited) {
-        const memoryFailure = {
-          ...execution.summary,
-          found: false,
-          failureClass: "memory-limited",
-          failureReason: `search stopped after ${execution.memoryStopReason}`,
-          failurePropagation: {
-            primaryFailureClass: "memory-limited",
-            failureClass: "memory-limited",
-            reason: `search stopped after ${execution.memoryStopReason}`,
-            recommendedNext: [
-              "raise the soft memory cap or reduce the segment scope before retrying",
-            ],
-          },
-        };
-        segmentResults.push(memoryFailure);
-        return finishResult({
-          found: false,
-          reachedMilestone: segment.startFrom || null,
-          failedSegment: memoryFailure,
-          finalCandidates: frontier,
-          segmentResults,
-          checkpointResults,
-          evaluationAttemptLedger,
-        });
+        return finishMemoryLimited(execution, segmentIndex, frontier);
       }
       const configuredRepair = tryRepairFromConfiguredMilestone(
         simulator,
@@ -3657,6 +3690,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       );
       if (configuredRepair && configuredRepair.repairedCurrent) {
         appendLedger(configuredRepair.repairedCurrent, "configured-repair");
+      }
+      if (configuredRepair && configuredRepair.repairedCurrent && configuredRepair.repairedCurrent.memoryLimited) {
+        return finishMemoryLimited(configuredRepair.repairedCurrent, segmentIndex, frontier);
       }
       if (configuredRepair && configuredRepair.found) {
         checkpointResults.push(
@@ -3673,32 +3709,6 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         frontier = configuredRepair.repairedCurrent.merged;
         continue;
       }
-      if (configuredRepair && configuredRepair.repairedCurrent && configuredRepair.repairedCurrent.memoryLimited) {
-        const memoryFailure = {
-          ...configuredRepair.repairedCurrent.summary,
-          found: false,
-          failureClass: "memory-limited",
-          failureReason: `search stopped after ${configuredRepair.repairedCurrent.memoryStopReason}`,
-          failurePropagation: {
-            primaryFailureClass: "memory-limited",
-            failureClass: "memory-limited",
-            reason: `search stopped after ${configuredRepair.repairedCurrent.memoryStopReason}`,
-            recommendedNext: [
-              "raise the soft memory cap before attempting another repair phase",
-            ],
-          },
-        };
-        segmentResults.push(memoryFailure);
-        return finishResult({
-          found: false,
-          reachedMilestone: segment.startFrom || null,
-          failedSegment: memoryFailure,
-          finalCandidates: frontier,
-          segmentResults,
-          checkpointResults,
-          evaluationAttemptLedger,
-        });
-      }
       const repair = tryRepairFromPreviousMilestone(
         simulator,
         segments,
@@ -3712,6 +3722,16 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       }
       if (repair && repair.repairedCurrent) {
         appendLedger(repair.repairedCurrent, "retry-current");
+      }
+      if (repair && repair.repairedCurrent && repair.repairedCurrent.memoryLimited) {
+        if (repair.expandedPrevious) {
+          upsertSegmentSummary(repair.expandedPrevious.summary);
+          upsertCheckpoint(repair.expandedPrevious);
+        }
+        return finishMemoryLimited(repair.repairedCurrent, segmentIndex, frontier);
+      }
+      if (repair && repair.expandedPrevious && repair.expandedPrevious.memoryLimited) {
+        return finishMemoryLimited(repair.expandedPrevious, segmentIndex - 1, frontier);
       }
       if (repair && repair.found) {
         if (checkpointResults.length > 0) checkpointResults.pop();
@@ -3743,37 +3763,6 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         });
         frontier = repair.repairedCurrent.merged;
         continue;
-      }
-      if (
-        repair &&
-        ((repair.expandedPrevious && repair.expandedPrevious.memoryLimited) ||
-          (repair.repairedCurrent && repair.repairedCurrent.memoryLimited))
-      ) {
-        const memoryExecution = repair.repairedCurrent || repair.expandedPrevious;
-        const memoryFailure = {
-          ...memoryExecution.summary,
-          found: false,
-          failureClass: "memory-limited",
-          failureReason: `search stopped after ${memoryExecution.memoryStopReason}`,
-          failurePropagation: {
-            primaryFailureClass: "memory-limited",
-            failureClass: "memory-limited",
-            reason: `search stopped after ${memoryExecution.memoryStopReason}`,
-            recommendedNext: [
-              "raise the soft memory cap before attempting another repair phase",
-            ],
-          },
-        };
-        segmentResults.push(memoryFailure);
-        return finishResult({
-          found: false,
-          reachedMilestone: segment.startFrom || null,
-          failedSegment: memoryFailure,
-          finalCandidates: frontier,
-          segmentResults,
-          checkpointResults,
-          evaluationAttemptLedger,
-        });
       }
       const failedSummary = execution.summary;
       if (configuredRepair) {
@@ -3814,30 +3803,10 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         evaluationAttemptLedger,
       });
     }
-    segmentResults.push(execution.summary);
-    if (execution.memoryLimited && execution.merged.length > 0 && segmentIndex < segments.length - 1) {
-      return finishResult({
-        found: false,
-        reachedMilestone: segment.id,
-        failedSegment: {
-          ...execution.summary,
-          failureClass: "memory-limited",
-          failureReason: `search stopped after ${execution.memoryStopReason}`,
-          failurePropagation: {
-            primaryFailureClass: "memory-limited",
-            failureClass: "memory-limited",
-            reason: `search stopped after ${execution.memoryStopReason}`,
-            recommendedNext: [
-              "raise the soft memory cap or reduce the segment scope before continuing the milestone graph",
-            ],
-          },
-        },
-        finalCandidates: execution.merged,
-        segmentResults,
-        checkpointResults,
-        evaluationAttemptLedger,
-      });
+    if (execution.memoryLimited) {
+      return finishMemoryLimited(execution, segmentIndex, frontier);
     }
+    segmentResults.push(execution.summary);
     checkpointResults.push(buildMilestoneCheckpoint(segment, execution));
     history.push({
       segment,

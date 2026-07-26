@@ -1249,6 +1249,11 @@ function searchDP(simulator, initialState, options) {
     1,
     Math.floor(number(config.memoryCheckIntervalExpansions, 1)),
   );
+  const memoryCheckIntervalActions = Math.max(
+    1,
+    Math.floor(number(config.memoryCheckIntervalActions, 1)),
+  );
+  const memoryLimitsEnabled = maxHeapMb > 0 || maxRssMb > 0;
   const memoryUsageProvider = typeof config.memoryUsageProvider === "function"
     ? config.memoryUsageProvider
     : () => process.memoryUsage();
@@ -1295,6 +1300,7 @@ function searchDP(simulator, initialState, options) {
   const memoryCheckDue = (expansionOrdinal) =>
     expansionOrdinal <= 0 || expansionOrdinal % memoryCheckIntervalExpansions === 0;
   const stopForMemoryIfNeeded = (phase, expansion, expansionOrdinal, force = false) => {
+    if (!memoryLimitsEnabled) return false;
     if (!force && !memoryCheckDue(expansionOrdinal)) return false;
     recordMemoryUsage(phase, expansion, true);
     if (memoryStoppedReason) {
@@ -1375,13 +1381,13 @@ function searchDP(simulator, initialState, options) {
         reasonCode: "action-provider-error",
         error: { name: error && error.name || "Error", message: error && error.message || String(error) },
       }));
-      if (stopForMemoryIfNeeded("after-action-provider", expansions, expansions)) break;
+      if (stopForMemoryIfNeeded("after-action-provider", expansions, expansionOrdinal)) break;
       continue;
     }
     if (typeof config.actionFilter === "function") {
       actions = actions.filter((action) => config.actionFilter(action, state));
     }
-    if (stopForMemoryIfNeeded("after-action-provider", expansions, expansions)) break;
+    if (stopForMemoryIfNeeded("after-action-provider", expansions, expansionOrdinal)) break;
     maxActionsGeneratedForState = Math.max(maxActionsGeneratedForState, actions.length);
     if (observer) observer.emit("actionSetGenerated", () => observerStatePayload(simulator, state, entry, config, {
       reasonCode: "action-set-generated",
@@ -1457,11 +1463,24 @@ function searchDP(simulator, initialState, options) {
           if (childNode) recordAction(actionStats, action, "kept");
           else recordAction(actionStats, action, "dominated");
         });
-        if (stopForMemoryIfNeeded("after-successor-enqueue", expansions, expansions)) {
+        const actionOrdinal = actionIndex + 1;
+        if (
+          memoryLimitsEnabled &&
+          actionOrdinal % memoryCheckIntervalActions === 0 &&
+          stopForMemoryIfNeeded(
+            "after-successor-enqueue",
+            expansions,
+            expansionOrdinal,
+            true,
+          )
+        ) {
           stopAfterSuccessorBatch = true;
         }
       });
     if (stopAfterSuccessorBatch) break;
+    if (!memoryLimitsEnabled) {
+      recordMemoryUsage("after-expansion", expansions, false);
+    }
   }
 
   agendaFairness.fairCursor = fairnessEnabled ? fairCursor : 0;
@@ -1495,10 +1514,15 @@ function searchDP(simulator, initialState, options) {
             maxHeapMb,
             maxRssMb,
             memoryCheckIntervalExpansions,
+            memoryCheckIntervalActions,
+            memoryLimitsEnabled,
             memory: {
               maxHeapMb,
               maxRssMb,
               memoryCheckIntervalExpansions,
+              memoryCheckIntervalActions,
+              memoryLimitsEnabled,
+              successorCheckGranularity: "action-batch",
               peakHeapUsedMb: maxHeapUsedMb,
               peakRssMb,
               stopHeapUsedMb,
@@ -1670,6 +1694,8 @@ function searchDP(simulator, initialState, options) {
         maxHeapMb,
         maxRssMb,
         memoryCheckIntervalExpansions,
+        memoryCheckIntervalActions,
+        memoryLimitsEnabled,
         wallMs: Date.now() - startedAt,
         heapUsedMb: Number(maxHeapUsedMb.toFixed(1)),
         rssMb: Number(peakRssMb.toFixed(1)),
@@ -1677,6 +1703,9 @@ function searchDP(simulator, initialState, options) {
           maxHeapMb,
           maxRssMb,
           memoryCheckIntervalExpansions,
+          memoryCheckIntervalActions,
+          memoryLimitsEnabled,
+          successorCheckGranularity: "action-batch",
           peakHeapUsedMb: Number(maxHeapUsedMb.toFixed(1)),
           peakRssMb: Number(peakRssMb.toFixed(1)),
           stopHeapUsedMb: stopHeapUsedMb == null ? null : Number(stopHeapUsedMb.toFixed(1)),

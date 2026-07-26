@@ -133,6 +133,7 @@ function buildSegmentedChildArgs(config, policy, budgetPlan, reportPath, outPath
     `--max-expansions=${budgetPlan.maxExpansions}`,
     `--max-runtime-ms=${budgetPlan.maxRuntimeMs}`,
     `--memory-check-interval-expansions=${config.memoryCheckIntervalExpansions == null ? 1 : config.memoryCheckIntervalExpansions}`,
+    `--memory-check-interval-actions=${config.memoryCheckIntervalActions == null ? 1 : config.memoryCheckIntervalActions}`,
     `--budget-scope=${config.budgetScope || "per-attempt"}`,
     `--report=${reportPath}`,
     `--print-failures=0`,
@@ -510,6 +511,13 @@ function aggregateMemoryReport(report, options) {
         ? options.memoryCheckIntervalExpansions
         : firstMemory.memory && firstMemory.memory.memoryCheckIntervalExpansions != null
           ? firstMemory.memory.memoryCheckIntervalExpansions
+          : 1,
+    memoryCheckIntervalActions: requested.memoryCheckIntervalActions != null
+      ? requested.memoryCheckIntervalActions
+      : options && options.memoryCheckIntervalActions != null
+        ? options.memoryCheckIntervalActions
+        : firstMemory.memory && firstMemory.memory.memoryCheckIntervalActions != null
+          ? firstMemory.memory.memoryCheckIntervalActions
           : 1,
     peakHeapUsedMb,
     peakRssMb,
