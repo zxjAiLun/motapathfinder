@@ -451,7 +451,7 @@ function checkMemoryRepairAndChildClassification() {
 function runRetainedRepairMemoryGraph(options) {
   const config = options || {};
   let primitiveCalls = 0;
-  let memorySamples = 0;
+  let memoryLimitArmed = false;
   const simulator = makeMemorySearchSimulator();
   simulator.enumeratePrimitiveActions = () => {
     primitiveCalls += 1;
@@ -464,12 +464,18 @@ function runRetainedRepairMemoryGraph(options) {
       }],
     };
   };
-  simulator.applyAction = (state) => ({
-    ...state,
-    step: 1,
-    hero: { ...state.hero, hp: Number(state.hero.hp || 0) + 100 },
-    route: [],
-  });
+  simulator.applyAction = (state) => {
+    const sourceHp = Number(state.hero && state.hero.hp || 0);
+    const isRetainedRepairGoalAction = sourceHp >= 200;
+    const next = {
+      ...state,
+      step: 1,
+      hero: { ...state.hero, hp: sourceHp + 100 },
+      route: [],
+    };
+    if (isRetainedRepairGoalAction) memoryLimitArmed = true;
+    return next;
+  };
   const milestones = [
     {
       id: "s1",
@@ -492,7 +498,6 @@ function runRetainedRepairMemoryGraph(options) {
       goal: { floorId: "F1", minHero: { hp: 400 } },
     });
   }
-  const highSample = config.configured ? 12 : 17;
   const result = require("./lib/segment-dp").runMilestoneGraph(
     simulator,
     makeMemorySearchState(),
@@ -502,12 +507,11 @@ function runRetainedRepairMemoryGraph(options) {
       maxRuntimeMs: 10000,
       maxHeapMb: 100,
       maxRssMb: 0,
-      memoryCheckIntervalExpansions: 1,
+      memoryCheckIntervalExpansions: 99,
       memoryCheckIntervalActions: 1,
       memoryUsageProvider: () => {
-        memorySamples += 1;
         return {
-          heapUsed: mb(memorySamples >= highSample ? 101 : 10),
+          heapUsed: mb(memoryLimitArmed ? 101 : 10),
           rss: mb(20),
         };
       },
@@ -515,7 +519,7 @@ function runRetainedRepairMemoryGraph(options) {
       budgetScope: config.budgetScope,
     },
   );
-  return { result, primitiveCalls, memorySamples };
+  return { result, primitiveCalls };
 }
 
 function checkRetainedRepairMemoryStops() {
@@ -528,6 +532,7 @@ function checkRetainedRepairMemoryStops() {
     assert.equal(configured.result.found, false);
     assert.equal(configured.result.reachedMilestone, "s2");
     assert.equal(configured.result.memory.searchCompletion, "memory-limited");
+    assert.equal(configured.result.memory.stoppedAtPhase, "after-successor-enqueue");
     assert.equal(configured.result.segmentResults.some((segment) => segment.segmentId === "s3"), false);
     assert.equal(configured.result.evaluationAttemptLedger.some((entry) => entry.segmentId === "s3"), false);
     assert(configured.result.finalCandidates[0].route.length >= 2, "configured repair must retain its goal route");
@@ -546,6 +551,7 @@ function checkRetainedRepairMemoryStops() {
     assert.equal(retry.result.found, false);
     assert.equal(retry.result.reachedMilestone, "s2");
     assert.equal(retry.result.memory.searchCompletion, "memory-limited");
+    assert.equal(retry.result.memory.stoppedAtPhase, "after-successor-enqueue");
     assert.equal(retry.result.segmentResults.some((segment) => segment.segmentId === "s3"), false);
     assert.equal(retry.result.evaluationAttemptLedger.some((entry) => entry.segmentId === "s3"), false);
     assert(retry.result.finalCandidates[0].route.length >= 2, "retry-current must retain its goal route");
@@ -564,6 +570,7 @@ function checkRetainedRepairMemoryStops() {
   });
   assert.equal(final.result.found, true, "final retained repair goal must remain a valid result");
   assert.equal(final.result.memory.searchCompletion, "memory-limited");
+  assert.equal(final.result.memory.stoppedAtPhase, "after-successor-enqueue");
   assert(final.result.finalCandidate.state.route.length >= 2);
 }
 
