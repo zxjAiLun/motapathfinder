@@ -1,6 +1,7 @@
 {
   "scripts": {
     "run:route": "node run-route.js",
+    "compose:route": "node compose-route.js",
     "smoke": "node run-route.js --rank=chaos --profile=linear-main --top-k=1 --max-expansions=300 --beam-width=300 --per-floor-beam-width=120 --per-region-beam-width=40 --diagnostics=1",
     "verify:mt2": "node verify-route-live.js --to-floor=MT2 --allow-fallback=0",
     "verify:mt3": "node verify-route-live.js --goal=updown-mt1-mt3 --allow-fallback=0",

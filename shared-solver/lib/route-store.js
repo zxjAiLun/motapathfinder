@@ -144,6 +144,80 @@ function readRouteFile(filePath) {
   return record;
 }
 
+function composeRouteRecords(prefixRecord, suffixRecord, options) {
+  const prefix = prefixRecord || {};
+  const suffix = suffixRecord || {};
+  const config = options || {};
+  if (prefix.schema !== ROUTE_SCHEMA || suffix.schema !== ROUTE_SCHEMA) {
+    throw new Error("route-store: composed routes require matching route schema records");
+  }
+  const prefixFinalExactStateKey = prefix.final && prefix.final.exactStateKey;
+  const suffixStartExactStateKey = suffix.start && suffix.start.exactStateKey;
+  if (!prefixFinalExactStateKey || !suffixStartExactStateKey) {
+    throw new Error("route-store: composed routes require exact boundary state keys");
+  }
+  if (prefixFinalExactStateKey !== suffixStartExactStateKey) {
+    throw new Error("route-store: composed route exact boundary mismatch");
+  }
+  const prefixDecisions = Array.isArray(prefix.decisions) ? prefix.decisions : [];
+  const suffixDecisions = Array.isArray(suffix.decisions) ? suffix.decisions : [];
+  const firstSuffixDecision = suffixDecisions[0];
+  if (firstSuffixDecision && firstSuffixDecision.preExactStateKey !== prefixFinalExactStateKey) {
+    throw new Error("route-store: composed route first suffix pre-state does not match boundary");
+  }
+  const decisions = prefixDecisions.concat(
+    suffixDecisions.map((decision, index) => ({
+      ...decision,
+      index: prefixDecisions.length + index + 1,
+    })),
+  );
+  const source = cloneJson(suffix.source || prefix.source || {});
+  if (config.commit) source.commit = config.commit;
+  const metadata = cloneJson(suffix.metadata || {}) || {};
+  metadata.kind = "composed-route";
+  metadata.composedFrom = {
+    prefixSourceCommit: prefix.source && prefix.source.commit || null,
+    suffixSourceCommit: suffix.source && suffix.source.commit || null,
+    prefixGoal: cloneJson(prefix.goal),
+    suffixGoal: cloneJson(suffix.goal),
+    prefixDecisionCount: prefixDecisions.length,
+    suffixDecisionCount: suffixDecisions.length,
+    boundaryExactStateKey: prefixFinalExactStateKey,
+  };
+  const rawPrefix = Array.isArray(prefix.rawRoute) ? prefix.rawRoute : [];
+  const rawSuffix = Array.isArray(suffix.rawRoute) ? suffix.rawRoute : [];
+  const hasNumericStat = (record, field) => record.stats && record.stats[field] != null && Number.isFinite(Number(record.stats[field]));
+  const notes = [];
+  [...(prefix.notes || []), ...(suffix.notes || [])].forEach((note) => {
+    if (!notes.includes(note)) notes.push(note);
+  });
+  notes.push(
+    `Composed from ${config.prefixFile || "prefix route"} and ${config.suffixFile || "suffix route"}; exact boundary verified.`,
+  );
+  return {
+    schema: ROUTE_SCHEMA,
+    createdAt: new Date().toISOString(),
+    source,
+    goal: cloneJson(suffix.goal || prefix.goal),
+    metadata,
+    stats: {
+      expanded: hasNumericStat(prefix, "expanded") && hasNumericStat(suffix, "expanded")
+        ? Number(prefix.stats.expanded) + Number(suffix.stats.expanded)
+        : null,
+      generated: hasNumericStat(prefix, "generated") && hasNumericStat(suffix, "generated")
+        ? Number(prefix.stats.generated) + Number(suffix.stats.generated)
+        : null,
+      depth: decisions.length,
+      routeLength: decisions.length,
+    },
+    start: cloneJson(prefix.start),
+    final: cloneJson(suffix.final),
+    decisions,
+    rawRoute: rawPrefix.concat(rawSuffix),
+    notes,
+  };
+}
+
 function snapshotTileIdToNumber(project, tileId) {
   if (tileId == null) return null;
   const value = String(tileId);
@@ -1079,6 +1153,7 @@ module.exports = {
   enumerateRecordedActionCandidates,
   listRecordedActionCandidates,
   normalizeAction,
+  composeRouteRecords,
   readRouteFile,
   resolveRecordedAction,
   writeRouteFile,
