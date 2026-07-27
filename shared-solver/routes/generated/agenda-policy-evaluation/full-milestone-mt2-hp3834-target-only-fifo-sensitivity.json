@@ -1,0 +1,1769 @@
+{
+  "schema": "agenda-policy-evaluation.v1",
+  "generatedAt": "2026-07-27T14:14:11.889Z",
+  "provenance": {
+    "solverCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+    "startedCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+    "finishedCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+    "commitStable": true,
+    "nodeVersion": "v22.12.0",
+    "platform": "win32"
+  },
+  "mode": "full-milestone",
+  "input": {
+    "routeName": "onlyup-chaos-mt5-blueking",
+    "projectRoot": "E:\\AUbuntuProject\\project\\motapathfind\\Only upV2.1\\Only upV2.1",
+    "startRoute": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-local-fifo-hp4362.route.json",
+    "startRouteStep": null,
+    "fromMilestone": "mt2-local-3582",
+    "toMilestone": "mt2-hp3834"
+  },
+  "policies": [
+    {
+      "id": "best-first",
+      "agendaMode": "best-first",
+      "fairnessEvery": null
+    }
+  ],
+  "budgetPlan": {
+    "kind": "time",
+    "budgets": [
+      180000
+    ],
+    "repeats": 1
+  },
+  "searchDefaults": {
+    "mode": "full-milestone",
+    "routeName": "onlyup-chaos-mt5-blueking",
+    "projectRoot": "E:\\AUbuntuProject\\project\\motapathfind\\Only upV2.1\\Only upV2.1",
+    "startRoute": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-local-fifo-hp4362.route.json",
+    "startRouteStep": null,
+    "fromMilestone": "mt2-local-3582",
+    "toMilestone": "mt2-hp3834",
+    "candidateLimit": 8,
+    "goalSkylineLimit": 8,
+    "dpSkylineMax": 4,
+    "preserveSkylineRoles": true,
+    "stopOnFirstGoal": true,
+    "maxActionsPerState": 256,
+    "dpKeyMode": null,
+    "budgetScope": "global-run",
+    "maxHeapMb": 1400,
+    "maxRssMb": 1800,
+    "memoryCheckIntervalExpansions": 1,
+    "memoryCheckIntervalActions": 1,
+    "childOldSpaceMb": 1600
+  },
+  "memory": {
+    "maxHeapMb": 1400,
+    "maxRssMb": 1800,
+    "memoryCheckIntervalExpansions": 1,
+    "memoryCheckIntervalActions": 1,
+    "childOldSpaceMb": 1600
+  },
+  "runs": [
+    {
+      "policy": "best-first",
+      "repeat": 1,
+      "found": false,
+      "reachedMilestone": "mt2-local-3582",
+      "failedSegmentId": "mt2-hp3834",
+      "segmentMetrics": [
+        {
+          "segmentId": "mt2-hp3834",
+          "label": "MT2 四怪前 3834 基准",
+          "found": false,
+          "attempts": 1,
+          "finalHp": null,
+          "metrics": {
+            "expansions": 182,
+            "wallMs": 180389,
+            "acceptedStates": 315,
+            "rejectedByHigherHp": 176,
+            "sameHpRejected": 91,
+            "replacedLowerHp": 83,
+            "actionTrimmed": 0,
+            "frontierSize": 96,
+            "heapUsedMb": 246,
+            "rssMb": 313.9,
+            "peakHeapUsedMb": 246,
+            "peakRssMb": 313.9,
+            "fairPops": 0,
+            "bestPops": 0,
+            "fairFallbacks": 0,
+            "bestFallbacks": 0,
+            "maxFairQueueAgeExpansions": 0,
+            "minLocalFirstGoalExpansion": null,
+            "attemptsBeforeFirstGoal": null,
+            "cumulativeExpansionsToFirstGoal": null,
+            "cumulativeWallMsToFirstGoal": null,
+            "attempts": 1
+          },
+          "stoppedReasons": [
+            "time-limit"
+          ],
+          "progress": {
+            "primaryFailureClass": "def-deficit",
+            "classCounts": {
+              "def-deficit": 1
+            },
+            "preferredCandidateTags": [
+              "highest-atk",
+              "best-combat",
+              "highest-def",
+              "highest-mdef"
+            ],
+            "recommendedNext": [
+              "backtrack to the previous milestone and try highest-atk or best-combat candidates",
+              "backtrack to the previous milestone and try highest-def or best-combat candidates",
+              "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+            ]
+          }
+        }
+      ],
+      "strictReplay": {
+        "performed": false,
+        "valid": false,
+        "stepsAttempted": 0,
+        "stepsCompleted": 0,
+        "failureStep": null,
+        "failureReason": "route-file-missing",
+        "expectedStateKey": null,
+        "actualStateKey": null,
+        "finalState": null,
+        "error": null,
+        "routeFile": null,
+        "scope": "full-route"
+      },
+      "finalState": null,
+      "finalHp": null,
+      "childMemoryLimited": false,
+      "budget": {
+        "kind": "time",
+        "value": 180000,
+        "maxExpansions": 1000000,
+        "maxRuntimeMs": 180000,
+        "scope": "global-run",
+        "requestedExpansions": 1000000,
+        "requestedRuntimeMs": 180000,
+        "consumedExpansions": 182,
+        "consumedWallMs": 180578,
+        "stoppedReason": "time-limit",
+        "maxHeapMb": 1400,
+        "maxRssMb": 1800,
+        "memoryCheckIntervalExpansions": 1,
+        "memoryCheckIntervalActions": 1,
+        "childOldSpaceMb": 1600
+      },
+      "metrics": {
+        "expansions": 182,
+        "wallMs": 180389,
+        "acceptedStates": 315,
+        "rejectedByHigherHp": 176,
+        "sameHpRejected": 91,
+        "replacedLowerHp": 83,
+        "actionTrimmed": 0,
+        "frontierSize": 96,
+        "heapUsedMb": 246,
+        "rssMb": 313.9,
+        "peakHeapUsedMb": 246,
+        "peakRssMb": 313.9,
+        "fairPops": 0,
+        "bestPops": 0,
+        "fairFallbacks": 0,
+        "bestFallbacks": 0,
+        "maxFairQueueAgeExpansions": 0,
+        "minLocalFirstGoalExpansion": null,
+        "attemptsBeforeFirstGoal": null,
+        "cumulativeFirstGoalExpansion": null,
+        "cumulativeFirstGoalWallMs": null,
+        "attemptsToFinalRequestedMilestone": null,
+        "expansionsToFinalRequestedMilestone": null,
+        "wallMsToFinalRequestedMilestone": null
+      },
+      "memory": {
+        "maxHeapMb": 1400,
+        "maxRssMb": 1800,
+        "memoryCheckIntervalExpansions": 1,
+        "memoryCheckIntervalActions": 1,
+        "peakHeapUsedMb": 246,
+        "peakRssMb": 313.9,
+        "heapLimitedCount": 0,
+        "rssLimitedCount": 0,
+        "childMemoryLimitedCount": 0,
+        "searchCompletion": "completed",
+        "childMemoryLimited": false
+      },
+      "progress": null,
+      "stoppedReasons": [
+        "time-limit"
+      ],
+      "completeWithinActionSet": true,
+      "attempts": [
+        {
+          "segmentId": "mt2-hp3834",
+          "startCandidateId": "initial#0",
+          "found": false,
+          "goalCount": 0,
+          "stoppedReason": "time-limit",
+          "expansions": 182,
+          "frontierSize": 96,
+          "firstGoalExpansion": null
+        }
+      ],
+      "searchConfig": {
+        "agendaMode": "best-first",
+        "fairnessEvery": null,
+        "priorityMode": "default",
+        "keyMode": "mutation",
+        "dpSkylineMax": 4,
+        "maxExpansions": 1000000,
+        "maxRuntimeMs": 180000,
+        "maxActionsPerState": 256,
+        "maxHeapMb": 1400,
+        "maxRssMb": 1800,
+        "memoryCheckIntervalExpansions": 1,
+        "memoryCheckIntervalActions": 1,
+        "childOldSpaceMb": 1600,
+        "memory": {
+          "maxHeapMb": 1400,
+          "maxRssMb": 1800,
+          "memoryCheckIntervalExpansions": 1,
+          "memoryCheckIntervalActions": 1,
+          "peakHeapUsedMb": 246,
+          "peakRssMb": 313.9,
+          "heapLimitedCount": 0,
+          "rssLimitedCount": 0,
+          "stoppedReason": null,
+          "stoppedAtExpansion": null,
+          "stoppedAtPhase": null,
+          "searchCompletion": "completed"
+        },
+        "actionProviderMode": "segment-provider",
+        "budgetScope": "global-run",
+        "budgetKind": "time",
+        "budgetValue": 180000
+      },
+      "process": {
+        "status": 0,
+        "signal": null,
+        "error": null,
+        "wallMs": 182676,
+        "stdoutTail": "    {\n      \"segmentId\": \"mt2-hp3834\",\n      \"label\": \"MT2 四怪前 3834 基准\",\n      \"found\": false,\n      \"startCandidatesTried\": 1,\n      \"candidateCount\": 0,\n      \"candidates\": [],\n      \"attempts\": [\n        {\n          \"startCandidateId\": \"initial#0\",\n          \"found\": false,\n          \"goalCount\": 0,\n          \"resourceTiming\": {\n            \"model\": \"breakpoint-v1\",\n            \"targetLimit\": 16,\n            \"resourceLimit\": 4,\n            \"thresholdLimit\": 3,\n            \"skylineMax\": 4,\n            \"analyzedStates\": 542\n          },\n          \"memory\": {\n            \"maxHeapMb\": 1400,\n            \"maxRssMb\": 1800,\n            \"memoryCheckIntervalExpansions\": 1,\n            \"memoryCheckIntervalActions\": 1,\n            \"memoryLimitsEnabled\": true,\n            \"successorCheckGranularity\": \"action-batch\",\n            \"peakHeapUsedMb\": 246,\n            \"peakRssMb\": 313.9,\n            \"stopHeapUsedMb\": null,\n            \"stopRssMb\": null,\n            \"stoppedReason\": null,\n            \"stoppedAtExpansion\": null,\n            \"stoppedAtPhase\": null,\n            \"sampleCount\": 946,\n            \"heapOvershootMb\": 0,\n            \"rssOvershootMb\": 0\n          }\n        }\n      ],\n      \"failurePropagation\": {\n        \"primaryFailureClass\": \"def-deficit\",\n        \"classCounts\": {\n          \"def-deficit\": 1\n        },\n        \"preferredCandidateTags\": [\n          \"highest-atk\",\n          \"best-combat\",\n          \"highest-def\",\n          \"highest-mdef\"\n        ],\n        \"recommendedNext\": [\n          \"backtrack to the previous milestone and try highest-atk or best-combat candidates\",\n          \"backtrack to the previous milestone and try highest-def or best-combat candidates\",\n          \"backtrack to the previous milestone and try highest-mdef or best-combat candidates\"\n        ]\n      }\n    }\n  ],\n  \"checkpoints\": []\n}\nReport written: E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-180000-r1.json\n",
+        "stderrTail": ""
+      },
+      "provenance": {
+        "startedCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+        "solverCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+        "finishedCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+        "commitStable": true
+      },
+      "reportFile": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-180000-r1.json",
+      "reportStatus": "valid",
+      "diagnosticsVersion": null,
+      "evaluationAttemptLedger": [
+        {
+          "segmentId": "mt2-hp3834",
+          "phase": "initial",
+          "startCandidateId": "initial#0",
+          "found": false,
+          "goalCount": 0,
+          "diagnostics": {
+            "dp": {
+              "keys": 225,
+              "priorityMode": "default",
+              "dpSkylineMax": 4,
+              "actionProviderMode": "segment-provider",
+              "stoppedReason": "time-limit",
+              "maxRuntimeMs": 179999,
+              "maxHeapMb": 1400,
+              "maxRssMb": 1800,
+              "memoryCheckIntervalExpansions": 1,
+              "memoryCheckIntervalActions": 1,
+              "memoryLimitsEnabled": true,
+              "wallMs": 180389,
+              "heapUsedMb": 246,
+              "rssMb": 313.9,
+              "memory": {
+                "maxHeapMb": 1400,
+                "maxRssMb": 1800,
+                "memoryCheckIntervalExpansions": 1,
+                "memoryCheckIntervalActions": 1,
+                "memoryLimitsEnabled": true,
+                "successorCheckGranularity": "action-batch",
+                "peakHeapUsedMb": 246,
+                "peakRssMb": 313.9,
+                "stopHeapUsedMb": null,
+                "stopRssMb": null,
+                "stoppedReason": null,
+                "stoppedAtExpansion": null,
+                "stoppedAtPhase": null,
+                "sampleCount": 946,
+                "heapOvershootMb": 0,
+                "rssOvershootMb": 0
+              },
+              "maxExpansions": 1000000,
+              "expansions": 182,
+              "frontierSize": 96,
+              "expansionBudgetExhausted": false,
+              "completeWithinActionSet": true,
+              "maxActionsPerState": 256,
+              "actionTrimmed": 0,
+              "statesWithActionTrim": 0,
+              "maxActionsGeneratedForState": 7,
+              "observerCaptureMode": "off",
+              "observerCaptureElapsedMs": 0,
+              "agendaFairness": {
+                "enabled": false,
+                "fairnessEvery": 32,
+                "bestPops": 0,
+                "fairPops": 0,
+                "fairFallbacks": 0,
+                "bestFallbacks": 0,
+                "skippedInactive": 0,
+                "skippedAlreadyExpanded": 0,
+                "maxFairQueueAgeExpansions": 0,
+                "fairCursor": 0,
+                "fairQueueLength": 0,
+                "fairActiveUnexpanded": 0
+              },
+              "actionsGeneratedByKind": {
+                "changeFloor": 182,
+                "battle": 399
+              },
+              "actionsExpandedByKind": {
+                "changeFloor": 182,
+                "battle": 399
+              },
+              "actionsKeptByKind": {
+                "changeFloor": 131,
+                "battle": 183
+              },
+              "actionsDominatedByKind": {
+                "changeFloor": 51,
+                "battle": 216
+              },
+              "uniqueBattleTargets": 10,
+              "uniquePortalEntries": 2,
+              "acceptedStates": 315,
+              "newKeys": 225,
+              "replacedLowerHp": 83,
+              "sameHpShorterRoute": 0,
+              "rejectedByHigherHp": 176,
+              "sameHpRejected": 91,
+              "agendaMode": "best-first",
+              "fairnessEvery": 32,
+              "stopOnFirstGoal": true,
+              "continueAfterGoal": false,
+              "keyMode": "mutation",
+              "targetFloorOrder": 2,
+              "foundFirstGoal": false,
+              "firstGoalExpansion": null,
+              "firstGoalElapsedMs": null,
+              "statProgress": {
+                "maxHeroSeen": {
+                  "hp": 5162,
+                  "atk": 72,
+                  "def": 35,
+                  "mdef": 290,
+                  "exp": 24
+                },
+                "firstStatGainExpansion": {
+                  "atk": 1,
+                  "def": 1,
+                  "mdef": 1
+                },
+                "acceptedStatGainStates": {
+                  "atk": 278,
+                  "def": 285,
+                  "mdef": 226
+                },
+                "firstStatGainAction": {
+                  "atk": {
+                    "summary": "battle:zombieKnight@MT2:4,3",
+                    "kind": "battle",
+                    "preStats": {
+                      "hp": 4362,
+                      "atk": 31,
+                      "def": 19,
+                      "mdef": 250,
+                      "exp": 10
+                    },
+                    "postStats": {
+                      "hp": 3540,
+                      "atk": 33,
+                      "def": 21,
+                      "mdef": 270,
+                      "exp": 12
+                    }
+                  },
+                  "def": {
+                    "summary": "battle:zombieKnight@MT2:4,3",
+                    "kind": "battle",
+                    "preStats": {
+                      "hp": 4362,
+                      "atk": 31,
+                      "def": 19,
+                      "mdef": 250,
+                      "exp": 10
+                    },
+                    "postStats": {
+                      "hp": 3540,
+                      "atk": 33,
+                      "def": 21,
+                      "mdef": 270,
+                      "exp": 12
+                    }
+                  },
+                  "mdef": {
+                    "summary": "battle:zombieKnight@MT2:4,3",
+                    "kind": "battle",
+                    "preStats": {
+                      "hp": 4362,
+                      "atk": 31,
+                      "def": 19,
+                      "mdef": 250,
+                      "exp": 10
+                    },
+                    "postStats": {
+                      "hp": 3540,
+                      "atk": 33,
+                      "def": 21,
+                      "mdef": 270,
+                      "exp": 12
+                    }
+                  }
+                }
+              },
+              "foundBestGoal": false,
+              "goalSkylineLimit": 8,
+              "goalSkylineCount": 0,
+              "observerEnabled": false,
+              "observerErrors": 0,
+              "landmarkArchiveCount": 0,
+              "firstGoal": null,
+              "bestGoal": null,
+              "oracle": null,
+              "resourceTiming": {
+                "model": "breakpoint-v1",
+                "targetLimit": 16,
+                "resourceLimit": 4,
+                "thresholdLimit": 3,
+                "skylineMax": 4,
+                "analyzedStates": 542
+              }
+            },
+            "actionTrimmed": 0,
+            "rejectedByHigherHp": 176,
+            "replacedLowerHp": 83,
+            "actionsGeneratedByKind": {
+              "changeFloor": 182,
+              "battle": 399
+            },
+            "actionsExpandedByKind": {
+              "changeFloor": 182,
+              "battle": 399
+            },
+            "actionsKeptByKind": {
+              "changeFloor": 131,
+              "battle": 183
+            },
+            "actionsDominatedByKind": {
+              "changeFloor": 51,
+              "battle": 216
+            },
+            "uniqueBattleTargets": 10,
+            "uniquePortalEntries": 2,
+            "failure": {
+              "failedSegmentId": "mt2-hp3834",
+              "label": "MT2 四怪前 3834 基准",
+              "bestSeen": {
+                "floorId": "MT2",
+                "hero": {
+                  "hp": 5162,
+                  "atk": 31,
+                  "def": 19,
+                  "mdef": 250,
+                  "lv": 3,
+                  "exp": 12,
+                  "money": 0,
+                  "equipment": []
+                },
+                "effectiveHero": {
+                  "hp": 5162,
+                  "atk": 31,
+                  "def": 19,
+                  "mdef": 250,
+                  "lv": 3,
+                  "exp": 12
+                },
+                "routeTail": [
+                  "auto:pickup:poisonWine@MT2:7,1",
+                  "auto:pickup:I585@MT2:5,1",
+                  "battle:skeleton@MT2:4,1",
+                  "auto:pickup:weakWine@MT2:3,2",
+                  "auto:pickup:I577@MT2:2,3",
+                  "battle:ghostSoldier@MT2:2,1",
+                  "auto:pickup:I635@MT2:1,2",
+                  "auto:battle:skeleton@MT2:8,1",
+                  "auto:pickup:I637@MT2:9,2",
+                  "auto:pickup:I578@MT2:10,3",
+                  {
+                    "summary": "changeFloor@MT2:6,0",
+                    "kind": "changeFloor",
+                    "fingerprint": "changeFloor|changeFloor@MT2:6,0",
+                    "floorId": "MT2",
+                    "x": 6,
+                    "y": 0,
+                    "target": null,
+                    "stance": {
+                      "x": 6,
+                      "y": 1
+                    },
+                    "path": [
+                      "right",
+                      "right",
+                      "right"
+                    ],
+                    "direction": "up",
+                    "tool": null,
+                    "equipId": null,
+                    "equipType": null,
+                    "targetFloorId": null,
+                    "enemyId": null,
+                    "itemId": null,
+                    "doorId": null,
+                    "eventId": null,
+                    "changeFloor": {
+                      "floorId": ":before",
+                      "stair": "upFloor"
+                    },
+                    "estimate": null,
+                    "plan": null,
+                    "planEntries": null
+                  },
+                  {
+                    "summary": "changeFloor@MT1:6,0",
+                    "kind": "changeFloor",
+                    "fingerprint": "changeFloor|changeFloor@MT1:6,0",
+                    "floorId": "MT1",
+                    "x": 6,
+                    "y": 0,
+                    "target": null,
+                    "stance": {
+                      "x": 6,
+                      "y": 1
+                    },
+                    "path": [
+                      "down"
+                    ],
+                    "direction": "up",
+                    "tool": null,
+                    "equipId": null,
+                    "equipType": null,
+                    "targetFloorId": null,
+                    "enemyId": null,
+                    "itemId": null,
+                    "doorId": null,
+                    "eventId": null,
+                    "changeFloor": {
+                      "floorId": ":next",
+                      "stair": "downFloor"
+                    },
+                    "estimate": null,
+                    "plan": null,
+                    "planEntries": null
+                  }
+                ]
+              },
+              "missingGoalFields": [
+                {
+                  "field": "hero.atk",
+                  "expected": 72,
+                  "actual": 31
+                },
+                {
+                  "field": "hero.def",
+                  "expected": 35,
+                  "actual": 19
+                },
+                {
+                  "field": "hero.mdef",
+                  "expected": 290,
+                  "actual": 250
+                }
+              ],
+              "failureClass": "def-deficit",
+              "failureReason": "defense threshold is not met",
+              "preferredCandidateTags": [
+                "highest-atk",
+                "best-combat",
+                "highest-def",
+                "highest-mdef"
+              ],
+              "recommendedRepair": "backtrack to the previous milestone and try highest-def or best-combat candidates",
+              "failurePropagation": {
+                "failureClass": "def-deficit",
+                "failureReason": "defense threshold is not met",
+                "allFailureClasses": [
+                  {
+                    "failureClass": "atk-deficit",
+                    "reason": "attack threshold is not met",
+                    "recommendation": "backtrack to the previous milestone and try highest-atk or best-combat candidates"
+                  },
+                  {
+                    "failureClass": "def-deficit",
+                    "reason": "defense threshold is not met",
+                    "recommendation": "backtrack to the previous milestone and try highest-def or best-combat candidates"
+                  },
+                  {
+                    "failureClass": "mdef-deficit",
+                    "reason": "magic-defense threshold is not met",
+                    "recommendation": "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+                  }
+                ],
+                "preferredCandidateTags": [
+                  "highest-atk",
+                  "best-combat",
+                  "highest-def",
+                  "highest-mdef"
+                ],
+                "recommendedRepair": "backtrack to the previous milestone and try highest-def or best-combat candidates",
+                "recommendedNext": [
+                  "backtrack to the previous milestone and try highest-atk or best-combat candidates",
+                  "backtrack to the previous milestone and try highest-def or best-combat candidates",
+                  "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+                ],
+                "segmentId": "mt2-hp3834"
+              },
+              "diagnostics": {
+                "actionTrimmed": 0,
+                "frontierRemaining": 96,
+                "rejectedByHigherHp": 176,
+                "replacedLowerHp": 83
+              },
+              "recommendedNext": [
+                "backtrack to the previous milestone and try highest-atk or best-combat candidates",
+                "backtrack to the previous milestone and try highest-def or best-combat candidates",
+                "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+              ]
+            },
+            "goalSkyline": {
+              "primaryOutput": true,
+              "count": 0,
+              "candidates": []
+            },
+            "actionScope": {
+              "actionKinds": [
+                "battle",
+                "pickup",
+                "equip",
+                "openDoor",
+                "useTool",
+                "changeFloor",
+                "event"
+              ],
+              "forbidUnsupportedEvents": true,
+              "allowedFloors": [
+                "MT1",
+                "MT2"
+              ],
+              "allowChangeFloors": [
+                "MT2:6,0",
+                "MT1:6,0"
+              ]
+            }
+          }
+        }
+      ],
+      "ledgerConsistency": {
+        "ledgerExpansions": 182,
+        "budgetExpansions": 182,
+        "match": true,
+        "delta": 0
+      },
+      "ledgerCosts": {
+        "totalExpansions": 182,
+        "totalWallMs": 180389,
+        "byPhase": {
+          "initial": {
+            "expansions": 182,
+            "wallMs": 180389,
+            "attempts": 1
+          }
+        },
+        "bySegment": {
+          "mt2-hp3834": {
+            "expansions": 182,
+            "wallMs": 180389,
+            "attempts": 1,
+            "expansionsToFirstGoal": null,
+            "wallMsToFirstGoal": null,
+            "attemptsToFirstGoal": null,
+            "firstGoal": null
+          }
+        },
+        "repairOverhead": 0,
+        "firstGoal": null,
+        "finalRequestedMilestoneGoal": null,
+        "expansionsToFirstGoal": null,
+        "wallMsToFirstGoal": null,
+        "expansionsToFinalRequestedMilestone": null,
+        "wallMsToFinalRequestedMilestone": null,
+        "attemptsToFinalRequestedMilestone": null,
+        "attemptCount": 1
+      },
+      "runStatus": "completed-with-search-failures",
+      "regressionFromBaseline": null,
+      "segmentRegressionFromBaseline": null,
+      "matrixCommitMismatch": false
+    }
+  ],
+  "matrix": {
+    "best-first": {
+      "time:180000": [
+        {
+          "policy": "best-first",
+          "repeat": 1,
+          "found": false,
+          "reachedMilestone": "mt2-local-3582",
+          "failedSegmentId": "mt2-hp3834",
+          "segmentMetrics": [
+            {
+              "segmentId": "mt2-hp3834",
+              "label": "MT2 四怪前 3834 基准",
+              "found": false,
+              "attempts": 1,
+              "finalHp": null,
+              "metrics": {
+                "expansions": 182,
+                "wallMs": 180389,
+                "acceptedStates": 315,
+                "rejectedByHigherHp": 176,
+                "sameHpRejected": 91,
+                "replacedLowerHp": 83,
+                "actionTrimmed": 0,
+                "frontierSize": 96,
+                "heapUsedMb": 246,
+                "rssMb": 313.9,
+                "peakHeapUsedMb": 246,
+                "peakRssMb": 313.9,
+                "fairPops": 0,
+                "bestPops": 0,
+                "fairFallbacks": 0,
+                "bestFallbacks": 0,
+                "maxFairQueueAgeExpansions": 0,
+                "minLocalFirstGoalExpansion": null,
+                "attemptsBeforeFirstGoal": null,
+                "cumulativeExpansionsToFirstGoal": null,
+                "cumulativeWallMsToFirstGoal": null,
+                "attempts": 1
+              },
+              "stoppedReasons": [
+                "time-limit"
+              ],
+              "progress": {
+                "primaryFailureClass": "def-deficit",
+                "classCounts": {
+                  "def-deficit": 1
+                },
+                "preferredCandidateTags": [
+                  "highest-atk",
+                  "best-combat",
+                  "highest-def",
+                  "highest-mdef"
+                ],
+                "recommendedNext": [
+                  "backtrack to the previous milestone and try highest-atk or best-combat candidates",
+                  "backtrack to the previous milestone and try highest-def or best-combat candidates",
+                  "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+                ]
+              }
+            }
+          ],
+          "strictReplay": {
+            "performed": false,
+            "valid": false,
+            "stepsAttempted": 0,
+            "stepsCompleted": 0,
+            "failureStep": null,
+            "failureReason": "route-file-missing",
+            "expectedStateKey": null,
+            "actualStateKey": null,
+            "finalState": null,
+            "error": null,
+            "routeFile": null,
+            "scope": "full-route"
+          },
+          "finalState": null,
+          "finalHp": null,
+          "childMemoryLimited": false,
+          "budget": {
+            "kind": "time",
+            "value": 180000,
+            "maxExpansions": 1000000,
+            "maxRuntimeMs": 180000,
+            "scope": "global-run",
+            "requestedExpansions": 1000000,
+            "requestedRuntimeMs": 180000,
+            "consumedExpansions": 182,
+            "consumedWallMs": 180578,
+            "stoppedReason": "time-limit",
+            "maxHeapMb": 1400,
+            "maxRssMb": 1800,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "childOldSpaceMb": 1600
+          },
+          "metrics": {
+            "expansions": 182,
+            "wallMs": 180389,
+            "acceptedStates": 315,
+            "rejectedByHigherHp": 176,
+            "sameHpRejected": 91,
+            "replacedLowerHp": 83,
+            "actionTrimmed": 0,
+            "frontierSize": 96,
+            "heapUsedMb": 246,
+            "rssMb": 313.9,
+            "peakHeapUsedMb": 246,
+            "peakRssMb": 313.9,
+            "fairPops": 0,
+            "bestPops": 0,
+            "fairFallbacks": 0,
+            "bestFallbacks": 0,
+            "maxFairQueueAgeExpansions": 0,
+            "minLocalFirstGoalExpansion": null,
+            "attemptsBeforeFirstGoal": null,
+            "cumulativeFirstGoalExpansion": null,
+            "cumulativeFirstGoalWallMs": null,
+            "attemptsToFinalRequestedMilestone": null,
+            "expansionsToFinalRequestedMilestone": null,
+            "wallMsToFinalRequestedMilestone": null
+          },
+          "memory": {
+            "maxHeapMb": 1400,
+            "maxRssMb": 1800,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "peakHeapUsedMb": 246,
+            "peakRssMb": 313.9,
+            "heapLimitedCount": 0,
+            "rssLimitedCount": 0,
+            "childMemoryLimitedCount": 0,
+            "searchCompletion": "completed",
+            "childMemoryLimited": false
+          },
+          "progress": null,
+          "stoppedReasons": [
+            "time-limit"
+          ],
+          "completeWithinActionSet": true,
+          "attempts": [
+            {
+              "segmentId": "mt2-hp3834",
+              "startCandidateId": "initial#0",
+              "found": false,
+              "goalCount": 0,
+              "stoppedReason": "time-limit",
+              "expansions": 182,
+              "frontierSize": 96,
+              "firstGoalExpansion": null
+            }
+          ],
+          "searchConfig": {
+            "agendaMode": "best-first",
+            "fairnessEvery": null,
+            "priorityMode": "default",
+            "keyMode": "mutation",
+            "dpSkylineMax": 4,
+            "maxExpansions": 1000000,
+            "maxRuntimeMs": 180000,
+            "maxActionsPerState": 256,
+            "maxHeapMb": 1400,
+            "maxRssMb": 1800,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "childOldSpaceMb": 1600,
+            "memory": {
+              "maxHeapMb": 1400,
+              "maxRssMb": 1800,
+              "memoryCheckIntervalExpansions": 1,
+              "memoryCheckIntervalActions": 1,
+              "peakHeapUsedMb": 246,
+              "peakRssMb": 313.9,
+              "heapLimitedCount": 0,
+              "rssLimitedCount": 0,
+              "stoppedReason": null,
+              "stoppedAtExpansion": null,
+              "stoppedAtPhase": null,
+              "searchCompletion": "completed"
+            },
+            "actionProviderMode": "segment-provider",
+            "budgetScope": "global-run",
+            "budgetKind": "time",
+            "budgetValue": 180000
+          },
+          "process": {
+            "status": 0,
+            "signal": null,
+            "error": null,
+            "wallMs": 182676,
+            "stdoutTail": "    {\n      \"segmentId\": \"mt2-hp3834\",\n      \"label\": \"MT2 四怪前 3834 基准\",\n      \"found\": false,\n      \"startCandidatesTried\": 1,\n      \"candidateCount\": 0,\n      \"candidates\": [],\n      \"attempts\": [\n        {\n          \"startCandidateId\": \"initial#0\",\n          \"found\": false,\n          \"goalCount\": 0,\n          \"resourceTiming\": {\n            \"model\": \"breakpoint-v1\",\n            \"targetLimit\": 16,\n            \"resourceLimit\": 4,\n            \"thresholdLimit\": 3,\n            \"skylineMax\": 4,\n            \"analyzedStates\": 542\n          },\n          \"memory\": {\n            \"maxHeapMb\": 1400,\n            \"maxRssMb\": 1800,\n            \"memoryCheckIntervalExpansions\": 1,\n            \"memoryCheckIntervalActions\": 1,\n            \"memoryLimitsEnabled\": true,\n            \"successorCheckGranularity\": \"action-batch\",\n            \"peakHeapUsedMb\": 246,\n            \"peakRssMb\": 313.9,\n            \"stopHeapUsedMb\": null,\n            \"stopRssMb\": null,\n            \"stoppedReason\": null,\n            \"stoppedAtExpansion\": null,\n            \"stoppedAtPhase\": null,\n            \"sampleCount\": 946,\n            \"heapOvershootMb\": 0,\n            \"rssOvershootMb\": 0\n          }\n        }\n      ],\n      \"failurePropagation\": {\n        \"primaryFailureClass\": \"def-deficit\",\n        \"classCounts\": {\n          \"def-deficit\": 1\n        },\n        \"preferredCandidateTags\": [\n          \"highest-atk\",\n          \"best-combat\",\n          \"highest-def\",\n          \"highest-mdef\"\n        ],\n        \"recommendedNext\": [\n          \"backtrack to the previous milestone and try highest-atk or best-combat candidates\",\n          \"backtrack to the previous milestone and try highest-def or best-combat candidates\",\n          \"backtrack to the previous milestone and try highest-mdef or best-combat candidates\"\n        ]\n      }\n    }\n  ],\n  \"checkpoints\": []\n}\nReport written: E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-180000-r1.json\n",
+            "stderrTail": ""
+          },
+          "provenance": {
+            "startedCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+            "solverCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+            "finishedCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+            "commitStable": true
+          },
+          "reportFile": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-180000-r1.json",
+          "reportStatus": "valid",
+          "diagnosticsVersion": null,
+          "evaluationAttemptLedger": [
+            {
+              "segmentId": "mt2-hp3834",
+              "phase": "initial",
+              "startCandidateId": "initial#0",
+              "found": false,
+              "goalCount": 0,
+              "diagnostics": {
+                "dp": {
+                  "keys": 225,
+                  "priorityMode": "default",
+                  "dpSkylineMax": 4,
+                  "actionProviderMode": "segment-provider",
+                  "stoppedReason": "time-limit",
+                  "maxRuntimeMs": 179999,
+                  "maxHeapMb": 1400,
+                  "maxRssMb": 1800,
+                  "memoryCheckIntervalExpansions": 1,
+                  "memoryCheckIntervalActions": 1,
+                  "memoryLimitsEnabled": true,
+                  "wallMs": 180389,
+                  "heapUsedMb": 246,
+                  "rssMb": 313.9,
+                  "memory": {
+                    "maxHeapMb": 1400,
+                    "maxRssMb": 1800,
+                    "memoryCheckIntervalExpansions": 1,
+                    "memoryCheckIntervalActions": 1,
+                    "memoryLimitsEnabled": true,
+                    "successorCheckGranularity": "action-batch",
+                    "peakHeapUsedMb": 246,
+                    "peakRssMb": 313.9,
+                    "stopHeapUsedMb": null,
+                    "stopRssMb": null,
+                    "stoppedReason": null,
+                    "stoppedAtExpansion": null,
+                    "stoppedAtPhase": null,
+                    "sampleCount": 946,
+                    "heapOvershootMb": 0,
+                    "rssOvershootMb": 0
+                  },
+                  "maxExpansions": 1000000,
+                  "expansions": 182,
+                  "frontierSize": 96,
+                  "expansionBudgetExhausted": false,
+                  "completeWithinActionSet": true,
+                  "maxActionsPerState": 256,
+                  "actionTrimmed": 0,
+                  "statesWithActionTrim": 0,
+                  "maxActionsGeneratedForState": 7,
+                  "observerCaptureMode": "off",
+                  "observerCaptureElapsedMs": 0,
+                  "agendaFairness": {
+                    "enabled": false,
+                    "fairnessEvery": 32,
+                    "bestPops": 0,
+                    "fairPops": 0,
+                    "fairFallbacks": 0,
+                    "bestFallbacks": 0,
+                    "skippedInactive": 0,
+                    "skippedAlreadyExpanded": 0,
+                    "maxFairQueueAgeExpansions": 0,
+                    "fairCursor": 0,
+                    "fairQueueLength": 0,
+                    "fairActiveUnexpanded": 0
+                  },
+                  "actionsGeneratedByKind": {
+                    "changeFloor": 182,
+                    "battle": 399
+                  },
+                  "actionsExpandedByKind": {
+                    "changeFloor": 182,
+                    "battle": 399
+                  },
+                  "actionsKeptByKind": {
+                    "changeFloor": 131,
+                    "battle": 183
+                  },
+                  "actionsDominatedByKind": {
+                    "changeFloor": 51,
+                    "battle": 216
+                  },
+                  "uniqueBattleTargets": 10,
+                  "uniquePortalEntries": 2,
+                  "acceptedStates": 315,
+                  "newKeys": 225,
+                  "replacedLowerHp": 83,
+                  "sameHpShorterRoute": 0,
+                  "rejectedByHigherHp": 176,
+                  "sameHpRejected": 91,
+                  "agendaMode": "best-first",
+                  "fairnessEvery": 32,
+                  "stopOnFirstGoal": true,
+                  "continueAfterGoal": false,
+                  "keyMode": "mutation",
+                  "targetFloorOrder": 2,
+                  "foundFirstGoal": false,
+                  "firstGoalExpansion": null,
+                  "firstGoalElapsedMs": null,
+                  "statProgress": {
+                    "maxHeroSeen": {
+                      "hp": 5162,
+                      "atk": 72,
+                      "def": 35,
+                      "mdef": 290,
+                      "exp": 24
+                    },
+                    "firstStatGainExpansion": {
+                      "atk": 1,
+                      "def": 1,
+                      "mdef": 1
+                    },
+                    "acceptedStatGainStates": {
+                      "atk": 278,
+                      "def": 285,
+                      "mdef": 226
+                    },
+                    "firstStatGainAction": {
+                      "atk": {
+                        "summary": "battle:zombieKnight@MT2:4,3",
+                        "kind": "battle",
+                        "preStats": {
+                          "hp": 4362,
+                          "atk": 31,
+                          "def": 19,
+                          "mdef": 250,
+                          "exp": 10
+                        },
+                        "postStats": {
+                          "hp": 3540,
+                          "atk": 33,
+                          "def": 21,
+                          "mdef": 270,
+                          "exp": 12
+                        }
+                      },
+                      "def": {
+                        "summary": "battle:zombieKnight@MT2:4,3",
+                        "kind": "battle",
+                        "preStats": {
+                          "hp": 4362,
+                          "atk": 31,
+                          "def": 19,
+                          "mdef": 250,
+                          "exp": 10
+                        },
+                        "postStats": {
+                          "hp": 3540,
+                          "atk": 33,
+                          "def": 21,
+                          "mdef": 270,
+                          "exp": 12
+                        }
+                      },
+                      "mdef": {
+                        "summary": "battle:zombieKnight@MT2:4,3",
+                        "kind": "battle",
+                        "preStats": {
+                          "hp": 4362,
+                          "atk": 31,
+                          "def": 19,
+                          "mdef": 250,
+                          "exp": 10
+                        },
+                        "postStats": {
+                          "hp": 3540,
+                          "atk": 33,
+                          "def": 21,
+                          "mdef": 270,
+                          "exp": 12
+                        }
+                      }
+                    }
+                  },
+                  "foundBestGoal": false,
+                  "goalSkylineLimit": 8,
+                  "goalSkylineCount": 0,
+                  "observerEnabled": false,
+                  "observerErrors": 0,
+                  "landmarkArchiveCount": 0,
+                  "firstGoal": null,
+                  "bestGoal": null,
+                  "oracle": null,
+                  "resourceTiming": {
+                    "model": "breakpoint-v1",
+                    "targetLimit": 16,
+                    "resourceLimit": 4,
+                    "thresholdLimit": 3,
+                    "skylineMax": 4,
+                    "analyzedStates": 542
+                  }
+                },
+                "actionTrimmed": 0,
+                "rejectedByHigherHp": 176,
+                "replacedLowerHp": 83,
+                "actionsGeneratedByKind": {
+                  "changeFloor": 182,
+                  "battle": 399
+                },
+                "actionsExpandedByKind": {
+                  "changeFloor": 182,
+                  "battle": 399
+                },
+                "actionsKeptByKind": {
+                  "changeFloor": 131,
+                  "battle": 183
+                },
+                "actionsDominatedByKind": {
+                  "changeFloor": 51,
+                  "battle": 216
+                },
+                "uniqueBattleTargets": 10,
+                "uniquePortalEntries": 2,
+                "failure": {
+                  "failedSegmentId": "mt2-hp3834",
+                  "label": "MT2 四怪前 3834 基准",
+                  "bestSeen": {
+                    "floorId": "MT2",
+                    "hero": {
+                      "hp": 5162,
+                      "atk": 31,
+                      "def": 19,
+                      "mdef": 250,
+                      "lv": 3,
+                      "exp": 12,
+                      "money": 0,
+                      "equipment": []
+                    },
+                    "effectiveHero": {
+                      "hp": 5162,
+                      "atk": 31,
+                      "def": 19,
+                      "mdef": 250,
+                      "lv": 3,
+                      "exp": 12
+                    },
+                    "routeTail": [
+                      "auto:pickup:poisonWine@MT2:7,1",
+                      "auto:pickup:I585@MT2:5,1",
+                      "battle:skeleton@MT2:4,1",
+                      "auto:pickup:weakWine@MT2:3,2",
+                      "auto:pickup:I577@MT2:2,3",
+                      "battle:ghostSoldier@MT2:2,1",
+                      "auto:pickup:I635@MT2:1,2",
+                      "auto:battle:skeleton@MT2:8,1",
+                      "auto:pickup:I637@MT2:9,2",
+                      "auto:pickup:I578@MT2:10,3",
+                      {
+                        "summary": "changeFloor@MT2:6,0",
+                        "kind": "changeFloor",
+                        "fingerprint": "changeFloor|changeFloor@MT2:6,0",
+                        "floorId": "MT2",
+                        "x": 6,
+                        "y": 0,
+                        "target": null,
+                        "stance": {
+                          "x": 6,
+                          "y": 1
+                        },
+                        "path": [
+                          "right",
+                          "right",
+                          "right"
+                        ],
+                        "direction": "up",
+                        "tool": null,
+                        "equipId": null,
+                        "equipType": null,
+                        "targetFloorId": null,
+                        "enemyId": null,
+                        "itemId": null,
+                        "doorId": null,
+                        "eventId": null,
+                        "changeFloor": {
+                          "floorId": ":before",
+                          "stair": "upFloor"
+                        },
+                        "estimate": null,
+                        "plan": null,
+                        "planEntries": null
+                      },
+                      {
+                        "summary": "changeFloor@MT1:6,0",
+                        "kind": "changeFloor",
+                        "fingerprint": "changeFloor|changeFloor@MT1:6,0",
+                        "floorId": "MT1",
+                        "x": 6,
+                        "y": 0,
+                        "target": null,
+                        "stance": {
+                          "x": 6,
+                          "y": 1
+                        },
+                        "path": [
+                          "down"
+                        ],
+                        "direction": "up",
+                        "tool": null,
+                        "equipId": null,
+                        "equipType": null,
+                        "targetFloorId": null,
+                        "enemyId": null,
+                        "itemId": null,
+                        "doorId": null,
+                        "eventId": null,
+                        "changeFloor": {
+                          "floorId": ":next",
+                          "stair": "downFloor"
+                        },
+                        "estimate": null,
+                        "plan": null,
+                        "planEntries": null
+                      }
+                    ]
+                  },
+                  "missingGoalFields": [
+                    {
+                      "field": "hero.atk",
+                      "expected": 72,
+                      "actual": 31
+                    },
+                    {
+                      "field": "hero.def",
+                      "expected": 35,
+                      "actual": 19
+                    },
+                    {
+                      "field": "hero.mdef",
+                      "expected": 290,
+                      "actual": 250
+                    }
+                  ],
+                  "failureClass": "def-deficit",
+                  "failureReason": "defense threshold is not met",
+                  "preferredCandidateTags": [
+                    "highest-atk",
+                    "best-combat",
+                    "highest-def",
+                    "highest-mdef"
+                  ],
+                  "recommendedRepair": "backtrack to the previous milestone and try highest-def or best-combat candidates",
+                  "failurePropagation": {
+                    "failureClass": "def-deficit",
+                    "failureReason": "defense threshold is not met",
+                    "allFailureClasses": [
+                      {
+                        "failureClass": "atk-deficit",
+                        "reason": "attack threshold is not met",
+                        "recommendation": "backtrack to the previous milestone and try highest-atk or best-combat candidates"
+                      },
+                      {
+                        "failureClass": "def-deficit",
+                        "reason": "defense threshold is not met",
+                        "recommendation": "backtrack to the previous milestone and try highest-def or best-combat candidates"
+                      },
+                      {
+                        "failureClass": "mdef-deficit",
+                        "reason": "magic-defense threshold is not met",
+                        "recommendation": "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+                      }
+                    ],
+                    "preferredCandidateTags": [
+                      "highest-atk",
+                      "best-combat",
+                      "highest-def",
+                      "highest-mdef"
+                    ],
+                    "recommendedRepair": "backtrack to the previous milestone and try highest-def or best-combat candidates",
+                    "recommendedNext": [
+                      "backtrack to the previous milestone and try highest-atk or best-combat candidates",
+                      "backtrack to the previous milestone and try highest-def or best-combat candidates",
+                      "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+                    ],
+                    "segmentId": "mt2-hp3834"
+                  },
+                  "diagnostics": {
+                    "actionTrimmed": 0,
+                    "frontierRemaining": 96,
+                    "rejectedByHigherHp": 176,
+                    "replacedLowerHp": 83
+                  },
+                  "recommendedNext": [
+                    "backtrack to the previous milestone and try highest-atk or best-combat candidates",
+                    "backtrack to the previous milestone and try highest-def or best-combat candidates",
+                    "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+                  ]
+                },
+                "goalSkyline": {
+                  "primaryOutput": true,
+                  "count": 0,
+                  "candidates": []
+                },
+                "actionScope": {
+                  "actionKinds": [
+                    "battle",
+                    "pickup",
+                    "equip",
+                    "openDoor",
+                    "useTool",
+                    "changeFloor",
+                    "event"
+                  ],
+                  "forbidUnsupportedEvents": true,
+                  "allowedFloors": [
+                    "MT1",
+                    "MT2"
+                  ],
+                  "allowChangeFloors": [
+                    "MT2:6,0",
+                    "MT1:6,0"
+                  ]
+                }
+              }
+            }
+          ],
+          "ledgerConsistency": {
+            "ledgerExpansions": 182,
+            "budgetExpansions": 182,
+            "match": true,
+            "delta": 0
+          },
+          "ledgerCosts": {
+            "totalExpansions": 182,
+            "totalWallMs": 180389,
+            "byPhase": {
+              "initial": {
+                "expansions": 182,
+                "wallMs": 180389,
+                "attempts": 1
+              }
+            },
+            "bySegment": {
+              "mt2-hp3834": {
+                "expansions": 182,
+                "wallMs": 180389,
+                "attempts": 1,
+                "expansionsToFirstGoal": null,
+                "wallMsToFirstGoal": null,
+                "attemptsToFirstGoal": null,
+                "firstGoal": null
+              }
+            },
+            "repairOverhead": 0,
+            "firstGoal": null,
+            "finalRequestedMilestoneGoal": null,
+            "expansionsToFirstGoal": null,
+            "wallMsToFirstGoal": null,
+            "expansionsToFinalRequestedMilestone": null,
+            "wallMsToFinalRequestedMilestone": null,
+            "attemptsToFinalRequestedMilestone": null,
+            "attemptCount": 1
+          },
+          "runStatus": "completed-with-search-failures",
+          "regressionFromBaseline": null,
+          "segmentRegressionFromBaseline": null
+        }
+      ]
+    }
+  },
+  "summaries": {
+    "best-first": {
+      "time:180000": {
+        "budget": {
+          "kind": "time",
+          "value": 180000,
+          "maxExpansions": 1000000,
+          "maxRuntimeMs": 180000,
+          "scope": "global-run",
+          "requestedExpansions": 1000000,
+          "requestedRuntimeMs": 180000,
+          "consumedExpansions": 182,
+          "consumedWallMs": 180578,
+          "stoppedReason": "time-limit",
+          "maxHeapMb": 1400,
+          "maxRssMb": 1800,
+          "memoryCheckIntervalExpansions": 1,
+          "memoryCheckIntervalActions": 1,
+          "childOldSpaceMb": 1600
+        },
+        "repeats": {
+          "count": 1,
+          "foundCount": 0,
+          "replayValidCount": 0,
+          "metrics": {
+            "expansions": {
+              "min": 182,
+              "max": 182,
+              "median": 182,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "wallMs": {
+              "min": 180389,
+              "max": 180389,
+              "median": 180389,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "fairPops": {
+              "min": 0,
+              "max": 0,
+              "median": 0,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "bestPops": {
+              "min": 0,
+              "max": 0,
+              "median": 0,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "frontierSize": {
+              "min": 96,
+              "max": 96,
+              "median": 96,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "heapUsedMb": {
+              "min": 246,
+              "max": 246,
+              "median": 246,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "rssMb": {
+              "min": 313.9,
+              "max": 313.9,
+              "median": 313.9,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "attemptsToFinalRequestedMilestone": {
+              "min": null,
+              "max": null,
+              "median": null,
+              "sampleCount": 0,
+              "missingCount": 1
+            },
+            "expansionsToFinalRequestedMilestone": {
+              "min": null,
+              "max": null,
+              "median": null,
+              "sampleCount": 0,
+              "missingCount": 1
+            },
+            "wallMsToFinalRequestedMilestone": {
+              "min": null,
+              "max": null,
+              "median": null,
+              "sampleCount": 0,
+              "missingCount": 1
+            }
+          }
+        },
+        "segmentRepeats": {
+          "mt2-hp3834": {
+            "label": "MT2 四怪前 3834 基准",
+            "foundCount": 0,
+            "repeats": 1,
+            "metrics": {
+              "expansions": {
+                "min": 182,
+                "max": 182,
+                "median": 182,
+                "sampleCount": 1,
+                "missingCount": 0
+              },
+              "wallMs": {
+                "min": 180389,
+                "max": 180389,
+                "median": 180389,
+                "sampleCount": 1,
+                "missingCount": 0
+              },
+              "cumulativeExpansionsToFirstGoal": {
+                "min": null,
+                "max": null,
+                "median": null,
+                "sampleCount": 0,
+                "missingCount": 1
+              },
+              "cumulativeWallMsToFirstGoal": {
+                "min": null,
+                "max": null,
+                "median": null,
+                "sampleCount": 0,
+                "missingCount": 1
+              },
+              "frontierSize": {
+                "min": 96,
+                "max": 96,
+                "median": 96,
+                "sampleCount": 1,
+                "missingCount": 0
+              },
+              "finalHp": {
+                "min": null,
+                "max": null,
+                "median": null,
+                "sampleCount": 0,
+                "missingCount": 1
+              }
+            }
+          }
+        },
+        "ledgerCosts": {
+          "totalExpansions": {
+            "min": 182,
+            "max": 182,
+            "median": 182,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "totalWallMs": {
+            "min": 180389,
+            "max": 180389,
+            "median": 180389,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "expansionsToFirstGoal": {
+            "min": null,
+            "max": null,
+            "median": null,
+            "sampleCount": 0,
+            "missingCount": 1
+          },
+          "wallMsToFirstGoal": {
+            "min": null,
+            "max": null,
+            "median": null,
+            "sampleCount": 0,
+            "missingCount": 1
+          },
+          "expansionsToFinalRequestedMilestone": {
+            "min": null,
+            "max": null,
+            "median": null,
+            "sampleCount": 0,
+            "missingCount": 1
+          },
+          "wallMsToFinalRequestedMilestone": {
+            "min": null,
+            "max": null,
+            "median": null,
+            "sampleCount": 0,
+            "missingCount": 1
+          },
+          "attemptsToFinalRequestedMilestone": {
+            "min": null,
+            "max": null,
+            "median": null,
+            "sampleCount": 0,
+            "missingCount": 1
+          }
+        },
+        "ledgerConsistency": {
+          "count": 1,
+          "matchCount": 1,
+          "mismatchCount": 0,
+          "allMatch": true
+        },
+        "memory": {
+          "heapLimitedCount": 0,
+          "rssLimitedCount": 0,
+          "childMemoryLimitedCount": 0,
+          "peakHeapUsedMb": {
+            "min": 246,
+            "max": 246,
+            "median": 246,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "peakRssMb": {
+            "min": 313.9,
+            "max": 313.9,
+            "median": 313.9,
+            "sampleCount": 1,
+            "missingCount": 0
+          }
+        },
+        "runs": [
+          {
+            "repeat": 1,
+            "found": false,
+            "strictReplay": {
+              "performed": false,
+              "valid": false,
+              "stepsAttempted": 0,
+              "stepsCompleted": 0,
+              "failureStep": null,
+              "failureReason": "route-file-missing",
+              "expectedStateKey": null,
+              "actualStateKey": null,
+              "finalState": null,
+              "error": null,
+              "routeFile": null,
+              "scope": "full-route"
+            },
+            "runStatus": "completed-with-search-failures",
+            "segmentMetrics": [
+              {
+                "segmentId": "mt2-hp3834",
+                "label": "MT2 四怪前 3834 基准",
+                "found": false,
+                "attempts": 1,
+                "finalHp": null,
+                "metrics": {
+                  "expansions": 182,
+                  "wallMs": 180389,
+                  "acceptedStates": 315,
+                  "rejectedByHigherHp": 176,
+                  "sameHpRejected": 91,
+                  "replacedLowerHp": 83,
+                  "actionTrimmed": 0,
+                  "frontierSize": 96,
+                  "heapUsedMb": 246,
+                  "rssMb": 313.9,
+                  "peakHeapUsedMb": 246,
+                  "peakRssMb": 313.9,
+                  "fairPops": 0,
+                  "bestPops": 0,
+                  "fairFallbacks": 0,
+                  "bestFallbacks": 0,
+                  "maxFairQueueAgeExpansions": 0,
+                  "minLocalFirstGoalExpansion": null,
+                  "attemptsBeforeFirstGoal": null,
+                  "cumulativeExpansionsToFirstGoal": null,
+                  "cumulativeWallMsToFirstGoal": null,
+                  "attempts": 1
+                },
+                "stoppedReasons": [
+                  "time-limit"
+                ],
+                "progress": {
+                  "primaryFailureClass": "def-deficit",
+                  "classCounts": {
+                    "def-deficit": 1
+                  },
+                  "preferredCandidateTags": [
+                    "highest-atk",
+                    "best-combat",
+                    "highest-def",
+                    "highest-mdef"
+                  ],
+                  "recommendedNext": [
+                    "backtrack to the previous milestone and try highest-atk or best-combat candidates",
+                    "backtrack to the previous milestone and try highest-def or best-combat candidates",
+                    "backtrack to the previous milestone and try highest-mdef or best-combat candidates"
+                  ]
+                }
+              }
+            ],
+            "metrics": {
+              "expansions": 182,
+              "wallMs": 180389,
+              "acceptedStates": 315,
+              "rejectedByHigherHp": 176,
+              "sameHpRejected": 91,
+              "replacedLowerHp": 83,
+              "actionTrimmed": 0,
+              "frontierSize": 96,
+              "heapUsedMb": 246,
+              "rssMb": 313.9,
+              "peakHeapUsedMb": 246,
+              "peakRssMb": 313.9,
+              "fairPops": 0,
+              "bestPops": 0,
+              "fairFallbacks": 0,
+              "bestFallbacks": 0,
+              "maxFairQueueAgeExpansions": 0,
+              "minLocalFirstGoalExpansion": null,
+              "attemptsBeforeFirstGoal": null,
+              "cumulativeFirstGoalExpansion": null,
+              "cumulativeFirstGoalWallMs": null,
+              "attemptsToFinalRequestedMilestone": null,
+              "expansionsToFinalRequestedMilestone": null,
+              "wallMsToFinalRequestedMilestone": null
+            },
+            "memory": {
+              "maxHeapMb": 1400,
+              "maxRssMb": 1800,
+              "memoryCheckIntervalExpansions": 1,
+              "memoryCheckIntervalActions": 1,
+              "peakHeapUsedMb": 246,
+              "peakRssMb": 313.9,
+              "heapLimitedCount": 0,
+              "rssLimitedCount": 0,
+              "childMemoryLimitedCount": 0,
+              "searchCompletion": "completed",
+              "childMemoryLimited": false
+            },
+            "ledgerCosts": {
+              "totalExpansions": 182,
+              "totalWallMs": 180389,
+              "byPhase": {
+                "initial": {
+                  "expansions": 182,
+                  "wallMs": 180389,
+                  "attempts": 1
+                }
+              },
+              "bySegment": {
+                "mt2-hp3834": {
+                  "expansions": 182,
+                  "wallMs": 180389,
+                  "attempts": 1,
+                  "expansionsToFirstGoal": null,
+                  "wallMsToFirstGoal": null,
+                  "attemptsToFirstGoal": null,
+                  "firstGoal": null
+                }
+              },
+              "repairOverhead": 0,
+              "firstGoal": null,
+              "finalRequestedMilestoneGoal": null,
+              "expansionsToFirstGoal": null,
+              "wallMsToFirstGoal": null,
+              "expansionsToFinalRequestedMilestone": null,
+              "wallMsToFinalRequestedMilestone": null,
+              "attemptsToFinalRequestedMilestone": null,
+              "attemptCount": 1
+            },
+            "ledgerConsistency": {
+              "ledgerExpansions": 182,
+              "budgetExpansions": 182,
+              "match": true,
+              "delta": 0
+            },
+            "provenance": {
+              "startedCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+              "solverCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+              "finishedCommit": "e3603b519f4f9301cf7818d04e37086e4114cb4c",
+              "commitStable": true
+            },
+            "regressionFromBaseline": null,
+            "segmentRegressionFromBaseline": null
+          }
+        ]
+      }
+    }
+  },
+  "stoppedReason": "completed-with-search-failures"
+}
