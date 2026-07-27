@@ -1,0 +1,3173 @@
+{
+  "kind": "segmented-dp-diagnosis",
+  "provenance": {
+    "solverCommit": "71828446b25708daf14853f63ef4242980cc1de7"
+  },
+  "routeName": "onlyup-chaos-mt5-blueking",
+  "projectRoot": "E:\\AUbuntuProject\\project\\motapathfind\\Only upV2.1\\Only upV2.1",
+  "startRoute": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-hp3834-composed-from-initial.route.json",
+  "startRouteStep": null,
+  "startStateFile": null,
+  "fromMilestone": "mt2-local-3582",
+  "toMilestone": "mt2-hp3834",
+  "found": true,
+  "reachedMilestone": "mt2-hp3834",
+  "failedSegmentId": null,
+  "doctor": null,
+  "initialState": {
+    "floorId": "MT2",
+    "hero": {
+      "image": "hero.png",
+      "animate": false,
+      "name": "纱雪",
+      "lv": 4,
+      "hpmax": 9999,
+      "hp": 6620,
+      "manamax": -1,
+      "mana": 0,
+      "atk": 72,
+      "def": 35,
+      "mdef": 340,
+      "money": 0,
+      "exp": 3,
+      "equipment": [],
+      "loc": {
+        "direction": "right",
+        "x": 3,
+        "y": 7
+      },
+      "flags": {},
+      "followers": [],
+      "steps": 103,
+      "statistics": {
+        "battleDamage": 11081,
+        "battle": 35,
+        "money": 0,
+        "exp": 41
+      }
+    },
+    "routeLength": 80,
+    "traceLength": 22
+  },
+  "dp": {
+    "candidateLimit": 8,
+    "dpKeyMode": null,
+    "maxExpansions": 1,
+    "maxRuntimeMs": 1000,
+    "maxHeapMb": null,
+    "maxRssMb": null,
+    "memoryCheckIntervalExpansions": null,
+    "memoryCheckIntervalActions": null,
+    "childOldSpaceMb": null,
+    "stopOnFirstGoal": true,
+    "dpSkylineMax": null,
+    "preserveSkylineRoles": false,
+    "goalSkylineLimit": null,
+    "agendaMode": null,
+    "fairnessEvery": null,
+    "maxActionsPerState": null,
+    "budgetScope": "per-attempt"
+  },
+  "budget": null,
+  "memory": {
+    "maxHeapMb": 0,
+    "maxRssMb": 0,
+    "memoryCheckIntervalExpansions": 1,
+    "memoryCheckIntervalActions": 1,
+    "peakHeapUsedMb": 53.6,
+    "peakRssMb": 109.6,
+    "heapLimitedCount": 0,
+    "rssLimitedCount": 0,
+    "stoppedReason": null,
+    "stoppedAtExpansion": null,
+    "stoppedAtPhase": null,
+    "searchCompletion": "completed"
+  },
+  "summary": {
+    "routeName": "onlyup-chaos-mt5-blueking",
+    "found": true,
+    "reachedMilestone": "mt2-hp3834",
+    "failedSegmentId": null,
+    "doctor": null,
+    "completedSegments": [
+      "mt2-hp3834"
+    ],
+    "segments": [
+      {
+        "segmentId": "mt2-hp3834",
+        "label": "MT2 四怪前 3834 基准",
+        "found": true,
+        "startCandidatesTried": 1,
+        "candidateCount": 1,
+        "candidates": [
+          {
+            "id": "mt2-hp3834:candidate-0",
+            "hero": {
+              "hp": 6620,
+              "atk": 72,
+              "def": 35,
+              "mdef": 340,
+              "lv": 4,
+              "exp": 3,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 6620,
+              "atk": 72,
+              "def": 35,
+              "mdef": 340,
+              "lv": 4,
+              "exp": 3
+            },
+            "tags": [
+              "highest-hp",
+              "best-combat",
+              "highest-atk",
+              "highest-def",
+              "highest-mdef",
+              "highest-exp",
+              "shortest"
+            ],
+            "routeLength": 80,
+            "resourceTiming": {
+              "retainedOptionValue": 125000,
+              "projectedDamageSaving": 3190,
+              "newlySurvivableTargets": 0,
+              "roles": [
+                "retained-resource-option",
+                "future-combat-saving"
+              ]
+            }
+          }
+        ],
+        "attempts": [
+          {
+            "startCandidateId": "initial#0",
+            "found": true,
+            "goalCount": 1,
+            "resourceTiming": {
+              "model": "breakpoint-v1",
+              "targetLimit": 16,
+              "resourceLimit": 4,
+              "thresholdLimit": 3,
+              "skylineMax": 4,
+              "analyzedStates": 1
+            },
+            "memory": {
+              "maxHeapMb": 0,
+              "maxRssMb": 0,
+              "memoryCheckIntervalExpansions": 1,
+              "memoryCheckIntervalActions": 1,
+              "memoryLimitsEnabled": false,
+              "successorCheckGranularity": "action-batch",
+              "peakHeapUsedMb": 53.6,
+              "peakRssMb": 109.6,
+              "stopHeapUsedMb": null,
+              "stopRssMb": null,
+              "stoppedReason": null,
+              "stoppedAtExpansion": null,
+              "stoppedAtPhase": null,
+              "sampleCount": 1,
+              "heapOvershootMb": 0,
+              "rssOvershootMb": 0
+            }
+          }
+        ],
+        "failurePropagation": null
+      }
+    ],
+    "checkpoints": [
+      {
+        "segmentId": "mt2-hp3834",
+        "uniqueFeasibleRoute": true,
+        "candidateCount": 1
+      }
+    ]
+  },
+  "milestones": [
+    {
+      "id": "mt1-gate-1559",
+      "label": "MT1 1559 生存门槛",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT1",
+        "minHero": {
+          "hp": 1559,
+          "atk": 19,
+          "def": 10,
+          "mdef": 130,
+          "exp": 5
+        },
+        "actionSurvivable": {
+          "summary": "battle:skeleton@MT1:8,1",
+          "exactDamage": 1558
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT1"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 4000,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 8
+      }
+    },
+    {
+      "id": "mt2-entry",
+      "label": "进入 MT2",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": {
+          "hp": 1601,
+          "atk": 21,
+          "def": 17,
+          "mdef": 130,
+          "exp": 6
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT1",
+          "MT2"
+        ],
+        "allowChangeFloors": [
+          "MT1:6,0"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 2500,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 8
+      }
+    },
+    {
+      "id": "mt2-local-3582",
+      "label": "MT2 三怪顺序合流",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": {
+          "hp": 3582,
+          "atk": 31,
+          "def": 19,
+          "mdef": 250,
+          "exp": 9
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT2"
+        ]
+      },
+      "dp": {
+        "keyMode": "mutation",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 800,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 8,
+        "safeReason": "MT2 local three-monster confluence has no movement damage and uses identical map mutation/resource state."
+      }
+    },
+    {
+      "id": "mt2-hp3834",
+      "label": "MT2 四怪前 3834 基准",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": {
+          "hp": 3834,
+          "atk": 72,
+          "def": 35,
+          "mdef": 290
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT1",
+          "MT2"
+        ],
+        "allowChangeFloors": [
+          "MT2:6,0",
+          "MT1:6,0"
+        ]
+      },
+      "dp": {
+        "keyMode": "mutation",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 1400,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 8,
+        "safeReason": "Verified MT2/MT1 local return branch; mutation key is used only inside this bounded confluence segment."
+      }
+    },
+    {
+      "id": "mt2-left-chain-open",
+      "label": "MT2 左线资源链打开",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": {
+          "hp": 8372,
+          "atk": 87,
+          "def": 50,
+          "mdef": 440,
+          "exp": 7
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT2",
+            "x": 2,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 10
+          },
+          {
+            "floorId": "MT2",
+            "x": 4,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT2",
+            "x": 4,
+            "y": 7,
+            "reason": "Preserve redPriest HP timing for the later I893 resource chain."
+          },
+          {
+            "floorId": "MT2",
+            "x": 8,
+            "y": 7,
+            "reason": "Preserve redPriest HP timing for the later I893 resource chain."
+          },
+          {
+            "floorId": "MT2",
+            "x": 10,
+            "y": 8,
+            "reason": "Preserve redPriest HP timing for the later I893 resource chain."
+          },
+          {
+            "floorId": "MT2",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 6
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 9
+          }
+        ],
+        "preferredPresentTiles": [
+          {
+            "floorId": "MT2",
+            "x": 8,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 10
+          },
+          {
+            "floorId": "MT2",
+            "x": 10,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 9
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT2"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 1200,
+        "maxRuntimeMs": 10000,
+        "goalSkylineLimit": 8,
+        "enablePreviewScore": false,
+        "firstGoalSafeReason": "This strict setup segment has hard presentTiles for later I893 resources; first passing goal is the intended left-chain checkpoint."
+      }
+    },
+    {
+      "id": "mt3-first-return",
+      "label": "MT3 首轮宝石后返回 MT2",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": {
+          "hp": 9172,
+          "atk": 97,
+          "def": 65,
+          "mdef": 440,
+          "exp": 11
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT2",
+            "x": 2,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 10
+          },
+          {
+            "floorId": "MT2",
+            "x": 4,
+            "y": 11
+          },
+          {
+            "floorId": "MT3",
+            "x": 5,
+            "y": 11
+          },
+          {
+            "floorId": "MT3",
+            "x": 7,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT2",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 6
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 9
+          }
+        ],
+        "preferredPresentTiles": [
+          {
+            "floorId": "MT2",
+            "x": 4,
+            "y": 7
+          },
+          {
+            "floorId": "MT2",
+            "x": 8,
+            "y": 7
+          },
+          {
+            "floorId": "MT2",
+            "x": 10,
+            "y": 8
+          }
+        ],
+        "actionSurvivable": {
+          "summary": "battle:redWizard@MT2:11,11"
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT2",
+          "MT3"
+        ],
+        "allowChangeFloors": [
+          "MT2:6,12",
+          "MT3:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 600,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "enablePreviewScore": false,
+        "firstGoalSafeReason": "This bridge segment only needs MT3 gem pickup and return while preserving I893 chain blockers."
+      }
+    },
+    {
+      "id": "mt2-redwizard-shield",
+      "label": "MT2 右下护盾资源",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": {
+          "hp": 1,
+          "atk": 97,
+          "def": 90,
+          "mdef": 490,
+          "exp": 19
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT2",
+            "x": 11,
+            "y": 11
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT2"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 500,
+        "maxRuntimeMs": 6000,
+        "goalSkylineLimit": 8,
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "Single removedTile target for the right-bottom shield resource; later skyline is handled by the next segment."
+      }
+    },
+    {
+      "id": "mt2-i893-equipped",
+      "label": "MT2 装备 I893",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT2",
+        "minHero": {
+          "hp": 8425,
+          "atk": 107,
+          "def": 95,
+          "mdef": 490,
+          "exp": 26
+        },
+        "equipmentIncludes": [
+          "I893"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT2",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 6
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 9
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT2"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 1400,
+        "maxRuntimeMs": 10000,
+        "goalSkylineLimit": 8,
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "Goal requires I893 equipped plus all center blockers removed; this is a strict terminal setup for the next floor transition."
+      }
+    },
+    {
+      "id": "mt3-i893-hp8425",
+      "label": "MT3 I893 功法",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT3",
+        "minHero": {
+          "hp": 8425,
+          "atk": 107,
+          "def": 100,
+          "mdef": 510,
+          "exp": 31
+        },
+        "equipmentIncludes": [
+          "I893"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT2",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 6
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 8
+          },
+          {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 9
+          },
+          {
+            "floorId": "MT3",
+            "x": 5,
+            "y": 11
+          },
+          {
+            "floorId": "MT3",
+            "x": 7,
+            "y": 11
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT2",
+          "MT3"
+        ],
+        "allowChangeFloors": [
+          "MT2:6,12",
+          "MT3:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 600,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "enablePreviewScore": false,
+        "firstGoalSafeReason": "Only final MT2->MT3 transition and automatic MT3 pickup remain after I893 is equipped."
+      }
+    },
+    {
+      "id": "mt4-hp4459",
+      "label": "MT4 入口关键属性",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 4459
+        },
+        "minEffectiveHero": {
+          "atk": 421,
+          "def": 318,
+          "mdef": 5012
+        },
+        "equipmentIncludes": [
+          "I893"
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT3",
+          "MT4"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT4:6,0"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 7000,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 8
+      }
+    },
+    {
+      "id": "mt5-early-gem-entry",
+      "label": "MT4/MT5 早上楼资源分支",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 44471,
+          "atk": 777,
+          "def": 745,
+          "mdef": 4910,
+          "exp": 77
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT4:6,0",
+          "MT3:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 7000,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 8
+      }
+    },
+    {
+      "id": "mt5-first-sweep",
+      "label": "MT5 第一轮资源扫荡",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 136514,
+          "atk": 977,
+          "def": 795,
+          "mdef": 6110,
+          "exp": 221
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 7000,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 8
+      }
+    },
+    {
+      "id": "mt5-third-gate",
+      "label": "MT5 第三门槛",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 105138,
+          "atk": 1097,
+          "def": 965,
+          "mdef": 6310,
+          "exp": 367
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 7000,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 8
+      }
+    },
+    {
+      "id": "mt5-sustain-balance",
+      "label": "MT5 续航与前进平衡",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 94905,
+          "atk": 1297,
+          "def": 1165,
+          "mdef": 6310,
+          "exp": 435
+        },
+        "minEffectiveHero": {
+          "atk": 1621,
+          "def": 1456,
+          "mdef": 7887
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 6
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 6
+          },
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 10,
+            "y": 5
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 7
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 3
+          },
+          {
+            "floorId": "MT5",
+            "x": 6,
+            "y": 7
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT5"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 800,
+        "maxRuntimeMs": 6000,
+        "goalSkylineLimit": 8,
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "This segment is the single MT5 sustain gate at 3,6 while preserving all later I894 and blueKing resources."
+      }
+    },
+    {
+      "id": "mt5-i894-equipped",
+      "label": "MT5 装备 I894",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 14404
+        },
+        "minEffectiveHero": {
+          "atk": 2075,
+          "def": 2024,
+          "mdef": 13296
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 6
+          },
+          {
+            "floorId": "MT5",
+            "x": 9,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 10,
+            "y": 5
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 5
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 7
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 3
+          },
+          {
+            "floorId": "MT5",
+            "x": 6,
+            "y": 7
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 3000,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "Goal requires I894 equipped after clearing the three mandatory blockers; later HP/boss resources are protected by presentTiles."
+      }
+    },
+    {
+      "id": "mt5-final-stats-before-hp",
+      "label": "MT5 boss 前最终属性",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 417246,
+          "lv": 8,
+          "exp": 1033
+        },
+        "minEffectiveHero": {
+          "atk": 3147,
+          "def": 3096,
+          "mdef": 20816
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 4
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 7
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 3
+          },
+          {
+            "floorId": "MT5",
+            "x": 6,
+            "y": 7
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT5"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 3000,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "This strict post-I894 segment clears final stat resources while preserving the HP pickup chain and blueKing."
+      }
+    },
+    {
+      "id": "mt5-before-blueking",
+      "label": "MT5 boss 前血量",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 1098112
+        },
+        "minEffectiveHero": {
+          "atk": 3147,
+          "def": 3096,
+          "mdef": 20816
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 3
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT5",
+            "x": 6,
+            "y": 7
+          }
+        ],
+        "actionSurvivable": {
+          "summary": "battle:blueKing@MT5:6,7"
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 2000,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 8,
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "Only the final HP pickup chain at 8,3 remains; blueKing is protected as presentTiles until the kill segment."
+      }
+    },
+    {
+      "id": "mt5-blueking-kill",
+      "label": "MT5 击破 blueKing（织光仙子）",
+      "goal": {
+        "type": "bossDefeated",
+        "floorId": "MT5",
+        "x": 6,
+        "y": 7,
+        "enemyId": "blueKing",
+        "minHero": {
+          "hp": 1,
+          "atk": 2167,
+          "def": 2135,
+          "mdef": 13010,
+          "lv": 8
+        },
+        "minEffectiveHero": {
+          "atk": 3467,
+          "def": 3416,
+          "mdef": 20816
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "changeFloor"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT5:6,12",
+          "MT5:6,0"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 4000,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 8
+      }
+    },
+    {
+      "id": "mt6-upper-left-blueking",
+      "label": "MT6 上半区左侧织光仙子前置链",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": {
+          "hp": 142115,
+          "atk": 4567,
+          "def": 3335,
+          "mdef": 23010,
+          "lv": 9,
+          "exp": 309
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "floorId": "MT6",
+            "x": 8,
+            "y": 1
+          },
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 3
+          },
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 4
+          },
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 6
+          },
+          {
+            "floorId": "MT6",
+            "x": 3,
+            "y": 6
+          },
+          {
+            "floorId": "MT6",
+            "x": 2,
+            "y": 5
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 7
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT5",
+          "MT6"
+        ],
+        "allowChangeFloors": [
+          "MT5:6,0"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 1800,
+        "maxRuntimeMs": 15000,
+        "goalSkylineLimit": 4,
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "This segment forces the MT6 left-side blueKing resource before the right-side blueKing is consumed."
+      }
+    },
+    {
+      "id": "mt6-upper-right-blueking",
+      "label": "MT6 右侧夹击血瓶显式拾取",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": {
+          "hp": 324506,
+          "atk": 4567,
+          "def": 4335,
+          "mdef": 23010,
+          "lv": 9,
+          "exp": 351
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 7
+          },
+          {
+            "floorId": "MT6",
+            "x": 7,
+            "y": 7
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT6",
+            "x": 1,
+            "y": 11,
+            "reason": "Preserve the lower attack-pair route after the explicit 7,7 pickup."
+          },
+          {
+            "floorId": "MT6",
+            "x": 10,
+            "y": 8,
+            "reason": "Preserve the lower attack-pair route after the explicit 7,7 pickup."
+          },
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 6,
+            "reason": "Preserve the first center guard as the next sustain checkpoint."
+          },
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 8,
+            "reason": "Preserve the second center guard for the later lower sweep."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "interactPickup",
+          "equip",
+          "changeFloor"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT6"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 500,
+        "maxRuntimeMs": 5000,
+        "goalSkylineLimit": 4,
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "This segment only makes the formerly implicit 7,7 pickup explicit and preserves all lower MT6 resources."
+      }
+    },
+    {
+      "id": "mt6-lower-attack-pair",
+      "label": "MT6 下半区双碎晶反应",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": {
+          "hp": 223386,
+          "atk": 5567,
+          "def": 4335,
+          "mdef": 23010,
+          "lv": 9,
+          "exp": 435
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT6",
+            "x": 1,
+            "y": 11
+          },
+          {
+            "floorId": "MT6",
+            "x": 10,
+            "y": 8
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 6,
+            "reason": "Delay center HP sustain until both lower attack resources are collected."
+          },
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 8,
+            "reason": "Preserve second center guard until lower attack pair is resolved."
+          },
+          {
+            "floorId": "MT6",
+            "x": 2,
+            "y": 1,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 10,
+            "reason": "Preserve lower sweep resource."
+          },
+          {
+            "floorId": "MT6",
+            "x": 11,
+            "y": 11,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 11,
+            "reason": "Preserve final MT6 mdef pickup route."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT6"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 1200,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 4,
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required"
+      }
+    },
+    {
+      "id": "mt6-first-center-guard",
+      "label": "MT6 第一中路制动警卫",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": {
+          "hp": 670354,
+          "atk": 5567,
+          "def": 4335,
+          "mdef": 23010,
+          "lv": 9,
+          "exp": 477
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 6
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 8,
+            "reason": "Second center guard must be delayed until both attack resources are collected."
+          },
+          {
+            "floorId": "MT6",
+            "x": 2,
+            "y": 1,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 10,
+            "reason": "Preserve lower sweep resource."
+          },
+          {
+            "floorId": "MT6",
+            "x": 11,
+            "y": 11,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 11,
+            "reason": "Preserve final MT6 mdef pickup route."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT6"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 700,
+        "maxRuntimeMs": 6000,
+        "goalSkylineLimit": 4,
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "After both lower attack resources are collected, this single center guard is the sustain checkpoint for the second center guard."
+      }
+    },
+    {
+      "id": "mt6-second-center-guard",
+      "label": "MT6 第二中路制动警卫",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": {
+          "hp": 557322,
+          "atk": 5767,
+          "def": 4535,
+          "mdef": 25010,
+          "lv": 9,
+          "exp": 519
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 8
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT6",
+            "x": 2,
+            "y": 1,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 10,
+            "reason": "Preserve lower sweep resource."
+          },
+          {
+            "floorId": "MT6",
+            "x": 11,
+            "y": 11,
+            "reason": "Preserve optional high-defense skyline candidate for MT7."
+          },
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 11,
+            "reason": "Preserve final MT6 mdef pickup route."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT6"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 900,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 4,
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "The second center guard is the only immediate route to the next lower MT6 skyline."
+      }
+    },
+    {
+      "id": "mt7-entry-after-mt6-sweep",
+      "label": "MT6 最终魔防后进入 MT7",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT7",
+        "minHero": {
+          "hp": 1,
+          "atk": 5767,
+          "def": 4535,
+          "mdef": 30010,
+          "lv": 9,
+          "exp": 561
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT6",
+            "x": 4,
+            "y": 11
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT5:6,0",
+          "MT6:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 1600,
+        "maxRuntimeMs": 12000,
+        "goalSkylineLimit": 8,
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "This milestone is an MT7 entry checkpoint; later MT7 fights belong to the next segment."
+      }
+    },
+    {
+      "id": "mt7-mt6-defense-sweep",
+      "label": "MT7 入口后回 MT6 拿左上防御资源",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": {
+          "hp": 112394,
+          "atk": 5767,
+          "def": 5035,
+          "mdef": 30010,
+          "lv": 9,
+          "exp": 603
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT6",
+            "x": 2,
+            "y": 1
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 10,
+            "reason": "Delay the lower-right sustain chain until after the MT6 defense pickup."
+          },
+          {
+            "floorId": "MT6",
+            "x": 11,
+            "y": 11,
+            "reason": "Keep the right-side crystal guard for the next sustain segment."
+          },
+          {
+            "floorId": "MT7",
+            "x": 4,
+            "y": 11,
+            "reason": "MT7 bottom fairies are the next segment, not part of this MT6 defense sweep."
+          },
+          {
+            "floorId": "MT7",
+            "x": 8,
+            "y": 11,
+            "reason": "MT7 bottom fairies are the next segment, not part of this MT6 defense sweep."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12",
+          "MT6:6,12",
+          "MT6:6,0"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 800,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 4,
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "This segment only removes MT6:2,1 to unlock the +500 defense pickup before the right-side sustain chain."
+      }
+    },
+    {
+      "id": "mt7-mt6-right-crystal-sweep",
+      "label": "MT6 右下制动警卫与傀儡资源",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": {
+          "hp": 152669,
+          "atk": 5767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9,
+          "exp": 729
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 10
+          },
+          {
+            "floorId": "MT6",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT6",
+            "x": 8,
+            "y": 7
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT7",
+            "x": 4,
+            "y": 11,
+            "reason": "Both MT7 bottom fairies must be delayed until the MT6 right-side defense resource is collected."
+          },
+          {
+            "floorId": "MT7",
+            "x": 8,
+            "y": 11,
+            "reason": "Both MT7 bottom fairies must be delayed until the MT6 right-side defense resource is collected."
+          },
+          {
+            "floorId": "MT7",
+            "x": 11,
+            "y": 11,
+            "reason": "MT7 right crystal guard belongs after both bottom fairies."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12",
+          "MT6:6,12",
+          "MT6:6,0"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 1200,
+        "maxRuntimeMs": 10000,
+        "goalSkylineLimit": 4,
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "The MT6 right-side chain has a fixed local sustain dependency after MT6:2,1 is cleared."
+      }
+    },
+    {
+      "id": "mt7-bottom-double-fairy",
+      "label": "MT7 底部双飞蛾补给链",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT7",
+        "minHero": {
+          "hp": 499741,
+          "atk": 5767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9,
+          "exp": 813
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT7",
+            "x": 4,
+            "y": 11
+          },
+          {
+            "floorId": "MT7",
+            "x": 8,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT7",
+            "x": 11,
+            "y": 11,
+            "reason": "The right-side crystal guard must wait until both bottom weakWine pickups are collected."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12",
+          "MT6:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "stopOnFirstGoal": true,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 900,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 4,
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "firstGoalSafeReason": "After MT6 defense resources, both MT7 bottom fairies are the only local HP-positive bottom route."
+      }
+    },
+    {
+      "id": "mt7-special80-ready",
+      "label": "MT7 生命限制怪前 HP 准备",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT7",
+        "minHero": {
+          "hp": 1,
+          "atk": 5767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT7",
+            "x": 1,
+            "y": 11,
+            "reason": "Keep poisonZombie（废墟入土魂灵） until the life-limit survivability threshold is reached."
+          },
+          {
+            "floorId": "MT7",
+            "x": 0,
+            "y": 11,
+            "reason": "I616（灰岩重剑） is the reward behind the life-limit blocker and belongs to the next segment."
+          }
+        ],
+        "actionSurvivable": {
+          "summary": "battle:poisonZombie@MT7:1,11"
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "interactPickup",
+          "equip",
+          "changeFloor",
+          "floorFly"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12",
+          "MT6:6,12",
+          "MT6:6,0",
+          "MT7:6,0"
+        ],
+        "resourceTimingMode": "sustain-prep"
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 20000,
+        "maxRuntimeMs": 60000,
+        "goalSkylineLimit": 8,
+        "priorityMode": "default",
+        "resourceTimingMode": "sustain-prep",
+        "enablePreviewScore": "required"
+      }
+    },
+    {
+      "id": "mt7-left-sword",
+      "label": "MT7 击破生命限制怪并取得灰岩重剑",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT7",
+        "minHero": {
+          "hp": 1,
+          "atk": 8767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT7",
+            "x": 1,
+            "y": 11
+          },
+          {
+            "floorId": "MT7",
+            "x": 0,
+            "y": 11
+          }
+        ],
+        "actionSurvivable": {
+          "summary": "battle:poisonZombie@MT7:1,11"
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "interactPickup",
+          "equip",
+          "changeFloor",
+          "floorFly"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT6:6,12",
+          "MT7:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "region",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 6000,
+        "maxRuntimeMs": 20000,
+        "goalSkylineLimit": 8,
+        "priorityMode": "default",
+        "resourceTimingMode": "sustain-prep",
+        "enablePreviewScore": "required",
+        "continueAfterGoal": true
+      }
+    },
+    {
+      "id": "mt7-right-exp-crystal",
+      "label": "MT7 灰岩重剑后拿右侧进化结晶",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT7",
+        "minHero": {
+          "hp": 1,
+          "atk": 8767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT7",
+            "x": 11,
+            "y": 11
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 1200,
+        "maxRuntimeMs": 10000,
+        "goalSkylineLimit": 8,
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required"
+      }
+    },
+    {
+      "id": "mt8-entry-after-mt7-left-sword",
+      "label": "MT7 灰岩重剑与右侧结晶后进入 MT8",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT8",
+        "minHero": {
+          "hp": 1,
+          "atk": 8767,
+          "def": 5535,
+          "mdef": 30010,
+          "lv": 9
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT7",
+            "x": 1,
+            "y": 11
+          },
+          {
+            "floorId": "MT7",
+            "x": 0,
+            "y": 11
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "interactPickup",
+          "equip",
+          "changeFloor",
+          "floorFly"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "MT7",
+          "MT8"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,0",
+          "MT7:6,12"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "stopOnFirstGoal": false,
+        "maxActionsPerState": 9999,
+        "maxExpansions": 2000,
+        "maxRuntimeMs": 10000,
+        "goalSkylineLimit": 8,
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required"
+      }
+    }
+  ],
+  "segmentResults": [
+    {
+      "segmentId": "mt2-hp3834",
+      "label": "MT2 四怪前 3834 基准",
+      "found": true,
+      "startCandidatesTried": 1,
+      "startCandidatesAvailable": 1,
+      "candidates": [
+        {
+          "id": "mt2-hp3834:candidate-0",
+          "hero": {
+            "hp": 6620,
+            "atk": 72,
+            "def": 35,
+            "mdef": 340,
+            "lv": 4,
+            "exp": 3,
+            "money": 0,
+            "equipment": []
+          },
+          "effectiveHero": {
+            "hp": 6620,
+            "atk": 72,
+            "def": 35,
+            "mdef": 340,
+            "lv": 4,
+            "exp": 3
+          },
+          "tags": [
+            "highest-hp",
+            "best-combat",
+            "highest-atk",
+            "highest-def",
+            "highest-mdef",
+            "highest-exp",
+            "shortest"
+          ],
+          "routeLength": 80,
+          "resourceTiming": {
+            "retainedOptionValue": 125000,
+            "projectedDamageSaving": 3190,
+            "newlySurvivableTargets": 0,
+            "roles": [
+              "retained-resource-option",
+              "future-combat-saving"
+            ]
+          }
+        }
+      ],
+      "attempts": [
+        {
+          "startCandidateId": "initial#0",
+          "found": true,
+          "goalCount": 1,
+          "diagnostics": {
+            "dp": {
+              "keys": 1,
+              "priorityMode": "default",
+              "dpSkylineMax": 4,
+              "actionProviderMode": "segment-provider",
+              "stoppedReason": null,
+              "maxRuntimeMs": 1000,
+              "maxHeapMb": 0,
+              "maxRssMb": 0,
+              "memoryCheckIntervalExpansions": 1,
+              "memoryCheckIntervalActions": 1,
+              "memoryLimitsEnabled": false,
+              "wallMs": 18,
+              "heapUsedMb": 53.6,
+              "rssMb": 109.6,
+              "memory": {
+                "maxHeapMb": 0,
+                "maxRssMb": 0,
+                "memoryCheckIntervalExpansions": 1,
+                "memoryCheckIntervalActions": 1,
+                "memoryLimitsEnabled": false,
+                "successorCheckGranularity": "action-batch",
+                "peakHeapUsedMb": 53.6,
+                "peakRssMb": 109.6,
+                "stopHeapUsedMb": null,
+                "stopRssMb": null,
+                "stoppedReason": null,
+                "stoppedAtExpansion": null,
+                "stoppedAtPhase": null,
+                "sampleCount": 1,
+                "heapOvershootMb": 0,
+                "rssOvershootMb": 0
+              },
+              "maxExpansions": 1,
+              "expansions": 0,
+              "frontierSize": 0,
+              "expansionBudgetExhausted": false,
+              "completeWithinActionSet": true,
+              "maxActionsPerState": 9999,
+              "actionTrimmed": 0,
+              "statesWithActionTrim": 0,
+              "maxActionsGeneratedForState": 0,
+              "observerCaptureMode": "off",
+              "observerCaptureElapsedMs": 0,
+              "agendaFairness": {
+                "enabled": false,
+                "fairnessEvery": 32,
+                "bestPops": 0,
+                "fairPops": 0,
+                "fairFallbacks": 0,
+                "bestFallbacks": 0,
+                "skippedInactive": 0,
+                "skippedAlreadyExpanded": 0,
+                "maxFairQueueAgeExpansions": 0,
+                "fairCursor": 0,
+                "fairQueueLength": 0,
+                "fairActiveUnexpanded": 0
+              },
+              "actionsGeneratedByKind": {},
+              "actionsExpandedByKind": {},
+              "actionsKeptByKind": {},
+              "actionsDominatedByKind": {},
+              "uniqueBattleTargets": 0,
+              "uniquePortalEntries": 0,
+              "acceptedStates": 1,
+              "newKeys": 1,
+              "replacedLowerHp": 0,
+              "sameHpShorterRoute": 0,
+              "rejectedByHigherHp": 0,
+              "sameHpRejected": 0,
+              "agendaMode": "best-first",
+              "fairnessEvery": 32,
+              "stopOnFirstGoal": true,
+              "continueAfterGoal": false,
+              "keyMode": "mutation",
+              "targetFloorOrder": 2,
+              "foundFirstGoal": true,
+              "firstGoalExpansion": 0,
+              "firstGoalElapsedMs": 10,
+              "statProgress": {
+                "maxHeroSeen": {
+                  "hp": 6620,
+                  "atk": 72,
+                  "def": 35,
+                  "mdef": 340,
+                  "exp": 3
+                },
+                "firstStatGainExpansion": {
+                  "atk": null,
+                  "def": null,
+                  "mdef": null
+                },
+                "acceptedStatGainStates": {
+                  "atk": 0,
+                  "def": 0,
+                  "mdef": 0
+                },
+                "firstStatGainAction": {
+                  "atk": null,
+                  "def": null,
+                  "mdef": null
+                }
+              },
+              "foundBestGoal": true,
+              "goalSkylineLimit": 8,
+              "goalSkylineCount": 1,
+              "observerEnabled": false,
+              "observerErrors": 0,
+              "landmarkArchiveCount": 0,
+              "firstGoal": {
+                "floorId": "MT2",
+                "hp": 6620,
+                "routeLength": 80,
+                "decisionDepth": 22
+              },
+              "bestGoal": {
+                "floorId": "MT2",
+                "hp": 6620,
+                "routeLength": 80,
+                "decisionDepth": 22
+              },
+              "oracle": null,
+              "resourceTiming": {
+                "model": "breakpoint-v1",
+                "targetLimit": 16,
+                "resourceLimit": 4,
+                "thresholdLimit": 3,
+                "skylineMax": 4,
+                "analyzedStates": 1
+              }
+            },
+            "actionTrimmed": 0,
+            "rejectedByHigherHp": 0,
+            "replacedLowerHp": 0,
+            "actionsGeneratedByKind": {},
+            "actionsExpandedByKind": {},
+            "actionsKeptByKind": {},
+            "actionsDominatedByKind": {},
+            "uniqueBattleTargets": 0,
+            "uniquePortalEntries": 0,
+            "failure": null,
+            "goalSkyline": {
+              "primaryOutput": true,
+              "count": 1,
+              "candidates": [
+                {
+                  "id": "mt2-hp3834#0",
+                  "tags": [
+                    "highest-hp",
+                    "best-combat",
+                    "highest-atk",
+                    "highest-def",
+                    "highest-mdef",
+                    "highest-exp",
+                    "shortest"
+                  ],
+                  "hero": {
+                    "hp": 6620,
+                    "atk": 72,
+                    "def": 35,
+                    "mdef": 340,
+                    "lv": 4,
+                    "exp": 3,
+                    "money": 0,
+                    "equipment": []
+                  },
+                  "effectiveHero": {
+                    "hp": 6620,
+                    "atk": 72,
+                    "def": 35,
+                    "mdef": 340,
+                    "lv": 4,
+                    "exp": 3
+                  },
+                  "routeLength": 80
+                }
+              ]
+            },
+            "actionScope": {
+              "actionKinds": [
+                "battle",
+                "pickup",
+                "equip",
+                "openDoor",
+                "useTool",
+                "changeFloor",
+                "event"
+              ],
+              "forbidUnsupportedEvents": true,
+              "allowedFloors": [
+                "MT1",
+                "MT2"
+              ],
+              "allowChangeFloors": [
+                "MT2:6,0",
+                "MT1:6,0"
+              ]
+            }
+          }
+        }
+      ],
+      "failurePropagation": null,
+      "memory": {
+        "limited": false,
+        "stoppedReason": null,
+        "attemptCount": 0
+      }
+    }
+  ],
+  "evaluationAttemptLedger": [
+    {
+      "segmentId": "mt2-hp3834",
+      "phase": "initial",
+      "startCandidateId": "initial#0",
+      "found": true,
+      "goalCount": 1,
+      "diagnostics": {
+        "dp": {
+          "keys": 1,
+          "priorityMode": "default",
+          "dpSkylineMax": 4,
+          "actionProviderMode": "segment-provider",
+          "stoppedReason": null,
+          "maxRuntimeMs": 1000,
+          "maxHeapMb": 0,
+          "maxRssMb": 0,
+          "memoryCheckIntervalExpansions": 1,
+          "memoryCheckIntervalActions": 1,
+          "memoryLimitsEnabled": false,
+          "wallMs": 18,
+          "heapUsedMb": 53.6,
+          "rssMb": 109.6,
+          "memory": {
+            "maxHeapMb": 0,
+            "maxRssMb": 0,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "memoryLimitsEnabled": false,
+            "successorCheckGranularity": "action-batch",
+            "peakHeapUsedMb": 53.6,
+            "peakRssMb": 109.6,
+            "stopHeapUsedMb": null,
+            "stopRssMb": null,
+            "stoppedReason": null,
+            "stoppedAtExpansion": null,
+            "stoppedAtPhase": null,
+            "sampleCount": 1,
+            "heapOvershootMb": 0,
+            "rssOvershootMb": 0
+          },
+          "maxExpansions": 1,
+          "expansions": 0,
+          "frontierSize": 0,
+          "expansionBudgetExhausted": false,
+          "completeWithinActionSet": true,
+          "maxActionsPerState": 9999,
+          "actionTrimmed": 0,
+          "statesWithActionTrim": 0,
+          "maxActionsGeneratedForState": 0,
+          "observerCaptureMode": "off",
+          "observerCaptureElapsedMs": 0,
+          "agendaFairness": {
+            "enabled": false,
+            "fairnessEvery": 32,
+            "bestPops": 0,
+            "fairPops": 0,
+            "fairFallbacks": 0,
+            "bestFallbacks": 0,
+            "skippedInactive": 0,
+            "skippedAlreadyExpanded": 0,
+            "maxFairQueueAgeExpansions": 0,
+            "fairCursor": 0,
+            "fairQueueLength": 0,
+            "fairActiveUnexpanded": 0
+          },
+          "actionsGeneratedByKind": {},
+          "actionsExpandedByKind": {},
+          "actionsKeptByKind": {},
+          "actionsDominatedByKind": {},
+          "uniqueBattleTargets": 0,
+          "uniquePortalEntries": 0,
+          "acceptedStates": 1,
+          "newKeys": 1,
+          "replacedLowerHp": 0,
+          "sameHpShorterRoute": 0,
+          "rejectedByHigherHp": 0,
+          "sameHpRejected": 0,
+          "agendaMode": "best-first",
+          "fairnessEvery": 32,
+          "stopOnFirstGoal": true,
+          "continueAfterGoal": false,
+          "keyMode": "mutation",
+          "targetFloorOrder": 2,
+          "foundFirstGoal": true,
+          "firstGoalExpansion": 0,
+          "firstGoalElapsedMs": 10,
+          "statProgress": {
+            "maxHeroSeen": {
+              "hp": 6620,
+              "atk": 72,
+              "def": 35,
+              "mdef": 340,
+              "exp": 3
+            },
+            "firstStatGainExpansion": {
+              "atk": null,
+              "def": null,
+              "mdef": null
+            },
+            "acceptedStatGainStates": {
+              "atk": 0,
+              "def": 0,
+              "mdef": 0
+            },
+            "firstStatGainAction": {
+              "atk": null,
+              "def": null,
+              "mdef": null
+            }
+          },
+          "foundBestGoal": true,
+          "goalSkylineLimit": 8,
+          "goalSkylineCount": 1,
+          "observerEnabled": false,
+          "observerErrors": 0,
+          "landmarkArchiveCount": 0,
+          "firstGoal": {
+            "floorId": "MT2",
+            "hp": 6620,
+            "routeLength": 80,
+            "decisionDepth": 22
+          },
+          "bestGoal": {
+            "floorId": "MT2",
+            "hp": 6620,
+            "routeLength": 80,
+            "decisionDepth": 22
+          },
+          "oracle": null,
+          "resourceTiming": {
+            "model": "breakpoint-v1",
+            "targetLimit": 16,
+            "resourceLimit": 4,
+            "thresholdLimit": 3,
+            "skylineMax": 4,
+            "analyzedStates": 1
+          }
+        },
+        "actionTrimmed": 0,
+        "rejectedByHigherHp": 0,
+        "replacedLowerHp": 0,
+        "actionsGeneratedByKind": {},
+        "actionsExpandedByKind": {},
+        "actionsKeptByKind": {},
+        "actionsDominatedByKind": {},
+        "uniqueBattleTargets": 0,
+        "uniquePortalEntries": 0,
+        "failure": null,
+        "goalSkyline": {
+          "primaryOutput": true,
+          "count": 1,
+          "candidates": [
+            {
+              "id": "mt2-hp3834#0",
+              "tags": [
+                "highest-hp",
+                "best-combat",
+                "highest-atk",
+                "highest-def",
+                "highest-mdef",
+                "highest-exp",
+                "shortest"
+              ],
+              "hero": {
+                "hp": 6620,
+                "atk": 72,
+                "def": 35,
+                "mdef": 340,
+                "lv": 4,
+                "exp": 3,
+                "money": 0,
+                "equipment": []
+              },
+              "effectiveHero": {
+                "hp": 6620,
+                "atk": 72,
+                "def": 35,
+                "mdef": 340,
+                "lv": 4,
+                "exp": 3
+              },
+              "routeLength": 80
+            }
+          ]
+        },
+        "actionScope": {
+          "actionKinds": [
+            "battle",
+            "pickup",
+            "equip",
+            "openDoor",
+            "useTool",
+            "changeFloor",
+            "event"
+          ],
+          "forbidUnsupportedEvents": true,
+          "allowedFloors": [
+            "MT1",
+            "MT2"
+          ],
+          "allowChangeFloors": [
+            "MT2:6,0",
+            "MT1:6,0"
+          ]
+        }
+      }
+    }
+  ],
+  "failedSegment": null,
+  "checkpoints": [
+    {
+      "segmentId": "mt2-hp3834",
+      "label": "MT2 四怪前 3834 基准",
+      "uniqueFeasibleRoute": true,
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "id": "mt2-hp3834:candidate-0",
+          "state": {
+            "floorId": "MT2",
+            "hero": {
+              "image": "hero.png",
+              "animate": false,
+              "name": "纱雪",
+              "lv": 4,
+              "hpmax": 9999,
+              "hp": 6620,
+              "manamax": -1,
+              "mana": 0,
+              "atk": 72,
+              "def": 35,
+              "mdef": 340,
+              "money": 0,
+              "exp": 3,
+              "equipment": [],
+              "loc": {
+                "direction": "right",
+                "x": 3,
+                "y": 7
+              },
+              "flags": {},
+              "followers": [],
+              "steps": 103,
+              "statistics": {
+                "battleDamage": 11081,
+                "battle": 35,
+                "money": 0,
+                "exp": 41
+              }
+            },
+            "inventory": {
+              "book": 1,
+              "fly": 1,
+              "I600": 1
+            },
+            "flags": {
+              "shiqu": 1,
+              "autoBattle": 1,
+              "hatred": 70,
+              "__leaveLoc__": {
+                "MT1": {
+                  "x": 6,
+                  "y": 0,
+                  "direction": "up"
+                },
+                "MT2": {
+                  "x": 6,
+                  "y": 0,
+                  "direction": "up"
+                }
+              }
+            },
+            "floorStates": {
+              "MT1": {
+                "removed": {
+                  "7,6": true,
+                  "5,6": true,
+                  "7,8": true,
+                  "5,8": true,
+                  "8,7": true,
+                  "10,7": true,
+                  "4,7": true,
+                  "2,7": true,
+                  "10,8": true,
+                  "9,9": true,
+                  "9,6": true,
+                  "10,5": true,
+                  "2,8": true,
+                  "11,5": true,
+                  "3,9": true,
+                  "9,4": true,
+                  "9,2": true,
+                  "10,3": true,
+                  "9,10": true,
+                  "3,6": true,
+                  "3,10": true,
+                  "10,11": true,
+                  "2,11": true,
+                  "3,4": true,
+                  "3,2": true,
+                  "2,3": true,
+                  "2,1": true,
+                  "1,2": true,
+                  "4,11": true,
+                  "8,11": true,
+                  "5,11": true,
+                  "7,11": true,
+                  "4,3": true,
+                  "5,3": true,
+                  "11,11": true,
+                  "12,11": true,
+                  "10,1": true,
+                  "11,2": true,
+                  "1,11": true,
+                  "0,11": true,
+                  "2,5": true,
+                  "1,5": true,
+                  "4,1": true,
+                  "5,1": true,
+                  "7,1": true,
+                  "8,1": true,
+                  "8,3": true,
+                  "7,3": true
+                },
+                "replaced": {}
+              },
+              "MT2": {
+                "removed": {
+                  "7,1": true,
+                  "5,1": true,
+                  "8,1": true,
+                  "9,2": true,
+                  "10,3": true,
+                  "4,1": true,
+                  "3,2": true,
+                  "2,3": true,
+                  "2,1": true,
+                  "1,2": true,
+                  "8,3": true,
+                  "7,3": true,
+                  "9,4": true,
+                  "10,5": true,
+                  "11,5": true,
+                  "9,6": true,
+                  "3,4": true,
+                  "10,7": true,
+                  "2,5": true,
+                  "1,5": true,
+                  "4,3": true,
+                  "5,3": true,
+                  "10,1": true,
+                  "11,2": true,
+                  "3,6": true,
+                  "2,7": true,
+                  "4,7": true,
+                  "5,7": true,
+                  "7,7": true
+                },
+                "replaced": {}
+              }
+            },
+            "visitedFloors": {
+              "MT1": true,
+              "MT2": true
+            },
+            "triggeredAutoEvents": {},
+            "route": [
+              "auto:pickup:greenGem@MT1:7,6",
+              "auto:pickup:I600@MT1:5,6",
+              "auto:pickup:redGem@MT1:7,8",
+              "auto:pickup:redPotion@MT1:5,8",
+              "battle:blackSlime@MT1:8,7",
+              "auto:pickup:I586@MT1:10,7",
+              "auto:battle:greenSlime@MT1:4,7",
+              "auto:pickup:redPotion@MT1:2,7",
+              "battle:redSlime@MT1:10,8",
+              "auto:pickup:blueGem@MT1:9,9",
+              "auto:battle:redSlime@MT1:9,6",
+              "auto:battle:greenSlime@MT1:10,5",
+              "auto:battle:redSlime@MT1:2,8",
+              "auto:pickup:redGem@MT1:11,5",
+              "auto:pickup:redGem@MT1:3,9",
+              "battle:slimelord@MT1:9,4",
+              "auto:pickup:yellowGem@MT1:9,2",
+              "auto:pickup:yellowPotion@MT1:10,3",
+              "auto:battle:blackSlime@MT1:9,10",
+              "auto:battle:blackSlime@MT1:3,6",
+              "auto:battle:blackSlime@MT1:3,10",
+              "auto:pickup:yellowPotion@MT1:10,11",
+              "auto:pickup:I578@MT1:2,11",
+              "battle:slimelord@MT1:3,4",
+              "auto:pickup:I578@MT1:3,2",
+              "auto:pickup:blueGem@MT1:2,3",
+              "battle:skeletonWarrior@MT1:2,1",
+              "auto:pickup:I584@MT1:1,2",
+              "auto:battle:bat@MT1:4,11",
+              "auto:battle:bat@MT1:8,11",
+              "auto:pickup:blueGem@MT1:5,11",
+              "auto:pickup:bluePotion@MT1:7,11",
+              "battle:vampire@MT1:4,3",
+              "auto:pickup:I576@MT1:5,3",
+              "auto:battle:bigBat@MT1:11,11",
+              "auto:pickup:I576@MT1:12,11",
+              "auto:battle:redBat@MT1:10,1",
+              "auto:pickup:I579@MT1:11,2",
+              "auto:battle:vampire@MT1:1,11",
+              "auto:pickup:I577@MT1:0,11",
+              "battle:skeletonCaptain@MT1:2,5",
+              "auto:pickup:poisonWine@MT1:1,5",
+              "battle:skeleton@MT1:4,1",
+              "auto:pickup:I576@MT1:5,1",
+              "auto:pickup:I577@MT1:7,1",
+              "changeFloor@MT1:6,0",
+              "auto:pickup:poisonWine@MT2:7,1",
+              "auto:pickup:I585@MT2:5,1",
+              "battle:skeleton@MT2:8,1",
+              "auto:pickup:I637@MT2:9,2",
+              "auto:pickup:I578@MT2:10,3",
+              "battle:skeleton@MT2:4,1",
+              "auto:pickup:weakWine@MT2:3,2",
+              "auto:pickup:I577@MT2:2,3",
+              "battle:ghostSoldier@MT2:2,1",
+              "auto:pickup:I635@MT2:1,2",
+              "battle:zombie@MT2:8,3",
+              "auto:pickup:I585@MT2:7,3",
+              "battle:zombieKnight@MT2:9,4",
+              "battle:ghostSoldier@MT2:10,5",
+              "auto:pickup:I579@MT2:11,5",
+              "auto:battle:zombie@MT2:9,6",
+              "auto:battle:zombie@MT2:3,4",
+              "auto:pickup:I584@MT2:10,7",
+              "battle:slimeman@MT2:2,5",
+              "auto:pickup:I615@MT2:1,5",
+              "battle:zombieKnight@MT2:4,3",
+              "auto:pickup:I579@MT2:5,3",
+              "battle:rock@MT2:10,1",
+              "auto:pickup:I576@MT2:11,2",
+              "battle:rock@MT2:3,6",
+              "auto:pickup:I577@MT2:2,7",
+              "changeFloor@MT2:6,0",
+              "auto:battle:skeleton@MT1:8,1",
+              "auto:battle:skeletonCaptain@MT1:8,3",
+              "auto:pickup:greenPotion@MT1:7,3",
+              "changeFloor@MT1:6,0",
+              "battle:redPriest@MT2:4,7",
+              "auto:pickup:I586@MT2:5,7",
+              "auto:pickup:I572@MT2:7,7"
+            ],
+            "notes": [],
+            "meta": {
+              "rank": "chaos",
+              "decisionDepth": 22,
+              "autoStepCount": 58,
+              "autoPickupCount": 42,
+              "autoBattleCount": 16
+            },
+            "progress": {
+              "stageIndex": 1,
+              "milestoneMask": "MT1,MT2",
+              "visitedFloorMask": "MT1,MT2",
+              "targetFloor": null,
+              "bestFloorRank": 2,
+              "currentFloorRank": 2,
+              "lastProgressActionId": null
+            }
+          },
+          "route": [
+            "auto:pickup:greenGem@MT1:7,6",
+            "auto:pickup:I600@MT1:5,6",
+            "auto:pickup:redGem@MT1:7,8",
+            "auto:pickup:redPotion@MT1:5,8",
+            "battle:blackSlime@MT1:8,7",
+            "auto:pickup:I586@MT1:10,7",
+            "auto:battle:greenSlime@MT1:4,7",
+            "auto:pickup:redPotion@MT1:2,7",
+            "battle:redSlime@MT1:10,8",
+            "auto:pickup:blueGem@MT1:9,9",
+            "auto:battle:redSlime@MT1:9,6",
+            "auto:battle:greenSlime@MT1:10,5",
+            "auto:battle:redSlime@MT1:2,8",
+            "auto:pickup:redGem@MT1:11,5",
+            "auto:pickup:redGem@MT1:3,9",
+            "battle:slimelord@MT1:9,4",
+            "auto:pickup:yellowGem@MT1:9,2",
+            "auto:pickup:yellowPotion@MT1:10,3",
+            "auto:battle:blackSlime@MT1:9,10",
+            "auto:battle:blackSlime@MT1:3,6",
+            "auto:battle:blackSlime@MT1:3,10",
+            "auto:pickup:yellowPotion@MT1:10,11",
+            "auto:pickup:I578@MT1:2,11",
+            "battle:slimelord@MT1:3,4",
+            "auto:pickup:I578@MT1:3,2",
+            "auto:pickup:blueGem@MT1:2,3",
+            "battle:skeletonWarrior@MT1:2,1",
+            "auto:pickup:I584@MT1:1,2",
+            "auto:battle:bat@MT1:4,11",
+            "auto:battle:bat@MT1:8,11",
+            "auto:pickup:blueGem@MT1:5,11",
+            "auto:pickup:bluePotion@MT1:7,11",
+            "battle:vampire@MT1:4,3",
+            "auto:pickup:I576@MT1:5,3",
+            "auto:battle:bigBat@MT1:11,11",
+            "auto:pickup:I576@MT1:12,11",
+            "auto:battle:redBat@MT1:10,1",
+            "auto:pickup:I579@MT1:11,2",
+            "auto:battle:vampire@MT1:1,11",
+            "auto:pickup:I577@MT1:0,11",
+            "battle:skeletonCaptain@MT1:2,5",
+            "auto:pickup:poisonWine@MT1:1,5",
+            "battle:skeleton@MT1:4,1",
+            "auto:pickup:I576@MT1:5,1",
+            "auto:pickup:I577@MT1:7,1",
+            "changeFloor@MT1:6,0",
+            "auto:pickup:poisonWine@MT2:7,1",
+            "auto:pickup:I585@MT2:5,1",
+            "battle:skeleton@MT2:8,1",
+            "auto:pickup:I637@MT2:9,2",
+            "auto:pickup:I578@MT2:10,3",
+            "battle:skeleton@MT2:4,1",
+            "auto:pickup:weakWine@MT2:3,2",
+            "auto:pickup:I577@MT2:2,3",
+            "battle:ghostSoldier@MT2:2,1",
+            "auto:pickup:I635@MT2:1,2",
+            "battle:zombie@MT2:8,3",
+            "auto:pickup:I585@MT2:7,3",
+            "battle:zombieKnight@MT2:9,4",
+            "battle:ghostSoldier@MT2:10,5",
+            "auto:pickup:I579@MT2:11,5",
+            "auto:battle:zombie@MT2:9,6",
+            "auto:battle:zombie@MT2:3,4",
+            "auto:pickup:I584@MT2:10,7",
+            "battle:slimeman@MT2:2,5",
+            "auto:pickup:I615@MT2:1,5",
+            "battle:zombieKnight@MT2:4,3",
+            "auto:pickup:I579@MT2:5,3",
+            "battle:rock@MT2:10,1",
+            "auto:pickup:I576@MT2:11,2",
+            "battle:rock@MT2:3,6",
+            "auto:pickup:I577@MT2:2,7",
+            "changeFloor@MT2:6,0",
+            "auto:battle:skeleton@MT1:8,1",
+            "auto:battle:skeletonCaptain@MT1:8,3",
+            "auto:pickup:greenPotion@MT1:7,3",
+            "changeFloor@MT1:6,0",
+            "battle:redPriest@MT2:4,7",
+            "auto:pickup:I586@MT2:5,7",
+            "auto:pickup:I572@MT2:7,7"
+          ],
+          "trace": [],
+          "hero": {
+            "hp": 6620,
+            "atk": 72,
+            "def": 35,
+            "mdef": 340,
+            "lv": 4,
+            "exp": 3,
+            "money": 0,
+            "equipment": []
+          },
+          "effectiveHero": {
+            "hp": 6620,
+            "atk": 72,
+            "def": 35,
+            "mdef": 340,
+            "lv": 4,
+            "exp": 3
+          },
+          "tags": [
+            "highest-hp",
+            "best-combat",
+            "highest-atk",
+            "highest-def",
+            "highest-mdef",
+            "highest-exp",
+            "shortest"
+          ],
+          "score": 12728820
+        }
+      ]
+    }
+  ],
+  "finalCandidates": [
+    {
+      "id": "mt2-hp3834:candidate-0",
+      "hero": {
+        "hp": 6620,
+        "atk": 72,
+        "def": 35,
+        "mdef": 340,
+        "lv": 4,
+        "exp": 3,
+        "money": 0,
+        "equipment": []
+      },
+      "effectiveHero": {
+        "hp": 6620,
+        "atk": 72,
+        "def": 35,
+        "mdef": 340,
+        "lv": 4,
+        "exp": 3
+      },
+      "tags": [
+        "highest-hp",
+        "best-combat",
+        "highest-atk",
+        "highest-def",
+        "highest-mdef",
+        "highest-exp",
+        "shortest"
+      ],
+      "routeLength": null,
+      "score": 12728820
+    }
+  ]
+}
