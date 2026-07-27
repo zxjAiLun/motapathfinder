@@ -1,0 +1,1853 @@
+{
+  "schema": "agenda-policy-evaluation.v1",
+  "generatedAt": "2026-07-27T15:50:45.840Z",
+  "provenance": {
+    "solverCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+    "startedCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+    "finishedCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+    "commitStable": true,
+    "nodeVersion": "v22.12.0",
+    "platform": "win32"
+  },
+  "mode": "full-milestone",
+  "input": {
+    "routeName": "onlyup-chaos-mt5-blueking",
+    "projectRoot": "E:\\AUbuntuProject\\project\\motapathfind\\Only upV2.1\\Only upV2.1",
+    "startRoute": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-hp3834-composed-from-initial.route.json",
+    "startRouteStep": null,
+    "fromMilestone": "mt2-hp3834",
+    "toMilestone": "mt2-left-chain-open"
+  },
+  "policies": [
+    {
+      "id": "best-first",
+      "agendaMode": "best-first",
+      "fairnessEvery": null
+    }
+  ],
+  "budgetPlan": {
+    "kind": "time",
+    "budgets": [
+      180000
+    ],
+    "repeats": 1
+  },
+  "searchDefaults": {
+    "mode": "full-milestone",
+    "routeName": "onlyup-chaos-mt5-blueking",
+    "projectRoot": "E:\\AUbuntuProject\\project\\motapathfind\\Only upV2.1\\Only upV2.1",
+    "startRoute": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-hp3834-composed-from-initial.route.json",
+    "startRouteStep": null,
+    "fromMilestone": "mt2-hp3834",
+    "toMilestone": "mt2-left-chain-open",
+    "candidateLimit": 8,
+    "goalSkylineLimit": 8,
+    "dpSkylineMax": 4,
+    "preserveSkylineRoles": true,
+    "stopOnFirstGoal": true,
+    "maxActionsPerState": 256,
+    "dpKeyMode": null,
+    "budgetScope": "global-run",
+    "maxHeapMb": 1400,
+    "maxRssMb": 1800,
+    "memoryCheckIntervalExpansions": 1,
+    "memoryCheckIntervalActions": 1,
+    "childOldSpaceMb": 1600
+  },
+  "memory": {
+    "maxHeapMb": 1400,
+    "maxRssMb": 1800,
+    "memoryCheckIntervalExpansions": 1,
+    "memoryCheckIntervalActions": 1,
+    "childOldSpaceMb": 1600
+  },
+  "runs": [
+    {
+      "policy": "best-first",
+      "repeat": 1,
+      "found": false,
+      "reachedMilestone": "mt2-hp3834",
+      "failedSegmentId": "mt2-left-chain-open",
+      "segmentMetrics": [
+        {
+          "segmentId": "mt2-left-chain-open",
+          "label": "MT2 左线资源链打开",
+          "found": false,
+          "attempts": 1,
+          "finalHp": null,
+          "metrics": {
+            "expansions": 9,
+            "wallMs": 10900,
+            "acceptedStates": 9,
+            "rejectedByHigherHp": 1,
+            "sameHpRejected": 1,
+            "replacedLowerHp": 0,
+            "actionTrimmed": 0,
+            "frontierSize": 0,
+            "heapUsedMb": 52.9,
+            "rssMb": 116.7,
+            "peakHeapUsedMb": 52.9,
+            "peakRssMb": 116.7,
+            "fairPops": 0,
+            "bestPops": 0,
+            "fairFallbacks": 0,
+            "bestFallbacks": 0,
+            "maxFairQueueAgeExpansions": 0,
+            "minLocalFirstGoalExpansion": null,
+            "attemptsBeforeFirstGoal": null,
+            "cumulativeExpansionsToFirstGoal": null,
+            "cumulativeWallMsToFirstGoal": null,
+            "attempts": 1
+          },
+          "stoppedReasons": [],
+          "progress": {
+            "primaryFailureClass": "present-tile-overconstrained",
+            "classCounts": {
+              "present-tile-overconstrained": 1
+            },
+            "preferredCandidateTags": [
+              "best-combat",
+              "shortest"
+            ],
+            "recommendedNext": [
+              "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource"
+            ]
+          }
+        }
+      ],
+      "strictReplay": {
+        "performed": false,
+        "valid": false,
+        "stepsAttempted": 0,
+        "stepsCompleted": 0,
+        "failureStep": null,
+        "failureReason": "route-file-missing",
+        "expectedStateKey": null,
+        "actualStateKey": null,
+        "finalState": null,
+        "error": null,
+        "routeFile": null,
+        "scope": "full-route"
+      },
+      "finalState": null,
+      "finalHp": null,
+      "childMemoryLimited": false,
+      "budget": {
+        "kind": "time",
+        "value": 180000,
+        "maxExpansions": 1000000,
+        "maxRuntimeMs": 180000,
+        "scope": "global-run",
+        "requestedExpansions": 1000000,
+        "requestedRuntimeMs": 180000,
+        "consumedExpansions": 9,
+        "consumedWallMs": 11572,
+        "stoppedReason": null,
+        "maxHeapMb": 1400,
+        "maxRssMb": 1800,
+        "memoryCheckIntervalExpansions": 1,
+        "memoryCheckIntervalActions": 1,
+        "childOldSpaceMb": 1600
+      },
+      "metrics": {
+        "expansions": 9,
+        "wallMs": 10900,
+        "acceptedStates": 9,
+        "rejectedByHigherHp": 1,
+        "sameHpRejected": 1,
+        "replacedLowerHp": 0,
+        "actionTrimmed": 0,
+        "frontierSize": 0,
+        "heapUsedMb": 52.9,
+        "rssMb": 116.7,
+        "peakHeapUsedMb": 52.9,
+        "peakRssMb": 116.7,
+        "fairPops": 0,
+        "bestPops": 0,
+        "fairFallbacks": 0,
+        "bestFallbacks": 0,
+        "maxFairQueueAgeExpansions": 0,
+        "minLocalFirstGoalExpansion": null,
+        "attemptsBeforeFirstGoal": null,
+        "cumulativeFirstGoalExpansion": null,
+        "cumulativeFirstGoalWallMs": null,
+        "attemptsToFinalRequestedMilestone": null,
+        "expansionsToFinalRequestedMilestone": null,
+        "wallMsToFinalRequestedMilestone": null
+      },
+      "memory": {
+        "maxHeapMb": 1400,
+        "maxRssMb": 1800,
+        "memoryCheckIntervalExpansions": 1,
+        "memoryCheckIntervalActions": 1,
+        "peakHeapUsedMb": 52.9,
+        "peakRssMb": 116.7,
+        "heapLimitedCount": 0,
+        "rssLimitedCount": 0,
+        "childMemoryLimitedCount": 0,
+        "searchCompletion": "completed",
+        "childMemoryLimited": false
+      },
+      "progress": null,
+      "stoppedReasons": [],
+      "completeWithinActionSet": true,
+      "attempts": [
+        {
+          "segmentId": "mt2-left-chain-open",
+          "startCandidateId": "initial#0",
+          "found": false,
+          "goalCount": 0,
+          "stoppedReason": null,
+          "expansions": 9,
+          "frontierSize": 0,
+          "firstGoalExpansion": null
+        }
+      ],
+      "searchConfig": {
+        "agendaMode": "best-first",
+        "fairnessEvery": null,
+        "priorityMode": "default",
+        "keyMode": "region",
+        "dpSkylineMax": 4,
+        "maxExpansions": 1000000,
+        "maxRuntimeMs": 180000,
+        "maxActionsPerState": 256,
+        "maxHeapMb": 1400,
+        "maxRssMb": 1800,
+        "memoryCheckIntervalExpansions": 1,
+        "memoryCheckIntervalActions": 1,
+        "childOldSpaceMb": 1600,
+        "memory": {
+          "maxHeapMb": 1400,
+          "maxRssMb": 1800,
+          "memoryCheckIntervalExpansions": 1,
+          "memoryCheckIntervalActions": 1,
+          "peakHeapUsedMb": 52.9,
+          "peakRssMb": 116.7,
+          "heapLimitedCount": 0,
+          "rssLimitedCount": 0,
+          "stoppedReason": null,
+          "stoppedAtExpansion": null,
+          "stoppedAtPhase": null,
+          "searchCompletion": "completed"
+        },
+        "actionProviderMode": "segment-provider",
+        "budgetScope": "global-run",
+        "budgetKind": "time",
+        "budgetValue": 180000
+      },
+      "process": {
+        "status": 0,
+        "signal": null,
+        "error": null,
+        "wallMs": 15495,
+        "stdoutTail": "edActions=10, keptActions=8, dominatedActions=2. Deficit: presentTiles: need MT2:4,7=present, have removed-or-missing.\"\n  },\n  \"completedSegments\": [],\n  \"segments\": [\n    {\n      \"segmentId\": \"mt2-left-chain-open\",\n      \"label\": \"MT2 左线资源链打开\",\n      \"found\": false,\n      \"startCandidatesTried\": 1,\n      \"candidateCount\": 0,\n      \"candidates\": [],\n      \"attempts\": [\n        {\n          \"startCandidateId\": \"initial#0\",\n          \"found\": false,\n          \"goalCount\": 0,\n          \"resourceTiming\": {\n            \"model\": \"breakpoint-v1\",\n            \"targetLimit\": 16,\n            \"resourceLimit\": 4,\n            \"thresholdLimit\": 3,\n            \"skylineMax\": 4,\n            \"analyzedStates\": 11\n          },\n          \"memory\": {\n            \"maxHeapMb\": 1400,\n            \"maxRssMb\": 1800,\n            \"memoryCheckIntervalExpansions\": 1,\n            \"memoryCheckIntervalActions\": 1,\n            \"memoryLimitsEnabled\": true,\n            \"successorCheckGranularity\": \"action-batch\",\n            \"peakHeapUsedMb\": 52.9,\n            \"peakRssMb\": 116.7,\n            \"stopHeapUsedMb\": null,\n            \"stopRssMb\": null,\n            \"stoppedReason\": null,\n            \"stoppedAtExpansion\": null,\n            \"stoppedAtPhase\": null,\n            \"sampleCount\": 30,\n            \"heapOvershootMb\": 0,\n            \"rssOvershootMb\": 0\n          }\n        }\n      ],\n      \"failurePropagation\": {\n        \"primaryFailureClass\": \"present-tile-overconstrained\",\n        \"classCounts\": {\n          \"present-tile-overconstrained\": 1\n        },\n        \"preferredCandidateTags\": [\n          \"best-combat\",\n          \"shortest\"\n        ],\n        \"recommendedNext\": [\n          \"relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource\"\n        ]\n      }\n    }\n  ],\n  \"checkpoints\": []\n}\nReport written: E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-180000-r1.json\n",
+        "stderrTail": ""
+      },
+      "provenance": {
+        "startedCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+        "solverCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+        "finishedCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+        "commitStable": true
+      },
+      "reportFile": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-180000-r1.json",
+      "reportStatus": "valid",
+      "diagnosticsVersion": null,
+      "evaluationAttemptLedger": [
+        {
+          "segmentId": "mt2-left-chain-open",
+          "phase": "initial",
+          "startCandidateId": "initial#0",
+          "found": false,
+          "goalCount": 0,
+          "diagnostics": {
+            "dp": {
+              "keys": 9,
+              "priorityMode": "default",
+              "dpSkylineMax": 4,
+              "actionProviderMode": "segment-provider",
+              "stoppedReason": null,
+              "maxRuntimeMs": 179999,
+              "maxHeapMb": 1400,
+              "maxRssMb": 1800,
+              "memoryCheckIntervalExpansions": 1,
+              "memoryCheckIntervalActions": 1,
+              "memoryLimitsEnabled": true,
+              "wallMs": 10900,
+              "heapUsedMb": 52.9,
+              "rssMb": 116.7,
+              "memory": {
+                "maxHeapMb": 1400,
+                "maxRssMb": 1800,
+                "memoryCheckIntervalExpansions": 1,
+                "memoryCheckIntervalActions": 1,
+                "memoryLimitsEnabled": true,
+                "successorCheckGranularity": "action-batch",
+                "peakHeapUsedMb": 52.9,
+                "peakRssMb": 116.7,
+                "stopHeapUsedMb": null,
+                "stopRssMb": null,
+                "stoppedReason": null,
+                "stoppedAtExpansion": null,
+                "stoppedAtPhase": null,
+                "sampleCount": 30,
+                "heapOvershootMb": 0,
+                "rssOvershootMb": 0
+              },
+              "maxExpansions": 1000000,
+              "expansions": 9,
+              "frontierSize": 0,
+              "expansionBudgetExhausted": false,
+              "completeWithinActionSet": true,
+              "maxActionsPerState": 256,
+              "actionTrimmed": 0,
+              "statesWithActionTrim": 0,
+              "maxActionsGeneratedForState": 2,
+              "observerCaptureMode": "off",
+              "observerCaptureElapsedMs": 0,
+              "agendaFairness": {
+                "enabled": false,
+                "fairnessEvery": 32,
+                "bestPops": 0,
+                "fairPops": 0,
+                "fairFallbacks": 0,
+                "bestFallbacks": 0,
+                "skippedInactive": 0,
+                "skippedAlreadyExpanded": 0,
+                "maxFairQueueAgeExpansions": 0,
+                "fairCursor": 0,
+                "fairQueueLength": 0,
+                "fairActiveUnexpanded": 0
+              },
+              "actionsGeneratedByKind": {
+                "battle": 10
+              },
+              "actionsExpandedByKind": {
+                "battle": 10
+              },
+              "actionsKeptByKind": {
+                "battle": 8
+              },
+              "actionsDominatedByKind": {
+                "battle": 2
+              },
+              "uniqueBattleTargets": 6,
+              "uniquePortalEntries": 0,
+              "acceptedStates": 9,
+              "newKeys": 9,
+              "replacedLowerHp": 0,
+              "sameHpShorterRoute": 0,
+              "rejectedByHigherHp": 1,
+              "sameHpRejected": 1,
+              "agendaMode": "best-first",
+              "fairnessEvery": 32,
+              "stopOnFirstGoal": true,
+              "continueAfterGoal": false,
+              "keyMode": "region",
+              "targetFloorOrder": 2,
+              "foundFirstGoal": false,
+              "firstGoalExpansion": null,
+              "firstGoalElapsedMs": null,
+              "statProgress": {
+                "maxHeroSeen": {
+                  "hp": 12008,
+                  "atk": 97,
+                  "def": 55,
+                  "mdef": 490,
+                  "exp": 15
+                },
+                "firstStatGainExpansion": {
+                  "atk": 2,
+                  "def": 2,
+                  "mdef": 2
+                },
+                "acceptedStatGainStates": {
+                  "atk": 7,
+                  "def": 7,
+                  "mdef": 7
+                },
+                "firstStatGainAction": {
+                  "atk": {
+                    "summary": "battle:brownWizard@MT2:3,10",
+                    "kind": "battle",
+                    "preStats": {
+                      "hp": 5870,
+                      "atk": 72,
+                      "def": 35,
+                      "mdef": 340,
+                      "exp": 5
+                    },
+                    "postStats": {
+                      "hp": 4898,
+                      "atk": 77,
+                      "def": 40,
+                      "mdef": 390,
+                      "exp": 7
+                    }
+                  },
+                  "def": {
+                    "summary": "battle:brownWizard@MT2:3,10",
+                    "kind": "battle",
+                    "preStats": {
+                      "hp": 5870,
+                      "atk": 72,
+                      "def": 35,
+                      "mdef": 340,
+                      "exp": 5
+                    },
+                    "postStats": {
+                      "hp": 4898,
+                      "atk": 77,
+                      "def": 40,
+                      "mdef": 390,
+                      "exp": 7
+                    }
+                  },
+                  "mdef": {
+                    "summary": "battle:brownWizard@MT2:3,10",
+                    "kind": "battle",
+                    "preStats": {
+                      "hp": 5870,
+                      "atk": 72,
+                      "def": 35,
+                      "mdef": 340,
+                      "exp": 5
+                    },
+                    "postStats": {
+                      "hp": 4898,
+                      "atk": 77,
+                      "def": 40,
+                      "mdef": 390,
+                      "exp": 7
+                    }
+                  }
+                }
+              },
+              "foundBestGoal": false,
+              "goalSkylineLimit": 8,
+              "goalSkylineCount": 0,
+              "observerEnabled": false,
+              "observerErrors": 0,
+              "landmarkArchiveCount": 0,
+              "firstGoal": null,
+              "bestGoal": null,
+              "oracle": null,
+              "resourceTiming": {
+                "model": "breakpoint-v1",
+                "targetLimit": 16,
+                "resourceLimit": 4,
+                "thresholdLimit": 3,
+                "skylineMax": 4,
+                "analyzedStates": 11
+              }
+            },
+            "actionTrimmed": 0,
+            "rejectedByHigherHp": 1,
+            "replacedLowerHp": 0,
+            "actionsGeneratedByKind": {
+              "battle": 10
+            },
+            "actionsExpandedByKind": {
+              "battle": 10
+            },
+            "actionsKeptByKind": {
+              "battle": 8
+            },
+            "actionsDominatedByKind": {
+              "battle": 2
+            },
+            "uniqueBattleTargets": 6,
+            "uniquePortalEntries": 0,
+            "failure": {
+              "failedSegmentId": "mt2-left-chain-open",
+              "label": "MT2 左线资源链打开",
+              "bestSeen": {
+                "floorId": "MT2",
+                "hero": {
+                  "hp": 12008,
+                  "atk": 87,
+                  "def": 50,
+                  "mdef": 490,
+                  "lv": 4,
+                  "exp": 11,
+                  "money": 0,
+                  "equipment": []
+                },
+                "effectiveHero": {
+                  "hp": 12008,
+                  "atk": 87,
+                  "def": 50,
+                  "mdef": 490,
+                  "lv": 4,
+                  "exp": 11
+                },
+                "routeTail": [
+                  "changeFloor@MT2:6,0",
+                  "auto:battle:skeleton@MT1:8,1",
+                  "auto:battle:skeletonCaptain@MT1:8,3",
+                  "auto:pickup:greenPotion@MT1:7,3",
+                  "changeFloor@MT1:6,0",
+                  "battle:redPriest@MT2:4,7",
+                  "auto:pickup:I586@MT2:5,7",
+                  "auto:pickup:I572@MT2:7,7",
+                  {
+                    "summary": "battle:bluePriest@MT2:2,8",
+                    "kind": "battle",
+                    "fingerprint": "battle|MT2|2|8|bluePriest",
+                    "floorId": "MT2",
+                    "x": null,
+                    "y": null,
+                    "target": {
+                      "x": 2,
+                      "y": 8
+                    },
+                    "stance": {
+                      "x": 2,
+                      "y": 7
+                    },
+                    "path": [
+                      "left"
+                    ],
+                    "direction": "down",
+                    "tool": null,
+                    "equipId": null,
+                    "equipType": null,
+                    "targetFloorId": null,
+                    "enemyId": "bluePriest",
+                    "itemId": null,
+                    "doorId": null,
+                    "eventId": null,
+                    "changeFloor": null,
+                    "estimate": {
+                      "damage": 1550,
+                      "turn": 55,
+                      "money": 0,
+                      "exp": 2,
+                      "guards": 0,
+                      "segmentPreviewScore": 10000000
+                    },
+                    "plan": null,
+                    "planEntries": null
+                  },
+                  {
+                    "summary": "battle:brownWizard@MT2:3,10",
+                    "kind": "battle",
+                    "fingerprint": "battle|MT2|3|10|brownWizard",
+                    "floorId": "MT2",
+                    "x": null,
+                    "y": null,
+                    "target": {
+                      "x": 3,
+                      "y": 10
+                    },
+                    "stance": {
+                      "x": 3,
+                      "y": 9
+                    },
+                    "path": [
+                      "down",
+                      "down",
+                      "right"
+                    ],
+                    "direction": "down",
+                    "tool": null,
+                    "equipId": null,
+                    "equipType": null,
+                    "targetFloorId": null,
+                    "enemyId": "brownWizard",
+                    "itemId": null,
+                    "doorId": null,
+                    "eventId": null,
+                    "changeFloor": null,
+                    "estimate": {
+                      "damage": 2972,
+                      "turn": 93,
+                      "money": 0,
+                      "exp": 2,
+                      "guards": 0,
+                      "segmentPreviewScore": 10000000
+                    },
+                    "plan": null,
+                    "planEntries": null
+                  },
+                  {
+                    "summary": "battle:slimeman@MT2:4,11",
+                    "kind": "battle",
+                    "fingerprint": "battle|MT2|4|11|slimeman",
+                    "floorId": "MT2",
+                    "x": null,
+                    "y": null,
+                    "target": {
+                      "x": 4,
+                      "y": 11
+                    },
+                    "stance": {
+                      "x": 3,
+                      "y": 11
+                    },
+                    "path": [
+                      "down",
+                      "down"
+                    ],
+                    "direction": "right",
+                    "tool": null,
+                    "equipId": null,
+                    "equipType": null,
+                    "targetFloorId": null,
+                    "enemyId": "slimeman",
+                    "itemId": null,
+                    "doorId": null,
+                    "eventId": null,
+                    "changeFloor": null,
+                    "estimate": {
+                      "damage": 790,
+                      "turn": 60,
+                      "money": 0,
+                      "exp": 2,
+                      "guards": 0,
+                      "segmentPreviewScore": 10000000
+                    },
+                    "plan": null,
+                    "planEntries": null
+                  },
+                  {
+                    "summary": "battle:slimeman@MT2:8,11",
+                    "kind": "battle",
+                    "fingerprint": "battle|MT2|8|11|slimeman",
+                    "floorId": "MT2",
+                    "x": null,
+                    "y": null,
+                    "target": {
+                      "x": 8,
+                      "y": 11
+                    },
+                    "stance": {
+                      "x": 7,
+                      "y": 11
+                    },
+                    "path": [
+                      "right",
+                      "right",
+                      "right",
+                      "right"
+                    ],
+                    "direction": "right",
+                    "tool": null,
+                    "equipId": null,
+                    "equipType": null,
+                    "targetFloorId": null,
+                    "enemyId": "slimeman",
+                    "itemId": null,
+                    "doorId": null,
+                    "eventId": null,
+                    "changeFloor": null,
+                    "estimate": {
+                      "damage": 100,
+                      "turn": 60,
+                      "money": 0,
+                      "exp": 2,
+                      "guards": 0,
+                      "segmentPreviewScore": -1000000
+                    },
+                    "plan": null,
+                    "planEntries": null
+                  }
+                ]
+              },
+              "missingGoalFields": [
+                {
+                  "field": "presentTiles",
+                  "expected": "MT2:4,7=present",
+                  "actual": "removed-or-missing"
+                }
+              ],
+              "failureClass": "present-tile-overconstrained",
+              "failureReason": "hard presentTiles constraint was violated before this milestone goal",
+              "preferredCandidateTags": [
+                "best-combat",
+                "shortest"
+              ],
+              "recommendedRepair": "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource",
+              "failurePropagation": {
+                "failureClass": "present-tile-overconstrained",
+                "failureReason": "hard presentTiles constraint was violated before this milestone goal",
+                "allFailureClasses": [
+                  {
+                    "failureClass": "present-tile-overconstrained",
+                    "reason": "hard presentTiles constraint was violated before this milestone goal",
+                    "recommendation": "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource"
+                  }
+                ],
+                "preferredCandidateTags": [
+                  "best-combat",
+                  "shortest"
+                ],
+                "recommendedRepair": "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource",
+                "recommendedNext": [
+                  "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource"
+                ],
+                "segmentId": "mt2-left-chain-open"
+              },
+              "diagnostics": {
+                "actionTrimmed": 0,
+                "frontierRemaining": 0,
+                "rejectedByHigherHp": 1,
+                "replacedLowerHp": 0
+              },
+              "recommendedNext": [
+                "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource"
+              ]
+            },
+            "goalSkyline": {
+              "primaryOutput": true,
+              "count": 0,
+              "candidates": []
+            },
+            "actionScope": {
+              "actionKinds": [
+                "battle",
+                "pickup",
+                "equip",
+                "openDoor",
+                "useTool",
+                "changeFloor",
+                "event"
+              ],
+              "forbidUnsupportedEvents": true,
+              "allowedFloors": [
+                "MT2"
+              ]
+            }
+          }
+        }
+      ],
+      "ledgerConsistency": {
+        "ledgerExpansions": 9,
+        "budgetExpansions": 9,
+        "match": true,
+        "delta": 0
+      },
+      "ledgerCosts": {
+        "totalExpansions": 9,
+        "totalWallMs": 10900,
+        "byPhase": {
+          "initial": {
+            "expansions": 9,
+            "wallMs": 10900,
+            "attempts": 1
+          }
+        },
+        "bySegment": {
+          "mt2-left-chain-open": {
+            "expansions": 9,
+            "wallMs": 10900,
+            "attempts": 1,
+            "expansionsToFirstGoal": null,
+            "wallMsToFirstGoal": null,
+            "attemptsToFirstGoal": null,
+            "firstGoal": null
+          }
+        },
+        "repairOverhead": 0,
+        "firstGoal": null,
+        "finalRequestedMilestoneGoal": null,
+        "expansionsToFirstGoal": null,
+        "wallMsToFirstGoal": null,
+        "expansionsToFinalRequestedMilestone": null,
+        "wallMsToFinalRequestedMilestone": null,
+        "attemptsToFinalRequestedMilestone": null,
+        "attemptCount": 1
+      },
+      "runStatus": "completed-with-search-failures",
+      "regressionFromBaseline": null,
+      "segmentRegressionFromBaseline": null,
+      "matrixCommitMismatch": false
+    }
+  ],
+  "matrix": {
+    "best-first": {
+      "time:180000": [
+        {
+          "policy": "best-first",
+          "repeat": 1,
+          "found": false,
+          "reachedMilestone": "mt2-hp3834",
+          "failedSegmentId": "mt2-left-chain-open",
+          "segmentMetrics": [
+            {
+              "segmentId": "mt2-left-chain-open",
+              "label": "MT2 左线资源链打开",
+              "found": false,
+              "attempts": 1,
+              "finalHp": null,
+              "metrics": {
+                "expansions": 9,
+                "wallMs": 10900,
+                "acceptedStates": 9,
+                "rejectedByHigherHp": 1,
+                "sameHpRejected": 1,
+                "replacedLowerHp": 0,
+                "actionTrimmed": 0,
+                "frontierSize": 0,
+                "heapUsedMb": 52.9,
+                "rssMb": 116.7,
+                "peakHeapUsedMb": 52.9,
+                "peakRssMb": 116.7,
+                "fairPops": 0,
+                "bestPops": 0,
+                "fairFallbacks": 0,
+                "bestFallbacks": 0,
+                "maxFairQueueAgeExpansions": 0,
+                "minLocalFirstGoalExpansion": null,
+                "attemptsBeforeFirstGoal": null,
+                "cumulativeExpansionsToFirstGoal": null,
+                "cumulativeWallMsToFirstGoal": null,
+                "attempts": 1
+              },
+              "stoppedReasons": [],
+              "progress": {
+                "primaryFailureClass": "present-tile-overconstrained",
+                "classCounts": {
+                  "present-tile-overconstrained": 1
+                },
+                "preferredCandidateTags": [
+                  "best-combat",
+                  "shortest"
+                ],
+                "recommendedNext": [
+                  "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource"
+                ]
+              }
+            }
+          ],
+          "strictReplay": {
+            "performed": false,
+            "valid": false,
+            "stepsAttempted": 0,
+            "stepsCompleted": 0,
+            "failureStep": null,
+            "failureReason": "route-file-missing",
+            "expectedStateKey": null,
+            "actualStateKey": null,
+            "finalState": null,
+            "error": null,
+            "routeFile": null,
+            "scope": "full-route"
+          },
+          "finalState": null,
+          "finalHp": null,
+          "childMemoryLimited": false,
+          "budget": {
+            "kind": "time",
+            "value": 180000,
+            "maxExpansions": 1000000,
+            "maxRuntimeMs": 180000,
+            "scope": "global-run",
+            "requestedExpansions": 1000000,
+            "requestedRuntimeMs": 180000,
+            "consumedExpansions": 9,
+            "consumedWallMs": 11572,
+            "stoppedReason": null,
+            "maxHeapMb": 1400,
+            "maxRssMb": 1800,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "childOldSpaceMb": 1600
+          },
+          "metrics": {
+            "expansions": 9,
+            "wallMs": 10900,
+            "acceptedStates": 9,
+            "rejectedByHigherHp": 1,
+            "sameHpRejected": 1,
+            "replacedLowerHp": 0,
+            "actionTrimmed": 0,
+            "frontierSize": 0,
+            "heapUsedMb": 52.9,
+            "rssMb": 116.7,
+            "peakHeapUsedMb": 52.9,
+            "peakRssMb": 116.7,
+            "fairPops": 0,
+            "bestPops": 0,
+            "fairFallbacks": 0,
+            "bestFallbacks": 0,
+            "maxFairQueueAgeExpansions": 0,
+            "minLocalFirstGoalExpansion": null,
+            "attemptsBeforeFirstGoal": null,
+            "cumulativeFirstGoalExpansion": null,
+            "cumulativeFirstGoalWallMs": null,
+            "attemptsToFinalRequestedMilestone": null,
+            "expansionsToFinalRequestedMilestone": null,
+            "wallMsToFinalRequestedMilestone": null
+          },
+          "memory": {
+            "maxHeapMb": 1400,
+            "maxRssMb": 1800,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "peakHeapUsedMb": 52.9,
+            "peakRssMb": 116.7,
+            "heapLimitedCount": 0,
+            "rssLimitedCount": 0,
+            "childMemoryLimitedCount": 0,
+            "searchCompletion": "completed",
+            "childMemoryLimited": false
+          },
+          "progress": null,
+          "stoppedReasons": [],
+          "completeWithinActionSet": true,
+          "attempts": [
+            {
+              "segmentId": "mt2-left-chain-open",
+              "startCandidateId": "initial#0",
+              "found": false,
+              "goalCount": 0,
+              "stoppedReason": null,
+              "expansions": 9,
+              "frontierSize": 0,
+              "firstGoalExpansion": null
+            }
+          ],
+          "searchConfig": {
+            "agendaMode": "best-first",
+            "fairnessEvery": null,
+            "priorityMode": "default",
+            "keyMode": "region",
+            "dpSkylineMax": 4,
+            "maxExpansions": 1000000,
+            "maxRuntimeMs": 180000,
+            "maxActionsPerState": 256,
+            "maxHeapMb": 1400,
+            "maxRssMb": 1800,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "childOldSpaceMb": 1600,
+            "memory": {
+              "maxHeapMb": 1400,
+              "maxRssMb": 1800,
+              "memoryCheckIntervalExpansions": 1,
+              "memoryCheckIntervalActions": 1,
+              "peakHeapUsedMb": 52.9,
+              "peakRssMb": 116.7,
+              "heapLimitedCount": 0,
+              "rssLimitedCount": 0,
+              "stoppedReason": null,
+              "stoppedAtExpansion": null,
+              "stoppedAtPhase": null,
+              "searchCompletion": "completed"
+            },
+            "actionProviderMode": "segment-provider",
+            "budgetScope": "global-run",
+            "budgetKind": "time",
+            "budgetValue": 180000
+          },
+          "process": {
+            "status": 0,
+            "signal": null,
+            "error": null,
+            "wallMs": 15495,
+            "stdoutTail": "edActions=10, keptActions=8, dominatedActions=2. Deficit: presentTiles: need MT2:4,7=present, have removed-or-missing.\"\n  },\n  \"completedSegments\": [],\n  \"segments\": [\n    {\n      \"segmentId\": \"mt2-left-chain-open\",\n      \"label\": \"MT2 左线资源链打开\",\n      \"found\": false,\n      \"startCandidatesTried\": 1,\n      \"candidateCount\": 0,\n      \"candidates\": [],\n      \"attempts\": [\n        {\n          \"startCandidateId\": \"initial#0\",\n          \"found\": false,\n          \"goalCount\": 0,\n          \"resourceTiming\": {\n            \"model\": \"breakpoint-v1\",\n            \"targetLimit\": 16,\n            \"resourceLimit\": 4,\n            \"thresholdLimit\": 3,\n            \"skylineMax\": 4,\n            \"analyzedStates\": 11\n          },\n          \"memory\": {\n            \"maxHeapMb\": 1400,\n            \"maxRssMb\": 1800,\n            \"memoryCheckIntervalExpansions\": 1,\n            \"memoryCheckIntervalActions\": 1,\n            \"memoryLimitsEnabled\": true,\n            \"successorCheckGranularity\": \"action-batch\",\n            \"peakHeapUsedMb\": 52.9,\n            \"peakRssMb\": 116.7,\n            \"stopHeapUsedMb\": null,\n            \"stopRssMb\": null,\n            \"stoppedReason\": null,\n            \"stoppedAtExpansion\": null,\n            \"stoppedAtPhase\": null,\n            \"sampleCount\": 30,\n            \"heapOvershootMb\": 0,\n            \"rssOvershootMb\": 0\n          }\n        }\n      ],\n      \"failurePropagation\": {\n        \"primaryFailureClass\": \"present-tile-overconstrained\",\n        \"classCounts\": {\n          \"present-tile-overconstrained\": 1\n        },\n        \"preferredCandidateTags\": [\n          \"best-combat\",\n          \"shortest\"\n        ],\n        \"recommendedNext\": [\n          \"relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource\"\n        ]\n      }\n    }\n  ],\n  \"checkpoints\": []\n}\nReport written: E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-180000-r1.json\n",
+            "stderrTail": ""
+          },
+          "provenance": {
+            "startedCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+            "solverCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+            "finishedCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+            "commitStable": true
+          },
+          "reportFile": "E:\\AUbuntuProject\\project\\motapathfind\\shared-solver\\routes\\generated\\agenda-policy-evaluation\\full-milestone-best-first-time-180000-r1.json",
+          "reportStatus": "valid",
+          "diagnosticsVersion": null,
+          "evaluationAttemptLedger": [
+            {
+              "segmentId": "mt2-left-chain-open",
+              "phase": "initial",
+              "startCandidateId": "initial#0",
+              "found": false,
+              "goalCount": 0,
+              "diagnostics": {
+                "dp": {
+                  "keys": 9,
+                  "priorityMode": "default",
+                  "dpSkylineMax": 4,
+                  "actionProviderMode": "segment-provider",
+                  "stoppedReason": null,
+                  "maxRuntimeMs": 179999,
+                  "maxHeapMb": 1400,
+                  "maxRssMb": 1800,
+                  "memoryCheckIntervalExpansions": 1,
+                  "memoryCheckIntervalActions": 1,
+                  "memoryLimitsEnabled": true,
+                  "wallMs": 10900,
+                  "heapUsedMb": 52.9,
+                  "rssMb": 116.7,
+                  "memory": {
+                    "maxHeapMb": 1400,
+                    "maxRssMb": 1800,
+                    "memoryCheckIntervalExpansions": 1,
+                    "memoryCheckIntervalActions": 1,
+                    "memoryLimitsEnabled": true,
+                    "successorCheckGranularity": "action-batch",
+                    "peakHeapUsedMb": 52.9,
+                    "peakRssMb": 116.7,
+                    "stopHeapUsedMb": null,
+                    "stopRssMb": null,
+                    "stoppedReason": null,
+                    "stoppedAtExpansion": null,
+                    "stoppedAtPhase": null,
+                    "sampleCount": 30,
+                    "heapOvershootMb": 0,
+                    "rssOvershootMb": 0
+                  },
+                  "maxExpansions": 1000000,
+                  "expansions": 9,
+                  "frontierSize": 0,
+                  "expansionBudgetExhausted": false,
+                  "completeWithinActionSet": true,
+                  "maxActionsPerState": 256,
+                  "actionTrimmed": 0,
+                  "statesWithActionTrim": 0,
+                  "maxActionsGeneratedForState": 2,
+                  "observerCaptureMode": "off",
+                  "observerCaptureElapsedMs": 0,
+                  "agendaFairness": {
+                    "enabled": false,
+                    "fairnessEvery": 32,
+                    "bestPops": 0,
+                    "fairPops": 0,
+                    "fairFallbacks": 0,
+                    "bestFallbacks": 0,
+                    "skippedInactive": 0,
+                    "skippedAlreadyExpanded": 0,
+                    "maxFairQueueAgeExpansions": 0,
+                    "fairCursor": 0,
+                    "fairQueueLength": 0,
+                    "fairActiveUnexpanded": 0
+                  },
+                  "actionsGeneratedByKind": {
+                    "battle": 10
+                  },
+                  "actionsExpandedByKind": {
+                    "battle": 10
+                  },
+                  "actionsKeptByKind": {
+                    "battle": 8
+                  },
+                  "actionsDominatedByKind": {
+                    "battle": 2
+                  },
+                  "uniqueBattleTargets": 6,
+                  "uniquePortalEntries": 0,
+                  "acceptedStates": 9,
+                  "newKeys": 9,
+                  "replacedLowerHp": 0,
+                  "sameHpShorterRoute": 0,
+                  "rejectedByHigherHp": 1,
+                  "sameHpRejected": 1,
+                  "agendaMode": "best-first",
+                  "fairnessEvery": 32,
+                  "stopOnFirstGoal": true,
+                  "continueAfterGoal": false,
+                  "keyMode": "region",
+                  "targetFloorOrder": 2,
+                  "foundFirstGoal": false,
+                  "firstGoalExpansion": null,
+                  "firstGoalElapsedMs": null,
+                  "statProgress": {
+                    "maxHeroSeen": {
+                      "hp": 12008,
+                      "atk": 97,
+                      "def": 55,
+                      "mdef": 490,
+                      "exp": 15
+                    },
+                    "firstStatGainExpansion": {
+                      "atk": 2,
+                      "def": 2,
+                      "mdef": 2
+                    },
+                    "acceptedStatGainStates": {
+                      "atk": 7,
+                      "def": 7,
+                      "mdef": 7
+                    },
+                    "firstStatGainAction": {
+                      "atk": {
+                        "summary": "battle:brownWizard@MT2:3,10",
+                        "kind": "battle",
+                        "preStats": {
+                          "hp": 5870,
+                          "atk": 72,
+                          "def": 35,
+                          "mdef": 340,
+                          "exp": 5
+                        },
+                        "postStats": {
+                          "hp": 4898,
+                          "atk": 77,
+                          "def": 40,
+                          "mdef": 390,
+                          "exp": 7
+                        }
+                      },
+                      "def": {
+                        "summary": "battle:brownWizard@MT2:3,10",
+                        "kind": "battle",
+                        "preStats": {
+                          "hp": 5870,
+                          "atk": 72,
+                          "def": 35,
+                          "mdef": 340,
+                          "exp": 5
+                        },
+                        "postStats": {
+                          "hp": 4898,
+                          "atk": 77,
+                          "def": 40,
+                          "mdef": 390,
+                          "exp": 7
+                        }
+                      },
+                      "mdef": {
+                        "summary": "battle:brownWizard@MT2:3,10",
+                        "kind": "battle",
+                        "preStats": {
+                          "hp": 5870,
+                          "atk": 72,
+                          "def": 35,
+                          "mdef": 340,
+                          "exp": 5
+                        },
+                        "postStats": {
+                          "hp": 4898,
+                          "atk": 77,
+                          "def": 40,
+                          "mdef": 390,
+                          "exp": 7
+                        }
+                      }
+                    }
+                  },
+                  "foundBestGoal": false,
+                  "goalSkylineLimit": 8,
+                  "goalSkylineCount": 0,
+                  "observerEnabled": false,
+                  "observerErrors": 0,
+                  "landmarkArchiveCount": 0,
+                  "firstGoal": null,
+                  "bestGoal": null,
+                  "oracle": null,
+                  "resourceTiming": {
+                    "model": "breakpoint-v1",
+                    "targetLimit": 16,
+                    "resourceLimit": 4,
+                    "thresholdLimit": 3,
+                    "skylineMax": 4,
+                    "analyzedStates": 11
+                  }
+                },
+                "actionTrimmed": 0,
+                "rejectedByHigherHp": 1,
+                "replacedLowerHp": 0,
+                "actionsGeneratedByKind": {
+                  "battle": 10
+                },
+                "actionsExpandedByKind": {
+                  "battle": 10
+                },
+                "actionsKeptByKind": {
+                  "battle": 8
+                },
+                "actionsDominatedByKind": {
+                  "battle": 2
+                },
+                "uniqueBattleTargets": 6,
+                "uniquePortalEntries": 0,
+                "failure": {
+                  "failedSegmentId": "mt2-left-chain-open",
+                  "label": "MT2 左线资源链打开",
+                  "bestSeen": {
+                    "floorId": "MT2",
+                    "hero": {
+                      "hp": 12008,
+                      "atk": 87,
+                      "def": 50,
+                      "mdef": 490,
+                      "lv": 4,
+                      "exp": 11,
+                      "money": 0,
+                      "equipment": []
+                    },
+                    "effectiveHero": {
+                      "hp": 12008,
+                      "atk": 87,
+                      "def": 50,
+                      "mdef": 490,
+                      "lv": 4,
+                      "exp": 11
+                    },
+                    "routeTail": [
+                      "changeFloor@MT2:6,0",
+                      "auto:battle:skeleton@MT1:8,1",
+                      "auto:battle:skeletonCaptain@MT1:8,3",
+                      "auto:pickup:greenPotion@MT1:7,3",
+                      "changeFloor@MT1:6,0",
+                      "battle:redPriest@MT2:4,7",
+                      "auto:pickup:I586@MT2:5,7",
+                      "auto:pickup:I572@MT2:7,7",
+                      {
+                        "summary": "battle:bluePriest@MT2:2,8",
+                        "kind": "battle",
+                        "fingerprint": "battle|MT2|2|8|bluePriest",
+                        "floorId": "MT2",
+                        "x": null,
+                        "y": null,
+                        "target": {
+                          "x": 2,
+                          "y": 8
+                        },
+                        "stance": {
+                          "x": 2,
+                          "y": 7
+                        },
+                        "path": [
+                          "left"
+                        ],
+                        "direction": "down",
+                        "tool": null,
+                        "equipId": null,
+                        "equipType": null,
+                        "targetFloorId": null,
+                        "enemyId": "bluePriest",
+                        "itemId": null,
+                        "doorId": null,
+                        "eventId": null,
+                        "changeFloor": null,
+                        "estimate": {
+                          "damage": 1550,
+                          "turn": 55,
+                          "money": 0,
+                          "exp": 2,
+                          "guards": 0,
+                          "segmentPreviewScore": 10000000
+                        },
+                        "plan": null,
+                        "planEntries": null
+                      },
+                      {
+                        "summary": "battle:brownWizard@MT2:3,10",
+                        "kind": "battle",
+                        "fingerprint": "battle|MT2|3|10|brownWizard",
+                        "floorId": "MT2",
+                        "x": null,
+                        "y": null,
+                        "target": {
+                          "x": 3,
+                          "y": 10
+                        },
+                        "stance": {
+                          "x": 3,
+                          "y": 9
+                        },
+                        "path": [
+                          "down",
+                          "down",
+                          "right"
+                        ],
+                        "direction": "down",
+                        "tool": null,
+                        "equipId": null,
+                        "equipType": null,
+                        "targetFloorId": null,
+                        "enemyId": "brownWizard",
+                        "itemId": null,
+                        "doorId": null,
+                        "eventId": null,
+                        "changeFloor": null,
+                        "estimate": {
+                          "damage": 2972,
+                          "turn": 93,
+                          "money": 0,
+                          "exp": 2,
+                          "guards": 0,
+                          "segmentPreviewScore": 10000000
+                        },
+                        "plan": null,
+                        "planEntries": null
+                      },
+                      {
+                        "summary": "battle:slimeman@MT2:4,11",
+                        "kind": "battle",
+                        "fingerprint": "battle|MT2|4|11|slimeman",
+                        "floorId": "MT2",
+                        "x": null,
+                        "y": null,
+                        "target": {
+                          "x": 4,
+                          "y": 11
+                        },
+                        "stance": {
+                          "x": 3,
+                          "y": 11
+                        },
+                        "path": [
+                          "down",
+                          "down"
+                        ],
+                        "direction": "right",
+                        "tool": null,
+                        "equipId": null,
+                        "equipType": null,
+                        "targetFloorId": null,
+                        "enemyId": "slimeman",
+                        "itemId": null,
+                        "doorId": null,
+                        "eventId": null,
+                        "changeFloor": null,
+                        "estimate": {
+                          "damage": 790,
+                          "turn": 60,
+                          "money": 0,
+                          "exp": 2,
+                          "guards": 0,
+                          "segmentPreviewScore": 10000000
+                        },
+                        "plan": null,
+                        "planEntries": null
+                      },
+                      {
+                        "summary": "battle:slimeman@MT2:8,11",
+                        "kind": "battle",
+                        "fingerprint": "battle|MT2|8|11|slimeman",
+                        "floorId": "MT2",
+                        "x": null,
+                        "y": null,
+                        "target": {
+                          "x": 8,
+                          "y": 11
+                        },
+                        "stance": {
+                          "x": 7,
+                          "y": 11
+                        },
+                        "path": [
+                          "right",
+                          "right",
+                          "right",
+                          "right"
+                        ],
+                        "direction": "right",
+                        "tool": null,
+                        "equipId": null,
+                        "equipType": null,
+                        "targetFloorId": null,
+                        "enemyId": "slimeman",
+                        "itemId": null,
+                        "doorId": null,
+                        "eventId": null,
+                        "changeFloor": null,
+                        "estimate": {
+                          "damage": 100,
+                          "turn": 60,
+                          "money": 0,
+                          "exp": 2,
+                          "guards": 0,
+                          "segmentPreviewScore": -1000000
+                        },
+                        "plan": null,
+                        "planEntries": null
+                      }
+                    ]
+                  },
+                  "missingGoalFields": [
+                    {
+                      "field": "presentTiles",
+                      "expected": "MT2:4,7=present",
+                      "actual": "removed-or-missing"
+                    }
+                  ],
+                  "failureClass": "present-tile-overconstrained",
+                  "failureReason": "hard presentTiles constraint was violated before this milestone goal",
+                  "preferredCandidateTags": [
+                    "best-combat",
+                    "shortest"
+                  ],
+                  "recommendedRepair": "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource",
+                  "failurePropagation": {
+                    "failureClass": "present-tile-overconstrained",
+                    "failureReason": "hard presentTiles constraint was violated before this milestone goal",
+                    "allFailureClasses": [
+                      {
+                        "failureClass": "present-tile-overconstrained",
+                        "reason": "hard presentTiles constraint was violated before this milestone goal",
+                        "recommendation": "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource"
+                      }
+                    ],
+                    "preferredCandidateTags": [
+                      "best-combat",
+                      "shortest"
+                    ],
+                    "recommendedRepair": "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource",
+                    "recommendedNext": [
+                      "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource"
+                    ],
+                    "segmentId": "mt2-left-chain-open"
+                  },
+                  "diagnostics": {
+                    "actionTrimmed": 0,
+                    "frontierRemaining": 0,
+                    "rejectedByHigherHp": 1,
+                    "replacedLowerHp": 0
+                  },
+                  "recommendedNext": [
+                    "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource"
+                  ]
+                },
+                "goalSkyline": {
+                  "primaryOutput": true,
+                  "count": 0,
+                  "candidates": []
+                },
+                "actionScope": {
+                  "actionKinds": [
+                    "battle",
+                    "pickup",
+                    "equip",
+                    "openDoor",
+                    "useTool",
+                    "changeFloor",
+                    "event"
+                  ],
+                  "forbidUnsupportedEvents": true,
+                  "allowedFloors": [
+                    "MT2"
+                  ]
+                }
+              }
+            }
+          ],
+          "ledgerConsistency": {
+            "ledgerExpansions": 9,
+            "budgetExpansions": 9,
+            "match": true,
+            "delta": 0
+          },
+          "ledgerCosts": {
+            "totalExpansions": 9,
+            "totalWallMs": 10900,
+            "byPhase": {
+              "initial": {
+                "expansions": 9,
+                "wallMs": 10900,
+                "attempts": 1
+              }
+            },
+            "bySegment": {
+              "mt2-left-chain-open": {
+                "expansions": 9,
+                "wallMs": 10900,
+                "attempts": 1,
+                "expansionsToFirstGoal": null,
+                "wallMsToFirstGoal": null,
+                "attemptsToFirstGoal": null,
+                "firstGoal": null
+              }
+            },
+            "repairOverhead": 0,
+            "firstGoal": null,
+            "finalRequestedMilestoneGoal": null,
+            "expansionsToFirstGoal": null,
+            "wallMsToFirstGoal": null,
+            "expansionsToFinalRequestedMilestone": null,
+            "wallMsToFinalRequestedMilestone": null,
+            "attemptsToFinalRequestedMilestone": null,
+            "attemptCount": 1
+          },
+          "runStatus": "completed-with-search-failures",
+          "regressionFromBaseline": null,
+          "segmentRegressionFromBaseline": null
+        }
+      ]
+    }
+  },
+  "summaries": {
+    "best-first": {
+      "time:180000": {
+        "budget": {
+          "kind": "time",
+          "value": 180000,
+          "maxExpansions": 1000000,
+          "maxRuntimeMs": 180000,
+          "scope": "global-run",
+          "requestedExpansions": 1000000,
+          "requestedRuntimeMs": 180000,
+          "consumedExpansions": 9,
+          "consumedWallMs": 11572,
+          "stoppedReason": null,
+          "maxHeapMb": 1400,
+          "maxRssMb": 1800,
+          "memoryCheckIntervalExpansions": 1,
+          "memoryCheckIntervalActions": 1,
+          "childOldSpaceMb": 1600
+        },
+        "repeats": {
+          "count": 1,
+          "foundCount": 0,
+          "replayValidCount": 0,
+          "metrics": {
+            "expansions": {
+              "min": 9,
+              "max": 9,
+              "median": 9,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "wallMs": {
+              "min": 10900,
+              "max": 10900,
+              "median": 10900,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "fairPops": {
+              "min": 0,
+              "max": 0,
+              "median": 0,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "bestPops": {
+              "min": 0,
+              "max": 0,
+              "median": 0,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "frontierSize": {
+              "min": 0,
+              "max": 0,
+              "median": 0,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "heapUsedMb": {
+              "min": 52.9,
+              "max": 52.9,
+              "median": 52.9,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "rssMb": {
+              "min": 116.7,
+              "max": 116.7,
+              "median": 116.7,
+              "sampleCount": 1,
+              "missingCount": 0
+            },
+            "attemptsToFinalRequestedMilestone": {
+              "min": null,
+              "max": null,
+              "median": null,
+              "sampleCount": 0,
+              "missingCount": 1
+            },
+            "expansionsToFinalRequestedMilestone": {
+              "min": null,
+              "max": null,
+              "median": null,
+              "sampleCount": 0,
+              "missingCount": 1
+            },
+            "wallMsToFinalRequestedMilestone": {
+              "min": null,
+              "max": null,
+              "median": null,
+              "sampleCount": 0,
+              "missingCount": 1
+            }
+          }
+        },
+        "segmentRepeats": {
+          "mt2-left-chain-open": {
+            "label": "MT2 左线资源链打开",
+            "foundCount": 0,
+            "repeats": 1,
+            "metrics": {
+              "expansions": {
+                "min": 9,
+                "max": 9,
+                "median": 9,
+                "sampleCount": 1,
+                "missingCount": 0
+              },
+              "wallMs": {
+                "min": 10900,
+                "max": 10900,
+                "median": 10900,
+                "sampleCount": 1,
+                "missingCount": 0
+              },
+              "cumulativeExpansionsToFirstGoal": {
+                "min": null,
+                "max": null,
+                "median": null,
+                "sampleCount": 0,
+                "missingCount": 1
+              },
+              "cumulativeWallMsToFirstGoal": {
+                "min": null,
+                "max": null,
+                "median": null,
+                "sampleCount": 0,
+                "missingCount": 1
+              },
+              "frontierSize": {
+                "min": 0,
+                "max": 0,
+                "median": 0,
+                "sampleCount": 1,
+                "missingCount": 0
+              },
+              "finalHp": {
+                "min": null,
+                "max": null,
+                "median": null,
+                "sampleCount": 0,
+                "missingCount": 1
+              }
+            }
+          }
+        },
+        "ledgerCosts": {
+          "totalExpansions": {
+            "min": 9,
+            "max": 9,
+            "median": 9,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "totalWallMs": {
+            "min": 10900,
+            "max": 10900,
+            "median": 10900,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "expansionsToFirstGoal": {
+            "min": null,
+            "max": null,
+            "median": null,
+            "sampleCount": 0,
+            "missingCount": 1
+          },
+          "wallMsToFirstGoal": {
+            "min": null,
+            "max": null,
+            "median": null,
+            "sampleCount": 0,
+            "missingCount": 1
+          },
+          "expansionsToFinalRequestedMilestone": {
+            "min": null,
+            "max": null,
+            "median": null,
+            "sampleCount": 0,
+            "missingCount": 1
+          },
+          "wallMsToFinalRequestedMilestone": {
+            "min": null,
+            "max": null,
+            "median": null,
+            "sampleCount": 0,
+            "missingCount": 1
+          },
+          "attemptsToFinalRequestedMilestone": {
+            "min": null,
+            "max": null,
+            "median": null,
+            "sampleCount": 0,
+            "missingCount": 1
+          }
+        },
+        "ledgerConsistency": {
+          "count": 1,
+          "matchCount": 1,
+          "mismatchCount": 0,
+          "allMatch": true
+        },
+        "memory": {
+          "heapLimitedCount": 0,
+          "rssLimitedCount": 0,
+          "childMemoryLimitedCount": 0,
+          "peakHeapUsedMb": {
+            "min": 52.9,
+            "max": 52.9,
+            "median": 52.9,
+            "sampleCount": 1,
+            "missingCount": 0
+          },
+          "peakRssMb": {
+            "min": 116.7,
+            "max": 116.7,
+            "median": 116.7,
+            "sampleCount": 1,
+            "missingCount": 0
+          }
+        },
+        "runs": [
+          {
+            "repeat": 1,
+            "found": false,
+            "strictReplay": {
+              "performed": false,
+              "valid": false,
+              "stepsAttempted": 0,
+              "stepsCompleted": 0,
+              "failureStep": null,
+              "failureReason": "route-file-missing",
+              "expectedStateKey": null,
+              "actualStateKey": null,
+              "finalState": null,
+              "error": null,
+              "routeFile": null,
+              "scope": "full-route"
+            },
+            "runStatus": "completed-with-search-failures",
+            "segmentMetrics": [
+              {
+                "segmentId": "mt2-left-chain-open",
+                "label": "MT2 左线资源链打开",
+                "found": false,
+                "attempts": 1,
+                "finalHp": null,
+                "metrics": {
+                  "expansions": 9,
+                  "wallMs": 10900,
+                  "acceptedStates": 9,
+                  "rejectedByHigherHp": 1,
+                  "sameHpRejected": 1,
+                  "replacedLowerHp": 0,
+                  "actionTrimmed": 0,
+                  "frontierSize": 0,
+                  "heapUsedMb": 52.9,
+                  "rssMb": 116.7,
+                  "peakHeapUsedMb": 52.9,
+                  "peakRssMb": 116.7,
+                  "fairPops": 0,
+                  "bestPops": 0,
+                  "fairFallbacks": 0,
+                  "bestFallbacks": 0,
+                  "maxFairQueueAgeExpansions": 0,
+                  "minLocalFirstGoalExpansion": null,
+                  "attemptsBeforeFirstGoal": null,
+                  "cumulativeExpansionsToFirstGoal": null,
+                  "cumulativeWallMsToFirstGoal": null,
+                  "attempts": 1
+                },
+                "stoppedReasons": [],
+                "progress": {
+                  "primaryFailureClass": "present-tile-overconstrained",
+                  "classCounts": {
+                    "present-tile-overconstrained": 1
+                  },
+                  "preferredCandidateTags": [
+                    "best-combat",
+                    "shortest"
+                  ],
+                  "recommendedNext": [
+                    "relax non-essential presentTiles into preferredPresentTiles or add an explicit reason if it is a required later resource"
+                  ]
+                }
+              }
+            ],
+            "metrics": {
+              "expansions": 9,
+              "wallMs": 10900,
+              "acceptedStates": 9,
+              "rejectedByHigherHp": 1,
+              "sameHpRejected": 1,
+              "replacedLowerHp": 0,
+              "actionTrimmed": 0,
+              "frontierSize": 0,
+              "heapUsedMb": 52.9,
+              "rssMb": 116.7,
+              "peakHeapUsedMb": 52.9,
+              "peakRssMb": 116.7,
+              "fairPops": 0,
+              "bestPops": 0,
+              "fairFallbacks": 0,
+              "bestFallbacks": 0,
+              "maxFairQueueAgeExpansions": 0,
+              "minLocalFirstGoalExpansion": null,
+              "attemptsBeforeFirstGoal": null,
+              "cumulativeFirstGoalExpansion": null,
+              "cumulativeFirstGoalWallMs": null,
+              "attemptsToFinalRequestedMilestone": null,
+              "expansionsToFinalRequestedMilestone": null,
+              "wallMsToFinalRequestedMilestone": null
+            },
+            "memory": {
+              "maxHeapMb": 1400,
+              "maxRssMb": 1800,
+              "memoryCheckIntervalExpansions": 1,
+              "memoryCheckIntervalActions": 1,
+              "peakHeapUsedMb": 52.9,
+              "peakRssMb": 116.7,
+              "heapLimitedCount": 0,
+              "rssLimitedCount": 0,
+              "childMemoryLimitedCount": 0,
+              "searchCompletion": "completed",
+              "childMemoryLimited": false
+            },
+            "ledgerCosts": {
+              "totalExpansions": 9,
+              "totalWallMs": 10900,
+              "byPhase": {
+                "initial": {
+                  "expansions": 9,
+                  "wallMs": 10900,
+                  "attempts": 1
+                }
+              },
+              "bySegment": {
+                "mt2-left-chain-open": {
+                  "expansions": 9,
+                  "wallMs": 10900,
+                  "attempts": 1,
+                  "expansionsToFirstGoal": null,
+                  "wallMsToFirstGoal": null,
+                  "attemptsToFirstGoal": null,
+                  "firstGoal": null
+                }
+              },
+              "repairOverhead": 0,
+              "firstGoal": null,
+              "finalRequestedMilestoneGoal": null,
+              "expansionsToFirstGoal": null,
+              "wallMsToFirstGoal": null,
+              "expansionsToFinalRequestedMilestone": null,
+              "wallMsToFinalRequestedMilestone": null,
+              "attemptsToFinalRequestedMilestone": null,
+              "attemptCount": 1
+            },
+            "ledgerConsistency": {
+              "ledgerExpansions": 9,
+              "budgetExpansions": 9,
+              "match": true,
+              "delta": 0
+            },
+            "provenance": {
+              "startedCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+              "solverCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+              "finishedCommit": "c4994e3c46f74917e27b1eb437c975278bdf9065",
+              "commitStable": true
+            },
+            "regressionFromBaseline": null,
+            "segmentRegressionFromBaseline": null
+          }
+        ]
+      }
+    }
+  },
+  "stoppedReason": "completed-with-search-failures"
+}
