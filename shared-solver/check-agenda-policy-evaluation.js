@@ -407,6 +407,66 @@ function checkFirstGoalExpansionAccounting() {
   });
   assert.equal(nthGoal.diagnostics.dp.firstGoalExpansion, 3);
   assert(nthGoal.diagnostics.dp.firstGoalExpansion <= nthGoal.expansions);
+
+  const statProgress = searchDP(makeMemorySearchSimulator(), makeMemorySearchState(), {
+    maxExpansions: 1,
+    maxRuntimeMs: 1000,
+    stopOnFirstGoal: false,
+    goalPredicate: () => false,
+    actionProvider: () => [{
+      kind: "event",
+      summary: "event:stat-gain@F1:2,1",
+      floorId: "F1",
+      x: 2,
+      y: 1,
+    }],
+    actionApplier: (state) => ({
+      ...state,
+      step: 1,
+      hero: {
+        ...state.hero,
+        atk: state.hero.atk + 1,
+        def: state.hero.def + 1,
+        mdef: state.hero.mdef + 1,
+        exp: state.hero.exp + 1,
+        loc: { ...state.hero.loc, x: 2 },
+      },
+      route: [],
+    }),
+  });
+  assert.deepEqual(statProgress.diagnostics.dp.statProgress.maxHeroSeen, {
+    hp: 100,
+    atk: 2,
+    def: 2,
+    mdef: 2,
+    exp: 1,
+  });
+  assert.deepEqual(statProgress.diagnostics.dp.statProgress.firstStatGainExpansion, {
+    atk: 1,
+    def: 1,
+    mdef: 1,
+  });
+  assert.deepEqual(statProgress.diagnostics.dp.statProgress.acceptedStatGainStates, {
+    atk: 1,
+    def: 1,
+    mdef: 1,
+  });
+  assert.equal(statProgress.diagnostics.dp.statProgress.firstStatGainAction.atk.summary, "event:stat-gain@F1:2,1");
+  assert.equal(statProgress.diagnostics.dp.statProgress.firstStatGainAction.atk.kind, "event");
+  assert.deepEqual(statProgress.diagnostics.dp.statProgress.firstStatGainAction.atk.preStats, {
+    hp: 100,
+    atk: 1,
+    def: 1,
+    mdef: 1,
+    exp: 0,
+  });
+  assert.deepEqual(statProgress.diagnostics.dp.statProgress.firstStatGainAction.atk.postStats, {
+    hp: 100,
+    atk: 2,
+    def: 2,
+    mdef: 2,
+    exp: 1,
+  });
 }
 
 function checkMemoryRepairAndChildClassification() {

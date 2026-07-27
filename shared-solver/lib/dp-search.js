@@ -844,6 +844,49 @@ function searchDP(simulator, initialState, options) {
   let firstGoalElapsedMs = null;
   let bestGoalNode = null;
   const goalNodes = [];
+  const statProgressBaseline = {
+    hp: number(rootState.hero && rootState.hero.hp, 0),
+    atk: number(rootState.hero && rootState.hero.atk, 0),
+    def: number(rootState.hero && rootState.hero.def, 0),
+    mdef: number(rootState.hero && rootState.hero.mdef, 0),
+    exp: number(rootState.hero && rootState.hero.exp, 0),
+  };
+  const statProgress = {
+    maxHeroSeen: { ...statProgressBaseline },
+    firstStatGainExpansion: { atk: null, def: null, mdef: null },
+    acceptedStatGainStates: { atk: 0, def: 0, mdef: 0 },
+    firstStatGainAction: { atk: null, def: null, mdef: null },
+  };
+  const statsOf = (state) => {
+    const hero = (state && state.hero) || {};
+    return {
+      hp: number(hero.hp, 0),
+      atk: number(hero.atk, 0),
+      def: number(hero.def, 0),
+      mdef: number(hero.mdef, 0),
+      exp: number(hero.exp, 0),
+    };
+  };
+  const recordStatProgress = (state, sourceAction, parentNode) => {
+    const postStats = statsOf(state);
+    Object.keys(statProgress.maxHeroSeen).forEach((field) => {
+      if (postStats[field] > statProgress.maxHeroSeen[field]) {
+        statProgress.maxHeroSeen[field] = postStats[field];
+      }
+    });
+    ["atk", "def", "mdef"].forEach((field) => {
+      if (postStats[field] <= statProgressBaseline[field]) return;
+      statProgress.acceptedStatGainStates[field] += 1;
+      if (statProgress.firstStatGainExpansion[field] != null) return;
+      statProgress.firstStatGainExpansion[field] = expansions;
+      statProgress.firstStatGainAction[field] = {
+        summary: sourceAction && sourceAction.summary || null,
+        kind: sourceAction && sourceAction.kind || null,
+        preStats: parentNode ? statsOf(parentNode.state) : null,
+        postStats,
+      };
+    });
+  };
   let bestSeenNode = null;
   let bestProgressNode = null;
   const landmarkArchiveLimit = Math.max(0, number(config.landmarkArchiveLimit, 0));
@@ -1145,6 +1188,7 @@ function searchDP(simulator, initialState, options) {
       fairEnqueueExpansions.set(node.nodeId, expansions);
     }
     registered += 1;
+    recordStatProgress(state, actionForEntry, parentNode);
     if (!bestSeenNode || compareDpBest(state, bestSeenNode.state) > 0) bestSeenNode = node;
     const progressDiff = bestProgressNode ? compareProgress(state, bestProgressNode.state) : 1;
     if (!bestProgressNode || progressDiff > 0 || (progressDiff === 0 && compareDpBest(state, bestProgressNode.state) > 0)) {
@@ -1762,6 +1806,12 @@ function searchDP(simulator, initialState, options) {
         foundFirstGoal: Boolean(firstGoalState),
         firstGoalExpansion,
         firstGoalElapsedMs,
+        statProgress: {
+          maxHeroSeen: { ...statProgress.maxHeroSeen },
+          firstStatGainExpansion: { ...statProgress.firstStatGainExpansion },
+          acceptedStatGainStates: { ...statProgress.acceptedStatGainStates },
+          firstStatGainAction: { ...statProgress.firstStatGainAction },
+        },
         foundBestGoal: Boolean(bestGoalState),
         goalSkylineLimit: Math.max(1, Number(config.goalSkylineLimit || 8)),
         goalSkylineCount: goalSkylineStates.length,
