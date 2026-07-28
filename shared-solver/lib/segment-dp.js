@@ -1970,7 +1970,25 @@ function hasMissingField(missing, predicate) {
   );
 }
 
-function classifySegmentFailure(missing, segment) {
+function upstreamCheckpointPresentTileIssues(project, startState, segment) {
+  if (!startState) return [];
+  return ((segment || {}).goal || {}).presentTiles
+    ? ((segment || {}).goal || {}).presentTiles.filter(
+        (required) =>
+          typeof (required || {}).reason === "string" &&
+          required.reason.trim().length > 0 &&
+          getTileDefinitionAt(
+            project,
+            startState,
+            required.floorId,
+            required.x,
+            required.y,
+          ) == null,
+      )
+    : [];
+}
+
+function classifySegmentFailure(missing, segment, upstreamPresentTileIssues) {
   const missingFields = missing || [];
   const classes = [];
   const preferredCandidateTags = [];
@@ -1985,7 +2003,14 @@ function classifySegmentFailure(missing, segment) {
       recommendedNext.push(recommendation);
   };
 
-  if (hasMissingField(missingFields, (field) => field === "presentTiles")) {
+  if ((upstreamPresentTileIssues || []).length > 0) {
+    addClass(
+      "upstream-checkpoint-incompatible",
+      "required hard presentTiles were already removed at the segment start checkpoint",
+      ["best-combat", "shortest"],
+      "backtrack to the previous milestone and regenerate a checkpoint preserving the required hard presentTiles",
+    );
+  } else if (hasMissingField(missingFields, (field) => field === "presentTiles")) {
     addClass(
       "present-tile-overconstrained",
       "hard presentTiles constraint was violated before this milestone goal",
@@ -2138,6 +2163,7 @@ function classifySegmentFailure(missing, segment) {
   const failurePriority = {
     "life-limit-hp-deficit": 100,
     "target-action-unreachable": 95,
+    "upstream-checkpoint-incompatible": 94,
     "present-tile-overconstrained": 90,
     "action-survivability-deficit": 85,
     "floor-scope-mismatch": 80,
@@ -2167,13 +2193,22 @@ function classifySegmentFailure(missing, segment) {
   };
 }
 
-function summarizeSegmentFailure(project, segment, result, simulator) {
+function summarizeSegmentFailure(project, segment, result, simulator, startState) {
   const best =
     (result && (result.bestProgressState || result.bestSeenState)) || null;
   const missing = best
     ? missingGoalFields(project, simulator, best, segment)
     : [{ field: "state", expected: "reachable", actual: "none" }];
-  const classification = classifySegmentFailure(missing, segment);
+  const upstreamPresentTileIssues = upstreamCheckpointPresentTileIssues(
+    project,
+    startState,
+    segment,
+  );
+  const classification = classifySegmentFailure(
+    missing,
+    segment,
+    upstreamPresentTileIssues,
+  );
   return {
     failedSegmentId: segment.id,
     label: segment.label,
@@ -2184,6 +2219,12 @@ function summarizeSegmentFailure(project, segment, result, simulator) {
     preferredCandidateTags: classification.preferredCandidateTags,
     recommendedRepair: classification.recommendedRepair,
     failurePropagation: classification,
+    upstreamCheckpointIncompatible: upstreamPresentTileIssues.map((tile) => ({
+      floorId: tile.floorId,
+      x: tile.x,
+      y: tile.y,
+      reason: tile.reason,
+    })),
     diagnostics: {
       actionTrimmed:
         result &&
@@ -2652,6 +2693,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
                 segment,
                 result,
                 simulator,
+                startState,
               ),
       goalSkyline: {
         primaryOutput: true,

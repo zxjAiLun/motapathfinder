@@ -1,10 +1,16 @@
 "use strict";
 
+const assert = require("node:assert/strict");
 const path = require("node:path");
 
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
-const { createInitialState, getTileDefinitionAt } = require("./lib/state");
+const { summarizeSegmentFailure } = require("./lib/segment-dp");
+const {
+  createInitialState,
+  getTileDefinitionAt,
+  removeTileAt,
+} = require("./lib/state");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
 
@@ -224,7 +230,11 @@ function auditMilestones(spec, project) {
         errors.push(`${milestone.id}: presentTiles entry is missing floorId/x/y`);
         continue;
       }
-      if (!futureUsedByIndex[index].has(key) && !hasReason(tile)) {
+      if (
+        !futureUsedByIndex[index].has(key) &&
+        !hasReason(tile) &&
+        !tile.propagatedFromMilestone
+      ) {
         errors.push(`${milestone.id}: presentTile ${key} is not used by a later segment and has no reason`);
       }
     }
@@ -270,7 +280,48 @@ function main() {
   const projectRoot = path.resolve(args["project-root"] || DEFAULT_PROJECT_ROOT);
   const routeName = args["route-name"] || "onlyup-chaos-mt5-blueking";
   const project = loadProject(projectRoot);
-  const report = auditMilestones(getMilestoneSpec(project, routeName), project);
+  const spec = getMilestoneSpec(project, routeName);
+  const report = auditMilestones(spec, project);
+  if (routeName === "onlyup-chaos-mt5-blueking") {
+    const hp3834 = spec.milestones.find((milestone) => milestone.id === "mt2-hp3834");
+    const leftChain = spec.milestones.find((milestone) => milestone.id === "mt2-left-chain-open");
+    const hardKeys = new Set((leftChain.goal.presentTiles || []).map(tileKey));
+    const propagated = new Set((hp3834.goal.presentTiles || []).map(tileKey));
+    for (const key of hardKeys) assert.ok(propagated.has(key), `mt2-hp3834 must preserve ${key}`);
+    for (const tile of leftChain.goal.preferredPresentTiles || []) {
+      assert.equal(propagated.has(tileKey(tile)), false, `soft tile must not propagate: ${tileKey(tile)}`);
+    }
+
+    const incompatibleStart = createInitialState(project, { rank: "chaos" });
+    removeTileAt(incompatibleStart, "MT2", 4, 7);
+    const incompatible = summarizeSegmentFailure(
+      project,
+      leftChain,
+      { bestSeenState: incompatibleStart, frontierSize: 0, diagnostics: { dp: {} } },
+      { project },
+      incompatibleStart,
+    );
+    assert.equal(incompatible.failureClass, "upstream-checkpoint-incompatible");
+    assert.equal(incompatible.upstreamCheckpointIncompatible.length, 1);
+
+    const noReasonSegment = {
+      ...leftChain,
+      goal: {
+        ...leftChain.goal,
+        presentTiles: [leftChain.goal.presentTiles.find((tile) => tile.x === 11 && tile.y === 11)],
+      },
+    };
+    const nonExplicitStart = createInitialState(project, { rank: "chaos" });
+    removeTileAt(nonExplicitStart, "MT2", 11, 11);
+    const nonExplicit = summarizeSegmentFailure(
+      project,
+      noReasonSegment,
+      { bestSeenState: nonExplicitStart, frontierSize: 0, diagnostics: { dp: {} } },
+      { project },
+      nonExplicitStart,
+    );
+    assert.equal(nonExplicit.failureClass, "present-tile-overconstrained");
+  }
   console.log(JSON.stringify(report, null, 2));
   if (report.errors.length > 0) process.exitCode = 1;
 }

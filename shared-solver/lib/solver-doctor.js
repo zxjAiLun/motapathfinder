@@ -195,6 +195,9 @@ function doctorRecommendation(failureClass, evidence) {
   ) {
     return "check allowedFloors, allowChangeFloors, presentTiles, and action scope";
   }
+  if (failureClass === "upstream-checkpoint-incompatible") {
+    return "backtrack to the previous milestone and regenerate a checkpoint preserving required hard presentTiles";
+  }
   if (failureClass === "present-tile-overconstrained") {
     return "relax non-essential presentTiles into preferredPresentTiles";
   }
@@ -230,6 +233,9 @@ function likelyCause(failureClass, evidence) {
     failureClass === "present-tile-overconstrained"
   ) {
     return "goal is unreachable under the current action scope";
+  }
+  if (failureClass === "upstream-checkpoint-incompatible") {
+    return "upstream checkpoint already consumed a required hard present tile";
   }
   if (
     failureClass === "life-limit-hp-deficit" ||

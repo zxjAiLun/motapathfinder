@@ -29,6 +29,38 @@ function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function tileKey(tile) {
+  if (!tile || tile.floorId == null || tile.x == null || tile.y == null) return null;
+  return `${tile.floorId}:${tile.x},${tile.y}`;
+}
+
+function propagateSuccessorHardPresentTiles(milestones) {
+  const result = milestones.map((milestone) => ({
+    ...milestone,
+    goal: cloneJson(milestone.goal || {}),
+  }));
+  for (let index = 0; index + 1 < result.length; index += 1) {
+    const milestone = result[index];
+    const successor = result[index + 1];
+    if (successor.startFrom !== milestone.id) continue;
+    const presentTiles = Array.isArray(milestone.goal.presentTiles)
+      ? milestone.goal.presentTiles.slice()
+      : [];
+    const known = new Set(presentTiles.map(tileKey).filter(Boolean));
+    for (const tile of successor.goal.presentTiles || []) {
+      const key = tileKey(tile);
+      if (!key || known.has(key)) continue;
+      presentTiles.push({
+        ...cloneJson(tile),
+        propagatedFromMilestone: successor.id,
+      });
+      known.add(key);
+    }
+    milestone.goal.presentTiles = presentTiles;
+  }
+  return result;
+}
+
 function routeFilePath(routeName) {
   const name = routeName || DEFAULT_ROUTE_NAME;
   if (!/^[a-z0-9][a-z0-9-]*$/i.test(name)) throw new Error(`Invalid milestone route name: ${name}`);
@@ -116,7 +148,9 @@ function normalizeSpec(project, rawSpec, requestedRouteName) {
   if (requestedRouteName && spec.routeName !== requestedRouteName) {
     throw new Error(`Milestone route mismatch: requested ${requestedRouteName}, file contains ${spec.routeName}`);
   }
-  spec.milestones = (spec.milestones || []).map(normalizeMilestone);
+  spec.milestones = propagateSuccessorHardPresentTiles(
+    (spec.milestones || []).map(normalizeMilestone),
+  );
   spec.projectTitle = project && project.data && project.data.firstData ? project.data.firstData.title : null;
   validateMilestoneSpec(spec);
   return spec;
