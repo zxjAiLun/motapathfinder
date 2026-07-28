@@ -1,0 +1,210 @@
+{
+  "schema": "motapathfinder.hp3834-teacher-fixture-oracle-audit.v1",
+  "generatedAt": "2026-07-28T03:26:55.084Z",
+  "source": {
+    "fixture": "routes\\fixtures\\mt1-mt3-i893-hp8425.route.json",
+    "projectRoot": "..\\Only upV2.1\\Only upV2.1",
+    "fixtureDecisionsInjectedIntoProductionSearch": false
+  },
+  "target": {
+    "milestone": "mt2-hp3834",
+    "minHero": {
+      "hp": 3834,
+      "atk": 72,
+      "def": 35,
+      "mdef": 290
+    },
+    "hardPresentTiles": [
+      {
+        "floorId": "MT2",
+        "x": 4,
+        "y": 7,
+        "reason": "Preserve redPriest HP timing for the later I893 resource chain.",
+        "propagatedFromMilestone": "mt2-left-chain-open"
+      },
+      {
+        "floorId": "MT2",
+        "x": 8,
+        "y": 7,
+        "reason": "Preserve redPriest HP timing for the later I893 resource chain.",
+        "propagatedFromMilestone": "mt2-left-chain-open"
+      },
+      {
+        "floorId": "MT2",
+        "x": 10,
+        "y": 8,
+        "reason": "Preserve redPriest HP timing for the later I893 resource chain.",
+        "propagatedFromMilestone": "mt2-left-chain-open"
+      },
+      {
+        "floorId": "MT2",
+        "x": 11,
+        "y": 11,
+        "reason": null,
+        "propagatedFromMilestone": "mt2-left-chain-open"
+      },
+      {
+        "floorId": "MT2",
+        "x": 6,
+        "y": 6,
+        "reason": null,
+        "propagatedFromMilestone": "mt2-left-chain-open"
+      },
+      {
+        "floorId": "MT2",
+        "x": 6,
+        "y": 8,
+        "reason": null,
+        "propagatedFromMilestone": "mt2-left-chain-open"
+      },
+      {
+        "floorId": "MT2",
+        "x": 6,
+        "y": 9,
+        "reason": null,
+        "propagatedFromMilestone": "mt2-left-chain-open"
+      }
+    ]
+  },
+  "strictReplay": {
+    "performed": true,
+    "valid": false,
+    "stepsAttempted": 33,
+    "stepsCompleted": 11,
+    "failureStep": 12,
+    "failureReason": "post-exact-state-mismatch",
+    "expectedStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"4:MT1,MT2,MT3,MT4,MT5:MT1,MT2,MT3,MT4,MT5:5\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1601,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\",\"MT4\",\"MT5\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+    "actualStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"4:MT1,MT2,MT3,MT4,MT5:MT1,MT2,MT3,MT4,MT5:5\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1601,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\",\"MT4\",\"MT5\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+    "finalState": {
+      "floorId": "MT2",
+      "hero": {
+        "hp": 1601,
+        "hpmax": 9999,
+        "mana": 0,
+        "manamax": -1,
+        "atk": 21,
+        "def": 17,
+        "mdef": 130,
+        "money": 0,
+        "exp": 6,
+        "lv": 3,
+        "loc": {
+          "x": 6,
+          "y": 0,
+          "direction": "up"
+        },
+        "equipment": [],
+        "steps": 91,
+        "statistics": {
+          "battleDamage": 2500,
+          "battle": 19,
+          "money": 0,
+          "exp": 19
+        }
+      },
+      "inventory": {
+        "I600": 1,
+        "book": 1,
+        "fly": 1
+      },
+      "flags": {
+        "autoBattle": 1,
+        "shiqu": 1,
+        "hatred": 38,
+        "__leaveLoc__": {
+          "MT1": {
+            "x": 6,
+            "y": 0,
+            "direction": "up"
+          }
+        }
+      },
+      "stateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"4:MT1,MT2,MT3,MT4,MT5:MT1,MT2,MT3,MT4,MT5:5\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1601,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\",\"MT4\",\"MT5\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+    },
+    "error": null
+  },
+  "summaryReplay": {
+    "decisionsAttempted": 33,
+    "decisionsApplied": 33,
+    "replayErrors": [],
+    "final": {
+      "floorId": "MT3",
+      "hero": {
+        "hp": 8425,
+        "atk": 107,
+        "def": 100,
+        "mdef": 510,
+        "exp": 31
+      },
+      "exactStateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":8425,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":107,\"def\":100,\"mdef\":510,\"money\":0,\"exp\":31,\"lv\":4,\"equipment\":[\"I893\"],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__atk_buff__\":1.25,\"__def_buff__\":1.25,\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"},\"MT3\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"__mdef_buff__\":1.25,\"autoBattle\":1,\"hatred\":96,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"6,5\",\"6,6\",\"6,8\",\"6,9\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"0,11\",\"1,11\",\"2,11\",\"4,11\",\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "decisionDepth": 33,
+      "missingHardTiles": [
+        "MT2:4,7",
+        "MT2:8,7",
+        "MT2:10,8",
+        "MT2:11,11",
+        "MT2:6,6",
+        "MT2:6,8",
+        "MT2:6,9"
+      ]
+    }
+  },
+  "earliestContinuationCompatibleWitness": {
+    "decisionIndex": 23,
+    "reachedAfterDecision": 23,
+    "state": {
+      "floorId": "MT2",
+      "hero": {
+        "hp": 3834,
+        "atk": 72,
+        "def": 35,
+        "mdef": 290,
+        "exp": 1
+      },
+      "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":3834,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":72,\"def\":35,\"mdef\":290,\"money\":0,\"exp\":1,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":68,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}",
+      "decisionDepth": 23,
+      "missingHardTiles": []
+    },
+    "nextFixtureDecision": {
+      "index": 24,
+      "summary": "battle:bluePriest@MT2:2,8"
+    }
+  },
+  "oracleObserverAudit": {
+    "providerActionCount": 2,
+    "providerContainsNextFixtureAction": true,
+    "nextFixtureAction": {
+      "summary": "battle:bluePriest@MT2:2,8",
+      "kind": "battle",
+      "target": {
+        "x": 2,
+        "y": 8
+      }
+    },
+    "search": {
+      "expansions": 1,
+      "frontierSize": 2,
+      "acceptedStates": 3,
+      "generatedActions": {
+        "changeFloor": 1,
+        "battle": 1
+      },
+      "eventCounts": {
+        "skylineInserted": 3,
+        "agendaPopped": 1,
+        "actionSetGenerated": 1,
+        "candidateGenerated": 2,
+        "budgetStopped": 1
+      }
+    },
+    "nextActionWitness": {
+      "successorGenerated": true,
+      "rejectedReasons": [],
+      "dominanceRejected": false,
+      "skylineInserted": true,
+      "skylineEvicted": false,
+      "agendaExpanded": false
+    }
+  },
+  "conclusion": "fixture strict replay failed; summary replay is retained only as a non-strict oracle trace"
+}
