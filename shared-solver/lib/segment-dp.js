@@ -1975,8 +1975,10 @@ function upstreamCheckpointPresentTileIssues(project, startState, segment) {
   return ((segment || {}).goal || {}).presentTiles
     ? ((segment || {}).goal || {}).presentTiles.filter(
         (required) =>
-          typeof (required || {}).reason === "string" &&
-          required.reason.trim().length > 0 &&
+          ((typeof (required || {}).reason === "string" &&
+            required.reason.trim().length > 0) ||
+            (typeof (required || {}).propagatedFromMilestone === "string" &&
+              required.propagatedFromMilestone.length > 0)) &&
           getTileDefinitionAt(
             project,
             startState,
@@ -2224,6 +2226,7 @@ function summarizeSegmentFailure(project, segment, result, simulator, startState
       x: tile.x,
       y: tile.y,
       reason: tile.reason,
+      propagatedFromMilestone: tile.propagatedFromMilestone || null,
     })),
     diagnostics: {
       actionTrimmed:
@@ -2577,6 +2580,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
       segment,
       simulator,
     ),
+    progressGoal: segment.goal || null,
   });
   const baseDpDiagnostics = (result.diagnostics && result.diagnostics.dp) || {};
   const expansionBudgetExhausted =

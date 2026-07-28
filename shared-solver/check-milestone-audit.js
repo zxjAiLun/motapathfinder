@@ -304,15 +304,24 @@ function main() {
     assert.equal(incompatible.failureClass, "upstream-checkpoint-incompatible");
     assert.equal(incompatible.upstreamCheckpointIncompatible.length, 1);
 
+    const propagatedNoReasonTile = hp3834.goal.presentTiles.find(
+      (tile) => tile.propagatedFromMilestone && !hasReason(tile),
+    );
+    assert.ok(propagatedNoReasonTile, "expected a propagated hard tile without a reason");
     const noReasonSegment = {
       ...leftChain,
       goal: {
         ...leftChain.goal,
-        presentTiles: [leftChain.goal.presentTiles.find((tile) => tile.x === 11 && tile.y === 11)],
+        presentTiles: [propagatedNoReasonTile],
       },
     };
     const nonExplicitStart = createInitialState(project, { rank: "chaos" });
-    removeTileAt(nonExplicitStart, "MT2", 11, 11);
+    removeTileAt(
+      nonExplicitStart,
+      propagatedNoReasonTile.floorId,
+      propagatedNoReasonTile.x,
+      propagatedNoReasonTile.y,
+    );
     const nonExplicit = summarizeSegmentFailure(
       project,
       noReasonSegment,
@@ -320,7 +329,12 @@ function main() {
       { project },
       nonExplicitStart,
     );
-    assert.equal(nonExplicit.failureClass, "present-tile-overconstrained");
+    assert.equal(nonExplicit.failureClass, "upstream-checkpoint-incompatible");
+    assert.equal(nonExplicit.upstreamCheckpointIncompatible.length, 1);
+    assert.equal(
+      nonExplicit.upstreamCheckpointIncompatible[0].propagatedFromMilestone,
+      "mt2-left-chain-open",
+    );
   }
   console.log(JSON.stringify(report, null, 2));
   if (report.errors.length > 0) process.exitCode = 1;

@@ -857,6 +857,34 @@ function searchDP(simulator, initialState, options) {
     acceptedStatGainStates: { atk: 0, def: 0, mdef: 0 },
     firstStatGainAction: { atk: null, def: null, mdef: null },
   };
+  const progressGoal = config.progressGoal || null;
+  const progressMinHero = (progressGoal && progressGoal.minHero) || {};
+  const progressFields = ["hp", "atk", "def", "mdef", "exp"].filter(
+    (field) => Number.isFinite(Number(progressMinHero[field])),
+  );
+  const progressMeetings = {
+    atk: ["atk"],
+    def: ["def"],
+    mdef: ["mdef"],
+    "atk+def": ["atk", "def"],
+    "atk+mdef": ["atk", "mdef"],
+    "def+mdef": ["def", "mdef"],
+    "atk+def+mdef": ["atk", "def", "mdef"],
+    fullMinHero: progressFields,
+  };
+  const acceptedStatesMeeting = Object.fromEntries(
+    Object.keys(progressMeetings).map((name) => [name, 0]),
+  );
+  acceptedStatesMeeting.fullGoal = 0;
+  const firstExpansionMeeting = Object.fromEntries(
+    Object.keys(acceptedStatesMeeting).map((name) => [name, null]),
+  );
+  const maxHpAmongStatesMeeting = Object.fromEntries(
+    Object.keys(acceptedStatesMeeting).map((name) => [name, null]),
+  );
+  let bestWitnessMeetingAtkDefMdefNode = null;
+  let closestGoalNode = null;
+  let closestGoalMetrics = null;
   const statsOf = (state) => {
     const hero = (state && state.hero) || {};
     return {
@@ -867,7 +895,7 @@ function searchDP(simulator, initialState, options) {
       exp: number(hero.exp, 0),
     };
   };
-  const recordStatProgress = (state, sourceAction, parentNode) => {
+  const recordStatProgress = (state, sourceAction, parentNode, node) => {
     const postStats = statsOf(state);
     Object.keys(statProgress.maxHeroSeen).forEach((field) => {
       if (postStats[field] > statProgress.maxHeroSeen[field]) {
@@ -886,6 +914,7 @@ function searchDP(simulator, initialState, options) {
         postStats,
       };
     });
+    recordGoalProgress(state, node);
   };
   let bestSeenNode = null;
   let bestProgressNode = null;
@@ -896,6 +925,105 @@ function searchDP(simulator, initialState, options) {
   const isGoalState = typeof config.goalPredicate === "function"
     ? config.goalPredicate
     : (state) => simulator.isTerminal(state);
+
+  const routeTailOfNode = (node) => initialRoutePrefix
+    .concat(reconstructActionEntries(nodes, node))
+    .slice(-12)
+    .map((entry) => (typeof entry === "string" ? entry : entry && entry.summary))
+    .filter(Boolean);
+  const exactStateKeyOf = (state) => {
+    try {
+      return buildStateKey(state);
+    } catch (error) {
+      return null;
+    }
+  };
+  const witnessOfNode = (node) => {
+    if (!node || !node.state) return null;
+    const stats = statsOf(node.state);
+    return {
+      hp: stats.hp,
+      atk: stats.atk,
+      def: stats.def,
+      mdef: stats.mdef,
+      exp: stats.exp,
+      exactStateKey: exactStateKeyOf(node.state),
+      decisionDepth: getDecisionDepth(node.state),
+      routeTail: routeTailOfNode(node),
+    };
+  };
+  const meetsProgressFields = (stats, fields) =>
+    fields.length > 0 && fields.every(
+      (field) => stats[field] >= Number(progressMinHero[field]),
+    );
+  const goalDistanceOf = (stats) => {
+    if (!progressGoal || progressFields.length === 0) return null;
+    const deficitVector = {};
+    const normalizedDeficitVector = {};
+    let missingFieldCount = 0;
+    let normalizedTotal = 0;
+    progressFields.forEach((field) => {
+      const deficit = Math.max(0, Number(progressMinHero[field]) - stats[field]);
+      if (deficit > 0) missingFieldCount += 1;
+      const normalized = deficit / Math.max(1, Math.abs(Number(progressMinHero[field])));
+      deficitVector[field] = deficit;
+      normalizedDeficitVector[field] = Number(normalized.toFixed(4));
+      normalizedTotal += normalized;
+    });
+    return {
+      missingFieldCount,
+      deficitVector,
+      normalizedDeficitVector,
+      normalizedTotal,
+    };
+  };
+  function recordGoalProgress(state, node) {
+    if (!progressGoal || progressFields.length === 0) return;
+    const stats = statsOf(state);
+    const meetings = Object.fromEntries(
+      Object.entries(progressMeetings).map(([name, fields]) => [
+        name,
+        meetsProgressFields(stats, fields),
+      ]),
+    );
+    meetings.fullGoal = isGoalState(state);
+    Object.entries(meetings).forEach(([name, met]) => {
+      if (!met) return;
+      acceptedStatesMeeting[name] += 1;
+      if (firstExpansionMeeting[name] == null) firstExpansionMeeting[name] = expansions;
+      if (
+        maxHpAmongStatesMeeting[name] == null ||
+        stats.hp > maxHpAmongStatesMeeting[name]
+      ) {
+        maxHpAmongStatesMeeting[name] = stats.hp;
+      }
+    });
+    if (meetings["atk+def+mdef"] &&
+        (!bestWitnessMeetingAtkDefMdefNode ||
+          stats.hp > statsOf(bestWitnessMeetingAtkDefMdefNode.state).hp ||
+          (stats.hp === statsOf(bestWitnessMeetingAtkDefMdefNode.state).hp &&
+            compareDpBest(state, bestWitnessMeetingAtkDefMdefNode.state) > 0))) {
+      bestWitnessMeetingAtkDefMdefNode = node;
+    }
+    const distance = goalDistanceOf(stats);
+    if (
+      distance &&
+      (!closestGoalMetrics ||
+        distance.missingFieldCount < closestGoalMetrics.missingFieldCount ||
+        (distance.missingFieldCount === closestGoalMetrics.missingFieldCount &&
+          (distance.normalizedTotal < closestGoalMetrics.normalizedTotal ||
+            (distance.normalizedTotal === closestGoalMetrics.normalizedTotal &&
+              (stats.hp > closestGoalMetrics.hp ||
+                (stats.hp === closestGoalMetrics.hp &&
+                  compareDpBest(state, closestGoalNode.state) > 0))))))
+    ) {
+      closestGoalNode = node;
+      closestGoalMetrics = {
+        ...distance,
+        hp: stats.hp,
+      };
+    }
+  }
 
   const emitStateEvent = (eventType, state, node, extra) => {
     if (!observer) return;
@@ -1188,7 +1316,7 @@ function searchDP(simulator, initialState, options) {
       fairEnqueueExpansions.set(node.nodeId, expansions);
     }
     registered += 1;
-    recordStatProgress(state, actionForEntry, parentNode);
+    recordStatProgress(state, actionForEntry, parentNode, node);
     if (!bestSeenNode || compareDpBest(state, bestSeenNode.state) > 0) bestSeenNode = node;
     const progressDiff = bestProgressNode ? compareProgress(state, bestProgressNode.state) : 1;
     if (!bestProgressNode || progressDiff > 0 || (progressDiff === 0 && compareDpBest(state, bestProgressNode.state) > 0)) {
@@ -1811,6 +1939,25 @@ function searchDP(simulator, initialState, options) {
           firstStatGainExpansion: { ...statProgress.firstStatGainExpansion },
           acceptedStatGainStates: { ...statProgress.acceptedStatGainStates },
           firstStatGainAction: { ...statProgress.firstStatGainAction },
+          acceptedStatesMeeting: { ...acceptedStatesMeeting },
+          firstExpansionMeeting: { ...firstExpansionMeeting },
+          maxHpAmongStatesMeeting: { ...maxHpAmongStatesMeeting },
+          bestWitnessMeetingAtkDefMdef: witnessOfNode(
+            bestWitnessMeetingAtkDefMdefNode,
+          ),
+          closestGoalState: closestGoalNode
+            ? {
+                missingFieldCount: closestGoalMetrics.missingFieldCount,
+                deficitVector: { ...closestGoalMetrics.deficitVector },
+                normalizedDeficitVector: {
+                  ...closestGoalMetrics.normalizedDeficitVector,
+                },
+                hp: closestGoalMetrics.hp,
+                exactStateKey: exactStateKeyOf(closestGoalNode.state),
+                decisionDepth: getDecisionDepth(closestGoalNode.state),
+                routeTail: routeTailOfNode(closestGoalNode),
+              }
+            : null,
         },
         foundBestGoal: Boolean(bestGoalState),
         goalSkylineLimit: Math.max(1, Number(config.goalSkylineLimit || 8)),

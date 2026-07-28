@@ -412,7 +412,16 @@ function checkFirstGoalExpansionAccounting() {
     maxExpansions: 1,
     maxRuntimeMs: 1000,
     stopOnFirstGoal: false,
-    goalPredicate: () => false,
+    goalPredicate: (state) => state.step === 1,
+    progressGoal: {
+      minHero: {
+        hp: 100,
+        atk: 2,
+        def: 2,
+        mdef: 2,
+        exp: 1,
+      },
+    },
     actionProvider: () => [{
       kind: "event",
       summary: "event:stat-gain@F1:2,1",
@@ -451,6 +460,56 @@ function checkFirstGoalExpansionAccounting() {
     def: 1,
     mdef: 1,
   });
+  assert.deepEqual(statProgress.diagnostics.dp.statProgress.acceptedStatesMeeting, {
+    atk: 1,
+    def: 1,
+    mdef: 1,
+    "atk+def": 1,
+    "atk+mdef": 1,
+    "def+mdef": 1,
+    "atk+def+mdef": 1,
+    fullMinHero: 1,
+    fullGoal: 1,
+  });
+  assert.deepEqual(statProgress.diagnostics.dp.statProgress.firstExpansionMeeting, {
+    atk: 1,
+    def: 1,
+    mdef: 1,
+    "atk+def": 1,
+    "atk+mdef": 1,
+    "def+mdef": 1,
+    "atk+def+mdef": 1,
+    fullMinHero: 1,
+    fullGoal: 1,
+  });
+  assert.deepEqual(statProgress.diagnostics.dp.statProgress.maxHpAmongStatesMeeting, {
+    atk: 100,
+    def: 100,
+    mdef: 100,
+    "atk+def": 100,
+    "atk+mdef": 100,
+    "def+mdef": 100,
+    "atk+def+mdef": 100,
+    fullMinHero: 100,
+    fullGoal: 100,
+  });
+  assert.equal(
+    statProgress.diagnostics.dp.statProgress.bestWitnessMeetingAtkDefMdef.hp,
+    100,
+  );
+  assert.equal(
+    statProgress.diagnostics.dp.statProgress.bestWitnessMeetingAtkDefMdef.exactStateKey != null,
+    true,
+  );
+  assert.deepEqual(
+    statProgress.diagnostics.dp.statProgress.bestWitnessMeetingAtkDefMdef.routeTail,
+    ["event:stat-gain@F1:2,1"],
+  );
+  assert.equal(statProgress.diagnostics.dp.statProgress.closestGoalState.missingFieldCount, 0);
+  assert.deepEqual(
+    statProgress.diagnostics.dp.statProgress.closestGoalState.normalizedDeficitVector,
+    { hp: 0, atk: 0, def: 0, mdef: 0, exp: 0 },
+  );
   assert.equal(statProgress.diagnostics.dp.statProgress.firstStatGainAction.atk.summary, "event:stat-gain@F1:2,1");
   assert.equal(statProgress.diagnostics.dp.statProgress.firstStatGainAction.atk.kind, "event");
   assert.deepEqual(statProgress.diagnostics.dp.statProgress.firstStatGainAction.atk.preStats, {
