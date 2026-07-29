@@ -269,6 +269,7 @@ function buildMarkdown(report) {
     "- No teacher actions were injected: **" + report.gates.noTeacherActionInjection + "**.",
     "- Candidate-2 was naturally retained by the MT1 merged checkpoint: **" + report.gates.candidate2Retained + "**.",
     "- Candidate-2 lifecycle observer covered decisions 11–23: **" + report.gates.lifecycleObserved + "**.",
+    "- Full-frontier condition met (candidate-2 success): **" + report.conditions.fullFrontierApplicable + "**.",
     "- Full four-candidate frontier run executed: **" + report.gates.fullFrontierRunExecuted + "**.",
     "",
     "## Candidate-2-only result",
@@ -429,7 +430,6 @@ function main() {
     candidate2ReachedHp3834,
     lifecycleObserved,
     noTeacherActionInjection,
-    fullFrontierApplicable,
     fullFrontierRunExecuted: !fullFrontierApplicable || Boolean(fullFrontier),
     fullFrontierRunCompleted: !fullFrontierApplicable || Boolean(fullFrontier && fullFrontier.run && fullFrontier.run.reachedMilestone === "mt2-hp3834"),
   };
@@ -452,6 +452,9 @@ function main() {
     status,
     failedGates,
     gates,
+    conditions: {
+      fullFrontierApplicable,
+    },
     config: {
       agendaMode: candidate2Options.agendaMode,
       stopOnFirstGoal: false,
