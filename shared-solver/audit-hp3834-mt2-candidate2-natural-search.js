@@ -280,7 +280,7 @@ function buildMarkdown(report) {
     "| Decision | Segment | Generated | Dominance reject | Skyline insert | Evicted | Popped | Goal accepted | Classification |",
     "|---:|---|:---:|:---:|:---:|:---:|:---:|:---:|---|",
   ];
-  report.candidate2Only.lifecycle.records.forEach((record) => {
+  Object.values(report.candidate2Only.lifecycle.records || {}).forEach((record) => {
     lines.push(
       "| " + record.decisionIndex +
       " | " + record.targetSegment +
