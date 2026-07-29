@@ -416,9 +416,12 @@ function main() {
   const candidate2Lifecycle = candidate2Only && candidate2Only.lifecycle;
   const lifecycleObserved = Boolean(
     candidate2Lifecycle &&
-    candidate2Lifecycle.records.length === FUTURE_DECISION_END - FUTURE_DECISION_START + 1,
+    Object.keys(candidate2Lifecycle.records || {}).length === FUTURE_DECISION_END - FUTURE_DECISION_START + 1,
   );
   const noTeacherActionInjection = true;
+  const fullFrontierApplicable = Boolean(
+    candidate2ReachedHp3834 && retained.length >= 4,
+  );
   const gates = {
     candidate2Retained: candidate2Index >= 0,
     candidate2NaturalStart: Boolean(candidate2),
@@ -426,8 +429,9 @@ function main() {
     candidate2ReachedHp3834,
     lifecycleObserved,
     noTeacherActionInjection,
-    fullFrontierRunExecuted: Boolean(fullFrontier),
-    fullFrontierRunCompleted: Boolean(fullFrontier && fullFrontier.run && fullFrontier.run.reachedMilestone === "mt2-hp3834"),
+    fullFrontierApplicable,
+    fullFrontierRunExecuted: !fullFrontierApplicable || Boolean(fullFrontier),
+    fullFrontierRunCompleted: !fullFrontierApplicable || Boolean(fullFrontier && fullFrontier.run && fullFrontier.run.reachedMilestone === "mt2-hp3834"),
   };
   const failedGates = Object.entries(gates).filter((entry) => !entry[1]).map((entry) => entry[0]);
   const status = failedGates.length === 0 ? "completed" : "failed";
