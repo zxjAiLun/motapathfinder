@@ -193,11 +193,17 @@ function compactEvent(event) {
     expansions: event.expansions == null ? null : event.expansions,
     frontierSize: event.frontierSize == null ? null : event.frontierSize,
     dominanceComparison: event.dominanceComparison || null,
+    dpKey: event.dpKey || null,
+    dominanceStateDiff: event.dominanceStateDiff || null,
     dominanceWitnesses: event.dominanceWitnesses || [],
+    dominanceWitnessStates: event.dominanceWitnessStates || [],
   };
 }
 
-function createLineageObserver(commonExactStateKey, targets) {
+function createLineageObserver(commonExactStateKey, targets, options) {
+  const config = options || {};
+  const captureWitnessFor = new Set(config.captureWitnessFor || []);
+  const captureSimulator = config.simulator || null;
   const candidateToLineage = new Map();
   const nodeToLineage = new Map();
   const lineages = new Map(targets.map((target) => [target.id, {
@@ -263,6 +269,28 @@ function createLineageObserver(commonExactStateKey, targets) {
   };
   const observer = {
     includeExactStateKey: true,
+    shouldCaptureDominanceWitness(meta) {
+      if (!meta || captureWitnessFor.size === 0 || !meta.state) return false;
+      let candidateExactStateKey = null;
+      try {
+        candidateExactStateKey = buildStateKey(meta.state);
+      } catch (error) {
+        return false;
+      }
+      let candidateFingerprint = meta.action && meta.action.fingerprint || null;
+      if (!candidateFingerprint && captureSimulator && typeof captureSimulator.getActionFingerprint === "function") {
+        try {
+          candidateFingerprint = captureSimulator.getActionFingerprint(meta.action);
+        } catch (error) {
+          candidateFingerprint = null;
+        }
+      }
+      return Array.from(lineages.values()).some((lineage) =>
+        captureWitnessFor.has(lineage.id) &&
+        lineage.expectedPostExactStateKey === candidateExactStateKey &&
+        lineage.actionFingerprint === candidateFingerprint,
+      );
+    },
     onEvent(event) {
       if (!event || !event.eventType) return;
       const matchingTargets = event.eventType === "candidateGenerated" &&
@@ -332,6 +360,7 @@ function createLineageObserver(commonExactStateKey, targets) {
       output[lineage.id] = {
         id: lineage.id,
         actionSummary: lineage.actionSummary,
+        actionFingerprint: lineage.actionFingerprint || null,
         expectedPostExactStateKey: lineage.expectedPostExactStateKey,
         expectedPostDominanceKey: lineage.expectedPostDominanceKey,
         providerContainsAction: lineage.providerContainsAction,
@@ -635,6 +664,12 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
+  actionFingerprint,
   classifyLineage,
+  compactEvent,
+  compactState,
   createLineageObserver,
+  heroSummary,
+  makeSimulator,
+  replayRoute,
 };
