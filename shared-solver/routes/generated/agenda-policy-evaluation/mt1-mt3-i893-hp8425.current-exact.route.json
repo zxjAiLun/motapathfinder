@@ -1,8 +1,8 @@
 {
   "schema": "motapathfinder.route.v1",
-  "createdAt": "2026-07-28T13:42:48.888Z",
+  "createdAt": "2026-07-29T09:02:36.001Z",
   "source": {
-    "commit": "3db4fdb4dc254d8c4bfb938a9b7529155885fda7",
+    "commit": "a0bcc8f309eb38bccee88f2ff2030601223827dc",
     "solver": "bruteforce",
     "profile": "user-branch-from-3834",
     "rank": "chaos",
@@ -11,11 +11,20 @@
     "rematerializedCurrentExact": true
   },
   "goal": {
-    "type": "floor",
-    "floorId": "MT5"
+    "type": "oracle-fixture",
+    "floorId": "MT3",
+    "legacyGoal": {
+      "type": "floor",
+      "floorId": "MT5"
+    }
   },
   "metadata": {
     "currentExactRoute": true,
+    "oraclePurpose": "mt1-mt3-i893",
+    "expectedFinalFloor": "MT3",
+    "expectedEquipment": [
+      "I893"
+    ],
     "originalFixtureSha256": "06e415da4ca57c3c5f05b0955119beeaaf1ae4df16fd345ef33d73449f2a0994",
     "originalDecisionCount": 33
   },

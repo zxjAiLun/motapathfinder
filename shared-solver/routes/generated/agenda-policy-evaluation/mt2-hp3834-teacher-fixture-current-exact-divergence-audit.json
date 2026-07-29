@@ -1,6 +1,6 @@
 {
   "schema": "motapathfinder.hp3834-teacher-fixture-current-exact-divergence-audit.v2",
-  "generatedAt": "2026-07-28T13:43:22.466Z",
+  "generatedAt": "2026-07-29T09:03:17.518Z",
   "status": "completed",
   "source": {
     "fixture": "shared-solver\\routes\\fixtures\\mt1-mt3-i893-hp8425.route.json",
@@ -13,13 +13,13 @@
     "fixtureDecisionsInjectedIntoProductionSearch": false
   },
   "provenance": {
-    "solverCommit": "3db4fdb4dc254d8c4bfb938a9b7529155885fda7",
-    "startedCommit": "3db4fdb4dc254d8c4bfb938a9b7529155885fda7",
-    "finishedCommit": "3db4fdb4dc254d8c4bfb938a9b7529155885fda7",
+    "solverCommit": "a0bcc8f309eb38bccee88f2ff2030601223827dc",
+    "startedCommit": "a0bcc8f309eb38bccee88f2ff2030601223827dc",
+    "finishedCommit": "a0bcc8f309eb38bccee88f2ff2030601223827dc",
     "commitStable": true,
     "nodeVersion": "v22.12.0",
     "worktreeCleanAtStart": true,
-    "worktreeCleanAtFinish": true
+    "worktreeCleanAtFinish": false
   },
   "target": {
     "localMilestone": "mt2-local-3582",
@@ -824,7 +824,7 @@
     "productionStateIndexForContinuation": 12
   },
   "preGoalAudit": {
-    "mode": "single-step-search-observer",
+    "mode": "provider-and-successor-only",
     "anchoredToProductionCheckpoint": false,
     "anchorReason": "mt2-local-3582 teacher state and production route checkpoint have no common dominance key",
     "steps": [
@@ -862,38 +862,12 @@
         "successorExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":5982,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":12,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":50,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
         "providerError": null,
         "successorError": null,
-        "candidateRejectedReasons": [],
-        "dominanceRejected": false,
-        "skylineInserted": true,
-        "skylineEvicted": false,
-        "agendaPopped": false,
-        "searchObserver": {
-          "providerActionCount": 6,
-          "providerContainsAction": true,
-          "providerError": null,
-          "nextAction": {
-            "summary": "changeFloor@MT2:6,0",
-            "kind": "changeFloor",
-            "fingerprint": "changeFloor|changeFloor@MT2:6,0"
-          },
-          "search": {
-            "expansions": 1,
-            "frontierSize": 6,
-            "eventCounts": {
-              "skylineInserted": 7,
-              "agendaPopped": 1,
-              "actionSetGenerated": 1,
-              "candidateGenerated": 6,
-              "budgetStopped": 1
-            }
-          },
-          "successorGenerated": true,
-          "candidateRejectedReasons": [],
-          "dominanceRejected": false,
-          "skylineInserted": true,
-          "skylineEvicted": false,
-          "agendaPopped": false
-        }
+        "candidateRejectedReasons": null,
+        "dominanceRejected": null,
+        "skylineInserted": null,
+        "skylineEvicted": null,
+        "agendaPopped": null,
+        "searchObserver": null
       },
       {
         "stateIndex": 15,
@@ -929,38 +903,12 @@
         "successorExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":5982,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":12,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":50,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
         "providerError": null,
         "successorError": null,
-        "candidateRejectedReasons": [],
-        "dominanceRejected": false,
-        "skylineInserted": true,
-        "skylineEvicted": false,
-        "agendaPopped": false,
-        "searchObserver": {
-          "providerActionCount": 1,
-          "providerContainsAction": true,
-          "providerError": null,
-          "nextAction": {
-            "summary": "changeFloor@MT1:6,0",
-            "kind": "changeFloor",
-            "fingerprint": "changeFloor|changeFloor@MT1:6,0"
-          },
-          "search": {
-            "expansions": 1,
-            "frontierSize": 1,
-            "eventCounts": {
-              "skylineInserted": 2,
-              "agendaPopped": 1,
-              "actionSetGenerated": 1,
-              "candidateGenerated": 1,
-              "budgetStopped": 1
-            }
-          },
-          "successorGenerated": true,
-          "candidateRejectedReasons": [],
-          "dominanceRejected": false,
-          "skylineInserted": true,
-          "skylineEvicted": false,
-          "agendaPopped": false
-        }
+        "candidateRejectedReasons": null,
+        "dominanceRejected": null,
+        "skylineInserted": null,
+        "skylineEvicted": null,
+        "agendaPopped": null,
+        "searchObserver": null
       },
       {
         "stateIndex": 16,
@@ -996,38 +944,12 @@
         "successorExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":3,\"direction\":null,\"hp\":5595,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":24,\"mdef\":250,\"money\":0,\"exp\":13,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":52,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\"],\"replaced\":[]}]}",
         "providerError": null,
         "successorError": null,
-        "candidateRejectedReasons": [],
-        "dominanceRejected": false,
-        "skylineInserted": true,
-        "skylineEvicted": false,
-        "agendaPopped": false,
-        "searchObserver": {
-          "providerActionCount": 6,
-          "providerContainsAction": true,
-          "providerError": null,
-          "nextAction": {
-            "summary": "battle:zombie@MT2:8,3",
-            "kind": "battle",
-            "fingerprint": "battle|MT2|8|3|zombie"
-          },
-          "search": {
-            "expansions": 1,
-            "frontierSize": 6,
-            "eventCounts": {
-              "skylineInserted": 7,
-              "agendaPopped": 1,
-              "actionSetGenerated": 1,
-              "candidateGenerated": 6,
-              "budgetStopped": 1
-            }
-          },
-          "successorGenerated": true,
-          "candidateRejectedReasons": [],
-          "dominanceRejected": false,
-          "skylineInserted": true,
-          "skylineEvicted": false,
-          "agendaPopped": false
-        }
+        "candidateRejectedReasons": null,
+        "dominanceRejected": null,
+        "skylineInserted": null,
+        "skylineEvicted": null,
+        "agendaPopped": null,
+        "searchObserver": null
       },
       {
         "stateIndex": 17,
@@ -1063,38 +985,12 @@
         "successorExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":3,\"direction\":null,\"hp\":4333,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":24,\"mdef\":250,\"money\":0,\"exp\":15,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":54,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\"],\"replaced\":[]}]}",
         "providerError": null,
         "successorError": null,
-        "candidateRejectedReasons": [],
-        "dominanceRejected": false,
-        "skylineInserted": true,
-        "skylineEvicted": false,
-        "agendaPopped": false,
-        "searchObserver": {
-          "providerActionCount": 5,
-          "providerContainsAction": true,
-          "providerError": null,
-          "nextAction": {
-            "summary": "battle:zombieKnight@MT2:9,4",
-            "kind": "battle",
-            "fingerprint": "battle|MT2|9|4|zombieKnight"
-          },
-          "search": {
-            "expansions": 1,
-            "frontierSize": 5,
-            "eventCounts": {
-              "skylineInserted": 6,
-              "agendaPopped": 1,
-              "actionSetGenerated": 1,
-              "candidateGenerated": 5,
-              "budgetStopped": 1
-            }
-          },
-          "successorGenerated": true,
-          "candidateRejectedReasons": [],
-          "dominanceRejected": false,
-          "skylineInserted": true,
-          "skylineEvicted": false,
-          "agendaPopped": false
-        }
+        "candidateRejectedReasons": null,
+        "dominanceRejected": null,
+        "skylineInserted": null,
+        "skylineEvicted": null,
+        "agendaPopped": null,
+        "searchObserver": null
       },
       {
         "stateIndex": 18,
@@ -1130,38 +1026,12 @@
         "successorExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":5,\"direction\":null,\"hp\":4967,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":38,\"def\":26,\"mdef\":270,\"money\":0,\"exp\":18,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":60,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"10,5\",\"10,7\",\"11,5\",\"2,1\",\"2,3\",\"3,2\",\"3,4\",\"4,1\",\"5,1\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}",
         "providerError": null,
         "successorError": null,
-        "candidateRejectedReasons": [],
-        "dominanceRejected": false,
-        "skylineInserted": true,
-        "skylineEvicted": false,
-        "agendaPopped": false,
-        "searchObserver": {
-          "providerActionCount": 6,
-          "providerContainsAction": true,
-          "providerError": null,
-          "nextAction": {
-            "summary": "battle:ghostSoldier@MT2:10,5",
-            "kind": "battle",
-            "fingerprint": "battle|MT2|10|5|ghostSoldier"
-          },
-          "search": {
-            "expansions": 1,
-            "frontierSize": 6,
-            "eventCounts": {
-              "skylineInserted": 7,
-              "agendaPopped": 1,
-              "actionSetGenerated": 1,
-              "candidateGenerated": 6,
-              "budgetStopped": 1
-            }
-          },
-          "successorGenerated": true,
-          "candidateRejectedReasons": [],
-          "dominanceRejected": false,
-          "skylineInserted": true,
-          "skylineEvicted": false,
-          "agendaPopped": false
-        }
+        "candidateRejectedReasons": null,
+        "dominanceRejected": null,
+        "skylineInserted": null,
+        "skylineEvicted": null,
+        "agendaPopped": null,
+        "searchObserver": null
       },
       {
         "stateIndex": 19,
@@ -1197,38 +1067,12 @@
         "successorExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":3231,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":63,\"def\":26,\"mdef\":270,\"money\":0,\"exp\":20,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":62,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,3\",\"10,5\",\"10,7\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"3,2\",\"3,4\",\"4,1\",\"5,1\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}",
         "providerError": null,
         "successorError": null,
-        "candidateRejectedReasons": [],
-        "dominanceRejected": false,
-        "skylineInserted": true,
-        "skylineEvicted": false,
-        "agendaPopped": false,
-        "searchObserver": {
-          "providerActionCount": 5,
-          "providerContainsAction": true,
-          "providerError": null,
-          "nextAction": {
-            "summary": "battle:slimeman@MT2:2,5",
-            "kind": "battle",
-            "fingerprint": "battle|MT2|2|5|slimeman"
-          },
-          "search": {
-            "expansions": 1,
-            "frontierSize": 5,
-            "eventCounts": {
-              "skylineInserted": 6,
-              "agendaPopped": 1,
-              "actionSetGenerated": 1,
-              "candidateGenerated": 5,
-              "budgetStopped": 1
-            }
-          },
-          "successorGenerated": true,
-          "candidateRejectedReasons": [],
-          "dominanceRejected": false,
-          "skylineInserted": true,
-          "skylineEvicted": false,
-          "agendaPopped": false
-        }
+        "candidateRejectedReasons": null,
+        "dominanceRejected": null,
+        "skylineInserted": null,
+        "skylineEvicted": null,
+        "agendaPopped": null,
+        "searchObserver": null
       },
       {
         "stateIndex": 20,
@@ -1264,38 +1108,12 @@
         "successorExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":3,\"direction\":null,\"hp\":3883,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":65,\"def\":28,\"mdef\":290,\"money\":0,\"exp\":22,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":64,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,3\",\"10,5\",\"10,7\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"3,2\",\"3,4\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}",
         "providerError": null,
         "successorError": null,
-        "candidateRejectedReasons": [],
-        "dominanceRejected": false,
-        "skylineInserted": true,
-        "skylineEvicted": false,
-        "agendaPopped": false,
-        "searchObserver": {
-          "providerActionCount": 4,
-          "providerContainsAction": true,
-          "providerError": null,
-          "nextAction": {
-            "summary": "battle:zombieKnight@MT2:4,3",
-            "kind": "battle",
-            "fingerprint": "battle|MT2|4|3|zombieKnight"
-          },
-          "search": {
-            "expansions": 1,
-            "frontierSize": 4,
-            "eventCounts": {
-              "skylineInserted": 5,
-              "agendaPopped": 1,
-              "actionSetGenerated": 1,
-              "candidateGenerated": 4,
-              "budgetStopped": 1
-            }
-          },
-          "successorGenerated": true,
-          "candidateRejectedReasons": [],
-          "dominanceRejected": false,
-          "skylineInserted": true,
-          "skylineEvicted": false,
-          "agendaPopped": false
-        }
+        "candidateRejectedReasons": null,
+        "dominanceRejected": null,
+        "skylineInserted": null,
+        "skylineEvicted": null,
+        "agendaPopped": null,
+        "searchObserver": null
       },
       {
         "stateIndex": 21,
@@ -1331,38 +1149,12 @@
         "successorExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":1,\"direction\":null,\"hp\":3840,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":67,\"def\":28,\"mdef\":290,\"money\":0,\"exp\":24,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":66,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"3,2\",\"3,4\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}",
         "providerError": null,
         "successorError": null,
-        "candidateRejectedReasons": [],
-        "dominanceRejected": false,
-        "skylineInserted": true,
-        "skylineEvicted": false,
-        "agendaPopped": false,
-        "searchObserver": {
-          "providerActionCount": 3,
-          "providerContainsAction": true,
-          "providerError": null,
-          "nextAction": {
-            "summary": "battle:rock@MT2:10,1",
-            "kind": "battle",
-            "fingerprint": "battle|MT2|10|1|rock"
-          },
-          "search": {
-            "expansions": 1,
-            "frontierSize": 3,
-            "eventCounts": {
-              "skylineInserted": 4,
-              "agendaPopped": 1,
-              "actionSetGenerated": 1,
-              "candidateGenerated": 3,
-              "budgetStopped": 1
-            }
-          },
-          "successorGenerated": true,
-          "candidateRejectedReasons": [],
-          "dominanceRejected": false,
-          "skylineInserted": true,
-          "skylineEvicted": false,
-          "agendaPopped": false
-        }
+        "candidateRejectedReasons": null,
+        "dominanceRejected": null,
+        "skylineInserted": null,
+        "skylineEvicted": null,
+        "agendaPopped": null,
+        "searchObserver": null
       },
       {
         "stateIndex": 22,
@@ -1398,38 +1190,12 @@
         "successorExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":3834,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":72,\"def\":35,\"mdef\":290,\"money\":0,\"exp\":1,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":68,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}",
         "providerError": null,
         "successorError": null,
-        "candidateRejectedReasons": [],
-        "dominanceRejected": false,
-        "skylineInserted": true,
-        "skylineEvicted": false,
-        "agendaPopped": false,
-        "searchObserver": {
-          "providerActionCount": 2,
-          "providerContainsAction": true,
-          "providerError": null,
-          "nextAction": {
-            "summary": "battle:rock@MT2:3,6",
-            "kind": "battle",
-            "fingerprint": "battle|MT2|3|6|rock"
-          },
-          "search": {
-            "expansions": 1,
-            "frontierSize": 2,
-            "eventCounts": {
-              "skylineInserted": 3,
-              "agendaPopped": 1,
-              "actionSetGenerated": 1,
-              "candidateGenerated": 2,
-              "budgetStopped": 1
-            }
-          },
-          "successorGenerated": true,
-          "candidateRejectedReasons": [],
-          "dominanceRejected": false,
-          "skylineInserted": true,
-          "skylineEvicted": false,
-          "agendaPopped": false
-        }
+        "candidateRejectedReasons": null,
+        "dominanceRejected": null,
+        "skylineInserted": null,
+        "skylineEvicted": null,
+        "agendaPopped": null,
+        "searchObserver": null
       }
     ],
     "firstProviderDivergence": null

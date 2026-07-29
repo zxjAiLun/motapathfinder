@@ -11,7 +11,7 @@ Status: **completed**
 
 ## Joint witness comparison
 
-- Teacher witness: decision ?; HP 3834; ATK/DEF/MDEF 72/35/290.
+- Teacher witness: decision 23; HP 3834; ATK/DEF/MDEF 72/35/290.
 - Production witness: depth 21; HP 2828; ATK/DEF/MDEF 72/35/290.
 - Same dominance key: **true**; exact key equal: **false**.
 - Same mutation/flags/inventory/location: **true**.
@@ -28,28 +28,28 @@ The local checkpoint is not treated as a common continuation state because its d
 
 ## Pre-goal step audit
 
-Audit mode: single-step-search-observer; anchored to production checkpoint: **false**.
+Audit mode: provider-and-successor-only; anchored to production checkpoint: **false**.
 
 | Decision | Action | Provider | Successor | Dominance reject | Skyline insert/evict | Agenda pop |
 |---:|---|:---:|:---:|:---:|:---:|:---:|
-| 15 | changeFloor@MT2:6,0 | true | true | false | true/false | false |
-| 16 | changeFloor@MT1:6,0 | true | true | false | true/false | false |
-| 17 | battle:zombie@MT2:8,3 | true | true | false | true/false | false |
-| 18 | battle:zombieKnight@MT2:9,4 | true | true | false | true/false | false |
-| 19 | battle:ghostSoldier@MT2:10,5 | true | true | false | true/false | false |
-| 20 | battle:slimeman@MT2:2,5 | true | true | false | true/false | false |
-| 21 | battle:zombieKnight@MT2:4,3 | true | true | false | true/false | false |
-| 22 | battle:rock@MT2:10,1 | true | true | false | true/false | false |
-| 23 | battle:rock@MT2:3,6 | true | true | false | true/false | false |
+| 15 | changeFloor@MT2:6,0 | true | true | n/a | n/a | n/a |
+| 16 | changeFloor@MT1:6,0 | true | true | n/a | n/a | n/a |
+| 17 | battle:zombie@MT2:8,3 | true | true | n/a | n/a | n/a |
+| 18 | battle:zombieKnight@MT2:9,4 | true | true | n/a | n/a | n/a |
+| 19 | battle:ghostSoldier@MT2:10,5 | true | true | n/a | n/a | n/a |
+| 20 | battle:slimeman@MT2:2,5 | true | true | n/a | n/a | n/a |
+| 21 | battle:zombieKnight@MT2:4,3 | true | true | n/a | n/a | n/a |
+| 22 | battle:rock@MT2:10,1 | true | true | n/a | n/a | n/a |
+| 23 | battle:rock@MT2:3,6 | true | true | n/a | n/a | n/a |
 
 Null lifecycle fields mean no production search was claimed at that row; the production local checkpoint was not a dominance-equivalent anchor.
 
 ## Provenance
 
-- solver commit: 3db4fdb4dc254d8c4bfb938a9b7529155885fda7
+- solver commit: a0bcc8f309eb38bccee88f2ff2030601223827dc
 - started/finished stable: **true**
 - node: v22.12.0
-- clean worktree at start/finish: **true/true**
+- clean worktree at start/finish: **true/false**
 
 Raw JSON: shared-solver\routes\generated\agenda-policy-evaluation\mt2-hp3834-teacher-fixture-current-exact-divergence-audit.json
 Current-exact route: shared-solver\routes\generated\agenda-policy-evaluation\mt1-mt3-i893-hp8425.current-exact.route.json
