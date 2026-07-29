@@ -538,6 +538,7 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
+  buildMarkdown,
   buildFutureTargets,
   runDownstream,
   summarizeRun,
