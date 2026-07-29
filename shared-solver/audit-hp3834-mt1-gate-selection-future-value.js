@@ -136,6 +136,14 @@ function compactEvent(event) {
     decisionDepth: event.decisionDepth == null ? null : event.decisionDepth,
     popExpansion: event.popExpansion == null ? null : event.popExpansion,
     frontierSize: event.frontierSize == null ? null : event.frontierSize,
+    dominanceWitnesses: Array.isArray(event.dominanceWitnesses)
+      ? event.dominanceWitnesses.slice(0, 4)
+      : [],
+    dominanceComparison: event.dominanceComparison || null,
+    dominanceStateDiff: event.dominanceStateDiff || null,
+    dominanceWitnessStates: Array.isArray(event.dominanceWitnessStates)
+      ? event.dominanceWitnessStates.slice(0, 4).map((state) => compactState(state))
+      : [],
   };
 }
 
@@ -168,7 +176,10 @@ function actionMatches(simulator, action, decision) {
   return Boolean(decision.summary && action.summary === decision.summary);
 }
 
-function createLifecycleObserver(simulator, targets, gateExactStateKey) {
+function createLifecycleObserver(simulator, targets, gateExactStateKey, options) {
+  const observerOptions = options || {};
+  const continuationBoundaries = observerOptions.continuationBoundaries || {};
+  const witnessTargets = new Set(observerOptions.captureDominanceWitnessFor || []);
   const byCandidate = new Map();
   const byNode = new Map();
   const records = new Map(targets.map((target) => [target.id, {
@@ -205,6 +216,18 @@ function createLifecycleObserver(simulator, targets, gateExactStateKey) {
   };
   const observer = {
     includeExactStateKey: true,
+    dominanceCaptureMode: witnessTargets.size > 0 ? "targeted-state" : "off",
+    shouldCaptureDominanceWitness(meta) {
+      if (witnessTargets.size === 0 || !meta || !meta.state) return false;
+      const exactStateKey = buildStateKey(meta.state);
+      const fingerprint = actionFingerprint(simulator, meta.action);
+      return Array.from(witnessTargets).some((id) => {
+        const record = records.get(id);
+        return record &&
+          record.expectedPostExactStateKey === exactStateKey &&
+          (!record.actionFingerprint || record.actionFingerprint === fingerprint);
+      });
+    },
     onEvent(event) {
       if (!event || !event.eventType) return;
       if (event.eventType === "goalAccepted") {
@@ -266,7 +289,13 @@ function createLifecycleObserver(simulator, targets, gateExactStateKey) {
     gateGoalEvents: goalEvents.filter((event) => event.exactStateKey === gateExactStateKey),
     records: Object.fromEntries(Array.from(records.entries()).map(([id, record]) => [id, {
       ...record,
-      classification: record.goalAccepted
+      ...(continuationBoundaries[record.decisionIndex] || {}),
+      classification: continuationBoundaries[record.decisionIndex] &&
+        record.generated === false &&
+        record.dominanceRejected === false &&
+        record.skylineInserted === false
+        ? continuationBoundaries[record.decisionIndex].classification
+        : record.goalAccepted
         ? "goal-accepted"
         : record.dominanceRejected
           ? "dominance-rejected"
@@ -278,7 +307,7 @@ function createLifecycleObserver(simulator, targets, gateExactStateKey) {
                 ? "skyline-retained-or-pending"
                 : record.generated
                   ? "candidate-generated-no-lifecycle"
-                  : "candidate-not-generated",
+                    : "candidate-not-generated",
     }])),
   });
   return { observer, finalize };
@@ -460,7 +489,10 @@ function buildMarkdown(report) {
     "## Gate contract",
     "",
     "- Failed gates: " + (report.failedGates.join(", ") || "none") + ".",
-    "- Search boundary: found=" + report.search.found + ", expansions=" + report.search.expansions + ", frontier=" + report.search.frontierSize + ", stoppedReason=" + report.search.stoppedReason + ".",
+    "- Search boundary: found=" + report.search.found + ", expansions=" + report.search.expansions + ", frontier=" + report.search.frontierSize + ", stoppedReason=" + report.search.stoppedReason + ", expansionBudgetExhausted=" + report.search.expansionBudgetExhausted + ".",
+    "- Search completed within configured action set: **" + report.gates.searchCompletedWithinConfiguredActionSet + "**.",
+    "- Pipeline retention gates (raw DP / segment skyline / merged checkpoint): **" + report.gates.teacherGateRawDpGoalSkylineRetained + " / " + report.gates.teacherGateSegmentGoalSkylineRetained + " / " + report.gates.teacherGateMergedCheckpointRetained + "**.",
+    "- Future-value contract gates (complete suffix / hard tiles present): **" + report.gates.futureValueCompleteSuffix + " / " + report.gates.futureValueHardTilesPresent + "**.",
     "",
     "## Teacher-compatible gate lifecycle",
     "",
@@ -563,7 +595,14 @@ function main() {
       expectedPostExactStateKey: buildStateKey(postState),
     });
   }
-  const lifecycleCollector = createLifecycleObserver(simulator, lifecycleTargets, gateExactStateKey);
+  const lifecycleCollector = createLifecycleObserver(simulator, lifecycleTargets, gateExactStateKey, {
+    continuationBoundaries: {
+      3: {
+        classification: "pre-state-replaced-by-continuation-compatible-witness",
+        exactRejoinedAtDecision: 4,
+      },
+    },
+  });
   const pipelineCollector = makePipelineObserver(simulator);
   const maxExpansions = number(args["max-expansions"], 400);
   const maxRuntimeMs = number(args["max-runtime-ms"], 900000);
@@ -657,13 +696,23 @@ function main() {
     commonExactState: buildStateKey(teacherReplay.states[1]) === buildStateKey(productionReplay.states[1]),
     commonDominanceState: buildDominanceKey(teacherReplay.states[1]) === buildDominanceKey(productionReplay.states[1]),
     searchExecuted: Boolean(run && run.segmentResults && run.segmentResults.length > 0),
+    searchCompletedWithinConfiguredActionSet: Boolean(
+      searchDiagnostics.frontierSize === 0 &&
+      !searchDiagnostics.stoppedReason &&
+      !searchDiagnostics.expansionBudgetExhausted,
+    ),
   };
   const gates = {
     ...inputGates,
     teacherGateGoalAccepted: gate.goalAccepted,
+    teacherGateRawDpGoalSkylineRetained: rawDpGoalSkyline.present,
+    teacherGateSegmentGoalSkylineRetained: segmentGoalSkyline.present,
+    teacherGateMergedCheckpointRetained: mergedCheckpoint.present,
     teacherGateCheckpointPipelineObserved: Boolean(attempt && merge),
     teacherGateFutureReachedHp3834: Boolean(futureValue[0].audit.reachedMt2Hp3834),
     futureValueAuditExecuted: futureValue.length >= 1 && futureValue.every((entry) => entry.audit && Array.isArray(entry.audit.steps)),
+    futureValueCompleteSuffix: futureValue.length >= 1 && futureValue.every((entry) => entry.audit && entry.audit.completeSuffix),
+    futureValueHardTilesPresent: futureValue.length >= 1 && futureValue.every((entry) => entry.audit && entry.audit.allHardTilesPresent),
   };
   const failedGates = Object.entries(gates).filter((entry) => !entry[1]).map((entry) => entry[0]);
   const inconclusive = inputGates.teacherStrictReplay &&
@@ -733,6 +782,7 @@ function main() {
       expansions: searchDiagnostics.expansions,
       frontierSize: searchDiagnostics.frontierSize,
       stoppedReason: searchDiagnostics.stoppedReason || null,
+      expansionBudgetExhausted: Boolean(searchDiagnostics.expansionBudgetExhausted),
       memory: searchDiagnostics.memory || null,
       childOldSpaceMb: number(args["child-old-space-mb"], 1600),
       ledger: run && run.evaluationAttemptLedger || [],
@@ -758,5 +808,6 @@ if (require.main === module) main();
 
 module.exports = {
   createLifecycleObserver,
+  makePipelineObserver,
   runFutureValueOracle,
 };

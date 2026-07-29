@@ -2839,11 +2839,11 @@ function segmentDpOverrides(segment, config, overrides) {
     ...(config && config.dpKeyMode && !generatedSegment
       ? { keyMode: config.dpKeyMode }
       : {}),
-    ...(config && config.maxExpansions && !generatedSegment
-      ? { maxExpansions: config.maxExpansions }
+    ...(config && (config.perAttemptMaxExpansions || config.maxExpansions) && !generatedSegment
+      ? { maxExpansions: config.perAttemptMaxExpansions || config.maxExpansions }
       : {}),
-    ...(config && config.maxRuntimeMs && !generatedSegment
-      ? { maxRuntimeMs: config.maxRuntimeMs }
+    ...(config && (config.perAttemptMaxRuntimeMs || config.maxRuntimeMs) && !generatedSegment
+      ? { maxRuntimeMs: config.perAttemptMaxRuntimeMs || config.maxRuntimeMs }
       : {}),
     ...(config && config.maxHeapMb != null
       ? { maxHeapMb: config.maxHeapMb }
@@ -3655,24 +3655,32 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     config.toMilestoneId,
   );
   const checkpointResults = [];
-  const initialFrontierState = cloneStateWithoutRouteTrace(initialState);
-  let frontier = [
-    {
-      id: "initial#0",
+  const configuredInitialFrontier = Array.isArray(config.initialFrontier) && config.initialFrontier.length > 0
+    ? config.initialFrontier
+    : [{ id: "initial#0", state: initialState, tags: ["initial"] }];
+  let frontier = configuredInitialFrontier.map((candidate, index) => {
+    const candidateState = candidate && candidate.state ? candidate.state : candidate;
+    const initialFrontierState = cloneStateWithoutRouteTrace(candidateState);
+    return {
+      id: candidate && candidate.id || "initial#" + index,
       state: initialFrontierState,
-      route: Array.isArray(initialState.route)
-        ? initialState.route.slice()
-        : [],
-      trace:
-        config.captureTrace === true && Array.isArray(initialState.routeTrace)
-          ? initialState.routeTrace.slice()
+      route: Array.isArray(candidate && candidate.route)
+        ? candidate.route.slice()
+        : Array.isArray(candidateState && candidateState.route)
+          ? candidateState.route.slice()
           : [],
-      hero: summarizeHero(initialState),
-      effectiveHero: summarizeEffectiveHero(initialState),
-      tags: ["initial"],
-      score: goalCandidateScore(initialState),
-    },
-  ];
+      trace:
+        config.captureTrace === true && Array.isArray(candidate && candidate.trace)
+          ? candidate.trace.slice()
+          : config.captureTrace === true && Array.isArray(candidateState && candidateState.routeTrace)
+            ? candidateState.routeTrace.slice()
+            : [],
+      hero: candidate && candidate.hero || summarizeHero(candidateState),
+      effectiveHero: candidate && candidate.effectiveHero || summarizeEffectiveHero(candidateState),
+      tags: Array.isArray(candidate && candidate.tags) ? candidate.tags.slice() : ["initial"],
+      score: candidate && candidate.score != null ? candidate.score : goalCandidateScore(candidateState),
+    };
+  });
   const segmentResults = [];
   const evaluationAttemptLedger = [];
   const appendLedger = (execution, phase) => {
