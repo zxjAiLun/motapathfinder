@@ -3096,6 +3096,18 @@ function runSegmentAgainstFrontier(
       dpOverrides,
     });
     attempts.push(result);
+    if (config && config.pipelineObserver && typeof config.pipelineObserver.onAttempt === "function") {
+      try {
+        config.pipelineObserver.onAttempt({
+          segment,
+          candidate,
+          candidateIndex,
+          attempt: result,
+        });
+      } catch (error) {
+        // Pipeline observation is diagnostic-only and must not affect search.
+      }
+    }
     const dp = result && result.diagnostics && result.diagnostics.dp;
     if (dp && ["heap-limit", "rss-limit"].includes(dp.stoppedReason)) {
       memoryLimited = true;
@@ -3126,6 +3138,20 @@ function runSegmentAgainstFrontier(
       (overrides || {}).preserveSkylineRoles,
     ),
   });
+  if (config && config.pipelineObserver && typeof config.pipelineObserver.onMerge === "function") {
+    try {
+      config.pipelineObserver.onMerge({
+        segment,
+        inputFrontier,
+        nextCandidates,
+        attempts,
+        merged,
+        candidateLimit,
+      });
+    } catch (error) {
+      // Pipeline observation is diagnostic-only and must not affect search.
+    }
+  }
   const failurePropagation = mergeFailurePropagation(attempts);
   const summary = {
     segmentId: segment.id,

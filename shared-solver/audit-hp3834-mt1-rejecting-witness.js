@@ -6,7 +6,11 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const { getMilestoneSpec } = require("./lib/milestone-spec");
-const { buildSegmentActionProvider, runMilestoneGraph } = require("./lib/segment-dp");
+const {
+  buildSegmentActionProvider,
+  buildSegmentGoalPredicate,
+  runMilestoneGraph,
+} = require("./lib/segment-dp");
 const { resolveRecordedAction } = require("./lib/route-store");
 const { strictReplayRoute } = require("./lib/agenda-policy-evaluation");
 const { cloneState, listFloorMutationSummary } = require("./lib/state");
@@ -162,12 +166,9 @@ function compactStateDiff(teacherState, witnessState) {
   return diff;
 }
 
-function meetsGoal(state, segment) {
-  if (!state || !segment || !segment.goal) return false;
-  if (segment.goal.floorId && state.floorId !== segment.goal.floorId) return false;
-  return Object.entries(segment.goal.minHero || {}).every(([field, value]) =>
-    Number(state.hero && state.hero[field] || 0) >= Number(value),
-  );
+function meetsGoal(project, simulator, state, segment) {
+  if (!state || !segment) return false;
+  return buildSegmentGoalPredicate(project, segment, simulator)(state);
 }
 
 function chooseSuccessor(successors, expectedPostExactStateKey) {
@@ -197,12 +198,13 @@ function providerResult(simulator, provider, state, decision) {
 }
 
 function continueTeacherSuffix(project, simulator, provider, teacherStartState, witnessStartState, decisions, segment) {
+  const goalPredicate = buildSegmentGoalPredicate(project, segment, simulator);
   let teacherState = cloneState(teacherStartState);
   let witnessState = witnessStartState ? cloneState(witnessStartState) : null;
   const steps = [];
   let failure = null;
-  let teacherReachedGoal = meetsGoal(teacherState, segment);
-  let witnessReachedGoal = meetsGoal(witnessState, segment);
+  let teacherReachedGoal = goalPredicate(teacherState);
+  let witnessReachedGoal = goalPredicate(witnessState);
 
   for (const decision of decisions) {
     const teacherProvider = providerResult(simulator, provider, teacherState, decision);
@@ -292,7 +294,7 @@ function continueTeacherSuffix(project, simulator, provider, teacherStartState, 
           teacherPostDominanceKey === expectedTeacherPostDominanceKey,
         ),
         hero: teacherNext ? heroSummary(teacherNext) : null,
-        reachedGoal: meetsGoal(teacherNext, segment),
+        reachedGoal: goalPredicate(teacherNext),
       },
       witness: {
         providerContainsAction: witnessProvider.containsAction,
@@ -303,7 +305,7 @@ function continueTeacherSuffix(project, simulator, provider, teacherStartState, 
         postExactStateKey: witnessPostExactStateKey,
         postDominanceKey: witnessPostDominanceKey,
         hero: witnessNext ? heroSummary(witnessNext) : null,
-        reachedGoal: meetsGoal(witnessNext, segment),
+        reachedGoal: goalPredicate(witnessNext),
       },
       comparison: {
         exactStateEqual: Boolean(
@@ -325,8 +327,8 @@ function continueTeacherSuffix(project, simulator, provider, teacherStartState, 
     steps.push(step);
     teacherState = teacherNext;
     witnessState = witnessNext;
-    teacherReachedGoal = meetsGoal(teacherState, segment);
-    witnessReachedGoal = meetsGoal(witnessState, segment);
+    teacherReachedGoal = goalPredicate(teacherState);
+    witnessReachedGoal = goalPredicate(witnessState);
     if (!teacherApplied.resolved || !teacherApplied.successorGenerated) {
       failure = { side: "teacher", decisionIndex: decision.index, reason: teacherApplied.reason };
       break;
@@ -562,7 +564,8 @@ function main() {
         },
       }
     : null;
-  const teacherGoalStateIndex = teacherReplay.states.findIndex((state) => meetsGoal(state, segment));
+  const teacherGoalPredicate = buildSegmentGoalPredicate(project, segment, simulator);
+  const teacherGoalStateIndex = teacherReplay.states.findIndex((state) => teacherGoalPredicate(state));
   const suffixDecisions = teacherGoalStateIndex > 2
     ? teacherRoute.decisions.slice(2, teacherGoalStateIndex)
     : [];
@@ -584,6 +587,9 @@ function main() {
     rejectingWitnessCaptured: Boolean(witness),
     searchFoundMt1Goal: Boolean(searchSummary.found && searchSummary.reachedMilestone === segment.id),
     teacherSuffixReachedMt1Goal: continuation.teacherReachedGoal,
+    witnessSuffixReachedMt1Goal: continuation.witnessReachedGoal,
+    continuationComplete: continuation.completeSuffix,
+    continuationCompatible: continuation.compatibilityVerdict === "continuation-compatible",
   };
   const failedGates = Object.entries(gates).filter((entry) => !entry[1]).map((entry) => entry[0]);
   const finishedCommit = gitCommit();
