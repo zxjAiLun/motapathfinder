@@ -9,7 +9,7 @@ const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
 const { searchDP } = require("./lib/dp-search");
-const { resolveRecordedAction, writeRouteFile } = require("./lib/route-store");
+const { writeRouteFile } = require("./lib/route-store");
 const { buildSegmentActionProvider } = require("./lib/segment-dp");
 const { StaticSimulator } = require("./lib/simulator");
 const { buildDominanceKey, buildStateKey } = require("./lib/state-key");
@@ -264,8 +264,18 @@ function materializeCurrentExactRoute(project, simulator, record, sourceFile, co
     metadata: {
       ...(record.metadata || {}),
       currentExactRoute: true,
+      oraclePurpose: "mt1-mt3-i893",
+      expectedFinalFloor: finalState.floorId,
+      expectedEquipment: Array.isArray(finalState.hero && finalState.hero.equipment)
+        ? finalState.hero.equipment.slice()
+        : [],
       originalFixtureSha256: sha256(sourceFile),
       originalDecisionCount: decisions.length,
+    },
+    goal: {
+      type: "oracle-fixture",
+      floorId: finalState.floorId,
+      legacyGoal: record.goal || null,
     },
     start: {
       ...(record.start || {}),
@@ -617,7 +627,7 @@ function buildMarkdown(report) {
     "",
     "## Joint witness comparison",
     "",
-    `- Teacher witness: decision ${compare && compare.teacher && compare.teacher.decisionDepth != null ? compare.teacher.decisionDepth : "?"}; HP ${compare ? compare.teacher.hero.hp : "?"}; ATK/DEF/MDEF ${compare ? `${compare.teacher.hero.atk}/${compare.teacher.hero.def}/${compare.teacher.hero.mdef}` : "?"}.`,
+    `- Teacher witness: decision ${report.earliestContinuationCompatibleWitness ? report.earliestContinuationCompatibleWitness.reachedAfterDecision : "?"}; HP ${compare ? compare.teacher.hero.hp : "?"}; ATK/DEF/MDEF ${compare ? `${compare.teacher.hero.atk}/${compare.teacher.hero.def}/${compare.teacher.hero.mdef}` : "?"}.`,
     `- Production witness: depth ${report.productionWitness ? report.productionWitness.decisionDepth : "?"}; HP ${compare ? compare.production.hero.hp : "?"}; ATK/DEF/MDEF ${compare ? `${compare.production.hero.atk}/${compare.production.hero.def}/${compare.production.hero.mdef}` : "?"}.`,
     `- Same dominance key: **${Boolean(compare && compare.dominanceKeyEqual)}**; exact key equal: **${Boolean(compare && compare.exactStateKeyEqual)}**.`,
     `- Same mutation/flags/inventory/location: **${Boolean(compare && compare.sameMutationState && compare.sameFlags && compare.sameInventory && compare.sameLocation)}**.`,

@@ -3088,6 +3088,11 @@ function runSegmentAgainstFrontier(
         (overrides || {}).preserveSkylineRoles,
       ),
       captureTrace: config && config.captureTrace === true,
+      observer: config && config.observer,
+      observerIncludeExactStateKey: config && config.observerIncludeExactStateKey === true,
+      observerCaptureMode: config && config.observerCaptureMode,
+      observerCaptureDominanceWitnesses: config && config.observerCaptureDominanceWitnesses === true,
+      observerCaptureWitnessStates: config && config.observerCaptureWitnessStates === true,
       dpOverrides,
     });
     attempts.push(result);
