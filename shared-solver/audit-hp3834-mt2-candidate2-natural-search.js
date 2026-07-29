@@ -270,7 +270,11 @@ function buildMarkdown(report) {
     "- Candidate-2 was naturally retained by the MT1 merged checkpoint: **" + report.gates.candidate2Retained + "**.",
     "- Candidate-2 lifecycle observer covered decisions 11–23: **" + report.gates.lifecycleObserved + "**.",
     "- Full-frontier condition met (candidate-2 success): **" + report.conditions.fullFrontierApplicable + "**.",
-    "- Full four-candidate frontier run executed: **" + report.gates.fullFrontierRunExecuted + "**.",
+    "- Full four-candidate frontier run: **" + (
+      report.conditions.fullFrontierApplicable
+        ? report.gates.fullFrontierRunExecuted
+        : "not-applicable"
+    ) + "**.",
     "",
     "## Candidate-2-only result",
     "",
