@@ -263,10 +263,51 @@ function normalizeReplayOptions(options) {
 }
 
 function normalizeSnapshotForRuntime(snapshot, config) {
-  if (!snapshot || shouldUseRuntimeAutoBattle(config)) return snapshot;
+  if (!snapshot) return snapshot;
   const normalized = JSON.parse(JSON.stringify(snapshot));
-  if (normalized.flags) delete normalized.flags.autoBattle;
+  if (!shouldUseRuntimeAutoBattle(config) && normalized.flags) delete normalized.flags.autoBattle;
   return normalized;
+}
+
+function isEmptyRuntimeFloorRecord(value) {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Array.isArray(value.removed) &&
+      value.removed.length === 0 &&
+      Array.isArray(value.replaced) &&
+      value.replaced.length === 0
+  );
+}
+
+function normalizeRuntimeSnapshotPair(expected, actual, config) {
+  const normalizedExpected = normalizeSnapshotForRuntime(expected, config);
+  const normalizedActual = normalizeSnapshotForRuntime(actual, config);
+  if (!normalizedExpected || !normalizedActual) return { expected: normalizedExpected, actual: normalizedActual };
+
+  const expectedFloors = normalizedExpected.floors;
+  const actualFloors = normalizedActual.floors;
+  if (
+    expectedFloors &&
+    actualFloors &&
+    typeof expectedFloors === "object" &&
+    typeof actualFloors === "object" &&
+    !Array.isArray(expectedFloors) &&
+    !Array.isArray(actualFloors)
+  ) {
+    for (const [floorId, floor] of Object.entries(expectedFloors)) {
+      if (!Object.prototype.hasOwnProperty.call(actualFloors, floorId) && isEmptyRuntimeFloorRecord(floor)) {
+        actualFloors[floorId] = { removed: [], replaced: [] };
+      }
+    }
+    for (const [floorId, floor] of Object.entries(actualFloors)) {
+      if (!Object.prototype.hasOwnProperty.call(expectedFloors, floorId) && isEmptyRuntimeFloorRecord(floor)) {
+        expectedFloors[floorId] = { removed: [], replaced: [] };
+      }
+    }
+  }
+  return { expected: normalizedExpected, actual: normalizedActual };
 }
 
 function diffSnapshotSubset(expected, actual, pathSegments) {
@@ -301,8 +342,9 @@ function diffSnapshotSubset(expected, actual, pathSegments) {
 }
 
 function diffRouteSnapshot(expected, actual, config, pathSegments) {
-  const normalizedExpected = normalizeSnapshotForRuntime(expected, config);
-  const normalizedActual = normalizeSnapshotForRuntime(actual, config);
+  const normalizedPair = normalizeRuntimeSnapshotPair(expected, actual, config);
+  const normalizedExpected = normalizedPair.expected;
+  const normalizedActual = normalizedPair.actual;
   if (normalizedExpected && normalizedExpected.partial) {
     return diffSnapshotSubset(normalizedExpected, normalizedActual, pathSegments || []);
   }
@@ -732,7 +774,17 @@ function routeSnapshotFloors(routeRecord, options) {
   if (options && options.snapshotFloors) {
     return String(options.snapshotFloors).split(",").map((item) => item.trim()).filter(Boolean);
   }
-  return Object.keys((((routeRecord.start || {}).snapshot || {}).floors) || (((routeRecord.final || {}).snapshot || {}).floors) || { MT1: true, MT2: true, MT3: true });
+  const floorIds = new Set();
+  const snapshots = [
+    (routeRecord.start || {}).snapshot,
+    ...((routeRecord.decisions || []).map((decision) => decision.postSnapshot).filter(Boolean)),
+    (routeRecord.final || {}).snapshot,
+  ];
+  snapshots.forEach((snapshot) => {
+    Object.keys((snapshot && snapshot.floors) || {}).forEach((floorId) => floorIds.add(floorId));
+  });
+  if (floorIds.size === 0) ["MT1", "MT2", "MT3"].forEach((floorId) => floorIds.add(floorId));
+  return Array.from(floorIds);
 }
 
 function resolveDownloadsDir(projectRoot, config) {
@@ -825,11 +877,12 @@ async function launchRuntimeSession(routeRecord, options) {
 
 async function verifyInitialRuntimeSnapshot(session, routeRecord) {
   const actual = await captureRuntimeSnapshot(session.page, { verifyFloors: session.verifyFloors });
-  const mismatch = diffSnapshots(
-    normalizeSnapshotForRuntime((routeRecord.start || {}).snapshot, session.options),
-    normalizeSnapshotForRuntime(actual, session.options),
-    ["initial"]
+  const normalizedPair = normalizeRuntimeSnapshotPair(
+    (routeRecord.start || {}).snapshot,
+    actual,
+    session.options
   );
+  const mismatch = diffSnapshots(normalizedPair.expected, normalizedPair.actual, ["initial"]);
   return {
     ok: !mismatch,
     mismatch,
@@ -901,11 +954,12 @@ async function replayRouteFile(routeRecord, options) {
     }
 
     const initialRuntimeSnapshot = await captureRuntimeSnapshot(page, { verifyFloors });
-    const initialMismatch = diffSnapshots(
-      normalizeSnapshotForRuntime((routeRecord.start || {}).snapshot, config),
-      normalizeSnapshotForRuntime(initialRuntimeSnapshot, config),
-      ["initial"]
+    const normalizedInitialPair = normalizeRuntimeSnapshotPair(
+      (routeRecord.start || {}).snapshot,
+      initialRuntimeSnapshot,
+      config
     );
+    const initialMismatch = diffSnapshots(normalizedInitialPair.expected, normalizedInitialPair.actual, ["initial"]);
     if (initialMismatch) {
       console.error("Expected initial snapshot:", JSON.stringify(summarizeSnapshot((routeRecord.start || {}).snapshot), null, 2));
       console.error("Actual initial snapshot:", JSON.stringify(summarizeSnapshot(initialRuntimeSnapshot), null, 2));
@@ -970,6 +1024,7 @@ module.exports = {
   createStaticServer,
   describeRuntimeStatus,
   diffSnapshots,
+  diffRouteSnapshot,
   executeRuntimeDecision,
   findBrowserExecutable,
   isAutoAdvanceableRuntimeEvent,
@@ -979,6 +1034,7 @@ module.exports = {
   quickStartRuntime,
   replayRouteFile,
   replayRouteRecordLive,
+  routeSnapshotFloors,
   stabilizeRuntime,
   verifyInitialRuntimeSnapshot,
   waitForRuntimeIdle,
