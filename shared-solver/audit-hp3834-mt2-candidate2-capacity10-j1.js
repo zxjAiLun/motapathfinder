@@ -7,7 +7,8 @@ const { spawnSync } = require("node:child_process");
 
 const { loadProject } = require("./lib/project-loader");
 const { buildStateKey } = require("./lib/state-key");
-const { buildRouteRecord, readRouteFile } = require("./lib/route-store");
+const { buildRouteRecord, resolveRecordedAction } = require("./lib/route-store");
+const { cloneState } = require("./lib/state");
 const { strictReplayRoute } = require("./lib/agenda-policy-evaluation");
 const {
   makeSimulator,
@@ -87,6 +88,40 @@ function successfulHpAttempt(report) {
   return segment && (segment.attempts || []).find((attempt) => attempt.found === true) || null;
 }
 
+function replayRouteFromState(project, simulator, initialState, record) {
+  let state = cloneState(initialState);
+  const states = [state];
+  const errors = [];
+  for (let index = 0; index < (record.decisions || []).length; index += 1) {
+    const decision = record.decisions[index];
+    let resolved;
+    try {
+      resolved = resolveRecordedAction(simulator, state, decision, { project });
+    } catch (error) {
+      errors.push({ index: decision.index || index + 1, reason: String(error.message || error) });
+      break;
+    }
+    if (!resolved || !resolved.action) {
+      errors.push({ index: decision.index || index + 1, reason: resolved && resolved.reason || "action-unavailable" });
+      break;
+    }
+    try {
+      const applied = simulator.applyAction(state, resolved.action, { storeRoute: false });
+      const successors = Array.isArray(applied) ? applied : [applied];
+      state = successors.find((candidate) => (
+        !decision.postExactStateKey || buildStateKey(candidate) === decision.postExactStateKey
+      )) || successors[0];
+      if (!state) throw new Error("no-successor");
+      state.meta = { ...(state.meta || {}), decisionDepth: (initialState.meta && initialState.meta.decisionDepth || 0) + index + 1 };
+      states.push(state);
+    } catch (error) {
+      errors.push({ index: decision.index || index + 1, reason: String(error.message || error) });
+      break;
+    }
+  }
+  return { states, state, errors };
+}
+
 function buildWinningRouteEvidence(projectRoot, project, simulator, report, teacherRoute, teacherReplay) {
   const attempt = successfulHpAttempt(report);
   const winningHpAttemptStartCandidateId = attempt && attempt.startCandidateId || null;
@@ -105,18 +140,29 @@ function buildWinningRouteEvidence(projectRoot, project, simulator, report, teac
     "mt2-hp3834",
     report.exactHp3834Reachability && report.exactHp3834Reachability.finalCandidateId || "mt2-hp3834:candidate-0",
   ) || checkpointCandidate(report, "mt2-hp3834", "mt2-hp3834:candidate-0");
-  const initialState = simulator.createInitialState({ rank: "chaos" });
+  const gateState = teacherReplay.states.find((state) => (
+    buildStateKey(state) === report.mt1Setup.candidate2.exactStateKey
+  ));
+  const initialState = gateState && cloneState(gateState);
   let routeRecord = null;
   let routeBuildError = null;
   let routeReplay = null;
   let strictReplay = null;
   try {
     if (!finalCandidate || !finalCandidate.state) throw new Error("winning HP checkpoint candidate missing");
+    if (!initialState) throw new Error("teacher gate exact start state missing");
+    const finalRoute = Array.isArray(finalCandidate.route) ? finalCandidate.route.slice() : [];
+    const naturalRouteDecisionCount = Number(
+      report.strictRouteReplay && report.strictRouteReplay.natural && report.strictRouteReplay.natural.routeDecisionCount || 0,
+    );
+    const routePrefixLength = Math.max(0, finalRoute.length - naturalRouteDecisionCount);
+    const finalState = cloneState(finalCandidate.state);
+    finalState.route = finalRoute.slice(routePrefixLength);
     routeRecord = buildRouteRecord({
       project,
       simulator,
       initialState,
-      finalState: finalCandidate.state,
+      finalState,
       options: {
         projectRoot,
         solver: "pr-4.4j1-winning-ancestry-postprocess",
@@ -128,7 +174,7 @@ function buildWinningRouteEvidence(projectRoot, project, simulator, report, teac
       },
     });
     strictReplay = strictReplayRoute(project, simulator, routeRecord);
-    routeReplay = replayRoute(project, simulator, routeRecord);
+    routeReplay = replayRouteFromState(project, simulator, initialState, routeRecord);
   } catch (error) {
     routeBuildError = String(error.message || error);
   }
@@ -253,8 +299,8 @@ function main(argv) {
     winningRouteContainsTeacherLocalExact: winningAncestry.winningRouteContainsTeacherLocalExact,
     winningRouteFinalMatchesTeacherDecision23: winningAncestry.winningRouteFinalMatchesTeacherDecision23,
     winningRouteStrictReplayAttempted: winningAncestry.winningRouteStrictReplay.performed,
-    winningRouteStrictReplayCompleted: winningAncestry.winningRouteStrictReplay.stepsAttempted === 22 &&
-      winningAncestry.winningRouteStrictReplay.stepsCompleted === 22,
+    winningRouteStrictReplayCompleted: winningAncestry.winningRouteStrictReplay.stepsAttempted === 13 &&
+      winningAncestry.winningRouteStrictReplay.stepsCompleted === 13,
     winningRouteStrictReplayValid: winningAncestry.winningRouteStrictReplay.valid,
     hardTilesExactSeven: Array.isArray(report.hardTiles) && report.hardTiles.length === 7 && report.hardTiles.every((tile) => tile.present === true),
     retainedMatrixInconclusive: report.retainedMatrixCompletion && report.retainedMatrixCompletion.classification === "inconclusive",

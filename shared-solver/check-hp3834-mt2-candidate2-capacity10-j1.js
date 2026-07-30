@@ -33,8 +33,8 @@ assert.strictEqual(report.j1Gates.hardTilesExactSeven, true);
 assert.strictEqual(report.j1Gates.retainedMatrixInconclusive, true);
 assert.strictEqual(report.j1Gates.globalDefaultNotEstablished, true);
 assert.strictEqual(report.winningAncestry.winningHpAttemptStartCandidateId, "mt2-local-3582:candidate-6");
-assert.strictEqual(report.winningAncestry.winningRouteStrictReplay.stepsAttempted, 22);
-assert.strictEqual(report.winningAncestry.winningRouteStrictReplay.stepsCompleted, 22);
+assert.strictEqual(report.winningAncestry.winningRouteStrictReplay.stepsAttempted, 13);
+assert.strictEqual(report.winningAncestry.winningRouteStrictReplay.stepsCompleted, 13);
 assert.strictEqual(
   report.exactLifecycleOutcome.firstExactLineageDrop.classification,
   "pre-state-replaced-by-continuation-compatible-witness",
