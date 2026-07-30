@@ -441,6 +441,137 @@ function selectGoalSkylineNodes(goalNodes, options) {
   return selected;
 }
 
+function compactGoalArchiveNode(simulator, node, config) {
+  if (!node || !node.state) return null;
+  const state = node.state;
+  return {
+    nodeId: node.nodeId,
+    parentId: node.parentId == null ? null : node.parentId,
+    exactStateKey: buildStateKey(state),
+    dpKey: node.key || node.stateKey || null,
+    state: cloneState(state),
+    hero: compactObserverHero(state),
+    inventory: stableObject(state.inventory),
+    flags: stableObject(state.flags),
+    visitedFloors: Object.keys(state.visitedFloors || {}).sort(),
+    mutations: listFloorMutationSummary(state.floorStates || {}),
+    routeLength: routeLengthOfState(state),
+    decisionDepth: getDecisionDepth(state),
+    action: compactObserverAction(simulator, node.actionEntry || node.action),
+    skylineRoles: observerRoles(config, state),
+  };
+}
+
+function describeGoalArchiveComparison(left, right) {
+  if (!left || !right) return null;
+  const fields = ["hp", "atk", "def", "mdef", "lv", "exp"];
+  const comparison = {
+    comparator: "compareGoalStates",
+    result: compareGoalStates(left, right),
+    hpDiff: heroHp(left) - heroHp(right),
+    atkDiff: effectiveHeroValue(left, "atk") - effectiveHeroValue(right, "atk"),
+    defDiff: effectiveHeroValue(left, "def") - effectiveHeroValue(right, "def"),
+    mdefDiff: effectiveHeroValue(left, "mdef") - effectiveHeroValue(right, "mdef"),
+    lvDiff: Number((left.hero || {}).lv || 0) - Number((right.hero || {}).lv || 0),
+    expDiff: Number((left.hero || {}).exp || 0) - Number((right.hero || {}).exp || 0),
+    routeLengthDiff: routeLengthOfState(left) - routeLengthOfState(right),
+    firstDecidingField: null,
+  };
+  for (const field of fields) {
+    const diff = field === "hp"
+      ? comparison.hpDiff
+      : field === "atk"
+        ? comparison.atkDiff
+        : field === "def"
+          ? comparison.defDiff
+          : field === "mdef"
+            ? comparison.mdefDiff
+            : comparison[`${field}Diff`];
+    if (diff !== 0) {
+      comparison.firstDecidingField = field;
+      break;
+    }
+  }
+  if (!comparison.firstDecidingField && comparison.routeLengthDiff !== 0) {
+    comparison.firstDecidingField = "routeLength";
+  }
+  return comparison;
+}
+
+function buildGoalArchiveAudit({
+  config,
+  goalNodes,
+  activeGoalNodes,
+  selectedGoalNodes,
+  accepted,
+  events,
+}) {
+  if (!config || !config.goalArchiveAudit) return null;
+  const targetKeys = Array.isArray(config.goalArchiveAudit.targetExactStateKeys)
+    ? config.goalArchiveAudit.targetExactStateKeys.filter(Boolean)
+    : [];
+  const activeNodeIds = new Set(activeGoalNodes.map((node) => node.nodeId));
+  const selectedNodeIds = new Set(selectedGoalNodes.map((node) => node.nodeId));
+  const sortedActive = activeGoalNodes
+    .slice()
+    .sort((left, right) => compareGoalStates(right.state, left.state));
+  const sortedIndex = new Map(sortedActive.map((node, index) => [node.nodeId, index]));
+  const targetRecords = targetKeys.map((exactStateKey) => {
+    const insertions = accepted.filter((entry) => entry.exactStateKey === exactStateKey);
+    const evictions = events.filter((event) => (
+      event.eventType === "goal-archive-evicted" &&
+      event.evicted && event.evicted.exactStateKey === exactStateKey
+    ));
+    const rejections = events.filter((event) => (
+      event.eventType === "goal-candidate-rejected" &&
+      event.candidate && event.candidate.exactStateKey === exactStateKey
+    ));
+    const nodeIds = insertions.map((entry) => entry.nodeId);
+    const activeInsertions = insertions.filter((entry) => activeNodeIds.has(entry.nodeId));
+    const selectedInsertions = insertions.filter((entry) => selectedNodeIds.has(entry.nodeId));
+    const firstEviction = evictions[0] || null;
+    const firstInsertion = insertions[0] || null;
+    return {
+      exactStateKey,
+      label: config.goalArchiveAudit.targetLabels && config.goalArchiveAudit.targetLabels[exactStateKey] || null,
+      insertionCount: insertions.length,
+      insertions,
+      nodeIds,
+      activeAtFinish: activeInsertions.length > 0,
+      selectedAtFinish: selectedInsertions.length > 0,
+      sortPositions: activeInsertions.map((entry) => sortedIndex.get(entry.nodeId)).filter((index) => index != null),
+      archiveDecision: firstEviction
+        ? "evicted-by-skyline-replacement"
+        : rejections.length > 0
+          ? rejections[0].reasonCode === "skyline-capacity-rejected"
+            ? "rejected-by-dp-skyline-capacity"
+            : "rejected-by-dominance"
+          : selectedInsertions.length > 0
+            ? "selected"
+            : activeInsertions.length > 0
+              ? "rejected-by-goal-archive-capacity-or-deduplication"
+              : "inactive-without-captured-replacement",
+      evictions,
+      rejections,
+      actualReplacementWitness: firstEviction && firstEviction.replacement || null,
+      comparison: firstEviction && firstEviction.comparison || null,
+      initialInsertion: firstInsertion || null,
+    };
+  });
+  return {
+    enabled: true,
+    targetExactStateKeys: targetKeys,
+    goalNodesSeen: goalNodes.length,
+    activeGoalNodes: activeGoalNodes.length,
+    selectedGoalNodes: selectedGoalNodes.length,
+    goalArchiveCapacity: Math.max(1, Number(config.goalSkylineLimit || 8)),
+    dpSkylineCapacity: Number(config.dpSkylineMax || 1),
+    goalArchiveRole: config.goalArchiveAudit.role || "raw-dp-goal-archive",
+    targetRecords,
+    events: events.slice(),
+  };
+}
+
 const DP_OBSERVER_EVENT_VERSION = "dp-observer.v1";
 const observerExactStateKeyCache = new WeakMap();
 
@@ -844,6 +975,32 @@ function searchDP(simulator, initialState, options) {
   let firstGoalElapsedMs = null;
   let bestGoalNode = null;
   const goalNodes = [];
+  const goalArchiveAuditConfig = config.goalArchiveAudit && typeof config.goalArchiveAudit === "object"
+    ? config.goalArchiveAudit
+    : null;
+  const goalArchiveTargetExactStateKeys = new Set(
+    goalArchiveAuditConfig && Array.isArray(goalArchiveAuditConfig.targetExactStateKeys)
+      ? goalArchiveAuditConfig.targetExactStateKeys.filter(Boolean)
+      : [],
+  );
+  const goalArchiveAuditAccepted = [];
+  const goalArchiveAuditEvents = [];
+  const goalArchiveAuditRelevantNodeIds = new Set();
+  const goalArchiveAuditEvent = (event) => {
+    if (!goalArchiveAuditConfig || goalArchiveAuditEvents.length >= 200) return;
+    goalArchiveAuditEvents.push(event);
+  };
+  const goalArchiveRecordAccepted = (node) => {
+    if (!goalArchiveAuditConfig || !node || !node.state) return;
+    const exactStateKey = buildStateKey(node.state);
+    if (!goalArchiveTargetExactStateKeys.has(exactStateKey)) return;
+    goalArchiveAuditRelevantNodeIds.add(node.nodeId);
+    goalArchiveAuditAccepted.push({
+      ...compactGoalArchiveNode(simulator, node, config),
+      expansion: expansions,
+      elapsedMs: Date.now() - startedAt,
+    });
+  };
   const statProgressBaseline = {
     hp: number(rootState.hero && rootState.hero.hp, 0),
     atk: number(rootState.hero && rootState.hero.atk, 0),
@@ -1187,6 +1344,27 @@ function searchDP(simulator, initialState, options) {
           observerCaptureElapsedMs += Date.now() - witnessCaptureStartedAt;
         }
       }
+      if (goalArchiveAuditConfig && isGoalState(state)) {
+        const exactStateKey = buildStateKey(state);
+        if (goalArchiveTargetExactStateKeys.has(exactStateKey)) {
+          goalArchiveAuditEvent({
+            eventType: "goal-candidate-rejected",
+            reasonCode: "dominance-rejected",
+            candidate: compactGoalArchiveNode(simulator, {
+              nodeId: null,
+              parentId: parentNode && parentNode.nodeId,
+              key,
+              state,
+              action: sourceAction,
+            }, config),
+            witness: existingState ? compactGoalArchiveNode(simulator, existing, config) : null,
+            comparison: existingState ? describeGoalArchiveComparison(state, existingState) : null,
+            archiveSizeAtEvent: goalNodes.length,
+            goalArchiveCapacity: Number(config.goalSkylineLimit || 0),
+            dpSkylineCapacity: skylineMax,
+          });
+        }
+      }
       return false;
     }
     const existing = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);
@@ -1235,6 +1413,27 @@ function searchDP(simulator, initialState, options) {
           successorId: sourceAction && sourceAction.__observerSuccessorId || null,
         }));
       }
+      if (goalArchiveAuditConfig && isGoalState(state)) {
+        const exactStateKey = buildStateKey(state);
+        if (goalArchiveTargetExactStateKeys.has(exactStateKey)) {
+          goalArchiveAuditEvent({
+            eventType: "goal-candidate-rejected",
+            reasonCode: "skyline-capacity-rejected",
+            candidate: compactGoalArchiveNode(simulator, {
+              nodeId: null,
+              parentId: parentNode && parentNode.nodeId,
+              key,
+              state,
+              action: sourceAction,
+            }, config),
+            witness: null,
+            comparison: null,
+            archiveSizeAtEvent: goalNodes.length,
+            goalArchiveCapacity: Number(config.goalSkylineLimit || 0),
+            dpSkylineCapacity: skylineMax,
+          });
+        }
+      }
       return false;
     }
     nodes.set(node.nodeId, node);
@@ -1270,6 +1469,22 @@ function searchDP(simulator, initialState, options) {
         .filter((nodeId) => !afterSkylineIds.includes(nodeId))
         .forEach((nodeId) => {
           const evictedNode = nodes.get(nodeId);
+          if (goalArchiveAuditConfig && evictedNode && evictedNode.state && isGoalState(evictedNode.state)) {
+            const evictedExactStateKey = buildStateKey(evictedNode.state);
+            if (goalArchiveTargetExactStateKeys.has(evictedExactStateKey)) {
+              goalArchiveAuditRelevantNodeIds.add(node.nodeId);
+              goalArchiveAuditEvent({
+                eventType: "goal-archive-evicted",
+                reasonCode: "skyline-replaced",
+                evicted: compactGoalArchiveNode(simulator, evictedNode, config),
+                replacement: compactGoalArchiveNode(simulator, node, config),
+                comparison: describeGoalArchiveComparison(evictedNode.state, node.state),
+                archiveSizeAtEvent: goalNodes.length,
+                goalArchiveCapacity: Number(config.goalSkylineLimit || 0),
+                dpSkylineCapacity: skylineMax,
+              });
+            }
+          }
           observer.emit("skylineEvicted", () => observerStatePayload(
             simulator,
             evictedNode ? evictedNode.state : state,
@@ -1329,6 +1544,7 @@ function searchDP(simulator, initialState, options) {
         firstGoalElapsedMs = Date.now() - startedAt;
       }
       goalNodes.push(node);
+      goalArchiveRecordAccepted(node);
       if (!bestGoalNode || compareGoalStates(state, bestGoalNode.state) > 0) bestGoalNode = node;
       if (observer) {
         emitStateEvent("goalAccepted", state, node, () => ({
@@ -1717,18 +1933,24 @@ function searchDP(simulator, initialState, options) {
         ),
     );
   }
-  const goalSkylineNodes = selectGoalSkylineNodes(
-    goalNodes.filter((node) => {
-      if (!isGoalState(node.state)) return false;
-      if (config.preserveGoalArchive === true) return true;
-      if (bestByKey instanceof SkylineSet) {
-        return bestByKey.isActive(node.key, node.nodeId);
-      }
-      const active = bestByKey.get(node.key);
-      return Boolean(active && active.nodeId === node.nodeId);
-    }),
-    config
-  );
+  const activeGoalNodes = goalNodes.filter((node) => {
+    if (!isGoalState(node.state)) return false;
+    if (config.preserveGoalArchive === true) return true;
+    if (bestByKey instanceof SkylineSet) {
+      return bestByKey.isActive(node.key, node.nodeId);
+    }
+    const active = bestByKey.get(node.key);
+    return Boolean(active && active.nodeId === node.nodeId);
+  });
+  const goalSkylineNodes = selectGoalSkylineNodes(activeGoalNodes, config);
+  const goalArchiveAudit = buildGoalArchiveAudit({
+    config,
+    goalNodes,
+    activeGoalNodes,
+    selectedGoalNodes: goalSkylineNodes,
+    accepted: goalArchiveAuditAccepted,
+    events: goalArchiveAuditEvents,
+  });
 
   const attachRouteToNodeState = (node) => {
     if (!node || !node.state) return null;
@@ -1779,6 +2001,7 @@ function searchDP(simulator, initialState, options) {
     firstGoalState,
     bestGoalState,
     goalSkylineStates,
+    goalArchiveAudit,
     bestSeenState,
     bestProgressState,
     landmarkArchive,

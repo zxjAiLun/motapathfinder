@@ -2538,6 +2538,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     observerCaptureMode: dpConfig.observerCaptureMode || config.observerCaptureMode || "off",
     observerCaptureDominanceWitnesses: dpConfig.observerCaptureDominanceWitnesses === true || config.observerCaptureDominanceWitnesses === true,
     observerCaptureWitnessStates: dpConfig.observerCaptureWitnessStates === true || config.observerCaptureWitnessStates === true,
+    goalArchiveAudit: dpConfig.goalArchiveAudit || config.goalArchiveAudit || null,
     stopOnFirstGoal: dpConfig.stopOnFirstGoal === true,
     continueAfterGoal: dpConfig.continueAfterGoal === true,
     captureTrace,
@@ -2877,6 +2878,9 @@ function segmentDpOverrides(segment, config, overrides) {
       : {}),
     ...(config && config.maxActionsPerState != null && !generatedSegment
       ? { maxActionsPerState: config.maxActionsPerState }
+      : {}),
+    ...(config && config.goalArchiveAudit
+      ? { goalArchiveAudit: config.goalArchiveAudit }
       : {}),
     ...(config && config.resourceTimingModel != null
       ? { resourceTimingModel: config.resourceTimingModel }

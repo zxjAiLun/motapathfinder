@@ -357,6 +357,7 @@ function makePipelineObserver(simulator) {
         stoppedReason: attempt && attempt.diagnostics && attempt.diagnostics.dp && attempt.diagnostics.dp.stoppedReason || null,
         rawGoalSkylineStates: ((attempt && attempt.rawResult && attempt.rawResult.goalSkylineStates) || [])
           .map((state) => compactCandidate(simulator, { state }, payload.segment)),
+        goalArchiveAudit: attempt && attempt.rawResult && attempt.rawResult.goalArchiveAudit || null,
         segmentGoalSkyline: (attempt && attempt.goalSkyline || [])
           .map((candidate) => compactCandidate(simulator, candidate, payload.segment)),
       });

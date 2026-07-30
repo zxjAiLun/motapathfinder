@@ -197,6 +197,9 @@ function summarizePipelineStages(pipeline, segmentIds) {
     const segmentAttempts = attempts.filter((attempt) => attempt.segmentId === segmentId);
     const segmentMerges = merges.filter((merge) => merge.segmentId === segmentId);
     const rawGoalArchive = segmentAttempts.flatMap((attempt) => attempt.rawGoalSkylineStates || []);
+    const goalArchiveAudits = segmentAttempts
+      .map((attempt) => attempt.goalArchiveAudit)
+      .filter(Boolean);
     const segmentCandidates = segmentAttempts.flatMap((attempt) => attempt.segmentGoalSkyline || []);
     const mergedCandidates = segmentMerges.flatMap((merge) => merge.merged || []);
     return {
@@ -213,6 +216,7 @@ function summarizePipelineStages(pipeline, segmentIds) {
       rawDpGoalArchive: {
         candidateCount: rawGoalArchive.length,
         candidates: rawGoalArchive,
+        audits: goalArchiveAudits,
       },
       segmentGoalCandidates: {
         candidateCount: segmentCandidates.length,
@@ -264,6 +268,9 @@ function exactLineagePipelineEvidence(simulator, pipeline, segment, exactStateKe
   const rawGoalMatches = attempts.flatMap((attempt) => (
     exactMatches(attempt.rawGoalSkylineStates, exactStateKey)
   ));
+  const goalArchiveAudits = attempts
+    .map((attempt) => attempt.goalArchiveAudit)
+    .filter(Boolean);
   const segmentGoalMatches = attempts.flatMap((attempt) => (
     exactMatches(attempt.segmentGoalSkyline, exactStateKey)
   ));
@@ -277,6 +284,7 @@ function exactLineagePipelineEvidence(simulator, pipeline, segment, exactStateKe
       id: "raw-dp-goal-archive",
       present: rawGoalMatches.length > 0,
       matches: rawGoalMatches,
+      audits: goalArchiveAudits,
     },
     {
       id: "segment-goal-skyline",
@@ -300,6 +308,7 @@ function exactLineagePipelineEvidence(simulator, pipeline, segment, exactStateKe
       matchingCandidates: stage.matches.map((candidate) => (
         compactPipelineCandidate(simulator, candidate, segment)
       )),
+      audits: stage.audits || [],
     })),
     firstAbsentPipelineStage: firstAbsent && firstAbsent.id || null,
     replacingCandidates: mergedCandidates.map((candidate) => (
@@ -616,6 +625,7 @@ function runDownstream(project, simulator, teacherRoute, teacherReplay, segments
     observer: lifecycleCollector.observer,
     observerIncludeExactStateKey: true,
     observerCaptureMode: "targeted-state",
+    goalArchiveAudit: options.goalArchiveAudit || null,
     pipelineObserver: pipeline,
   });
   return {
@@ -660,6 +670,7 @@ function runCheckpointWorker() {
     memoryCheckIntervalExpansions: options.memoryCheckIntervalExpansions,
     memoryCheckIntervalActions: options.memoryCheckIntervalActions,
     agendaMode: options.agendaMode,
+    goalArchiveAudit: options.goalArchiveAudit || null,
     pipelineObserver: pipeline,
   });
   const heapSizeLimitMb = v8.getHeapStatistics().heap_size_limit / (1024 * 1024);
@@ -876,6 +887,9 @@ function buildMarkdown(report) {
 function buildIsolatedMarkdown(report) {
   const pipeline = report.pipelineEvidence || {};
   const lifecycle = report.lifecycleCoverage || {};
+  const archiveAudit = report.goalArchiveAudit || {};
+  const archiveRecord = archiveAudit.teacherEntry || null;
+  const archiveWitnessContinuation = archiveAudit.actualWitnessContinuation || null;
   const lines = [
     `# PR-4.4h-${report.counterfactualEnabled ? "b" : "a"} exact pipeline and isolated checkpoint audit`,
     "",
@@ -937,6 +951,28 @@ function buildIsolatedMarkdown(report) {
   (pipeline.stages || []).forEach((stage) => {
     lines.push("| " + stage.id + " | " + stage.present + " | " + (stage.matchingCandidates || []).length + " |");
   });
+  if (archiveRecord) {
+    lines.push(
+      "",
+      "## Raw goal archive witness audit",
+      "",
+      "- target: **" + (archiveRecord.label || "teacher-entry") + "**",
+      "- insertionCount: **" + archiveRecord.insertionCount + "**",
+      "- archiveDecision: **" + archiveRecord.archiveDecision + "**",
+      "- activeAtFinish / selectedAtFinish: **" + archiveRecord.activeAtFinish + " / " + archiveRecord.selectedAtFinish + "**",
+      "- actual replacement witness: **" + Boolean(archiveRecord.actualReplacementWitness) + "**",
+      "- comparator result: " + JSON.stringify(archiveRecord.comparison || null),
+      "- archive size / goal capacity / DP skyline capacity: **" + [
+        archiveAudit.goalNodesSeen,
+        archiveAudit.goalArchiveCapacity,
+        archiveAudit.dpSkylineCapacity,
+      ].join(" / ") + "**",
+      "- witness downstream executed / found HP3834: **" + [
+        archiveWitnessContinuation && archiveWitnessContinuation.executed,
+        archiveWitnessContinuation && archiveWitnessContinuation.reachedMt2Hp3834,
+      ].join(" / ") + "**",
+    );
+  }
   lines.push(
     "",
     "## Entry replacement oracle (decisions 13–23)",
@@ -1059,6 +1095,13 @@ function runIsolatedAudit(argv) {
     memoryCheckIntervalActions: number(args["memory-check-interval-actions"], 1),
     childOldSpaceMb: number(args["child-old-space-mb"], 1600),
     agendaMode: args["agenda-mode"] || "best-first",
+    goalArchiveAudit: {
+      targetExactStateKeys: [buildStateKey(teacherReplay.states[12])],
+      targetLabels: {
+        [buildStateKey(teacherReplay.states[12])]: "teacher-entry-decision-12",
+      },
+      role: "raw-dp-goal-archive",
+    },
   };
   const prefixSegments = futureSegments.slice(0, 2);
   const candidate2Only = candidate2
@@ -1089,9 +1132,42 @@ function runIsolatedAudit(argv) {
       stages: [],
       firstAbsentPipelineStage: null,
       replacingCandidates: [],
-    };
+  };
   entryPipeline.goalAccepted = Boolean(teacherEntryRecord && teacherEntryRecord.goalAccepted);
   const lifecycleCoverage = annotateLifecycleCoverage(candidate2LifecycleRaw, entryPipeline);
+  const rawGoalArchiveStage = entryPipeline.stages.find((stage) => stage.id === "raw-dp-goal-archive") || null;
+  const entryGoalArchiveAudit = rawGoalArchiveStage && (rawGoalArchiveStage.audits || []).find((audit) => (
+    audit.targetExactStateKeys && audit.targetExactStateKeys.includes(entryPipeline.exactStateKey)
+  )) || null;
+  const teacherEntryArchiveRecord = entryGoalArchiveAudit && (entryGoalArchiveAudit.targetRecords || []).find((record) => (
+    record.exactStateKey === entryPipeline.exactStateKey
+  )) || null;
+  const actualArchiveWitness = teacherEntryArchiveRecord && teacherEntryArchiveRecord.actualReplacementWitness || null;
+  const archiveWitnessContinuationRun = actualArchiveWitness && actualArchiveWitness.state
+    ? runDownstream(
+      project,
+      simulator,
+      teacherRoute,
+      teacherReplay,
+      futureSegments.slice(1),
+      segmentsById,
+      actualArchiveWitness.state,
+      { ...candidate2Options, goalArchiveAudit: null },
+    )
+    : null;
+  const archiveWitnessContinuation = {
+    executed: Boolean(archiveWitnessContinuationRun),
+    witnessFound: Boolean(actualArchiveWitness),
+    witness: actualArchiveWitness
+      ? { ...actualArchiveWitness, state: undefined }
+      : null,
+    search: archiveWitnessContinuationRun ? summarizeRun(archiveWitnessContinuationRun.run) : null,
+    reachedMt2Hp3834: Boolean(
+      archiveWitnessContinuationRun &&
+      archiveWitnessContinuationRun.run &&
+      archiveWitnessContinuationRun.run.reachedMilestone === "mt2-hp3834",
+    ),
+  };
   const entryMerge = candidate2Only && candidate2Only.pipeline && candidate2Only.pipeline.rawMerges
     .filter((merge) => merge.segmentId === "mt2-entry")
     .slice(-1)[0];
@@ -1364,6 +1440,11 @@ function runIsolatedAudit(argv) {
     } : null,
     lifecycleCoverage,
     pipelineEvidence: entryPipeline,
+    goalArchiveAudit: {
+      entryStage: entryGoalArchiveAudit,
+      teacherEntry: teacherEntryArchiveRecord,
+      actualWitnessContinuation: archiveWitnessContinuation,
+    },
     entryReplacementContinuations,
     isolatedLocalCheckpoints,
     isolatedHpPipeline: hpPipelineStage,
