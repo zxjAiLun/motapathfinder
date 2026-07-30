@@ -389,6 +389,12 @@ function buildMarkdown(report) {
     ].join(" / ") + "**.",
     "- Oracle suffix complete and hard tiles checked: **" + report.gates.oracleSuffixComplete + " / " + report.gates.hardTilesChecked + "**.",
     "- Search completion classification: **" + report.searchCompletion.classification + "**.",
+    "- Natural milestone reach: entry=" + report.candidate2NaturallyReached.mt2Entry + ", local-3582=" + report.candidate2NaturallyReached.mt2Local3582 + ", HP3834=" + report.candidate2NaturallyReached.mt2Hp3834 + ".",
+    "- Incomplete attempts: " + (report.searchCompletion.incompleteAttempts.length
+      ? report.searchCompletion.incompleteAttempts.map((attempt) => (
+        attempt.startCandidateId + " (expansions=" + attempt.expansions + ", frontier=" + attempt.frontierSize + ", reasons=" + attempt.incompleteReasons.join("+") + ")"
+      )).join("; ")
+      : "none") + ".",
     "- Full-frontier condition met (candidate-2 success): **" + report.conditions.fullFrontierApplicable + "**.",
     "- Full four-candidate frontier run: **" + (
       report.conditions.fullFrontierApplicable
@@ -441,7 +447,9 @@ function buildMarkdown(report) {
     "## Oracle-only suffix",
     "",
     "- executed=" + report.gates.oracleSuffixExecuted + ", completeSuffix=" + report.oracle.completeSuffix + ".",
-    "- reached=" + JSON.stringify(report.oracle.reached) + ".",
+    "- reached milestones=" + Object.entries(report.oracle.reached || {}).map(([id, value]) => (
+      id + "@decision-" + value.decisionIndex
+    )).join(", ") + ".",
     "- final hero=" + JSON.stringify(report.oracle.finalHero) + ".",
     "- all hard tiles present=" + report.oracle.allHardTilesPresent + ".",
     "",
