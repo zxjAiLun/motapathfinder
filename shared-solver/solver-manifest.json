@@ -1451,6 +1451,13 @@
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
+    "shared-solver/check-hp3834-mt2-candidate2-capacity10-j1.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-hp3834-mt2-candidate2-goal-archive-audit-i.js": {
       "grade": "diagnostic",
       "allowsNotFound": false,
