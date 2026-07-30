@@ -825,7 +825,7 @@ function buildIsolatedMarkdown(report) {
   const pipeline = report.pipelineEvidence || {};
   const lifecycle = report.lifecycleCoverage || {};
   const lines = [
-    "# PR-4.4h-a exact pipeline and isolated checkpoint audit",
+    `# PR-4.4h-${report.counterfactualEnabled ? "b" : "a"} exact pipeline and isolated checkpoint audit`,
     "",
     "Status: **" + report.status + "**",
     "",
