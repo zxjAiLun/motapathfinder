@@ -99,6 +99,10 @@ function sha256(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
 
+function shortHash(value) {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex");
+}
+
 function gitCommit() {
   const result = spawnSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" });
   return result.status === 0 ? String(result.stdout || "").trim() || null : null;
@@ -825,7 +829,10 @@ function buildIsolatedMarkdown(report) {
     "",
     "## Exact teacher entry pipeline",
     "",
-    "- exact key: `" + pipeline.exactStateKey + "`",
+    "- exact state key SHA-256: `" + shortHash(pipeline.exactStateKey) + "`",
+    "- expected teacher entry hero: " + JSON.stringify(
+      lifecycle.records && lifecycle.records["decision-12"] && lifecycle.records["decision-12"].expectedPostHero || null,
+    ),
     "- first absent stage: **" + pipeline.firstAbsentPipelineStage + "**",
     "",
     "| Stage | Exact state present | Matching candidates |",
