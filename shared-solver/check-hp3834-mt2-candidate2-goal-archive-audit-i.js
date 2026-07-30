@@ -24,6 +24,7 @@ assert.ok(report.goalArchiveAudit.teacherEntry.insertionCount > 0);
 assert.ok(
   [
     "evicted-by-skyline-replacement",
+    "rejected-by-goal-archive-capacity",
     "rejected-by-dp-skyline-capacity",
     "rejected-by-dominance",
   ].includes(report.goalArchiveAudit.teacherEntry.archiveDecision),

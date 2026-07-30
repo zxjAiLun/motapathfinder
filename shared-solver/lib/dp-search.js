@@ -499,6 +499,7 @@ function describeGoalArchiveComparison(left, right) {
 }
 
 function buildGoalArchiveAudit({
+  simulator,
   config,
   goalNodes,
   activeGoalNodes,
@@ -512,6 +513,7 @@ function buildGoalArchiveAudit({
     : [];
   const activeNodeIds = new Set(activeGoalNodes.map((node) => node.nodeId));
   const selectedNodeIds = new Set(selectedGoalNodes.map((node) => node.nodeId));
+  const goalArchiveCapacity = Math.max(1, Number(config.goalSkylineLimit || 8));
   const sortedActive = activeGoalNodes
     .slice()
     .sort((left, right) => compareGoalStates(right.state, left.state));
@@ -531,6 +533,14 @@ function buildGoalArchiveAudit({
     const selectedInsertions = insertions.filter((entry) => selectedNodeIds.has(entry.nodeId));
     const firstEviction = evictions[0] || null;
     const firstInsertion = insertions[0] || null;
+    const targetNode = activeGoalNodes.find((node) => node.nodeId === (firstInsertion && firstInsertion.nodeId));
+    const targetPosition = targetNode ? sortedIndex.get(targetNode.nodeId) : null;
+    const capacityBoundaryNode = targetPosition != null && targetPosition >= goalArchiveCapacity
+      ? sortedActive[goalArchiveCapacity - 1]
+      : null;
+    const capacityBoundaryWitness = capacityBoundaryNode
+      ? compactGoalArchiveNode(simulator, capacityBoundaryNode, config)
+      : null;
     return {
       exactStateKey,
       label: config.goalArchiveAudit.targetLabels && config.goalArchiveAudit.targetLabels[exactStateKey] || null,
@@ -546,15 +556,20 @@ function buildGoalArchiveAudit({
           ? rejections[0].reasonCode === "skyline-capacity-rejected"
             ? "rejected-by-dp-skyline-capacity"
             : "rejected-by-dominance"
-          : selectedInsertions.length > 0
+          : capacityBoundaryWitness
+            ? "rejected-by-goal-archive-capacity"
+            : selectedInsertions.length > 0
             ? "selected"
             : activeInsertions.length > 0
               ? "rejected-by-goal-archive-capacity-or-deduplication"
               : "inactive-without-captured-replacement",
       evictions,
       rejections,
-      actualReplacementWitness: firstEviction && firstEviction.replacement || null,
-      comparison: firstEviction && firstEviction.comparison || null,
+      actualReplacementWitness: firstEviction && firstEviction.replacement || capacityBoundaryWitness,
+      comparison: firstEviction && firstEviction.comparison || capacityBoundaryNode
+        ? describeGoalArchiveComparison(targetNode && targetNode.state, capacityBoundaryNode && capacityBoundaryNode.state)
+        : null,
+      capacityBoundary: capacityBoundaryWitness,
       initialInsertion: firstInsertion || null,
     };
   });
@@ -564,9 +579,14 @@ function buildGoalArchiveAudit({
     goalNodesSeen: goalNodes.length,
     activeGoalNodes: activeGoalNodes.length,
     selectedGoalNodes: selectedGoalNodes.length,
-    goalArchiveCapacity: Math.max(1, Number(config.goalSkylineLimit || 8)),
+    goalArchiveCapacity,
     dpSkylineCapacity: Number(config.dpSkylineMax || 1),
     goalArchiveRole: config.goalArchiveAudit.role || "raw-dp-goal-archive",
+    activeCandidates: sortedActive.map((node, index) => ({
+      rank: index,
+      selected: selectedNodeIds.has(node.nodeId),
+      candidate: compactGoalArchiveNode(simulator, node, config),
+    })),
     targetRecords,
     events: events.slice(),
   };
@@ -1944,6 +1964,7 @@ function searchDP(simulator, initialState, options) {
   });
   const goalSkylineNodes = selectGoalSkylineNodes(activeGoalNodes, config);
   const goalArchiveAudit = buildGoalArchiveAudit({
+    simulator,
     config,
     goalNodes,
     activeGoalNodes,

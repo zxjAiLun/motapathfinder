@@ -1047,6 +1047,50 @@ function buildIsolatedMarkdown(report) {
   return lines.join("\n") + "\n";
 }
 
+function buildGoalArchiveMarkdown(report) {
+  const audit = report.goalArchiveAudit || {};
+  const teacherEntry = audit.teacherEntry || {};
+  const witness = audit.actualWitnessContinuation || {};
+  const search = witness.search || {};
+  return [
+    "# PR-4.4i goal archive witness audit",
+    "",
+    "Status: **" + report.status + "**",
+    "",
+    "## Teacher entry archive decision",
+    "",
+    "- goalAccepted: **" + Boolean(report.pipelineEvidence && report.pipelineEvidence.goalAccepted) + "**",
+    "- raw goal archive retained: **" + Boolean(report.pipelineEvidence && report.pipelineEvidence.stages && report.pipelineEvidence.stages.find((stage) => stage.id === "raw-dp-goal-archive" && stage.present)) + "**",
+    "- insertionCount: **" + (teacherEntry.insertionCount || 0) + "**",
+    "- archiveDecision: **" + (teacherEntry.archiveDecision || "not-observed") + "**",
+    "- activeAtFinish / selectedAtFinish: **" + Boolean(teacherEntry.activeAtFinish) + " / " + Boolean(teacherEntry.selectedAtFinish) + "**",
+    "- goal nodes / goal archive capacity / DP skyline capacity: **" + [
+      audit.entryStage && audit.entryStage.goalNodesSeen,
+      audit.entryStage && audit.entryStage.goalArchiveCapacity,
+      audit.entryStage && audit.entryStage.dpSkylineCapacity,
+    ].join(" / ") + "**",
+    "- actual archive witness: **" + Boolean(teacherEntry.actualReplacementWitness) + "**",
+    "- comparator: " + JSON.stringify(teacherEntry.comparison || null),
+    "",
+    "## Witness-level continuation",
+    "",
+    "- executed: **" + Boolean(witness.executed) + "**",
+    "- search found: **" + Boolean(search.found) + "**",
+    "- reached mt2-hp3834: **" + Boolean(witness.reachedMt2Hp3834) + "**",
+    "- completion classification: **" + (search.completion && search.completion.classification || "not-run") + "**",
+    "- remaining frontier: **" + (search.completion && search.completion.incompleteAttempts && search.completion.incompleteAttempts[0] && search.completion.incompleteAttempts[0].frontierSize || 0) + "**",
+    "",
+    "## Conclusion",
+    "",
+    report.conclusion,
+    "",
+    "## Provenance",
+    "",
+    "- data generation commit: " + report.provenance.dataGenerationCommit,
+    "- renderer commit: " + report.provenance.rendererCommit,
+  ].join("\n") + "\n";
+}
+
 function runIsolatedAudit(argv) {
   const args = parseArgs(argv);
   const dataGenerationCommit = gitCommit();
@@ -1168,6 +1212,75 @@ function runIsolatedAudit(argv) {
       archiveWitnessContinuationRun.run.reachedMilestone === "mt2-hp3834",
     ),
   };
+  if (args["archive-only"] === "1") {
+    const archiveAuditComplete = Boolean(
+      entryGoalArchiveAudit &&
+      teacherEntryArchiveRecord &&
+      archiveWitnessContinuation.executed,
+    );
+    const report = {
+      schema: "motapathfinder.hp3834-mt2-candidate2-goal-archive-audit.v1",
+      generatedAt: new Date().toISOString(),
+      status: archiveAuditComplete ? "completed" : "failed",
+      auditKind: "raw-dp-goal-archive-witness",
+      config: {
+        agendaMode: candidate2Options.agendaMode,
+        candidateLimit: candidate2Options.candidateLimit,
+        goalSkylineLimit: candidate2Options.goalSkylineLimit,
+        dpSkylineMax: candidate2Options.dpSkylineMax,
+        maxExpansionsPerAttempt: candidate2Options.maxExpansions,
+        maxRuntimeMsPerAttempt: candidate2Options.maxRuntimeMs,
+        maxHeapMb: candidate2Options.maxHeapMb,
+        maxRssMb: candidate2Options.maxRssMb,
+        childOldSpaceMb: candidate2Options.childOldSpaceMb,
+        memoryCheckIntervalExpansions: candidate2Options.memoryCheckIntervalExpansions,
+        memoryCheckIntervalActions: candidate2Options.memoryCheckIntervalActions,
+      },
+      provenance: {
+        dataGenerationCommit,
+        rendererCommit: gitCommit(),
+        artifactPublicationCommit: null,
+        provenanceFinalizationCommit: null,
+        solverCommit: dataGenerationCommit,
+        startedCommit: dataGenerationCommit,
+        finishedCommit: gitCommit(),
+        commitStable: Boolean(dataGenerationCommit && gitCommit() === dataGenerationCommit),
+        nodeVersion: process.version,
+        worktreeCleanAtStart: startedClean,
+        worktreeCleanAtFinish: cleanWorktree(),
+      },
+      source: {
+        teacherRoute: relative(teacherRouteFile),
+        teacherRouteSha256: sha256(teacherRouteFile),
+        projectRoot: relative(projectRoot),
+        reportFile: relative(outFile),
+        productionScope: "candidate-2 MT2-entry raw goal archive and actual witness downstream continuation",
+      },
+      sourceRouteStrictReplay: summarizeStrictReplay(sourceRouteStrictReplay),
+      candidate2Prefix: candidate2Only ? {
+        search: summarizeRun(candidate2Only.run),
+        pipeline: {
+          attempts: candidate2Only.pipeline.attempts,
+          merges: candidate2Only.pipeline.merges,
+          stages: summarizePipelineStages(candidate2Only.pipeline, prefixSegments.map((segment) => segment.id)),
+        },
+      } : null,
+      pipelineEvidence: entryPipeline,
+      goalArchiveAudit: {
+        entryStage: entryGoalArchiveAudit,
+        teacherEntry: teacherEntryArchiveRecord,
+        actualWitnessContinuation: archiveWitnessContinuation,
+      },
+      conclusion: archiveAuditComplete
+        ? "Teacher exact entry was goalAccepted but omitted from the raw goal archive by " + teacherEntryArchiveRecord.archiveDecision + "; the recorded actual archive witness was sent through production downstream continuation."
+        : "The raw goal archive witness audit did not produce a complete target record and continuation.",
+    };
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + "\n", "utf8");
+    fs.writeFileSync(outMarkdown, buildGoalArchiveMarkdown(report), "utf8");
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
   const entryMerge = candidate2Only && candidate2Only.pipeline && candidate2Only.pipeline.rawMerges
     .filter((merge) => merge.segmentId === "mt2-entry")
     .slice(-1)[0];
