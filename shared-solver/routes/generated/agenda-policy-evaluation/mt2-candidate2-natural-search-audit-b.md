@@ -76,6 +76,6 @@ Candidate-2 downstream outcome: **inconclusive**.
 
 - data generation commit: d39db9725fb6ffa89532ae3294906d7abefe1b74
 - renderer commit: d39db9725fb6ffa89532ae3294906d7abefe1b74
-- artifact publication commit: pending-artifact-publication
+- artifact publication commit: 5cd85a667cbbbb84481f6f0116f445278d95fe38
 - provenance finalization commit: pending-provenance-finalization
 - clean worktree at run start / finish: **true/true**

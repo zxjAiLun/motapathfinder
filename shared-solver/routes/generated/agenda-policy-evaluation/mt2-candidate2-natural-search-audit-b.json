@@ -189,7 +189,7 @@
   "provenance": {
     "dataGenerationCommit": "d39db9725fb6ffa89532ae3294906d7abefe1b74",
     "rendererCommit": "d39db9725fb6ffa89532ae3294906d7abefe1b74",
-    "artifactPublicationCommit": null,
+    "artifactPublicationCommit": "5cd85a667cbbbb84481f6f0116f445278d95fe38",
     "provenanceFinalizationCommit": null,
     "solverCommit": "d39db9725fb6ffa89532ae3294906d7abefe1b74",
     "startedCommit": "d39db9725fb6ffa89532ae3294906d7abefe1b74",
