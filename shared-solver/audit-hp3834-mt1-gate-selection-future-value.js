@@ -502,7 +502,11 @@ function runFutureValueOracle(project, simulator, startState, teacherRoute, teac
     final: state ? compactState(state) : null,
     finalHero: state ? compactHero(state) : null,
     hardTiles: hardTileStatus(project, state, hpSegment),
-    allHardTilesPresent: Boolean(state && hardTileStatus(project, state, hpSegment).every((tile) => tile.present)),
+    allHardTilesPresent: Boolean(
+      state &&
+      hardTileStatus(project, state, hpSegment).length > 0 &&
+      hardTileStatus(project, state, hpSegment).every((tile) => tile.present),
+    ),
     teacherExpectedFinal: teacherReplay.states[endDecisionNumber]
       ? compactState(teacherReplay.states[endDecisionNumber])
       : null,

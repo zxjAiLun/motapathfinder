@@ -374,20 +374,26 @@ function annotateLifecycleCoverage(lifecycle, exactDropEvidence) {
 }
 
 function classifyIsolatedSearch(results) {
-  const attempts = (results || []).map((result) => result.search && result.search.completion).filter(Boolean);
-  if (attempts.length === 0) {
+  const workerResults = results || [];
+  const completions = workerResults.map((result) => result.search && result.search.completion);
+  if (workerResults.length === 0) {
     return {
       classification: "not-run",
       completeWithinConfiguredActionSet: false,
       incompleteAttempts: [],
     };
   }
-  const incompleteAttempts = attempts
-    .filter((completion) => !completion.completeWithinConfiguredActionSet)
-    .flatMap((completion) => completion.incompleteAttempts || []);
-  const completeWithinConfiguredActionSet = incompleteAttempts.length === 0 &&
-    attempts.length === results.length;
-  const found = (results || []).some((result) => result.search && result.search.found);
+  const incompleteAttempts = workerResults.flatMap((result, index) => (
+    (completions[index] && completions[index].incompleteAttempts || []).map((attempt) => ({
+      ...attempt,
+      isolatedCandidateId: result.candidateId || null,
+      workerPid: result.pid || null,
+    }))
+  ));
+  const completeWithinConfiguredActionSet = workerResults.every((result, index) => (
+    Boolean(completions[index] && completions[index].completeWithinConfiguredActionSet)
+  ));
+  const found = workerResults.some((result) => result.search && result.search.found);
   return {
     classification: !completeWithinConfiguredActionSet
       ? "inconclusive"
@@ -580,9 +586,13 @@ function runCheckpointWorker() {
   });
   syncProgress(state);
   const restoredStateKey = buildStateKey(state);
+  const snapshotRoundTripExact = restoredStateKey === payload.startExactStateKey;
   const pipeline = makePipelineObserver(simulator);
   const options = payload.options || {};
-  const run = runMilestoneGraph(simulator, state, { milestones: [payload.segment] }, {
+  const segments = Array.isArray(payload.segments) && payload.segments.length > 0
+    ? payload.segments
+    : [payload.segment];
+  const run = runMilestoneGraph(simulator, state, { milestones: segments }, {
     candidateLimit: options.candidateLimit,
     goalSkylineLimit: options.goalSkylineLimit,
     dpSkylineMax: options.dpSkylineMax,
@@ -609,6 +619,7 @@ function runCheckpointWorker() {
     pid: process.pid,
     startExactStateKey: payload.startExactStateKey || null,
     restoredStateKey,
+    snapshotRoundTripExact,
     processIsolated: true,
     childOldSpaceMb: oldSpaceConfiguredMb,
     childOldSpaceFlagApplied: oldSpaceConfiguredMb === Number(options.childOldSpaceMb),
@@ -618,19 +629,23 @@ function runCheckpointWorker() {
     pipeline: {
       attempts: pipeline.attempts,
       merges: pipeline.merges,
-      stages: summarizePipelineStages(pipeline, [payload.segment.id]),
+      stages: summarizePipelineStages(pipeline, segments.map((segment) => segment.id)),
     },
   };
   process.stdout.write(JSON.stringify(output));
 }
 
 function runIsolatedLocalCheckpoint(projectRoot, project, candidate, segment, options) {
+  const segments = Array.isArray(segment) ? segment : [segment];
+  const visitedFloorIds = Object.keys(candidate.state.visitedFloors || {})
+    .filter((floorId) => candidate.state.visitedFloors[floorId]);
   const snapshot = buildSolverSnapshot(project, candidate.state, {
-    floorIds: Object.keys(project.floorsById || {}),
+    floorIds: visitedFloorIds.length > 0 ? visitedFloorIds : [candidate.state.floorId],
   });
   const payload = {
     projectRoot,
-    segment,
+    segment: segments[0],
+    segments,
     startSnapshot: snapshot,
     startExactStateKey: buildStateKey(candidate.state),
     decisionDepth: candidate.state && candidate.state.meta && candidate.state.meta.decisionDepth || 0,
@@ -666,12 +681,21 @@ function runIsolatedLocalCheckpoint(projectRoot, project, candidate, segment, op
     signal: child.signal || null,
     timedOut: Boolean(child.error && child.error.code === "ETIMEDOUT"),
     processIsolated: Boolean(result && result.processIsolated),
+    restoredStateKey: result && result.restoredStateKey || null,
+    snapshotRoundTripExact: Boolean(result && result.snapshotRoundTripExact),
     childOldSpaceFlagApplied: Boolean(result && result.childOldSpaceFlagApplied),
     childOldSpaceActuallyApplied: Boolean(result && result.childOldSpaceActuallyApplied),
     childOldSpaceMb: result && result.childOldSpaceMb || null,
     heapSizeLimitMb: result && result.heapSizeLimitMb || null,
     search: result && result.search || null,
     pipeline: result && result.pipeline || null,
+    workerReportValid: Boolean(
+      result &&
+      result.search &&
+      result.pipeline &&
+      result.restoredStateKey &&
+      result.snapshotRoundTripExact === true,
+    ),
     error: result
       ? null
       : String(child.error && child.error.message || String(child.stderr || "worker produced no JSON output")).slice(0, 1000),
@@ -817,9 +841,17 @@ function buildIsolatedMarkdown(report) {
       report.gates.teacherEntryMergedCheckpointRetained,
     ].join(" / ") + "**.",
     "- First exact-lineage drop classified: **" + report.gates.firstExactLineageDropClassified + "**.",
-    "- Entry replacement continuation audited: **" + report.gates.entryReplacementContinuationAudited + "**.",
+    "- Entry replacement gates (audited / 13–14 / suffix / failure-free): **" + [
+      report.gates.allEntryReplacementsAudited,
+      report.gates.allEntryReplacementsExecute13To14,
+      report.gates.allEntryReplacementSuffixesComplete,
+      report.gates.allEntryReplacementOraclesFailureFree,
+    ].join(" / ") + "**.",
     "- All local checkpoints attempted in isolated processes: **" + report.gates.allLocalCheckpointsAttempted + " / " + report.gates.allLocalAttemptsProcessIsolated + "**.",
+    "- Snapshot round-trips exact: **" + report.gates.allLocalSnapshotRoundTripsExact + "**.",
+    "- Workers exited cleanly and produced valid reports: **" + report.gates.allLocalWorkersExitedCleanly + " / " + report.gates.allLocalWorkersProducedValidReports + "**.",
     "- Child old-space actually applied to every worker: **" + report.gates.childOldSpaceActuallyApplied + "**.",
+    "- Exact seven hard tiles present: **" + report.gates.exactSevenHardTilesPresent + "**.",
     "- Lifecycle targets defined / last observed / first unobserved: **" + [
       report.gates.decisionTargetsDefined,
       lifecycle.lastNaturallyTrackedDecision,
@@ -892,11 +924,22 @@ function buildIsolatedMarkdown(report) {
     "- final hero=" + JSON.stringify(report.oracle.finalHero) + ".",
     "- all hard tiles present=" + report.oracle.allHardTilesPresent + ".",
     "",
+    "## Exact-state counterfactuals",
+    "",
+    "- enabled=" + report.counterfactualEnabled + ".",
+    ...(report.counterfactuals ? ["exactTeacherLocal", "exactTeacherEntry"].map((id) => {
+      const result = report.counterfactuals[id];
+      return "- " + id + ": found=" + Boolean(result && result.search && result.search.found) +
+        ", completion=" + (result && result.search && result.search.completion && result.search.completion.classification || "not-run") +
+        ", roundTrip=" + Boolean(result && result.snapshotRoundTripExact) + ".";
+    }) : []),
+    "",
     "## Provenance",
     "",
     "- data generation commit: " + report.provenance.dataGenerationCommit,
     "- renderer commit: " + report.provenance.rendererCommit,
-    "- artifact commit: " + (report.provenance.artifactCommit || "pending-artifact-commit"),
+    "- artifact publication commit: " + (report.provenance.artifactPublicationCommit || "pending-artifact-publication"),
+    "- provenance finalization commit: " + (report.provenance.provenanceFinalizationCommit || "pending-provenance-finalization"),
     "- clean worktree at run start / finish: **" + report.provenance.worktreeCleanAtStart + "/" + report.provenance.worktreeCleanAtFinish + "**",
   );
   return lines.join("\n") + "\n";
@@ -1025,6 +1068,25 @@ function runIsolatedAudit(argv) {
   ));
   const searchCompletion = classifyIsolatedSearch(isolatedLocalCheckpoints);
   const hpPipelineStage = isolatedPipelineStage(isolatedLocalCheckpoints, "mt2-hp3834");
+  const counterfactualEnabled = args.counterfactual === "1";
+  const counterfactuals = counterfactualEnabled && teacherReplay.states[12] && teacherReplay.states[14]
+    ? {
+      exactTeacherLocal: runIsolatedLocalCheckpoint(
+        projectRoot,
+        project,
+        { id: "exact-teacher-local", state: teacherReplay.states[14] },
+        segmentsById["mt2-hp3834"],
+        candidate2Options,
+      ),
+      exactTeacherEntry: runIsolatedLocalCheckpoint(
+        projectRoot,
+        project,
+        { id: "exact-teacher-entry", state: teacherReplay.states[12] },
+        futureSegments.slice(1),
+        candidate2Options,
+      ),
+    }
+    : null;
   const candidate2NaturallyReached = {
     mt2Entry: Boolean(candidate2Only && runReachedMilestone(candidate2Only.run, "mt2-entry")),
     mt2Local3582: Boolean(candidate2Only && runReachedMilestone(candidate2Only.run, "mt2-local-3582")),
@@ -1042,15 +1104,23 @@ function runIsolatedAudit(argv) {
     teacherEntryMergedCheckpointRetained: Boolean(entryPipeline.stages.find((stage) => stage.id === "merged-checkpoint-frontier" && stage.present)),
     firstExactLineageDropClassified: Boolean(entryPipeline.goalAccepted && entryPipeline.firstAbsentPipelineStage),
     entryReplacementContinuationAudited: entryCandidates.length === 8 && entryReplacementContinuations.length === 8,
+    allEntryReplacementsAudited: entryCandidates.length === 8 && entryReplacementContinuations.length === 8,
+    allEntryReplacementsExecute13To14: entryReplacementContinuations.length === 8 && entryReplacementContinuations.every((entry) => entry.decisions13To14Executable),
+    allEntryReplacementSuffixesComplete: entryReplacementContinuations.length === 8 && entryReplacementContinuations.every((entry) => entry.completeSuffix === true),
+    allEntryReplacementOraclesFailureFree: entryReplacementContinuations.length === 8 && entryReplacementContinuations.every((entry) => entry.failure == null),
     allLocalCheckpointsAttempted: localCandidates.length === 8 && isolatedLocalCheckpoints.length === 8 && isolatedLocalCheckpoints.every((entry) => entry.started),
     allLocalAttemptsProcessIsolated: isolatedLocalCheckpoints.length === 8 && isolatedLocalCheckpoints.every((entry) => entry.processIsolated && entry.pid),
     childOldSpaceActuallyApplied: isolatedLocalCheckpoints.length === 8 && isolatedLocalCheckpoints.every((entry) => entry.childOldSpaceActuallyApplied),
+    allLocalSnapshotRoundTripsExact: isolatedLocalCheckpoints.length === 8 && isolatedLocalCheckpoints.every((entry) => entry.snapshotRoundTripExact === true && entry.restoredStateKey === entry.startExactStateKey),
+    allLocalWorkersExitedCleanly: isolatedLocalCheckpoints.length === 8 && isolatedLocalCheckpoints.every((entry) => entry.exitCode === 0 && entry.signal == null && entry.timedOut === false && entry.error == null),
+    allLocalWorkersProducedValidReports: isolatedLocalCheckpoints.length === 8 && isolatedLocalCheckpoints.every((entry) => entry.workerReportValid === true),
     mt2EntryPipelineObserved: Boolean(candidate2Only && candidate2Only.pipeline.attempts.some((attempt) => attempt.segmentId === "mt2-entry")),
     mt2LocalPipelineObserved: Boolean(candidate2Only && candidate2Only.pipeline.attempts.some((attempt) => attempt.segmentId === "mt2-local-3582")),
     mt2Hp3834PipelineObserved: hpPipelineStage.observed,
     oracleSuffixExecuted: Boolean(oracle),
     oracleSuffixComplete: Boolean(oracle && oracle.completeSuffix),
-    hardTilesChecked: Boolean(oracle && oracle.allHardTilesPresent),
+    hardTilesChecked: Boolean(oracle && hardTilesMatchExpected(oracle.hardTiles)),
+    exactSevenHardTilesPresent: Boolean(oracle && hardTilesMatchExpected(oracle.hardTiles)),
     decisionTargetsDefined: Boolean(lifecycleCoverage && lifecycleCoverage.decisionTargetsDefined),
     lastNaturallyTrackedDecision: lifecycleCoverage && lifecycleCoverage.lastNaturallyTrackedDecision === 12,
     firstUnobservedDecision: lifecycleCoverage && lifecycleCoverage.firstUnobservedDecision === 13,
@@ -1060,6 +1130,22 @@ function runIsolatedAudit(argv) {
     worktreeCleanAtStart: startedClean,
     worktreeCleanAtFinish: cleanWorktree(),
   };
+  if (counterfactualEnabled) {
+    gates.exactTeacherLocalCounterfactualExecuted = Boolean(counterfactuals && counterfactuals.exactTeacherLocal);
+    gates.exactTeacherEntryCounterfactualExecuted = Boolean(counterfactuals && counterfactuals.exactTeacherEntry);
+    gates.counterfactualWorkersExitedCleanly = Boolean(
+      counterfactuals &&
+      [counterfactuals.exactTeacherLocal, counterfactuals.exactTeacherEntry].every((entry) => (
+        entry && entry.exitCode === 0 && entry.signal == null && entry.timedOut === false && entry.error == null
+      )),
+    );
+    gates.counterfactualSnapshotRoundTripsExact = Boolean(
+      counterfactuals &&
+      [counterfactuals.exactTeacherLocal, counterfactuals.exactTeacherEntry].every((entry) => (
+        entry && entry.snapshotRoundTripExact === true && entry.restoredStateKey === entry.startExactStateKey
+      )),
+    );
+  }
   const requiredGateNames = [
     "sourceRouteStrictReplay",
     "candidate2ExactStartMatched",
@@ -1068,15 +1154,23 @@ function runIsolatedAudit(argv) {
     "teacherEntryGoalAccepted",
     "firstExactLineageDropClassified",
     "entryReplacementContinuationAudited",
+    "allEntryReplacementsAudited",
+    "allEntryReplacementsExecute13To14",
+    "allEntryReplacementSuffixesComplete",
+    "allEntryReplacementOraclesFailureFree",
     "allLocalCheckpointsAttempted",
     "allLocalAttemptsProcessIsolated",
     "childOldSpaceActuallyApplied",
+    "allLocalSnapshotRoundTripsExact",
+    "allLocalWorkersExitedCleanly",
+    "allLocalWorkersProducedValidReports",
     "mt2EntryPipelineObserved",
     "mt2LocalPipelineObserved",
     "mt2Hp3834PipelineObserved",
     "oracleSuffixExecuted",
     "oracleSuffixComplete",
     "hardTilesChecked",
+    "exactSevenHardTilesPresent",
     "decisionTargetsDefined",
     "lastNaturallyTrackedDecision",
     "firstUnobservedDecision",
@@ -1086,6 +1180,14 @@ function runIsolatedAudit(argv) {
     "worktreeCleanAtStart",
     "worktreeCleanAtFinish",
   ];
+  if (counterfactualEnabled) {
+    requiredGateNames.push(
+      "exactTeacherLocalCounterfactualExecuted",
+      "exactTeacherEntryCounterfactualExecuted",
+      "counterfactualWorkersExitedCleanly",
+      "counterfactualSnapshotRoundTripsExact",
+    );
+  }
   const failedGates = requiredGateNames.filter((name) => gates[name] !== true);
   const status = failedGates.length > 0
     ? "failed"
@@ -1094,7 +1196,9 @@ function runIsolatedAudit(argv) {
       : "completed";
   const rendererCommit = gitCommit();
   const report = {
-    schema: "motapathfinder.hp3834-mt2-candidate2-natural-search-audit.v2",
+    schema: counterfactualEnabled
+      ? "motapathfinder.hp3834-mt2-candidate2-natural-search-audit.v3"
+      : "motapathfinder.hp3834-mt2-candidate2-natural-search-audit.v2",
     generatedAt: new Date().toISOString(),
     status,
     failedGates,
@@ -1127,7 +1231,8 @@ function runIsolatedAudit(argv) {
     provenance: {
       dataGenerationCommit,
       rendererCommit,
-      artifactCommit: null,
+      artifactPublicationCommit: null,
+      provenanceFinalizationCommit: null,
       solverCommit: dataGenerationCommit,
       startedCommit: dataGenerationCommit,
       finishedCommit: rendererCommit,
@@ -1165,6 +1270,8 @@ function runIsolatedAudit(argv) {
     entryReplacementContinuations,
     isolatedLocalCheckpoints,
     isolatedHpPipeline: hpPipelineStage,
+    counterfactualEnabled,
+    counterfactuals,
     oracle: oracle ? {
       ...oracle,
       executed: true,
