@@ -403,6 +403,58 @@ function classifyIsolatedSearch(results) {
   };
 }
 
+function assessExactCounterfactuals({
+  counterfactualEnabled,
+  counterfactuals,
+  lifecycleCoverage,
+  teacherEntryGoalAccepted,
+  teacherEntryRawGoalRetained,
+}) {
+  const expectedHp3834ExactStateKey = lifecycleCoverage && lifecycleCoverage.records &&
+    lifecycleCoverage.records["decision-23"] &&
+    lifecycleCoverage.records["decision-23"].expectedPostExactStateKey || null;
+  const local = counterfactuals && counterfactuals.exactTeacherLocal;
+  const entry = counterfactuals && counterfactuals.exactTeacherEntry;
+  const localSearch = local && local.search;
+  const entrySearch = entry && entry.search;
+  const localFound = Boolean(localSearch && localSearch.found === true);
+  const entryFound = Boolean(entrySearch && entrySearch.found === true);
+  const localReachedHp3834 = Boolean(localSearch && localSearch.reachedMilestone === "mt2-hp3834");
+  const entryReachedHp3834 = Boolean(entrySearch && entrySearch.reachedMilestone === "mt2-hp3834");
+  const localFinalExactMatched = Boolean(
+    expectedHp3834ExactStateKey && localSearch && localSearch.finalCandidate &&
+    localSearch.finalCandidate.exactStateKey === expectedHp3834ExactStateKey,
+  );
+  const entryFinalExactMatched = Boolean(
+    expectedHp3834ExactStateKey && entrySearch && entrySearch.finalCandidate &&
+    entrySearch.finalCandidate.exactStateKey === expectedHp3834ExactStateKey,
+  );
+  const exactCounterfactualSuccess = localFound && entryFound &&
+    localReachedHp3834 && entryReachedHp3834 &&
+    localFinalExactMatched && entryFinalExactMatched;
+  const knownExactWitnessCausalityEstablished = Boolean(
+    teacherEntryGoalAccepted &&
+    teacherEntryRawGoalRetained === false &&
+    exactCounterfactualSuccess,
+  );
+  return {
+    expectedHp3834ExactStateKey,
+    exactTeacherLocalCounterfactualFound: localFound,
+    exactTeacherEntryCounterfactualFound: entryFound,
+    exactTeacherLocalReachedHp3834: localReachedHp3834,
+    exactTeacherEntryReachedHp3834: entryReachedHp3834,
+    exactTeacherLocalFinalExactMatched: localFinalExactMatched,
+    exactTeacherEntryFinalExactMatched: entryFinalExactMatched,
+    exactCounterfactualReachability: !counterfactualEnabled
+      ? "not-run"
+      : exactCounterfactualSuccess ? "success" : "not-established",
+    knownExactWitnessCausality: !counterfactualEnabled
+      ? "not-run"
+      : knownExactWitnessCausalityEstablished ? "established" : "not-established",
+    knownExactWitnessCausalityEstablished,
+  };
+}
+
 function isolatedPipelineStage(results, segmentId) {
   const workers = (results || []).filter((result) => result.pipeline && result.pipeline.stages);
   const stages = workers
@@ -831,6 +883,18 @@ function buildIsolatedMarkdown(report) {
     "",
     "Candidate-2 downstream outcome: **" + report.candidate2Outcome + "**.",
     "",
+    "## Conclusion dimensions",
+    "",
+    "- overallStatus: **" + report.overallStatus + "**",
+    "- retainedCheckpointMatrixOutcome: **" + report.retainedCheckpointMatrixOutcome + "**",
+    "- exactCounterfactualReachability: **" + report.exactCounterfactualReachability + "**",
+    "- knownExactWitnessCausality: **" + report.knownExactWitnessCausality + "**",
+    "- globalSelectorCorrectness: **" + report.globalSelectorCorrectness + "**",
+    "- conclusion: " + report.conclusion,
+    ...(report.exactCounterfactualReachability === "success" ? [
+      "- Both exact counterfactuals naturally reached the known exact HP3834 state; remaining frontier limits exhaustiveness, not positive reachability.",
+    ] : []),
+    "",
     "## Gate summary",
     "",
     "- Source route strict replay: **" + report.gates.sourceRouteStrictReplay + "**.",
@@ -930,6 +994,8 @@ function buildIsolatedMarkdown(report) {
     ...(report.counterfactuals ? ["exactTeacherLocal", "exactTeacherEntry"].map((id) => {
       const result = report.counterfactuals[id];
       return "- " + id + ": found=" + Boolean(result && result.search && result.search.found) +
+        ", reached=" + Boolean(result && result.search && result.search.reachedMilestone === "mt2-hp3834") +
+        ", finalExactMatched=" + Boolean(report.counterfactualAssessment && report.counterfactualAssessment[id + "FinalExactMatched"]) +
         ", completion=" + (result && result.search && result.search.completion && result.search.completion.classification || "not-run") +
         ", roundTrip=" + Boolean(result && result.snapshotRoundTripExact) + ".";
     }) : []),
@@ -1087,6 +1153,13 @@ function runIsolatedAudit(argv) {
       ),
     }
     : null;
+  const counterfactualAssessment = assessExactCounterfactuals({
+    counterfactualEnabled,
+    counterfactuals,
+    lifecycleCoverage,
+    teacherEntryGoalAccepted: Boolean(entryPipeline.goalAccepted),
+    teacherEntryRawGoalRetained: Boolean(entryPipeline.stages.find((stage) => stage.id === "raw-dp-goal-archive" && stage.present)),
+  });
   const candidate2NaturallyReached = {
     mt2Entry: Boolean(candidate2Only && runReachedMilestone(candidate2Only.run, "mt2-entry")),
     mt2Local3582: Boolean(candidate2Only && runReachedMilestone(candidate2Only.run, "mt2-local-3582")),
@@ -1146,6 +1219,13 @@ function runIsolatedAudit(argv) {
       )),
     );
   }
+  gates.exactTeacherLocalCounterfactualFound = counterfactualAssessment.exactTeacherLocalCounterfactualFound;
+  gates.exactTeacherEntryCounterfactualFound = counterfactualAssessment.exactTeacherEntryCounterfactualFound;
+  gates.exactTeacherLocalReachedHp3834 = counterfactualAssessment.exactTeacherLocalReachedHp3834;
+  gates.exactTeacherEntryReachedHp3834 = counterfactualAssessment.exactTeacherEntryReachedHp3834;
+  gates.exactTeacherLocalFinalExactMatched = counterfactualAssessment.exactTeacherLocalFinalExactMatched;
+  gates.exactTeacherEntryFinalExactMatched = counterfactualAssessment.exactTeacherEntryFinalExactMatched;
+  gates.knownExactWitnessCausalityEstablished = counterfactualAssessment.knownExactWitnessCausalityEstablished;
   const requiredGateNames = [
     "sourceRouteStrictReplay",
     "candidate2ExactStartMatched",
@@ -1186,6 +1266,13 @@ function runIsolatedAudit(argv) {
       "exactTeacherEntryCounterfactualExecuted",
       "counterfactualWorkersExitedCleanly",
       "counterfactualSnapshotRoundTripsExact",
+      "exactTeacherLocalCounterfactualFound",
+      "exactTeacherEntryCounterfactualFound",
+      "exactTeacherLocalReachedHp3834",
+      "exactTeacherEntryReachedHp3834",
+      "exactTeacherLocalFinalExactMatched",
+      "exactTeacherEntryFinalExactMatched",
+      "knownExactWitnessCausalityEstablished",
     );
   }
   const failedGates = requiredGateNames.filter((name) => gates[name] !== true);
@@ -1195,12 +1282,22 @@ function runIsolatedAudit(argv) {
       ? "inconclusive"
       : "completed";
   const rendererCommit = gitCommit();
+  const conclusion = counterfactualAssessment.knownExactWitnessCausalityEstablished
+    ? "Known exact teacher witness causality is established: both exact teacher local and exact teacher entry counterfactuals naturally reach the known HP3834 exact state. The retained checkpoint matrix remains " + searchCompletion.classification + "; frontier exhaustion and global selector correctness are not established."
+    : candidate2NaturallyReached.mt2Hp3834
+      ? "At least one isolated retained local checkpoint naturally reaches mt2-hp3834; compare replacement continuation and checkpoint ordering next."
+      : "The isolated local checkpoint matrix did not establish HP3834 completion; retain inconclusive status and inspect exact pipeline/replacement evidence.";
   const report = {
     schema: counterfactualEnabled
       ? "motapathfinder.hp3834-mt2-candidate2-natural-search-audit.v3"
       : "motapathfinder.hp3834-mt2-candidate2-natural-search-audit.v2",
     generatedAt: new Date().toISOString(),
     status,
+    overallStatus: status,
+    retainedCheckpointMatrixOutcome: searchCompletion.classification,
+    exactCounterfactualReachability: counterfactualAssessment.exactCounterfactualReachability,
+    knownExactWitnessCausality: counterfactualAssessment.knownExactWitnessCausality,
+    globalSelectorCorrectness: "not-established",
     failedGates,
     candidate2Outcome: searchCompletion.classification,
     candidate2NaturallyReached,
@@ -1272,6 +1369,7 @@ function runIsolatedAudit(argv) {
     isolatedHpPipeline: hpPipelineStage,
     counterfactualEnabled,
     counterfactuals,
+    counterfactualAssessment,
     oracle: oracle ? {
       ...oracle,
       executed: true,
@@ -1289,9 +1387,7 @@ function runIsolatedAudit(argv) {
     conditions: {
       fullFrontierApplicable,
     },
-    conclusion: candidate2NaturallyReached.mt2Hp3834
-      ? "At least one isolated retained local checkpoint naturally reaches mt2-hp3834; compare replacement continuation and checkpoint ordering next."
-      : "The isolated local checkpoint matrix did not establish HP3834 completion; retain inconclusive status and inspect exact pipeline/replacement evidence.",
+    conclusion,
   };
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + "\n", "utf8");
@@ -1578,6 +1674,7 @@ module.exports = {
   buildFutureTargets,
   classifySearch,
   classifyIsolatedSearch,
+  assessExactCounterfactuals,
   annotateLifecycleCoverage,
   exactLineagePipelineEvidence,
   hardTilesMatchExpected,
