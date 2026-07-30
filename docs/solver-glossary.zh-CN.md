@@ -23,7 +23,7 @@
 | 术语 | 中文 | 用途 | 是否包含当前 HP |
 |---|---|---|---|
 | `state key` / `exactStateKey` | 完整状态身份 | 判断两个记录状态是否完全一致、strict replay 对齐 | 是 |
-| `dominance key` | 支配比较身份 | 同类状态中用更高 HP 替代低 HP | 否 |
+| `dominance key` | 去掉 HP 的辅助身份 | 路线记录、审计和状态对比；不是生产 segment DP 的桶身份 | 否 |
 | `DP key` / `dpKey` | 搜索抽象桶身份 | 控制同类状态数量，取决于 location/region/mutation key mode | 通常否 |
 
 最重要的区别：
@@ -31,8 +31,10 @@
 ```text
 exact 相同：所有关键字段相同。
 DP key 相同：搜索认为两者属于同一抽象桶。
-dominance key 相同：允许用 HP 比较谁更强。
+dominance key 相同：两者的 exact state 除 HP 外具有相同辅助结构。
 ```
+
+生产 segment DP 不是先用 `buildDominanceKey()` 建桶，而是先用 `buildDpStateKey()` 找到 DP bucket，再调用 `dominanceConfig.compare` 或默认 comparator 判断候选是否保留。
 
 ## C. Skyline 的四个中文名字
 
@@ -69,7 +71,8 @@ candidateLimit
 | `skylineInserted` | 状态进入某个保留集合 |
 | `skylineEvicted` | 状态曾进入集合，后来被另一个候选替换 |
 | `agendaPopped` | 状态从搜索队列取出并准备展开 |
-| `goalAccepted` | 状态满足 milestone 的全部正式条件 |
+| `goal predicate matched` | 状态本身满足 milestone 的全部正式条件；当前没有单独的 observer event |
+| `goalAccepted` | 状态满足 predicate，并且通过当前 DP retention 后进入 goal archive |
 | `frontierSize` | 搜索结束时仍未展开的状态数量；不为 0 通常意味着搜索未完全收尽 |
 | `actionTrimmed` | 动作被每状态动作上限截掉；不能据此宣称无路 |
 | `expansionBudgetExhausted` | 达到 expansion 上限时仍有 frontier |
@@ -166,7 +169,7 @@ frontierSize > 0 / stoppedReason = time-limit
 goalAccepted = true
 ```
 
-说明正式 milestone predicate 通过，不说明后续 milestone 一定能过。
+说明正式 milestone predicate 通过，并且该状态通过当前 DP retention、进入了 goal archive；不说明后续 milestone 一定能过。
 
 看到：
 

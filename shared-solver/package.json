@@ -87,6 +87,7 @@
     "perf:brute:compare": "node find-route-bruteforce.js --algorithm=bfs --to-floor=MT3 --max-expanded=200000 --perf=1 --resource-pocket-mode=off --fight-to-levelup=0 --workers=1 && node find-route-bruteforce.js --algorithm=bfs --to-floor=MT3 --max-expanded=200000 --perf=1 --resource-pocket-mode=off --fight-to-levelup=0 --workers=8",
     "check:route": "node check-route-record.js --route-file=routes/fixtures/mt1-mt3-i893-hp8425.route.json",
     "check:live-snapshot-normalization": "node check-live-snapshot-normalization.js",
+    "check:windows-route-gui-close": "node check-windows-route-gui-close.js",
     "check:mt5-route-repair": "node check-mt5-route-repair-closure.js",
     "check:auto-stabilize": "node check-auto-stabilize.js",
     "check:floor-scout": "node check-floor-scout.js",

@@ -95,7 +95,14 @@ EXP >= 5
 并且能存活执行指定的 skeleton 战斗
 ```
 
-`buildSegmentGoalPredicate()` 会把 milestone JSON 转成一个函数。搜索找到一个状态后，只有所有正式条件都满足，才会发出 `goalAccepted`。
+`buildSegmentGoalPredicate()` 会把 milestone JSON 转成一个函数。需要区分两个事件：
+
+```text
+goal predicate matched：状态本身满足 milestone 的全部正式条件。
+goalAccepted：状态满足 predicate，并且已经通过当前 DP retention，进入 goal archive。
+```
+
+当前代码没有单独的 `goalPredicateMatched` observer event。因此没有看到 `goalAccepted`，不能直接推出“从未生成过满足条件的 successor”；该 successor 也可能在进入 goal archive 前被 dominance 或容量规则拒绝。
 
 milestone 还定义本段的 action policy、DP 配置、hard present/removed tiles，以及下一段的 `startFrom` 关系。当前 Only Up 的典型链条是：
 
@@ -119,13 +126,15 @@ action provider 枚举本段可做动作
   ↓
 逐个 applyAction，得到 successor state
   ↓
-检查动作是否被截断、是否越过 action policy、是否满足目标
+检查动作是否被截断、是否越过 action policy
   ↓
-为 successor 计算 DP key / dominance key
+为 successor 计算 DP key，定位生产搜索桶
   ↓
-在同类状态桶中保留代表
+使用 dominanceConfig/default comparator 判断是否保留
   ↓
-把可继续搜索的 successor 放回 agenda
+若已保留，再检查 goal predicate
+  ↓
+通过时加入 goal archive 并发出 goalAccepted；否则把 successor 放回 agenda
 ```
 
 `best-first`、`FIFO`、`hybrid-fair-*` 主要改变 agenda 先取哪个状态；它们不改变游戏规则，也不应该被解释为不同的游戏模型。
@@ -140,13 +149,13 @@ action provider 枚举本段可做动作
 
 > 两个状态在当前时刻是否完全一样？
 
-### `buildDominanceKey()`：允许只比较 HP 的同类身份
+### `buildDominanceKey()`：去掉 HP 的辅助身份
 
-它把 HP 忽略，其他关键字段仍保留。它回答：
+它把 HP 忽略，其他关键字段仍保留，主要用于路线记录、审计和状态对比。它可以帮助回答：
 
-> 两个状态是否可以认为拥有相同的未来结构，只用 HP 判断谁更强？
+> 两个 exact state 除 HP 外是否具有相同结构？
 
-如果同一 dominance key 下，一个状态 HP 更高，通常可以淘汰较低 HP 状态；同 HP 时再比较路线长度等。
+它不是生产 segment DP 的正式桶身份，也不要理解成“先计算 dominance key，再按 HP 做所有搜索保留”。
 
 ### `buildDpStateKey()`：搜索用的抽象桶身份
 
@@ -156,8 +165,17 @@ action provider 枚举本段可做动作
 
 ```text
 DP key 相同        = 搜索认为属于同一个抽象桶
-dominance key 相同 = 可以进行 HP 优劣比较的同类身份
+dominance key 相同 = exact state 去掉 HP 后的辅助同类身份
 exact state key 相同 = 所有记录字段完全一致
+```
+
+生产 segment DP 的真实顺序是：
+
+```text
+buildDpStateKey()
+  → 找到 DP bucket
+  → 使用 dominanceConfig.compare 或默认 comparator
+  → 决定候选是否留在 bucket / agenda
 ```
 
 ## 6. 四层候选筛选：不要再把它们都叫 skyline

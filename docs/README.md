@@ -8,7 +8,6 @@
 
 ## 配套文档
 
-- `docs/auto-decomposition-handoff.md`：自动因果拆段当前实现、MT5 I894 进度、HY3 后续计划与代码 review 门禁。
 - `docs/solver-architecture.md`：当前 solver 架构方向。
 - `docs/development-boundaries.md`：写入边界与检查命令。
 - `docs/public-api.md`：`shared-solver/public.js` 稳定 API。
@@ -18,6 +17,7 @@
 - `docs/solver-architecture.zh-CN.md`：面向项目负责人的中文运行链路与四层候选筛选说明。
 - `docs/solver-glossary.zh-CN.md`：skyline、DP key、dominance、witness、gate 等术语对照表。
 - `docs/onlyup-current-model.md`：Only Up 当前精确模型、启发式、oracle-only 边界与建模缺口。
+- `docs/archive/2026-07-29-solver-explanation-notes.md`：2026-07-29 的历史解释与讨论归档，不是当前规范。
 
 ## Windows 可视化
 

@@ -11,6 +11,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($NoLive -and $CloseWhenDone) {
+  throw "-CloseWhenDone requires live replay; remove -NoLive."
+}
+if ($NoAutoPlay -and $CloseWhenDone) {
+  throw "-CloseWhenDone requires auto-play; remove -NoAutoPlay."
+}
+
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
   $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 } else {
@@ -129,5 +136,39 @@ if (-not $NoAutoPlay) {
   Write-Output "Auto-play started. Use -NoAutoPlay to leave the session paused."
 }
 if ($CloseWhenDone) {
-  Wait-Process -Id $guiProcess.Id
+  $completionDeadline = (Get-Date).AddSeconds(180)
+  $completionStatus = $null
+  while ((Get-Date) -lt $completionDeadline) {
+    if ($guiProcess.HasExited) { break }
+    try {
+      $completionStatus = Invoke-RestMethod -Uri "$guiUrl/api/session/status"
+      if (@("completed", "failed") -contains $completionStatus.state) { break }
+    } catch {
+      $completionStatus = $null
+    }
+    Start-Sleep -Milliseconds 250
+  }
+
+  if (-not $completionStatus -or @("completed", "failed") -notcontains $completionStatus.state) {
+    try {
+      Invoke-RestMethod -Uri "$guiUrl/api/session/close" -Method Post -ContentType "application/json" -Body "{}" | Out-Null
+    } catch { }
+    Stop-Process -Id $guiProcess.Id -Force -ErrorAction SilentlyContinue
+    throw "Timed out waiting for live route completion. See $logFile"
+  }
+
+  Invoke-RestMethod -Uri "$guiUrl/api/session/close" -Method Post -ContentType "application/json" -Body "{}" | Out-Null
+  Stop-Process -Id $guiProcess.Id -Force -ErrorAction SilentlyContinue
+  $processExitDeadline = (Get-Date).AddSeconds(10)
+  while (-not $guiProcess.HasExited -and (Get-Date) -lt $processExitDeadline) {
+    Start-Sleep -Milliseconds 100
+    $guiProcess.Refresh()
+  }
+  if (-not $guiProcess.HasExited) {
+    throw "Route GUI did not exit after session close. See $logFile"
+  }
+  if ($completionStatus.state -eq "failed") {
+    throw "Live route failed before CloseWhenDone shutdown. See $logFile"
+  }
+  Write-Output "Live route completed and Route GUI exited."
 }

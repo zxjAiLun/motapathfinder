@@ -1,3 +1,8 @@
+> 历史归档，非 canonical 文档。
+> 当前架构请阅读 `docs/solver-architecture.zh-CN.md`；
+> 当前模型边界请阅读 `docs/onlyup-current-model.md`。
+> 本文对应 2026-07-29 的 solver 解释与可视化收口讨论，其中的计划和结论可能已经过时。
+
 你现在停下来梳理是对的。最近几轮已经产生了明显的“解释债务”：代码和诊断能力不断增加，但你看到的主要是 `skylineInserted`、`goalAccepted`、`dominance witness` 这类机器术语，缺少一张面向项目负责人的总图。
 
 先给出核心判断：
@@ -823,3 +828,7 @@ dominance witness compatible
 > 游戏原始工程被 StaticSimulator 精确模拟；路线被切成 milestones；每段通过 DP 搜索产生大量状态，用同类状态压缩和多角色候选保留控制规模；阶段候选继续传给下一段；最终路线通过内部 strict replay 和真实浏览器 replay 验证。当前主要短板不是地图状态完全没记录，而是候选评价仍偏重当前属性，尚未可靠理解资源推迟消费的长期价值。
 
 这就是我们接下来真正应该优化的方向。
+> 历史归档，非 canonical 文档。
+> 当前架构请阅读 `docs/solver-architecture.zh-CN.md`；
+> 当前模型边界请阅读 `docs/onlyup-current-model.md`。
+> 本文对应 2026-07-29 的 solver 解释与可视化收口讨论，其中的计划和结论可能已经过时。
