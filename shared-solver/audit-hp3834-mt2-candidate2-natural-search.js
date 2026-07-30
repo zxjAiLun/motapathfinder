@@ -1146,15 +1146,13 @@ function summarizeCapacity10Lifecycle(lifecycle, expectedFinalExactStateKey, run
     const decisionIndex = index + 13;
     return records["decision-" + decisionIndex] || null;
   }).filter(Boolean);
-  const firstDrop = downstream.find((record) => (
-    record.observed === false && record.postRejoined !== true
-  )) || null;
+  const firstDrop = downstream.find((record) => record.observed === false) || null;
   const exactRejoins = downstream
     .filter((record) => record.postRejoined === true)
     .map((record) => record.decisionIndex);
   const finalExactStateKey = run && run.finalCandidate && run.finalCandidate.state
     ? buildStateKey(run.finalCandidate.state)
-    : null;
+    : run && run.finalExactStateKey || null;
   return {
     teacherEntry: entry,
     decisions13To23: downstream,
@@ -1170,11 +1168,13 @@ function summarizeCapacity10Lifecycle(lifecycle, expectedFinalExactStateKey, run
     finalExactStateMatched: Boolean(
       expectedFinalExactStateKey && finalExactStateKey === expectedFinalExactStateKey,
     ),
-    outcome: firstDrop
-      ? "exact-lineage-drop-classified"
+    outcome: finalExactStateKey === expectedFinalExactStateKey && firstDrop
+      ? "exact-lineage-dropped-and-exactly-rejoined-at-final-milestone"
       : finalExactStateKey === expectedFinalExactStateKey
         ? "exact-lineage-reached-final-milestone"
-        : "exact-lineage-not-yet-classified",
+        : firstDrop
+          ? "exact-lineage-drop-classified"
+          : "exact-lineage-not-yet-classified",
   };
 }
 
@@ -1298,6 +1298,33 @@ function runCapacity10Audit(argv) {
   const teacherRouteFile = path.resolve(args["teacher-route"] || DEFAULT_TEACHER_ROUTE);
   const outFile = path.resolve(args.out || path.resolve(__dirname, "routes", "generated", "agenda-policy-evaluation", "mt2-candidate2-capacity10-j.json"));
   const outMarkdown = path.resolve(args["out-md"] || outFile.replace(/\.json$/i, ".md"));
+  if (args["render-existing"] === "1") {
+    const report = readJson(outFile);
+    report.exactLifecycleOutcome = summarizeCapacity10Lifecycle(
+      report.candidate2NaturalRun && report.candidate2NaturalRun.lifecycle,
+      report.exactHp3834Reachability && report.exactHp3834Reachability.expectedHp3834ExactStateKey,
+      { finalExactStateKey: report.exactHp3834Reachability && report.exactHp3834Reachability.finalExactStateKey },
+    );
+    report.gates.firstExactLineageDropClassified = Boolean(
+      report.exactLifecycleOutcome.firstExactLineageDrop || report.exactLifecycleOutcome.finalExactStateMatched,
+    );
+    report.failedGates = Object.entries(report.gates)
+      .filter(([, value]) => value !== true)
+      .map(([name]) => name);
+    report.status = report.failedGates.length > 0 ? "failed" : "completed";
+    report.auditStatus = report.status;
+    if (report.provenance) {
+      report.provenance.rendererCommit = gitCommit();
+      report.provenance.commitStable = Boolean(
+        report.provenance.dataGenerationCommit && report.provenance.dataGenerationCommit === report.provenance.rendererCommit,
+      );
+      report.provenance.worktreeCleanAtFinish = cleanWorktree();
+    }
+    fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + "\n", "utf8");
+    fs.writeFileSync(outMarkdown, buildCapacity10Markdown(report), "utf8");
+    console.log(JSON.stringify(report, null, 2));
+    return report;
+  }
   const project = loadProject(projectRoot);
   const simulator = makeSimulator(project);
   const teacherRoute = readJson(teacherRouteFile);
