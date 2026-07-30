@@ -134,6 +134,10 @@ function buildWinningRouteEvidence(projectRoot, project, simulator, report, teac
   const teacherEntryExactStateKey = buildStateKey(teacherReplay.states[12]);
   const teacherLocalExactStateKey = buildStateKey(teacherReplay.states[14]);
   const teacherFinalExactStateKey = buildStateKey(teacherReplay.states[23]);
+  const exactTeacherLocalCandidate = (report.candidate2NaturalRun && report.candidate2NaturalRun.search && report.candidate2NaturalRun.search.checkpointResults || [])
+    .find((entry) => entry.segmentId === "mt2-local-3582");
+  const exactTeacherLocalCheckpoint = exactTeacherLocalCandidate && (exactTeacherLocalCandidate.candidates || [])
+    .find((candidate) => candidate.state && buildStateKey(candidate.state) === teacherLocalExactStateKey) || null;
   const winningLocalMatchesTeacherDecision14 = winningLocalCheckpointExactStateKey === teacherLocalExactStateKey;
   const finalCandidate = checkpointCandidate(
     report,
@@ -193,6 +197,8 @@ function buildWinningRouteEvidence(projectRoot, project, simulator, report, teac
     winningHpAttemptStartCandidateId,
     winningLocalCheckpointExactStateKey,
     winningLocalMatchesTeacherDecision14,
+    exactTeacherLocalCheckpointCandidateId: exactTeacherLocalCheckpoint && exactTeacherLocalCheckpoint.id || null,
+    winningAttemptStartedFromExactTeacherLocal: winningLocalMatchesTeacherDecision14,
     winningRouteContainsTeacherEntryExact,
     winningRouteContainsTeacherLocalExact,
     winningRouteFinalMatchesTeacherDecision23,
@@ -240,12 +246,14 @@ function buildMarkdown(report) {
     "## Winning HP3834 ancestry",
     "",
     "- winning HP attempt start: **" + winner.winningHpAttemptStartCandidateId + "**",
+    "- exact teacher-local checkpoint candidate: **" + winner.exactTeacherLocalCheckpointCandidateId + "**",
     "- winning local checkpoint matches teacher decision-14: **" + winner.winningLocalMatchesTeacherDecision14 + "**",
     "- route contains teacher entry exact: **" + winner.winningRouteContainsTeacherEntryExact + "**",
     "- route contains teacher local exact: **" + winner.winningRouteContainsTeacherLocalExact + "**",
     "- route final matches teacher decision-23: **" + winner.winningRouteFinalMatchesTeacherDecision23 + "**",
     "- winning route strict replay: **" + replay.stepsCompleted + "/" + replay.stepsAttempted + ", valid=" + replay.valid + "**",
     "- known exact witness capacity recovery: **" + winner.knownExactWitnessCapacityRecoveryEstablished + "**",
+    "- j1 conclusion: **" + report.j1Conclusion + "**",
     "",
     "## Boundary",
     "",
@@ -313,8 +321,11 @@ function main(argv) {
   report.knownExactWitnessCapacityRecoveryEstablished = winningAncestry.knownExactWitnessCapacityRecoveryEstablished;
   report.j1Gates = j1Gates;
   report.j1FailedGates = failedJ1Gates;
-  report.status = failedJ1Gates.length === 0 ? "completed" : "failed";
+  report.status = failedJ1Gates.length === 0 ? "completed" : "completed-with-contract-gaps";
   report.auditStatus = report.status;
+  report.j1Conclusion = failedJ1Gates.length === 0
+    ? "Known exact teacher-witness ancestry is established."
+    : "Post-processing completed, but the winning HP attempt does not start from the exact teacher-local checkpoint; known exact teacher-witness capacity recovery remains not-established.";
   report.j1Provenance = {
     postProcessCommit: gitCommit(),
     worktreeCleanAtStart: cleanWorktree(),

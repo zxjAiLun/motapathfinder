@@ -1,41 +1,34 @@
-# PR-4.4j MT2 candidate-2 capacity counterfactual
+# PR-4.4j1 artifact contract closure
 
-Status: **completed**
+Status: **completed-with-contract-gaps**
 
-## Contract
+## First exact-lineage drop
 
-- auditStatus: **completed**
-- capacityCounterfactualConfigVerified: **true**
-- productionDefaultsUnchanged: **true**
-- noTeacherInjection: **true**
-- productionSemanticChange: **false**
-- globalDefaultChangeRecommended: **not-established**
+- decision: **15**
+- classification: **pre-state-replaced-by-continuation-compatible-witness**
+- generated: **false**
+- postRejoined: **true**
+- exact rejoin decisions include 15: **true**
 
-## Exact teacher-entry lifecycle
+## Winning HP3834 ancestry
 
-- goalAccepted: **true**
-- raw archive retained / selected archive rank: **true / 9**
-- raw sort rank: **9**
-- segment-goal candidate retained: **true**
-- merged checkpoint retained: **true**
-- downstream agenda popped: **true**
-- first exact-lineage drop: **{"decisionIndex":15,"classification":"pre-state-replaced-by-continuation-compatible-witness","reason":null}**
-- exact lifecycle outcome: **exact-lineage-dropped-and-exactly-rejoined-at-final-milestone**
+- winning HP attempt start: **mt2-local-3582:candidate-6**
+- exact teacher-local checkpoint candidate: **mt2-local-3582:candidate-7**
+- winning local checkpoint matches teacher decision-14: **false**
+- route contains teacher entry exact: **false**
+- route contains teacher local exact: **false**
+- route final matches teacher decision-23: **true**
+- winning route strict replay: **13/13, valid=true**
+- known exact witness capacity recovery: **false**
+- j1 conclusion: **Post-processing completed, but the winning HP attempt does not start from the exact teacher-local checkpoint; known exact teacher-witness capacity recovery remains not-established.**
 
-## Search and exact reproduction
+## Boundary
 
-- run found / reached: **true / true**
-- exact HP3834 match: **true**
-- retained-matrix completion: **inconclusive**
-- strict natural route replay: **true**
-- hard tiles preserved: **true**
-
-## Conclusion
-
-Increasing runtime raw goal-archive and checkpoint capacities to 10 allowed the naturally retained MT1 candidate-2 pipeline to reproduce the exact teacher HP3834 state. This establishes a known-witness capacity counterfactual only; it does not establish a global selector conclusion or a default-capacity change.
+- retained matrix completion: **inconclusive**
+- global default change recommended: **not-established**
+- production semantic change: **false**
 
 ## Provenance
 
-- data generation commit: 6efc8bb78f93f0bf5ba0d5a7671d180131338e74
-- renderer commit: 3248051a936e049fedc5b15147b327897f3e1baf
-- worktree clean at run start / finish: **true/true**
+- source j artifact data commit: 6efc8bb78f93f0bf5ba0d5a7671d180131338e74
+- j1 post-process commit: e16dad085b805d5219aa35db910d470243269ad4
