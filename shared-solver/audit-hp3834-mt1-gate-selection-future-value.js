@@ -194,6 +194,8 @@ function createLifecycleObserver(simulator, targets, gateExactStateKey, options)
     skylineEvicted: false,
     agendaPopped: false,
     goalAccepted: false,
+    postRejoined: false,
+    postRejoinEvents: [],
     rejectedReasons: [],
     events: [],
   }]));
@@ -230,6 +232,20 @@ function createLifecycleObserver(simulator, targets, gateExactStateKey, options)
     },
     onEvent(event) {
       if (!event || !event.eventType) return;
+      if (observerOptions.capturePostStateRejoins === true) {
+        records.forEach((record) => {
+          const eventAction = event.action || {};
+          const samePostState = record.expectedPostExactStateKey === event.exactStateKey;
+          const sameAction = record.actionFingerprint
+            ? record.actionFingerprint === eventAction.fingerprint
+            : record.actionSummary && record.actionSummary === eventAction.summary;
+          const postStateEvent = ["candidateRejected", "skylineInserted", "goalAccepted"].includes(event.eventType);
+          if (samePostState && sameAction && postStateEvent) {
+            record.postRejoined = true;
+            if (record.postRejoinEvents.length < 20) record.postRejoinEvents.push(compactEvent(event));
+          }
+        });
+      }
       if (event.eventType === "goalAccepted") {
         goalEvents.push(compactEvent(event));
         if (goalEvents.length > 400) goalEvents.shift();
@@ -287,10 +303,12 @@ function createLifecycleObserver(simulator, targets, gateExactStateKey, options)
     eventCounts,
     goalEvents,
     gateGoalEvents: goalEvents.filter((event) => event.exactStateKey === gateExactStateKey),
-    records: Object.fromEntries(Array.from(records.entries()).map(([id, record]) => [id, {
+      records: Object.fromEntries(Array.from(records.entries()).map(([id, record]) => [id, {
       ...record,
       ...(continuationBoundaries[record.decisionIndex] || {}),
-      classification: continuationBoundaries[record.decisionIndex] &&
+      classification: record.postRejoined && record.generated === false
+        ? "pre-state-replaced-by-continuation-compatible-witness"
+        : continuationBoundaries[record.decisionIndex] &&
         record.generated === false &&
         record.dominanceRejected === false &&
         record.skylineInserted === false

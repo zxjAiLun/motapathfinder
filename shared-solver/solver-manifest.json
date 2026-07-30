@@ -1444,12 +1444,26 @@
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
+    "shared-solver/check-hp3834-mt2-candidate2-natural-search.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-hybrid-fair-agenda.js": {
       "grade": "unit",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "synthetic hybrid-fair agenda contract; no tower/project load"
+    },
+    "shared-solver/check-live-snapshot-normalization.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-manifest-runner.js": {
       "grade": "unit",
@@ -1683,6 +1697,13 @@
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-window-repair.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-windows-route-gui-close.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,

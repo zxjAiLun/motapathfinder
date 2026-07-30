@@ -22,6 +22,7 @@ const { buildDpStateKey } = require("./lib/dp-search");
 const {
   createLifecycleObserver,
   makePipelineObserver,
+  runFutureValueOracle,
 } = require("./audit-hp3834-mt1-gate-selection-future-value");
 const {
   actionFingerprint,
@@ -29,6 +30,7 @@ const {
   makeSimulator,
   replayRoute,
 } = require("./audit-hp3834-mt1-first-divergence");
+const { strictReplayRoute } = require("./lib/agenda-policy-evaluation");
 
 const ROOT = path.resolve(__dirname, "..");
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
@@ -51,6 +53,15 @@ const MT1_SETUP_MAX_EXPANSIONS = 400;
 const FUTURE_DECISION_START = 11;
 const FUTURE_DECISION_END = 23;
 const FUTURE_SEGMENT_IDS = ["mt2-entry", "mt2-local-3582", "mt2-hp3834"];
+const EXPECTED_HARD_TILES = [
+  ["MT2", 4, 7],
+  ["MT2", 8, 7],
+  ["MT2", 10, 8],
+  ["MT2", 11, 11],
+  ["MT2", 6, 6],
+  ["MT2", 6, 8],
+  ["MT2", 6, 9],
+];
 
 function parseArgs(argv) {
   return argv.reduce((result, token) => {
@@ -106,17 +117,112 @@ function compactHero(state) {
 
 function summarizeAttempt(attempt) {
   const dp = attempt && attempt.diagnostics && attempt.diagnostics.dp || {};
+  const frontierSize = Number(dp.frontierSize || 0);
+  const actionTrimmed = Number(dp.actionTrimmed || 0);
+  const expansionBudgetExhausted = Boolean(dp.expansionBudgetExhausted);
+  const incompleteReasons = [];
+  if (frontierSize > 0) incompleteReasons.push("frontier-nonempty");
+  if (dp.stoppedReason) incompleteReasons.push(dp.stoppedReason);
+  if (actionTrimmed > 0) incompleteReasons.push("action-trimmed");
+  if (expansionBudgetExhausted) incompleteReasons.push("expansion-budget-exhausted");
   return {
     startCandidateId: attempt && attempt.startCandidateId || null,
     found: Boolean(attempt && attempt.found),
     goalCount: Number(attempt && attempt.goalCount || 0),
     expansions: Number(dp.expansions || 0),
-    frontierSize: Number(dp.frontierSize || 0),
+    frontierSize,
     stoppedReason: dp.stoppedReason || null,
-    expansionBudgetExhausted: Boolean(dp.expansionBudgetExhausted),
-    actionTrimmed: Number(dp.actionTrimmed || 0),
+    expansionBudgetExhausted,
+    actionTrimmed,
+    completeWithinConfiguredActionSet: incompleteReasons.length === 0,
+    incompleteReasons,
     failureClass: attempt && attempt.failureClass || null,
   };
+}
+
+function classifySearch(run) {
+  const attempts = (run && run.segmentResults || []).flatMap((segment) => segment.attempts || []);
+  if (attempts.length === 0) {
+    return {
+      classification: "not-run",
+      completeWithinConfiguredActionSet: false,
+      incompleteAttempts: [],
+    };
+  }
+  const summarized = attempts.map(summarizeAttempt);
+  const incompleteAttempts = summarized.filter((attempt) => !attempt.completeWithinConfiguredActionSet);
+  const completeWithinConfiguredActionSet = incompleteAttempts.length === 0;
+  return {
+    classification: completeWithinConfiguredActionSet
+      ? (run && run.found ? "success" : "failed")
+      : "inconclusive",
+    completeWithinConfiguredActionSet,
+    incompleteAttempts,
+  };
+}
+
+function summarizeStrictReplay(result) {
+  return {
+    performed: Boolean(result && result.performed),
+    valid: Boolean(result && result.valid),
+    stepsAttempted: Number(result && result.stepsAttempted || 0),
+    stepsCompleted: Number(result && result.stepsCompleted || 0),
+    failureStep: result && result.failureStep != null ? result.failureStep : null,
+    failureReason: result && result.failureReason || null,
+    expectedStateKey: result && result.expectedStateKey || null,
+    actualStateKey: result && result.actualStateKey || null,
+    error: result && result.error || null,
+  };
+}
+
+function summarizePipelineStages(pipeline, segmentIds) {
+  const attempts = pipeline && pipeline.attempts || [];
+  const merges = pipeline && pipeline.merges || [];
+  return segmentIds.map((segmentId) => {
+    const segmentAttempts = attempts.filter((attempt) => attempt.segmentId === segmentId);
+    const segmentMerges = merges.filter((merge) => merge.segmentId === segmentId);
+    const rawGoalArchive = segmentAttempts.flatMap((attempt) => attempt.rawGoalSkylineStates || []);
+    const segmentCandidates = segmentAttempts.flatMap((attempt) => attempt.segmentGoalSkyline || []);
+    const mergedCandidates = segmentMerges.flatMap((merge) => merge.merged || []);
+    return {
+      segmentId,
+      observed: segmentAttempts.length > 0 || segmentMerges.length > 0,
+      productionSuccessor: {
+        attemptsObserved: segmentAttempts.length,
+        candidateIds: segmentAttempts.map((attempt) => attempt.candidateId),
+      },
+      dpBucketRetention: {
+        observed: segmentAttempts.length > 0,
+        attemptCount: segmentAttempts.length,
+      },
+      rawDpGoalArchive: {
+        candidateCount: rawGoalArchive.length,
+        candidates: rawGoalArchive,
+      },
+      segmentGoalCandidates: {
+        candidateCount: segmentCandidates.length,
+        candidates: segmentCandidates,
+      },
+      mergedCheckpointFrontier: {
+        mergeCount: segmentMerges.length,
+        candidateCount: mergedCandidates.length,
+        candidates: mergedCandidates,
+      },
+    };
+  });
+}
+
+function runReachedMilestone(run, segmentId) {
+  return Boolean((run && run.segmentResults || []).some((segment) => (
+    segment.segmentId === segmentId && segment.found === true
+  )));
+}
+
+function hardTilesMatchExpected(hardTiles) {
+  const actual = new Set((hardTiles || []).map((tile) => `${tile.floorId}:${tile.x},${tile.y}`));
+  return EXPECTED_HARD_TILES.every(([floorId, x, y]) => actual.has(`${floorId}:${x},${y}`)) &&
+    EXPECTED_HARD_TILES.length === (hardTiles || []).length &&
+    (hardTiles || []).every((tile) => tile.present === true);
 }
 
 function summarizeRun(run) {
@@ -154,6 +260,7 @@ function summarizeRun(run) {
     ledger: run && run.evaluationAttemptLedger || [],
     budget: run && run.budget || null,
     memory: run && run.memory || null,
+    completion: classifySearch(run),
   };
 }
 
@@ -223,7 +330,10 @@ function runDownstream(project, simulator, teacherRoute, teacherReplay, segments
     simulator,
     targets,
     finalTarget.expectedPostExactStateKey,
-    { captureDominanceWitnessFor: targets.map((target) => target.id) },
+    {
+      captureDominanceWitnessFor: targets.map((target) => target.id),
+      capturePostStateRejoins: true,
+    },
   );
   const pipeline = makePipelineObserver(simulator);
   const run = runMilestoneGraph(simulator, initialState, { milestones: segments }, {
@@ -263,12 +373,22 @@ function buildMarkdown(report) {
     "",
     "Status: **" + report.status + "**",
     "",
+    "Candidate-2-only outcome: **" + report.candidate2Outcome + "**.",
+    "",
     "## Contract",
     "",
-    "- Candidate-2-only natural search reached `mt2-hp3834`: **" + report.gates.candidate2ReachedHp3834 + "**.",
-    "- No teacher actions were injected: **" + report.gates.noTeacherActionInjection + "**.",
+    "- Source route strict replay: **" + report.gates.sourceRouteStrictReplay + "**.",
+    "- Candidate-2 exact start matched the MT1 gate: **" + report.gates.candidate2ExactStartMatched + "**.",
+    "- Production search executed without teacher action injection: **" + report.gates.productionSearchExecuted + " / " + report.gates.productionSearchNoTeacherInjection + "**.",
     "- Candidate-2 was naturally retained by the MT1 merged checkpoint: **" + report.gates.candidate2Retained + "**.",
     "- Candidate-2 lifecycle observer covered decisions 11–23: **" + report.gates.lifecycleObserved + "**.",
+    "- Pipeline observed for entry/local/HP3834: **" + [
+      report.gates.mt2EntryPipelineObserved,
+      report.gates.mt2LocalPipelineObserved,
+      report.gates.mt2Hp3834PipelineObserved,
+    ].join(" / ") + "**.",
+    "- Oracle suffix complete and hard tiles checked: **" + report.gates.oracleSuffixComplete + " / " + report.gates.hardTilesChecked + "**.",
+    "- Search completion classification: **" + report.searchCompletion.classification + "**.",
     "- Full-frontier condition met (candidate-2 success): **" + report.conditions.fullFrontierApplicable + "**.",
     "- Full four-candidate frontier run: **" + (
       report.conditions.fullFrontierApplicable
@@ -282,14 +402,15 @@ function buildMarkdown(report) {
     "- final hero=" + JSON.stringify(report.candidate2Only.search.finalCandidate && report.candidate2Only.search.finalCandidate.hero) + ".",
     "- budget=" + JSON.stringify(report.candidate2Only.search.budget) + ".",
     "",
-    "| Decision | Segment | Generated | Dominance reject | Skyline insert | Evicted | Popped | Goal accepted | Classification |",
-    "|---:|---|:---:|:---:|:---:|:---:|:---:|:---:|---|",
+    "| Decision | Segment | Generated | Post rejoin | Dominance reject | Skyline insert | Evicted | Popped | Goal accepted | Classification |",
+    "|---:|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|---|",
   ];
   Object.values(report.candidate2Only.lifecycle.records || {}).forEach((record) => {
     lines.push(
       "| " + record.decisionIndex +
       " | " + record.targetSegment +
       " | " + record.generated +
+      " | " + record.postRejoined +
       " | " + record.dominanceRejected +
       " | " + record.skylineInserted +
       " | " + record.skylineEvicted +
@@ -299,6 +420,30 @@ function buildMarkdown(report) {
     );
   });
   lines.push(
+    "",
+    "## Pipeline stages",
+    "",
+    "| Segment | Production attempts | DP bucket retention | Raw goal archive | Segment candidates | Merged checkpoint |",
+    "|---|---:|:---:|---:|---:|---:|",
+  );
+  (report.candidate2Only.pipeline.stages || []).forEach((stage) => {
+    lines.push(
+      "| " + stage.segmentId +
+      " | " + stage.productionSuccessor.attemptsObserved +
+      " | " + stage.dpBucketRetention.observed +
+      " | " + stage.rawDpGoalArchive.candidateCount +
+      " | " + stage.segmentGoalCandidates.candidateCount +
+      " | " + stage.mergedCheckpointFrontier.candidateCount + " |",
+    );
+  });
+  lines.push(
+    "",
+    "## Oracle-only suffix",
+    "",
+    "- executed=" + report.gates.oracleSuffixExecuted + ", completeSuffix=" + report.oracle.completeSuffix + ".",
+    "- reached=" + JSON.stringify(report.oracle.reached) + ".",
+    "- final hero=" + JSON.stringify(report.oracle.finalHero) + ".",
+    "- all hard tiles present=" + report.oracle.allHardTilesPresent + ".",
     "",
     "## Segment attempts",
     "",
@@ -344,6 +489,7 @@ function main() {
   const project = loadProject(projectRoot);
   const simulator = makeSimulator(project);
   const teacherRoute = readJson(teacherRouteFile);
+  const sourceRouteStrictReplay = strictReplayRoute(project, simulator, teacherRoute);
   const teacherReplay = replayRoute(project, simulator, teacherRoute);
   const spec = getMilestoneSpec(project, "onlyup-chaos-mt5-blueking");
   const segmentsById = Object.fromEntries(
@@ -364,6 +510,9 @@ function main() {
   const retained = setup.merge && Array.isArray(setup.merge.merged) ? setup.merge.merged : [];
   const candidate2Index = retained.findIndex((candidate) => buildStateKey(candidate.state) === gateExactStateKey);
   const candidate2 = candidate2Index >= 0 ? retained[candidate2Index] : null;
+  const oracle = candidate2
+    ? runFutureValueOracle(project, simulator, candidate2.state, teacherRoute, teacherReplay, futureSegments)
+    : null;
   const candidate2Options = {
     candidateLimit: number(args["candidate-limit"], 8),
     goalSkylineLimit: number(args["goal-skyline-limit"], 8),
@@ -424,21 +573,51 @@ function main() {
     Object.keys(candidate2Lifecycle.records || {}).length === FUTURE_DECISION_END - FUTURE_DECISION_START + 1,
   );
   const noTeacherActionInjection = true;
+  const candidate2Completion = classifySearch(candidate2Only && candidate2Only.run);
+  const candidate2PipelineStages = summarizePipelineStages(
+    candidate2Only && candidate2Only.pipeline,
+    FUTURE_SEGMENT_IDS,
+  );
+  const oracleHardTiles = oracle && oracle.hardTiles || [];
+  const oracleSuffixComplete = Boolean(oracle && oracle.completeSuffix);
+  const oracleHardTilesChecked = Boolean(oracle && oracleHardTiles.length === EXPECTED_HARD_TILES.length);
+  const candidate2NaturallyReached = {
+    mt2Entry: Boolean(candidate2Only && runReachedMilestone(candidate2Only.run, "mt2-entry")),
+    mt2Local3582: Boolean(candidate2Only && runReachedMilestone(candidate2Only.run, "mt2-local-3582")),
+    mt2Hp3834: candidate2ReachedHp3834,
+  };
   const fullFrontierApplicable = Boolean(
     candidate2ReachedHp3834 && retained.length >= 4,
   );
   const gates = {
+    sourceRouteStrictReplay: Boolean(sourceRouteStrictReplay && sourceRouteStrictReplay.performed && sourceRouteStrictReplay.valid),
+    candidate2ExactStartMatched: Boolean(candidate2 && buildStateKey(candidate2.state) === gateExactStateKey),
+    productionSearchExecuted: Boolean(candidate2Only && candidate2Only.run),
+    productionSearchNoTeacherInjection: noTeacherActionInjection,
+    mt2EntryPipelineObserved: candidate2PipelineStages.find((stage) => stage.segmentId === "mt2-entry").observed,
+    mt2LocalPipelineObserved: candidate2PipelineStages.find((stage) => stage.segmentId === "mt2-local-3582").observed,
+    mt2Hp3834PipelineObserved: candidate2PipelineStages.find((stage) => stage.segmentId === "mt2-hp3834").observed,
+    oracleSuffixExecuted: Boolean(oracle),
+    oracleSuffixComplete,
+    hardTilesChecked: oracleHardTilesChecked && hardTilesMatchExpected(oracleHardTiles),
+    searchCompletionClassified: candidate2Completion.classification !== "not-run",
+    provenanceCommitStable: Boolean(startedCommit && gitCommit() === startedCommit),
+    worktreeCleanAtStart: startedClean,
+    worktreeCleanAtFinish: cleanWorktree(),
     candidate2Retained: candidate2Index >= 0,
     candidate2NaturalStart: Boolean(candidate2),
     candidate2OnlyRunExecuted: Boolean(candidate2Only),
-    candidate2ReachedHp3834,
     lifecycleObserved,
     noTeacherActionInjection,
     fullFrontierRunExecuted: !fullFrontierApplicable || Boolean(fullFrontier),
     fullFrontierRunCompleted: !fullFrontierApplicable || Boolean(fullFrontier && fullFrontier.run && fullFrontier.run.reachedMilestone === "mt2-hp3834"),
   };
   const failedGates = Object.entries(gates).filter((entry) => !entry[1]).map((entry) => entry[0]);
-  const status = failedGates.length === 0 ? "completed" : "failed";
+  const status = failedGates.length > 0
+    ? "failed"
+    : candidate2Completion.classification === "inconclusive"
+      ? "inconclusive"
+      : "completed";
   const finishedCommit = gitCommit();
   const compactRetained = retained.map((candidate, index) => ({
     index,
@@ -456,6 +635,23 @@ function main() {
     status,
     failedGates,
     gates,
+    candidate2Outcome: candidate2Completion.classification,
+    candidate2NaturallyReached,
+    searchCompletion: candidate2Completion,
+    sourceRouteStrictReplay: summarizeStrictReplay(sourceRouteStrictReplay),
+    oracle: oracle ? {
+      ...oracle,
+      executed: true,
+      hardTiles: oracleHardTiles,
+      allHardTilesPresent: hardTilesMatchExpected(oracleHardTiles),
+      noTeacherActionInjection: true,
+    } : {
+      executed: false,
+      completeSuffix: false,
+      hardTiles: [],
+      allHardTilesPresent: false,
+      noTeacherActionInjection: true,
+    },
     conditions: {
       fullFrontierApplicable,
     },
@@ -513,6 +709,7 @@ function main() {
       pipeline: {
         attempts: candidate2Only.pipeline.attempts,
         merges: candidate2Only.pipeline.merges,
+        stages: candidate2PipelineStages,
       },
     } : {
       candidateId: null,
@@ -520,7 +717,7 @@ function main() {
       search: null,
       lifecycle: { records: [] },
       targets: [],
-      pipeline: { attempts: [], merges: [] },
+      pipeline: { attempts: [], merges: [], stages: [] },
     },
     fullFrontier: fullFrontier ? {
       search: summarizeRun(fullFrontier.run),
@@ -528,6 +725,7 @@ function main() {
       pipeline: {
         attempts: fullFrontier.pipeline.attempts,
         merges: fullFrontier.pipeline.merges,
+        stages: summarizePipelineStages(fullFrontier.pipeline, FUTURE_SEGMENT_IDS),
       },
       initialCandidateOrder: retained.slice(0, 4).map((candidate, index) => ({
         order: index + 1,
@@ -551,6 +749,9 @@ if (require.main === module) main();
 module.exports = {
   buildMarkdown,
   buildFutureTargets,
+  classifySearch,
+  hardTilesMatchExpected,
   runDownstream,
+  summarizePipelineStages,
   summarizeRun,
 };
