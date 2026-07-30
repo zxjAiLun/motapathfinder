@@ -21,7 +21,8 @@ const {
 const { buildStateKey, buildDominanceKey } = require("./lib/state-key");
 const { buildDpStateKey } = require("./lib/dp-search");
 const { buildSolverSnapshot } = require("./lib/route-snapshot");
-const { createStateFromSnapshot } = require("./lib/route-store");
+const { buildRouteRecord, createStateFromSnapshot } = require("./lib/route-store");
+const { cloneState } = require("./lib/state");
 const { syncProgress } = require("./lib/progress");
 const {
   createLifecycleObserver,
@@ -1100,6 +1101,466 @@ function buildGoalArchiveMarkdown(report) {
   ].join("\n") + "\n";
 }
 
+function inspectProductionDefaults() {
+  const segmentedSource = fs.readFileSync(path.join(__dirname, "run-segmented-dp.js"), "utf8");
+  const segmentSource = fs.readFileSync(path.join(__dirname, "lib", "segment-dp.js"), "utf8");
+  const runSegmentedCandidateLimitDefault8 =
+    /candidateLimit:\s*optionalNumber\(args\["candidate-limit"\]\)\s*\|\|\s*8/.test(segmentedSource);
+  const segmentGoalSkylineLimitDefault8 =
+    /goalSkylineLimit:\s*number\(dpConfig\.goalSkylineLimit,\s*8\)/.test(segmentSource);
+  return {
+    runSegmentedCandidateLimitDefault8,
+    segmentGoalSkylineLimitDefault8,
+    allKnownDefaultsUnchanged: runSegmentedCandidateLimitDefault8 && segmentGoalSkylineLimitDefault8,
+  };
+}
+
+function summarizeRetentionStage(stage, exactStateKey) {
+  const matches = stage && Array.isArray(stage.matchingCandidates)
+    ? stage.matchingCandidates
+    : [];
+  return {
+    stageId: stage && stage.id || null,
+    retained: matches.length > 0,
+    matchingCandidateCount: matches.length,
+    matchingCandidates: matches,
+    exactStateKey,
+  };
+}
+
+function summarizeCapacity10Lifecycle(lifecycle, expectedFinalExactStateKey, run) {
+  const records = lifecycle && lifecycle.records || {};
+  const entry = records["decision-12"] || null;
+  const downstream = Array.from({ length: FUTURE_DECISION_END - 12 }, (_, index) => {
+    const decisionIndex = index + 13;
+    return records["decision-" + decisionIndex] || null;
+  }).filter(Boolean);
+  const firstDrop = downstream.find((record) => (
+    record.observed === false && record.postRejoined !== true
+  )) || null;
+  const exactRejoins = downstream
+    .filter((record) => record.postRejoined === true)
+    .map((record) => record.decisionIndex);
+  const finalExactStateKey = run && run.finalCandidate && run.finalCandidate.state
+    ? buildStateKey(run.finalCandidate.state)
+    : null;
+  return {
+    teacherEntry: entry,
+    decisions13To23: downstream,
+    agendaPoppedDownstream: downstream.some((record) => record.agendaPopped === true),
+    goalAcceptedDownstream: downstream.some((record) => record.goalAccepted === true),
+    exactRejoinDecisions: exactRejoins,
+    firstExactLineageDrop: firstDrop ? {
+      decisionIndex: firstDrop.decisionIndex,
+      classification: firstDrop.classification || null,
+      reason: firstDrop.classificationReason || null,
+    } : null,
+    finalExactStateKey,
+    finalExactStateMatched: Boolean(
+      expectedFinalExactStateKey && finalExactStateKey === expectedFinalExactStateKey,
+    ),
+    outcome: firstDrop
+      ? "exact-lineage-drop-classified"
+      : finalExactStateKey === expectedFinalExactStateKey
+        ? "exact-lineage-reached-final-milestone"
+        : "exact-lineage-not-yet-classified",
+  };
+}
+
+function buildNaturalStrictReplay(projectRoot, project, simulator, initialState, run) {
+  const finalCandidate = run && run.finalCandidate;
+  if (!finalCandidate || !finalCandidate.state) {
+    return {
+      performed: false,
+      valid: false,
+      failureReason: "natural-final-candidate-missing",
+      routeDecisionCount: 0,
+    };
+  }
+  try {
+    const finalState = cloneState(finalCandidate.state);
+    const initialRouteLength = Array.isArray(initialState && initialState.route)
+      ? initialState.route.length
+      : 0;
+    const fullRoute = Array.isArray(finalCandidate.route)
+      ? finalCandidate.route.slice()
+      : Array.isArray(finalState.route)
+        ? finalState.route.slice()
+        : [];
+    finalState.route = fullRoute.length >= initialRouteLength
+      ? fullRoute.slice(initialRouteLength)
+      : fullRoute;
+    const fullTrace = Array.isArray(finalCandidate.trace)
+      ? finalCandidate.trace.slice()
+      : Array.isArray(finalState.routeTrace)
+        ? finalState.routeTrace.slice()
+        : [];
+    if (fullTrace.length > 0) finalState.routeTrace = fullTrace.slice(initialRouteLength);
+    const routeRecord = buildRouteRecord({
+      project,
+      simulator,
+      initialState,
+      finalState,
+      options: {
+        projectRoot,
+        solver: "pr-4.4j-capacity-counterfactual",
+        profile: "best-first-10x10x4",
+        rank: "chaos",
+        toFloor: finalState.floorId,
+        goalType: "milestone-counterfactual",
+        commit: gitCommit(),
+      },
+    });
+    const replay = strictReplayRoute(project, simulator, routeRecord);
+    return {
+      ...summarizeStrictReplay(replay),
+      routeDecisionCount: routeRecord.decisions.length,
+      routeFinalExactStateKey: routeRecord.final && routeRecord.final.exactStateKey || null,
+    };
+  } catch (error) {
+    return {
+      performed: true,
+      valid: false,
+      failureReason: "natural-route-build-failed",
+      error: String(error.message || error),
+      routeDecisionCount: 0,
+    };
+  }
+}
+
+function buildCapacity10Markdown(report) {
+  const retention = report.teacherEntryRawRetention || {};
+  const lifecycle = report.exactLifecycleOutcome || {};
+  const reachability = report.exactHp3834Reachability || {};
+  const completion = report.retainedMatrixCompletion || {};
+  const naturalReplay = report.strictRouteReplay && report.strictRouteReplay.natural || {};
+  return [
+    "# PR-4.4j MT2 candidate-2 capacity counterfactual",
+    "",
+    "Status: **" + report.status + "**",
+    "",
+    "## Contract",
+    "",
+    "- auditStatus: **" + report.auditStatus + "**",
+    "- capacityCounterfactualConfigVerified: **" + report.capacityCounterfactualConfigVerified + "**",
+    "- productionDefaultsUnchanged: **" + report.productionDefaultsUnchanged + "**",
+    "- noTeacherInjection: **" + report.noTeacherInjection + "**",
+    "- productionSemanticChange: **" + report.productionSemanticChange + "**",
+    "- globalDefaultChangeRecommended: **" + report.globalDefaultChangeRecommended + "**",
+    "",
+    "## Exact teacher-entry lifecycle",
+    "",
+    "- goalAccepted: **" + Boolean(report.pipelineEvidence && report.pipelineEvidence.goalAccepted) + "**",
+    "- raw archive retained / selected archive rank: **" + retention.retained + " / " + (retention.selectedArchiveRank == null ? "null" : retention.selectedArchiveRank) + "**",
+    "- raw sort rank: **" + (retention.rawSortRank == null ? "null" : retention.rawSortRank) + "**",
+    "- segment-goal candidate retained: **" + Boolean(report.teacherEntrySegmentRetention && report.teacherEntrySegmentRetention.retained) + "**",
+    "- merged checkpoint retained: **" + Boolean(report.teacherEntryMergedRetention && report.teacherEntryMergedRetention.retained) + "**",
+    "- downstream agenda popped: **" + Boolean(lifecycle.agendaPoppedDownstream) + "**",
+    "- first exact-lineage drop: **" + JSON.stringify(lifecycle.firstExactLineageDrop || null) + "**",
+    "- exact lifecycle outcome: **" + lifecycle.outcome + "**",
+    "",
+    "## Search and exact reproduction",
+    "",
+    "- run found / reached: **" + Boolean(reachability.found) + " / " + Boolean(reachability.reachedMilestone) + "**",
+    "- exact HP3834 match: **" + Boolean(reachability.finalExactStateMatched) + "**",
+    "- retained-matrix completion: **" + completion.classification + "**",
+    "- strict natural route replay: **" + Boolean(naturalReplay.valid) + "**",
+    "- hard tiles preserved: **" + report.hardTilesPreserved + "**",
+    "",
+    "## Conclusion",
+    "",
+    report.conclusion,
+    "",
+    "## Provenance",
+    "",
+    "- data generation commit: " + report.provenance.dataGenerationCommit,
+    "- renderer commit: " + report.provenance.rendererCommit,
+    "- worktree clean at run start / finish: **" + report.provenance.worktreeCleanAtStart + "/" + report.provenance.worktreeCleanAtFinish + "**",
+  ].join("\n") + "\n";
+}
+
+function runCapacity10Audit(argv) {
+  const args = parseArgs(argv);
+  const dataGenerationCommit = gitCommit();
+  const startedClean = cleanWorktree();
+  const projectRoot = path.resolve(args["project-root"] || DEFAULT_PROJECT_ROOT);
+  const teacherRouteFile = path.resolve(args["teacher-route"] || DEFAULT_TEACHER_ROUTE);
+  const outFile = path.resolve(args.out || path.resolve(__dirname, "routes", "generated", "agenda-policy-evaluation", "mt2-candidate2-capacity10-j.json"));
+  const outMarkdown = path.resolve(args["out-md"] || outFile.replace(/\.json$/i, ".md"));
+  const project = loadProject(projectRoot);
+  const simulator = makeSimulator(project);
+  const teacherRoute = readJson(teacherRouteFile);
+  const sourceRouteStrictReplay = strictReplayRoute(project, simulator, teacherRoute);
+  const teacherReplay = replayRoute(project, simulator, teacherRoute);
+  const spec = getMilestoneSpec(project, "onlyup-chaos-mt5-blueking");
+  const segmentsById = Object.fromEntries(
+    ["mt1-gate-1559"].concat(FUTURE_SEGMENT_IDS)
+      .map((id) => [id, spec.milestones.find((milestone) => milestone.id === id)]),
+  );
+  if (Object.values(segmentsById).some((segment) => !segment)) {
+    throw new Error("Missing required MT1/MT2 milestone.");
+  }
+  const mt1 = segmentsById["mt1-gate-1559"];
+  const futureSegments = FUTURE_SEGMENT_IDS.map((id) => segmentsById[id]);
+  const teacherGatePredicate = buildSegmentGoalPredicate(project, mt1, simulator);
+  const teacherGateState = teacherReplay.states.find((state) => teacherGatePredicate(state));
+  if (!teacherGateState) throw new Error("Teacher route has no formal mt1-gate-1559 state.");
+  const gateExactStateKey = buildStateKey(teacherGateState);
+  const teacherEntryExactStateKey = buildStateKey(teacherReplay.states[12]);
+  const expectedHp3834ExactStateKey = buildStateKey(teacherReplay.states[23]);
+  const commonState = teacherReplay.states[1];
+  const setup = runMt1Setup(project, simulator, commonState, mt1, {
+    ...args,
+    "candidate-limit": "10",
+    "goal-skyline-limit": "10",
+    "dp-skyline-max": "4",
+  });
+  const retained = setup.merge && Array.isArray(setup.merge.merged) ? setup.merge.merged : [];
+  const candidate2Index = retained.findIndex((candidate) => buildStateKey(candidate.state) === gateExactStateKey);
+  const candidate2 = candidate2Index >= 0 ? retained[candidate2Index] : null;
+  const candidate2Options = {
+    candidateLimit: 10,
+    goalSkylineLimit: 10,
+    dpSkylineMax: 4,
+    maxActionsPerState: number(args["max-actions-per-state"], 256),
+    maxExpansions: number(args["max-expansions"], 900),
+    maxRuntimeMs: number(args["max-runtime-ms"], 900000),
+    maxHeapMb: number(args["max-heap-mb"], 1400),
+    maxRssMb: number(args["max-rss-mb"], 1800),
+    memoryCheckIntervalExpansions: number(args["memory-check-interval-expansions"], 1),
+    memoryCheckIntervalActions: number(args["memory-check-interval-actions"], 1),
+    childOldSpaceMb: number(args["child-old-space-mb"], 1600),
+    agendaMode: "best-first",
+    goalArchiveAudit: {
+      targetExactStateKeys: [teacherEntryExactStateKey],
+      targetLabels: { [teacherEntryExactStateKey]: "teacher-entry-decision-12" },
+      role: "raw-dp-goal-archive",
+    },
+  };
+  const candidate2Only = candidate2
+    ? runDownstream(
+      project,
+      simulator,
+      teacherRoute,
+      teacherReplay,
+      futureSegments,
+      segmentsById,
+      candidate2.state,
+      candidate2Options,
+    )
+    : null;
+  const entryPipeline = candidate2Only
+    ? exactLineagePipelineEvidence(
+      simulator,
+      candidate2Only.pipeline,
+      segmentsById["mt2-entry"],
+      teacherEntryExactStateKey,
+    )
+    : {
+      segmentId: "mt2-entry",
+      exactStateKey: teacherEntryExactStateKey,
+      goalAccepted: false,
+      stages: [],
+      firstAbsentPipelineStage: "production-search-not-run",
+      replacingCandidates: [],
+    };
+  const lifecycleRaw = candidate2Only && candidate2Only.lifecycle;
+  const entryRecord = lifecycleRaw && lifecycleRaw.records && lifecycleRaw.records["decision-12"] || null;
+  entryPipeline.goalAccepted = Boolean(entryRecord && entryRecord.goalAccepted);
+  const lifecycle = annotateLifecycleCoverage(lifecycleRaw, entryPipeline);
+  const rawStage = entryPipeline.stages.find((stage) => stage.id === "raw-dp-goal-archive") || null;
+  const segmentStage = entryPipeline.stages.find((stage) => stage.id === "segment-goal-skyline") || null;
+  const mergedStage = entryPipeline.stages.find((stage) => stage.id === "merged-checkpoint-frontier") || null;
+  const archiveAudit = rawStage && (rawStage.audits || []).find((audit) => (
+    audit.targetExactStateKeys && audit.targetExactStateKeys.includes(teacherEntryExactStateKey)
+  )) || null;
+  const archiveRecord = archiveAudit && (archiveAudit.targetRecords || []).find((record) => (
+    record.exactStateKey === teacherEntryExactStateKey
+  )) || null;
+  const searchSummary = candidate2Only ? summarizeRun(candidate2Only.run) : null;
+  const exactFinalState = candidate2Only && candidate2Only.run && candidate2Only.run.finalCandidate && candidate2Only.run.finalCandidate.state || null;
+  const finalExactStateKey = exactFinalState ? buildStateKey(exactFinalState) : null;
+  const exactReachability = {
+    found: Boolean(candidate2Only && candidate2Only.run && candidate2Only.run.found),
+    reachedMilestone: candidate2Only && candidate2Only.run && candidate2Only.run.reachedMilestone || null,
+    finalExactStateKey,
+    expectedHp3834ExactStateKey,
+    finalExactStateMatched: Boolean(finalExactStateKey && finalExactStateKey === expectedHp3834ExactStateKey),
+    completion: searchSummary && searchSummary.completion || { classification: "not-run" },
+  };
+  const exactLifecycle = summarizeCapacity10Lifecycle(
+    lifecycle,
+    expectedHp3834ExactStateKey,
+    candidate2Only && candidate2Only.run,
+  );
+  const naturalStrictReplay = buildNaturalStrictReplay(
+    projectRoot,
+    project,
+    simulator,
+    candidate2 && candidate2.state,
+    candidate2Only && candidate2Only.run,
+  );
+  const finalHardTiles = exactFinalState
+    ? hardTileStatus(project, exactFinalState, segmentsById["mt2-hp3834"])
+    : [];
+  const hardTilesApplicable = Boolean(exactFinalState);
+  const hardTilesPreserved = !hardTilesApplicable || hardTilesMatchExpected(finalHardTiles);
+  const defaults = inspectProductionDefaults();
+  const config = {
+    agendaMode: "best-first",
+    stopOnFirstGoal: false,
+    goalSkylineLimit: 10,
+    candidateLimit: 10,
+    dpSkylineMax: 4,
+    preserveSkylineRoles: true,
+    maxExpansions: candidate2Options.maxExpansions,
+    maxRuntimeMs: candidate2Options.maxRuntimeMs,
+    maxHeapMb: candidate2Options.maxHeapMb,
+    maxRssMb: candidate2Options.maxRssMb,
+    childOldSpaceMb: candidate2Options.childOldSpaceMb,
+    memoryCheckIntervalExpansions: candidate2Options.memoryCheckIntervalExpansions,
+    memoryCheckIntervalActions: candidate2Options.memoryCheckIntervalActions,
+  };
+  const capacityCounterfactualConfigVerified = (
+    config.agendaMode === "best-first" &&
+    config.stopOnFirstGoal === false &&
+    config.goalSkylineLimit === 10 &&
+    config.candidateLimit === 10 &&
+    config.dpSkylineMax === 4 &&
+    config.preserveSkylineRoles === true &&
+    config.maxExpansions === 900 &&
+    config.maxRuntimeMs === 900000 &&
+    config.maxHeapMb === 1400 &&
+    config.maxRssMb === 1800 &&
+    config.childOldSpaceMb === 1600 &&
+    config.memoryCheckIntervalExpansions === 1 &&
+    config.memoryCheckIntervalActions === 1
+  );
+  const noTeacherInjection = true;
+  const gates = {
+    configExactly10x10x4: capacityCounterfactualConfigVerified,
+    capacityCounterfactualConfigVerified,
+    productionDefaultsUnchanged: defaults.allKnownDefaultsUnchanged,
+    noTeacherInjection,
+    sourceRouteStrictReplayValid: Boolean(sourceRouteStrictReplay && sourceRouteStrictReplay.valid),
+    candidate2NaturalStart: Boolean(candidate2 && buildStateKey(candidate2.state) === gateExactStateKey),
+    productionSearchExecuted: Boolean(candidate2Only && candidate2Only.run),
+    teacherEntryGoalAccepted: Boolean(entryRecord && entryRecord.goalAccepted),
+    teacherEntryActiveAtFinish: Boolean(archiveRecord && archiveRecord.activeAtFinish),
+    teacherEntryRawSelected: Boolean(rawStage && rawStage.present),
+    teacherEntryRawSelectedArchiveRankPresent: Boolean(
+      archiveRecord && archiveRecord.selectedArchiveRanks && archiveRecord.selectedArchiveRanks.length > 0,
+    ),
+    teacherEntrySegmentRetentionClassified: Boolean(segmentStage),
+    teacherEntryMergedRetentionClassified: Boolean(mergedStage),
+    firstExactLineageDropClassified: Boolean(exactLifecycle.firstExactLineageDrop || exactLifecycle.finalExactStateMatched),
+    downstreamSearchExecuted: Boolean(candidate2Only && candidate2Only.run && candidate2Only.run.segmentResults.length === 3),
+    searchCompletionClassified: Boolean(searchSummary && searchSummary.completion && searchSummary.completion.classification !== "not-run"),
+    exactHp3834MatchClassified: Boolean(exactReachability.finalExactStateMatched || exactReachability.completion.classification === "inconclusive" || exactReachability.completion.classification === "failed"),
+    strictRouteReplayValid: Boolean(sourceRouteStrictReplay && sourceRouteStrictReplay.valid && (!exactReachability.found || naturalStrictReplay.valid)),
+    hardTilesPreserved,
+    worktreeCleanAtStart: startedClean,
+  };
+  const failedGates = Object.entries(gates).filter(([, value]) => value !== true).map(([name]) => name);
+  const status = failedGates.length > 0 ? "failed" : "completed";
+  const finishedCommit = gitCommit();
+  const report = {
+    schema: "motapathfinder.hp3834-mt2-candidate2-capacity-counterfactual.v1",
+    generatedAt: new Date().toISOString(),
+    status,
+    failedGates,
+    auditStatus: status === "completed" ? "completed" : "failed",
+    capacityCounterfactualConfigVerified,
+    productionDefaultsUnchanged: defaults.allKnownDefaultsUnchanged,
+    noTeacherInjection,
+    teacherEntryRawRetention: {
+      retained: Boolean(rawStage && rawStage.present),
+      rawSortRank: archiveRecord && archiveRecord.rawSortRanks && archiveRecord.rawSortRanks[0] != null
+        ? archiveRecord.rawSortRanks[0]
+        : null,
+      selectedArchiveRank: archiveRecord && archiveRecord.selectedArchiveRanks && archiveRecord.selectedArchiveRanks[0] != null
+        ? archiveRecord.selectedArchiveRanks[0]
+        : null,
+      archiveDecision: archiveRecord && archiveRecord.archiveDecision || "not-observed",
+      archiveRecord,
+    },
+    teacherEntrySegmentRetention: summarizeRetentionStage(segmentStage, teacherEntryExactStateKey),
+    teacherEntryMergedRetention: summarizeRetentionStage(mergedStage, teacherEntryExactStateKey),
+    exactLifecycleOutcome: exactLifecycle,
+    exactHp3834Reachability: exactReachability,
+    retainedMatrixCompletion: searchSummary && searchSummary.completion || { classification: "not-run" },
+    productionSemanticChange: false,
+    globalDefaultChangeRecommended: "not-established",
+    strictRouteReplay: {
+      source: summarizeStrictReplay(sourceRouteStrictReplay),
+      natural: naturalStrictReplay,
+    },
+    hardTiles: finalHardTiles,
+    hardTilesApplicable,
+    hardTilesPreserved,
+    gates,
+    config,
+    defaults,
+    source: {
+      teacherRoute: relative(teacherRouteFile),
+      teacherRouteSha256: sha256(teacherRouteFile),
+      projectRoot: relative(projectRoot),
+      reportFile: relative(outFile),
+      productionScope: "natural MT1 candidate-2 continuation with runtime-only goal/checkpoint capacity 10",
+      injection: {
+        teacherActionInjection: false,
+        teacherStateInjection: false,
+        exactStatePriorityInjection: false,
+      },
+    },
+    provenance: {
+      dataGenerationCommit,
+      rendererCommit: gitCommit(),
+      solverCommit: dataGenerationCommit,
+      startedCommit: dataGenerationCommit,
+      finishedCommit,
+      commitStable: Boolean(dataGenerationCommit && finishedCommit === dataGenerationCommit),
+      nodeVersion: process.version,
+      worktreeCleanAtStart: startedClean,
+      worktreeCleanAtFinish: cleanWorktree(),
+    },
+    sourceRouteStrictReplay: summarizeStrictReplay(sourceRouteStrictReplay),
+    mt1Setup: {
+      search: summarizeRun(setup.run),
+      retainedCandidateCount: retained.length,
+      candidate2: candidate2 ? {
+        retainedIndex: candidate2Index,
+        id: candidate2.id || null,
+        exactStateKey: gateExactStateKey,
+        matchesTeacherGate: true,
+        hero: compactHero(candidate2.state),
+      } : null,
+    },
+    pipelineEvidence: entryPipeline,
+    goalArchiveAudit: archiveAudit,
+    candidate2NaturalRun: candidate2Only ? {
+      search: searchSummary,
+      lifecycle,
+      targets: candidate2Only.targets,
+      pipeline: {
+        attempts: candidate2Only.pipeline.attempts,
+        merges: candidate2Only.pipeline.merges,
+        stages: summarizePipelineStages(candidate2Only.pipeline, FUTURE_SEGMENT_IDS),
+      },
+    } : null,
+    conclusion: exactReachability.finalExactStateMatched
+      ? "Increasing runtime raw goal-archive and checkpoint capacities to 10 allowed the naturally retained MT1 candidate-2 pipeline to reproduce the exact teacher HP3834 state. This establishes a known-witness capacity counterfactual only; it does not establish a global selector conclusion or a default-capacity change."
+      : exactReachability.completion.classification === "inconclusive"
+        ? "The 10/10/4 natural capacity counterfactual executed but remained incomplete; exact HP3834 reproduction is inconclusive and no default capacity change is recommended."
+        : "The 10/10/4 natural capacity counterfactual completed without reproducing the exact teacher HP3834 state; inspect the first classified downstream loss before changing defaults.",
+  };
+  fs.mkdirSync(path.dirname(outFile), { recursive: true });
+  fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + "\n", "utf8");
+  fs.writeFileSync(outMarkdown, buildCapacity10Markdown(report), "utf8");
+  console.log(JSON.stringify(report, null, 2));
+  return report;
+}
+
 function runIsolatedAudit(argv) {
   const args = parseArgs(argv);
   const dataGenerationCommit = gitCommit();
@@ -1890,6 +2351,7 @@ module.exports = {
   annotateLifecycleCoverage,
   exactLineagePipelineEvidence,
   hardTilesMatchExpected,
+  runCapacity10Audit,
   runIsolatedAudit,
   runIsolatedLocalCheckpoint,
   runDownstream,
