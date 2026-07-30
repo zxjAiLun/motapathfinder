@@ -1,4 +1,4 @@
-# PR-4.4h-a exact pipeline and isolated checkpoint audit
+# PR-4.4h-b exact pipeline and isolated checkpoint audit
 
 Status: **inconclusive**
 
@@ -75,7 +75,7 @@ Candidate-2 downstream outcome: **inconclusive**.
 ## Provenance
 
 - data generation commit: d39db9725fb6ffa89532ae3294906d7abefe1b74
-- renderer commit: d39db9725fb6ffa89532ae3294906d7abefe1b74
+- renderer commit: c740acc222ae8d272a163ef12c619feac8b2b13b
 - artifact publication commit: 5cd85a667cbbbb84481f6f0116f445278d95fe38
 - provenance finalization commit: c4a1b43eeedffa0027ccb011ca27c17e40d33f4c
 - clean worktree at run start / finish: **true/true**
