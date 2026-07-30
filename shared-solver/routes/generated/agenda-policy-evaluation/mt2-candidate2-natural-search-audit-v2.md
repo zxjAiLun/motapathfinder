@@ -67,5 +67,5 @@ Candidate-2 downstream outcome: **inconclusive**.
 
 - data generation commit: 45dddee9096ea5d34729dd495a16c000cccea9cd
 - renderer commit: 3ac74f19f7d0ed956c88611ddf6768031885147f
-- artifact commit: pending-artifact-commit
+- artifact commit: a4915d46f25bfbc0773615b27d43600f47eaee39
 - clean worktree at run start / finish: **true/true**

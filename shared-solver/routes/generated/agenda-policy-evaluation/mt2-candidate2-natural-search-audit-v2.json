@@ -165,7 +165,7 @@
   "provenance": {
     "dataGenerationCommit": "45dddee9096ea5d34729dd495a16c000cccea9cd",
     "rendererCommit": "3ac74f19f7d0ed956c88611ddf6768031885147f",
-    "artifactCommit": null,
+    "artifactCommit": "a4915d46f25bfbc0773615b27d43600f47eaee39",
     "solverCommit": "45dddee9096ea5d34729dd495a16c000cccea9cd",
     "startedCommit": "45dddee9096ea5d34729dd495a16c000cccea9cd",
     "finishedCommit": "45dddee9096ea5d34729dd495a16c000cccea9cd",
