@@ -22,7 +22,7 @@ const { buildStateKey, buildDominanceKey } = require("./lib/state-key");
 const { buildDpStateKey } = require("./lib/dp-search");
 const { buildSolverSnapshot } = require("./lib/route-snapshot");
 const { buildRouteRecord, createStateFromSnapshot } = require("./lib/route-store");
-const { cloneState } = require("./lib/state");
+const { cloneState, getTileDefinitionAt } = require("./lib/state");
 const { syncProgress } = require("./lib/progress");
 const {
   createLifecycleObserver,
@@ -492,6 +492,17 @@ function hardTilesMatchExpected(hardTiles) {
   return EXPECTED_HARD_TILES.every(([floorId, x, y]) => actual.has(`${floorId}:${x},${y}`)) &&
     EXPECTED_HARD_TILES.length === (hardTiles || []).length &&
     (hardTiles || []).every((tile) => tile.present === true);
+}
+
+function capacity10HardTileStatus(project, state, segment) {
+  const tiles = ((segment || {}).goal || {}).presentTiles || [];
+  return tiles.map((tile) => ({
+    floorId: tile.floorId,
+    x: tile.x,
+    y: tile.y,
+    reason: tile.reason || null,
+    present: getTileDefinitionAt(project, state, tile.floorId, tile.x, tile.y) != null,
+  }));
 }
 
 function summarizeRun(run) {
@@ -1401,7 +1412,7 @@ function runCapacity10Audit(argv) {
     candidate2Only && candidate2Only.run,
   );
   const finalHardTiles = exactFinalState
-    ? hardTileStatus(project, exactFinalState, segmentsById["mt2-hp3834"])
+    ? capacity10HardTileStatus(project, exactFinalState, segmentsById["mt2-hp3834"])
     : [];
   const hardTilesApplicable = Boolean(exactFinalState);
   const hardTilesPreserved = !hardTilesApplicable || hardTilesMatchExpected(finalHardTiles);
