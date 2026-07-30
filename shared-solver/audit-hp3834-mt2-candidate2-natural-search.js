@@ -1146,7 +1146,9 @@ function summarizeCapacity10Lifecycle(lifecycle, expectedFinalExactStateKey, run
     const decisionIndex = index + 13;
     return records["decision-" + decisionIndex] || null;
   }).filter(Boolean);
-  const firstDrop = downstream.find((record) => record.observed === false) || null;
+  const firstDrop = downstream.find((record) => (
+    record.generated === false && record.postRejoined === true
+  ) || record.observed === false) || null;
   const exactRejoins = downstream
     .filter((record) => record.postRejoined === true)
     .map((record) => record.decisionIndex);
