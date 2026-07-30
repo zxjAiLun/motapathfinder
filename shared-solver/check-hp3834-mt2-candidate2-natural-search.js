@@ -3,7 +3,10 @@
 const assert = require("assert");
 
 const {
+  annotateLifecycleCoverage,
   classifySearch,
+  classifyIsolatedSearch,
+  exactLineagePipelineEvidence,
   hardTilesMatchExpected,
   summarizePipelineStages,
 } = require("./audit-hp3834-mt2-candidate2-natural-search");
@@ -88,4 +91,52 @@ const hardTiles = [
 assert.strictEqual(hardTilesMatchExpected(hardTiles), true);
 assert.strictEqual(hardTilesMatchExpected(hardTiles.slice(0, -1)), false);
 
-console.log("hp3834 candidate-2 natural search audit checks: 13/13 passed");
+const lifecycleRecords = {};
+for (let decision = 11; decision <= 23; decision += 1) {
+  lifecycleRecords[`decision-${decision}`] = {
+    decisionIndex: decision,
+    generated: decision <= 12,
+    successorGenerated: decision <= 12,
+    skylineInserted: decision <= 12,
+    agendaPopped: decision <= 12,
+    goalAccepted: decision === 12,
+    postRejoined: decision <= 12,
+    events: decision <= 12 ? [{ eventType: "candidateGenerated" }] : [],
+    classification: decision <= 12 ? "goal-accepted" : "candidate-not-generated",
+  };
+}
+const coverage = annotateLifecycleCoverage(
+  { records: lifecycleRecords, eventCounts: {}, goalEvents: [], gateGoalEvents: [] },
+  { goalAccepted: true, firstAbsentPipelineStage: "raw-dp-goal-archive" },
+);
+assert.strictEqual(coverage.decisionTargetsDefined, true);
+assert.strictEqual(coverage.lastNaturallyTrackedDecision, 12);
+assert.strictEqual(coverage.firstUnobservedDecision, 13);
+assert.strictEqual(coverage.postDropDecisionsClassifiedNotApplicable, true);
+assert.strictEqual(coverage.records["decision-13"].classification, "not-applicable-exact-lineage-absent");
+
+const pipelineEvidence = exactLineagePipelineEvidence(
+  null,
+  {
+    attempts: [{
+      segmentId: "mt2-entry",
+      rawGoalSkylineStates: [{ exactStateKey: "other" }, { exactStateKey: "teacher" }],
+      segmentGoalSkyline: [{ exactStateKey: "other" }],
+    }],
+    rawMerges: [{ segmentId: "mt2-entry", merged: [{ id: "replacement", exactStateKey: "replacement" }] }],
+  },
+  { id: "mt2-entry" },
+  "teacher",
+);
+assert.strictEqual(pipelineEvidence.stages[0].present, true);
+assert.strictEqual(pipelineEvidence.stages[1].present, false);
+assert.strictEqual(pipelineEvidence.firstAbsentPipelineStage, "segment-goal-skyline");
+assert.strictEqual(pipelineEvidence.replacingCandidates[0].id, "replacement");
+
+const isolatedClassification = classifyIsolatedSearch([
+  { search: { found: false, completion: inconclusiveRun } },
+  { search: { found: true, completion: completeRun } },
+]);
+assert.strictEqual(isolatedClassification.classification, "inconclusive");
+
+console.log("hp3834 candidate-2 natural search audit checks: 25/25 passed");

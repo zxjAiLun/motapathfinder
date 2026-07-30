@@ -416,10 +416,14 @@ function providerForTarget(simulator, segments, targetIndex, state, decision) {
   };
 }
 
-function runFutureValueOracle(project, simulator, startState, teacherRoute, teacherReplay, segments) {
+function runFutureValueOracle(project, simulator, startState, teacherRoute, teacherReplay, segments, options) {
+  const config = options || {};
+  const startDecisionNumber = Number(config.startDecisionNumber || FUTURE_DECISION_START);
+  const endDecisionNumber = Number(config.endDecisionNumber || FUTURE_DECISION_END);
+  const initialTargetIndex = Number(config.initialTargetIndex || 0);
   let state = cloneState(startState);
-  let targetIndex = 0;
-  const decisions = teacherRoute.decisions.slice(FUTURE_DECISION_START - 1, FUTURE_DECISION_END);
+  let targetIndex = initialTargetIndex;
+  const decisions = teacherRoute.decisions.slice(startDecisionNumber - 1, endDecisionNumber);
   const steps = [];
   let failure = null;
   const reached = {};
@@ -487,7 +491,7 @@ function runFutureValueOracle(project, simulator, startState, teacherRoute, teac
   const hpSegment = segments[segments.length - 1];
   const reachedHp3834 = Boolean(reached[hpSegment.id]);
   return {
-    decisionRange: [FUTURE_DECISION_START, FUTURE_DECISION_END],
+    decisionRange: [startDecisionNumber, endDecisionNumber],
     steps,
     failure,
     completeSuffix: steps.length === decisions.length && !failure,
@@ -499,8 +503,8 @@ function runFutureValueOracle(project, simulator, startState, teacherRoute, teac
     finalHero: state ? compactHero(state) : null,
     hardTiles: hardTileStatus(project, state, hpSegment),
     allHardTilesPresent: Boolean(state && hardTileStatus(project, state, hpSegment).every((tile) => tile.present)),
-    teacherExpectedFinal: teacherReplay.states[FUTURE_DECISION_END]
-      ? compactState(teacherReplay.states[FUTURE_DECISION_END])
+    teacherExpectedFinal: teacherReplay.states[endDecisionNumber]
+      ? compactState(teacherReplay.states[endDecisionNumber])
       : null,
   };
 }
