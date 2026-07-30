@@ -464,29 +464,43 @@ function compactGoalArchiveNode(simulator, node, config) {
 
 function describeGoalArchiveComparison(left, right) {
   if (!left || !right) return null;
-  const fields = ["hp", "atk", "def", "mdef", "lv", "exp"];
+  const fields = [
+    "hp",
+    "effectiveAtk",
+    "effectiveDef",
+    "effectiveMdef",
+    "rawLv",
+    "rawExp",
+    "rawAtk",
+    "rawDef",
+    "rawMdef",
+    "routeLength",
+  ];
   const comparison = {
     comparator: "compareGoalStates",
     result: compareGoalStates(left, right),
     hpDiff: heroHp(left) - heroHp(right),
-    atkDiff: effectiveHeroValue(left, "atk") - effectiveHeroValue(right, "atk"),
-    defDiff: effectiveHeroValue(left, "def") - effectiveHeroValue(right, "def"),
-    mdefDiff: effectiveHeroValue(left, "mdef") - effectiveHeroValue(right, "mdef"),
-    lvDiff: Number((left.hero || {}).lv || 0) - Number((right.hero || {}).lv || 0),
-    expDiff: Number((left.hero || {}).exp || 0) - Number((right.hero || {}).exp || 0),
-    routeLengthDiff: routeLengthOfState(left) - routeLengthOfState(right),
+    effectiveAtkDiff: effectiveHeroValue(left, "atk") - effectiveHeroValue(right, "atk"),
+    effectiveDefDiff: effectiveHeroValue(left, "def") - effectiveHeroValue(right, "def"),
+    effectiveMdefDiff: effectiveHeroValue(left, "mdef") - effectiveHeroValue(right, "mdef"),
+    rawLvDiff: Number((left.hero || {}).lv || 0) - Number((right.hero || {}).lv || 0),
+    rawExpDiff: Number((left.hero || {}).exp || 0) - Number((right.hero || {}).exp || 0),
+    rawAtkDiff: Number((left.hero || {}).atk || 0) - Number((right.hero || {}).atk || 0),
+    rawDefDiff: Number((left.hero || {}).def || 0) - Number((right.hero || {}).def || 0),
+    rawMdefDiff: Number((left.hero || {}).mdef || 0) - Number((right.hero || {}).mdef || 0),
+    routeLengthDiff: routeLengthOfState(right) - routeLengthOfState(left),
     firstDecidingField: null,
   };
   for (const field of fields) {
     const diff = field === "hp"
       ? comparison.hpDiff
-      : field === "atk"
-        ? comparison.atkDiff
-        : field === "def"
-          ? comparison.defDiff
-          : field === "mdef"
-            ? comparison.mdefDiff
-            : comparison[`${field}Diff`];
+      : field === "effectiveAtk"
+        ? comparison.effectiveAtkDiff
+        : field === "effectiveDef"
+          ? comparison.effectiveDefDiff
+          : field === "effectiveMdef"
+            ? comparison.effectiveMdefDiff
+            : comparison[`${field.replace("effective", "").replace(/^raw/, "raw")}Diff`] || comparison[`${field}Diff`];
     if (diff !== 0) {
       comparison.firstDecidingField = field;
       break;
@@ -518,6 +532,7 @@ function buildGoalArchiveAudit({
     .slice()
     .sort((left, right) => compareGoalStates(right.state, left.state));
   const sortedIndex = new Map(sortedActive.map((node, index) => [node.nodeId, index]));
+  const selectedIndex = new Map(selectedGoalNodes.map((node, index) => [node.nodeId, index]));
   const targetRecords = targetKeys.map((exactStateKey) => {
     const insertions = accepted.filter((entry) => entry.exactStateKey === exactStateKey);
     const evictions = events.filter((event) => (
@@ -535,8 +550,12 @@ function buildGoalArchiveAudit({
     const firstInsertion = insertions[0] || null;
     const targetNode = activeGoalNodes.find((node) => node.nodeId === (firstInsertion && firstInsertion.nodeId));
     const targetPosition = targetNode ? sortedIndex.get(targetNode.nodeId) : null;
-    const capacityBoundaryNode = targetPosition != null && targetPosition >= goalArchiveCapacity
-      ? sortedActive[goalArchiveCapacity - 1]
+    const targetKey = targetNode && (config.preserveGoalArchive ? `goal:${targetNode.nodeId}` : targetNode.key || targetNode.stateKey || `node:${targetNode.nodeId}`);
+    const selectedTargetKey = targetKey && selectedGoalNodes.some((node) => (
+      (config.preserveGoalArchive ? `goal:${node.nodeId}` : node.key || node.stateKey || `node:${node.nodeId}`) === targetKey
+    ));
+    const capacityBoundaryNode = targetPosition != null && !selectedInsertions.length && !selectedTargetKey
+      ? selectedGoalNodes[selectedGoalNodes.length - 1]
       : null;
     const capacityBoundaryWitness = capacityBoundaryNode
       ? compactGoalArchiveNode(simulator, capacityBoundaryNode, config)
@@ -549,7 +568,8 @@ function buildGoalArchiveAudit({
       nodeIds,
       activeAtFinish: activeInsertions.length > 0,
       selectedAtFinish: selectedInsertions.length > 0,
-      sortPositions: activeInsertions.map((entry) => sortedIndex.get(entry.nodeId)).filter((index) => index != null),
+      rawSortRanks: activeInsertions.map((entry) => sortedIndex.get(entry.nodeId)).filter((index) => index != null),
+      selectedArchiveRanks: selectedInsertions.map((entry) => selectedIndex.get(entry.nodeId)).filter((index) => index != null),
       archiveDecision: firstEviction
         ? "evicted-by-skyline-replacement"
         : rejections.length > 0
@@ -565,11 +585,16 @@ function buildGoalArchiveAudit({
               : "inactive-without-captured-replacement",
       evictions,
       rejections,
-      actualReplacementWitness: firstEviction && firstEviction.replacement || capacityBoundaryWitness,
+      witnessKind: firstEviction
+        ? "goal-archive-eviction-replacement"
+        : capacityBoundaryWitness
+          ? "goal-archive-capacity-boundary"
+          : null,
+      actualReplacementWitness: firstEviction && firstEviction.replacement || null,
+      capacityBoundaryWitness,
       comparison: firstEviction && firstEviction.comparison || capacityBoundaryNode
         ? describeGoalArchiveComparison(targetNode && targetNode.state, capacityBoundaryNode && capacityBoundaryNode.state)
         : null,
-      capacityBoundary: capacityBoundaryWitness,
       initialInsertion: firstInsertion || null,
     };
   });
@@ -583,7 +608,8 @@ function buildGoalArchiveAudit({
     dpSkylineCapacity: Number(config.dpSkylineMax || 1),
     goalArchiveRole: config.goalArchiveAudit.role || "raw-dp-goal-archive",
     activeCandidates: sortedActive.map((node, index) => ({
-      rank: index,
+      rawSortRank: index,
+      selectedArchiveRank: selectedIndex.has(node.nodeId) ? selectedIndex.get(node.nodeId) : null,
       selected: selectedNodeIds.has(node.nodeId),
       candidate: compactGoalArchiveNode(simulator, node, config),
     })),

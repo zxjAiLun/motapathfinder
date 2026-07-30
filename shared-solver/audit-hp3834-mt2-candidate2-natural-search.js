@@ -961,6 +961,8 @@ function buildIsolatedMarkdown(report) {
       "- archiveDecision: **" + archiveRecord.archiveDecision + "**",
       "- activeAtFinish / selectedAtFinish: **" + archiveRecord.activeAtFinish + " / " + archiveRecord.selectedAtFinish + "**",
       "- actual replacement witness: **" + Boolean(archiveRecord.actualReplacementWitness) + "**",
+      "- witness kind: **" + (archiveRecord.witnessKind || "none") + "**",
+      "- capacity boundary witness: **" + Boolean(archiveRecord.capacityBoundaryWitness) + "**",
       "- comparator result: " + JSON.stringify(archiveRecord.comparison || null),
       "- archive size / goal capacity / DP skyline capacity: **" + [
         archiveAudit.goalNodesSeen,
@@ -1057,19 +1059,26 @@ function buildGoalArchiveMarkdown(report) {
     "",
     "Status: **" + report.status + "**",
     "",
+    "- auditStatus: **" + report.auditStatus + "**",
+    "- teacherEntryArchiveOutcome: **" + report.teacherEntryArchiveOutcome + "**",
+    "- boundaryWitnessContinuation: **" + report.boundaryWitnessContinuation + "**",
+    "- productionSemanticChange: **" + report.productionSemanticChange + "**",
+    "",
     "## Teacher entry archive decision",
     "",
     "- goalAccepted: **" + Boolean(report.pipelineEvidence && report.pipelineEvidence.goalAccepted) + "**",
     "- raw goal archive retained: **" + Boolean(report.pipelineEvidence && report.pipelineEvidence.stages && report.pipelineEvidence.stages.find((stage) => stage.id === "raw-dp-goal-archive" && stage.present)) + "**",
     "- insertionCount: **" + (teacherEntry.insertionCount || 0) + "**",
     "- archiveDecision: **" + (teacherEntry.archiveDecision || "not-observed") + "**",
+    "- witnessKind: **" + (teacherEntry.witnessKind || "none") + "**",
     "- activeAtFinish / selectedAtFinish: **" + Boolean(teacherEntry.activeAtFinish) + " / " + Boolean(teacherEntry.selectedAtFinish) + "**",
     "- goal nodes / goal archive capacity / DP skyline capacity: **" + [
       audit.entryStage && audit.entryStage.goalNodesSeen,
       audit.entryStage && audit.entryStage.goalArchiveCapacity,
       audit.entryStage && audit.entryStage.dpSkylineCapacity,
     ].join(" / ") + "**",
-    "- actual archive witness: **" + Boolean(teacherEntry.actualReplacementWitness) + "**",
+    "- capacity boundary witness: **" + Boolean(teacherEntry.capacityBoundaryWitness) + "**",
+    "- actual replacement witness: **" + Boolean(teacherEntry.actualReplacementWitness) + "**",
     "- comparator: " + JSON.stringify(teacherEntry.comparison || null),
     "",
     "## Witness-level continuation",
@@ -1186,7 +1195,10 @@ function runIsolatedAudit(argv) {
   const teacherEntryArchiveRecord = entryGoalArchiveAudit && (entryGoalArchiveAudit.targetRecords || []).find((record) => (
     record.exactStateKey === entryPipeline.exactStateKey
   )) || null;
-  const actualArchiveWitness = teacherEntryArchiveRecord && teacherEntryArchiveRecord.actualReplacementWitness || null;
+  const actualArchiveWitness = teacherEntryArchiveRecord && (
+    teacherEntryArchiveRecord.capacityBoundaryWitness ||
+    teacherEntryArchiveRecord.actualReplacementWitness
+  ) || null;
   const archiveWitnessContinuationRun = actualArchiveWitness && actualArchiveWitness.state
     ? runDownstream(
       project,
@@ -1222,6 +1234,12 @@ function runIsolatedAudit(argv) {
       schema: "motapathfinder.hp3834-mt2-candidate2-goal-archive-audit.v1",
       generatedAt: new Date().toISOString(),
       status: archiveAuditComplete ? "completed" : "failed",
+      auditStatus: archiveAuditComplete ? "completed" : "failed",
+      teacherEntryArchiveOutcome: teacherEntryArchiveRecord && teacherEntryArchiveRecord.archiveDecision || "not-observed",
+      boundaryWitnessContinuation: archiveWitnessContinuation.search &&
+        archiveWitnessContinuation.search.completion &&
+        archiveWitnessContinuation.search.completion.classification || "not-run",
+      productionSemanticChange: false,
       auditKind: "raw-dp-goal-archive-witness",
       config: {
         agendaMode: candidate2Options.agendaMode,
@@ -1272,7 +1290,7 @@ function runIsolatedAudit(argv) {
         actualWitnessContinuation: archiveWitnessContinuation,
       },
       conclusion: archiveAuditComplete
-        ? "Teacher exact entry was goalAccepted but omitted from the raw goal archive by " + teacherEntryArchiveRecord.archiveDecision + "; the recorded actual archive witness was sent through production downstream continuation."
+        ? "Teacher exact entry was goalAccepted but omitted from the raw goal archive by " + teacherEntryArchiveRecord.archiveDecision + "; the capacity boundary witness was sent through production downstream continuation."
         : "The raw goal archive witness audit did not produce a complete target record and continuation.",
     };
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
