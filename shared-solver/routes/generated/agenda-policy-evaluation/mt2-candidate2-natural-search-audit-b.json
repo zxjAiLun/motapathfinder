@@ -162,7 +162,14 @@
     "exactTeacherLocalCounterfactualExecuted": true,
     "exactTeacherEntryCounterfactualExecuted": true,
     "counterfactualWorkersExitedCleanly": true,
-    "counterfactualSnapshotRoundTripsExact": true
+    "counterfactualSnapshotRoundTripsExact": true,
+    "exactTeacherLocalCounterfactualFound": true,
+    "exactTeacherEntryCounterfactualFound": true,
+    "exactTeacherLocalReachedHp3834": true,
+    "exactTeacherEntryReachedHp3834": true,
+    "exactTeacherLocalFinalExactMatched": true,
+    "exactTeacherEntryFinalExactMatched": true,
+    "knownExactWitnessCausalityEstablished": true
   },
   "config": {
     "agendaMode": "best-first",
@@ -188,13 +195,13 @@
   },
   "provenance": {
     "dataGenerationCommit": "d39db9725fb6ffa89532ae3294906d7abefe1b74",
-    "rendererCommit": "c740acc222ae8d272a163ef12c619feac8b2b13b",
+    "rendererCommit": "523326c50164535d88c552934aad537e5f258703",
     "artifactPublicationCommit": "5cd85a667cbbbb84481f6f0116f445278d95fe38",
     "provenanceFinalizationCommit": "c4a1b43eeedffa0027ccb011ca27c17e40d33f4c",
     "solverCommit": "d39db9725fb6ffa89532ae3294906d7abefe1b74",
     "startedCommit": "d39db9725fb6ffa89532ae3294906d7abefe1b74",
-    "finishedCommit": "d39db9725fb6ffa89532ae3294906d7abefe1b74",
-    "commitStable": true,
+    "finishedCommit": "523326c50164535d88c552934aad537e5f258703",
+    "commitStable": false,
     "nodeVersion": "v24.18.0",
     "worktreeCleanAtStart": true,
     "worktreeCleanAtFinish": true
@@ -59984,5 +59991,22 @@
   "conditions": {
     "fullFrontierApplicable": false
   },
-  "conclusion": "The isolated local checkpoint matrix did not establish HP3834 completion; retain inconclusive status and inspect exact pipeline/replacement evidence."
+  "conclusion": "Known exact teacher witness causality is established: both exact teacher local and exact teacher entry counterfactuals naturally reach the known HP3834 exact state. The retained checkpoint matrix remains inconclusive; frontier exhaustion and global selector correctness are not established.",
+  "counterfactualAssessment": {
+    "expectedHp3834ExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":3834,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":72,\"def\":35,\"mdef\":290,\"money\":0,\"exp\":1,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":68,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}",
+    "exactTeacherLocalCounterfactualFound": true,
+    "exactTeacherEntryCounterfactualFound": true,
+    "exactTeacherLocalReachedHp3834": true,
+    "exactTeacherEntryReachedHp3834": true,
+    "exactTeacherLocalFinalExactMatched": true,
+    "exactTeacherEntryFinalExactMatched": true,
+    "exactCounterfactualReachability": "success",
+    "knownExactWitnessCausality": "established",
+    "knownExactWitnessCausalityEstablished": true
+  },
+  "overallStatus": "inconclusive",
+  "retainedCheckpointMatrixOutcome": "inconclusive",
+  "exactCounterfactualReachability": "success",
+  "knownExactWitnessCausality": "established",
+  "globalSelectorCorrectness": "not-established"
 }

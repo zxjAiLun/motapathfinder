@@ -4,6 +4,16 @@ Status: **inconclusive**
 
 Candidate-2 downstream outcome: **inconclusive**.
 
+## Conclusion dimensions
+
+- overallStatus: **inconclusive**
+- retainedCheckpointMatrixOutcome: **inconclusive**
+- exactCounterfactualReachability: **success**
+- knownExactWitnessCausality: **established**
+- globalSelectorCorrectness: **not-established**
+- conclusion: Known exact teacher witness causality is established: both exact teacher local and exact teacher entry counterfactuals naturally reach the known HP3834 exact state. The retained checkpoint matrix remains inconclusive; frontier exhaustion and global selector correctness are not established.
+- Both exact counterfactuals naturally reached the known exact HP3834 state; remaining frontier limits exhaustiveness, not positive reachability.
+
 ## Gate summary
 
 - Source route strict replay: **true**.
@@ -69,13 +79,13 @@ Candidate-2 downstream outcome: **inconclusive**.
 ## Exact-state counterfactuals
 
 - enabled=true.
-- exactTeacherLocal: found=true, completion=inconclusive, roundTrip=true.
-- exactTeacherEntry: found=true, completion=inconclusive, roundTrip=true.
+- exactTeacherLocal: found=true, reached=true, finalExactMatched=true, completion=inconclusive, roundTrip=true.
+- exactTeacherEntry: found=true, reached=true, finalExactMatched=true, completion=inconclusive, roundTrip=true.
 
 ## Provenance
 
 - data generation commit: d39db9725fb6ffa89532ae3294906d7abefe1b74
-- renderer commit: c740acc222ae8d272a163ef12c619feac8b2b13b
+- renderer commit: 523326c50164535d88c552934aad537e5f258703
 - artifact publication commit: 5cd85a667cbbbb84481f6f0116f445278d95fe38
 - provenance finalization commit: c4a1b43eeedffa0027ccb011ca27c17e40d33f4c
 - clean worktree at run start / finish: **true/true**
