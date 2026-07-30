@@ -2,16 +2,23 @@
 
 Status: **completed**
 
+- auditStatus: **completed**
+- teacherEntryArchiveOutcome: **rejected-by-goal-archive-capacity**
+- boundaryWitnessContinuation: **inconclusive**
+- productionSemanticChange: **false**
+
 ## Teacher entry archive decision
 
 - goalAccepted: **true**
 - raw goal archive retained: **false**
 - insertionCount: **1**
 - archiveDecision: **rejected-by-goal-archive-capacity**
+- witnessKind: **goal-archive-capacity-boundary**
 - activeAtFinish / selectedAtFinish: **true / false**
 - goal nodes / goal archive capacity / DP skyline capacity: **10 / 8 / 4**
-- actual archive witness: **true**
-- comparator: {"comparator":"compareGoalStates","result":-369,"hpDiff":-369,"atkDiff":0,"defDiff":0,"mdefDiff":0,"lvDiff":0,"expDiff":-1,"routeLengthDiff":3,"firstDecidingField":"hp"}
+- capacity boundary witness: **true**
+- actual replacement witness: **false**
+- comparator: {"comparator":"compareGoalStates","result":-369,"hpDiff":-369,"effectiveAtkDiff":0,"effectiveDefDiff":0,"effectiveMdefDiff":0,"rawLvDiff":0,"rawExpDiff":-1,"rawAtkDiff":0,"rawDefDiff":0,"rawMdefDiff":0,"routeLengthDiff":-3,"firstDecidingField":"hp"}
 
 ## Witness-level continuation
 
@@ -23,9 +30,9 @@ Status: **completed**
 
 ## Conclusion
 
-Teacher exact entry was goalAccepted but omitted from the raw goal archive by rejected-by-goal-archive-capacity; the recorded actual archive witness was sent through production downstream continuation.
+Teacher exact entry was goalAccepted but omitted from the raw goal archive by rejected-by-goal-archive-capacity; the capacity boundary witness was sent through production downstream continuation.
 
 ## Provenance
 
-- data generation commit: c630f981e45987fbbe00d4f7f41886b070131a58
-- renderer commit: c630f981e45987fbbe00d4f7f41886b070131a58
+- data generation commit: 2dcbccddc5d0350ae29a1ac28fabc9b29855f5a9
+- renderer commit: 2dcbccddc5d0350ae29a1ac28fabc9b29855f5a9

@@ -1,7 +1,11 @@
 {
   "schema": "motapathfinder.hp3834-mt2-candidate2-goal-archive-audit.v1",
-  "generatedAt": "2026-07-30T11:02:21.799Z",
+  "generatedAt": "2026-07-30T11:47:11.368Z",
   "status": "completed",
+  "auditStatus": "completed",
+  "teacherEntryArchiveOutcome": "rejected-by-goal-archive-capacity",
+  "boundaryWitnessContinuation": "inconclusive",
+  "productionSemanticChange": false,
   "auditKind": "raw-dp-goal-archive-witness",
   "config": {
     "agendaMode": "best-first",
@@ -17,13 +21,13 @@
     "memoryCheckIntervalActions": 1
   },
   "provenance": {
-    "dataGenerationCommit": "c630f981e45987fbbe00d4f7f41886b070131a58",
-    "rendererCommit": "c630f981e45987fbbe00d4f7f41886b070131a58",
+    "dataGenerationCommit": "2dcbccddc5d0350ae29a1ac28fabc9b29855f5a9",
+    "rendererCommit": "2dcbccddc5d0350ae29a1ac28fabc9b29855f5a9",
     "artifactPublicationCommit": null,
     "provenanceFinalizationCommit": null,
-    "solverCommit": "c630f981e45987fbbe00d4f7f41886b070131a58",
-    "startedCommit": "c630f981e45987fbbe00d4f7f41886b070131a58",
-    "finishedCommit": "c630f981e45987fbbe00d4f7f41886b070131a58",
+    "solverCommit": "2dcbccddc5d0350ae29a1ac28fabc9b29855f5a9",
+    "startedCommit": "2dcbccddc5d0350ae29a1ac28fabc9b29855f5a9",
+    "finishedCommit": "2dcbccddc5d0350ae29a1ac28fabc9b29855f5a9",
     "commitStable": true,
     "nodeVersion": "v24.18.0",
     "worktreeCleanAtStart": true,
@@ -23752,9 +23756,9 @@
               "memoryCheckIntervalExpansions": 1,
               "memoryCheckIntervalActions": 1,
               "memoryLimitsEnabled": true,
-              "wallMs": 3016,
-              "heapUsedMb": 278.6,
-              "rssMb": 467.8,
+              "wallMs": 4999,
+              "heapUsedMb": 440.3,
+              "rssMb": 601.1,
               "memory": {
                 "maxHeapMb": 1400,
                 "maxRssMb": 1800,
@@ -23762,8 +23766,8 @@
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
                 "successorCheckGranularity": "action-batch",
-                "peakHeapUsedMb": 278.6,
-                "peakRssMb": 467.8,
+                "peakHeapUsedMb": 440.3,
+                "peakRssMb": 601.1,
                 "stopHeapUsedMb": null,
                 "stopRssMb": null,
                 "stoppedReason": null,
@@ -23830,7 +23834,7 @@
               "targetFloorOrder": 2,
               "foundFirstGoal": true,
               "firstGoalExpansion": 2,
-              "firstGoalElapsedMs": 393,
+              "firstGoalElapsedMs": 757,
               "statProgress": {
                 "maxHeroSeen": {
                   "hp": 3250,
@@ -24264,9 +24268,9 @@
               "memoryCheckIntervalExpansions": 1,
               "memoryCheckIntervalActions": 1,
               "memoryLimitsEnabled": true,
-              "wallMs": 21780,
-              "heapUsedMb": 558.1,
-              "rssMb": 721.8,
+              "wallMs": 24021,
+              "heapUsedMb": 523.4,
+              "rssMb": 686.6,
               "memory": {
                 "maxHeapMb": 1400,
                 "maxRssMb": 1800,
@@ -24274,8 +24278,8 @@
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
                 "successorCheckGranularity": "action-batch",
-                "peakHeapUsedMb": 558.1,
-                "peakRssMb": 721.8,
+                "peakHeapUsedMb": 523.4,
+                "peakRssMb": 686.6,
                 "stopHeapUsedMb": null,
                 "stopRssMb": null,
                 "stoppedReason": null,
@@ -24295,7 +24299,7 @@
               "statesWithActionTrim": 0,
               "maxActionsGeneratedForState": 6,
               "observerCaptureMode": "targeted-state",
-              "observerCaptureElapsedMs": 11,
+              "observerCaptureElapsedMs": 16,
               "agendaFairness": {
                 "enabled": false,
                 "fairnessEvery": 32,
@@ -24338,7 +24342,7 @@
               "targetFloorOrder": 2,
               "foundFirstGoal": true,
               "firstGoalExpansion": 3,
-              "firstGoalElapsedMs": 54,
+              "firstGoalElapsedMs": 95,
               "statProgress": {
                 "maxHeroSeen": {
                   "hp": 6155,
@@ -24665,9 +24669,9 @@
               "memoryCheckIntervalExpansions": 1,
               "memoryCheckIntervalActions": 1,
               "memoryLimitsEnabled": true,
-              "wallMs": 12263,
-              "heapUsedMb": 625.1,
-              "rssMb": 793.7,
+              "wallMs": 18731,
+              "heapUsedMb": 658,
+              "rssMb": 831,
               "memory": {
                 "maxHeapMb": 1400,
                 "maxRssMb": 1800,
@@ -24675,8 +24679,8 @@
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
                 "successorCheckGranularity": "action-batch",
-                "peakHeapUsedMb": 625.1,
-                "peakRssMb": 793.7,
+                "peakHeapUsedMb": 658,
+                "peakRssMb": 831,
                 "stopHeapUsedMb": null,
                 "stopRssMb": null,
                 "stoppedReason": null,
@@ -24696,7 +24700,7 @@
               "statesWithActionTrim": 0,
               "maxActionsGeneratedForState": 5,
               "observerCaptureMode": "targeted-state",
-              "observerCaptureElapsedMs": 14,
+              "observerCaptureElapsedMs": 19,
               "agendaFairness": {
                 "enabled": false,
                 "fairnessEvery": 32,
@@ -24739,7 +24743,7 @@
               "targetFloorOrder": 2,
               "foundFirstGoal": true,
               "firstGoalExpansion": 4,
-              "firstGoalElapsedMs": 121,
+              "firstGoalElapsedMs": 166,
               "statProgress": {
                 "maxHeroSeen": {
                   "hp": 5408,
@@ -25019,9 +25023,9 @@
               "memoryCheckIntervalExpansions": 1,
               "memoryCheckIntervalActions": 1,
               "memoryLimitsEnabled": true,
-              "wallMs": 15678,
-              "heapUsedMb": 745.8,
-              "rssMb": 925.9,
+              "wallMs": 21865,
+              "heapUsedMb": 696.8,
+              "rssMb": 873.5,
               "memory": {
                 "maxHeapMb": 1400,
                 "maxRssMb": 1800,
@@ -25029,8 +25033,8 @@
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
                 "successorCheckGranularity": "action-batch",
-                "peakHeapUsedMb": 745.8,
-                "peakRssMb": 925.9,
+                "peakHeapUsedMb": 696.8,
+                "peakRssMb": 873.5,
                 "stopHeapUsedMb": null,
                 "stopRssMb": null,
                 "stoppedReason": null,
@@ -25050,7 +25054,7 @@
               "statesWithActionTrim": 0,
               "maxActionsGeneratedForState": 6,
               "observerCaptureMode": "targeted-state",
-              "observerCaptureElapsedMs": 16,
+              "observerCaptureElapsedMs": 15,
               "agendaFairness": {
                 "enabled": false,
                 "fairnessEvery": 32,
@@ -25093,7 +25097,7 @@
               "targetFloorOrder": 2,
               "foundFirstGoal": true,
               "firstGoalExpansion": 4,
-              "firstGoalElapsedMs": 148,
+              "firstGoalElapsedMs": 214,
               "statProgress": {
                 "maxHeroSeen": {
                   "hp": 5675,
@@ -25373,9 +25377,9 @@
               "memoryCheckIntervalExpansions": 1,
               "memoryCheckIntervalActions": 1,
               "memoryLimitsEnabled": true,
-              "wallMs": 15909,
-              "heapUsedMb": 861.4,
-              "rssMb": 1053.4,
+              "wallMs": 24010,
+              "heapUsedMb": 642.5,
+              "rssMb": 870.1,
               "memory": {
                 "maxHeapMb": 1400,
                 "maxRssMb": 1800,
@@ -25383,8 +25387,8 @@
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
                 "successorCheckGranularity": "action-batch",
-                "peakHeapUsedMb": 861.4,
-                "peakRssMb": 1053.4,
+                "peakHeapUsedMb": 642.5,
+                "peakRssMb": 870.1,
                 "stopHeapUsedMb": null,
                 "stopRssMb": null,
                 "stoppedReason": null,
@@ -25404,7 +25408,7 @@
               "statesWithActionTrim": 0,
               "maxActionsGeneratedForState": 6,
               "observerCaptureMode": "targeted-state",
-              "observerCaptureElapsedMs": 5,
+              "observerCaptureElapsedMs": 13,
               "agendaFairness": {
                 "enabled": false,
                 "fairnessEvery": 32,
@@ -25447,7 +25451,7 @@
               "targetFloorOrder": 2,
               "foundFirstGoal": true,
               "firstGoalExpansion": 3,
-              "firstGoalElapsedMs": 94,
+              "firstGoalElapsedMs": 169,
               "statProgress": {
                 "maxHeroSeen": {
                   "hp": 6155,
@@ -25774,9 +25778,9 @@
               "memoryCheckIntervalExpansions": 1,
               "memoryCheckIntervalActions": 1,
               "memoryLimitsEnabled": true,
-              "wallMs": 31819,
-              "heapUsedMb": 686.2,
-              "rssMb": 1045.4,
+              "wallMs": 21569,
+              "heapUsedMb": 654,
+              "rssMb": 875.3,
               "memory": {
                 "maxHeapMb": 1400,
                 "maxRssMb": 1800,
@@ -25784,8 +25788,8 @@
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
                 "successorCheckGranularity": "action-batch",
-                "peakHeapUsedMb": 686.2,
-                "peakRssMb": 1045.4,
+                "peakHeapUsedMb": 654,
+                "peakRssMb": 875.3,
                 "stopHeapUsedMb": null,
                 "stopRssMb": null,
                 "stoppedReason": null,
@@ -25805,7 +25809,7 @@
               "statesWithActionTrim": 0,
               "maxActionsGeneratedForState": 6,
               "observerCaptureMode": "targeted-state",
-              "observerCaptureElapsedMs": 27,
+              "observerCaptureElapsedMs": 16,
               "agendaFairness": {
                 "enabled": false,
                 "fairnessEvery": 32,
@@ -25848,7 +25852,7 @@
               "targetFloorOrder": 2,
               "foundFirstGoal": true,
               "firstGoalExpansion": 4,
-              "firstGoalElapsedMs": 293,
+              "firstGoalElapsedMs": 173,
               "statProgress": {
                 "maxHeroSeen": {
                   "hp": 5675,
@@ -26128,9 +26132,9 @@
               "memoryCheckIntervalExpansions": 1,
               "memoryCheckIntervalActions": 1,
               "memoryLimitsEnabled": true,
-              "wallMs": 10819,
-              "heapUsedMb": 803,
-              "rssMb": 1056.3,
+              "wallMs": 12690,
+              "heapUsedMb": 777.8,
+              "rssMb": 975.7,
               "memory": {
                 "maxHeapMb": 1400,
                 "maxRssMb": 1800,
@@ -26138,8 +26142,8 @@
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
                 "successorCheckGranularity": "action-batch",
-                "peakHeapUsedMb": 803,
-                "peakRssMb": 1056.3,
+                "peakHeapUsedMb": 777.8,
+                "peakRssMb": 975.7,
                 "stopHeapUsedMb": null,
                 "stopRssMb": null,
                 "stoppedReason": null,
@@ -26159,7 +26163,7 @@
               "statesWithActionTrim": 0,
               "maxActionsGeneratedForState": 5,
               "observerCaptureMode": "targeted-state",
-              "observerCaptureElapsedMs": 4,
+              "observerCaptureElapsedMs": 5,
               "agendaFairness": {
                 "enabled": false,
                 "fairnessEvery": 32,
@@ -26202,7 +26206,7 @@
               "targetFloorOrder": 2,
               "foundFirstGoal": true,
               "firstGoalExpansion": 3,
-              "firstGoalElapsedMs": 120,
+              "firstGoalElapsedMs": 92,
               "statProgress": {
                 "maxHeroSeen": {
                   "hp": 4928,
@@ -26482,9 +26486,9 @@
               "memoryCheckIntervalExpansions": 1,
               "memoryCheckIntervalActions": 1,
               "memoryLimitsEnabled": true,
-              "wallMs": 8179,
-              "heapUsedMb": 323.9,
-              "rssMb": 1023.3,
+              "wallMs": 11242,
+              "heapUsedMb": 327.3,
+              "rssMb": 944.3,
               "memory": {
                 "maxHeapMb": 1400,
                 "maxRssMb": 1800,
@@ -26492,8 +26496,8 @@
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
                 "successorCheckGranularity": "action-batch",
-                "peakHeapUsedMb": 323.9,
-                "peakRssMb": 1023.3,
+                "peakHeapUsedMb": 327.3,
+                "peakRssMb": 944.3,
                 "stopHeapUsedMb": null,
                 "stopRssMb": null,
                 "stoppedReason": null,
@@ -26513,7 +26517,7 @@
               "statesWithActionTrim": 0,
               "maxActionsGeneratedForState": 5,
               "observerCaptureMode": "targeted-state",
-              "observerCaptureElapsedMs": 5,
+              "observerCaptureElapsedMs": 3,
               "agendaFairness": {
                 "enabled": false,
                 "fairnessEvery": 32,
@@ -26556,7 +26560,7 @@
               "targetFloorOrder": 2,
               "foundFirstGoal": true,
               "firstGoalExpansion": 3,
-              "firstGoalElapsedMs": 45,
+              "firstGoalElapsedMs": 76,
               "statProgress": {
                 "maxHeroSeen": {
                   "hp": 4875,
@@ -26836,9 +26840,9 @@
               "memoryCheckIntervalExpansions": 1,
               "memoryCheckIntervalActions": 1,
               "memoryLimitsEnabled": true,
-              "wallMs": 8928,
-              "heapUsedMb": 413.8,
-              "rssMb": 1032.7,
+              "wallMs": 11071,
+              "heapUsedMb": 452,
+              "rssMb": 956,
               "memory": {
                 "maxHeapMb": 1400,
                 "maxRssMb": 1800,
@@ -26846,8 +26850,8 @@
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
                 "successorCheckGranularity": "action-batch",
-                "peakHeapUsedMb": 413.8,
-                "peakRssMb": 1032.7,
+                "peakHeapUsedMb": 452,
+                "peakRssMb": 956,
                 "stopHeapUsedMb": null,
                 "stopRssMb": null,
                 "stoppedReason": null,
@@ -26867,7 +26871,7 @@
               "statesWithActionTrim": 0,
               "maxActionsGeneratedForState": 5,
               "observerCaptureMode": "targeted-state",
-              "observerCaptureElapsedMs": 2,
+              "observerCaptureElapsedMs": 3,
               "agendaFairness": {
                 "enabled": false,
                 "fairnessEvery": 32,
@@ -26910,7 +26914,7 @@
               "targetFloorOrder": 2,
               "foundFirstGoal": true,
               "firstGoalExpansion": 3,
-              "firstGoalElapsedMs": 47,
+              "firstGoalElapsedMs": 84,
               "statProgress": {
                 "maxHeroSeen": {
                   "hp": 4875,
@@ -27178,8 +27182,8 @@
         "maxRssMb": 1800,
         "memoryCheckIntervalExpansions": 1,
         "memoryCheckIntervalActions": 1,
-        "peakHeapUsedMb": 861.4,
-        "peakRssMb": 1056.3,
+        "peakHeapUsedMb": 777.8,
+        "peakRssMb": 975.7,
         "heapLimitedCount": 0,
         "rssLimitedCount": 0,
         "stoppedReason": null,
@@ -27400,7 +27404,8 @@
             "goalArchiveRole": "raw-dp-goal-archive",
             "activeCandidates": [
               {
-                "rank": 0,
+                "rawSortRank": 0,
+                "selectedArchiveRank": 0,
                 "selected": true,
                 "candidate": {
                   "nodeId": 15,
@@ -27682,7 +27687,8 @@
                 }
               },
               {
-                "rank": 1,
+                "rawSortRank": 1,
+                "selectedArchiveRank": 1,
                 "selected": true,
                 "candidate": {
                   "nodeId": 17,
@@ -27964,7 +27970,8 @@
                 }
               },
               {
-                "rank": 2,
+                "rawSortRank": 2,
+                "selectedArchiveRank": 2,
                 "selected": true,
                 "candidate": {
                   "nodeId": 21,
@@ -28242,7 +28249,8 @@
                 }
               },
               {
-                "rank": 3,
+                "rawSortRank": 3,
+                "selectedArchiveRank": 3,
                 "selected": true,
                 "candidate": {
                   "nodeId": 23,
@@ -28520,7 +28528,8 @@
                 }
               },
               {
-                "rank": 4,
+                "rawSortRank": 4,
+                "selectedArchiveRank": 4,
                 "selected": true,
                 "candidate": {
                   "nodeId": 16,
@@ -28804,7 +28813,8 @@
                 }
               },
               {
-                "rank": 5,
+                "rawSortRank": 5,
+                "selectedArchiveRank": 5,
                 "selected": true,
                 "candidate": {
                   "nodeId": 22,
@@ -29084,7 +29094,8 @@
                 }
               },
               {
-                "rank": 6,
+                "rawSortRank": 6,
+                "selectedArchiveRank": 6,
                 "selected": true,
                 "candidate": {
                   "nodeId": 11,
@@ -29362,7 +29373,8 @@
                 }
               },
               {
-                "rank": 7,
+                "rawSortRank": 7,
+                "selectedArchiveRank": 7,
                 "selected": true,
                 "candidate": {
                   "nodeId": 13,
@@ -29640,7 +29652,8 @@
                 }
               },
               {
-                "rank": 8,
+                "rawSortRank": 8,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 5,
@@ -29914,7 +29927,8 @@
                 }
               },
               {
-                "rank": 9,
+                "rawSortRank": 9,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 6,
@@ -30470,7 +30484,7 @@
                     },
                     "skylineRoles": [],
                     "expansion": 3,
-                    "elapsedMs": 397
+                    "elapsedMs": 766
                   }
                 ],
                 "nodeIds": [
@@ -30478,13 +30492,16 @@
                 ],
                 "activeAtFinish": true,
                 "selectedAtFinish": false,
-                "sortPositions": [
+                "rawSortRanks": [
                   9
                 ],
+                "selectedArchiveRanks": [],
                 "archiveDecision": "rejected-by-goal-archive-capacity",
                 "evictions": [],
                 "rejections": [],
-                "actualReplacementWitness": {
+                "witnessKind": "goal-archive-capacity-boundary",
+                "actualReplacementWitness": null,
+                "capacityBoundaryWitness": {
                   "nodeId": 13,
                   "parentId": 8,
                   "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
@@ -30762,287 +30779,16 @@
                   "comparator": "compareGoalStates",
                   "result": -369,
                   "hpDiff": -369,
-                  "atkDiff": 0,
-                  "defDiff": 0,
-                  "mdefDiff": 0,
-                  "lvDiff": 0,
-                  "expDiff": -1,
-                  "routeLengthDiff": 3,
+                  "effectiveAtkDiff": 0,
+                  "effectiveDefDiff": 0,
+                  "effectiveMdefDiff": 0,
+                  "rawLvDiff": 0,
+                  "rawExpDiff": -1,
+                  "rawAtkDiff": 0,
+                  "rawDefDiff": 0,
+                  "rawMdefDiff": 0,
+                  "routeLengthDiff": -3,
                   "firstDecidingField": "hp"
-                },
-                "capacityBoundary": {
-                  "nodeId": 13,
-                  "parentId": 8,
-                  "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
-                  "dpKey": "{\"floorId\":\"MT2\",\"keyMode\":\"region\",\"regionKey\":\"5,1|6,0|6,1|7,1\",\"reachableEndpointsKey\":\"battle:skeleton@4,1|battle:skeleton@8,1|changeFloor:6,0->:before\",\"hero\":{\"atk\":21,\"def\":17,\"mdef\":130,\"lv\":3,\"exp\":7,\"money\":0,\"mana\":0,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
-                  "state": {
-                    "floorId": "MT2",
-                    "hero": {
-                      "hp": 1970,
-                      "hpmax": 9999,
-                      "mana": 0,
-                      "manamax": -1,
-                      "atk": 21,
-                      "def": 17,
-                      "mdef": 130,
-                      "money": 0,
-                      "exp": 7,
-                      "lv": 3,
-                      "loc": {
-                        "x": 6,
-                        "y": 0,
-                        "direction": "up"
-                      },
-                      "equipment": [],
-                      "steps": 95,
-                      "statistics": {
-                        "battleDamage": 2931,
-                        "battle": 20,
-                        "money": 0,
-                        "exp": 20
-                      }
-                    },
-                    "inventory": {
-                      "I600": 1,
-                      "book": 1,
-                      "fly": 1
-                    },
-                    "flags": {
-                      "autoBattle": 1,
-                      "shiqu": 1,
-                      "hatred": 40,
-                      "__leaveLoc__": {
-                        "MT1": {
-                          "x": 6,
-                          "y": 0,
-                          "direction": "up"
-                        }
-                      }
-                    },
-                    "floorStates": {
-                      "MT1": {
-                        "removed": {
-                          "5,6": true,
-                          "7,6": true,
-                          "5,8": true,
-                          "7,8": true,
-                          "8,7": true,
-                          "10,7": true,
-                          "4,7": true,
-                          "2,7": true,
-                          "9,6": true,
-                          "10,8": true,
-                          "10,5": true,
-                          "2,8": true,
-                          "11,5": true,
-                          "9,9": true,
-                          "3,9": true,
-                          "3,10": true,
-                          "2,11": true,
-                          "3,6": true,
-                          "9,10": true,
-                          "10,11": true,
-                          "9,4": true,
-                          "9,2": true,
-                          "10,3": true,
-                          "3,4": true,
-                          "3,2": true,
-                          "2,3": true,
-                          "4,11": true,
-                          "5,11": true,
-                          "7,11": true,
-                          "8,11": true,
-                          "11,11": true,
-                          "12,11": true,
-                          "2,1": true,
-                          "1,2": true,
-                          "10,1": true,
-                          "11,2": true,
-                          "4,3": true,
-                          "1,11": true,
-                          "5,3": true,
-                          "0,11": true,
-                          "8,3": true,
-                          "7,3": true,
-                          "8,1": true,
-                          "7,1": true,
-                          "5,1": true
-                        },
-                        "replaced": {}
-                      },
-                      "MT2": {
-                        "removed": {
-                          "7,1": true,
-                          "5,1": true
-                        },
-                        "replaced": {}
-                      }
-                    },
-                    "visitedFloors": {
-                      "MT1": true,
-                      "MT2": true
-                    },
-                    "triggeredAutoEvents": {},
-                    "route": [
-                      "battle:blackSlime@MT1:8,7",
-                      "auto:pickup:I586@MT1:10,7",
-                      "auto:battle:greenSlime@MT1:4,7",
-                      "auto:pickup:redPotion@MT1:2,7",
-                      "battle:redSlime@MT1:9,6",
-                      "auto:battle:redSlime@MT1:10,8",
-                      "auto:battle:greenSlime@MT1:10,5",
-                      "auto:battle:redSlime@MT1:2,8",
-                      "auto:pickup:redGem@MT1:11,5",
-                      "auto:pickup:blueGem@MT1:9,9",
-                      "auto:pickup:redGem@MT1:3,9",
-                      "battle:blackSlime@MT1:3,10",
-                      "auto:pickup:I578@MT1:2,11",
-                      "auto:battle:blackSlime@MT1:3,6",
-                      "auto:battle:blackSlime@MT1:9,10",
-                      "auto:pickup:yellowPotion@MT1:10,11",
-                      "battle:slimelord@MT1:9,4",
-                      "auto:pickup:yellowGem@MT1:9,2",
-                      "auto:pickup:yellowPotion@MT1:10,3",
-                      "battle:slimelord@MT1:3,4",
-                      "auto:pickup:I578@MT1:3,2",
-                      "auto:pickup:blueGem@MT1:2,3",
-                      "battle:bat@MT1:4,11",
-                      "auto:pickup:blueGem@MT1:5,11",
-                      "auto:pickup:bluePotion@MT1:7,11",
-                      "battle:bat@MT1:8,11",
-                      "battle:bigBat@MT1:11,11",
-                      "auto:pickup:I576@MT1:12,11",
-                      "battle:skeletonWarrior@MT1:2,1",
-                      "auto:pickup:I584@MT1:1,2",
-                      "battle:redBat@MT1:10,1",
-                      "auto:pickup:I579@MT1:11,2",
-                      "auto:battle:vampire@MT1:4,3",
-                      "auto:battle:vampire@MT1:1,11",
-                      "auto:pickup:I576@MT1:5,3",
-                      "auto:pickup:I577@MT1:0,11"
-                    ],
-                    "notes": [],
-                    "meta": {
-                      "rank": "chaos",
-                      "decisionDepth": 13,
-                      "autoStepCount": 31,
-                      "autoPickupCount": 23,
-                      "autoBattleCount": 8
-                    },
-                    "progress": {
-                      "stageIndex": 1,
-                      "milestoneMask": "MT1,MT2",
-                      "visitedFloorMask": "MT1,MT2",
-                      "targetFloor": null,
-                      "bestFloorRank": 2,
-                      "currentFloorRank": 2,
-                      "lastProgressActionId": null
-                    }
-                  },
-                  "hero": {
-                    "hp": 1970,
-                    "hpmax": 9999,
-                    "atk": 21,
-                    "def": 17,
-                    "mdef": 130,
-                    "lv": 3,
-                    "exp": 7,
-                    "money": 0,
-                    "loc": {
-                      "x": 6,
-                      "y": 0
-                    }
-                  },
-                  "inventory": {
-                    "I600": 1,
-                    "book": 1,
-                    "fly": 1
-                  },
-                  "flags": {
-                    "__leaveLoc__": {
-                      "MT1": {
-                        "x": 6,
-                        "y": 0,
-                        "direction": "up"
-                      }
-                    },
-                    "autoBattle": 1,
-                    "hatred": 40,
-                    "shiqu": 1
-                  },
-                  "visitedFloors": [
-                    "MT1",
-                    "MT2"
-                  ],
-                  "mutations": [
-                    {
-                      "floorId": "MT1",
-                      "removed": [
-                        "0,11",
-                        "1,11",
-                        "1,2",
-                        "10,1",
-                        "10,11",
-                        "10,3",
-                        "10,5",
-                        "10,7",
-                        "10,8",
-                        "11,11",
-                        "11,2",
-                        "11,5",
-                        "12,11",
-                        "2,1",
-                        "2,11",
-                        "2,3",
-                        "2,7",
-                        "2,8",
-                        "3,10",
-                        "3,2",
-                        "3,4",
-                        "3,6",
-                        "3,9",
-                        "4,11",
-                        "4,3",
-                        "4,7",
-                        "5,1",
-                        "5,11",
-                        "5,3",
-                        "5,6",
-                        "5,8",
-                        "7,1",
-                        "7,11",
-                        "7,3",
-                        "7,6",
-                        "7,8",
-                        "8,1",
-                        "8,11",
-                        "8,3",
-                        "8,7",
-                        "9,10",
-                        "9,2",
-                        "9,4",
-                        "9,6",
-                        "9,9"
-                      ],
-                      "replaced": []
-                    },
-                    {
-                      "floorId": "MT2",
-                      "removed": [
-                        "5,1",
-                        "7,1"
-                      ],
-                      "replaced": []
-                    }
-                  ],
-                  "routeLength": 36,
-                  "decisionDepth": 13,
-                  "action": {
-                    "kind": "changeFloor",
-                    "summary": "changeFloor@MT1:6,0",
-                    "fingerprint": "changeFloor|changeFloor@MT1:6,0"
-                  },
-                  "skylineRoles": []
                 },
                 "initialInsertion": {
                   "nodeId": 6,
@@ -31317,7 +31063,7 @@
                   },
                   "skylineRoles": [],
                   "expansion": 3,
-                  "elapsedMs": 397
+                  "elapsedMs": 766
                 }
               }
             ],
@@ -31642,7 +31388,8 @@
             "goalArchiveRole": "raw-dp-goal-archive",
             "activeCandidates": [
               {
-                "rank": 0,
+                "rawSortRank": 0,
+                "selectedArchiveRank": 0,
                 "selected": true,
                 "candidate": {
                   "nodeId": 28,
@@ -31940,7 +31687,8 @@
                 }
               },
               {
-                "rank": 1,
+                "rawSortRank": 1,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 13,
@@ -32238,7 +31986,8 @@
                 }
               },
               {
-                "rank": 2,
+                "rawSortRank": 2,
+                "selectedArchiveRank": 1,
                 "selected": true,
                 "candidate": {
                   "nodeId": 21,
@@ -32540,7 +32289,8 @@
                 }
               },
               {
-                "rank": 3,
+                "rawSortRank": 3,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 6,
@@ -32842,7 +32592,8 @@
                 }
               },
               {
-                "rank": 4,
+                "rawSortRank": 4,
+                "selectedArchiveRank": 2,
                 "selected": true,
                 "candidate": {
                   "nodeId": 39,
@@ -33151,13 +32902,15 @@
                 "nodeIds": [],
                 "activeAtFinish": false,
                 "selectedAtFinish": false,
-                "sortPositions": [],
+                "rawSortRanks": [],
+                "selectedArchiveRanks": [],
                 "archiveDecision": "inactive-without-captured-replacement",
                 "evictions": [],
                 "rejections": [],
+                "witnessKind": null,
                 "actualReplacementWitness": null,
+                "capacityBoundaryWitness": null,
                 "comparison": null,
-                "capacityBoundary": null,
                 "initialInsertion": null
               }
             ],
@@ -33300,7 +33053,8 @@
             "goalArchiveRole": "raw-dp-goal-archive",
             "activeCandidates": [
               {
-                "rank": 0,
+                "rawSortRank": 0,
+                "selectedArchiveRank": 0,
                 "selected": true,
                 "candidate": {
                   "nodeId": 15,
@@ -33600,7 +33354,8 @@
                 }
               },
               {
-                "rank": 1,
+                "rawSortRank": 1,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 8,
@@ -33909,13 +33664,15 @@
                 "nodeIds": [],
                 "activeAtFinish": false,
                 "selectedAtFinish": false,
-                "sortPositions": [],
+                "rawSortRanks": [],
+                "selectedArchiveRanks": [],
                 "archiveDecision": "inactive-without-captured-replacement",
                 "evictions": [],
                 "rejections": [],
+                "witnessKind": null,
                 "actualReplacementWitness": null,
+                "capacityBoundaryWitness": null,
                 "comparison": null,
-                "capacityBoundary": null,
                 "initialInsertion": null
               }
             ],
@@ -34003,7 +33760,8 @@
             "goalArchiveRole": "raw-dp-goal-archive",
             "activeCandidates": [
               {
-                "rank": 0,
+                "rawSortRank": 0,
+                "selectedArchiveRank": 0,
                 "selected": true,
                 "candidate": {
                   "nodeId": 21,
@@ -34297,7 +34055,8 @@
                 }
               },
               {
-                "rank": 1,
+                "rawSortRank": 1,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 9,
@@ -34600,13 +34359,15 @@
                 "nodeIds": [],
                 "activeAtFinish": false,
                 "selectedAtFinish": false,
-                "sortPositions": [],
+                "rawSortRanks": [],
+                "selectedArchiveRanks": [],
                 "archiveDecision": "inactive-without-captured-replacement",
                 "evictions": [],
                 "rejections": [],
+                "witnessKind": null,
                 "actualReplacementWitness": null,
+                "capacityBoundaryWitness": null,
                 "comparison": null,
-                "capacityBoundary": null,
                 "initialInsertion": null
               }
             ],
@@ -34740,7 +34501,8 @@
             "goalArchiveRole": "raw-dp-goal-archive",
             "activeCandidates": [
               {
-                "rank": 0,
+                "rawSortRank": 0,
+                "selectedArchiveRank": 0,
                 "selected": true,
                 "candidate": {
                   "nodeId": 28,
@@ -35038,7 +34800,8 @@
                 }
               },
               {
-                "rank": 1,
+                "rawSortRank": 1,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 13,
@@ -35336,7 +35099,8 @@
                 }
               },
               {
-                "rank": 2,
+                "rawSortRank": 2,
+                "selectedArchiveRank": 1,
                 "selected": true,
                 "candidate": {
                   "nodeId": 21,
@@ -35638,7 +35402,8 @@
                 }
               },
               {
-                "rank": 3,
+                "rawSortRank": 3,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 6,
@@ -35940,7 +35705,8 @@
                 }
               },
               {
-                "rank": 4,
+                "rawSortRank": 4,
+                "selectedArchiveRank": 2,
                 "selected": true,
                 "candidate": {
                   "nodeId": 39,
@@ -36249,13 +36015,15 @@
                 "nodeIds": [],
                 "activeAtFinish": false,
                 "selectedAtFinish": false,
-                "sortPositions": [],
+                "rawSortRanks": [],
+                "selectedArchiveRanks": [],
                 "archiveDecision": "inactive-without-captured-replacement",
                 "evictions": [],
                 "rejections": [],
+                "witnessKind": null,
                 "actualReplacementWitness": null,
+                "capacityBoundaryWitness": null,
                 "comparison": null,
-                "capacityBoundary": null,
                 "initialInsertion": null
               }
             ],
@@ -36398,7 +36166,8 @@
             "goalArchiveRole": "raw-dp-goal-archive",
             "activeCandidates": [
               {
-                "rank": 0,
+                "rawSortRank": 0,
+                "selectedArchiveRank": 0,
                 "selected": true,
                 "candidate": {
                   "nodeId": 21,
@@ -36655,7 +36424,8 @@
                 }
               },
               {
-                "rank": 1,
+                "rawSortRank": 1,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 9,
@@ -36921,13 +36691,15 @@
                 "nodeIds": [],
                 "activeAtFinish": false,
                 "selectedAtFinish": false,
-                "sortPositions": [],
+                "rawSortRanks": [],
+                "selectedArchiveRanks": [],
                 "archiveDecision": "inactive-without-captured-replacement",
                 "evictions": [],
                 "rejections": [],
+                "witnessKind": null,
                 "actualReplacementWitness": null,
+                "capacityBoundaryWitness": null,
                 "comparison": null,
-                "capacityBoundary": null,
                 "initialInsertion": null
               }
             ],
@@ -37015,7 +36787,8 @@
             "goalArchiveRole": "raw-dp-goal-archive",
             "activeCandidates": [
               {
-                "rank": 0,
+                "rawSortRank": 0,
+                "selectedArchiveRank": 0,
                 "selected": true,
                 "candidate": {
                   "nodeId": 11,
@@ -37274,7 +37047,8 @@
                 }
               },
               {
-                "rank": 1,
+                "rawSortRank": 1,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 4,
@@ -37542,13 +37316,15 @@
                 "nodeIds": [],
                 "activeAtFinish": false,
                 "selectedAtFinish": false,
-                "sortPositions": [],
+                "rawSortRanks": [],
+                "selectedArchiveRanks": [],
                 "archiveDecision": "inactive-without-captured-replacement",
                 "evictions": [],
                 "rejections": [],
+                "witnessKind": null,
                 "actualReplacementWitness": null,
+                "capacityBoundaryWitness": null,
                 "comparison": null,
-                "capacityBoundary": null,
                 "initialInsertion": null
               }
             ],
@@ -37636,7 +37412,8 @@
             "goalArchiveRole": "raw-dp-goal-archive",
             "activeCandidates": [
               {
-                "rank": 0,
+                "rawSortRank": 0,
+                "selectedArchiveRank": 0,
                 "selected": true,
                 "candidate": {
                   "nodeId": 11,
@@ -37893,7 +37670,8 @@
                 }
               },
               {
-                "rank": 1,
+                "rawSortRank": 1,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 4,
@@ -38159,13 +37937,15 @@
                 "nodeIds": [],
                 "activeAtFinish": false,
                 "selectedAtFinish": false,
-                "sortPositions": [],
+                "rawSortRanks": [],
+                "selectedArchiveRanks": [],
                 "archiveDecision": "inactive-without-captured-replacement",
                 "evictions": [],
                 "rejections": [],
+                "witnessKind": null,
                 "actualReplacementWitness": null,
+                "capacityBoundaryWitness": null,
                 "comparison": null,
-                "capacityBoundary": null,
                 "initialInsertion": null
               }
             ],
@@ -38253,7 +38033,8 @@
             "goalArchiveRole": "raw-dp-goal-archive",
             "activeCandidates": [
               {
-                "rank": 0,
+                "rawSortRank": 0,
+                "selectedArchiveRank": 0,
                 "selected": true,
                 "candidate": {
                   "nodeId": 11,
@@ -38510,7 +38291,8 @@
                 }
               },
               {
-                "rank": 1,
+                "rawSortRank": 1,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 4,
@@ -38776,13 +38558,15 @@
                 "nodeIds": [],
                 "activeAtFinish": false,
                 "selectedAtFinish": false,
-                "sortPositions": [],
+                "rawSortRanks": [],
+                "selectedArchiveRanks": [],
                 "archiveDecision": "inactive-without-captured-replacement",
                 "evictions": [],
                 "rejections": [],
+                "witnessKind": null,
                 "actualReplacementWitness": null,
+                "capacityBoundaryWitness": null,
                 "comparison": null,
-                "capacityBoundary": null,
                 "initialInsertion": null
               }
             ],
@@ -40174,7 +39958,8 @@
                 "goalArchiveRole": "raw-dp-goal-archive",
                 "activeCandidates": [
                   {
-                    "rank": 0,
+                    "rawSortRank": 0,
+                    "selectedArchiveRank": 0,
                     "selected": true,
                     "candidate": {
                       "nodeId": 15,
@@ -40456,7 +40241,8 @@
                     }
                   },
                   {
-                    "rank": 1,
+                    "rawSortRank": 1,
+                    "selectedArchiveRank": 1,
                     "selected": true,
                     "candidate": {
                       "nodeId": 17,
@@ -40738,7 +40524,8 @@
                     }
                   },
                   {
-                    "rank": 2,
+                    "rawSortRank": 2,
+                    "selectedArchiveRank": 2,
                     "selected": true,
                     "candidate": {
                       "nodeId": 21,
@@ -41016,7 +40803,8 @@
                     }
                   },
                   {
-                    "rank": 3,
+                    "rawSortRank": 3,
+                    "selectedArchiveRank": 3,
                     "selected": true,
                     "candidate": {
                       "nodeId": 23,
@@ -41294,7 +41082,8 @@
                     }
                   },
                   {
-                    "rank": 4,
+                    "rawSortRank": 4,
+                    "selectedArchiveRank": 4,
                     "selected": true,
                     "candidate": {
                       "nodeId": 16,
@@ -41578,7 +41367,8 @@
                     }
                   },
                   {
-                    "rank": 5,
+                    "rawSortRank": 5,
+                    "selectedArchiveRank": 5,
                     "selected": true,
                     "candidate": {
                       "nodeId": 22,
@@ -41858,7 +41648,8 @@
                     }
                   },
                   {
-                    "rank": 6,
+                    "rawSortRank": 6,
+                    "selectedArchiveRank": 6,
                     "selected": true,
                     "candidate": {
                       "nodeId": 11,
@@ -42136,7 +41927,8 @@
                     }
                   },
                   {
-                    "rank": 7,
+                    "rawSortRank": 7,
+                    "selectedArchiveRank": 7,
                     "selected": true,
                     "candidate": {
                       "nodeId": 13,
@@ -42414,7 +42206,8 @@
                     }
                   },
                   {
-                    "rank": 8,
+                    "rawSortRank": 8,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 5,
@@ -42688,7 +42481,8 @@
                     }
                   },
                   {
-                    "rank": 9,
+                    "rawSortRank": 9,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 6,
@@ -43244,7 +43038,7 @@
                         },
                         "skylineRoles": [],
                         "expansion": 3,
-                        "elapsedMs": 397
+                        "elapsedMs": 766
                       }
                     ],
                     "nodeIds": [
@@ -43252,13 +43046,16 @@
                     ],
                     "activeAtFinish": true,
                     "selectedAtFinish": false,
-                    "sortPositions": [
+                    "rawSortRanks": [
                       9
                     ],
+                    "selectedArchiveRanks": [],
                     "archiveDecision": "rejected-by-goal-archive-capacity",
                     "evictions": [],
                     "rejections": [],
-                    "actualReplacementWitness": {
+                    "witnessKind": "goal-archive-capacity-boundary",
+                    "actualReplacementWitness": null,
+                    "capacityBoundaryWitness": {
                       "nodeId": 13,
                       "parentId": 8,
                       "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
@@ -43536,287 +43333,16 @@
                       "comparator": "compareGoalStates",
                       "result": -369,
                       "hpDiff": -369,
-                      "atkDiff": 0,
-                      "defDiff": 0,
-                      "mdefDiff": 0,
-                      "lvDiff": 0,
-                      "expDiff": -1,
-                      "routeLengthDiff": 3,
+                      "effectiveAtkDiff": 0,
+                      "effectiveDefDiff": 0,
+                      "effectiveMdefDiff": 0,
+                      "rawLvDiff": 0,
+                      "rawExpDiff": -1,
+                      "rawAtkDiff": 0,
+                      "rawDefDiff": 0,
+                      "rawMdefDiff": 0,
+                      "routeLengthDiff": -3,
                       "firstDecidingField": "hp"
-                    },
-                    "capacityBoundary": {
-                      "nodeId": 13,
-                      "parentId": 8,
-                      "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
-                      "dpKey": "{\"floorId\":\"MT2\",\"keyMode\":\"region\",\"regionKey\":\"5,1|6,0|6,1|7,1\",\"reachableEndpointsKey\":\"battle:skeleton@4,1|battle:skeleton@8,1|changeFloor:6,0->:before\",\"hero\":{\"atk\":21,\"def\":17,\"mdef\":130,\"lv\":3,\"exp\":7,\"money\":0,\"mana\":0,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
-                      "state": {
-                        "floorId": "MT2",
-                        "hero": {
-                          "hp": 1970,
-                          "hpmax": 9999,
-                          "mana": 0,
-                          "manamax": -1,
-                          "atk": 21,
-                          "def": 17,
-                          "mdef": 130,
-                          "money": 0,
-                          "exp": 7,
-                          "lv": 3,
-                          "loc": {
-                            "x": 6,
-                            "y": 0,
-                            "direction": "up"
-                          },
-                          "equipment": [],
-                          "steps": 95,
-                          "statistics": {
-                            "battleDamage": 2931,
-                            "battle": 20,
-                            "money": 0,
-                            "exp": 20
-                          }
-                        },
-                        "inventory": {
-                          "I600": 1,
-                          "book": 1,
-                          "fly": 1
-                        },
-                        "flags": {
-                          "autoBattle": 1,
-                          "shiqu": 1,
-                          "hatred": 40,
-                          "__leaveLoc__": {
-                            "MT1": {
-                              "x": 6,
-                              "y": 0,
-                              "direction": "up"
-                            }
-                          }
-                        },
-                        "floorStates": {
-                          "MT1": {
-                            "removed": {
-                              "5,6": true,
-                              "7,6": true,
-                              "5,8": true,
-                              "7,8": true,
-                              "8,7": true,
-                              "10,7": true,
-                              "4,7": true,
-                              "2,7": true,
-                              "9,6": true,
-                              "10,8": true,
-                              "10,5": true,
-                              "2,8": true,
-                              "11,5": true,
-                              "9,9": true,
-                              "3,9": true,
-                              "3,10": true,
-                              "2,11": true,
-                              "3,6": true,
-                              "9,10": true,
-                              "10,11": true,
-                              "9,4": true,
-                              "9,2": true,
-                              "10,3": true,
-                              "3,4": true,
-                              "3,2": true,
-                              "2,3": true,
-                              "4,11": true,
-                              "5,11": true,
-                              "7,11": true,
-                              "8,11": true,
-                              "11,11": true,
-                              "12,11": true,
-                              "2,1": true,
-                              "1,2": true,
-                              "10,1": true,
-                              "11,2": true,
-                              "4,3": true,
-                              "1,11": true,
-                              "5,3": true,
-                              "0,11": true,
-                              "8,3": true,
-                              "7,3": true,
-                              "8,1": true,
-                              "7,1": true,
-                              "5,1": true
-                            },
-                            "replaced": {}
-                          },
-                          "MT2": {
-                            "removed": {
-                              "7,1": true,
-                              "5,1": true
-                            },
-                            "replaced": {}
-                          }
-                        },
-                        "visitedFloors": {
-                          "MT1": true,
-                          "MT2": true
-                        },
-                        "triggeredAutoEvents": {},
-                        "route": [
-                          "battle:blackSlime@MT1:8,7",
-                          "auto:pickup:I586@MT1:10,7",
-                          "auto:battle:greenSlime@MT1:4,7",
-                          "auto:pickup:redPotion@MT1:2,7",
-                          "battle:redSlime@MT1:9,6",
-                          "auto:battle:redSlime@MT1:10,8",
-                          "auto:battle:greenSlime@MT1:10,5",
-                          "auto:battle:redSlime@MT1:2,8",
-                          "auto:pickup:redGem@MT1:11,5",
-                          "auto:pickup:blueGem@MT1:9,9",
-                          "auto:pickup:redGem@MT1:3,9",
-                          "battle:blackSlime@MT1:3,10",
-                          "auto:pickup:I578@MT1:2,11",
-                          "auto:battle:blackSlime@MT1:3,6",
-                          "auto:battle:blackSlime@MT1:9,10",
-                          "auto:pickup:yellowPotion@MT1:10,11",
-                          "battle:slimelord@MT1:9,4",
-                          "auto:pickup:yellowGem@MT1:9,2",
-                          "auto:pickup:yellowPotion@MT1:10,3",
-                          "battle:slimelord@MT1:3,4",
-                          "auto:pickup:I578@MT1:3,2",
-                          "auto:pickup:blueGem@MT1:2,3",
-                          "battle:bat@MT1:4,11",
-                          "auto:pickup:blueGem@MT1:5,11",
-                          "auto:pickup:bluePotion@MT1:7,11",
-                          "battle:bat@MT1:8,11",
-                          "battle:bigBat@MT1:11,11",
-                          "auto:pickup:I576@MT1:12,11",
-                          "battle:skeletonWarrior@MT1:2,1",
-                          "auto:pickup:I584@MT1:1,2",
-                          "battle:redBat@MT1:10,1",
-                          "auto:pickup:I579@MT1:11,2",
-                          "auto:battle:vampire@MT1:4,3",
-                          "auto:battle:vampire@MT1:1,11",
-                          "auto:pickup:I576@MT1:5,3",
-                          "auto:pickup:I577@MT1:0,11"
-                        ],
-                        "notes": [],
-                        "meta": {
-                          "rank": "chaos",
-                          "decisionDepth": 13,
-                          "autoStepCount": 31,
-                          "autoPickupCount": 23,
-                          "autoBattleCount": 8
-                        },
-                        "progress": {
-                          "stageIndex": 1,
-                          "milestoneMask": "MT1,MT2",
-                          "visitedFloorMask": "MT1,MT2",
-                          "targetFloor": null,
-                          "bestFloorRank": 2,
-                          "currentFloorRank": 2,
-                          "lastProgressActionId": null
-                        }
-                      },
-                      "hero": {
-                        "hp": 1970,
-                        "hpmax": 9999,
-                        "atk": 21,
-                        "def": 17,
-                        "mdef": 130,
-                        "lv": 3,
-                        "exp": 7,
-                        "money": 0,
-                        "loc": {
-                          "x": 6,
-                          "y": 0
-                        }
-                      },
-                      "inventory": {
-                        "I600": 1,
-                        "book": 1,
-                        "fly": 1
-                      },
-                      "flags": {
-                        "__leaveLoc__": {
-                          "MT1": {
-                            "x": 6,
-                            "y": 0,
-                            "direction": "up"
-                          }
-                        },
-                        "autoBattle": 1,
-                        "hatred": 40,
-                        "shiqu": 1
-                      },
-                      "visitedFloors": [
-                        "MT1",
-                        "MT2"
-                      ],
-                      "mutations": [
-                        {
-                          "floorId": "MT1",
-                          "removed": [
-                            "0,11",
-                            "1,11",
-                            "1,2",
-                            "10,1",
-                            "10,11",
-                            "10,3",
-                            "10,5",
-                            "10,7",
-                            "10,8",
-                            "11,11",
-                            "11,2",
-                            "11,5",
-                            "12,11",
-                            "2,1",
-                            "2,11",
-                            "2,3",
-                            "2,7",
-                            "2,8",
-                            "3,10",
-                            "3,2",
-                            "3,4",
-                            "3,6",
-                            "3,9",
-                            "4,11",
-                            "4,3",
-                            "4,7",
-                            "5,1",
-                            "5,11",
-                            "5,3",
-                            "5,6",
-                            "5,8",
-                            "7,1",
-                            "7,11",
-                            "7,3",
-                            "7,6",
-                            "7,8",
-                            "8,1",
-                            "8,11",
-                            "8,3",
-                            "8,7",
-                            "9,10",
-                            "9,2",
-                            "9,4",
-                            "9,6",
-                            "9,9"
-                          ],
-                          "replaced": []
-                        },
-                        {
-                          "floorId": "MT2",
-                          "removed": [
-                            "5,1",
-                            "7,1"
-                          ],
-                          "replaced": []
-                        }
-                      ],
-                      "routeLength": 36,
-                      "decisionDepth": 13,
-                      "action": {
-                        "kind": "changeFloor",
-                        "summary": "changeFloor@MT1:6,0",
-                        "fingerprint": "changeFloor|changeFloor@MT1:6,0"
-                      },
-                      "skylineRoles": []
                     },
                     "initialInsertion": {
                       "nodeId": 6,
@@ -44091,7 +43617,7 @@
                       },
                       "skylineRoles": [],
                       "expansion": 3,
-                      "elapsedMs": 397
+                      "elapsedMs": 766
                     }
                   }
                 ],
@@ -44877,7 +44403,8 @@
                 "goalArchiveRole": "raw-dp-goal-archive",
                 "activeCandidates": [
                   {
-                    "rank": 0,
+                    "rawSortRank": 0,
+                    "selectedArchiveRank": 0,
                     "selected": true,
                     "candidate": {
                       "nodeId": 28,
@@ -45175,7 +44702,8 @@
                     }
                   },
                   {
-                    "rank": 1,
+                    "rawSortRank": 1,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 13,
@@ -45473,7 +45001,8 @@
                     }
                   },
                   {
-                    "rank": 2,
+                    "rawSortRank": 2,
+                    "selectedArchiveRank": 1,
                     "selected": true,
                     "candidate": {
                       "nodeId": 21,
@@ -45775,7 +45304,8 @@
                     }
                   },
                   {
-                    "rank": 3,
+                    "rawSortRank": 3,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 6,
@@ -46077,7 +45607,8 @@
                     }
                   },
                   {
-                    "rank": 4,
+                    "rawSortRank": 4,
+                    "selectedArchiveRank": 2,
                     "selected": true,
                     "candidate": {
                       "nodeId": 39,
@@ -46386,13 +45917,15 @@
                     "nodeIds": [],
                     "activeAtFinish": false,
                     "selectedAtFinish": false,
-                    "sortPositions": [],
+                    "rawSortRanks": [],
+                    "selectedArchiveRanks": [],
                     "archiveDecision": "inactive-without-captured-replacement",
                     "evictions": [],
                     "rejections": [],
+                    "witnessKind": null,
                     "actualReplacementWitness": null,
+                    "capacityBoundaryWitness": null,
                     "comparison": null,
-                    "capacityBoundary": null,
                     "initialInsertion": null
                   }
                 ],
@@ -46411,7 +45944,8 @@
                 "goalArchiveRole": "raw-dp-goal-archive",
                 "activeCandidates": [
                   {
-                    "rank": 0,
+                    "rawSortRank": 0,
+                    "selectedArchiveRank": 0,
                     "selected": true,
                     "candidate": {
                       "nodeId": 15,
@@ -46711,7 +46245,8 @@
                     }
                   },
                   {
-                    "rank": 1,
+                    "rawSortRank": 1,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 8,
@@ -47020,13 +46555,15 @@
                     "nodeIds": [],
                     "activeAtFinish": false,
                     "selectedAtFinish": false,
-                    "sortPositions": [],
+                    "rawSortRanks": [],
+                    "selectedArchiveRanks": [],
                     "archiveDecision": "inactive-without-captured-replacement",
                     "evictions": [],
                     "rejections": [],
+                    "witnessKind": null,
                     "actualReplacementWitness": null,
+                    "capacityBoundaryWitness": null,
                     "comparison": null,
-                    "capacityBoundary": null,
                     "initialInsertion": null
                   }
                 ],
@@ -47045,7 +46582,8 @@
                 "goalArchiveRole": "raw-dp-goal-archive",
                 "activeCandidates": [
                   {
-                    "rank": 0,
+                    "rawSortRank": 0,
+                    "selectedArchiveRank": 0,
                     "selected": true,
                     "candidate": {
                       "nodeId": 21,
@@ -47339,7 +46877,8 @@
                     }
                   },
                   {
-                    "rank": 1,
+                    "rawSortRank": 1,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 9,
@@ -47642,13 +47181,15 @@
                     "nodeIds": [],
                     "activeAtFinish": false,
                     "selectedAtFinish": false,
-                    "sortPositions": [],
+                    "rawSortRanks": [],
+                    "selectedArchiveRanks": [],
                     "archiveDecision": "inactive-without-captured-replacement",
                     "evictions": [],
                     "rejections": [],
+                    "witnessKind": null,
                     "actualReplacementWitness": null,
+                    "capacityBoundaryWitness": null,
                     "comparison": null,
-                    "capacityBoundary": null,
                     "initialInsertion": null
                   }
                 ],
@@ -47667,7 +47208,8 @@
                 "goalArchiveRole": "raw-dp-goal-archive",
                 "activeCandidates": [
                   {
-                    "rank": 0,
+                    "rawSortRank": 0,
+                    "selectedArchiveRank": 0,
                     "selected": true,
                     "candidate": {
                       "nodeId": 28,
@@ -47965,7 +47507,8 @@
                     }
                   },
                   {
-                    "rank": 1,
+                    "rawSortRank": 1,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 13,
@@ -48263,7 +47806,8 @@
                     }
                   },
                   {
-                    "rank": 2,
+                    "rawSortRank": 2,
+                    "selectedArchiveRank": 1,
                     "selected": true,
                     "candidate": {
                       "nodeId": 21,
@@ -48565,7 +48109,8 @@
                     }
                   },
                   {
-                    "rank": 3,
+                    "rawSortRank": 3,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 6,
@@ -48867,7 +48412,8 @@
                     }
                   },
                   {
-                    "rank": 4,
+                    "rawSortRank": 4,
+                    "selectedArchiveRank": 2,
                     "selected": true,
                     "candidate": {
                       "nodeId": 39,
@@ -49176,13 +48722,15 @@
                     "nodeIds": [],
                     "activeAtFinish": false,
                     "selectedAtFinish": false,
-                    "sortPositions": [],
+                    "rawSortRanks": [],
+                    "selectedArchiveRanks": [],
                     "archiveDecision": "inactive-without-captured-replacement",
                     "evictions": [],
                     "rejections": [],
+                    "witnessKind": null,
                     "actualReplacementWitness": null,
+                    "capacityBoundaryWitness": null,
                     "comparison": null,
-                    "capacityBoundary": null,
                     "initialInsertion": null
                   }
                 ],
@@ -49201,7 +48749,8 @@
                 "goalArchiveRole": "raw-dp-goal-archive",
                 "activeCandidates": [
                   {
-                    "rank": 0,
+                    "rawSortRank": 0,
+                    "selectedArchiveRank": 0,
                     "selected": true,
                     "candidate": {
                       "nodeId": 21,
@@ -49458,7 +49007,8 @@
                     }
                   },
                   {
-                    "rank": 1,
+                    "rawSortRank": 1,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 9,
@@ -49724,13 +49274,15 @@
                     "nodeIds": [],
                     "activeAtFinish": false,
                     "selectedAtFinish": false,
-                    "sortPositions": [],
+                    "rawSortRanks": [],
+                    "selectedArchiveRanks": [],
                     "archiveDecision": "inactive-without-captured-replacement",
                     "evictions": [],
                     "rejections": [],
+                    "witnessKind": null,
                     "actualReplacementWitness": null,
+                    "capacityBoundaryWitness": null,
                     "comparison": null,
-                    "capacityBoundary": null,
                     "initialInsertion": null
                   }
                 ],
@@ -49749,7 +49301,8 @@
                 "goalArchiveRole": "raw-dp-goal-archive",
                 "activeCandidates": [
                   {
-                    "rank": 0,
+                    "rawSortRank": 0,
+                    "selectedArchiveRank": 0,
                     "selected": true,
                     "candidate": {
                       "nodeId": 11,
@@ -50008,7 +49561,8 @@
                     }
                   },
                   {
-                    "rank": 1,
+                    "rawSortRank": 1,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 4,
@@ -50276,13 +49830,15 @@
                     "nodeIds": [],
                     "activeAtFinish": false,
                     "selectedAtFinish": false,
-                    "sortPositions": [],
+                    "rawSortRanks": [],
+                    "selectedArchiveRanks": [],
                     "archiveDecision": "inactive-without-captured-replacement",
                     "evictions": [],
                     "rejections": [],
+                    "witnessKind": null,
                     "actualReplacementWitness": null,
+                    "capacityBoundaryWitness": null,
                     "comparison": null,
-                    "capacityBoundary": null,
                     "initialInsertion": null
                   }
                 ],
@@ -50301,7 +49857,8 @@
                 "goalArchiveRole": "raw-dp-goal-archive",
                 "activeCandidates": [
                   {
-                    "rank": 0,
+                    "rawSortRank": 0,
+                    "selectedArchiveRank": 0,
                     "selected": true,
                     "candidate": {
                       "nodeId": 11,
@@ -50558,7 +50115,8 @@
                     }
                   },
                   {
-                    "rank": 1,
+                    "rawSortRank": 1,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 4,
@@ -50824,13 +50382,15 @@
                     "nodeIds": [],
                     "activeAtFinish": false,
                     "selectedAtFinish": false,
-                    "sortPositions": [],
+                    "rawSortRanks": [],
+                    "selectedArchiveRanks": [],
                     "archiveDecision": "inactive-without-captured-replacement",
                     "evictions": [],
                     "rejections": [],
+                    "witnessKind": null,
                     "actualReplacementWitness": null,
+                    "capacityBoundaryWitness": null,
                     "comparison": null,
-                    "capacityBoundary": null,
                     "initialInsertion": null
                   }
                 ],
@@ -50849,7 +50409,8 @@
                 "goalArchiveRole": "raw-dp-goal-archive",
                 "activeCandidates": [
                   {
-                    "rank": 0,
+                    "rawSortRank": 0,
+                    "selectedArchiveRank": 0,
                     "selected": true,
                     "candidate": {
                       "nodeId": 11,
@@ -51106,7 +50667,8 @@
                     }
                   },
                   {
-                    "rank": 1,
+                    "rawSortRank": 1,
+                    "selectedArchiveRank": null,
                     "selected": false,
                     "candidate": {
                       "nodeId": 4,
@@ -51372,13 +50934,15 @@
                     "nodeIds": [],
                     "activeAtFinish": false,
                     "selectedAtFinish": false,
-                    "sortPositions": [],
+                    "rawSortRanks": [],
+                    "selectedArchiveRanks": [],
                     "archiveDecision": "inactive-without-captured-replacement",
                     "evictions": [],
                     "rejections": [],
+                    "witnessKind": null,
                     "actualReplacementWitness": null,
+                    "capacityBoundaryWitness": null,
                     "comparison": null,
-                    "capacityBoundary": null,
                     "initialInsertion": null
                   }
                 ],
@@ -52087,7 +51651,8 @@
             "goalArchiveRole": "raw-dp-goal-archive",
             "activeCandidates": [
               {
-                "rank": 0,
+                "rawSortRank": 0,
+                "selectedArchiveRank": 0,
                 "selected": true,
                 "candidate": {
                   "nodeId": 15,
@@ -52369,7 +51934,8 @@
                 }
               },
               {
-                "rank": 1,
+                "rawSortRank": 1,
+                "selectedArchiveRank": 1,
                 "selected": true,
                 "candidate": {
                   "nodeId": 17,
@@ -52651,7 +52217,8 @@
                 }
               },
               {
-                "rank": 2,
+                "rawSortRank": 2,
+                "selectedArchiveRank": 2,
                 "selected": true,
                 "candidate": {
                   "nodeId": 21,
@@ -52929,7 +52496,8 @@
                 }
               },
               {
-                "rank": 3,
+                "rawSortRank": 3,
+                "selectedArchiveRank": 3,
                 "selected": true,
                 "candidate": {
                   "nodeId": 23,
@@ -53207,7 +52775,8 @@
                 }
               },
               {
-                "rank": 4,
+                "rawSortRank": 4,
+                "selectedArchiveRank": 4,
                 "selected": true,
                 "candidate": {
                   "nodeId": 16,
@@ -53491,7 +53060,8 @@
                 }
               },
               {
-                "rank": 5,
+                "rawSortRank": 5,
+                "selectedArchiveRank": 5,
                 "selected": true,
                 "candidate": {
                   "nodeId": 22,
@@ -53771,7 +53341,8 @@
                 }
               },
               {
-                "rank": 6,
+                "rawSortRank": 6,
+                "selectedArchiveRank": 6,
                 "selected": true,
                 "candidate": {
                   "nodeId": 11,
@@ -54049,7 +53620,8 @@
                 }
               },
               {
-                "rank": 7,
+                "rawSortRank": 7,
+                "selectedArchiveRank": 7,
                 "selected": true,
                 "candidate": {
                   "nodeId": 13,
@@ -54327,7 +53899,8 @@
                 }
               },
               {
-                "rank": 8,
+                "rawSortRank": 8,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 5,
@@ -54601,7 +54174,8 @@
                 }
               },
               {
-                "rank": 9,
+                "rawSortRank": 9,
+                "selectedArchiveRank": null,
                 "selected": false,
                 "candidate": {
                   "nodeId": 6,
@@ -55157,7 +54731,7 @@
                     },
                     "skylineRoles": [],
                     "expansion": 3,
-                    "elapsedMs": 397
+                    "elapsedMs": 766
                   }
                 ],
                 "nodeIds": [
@@ -55165,13 +54739,16 @@
                 ],
                 "activeAtFinish": true,
                 "selectedAtFinish": false,
-                "sortPositions": [
+                "rawSortRanks": [
                   9
                 ],
+                "selectedArchiveRanks": [],
                 "archiveDecision": "rejected-by-goal-archive-capacity",
                 "evictions": [],
                 "rejections": [],
-                "actualReplacementWitness": {
+                "witnessKind": "goal-archive-capacity-boundary",
+                "actualReplacementWitness": null,
+                "capacityBoundaryWitness": {
                   "nodeId": 13,
                   "parentId": 8,
                   "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
@@ -55449,287 +55026,16 @@
                   "comparator": "compareGoalStates",
                   "result": -369,
                   "hpDiff": -369,
-                  "atkDiff": 0,
-                  "defDiff": 0,
-                  "mdefDiff": 0,
-                  "lvDiff": 0,
-                  "expDiff": -1,
-                  "routeLengthDiff": 3,
+                  "effectiveAtkDiff": 0,
+                  "effectiveDefDiff": 0,
+                  "effectiveMdefDiff": 0,
+                  "rawLvDiff": 0,
+                  "rawExpDiff": -1,
+                  "rawAtkDiff": 0,
+                  "rawDefDiff": 0,
+                  "rawMdefDiff": 0,
+                  "routeLengthDiff": -3,
                   "firstDecidingField": "hp"
-                },
-                "capacityBoundary": {
-                  "nodeId": 13,
-                  "parentId": 8,
-                  "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
-                  "dpKey": "{\"floorId\":\"MT2\",\"keyMode\":\"region\",\"regionKey\":\"5,1|6,0|6,1|7,1\",\"reachableEndpointsKey\":\"battle:skeleton@4,1|battle:skeleton@8,1|changeFloor:6,0->:before\",\"hero\":{\"atk\":21,\"def\":17,\"mdef\":130,\"lv\":3,\"exp\":7,\"money\":0,\"mana\":0,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
-                  "state": {
-                    "floorId": "MT2",
-                    "hero": {
-                      "hp": 1970,
-                      "hpmax": 9999,
-                      "mana": 0,
-                      "manamax": -1,
-                      "atk": 21,
-                      "def": 17,
-                      "mdef": 130,
-                      "money": 0,
-                      "exp": 7,
-                      "lv": 3,
-                      "loc": {
-                        "x": 6,
-                        "y": 0,
-                        "direction": "up"
-                      },
-                      "equipment": [],
-                      "steps": 95,
-                      "statistics": {
-                        "battleDamage": 2931,
-                        "battle": 20,
-                        "money": 0,
-                        "exp": 20
-                      }
-                    },
-                    "inventory": {
-                      "I600": 1,
-                      "book": 1,
-                      "fly": 1
-                    },
-                    "flags": {
-                      "autoBattle": 1,
-                      "shiqu": 1,
-                      "hatred": 40,
-                      "__leaveLoc__": {
-                        "MT1": {
-                          "x": 6,
-                          "y": 0,
-                          "direction": "up"
-                        }
-                      }
-                    },
-                    "floorStates": {
-                      "MT1": {
-                        "removed": {
-                          "5,6": true,
-                          "7,6": true,
-                          "5,8": true,
-                          "7,8": true,
-                          "8,7": true,
-                          "10,7": true,
-                          "4,7": true,
-                          "2,7": true,
-                          "9,6": true,
-                          "10,8": true,
-                          "10,5": true,
-                          "2,8": true,
-                          "11,5": true,
-                          "9,9": true,
-                          "3,9": true,
-                          "3,10": true,
-                          "2,11": true,
-                          "3,6": true,
-                          "9,10": true,
-                          "10,11": true,
-                          "9,4": true,
-                          "9,2": true,
-                          "10,3": true,
-                          "3,4": true,
-                          "3,2": true,
-                          "2,3": true,
-                          "4,11": true,
-                          "5,11": true,
-                          "7,11": true,
-                          "8,11": true,
-                          "11,11": true,
-                          "12,11": true,
-                          "2,1": true,
-                          "1,2": true,
-                          "10,1": true,
-                          "11,2": true,
-                          "4,3": true,
-                          "1,11": true,
-                          "5,3": true,
-                          "0,11": true,
-                          "8,3": true,
-                          "7,3": true,
-                          "8,1": true,
-                          "7,1": true,
-                          "5,1": true
-                        },
-                        "replaced": {}
-                      },
-                      "MT2": {
-                        "removed": {
-                          "7,1": true,
-                          "5,1": true
-                        },
-                        "replaced": {}
-                      }
-                    },
-                    "visitedFloors": {
-                      "MT1": true,
-                      "MT2": true
-                    },
-                    "triggeredAutoEvents": {},
-                    "route": [
-                      "battle:blackSlime@MT1:8,7",
-                      "auto:pickup:I586@MT1:10,7",
-                      "auto:battle:greenSlime@MT1:4,7",
-                      "auto:pickup:redPotion@MT1:2,7",
-                      "battle:redSlime@MT1:9,6",
-                      "auto:battle:redSlime@MT1:10,8",
-                      "auto:battle:greenSlime@MT1:10,5",
-                      "auto:battle:redSlime@MT1:2,8",
-                      "auto:pickup:redGem@MT1:11,5",
-                      "auto:pickup:blueGem@MT1:9,9",
-                      "auto:pickup:redGem@MT1:3,9",
-                      "battle:blackSlime@MT1:3,10",
-                      "auto:pickup:I578@MT1:2,11",
-                      "auto:battle:blackSlime@MT1:3,6",
-                      "auto:battle:blackSlime@MT1:9,10",
-                      "auto:pickup:yellowPotion@MT1:10,11",
-                      "battle:slimelord@MT1:9,4",
-                      "auto:pickup:yellowGem@MT1:9,2",
-                      "auto:pickup:yellowPotion@MT1:10,3",
-                      "battle:slimelord@MT1:3,4",
-                      "auto:pickup:I578@MT1:3,2",
-                      "auto:pickup:blueGem@MT1:2,3",
-                      "battle:bat@MT1:4,11",
-                      "auto:pickup:blueGem@MT1:5,11",
-                      "auto:pickup:bluePotion@MT1:7,11",
-                      "battle:bat@MT1:8,11",
-                      "battle:bigBat@MT1:11,11",
-                      "auto:pickup:I576@MT1:12,11",
-                      "battle:skeletonWarrior@MT1:2,1",
-                      "auto:pickup:I584@MT1:1,2",
-                      "battle:redBat@MT1:10,1",
-                      "auto:pickup:I579@MT1:11,2",
-                      "auto:battle:vampire@MT1:4,3",
-                      "auto:battle:vampire@MT1:1,11",
-                      "auto:pickup:I576@MT1:5,3",
-                      "auto:pickup:I577@MT1:0,11"
-                    ],
-                    "notes": [],
-                    "meta": {
-                      "rank": "chaos",
-                      "decisionDepth": 13,
-                      "autoStepCount": 31,
-                      "autoPickupCount": 23,
-                      "autoBattleCount": 8
-                    },
-                    "progress": {
-                      "stageIndex": 1,
-                      "milestoneMask": "MT1,MT2",
-                      "visitedFloorMask": "MT1,MT2",
-                      "targetFloor": null,
-                      "bestFloorRank": 2,
-                      "currentFloorRank": 2,
-                      "lastProgressActionId": null
-                    }
-                  },
-                  "hero": {
-                    "hp": 1970,
-                    "hpmax": 9999,
-                    "atk": 21,
-                    "def": 17,
-                    "mdef": 130,
-                    "lv": 3,
-                    "exp": 7,
-                    "money": 0,
-                    "loc": {
-                      "x": 6,
-                      "y": 0
-                    }
-                  },
-                  "inventory": {
-                    "I600": 1,
-                    "book": 1,
-                    "fly": 1
-                  },
-                  "flags": {
-                    "__leaveLoc__": {
-                      "MT1": {
-                        "x": 6,
-                        "y": 0,
-                        "direction": "up"
-                      }
-                    },
-                    "autoBattle": 1,
-                    "hatred": 40,
-                    "shiqu": 1
-                  },
-                  "visitedFloors": [
-                    "MT1",
-                    "MT2"
-                  ],
-                  "mutations": [
-                    {
-                      "floorId": "MT1",
-                      "removed": [
-                        "0,11",
-                        "1,11",
-                        "1,2",
-                        "10,1",
-                        "10,11",
-                        "10,3",
-                        "10,5",
-                        "10,7",
-                        "10,8",
-                        "11,11",
-                        "11,2",
-                        "11,5",
-                        "12,11",
-                        "2,1",
-                        "2,11",
-                        "2,3",
-                        "2,7",
-                        "2,8",
-                        "3,10",
-                        "3,2",
-                        "3,4",
-                        "3,6",
-                        "3,9",
-                        "4,11",
-                        "4,3",
-                        "4,7",
-                        "5,1",
-                        "5,11",
-                        "5,3",
-                        "5,6",
-                        "5,8",
-                        "7,1",
-                        "7,11",
-                        "7,3",
-                        "7,6",
-                        "7,8",
-                        "8,1",
-                        "8,11",
-                        "8,3",
-                        "8,7",
-                        "9,10",
-                        "9,2",
-                        "9,4",
-                        "9,6",
-                        "9,9"
-                      ],
-                      "replaced": []
-                    },
-                    {
-                      "floorId": "MT2",
-                      "removed": [
-                        "5,1",
-                        "7,1"
-                      ],
-                      "replaced": []
-                    }
-                  ],
-                  "routeLength": 36,
-                  "decisionDepth": 13,
-                  "action": {
-                    "kind": "changeFloor",
-                    "summary": "changeFloor@MT1:6,0",
-                    "fingerprint": "changeFloor|changeFloor@MT1:6,0"
-                  },
-                  "skylineRoles": []
                 },
                 "initialInsertion": {
                   "nodeId": 6,
@@ -56004,7 +55310,7 @@
                   },
                   "skylineRoles": [],
                   "expansion": 3,
-                  "elapsedMs": 397
+                  "elapsedMs": 766
                 }
               }
             ],
@@ -56221,7 +55527,8 @@
       "goalArchiveRole": "raw-dp-goal-archive",
       "activeCandidates": [
         {
-          "rank": 0,
+          "rawSortRank": 0,
+          "selectedArchiveRank": 0,
           "selected": true,
           "candidate": {
             "nodeId": 15,
@@ -56503,7 +55810,8 @@
           }
         },
         {
-          "rank": 1,
+          "rawSortRank": 1,
+          "selectedArchiveRank": 1,
           "selected": true,
           "candidate": {
             "nodeId": 17,
@@ -56785,7 +56093,8 @@
           }
         },
         {
-          "rank": 2,
+          "rawSortRank": 2,
+          "selectedArchiveRank": 2,
           "selected": true,
           "candidate": {
             "nodeId": 21,
@@ -57063,7 +56372,8 @@
           }
         },
         {
-          "rank": 3,
+          "rawSortRank": 3,
+          "selectedArchiveRank": 3,
           "selected": true,
           "candidate": {
             "nodeId": 23,
@@ -57341,7 +56651,8 @@
           }
         },
         {
-          "rank": 4,
+          "rawSortRank": 4,
+          "selectedArchiveRank": 4,
           "selected": true,
           "candidate": {
             "nodeId": 16,
@@ -57625,7 +56936,8 @@
           }
         },
         {
-          "rank": 5,
+          "rawSortRank": 5,
+          "selectedArchiveRank": 5,
           "selected": true,
           "candidate": {
             "nodeId": 22,
@@ -57905,7 +57217,8 @@
           }
         },
         {
-          "rank": 6,
+          "rawSortRank": 6,
+          "selectedArchiveRank": 6,
           "selected": true,
           "candidate": {
             "nodeId": 11,
@@ -58183,7 +57496,8 @@
           }
         },
         {
-          "rank": 7,
+          "rawSortRank": 7,
+          "selectedArchiveRank": 7,
           "selected": true,
           "candidate": {
             "nodeId": 13,
@@ -58461,7 +57775,8 @@
           }
         },
         {
-          "rank": 8,
+          "rawSortRank": 8,
+          "selectedArchiveRank": null,
           "selected": false,
           "candidate": {
             "nodeId": 5,
@@ -58735,7 +58050,8 @@
           }
         },
         {
-          "rank": 9,
+          "rawSortRank": 9,
+          "selectedArchiveRank": null,
           "selected": false,
           "candidate": {
             "nodeId": 6,
@@ -59291,7 +58607,7 @@
               },
               "skylineRoles": [],
               "expansion": 3,
-              "elapsedMs": 397
+              "elapsedMs": 766
             }
           ],
           "nodeIds": [
@@ -59299,13 +58615,16 @@
           ],
           "activeAtFinish": true,
           "selectedAtFinish": false,
-          "sortPositions": [
+          "rawSortRanks": [
             9
           ],
+          "selectedArchiveRanks": [],
           "archiveDecision": "rejected-by-goal-archive-capacity",
           "evictions": [],
           "rejections": [],
-          "actualReplacementWitness": {
+          "witnessKind": "goal-archive-capacity-boundary",
+          "actualReplacementWitness": null,
+          "capacityBoundaryWitness": {
             "nodeId": 13,
             "parentId": 8,
             "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
@@ -59583,287 +58902,16 @@
             "comparator": "compareGoalStates",
             "result": -369,
             "hpDiff": -369,
-            "atkDiff": 0,
-            "defDiff": 0,
-            "mdefDiff": 0,
-            "lvDiff": 0,
-            "expDiff": -1,
-            "routeLengthDiff": 3,
+            "effectiveAtkDiff": 0,
+            "effectiveDefDiff": 0,
+            "effectiveMdefDiff": 0,
+            "rawLvDiff": 0,
+            "rawExpDiff": -1,
+            "rawAtkDiff": 0,
+            "rawDefDiff": 0,
+            "rawMdefDiff": 0,
+            "routeLengthDiff": -3,
             "firstDecidingField": "hp"
-          },
-          "capacityBoundary": {
-            "nodeId": 13,
-            "parentId": 8,
-            "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
-            "dpKey": "{\"floorId\":\"MT2\",\"keyMode\":\"region\",\"regionKey\":\"5,1|6,0|6,1|7,1\",\"reachableEndpointsKey\":\"battle:skeleton@4,1|battle:skeleton@8,1|changeFloor:6,0->:before\",\"hero\":{\"atk\":21,\"def\":17,\"mdef\":130,\"lv\":3,\"exp\":7,\"money\":0,\"mana\":0,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
-            "state": {
-              "floorId": "MT2",
-              "hero": {
-                "hp": 1970,
-                "hpmax": 9999,
-                "mana": 0,
-                "manamax": -1,
-                "atk": 21,
-                "def": 17,
-                "mdef": 130,
-                "money": 0,
-                "exp": 7,
-                "lv": 3,
-                "loc": {
-                  "x": 6,
-                  "y": 0,
-                  "direction": "up"
-                },
-                "equipment": [],
-                "steps": 95,
-                "statistics": {
-                  "battleDamage": 2931,
-                  "battle": 20,
-                  "money": 0,
-                  "exp": 20
-                }
-              },
-              "inventory": {
-                "I600": 1,
-                "book": 1,
-                "fly": 1
-              },
-              "flags": {
-                "autoBattle": 1,
-                "shiqu": 1,
-                "hatred": 40,
-                "__leaveLoc__": {
-                  "MT1": {
-                    "x": 6,
-                    "y": 0,
-                    "direction": "up"
-                  }
-                }
-              },
-              "floorStates": {
-                "MT1": {
-                  "removed": {
-                    "5,6": true,
-                    "7,6": true,
-                    "5,8": true,
-                    "7,8": true,
-                    "8,7": true,
-                    "10,7": true,
-                    "4,7": true,
-                    "2,7": true,
-                    "9,6": true,
-                    "10,8": true,
-                    "10,5": true,
-                    "2,8": true,
-                    "11,5": true,
-                    "9,9": true,
-                    "3,9": true,
-                    "3,10": true,
-                    "2,11": true,
-                    "3,6": true,
-                    "9,10": true,
-                    "10,11": true,
-                    "9,4": true,
-                    "9,2": true,
-                    "10,3": true,
-                    "3,4": true,
-                    "3,2": true,
-                    "2,3": true,
-                    "4,11": true,
-                    "5,11": true,
-                    "7,11": true,
-                    "8,11": true,
-                    "11,11": true,
-                    "12,11": true,
-                    "2,1": true,
-                    "1,2": true,
-                    "10,1": true,
-                    "11,2": true,
-                    "4,3": true,
-                    "1,11": true,
-                    "5,3": true,
-                    "0,11": true,
-                    "8,3": true,
-                    "7,3": true,
-                    "8,1": true,
-                    "7,1": true,
-                    "5,1": true
-                  },
-                  "replaced": {}
-                },
-                "MT2": {
-                  "removed": {
-                    "7,1": true,
-                    "5,1": true
-                  },
-                  "replaced": {}
-                }
-              },
-              "visitedFloors": {
-                "MT1": true,
-                "MT2": true
-              },
-              "triggeredAutoEvents": {},
-              "route": [
-                "battle:blackSlime@MT1:8,7",
-                "auto:pickup:I586@MT1:10,7",
-                "auto:battle:greenSlime@MT1:4,7",
-                "auto:pickup:redPotion@MT1:2,7",
-                "battle:redSlime@MT1:9,6",
-                "auto:battle:redSlime@MT1:10,8",
-                "auto:battle:greenSlime@MT1:10,5",
-                "auto:battle:redSlime@MT1:2,8",
-                "auto:pickup:redGem@MT1:11,5",
-                "auto:pickup:blueGem@MT1:9,9",
-                "auto:pickup:redGem@MT1:3,9",
-                "battle:blackSlime@MT1:3,10",
-                "auto:pickup:I578@MT1:2,11",
-                "auto:battle:blackSlime@MT1:3,6",
-                "auto:battle:blackSlime@MT1:9,10",
-                "auto:pickup:yellowPotion@MT1:10,11",
-                "battle:slimelord@MT1:9,4",
-                "auto:pickup:yellowGem@MT1:9,2",
-                "auto:pickup:yellowPotion@MT1:10,3",
-                "battle:slimelord@MT1:3,4",
-                "auto:pickup:I578@MT1:3,2",
-                "auto:pickup:blueGem@MT1:2,3",
-                "battle:bat@MT1:4,11",
-                "auto:pickup:blueGem@MT1:5,11",
-                "auto:pickup:bluePotion@MT1:7,11",
-                "battle:bat@MT1:8,11",
-                "battle:bigBat@MT1:11,11",
-                "auto:pickup:I576@MT1:12,11",
-                "battle:skeletonWarrior@MT1:2,1",
-                "auto:pickup:I584@MT1:1,2",
-                "battle:redBat@MT1:10,1",
-                "auto:pickup:I579@MT1:11,2",
-                "auto:battle:vampire@MT1:4,3",
-                "auto:battle:vampire@MT1:1,11",
-                "auto:pickup:I576@MT1:5,3",
-                "auto:pickup:I577@MT1:0,11"
-              ],
-              "notes": [],
-              "meta": {
-                "rank": "chaos",
-                "decisionDepth": 13,
-                "autoStepCount": 31,
-                "autoPickupCount": 23,
-                "autoBattleCount": 8
-              },
-              "progress": {
-                "stageIndex": 1,
-                "milestoneMask": "MT1,MT2",
-                "visitedFloorMask": "MT1,MT2",
-                "targetFloor": null,
-                "bestFloorRank": 2,
-                "currentFloorRank": 2,
-                "lastProgressActionId": null
-              }
-            },
-            "hero": {
-              "hp": 1970,
-              "hpmax": 9999,
-              "atk": 21,
-              "def": 17,
-              "mdef": 130,
-              "lv": 3,
-              "exp": 7,
-              "money": 0,
-              "loc": {
-                "x": 6,
-                "y": 0
-              }
-            },
-            "inventory": {
-              "I600": 1,
-              "book": 1,
-              "fly": 1
-            },
-            "flags": {
-              "__leaveLoc__": {
-                "MT1": {
-                  "x": 6,
-                  "y": 0,
-                  "direction": "up"
-                }
-              },
-              "autoBattle": 1,
-              "hatred": 40,
-              "shiqu": 1
-            },
-            "visitedFloors": [
-              "MT1",
-              "MT2"
-            ],
-            "mutations": [
-              {
-                "floorId": "MT1",
-                "removed": [
-                  "0,11",
-                  "1,11",
-                  "1,2",
-                  "10,1",
-                  "10,11",
-                  "10,3",
-                  "10,5",
-                  "10,7",
-                  "10,8",
-                  "11,11",
-                  "11,2",
-                  "11,5",
-                  "12,11",
-                  "2,1",
-                  "2,11",
-                  "2,3",
-                  "2,7",
-                  "2,8",
-                  "3,10",
-                  "3,2",
-                  "3,4",
-                  "3,6",
-                  "3,9",
-                  "4,11",
-                  "4,3",
-                  "4,7",
-                  "5,1",
-                  "5,11",
-                  "5,3",
-                  "5,6",
-                  "5,8",
-                  "7,1",
-                  "7,11",
-                  "7,3",
-                  "7,6",
-                  "7,8",
-                  "8,1",
-                  "8,11",
-                  "8,3",
-                  "8,7",
-                  "9,10",
-                  "9,2",
-                  "9,4",
-                  "9,6",
-                  "9,9"
-                ],
-                "replaced": []
-              },
-              {
-                "floorId": "MT2",
-                "removed": [
-                  "5,1",
-                  "7,1"
-                ],
-                "replaced": []
-              }
-            ],
-            "routeLength": 36,
-            "decisionDepth": 13,
-            "action": {
-              "kind": "changeFloor",
-              "summary": "changeFloor@MT1:6,0",
-              "fingerprint": "changeFloor|changeFloor@MT1:6,0"
-            },
-            "skylineRoles": []
           },
           "initialInsertion": {
             "nodeId": 6,
@@ -60138,7 +59186,7 @@
             },
             "skylineRoles": [],
             "expansion": 3,
-            "elapsedMs": 397
+            "elapsedMs": 766
           }
         }
       ],
@@ -60422,7 +59470,7 @@
           },
           "skylineRoles": [],
           "expansion": 3,
-          "elapsedMs": 397
+          "elapsedMs": 766
         }
       ],
       "nodeIds": [
@@ -60430,13 +59478,16 @@
       ],
       "activeAtFinish": true,
       "selectedAtFinish": false,
-      "sortPositions": [
+      "rawSortRanks": [
         9
       ],
+      "selectedArchiveRanks": [],
       "archiveDecision": "rejected-by-goal-archive-capacity",
       "evictions": [],
       "rejections": [],
-      "actualReplacementWitness": {
+      "witnessKind": "goal-archive-capacity-boundary",
+      "actualReplacementWitness": null,
+      "capacityBoundaryWitness": {
         "nodeId": 13,
         "parentId": 8,
         "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
@@ -60714,287 +59765,16 @@
         "comparator": "compareGoalStates",
         "result": -369,
         "hpDiff": -369,
-        "atkDiff": 0,
-        "defDiff": 0,
-        "mdefDiff": 0,
-        "lvDiff": 0,
-        "expDiff": -1,
-        "routeLengthDiff": 3,
+        "effectiveAtkDiff": 0,
+        "effectiveDefDiff": 0,
+        "effectiveMdefDiff": 0,
+        "rawLvDiff": 0,
+        "rawExpDiff": -1,
+        "rawAtkDiff": 0,
+        "rawDefDiff": 0,
+        "rawMdefDiff": 0,
+        "routeLengthDiff": -3,
         "firstDecidingField": "hp"
-      },
-      "capacityBoundary": {
-        "nodeId": 13,
-        "parentId": 8,
-        "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
-        "dpKey": "{\"floorId\":\"MT2\",\"keyMode\":\"region\",\"regionKey\":\"5,1|6,0|6,1|7,1\",\"reachableEndpointsKey\":\"battle:skeleton@4,1|battle:skeleton@8,1|changeFloor:6,0->:before\",\"hero\":{\"atk\":21,\"def\":17,\"mdef\":130,\"lv\":3,\"exp\":7,\"money\":0,\"mana\":0,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
-        "state": {
-          "floorId": "MT2",
-          "hero": {
-            "hp": 1970,
-            "hpmax": 9999,
-            "mana": 0,
-            "manamax": -1,
-            "atk": 21,
-            "def": 17,
-            "mdef": 130,
-            "money": 0,
-            "exp": 7,
-            "lv": 3,
-            "loc": {
-              "x": 6,
-              "y": 0,
-              "direction": "up"
-            },
-            "equipment": [],
-            "steps": 95,
-            "statistics": {
-              "battleDamage": 2931,
-              "battle": 20,
-              "money": 0,
-              "exp": 20
-            }
-          },
-          "inventory": {
-            "I600": 1,
-            "book": 1,
-            "fly": 1
-          },
-          "flags": {
-            "autoBattle": 1,
-            "shiqu": 1,
-            "hatred": 40,
-            "__leaveLoc__": {
-              "MT1": {
-                "x": 6,
-                "y": 0,
-                "direction": "up"
-              }
-            }
-          },
-          "floorStates": {
-            "MT1": {
-              "removed": {
-                "5,6": true,
-                "7,6": true,
-                "5,8": true,
-                "7,8": true,
-                "8,7": true,
-                "10,7": true,
-                "4,7": true,
-                "2,7": true,
-                "9,6": true,
-                "10,8": true,
-                "10,5": true,
-                "2,8": true,
-                "11,5": true,
-                "9,9": true,
-                "3,9": true,
-                "3,10": true,
-                "2,11": true,
-                "3,6": true,
-                "9,10": true,
-                "10,11": true,
-                "9,4": true,
-                "9,2": true,
-                "10,3": true,
-                "3,4": true,
-                "3,2": true,
-                "2,3": true,
-                "4,11": true,
-                "5,11": true,
-                "7,11": true,
-                "8,11": true,
-                "11,11": true,
-                "12,11": true,
-                "2,1": true,
-                "1,2": true,
-                "10,1": true,
-                "11,2": true,
-                "4,3": true,
-                "1,11": true,
-                "5,3": true,
-                "0,11": true,
-                "8,3": true,
-                "7,3": true,
-                "8,1": true,
-                "7,1": true,
-                "5,1": true
-              },
-              "replaced": {}
-            },
-            "MT2": {
-              "removed": {
-                "7,1": true,
-                "5,1": true
-              },
-              "replaced": {}
-            }
-          },
-          "visitedFloors": {
-            "MT1": true,
-            "MT2": true
-          },
-          "triggeredAutoEvents": {},
-          "route": [
-            "battle:blackSlime@MT1:8,7",
-            "auto:pickup:I586@MT1:10,7",
-            "auto:battle:greenSlime@MT1:4,7",
-            "auto:pickup:redPotion@MT1:2,7",
-            "battle:redSlime@MT1:9,6",
-            "auto:battle:redSlime@MT1:10,8",
-            "auto:battle:greenSlime@MT1:10,5",
-            "auto:battle:redSlime@MT1:2,8",
-            "auto:pickup:redGem@MT1:11,5",
-            "auto:pickup:blueGem@MT1:9,9",
-            "auto:pickup:redGem@MT1:3,9",
-            "battle:blackSlime@MT1:3,10",
-            "auto:pickup:I578@MT1:2,11",
-            "auto:battle:blackSlime@MT1:3,6",
-            "auto:battle:blackSlime@MT1:9,10",
-            "auto:pickup:yellowPotion@MT1:10,11",
-            "battle:slimelord@MT1:9,4",
-            "auto:pickup:yellowGem@MT1:9,2",
-            "auto:pickup:yellowPotion@MT1:10,3",
-            "battle:slimelord@MT1:3,4",
-            "auto:pickup:I578@MT1:3,2",
-            "auto:pickup:blueGem@MT1:2,3",
-            "battle:bat@MT1:4,11",
-            "auto:pickup:blueGem@MT1:5,11",
-            "auto:pickup:bluePotion@MT1:7,11",
-            "battle:bat@MT1:8,11",
-            "battle:bigBat@MT1:11,11",
-            "auto:pickup:I576@MT1:12,11",
-            "battle:skeletonWarrior@MT1:2,1",
-            "auto:pickup:I584@MT1:1,2",
-            "battle:redBat@MT1:10,1",
-            "auto:pickup:I579@MT1:11,2",
-            "auto:battle:vampire@MT1:4,3",
-            "auto:battle:vampire@MT1:1,11",
-            "auto:pickup:I576@MT1:5,3",
-            "auto:pickup:I577@MT1:0,11"
-          ],
-          "notes": [],
-          "meta": {
-            "rank": "chaos",
-            "decisionDepth": 13,
-            "autoStepCount": 31,
-            "autoPickupCount": 23,
-            "autoBattleCount": 8
-          },
-          "progress": {
-            "stageIndex": 1,
-            "milestoneMask": "MT1,MT2",
-            "visitedFloorMask": "MT1,MT2",
-            "targetFloor": null,
-            "bestFloorRank": 2,
-            "currentFloorRank": 2,
-            "lastProgressActionId": null
-          }
-        },
-        "hero": {
-          "hp": 1970,
-          "hpmax": 9999,
-          "atk": 21,
-          "def": 17,
-          "mdef": 130,
-          "lv": 3,
-          "exp": 7,
-          "money": 0,
-          "loc": {
-            "x": 6,
-            "y": 0
-          }
-        },
-        "inventory": {
-          "I600": 1,
-          "book": 1,
-          "fly": 1
-        },
-        "flags": {
-          "__leaveLoc__": {
-            "MT1": {
-              "x": 6,
-              "y": 0,
-              "direction": "up"
-            }
-          },
-          "autoBattle": 1,
-          "hatred": 40,
-          "shiqu": 1
-        },
-        "visitedFloors": [
-          "MT1",
-          "MT2"
-        ],
-        "mutations": [
-          {
-            "floorId": "MT1",
-            "removed": [
-              "0,11",
-              "1,11",
-              "1,2",
-              "10,1",
-              "10,11",
-              "10,3",
-              "10,5",
-              "10,7",
-              "10,8",
-              "11,11",
-              "11,2",
-              "11,5",
-              "12,11",
-              "2,1",
-              "2,11",
-              "2,3",
-              "2,7",
-              "2,8",
-              "3,10",
-              "3,2",
-              "3,4",
-              "3,6",
-              "3,9",
-              "4,11",
-              "4,3",
-              "4,7",
-              "5,1",
-              "5,11",
-              "5,3",
-              "5,6",
-              "5,8",
-              "7,1",
-              "7,11",
-              "7,3",
-              "7,6",
-              "7,8",
-              "8,1",
-              "8,11",
-              "8,3",
-              "8,7",
-              "9,10",
-              "9,2",
-              "9,4",
-              "9,6",
-              "9,9"
-            ],
-            "replaced": []
-          },
-          {
-            "floorId": "MT2",
-            "removed": [
-              "5,1",
-              "7,1"
-            ],
-            "replaced": []
-          }
-        ],
-        "routeLength": 36,
-        "decisionDepth": 13,
-        "action": {
-          "kind": "changeFloor",
-          "summary": "changeFloor@MT1:6,0",
-          "fingerprint": "changeFloor|changeFloor@MT1:6,0"
-        },
-        "skylineRoles": []
       },
       "initialInsertion": {
         "nodeId": 6,
@@ -61269,7 +60049,7 @@
         },
         "skylineRoles": [],
         "expansion": 3,
-        "elapsedMs": 397
+        "elapsedMs": 766
       }
     },
     "actualWitnessContinuation": {
@@ -61909,9 +60689,9 @@
                 "memoryCheckIntervalExpansions": 1,
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
-                "wallMs": 2071,
-                "heapUsedMb": 328.2,
-                "rssMb": 1025.2,
+                "wallMs": 2341,
+                "heapUsedMb": 574.5,
+                "rssMb": 967.1,
                 "memory": {
                   "maxHeapMb": 1400,
                   "maxRssMb": 1800,
@@ -61919,8 +60699,8 @@
                   "memoryCheckIntervalActions": 1,
                   "memoryLimitsEnabled": true,
                   "successorCheckGranularity": "action-batch",
-                  "peakHeapUsedMb": 328.2,
-                  "peakRssMb": 1025.2,
+                  "peakHeapUsedMb": 574.5,
+                  "peakRssMb": 967.1,
                   "stopHeapUsedMb": null,
                   "stopRssMb": null,
                   "stoppedReason": null,
@@ -61983,7 +60763,7 @@
                 "targetFloorOrder": 2,
                 "foundFirstGoal": true,
                 "firstGoalExpansion": 3,
-                "firstGoalElapsedMs": 20,
+                "firstGoalElapsedMs": 68,
                 "statProgress": {
                   "maxHeroSeen": {
                     "hp": 4875,
@@ -62263,9 +61043,9 @@
                 "memoryCheckIntervalExpansions": 1,
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
-                "wallMs": 68937,
-                "heapUsedMb": 589.5,
-                "rssMb": 1048.8,
+                "wallMs": 79719,
+                "heapUsedMb": 667,
+                "rssMb": 974.1,
                 "memory": {
                   "maxHeapMb": 1400,
                   "maxRssMb": 1800,
@@ -62273,8 +61053,8 @@
                   "memoryCheckIntervalActions": 1,
                   "memoryLimitsEnabled": true,
                   "successorCheckGranularity": "action-batch",
-                  "peakHeapUsedMb": 589.5,
-                  "peakRssMb": 1048.8,
+                  "peakHeapUsedMb": 667,
+                  "peakRssMb": 974.1,
                   "stopHeapUsedMb": null,
                   "stopRssMb": null,
                   "stoppedReason": null,
@@ -62294,7 +61074,7 @@
                 "statesWithActionTrim": 0,
                 "maxActionsGeneratedForState": 7,
                 "observerCaptureMode": "targeted-state",
-                "observerCaptureElapsedMs": 63,
+                "observerCaptureElapsedMs": 67,
                 "agendaFairness": {
                   "enabled": false,
                   "fairnessEvery": 32,
@@ -62838,9 +61618,9 @@
                 "memoryCheckIntervalExpansions": 1,
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
-                "wallMs": 3019,
-                "heapUsedMb": 424.7,
-                "rssMb": 1037.3,
+                "wallMs": 2659,
+                "heapUsedMb": 563.7,
+                "rssMb": 971.2,
                 "memory": {
                   "maxHeapMb": 1400,
                   "maxRssMb": 1800,
@@ -62848,8 +61628,8 @@
                   "memoryCheckIntervalActions": 1,
                   "memoryLimitsEnabled": true,
                   "successorCheckGranularity": "action-batch",
-                  "peakHeapUsedMb": 424.7,
-                  "peakRssMb": 1037.3,
+                  "peakHeapUsedMb": 563.7,
+                  "peakRssMb": 971.2,
                   "stopHeapUsedMb": null,
                   "stopRssMb": null,
                   "stoppedReason": null,
@@ -62869,7 +61649,7 @@
                 "statesWithActionTrim": 0,
                 "maxActionsGeneratedForState": 5,
                 "observerCaptureMode": "targeted-state",
-                "observerCaptureElapsedMs": 6,
+                "observerCaptureElapsedMs": 4,
                 "agendaFairness": {
                   "enabled": false,
                   "fairnessEvery": 32,
@@ -62912,7 +61692,7 @@
                 "targetFloorOrder": 2,
                 "foundFirstGoal": true,
                 "firstGoalExpansion": 3,
-                "firstGoalElapsedMs": 73,
+                "firstGoalElapsedMs": 50,
                 "statProgress": {
                   "maxHeroSeen": {
                     "hp": 4875,
@@ -63192,9 +61972,9 @@
                 "memoryCheckIntervalExpansions": 1,
                 "memoryCheckIntervalActions": 1,
                 "memoryLimitsEnabled": true,
-                "wallMs": 14223,
-                "heapUsedMb": 651.1,
-                "rssMb": 1057.7,
+                "wallMs": 18794,
+                "heapUsedMb": 639.5,
+                "rssMb": 978,
                 "memory": {
                   "maxHeapMb": 1400,
                   "maxRssMb": 1800,
@@ -63202,8 +61982,8 @@
                   "memoryCheckIntervalActions": 1,
                   "memoryLimitsEnabled": true,
                   "successorCheckGranularity": "action-batch",
-                  "peakHeapUsedMb": 651.1,
-                  "peakRssMb": 1057.7,
+                  "peakHeapUsedMb": 639.5,
+                  "peakRssMb": 978,
                   "stopHeapUsedMb": null,
                   "stopRssMb": null,
                   "stoppedReason": null,
@@ -63223,7 +62003,7 @@
                 "statesWithActionTrim": 0,
                 "maxActionsGeneratedForState": 7,
                 "observerCaptureMode": "targeted-state",
-                "observerCaptureElapsedMs": 36,
+                "observerCaptureElapsedMs": 50,
                 "agendaFairness": {
                   "enabled": false,
                   "fairnessEvery": 32,
@@ -63755,8 +62535,8 @@
           "maxRssMb": 1800,
           "memoryCheckIntervalExpansions": 1,
           "memoryCheckIntervalActions": 1,
-          "peakHeapUsedMb": 651.1,
-          "peakRssMb": 1057.7,
+          "peakHeapUsedMb": 667,
+          "peakRssMb": 978,
           "heapLimitedCount": 0,
           "rssLimitedCount": 0,
           "stoppedReason": null,
@@ -63790,5 +62570,5 @@
       "reachedMt2Hp3834": false
     }
   },
-  "conclusion": "Teacher exact entry was goalAccepted but omitted from the raw goal archive by rejected-by-goal-archive-capacity; the recorded actual archive witness was sent through production downstream continuation."
+  "conclusion": "Teacher exact entry was goalAccepted but omitted from the raw goal archive by rejected-by-goal-archive-capacity; the capacity boundary witness was sent through production downstream continuation."
 }
