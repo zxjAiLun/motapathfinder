@@ -1053,9 +1053,33 @@ function runIsolatedAudit(argv) {
     worktreeCleanAtStart: startedClean,
     worktreeCleanAtFinish: cleanWorktree(),
   };
-  const failedGates = Object.entries(gates)
-    .filter(([, value]) => typeof value === "boolean" && !value)
-    .map(([name]) => name);
+  const requiredGateNames = [
+    "sourceRouteStrictReplay",
+    "candidate2ExactStartMatched",
+    "productionSearchExecuted",
+    "productionSearchNoTeacherInjection",
+    "teacherEntryGoalAccepted",
+    "firstExactLineageDropClassified",
+    "entryReplacementContinuationAudited",
+    "allLocalCheckpointsAttempted",
+    "allLocalAttemptsProcessIsolated",
+    "childOldSpaceActuallyApplied",
+    "mt2EntryPipelineObserved",
+    "mt2LocalPipelineObserved",
+    "mt2Hp3834PipelineObserved",
+    "oracleSuffixExecuted",
+    "oracleSuffixComplete",
+    "hardTilesChecked",
+    "decisionTargetsDefined",
+    "lastNaturallyTrackedDecision",
+    "firstUnobservedDecision",
+    "postDropDecisionsClassifiedNotApplicable",
+    "searchCompletionClassified",
+    "provenanceCommitStable",
+    "worktreeCleanAtStart",
+    "worktreeCleanAtFinish",
+  ];
+  const failedGates = requiredGateNames.filter((name) => gates[name] !== true);
   const status = failedGates.length > 0
     ? "failed"
     : searchCompletion.classification === "inconclusive"
