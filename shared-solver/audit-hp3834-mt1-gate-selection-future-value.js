@@ -199,6 +199,12 @@ function createLifecycleObserver(simulator, targets, gateExactStateKey, options)
     rejectedReasons: [],
     events: [],
   }]));
+  const postStateTargets = new Map();
+  records.forEach((record) => {
+    const bucket = postStateTargets.get(record.expectedPostExactStateKey) || [];
+    bucket.push(record);
+    postStateTargets.set(record.expectedPostExactStateKey, bucket);
+  });
   const goalEvents = [];
   const eventCounts = {};
   const addUnique = (list, value) => {
@@ -233,14 +239,16 @@ function createLifecycleObserver(simulator, targets, gateExactStateKey, options)
     onEvent(event) {
       if (!event || !event.eventType) return;
       if (observerOptions.capturePostStateRejoins === true) {
-        records.forEach((record) => {
-          const eventAction = event.action || {};
-          const samePostState = record.expectedPostExactStateKey === event.exactStateKey;
+        const postStateEvent = ["candidateRejected", "skylineInserted", "goalAccepted"].includes(event.eventType);
+        const eventAction = event.action || {};
+        const matchingRecords = postStateEvent
+          ? postStateTargets.get(event.exactStateKey) || []
+          : [];
+        matchingRecords.forEach((record) => {
           const sameAction = record.actionFingerprint
             ? record.actionFingerprint === eventAction.fingerprint
             : record.actionSummary && record.actionSummary === eventAction.summary;
-          const postStateEvent = ["candidateRejected", "skylineInserted", "goalAccepted"].includes(event.eventType);
-          if (samePostState && sameAction && postStateEvent) {
+          if (sameAction) {
             record.postRejoined = true;
             if (record.postRejoinEvents.length < 20) record.postRejoinEvents.push(compactEvent(event));
           }
