@@ -292,6 +292,7 @@ function emptyExpansionTelemetry() {
     multiSuccessorActionCount: 0,
     maxSuccessorsPerAction: 0,
     generatedCrossProductPairCount: 0,
+    exactRejoinObserved: false,
   };
 }
 
@@ -391,6 +392,9 @@ function runPairedExpansion(root, adapter, options) {
       budgetExhausted = true;
       exhaustedReason = "state-cap";
       break;
+    }
+    if (node.depth > 0 && adapter.exactKey(node.left) === adapter.exactKey(node.right)) {
+      telemetry.exactRejoinObserved = true;
     }
     const leftTable = buildActionTable(adapter, node.left);
     const rightTable = buildActionTable(adapter, node.right);
@@ -976,6 +980,8 @@ module.exports = {
   buildReport,
   buildActionTable,
   comparePairedActionTables,
+  initialPairEvidence,
+  makeRealAdapter,
   makeSyntheticDepthBoundaryControl,
   makeSyntheticExecutionErrorControl,
   makeSyntheticNegativeControl,
