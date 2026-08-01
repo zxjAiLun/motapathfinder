@@ -1,0 +1,31 @@
+{
+  "schema": "motapathfinder.pr-4.5b-state-abstraction-corpus.v1",
+  "search": {
+    "depth": 2,
+    "branchCap": 32,
+    "stateCap": 256
+  },
+  "positiveCorpus": [
+    {
+      "id": "candidate-6-7-decision-14-20",
+      "fixedPositive": true,
+      "sourceReport": "shared-solver/routes/generated/agenda-policy-evaluation/mt2-candidate2-capacity10-j.json",
+      "ancestryReport": "shared-solver/routes/generated/agenda-policy-evaluation/mt2-candidate2-capacity10-j2.json",
+      "candidateCheckpoint": "mt2-local-3582",
+      "routeCheckpoint": "mt2-hp3834",
+      "leftCandidateId": "mt2-local-3582:candidate-6",
+      "rightCandidateId": "mt2-local-3582:candidate-7",
+      "startDecision": 14,
+      "endDecision": 20,
+      "routeDecisionOffset": 2
+    }
+  ],
+  "negativeControls": [
+    {
+      "id": "synthetic-reentry-hidden-mutation-v1",
+      "type": "synthetic-reentry-hidden-mutation",
+      "expectedOutcome": "mismatch-witness",
+      "description": "Two MT2 states hide different MT1 history under an intentionally unsafe all-mutation projection; a shared re-entry action exposes different MT1 action relations."
+    }
+  ]
+}

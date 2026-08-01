@@ -102,6 +102,7 @@ DP key 必须覆盖：
 | `check-progressive-to-milestone.js` | ✅ v4 bridge | progressive planner → milestone suggestion；special target inference；segment DP validation；focused checks |
 | `check-state-key-audit.js` | ✅ | direction-sensitive items/flags/visitedFloors/DP keyMode 审计 |
 | `audit-state-abstraction.js` / `check-state-abstraction-audit.js` | ✅ PR-4.5a1 shadow-only | candidate-6/7 decision 14–20 的 action-labelled relation、exact-key split、triggeredAutoEvents、direction coverage 与完整性 gates；不接入 production key |
+| `bounded-abstraction-counterexample-search.js` / `check-bounded-abstraction-counterexample.js` | ✅ PR-4.5b shadow-only | manifest-driven depth-2 paired expansion、budget/incomplete contract、最短 mismatch witness 与 deterministic negative control；不接入 production key |
 | `check-onlyup-floorfly-dedup-safety.js` | ✅ | OnlyUp floorFly dedup 安全审计（确认 target-floor 模式不安全） |
 | `check-progressive-monster-planner.js` | ✅ | synthetic smoke + special target priority + batch cap + targeted matcher + legacy compat + portal compat + portal dedup safety（9 tests） |
 
@@ -151,6 +152,14 @@ DP key 必须覆盖：
 当前证据显示：当前楼层 mutation-only projection 在该局部窗口的 action-set 和 projection successor-set 均等价，但 exact successor-set 仍被非当前楼层 mutation 分裂。该结果只支持局部审计结论，不支持修改全局 DP key。
 
 PR-4.5a1 已收紧为可复核契约：固定 7 个 projection collision，使用按 action ID 对齐的 successor relation 作为安全门，锁定 14–19 exact relation 不等价与 decision 20 exact rejoin，并把 replay、enumeration、action application、输入 SHA 和 direction coverage 纳入报告 gates。当前仍不改变 production key。
+
+### P1.7：Bounded Abstraction Counterexample Search（PR-4.5b）✅ 首轮 shadow-only
+
+- ✅ manifest-driven candidate corpus，保留 candidate-6/7 为固定 positive control。
+- ✅ 从每个 projection collision 做深度 2 的 action-labelled paired expansion。
+- ✅ branch/state cap 耗尽输出 `incomplete`，不把预算不足误报为等价。
+- ✅ 输出最短 mismatch witness，并用 synthetic re-entry hidden-mutation control 验证负向检测能力。
+- 当前结果：正样本 `equivalent`，负向控制 `mismatch-witness`；尚不涉及 production key 或全局安全结论。
 
 ### P2：Adaptive planner 闭环
 

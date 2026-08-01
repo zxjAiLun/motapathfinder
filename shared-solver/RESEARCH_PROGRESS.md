@@ -42,6 +42,17 @@ npm run check:no-tower-solver-js
 
 当前 a1 结论：7 个 shadow collision 点均 action-labelled projection relation 等价，14–19 的 exact relation 仍不等价，decision 20 exact relation 等价；审计结果为 `evidenceOutcome=equivalent`，不构成删除全局 mutation 历史的证明。
 
+## 0.9 2026-08-01：PR-4.5b Bounded Abstraction Counterexample Search
+
+PR-4.5a/a1 正式关闭后，继续保持 shadow-only，新增 manifest-driven 的有界抽象反例搜索；不修改 production DP key、dominance、agenda、容量或默认策略。
+
+- 新增 `profiles/state-abstraction-corpus.json`，由 manifest 指定 candidate-6 / candidate-7 正样本、decision 14–20、深度 2、branch cap 32、state cap 256。
+- 新增 `bounded-abstraction-counterexample-search.js`，从每个 projection collision 出发按 action ID 做 BFS 式 paired expansion；预算或分支 cap 耗尽统一输出 `incomplete`。
+- 正样本 7 个 roots 在深度 2 均为 `equivalent`；新增 deterministic synthetic re-entry negative control，在共享 `reenter-MT1` 后发现 `historical-tile@MT1` action-set mismatch，并输出最短 witness。
+- 新增 `check-bounded-abstraction-counterexample.js`，锁定正样本 `equivalent`、负向控制 `mismatch-witness`、深度/cap、无 incomplete 及 production shadow-only 边界。
+
+当前结论：该 bounded search 已能在固定 manifest 与预算内主动验证正样本，并能检测“隐藏历史在重新进入楼层后改变 action relation”的反例；这仍不是全局 abstraction safety proof。
+
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 
 ### 0.1 本轮目标

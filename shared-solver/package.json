@@ -22,6 +22,8 @@
     "check:key-audit": "node audit-state-dependencies.js",
     "check:state-abstraction": "node check-state-abstraction-audit.js",
     "run:state-abstraction": "node audit-state-abstraction.js",
+    "check:state-abstraction:bounded": "node check-bounded-abstraction-counterexample.js",
+    "run:state-abstraction:bounded": "node bounded-abstraction-counterexample-search.js",
     "check:stage": "node check-stage-acceptance.js --profile=linear-main --targets=MT3,MT5,MT7,MT11 --max-expansions=300 --min-progress-floor=MT2",
     "check:stage:short": "node check-stage-acceptance.js --profile=linear-main --targets=MT3,MT5 --max-expansions=20 --resource-pocket-mode=lite --resource-cluster=1 --search-graph=macro --min-progress-floor=MT2",
     "brute:mt2": "node find-route-bruteforce.js --algorithm=bfs --workers=8 --to-floor=MT2 --max-expanded=50000 --max-depth=120 --out=routes/latest/mt1-mt2.route.json --fail-on-miss --resource-pocket-mode=off --fight-to-levelup=0",

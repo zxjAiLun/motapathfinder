@@ -1,0 +1,374 @@
+{
+  "schema": "motapathfinder.pr-4.5b-bounded-abstraction-counterexample-search.v1",
+  "generatedAt": "2026-08-01T10:52:01.368Z",
+  "status": "completed",
+  "scope": {
+    "shadowOnly": true,
+    "productionSemanticChange": false,
+    "productionChanges": [],
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultStrategyChanged": false
+  },
+  "search": {
+    "depth": 2,
+    "branchCap": 32,
+    "stateCap": 256
+  },
+  "positiveCorpus": {
+    "outcome": "equivalent",
+    "expectedOutcome": "equivalent",
+    "entries": [
+      {
+        "id": "candidate-6-7-decision-14-20",
+        "fixedPositive": true,
+        "sourceReport": "shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-candidate2-capacity10-j.json",
+        "ancestryReport": "shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-candidate2-capacity10-j2.json",
+        "sourceReportSha256": "63ef50026429386fac62c2d40558f2bc7ff0e1168b5450c0783016fac6f9ce74",
+        "ancestryReportSha256": "e85a0bf55d957dea9d5cbcf301b421c48630f8c9a9746aadece798c77e5f7e2f",
+        "startDecision": 14,
+        "endDecision": 20,
+        "replayErrors": [],
+        "candidateExactKeysMatchArtifact": true,
+        "expectedDecisionCount": 7,
+        "rootCount": 7,
+        "incompleteRootCount": 0,
+        "outcome": "equivalent",
+        "roots": [
+          {
+            "id": "candidate-6-7-decision-14-20@decision-14",
+            "decision": 14,
+            "initialPair": {
+              "exactKeyHashes": {
+                "left": "4c07c9e40535fbf8",
+                "right": "5fcb8937e15bd360"
+              },
+              "projectionKeyHashes": {
+                "left": "cc9e3675eb9ea718",
+                "right": "cc9e3675eb9ea718"
+              },
+              "projectionEqual": true
+            },
+            "outcome": "equivalent",
+            "depth": 2,
+            "depthReached": 2,
+            "expandedPairCount": 7,
+            "generatedPairCount": 37,
+            "budgetExhausted": false,
+            "branchCap": 32,
+            "stateCap": 256,
+            "levels": [
+              {
+                "depth": 0,
+                "expandedPairCount": 1
+              },
+              {
+                "depth": 1,
+                "expandedPairCount": 6
+              }
+            ],
+            "witness": null
+          },
+          {
+            "id": "candidate-6-7-decision-14-20@decision-15",
+            "decision": 15,
+            "initialPair": {
+              "exactKeyHashes": {
+                "left": "cb976d30d03237c4",
+                "right": "626d218c288b1679"
+              },
+              "projectionKeyHashes": {
+                "left": "4ee9b59f742e43fb",
+                "right": "4ee9b59f742e43fb"
+              },
+              "projectionEqual": true
+            },
+            "outcome": "equivalent",
+            "depth": 2,
+            "depthReached": 2,
+            "expandedPairCount": 6,
+            "generatedPairCount": 27,
+            "budgetExhausted": false,
+            "branchCap": 32,
+            "stateCap": 256,
+            "levels": [
+              {
+                "depth": 0,
+                "expandedPairCount": 1
+              },
+              {
+                "depth": 1,
+                "expandedPairCount": 5
+              }
+            ],
+            "witness": null
+          },
+          {
+            "id": "candidate-6-7-decision-14-20@decision-16",
+            "decision": 16,
+            "initialPair": {
+              "exactKeyHashes": {
+                "left": "6cb7088e31dd93c8",
+                "right": "04122289687efa8c"
+              },
+              "projectionKeyHashes": {
+                "left": "6aebccb256f302ba",
+                "right": "6aebccb256f302ba"
+              },
+              "projectionEqual": true
+            },
+            "outcome": "equivalent",
+            "depth": 2,
+            "depthReached": 2,
+            "expandedPairCount": 7,
+            "generatedPairCount": 34,
+            "budgetExhausted": false,
+            "branchCap": 32,
+            "stateCap": 256,
+            "levels": [
+              {
+                "depth": 0,
+                "expandedPairCount": 1
+              },
+              {
+                "depth": 1,
+                "expandedPairCount": 6
+              }
+            ],
+            "witness": null
+          },
+          {
+            "id": "candidate-6-7-decision-14-20@decision-17",
+            "decision": 17,
+            "initialPair": {
+              "exactKeyHashes": {
+                "left": "e863212bf728087b",
+                "right": "f4da1c8b23b17cc2"
+              },
+              "projectionKeyHashes": {
+                "left": "6b34e05aab121b6b",
+                "right": "6b34e05aab121b6b"
+              },
+              "projectionEqual": true
+            },
+            "outcome": "equivalent",
+            "depth": 2,
+            "depthReached": 2,
+            "expandedPairCount": 6,
+            "generatedPairCount": 24,
+            "budgetExhausted": false,
+            "branchCap": 32,
+            "stateCap": 256,
+            "levels": [
+              {
+                "depth": 0,
+                "expandedPairCount": 1
+              },
+              {
+                "depth": 1,
+                "expandedPairCount": 5
+              }
+            ],
+            "witness": null
+          },
+          {
+            "id": "candidate-6-7-decision-14-20@decision-18",
+            "decision": 18,
+            "initialPair": {
+              "exactKeyHashes": {
+                "left": "429efe258d551c92",
+                "right": "f0fcc53c26c588b4"
+              },
+              "projectionKeyHashes": {
+                "left": "898430086e9e5261",
+                "right": "898430086e9e5261"
+              },
+              "projectionEqual": true
+            },
+            "outcome": "equivalent",
+            "depth": 2,
+            "depthReached": 2,
+            "expandedPairCount": 5,
+            "generatedPairCount": 16,
+            "budgetExhausted": false,
+            "branchCap": 32,
+            "stateCap": 256,
+            "levels": [
+              {
+                "depth": 0,
+                "expandedPairCount": 1
+              },
+              {
+                "depth": 1,
+                "expandedPairCount": 4
+              }
+            ],
+            "witness": null
+          },
+          {
+            "id": "candidate-6-7-decision-14-20@decision-19",
+            "decision": 19,
+            "initialPair": {
+              "exactKeyHashes": {
+                "left": "2850125ac52ad2dd",
+                "right": "d2695bc38fb736d8"
+              },
+              "projectionKeyHashes": {
+                "left": "47570363c6941ab8",
+                "right": "47570363c6941ab8"
+              },
+              "projectionEqual": true
+            },
+            "outcome": "equivalent",
+            "depth": 2,
+            "depthReached": 2,
+            "expandedPairCount": 4,
+            "generatedPairCount": 10,
+            "budgetExhausted": false,
+            "branchCap": 32,
+            "stateCap": 256,
+            "levels": [
+              {
+                "depth": 0,
+                "expandedPairCount": 1
+              },
+              {
+                "depth": 1,
+                "expandedPairCount": 3
+              }
+            ],
+            "witness": null
+          },
+          {
+            "id": "candidate-6-7-decision-14-20@decision-20",
+            "decision": 20,
+            "initialPair": {
+              "exactKeyHashes": {
+                "left": "95fe8da81afce8d8",
+                "right": "95fe8da81afce8d8"
+              },
+              "projectionKeyHashes": {
+                "left": "391a79ef35bee6df",
+                "right": "391a79ef35bee6df"
+              },
+              "projectionEqual": true
+            },
+            "outcome": "equivalent",
+            "depth": 2,
+            "depthReached": 2,
+            "expandedPairCount": 3,
+            "generatedPairCount": 10,
+            "budgetExhausted": false,
+            "branchCap": 32,
+            "stateCap": 256,
+            "levels": [
+              {
+                "depth": 0,
+                "expandedPairCount": 1
+              },
+              {
+                "depth": 1,
+                "expandedPairCount": 2
+              }
+            ],
+            "witness": null
+          }
+        ]
+      }
+    ]
+  },
+  "negativeControls": {
+    "outcome": "mismatch-witness",
+    "expectedOutcome": "mismatch-witness",
+    "entries": [
+      {
+        "id": "synthetic-reentry-hidden-mutation-v1",
+        "type": "synthetic-reentry-hidden-mutation",
+        "expectedOutcome": "mismatch-witness",
+        "description": "Two MT2 states hide different MT1 history under an intentionally unsafe all-mutation projection; a shared re-entry action exposes different MT1 action relations.",
+        "outcome": "mismatch-witness",
+        "depth": 2,
+        "depthReached": 1,
+        "expandedPairCount": 2,
+        "generatedPairCount": 2,
+        "budgetExhausted": false,
+        "branchCap": 32,
+        "stateCap": 256,
+        "levels": [
+          {
+            "depth": 0,
+            "expandedPairCount": 1
+          },
+          {
+            "depth": 1,
+            "expandedPairCount": 1
+          }
+        ],
+        "witness": {
+          "rootId": "synthetic-reentry-hidden-mutation-v1",
+          "rootDecision": 0,
+          "initialPair": {
+            "exactKeyHashes": {
+              "left": "0c143ef526b7eea2",
+              "right": "4e202a67ac72113a"
+            },
+            "projectionKeyHashes": {
+              "left": "ed0c3c224eb9bad8",
+              "right": "ed0c3c224eb9bad8"
+            },
+            "projectionEqual": true
+          },
+          "sharedActionSequence": [
+            {
+              "id": "reenter-MT1",
+              "action": {
+                "id": "reenter-MT1"
+              }
+            }
+          ],
+          "firstUnmatched": {
+            "depth": 1,
+            "kind": "action-set-mismatch",
+            "actionId": "historical-tile@MT1",
+            "leftOnlyActions": [],
+            "rightOnlyActions": [
+              "historical-tile@MT1"
+            ],
+            "successorMismatch": {
+              "id": "leave-MT2",
+              "exactEqual": false,
+              "projectedEqual": true,
+              "leftExactSuccessors": [
+                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"historical-gate\"]}]}"
+              ],
+              "rightExactSuccessors": [
+                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[]}]}"
+              ],
+              "leftProjectedSuccessors": [
+                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0}}"
+              ],
+              "rightProjectedSuccessors": [
+                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0}}"
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  "summary": {
+    "positiveCorpusEquivalent": true,
+    "negativeControlFoundWitness": true,
+    "anyIncomplete": false
+  },
+  "provenance": {
+    "manifest": "shared-solver\\profiles\\state-abstraction-corpus.json",
+    "manifestSha256": "788c754bcd984dc6c89236206eb3be7d8e930b4be94ff9ebd3895395f51b20ff",
+    "projectRoot": "Only upV2.1\\Only upV2.1",
+    "generationCommit": "76cecf7eecdd7a30ff5f7a4458d6eebd7ae162c7",
+    "productionStateKeyModule": "shared-solver/lib/state-key.js",
+    "productionStateKeySha256": "f5be4802f9926744bc8e91f30ecb8ab8b09ab73057fdef7ceaa44ddbbec808a5"
+  }
+}

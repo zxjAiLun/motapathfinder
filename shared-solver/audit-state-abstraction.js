@@ -376,13 +376,14 @@ function resolveSuffixAction(simulator, state, routeEntry) {
   };
 }
 
-function replayDecisionWindow(simulator, candidate, suffixRoute, startDecision, endDecision) {
+function replayDecisionWindow(simulator, candidate, suffixRoute, startDecision, endDecision, routeDecisionOffset) {
   const states = new Map([[startDecision, candidate.state]]);
   const actions = [];
   const errors = [];
+  const offset = Number(routeDecisionOffset == null ? 2 : routeDecisionOffset);
   let state = candidate.state;
   for (let decision = startDecision + 1; decision <= endDecision; decision += 1) {
-    const routeIndex = decision - 2;
+    const routeIndex = decision - offset;
     const routeEntry = suffixRoute[routeIndex];
     if (!routeEntry) {
       errors.push({ decision, message: `missing route entry at route index ${routeIndex}` });
@@ -981,8 +982,18 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
+  actionSignature,
+  applyActionSuccessors,
   buildMarkdown,
   buildReport,
+  describeActionSet,
+  displayAction,
+  enumeratePrimitiveActions,
+  getCandidate,
+  getHpCheckpointReport,
+  makeSimulator,
+  replayDecisionWindow,
+  safeStateKey,
   shadowCanonicalProjection,
   shadowProjectionKey,
 };
