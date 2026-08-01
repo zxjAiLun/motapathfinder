@@ -25,7 +25,7 @@ function readJson(file) {
 function assertCommonContract(report) {
   assert.strictEqual(report.schema, CONTRACT_SCHEMA);
   assert.strictEqual(report.status, "completed");
-  assert.strictEqual(report.contract.id, "PR-4.6a1");
+  assert.strictEqual(report.contract.id, "PR-4.6a1a");
   assert.strictEqual(report.contract.maxRepairs, 1);
   assert.strictEqual(report.contract.fixedCaseCount, 5);
   assert.strictEqual(report.contract.expectedObservedMustMatch, true);
@@ -45,11 +45,17 @@ function assertCommonContract(report) {
     assert.strictEqual(item.execution.options.enableConvergenceSplit, false, item.id);
     assert.strictEqual(item.repairAttempt.maxRepairCount, 1, item.id);
     assert.strictEqual(item.repairAttempt.recursion, false, item.id);
-    assert.ok(item.oneRepairClosure.orchestratorAttemptCount <= 2, item.id);
-    assert.ok(item.oneRepairClosure.executedAttemptCount <= 2, item.id);
-    assert.ok(item.oneRepairClosure.insertedSegmentCount <= 1, item.id);
-    assert.ok(item.oneRepairClosure.repairIndexes.every((index) => index === 0), item.id);
-    assert.strictEqual(item.oneRepairClosure.stoppedAfterOneRepair, true, item.id);
+    assert.strictEqual(item.generatedRepairSegment.dp.maxExpansions, REPAIR_BUDGET.repairMaxExpansions, item.id);
+    assert.strictEqual(item.generatedRepairSegment.dp.maxRuntimeMs, REPAIR_BUDGET.repairMaxRuntimeMs, item.id);
+    assert.strictEqual(item.effectiveRepairBudget.maxExpansions, REPAIR_BUDGET.repairMaxExpansions, item.id);
+    assert.strictEqual(item.effectiveRepairBudget.maxRuntimeMs, REPAIR_BUDGET.repairMaxRuntimeMs, item.id);
+    assert.ok(item.oneRepairInsertionClosure.orchestratorAttemptCount <= 2, item.id);
+    assert.ok(item.oneRepairInsertionClosure.branchEvaluationCount <= 1, item.id);
+    assert.ok(item.oneRepairInsertionClosure.finalAttemptCount <= 1, item.id);
+    assert.ok(item.oneRepairInsertionClosure.totalGraphExecutionCount <= 3, item.id);
+    assert.ok(item.oneRepairInsertionClosure.uniqueRepairedSpecCount <= 1, item.id);
+    assert.ok(item.oneRepairInsertionClosure.repairIndexes.every((index) => index === 0), item.id);
+    assert.strictEqual(item.oneRepairInsertionClosure.stoppedAfterOneRepairInsertion, true, item.id);
     assert.strictEqual(item.expectedOutcome, item.observedOutcome, item.id);
     assert.ok(["success", "rejected", "repair-incomplete"].includes(item.observedOutcome), item.id);
     assert.strictEqual(
@@ -68,6 +74,7 @@ function assertCommonContract(report) {
     assert.strictEqual(item.scope.productionCapacityChanged, false, item.id);
     assert.strictEqual(item.scope.productionDefaultPolicyChanged, false, item.id);
     assert.strictEqual(item.scope.describesCompleteOnlyUpRoute, false, item.id);
+    assert.ok(["runAdaptiveSegmentPlanner", "admissibility-validator"].includes(item.observedOutcomeSource), item.id);
   });
 }
 
@@ -124,8 +131,6 @@ function assertObservedExecution(report) {
     }
     if (id === "action-survivability-deficit") {
       assert.strictEqual(item.baselineOutcome.failureClassAliases[0], "hp-deficit");
-      assert.strictEqual(item.effectiveRepairBudget.maxExpansions, REPAIR_BUDGET.repairMaxExpansions);
-      assert.strictEqual(item.effectiveRepairBudget.maxRuntimeMs, REPAIR_BUDGET.repairMaxRuntimeMs);
     }
     if (id === "target-action-unreachable") {
       assert.ok(item.generatedRepairSegment.actionPolicy.actionKinds.includes("changeFloor"));
@@ -133,10 +138,9 @@ function assertObservedExecution(report) {
       assert.ok(item.mapping.note.includes("not claimed"));
     }
     if (id === "budget-or-action-scope-exhausted") {
-      assert.strictEqual(item.effectiveRepairBudget.maxExpansions, REPAIR_BUDGET.repairMaxExpansions);
-      assert.strictEqual(item.effectiveRepairBudget.maxRuntimeMs, REPAIR_BUDGET.repairMaxRuntimeMs);
-      assert.strictEqual(item.oneRepairClosure.orchestratorAttemptCount, 2);
-      assert.strictEqual(item.oneRepairClosure.stoppedReason, "max-repair-count");
+      assert.strictEqual(item.oneRepairInsertionClosure.orchestratorAttemptCount, 2);
+      assert.strictEqual(item.oneRepairInsertionClosure.totalGraphExecutionCount, 3);
+      assert.strictEqual(item.oneRepairInsertionClosure.stoppedReason, "max-repair-count");
     }
   });
 }
@@ -149,7 +153,14 @@ function assertOutcomeSemantics(report) {
   assert.strictEqual(rejected.insertedSegmentId, null);
   assert.strictEqual(rejected.repairBranches.length, 0);
   assert.strictEqual(rejected.admissibilityValidator.accepted, false);
+  assert.ok(rejected.admissibilityValidator.checkedTiles.length > 0);
+  assert.ok(rejected.admissibilityValidator.missingRequiredTiles.length > 0);
+  assert.ok(rejected.admissibilityValidator.removedHardDependencies.length > 0);
+  assert.strictEqual(rejected.validatorControls.rejectedHardTile.accepted, false);
+  assert.strictEqual(rejected.validatorControls.acceptedNonHardTile.accepted, true);
   assert.ok(rejected.admissibilityValidator.reason);
+  assert.strictEqual(rejected.observedOutcomeSource, "admissibility-validator");
+  assert.strictEqual(rejected.oneRepairInsertionClosure.totalGraphExecutionCount, 1);
 
   report.cases
     .filter((item) => item.observedOutcome === "success" || item.observedOutcome === "repair-incomplete")
@@ -157,13 +168,20 @@ function assertOutcomeSemantics(report) {
       assert.strictEqual(item.repairAttempt.executed, true, item.id);
       assert.strictEqual(item.repairAttempt.appliedRepairCount, 1, item.id);
       assert.ok(item.insertedSegmentId, item.id);
-      assert.strictEqual(item.oneRepairClosure.insertedSegmentCount, 1, item.id);
+      assert.strictEqual(item.oneRepairInsertionClosure.repairInsertionCount, 1, item.id);
       assert.ok(item.repairedAttempt, item.id);
+      assert.strictEqual(item.observedOutcomeSource, "runAdaptiveSegmentPlanner", item.id);
       if (item.observedOutcome === "success") {
         assert.strictEqual(item.repairedAttempt.found, true, item.id);
+        assert.strictEqual(item.oneRepairInsertionClosure.totalGraphExecutionCount, 2, item.id);
+        assert.strictEqual(item.oneRepairInsertionClosure.branchEvaluationCount, 1, item.id);
+        assert.strictEqual(item.oneRepairInsertionClosure.finalAttemptCount, 0, item.id);
       } else {
         assert.strictEqual(item.repairedAttempt.found, false, item.id);
-        assert.ok(item.oneRepairClosure.stoppedReason, item.id);
+        assert.strictEqual(item.oneRepairInsertionClosure.totalGraphExecutionCount, 3, item.id);
+        assert.strictEqual(item.oneRepairInsertionClosure.branchEvaluationCount, 1, item.id);
+        assert.strictEqual(item.oneRepairInsertionClosure.finalAttemptCount, 1, item.id);
+        assert.ok(item.oneRepairInsertionClosure.stoppedReason, item.id);
       }
     });
 }
@@ -174,7 +192,9 @@ function assertControls(report) {
   assert.strictEqual(report.controls.incompleteRepair, "action-survivability-deficit");
   assert.strictEqual(report.controls.autoSplit, "budget-or-action-scope-exhausted");
   assert.strictEqual(report.controls.deterministicLiveRebuild, true);
-  assert.strictEqual(report.controls.observedFromRunner, true);
+  assert.strictEqual(report.controls.observedFromRunner, false);
+  assert.strictEqual(report.controls.observedExecutionCases, 4);
+  assert.strictEqual(report.controls.observedValidatorCases, 1);
 }
 
 function main() {
@@ -190,7 +210,8 @@ function main() {
   const rebuilt = buildReport();
   assert.deepStrictEqual(normalizeReport(rebuilt), normalizeReport(report));
   const markdown = fs.readFileSync(DEFAULT_OUT_MD, "utf8");
-  assert.ok(markdown.includes("observed from executed synthetic runs"));
+  assert.ok(markdown.includes("Success/incomplete outcomes are observed from executed synthetic runs"));
+  assert.ok(markdown.includes("one-repair-insertion closure"));
   assert.ok(markdown.includes("maxAdaptiveRepairs=1"));
   assert.ok(markdown.includes("300-expansion / 2000-ms"));
   assert.ok(markdown.includes("not a claim of a complete OnlyUp route"));

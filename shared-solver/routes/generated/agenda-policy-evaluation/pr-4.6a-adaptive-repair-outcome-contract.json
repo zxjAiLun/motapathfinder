@@ -1,16 +1,16 @@
 {
-  "schema": "motapathfinder.pr-4.6a1-adaptive-repair-outcome-contract.v1",
+  "schema": "motapathfinder.pr-4.6a1a-adaptive-repair-outcome-contract.v1",
   "status": "completed",
   "generatedAt": "deterministic-contract",
   "provenance": {
-    "generationCommit": "4fa37e9",
+    "generationCommit": "478b318",
     "source": "shared-solver/lib/adaptive-segment-planner.js",
     "syntheticSimulator": "shared-solver/adaptive-repair-synthetic-simulator.js",
     "mode": "shadow-only"
   },
   "contract": {
-    "id": "PR-4.6a1",
-    "title": "Executed One-Repair Outcome Controls",
+    "id": "PR-4.6a1a",
+    "title": "Validator & Execution Accounting",
     "maxRepairs": 1,
     "fixedCaseCount": 5,
     "supportedFailureClasses": [
@@ -28,7 +28,8 @@
     ],
     "unresolvedOutcome": "repair-incomplete",
     "expectedObservedMustMatch": true,
-    "syntheticControlLabel": "synthetic-contract-executed"
+    "syntheticControlLabel": "synthetic-contract-executed",
+    "closureTerminology": "one-repair-insertion closure"
   },
   "cases": [
     {
@@ -377,6 +378,7 @@
         }
       ],
       "observedOutcome": "success",
+      "observedOutcomeSource": "runAdaptiveSegmentPlanner",
       "expectedOutcome": "success",
       "terminationReason": "repair-success",
       "repairAttempt": {
@@ -386,14 +388,18 @@
         "appliedRepairCount": 1,
         "executed": true
       },
-      "oneRepairClosure": {
+      "oneRepairInsertionClosure": {
+        "repairInsertionCount": 1,
         "orchestratorAttemptCount": 1,
-        "executedAttemptCount": 2,
-        "insertedSegmentCount": 1,
+        "branchEvaluationCount": 1,
+        "finalAttemptCount": 0,
+        "totalGraphExecutionCount": 2,
+        "uniqueRepairedSpecCount": 1,
+        "repairedRunExecutionCount": 1,
         "repairIndexes": [
           0
         ],
-        "stoppedAfterOneRepair": true,
+        "stoppedAfterOneRepairInsertion": true,
         "stoppedReason": "repair-success"
       },
       "execution": {
@@ -636,6 +642,7 @@
         }
       ],
       "observedOutcome": "repair-incomplete",
+      "observedOutcomeSource": "runAdaptiveSegmentPlanner",
       "expectedOutcome": "repair-incomplete",
       "terminationReason": "repair-incomplete",
       "repairAttempt": {
@@ -645,14 +652,18 @@
         "appliedRepairCount": 1,
         "executed": true
       },
-      "oneRepairClosure": {
+      "oneRepairInsertionClosure": {
+        "repairInsertionCount": 1,
         "orchestratorAttemptCount": 2,
-        "executedAttemptCount": 2,
-        "insertedSegmentCount": 1,
+        "branchEvaluationCount": 1,
+        "finalAttemptCount": 1,
+        "totalGraphExecutionCount": 3,
+        "uniqueRepairedSpecCount": 1,
+        "repairedRunExecutionCount": 2,
         "repairIndexes": [
           0
         ],
-        "stoppedAfterOneRepair": true,
+        "stoppedAfterOneRepairInsertion": true,
         "stoppedReason": "max-repair-count"
       },
       "execution": {
@@ -905,6 +916,7 @@
         }
       ],
       "observedOutcome": "success",
+      "observedOutcomeSource": "runAdaptiveSegmentPlanner",
       "expectedOutcome": "success",
       "terminationReason": "repair-success",
       "repairAttempt": {
@@ -914,14 +926,18 @@
         "appliedRepairCount": 1,
         "executed": true
       },
-      "oneRepairClosure": {
+      "oneRepairInsertionClosure": {
+        "repairInsertionCount": 1,
         "orchestratorAttemptCount": 1,
-        "executedAttemptCount": 2,
-        "insertedSegmentCount": 1,
+        "branchEvaluationCount": 1,
+        "finalAttemptCount": 0,
+        "totalGraphExecutionCount": 2,
+        "uniqueRepairedSpecCount": 1,
+        "repairedRunExecutionCount": 1,
         "repairIndexes": [
           0
         ],
-        "stoppedAfterOneRepair": true,
+        "stoppedAfterOneRepairInsertion": true,
         "stoppedReason": "repair-success"
       },
       "execution": {
@@ -1102,6 +1118,7 @@
       },
       "repairBranches": [],
       "observedOutcome": "rejected",
+      "observedOutcomeSource": "admissibility-validator",
       "expectedOutcome": "rejected",
       "terminationReason": "repair-rejected",
       "repairAttempt": {
@@ -1111,18 +1128,88 @@
         "appliedRepairCount": 0,
         "executed": false
       },
-      "oneRepairClosure": {
+      "oneRepairInsertionClosure": {
+        "repairInsertionCount": 0,
         "orchestratorAttemptCount": 1,
-        "executedAttemptCount": 1,
-        "insertedSegmentCount": 0,
+        "branchEvaluationCount": 0,
+        "finalAttemptCount": 0,
+        "totalGraphExecutionCount": 1,
+        "uniqueRepairedSpecCount": 0,
+        "repairedRunExecutionCount": 0,
         "repairIndexes": [],
-        "stoppedAfterOneRepair": true,
+        "stoppedAfterOneRepairInsertion": true,
         "stoppedReason": "repair-rejected"
       },
       "admissibilityValidator": {
         "accepted": false,
-        "predicate": "required presentTiles must exist at the baseline checkpoint",
-        "reason": "present tile S1:1,0 is already absent; downgrade would erase a hard dependency rather than repair it"
+        "checkedTiles": [
+          {
+            "floorId": "S1",
+            "x": 1,
+            "y": 0,
+            "present": false,
+            "hardDependency": true
+          }
+        ],
+        "missingRequiredTiles": [
+          {
+            "floorId": "S1",
+            "x": 1,
+            "y": 0
+          }
+        ],
+        "removedHardDependencies": [
+          {
+            "floorId": "S1",
+            "x": 1,
+            "y": 0
+          }
+        ],
+        "reason": "baseline is missing a hard present tile or proposed relaxation removes a hard dependency"
+      },
+      "validatorControls": {
+        "rejectedHardTile": {
+          "accepted": false,
+          "checkedTiles": [
+            {
+              "floorId": "S1",
+              "x": 1,
+              "y": 0,
+              "present": false,
+              "hardDependency": true
+            }
+          ],
+          "missingRequiredTiles": [
+            {
+              "floorId": "S1",
+              "x": 1,
+              "y": 0
+            }
+          ],
+          "removedHardDependencies": [
+            {
+              "floorId": "S1",
+              "x": 1,
+              "y": 0
+            }
+          ],
+          "reason": "baseline is missing a hard present tile or proposed relaxation removes a hard dependency"
+        },
+        "acceptedNonHardTile": {
+          "accepted": true,
+          "checkedTiles": [
+            {
+              "floorId": "S1",
+              "x": 1,
+              "y": 0,
+              "present": true,
+              "hardDependency": false
+            }
+          ],
+          "missingRequiredTiles": [],
+          "removedHardDependencies": [],
+          "reason": "proposed relaxation removes only non-hard presentTiles"
+        }
       },
       "execution": {
         "runner": "runAdaptiveSegmentPlanner",
@@ -1139,7 +1226,8 @@
           "splitMaxExpansions": 300,
           "splitMaxRuntimeMs": 2000
         },
-        "simulator": "deterministic-synthetic"
+        "simulator": "deterministic-synthetic",
+        "outcomeSource": "admissibility-validator"
       },
       "scope": {
         "shadowOnly": true,
@@ -1380,6 +1468,7 @@
         }
       ],
       "observedOutcome": "repair-incomplete",
+      "observedOutcomeSource": "runAdaptiveSegmentPlanner",
       "expectedOutcome": "repair-incomplete",
       "terminationReason": "repair-incomplete",
       "repairAttempt": {
@@ -1389,14 +1478,18 @@
         "appliedRepairCount": 1,
         "executed": true
       },
-      "oneRepairClosure": {
+      "oneRepairInsertionClosure": {
+        "repairInsertionCount": 1,
         "orchestratorAttemptCount": 2,
-        "executedAttemptCount": 2,
-        "insertedSegmentCount": 1,
+        "branchEvaluationCount": 1,
+        "finalAttemptCount": 1,
+        "totalGraphExecutionCount": 3,
+        "uniqueRepairedSpecCount": 1,
+        "repairedRunExecutionCount": 2,
         "repairIndexes": [
           0
         ],
-        "stoppedAfterOneRepair": true,
+        "stoppedAfterOneRepairInsertion": true,
         "stoppedReason": "max-repair-count"
       },
       "execution": {
@@ -1433,6 +1526,8 @@
     "incompleteRepair": "action-survivability-deficit",
     "autoSplit": "budget-or-action-scope-exhausted",
     "deterministicLiveRebuild": true,
-    "observedFromRunner": true
+    "observedFromRunner": false,
+    "observedExecutionCases": 4,
+    "observedValidatorCases": 1
   }
 }

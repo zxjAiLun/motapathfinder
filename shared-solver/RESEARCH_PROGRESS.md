@@ -146,6 +146,19 @@ PR-4.5c1a 正式关闭后，P2 首轮进入 adaptive planner repair outcome cont
 
 当前结论：PR-4.6a1 已建立 executed one-repair outcome evidence；仍保持 synthetic contract-only 语义，不描述为完整 OnlyUp route，也不修改 production 默认 repair 次数或搜索策略。
 
+## 1.8 2026-08-02：PR-4.6a1a Validator & Execution Accounting
+
+针对 review 指出的 rejected outcome 仍是常量、以及 incomplete case 把 branch evaluation 与 final repaired-spec execution 混称为一次的问题，本轮继续 shadow-only，进入 PR-4.6a1a。
+
+- `validatePresentTileRelaxation` 现在实际读取 synthetic baseline state/project，检查 `checkedTiles`、`missingRequiredTiles` 与 `removedHardDependencies`，由 `validatorResult.accepted` 推导 rejected outcome。
+- 增加 accepted reverse control：tile 存在且仅降级 non-hard dependency 时 validator 必须返回 accepted；hard tile 缺失/被移除时才返回 rejected。
+- 将 accounting 拆为 `repairInsertionCount`、`orchestratorAttemptCount`、`branchEvaluationCount`、`finalAttemptCount`、`totalGraphExecutionCount`、`uniqueRepairedSpecCount` 与 `repairedRunExecutionCount`。
+- 合同术语改为 `one-repair-insertion closure`；当前 success 的 graph execution 为 2 次，incomplete 为 3 次（baseline + branch evaluation + final repaired-spec run），不修改 production orchestrator 控制流。
+- `observedOutcomeSource` 区分 `runAdaptiveSegmentPlanner` 与 `admissibility-validator`，顶层不再宣称所有 outcome 都来自 runner。
+- checker 对五个 case 统一校验 generated segment、effective repair budget 与 300/2000 一致，并锁定 validator 双向 control 与 execution accounting。
+
+当前结论：PR-4.6a1a 已补齐 validator 与 execution accounting evidence；PR-4.6a/a1 正式关闭仍等待 review 确认。
+
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 
 ### 0.1 本轮目标

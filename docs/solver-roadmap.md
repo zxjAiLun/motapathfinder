@@ -105,7 +105,7 @@ DP key 必须覆盖：
 | `bounded-abstraction-counterexample-search.js` / `check-bounded-abstraction-counterexample.js` | ✅ PR-4.5b3 shadow-only | inclusive depth-2 paired expansion、执行错误 incomplete contract、projection-class cross product、true off-diagonal regression 与 successor telemetry；不接入 production key |
 | `mine-state-abstraction-collisions.js` / `check-state-abstraction-collision-inventory.js` | ✅ PR-4.5c1 shadow-only | 读取锁定的 MT1/MT2 artifacts，occurrence/signature 双层 identity、witness integrity、pair cap、分离 risk strata、depth-2 bounded outcomes 与 candidate-6/7 fixed control；不接入 production key |
 | `check-bounded-abstraction-counterexample.js` / `check-state-abstraction-collision-inventory.js` | ✅ PR-4.5c1a shadow-only | b3/c1 committed artifact 的 normalized deep compare、依赖工件一致性、stale-report gates 与 signature coverage 口径；不接入 production key |
-| `adaptive-repair-synthetic-simulator.js` / `audit-adaptive-repair-outcomes.js` / `check-adaptive-repair-outcomes.js` | ✅ PR-4.6a1 shadow-only | deterministic synthetic execution、真实 runAdaptiveSegmentPlanner 一次 repair、observed success/rejected/incomplete、effective budget 与 deterministic rebuild；不接入 production planner 默认路径 |
+| `adaptive-repair-synthetic-simulator.js` / `audit-adaptive-repair-outcomes.js` / `check-adaptive-repair-outcomes.js` | ✅ PR-4.6a1a shadow-only | deterministic synthetic execution、可执行 presentTiles validator、one-repair-insertion accounting、observed source split、五 case effective budget 与 deterministic rebuild；不接入 production planner 默认路径 |
 | `check-onlyup-floorfly-dedup-safety.js` | ✅ | OnlyUp floorFly dedup 安全审计（确认 target-floor 模式不安全） |
 | `check-progressive-monster-planner.js` | ✅ | synthetic smoke + special target priority + batch cap + targeted matcher + legacy compat + portal compat + portal dedup safety（9 tests） |
 
@@ -207,7 +207,9 @@ PR-4.5a1 已收紧为可复核契约：固定 7 个 projection collision，使�
 - ✅ validator rejection 的 `appliedRepairCount=0`，执行后 unresolved 的 `appliedRepairCount=1`；generated segment 的 effective budget 与 300/2000 合同一致。
 - ✅ target mapping 降级为实际支持的 adaptive-window/change-floor evidence，不宣称 blocker/openDoor whitelist。
 - ✅ synthetic controls 明确标记为 `synthetic-contract-executed`，不描述为完整 OnlyUp route；不改变 production 默认行为。
-- 🔶 PR-4.6a formal close 等待 review 对 a1 executed evidence 的确认。
+- ✅ PR-4.6a1a 增加可执行 presentTiles validator、accepted reverse control，并将 repair insertion 与 branch/final graph execution 分开计数。
+- ✅ 合同术语改为 `one-repair-insertion closure`；success=2 次 graph execution，incomplete=3 次 graph execution。
+- 🔶 PR-4.6a formal close 等待 review 对 a1/a1a evidence 的确认。
 
 第一批 repair：
 

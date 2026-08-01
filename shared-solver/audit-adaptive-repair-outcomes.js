@@ -7,6 +7,7 @@ const {
   runAdaptiveSegmentPlanner,
 } = require("./lib/adaptive-segment-planner");
 const { createSyntheticScenario } = require("./adaptive-repair-synthetic-simulator");
+const { getTileDefinitionAt } = require("./lib/state");
 
 const DEFAULT_OUT = path.join(
   __dirname,
@@ -16,7 +17,7 @@ const DEFAULT_OUT = path.join(
   "pr-4.6a-adaptive-repair-outcome-contract.json"
 );
 const DEFAULT_OUT_MD = DEFAULT_OUT.replace(/\.json$/i, ".md");
-const CONTRACT_SCHEMA = "motapathfinder.pr-4.6a1-adaptive-repair-outcome-contract.v1";
+const CONTRACT_SCHEMA = "motapathfinder.pr-4.6a1a-adaptive-repair-outcome-contract.v1";
 const REPAIR_BUDGET = Object.freeze({
   maxRepairs: 1,
   repairMaxExpansions: 300,
@@ -289,6 +290,43 @@ function compactBranches(runResult) {
   return cloneJson((runResult && runResult.adaptive && runResult.adaptive.repairBranches) || []);
 }
 
+function tileKey(tile) {
+  return `${tile.floorId}:${tile.x},${tile.y}`;
+}
+
+function validatePresentTileRelaxation({
+  baselineState,
+  project,
+  hardPresentTiles,
+  presentTiles,
+  proposedPresentTiles,
+}) {
+  const hardTiles = (hardPresentTiles || []).filter(Boolean);
+  const allTiles = (presentTiles || []).filter(Boolean);
+  const proposed = new Set((proposedPresentTiles || []).filter(Boolean).map(tileKey));
+  const checkedTiles = allTiles.map((tile) => ({
+    ...cloneJson(tile),
+    present: getTileDefinitionAt(project, baselineState, tile.floorId, tile.x, tile.y) != null,
+    hardDependency: hardTiles.some((hardTile) => tileKey(hardTile) === tileKey(tile)),
+  }));
+  const missingRequiredTiles = hardTiles
+    .filter((tile) => getTileDefinitionAt(project, baselineState, tile.floorId, tile.x, tile.y) == null)
+    .map(cloneJson);
+  const removedHardDependencies = hardTiles
+    .filter((tile) => !proposed.has(tileKey(tile)))
+    .map(cloneJson);
+  const accepted = missingRequiredTiles.length === 0 && removedHardDependencies.length === 0;
+  return {
+    accepted,
+    checkedTiles,
+    missingRequiredTiles,
+    removedHardDependencies,
+    reason: accepted
+      ? "proposed relaxation removes only non-hard presentTiles"
+      : "baseline is missing a hard present tile or proposed relaxation removes a hard dependency",
+  };
+}
+
 function buildExecutedCase(caseDef) {
   const { simulator, initialState } = createSyntheticScenario(caseDef.scenario);
   const spec = makeSpec(caseDef);
@@ -303,7 +341,10 @@ function buildExecutedCase(caseDef) {
   const inserted = adaptive.insertedSegments && adaptive.insertedSegments[0] || null;
   const repaired = compactAttempt(runResult, 1, "adaptive-final-result");
   const observedOutcome = runResult.found ? "success" : inserted ? "repair-incomplete" : "repair-incomplete";
-  const repairedExecutionCount = inserted ? 1 : 0;
+  const repairBranches = compactBranches(runResult);
+  const branchEvaluationCount = repairBranches.length;
+  const finalAttemptCount = Math.max(0, (adaptive.attempts || []).length - 1);
+  const totalGraphExecutionCount = 1 + branchEvaluationCount + finalAttemptCount;
   return {
     id: caseDef.id,
     baselineOutcome: {
@@ -346,24 +387,29 @@ function buildExecutedCase(caseDef) {
     }, 0, "adaptive-baseline-attempt"),
     insertedSegmentId: inserted && inserted.id || null,
     repairedAttempt: repaired,
-    repairBranches: compactBranches(runResult),
+    repairBranches,
     observedOutcome,
+    observedOutcomeSource: "runAdaptiveSegmentPlanner",
     expectedOutcome: caseDef.expectedOutcome,
     terminationReason: observedOutcome === "success" ? "repair-success" : "repair-incomplete",
     repairAttempt: {
       index: inserted ? 1 : null,
       maxRepairCount: REPAIR_BUDGET.maxRepairs,
       recursion: false,
-      appliedRepairCount: repairedExecutionCount,
+      appliedRepairCount: inserted ? 1 : 0,
       executed: inserted != null,
     },
-    oneRepairClosure: {
+    oneRepairInsertionClosure: {
+      repairInsertionCount: (adaptive.insertedSegments || []).length,
       orchestratorAttemptCount: (adaptive.attempts || []).length,
-      executedAttemptCount: inserted ? 2 : 1,
-      insertedSegmentCount: (adaptive.insertedSegments || []).length,
-      repairIndexes: compactBranches(runResult).map((branch) => branch.repairIndex),
-      stoppedAfterOneRepair: (adaptive.insertedSegments || []).length <= 1 &&
-        compactBranches(runResult).every((branch) => branch.repairIndex === 0),
+      branchEvaluationCount,
+      finalAttemptCount,
+      totalGraphExecutionCount,
+      uniqueRepairedSpecCount: inserted ? 1 : 0,
+      repairedRunExecutionCount: branchEvaluationCount + finalAttemptCount,
+      repairIndexes: repairBranches.map((branch) => branch.repairIndex),
+      stoppedAfterOneRepairInsertion: (adaptive.insertedSegments || []).length <= 1 &&
+        repairBranches.every((branch) => branch.repairIndex === 0),
       stoppedReason: observedOutcome === "repair-incomplete"
         ? adaptive.stoppedReason || (runResult.failedSegment && runResult.failedSegment.failureClass) || "max-repair-count"
         : "repair-success",
@@ -397,11 +443,26 @@ function buildRejectedPresentCase(caseDef) {
     throw new Error(`${caseDef.id}: expected baseline ${caseDef.failureClass}, observed ${baselineClass}`);
   }
   const proposed = contractAdapterSegment(caseDef);
-  const validator = {
-    accepted: false,
-    predicate: "required presentTiles must exist at the baseline checkpoint",
-    reason: "present tile S1:1,0 is already absent; downgrade would erase a hard dependency rather than repair it",
-  };
+  const requiredPresentTiles = spec.milestones[1].goal.presentTiles;
+  const validator = validatePresentTileRelaxation({
+    baselineState: initialState,
+    project: simulator.project,
+    hardPresentTiles: requiredPresentTiles,
+    presentTiles: requiredPresentTiles,
+    proposedPresentTiles: proposed.goal.presentTiles,
+  });
+  const reverseControlScenario = createSyntheticScenario("attack");
+  const acceptedControl = validatePresentTileRelaxation({
+    baselineState: reverseControlScenario.initialState,
+    project: reverseControlScenario.simulator.project,
+    hardPresentTiles: [],
+    presentTiles: requiredPresentTiles,
+    proposedPresentTiles: proposed.goal.presentTiles,
+  });
+  const observedOutcome = validator.accepted ? "repair-incomplete" : "rejected";
+  if (observedOutcome !== caseDef.expectedOutcome) {
+    throw new Error(`${caseDef.id}: validator unexpectedly accepted the hard-tile downgrade`);
+  }
   return {
     id: caseDef.id,
     baselineOutcome: {
@@ -449,9 +510,10 @@ function buildRejectedPresentCase(caseDef) {
       terminationReason: "repair-rejected",
     },
     repairBranches: [],
-    observedOutcome: "rejected",
+    observedOutcome,
+    observedOutcomeSource: "admissibility-validator",
     expectedOutcome: caseDef.expectedOutcome,
-    terminationReason: "repair-rejected",
+    terminationReason: observedOutcome === "rejected" ? "repair-rejected" : "repair-incomplete",
     repairAttempt: {
       index: null,
       maxRepairCount: REPAIR_BUDGET.maxRepairs,
@@ -459,19 +521,28 @@ function buildRejectedPresentCase(caseDef) {
       appliedRepairCount: 0,
       executed: false,
     },
-    oneRepairClosure: {
+    oneRepairInsertionClosure: {
+      repairInsertionCount: 0,
       orchestratorAttemptCount: (adaptive.attempts || []).length,
-      executedAttemptCount: 1,
-      insertedSegmentCount: 0,
+      branchEvaluationCount: 0,
+      finalAttemptCount: 0,
+      totalGraphExecutionCount: 1,
+      uniqueRepairedSpecCount: 0,
+      repairedRunExecutionCount: 0,
       repairIndexes: [],
-      stoppedAfterOneRepair: true,
+      stoppedAfterOneRepairInsertion: true,
       stoppedReason: "repair-rejected",
     },
     admissibilityValidator: validator,
+    validatorControls: {
+      rejectedHardTile: validator,
+      acceptedNonHardTile: acceptedControl,
+    },
     execution: {
       runner: "runAdaptiveSegmentPlanner",
       options: cloneJson(options),
       simulator: "deterministic-synthetic",
+      outcomeSource: "admissibility-validator",
     },
     scope: {
       shadowOnly: true,
@@ -508,8 +579,8 @@ function buildReport() {
       mode: "shadow-only",
     },
     contract: {
-      id: "PR-4.6a1",
-      title: "Executed One-Repair Outcome Controls",
+      id: "PR-4.6a1a",
+      title: "Validator & Execution Accounting",
       maxRepairs: 1,
       fixedCaseCount: 5,
       supportedFailureClasses: [
@@ -524,6 +595,7 @@ function buildReport() {
       unresolvedOutcome: "repair-incomplete",
       expectedObservedMustMatch: true,
       syntheticControlLabel: "synthetic-contract-executed",
+      closureTerminology: "one-repair-insertion closure",
     },
     cases,
     controls: {
@@ -532,20 +604,23 @@ function buildReport() {
       incompleteRepair: cases.find((item) => item.observedOutcome === "repair-incomplete").id,
       autoSplit: cases.find((item) => item.plannerProbe.mode === "auto-segment-split").id,
       deterministicLiveRebuild: true,
-      observedFromRunner: true,
+      observedFromRunner: false,
+      observedExecutionCases: cases.filter((item) => item.observedOutcomeSource === "runAdaptiveSegmentPlanner").length,
+      observedValidatorCases: cases.filter((item) => item.observedOutcomeSource === "admissibility-validator").length,
     },
   };
 }
 
 function markdown(report) {
   const lines = [
-    "# PR-4.6a1 Executed One-Repair Outcome Controls",
+    "# PR-4.6a1a Validator & Execution Accounting",
     "",
     `- Schema: \`${report.schema}\``,
     "- Status: completed",
     "- Scope: shadow-only",
     "- Runner: `runAdaptiveSegmentPlanner` with `maxAdaptiveRepairs=1`",
-    "- Outcomes are observed from executed synthetic runs; rejected controls are stopped by an admissibility validator before insertion.",
+    "- Success/incomplete outcomes are observed from executed synthetic runs; rejected controls are observed from an admissibility validator before insertion.",
+    "- Closure terminology: one-repair-insertion closure; branch evaluation and final graph execution are counted separately.",
     "- Synthetic execution is not a claim of a complete OnlyUp route.",
     "",
     "| Case | Failure class | Observed intent/mode | Expected | Observed | Applied repairs | Termination |",
@@ -557,7 +632,7 @@ function markdown(report) {
   });
   lines.push(
     "",
-    "Every executed repair segment is checked against the declared 300-expansion / 2000-ms shadow repair budget.",
+    "Every generated repair segment, including the rejected proposal, is checked against the declared 300-expansion / 2000-ms shadow repair budget.",
     "",
     "Production DP keys, dominance, agenda, capacity, default maxAdaptiveRepairs, and default policy are unchanged.",
     ""
