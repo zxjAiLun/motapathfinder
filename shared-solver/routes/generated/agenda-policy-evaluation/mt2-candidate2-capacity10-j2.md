@@ -35,7 +35,17 @@ The joint 10/10/4 configuration naturally reproduced the exact teacher HP3834 te
 - winner entry raw / segment / merged: **true / true / true**
 - winner local raw / segment / merged: **false / false / false**
 - baseline executed the exact winner-local HP attempt: **false**
+- entryRetainedUnder8 / localRetainedUnder8 / exactLocalAttemptExecutedUnder8: **true / false / false**
 - capacity dependency classification: **insufficient-existing-evidence**
+- classification reason: baseline retains the winner entry but contains no exact winner-local checkpoint or corresponding downstream attempt
+
+## Worker cache contract
+
+- reused: **true**
+- candidateExactKeysMatch / configMatch / milestoneMatch: **true / true / true**
+- cache key: `0d9a8628fd5161e5e30e68b9fb5519174444f98c030ecbb1483e3c6dc91ecd4b`
+- cache key source: **stored**
+- rejection reasons: **none**
 
 ## Isolated candidate workers
 
@@ -50,6 +60,7 @@ The joint 10/10/4 configuration naturally reproduced the exact teacher HP3834 te
 - knownExactTeacherWitnessRecovery: **not-established**
 - winningAncestryCapacityDependency: **insufficient-existing-evidence**
 - globalDefaultChangeRecommended: **not-established**
+- failedGates: **none**
 
 No production solver, DP key, dominance comparator, agenda default, or milestone definition was changed.
 
@@ -57,4 +68,4 @@ No production solver, DP key, dominance comparator, agenda default, or milestone
 
 - j artifact: `shared-solver\routes\generated\agenda-policy-evaluation\mt2-candidate2-capacity10-j.json`
 - baseline-8 artifact: `shared-solver\routes\generated\agenda-policy-evaluation\mt2-candidate2-natural-search-audit-v2.json`
-- j2 generation commit: `c90432836a6bc5d56e18e1c2b440b496419633a6`
+- j2 generation commit: `3664b4bebc88a0a2315b26378d4eb8e850dfce63`

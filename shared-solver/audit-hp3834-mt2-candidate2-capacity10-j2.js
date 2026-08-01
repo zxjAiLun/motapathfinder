@@ -82,6 +82,27 @@ function hash(value) {
   return crypto.createHash("sha256").update(String(value || "")).digest("hex").slice(0, 16);
 }
 
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!value || typeof value !== "object") return value;
+  return Object.keys(value).sort().reduce((result, key) => {
+    result[key] = canonicalize(value[key]);
+    return result;
+  }, {});
+}
+
+function canonicalJson(value) {
+  return JSON.stringify(canonicalize(value));
+}
+
+function valueHash(value) {
+  return crypto.createHash("sha256").update(canonicalJson(value)).digest("hex");
+}
+
+function valuesEqual(left, right) {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
 function parseStateKey(value) {
   if (!value) return null;
   try {
@@ -513,6 +534,38 @@ function entryAttribution(stage, checkpointCandidate) {
   };
 }
 
+function findFirstDivergence(winnerDecisions, teacherDecisions) {
+  const count = Math.min(winnerDecisions.length, teacherDecisions.length);
+  for (let index = 0; index < count; index += 1) {
+    const winner = winnerDecisions[index];
+    const teacher = teacherDecisions[index];
+    if (winner.actionFingerprint !== teacher.actionFingerprint) {
+      return {
+        decisionIndex: winner.decisionIndex,
+        winnerActionSummary: winner.actionSummary,
+        teacherActionSummary: teacher.actionSummary,
+        winnerActionFingerprint: winner.actionFingerprint,
+        teacherActionFingerprint: teacher.actionFingerprint,
+        arrayIndex: index,
+      };
+    }
+  }
+  if (winnerDecisions.length !== teacherDecisions.length) {
+    const index = count;
+    const winner = winnerDecisions[index] || {};
+    const teacher = teacherDecisions[index] || {};
+    return {
+      decisionIndex: winner.decisionIndex || teacher.decisionIndex || null,
+      winnerActionSummary: winner.actionSummary || null,
+      teacherActionSummary: teacher.actionSummary || null,
+      winnerActionFingerprint: winner.actionFingerprint || null,
+      teacherActionFingerprint: teacher.actionFingerprint || null,
+      arrayIndex: index,
+    };
+  }
+  return null;
+}
+
 function buildMarkdown(report) {
   const diff = report.candidate6VsTeacherLocal;
   const ancestry = report.ancestryComparison;
@@ -556,7 +609,17 @@ function buildMarkdown(report) {
     `- winner entry raw / segment / merged: **${baseline.winnerEntry.rawGoalArchive.present} / ${baseline.winnerEntry.segmentCheckpoint.present} / ${baseline.winnerEntry.mergedCheckpoint.present}**`,
     `- winner local raw / segment / merged: **${baseline.winnerLocal.rawGoalArchive.present} / ${baseline.winnerLocal.segmentCheckpoint.present} / ${baseline.winnerLocal.mergedCheckpoint.present}**`,
     `- baseline executed the exact winner-local HP attempt: **${baseline.winnerLocalAttempt.actualWinnerLocalAttemptExecuted}**`,
-    `- capacity dependency classification: **${baseline.winnerLineageCapacityDependency}**`,
+    `- entryRetainedUnder8 / localRetainedUnder8 / exactLocalAttemptExecutedUnder8: **${baseline.entryRetainedUnder8} / ${baseline.localRetainedUnder8} / ${baseline.exactLocalAttemptExecutedUnder8}**`,
+    `- capacity dependency classification: **${baseline.classification}**`,
+    `- classification reason: ${baseline.classificationReason}`,
+    "",
+    "## Worker cache contract",
+    "",
+    `- reused: **${report.workerCache.reused}**`,
+    `- candidateExactKeysMatch / configMatch / milestoneMatch: **${report.workerCache.candidateExactKeysMatch} / ${report.workerCache.configMatch} / ${report.workerCache.milestoneMatch}**`,
+    "- cache key: `" + report.workerCache.cacheKey + "`",
+    `- cache key source: **${report.workerCache.cacheKeySource}**`,
+    `- rejection reasons: **${report.workerCache.rejectionReasons.join(", ") || "none"}**`,
     "",
     "## Isolated candidate workers",
     "",
@@ -573,6 +636,7 @@ function buildMarkdown(report) {
     `- knownExactTeacherWitnessRecovery: **${report.verdict.knownExactTeacherWitnessRecovery}**`,
     `- winningAncestryCapacityDependency: **${report.verdict.winningAncestryCapacityDependency}**`,
     `- globalDefaultChangeRecommended: **${report.verdict.globalDefaultChangeRecommended}**`,
+    `- failedGates: **${report.failedGates.join(", ") || "none"}**`,
     "",
     "No production solver, DP key, dominance comparator, agenda default, or milestone definition was changed.",
     "",
@@ -586,6 +650,7 @@ function buildMarkdown(report) {
 
 function buildReport() {
   const j = readJson(J_REPORT);
+  if (j.conclusionContract) delete j.conclusionContract.contractClosedBy;
   const baseline = readJson(BASELINE_REPORT);
   const project = loadProject(PROJECT_ROOT);
   const simulator = makeSimulator(project);
@@ -617,6 +682,7 @@ function buildReport() {
   const teacherEntry = entryAttribution(entryStage, teacherEntrySource);
   const winningFull = buildFullAlternate(ROOT, project, simulator, gateState, winningCheckpoint, finalCandidate);
   const teacherLocalFull = buildFullAlternate(ROOT, project, simulator, gateState, teacherLocalCheckpoint, finalCandidate);
+  const firstDivergence = findFirstDivergence(winningBranch.decisions, teacherLocalBranch.decisions);
   const rejoinDecision = winningFull.states.length > 0 && teacherLocalFull.states.length > 0
     ? firstExactRejoin(winningFull.states, teacherLocalFull.states, winningFull.gateDepth)
     : null;
@@ -625,10 +691,12 @@ function buildReport() {
     gateExactStateKey: buildStateKey(gateState),
     gateExactStateKeyHash: hash(buildStateKey(gateState)),
     gateDecisionDepth: Number(gateState.meta && gateState.meta.decisionDepth || 0),
-    firstDivergenceDecision: 11,
+    firstDivergenceDecision: firstDivergence && firstDivergence.decisionIndex,
     firstDivergenceActions: {
-      winner: winningBranch.decisions[0] && winningBranch.decisions[0].actionSummary,
-      teacherLocal: teacherLocalBranch.decisions[0] && teacherLocalBranch.decisions[0].actionSummary,
+      winner: firstDivergence && firstDivergence.winnerActionSummary,
+      teacherLocal: firstDivergence && firstDivergence.teacherActionSummary,
+      winnerFingerprint: firstDivergence && firstDivergence.winnerActionFingerprint,
+      teacherLocalFingerprint: firstDivergence && firstDivergence.teacherActionFingerprint,
     },
     winningBranch: {
       winningEntryCandidateId: winningEntry.candidateId,
@@ -690,29 +758,188 @@ function buildReport() {
     agendaMode: "best-first",
     goalArchiveAudit: null,
   };
-  const spec = getMilestoneSpec(project, "onlyup-chaos-mt5-blueking");
-  const hpSegment = spec.milestones.find((segment) => segment.id === "mt2-hp3834");
+  const workerMilestoneId = "onlyup-chaos-mt5-blueking";
+  const workerSegmentId = "mt2-hp3834";
+  const spec = getMilestoneSpec(project, workerMilestoneId);
+  const hpSegment = spec.milestones.find((segment) => segment.id === workerSegmentId);
+  const currentWorkerExactKeys = [
+    exactKey(winningCheckpoint),
+    exactKey(teacherLocalCheckpoint),
+  ];
+  const solverIdentity = j.provenance && (
+    j.provenance.solverCommit ||
+    j.provenance.dataGenerationCommit ||
+    j.provenance.generationCommit
+  ) || null;
+  const sourceReportSha256 = sha256(J_REPORT);
+  const workerCacheInput = {
+    candidateExactStateKeys: currentWorkerExactKeys,
+    workerOptions,
+    milestoneId: workerMilestoneId,
+    segmentId: workerSegmentId,
+    projectIdentity: relative(PROJECT_ROOT),
+    solverIdentity,
+    sourceReportSha256,
+  };
+  const currentWorkerCacheKey = valueHash(workerCacheInput);
   const previousJ2 = fs.existsSync(DEFAULT_OUT) ? readJson(DEFAULT_OUT) : null;
   const previousWorkers = previousJ2 && previousJ2.isolatedWorkerComparison &&
     previousJ2.isolatedWorkerComparison.workers;
-  const reusableWorkers = Array.isArray(previousWorkers) &&
-    previousWorkers.length === 2 &&
+  const previousCache = previousJ2 && previousJ2.workerCache || null;
+  const previousConfig = previousJ2 && previousJ2.isolatedWorkerComparison &&
+    previousJ2.isolatedWorkerComparison.config;
+  const previousCandidateIdsMatch = Array.isArray(previousWorkers) &&
+    previousWorkers.length === currentWorkerExactKeys.length &&
     previousWorkers.map((worker) => worker.candidateId).join(",") ===
-      [winningCheckpoint.id, teacherLocalCheckpoint.id].join(",") &&
-    previousWorkers.every((worker) => worker.workerReportValid && worker.snapshotRoundTripExact)
-    ? previousWorkers
-    : null;
+      [winningCheckpoint.id, teacherLocalCheckpoint.id].join(",");
+  const candidateExactKeysMatch = previousCandidateIdsMatch && previousWorkers.every((worker, index) => (
+    worker.startExactStateKey === currentWorkerExactKeys[index]
+  ));
+  const configMatch = previousCandidateIdsMatch && valuesEqual(previousConfig, workerOptions);
+  const milestoneMatch = previousCandidateIdsMatch && previousWorkers.every((worker) => (
+    worker.search && worker.search.reachedMilestone === workerSegmentId &&
+    (worker.search.segmentResults || []).some((segment) => segment.segmentId === workerSegmentId)
+  ));
+  const previousSourceReportShaMatch = Boolean(
+    previousJ2 && previousJ2.provenance &&
+    previousJ2.provenance.jReportSha256AfterConclusionCorrection === sourceReportSha256,
+  );
+  const previousCachedSolverIdentity = previousCache && (
+    previousCache.solverIdentity ||
+    previousCache.cacheKeyInput && previousCache.cacheKeyInput.solverIdentity
+  );
+  const previousCachedSourceReportSha256 = previousCache && (
+    previousCache.sourceReportSha256 ||
+    previousCache.cacheKeyInput && previousCache.cacheKeyInput.sourceReportSha256
+  );
+  const solverIdentityMatch = Boolean(
+    previousCache
+      ? previousCachedSolverIdentity === solverIdentity && previousCachedSourceReportSha256 === sourceReportSha256
+      : previousSourceReportShaMatch,
+  );
+  const storedCacheKeyMatch = Boolean(previousCache && previousCache.cacheKey === currentWorkerCacheKey);
+  const legacyCacheIdentityMatch = Boolean(
+    !previousCache && candidateExactKeysMatch && configMatch && milestoneMatch && solverIdentityMatch,
+  );
+  const cacheKeyMatches = storedCacheKeyMatch || legacyCacheIdentityMatch;
+  const cacheRejectionReasons = [];
+  if (previousWorkers && !previousCandidateIdsMatch) cacheRejectionReasons.push("candidate-id-set-mismatch");
+  if (previousWorkers && !candidateExactKeysMatch) cacheRejectionReasons.push("candidate-exact-state-key-mismatch");
+  if (previousWorkers && !configMatch) cacheRejectionReasons.push("worker-options-mismatch");
+  if (previousWorkers && !milestoneMatch) cacheRejectionReasons.push("milestone-or-segment-mismatch");
+  if (previousWorkers && !previousSourceReportShaMatch) cacheRejectionReasons.push("source-report-identity-mismatch");
+  if (previousWorkers && !solverIdentityMatch) cacheRejectionReasons.push("solver-identity-mismatch");
+  if (previousWorkers && !cacheKeyMatches) cacheRejectionReasons.push("worker-cache-key-mismatch");
+  if (!previousWorkers) cacheRejectionReasons.push("no-reusable-worker-cache");
+  const reusableWorkers = previousWorkers && cacheKeyMatches ? previousWorkers : null;
   const workers = reusableWorkers || [winningCheckpoint, teacherLocalCheckpoint]
     .map((candidate) => runIsolatedLocalCheckpoint(PROJECT_ROOT, project, candidate, hpSegment, workerOptions))
     .map(compactWorker);
-  const baselineClassification = baselineEntry.rawGoalArchive.present &&
+  const workerStartKeysMatch = workers.every((worker, index) => (
+    worker.startExactStateKey === currentWorkerExactKeys[index]
+  ));
+  const workerMilestoneMatch = workers.every((worker) => (
+    worker.search && (worker.search.segmentResults || []).some((segment) => segment.segmentId === workerSegmentId)
+  ));
+  const workerCache = {
+    reused: Boolean(reusableWorkers),
+    candidateExactKeysMatch: workerStartKeysMatch,
+    configMatch: reusableWorkers ? configMatch : true,
+    milestoneMatch: workerMilestoneMatch,
+    solverIdentity,
+    sourceReportSha256,
+    solverIdentityMatch: reusableWorkers ? solverIdentityMatch : true,
+    sourceReportShaMatch: reusableWorkers ? previousSourceReportShaMatch : true,
+    cacheKey: currentWorkerCacheKey,
+    cacheKeyMatches: reusableWorkers ? cacheKeyMatches : true,
+    cacheKeySource: reusableWorkers
+      ? (previousCache ? "stored" : "legacy-derived-from-exact-key-config-milestone-identity")
+      : "new-worker-run",
+    cacheKeyInput: workerCacheInput,
+    rejectionReasons: reusableWorkers ? [] : cacheRejectionReasons,
+  };
+  workerCache.identityValidated = Boolean(
+    workerCache.candidateExactKeysMatch &&
+    workerCache.configMatch &&
+    workerCache.milestoneMatch &&
+    workerCache.solverIdentityMatch &&
+    workerCache.sourceReportShaMatch &&
+    workerCache.cacheKeyMatches,
+  );
+  const entryRetainedUnder8 = Boolean(
+    baselineEntry.rawGoalArchive.present &&
     baselineEntry.segmentCheckpoint.present &&
-    baselineEntry.mergedCheckpoint.present &&
-    !baselineLocal.rawGoalArchive.present &&
-    !baselineLocal.segmentCheckpoint.present &&
-    !baselineLocal.mergedCheckpoint.present
-    ? "insufficient-existing-evidence"
-    : "insufficient-existing-evidence";
+    baselineEntry.mergedCheckpoint.present,
+  );
+  const localRetainedUnder8 = Boolean(
+    baselineLocal.rawGoalArchive.present ||
+    baselineLocal.segmentCheckpoint.present ||
+    baselineLocal.mergedCheckpoint.present,
+  );
+  const exactLocalAttemptExecutedUnder8 = Boolean(winnerLocalAttempt.actualWinnerLocalAttemptExecuted);
+  const baselineEvidence = {
+    entryRetainedUnder8,
+    localRetainedUnder8,
+    exactLocalAttemptExecutedUnder8,
+    classification: entryRetainedUnder8 && !localRetainedUnder8 && !exactLocalAttemptExecutedUnder8
+      ? "insufficient-existing-evidence"
+      : "evidence-inconsistent",
+    classificationReason: entryRetainedUnder8 && !localRetainedUnder8 && !exactLocalAttemptExecutedUnder8
+      ? "baseline retains the winner entry but contains no exact winner-local checkpoint or corresponding downstream attempt"
+      : "baseline evidence does not support the expected entry-retained/local-absent classification",
+  };
+  const baselineClassification = baselineEvidence.classification;
+  const teacherFinalExactStateKey = j.winningAncestry.teacherFinalExactStateKey;
+  const workerSuccess = workers.every((worker) => (
+    worker.processIsolated &&
+    worker.exitCode === 0 &&
+    worker.signal === null &&
+    !worker.timedOut &&
+    worker.snapshotRoundTripExact &&
+    worker.workerReportValid &&
+    worker.search.found &&
+    worker.search.reachedMilestone === workerSegmentId &&
+    worker.search.finalCandidate &&
+    worker.search.finalCandidate.exactStateKey === teacherFinalExactStateKey
+  ));
+  const sharedContinuationSuccess = Boolean(
+    ancestryComparison.sharedContinuation.winningBranch.valid &&
+    ancestryComparison.sharedContinuation.winningBranch.stepsAttempted === 13 &&
+    ancestryComparison.sharedContinuation.winningBranch.stepsCompleted === 13 &&
+    ancestryComparison.sharedContinuation.winningBranch.finalMatchesTarget &&
+    ancestryComparison.sharedContinuation.teacherLocalBranch.valid &&
+    ancestryComparison.sharedContinuation.teacherLocalBranch.stepsAttempted === 13 &&
+    ancestryComparison.sharedContinuation.teacherLocalBranch.stepsCompleted === 13 &&
+    ancestryComparison.sharedContinuation.teacherLocalBranch.finalMatchesTarget,
+  );
+  const j2Gates = {
+    workerCacheIdentityValidated: workerCache.identityValidated,
+    workerCount: workers.length === 2,
+    workerProcessIsolated: workers.every((worker) => worker.processIsolated),
+    workerCleanExit: workers.every((worker) => worker.exitCode === 0 && worker.signal === null && !worker.timedOut),
+    workerSnapshotRoundTripExact: workers.every((worker) => worker.snapshotRoundTripExact),
+    workerReportsValid: workers.every((worker) => worker.workerReportValid),
+    workerFoundTarget: workers.every((worker) => worker.search.found === true),
+    workerReachedTargetMilestone: workers.every((worker) => worker.search.reachedMilestone === workerSegmentId),
+    workerSearchContract: workerSuccess,
+    workerFinalExactMatchesTeacherDecision23: workers.every((worker) => (
+      worker.search.finalCandidate && worker.search.finalCandidate.exactStateKey === teacherFinalExactStateKey
+    )),
+    sharedContinuation13Of13: sharedContinuationSuccess,
+    firstDivergenceDerived: Boolean(firstDivergence),
+    firstDivergenceDecision11: ancestryComparison.firstDivergenceDecision === 11,
+    firstDivergenceWinnerFingerprint: ancestryComparison.firstDivergenceActions.winnerFingerprint === "battle|MT1|4|1|skeleton",
+    firstDivergenceTeacherFingerprint: ancestryComparison.firstDivergenceActions.teacherLocalFingerprint === "battle|MT1|8|1|skeleton",
+    firstExactRejoinDecision20: ancestryComparison.firstExactRejoinDecision === 20,
+    baselineClassificationSupported: baselineClassification === "insufficient-existing-evidence",
+    terminalExactConvergenceViaAlternateAncestry: Boolean(
+      j.winningAncestry.winningRouteFinalMatchesTeacherDecision23 &&
+      j.winningAncestry.winningRouteStrictReplay.valid,
+    ),
+  };
+  const failedGates = Object.entries(j2Gates)
+    .filter(([, passed]) => passed !== true)
+    .map(([name]) => name);
 
   j.conclusion = CONCLUSION;
   j.conclusionContract = {
@@ -725,8 +952,8 @@ function buildReport() {
   const report = {
     schema: "motapathfinder.hp3834-mt2-candidate2-capacity10-ancestry.v1",
     generatedAt: new Date().toISOString(),
-    status: "completed",
-    auditStatus: "completed",
+    status: failedGates.length === 0 ? "completed" : "completed-with-contract-gaps",
+    auditStatus: failedGates.length === 0 ? "completed" : "contract-gaps",
     productionSemanticChange: false,
     conclusion: CONCLUSION,
     candidate6VsTeacherLocal: diff,
@@ -750,15 +977,23 @@ function buildReport() {
       winnerEntry: baselineEntry,
       winnerLocal: baselineLocal,
       winnerLocalAttempt,
+      entryRetainedUnder8: baselineEvidence.entryRetainedUnder8,
+      localRetainedUnder8: baselineEvidence.localRetainedUnder8,
+      exactLocalAttemptExecutedUnder8: baselineEvidence.exactLocalAttemptExecutedUnder8,
+      classification: baselineEvidence.classification,
+      classificationReason: baselineEvidence.classificationReason,
       winnerLineageCapacityDependency: baselineClassification,
     },
     isolatedWorkerComparison: {
       config: workerOptions,
       workers,
-      sameConfig: true,
+      sameConfig: workerCache.configMatch,
       workerCount: workers.length,
       allReportsValid: workers.every((worker) => worker.workerReportValid),
     },
+    workerCache,
+    j2Gates,
+    failedGates,
     verdict: {
       terminalExactConvergenceViaAlternateAncestry: Boolean(
         j.winningAncestry.winningRouteFinalMatchesTeacherDecision23 &&
