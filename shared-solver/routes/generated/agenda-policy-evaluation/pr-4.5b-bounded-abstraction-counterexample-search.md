@@ -1,4 +1,4 @@
-# PR-4.5b2 Bounded Abstraction Counterexample Search
+# PR-4.5b3 Bounded Abstraction Counterexample Search
 
 Status: **completed**
 Positive corpus outcome: **equivalent**
@@ -38,7 +38,7 @@ This artifact is shadow-only. It does not modify the production DP key, dominanc
 |---|---|---:|---|---|
 | synthetic-reentry-hidden-mutation-v1 | mismatch-witness | 1 | reenter-MT1 | historical-tile@MT1 |
 | synthetic-reentry-depth-boundary-v1 | mismatch-witness | 2 | reenter-MT1 → enter-history-zone | historical-tile@MT1 |
-| synthetic-off-diagonal-successor-v1 | mismatch-witness | 1 | branch | off-diagonal-mismatch |
+| synthetic-off-diagonal-successor-v1 | mismatch-witness | 1 | branch | lane-2 |
 
 The negative controls intentionally omit hidden mutation history from their projections. The witnesses confirm both an immediate re-entry mismatch and a mismatch first exposed at the configured depth boundary.
 
@@ -54,5 +54,5 @@ A bounded equivalent result is evidence for this manifest, depth, and budget onl
 
 ## Provenance
 
-- generation commit: `38977238307a7cf18632b3e02428320ff0055458`
+- generation commit: `8d392c153313774a0eceeb412b6488b26b8a9600`
 - production state-key SHA256: `f5be4802f9926744bc8e91f30ecb8ab8b09ab73057fdef7ceaa44ddbbec808a5`

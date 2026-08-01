@@ -1,6 +1,6 @@
 {
-  "schema": "motapathfinder.pr-4.5b2-paired-search-soundness-contract.v1",
-  "generatedAt": "2026-08-01T11:50:35.987Z",
+  "schema": "motapathfinder.pr-4.5b3-true-off-diagonal-regression-control.v1",
+  "generatedAt": "2026-08-01T12:45:17.948Z",
   "status": "completed",
   "scope": {
     "shadowOnly": true,
@@ -397,6 +397,17 @@
             },
             "projectionEqual": true
           },
+          "currentPair": {
+            "exactKeyHashes": {
+              "left": "ef0f20e1bb834193",
+              "right": "865517805102f689"
+            },
+            "projectionKeyHashes": {
+              "left": "2a9569a84a56ab19",
+              "right": "2a9569a84a56ab19"
+            },
+            "projectionEqual": true
+          },
           "sharedActionSequence": [
             {
               "id": "reenter-MT1",
@@ -478,6 +489,17 @@
             "projectionKeyHashes": {
               "left": "7548e8fcd0a748bb",
               "right": "7548e8fcd0a748bb"
+            },
+            "projectionEqual": true
+          },
+          "currentPair": {
+            "exactKeyHashes": {
+              "left": "364d7f372acb3d85",
+              "right": "99aacfa7fd157d7a"
+            },
+            "projectionKeyHashes": {
+              "left": "83a0001c46497f1c",
+              "right": "83a0001c46497f1c"
             },
             "projectionEqual": true
           },
@@ -567,6 +589,17 @@
             },
             "projectionEqual": true
           },
+          "currentPair": {
+            "exactKeyHashes": {
+              "left": "58b17ae151497572",
+              "right": "5e9fb7cefaff7b9f"
+            },
+            "projectionKeyHashes": {
+              "left": "6ac295dba804b48a",
+              "right": "6ac295dba804b48a"
+            },
+            "projectionEqual": true
+          },
           "sharedActionSequence": [
             {
               "id": "branch",
@@ -578,12 +611,12 @@
           "firstUnmatched": {
             "depth": 1,
             "kind": "action-set-mismatch",
-            "actionId": "off-diagonal-mismatch",
+            "actionId": "lane-2",
             "leftOnlyActions": [
-              "stable"
+              "lane-1"
             ],
             "rightOnlyActions": [
-              "off-diagonal-mismatch"
+              "lane-2"
             ],
             "successorMismatch": null
           }
@@ -600,9 +633,9 @@
   },
   "provenance": {
     "manifest": "shared-solver\\profiles\\state-abstraction-corpus.json",
-    "manifestSha256": "2567ec1f9d0026d0ee91eb869012b3cc6080d9e812ec69c69a3487b52039c002",
+    "manifestSha256": "fcf5cebc4ef62bf9b53360c355c90114e28287c7f26f47c94ccbb42581b5d70e",
     "projectRoot": "Only upV2.1\\Only upV2.1",
-    "generationCommit": "38977238307a7cf18632b3e02428320ff0055458",
+    "generationCommit": "8d392c153313774a0eceeb412b6488b26b8a9600",
     "productionStateKeyModule": "shared-solver/lib/state-key.js",
     "productionStateKeySha256": "f5be4802f9926744bc8e91f30ecb8ab8b09ab73057fdef7ceaa44ddbbec808a5"
   }

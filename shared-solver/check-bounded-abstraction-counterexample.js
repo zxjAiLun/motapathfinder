@@ -28,11 +28,11 @@ const MARKDOWN = path.resolve(
   "pr-4.5b-bounded-abstraction-counterexample-search.md",
 );
 
-assert.strictEqual(fs.existsSync(REPORT), true, "PR-4.5b1 report must exist");
-assert.strictEqual(fs.existsSync(MARKDOWN), true, "PR-4.5b1 markdown report must exist");
+assert.strictEqual(fs.existsSync(REPORT), true, "PR-4.5b3 report must exist");
+assert.strictEqual(fs.existsSync(MARKDOWN), true, "PR-4.5b3 markdown report must exist");
 
 const report = JSON.parse(fs.readFileSync(REPORT, "utf8"));
-assert.strictEqual(report.schema, "motapathfinder.pr-4.5b2-paired-search-soundness-contract.v1");
+assert.strictEqual(report.schema, "motapathfinder.pr-4.5b3-true-off-diagonal-regression-control.v1");
 assert.strictEqual(report.status, "completed");
 assert.strictEqual(report.scope.shadowOnly, true);
 assert.strictEqual(report.scope.productionSemanticChange, false);
@@ -107,8 +107,13 @@ assert.strictEqual(depthBoundary.witness.firstUnmatched.depth, 2);
 assert.strictEqual(depthBoundary.witness.firstUnmatched.actionId, "historical-tile@MT1");
 assert.strictEqual(offDiagonal.outcome, "mismatch-witness");
 assert.strictEqual(offDiagonal.witness.firstUnmatched.depth, 1);
-assert.strictEqual(offDiagonal.witness.firstUnmatched.actionId, "off-diagonal-mismatch");
+assert.strictEqual(offDiagonal.witness.firstUnmatched.actionId, "lane-2");
 assert.deepStrictEqual(offDiagonal.witness.sharedActionSequence.map((action) => action.id), ["branch"]);
+assert.strictEqual(offDiagonal.witness.currentPair.projectionEqual, true);
+assert.notStrictEqual(
+  offDiagonal.witness.currentPair.exactKeyHashes.left,
+  offDiagonal.witness.currentPair.exactKeyHashes.right,
+);
 assert.strictEqual(offDiagonal.multiSuccessorActionCount, 1);
 assert.strictEqual(offDiagonal.maxSuccessorsPerAction, 2);
 assert.strictEqual(offDiagonal.generatedCrossProductPairCount, 4);
@@ -188,6 +193,28 @@ assert.strictEqual(duplicateIncomplete.budgetExhausted, false);
 assert.strictEqual(duplicateIncomplete.incompleteReason, "duplicate-action-id");
 
 const directOffDiagonal = makeSyntheticOffDiagonalControl();
+const diagonalL1R1 = runPairedExpansion({
+  id: "synthetic-off-diagonal-diagonal-L1-R1",
+  left: { ...directOffDiagonal.root.left, variant: "L1" },
+  right: { ...directOffDiagonal.root.right, variant: "R1" },
+}, directOffDiagonal.adapter, {
+  depth: 0,
+  branchCap: 32,
+  stateCap: 256,
+});
+const diagonalL2R2 = runPairedExpansion({
+  id: "synthetic-off-diagonal-diagonal-L2-R2",
+  left: { ...directOffDiagonal.root.left, variant: "L2" },
+  right: { ...directOffDiagonal.root.right, variant: "R2" },
+}, directOffDiagonal.adapter, {
+  depth: 0,
+  branchCap: 32,
+  stateCap: 256,
+});
+assert.strictEqual(diagonalL1R1.outcome, "equivalent");
+assert.strictEqual(diagonalL1R1.depthReached, 0);
+assert.strictEqual(diagonalL2R2.outcome, "equivalent");
+assert.strictEqual(diagonalL2R2.depthReached, 0);
 const directOffDiagonalResult = runPairedExpansion(directOffDiagonal.root, directOffDiagonal.adapter, {
   depth: 2,
   branchCap: 32,
@@ -223,4 +250,4 @@ assert.strictEqual(
 assert.strictEqual(rebuilt.provenance.manifestSha256, report.provenance.manifestSha256);
 assert.strictEqual(rebuilt.provenance.productionStateKeySha256, report.provenance.productionStateKeySha256);
 
-console.log("PR-4.5b2 bounded abstraction counterexample checks: passed");
+console.log("PR-4.5b3 bounded abstraction counterexample checks: passed");

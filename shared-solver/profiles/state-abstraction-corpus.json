@@ -1,5 +1,5 @@
 {
-  "schema": "motapathfinder.pr-4.5b2-state-abstraction-corpus.v1",
+  "schema": "motapathfinder.pr-4.5b3-state-abstraction-corpus.v1",
   "search": {
     "depth": 2,
     "branchCap": 32,

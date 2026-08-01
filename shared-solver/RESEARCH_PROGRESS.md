@@ -75,6 +75,16 @@ PR-4.5a/a1 正式关闭后，继续保持 shadow-only，新增 manifest-driven �
 
 当前结论：正样本在 depth 0–2 和当前实际 successor multiplicity 下保持 `equivalent`；执行失败会标记为 `incomplete`，cross-product 负向控制可发现交叉配对反例；仍不构成 projection 的全局安全证明。
 
+## 1.2 2026-08-01：PR-4.5b3 True Off-Diagonal Regression Control
+
+修正 off-diagonal synthetic fixture，使两个 diagonal pairs 都保持等价，只有 cross-product 才能发现 mismatch；本轮不修改 paired search 算法。
+
+- L1/R1 使用 `lane-1`，L2/R2 使用 `lane-2`；完整 root 的 2×2 cross product 才会遇到 L1/R2 或 L2/R1 mismatch。
+- checker 直接锁定 L1/R1 与 L2/R2 在 depth 0 均为 `equivalent`，完整 root 为 `mismatch-witness` 且 `generatedCrossProductPairCount=4`。
+- mismatch witness 新增 `currentPair` 的 exact-key hashes 与 projection equality，确保报告包含实际 concrete pair 证据。
+
+当前结论：cross-product runner 的 off-diagonal-only regression 已建立；PR-4.5b 系列可以正式关闭，下一阶段进入 real-corpus collision mining 与 risk-stratified corpus expansion。
+
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 
 ### 0.1 本轮目标

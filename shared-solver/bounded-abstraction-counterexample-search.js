@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * PR-4.5b1 — Depth Boundary Contract
+ * PR-4.5b3 — True Off-Diagonal Regression Control
  *
  * This runner is deliberately shadow-only. It reads a manifest-driven corpus,
  * performs bounded paired expansion from projection collisions, and records a
@@ -265,13 +265,14 @@ function initialPairEvidence(adapter, left, right) {
   };
 }
 
-function buildMismatchWitness(root, node, comparison) {
+function buildMismatchWitness(root, node, comparison, adapter) {
   const actionSetMismatch = !comparison.actionSetEquivalent;
   const firstSuccessorMismatch = comparison.successorMismatches[0] || null;
   return {
     rootId: root.id || null,
     rootDecision: root.decision == null ? null : root.decision,
     initialPair: root.initialPair,
+    currentPair: initialPairEvidence(adapter, node.left, node.right),
     sharedActionSequence: node.sequence,
     firstUnmatched: {
       depth: node.depth,
@@ -429,7 +430,7 @@ function runPairedExpansion(root, adapter, options) {
         ...telemetry,
         executionErrors: null,
         uncheckedNodeDepth: null,
-        witness: buildMismatchWitness(root, node, comparison),
+        witness: buildMismatchWitness(root, node, comparison, adapter),
       };
     }
     if (node.depth >= config.depth) continue;
@@ -670,8 +671,9 @@ function makeSyntheticOffDiagonalControl() {
   const adapter = {
     enumerate(state) {
       if (state.variant === "root") return { actions: [{ id: "branch" }], errors: [] };
+      const lane = state.variant.endsWith("1") ? "lane-1" : "lane-2";
       return {
-        actions: [{ id: state.variant === "R2" ? "off-diagonal-mismatch" : "stable" }],
+        actions: [{ id: lane }],
         errors: [],
       };
     },
@@ -750,7 +752,7 @@ function outcomeOf(results) {
 
 function buildMarkdown(report) {
   const lines = [
-    "# PR-4.5b2 Bounded Abstraction Counterexample Search",
+    "# PR-4.5b3 Bounded Abstraction Counterexample Search",
     "",
     `Status: **${report.status}**`,
     `Positive corpus outcome: **${report.positiveCorpus.outcome}**`,
@@ -817,8 +819,8 @@ function buildReport(options) {
   const manifestPath = path.resolve(config.manifest || DEFAULT_MANIFEST);
   const projectRoot = path.resolve(config.projectRoot || path.resolve(ROOT, "Only upV2.1", "Only upV2.1"));
   const manifest = readJson(manifestPath);
-  if (manifest.schema !== "motapathfinder.pr-4.5b2-state-abstraction-corpus.v1") {
-    throw new Error(`Unsupported PR-4.5b2 corpus manifest schema: ${manifest.schema}`);
+  if (manifest.schema !== "motapathfinder.pr-4.5b3-state-abstraction-corpus.v1") {
+    throw new Error(`Unsupported PR-4.5b3 corpus manifest schema: ${manifest.schema}`);
   }
   const manifestSearch = manifest.search || {};
   const search = {
@@ -900,7 +902,7 @@ function buildReport(options) {
   const negativeOutcome = outcomeOf(negativeEntries);
   const allComplete = positiveOutcome !== "incomplete" && negativeOutcome !== "incomplete";
   return {
-    schema: "motapathfinder.pr-4.5b2-paired-search-soundness-contract.v1",
+    schema: "motapathfinder.pr-4.5b3-true-off-diagonal-regression-control.v1",
     generatedAt: new Date().toISOString(),
     status: allComplete ? "completed" : "completed-with-evidence-gaps",
     scope: {

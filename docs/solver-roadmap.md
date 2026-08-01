@@ -102,7 +102,7 @@ DP key 必须覆盖：
 | `check-progressive-to-milestone.js` | ✅ v4 bridge | progressive planner → milestone suggestion；special target inference；segment DP validation；focused checks |
 | `check-state-key-audit.js` | ✅ | direction-sensitive items/flags/visitedFloors/DP keyMode 审计 |
 | `audit-state-abstraction.js` / `check-state-abstraction-audit.js` | ✅ PR-4.5a1 shadow-only | candidate-6/7 decision 14–20 的 action-labelled relation、exact-key split、triggeredAutoEvents、direction coverage 与完整性 gates；不接入 production key |
-| `bounded-abstraction-counterexample-search.js` / `check-bounded-abstraction-counterexample.js` | ✅ PR-4.5b2 shadow-only | inclusive depth-2 paired expansion、执行错误 incomplete contract、projection-class cross product、successor telemetry 与 off-diagonal witness；不接入 production key |
+| `bounded-abstraction-counterexample-search.js` / `check-bounded-abstraction-counterexample.js` | ✅ PR-4.5b3 shadow-only | inclusive depth-2 paired expansion、执行错误 incomplete contract、projection-class cross product、true off-diagonal regression 与 successor telemetry；不接入 production key |
 | `check-onlyup-floorfly-dedup-safety.js` | ✅ | OnlyUp floorFly dedup 安全审计（确认 target-floor 模式不安全） |
 | `check-progressive-monster-planner.js` | ✅ | synthetic smoke + special target priority + batch cap + targeted matcher + legacy compat + portal compat + portal dedup safety（9 tests） |
 
@@ -153,7 +153,7 @@ DP key 必须覆盖：
 
 PR-4.5a1 已收紧为可复核契约：固定 7 个 projection collision，使用按 action ID 对齐的 successor relation 作为安全门，锁定 14–19 exact relation 不等价与 decision 20 exact rejoin，并把 replay、enumeration、action application、输入 SHA 和 direction coverage 纳入报告 gates。当前仍不改变 production key。
 
-### P1.7：Bounded Abstraction Counterexample Search（PR-4.5b / b1 / b2）✅ 首轮 shadow-only
+### P1.7：Bounded Abstraction Counterexample Search（PR-4.5b / b1 / b2 / b3）✅ 首轮 shadow-only
 
 - ✅ manifest-driven candidate corpus，保留 candidate-6/7 为固定 positive control。
 - ✅ 从每个 projection collision 做深度 2 的 action-labelled paired expansion。
@@ -163,6 +163,7 @@ PR-4.5a1 已收紧为可复核契约：固定 7 个 projection collision，使�
 - ✅ `state-cap` / `branch-cap` exhaustion reason 分离记录。
 - ✅ 执行错误与 duplicate action ID 标为 `incomplete`，不作为 abstraction mismatch 证据。
 - ✅ 同 projected successor class 展开完整 cross product，并记录 successor multiplicity telemetry；off-diagonal control 已锁定。
+- ✅ diagonal pairs 均为 equivalent、只有 cross-product pair 暴露 mismatch 的 true off-diagonal regression 已锁定。
 - 当前结果：正样本 `equivalent`，负向控制 `mismatch-witness`；尚不涉及 production key 或全局安全结论。
 
 ### P2：Adaptive planner 闭环
