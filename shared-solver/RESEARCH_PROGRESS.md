@@ -53,6 +53,17 @@ PR-4.5a/a1 正式关闭后，继续保持 shadow-only，新增 manifest-driven �
 
 当前结论：该 bounded search 已能在固定 manifest 与预算内主动验证正样本，并能检测“隐藏历史在重新进入楼层后改变 action relation”的反例；这仍不是全局 abstraction safety proof。
 
+## 1.0 2026-08-01：PR-4.5b1 Depth Boundary Contract
+
+针对 review 指出的 depth 语义边界完成最小修复，仍保持 shadow-only。
+
+- `depth` 现在表示最大被检查的 shared-prefix length；depth 0、1、2 节点都会执行 action-labelled relation check，depth 2 不再生成 depth 3。
+- 正样本 checker 锁定每个 root 的 levels `[0, 1, 2]`、`depthReached=2`、`budgetExhausted=false`，并在无去重前提下锁定 `expandedPairCount === generatedPairCount`。
+- 新增 depth-boundary negative control：`reenter-MT1 → enter-history-zone → historical-tile@MT1`，首次 mismatch 的 depth 为 2。
+- `incomplete` 现在显式携带 `exhaustedReason`，并增加 branch-cap probe；state-cap 与 branch-cap 分别输出 `state-cap` / `branch-cap`。
+
+当前结论：candidate-6/7 的 depth 0–2 bounded relation 观测为等价；depth-2 synthetic control 能被发现；这仍不构成 projection 的全局安全证明。
+
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 
 ### 0.1 本轮目标

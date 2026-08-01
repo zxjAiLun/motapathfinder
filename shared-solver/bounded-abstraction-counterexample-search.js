@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * PR-4.5b — Bounded Abstraction Counterexample Search
+ * PR-4.5b1 — Depth Boundary Contract
  *
  * This runner is deliberately shadow-only. It reads a manifest-driven corpus,
  * performs bounded paired expansion from projection collisions, and records a
@@ -274,6 +274,7 @@ function runPairedExpansion(root, adapter, options) {
       expandedPairCount: 0,
       generatedPairCount: 1,
       budgetExhausted: false,
+      exhaustedReason: null,
       branchCap: config.branchCap,
       stateCap: config.stateCap,
       witness: {
@@ -297,18 +298,20 @@ function runPairedExpansion(root, adapter, options) {
   let generatedPairCount = 1;
   let depthReached = 0;
   let budgetExhausted = false;
+  let exhaustedReason = null;
   while (queue.length > 0) {
     const node = queue.shift();
     depthReached = Math.max(depthReached, node.depth);
-    if (node.depth >= config.depth) continue;
     if (expandedPairCount >= config.stateCap) {
       budgetExhausted = true;
+      exhaustedReason = "state-cap";
       break;
     }
     const leftTable = buildActionTable(adapter, node.left);
     const rightTable = buildActionTable(adapter, node.right);
     if (leftTable.actions.length > config.branchCap || rightTable.actions.length > config.branchCap) {
       budgetExhausted = true;
+      exhaustedReason = "branch-cap";
       break;
     }
     const comparison = comparePairedActionTables(leftTable, rightTable);
@@ -324,12 +327,14 @@ function runPairedExpansion(root, adapter, options) {
         expandedPairCount,
         generatedPairCount,
         budgetExhausted: false,
+        exhaustedReason: null,
         branchCap: config.branchCap,
         stateCap: config.stateCap,
         levels,
         witness: buildMismatchWitness(root, node, comparison),
       };
     }
+    if (node.depth >= config.depth) continue;
     const leftMap = new Map(leftTable.actions.map((entry) => [entry.id, entry]));
     const rightMap = new Map(rightTable.actions.map((entry) => [entry.id, entry]));
     const commonIds = Array.from(leftMap.keys()).filter((id) => rightMap.has(id)).sort();
@@ -338,6 +343,7 @@ function runPairedExpansion(root, adapter, options) {
       for (const pair of pairs) {
         if (generatedPairCount >= config.stateCap) {
           budgetExhausted = true;
+          exhaustedReason = "state-cap";
           break;
         }
         queue.push({
@@ -363,6 +369,7 @@ function runPairedExpansion(root, adapter, options) {
       expandedPairCount,
       generatedPairCount,
       budgetExhausted: true,
+      exhaustedReason: exhaustedReason || "state-cap",
       branchCap: config.branchCap,
       stateCap: config.stateCap,
       levels,
@@ -376,6 +383,7 @@ function runPairedExpansion(root, adapter, options) {
     expandedPairCount,
     generatedPairCount,
     budgetExhausted: false,
+    exhaustedReason: null,
     branchCap: config.branchCap,
     stateCap: config.stateCap,
     levels,
@@ -497,6 +505,63 @@ function makeSyntheticNegativeControl() {
   };
 }
 
+function makeSyntheticDepthBoundaryControl() {
+  const left = {
+    floorId: "MT2",
+    hero: { x: 6, y: 0 },
+    historyZone: false,
+    mutations: [{ floorId: "MT1", removed: ["historical-gate"] }],
+  };
+  const right = {
+    floorId: "MT2",
+    hero: { x: 6, y: 0 },
+    historyZone: false,
+    mutations: [{ floorId: "MT1", removed: [] }],
+  };
+  const adapter = {
+    enumerate(state) {
+      if (state.floorId === "MT2") return { actions: [{ id: "reenter-MT1" }], errors: [] };
+      if (!state.historyZone) return { actions: [{ id: "enter-history-zone" }], errors: [] };
+      const actions = [{ id: "leave-MT2" }];
+      const mutation = (state.mutations || []).find((entry) => entry.floorId === "MT1");
+      if (!(mutation && mutation.removed || []).includes("historical-gate")) {
+        actions.push({ id: "historical-tile@MT1" });
+      }
+      return { actions, errors: [] };
+    },
+    apply(state, action) {
+      if (action.id === "reenter-MT1") return { successors: [{ ...state, floorId: "MT1" }], errors: [] };
+      if (action.id === "enter-history-zone") return { successors: [{ ...state, historyZone: true }], errors: [] };
+      if (action.id === "leave-MT2") return { successors: [{ ...state, floorId: "MT2" }], errors: [] };
+      return { successors: [{ ...state }], errors: [] };
+    },
+    actionId(action) {
+      return action.id;
+    },
+    displayAction(action) {
+      return { id: action.id };
+    },
+    exactKey(state) {
+      return canonicalJson(state);
+    },
+    projectionKey(state) {
+      // Keep the re-entry and history-zone sequence visible, but omit the
+      // hidden mutation that is supposed to be caught at depth two.
+      return canonicalJson({ floorId: state.floorId, hero: state.hero, historyZone: state.historyZone });
+    },
+  };
+  return {
+    adapter,
+    root: {
+      id: "synthetic-reentry-depth-boundary-v1",
+      decision: 0,
+      left,
+      right,
+      initialPair: initialPairEvidence(adapter, left, right),
+    },
+  };
+}
+
 function outcomeOf(results) {
   if (results.some((result) => result.outcome === "incomplete")) return "incomplete";
   if (results.some((result) => result.outcome === "mismatch-witness")) return "mismatch-witness";
@@ -505,7 +570,7 @@ function outcomeOf(results) {
 
 function buildMarkdown(report) {
   const lines = [
-    "# PR-4.5b Bounded Abstraction Counterexample Search",
+    "# PR-4.5b1 Bounded Abstraction Counterexample Search",
     "",
     `Status: **${report.status}**`,
     `Positive corpus outcome: **${report.positiveCorpus.outcome}**`,
@@ -517,6 +582,7 @@ function buildMarkdown(report) {
     "",
     `- manifest: **${report.provenance.manifest}**`,
     `- bounded depth: **${report.search.depth}**`,
+    `- relation checks: **shared-prefix depths 0 through ${report.search.depth}, inclusive**`,
     `- branch cap: **${report.search.branchCap}**`,
     `- state cap: **${report.search.stateCap}**`,
     "",
@@ -546,12 +612,13 @@ function buildMarkdown(report) {
       return `| ${entry.id} | ${entry.outcome} | ${entry.depthReached} | ${sequence} | ${unmatched} |`;
     }),
     "",
-    "The negative control intentionally omits all mutation history from its projection. The witness confirms that a shared re-entry action can expose a hidden-history action-set mismatch.",
+    "The negative controls intentionally omit hidden mutation history from their projections. The witnesses confirm both an immediate re-entry mismatch and a mismatch first exposed at the configured depth boundary.",
     "",
     "## Verdict",
     "",
     `- positive candidate-6/7 corpus: **${report.positiveCorpus.outcome}**`,
     `- negative control: **${report.negativeControls.outcome}**`,
+    `- depth-boundary control witness: **${report.summary.depthBoundaryControlFoundWitness}**`,
     `- any budget-incomplete run: **${report.summary.anyIncomplete}**`,
     `- production semantic change: **${report.scope.productionSemanticChange}**`,
     "",
@@ -570,8 +637,8 @@ function buildReport(options) {
   const manifestPath = path.resolve(config.manifest || DEFAULT_MANIFEST);
   const projectRoot = path.resolve(config.projectRoot || path.resolve(ROOT, "Only upV2.1", "Only upV2.1"));
   const manifest = readJson(manifestPath);
-  if (manifest.schema !== "motapathfinder.pr-4.5b-state-abstraction-corpus.v1") {
-    throw new Error(`Unsupported PR-4.5b corpus manifest schema: ${manifest.schema}`);
+  if (manifest.schema !== "motapathfinder.pr-4.5b1-state-abstraction-corpus.v1") {
+    throw new Error(`Unsupported PR-4.5b1 corpus manifest schema: ${manifest.schema}`);
   }
   const search = {
     depth: Number(manifest.search && manifest.search.depth || 2),
@@ -613,6 +680,7 @@ function buildReport(options) {
         expandedPairCount: root.expandedPairCount,
         generatedPairCount: root.generatedPairCount,
         budgetExhausted: root.budgetExhausted,
+        exhaustedReason: root.exhaustedReason,
         branchCap: root.branchCap,
         stateCap: root.stateCap,
         levels: root.levels,
@@ -622,11 +690,15 @@ function buildReport(options) {
   }
   const negativeEntries = [];
   for (const spec of manifest.negativeControls || []) {
-    if (spec.type !== "synthetic-reentry-hidden-mutation") {
+    let control;
+    if (spec.type === "synthetic-reentry-hidden-mutation") {
+      control = makeSyntheticNegativeControl();
+    } else if (spec.type === "synthetic-reentry-depth-boundary") {
+      control = makeSyntheticDepthBoundaryControl();
+    } else {
       negativeEntries.push({ id: spec.id, outcome: "incomplete", reason: `unsupported control type: ${spec.type}` });
       continue;
     }
-    const control = makeSyntheticNegativeControl();
     const result = runPairedExpansion(control.root, control.adapter, search);
     negativeEntries.push({
       id: spec.id,
@@ -640,7 +712,7 @@ function buildReport(options) {
   const negativeOutcome = outcomeOf(negativeEntries);
   const allComplete = positiveOutcome !== "incomplete" && negativeOutcome !== "incomplete";
   return {
-    schema: "motapathfinder.pr-4.5b-bounded-abstraction-counterexample-search.v1",
+    schema: "motapathfinder.pr-4.5b1-depth-boundary-contract.v1",
     generatedAt: new Date().toISOString(),
     status: allComplete ? "completed" : "completed-with-evidence-gaps",
     scope: {
@@ -667,6 +739,9 @@ function buildReport(options) {
     summary: {
       positiveCorpusEquivalent: positiveOutcome === "equivalent",
       negativeControlFoundWitness: negativeEntries.some((entry) => entry.outcome === "mismatch-witness"),
+      depthBoundaryControlFoundWitness: negativeEntries.some((entry) =>
+        entry.id === "synthetic-reentry-depth-boundary-v1" && entry.outcome === "mismatch-witness",
+      ),
       anyIncomplete: !allComplete,
     },
     provenance: {
@@ -708,6 +783,7 @@ module.exports = {
   buildReport,
   buildActionTable,
   comparePairedActionTables,
+  makeSyntheticDepthBoundaryControl,
   makeSyntheticNegativeControl,
   runPairedExpansion,
 };

@@ -1,4 +1,4 @@
-# PR-4.5b Bounded Abstraction Counterexample Search
+# PR-4.5b1 Bounded Abstraction Counterexample Search
 
 Status: **completed**
 Positive corpus outcome: **equivalent**
@@ -10,6 +10,7 @@ This artifact is shadow-only. It does not modify the production DP key, dominanc
 
 - manifest: **shared-solver\profiles\state-abstraction-corpus.json**
 - bounded depth: **2**
+- relation checks: **shared-prefix depths 0 through 2, inclusive**
 - branch cap: **32**
 - state cap: **256**
 
@@ -23,26 +24,28 @@ This artifact is shadow-only. It does not modify the production DP key, dominanc
 
 - replay errors: **0**
 - candidate keys match ancestry artifact: **true**
-- candidate-6-7-decision-14-20@decision-14: **equivalent**, expanded pairs **7**, generated pairs **37**
-- candidate-6-7-decision-14-20@decision-15: **equivalent**, expanded pairs **6**, generated pairs **27**
-- candidate-6-7-decision-14-20@decision-16: **equivalent**, expanded pairs **7**, generated pairs **34**
-- candidate-6-7-decision-14-20@decision-17: **equivalent**, expanded pairs **6**, generated pairs **24**
-- candidate-6-7-decision-14-20@decision-18: **equivalent**, expanded pairs **5**, generated pairs **16**
-- candidate-6-7-decision-14-20@decision-19: **equivalent**, expanded pairs **4**, generated pairs **10**
-- candidate-6-7-decision-14-20@decision-20: **equivalent**, expanded pairs **3**, generated pairs **10**
+- candidate-6-7-decision-14-20@decision-14: **equivalent**, expanded pairs **37**, generated pairs **37**
+- candidate-6-7-decision-14-20@decision-15: **equivalent**, expanded pairs **27**, generated pairs **27**
+- candidate-6-7-decision-14-20@decision-16: **equivalent**, expanded pairs **34**, generated pairs **34**
+- candidate-6-7-decision-14-20@decision-17: **equivalent**, expanded pairs **24**, generated pairs **24**
+- candidate-6-7-decision-14-20@decision-18: **equivalent**, expanded pairs **16**, generated pairs **16**
+- candidate-6-7-decision-14-20@decision-19: **equivalent**, expanded pairs **10**, generated pairs **10**
+- candidate-6-7-decision-14-20@decision-20: **equivalent**, expanded pairs **10**, generated pairs **10**
 
 ## Negative controls
 
 | Control | Outcome | Depth | Witness sequence | First unmatched |
 |---|---|---:|---|---|
 | synthetic-reentry-hidden-mutation-v1 | mismatch-witness | 1 | reenter-MT1 | historical-tile@MT1 |
+| synthetic-reentry-depth-boundary-v1 | mismatch-witness | 2 | reenter-MT1 → enter-history-zone | historical-tile@MT1 |
 
-The negative control intentionally omits all mutation history from its projection. The witness confirms that a shared re-entry action can expose a hidden-history action-set mismatch.
+The negative controls intentionally omit hidden mutation history from their projections. The witnesses confirm both an immediate re-entry mismatch and a mismatch first exposed at the configured depth boundary.
 
 ## Verdict
 
 - positive candidate-6/7 corpus: **equivalent**
 - negative control: **mismatch-witness**
+- depth-boundary control witness: **true**
 - any budget-incomplete run: **false**
 - production semantic change: **false**
 
@@ -50,5 +53,5 @@ A bounded equivalent result is evidence for this manifest, depth, and budget onl
 
 ## Provenance
 
-- generation commit: `76cecf7eecdd7a30ff5f7a4458d6eebd7ae162c7`
+- generation commit: `f5b0f06387fb910e8e8bd667a9ba9e453713bc30`
 - production state-key SHA256: `f5be4802f9926744bc8e91f30ecb8ab8b09ab73057fdef7ceaa44ddbbec808a5`

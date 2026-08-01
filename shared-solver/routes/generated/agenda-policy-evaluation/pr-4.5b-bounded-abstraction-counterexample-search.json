@@ -1,6 +1,6 @@
 {
-  "schema": "motapathfinder.pr-4.5b-bounded-abstraction-counterexample-search.v1",
-  "generatedAt": "2026-08-01T10:52:01.368Z",
+  "schema": "motapathfinder.pr-4.5b1-depth-boundary-contract.v1",
+  "generatedAt": "2026-08-01T11:09:54.968Z",
   "status": "completed",
   "scope": {
     "shadowOnly": true,
@@ -54,9 +54,10 @@
             "outcome": "equivalent",
             "depth": 2,
             "depthReached": 2,
-            "expandedPairCount": 7,
+            "expandedPairCount": 37,
             "generatedPairCount": 37,
             "budgetExhausted": false,
+            "exhaustedReason": null,
             "branchCap": 32,
             "stateCap": 256,
             "levels": [
@@ -67,6 +68,10 @@
               {
                 "depth": 1,
                 "expandedPairCount": 6
+              },
+              {
+                "depth": 2,
+                "expandedPairCount": 30
               }
             ],
             "witness": null
@@ -88,9 +93,10 @@
             "outcome": "equivalent",
             "depth": 2,
             "depthReached": 2,
-            "expandedPairCount": 6,
+            "expandedPairCount": 27,
             "generatedPairCount": 27,
             "budgetExhausted": false,
+            "exhaustedReason": null,
             "branchCap": 32,
             "stateCap": 256,
             "levels": [
@@ -101,6 +107,10 @@
               {
                 "depth": 1,
                 "expandedPairCount": 5
+              },
+              {
+                "depth": 2,
+                "expandedPairCount": 21
               }
             ],
             "witness": null
@@ -122,9 +132,10 @@
             "outcome": "equivalent",
             "depth": 2,
             "depthReached": 2,
-            "expandedPairCount": 7,
+            "expandedPairCount": 34,
             "generatedPairCount": 34,
             "budgetExhausted": false,
+            "exhaustedReason": null,
             "branchCap": 32,
             "stateCap": 256,
             "levels": [
@@ -135,6 +146,10 @@
               {
                 "depth": 1,
                 "expandedPairCount": 6
+              },
+              {
+                "depth": 2,
+                "expandedPairCount": 27
               }
             ],
             "witness": null
@@ -156,9 +171,10 @@
             "outcome": "equivalent",
             "depth": 2,
             "depthReached": 2,
-            "expandedPairCount": 6,
+            "expandedPairCount": 24,
             "generatedPairCount": 24,
             "budgetExhausted": false,
+            "exhaustedReason": null,
             "branchCap": 32,
             "stateCap": 256,
             "levels": [
@@ -169,6 +185,10 @@
               {
                 "depth": 1,
                 "expandedPairCount": 5
+              },
+              {
+                "depth": 2,
+                "expandedPairCount": 18
               }
             ],
             "witness": null
@@ -190,9 +210,10 @@
             "outcome": "equivalent",
             "depth": 2,
             "depthReached": 2,
-            "expandedPairCount": 5,
+            "expandedPairCount": 16,
             "generatedPairCount": 16,
             "budgetExhausted": false,
+            "exhaustedReason": null,
             "branchCap": 32,
             "stateCap": 256,
             "levels": [
@@ -203,6 +224,10 @@
               {
                 "depth": 1,
                 "expandedPairCount": 4
+              },
+              {
+                "depth": 2,
+                "expandedPairCount": 11
               }
             ],
             "witness": null
@@ -224,9 +249,10 @@
             "outcome": "equivalent",
             "depth": 2,
             "depthReached": 2,
-            "expandedPairCount": 4,
+            "expandedPairCount": 10,
             "generatedPairCount": 10,
             "budgetExhausted": false,
+            "exhaustedReason": null,
             "branchCap": 32,
             "stateCap": 256,
             "levels": [
@@ -237,6 +263,10 @@
               {
                 "depth": 1,
                 "expandedPairCount": 3
+              },
+              {
+                "depth": 2,
+                "expandedPairCount": 6
               }
             ],
             "witness": null
@@ -258,9 +288,10 @@
             "outcome": "equivalent",
             "depth": 2,
             "depthReached": 2,
-            "expandedPairCount": 3,
+            "expandedPairCount": 10,
             "generatedPairCount": 10,
             "budgetExhausted": false,
+            "exhaustedReason": null,
             "branchCap": 32,
             "stateCap": 256,
             "levels": [
@@ -271,6 +302,10 @@
               {
                 "depth": 1,
                 "expandedPairCount": 2
+              },
+              {
+                "depth": 2,
+                "expandedPairCount": 7
               }
             ],
             "witness": null
@@ -294,6 +329,7 @@
         "expandedPairCount": 2,
         "generatedPairCount": 2,
         "budgetExhausted": false,
+        "exhaustedReason": null,
         "branchCap": 32,
         "stateCap": 256,
         "levels": [
@@ -355,19 +391,104 @@
             }
           }
         }
+      },
+      {
+        "id": "synthetic-reentry-depth-boundary-v1",
+        "type": "synthetic-reentry-depth-boundary",
+        "expectedOutcome": "mismatch-witness",
+        "description": "Two shared actions reach a depth-two MT1 history zone; only then does the hidden mutation expose historical-tile@MT1.",
+        "outcome": "mismatch-witness",
+        "depth": 2,
+        "depthReached": 2,
+        "expandedPairCount": 3,
+        "generatedPairCount": 3,
+        "budgetExhausted": false,
+        "exhaustedReason": null,
+        "branchCap": 32,
+        "stateCap": 256,
+        "levels": [
+          {
+            "depth": 0,
+            "expandedPairCount": 1
+          },
+          {
+            "depth": 1,
+            "expandedPairCount": 1
+          },
+          {
+            "depth": 2,
+            "expandedPairCount": 1
+          }
+        ],
+        "witness": {
+          "rootId": "synthetic-reentry-depth-boundary-v1",
+          "rootDecision": 0,
+          "initialPair": {
+            "exactKeyHashes": {
+              "left": "97fe36b89b2950e2",
+              "right": "38c174297ff9d63b"
+            },
+            "projectionKeyHashes": {
+              "left": "7548e8fcd0a748bb",
+              "right": "7548e8fcd0a748bb"
+            },
+            "projectionEqual": true
+          },
+          "sharedActionSequence": [
+            {
+              "id": "reenter-MT1",
+              "action": {
+                "id": "reenter-MT1"
+              }
+            },
+            {
+              "id": "enter-history-zone",
+              "action": {
+                "id": "enter-history-zone"
+              }
+            }
+          ],
+          "firstUnmatched": {
+            "depth": 2,
+            "kind": "action-set-mismatch",
+            "actionId": "historical-tile@MT1",
+            "leftOnlyActions": [],
+            "rightOnlyActions": [
+              "historical-tile@MT1"
+            ],
+            "successorMismatch": {
+              "id": "leave-MT2",
+              "exactEqual": false,
+              "projectedEqual": true,
+              "leftExactSuccessors": [
+                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"historyZone\":true,\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"historical-gate\"]}]}"
+              ],
+              "rightExactSuccessors": [
+                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"historyZone\":true,\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[]}]}"
+              ],
+              "leftProjectedSuccessors": [
+                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"historyZone\":true}"
+              ],
+              "rightProjectedSuccessors": [
+                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"historyZone\":true}"
+              ]
+            }
+          }
+        }
       }
     ]
   },
   "summary": {
     "positiveCorpusEquivalent": true,
     "negativeControlFoundWitness": true,
+    "depthBoundaryControlFoundWitness": true,
     "anyIncomplete": false
   },
   "provenance": {
     "manifest": "shared-solver\\profiles\\state-abstraction-corpus.json",
-    "manifestSha256": "788c754bcd984dc6c89236206eb3be7d8e930b4be94ff9ebd3895395f51b20ff",
+    "manifestSha256": "1869801ed751dfc4d15e8cbebe0601b32abb7b58dbc73efa1bf0f7c693c03193",
     "projectRoot": "Only upV2.1\\Only upV2.1",
-    "generationCommit": "76cecf7eecdd7a30ff5f7a4458d6eebd7ae162c7",
+    "generationCommit": "f5b0f06387fb910e8e8bd667a9ba9e453713bc30",
     "productionStateKeyModule": "shared-solver/lib/state-key.js",
     "productionStateKeySha256": "f5be4802f9926744bc8e91f30ecb8ab8b09ab73057fdef7ceaa44ddbbec808a5"
   }

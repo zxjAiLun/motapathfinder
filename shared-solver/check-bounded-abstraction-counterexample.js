@@ -6,6 +6,7 @@ const path = require("node:path");
 
 const {
   buildReport,
+  makeSyntheticDepthBoundaryControl,
   makeSyntheticNegativeControl,
   runPairedExpansion,
 } = require("./bounded-abstraction-counterexample-search");
@@ -25,11 +26,11 @@ const MARKDOWN = path.resolve(
   "pr-4.5b-bounded-abstraction-counterexample-search.md",
 );
 
-assert.strictEqual(fs.existsSync(REPORT), true, "PR-4.5b report must exist");
-assert.strictEqual(fs.existsSync(MARKDOWN), true, "PR-4.5b markdown report must exist");
+assert.strictEqual(fs.existsSync(REPORT), true, "PR-4.5b1 report must exist");
+assert.strictEqual(fs.existsSync(MARKDOWN), true, "PR-4.5b1 markdown report must exist");
 
 const report = JSON.parse(fs.readFileSync(REPORT, "utf8"));
-assert.strictEqual(report.schema, "motapathfinder.pr-4.5b-bounded-abstraction-counterexample-search.v1");
+assert.strictEqual(report.schema, "motapathfinder.pr-4.5b1-depth-boundary-contract.v1");
 assert.strictEqual(report.status, "completed");
 assert.strictEqual(report.scope.shadowOnly, true);
 assert.strictEqual(report.scope.productionSemanticChange, false);
@@ -65,14 +66,19 @@ positive.roots.forEach((root) => {
   assert.strictEqual(root.depth, 2);
   assert.strictEqual(root.depthReached, 2);
   assert.strictEqual(root.budgetExhausted, false);
+  assert.strictEqual(root.exhaustedReason, null);
   assert.strictEqual(root.initialPair.projectionEqual, true);
   assert.ok(root.expandedPairCount > 0);
+  assert.strictEqual(root.expandedPairCount, root.generatedPairCount);
+  assert.deepStrictEqual(root.levels.map((level) => level.depth), [0, 1, 2]);
+  assert.ok(root.levels.find((level) => level.depth === 2 && level.expandedPairCount > 0));
 });
 
 assert.strictEqual(report.negativeControls.expectedOutcome, "mismatch-witness");
 assert.strictEqual(report.negativeControls.outcome, "mismatch-witness");
-assert.strictEqual(report.negativeControls.entries.length, 1);
-const negative = report.negativeControls.entries[0];
+assert.strictEqual(report.negativeControls.entries.length, 2);
+const negative = report.negativeControls.entries.find((entry) => entry.id === "synthetic-reentry-hidden-mutation-v1");
+const depthBoundary = report.negativeControls.entries.find((entry) => entry.id === "synthetic-reentry-depth-boundary-v1");
 assert.strictEqual(negative.id, "synthetic-reentry-hidden-mutation-v1");
 assert.strictEqual(negative.outcome, "mismatch-witness");
 assert.strictEqual(negative.budgetExhausted, false);
@@ -83,8 +89,18 @@ assert.strictEqual(negative.witness.sharedActionSequence[0].id, "reenter-MT1");
 assert.strictEqual(negative.witness.firstUnmatched.kind, "action-set-mismatch");
 assert.strictEqual(negative.witness.firstUnmatched.actionId, "historical-tile@MT1");
 assert.ok(negative.witness.firstUnmatched.rightOnlyActions.includes("historical-tile@MT1"));
+assert.strictEqual(depthBoundary.outcome, "mismatch-witness");
+assert.strictEqual(depthBoundary.budgetExhausted, false);
+assert.strictEqual(depthBoundary.witness.sharedActionSequence.length, 2);
+assert.deepStrictEqual(
+  depthBoundary.witness.sharedActionSequence.map((action) => action.id),
+  ["reenter-MT1", "enter-history-zone"],
+);
+assert.strictEqual(depthBoundary.witness.firstUnmatched.depth, 2);
+assert.strictEqual(depthBoundary.witness.firstUnmatched.actionId, "historical-tile@MT1");
 assert.strictEqual(report.summary.positiveCorpusEquivalent, true);
 assert.strictEqual(report.summary.negativeControlFoundWitness, true);
+assert.strictEqual(report.summary.depthBoundaryControlFoundWitness, true);
 assert.strictEqual(report.summary.anyIncomplete, false);
 assert.ok(report.provenance.manifestSha256);
 assert.ok(report.provenance.productionStateKeySha256);
@@ -98,6 +114,26 @@ const incomplete = runPairedExpansion(budgetProbe.root, budgetProbe.adapter, {
 });
 assert.strictEqual(incomplete.outcome, "incomplete");
 assert.strictEqual(incomplete.budgetExhausted, true);
+assert.strictEqual(incomplete.exhaustedReason, "state-cap");
+
+const branchProbe = makeSyntheticNegativeControl();
+const branchIncomplete = runPairedExpansion(branchProbe.root, branchProbe.adapter, {
+  depth: 2,
+  branchCap: 1,
+  stateCap: 256,
+});
+assert.strictEqual(branchIncomplete.outcome, "incomplete");
+assert.strictEqual(branchIncomplete.budgetExhausted, true);
+assert.strictEqual(branchIncomplete.exhaustedReason, "branch-cap");
+
+const depthProbe = makeSyntheticDepthBoundaryControl();
+const depthProbeResult = runPairedExpansion(depthProbe.root, depthProbe.adapter, {
+  depth: 2,
+  branchCap: 32,
+  stateCap: 256,
+});
+assert.strictEqual(depthProbeResult.outcome, "mismatch-witness");
+assert.strictEqual(depthProbeResult.witness.firstUnmatched.depth, 2);
 
 // The fixture is checked against a live rebuild so a stale generated report
 // cannot mask a change in the bounded search implementation.
@@ -106,8 +142,11 @@ assert.strictEqual(rebuilt.status, "completed");
 assert.strictEqual(rebuilt.positiveCorpus.outcome, "equivalent");
 assert.strictEqual(rebuilt.negativeControls.outcome, "mismatch-witness");
 assert.strictEqual(rebuilt.positiveCorpus.entries[0].rootCount, 7);
-assert.strictEqual(rebuilt.negativeControls.entries[0].witness.firstUnmatched.actionId, "historical-tile@MT1");
+assert.strictEqual(
+  rebuilt.negativeControls.entries.find((entry) => entry.id === "synthetic-reentry-depth-boundary-v1").witness.firstUnmatched.actionId,
+  "historical-tile@MT1",
+);
 assert.strictEqual(rebuilt.provenance.manifestSha256, report.provenance.manifestSha256);
 assert.strictEqual(rebuilt.provenance.productionStateKeySha256, report.provenance.productionStateKeySha256);
 
-console.log("PR-4.5b bounded abstraction counterexample checks: passed");
+console.log("PR-4.5b1 bounded abstraction counterexample checks: passed");

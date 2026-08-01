@@ -1,5 +1,5 @@
 {
-  "schema": "motapathfinder.pr-4.5b-state-abstraction-corpus.v1",
+  "schema": "motapathfinder.pr-4.5b1-state-abstraction-corpus.v1",
   "search": {
     "depth": 2,
     "branchCap": 32,
@@ -26,6 +26,12 @@
       "type": "synthetic-reentry-hidden-mutation",
       "expectedOutcome": "mismatch-witness",
       "description": "Two MT2 states hide different MT1 history under an intentionally unsafe all-mutation projection; a shared re-entry action exposes different MT1 action relations."
+    },
+    {
+      "id": "synthetic-reentry-depth-boundary-v1",
+      "type": "synthetic-reentry-depth-boundary",
+      "expectedOutcome": "mismatch-witness",
+      "description": "Two shared actions reach a depth-two MT1 history zone; only then does the hidden mutation expose historical-tile@MT1."
     }
   ]
 }
