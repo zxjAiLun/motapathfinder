@@ -1,6 +1,6 @@
 {
   "schema": "motapathfinder.pr-4.5c1-state-abstraction-collision-inventory.v1",
-  "generatedAt": "2026-08-01T13:49:34.446Z",
+  "generatedAt": "2026-08-01T14:10:35.859Z",
   "status": "completed",
   "scope": {
     "shadowOnly": true,
@@ -1311,6 +1311,8 @@
     "selectedPairOccurrenceCount": 8,
     "selectedUniqueSignatureCount": 5,
     "repeatedSignatureSelectionCount": 3,
+    "signatureIdsWithSkippedOccurrences": 3,
+    "unselectedUniqueSignatureCount": 2,
     "uniqueSignaturesSkippedByCap": 3,
     "pairsSelected": 8,
     "pairsSkippedByCap": 4,
@@ -1329,7 +1331,7 @@
     "manifest": "shared-solver\\profiles\\state-abstraction-mining-sources.json",
     "manifestSha256": "87cc75f0d6fd7a38935f7adc4519b67c0e526cd5d5b7d91423951dfa719a1e57",
     "projectRoot": "Only upV2.1\\Only upV2.1",
-    "generationCommit": "6fdd3658678982763828f9f21bc1f07de4e6b2be",
+    "generationCommit": "568a05ddf68d26b892fbbd5c00950302398d9b03",
     "relationEvaluator": "bounded-abstraction-counterexample-search.runPairedExpansion",
     "productionStateKeyModule": "shared-solver/lib/state-key.js",
     "productionStateKeySha256": "f5be4802f9926744bc8e91f30ecb8ab8b09ab73057fdef7ceaa44ddbbec808a5",

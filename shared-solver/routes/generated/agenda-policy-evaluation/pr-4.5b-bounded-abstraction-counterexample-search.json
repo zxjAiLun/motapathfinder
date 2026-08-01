@@ -1,6 +1,6 @@
 {
   "schema": "motapathfinder.pr-4.5b3-true-off-diagonal-regression-control.v1",
-  "generatedAt": "2026-08-01T12:45:17.948Z",
+  "generatedAt": "2026-08-01T14:10:19.993Z",
   "status": "completed",
   "scope": {
     "shadowOnly": true,
@@ -381,6 +381,7 @@
         "multiSuccessorActionCount": 0,
         "maxSuccessorsPerAction": 1,
         "generatedCrossProductPairCount": 1,
+        "exactRejoinObserved": false,
         "executionErrors": null,
         "uncheckedNodeDepth": null,
         "witness": {
@@ -424,23 +425,7 @@
             "rightOnlyActions": [
               "historical-tile@MT1"
             ],
-            "successorMismatch": {
-              "id": "leave-MT2",
-              "exactEqual": false,
-              "projectedEqual": true,
-              "leftExactSuccessors": [
-                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"historical-gate\"]}]}"
-              ],
-              "rightExactSuccessors": [
-                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[]}]}"
-              ],
-              "leftProjectedSuccessors": [
-                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0}}"
-              ],
-              "rightProjectedSuccessors": [
-                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0}}"
-              ]
-            }
+            "successorMismatch": null
           }
         }
       },
@@ -476,6 +461,7 @@
         "multiSuccessorActionCount": 0,
         "maxSuccessorsPerAction": 1,
         "generatedCrossProductPairCount": 2,
+        "exactRejoinObserved": false,
         "executionErrors": null,
         "uncheckedNodeDepth": null,
         "witness": {
@@ -525,23 +511,7 @@
             "rightOnlyActions": [
               "historical-tile@MT1"
             ],
-            "successorMismatch": {
-              "id": "leave-MT2",
-              "exactEqual": false,
-              "projectedEqual": true,
-              "leftExactSuccessors": [
-                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"historyZone\":true,\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"historical-gate\"]}]}"
-              ],
-              "rightExactSuccessors": [
-                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"historyZone\":true,\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[]}]}"
-              ],
-              "leftProjectedSuccessors": [
-                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"historyZone\":true}"
-              ],
-              "rightProjectedSuccessors": [
-                "{\"floorId\":\"MT2\",\"hero\":{\"x\":6,\"y\":0},\"historyZone\":true}"
-              ]
-            }
+            "successorMismatch": null
           }
         }
       },
@@ -573,6 +543,7 @@
         "multiSuccessorActionCount": 1,
         "maxSuccessorsPerAction": 2,
         "generatedCrossProductPairCount": 4,
+        "exactRejoinObserved": false,
         "executionErrors": null,
         "uncheckedNodeDepth": null,
         "witness": {
@@ -635,7 +606,7 @@
     "manifest": "shared-solver\\profiles\\state-abstraction-corpus.json",
     "manifestSha256": "fcf5cebc4ef62bf9b53360c355c90114e28287c7f26f47c94ccbb42581b5d70e",
     "projectRoot": "Only upV2.1\\Only upV2.1",
-    "generationCommit": "8d392c153313774a0eceeb412b6488b26b8a9600",
+    "generationCommit": "568a05ddf68d26b892fbbd5c00950302398d9b03",
     "productionStateKeyModule": "shared-solver/lib/state-key.js",
     "productionStateKeySha256": "f5be4802f9926744bc8e91f30ecb8ab8b09ab73057fdef7ceaa44ddbbec808a5"
   }

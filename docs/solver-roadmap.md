@@ -104,6 +104,7 @@ DP key 必须覆盖：
 | `audit-state-abstraction.js` / `check-state-abstraction-audit.js` | ✅ PR-4.5a1 shadow-only | candidate-6/7 decision 14–20 的 action-labelled relation、exact-key split、triggeredAutoEvents、direction coverage 与完整性 gates；不接入 production key |
 | `bounded-abstraction-counterexample-search.js` / `check-bounded-abstraction-counterexample.js` | ✅ PR-4.5b3 shadow-only | inclusive depth-2 paired expansion、执行错误 incomplete contract、projection-class cross product、true off-diagonal regression 与 successor telemetry；不接入 production key |
 | `mine-state-abstraction-collisions.js` / `check-state-abstraction-collision-inventory.js` | ✅ PR-4.5c1 shadow-only | 读取锁定的 MT1/MT2 artifacts，occurrence/signature 双层 identity、witness integrity、pair cap、分离 risk strata、depth-2 bounded outcomes 与 candidate-6/7 fixed control；不接入 production key |
+| `check-bounded-abstraction-counterexample.js` / `check-state-abstraction-collision-inventory.js` | ✅ PR-4.5c1a shadow-only | b3/c1 committed artifact 的 normalized deep compare、依赖工件一致性、stale-report gates 与 signature coverage 口径；不接入 production key |
 | `check-onlyup-floorfly-dedup-safety.js` | ✅ | OnlyUp floorFly dedup 安全审计（确认 target-floor 模式不安全） |
 | `check-progressive-monster-planner.js` | ✅ | synthetic smoke + special target priority + batch cap + targeted matcher + legacy compat + portal compat + portal dedup safety（9 tests） |
 
@@ -182,6 +183,14 @@ PR-4.5a1 已收紧为可复核契约：固定 7 个 projection collision，使�
 - ✅ selected/fixed/all-evaluated risk strata 分母明确；candidate-6/7 fixed control 锁定完整身份、exact-distinct hash、projection hash 和 exact rejoin。
 - ✅ checker 新增 witness 语义、pair → occurrence 引用、missing checkpoint error 与 deterministic rebuild gates。
 - 当前结果仍只建立 real-corpus 风险盘点，不修改 production DP key、dominance、agenda、容量或默认策略，也不构成全局 projection 安全证明。
+
+### P1.10：Dependent Artifact Integrity（PR-4.5c1a）✅ shadow-only
+
+- ✅ 重新生成当前 runner 语义下的 PR-4.5b3 JSON/Markdown，action-set mismatch 的 `successorMismatch` 统一为空。
+- ✅ b3 checker 对静态报告与 live rebuild 做 normalized full-report deep compare，仅排除时间戳与 generation commit。
+- ✅ c1 checker 对 selected pair 的 identity、risk、telemetry、execution errors、levels 与完整 witness 做 normalized deep compare。
+- ✅ 新增 `signatureIdsWithSkippedOccurrences=3`、`unselectedUniqueSignatureCount=2` coverage 口径。
+- 当前不修改 production DP key、dominance、agenda、容量或默认策略，也不构成全局 projection 安全证明。
 
 ### P2：Adaptive planner 闭环
 

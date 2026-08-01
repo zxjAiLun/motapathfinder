@@ -28,6 +28,13 @@ const MARKDOWN = path.resolve(
   "pr-4.5b-bounded-abstraction-counterexample-search.md",
 );
 
+function normalizeReport(value) {
+  const normalized = JSON.parse(JSON.stringify(value));
+  delete normalized.generatedAt;
+  if (normalized.provenance) delete normalized.provenance.generationCommit;
+  return normalized;
+}
+
 assert.strictEqual(fs.existsSync(REPORT), true, "PR-4.5b3 report must exist");
 assert.strictEqual(fs.existsSync(MARKDOWN), true, "PR-4.5b3 markdown report must exist");
 
@@ -235,6 +242,7 @@ assert.strictEqual(depthProbeResult.witness.firstUnmatched.depth, 2);
 // The fixture is checked against a live rebuild so a stale generated report
 // cannot mask a change in the bounded search implementation.
 const rebuilt = buildReport();
+assert.deepStrictEqual(normalizeReport(rebuilt), normalizeReport(report));
 assert.strictEqual(rebuilt.status, "completed");
 assert.strictEqual(rebuilt.positiveCorpus.outcome, "equivalent");
 assert.strictEqual(rebuilt.negativeControls.outcome, "mismatch-witness");

@@ -14,7 +14,8 @@ This is a shadow-only inventory. It reads existing MT1/MT2 JSON artifacts and re
 - selected unique signatures: **5**
 - repeated selected signatures: **3**
 - pairs skipped by cap: **4**
-- unique signatures skipped by cap: **3**
+- signature IDs with skipped occurrences: **3**
+- unselected unique signatures: **2**
 - search: depth **2**, branch cap **32**, state cap **256**
 
 ## Sources
@@ -55,5 +56,5 @@ An equivalent bounded result is evidence for the selected real-corpus pairs and 
 ## Provenance
 
 - manifest: **shared-solver\profiles\state-abstraction-mining-sources.json**
-- generation commit: **6fdd3658678982763828f9f21bc1f07de4e6b2be**
+- generation commit: **568a05ddf68d26b892fbbd5c00950302398d9b03**
 - relation evaluator: **bounded-abstraction-counterexample-search.runPairedExpansion**

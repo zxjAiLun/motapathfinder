@@ -109,6 +109,17 @@ PR-4.5b 系列正式关闭后，新增 `mine-state-abstraction-collisions.js` �
 
 当前 c1 结论：真实 mismatch witness 的引用 action 已与 projected relation failure 对齐，collision identity 与 sampling/risk 分母已明确；PR-4.5c1 提交等待 review，production projection 全局安全性仍未建立。
 
+## 1.5 2026-08-01：PR-4.5c1a Dependent Artifact Integrity
+
+针对 review 发现的 stale-artifact 问题，重新使用当前共享 runner 生成 PR-4.5b3 JSON/Markdown，并补齐当前 telemetry 与 action-set witness 语义：`successorMismatch` 在 action-set mismatch 中为 `null`。
+
+- b3 checker 新增 normalized full-report deep compare，仅排除 `generatedAt` 与 `provenance.generationCommit`；positive roots、negative controls、levels、telemetry、`currentPair`、shared sequence、first-unmatched 与 successor mismatch 均受 stale-report gate 约束。
+- c1 checker 新增 selected pair normalized deep compare，锁定 pair identity、risk labels、bounded telemetry、execution errors、levels 与完整 witness；live rebuild 与 committed inventory 必须一致。
+- coverage 新增 `signatureIdsWithSkippedOccurrences=3` 与 `unselectedUniqueSignatureCount=2`，区分“被跳过的 occurrence 涉及多少 signature”和“完全未覆盖的 signature”。
+- 本轮不修改 search algorithm、corpus、production DP key、dominance、agenda、容量或默认策略。
+
+当前 c1a 结论：PR-4.5b3 committed artifact 已与当前 runner 规范化一致，c1 inventory 也通过依赖工件 deep compare；全局 projection 安全性仍未建立。
+
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 
 ### 0.1 本轮目标

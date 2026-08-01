@@ -16,6 +16,35 @@ const {
   extractSourceRecords,
 } = require("./mine-state-abstraction-collisions");
 
+function normalizeSelectedPairs(report) {
+  return report.pairs.map((pair) => JSON.parse(JSON.stringify({
+    id: pair.id,
+    groupId: pair.groupId,
+    signatureId: pair.signatureId,
+    outcome: pair.outcome,
+    left: pair.left,
+    right: pair.right,
+    initialPair: pair.initialPair,
+    riskLabels: pair.riskLabels,
+    depth: pair.depth,
+    depthReached: pair.depthReached,
+    expandedPairCount: pair.expandedPairCount,
+    generatedPairCount: pair.generatedPairCount,
+    budgetExhausted: pair.budgetExhausted,
+    exhaustedReason: pair.exhaustedReason,
+    incompleteReason: pair.incompleteReason,
+    branchCap: pair.branchCap,
+    stateCap: pair.stateCap,
+    multiSuccessorActionCount: pair.multiSuccessorActionCount,
+    maxSuccessorsPerAction: pair.maxSuccessorsPerAction,
+    generatedCrossProductPairCount: pair.generatedCrossProductPairCount,
+    exactRejoinObserved: pair.exactRejoinObserved,
+    executionErrors: pair.executionErrors,
+    levels: pair.levels,
+    witness: pair.witness,
+  })));
+}
+
 const MANIFEST = path.resolve(__dirname, "profiles", "state-abstraction-mining-sources.json");
 const REPORT = path.resolve(
   __dirname,
@@ -64,6 +93,8 @@ assert.strictEqual(report.summary.exactDistinctPairCount, 12);
 assert.strictEqual(report.summary.selectedPairOccurrenceCount, 8);
 assert.strictEqual(report.summary.selectedUniqueSignatureCount, 5);
 assert.strictEqual(report.summary.repeatedSignatureSelectionCount, 3);
+assert.strictEqual(report.summary.signatureIdsWithSkippedOccurrences, 3);
+assert.strictEqual(report.summary.unselectedUniqueSignatureCount, 2);
 assert.strictEqual(report.summary.uniqueSignaturesSkippedByCap, 3);
 assert.strictEqual(report.summary.pairsSelected, 8);
 assert.strictEqual(report.summary.pairsSkippedByCap, 4);
@@ -306,9 +337,12 @@ assert.strictEqual(rebuilt.summary.statesScanned, report.summary.statesScanned);
 assert.strictEqual(rebuilt.summary.collisionOccurrenceCount, report.summary.collisionOccurrenceCount);
 assert.strictEqual(rebuilt.summary.uniqueCollisionSignatureCount, report.summary.uniqueCollisionSignatureCount);
 assert.strictEqual(rebuilt.summary.exactDistinctPairCount, report.summary.exactDistinctPairCount);
+assert.strictEqual(rebuilt.summary.signatureIdsWithSkippedOccurrences, report.summary.signatureIdsWithSkippedOccurrences);
+assert.strictEqual(rebuilt.summary.unselectedUniqueSignatureCount, report.summary.unselectedUniqueSignatureCount);
 assert.strictEqual(rebuilt.summary.pairsSelected, report.summary.pairsSelected);
 assert.strictEqual(rebuilt.summary.pairsSkippedByCap, report.summary.pairsSkippedByCap);
 assert.deepStrictEqual(rebuilt.pairs.map((pair) => pair.id), expectedPairIds);
+assert.deepStrictEqual(normalizeSelectedPairs(rebuilt), normalizeSelectedPairs(report));
 assert.deepStrictEqual(
   rebuilt.collisionGroups.map((group) => group.id),
   report.collisionGroups.map((group) => group.id),
