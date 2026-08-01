@@ -2394,6 +2394,7 @@ module.exports = {
   runCapacity10Audit,
   runIsolatedAudit,
   runIsolatedLocalCheckpoint,
+  runMt1Setup,
   runDownstream,
   summarizePipelineStages,
   summarizeRun,
