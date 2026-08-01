@@ -7,6 +7,8 @@ const path = require("node:path");
 const {
   buildReport,
   makeSyntheticDepthBoundaryControl,
+  makeSyntheticExecutionErrorControl,
+  makeSyntheticOffDiagonalControl,
   makeSyntheticNegativeControl,
   runPairedExpansion,
 } = require("./bounded-abstraction-counterexample-search");
@@ -30,7 +32,7 @@ assert.strictEqual(fs.existsSync(REPORT), true, "PR-4.5b1 report must exist");
 assert.strictEqual(fs.existsSync(MARKDOWN), true, "PR-4.5b1 markdown report must exist");
 
 const report = JSON.parse(fs.readFileSync(REPORT, "utf8"));
-assert.strictEqual(report.schema, "motapathfinder.pr-4.5b1-depth-boundary-contract.v1");
+assert.strictEqual(report.schema, "motapathfinder.pr-4.5b2-paired-search-soundness-contract.v1");
 assert.strictEqual(report.status, "completed");
 assert.strictEqual(report.scope.shadowOnly, true);
 assert.strictEqual(report.scope.productionSemanticChange, false);
@@ -67,18 +69,23 @@ positive.roots.forEach((root) => {
   assert.strictEqual(root.depthReached, 2);
   assert.strictEqual(root.budgetExhausted, false);
   assert.strictEqual(root.exhaustedReason, null);
+  assert.strictEqual(root.incompleteReason, null);
   assert.strictEqual(root.initialPair.projectionEqual, true);
   assert.ok(root.expandedPairCount > 0);
   assert.strictEqual(root.expandedPairCount, root.generatedPairCount);
   assert.deepStrictEqual(root.levels.map((level) => level.depth), [0, 1, 2]);
   assert.ok(root.levels.find((level) => level.depth === 2 && level.expandedPairCount > 0));
+  assert.strictEqual(root.multiSuccessorActionCount, 0);
+  assert.ok(root.maxSuccessorsPerAction <= 1);
+  assert.strictEqual(root.generatedCrossProductPairCount, root.generatedPairCount - 1);
 });
 
 assert.strictEqual(report.negativeControls.expectedOutcome, "mismatch-witness");
 assert.strictEqual(report.negativeControls.outcome, "mismatch-witness");
-assert.strictEqual(report.negativeControls.entries.length, 2);
+assert.strictEqual(report.negativeControls.entries.length, 3);
 const negative = report.negativeControls.entries.find((entry) => entry.id === "synthetic-reentry-hidden-mutation-v1");
 const depthBoundary = report.negativeControls.entries.find((entry) => entry.id === "synthetic-reentry-depth-boundary-v1");
+const offDiagonal = report.negativeControls.entries.find((entry) => entry.id === "synthetic-off-diagonal-successor-v1");
 assert.strictEqual(negative.id, "synthetic-reentry-hidden-mutation-v1");
 assert.strictEqual(negative.outcome, "mismatch-witness");
 assert.strictEqual(negative.budgetExhausted, false);
@@ -98,9 +105,17 @@ assert.deepStrictEqual(
 );
 assert.strictEqual(depthBoundary.witness.firstUnmatched.depth, 2);
 assert.strictEqual(depthBoundary.witness.firstUnmatched.actionId, "historical-tile@MT1");
+assert.strictEqual(offDiagonal.outcome, "mismatch-witness");
+assert.strictEqual(offDiagonal.witness.firstUnmatched.depth, 1);
+assert.strictEqual(offDiagonal.witness.firstUnmatched.actionId, "off-diagonal-mismatch");
+assert.deepStrictEqual(offDiagonal.witness.sharedActionSequence.map((action) => action.id), ["branch"]);
+assert.strictEqual(offDiagonal.multiSuccessorActionCount, 1);
+assert.strictEqual(offDiagonal.maxSuccessorsPerAction, 2);
+assert.strictEqual(offDiagonal.generatedCrossProductPairCount, 4);
 assert.strictEqual(report.summary.positiveCorpusEquivalent, true);
 assert.strictEqual(report.summary.negativeControlFoundWitness, true);
 assert.strictEqual(report.summary.depthBoundaryControlFoundWitness, true);
+assert.strictEqual(report.summary.offDiagonalControlFoundWitness, true);
 assert.strictEqual(report.summary.anyIncomplete, false);
 assert.ok(report.provenance.manifestSha256);
 assert.ok(report.provenance.productionStateKeySha256);
@@ -115,6 +130,7 @@ const incomplete = runPairedExpansion(budgetProbe.root, budgetProbe.adapter, {
 assert.strictEqual(incomplete.outcome, "incomplete");
 assert.strictEqual(incomplete.budgetExhausted, true);
 assert.strictEqual(incomplete.exhaustedReason, "state-cap");
+assert.strictEqual(incomplete.incompleteReason, "state-cap");
 
 const branchProbe = makeSyntheticNegativeControl();
 const branchIncomplete = runPairedExpansion(branchProbe.root, branchProbe.adapter, {
@@ -125,6 +141,60 @@ const branchIncomplete = runPairedExpansion(branchProbe.root, branchProbe.adapte
 assert.strictEqual(branchIncomplete.outcome, "incomplete");
 assert.strictEqual(branchIncomplete.budgetExhausted, true);
 assert.strictEqual(branchIncomplete.exhaustedReason, "branch-cap");
+assert.strictEqual(branchIncomplete.incompleteReason, "branch-cap");
+
+const depthZero = runPairedExpansion(budgetProbe.root, budgetProbe.adapter, {
+  depth: 0,
+  branchCap: 32,
+  stateCap: 256,
+});
+assert.strictEqual(depthZero.outcome, "equivalent");
+assert.strictEqual(depthZero.depthReached, 0);
+assert.strictEqual(depthZero.expandedPairCount, 1);
+assert.strictEqual(depthZero.generatedPairCount, 1);
+assert.deepStrictEqual(depthZero.levels.map((level) => level.depth), [0]);
+assert.strictEqual(depthZero.generatedCrossProductPairCount, 0);
+
+const enumerationFailure = makeSyntheticExecutionErrorControl("enumeration-error");
+const enumerationIncomplete = runPairedExpansion(enumerationFailure.root, enumerationFailure.adapter, {
+  depth: 2,
+  branchCap: 32,
+  stateCap: 256,
+});
+assert.strictEqual(enumerationIncomplete.outcome, "incomplete");
+assert.strictEqual(enumerationIncomplete.budgetExhausted, false);
+assert.strictEqual(enumerationIncomplete.incompleteReason, "enumeration-error");
+assert.strictEqual(enumerationIncomplete.witness, null);
+
+const applicationFailure = makeSyntheticExecutionErrorControl("action-application-error");
+const applicationIncomplete = runPairedExpansion(applicationFailure.root, applicationFailure.adapter, {
+  depth: 2,
+  branchCap: 32,
+  stateCap: 256,
+});
+assert.strictEqual(applicationIncomplete.outcome, "incomplete");
+assert.strictEqual(applicationIncomplete.budgetExhausted, false);
+assert.strictEqual(applicationIncomplete.incompleteReason, "action-application-error");
+assert.strictEqual(applicationIncomplete.witness, null);
+
+const duplicateFailure = makeSyntheticExecutionErrorControl("duplicate-action-id");
+const duplicateIncomplete = runPairedExpansion(duplicateFailure.root, duplicateFailure.adapter, {
+  depth: 2,
+  branchCap: 32,
+  stateCap: 256,
+});
+assert.strictEqual(duplicateIncomplete.outcome, "incomplete");
+assert.strictEqual(duplicateIncomplete.budgetExhausted, false);
+assert.strictEqual(duplicateIncomplete.incompleteReason, "duplicate-action-id");
+
+const directOffDiagonal = makeSyntheticOffDiagonalControl();
+const directOffDiagonalResult = runPairedExpansion(directOffDiagonal.root, directOffDiagonal.adapter, {
+  depth: 2,
+  branchCap: 32,
+  stateCap: 256,
+});
+assert.strictEqual(directOffDiagonalResult.outcome, "mismatch-witness");
+assert.strictEqual(directOffDiagonalResult.generatedCrossProductPairCount, 4);
 
 const depthProbe = makeSyntheticDepthBoundaryControl();
 const depthProbeResult = runPairedExpansion(depthProbe.root, depthProbe.adapter, {
@@ -146,7 +216,11 @@ assert.strictEqual(
   rebuilt.negativeControls.entries.find((entry) => entry.id === "synthetic-reentry-depth-boundary-v1").witness.firstUnmatched.actionId,
   "historical-tile@MT1",
 );
+assert.strictEqual(
+  rebuilt.negativeControls.entries.find((entry) => entry.id === "synthetic-off-diagonal-successor-v1").generatedCrossProductPairCount,
+  4,
+);
 assert.strictEqual(rebuilt.provenance.manifestSha256, report.provenance.manifestSha256);
 assert.strictEqual(rebuilt.provenance.productionStateKeySha256, report.provenance.productionStateKeySha256);
 
-console.log("PR-4.5b1 bounded abstraction counterexample checks: passed");
+console.log("PR-4.5b2 bounded abstraction counterexample checks: passed");

@@ -115,9 +115,13 @@ function buildActionTable(adapter, state) {
   const enumeration = adapter.enumerate(state) || { actions: [], errors: [] };
   const byId = new Map();
   const actionErrors = [];
+  const duplicateActionIds = [];
   for (const action of (enumeration.actions || []).filter(Boolean)) {
     const id = adapter.actionId(action);
-    if (byId.has(id)) continue;
+    if (byId.has(id)) {
+      if (!duplicateActionIds.includes(id)) duplicateActionIds.push(id);
+      continue;
+    }
     const applied = adapter.apply(state, action) || { successors: [], errors: [] };
     const successors = (applied.successors || []).filter(Boolean).map((successor) => ({
       state: successor,
@@ -144,8 +148,10 @@ function buildActionTable(adapter, state) {
     actions,
     enumerationErrors: enumeration.errors || [],
     actionErrors,
+    duplicateActionIds,
     noEnumerationErrors: (enumeration.errors || []).length === 0,
     noActionApplicationErrors: actionErrors.length === 0,
+    noDuplicateActionIds: duplicateActionIds.length === 0,
   };
 }
 
@@ -176,6 +182,7 @@ function comparePairedActionTables(left, right) {
   const actionSetEquivalent = leftOnly.length === 0 && rightOnly.length === 0;
   const noEnumerationErrors = left.noEnumerationErrors && right.noEnumerationErrors;
   const noActionApplicationErrors = left.noActionApplicationErrors && right.noActionApplicationErrors;
+  const noDuplicateActionIds = left.noDuplicateActionIds && right.noDuplicateActionIds;
   return {
     actionSetEquivalent,
     leftOnlyActions: leftOnly,
@@ -185,14 +192,21 @@ function comparePairedActionTables(left, right) {
     successorMismatchCount: successorMismatches.length,
     noEnumerationErrors,
     noActionApplicationErrors,
+    noDuplicateActionIds,
+    duplicateActionIds: {
+      left: left.duplicateActionIds,
+      right: right.duplicateActionIds,
+    },
     projectedSuccessorRelationEquivalent: actionSetEquivalent &&
       successorMismatches.every((entry) => entry.projectedEqual) &&
       noEnumerationErrors &&
-      noActionApplicationErrors,
+      noActionApplicationErrors &&
+      noDuplicateActionIds,
     exactSuccessorRelationEquivalent: actionSetEquivalent &&
       successorMismatches.every((entry) => entry.exactEqual) &&
       noEnumerationErrors &&
-      noActionApplicationErrors,
+      noActionApplicationErrors &&
+      noDuplicateActionIds,
   };
 }
 
@@ -205,19 +219,32 @@ function sortSuccessors(entries) {
 }
 
 function pairSuccessors(leftAction, rightAction) {
+  const leftByProjection = new Map();
   const rightByProjection = new Map();
+  sortSuccessors(leftAction.successors).forEach((entry) => {
+    if (!leftByProjection.has(entry.projectedKey)) leftByProjection.set(entry.projectedKey, []);
+    leftByProjection.get(entry.projectedKey).push(entry);
+  });
   sortSuccessors(rightAction.successors).forEach((entry) => {
     if (!rightByProjection.has(entry.projectedKey)) rightByProjection.set(entry.projectedKey, []);
     rightByProjection.get(entry.projectedKey).push(entry);
   });
   const pairs = [];
-  for (const leftEntry of sortSuccessors(leftAction.successors)) {
-    const matches = rightByProjection.get(leftEntry.projectedKey) || [];
-    const rightEntry = matches.shift();
-    if (!rightEntry) continue;
-    pairs.push({ left: leftEntry.state, right: rightEntry.state });
+  let generatedCrossProductPairCount = 0;
+  const projectionKeys = Array.from(leftByProjection.keys())
+    .filter((key) => rightByProjection.has(key))
+    .sort();
+  for (const projectionKey of projectionKeys) {
+    const leftEntries = leftByProjection.get(projectionKey);
+    const rightEntries = rightByProjection.get(projectionKey);
+    for (const leftEntry of leftEntries) {
+      for (const rightEntry of rightEntries) {
+        pairs.push({ left: leftEntry.state, right: rightEntry.state });
+        generatedCrossProductPairCount += 1;
+      }
+    }
   }
-  return pairs;
+  return { pairs, generatedCrossProductPairCount };
 }
 
 function initialPairEvidence(adapter, left, right) {
@@ -250,7 +277,7 @@ function buildMismatchWitness(root, node, comparison) {
       depth: node.depth,
       kind: actionSetMismatch ? "action-set-mismatch" : "projected-successor-relation-mismatch",
       actionId: actionSetMismatch
-        ? (comparison.leftOnlyActions[0] || comparison.rightOnlyActions[0] || null)
+        ? (comparison.rightOnlyActions[0] || comparison.leftOnlyActions[0] || null)
         : firstSuccessorMismatch && firstSuccessorMismatch.id,
       leftOnlyActions: comparison.leftOnlyActions.slice(0, 20),
       rightOnlyActions: comparison.rightOnlyActions.slice(0, 20),
@@ -259,11 +286,63 @@ function buildMismatchWitness(root, node, comparison) {
   };
 }
 
+function emptyExpansionTelemetry() {
+  return {
+    multiSuccessorActionCount: 0,
+    maxSuccessorsPerAction: 0,
+    generatedCrossProductPairCount: 0,
+  };
+}
+
+function observeActionMultiplicity(telemetry, leftTable, rightTable) {
+  const rightById = new Map(rightTable.actions.map((entry) => [entry.id, entry]));
+  leftTable.actions.forEach((leftAction) => {
+    const rightAction = rightById.get(leftAction.id);
+    if (!rightAction) return;
+    const maxSuccessors = Math.max(leftAction.successors.length, rightAction.successors.length);
+    telemetry.maxSuccessorsPerAction = Math.max(telemetry.maxSuccessorsPerAction, maxSuccessors);
+    if (maxSuccessors > 1) telemetry.multiSuccessorActionCount += 1;
+  });
+}
+
+function executionErrorEvidence(leftTable, rightTable) {
+  return {
+    leftEnumerationErrors: leftTable.enumerationErrors,
+    rightEnumerationErrors: rightTable.enumerationErrors,
+    leftActionErrors: leftTable.actionErrors,
+    rightActionErrors: rightTable.actionErrors,
+    leftDuplicateActionIds: leftTable.duplicateActionIds,
+    rightDuplicateActionIds: rightTable.duplicateActionIds,
+  };
+}
+
+function makeIncompleteResult(config, node, depthReached, expandedPairCount, generatedPairCount, levels, telemetry, reason, leftTable, rightTable) {
+  const budgetReason = reason === "state-cap" || reason === "branch-cap";
+  return {
+    outcome: "incomplete",
+    depth: config.depth,
+    depthReached,
+    expandedPairCount,
+    generatedPairCount,
+    budgetExhausted: budgetReason,
+    exhaustedReason: budgetReason ? reason : null,
+    incompleteReason: reason,
+    branchCap: config.branchCap,
+    stateCap: config.stateCap,
+    levels,
+    ...telemetry,
+    executionErrors: leftTable && rightTable ? executionErrorEvidence(leftTable, rightTable) : null,
+    witness: null,
+    uncheckedNodeDepth: node ? node.depth : null,
+  };
+}
+
 function runPairedExpansion(root, adapter, options) {
+  const suppliedOptions = options || {};
   const config = {
-    depth: Math.max(0, Number(options && options.depth || 2)),
-    branchCap: Math.max(1, Number(options && options.branchCap || 32)),
-    stateCap: Math.max(1, Number(options && options.stateCap || 256)),
+    depth: Math.max(0, Number(suppliedOptions.depth ?? 2)),
+    branchCap: Math.max(1, Number(suppliedOptions.branchCap ?? 32)),
+    stateCap: Math.max(1, Number(suppliedOptions.stateCap ?? 256)),
   };
   const initialPair = root.initialPair || initialPairEvidence(adapter, root.left, root.right);
   if (!initialPair.projectionEqual) {
@@ -275,8 +354,12 @@ function runPairedExpansion(root, adapter, options) {
       generatedPairCount: 1,
       budgetExhausted: false,
       exhaustedReason: null,
+      incompleteReason: null,
       branchCap: config.branchCap,
       stateCap: config.stateCap,
+      ...emptyExpansionTelemetry(),
+      executionErrors: null,
+      uncheckedNodeDepth: null,
       witness: {
         initialPair,
         sharedActionSequence: [],
@@ -299,6 +382,7 @@ function runPairedExpansion(root, adapter, options) {
   let depthReached = 0;
   let budgetExhausted = false;
   let exhaustedReason = null;
+  const telemetry = emptyExpansionTelemetry();
   while (queue.length > 0) {
     const node = queue.shift();
     depthReached = Math.max(depthReached, node.depth);
@@ -309,12 +393,22 @@ function runPairedExpansion(root, adapter, options) {
     }
     const leftTable = buildActionTable(adapter, node.left);
     const rightTable = buildActionTable(adapter, node.right);
+    const comparison = comparePairedActionTables(leftTable, rightTable);
+    observeActionMultiplicity(telemetry, leftTable, rightTable);
+    if (!comparison.noEnumerationErrors) {
+      return makeIncompleteResult(config, node, depthReached, expandedPairCount, generatedPairCount, levels, telemetry, "enumeration-error", leftTable, rightTable);
+    }
+    if (!comparison.noActionApplicationErrors) {
+      return makeIncompleteResult(config, node, depthReached, expandedPairCount, generatedPairCount, levels, telemetry, "action-application-error", leftTable, rightTable);
+    }
+    if (!comparison.noDuplicateActionIds) {
+      return makeIncompleteResult(config, node, depthReached, expandedPairCount, generatedPairCount, levels, telemetry, "duplicate-action-id", leftTable, rightTable);
+    }
     if (leftTable.actions.length > config.branchCap || rightTable.actions.length > config.branchCap) {
       budgetExhausted = true;
       exhaustedReason = "branch-cap";
       break;
     }
-    const comparison = comparePairedActionTables(leftTable, rightTable);
     expandedPairCount += 1;
     const level = levels.find((entry) => entry.depth === node.depth);
     if (level) level.expandedPairCount += 1;
@@ -328,9 +422,13 @@ function runPairedExpansion(root, adapter, options) {
         generatedPairCount,
         budgetExhausted: false,
         exhaustedReason: null,
+        incompleteReason: null,
         branchCap: config.branchCap,
         stateCap: config.stateCap,
         levels,
+        ...telemetry,
+        executionErrors: null,
+        uncheckedNodeDepth: null,
         witness: buildMismatchWitness(root, node, comparison),
       };
     }
@@ -339,8 +437,8 @@ function runPairedExpansion(root, adapter, options) {
     const rightMap = new Map(rightTable.actions.map((entry) => [entry.id, entry]));
     const commonIds = Array.from(leftMap.keys()).filter((id) => rightMap.has(id)).sort();
     for (const id of commonIds) {
-      const pairs = pairSuccessors(leftMap.get(id), rightMap.get(id));
-      for (const pair of pairs) {
+      const paired = pairSuccessors(leftMap.get(id), rightMap.get(id));
+      for (const pair of paired.pairs) {
         if (generatedPairCount >= config.stateCap) {
           budgetExhausted = true;
           exhaustedReason = "state-cap";
@@ -356,25 +454,25 @@ function runPairedExpansion(root, adapter, options) {
           }),
         });
         generatedPairCount += 1;
+        telemetry.generatedCrossProductPairCount += 1;
       }
       if (budgetExhausted) break;
     }
     if (budgetExhausted) break;
   }
   if (budgetExhausted || queue.length > 0) {
-    return {
-      outcome: "incomplete",
-      depth: config.depth,
+    return makeIncompleteResult(
+      config,
+      queue[0] || null,
       depthReached,
       expandedPairCount,
       generatedPairCount,
-      budgetExhausted: true,
-      exhaustedReason: exhaustedReason || "state-cap",
-      branchCap: config.branchCap,
-      stateCap: config.stateCap,
       levels,
-      witness: null,
-    };
+      telemetry,
+      exhaustedReason || "state-cap",
+      null,
+      null,
+    );
   }
   return {
     outcome: "equivalent",
@@ -384,9 +482,13 @@ function runPairedExpansion(root, adapter, options) {
     generatedPairCount,
     budgetExhausted: false,
     exhaustedReason: null,
+    incompleteReason: null,
     branchCap: config.branchCap,
     stateCap: config.stateCap,
     levels,
+    ...telemetry,
+    executionErrors: null,
+    uncheckedNodeDepth: null,
     witness: null,
   };
 }
@@ -562,6 +664,84 @@ function makeSyntheticDepthBoundaryControl() {
   };
 }
 
+function makeSyntheticOffDiagonalControl() {
+  const left = { floorId: "MT2", side: "left", variant: "root" };
+  const right = { floorId: "MT2", side: "right", variant: "root" };
+  const adapter = {
+    enumerate(state) {
+      if (state.variant === "root") return { actions: [{ id: "branch" }], errors: [] };
+      return {
+        actions: [{ id: state.variant === "R2" ? "off-diagonal-mismatch" : "stable" }],
+        errors: [],
+      };
+    },
+    apply(state, action) {
+      if (action.id === "branch") {
+        const variants = state.side === "left" ? ["L1", "L2"] : ["R1", "R2"];
+        return {
+          successors: variants.map((variant) => ({ ...state, variant })),
+          errors: [],
+        };
+      }
+      return { successors: [], errors: [] };
+    },
+    actionId(action) {
+      return action.id;
+    },
+    displayAction(action) {
+      return { id: action.id };
+    },
+    exactKey(state) {
+      return canonicalJson(state);
+    },
+    projectionKey(state) {
+      return canonicalJson({ floorId: state.floorId });
+    },
+  };
+  return {
+    adapter,
+    root: {
+      id: "synthetic-off-diagonal-successor-v1",
+      decision: 0,
+      left,
+      right,
+      initialPair: initialPairEvidence(adapter, left, right),
+    },
+  };
+}
+
+function makeSyntheticExecutionErrorControl(kind) {
+  const control = makeSyntheticNegativeControl();
+  const baseAdapter = control.adapter;
+  const adapter = {
+    ...baseAdapter,
+    enumerate(state) {
+      if (kind === "enumeration-error") {
+        return { actions: [], errors: [{ message: "synthetic enumeration failure" }] };
+      }
+      const result = baseAdapter.enumerate(state);
+      if (kind === "duplicate-action-id") {
+        return { actions: result.actions.concat(result.actions), errors: result.errors };
+      }
+      return result;
+    },
+    apply(state, action) {
+      if (kind === "action-application-error") {
+        return { successors: [], errors: [{ message: "synthetic action application failure" }] };
+      }
+      return baseAdapter.apply(state, action);
+    },
+  };
+  return {
+    adapter,
+    root: {
+      ...control.root,
+      id: `synthetic-${kind}-v1`,
+      initialPair: initialPairEvidence(adapter, control.root.left, control.root.right),
+    },
+  };
+}
+
 function outcomeOf(results) {
   if (results.some((result) => result.outcome === "incomplete")) return "incomplete";
   if (results.some((result) => result.outcome === "mismatch-witness")) return "mismatch-witness";
@@ -570,7 +750,7 @@ function outcomeOf(results) {
 
 function buildMarkdown(report) {
   const lines = [
-    "# PR-4.5b1 Bounded Abstraction Counterexample Search",
+    "# PR-4.5b2 Bounded Abstraction Counterexample Search",
     "",
     `Status: **${report.status}**`,
     `Positive corpus outcome: **${report.positiveCorpus.outcome}**`,
@@ -596,7 +776,7 @@ function buildMarkdown(report) {
   report.positiveCorpus.entries.forEach((entry) => {
     lines.push(`### ${entry.id}`, "", `- replay errors: **${entry.replayErrors.length}**`, `- candidate keys match ancestry artifact: **${entry.candidateExactKeysMatchArtifact}**`);
     entry.roots.forEach((root) => {
-      lines.push(`- ${root.id}: **${root.outcome}**, expanded pairs **${root.expandedPairCount}**, generated pairs **${root.generatedPairCount}**`);
+      lines.push(`- ${root.id}: **${root.outcome}**, expanded pairs **${root.expandedPairCount}**, generated pairs **${root.generatedPairCount}**, multi-successor actions **${root.multiSuccessorActionCount}**, cross-product pairs **${root.generatedCrossProductPairCount}**`);
     });
     lines.push("");
   });
@@ -637,13 +817,14 @@ function buildReport(options) {
   const manifestPath = path.resolve(config.manifest || DEFAULT_MANIFEST);
   const projectRoot = path.resolve(config.projectRoot || path.resolve(ROOT, "Only upV2.1", "Only upV2.1"));
   const manifest = readJson(manifestPath);
-  if (manifest.schema !== "motapathfinder.pr-4.5b1-state-abstraction-corpus.v1") {
-    throw new Error(`Unsupported PR-4.5b1 corpus manifest schema: ${manifest.schema}`);
+  if (manifest.schema !== "motapathfinder.pr-4.5b2-state-abstraction-corpus.v1") {
+    throw new Error(`Unsupported PR-4.5b2 corpus manifest schema: ${manifest.schema}`);
   }
+  const manifestSearch = manifest.search || {};
   const search = {
-    depth: Number(manifest.search && manifest.search.depth || 2),
-    branchCap: Number(manifest.search && manifest.search.branchCap || 32),
-    stateCap: Number(manifest.search && manifest.search.stateCap || 256),
+    depth: Number(manifestSearch.depth ?? 2),
+    branchCap: Number(manifestSearch.branchCap ?? 32),
+    stateCap: Number(manifestSearch.stateCap ?? 256),
   };
   const project = loadProject(projectRoot);
   const simulator = makeSimulator(project);
@@ -681,8 +862,13 @@ function buildReport(options) {
         generatedPairCount: root.generatedPairCount,
         budgetExhausted: root.budgetExhausted,
         exhaustedReason: root.exhaustedReason,
+        incompleteReason: root.incompleteReason,
         branchCap: root.branchCap,
         stateCap: root.stateCap,
+        multiSuccessorActionCount: root.multiSuccessorActionCount,
+        maxSuccessorsPerAction: root.maxSuccessorsPerAction,
+        generatedCrossProductPairCount: root.generatedCrossProductPairCount,
+        executionErrors: root.executionErrors,
         levels: root.levels,
         witness: root.witness,
       })),
@@ -695,6 +881,8 @@ function buildReport(options) {
       control = makeSyntheticNegativeControl();
     } else if (spec.type === "synthetic-reentry-depth-boundary") {
       control = makeSyntheticDepthBoundaryControl();
+    } else if (spec.type === "synthetic-off-diagonal-successor") {
+      control = makeSyntheticOffDiagonalControl();
     } else {
       negativeEntries.push({ id: spec.id, outcome: "incomplete", reason: `unsupported control type: ${spec.type}` });
       continue;
@@ -712,7 +900,7 @@ function buildReport(options) {
   const negativeOutcome = outcomeOf(negativeEntries);
   const allComplete = positiveOutcome !== "incomplete" && negativeOutcome !== "incomplete";
   return {
-    schema: "motapathfinder.pr-4.5b1-depth-boundary-contract.v1",
+    schema: "motapathfinder.pr-4.5b2-paired-search-soundness-contract.v1",
     generatedAt: new Date().toISOString(),
     status: allComplete ? "completed" : "completed-with-evidence-gaps",
     scope: {
@@ -741,6 +929,9 @@ function buildReport(options) {
       negativeControlFoundWitness: negativeEntries.some((entry) => entry.outcome === "mismatch-witness"),
       depthBoundaryControlFoundWitness: negativeEntries.some((entry) =>
         entry.id === "synthetic-reentry-depth-boundary-v1" && entry.outcome === "mismatch-witness",
+      ),
+      offDiagonalControlFoundWitness: negativeEntries.some((entry) =>
+        entry.id === "synthetic-off-diagonal-successor-v1" && entry.outcome === "mismatch-witness",
       ),
       anyIncomplete: !allComplete,
     },
@@ -784,6 +975,8 @@ module.exports = {
   buildActionTable,
   comparePairedActionTables,
   makeSyntheticDepthBoundaryControl,
+  makeSyntheticExecutionErrorControl,
   makeSyntheticNegativeControl,
+  makeSyntheticOffDiagonalControl,
   runPairedExpansion,
 };

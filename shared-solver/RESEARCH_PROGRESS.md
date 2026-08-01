@@ -64,6 +64,17 @@ PR-4.5a/a1 正式关闭后，继续保持 shadow-only，新增 manifest-driven �
 
 当前结论：candidate-6/7 的 depth 0–2 bounded relation 观测为等价；depth-2 synthetic control 能被发现；这仍不构成 projection 的全局安全证明。
 
+## 1.1 2026-08-01：PR-4.5b2 Paired Search Soundness Contract
+
+针对 review 的两个 soundness 缺口继续保持 shadow-only 收口：
+
+- enumeration、action application、duplicate action ID 不再生成 `mismatch-witness`，统一返回 `incompleteReason`；预算仍分别使用 `state-cap` / `branch-cap`。
+- 同一 projected successor class 现在展开完整笛卡尔积，不再使用贪心一一配对；所有 pair 继续受 state cap 限制。
+- 报告新增 `multiSuccessorActionCount`、`maxSuccessorsPerAction`、`generatedCrossProductPairCount`；candidate-6/7 当前 7 roots 均为单 successor，未触发 multi-successor。
+- 新增 off-diagonal negative control：2×2 successor cross product 中仅交叉配对暴露 mismatch；新增 depth=0、enumeration-error、action-application-error、duplicate-action-id probes。
+
+当前结论：正样本在 depth 0–2 和当前实际 successor multiplicity 下保持 `equivalent`；执行失败会标记为 `incomplete`，cross-product 负向控制可发现交叉配对反例；仍不构成 projection 的全局安全证明。
+
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 
 ### 0.1 本轮目标

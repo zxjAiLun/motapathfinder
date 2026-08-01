@@ -1,6 +1,6 @@
 {
-  "schema": "motapathfinder.pr-4.5b1-depth-boundary-contract.v1",
-  "generatedAt": "2026-08-01T11:09:54.968Z",
+  "schema": "motapathfinder.pr-4.5b2-paired-search-soundness-contract.v1",
+  "generatedAt": "2026-08-01T11:50:35.987Z",
   "status": "completed",
   "scope": {
     "shadowOnly": true,
@@ -58,8 +58,13 @@
             "generatedPairCount": 37,
             "budgetExhausted": false,
             "exhaustedReason": null,
+            "incompleteReason": null,
             "branchCap": 32,
             "stateCap": 256,
+            "multiSuccessorActionCount": 0,
+            "maxSuccessorsPerAction": 1,
+            "generatedCrossProductPairCount": 36,
+            "executionErrors": null,
             "levels": [
               {
                 "depth": 0,
@@ -97,8 +102,13 @@
             "generatedPairCount": 27,
             "budgetExhausted": false,
             "exhaustedReason": null,
+            "incompleteReason": null,
             "branchCap": 32,
             "stateCap": 256,
+            "multiSuccessorActionCount": 0,
+            "maxSuccessorsPerAction": 1,
+            "generatedCrossProductPairCount": 26,
+            "executionErrors": null,
             "levels": [
               {
                 "depth": 0,
@@ -136,8 +146,13 @@
             "generatedPairCount": 34,
             "budgetExhausted": false,
             "exhaustedReason": null,
+            "incompleteReason": null,
             "branchCap": 32,
             "stateCap": 256,
+            "multiSuccessorActionCount": 0,
+            "maxSuccessorsPerAction": 1,
+            "generatedCrossProductPairCount": 33,
+            "executionErrors": null,
             "levels": [
               {
                 "depth": 0,
@@ -175,8 +190,13 @@
             "generatedPairCount": 24,
             "budgetExhausted": false,
             "exhaustedReason": null,
+            "incompleteReason": null,
             "branchCap": 32,
             "stateCap": 256,
+            "multiSuccessorActionCount": 0,
+            "maxSuccessorsPerAction": 1,
+            "generatedCrossProductPairCount": 23,
+            "executionErrors": null,
             "levels": [
               {
                 "depth": 0,
@@ -214,8 +234,13 @@
             "generatedPairCount": 16,
             "budgetExhausted": false,
             "exhaustedReason": null,
+            "incompleteReason": null,
             "branchCap": 32,
             "stateCap": 256,
+            "multiSuccessorActionCount": 0,
+            "maxSuccessorsPerAction": 1,
+            "generatedCrossProductPairCount": 15,
+            "executionErrors": null,
             "levels": [
               {
                 "depth": 0,
@@ -253,8 +278,13 @@
             "generatedPairCount": 10,
             "budgetExhausted": false,
             "exhaustedReason": null,
+            "incompleteReason": null,
             "branchCap": 32,
             "stateCap": 256,
+            "multiSuccessorActionCount": 0,
+            "maxSuccessorsPerAction": 1,
+            "generatedCrossProductPairCount": 9,
+            "executionErrors": null,
             "levels": [
               {
                 "depth": 0,
@@ -292,8 +322,13 @@
             "generatedPairCount": 10,
             "budgetExhausted": false,
             "exhaustedReason": null,
+            "incompleteReason": null,
             "branchCap": 32,
             "stateCap": 256,
+            "multiSuccessorActionCount": 0,
+            "maxSuccessorsPerAction": 1,
+            "generatedCrossProductPairCount": 9,
+            "executionErrors": null,
             "levels": [
               {
                 "depth": 0,
@@ -330,6 +365,7 @@
         "generatedPairCount": 2,
         "budgetExhausted": false,
         "exhaustedReason": null,
+        "incompleteReason": null,
         "branchCap": 32,
         "stateCap": 256,
         "levels": [
@@ -342,6 +378,11 @@
             "expandedPairCount": 1
           }
         ],
+        "multiSuccessorActionCount": 0,
+        "maxSuccessorsPerAction": 1,
+        "generatedCrossProductPairCount": 1,
+        "executionErrors": null,
+        "uncheckedNodeDepth": null,
         "witness": {
           "rootId": "synthetic-reentry-hidden-mutation-v1",
           "rootDecision": 0,
@@ -404,6 +445,7 @@
         "generatedPairCount": 3,
         "budgetExhausted": false,
         "exhaustedReason": null,
+        "incompleteReason": null,
         "branchCap": 32,
         "stateCap": 256,
         "levels": [
@@ -420,6 +462,11 @@
             "expandedPairCount": 1
           }
         ],
+        "multiSuccessorActionCount": 0,
+        "maxSuccessorsPerAction": 1,
+        "generatedCrossProductPairCount": 2,
+        "executionErrors": null,
+        "uncheckedNodeDepth": null,
         "witness": {
           "rootId": "synthetic-reentry-depth-boundary-v1",
           "rootDecision": 0,
@@ -475,6 +522,72 @@
             }
           }
         }
+      },
+      {
+        "id": "synthetic-off-diagonal-successor-v1",
+        "type": "synthetic-off-diagonal-successor",
+        "expectedOutcome": "mismatch-witness",
+        "description": "A shared action yields two successors per side with one mismatch only in the cross-product pairing.",
+        "outcome": "mismatch-witness",
+        "depth": 2,
+        "depthReached": 1,
+        "expandedPairCount": 3,
+        "generatedPairCount": 5,
+        "budgetExhausted": false,
+        "exhaustedReason": null,
+        "incompleteReason": null,
+        "branchCap": 32,
+        "stateCap": 256,
+        "levels": [
+          {
+            "depth": 0,
+            "expandedPairCount": 1
+          },
+          {
+            "depth": 1,
+            "expandedPairCount": 2
+          }
+        ],
+        "multiSuccessorActionCount": 1,
+        "maxSuccessorsPerAction": 2,
+        "generatedCrossProductPairCount": 4,
+        "executionErrors": null,
+        "uncheckedNodeDepth": null,
+        "witness": {
+          "rootId": "synthetic-off-diagonal-successor-v1",
+          "rootDecision": 0,
+          "initialPair": {
+            "exactKeyHashes": {
+              "left": "db9156f7b80ebb9d",
+              "right": "8634bb2252eaf5d9"
+            },
+            "projectionKeyHashes": {
+              "left": "6ac295dba804b48a",
+              "right": "6ac295dba804b48a"
+            },
+            "projectionEqual": true
+          },
+          "sharedActionSequence": [
+            {
+              "id": "branch",
+              "action": {
+                "id": "branch"
+              }
+            }
+          ],
+          "firstUnmatched": {
+            "depth": 1,
+            "kind": "action-set-mismatch",
+            "actionId": "off-diagonal-mismatch",
+            "leftOnlyActions": [
+              "stable"
+            ],
+            "rightOnlyActions": [
+              "off-diagonal-mismatch"
+            ],
+            "successorMismatch": null
+          }
+        }
       }
     ]
   },
@@ -482,13 +595,14 @@
     "positiveCorpusEquivalent": true,
     "negativeControlFoundWitness": true,
     "depthBoundaryControlFoundWitness": true,
+    "offDiagonalControlFoundWitness": true,
     "anyIncomplete": false
   },
   "provenance": {
     "manifest": "shared-solver\\profiles\\state-abstraction-corpus.json",
-    "manifestSha256": "1869801ed751dfc4d15e8cbebe0601b32abb7b58dbc73efa1bf0f7c693c03193",
+    "manifestSha256": "2567ec1f9d0026d0ee91eb869012b3cc6080d9e812ec69c69a3487b52039c002",
     "projectRoot": "Only upV2.1\\Only upV2.1",
-    "generationCommit": "f5b0f06387fb910e8e8bd667a9ba9e453713bc30",
+    "generationCommit": "38977238307a7cf18632b3e02428320ff0055458",
     "productionStateKeyModule": "shared-solver/lib/state-key.js",
     "productionStateKeySha256": "f5be4802f9926744bc8e91f30ecb8ab8b09ab73057fdef7ceaa44ddbbec808a5"
   }
