@@ -267,7 +267,10 @@ function initialPairEvidence(adapter, left, right) {
 
 function buildMismatchWitness(root, node, comparison, adapter) {
   const actionSetMismatch = !comparison.actionSetEquivalent;
-  const firstSuccessorMismatch = comparison.successorMismatches[0] || null;
+  const firstProjectedMismatch = comparison.successorMismatches.find((entry) => entry.projectedEqual === false) || null;
+  if (!actionSetMismatch && !firstProjectedMismatch) {
+    throw new Error("Projected relation mismatch must include a projected successor mismatch");
+  }
   return {
     rootId: root.id || null,
     rootDecision: root.decision == null ? null : root.decision,
@@ -279,10 +282,10 @@ function buildMismatchWitness(root, node, comparison, adapter) {
       kind: actionSetMismatch ? "action-set-mismatch" : "projected-successor-relation-mismatch",
       actionId: actionSetMismatch
         ? (comparison.rightOnlyActions[0] || comparison.leftOnlyActions[0] || null)
-        : firstSuccessorMismatch && firstSuccessorMismatch.id,
+        : firstProjectedMismatch.id,
       leftOnlyActions: comparison.leftOnlyActions.slice(0, 20),
       rightOnlyActions: comparison.rightOnlyActions.slice(0, 20),
-      successorMismatch: firstSuccessorMismatch,
+      successorMismatch: actionSetMismatch ? null : firstProjectedMismatch,
     },
   };
 }

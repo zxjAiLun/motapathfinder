@@ -103,7 +103,7 @@ DP key 必须覆盖：
 | `check-state-key-audit.js` | ✅ | direction-sensitive items/flags/visitedFloors/DP keyMode 审计 |
 | `audit-state-abstraction.js` / `check-state-abstraction-audit.js` | ✅ PR-4.5a1 shadow-only | candidate-6/7 decision 14–20 的 action-labelled relation、exact-key split、triggeredAutoEvents、direction coverage 与完整性 gates；不接入 production key |
 | `bounded-abstraction-counterexample-search.js` / `check-bounded-abstraction-counterexample.js` | ✅ PR-4.5b3 shadow-only | inclusive depth-2 paired expansion、执行错误 incomplete contract、projection-class cross product、true off-diagonal regression 与 successor telemetry；不接入 production key |
-| `mine-state-abstraction-collisions.js` / `check-state-abstraction-collision-inventory.js` | ✅ PR-4.5c shadow-only | 读取锁定的 MT1/MT2 artifacts，确定性 collision grouping、pair cap、risk labels、depth-2 bounded outcomes 与 candidate-6/7 fixed control；不接入 production key |
+| `mine-state-abstraction-collisions.js` / `check-state-abstraction-collision-inventory.js` | ✅ PR-4.5c1 shadow-only | 读取锁定的 MT1/MT2 artifacts，occurrence/signature 双层 identity、witness integrity、pair cap、分离 risk strata、depth-2 bounded outcomes 与 candidate-6/7 fixed control；不接入 production key |
 | `check-onlyup-floorfly-dedup-safety.js` | ✅ | OnlyUp floorFly dedup 安全审计（确认 target-floor 模式不安全） |
 | `check-progressive-monster-planner.js` | ✅ | synthetic smoke + special target priority + batch cap + targeted matcher + legacy compat + portal compat + portal dedup safety（9 tests） |
 
@@ -167,13 +167,21 @@ PR-4.5a1 已收紧为可复核契约：固定 7 个 projection collision，使�
 - ✅ diagonal pairs 均为 equivalent、只有 cross-product pair 暴露 mismatch 的 true off-diagonal regression 已锁定。
 - 当前结果：正样本 `equivalent`，负向控制 `mismatch-witness`；尚不涉及 production key 或全局安全结论。
 
-### P1.8：Real-Corpus Collision Inventory（PR-4.5c）✅ 首轮 shadow-only
+### P1.8：Real-Corpus Collision Inventory（PR-4.5c）🔶 baseline 完成，等待 c1 收口
 
 - ✅ 仅读取 2 个稳定 MT1/MT2 JSON artifacts，锁定 source SHA256、checkpoint/candidate collection、state extraction mode 与 per-source pair cap。
-- ✅ 40 个状态形成 12 个 collision groups；12 个 exact-distinct pairs 中选取 8 对、按 cap 跳过 4 对，所有 group/pair ID 确定性生成。
+- ✅ 40 个状态形成 12 个 source-local collision occurrences、7 个 unique signatures；12 个 exact-distinct pairs 中选取 8 对、按 cap 跳过 4 对，所有 pair ID 确定性生成。
 - ✅ 复用 PR-4.5b3 depth-2 / branch-32 / state-256 runner；selected pairs 为 2 个 `equivalent`、6 个 `mismatch-witness`、0 个 `incomplete`，candidate-6/7 fixed control 为 `equivalent`。
-- ✅ 风险分层与 witness、execution-error exclusion、synthetic b3 suite、production boundary 已由 checker 锁定。
-- 当前结果只建立 real-corpus 风险盘点，不修改 production DP key、dominance、agenda、容量或默认策略，也不构成全局 projection 安全证明。
+- 🔶 baseline 的 witness 引用与 risk 分母口径由 c1 修正；在 c1 review 前不将 PR-4.5c 正式关闭。
+
+### P1.9：Witness Integrity & Collision Identity（PR-4.5c1）✅ 本轮 shadow-only
+
+- ✅ projected mismatch witness 只引用 `projectedEqual=false` 的 successor mismatch；action-set mismatch 不携带无关 successor mismatch。
+- ✅ collision occurrences 使用全局唯一 occurrence ID，跨 artifact 使用 signature ID 聚类；报告区分 12/7/5 occurrence、unique、duplicate 计数。
+- ✅ sampling coverage 区分 selected occurrences、selected unique/repeated signatures 与 skipped unique signatures。
+- ✅ selected/fixed/all-evaluated risk strata 分母明确；candidate-6/7 fixed control 锁定完整身份、exact-distinct hash、projection hash 和 exact rejoin。
+- ✅ checker 新增 witness 语义、pair → occurrence 引用、missing checkpoint error 与 deterministic rebuild gates。
+- 当前结果仍只建立 real-corpus 风险盘点，不修改 production DP key、dominance、agenda、容量或默认策略，也不构成全局 projection 安全证明。
 
 ### P2：Adaptive planner 闭环
 

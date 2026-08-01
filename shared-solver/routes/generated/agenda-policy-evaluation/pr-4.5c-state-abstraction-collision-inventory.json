@@ -1,6 +1,6 @@
 {
-  "schema": "motapathfinder.pr-4.5c-state-abstraction-collision-inventory.v1",
-  "generatedAt": "2026-08-01T13:05:56.716Z",
+  "schema": "motapathfinder.pr-4.5c1-state-abstraction-collision-inventory.v1",
+  "generatedAt": "2026-08-01T13:49:34.446Z",
   "status": "completed",
   "scope": {
     "shadowOnly": true,
@@ -46,7 +46,8 @@
       ],
       "statesScanned": 20,
       "extractionErrors": [],
-      "collisionGroupCount": 5,
+      "collisionOccurrenceCount": 5,
+      "uniqueCollisionSignatureCount": 5,
       "exactDistinctPairCount": 5,
       "pairsSelected": 4,
       "pairsSkippedByCap": 1
@@ -71,7 +72,8 @@
       ],
       "statesScanned": 20,
       "extractionErrors": [],
-      "collisionGroupCount": 7,
+      "collisionOccurrenceCount": 7,
+      "uniqueCollisionSignatureCount": 7,
       "exactDistinctPairCount": 7,
       "pairsSelected": 4,
       "pairsSkippedByCap": 3
@@ -79,143 +81,10 @@
   ],
   "collisionGroups": [
     {
-      "id": "collision-1981d0728653eb7b",
-      "sourceId": "mt2-candidate2-natural-search-audit",
-      "projectionKeyHash": "0fe1efaf3a244bd6",
-      "exactKeyHashes": [
-        "2f3bd8b73fdcfa99",
-        "5eec73f01149717d"
-      ],
-      "exactKeyCount": 2,
-      "stateIds": [
-        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-6",
-        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-7"
-      ],
-      "pairCount": 1
-    },
-    {
-      "id": "collision-1981d0728653eb7b",
+      "id": "occurrence-072f4759ab7dae16",
+      "signatureId": "signature-73cf9485b7f59b61",
       "sourceId": "mt2-candidate2-capacity10-j",
-      "projectionKeyHash": "0fe1efaf3a244bd6",
-      "exactKeyHashes": [
-        "2f3bd8b73fdcfa99",
-        "5eec73f01149717d"
-      ],
-      "exactKeyCount": 2,
-      "stateIds": [
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-7",
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-8"
-      ],
-      "pairCount": 1
-    },
-    {
-      "id": "collision-1aeddbf2e6765b01",
-      "sourceId": "mt2-candidate2-capacity10-j",
-      "projectionKeyHash": "80797571790335ae",
-      "exactKeyHashes": [
-        "d74ce433fc73828f",
-        "ef94136a061e88ba"
-      ],
-      "exactKeyCount": 2,
-      "stateIds": [
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-9",
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-2"
-      ],
-      "pairCount": 1
-    },
-    {
-      "id": "collision-3736d53c669215b6",
-      "sourceId": "mt2-candidate2-natural-search-audit",
-      "projectionKeyHash": "4559e22b83b6858f",
-      "exactKeyHashes": [
-        "60e698e656c7a0ce",
-        "69dc23af2d6d2b8d"
-      ],
-      "exactKeyCount": 2,
-      "stateIds": [
-        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582:candidate-1",
-        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582:candidate-0"
-      ],
-      "pairCount": 1
-    },
-    {
-      "id": "collision-3736d53c669215b6",
-      "sourceId": "mt2-candidate2-capacity10-j",
-      "projectionKeyHash": "4559e22b83b6858f",
-      "exactKeyHashes": [
-        "60e698e656c7a0ce",
-        "69dc23af2d6d2b8d"
-      ],
-      "exactKeyCount": 2,
-      "stateIds": [
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582:candidate-1",
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582:candidate-0"
-      ],
-      "pairCount": 1
-    },
-    {
-      "id": "collision-525cbdbf6523c718",
-      "sourceId": "mt2-candidate2-natural-search-audit",
-      "projectionKeyHash": "030d1ffe919b94cc",
-      "exactKeyHashes": [
-        "3830be4b11f065a2",
-        "a244b29015e6fb86"
-      ],
-      "exactKeyCount": 2,
-      "stateIds": [
-        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-2",
-        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-4"
-      ],
-      "pairCount": 1
-    },
-    {
-      "id": "collision-525cbdbf6523c718",
-      "sourceId": "mt2-candidate2-capacity10-j",
-      "projectionKeyHash": "030d1ffe919b94cc",
-      "exactKeyHashes": [
-        "3830be4b11f065a2",
-        "a244b29015e6fb86"
-      ],
-      "exactKeyCount": 2,
-      "stateIds": [
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-4",
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-5"
-      ],
-      "pairCount": 1
-    },
-    {
-      "id": "collision-65d161c7f079815f",
-      "sourceId": "mt2-candidate2-natural-search-audit",
-      "projectionKeyHash": "5fe8d7d616c837be",
-      "exactKeyHashes": [
-        "133eb945733b64ee",
-        "b7c89557ed8f0da7"
-      ],
-      "exactKeyCount": 2,
-      "stateIds": [
-        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-3",
-        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-0"
-      ],
-      "pairCount": 1
-    },
-    {
-      "id": "collision-65d161c7f079815f",
-      "sourceId": "mt2-candidate2-capacity10-j",
-      "projectionKeyHash": "5fe8d7d616c837be",
-      "exactKeyHashes": [
-        "133eb945733b64ee",
-        "b7c89557ed8f0da7"
-      ],
-      "exactKeyCount": 2,
-      "stateIds": [
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-3",
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-0"
-      ],
-      "pairCount": 1
-    },
-    {
-      "id": "collision-73cf9485b7f59b61",
-      "sourceId": "mt2-candidate2-capacity10-j",
+      "scopeKey": "mt2-candidate2-checkpoints::mt2-local-3582",
       "projectionKeyHash": "cc9e3675eb9ea718",
       "exactKeyHashes": [
         "4c07c9e40535fbf8",
@@ -223,29 +92,50 @@
       ],
       "exactKeyCount": 2,
       "stateIds": [
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582:candidate-6",
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582:candidate-7"
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582::mt2-local-3582:candidate-6",
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582::mt2-local-3582:candidate-7"
       ],
       "pairCount": 1
     },
     {
-      "id": "collision-df6047f6355f4711",
-      "sourceId": "mt2-candidate2-natural-search-audit",
-      "projectionKeyHash": "45a1a3a2f9850629",
-      "exactKeyHashes": [
-        "1f40aadff4025990",
-        "7d01ed261f656b39"
-      ],
-      "exactKeyCount": 2,
-      "stateIds": [
-        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582:candidate-4",
-        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582:candidate-5"
-      ],
-      "pairCount": 1
-    },
-    {
-      "id": "collision-df6047f6355f4711",
+      "id": "occurrence-1b2ab894fe0b15b9",
+      "signatureId": "signature-525cbdbf6523c718",
       "sourceId": "mt2-candidate2-capacity10-j",
+      "scopeKey": "mt2-candidate2-checkpoints::mt2-entry",
+      "projectionKeyHash": "030d1ffe919b94cc",
+      "exactKeyHashes": [
+        "3830be4b11f065a2",
+        "a244b29015e6fb86"
+      ],
+      "exactKeyCount": 2,
+      "stateIds": [
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-4",
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-5"
+      ],
+      "pairCount": 1
+    },
+    {
+      "id": "occurrence-3c5ed53a4315754c",
+      "signatureId": "signature-3736d53c669215b6",
+      "sourceId": "mt2-candidate2-natural-search-audit",
+      "scopeKey": "mt2-entry-and-local-3582::mt2-local-3582",
+      "projectionKeyHash": "4559e22b83b6858f",
+      "exactKeyHashes": [
+        "60e698e656c7a0ce",
+        "69dc23af2d6d2b8d"
+      ],
+      "exactKeyCount": 2,
+      "stateIds": [
+        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582::mt2-local-3582:candidate-1",
+        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582::mt2-local-3582:candidate-0"
+      ],
+      "pairCount": 1
+    },
+    {
+      "id": "occurrence-59e1c6a98c0e68d2",
+      "signatureId": "signature-df6047f6355f4711",
+      "sourceId": "mt2-candidate2-natural-search-audit",
+      "scopeKey": "mt2-entry-and-local-3582::mt2-local-3582",
       "projectionKeyHash": "45a1a3a2f9850629",
       "exactKeyHashes": [
         "1f40aadff4025990",
@@ -253,16 +143,268 @@
       ],
       "exactKeyCount": 2,
       "stateIds": [
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582:candidate-4",
-        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582:candidate-5"
+        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582::mt2-local-3582:candidate-4",
+        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582::mt2-local-3582:candidate-5"
+      ],
+      "pairCount": 1
+    },
+    {
+      "id": "occurrence-742c9e9020b6974c",
+      "signatureId": "signature-65d161c7f079815f",
+      "sourceId": "mt2-candidate2-natural-search-audit",
+      "scopeKey": "mt2-entry-and-local-3582::mt2-entry",
+      "projectionKeyHash": "5fe8d7d616c837be",
+      "exactKeyHashes": [
+        "133eb945733b64ee",
+        "b7c89557ed8f0da7"
+      ],
+      "exactKeyCount": 2,
+      "stateIds": [
+        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-3",
+        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-0"
+      ],
+      "pairCount": 1
+    },
+    {
+      "id": "occurrence-795d4bf97484ddc2",
+      "signatureId": "signature-1981d0728653eb7b",
+      "sourceId": "mt2-candidate2-natural-search-audit",
+      "scopeKey": "mt2-entry-and-local-3582::mt2-entry",
+      "projectionKeyHash": "0fe1efaf3a244bd6",
+      "exactKeyHashes": [
+        "2f3bd8b73fdcfa99",
+        "5eec73f01149717d"
+      ],
+      "exactKeyCount": 2,
+      "stateIds": [
+        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-6",
+        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-7"
+      ],
+      "pairCount": 1
+    },
+    {
+      "id": "occurrence-8dad8dacc9ed379c",
+      "signatureId": "signature-1aeddbf2e6765b01",
+      "sourceId": "mt2-candidate2-capacity10-j",
+      "scopeKey": "mt2-candidate2-checkpoints::mt2-entry",
+      "projectionKeyHash": "80797571790335ae",
+      "exactKeyHashes": [
+        "d74ce433fc73828f",
+        "ef94136a061e88ba"
+      ],
+      "exactKeyCount": 2,
+      "stateIds": [
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-9",
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-2"
+      ],
+      "pairCount": 1
+    },
+    {
+      "id": "occurrence-b3a8e97e9e72b1b9",
+      "signatureId": "signature-65d161c7f079815f",
+      "sourceId": "mt2-candidate2-capacity10-j",
+      "scopeKey": "mt2-candidate2-checkpoints::mt2-entry",
+      "projectionKeyHash": "5fe8d7d616c837be",
+      "exactKeyHashes": [
+        "133eb945733b64ee",
+        "b7c89557ed8f0da7"
+      ],
+      "exactKeyCount": 2,
+      "stateIds": [
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-3",
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-0"
+      ],
+      "pairCount": 1
+    },
+    {
+      "id": "occurrence-c71b42f739f3372f",
+      "signatureId": "signature-525cbdbf6523c718",
+      "sourceId": "mt2-candidate2-natural-search-audit",
+      "scopeKey": "mt2-entry-and-local-3582::mt2-entry",
+      "projectionKeyHash": "030d1ffe919b94cc",
+      "exactKeyHashes": [
+        "3830be4b11f065a2",
+        "a244b29015e6fb86"
+      ],
+      "exactKeyCount": 2,
+      "stateIds": [
+        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-2",
+        "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-4"
+      ],
+      "pairCount": 1
+    },
+    {
+      "id": "occurrence-ea97de6b89731723",
+      "signatureId": "signature-1981d0728653eb7b",
+      "sourceId": "mt2-candidate2-capacity10-j",
+      "scopeKey": "mt2-candidate2-checkpoints::mt2-entry",
+      "projectionKeyHash": "0fe1efaf3a244bd6",
+      "exactKeyHashes": [
+        "2f3bd8b73fdcfa99",
+        "5eec73f01149717d"
+      ],
+      "exactKeyCount": 2,
+      "stateIds": [
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-7",
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-8"
+      ],
+      "pairCount": 1
+    },
+    {
+      "id": "occurrence-eb861b415eab0de8",
+      "signatureId": "signature-3736d53c669215b6",
+      "sourceId": "mt2-candidate2-capacity10-j",
+      "scopeKey": "mt2-candidate2-checkpoints::mt2-local-3582",
+      "projectionKeyHash": "4559e22b83b6858f",
+      "exactKeyHashes": [
+        "60e698e656c7a0ce",
+        "69dc23af2d6d2b8d"
+      ],
+      "exactKeyCount": 2,
+      "stateIds": [
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582::mt2-local-3582:candidate-1",
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582::mt2-local-3582:candidate-0"
+      ],
+      "pairCount": 1
+    },
+    {
+      "id": "occurrence-f789863786707354",
+      "signatureId": "signature-df6047f6355f4711",
+      "sourceId": "mt2-candidate2-capacity10-j",
+      "scopeKey": "mt2-candidate2-checkpoints::mt2-local-3582",
+      "projectionKeyHash": "45a1a3a2f9850629",
+      "exactKeyHashes": [
+        "1f40aadff4025990",
+        "7d01ed261f656b39"
+      ],
+      "exactKeyCount": 2,
+      "stateIds": [
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582::mt2-local-3582:candidate-4",
+        "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582::mt2-local-3582:candidate-5"
       ],
       "pairCount": 1
     }
   ],
   "pairs": [
     {
-      "id": "pair-285e93d1eb45542d",
-      "groupId": "collision-1981d0728653eb7b",
+      "id": "pair-11cec6a5f310031c",
+      "groupId": "occurrence-c71b42f739f3372f",
+      "signatureId": "signature-525cbdbf6523c718",
+      "initialPair": {
+        "exactKeyHashes": {
+          "left": "3830be4b11f065a2",
+          "right": "a244b29015e6fb86"
+        },
+        "projectionKeyHashes": {
+          "left": "030d1ffe919b94cc",
+          "right": "030d1ffe919b94cc"
+        },
+        "projectionEqual": true
+      },
+      "left": {
+        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-2",
+        "sourceId": "mt2-candidate2-natural-search-audit",
+        "collectionId": "mt2-entry-and-local-3582",
+        "checkpointId": "mt2-entry",
+        "candidateId": "mt2-entry:candidate-2",
+        "exactKeyHash": "3830be4b11f065a2",
+        "projectionKeyHash": "030d1ffe919b94cc"
+      },
+      "right": {
+        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-4",
+        "sourceId": "mt2-candidate2-natural-search-audit",
+        "collectionId": "mt2-entry-and-local-3582",
+        "checkpointId": "mt2-entry",
+        "candidateId": "mt2-entry:candidate-4",
+        "exactKeyHash": "a244b29015e6fb86",
+        "projectionKeyHash": "030d1ffe919b94cc"
+      },
+      "riskLabels": {
+        "nonCurrentFloorMutationDiff": "true",
+        "currentFloorMutationDiff": "false",
+        "leaveLocOrDirectionDiff": "false",
+        "triggeredAutoEventsPresent": "false",
+        "crossFloorActionAvailable": "true",
+        "multiSuccessorObserved": "false",
+        "exactRejoinObserved": "false"
+      },
+      "outcome": "mismatch-witness",
+      "depth": 2,
+      "depthReached": 0,
+      "expandedPairCount": 1,
+      "generatedPairCount": 1,
+      "budgetExhausted": false,
+      "exhaustedReason": null,
+      "incompleteReason": null,
+      "branchCap": 32,
+      "stateCap": 256,
+      "multiSuccessorActionCount": 0,
+      "maxSuccessorsPerAction": 1,
+      "generatedCrossProductPairCount": 0,
+      "exactRejoinObserved": false,
+      "executionErrors": null,
+      "levels": [
+        {
+          "depth": 0,
+          "expandedPairCount": 1
+        }
+      ],
+      "witness": {
+        "rootId": "pair-11cec6a5f310031c",
+        "rootDecision": null,
+        "initialPair": {
+          "exactKeyHashes": {
+            "left": "3830be4b11f065a2",
+            "right": "a244b29015e6fb86"
+          },
+          "projectionKeyHashes": {
+            "left": "030d1ffe919b94cc",
+            "right": "030d1ffe919b94cc"
+          },
+          "projectionEqual": true
+        },
+        "currentPair": {
+          "exactKeyHashes": {
+            "left": "3830be4b11f065a2",
+            "right": "a244b29015e6fb86"
+          },
+          "projectionKeyHashes": {
+            "left": "030d1ffe919b94cc",
+            "right": "030d1ffe919b94cc"
+          },
+          "projectionEqual": true
+        },
+        "sharedActionSequence": [],
+        "firstUnmatched": {
+          "depth": 0,
+          "kind": "projected-successor-relation-mismatch",
+          "actionId": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
+          "leftOnlyActions": [],
+          "rightOnlyActions": [],
+          "successorMismatch": {
+            "id": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
+            "exactEqual": false,
+            "projectedEqual": false,
+            "leftExactSuccessors": [
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":2770,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+            ],
+            "rightExactSuccessors": [
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":2770,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+            ],
+            "leftProjectedSuccessors": [
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":7,\"followers\":[],\"hp\":2770,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+            ],
+            "rightProjectedSuccessors": [
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":7,\"followers\":[],\"hp\":2770,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "pair-130c13a9af1762d4",
+      "groupId": "occurrence-795d4bf97484ddc2",
+      "signatureId": "signature-1981d0728653eb7b",
       "initialPair": {
         "exactKeyHashes": {
           "left": "2f3bd8b73fdcfa99",
@@ -275,7 +417,7 @@
         "projectionEqual": true
       },
       "left": {
-        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-6",
+        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-6",
         "sourceId": "mt2-candidate2-natural-search-audit",
         "collectionId": "mt2-entry-and-local-3582",
         "checkpointId": "mt2-entry",
@@ -284,7 +426,7 @@
         "projectionKeyHash": "0fe1efaf3a244bd6"
       },
       "right": {
-        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-7",
+        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-7",
         "sourceId": "mt2-candidate2-natural-search-audit",
         "collectionId": "mt2-entry-and-local-3582",
         "checkpointId": "mt2-entry",
@@ -323,7 +465,7 @@
         }
       ],
       "witness": {
-        "rootId": "pair-285e93d1eb45542d",
+        "rootId": "pair-130c13a9af1762d4",
         "rootDecision": null,
         "initialPair": {
           "exactKeyHashes": {
@@ -351,146 +493,33 @@
         "firstUnmatched": {
           "depth": 0,
           "kind": "projected-successor-relation-mismatch",
-          "actionId": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
+          "actionId": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
           "leftOnlyActions": [],
           "rightOnlyActions": [],
           "successorMismatch": {
-            "id": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
+            "id": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
             "exactEqual": false,
-            "projectedEqual": true,
+            "projectedEqual": false,
             "leftExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":4875,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
             ],
             "rightExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":4875,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
             ],
             "leftProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":8,\"followers\":[],\"hp\":4875,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":7,\"followers\":[],\"hp\":1970,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
             ],
             "rightProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":8,\"followers\":[],\"hp\":4875,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":7,\"followers\":[],\"hp\":1970,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
             ]
           }
         }
       }
     },
     {
-      "id": "pair-3e9e2b6efe518b63",
-      "groupId": "collision-65d161c7f079815f",
-      "initialPair": {
-        "exactKeyHashes": {
-          "left": "b7c89557ed8f0da7",
-          "right": "133eb945733b64ee"
-        },
-        "projectionKeyHashes": {
-          "left": "5fe8d7d616c837be",
-          "right": "5fe8d7d616c837be"
-        },
-        "projectionEqual": true
-      },
-      "left": {
-        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-0",
-        "sourceId": "mt2-candidate2-natural-search-audit",
-        "collectionId": "mt2-entry-and-local-3582",
-        "checkpointId": "mt2-entry",
-        "candidateId": "mt2-entry:candidate-0",
-        "exactKeyHash": "b7c89557ed8f0da7",
-        "projectionKeyHash": "5fe8d7d616c837be"
-      },
-      "right": {
-        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-3",
-        "sourceId": "mt2-candidate2-natural-search-audit",
-        "collectionId": "mt2-entry-and-local-3582",
-        "checkpointId": "mt2-entry",
-        "candidateId": "mt2-entry:candidate-3",
-        "exactKeyHash": "133eb945733b64ee",
-        "projectionKeyHash": "5fe8d7d616c837be"
-      },
-      "riskLabels": {
-        "nonCurrentFloorMutationDiff": "true",
-        "currentFloorMutationDiff": "false",
-        "leaveLocOrDirectionDiff": "false",
-        "triggeredAutoEventsPresent": "false",
-        "crossFloorActionAvailable": "true",
-        "multiSuccessorObserved": "false",
-        "exactRejoinObserved": "false"
-      },
-      "outcome": "mismatch-witness",
-      "depth": 2,
-      "depthReached": 0,
-      "expandedPairCount": 1,
-      "generatedPairCount": 1,
-      "budgetExhausted": false,
-      "exhaustedReason": null,
-      "incompleteReason": null,
-      "branchCap": 32,
-      "stateCap": 256,
-      "multiSuccessorActionCount": 0,
-      "maxSuccessorsPerAction": 1,
-      "generatedCrossProductPairCount": 0,
-      "exactRejoinObserved": false,
-      "executionErrors": null,
-      "levels": [
-        {
-          "depth": 0,
-          "expandedPairCount": 1
-        }
-      ],
-      "witness": {
-        "rootId": "pair-3e9e2b6efe518b63",
-        "rootDecision": null,
-        "initialPair": {
-          "exactKeyHashes": {
-            "left": "b7c89557ed8f0da7",
-            "right": "133eb945733b64ee"
-          },
-          "projectionKeyHashes": {
-            "left": "5fe8d7d616c837be",
-            "right": "5fe8d7d616c837be"
-          },
-          "projectionEqual": true
-        },
-        "currentPair": {
-          "exactKeyHashes": {
-            "left": "b7c89557ed8f0da7",
-            "right": "133eb945733b64ee"
-          },
-          "projectionKeyHashes": {
-            "left": "5fe8d7d616c837be",
-            "right": "5fe8d7d616c837be"
-          },
-          "projectionEqual": true
-        },
-        "sharedActionSequence": [],
-        "firstUnmatched": {
-          "depth": 0,
-          "kind": "projected-successor-relation-mismatch",
-          "actionId": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
-          "leftOnlyActions": [],
-          "rightOnlyActions": [],
-          "successorMismatch": {
-            "id": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
-            "exactEqual": false,
-            "projectedEqual": true,
-            "leftExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":6155,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
-            ],
-            "rightExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":6155,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
-            ],
-            "leftProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":9,\"followers\":[],\"hp\":6155,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
-            ],
-            "rightProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":9,\"followers\":[],\"hp\":6155,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": "pair-56d844bfe57f58b0",
-      "groupId": "collision-1981d0728653eb7b",
+      "id": "pair-49f587da8e0c8c54",
+      "groupId": "occurrence-ea97de6b89731723",
+      "signatureId": "signature-1981d0728653eb7b",
       "initialPair": {
         "exactKeyHashes": {
           "left": "2f3bd8b73fdcfa99",
@@ -503,7 +532,7 @@
         "projectionEqual": true
       },
       "left": {
-        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-7",
+        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-7",
         "sourceId": "mt2-candidate2-capacity10-j",
         "collectionId": "mt2-candidate2-checkpoints",
         "checkpointId": "mt2-entry",
@@ -512,7 +541,7 @@
         "projectionKeyHash": "0fe1efaf3a244bd6"
       },
       "right": {
-        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-8",
+        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-8",
         "sourceId": "mt2-candidate2-capacity10-j",
         "collectionId": "mt2-candidate2-checkpoints",
         "checkpointId": "mt2-entry",
@@ -551,7 +580,7 @@
         }
       ],
       "witness": {
-        "rootId": "pair-56d844bfe57f58b0",
+        "rootId": "pair-49f587da8e0c8c54",
         "rootDecision": null,
         "initialPair": {
           "exactKeyHashes": {
@@ -579,218 +608,33 @@
         "firstUnmatched": {
           "depth": 0,
           "kind": "projected-successor-relation-mismatch",
-          "actionId": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
+          "actionId": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
           "leftOnlyActions": [],
           "rightOnlyActions": [],
           "successorMismatch": {
-            "id": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
+            "id": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
             "exactEqual": false,
-            "projectedEqual": true,
+            "projectedEqual": false,
             "leftExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":4875,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
             ],
             "rightExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":4875,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1970,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
             ],
             "leftProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":8,\"followers\":[],\"hp\":4875,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":7,\"followers\":[],\"hp\":1970,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
             ],
             "rightProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":8,\"followers\":[],\"hp\":4875,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":7,\"followers\":[],\"hp\":1970,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
             ]
           }
         }
       }
     },
     {
-      "id": "pair-5aec405522f8963c",
-      "groupId": "collision-525cbdbf6523c718",
-      "initialPair": {
-        "exactKeyHashes": {
-          "left": "3830be4b11f065a2",
-          "right": "a244b29015e6fb86"
-        },
-        "projectionKeyHashes": {
-          "left": "030d1ffe919b94cc",
-          "right": "030d1ffe919b94cc"
-        },
-        "projectionEqual": true
-      },
-      "left": {
-        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-4",
-        "sourceId": "mt2-candidate2-capacity10-j",
-        "collectionId": "mt2-candidate2-checkpoints",
-        "checkpointId": "mt2-entry",
-        "candidateId": "mt2-entry:candidate-4",
-        "exactKeyHash": "3830be4b11f065a2",
-        "projectionKeyHash": "030d1ffe919b94cc"
-      },
-      "right": {
-        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-5",
-        "sourceId": "mt2-candidate2-capacity10-j",
-        "collectionId": "mt2-candidate2-checkpoints",
-        "checkpointId": "mt2-entry",
-        "candidateId": "mt2-entry:candidate-5",
-        "exactKeyHash": "a244b29015e6fb86",
-        "projectionKeyHash": "030d1ffe919b94cc"
-      },
-      "riskLabels": {
-        "nonCurrentFloorMutationDiff": "true",
-        "currentFloorMutationDiff": "false",
-        "leaveLocOrDirectionDiff": "false",
-        "triggeredAutoEventsPresent": "false",
-        "crossFloorActionAvailable": "true",
-        "multiSuccessorObserved": "false",
-        "exactRejoinObserved": "false"
-      },
-      "outcome": "mismatch-witness",
-      "depth": 2,
-      "depthReached": 0,
-      "expandedPairCount": 1,
-      "generatedPairCount": 1,
-      "budgetExhausted": false,
-      "exhaustedReason": null,
-      "incompleteReason": null,
-      "branchCap": 32,
-      "stateCap": 256,
-      "multiSuccessorActionCount": 0,
-      "maxSuccessorsPerAction": 1,
-      "generatedCrossProductPairCount": 0,
-      "exactRejoinObserved": false,
-      "executionErrors": null,
-      "levels": [
-        {
-          "depth": 0,
-          "expandedPairCount": 1
-        }
-      ],
-      "witness": {
-        "rootId": "pair-5aec405522f8963c",
-        "rootDecision": null,
-        "initialPair": {
-          "exactKeyHashes": {
-            "left": "3830be4b11f065a2",
-            "right": "a244b29015e6fb86"
-          },
-          "projectionKeyHashes": {
-            "left": "030d1ffe919b94cc",
-            "right": "030d1ffe919b94cc"
-          },
-          "projectionEqual": true
-        },
-        "currentPair": {
-          "exactKeyHashes": {
-            "left": "3830be4b11f065a2",
-            "right": "a244b29015e6fb86"
-          },
-          "projectionKeyHashes": {
-            "left": "030d1ffe919b94cc",
-            "right": "030d1ffe919b94cc"
-          },
-          "projectionEqual": true
-        },
-        "sharedActionSequence": [],
-        "firstUnmatched": {
-          "depth": 0,
-          "kind": "projected-successor-relation-mismatch",
-          "actionId": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
-          "leftOnlyActions": [],
-          "rightOnlyActions": [],
-          "successorMismatch": {
-            "id": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
-            "exactEqual": false,
-            "projectedEqual": true,
-            "leftExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":5675,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
-            ],
-            "rightExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":5675,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
-            ],
-            "leftProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":8,\"followers\":[],\"hp\":5675,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
-            ],
-            "rightProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":8,\"followers\":[],\"hp\":5675,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": "pair-76ff53ff129974eb",
-      "groupId": "collision-3736d53c669215b6",
-      "initialPair": {
-        "exactKeyHashes": {
-          "left": "69dc23af2d6d2b8d",
-          "right": "60e698e656c7a0ce"
-        },
-        "projectionKeyHashes": {
-          "left": "4559e22b83b6858f",
-          "right": "4559e22b83b6858f"
-        },
-        "projectionEqual": true
-      },
-      "left": {
-        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582:candidate-0",
-        "sourceId": "mt2-candidate2-natural-search-audit",
-        "collectionId": "mt2-entry-and-local-3582",
-        "checkpointId": "mt2-local-3582",
-        "candidateId": "mt2-local-3582:candidate-0",
-        "exactKeyHash": "69dc23af2d6d2b8d",
-        "projectionKeyHash": "4559e22b83b6858f"
-      },
-      "right": {
-        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582:candidate-1",
-        "sourceId": "mt2-candidate2-natural-search-audit",
-        "collectionId": "mt2-entry-and-local-3582",
-        "checkpointId": "mt2-local-3582",
-        "candidateId": "mt2-local-3582:candidate-1",
-        "exactKeyHash": "60e698e656c7a0ce",
-        "projectionKeyHash": "4559e22b83b6858f"
-      },
-      "riskLabels": {
-        "nonCurrentFloorMutationDiff": "true",
-        "currentFloorMutationDiff": "false",
-        "leaveLocOrDirectionDiff": "false",
-        "triggeredAutoEventsPresent": "false",
-        "crossFloorActionAvailable": "true",
-        "multiSuccessorObserved": "false",
-        "exactRejoinObserved": "true"
-      },
-      "outcome": "equivalent",
-      "depth": 2,
-      "depthReached": 2,
-      "expandedPairCount": 37,
-      "generatedPairCount": 37,
-      "budgetExhausted": false,
-      "exhaustedReason": null,
-      "incompleteReason": null,
-      "branchCap": 32,
-      "stateCap": 256,
-      "multiSuccessorActionCount": 0,
-      "maxSuccessorsPerAction": 1,
-      "generatedCrossProductPairCount": 36,
-      "exactRejoinObserved": true,
-      "executionErrors": null,
-      "levels": [
-        {
-          "depth": 0,
-          "expandedPairCount": 1
-        },
-        {
-          "depth": 1,
-          "expandedPairCount": 6
-        },
-        {
-          "depth": 2,
-          "expandedPairCount": 30
-        }
-      ],
-      "witness": null
-    },
-    {
-      "id": "pair-98b621afcd564561",
-      "groupId": "collision-1aeddbf2e6765b01",
+      "id": "pair-5bc2408a0ea338e4",
+      "groupId": "occurrence-8dad8dacc9ed379c",
+      "signatureId": "signature-1aeddbf2e6765b01",
       "initialPair": {
         "exactKeyHashes": {
           "left": "ef94136a061e88ba",
@@ -803,7 +647,7 @@
         "projectionEqual": true
       },
       "left": {
-        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-2",
+        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-2",
         "sourceId": "mt2-candidate2-capacity10-j",
         "collectionId": "mt2-candidate2-checkpoints",
         "checkpointId": "mt2-entry",
@@ -812,7 +656,7 @@
         "projectionKeyHash": "80797571790335ae"
       },
       "right": {
-        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry:candidate-9",
+        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-9",
         "sourceId": "mt2-candidate2-capacity10-j",
         "collectionId": "mt2-candidate2-checkpoints",
         "checkpointId": "mt2-entry",
@@ -851,7 +695,7 @@
         }
       ],
       "witness": {
-        "rootId": "pair-98b621afcd564561",
+        "rootId": "pair-5bc2408a0ea338e4",
         "rootDecision": null,
         "initialPair": {
           "exactKeyHashes": {
@@ -879,32 +723,33 @@
         "firstUnmatched": {
           "depth": 0,
           "kind": "projected-successor-relation-mismatch",
-          "actionId": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
+          "actionId": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
           "leftOnlyActions": [],
           "rightOnlyActions": [],
           "successorMismatch": {
-            "id": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
+            "id": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
             "exactEqual": false,
-            "projectedEqual": true,
+            "projectedEqual": false,
             "leftExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":4506,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1601,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
             ],
             "rightExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":4506,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1601,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
             ],
             "leftProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":7,\"followers\":[],\"hp\":4506,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":6,\"followers\":[],\"hp\":1601,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
             ],
             "rightProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":7,\"followers\":[],\"hp\":4506,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":6,\"followers\":[],\"hp\":1601,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
             ]
           }
         }
       }
     },
     {
-      "id": "pair-be97aba6dbc5ee0a",
-      "groupId": "collision-3736d53c669215b6",
+      "id": "pair-5bee390b0cf25ff2",
+      "groupId": "occurrence-eb861b415eab0de8",
+      "signatureId": "signature-3736d53c669215b6",
       "initialPair": {
         "exactKeyHashes": {
           "left": "69dc23af2d6d2b8d",
@@ -917,7 +762,7 @@
         "projectionEqual": true
       },
       "left": {
-        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582:candidate-0",
+        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582::mt2-local-3582:candidate-0",
         "sourceId": "mt2-candidate2-capacity10-j",
         "collectionId": "mt2-candidate2-checkpoints",
         "checkpointId": "mt2-local-3582",
@@ -926,7 +771,7 @@
         "projectionKeyHash": "4559e22b83b6858f"
       },
       "right": {
-        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582:candidate-1",
+        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582::mt2-local-3582:candidate-1",
         "sourceId": "mt2-candidate2-capacity10-j",
         "collectionId": "mt2-candidate2-checkpoints",
         "checkpointId": "mt2-local-3582",
@@ -975,8 +820,9 @@
       "witness": null
     },
     {
-      "id": "pair-d89f7f8e0655b590",
-      "groupId": "collision-525cbdbf6523c718",
+      "id": "pair-6ced6eb6087fc42c",
+      "groupId": "occurrence-1b2ab894fe0b15b9",
+      "signatureId": "signature-525cbdbf6523c718",
       "initialPair": {
         "exactKeyHashes": {
           "left": "3830be4b11f065a2",
@@ -989,20 +835,20 @@
         "projectionEqual": true
       },
       "left": {
-        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-2",
-        "sourceId": "mt2-candidate2-natural-search-audit",
-        "collectionId": "mt2-entry-and-local-3582",
+        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-4",
+        "sourceId": "mt2-candidate2-capacity10-j",
+        "collectionId": "mt2-candidate2-checkpoints",
         "checkpointId": "mt2-entry",
-        "candidateId": "mt2-entry:candidate-2",
+        "candidateId": "mt2-entry:candidate-4",
         "exactKeyHash": "3830be4b11f065a2",
         "projectionKeyHash": "030d1ffe919b94cc"
       },
       "right": {
-        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry:candidate-4",
-        "sourceId": "mt2-candidate2-natural-search-audit",
-        "collectionId": "mt2-entry-and-local-3582",
+        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-entry::mt2-entry:candidate-5",
+        "sourceId": "mt2-candidate2-capacity10-j",
+        "collectionId": "mt2-candidate2-checkpoints",
         "checkpointId": "mt2-entry",
-        "candidateId": "mt2-entry:candidate-4",
+        "candidateId": "mt2-entry:candidate-5",
         "exactKeyHash": "a244b29015e6fb86",
         "projectionKeyHash": "030d1ffe919b94cc"
       },
@@ -1037,7 +883,7 @@
         }
       ],
       "witness": {
-        "rootId": "pair-d89f7f8e0655b590",
+        "rootId": "pair-6ced6eb6087fc42c",
         "rootDecision": null,
         "initialPair": {
           "exactKeyHashes": {
@@ -1065,35 +911,230 @@
         "firstUnmatched": {
           "depth": 0,
           "kind": "projected-successor-relation-mismatch",
-          "actionId": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
+          "actionId": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
           "leftOnlyActions": [],
           "rightOnlyActions": [],
           "successorMismatch": {
-            "id": "{\"changeFloor\":null,\"direction\":\"left\",\"equipId\":null,\"fingerprint\":\"battle|MT2|4|1|skeleton\",\"itemId\":null,\"kind\":\"battle\",\"path\":[\"down\",\"left\"],\"stance\":{\"x\":5,\"y\":1},\"summary\":\"battle:skeleton@MT2:4,1\",\"target\":{\"x\":4,\"y\":1},\"targetFloorId\":null,\"tool\":null}",
+            "id": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
             "exactEqual": false,
-            "projectedEqual": true,
+            "projectedEqual": false,
             "leftExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":5675,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":2770,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
             ],
             "rightExactSuccessors": [
-              "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":5675,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":2770,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
             ],
             "leftProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":8,\"followers\":[],\"hp\":5675,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":7,\"followers\":[],\"hp\":2770,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
             ],
             "rightProjectedSuccessors": [
-              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"floorId\":\"MT2\",\"hero\":{\"atk\":21,\"def\":19,\"direction\":null,\"equipment\":[],\"exp\":8,\"followers\":[],\"hp\":5675,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":5,\"y\":1},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":7,\"followers\":[],\"hp\":2770,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
             ]
           }
         }
       }
+    },
+    {
+      "id": "pair-a1d7bd817cb51d1f",
+      "groupId": "occurrence-742c9e9020b6974c",
+      "signatureId": "signature-65d161c7f079815f",
+      "initialPair": {
+        "exactKeyHashes": {
+          "left": "b7c89557ed8f0da7",
+          "right": "133eb945733b64ee"
+        },
+        "projectionKeyHashes": {
+          "left": "5fe8d7d616c837be",
+          "right": "5fe8d7d616c837be"
+        },
+        "projectionEqual": true
+      },
+      "left": {
+        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-0",
+        "sourceId": "mt2-candidate2-natural-search-audit",
+        "collectionId": "mt2-entry-and-local-3582",
+        "checkpointId": "mt2-entry",
+        "candidateId": "mt2-entry:candidate-0",
+        "exactKeyHash": "b7c89557ed8f0da7",
+        "projectionKeyHash": "5fe8d7d616c837be"
+      },
+      "right": {
+        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-entry::mt2-entry:candidate-3",
+        "sourceId": "mt2-candidate2-natural-search-audit",
+        "collectionId": "mt2-entry-and-local-3582",
+        "checkpointId": "mt2-entry",
+        "candidateId": "mt2-entry:candidate-3",
+        "exactKeyHash": "133eb945733b64ee",
+        "projectionKeyHash": "5fe8d7d616c837be"
+      },
+      "riskLabels": {
+        "nonCurrentFloorMutationDiff": "true",
+        "currentFloorMutationDiff": "false",
+        "leaveLocOrDirectionDiff": "false",
+        "triggeredAutoEventsPresent": "false",
+        "crossFloorActionAvailable": "true",
+        "multiSuccessorObserved": "false",
+        "exactRejoinObserved": "false"
+      },
+      "outcome": "mismatch-witness",
+      "depth": 2,
+      "depthReached": 0,
+      "expandedPairCount": 1,
+      "generatedPairCount": 1,
+      "budgetExhausted": false,
+      "exhaustedReason": null,
+      "incompleteReason": null,
+      "branchCap": 32,
+      "stateCap": 256,
+      "multiSuccessorActionCount": 0,
+      "maxSuccessorsPerAction": 1,
+      "generatedCrossProductPairCount": 0,
+      "exactRejoinObserved": false,
+      "executionErrors": null,
+      "levels": [
+        {
+          "depth": 0,
+          "expandedPairCount": 1
+        }
+      ],
+      "witness": {
+        "rootId": "pair-a1d7bd817cb51d1f",
+        "rootDecision": null,
+        "initialPair": {
+          "exactKeyHashes": {
+            "left": "b7c89557ed8f0da7",
+            "right": "133eb945733b64ee"
+          },
+          "projectionKeyHashes": {
+            "left": "5fe8d7d616c837be",
+            "right": "5fe8d7d616c837be"
+          },
+          "projectionEqual": true
+        },
+        "currentPair": {
+          "exactKeyHashes": {
+            "left": "b7c89557ed8f0da7",
+            "right": "133eb945733b64ee"
+          },
+          "projectionKeyHashes": {
+            "left": "5fe8d7d616c837be",
+            "right": "5fe8d7d616c837be"
+          },
+          "projectionEqual": true
+        },
+        "sharedActionSequence": [],
+        "firstUnmatched": {
+          "depth": 0,
+          "kind": "projected-successor-relation-mismatch",
+          "actionId": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
+          "leftOnlyActions": [],
+          "rightOnlyActions": [],
+          "successorMismatch": {
+            "id": "{\"changeFloor\":{\"floorId\":\":before\",\"stair\":\"upFloor\"},\"direction\":\"up\",\"equipId\":null,\"fingerprint\":\"changeFloor|changeFloor@MT2:6,0\",\"itemId\":null,\"kind\":\"changeFloor\",\"path\":[\"down\"],\"stance\":{\"x\":6,\"y\":1},\"summary\":\"changeFloor@MT2:6,0\",\"target\":null,\"targetFloorId\":null,\"tool\":null}",
+            "exactEqual": false,
+            "projectedEqual": false,
+            "leftExactSuccessors": [
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":3250,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+            ],
+            "rightExactSuccessors": [
+              "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":3250,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+            ],
+            "leftProjectedSuccessors": [
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":8,\"followers\":[],\"hp\":3250,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+            ],
+            "rightProjectedSuccessors": [
+              "{\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"direction\":\"up\",\"x\":6,\"y\":0},\"MT2\":{\"direction\":\"up\",\"x\":6,\"y\":0}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"floorId\":\"MT1\",\"hero\":{\"atk\":21,\"def\":17,\"direction\":null,\"equipment\":[],\"exp\":8,\"followers\":[],\"hp\":3250,\"hpmax\":9999,\"lv\":3,\"mana\":0,\"manamax\":-1,\"mdef\":130,\"money\":0,\"x\":6,\"y\":0},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}],\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"visitedFloors\":[\"MT1\",\"MT2\"]}"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "pair-d34460544b8e66ff",
+      "groupId": "occurrence-3c5ed53a4315754c",
+      "signatureId": "signature-3736d53c669215b6",
+      "initialPair": {
+        "exactKeyHashes": {
+          "left": "69dc23af2d6d2b8d",
+          "right": "60e698e656c7a0ce"
+        },
+        "projectionKeyHashes": {
+          "left": "4559e22b83b6858f",
+          "right": "4559e22b83b6858f"
+        },
+        "projectionEqual": true
+      },
+      "left": {
+        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582::mt2-local-3582:candidate-0",
+        "sourceId": "mt2-candidate2-natural-search-audit",
+        "collectionId": "mt2-entry-and-local-3582",
+        "checkpointId": "mt2-local-3582",
+        "candidateId": "mt2-local-3582:candidate-0",
+        "exactKeyHash": "69dc23af2d6d2b8d",
+        "projectionKeyHash": "4559e22b83b6858f"
+      },
+      "right": {
+        "stateId": "mt2-candidate2-natural-search-audit::mt2-entry-and-local-3582::mt2-local-3582::mt2-local-3582:candidate-1",
+        "sourceId": "mt2-candidate2-natural-search-audit",
+        "collectionId": "mt2-entry-and-local-3582",
+        "checkpointId": "mt2-local-3582",
+        "candidateId": "mt2-local-3582:candidate-1",
+        "exactKeyHash": "60e698e656c7a0ce",
+        "projectionKeyHash": "4559e22b83b6858f"
+      },
+      "riskLabels": {
+        "nonCurrentFloorMutationDiff": "true",
+        "currentFloorMutationDiff": "false",
+        "leaveLocOrDirectionDiff": "false",
+        "triggeredAutoEventsPresent": "false",
+        "crossFloorActionAvailable": "true",
+        "multiSuccessorObserved": "false",
+        "exactRejoinObserved": "true"
+      },
+      "outcome": "equivalent",
+      "depth": 2,
+      "depthReached": 2,
+      "expandedPairCount": 37,
+      "generatedPairCount": 37,
+      "budgetExhausted": false,
+      "exhaustedReason": null,
+      "incompleteReason": null,
+      "branchCap": 32,
+      "stateCap": 256,
+      "multiSuccessorActionCount": 0,
+      "maxSuccessorsPerAction": 1,
+      "generatedCrossProductPairCount": 36,
+      "exactRejoinObserved": true,
+      "executionErrors": null,
+      "levels": [
+        {
+          "depth": 0,
+          "expandedPairCount": 1
+        },
+        {
+          "depth": 1,
+          "expandedPairCount": 6
+        },
+        {
+          "depth": 2,
+          "expandedPairCount": 30
+        }
+      ],
+      "witness": null
     }
   ],
   "fixedControls": [
     {
       "id": "candidate-6-7-local-control",
+      "sourceId": "mt2-candidate2-capacity10-j",
+      "collectionId": "mt2-candidate2-checkpoints",
+      "checkpointId": "mt2-local-3582",
+      "leftCandidateId": "mt2-local-3582:candidate-6",
+      "rightCandidateId": "mt2-local-3582:candidate-7",
+      "groupId": "occurrence-072f4759ab7dae16",
+      "signatureId": "signature-73cf9485b7f59b61",
       "expectedOutcome": "equivalent",
-      "pairId": "pair-136b0c9d130a22b3",
+      "pairId": "pair-02d64376fd4f33c5",
       "outcome": "equivalent",
       "initialPair": {
         "exactKeyHashes": {
@@ -1107,7 +1148,7 @@
         "projectionEqual": true
       },
       "left": {
-        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582:candidate-6",
+        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582::mt2-local-3582:candidate-6",
         "sourceId": "mt2-candidate2-capacity10-j",
         "collectionId": "mt2-candidate2-checkpoints",
         "checkpointId": "mt2-local-3582",
@@ -1116,7 +1157,7 @@
         "projectionKeyHash": "cc9e3675eb9ea718"
       },
       "right": {
-        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582:candidate-7",
+        "stateId": "mt2-candidate2-capacity10-j::mt2-candidate2-checkpoints::mt2-local-3582::mt2-local-3582:candidate-7",
         "sourceId": "mt2-candidate2-capacity10-j",
         "collectionId": "mt2-candidate2-checkpoints",
         "checkpointId": "mt2-local-3582",
@@ -1149,7 +1190,81 @@
       "witness": null
     }
   ],
-  "riskStrata": {
+  "selectedPairRiskStrata": {
+    "nonCurrentFloorMutationDiff": {
+      "true": 8,
+      "false": 0,
+      "unknown": 0
+    },
+    "currentFloorMutationDiff": {
+      "true": 0,
+      "false": 8,
+      "unknown": 0
+    },
+    "leaveLocOrDirectionDiff": {
+      "true": 0,
+      "false": 8,
+      "unknown": 0
+    },
+    "triggeredAutoEventsPresent": {
+      "true": 0,
+      "false": 8,
+      "unknown": 0
+    },
+    "crossFloorActionAvailable": {
+      "true": 8,
+      "false": 0,
+      "unknown": 0
+    },
+    "multiSuccessorObserved": {
+      "true": 0,
+      "false": 8,
+      "unknown": 0
+    },
+    "exactRejoinObserved": {
+      "true": 2,
+      "false": 6,
+      "unknown": 0
+    }
+  },
+  "fixedControlRiskStrata": {
+    "nonCurrentFloorMutationDiff": {
+      "true": 1,
+      "false": 0,
+      "unknown": 0
+    },
+    "currentFloorMutationDiff": {
+      "true": 0,
+      "false": 1,
+      "unknown": 0
+    },
+    "leaveLocOrDirectionDiff": {
+      "true": 0,
+      "false": 1,
+      "unknown": 0
+    },
+    "triggeredAutoEventsPresent": {
+      "true": 0,
+      "false": 1,
+      "unknown": 0
+    },
+    "crossFloorActionAvailable": {
+      "true": 1,
+      "false": 0,
+      "unknown": 0
+    },
+    "multiSuccessorObserved": {
+      "true": 0,
+      "false": 1,
+      "unknown": 0
+    },
+    "exactRejoinObserved": {
+      "true": 1,
+      "false": 0,
+      "unknown": 0
+    }
+  },
+  "allEvaluatedRiskStrata": {
     "nonCurrentFloorMutationDiff": {
       "true": 9,
       "false": 0,
@@ -1189,8 +1304,14 @@
   "summary": {
     "sourceArtifactCount": 2,
     "statesScanned": 40,
-    "collisionGroupCount": 12,
+    "collisionOccurrenceCount": 12,
+    "uniqueCollisionSignatureCount": 7,
+    "duplicateSignatureOccurrenceCount": 5,
     "exactDistinctPairCount": 12,
+    "selectedPairOccurrenceCount": 8,
+    "selectedUniqueSignatureCount": 5,
+    "repeatedSignatureSelectionCount": 3,
+    "uniqueSignaturesSkippedByCap": 3,
     "pairsSelected": 8,
     "pairsSkippedByCap": 4,
     "outcomeCounts": {
@@ -1208,7 +1329,7 @@
     "manifest": "shared-solver\\profiles\\state-abstraction-mining-sources.json",
     "manifestSha256": "87cc75f0d6fd7a38935f7adc4519b67c0e526cd5d5b7d91423951dfa719a1e57",
     "projectRoot": "Only upV2.1\\Only upV2.1",
-    "generationCommit": "2b66846baf8a22d0da23cdd5cd68ef80c64834e8",
+    "generationCommit": "6fdd3658678982763828f9f21bc1f07de4e6b2be",
     "relationEvaluator": "bounded-abstraction-counterexample-search.runPairedExpansion",
     "productionStateKeyModule": "shared-solver/lib/state-key.js",
     "productionStateKeySha256": "f5be4802f9926744bc8e91f30ecb8ab8b09ab73057fdef7ceaa44ddbbec808a5",

@@ -85,17 +85,29 @@ PR-4.5a/a1 正式关闭后，继续保持 shadow-only，新增 manifest-driven �
 
 当前结论：cross-product runner 的 off-diagonal-only regression 已建立；PR-4.5b 系列可以正式关闭，下一阶段进入 real-corpus collision mining 与 risk-stratified corpus expansion。
 
-## 1.3 2026-08-01：PR-4.5c Real-Corpus Collision Inventory
+## 1.3 2026-08-01：PR-4.5c Real-Corpus Collision Inventory（baseline）
 
 PR-4.5b 系列正式关闭后，新增 `mine-state-abstraction-collisions.js` 与 `check-state-abstraction-collision-inventory.js`，继续保持 shadow-only。miner 只读取已存在的 MT1/MT2 JSON artifacts，不启动新的全量 solver 搜索；paired relation 复用 PR-4.5b3 runner，固定为 depth 2、branch cap 32、state cap 256。
 
 - source manifest 锁定 2 个 artifact、各自 state extraction path、candidate collection、pair cap 与 source SHA256；输入实际 hash 必须与 manifest 一致。
-- 本轮扫描 40 个状态，得到 12 个 collision groups 与 12 个 exact-distinct pairs；按每源 pair cap 4 选择 8 对，跳过 4 对，并按 projection key、exact-key hashes、state ID 做确定性排序。
+- 本轮扫描 40 个状态，得到 12 个 source-local collision occurrences、7 个 unique collision signatures 与 12 个 exact-distinct pairs；按每源 pair cap 4 选择 8 对，跳过 4 对，并按 projection key、exact-key hashes、state ID 做确定性排序。
 - 每个 selected pair 记录 `initialPair`、`currentPair`、shared action sequence 与 `firstUnmatched` witness；风险标签覆盖 non-current/current-floor mutation、leaveLoc/direction、triggeredAutoEvents、cross-floor action、multi-successor 与 exact rejoin，不能判定时使用 `unknown`。
-- selected pairs 的 outcome 为 2 个 `equivalent`、6 个 `mismatch-witness`、0 个 `incomplete`；candidate-6/7 fixed control 为 `equivalent`。mismatch 不允许带 execution error。
+- selected pair occurrences 的 outcome 为 2 个 `equivalent`、6 个 `mismatch-witness`、0 个 `incomplete`；candidate-6/7 fixed control 为 `equivalent`。原始 risk strata 曾把 fixed control 混入 selected 分母，已在 c1 修正。
 - checker 锁定 artifact SHA、扫描/分组/选取计数、稳定 pair IDs、risk strata、candidate-6/7 control、b3 synthetic suite 与 production boundary；不修改 production DP key、dominance、agenda、容量或默认策略。
 
-当前结论：真实 corpus 中确实存在 projection collision，且在 bounded depth-2 relation 下既有等价 pair，也有 mismatch witness；这只是风险分层与后续 corpus 扩展的盘点证据，不构成全局 projection 安全证明。
+当前结论：真实 corpus 中确实存在 projection collision，且在 bounded depth-2 relation 下既有等价 pair，也有 mismatch witness；baseline 结果需结合 c1 的 witness integrity 与 identity 口径读取，不构成全局 projection 安全证明。
+
+## 1.4 2026-08-01：PR-4.5c1 Witness Integrity & Collision Identity
+
+本轮按 review request changes 收紧 PR-4.5c 诊断合同，仍不修改 production 语义。
+
+- `buildMismatchWitness` 只选择第一个 `projectedEqual === false` 的 successor mismatch；action-set mismatch 明确使用 left/right-only action，并将 `successorMismatch` 置空。
+- collision group 拆为全局唯一 `occurrenceId` 与跨 artifact 聚类的 `signatureId`；报告显式输出 12 occurrences、7 unique signatures、5 duplicate occurrences。
+- sampling coverage 现在区分 selected pair occurrences（8）、selected unique signatures（5）、repeated selected signatures（3）与 cap 后跳过的 unique signatures（3）。
+- risk strata 拆为 `selectedPairRiskStrata`（分母 8）、`fixedControlRiskStrata`（分母 1）和可选的 `allEvaluatedRiskStrata`（分母 9）。
+- checker 锁定所有 occurrence/signature identity、pair → group 引用、witness 语义一致性、缺失 checkpoint extraction error、candidate-6/7 两侧 candidate ID、exact-distinct hashes、projection hash 与 `exactRejoinObserved=true`。
+
+当前 c1 结论：真实 mismatch witness 的引用 action 已与 projected relation failure 对齐，collision identity 与 sampling/risk 分母已明确；PR-4.5c1 提交等待 review，production projection 全局安全性仍未建立。
 
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 

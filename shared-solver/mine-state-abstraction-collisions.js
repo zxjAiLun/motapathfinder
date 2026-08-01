@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * PR-4.5c — Real-Corpus Collision Inventory
+ * PR-4.5c1 — Witness Integrity & Collision Identity
  *
  * This miner is intentionally shadow-only. It reads existing JSON artifacts,
  * groups exact-state-distinct records by the shadow projection, and reuses the
@@ -193,11 +193,21 @@ function extractSourceRecords(source, artifact) {
     const selectedCheckpoints = checkpoints
       .filter((checkpoint) => wanted.size === 0 || wanted.has(checkpoint.segmentId) || wanted.has(checkpoint.id))
       .sort((left, right) => String(left.segmentId || left.id || "").localeCompare(String(right.segmentId || right.id || "")));
+    if (wanted.size > 0) {
+      const found = new Set(selectedCheckpoints.flatMap((checkpoint) => [checkpoint.segmentId, checkpoint.id]
+        .filter((value) => value != null)
+        .map(String)));
+      for (const checkpointId of wanted) {
+        if (!found.has(String(checkpointId))) {
+          errors.push({ collectionId: collection.id, checkpointId: String(checkpointId), reason: "checkpoint-id-not-found", path: collection.path });
+        }
+      }
+    }
     for (const checkpoint of selectedCheckpoints) {
       const checkpointId = String(checkpoint.segmentId || checkpoint.id || "unknown-checkpoint");
       const candidates = Array.isArray(checkpoint.candidates) ? checkpoint.candidates.slice() : [];
       candidates.sort((left, right) => String(left.id || "").localeCompare(String(right.id || "")));
-      for (const candidate of candidates.slice(0, Number(collection.candidateLimit ?? candidates.length))) {
+      for (const [candidateIndex, candidate] of candidates.slice(0, Number(collection.candidateLimit ?? candidates.length)).entries()) {
         const state = getPath(candidate, collection.statePath || "state");
         const exactKey = safeStateKey(state);
         const projectionKey = shadowProjectionKey(state);
@@ -205,6 +215,7 @@ function extractSourceRecords(source, artifact) {
           errors.push({ collectionId: collection.id, checkpointId, candidateId: candidate.id || null, reason: "state-key-extraction-failed" });
           continue;
         }
+        const candidateId = candidate.id || `candidate-${candidateIndex}`;
         records.push({
           state,
           exactKey,
@@ -212,8 +223,8 @@ function extractSourceRecords(source, artifact) {
           sourceId: source.id,
           collectionId: collection.id,
           checkpointId,
-          candidateId: candidate.id || null,
-          stateId: `${source.id}::${collection.id}::${candidate.id || "candidate"}`,
+          candidateId,
+          stateId: `${source.id}::${collection.id}::${checkpointId}::${candidateId}`,
         });
       }
     }
@@ -222,7 +233,7 @@ function extractSourceRecords(source, artifact) {
   return { records, errors };
 }
 
-function buildCollisionGroups(records) {
+function buildCollisionGroups(records, sourceId) {
   const byProjection = new Map();
   for (const record of records) {
     if (!byProjection.has(record.projectionKey)) byProjection.set(record.projectionKey, []);
@@ -233,7 +244,9 @@ function buildCollisionGroups(records) {
     const exactKeys = Array.from(new Set(members.map((record) => record.exactKey))).sort();
     if (exactKeys.length <= 1) continue;
     const exactKeyHashes = exactKeys.map(hash).sort();
-    const id = `collision-${hash(`${projectionKey}|${exactKeyHashes.join("|")}`)}`;
+    const signatureId = `signature-${hash(`${projectionKey}|${exactKeyHashes.join("|")}`)}`;
+    const scopeKey = Array.from(new Set(members.map((record) => `${record.collectionId}::${record.checkpointId}`))).sort().join("|");
+    const occurrenceId = `occurrence-${hash(`${sourceId || members[0].sourceId}|${scopeKey}|${signatureId}`)}`;
     const sortedMembers = members.slice().sort((left, right) => (
       `${hash(left.exactKey)}|${left.stateId}`.localeCompare(`${hash(right.exactKey)}|${right.stateId}`)
     ));
@@ -249,7 +262,10 @@ function buildCollisionGroups(records) {
     }
     pairs.sort((left, right) => `${left.left.stateId}|${left.right.stateId}`.localeCompare(`${right.left.stateId}|${right.right.stateId}`));
     groups.push({
-      id,
+      id: occurrenceId,
+      signatureId,
+      sourceId: sourceId || members[0].sourceId,
+      scopeKey,
       projectionKey,
       projectionKeyHash: hash(projectionKey),
       exactKeyHashes,
@@ -259,7 +275,7 @@ function buildCollisionGroups(records) {
       pairs,
     });
   }
-  groups.sort((left, right) => left.id.localeCompare(right.id));
+  groups.sort((left, right) => `${left.signatureId}|${left.id}`.localeCompare(`${right.signatureId}|${right.id}`));
   return groups;
 }
 
@@ -303,6 +319,7 @@ function runPair(group, pair, adapter, search) {
   return {
     id,
     groupId: group.id,
+    signatureId: group.signatureId || null,
     initialPair: result.witness && result.witness.initialPair || initialPair,
     left: publicRecord(pair.left),
     right: publicRecord(pair.right),
@@ -357,7 +374,7 @@ function outcomeCounts(pairs) {
 
 function buildMarkdown(report) {
   const lines = [
-    "# PR-4.5c State Abstraction Collision Inventory",
+    "# PR-4.5c1 State Abstraction Collision Inventory",
     "",
     `Status: **${report.status}**`,
     "",
@@ -365,17 +382,22 @@ function buildMarkdown(report) {
     "",
     `- source artifacts: **${report.summary.sourceArtifactCount}**`,
     `- states scanned: **${report.summary.statesScanned}**`,
-    `- collision groups: **${report.summary.collisionGroupCount}**`,
+    `- collision occurrences: **${report.summary.collisionOccurrenceCount}**`,
+    `- unique collision signatures: **${report.summary.uniqueCollisionSignatureCount}**`,
+    `- duplicate signature occurrences: **${report.summary.duplicateSignatureOccurrenceCount}**`,
     `- exact-distinct pairs: **${report.summary.exactDistinctPairCount}**`,
-    `- pairs selected: **${report.summary.pairsSelected}**`,
+    `- selected pair occurrences: **${report.summary.selectedPairOccurrenceCount}**`,
+    `- selected unique signatures: **${report.summary.selectedUniqueSignatureCount}**`,
+    `- repeated selected signatures: **${report.summary.repeatedSignatureSelectionCount}**`,
     `- pairs skipped by cap: **${report.summary.pairsSkippedByCap}**`,
+    `- unique signatures skipped by cap: **${report.summary.uniqueSignaturesSkippedByCap}**`,
     `- search: depth **${report.search.depth}**, branch cap **${report.search.branchCap}**, state cap **${report.search.stateCap}**`,
     "",
     "## Sources",
     "",
-    "| Source | SHA256 matches manifest | States | Collision groups | Pair cap |",
-    "|---|---:|---:|---:|---:|",
-    ...report.sources.map((source) => `| ${source.id} | ${source.sourceSha256MatchesManifest} | ${source.statesScanned} | ${source.collisionGroupCount} | ${source.pairCap} |`),
+    "| Source | SHA256 matches manifest | States | Occurrences | Unique signatures | Pair cap |",
+    "|---|---:|---:|---:|---:|---:|",
+    ...report.sources.map((source) => `| ${source.id} | ${source.sourceSha256MatchesManifest} | ${source.statesScanned} | ${source.collisionOccurrenceCount} | ${source.uniqueCollisionSignatureCount} | ${source.pairCap} |`),
     "",
     "## Selected pair outcomes",
     "",
@@ -393,6 +415,8 @@ function buildMarkdown(report) {
     "## Verdict",
     "",
     `- selected outcome counts: **${JSON.stringify(report.summary.outcomeCounts)}**`,
+    `- selected risk-strata denominator: **${report.summary.selectedPairOccurrenceCount}**`,
+    `- fixed-control risk-strata denominator: **${report.fixedControls.length}**`,
     `- fixed candidate-6/7 control equivalent: **${report.summary.fixedCandidate67Equivalent}**`,
     `- any incomplete selected pair: **${report.summary.anyIncomplete}**`,
     `- production semantic change: **${report.scope.productionSemanticChange}**`,
@@ -429,19 +453,23 @@ function buildReport(options) {
   const recordsByStateId = new Map();
   let exactDistinctPairCount = 0;
   let pairsSkippedByCap = 0;
+  const skippedSignatureIds = new Set();
   for (const source of manifest.sources || []) {
     const artifactPath = resolveWorkspacePath(source.artifact);
     const artifact = readJson(artifactPath);
     const actualSha256 = sha256(artifactPath);
     const extracted = extractSourceRecords(source, artifact);
     extracted.records.forEach((record) => recordsByStateId.set(record.stateId, record));
-    const groups = buildCollisionGroups(extracted.records);
+    const groups = buildCollisionGroups(extracted.records, source.id);
     const sourcePairs = [];
     let sourceSkippedByCap = 0;
+    const sourceSkippedSignatureIds = new Set();
     for (const group of groups) {
       allGroups.push({
         id: group.id,
+        signatureId: group.signatureId,
         sourceId: source.id,
+        scopeKey: group.scopeKey,
         projectionKeyHash: group.projectionKeyHash,
         exactKeyHashes: group.exactKeyHashes,
         exactKeyCount: group.exactKeyCount,
@@ -452,12 +480,14 @@ function buildReport(options) {
       for (const pair of group.pairs) {
         if (sourcePairs.length >= Number(source.pairCap ?? 0)) {
           sourceSkippedByCap += 1;
+          sourceSkippedSignatureIds.add(group.signatureId);
           continue;
         }
         sourcePairs.push(runPair(group, pair, adapter, search));
       }
     }
     pairsSkippedByCap += sourceSkippedByCap;
+    sourceSkippedSignatureIds.forEach((signatureId) => skippedSignatureIds.add(signatureId));
     allPairs.push(...sourcePairs);
     sourceResults.push({
       id: source.id,
@@ -474,7 +504,8 @@ function buildReport(options) {
       })),
       statesScanned: extracted.records.length,
       extractionErrors: extracted.errors,
-      collisionGroupCount: groups.length,
+      collisionOccurrenceCount: groups.length,
+      uniqueCollisionSignatureCount: new Set(groups.map((group) => group.signatureId)).size,
       exactDistinctPairCount: groups.reduce((sum, group) => sum + group.pairCount, 0),
       pairsSelected: sourcePairs.length,
       pairsSkippedByCap: sourceSkippedByCap,
@@ -491,6 +522,13 @@ function buildReport(options) {
       if (!left || !right) {
         fixedControls.push({
           id: control.id,
+          sourceId: source.id,
+          collectionId: control.collectionId,
+          checkpointId: control.checkpointId,
+          leftCandidateId: control.leftCandidateId,
+          rightCandidateId: control.rightCandidateId,
+          groupId: null,
+          signatureId: null,
           expectedOutcome: control.expectedOutcome,
           outcome: "incomplete",
           incompleteReason: "fixed-control-state-not-found",
@@ -498,12 +536,20 @@ function buildReport(options) {
         });
         continue;
       }
-      const group = buildCollisionGroups([left, right])[0] || {
-        id: `fixed-${hash(`${left.projectionKey}|${left.exactKey}|${right.exactKey}`)}`,
+      const group = buildCollisionGroups([left, right], source.id)[0] || {
+        id: `occurrence-fixed-${hash(`${source.id}|${left.stateId}|${right.stateId}`)}`,
+        signatureId: `signature-fixed-${hash(`${left.projectionKey}|${left.exactKey}|${right.exactKey}`)}`,
       };
       const result = runPair(group, { left, right }, adapter, search);
       fixedControls.push({
         id: control.id,
+        sourceId: source.id,
+        collectionId: control.collectionId,
+        checkpointId: control.checkpointId,
+        leftCandidateId: left.candidateId,
+        rightCandidateId: right.candidateId,
+        groupId: result.groupId,
+        signatureId: result.signatureId,
         expectedOutcome: control.expectedOutcome,
         pairId: result.id,
         outcome: result.outcome,
@@ -529,11 +575,16 @@ function buildReport(options) {
     }
   }
   const outcomeSummary = outcomeCounts(allPairs);
+  const selectedPairRiskStrata = buildRiskStrata(allPairs);
+  const fixedControlRiskStrata = buildRiskStrata(fixedControls.filter((control) => control.riskLabels));
+  const allEvaluatedRiskStrata = buildRiskStrata(allPairs.concat(fixedControls.filter((control) => control.riskLabels)));
+  const uniqueCollisionSignatureIds = new Set(allGroups.map((group) => group.signatureId));
+  const selectedSignatureIds = new Set(allPairs.map((pair) => pair.signatureId));
   const allComplete = allPairs.every((pair) => pair.outcome !== "incomplete") &&
     fixedControls.every((control) => control.outcome !== "incomplete") &&
     sourceResults.every((source) => source.sourceSha256MatchesManifest && source.extractionErrors.length === 0);
   return {
-    schema: "motapathfinder.pr-4.5c-state-abstraction-collision-inventory.v1",
+    schema: "motapathfinder.pr-4.5c1-state-abstraction-collision-inventory.v1",
     generatedAt: new Date().toISOString(),
     status: allComplete ? "completed" : "completed-with-evidence-gaps",
     scope: {
@@ -551,12 +602,20 @@ function buildReport(options) {
     collisionGroups: allGroups,
     pairs: allPairs,
     fixedControls,
-    riskStrata: buildRiskStrata(allPairs.concat(fixedControls.filter((control) => control.riskLabels))),
+    selectedPairRiskStrata,
+    fixedControlRiskStrata,
+    allEvaluatedRiskStrata,
     summary: {
       sourceArtifactCount: sourceResults.length,
       statesScanned: sourceResults.reduce((sum, source) => sum + source.statesScanned, 0),
-      collisionGroupCount: allGroups.length,
+      collisionOccurrenceCount: allGroups.length,
+      uniqueCollisionSignatureCount: uniqueCollisionSignatureIds.size,
+      duplicateSignatureOccurrenceCount: allGroups.length - uniqueCollisionSignatureIds.size,
       exactDistinctPairCount,
+      selectedPairOccurrenceCount: allPairs.length,
+      selectedUniqueSignatureCount: selectedSignatureIds.size,
+      repeatedSignatureSelectionCount: allPairs.length - selectedSignatureIds.size,
+      uniqueSignaturesSkippedByCap: skippedSignatureIds.size,
       pairsSelected: allPairs.length,
       pairsSkippedByCap,
       outcomeCounts: outcomeSummary,
@@ -595,7 +654,7 @@ function main() {
     out: relative(out),
     outMd: relative(outMd),
     statesScanned: report.summary.statesScanned,
-    collisionGroupCount: report.summary.collisionGroupCount,
+    collisionOccurrenceCount: report.summary.collisionOccurrenceCount,
     pairsSelected: report.summary.pairsSelected,
     pairsSkippedByCap: report.summary.pairsSkippedByCap,
     outcomeCounts: report.summary.outcomeCounts,

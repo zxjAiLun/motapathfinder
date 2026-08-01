@@ -1,4 +1,4 @@
-# PR-4.5c State Abstraction Collision Inventory
+# PR-4.5c1 State Abstraction Collision Inventory
 
 Status: **completed**
 
@@ -6,39 +6,46 @@ This is a shadow-only inventory. It reads existing MT1/MT2 JSON artifacts and re
 
 - source artifacts: **2**
 - states scanned: **40**
-- collision groups: **12**
+- collision occurrences: **12**
+- unique collision signatures: **7**
+- duplicate signature occurrences: **5**
 - exact-distinct pairs: **12**
-- pairs selected: **8**
+- selected pair occurrences: **8**
+- selected unique signatures: **5**
+- repeated selected signatures: **3**
 - pairs skipped by cap: **4**
+- unique signatures skipped by cap: **3**
 - search: depth **2**, branch cap **32**, state cap **256**
 
 ## Sources
 
-| Source | SHA256 matches manifest | States | Collision groups | Pair cap |
-|---|---:|---:|---:|---:|
-| mt2-candidate2-natural-search-audit | true | 20 | 5 | 4 |
-| mt2-candidate2-capacity10-j | true | 20 | 7 | 4 |
+| Source | SHA256 matches manifest | States | Occurrences | Unique signatures | Pair cap |
+|---|---:|---:|---:|---:|---:|
+| mt2-candidate2-natural-search-audit | true | 20 | 5 | 5 | 4 |
+| mt2-candidate2-capacity10-j | true | 20 | 7 | 7 | 4 |
 
 ## Selected pair outcomes
 
 | Pair | Group | Outcome | Risks (true) |
 |---|---|---|---|
-| pair-285e93d1eb45542d | collision-1981d0728653eb7b | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
-| pair-3e9e2b6efe518b63 | collision-65d161c7f079815f | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
-| pair-56d844bfe57f58b0 | collision-1981d0728653eb7b | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
-| pair-5aec405522f8963c | collision-525cbdbf6523c718 | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
-| pair-76ff53ff129974eb | collision-3736d53c669215b6 | equivalent | nonCurrentFloorMutationDiff, crossFloorActionAvailable, exactRejoinObserved |
-| pair-98b621afcd564561 | collision-1aeddbf2e6765b01 | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
-| pair-be97aba6dbc5ee0a | collision-3736d53c669215b6 | equivalent | nonCurrentFloorMutationDiff, crossFloorActionAvailable, exactRejoinObserved |
-| pair-d89f7f8e0655b590 | collision-525cbdbf6523c718 | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
+| pair-11cec6a5f310031c | occurrence-c71b42f739f3372f | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
+| pair-130c13a9af1762d4 | occurrence-795d4bf97484ddc2 | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
+| pair-49f587da8e0c8c54 | occurrence-ea97de6b89731723 | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
+| pair-5bc2408a0ea338e4 | occurrence-8dad8dacc9ed379c | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
+| pair-5bee390b0cf25ff2 | occurrence-eb861b415eab0de8 | equivalent | nonCurrentFloorMutationDiff, crossFloorActionAvailable, exactRejoinObserved |
+| pair-6ced6eb6087fc42c | occurrence-1b2ab894fe0b15b9 | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
+| pair-a1d7bd817cb51d1f | occurrence-742c9e9020b6974c | mismatch-witness | nonCurrentFloorMutationDiff, crossFloorActionAvailable |
+| pair-d34460544b8e66ff | occurrence-3c5ed53a4315754c | equivalent | nonCurrentFloorMutationDiff, crossFloorActionAvailable, exactRejoinObserved |
 
 ## Fixed candidate-6/7 control
 
-- candidate-6-7-local-control: **equivalent**, expected **equivalent**, pair **pair-136b0c9d130a22b3**
+- candidate-6-7-local-control: **equivalent**, expected **equivalent**, pair **pair-02d64376fd4f33c5**
 
 ## Verdict
 
 - selected outcome counts: **{"equivalent":2,"mismatch-witness":6,"incomplete":0}**
+- selected risk-strata denominator: **8**
+- fixed-control risk-strata denominator: **1**
 - fixed candidate-6/7 control equivalent: **true**
 - any incomplete selected pair: **false**
 - production semantic change: **false**
@@ -48,5 +55,5 @@ An equivalent bounded result is evidence for the selected real-corpus pairs and 
 ## Provenance
 
 - manifest: **shared-solver\profiles\state-abstraction-mining-sources.json**
-- generation commit: **2b66846baf8a22d0da23cdd5cd68ef80c64834e8**
+- generation commit: **6fdd3658678982763828f9f21bc1f07de4e6b2be**
 - relation evaluator: **bounded-abstraction-counterexample-search.runPairedExpansion**
