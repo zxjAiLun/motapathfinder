@@ -179,7 +179,8 @@
         "shared-solver/check-teacher-dominance-audit.js",
         "shared-solver/check-hybrid-fair-agenda.js",
         "shared-solver/check-agenda-policy-evaluation.js",
-        "shared-solver/check-route-store-exact.js"
+        "shared-solver/check-route-store-exact.js",
+        "shared-solver/check-adaptive-repair-outcomes.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"

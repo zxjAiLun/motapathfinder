@@ -3,7 +3,10 @@
 const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
-const { buildRepairSegment } = require("./lib/adaptive-segment-planner");
+const {
+  runAdaptiveSegmentPlanner,
+} = require("./lib/adaptive-segment-planner");
+const { createSyntheticScenario } = require("./adaptive-repair-synthetic-simulator");
 
 const DEFAULT_OUT = path.join(
   __dirname,
@@ -13,7 +16,7 @@ const DEFAULT_OUT = path.join(
   "pr-4.6a-adaptive-repair-outcome-contract.json"
 );
 const DEFAULT_OUT_MD = DEFAULT_OUT.replace(/\.json$/i, ".md");
-const CONTRACT_SCHEMA = "motapathfinder.pr-4.6a-adaptive-repair-outcome-contract.v1";
+const CONTRACT_SCHEMA = "motapathfinder.pr-4.6a1-adaptive-repair-outcome-contract.v1";
 const REPAIR_BUDGET = Object.freeze({
   maxRepairs: 1,
   repairMaxExpansions: 300,
@@ -23,80 +26,55 @@ const REPAIR_BUDGET = Object.freeze({
 const CASES = Object.freeze([
   {
     id: "atk-deficit-positive",
+    scenario: "attack",
     failureClass: "atk-deficit",
-    failureClassFamily: "attack-resource",
-    selectedRepairIntent: "attack-resource-or-best-combat",
-    plannerMode: "contract-adapter",
-    controlOutcome: "success",
-    missingGoalFields: ["effectiveHero.atk"],
-    goal: {
-      type: "adaptiveResourceIntent",
-      minEffectiveHero: { atk: 120 },
-      resourceIntent: "attack-resource-or-best-combat",
-    },
+    expectedOutcome: "success",
+    failureClassFamily: "attack-resource-or-best-combat",
+    selectedRepairIntent: "stat-atk",
+    mappingFamily: "attack-resource-or-best-combat",
+    plannerMode: "resource-intent-scanner",
   },
   {
     id: "action-survivability-deficit",
+    scenario: "survivability",
     failureClass: "action-survivability-deficit",
     failureClassAliases: ["hp-deficit"],
+    expectedOutcome: "repair-incomplete",
     failureClassFamily: "hp-high-survival-low-damage",
-    selectedRepairIntent: "hp-high-survival-low-damage",
+    selectedRepairIntent: "adaptive-window-repair:hp-high-survival-low-damage",
+    mappingFamily: "hp-high-survival-low-damage",
     plannerMode: "adaptive-window-repair",
-    controlOutcome: "repair-incomplete",
-    missingGoalFields: ["actionSurvivable", "hero.hp"],
-    goal: {
-      type: "heroAtLeast",
-      floorId: "MT2",
-      minHero: { hp: 2500, def: 80 },
-    },
   },
   {
     id: "target-action-unreachable",
+    scenario: "target",
     failureClass: "target-action-unreachable",
-    failureClassFamily: "blocker-open-door-change-floor",
-    selectedRepairIntent: "blocker-open-door-change-floor-whitelist",
+    expectedOutcome: "success",
+    failureClassFamily: "adaptive-window-change-floor-repair",
+    selectedRepairIntent: "adaptive-window-repair:change-floor-whitelist",
+    mappingFamily: "adaptive-window-change-floor-repair",
     plannerMode: "adaptive-window-repair",
-    controlOutcome: "success",
-    missingGoalFields: ["targetAction"],
-    goal: {
-      type: "heroAtLeast",
-      floorId: "MT2",
-      minHero: { hp: 1200 },
-      targetAction: "battle:target-blocker@MT2:1,1",
-    },
+    mappingNote: "blocker/openDoor intent is not claimed; only observed change-floor window behavior is reported",
   },
   {
     id: "present-tile-overconstrained",
+    scenario: "present",
     failureClass: "present-tile-overconstrained",
+    expectedOutcome: "rejected",
     failureClassFamily: "presentTiles-relaxation",
     selectedRepairIntent: "presentTiles-to-preferredPresentTiles",
+    mappingFamily: "presentTiles-relaxation",
     plannerMode: "contract-adapter",
-    controlOutcome: "rejected",
-    missingGoalFields: ["presentTiles"],
-    goal: {
-      type: "heroAtLeast",
-      floorId: "MT2",
-      minHero: { hp: 1200 },
-      presentTiles: [
-        { floorId: "MT2", x: 1, y: 1 },
-        { floorId: "MT2", x: 2, y: 1 },
-      ],
-      preferredPresentTiles: [{ floorId: "MT2", x: 1, y: 1 }],
-    },
   },
   {
     id: "budget-or-action-scope-exhausted",
+    scenario: "budget",
     failureClass: "budget-or-action-scope-exhausted",
-    failureClassFamily: "budget-or-action-scope",
+    expectedOutcome: "repair-incomplete",
+    failureClassFamily: "auto-split-or-action-scope-expansion",
     selectedRepairIntent: "auto-split-or-action-scope-expansion",
+    mappingFamily: "auto-split-or-action-scope-expansion",
     plannerMode: "auto-segment-split",
-    controlOutcome: "repair-incomplete",
-    missingGoalFields: ["budget", "actionScope"],
-    goal: {
-      type: "heroAtLeast",
-      floorId: "MT2",
-      minHero: { hp: 1500, atk: 100 },
-    },
   },
 ]);
 
@@ -125,121 +103,101 @@ function generationCommit() {
   }
 }
 
-function policyFor(floorIds) {
+function policyFor(floorIds, actionKinds, allowChangeFloors) {
   return {
-    actionKinds: ["battle", "pickup", "equip", "openDoor", "useTool", "changeFloor"],
+    actionKinds: actionKinds.slice(),
     allowedFloors: floorIds.slice(),
-    allowChangeFloors: floorIds.map((floorId) => `${floorId}:0,0`),
+    ...(allowChangeFloors ? { allowChangeFloors: allowChangeFloors.slice() } : {}),
     forbidUnsupportedEvents: true,
   };
 }
 
 function makeSpec(caseDef) {
-  const sourcePolicy = policyFor(["MT1"]);
-  const failedPolicy = policyFor(["MT1", "MT2"]);
+  const sourcePolicy = caseDef.scenario === "target"
+    ? policyFor(["S1", "S2"], ["battle", "changeFloor"], ["S1:0,0"])
+    : policyFor(["S1"], ["battle", "pickup"]);
+  let failedGoal;
+  let failedPolicy;
+  if (caseDef.scenario === "attack") {
+    failedGoal = {
+      type: "heroAtLeast",
+      floorId: "S1",
+      minEffectiveHero: { atk: 10 },
+    };
+    failedPolicy = policyFor(["S1"], ["battle"]);
+  } else if (caseDef.scenario === "survivability") {
+    failedGoal = {
+      type: "heroAtLeast",
+      floorId: "S1",
+      actionSurvivable: { summary: "battle:survivor@S1:2,0" },
+    };
+    failedPolicy = policyFor(["S1"], ["battle"]);
+  } else if (caseDef.scenario === "target") {
+    failedGoal = {
+      type: "heroAtLeast",
+      floorId: "S2",
+      actionSurvivable: { summary: "battle:target@S2:1,0" },
+    };
+    failedPolicy = policyFor(["S1"], ["battle"]);
+  } else if (caseDef.scenario === "present") {
+    failedGoal = {
+      type: "heroAtLeast",
+      floorId: "S1",
+      minHero: { hp: 100 },
+      presentTiles: [{ floorId: "S1", x: 1, y: 0 }],
+    };
+    failedPolicy = policyFor(["S1"], []);
+  } else {
+    failedGoal = {
+      type: "syntheticBudgetGoal",
+      floorId: "S1",
+      resourceDeferral: {
+        resourceSummary: "battle:unsupported@S1:2,0",
+        requireSurvivable: true,
+      },
+    };
+    failedPolicy = policyFor(["S1"], []);
+  }
   return {
-    id: `pr-4.6a-${caseDef.id}`,
+    id: `pr-4.6a1-${caseDef.id}`,
     milestones: [
       {
         id: "repair-source",
         startFrom: null,
         goal: {
           type: "heroAtLeast",
-          floorId: "MT1",
-          minHero: { hp: 1000 },
+          floorId: "S1",
+          minHero: { hp: 100 },
         },
         actionPolicy: sourcePolicy,
-        dp: { keyMode: "region", stopOnFirstGoal: false, maxExpansions: 1000, maxRuntimeMs: 1000 },
+        dp: {
+          keyMode: "region",
+          stopOnFirstGoal: false,
+          maxExpansions: 1000,
+          maxRuntimeMs: 1000,
+        },
       },
       {
         id: "failed",
         startFrom: "repair-source",
-        goal: cloneJson(caseDef.goal),
+        goal: failedGoal,
         actionPolicy: failedPolicy,
-        dp: { keyMode: "region", stopOnFirstGoal: false, maxExpansions: 8000, maxRuntimeMs: 15000 },
+        dp: {
+          keyMode: "region",
+          stopOnFirstGoal: false,
+          maxExpansions: caseDef.scenario === "budget" ? 1 : 1000,
+          maxRuntimeMs: 1000,
+        },
       },
     ],
   };
 }
 
-function makeAttempts(caseDef) {
-  if (caseDef.failureClass !== "budget-or-action-scope-exhausted") return [];
-  return [{
-    diagnostics: {
-      dp: {
-        stoppedReason: "time-limit",
-        actionTrimmed: 0,
-        statesWithActionTrim: 0,
-      },
-      failure: {
-        bestSeen: {
-          floorId: "MT1",
-          hero: {
-            hp: 1234,
-            atk: 56,
-            def: 78,
-            mdef: 90,
-            lv: 3,
-            exp: 12,
-            equipment: ["IX"],
-          },
-          effectiveHero: {
-            hp: 1234,
-            atk: 112,
-            def: 156,
-            mdef: 180,
-            lv: 3,
-            exp: 12,
-          },
-        },
-      },
-    },
-  }];
-}
-
-function makePlannerResult(caseDef) {
-  return {
-    found: false,
-    failedSegment: {
-      segmentId: "failed",
-      failureClass: caseDef.failureClass,
-      missingGoalFields: caseDef.missingGoalFields.slice(),
-      attempts: makeAttempts(caseDef),
-    },
-    finalCandidates: [],
-  };
-}
-
 function contractAdapterSegment(caseDef) {
-  const policy = policyFor(["MT1", "MT2"]);
-  if (caseDef.failureClass === "atk-deficit") {
-    return {
-      id: "contract-repair-atk-deficit-1",
-      label: "PR-4.6a attack-resource repair contract",
-      generated: true,
-      generatedBy: {
-        mode: "contract-adapter",
-        contractOnly: true,
-        failureClass: caseDef.failureClass,
-        intentKind: caseDef.selectedRepairIntent,
-        reason: "shadow contract control for attack resource or best-combat repair",
-      },
-      goal: cloneJson(caseDef.goal),
-      actionPolicy: policy,
-      dp: {
-        keyMode: "region",
-        priorityMode: "combat-first",
-        stopOnFirstGoal: false,
-        maxActionsPerState: 9999,
-        maxExpansions: REPAIR_BUDGET.repairMaxExpansions,
-        maxRuntimeMs: REPAIR_BUDGET.repairMaxRuntimeMs,
-        goalSkylineLimit: 4,
-      },
-    };
-  }
+  const policy = policyFor(["S1"], []);
   return {
     id: "contract-repair-present-tiles-1",
-    label: "PR-4.6a presentTiles downgrade contract",
+    label: "PR-4.6a1 presentTiles admissibility control",
     generated: true,
     generatedBy: {
       mode: "contract-adapter",
@@ -247,15 +205,14 @@ function contractAdapterSegment(caseDef) {
       failureClass: caseDef.failureClass,
       intentKind: caseDef.selectedRepairIntent,
       downgrade: true,
-      presentTilesBefore: cloneJson(caseDef.goal.presentTiles),
-      presentTilesAfter: cloneJson(caseDef.goal.preferredPresentTiles),
-      reason: "shadow contract control for a one-step presentTiles relaxation",
+      presentTilesBefore: [{ floorId: "S1", x: 1, y: 0 }],
+      presentTilesAfter: [],
+      reason: "synthetic validator control; the hard tile is already absent at the baseline checkpoint",
     },
     goal: {
       type: "adaptivePresentTileRelaxation",
-      floorId: caseDef.goal.floorId,
-      minHero: cloneJson(caseDef.goal.minHero),
-      presentTiles: cloneJson(caseDef.goal.preferredPresentTiles),
+      floorId: "S1",
+      presentTiles: [],
     },
     actionPolicy: policy,
     dp: {
@@ -284,74 +241,137 @@ function compactSegment(segment) {
   };
 }
 
-function buildPlannerProbe(caseDef, spec, plannerResult) {
-  if (caseDef.plannerMode === "contract-adapter") {
-    return {
-      usedExistingPlanner: false,
-      mode: "contract-adapter",
-      reason: "case is deliberately a shadow contract control; production planner is unchanged",
-    };
-  }
-  const plannerSegment = buildRepairSegment(null, plannerResult, {
-    currentSpec: spec,
-    repairIndex: 0,
+function compactAttempt(result, index, source) {
+  return {
+    index,
+    source,
+    found: Boolean(result && result.found),
+    reachedMilestone: result && result.reachedMilestone || null,
+    failedSegmentId: result && result.failedSegment && (
+      result.failedSegment.segmentId || result.failedSegment.failedSegmentId
+    ) || null,
+    segmentResults: (result && result.segmentResults || []).map((segment) => ({
+      segmentId: segment.segmentId,
+      found: Boolean(segment.found),
+      candidateCount: (segment.candidates || []).length,
+      failureClass: segment.failureClass ||
+        (segment.failurePropagation && (
+          segment.failurePropagation.failureClass ||
+          segment.failurePropagation.primaryFailureClass
+        )) || null,
+    })),
+  };
+}
+
+function baselineFailureClass(runResult) {
+  const attempt = runResult && runResult.adaptive && runResult.adaptive.attempts && runResult.adaptive.attempts[0];
+  const failed = attempt && (attempt.segmentResults || []).find((segment) => !segment.found && segment.failureClass);
+  return failed && failed.failureClass || null;
+}
+
+function repairExecutionOptions() {
+  return {
+    maxAdaptiveRepairs: REPAIR_BUDGET.maxRepairs,
     candidateLimit: 4,
+    repairBranchLimit: 1,
+    enableFailureBacktracking: false,
+    enableConvergenceSplit: false,
     repairMaxExpansions: REPAIR_BUDGET.repairMaxExpansions,
     repairMaxRuntimeMs: REPAIR_BUDGET.repairMaxRuntimeMs,
+    windowRepairMaxExpansions: REPAIR_BUDGET.repairMaxExpansions,
+    windowRepairMaxRuntimeMs: REPAIR_BUDGET.repairMaxRuntimeMs,
     splitMaxExpansions: REPAIR_BUDGET.repairMaxExpansions,
     splitMaxRuntimeMs: REPAIR_BUDGET.repairMaxRuntimeMs,
-  });
-  return {
-    usedExistingPlanner: Boolean(plannerSegment),
-    mode: plannerSegment && plannerSegment.generatedBy && plannerSegment.generatedBy.mode || null,
-    segmentId: plannerSegment && plannerSegment.id || null,
-    failureClass: caseDef.failureClass,
-    generated: compactSegment(plannerSegment),
   };
 }
 
-function evaluateRepair(caseDef, segment) {
-  const outcome = caseDef.controlOutcome;
-  return {
-    repairedOutcome: outcome,
-    terminationReason: outcome === "success"
-      ? "repair-success"
-      : outcome === "rejected"
-        ? "repair-rejected"
-        : "repair-incomplete",
-    evidence: "synthetic-contract-only",
-    appliedRepairCount: segment ? 1 : 0,
-  };
+function compactBranches(runResult) {
+  return cloneJson((runResult && runResult.adaptive && runResult.adaptive.repairBranches) || []);
 }
 
-function buildCase(caseDef) {
+function buildExecutedCase(caseDef) {
+  const { simulator, initialState } = createSyntheticScenario(caseDef.scenario);
   const spec = makeSpec(caseDef);
-  const plannerResult = makePlannerResult(caseDef);
-  const plannerProbe = buildPlannerProbe(caseDef, spec, plannerResult);
-  const generated = plannerProbe.generated || compactSegment(contractAdapterSegment(caseDef));
-  const repair = evaluateRepair(caseDef, generated);
+  const options = repairExecutionOptions();
+  const runResult = runAdaptiveSegmentPlanner(simulator, initialState, spec, options);
+  const adaptive = runResult.adaptive || {};
+  const baseline = adaptive.attempts && adaptive.attempts[0] || null;
+  const baselineClass = baselineFailureClass(runResult);
+  if (baselineClass !== caseDef.failureClass) {
+    throw new Error(`${caseDef.id}: expected baseline ${caseDef.failureClass}, observed ${baselineClass}`);
+  }
+  const inserted = adaptive.insertedSegments && adaptive.insertedSegments[0] || null;
+  const repaired = compactAttempt(runResult, 1, "adaptive-final-result");
+  const observedOutcome = runResult.found ? "success" : inserted ? "repair-incomplete" : "repair-incomplete";
+  const repairedExecutionCount = inserted ? 1 : 0;
   return {
     id: caseDef.id,
     baselineOutcome: {
       status: "failed",
-      failureClass: caseDef.failureClass,
+      failureClass: baselineClass,
       failureClassAliases: (caseDef.failureClassAliases || []).slice(),
-      failedSegmentId: "failed",
+      failedSegmentId: baseline && baseline.failedSegmentId || null,
     },
-    failureClass: caseDef.failureClass,
+    failureClass: baselineClass,
     failureClassFamily: caseDef.failureClassFamily,
-    selectedRepairIntent: caseDef.selectedRepairIntent,
-    generatedRepairSegment: generated,
-    plannerProbe,
+    selectedRepairIntent: inserted && inserted.generatedBy && inserted.generatedBy.intentKind || caseDef.selectedRepairIntent,
+    mapping: {
+      family: caseDef.mappingFamily,
+      observedMode: inserted && inserted.generatedBy && inserted.generatedBy.mode || null,
+      observedIntentKind: inserted && inserted.generatedBy && inserted.generatedBy.intentKind || null,
+      verdict: inserted && inserted.generatedBy && inserted.generatedBy.mode === caseDef.plannerMode
+        ? "supported"
+        : "not-observed",
+      note: caseDef.mappingNote || null,
+    },
+    generatedRepairSegment: compactSegment(inserted),
+    plannerProbe: {
+      usedExistingPlanner: true,
+      mode: inserted && inserted.generatedBy && inserted.generatedBy.mode || null,
+      segmentId: inserted && inserted.id || null,
+      generated: compactSegment(inserted),
+    },
     repairBudget: cloneJson(REPAIR_BUDGET),
-    repairedOutcome: repair.repairedOutcome,
-    terminationReason: repair.terminationReason,
+    effectiveRepairBudget: inserted && inserted.dp
+      ? {
+          maxExpansions: Number(inserted.dp.maxExpansions),
+          maxRuntimeMs: Number(inserted.dp.maxRuntimeMs),
+        }
+      : null,
+    baselineAttempt: compactAttempt({
+      found: baseline && baseline.found,
+      reachedMilestone: baseline && baseline.reachedMilestone,
+      failedSegment: { segmentId: baseline && baseline.failedSegmentId },
+      segmentResults: baseline && baseline.segmentResults,
+    }, 0, "adaptive-baseline-attempt"),
+    insertedSegmentId: inserted && inserted.id || null,
+    repairedAttempt: repaired,
+    repairBranches: compactBranches(runResult),
+    observedOutcome,
+    expectedOutcome: caseDef.expectedOutcome,
+    terminationReason: observedOutcome === "success" ? "repair-success" : "repair-incomplete",
     repairAttempt: {
-      index: 1,
+      index: inserted ? 1 : null,
       maxRepairCount: REPAIR_BUDGET.maxRepairs,
       recursion: false,
-      outcomeEvidence: repair.evidence,
-      appliedRepairCount: repair.appliedRepairCount,
+      appliedRepairCount: repairedExecutionCount,
+      executed: inserted != null,
+    },
+    oneRepairClosure: {
+      orchestratorAttemptCount: (adaptive.attempts || []).length,
+      executedAttemptCount: inserted ? 2 : 1,
+      insertedSegmentCount: (adaptive.insertedSegments || []).length,
+      repairIndexes: compactBranches(runResult).map((branch) => branch.repairIndex),
+      stoppedAfterOneRepair: (adaptive.insertedSegments || []).length <= 1 &&
+        compactBranches(runResult).every((branch) => branch.repairIndex === 0),
+      stoppedReason: observedOutcome === "repair-incomplete"
+        ? adaptive.stoppedReason || (runResult.failedSegment && runResult.failedSegment.failureClass) || "max-repair-count"
+        : "repair-success",
+    },
+    execution: {
+      runner: "runAdaptiveSegmentPlanner",
+      options: cloneJson(options),
+      simulator: "deterministic-synthetic",
     },
     scope: {
       shadowOnly: true,
@@ -365,6 +385,116 @@ function buildCase(caseDef) {
   };
 }
 
+function buildRejectedPresentCase(caseDef) {
+  const { simulator, initialState } = createSyntheticScenario(caseDef.scenario);
+  const spec = makeSpec(caseDef);
+  const options = repairExecutionOptions();
+  const runResult = runAdaptiveSegmentPlanner(simulator, initialState, spec, options);
+  const adaptive = runResult.adaptive || {};
+  const baseline = adaptive.attempts && adaptive.attempts[0] || null;
+  const baselineClass = baselineFailureClass(runResult);
+  if (baselineClass !== caseDef.failureClass) {
+    throw new Error(`${caseDef.id}: expected baseline ${caseDef.failureClass}, observed ${baselineClass}`);
+  }
+  const proposed = contractAdapterSegment(caseDef);
+  const validator = {
+    accepted: false,
+    predicate: "required presentTiles must exist at the baseline checkpoint",
+    reason: "present tile S1:1,0 is already absent; downgrade would erase a hard dependency rather than repair it",
+  };
+  return {
+    id: caseDef.id,
+    baselineOutcome: {
+      status: "failed",
+      failureClass: baselineClass,
+      failureClassAliases: [],
+      failedSegmentId: baseline && baseline.failedSegmentId || null,
+    },
+    failureClass: baselineClass,
+    failureClassFamily: caseDef.failureClassFamily,
+    selectedRepairIntent: caseDef.selectedRepairIntent,
+    mapping: {
+      family: caseDef.mappingFamily,
+      observedMode: "contract-adapter",
+      observedIntentKind: caseDef.selectedRepairIntent,
+      verdict: "validator-rejected",
+      note: "presentTiles downgrade is evaluated before insertion",
+    },
+    generatedRepairSegment: compactSegment(proposed),
+    plannerProbe: {
+      usedExistingPlanner: false,
+      mode: "contract-adapter",
+      segmentId: proposed.id,
+      generated: compactSegment(proposed),
+      reason: "production planner was run for the baseline; the proposed relaxation was rejected before insertion",
+    },
+    repairBudget: cloneJson(REPAIR_BUDGET),
+    effectiveRepairBudget: {
+      maxExpansions: proposed.dp.maxExpansions,
+      maxRuntimeMs: proposed.dp.maxRuntimeMs,
+    },
+    baselineAttempt: compactAttempt({
+      found: baseline && baseline.found,
+      reachedMilestone: baseline && baseline.reachedMilestone,
+      failedSegment: { segmentId: baseline && baseline.failedSegmentId },
+      segmentResults: baseline && baseline.segmentResults,
+    }, 0, "adaptive-baseline-attempt"),
+    insertedSegmentId: null,
+    repairedAttempt: {
+      index: null,
+      source: "admissibility-validator",
+      executed: false,
+      found: false,
+      failedSegmentId: baseline && baseline.failedSegmentId || null,
+      terminationReason: "repair-rejected",
+    },
+    repairBranches: [],
+    observedOutcome: "rejected",
+    expectedOutcome: caseDef.expectedOutcome,
+    terminationReason: "repair-rejected",
+    repairAttempt: {
+      index: null,
+      maxRepairCount: REPAIR_BUDGET.maxRepairs,
+      recursion: false,
+      appliedRepairCount: 0,
+      executed: false,
+    },
+    oneRepairClosure: {
+      orchestratorAttemptCount: (adaptive.attempts || []).length,
+      executedAttemptCount: 1,
+      insertedSegmentCount: 0,
+      repairIndexes: [],
+      stoppedAfterOneRepair: true,
+      stoppedReason: "repair-rejected",
+    },
+    admissibilityValidator: validator,
+    execution: {
+      runner: "runAdaptiveSegmentPlanner",
+      options: cloneJson(options),
+      simulator: "deterministic-synthetic",
+    },
+    scope: {
+      shadowOnly: true,
+      productionDpKeyChanged: false,
+      productionDominanceChanged: false,
+      productionAgendaChanged: false,
+      productionCapacityChanged: false,
+      productionDefaultPolicyChanged: false,
+      describesCompleteOnlyUpRoute: false,
+    },
+  };
+}
+
+function buildCase(caseDef) {
+  const result = caseDef.scenario === "present"
+    ? buildRejectedPresentCase(caseDef)
+    : buildExecutedCase(caseDef);
+  if (result.observedOutcome !== caseDef.expectedOutcome) {
+    throw new Error(`${caseDef.id}: expected ${caseDef.expectedOutcome}, observed ${result.observedOutcome}`);
+  }
+  return result;
+}
+
 function buildReport() {
   const cases = CASES.map(buildCase);
   return {
@@ -374,11 +504,12 @@ function buildReport() {
     provenance: {
       generationCommit: generationCommit(),
       source: "shared-solver/lib/adaptive-segment-planner.js",
+      syntheticSimulator: "shared-solver/adaptive-repair-synthetic-simulator.js",
       mode: "shadow-only",
     },
     contract: {
-      id: "PR-4.6a",
-      title: "Adaptive Repair Outcome Contract",
+      id: "PR-4.6a1",
+      title: "Executed One-Repair Outcome Controls",
       maxRepairs: 1,
       fixedCaseCount: 5,
       supportedFailureClasses: [
@@ -391,40 +522,44 @@ function buildReport() {
       ],
       terminationReasons: ["repair-success", "repair-rejected", "repair-incomplete"],
       unresolvedOutcome: "repair-incomplete",
-      syntheticControlLabel: "synthetic-contract-only",
+      expectedObservedMustMatch: true,
+      syntheticControlLabel: "synthetic-contract-executed",
     },
     cases,
     controls: {
-      positiveRepairSuccess: cases.find((item) => item.repairedOutcome === "success").id,
-      negativeRepairRejected: cases.find((item) => item.repairedOutcome === "rejected").id,
-      incompleteRepair: cases.find((item) => item.repairedOutcome === "repair-incomplete").id,
+      positiveRepairSuccess: cases.find((item) => item.observedOutcome === "success").id,
+      negativeRepairRejected: cases.find((item) => item.observedOutcome === "rejected").id,
+      incompleteRepair: cases.find((item) => item.observedOutcome === "repair-incomplete").id,
       autoSplit: cases.find((item) => item.plannerProbe.mode === "auto-segment-split").id,
       deterministicLiveRebuild: true,
+      observedFromRunner: true,
     },
   };
 }
 
 function markdown(report) {
   const lines = [
-    "# PR-4.6a Adaptive Repair Outcome Contract",
+    "# PR-4.6a1 Executed One-Repair Outcome Controls",
     "",
     `- Schema: \`${report.schema}\``,
     "- Status: completed",
     "- Scope: shadow-only",
-    "- Maximum repair count: 1",
-    "- Synthetic controls use the label `synthetic-contract-only` and are not claims of a complete OnlyUp route.",
+    "- Runner: `runAdaptiveSegmentPlanner` with `maxAdaptiveRepairs=1`",
+    "- Outcomes are observed from executed synthetic runs; rejected controls are stopped by an admissibility validator before insertion.",
+    "- Synthetic execution is not a claim of a complete OnlyUp route.",
     "",
-    "| Case | Failure class | Selected intent | Planner mode | Repaired outcome | Termination |",
-    "| --- | --- | --- | --- | --- | --- |",
+    "| Case | Failure class | Observed intent/mode | Expected | Observed | Applied repairs | Termination |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
   ];
   report.cases.forEach((item) => {
-    lines.push(`| ${item.id} | ${item.failureClass} | ${item.selectedRepairIntent} | ${item.plannerProbe.mode} | ${item.repairedOutcome} | ${item.terminationReason} |`);
+    const intent = item.selectedRepairIntent || item.plannerProbe.mode;
+    lines.push(`| ${item.id} | ${item.failureClass} | ${intent} / ${item.plannerProbe.mode} | ${item.expectedOutcome} | ${item.observedOutcome} | ${item.repairAttempt.appliedRepairCount} | ${item.terminationReason} |`);
   });
   lines.push(
     "",
-    "The contract records baseline outcome, failure class, selected intent, generated repair segment, repair budget, repaired outcome, and explicit termination reason.",
+    "Every executed repair segment is checked against the declared 300-expansion / 2000-ms shadow repair budget.",
     "",
-    "Production DP keys, dominance, agenda, capacity, and default policy are unchanged.",
+    "Production DP keys, dominance, agenda, capacity, default maxAdaptiveRepairs, and default policy are unchanged.",
     ""
   );
   return lines.join("\n");

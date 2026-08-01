@@ -2,7 +2,6 @@
 
 const assert = require("assert");
 const fs = require("fs");
-const path = require("path");
 const {
   CASES,
   CONTRACT_SCHEMA,
@@ -26,30 +25,42 @@ function readJson(file) {
 function assertCommonContract(report) {
   assert.strictEqual(report.schema, CONTRACT_SCHEMA);
   assert.strictEqual(report.status, "completed");
-  assert.strictEqual(report.contract.id, "PR-4.6a");
+  assert.strictEqual(report.contract.id, "PR-4.6a1");
   assert.strictEqual(report.contract.maxRepairs, 1);
   assert.strictEqual(report.contract.fixedCaseCount, 5);
-  assert.deepStrictEqual(report.contract.terminationReasons, [
-    "repair-success",
-    "repair-rejected",
-    "repair-incomplete",
-  ]);
-  assert.strictEqual(report.contract.unresolvedOutcome, "repair-incomplete");
-  assert.strictEqual(report.contract.syntheticControlLabel, "synthetic-contract-only");
+  assert.strictEqual(report.contract.expectedObservedMustMatch, true);
+  assert.strictEqual(report.contract.syntheticControlLabel, "synthetic-contract-executed");
   assert.strictEqual(report.provenance.mode, "shadow-only");
+  assert.strictEqual(report.provenance.syntheticSimulator, "shared-solver/adaptive-repair-synthetic-simulator.js");
   assert.strictEqual(report.cases.length, 5);
   report.cases.forEach((item) => {
+    assert.ok(item.baselineAttempt, item.id);
     assert.strictEqual(item.baselineOutcome.status, "failed", item.id);
     assert.strictEqual(item.baselineOutcome.failureClass, item.failureClass, item.id);
     assert.ok(item.selectedRepairIntent, item.id);
     assert.ok(item.generatedRepairSegment, item.id);
-    assert.ok(item.generatedRepairSegment.generatedBy, item.id);
     assert.deepStrictEqual(item.repairBudget, REPAIR_BUDGET, item.id);
-    assert.strictEqual(item.repairAttempt.index, 1, item.id);
+    assert.strictEqual(item.execution.runner, "runAdaptiveSegmentPlanner", item.id);
+    assert.strictEqual(item.execution.options.maxAdaptiveRepairs, 1, item.id);
+    assert.strictEqual(item.execution.options.enableConvergenceSplit, false, item.id);
     assert.strictEqual(item.repairAttempt.maxRepairCount, 1, item.id);
     assert.strictEqual(item.repairAttempt.recursion, false, item.id);
-    assert.strictEqual(item.repairAttempt.appliedRepairCount, 1, item.id);
-    assert.strictEqual(item.repairAttempt.outcomeEvidence, "synthetic-contract-only", item.id);
+    assert.ok(item.oneRepairClosure.orchestratorAttemptCount <= 2, item.id);
+    assert.ok(item.oneRepairClosure.executedAttemptCount <= 2, item.id);
+    assert.ok(item.oneRepairClosure.insertedSegmentCount <= 1, item.id);
+    assert.ok(item.oneRepairClosure.repairIndexes.every((index) => index === 0), item.id);
+    assert.strictEqual(item.oneRepairClosure.stoppedAfterOneRepair, true, item.id);
+    assert.strictEqual(item.expectedOutcome, item.observedOutcome, item.id);
+    assert.ok(["success", "rejected", "repair-incomplete"].includes(item.observedOutcome), item.id);
+    assert.strictEqual(
+      item.terminationReason,
+      item.observedOutcome === "success"
+        ? "repair-success"
+        : item.observedOutcome === "rejected"
+          ? "repair-rejected"
+          : "repair-incomplete",
+      item.id
+    );
     assert.strictEqual(item.scope.shadowOnly, true, item.id);
     assert.strictEqual(item.scope.productionDpKeyChanged, false, item.id);
     assert.strictEqual(item.scope.productionDominanceChanged, false, item.id);
@@ -57,71 +68,104 @@ function assertCommonContract(report) {
     assert.strictEqual(item.scope.productionCapacityChanged, false, item.id);
     assert.strictEqual(item.scope.productionDefaultPolicyChanged, false, item.id);
     assert.strictEqual(item.scope.describesCompleteOnlyUpRoute, false, item.id);
-    assert.ok(["success", "rejected", "repair-incomplete"].includes(item.repairedOutcome), item.id);
-    assert.strictEqual(
-      item.terminationReason,
-      item.repairedOutcome === "success"
-        ? "repair-success"
-        : item.repairedOutcome === "rejected"
-          ? "repair-rejected"
-          : "repair-incomplete",
-      item.id
-    );
   });
 }
 
-function assertFailureIntentMapping(report) {
+function assertObservedExecution(report) {
   const byId = new Map(report.cases.map((item) => [item.id, item]));
-  const expectations = {
+  const expected = {
     "atk-deficit-positive": {
       failureClass: "atk-deficit",
-      intent: "attack-resource-or-best-combat",
-      mode: "contract-adapter",
       outcome: "success",
-      termination: "repair-success",
+      mode: "resource-intent-scanner",
+      intentKind: "stat-atk",
+      mappingFamily: "attack-resource-or-best-combat",
     },
     "action-survivability-deficit": {
       failureClass: "action-survivability-deficit",
-      intent: "hp-high-survival-low-damage",
-      mode: "adaptive-window-repair",
       outcome: "repair-incomplete",
-      termination: "repair-incomplete",
+      mode: "adaptive-window-repair",
+      intentKind: null,
+      mappingFamily: "hp-high-survival-low-damage",
     },
     "target-action-unreachable": {
       failureClass: "target-action-unreachable",
-      intent: "blocker-open-door-change-floor-whitelist",
-      mode: "adaptive-window-repair",
       outcome: "success",
-      termination: "repair-success",
+      mode: "adaptive-window-repair",
+      intentKind: null,
+      mappingFamily: "adaptive-window-change-floor-repair",
     },
     "present-tile-overconstrained": {
       failureClass: "present-tile-overconstrained",
-      intent: "presentTiles-to-preferredPresentTiles",
-      mode: "contract-adapter",
       outcome: "rejected",
-      termination: "repair-rejected",
+      mode: "contract-adapter",
+      intentKind: "presentTiles-to-preferredPresentTiles",
+      mappingFamily: "presentTiles-relaxation",
     },
     "budget-or-action-scope-exhausted": {
       failureClass: "budget-or-action-scope-exhausted",
-      intent: "auto-split-or-action-scope-expansion",
-      mode: "auto-segment-split",
       outcome: "repair-incomplete",
-      termination: "repair-incomplete",
+      mode: "auto-segment-split",
+      intentKind: null,
+      mappingFamily: "auto-split-or-action-scope-expansion",
     },
   };
-  Object.entries(expectations).forEach(([id, expected]) => {
+  Object.entries(expected).forEach(([id, expectation]) => {
     const item = byId.get(id);
     assert.ok(item, id);
-    assert.strictEqual(item.failureClass, expected.failureClass, id);
-    assert.strictEqual(item.selectedRepairIntent, expected.intent, id);
-    assert.strictEqual(item.plannerProbe.mode, expected.mode, id);
-    assert.strictEqual(item.generatedRepairSegment.generatedBy.mode, expected.mode, id);
-    assert.strictEqual(item.repairedOutcome, expected.outcome, id);
-    assert.strictEqual(item.terminationReason, expected.termination, id);
+    assert.strictEqual(item.failureClass, expectation.failureClass, id);
+    assert.strictEqual(item.observedOutcome, expectation.outcome, id);
+    assert.strictEqual(item.plannerProbe.mode, expectation.mode, id);
+    assert.strictEqual(item.generatedRepairSegment.generatedBy.mode, expectation.mode, id);
+    assert.strictEqual(item.mapping.family, expectation.mappingFamily, id);
+    if (expectation.intentKind) {
+      assert.strictEqual(item.generatedRepairSegment.generatedBy.intentKind, expectation.intentKind, id);
+      assert.strictEqual(item.mapping.observedIntentKind, expectation.intentKind, id);
+    }
+    if (id === "action-survivability-deficit") {
+      assert.strictEqual(item.baselineOutcome.failureClassAliases[0], "hp-deficit");
+      assert.strictEqual(item.effectiveRepairBudget.maxExpansions, REPAIR_BUDGET.repairMaxExpansions);
+      assert.strictEqual(item.effectiveRepairBudget.maxRuntimeMs, REPAIR_BUDGET.repairMaxRuntimeMs);
+    }
+    if (id === "target-action-unreachable") {
+      assert.ok(item.generatedRepairSegment.actionPolicy.actionKinds.includes("changeFloor"));
+      assert.ok(!item.selectedRepairIntent.includes("blocker-open-door-change-floor-whitelist"));
+      assert.ok(item.mapping.note.includes("not claimed"));
+    }
+    if (id === "budget-or-action-scope-exhausted") {
+      assert.strictEqual(item.effectiveRepairBudget.maxExpansions, REPAIR_BUDGET.repairMaxExpansions);
+      assert.strictEqual(item.effectiveRepairBudget.maxRuntimeMs, REPAIR_BUDGET.repairMaxRuntimeMs);
+      assert.strictEqual(item.oneRepairClosure.orchestratorAttemptCount, 2);
+      assert.strictEqual(item.oneRepairClosure.stoppedReason, "max-repair-count");
+    }
   });
-  assert.strictEqual(byId.get("action-survivability-deficit").baselineOutcome.failureClassAliases[0], "hp-deficit");
-  assert.strictEqual(byId.get("present-tile-overconstrained").generatedRepairSegment.generatedBy.downgrade, true);
-  assert.strictEqual(byId.get("budget-or-action-scope-exhausted").plannerProbe.usedExistingPlanner, true);
+}
+
+function assertOutcomeSemantics(report) {
+  const rejected = report.cases.find((item) => item.observedOutcome === "rejected");
+  assert.ok(rejected);
+  assert.strictEqual(rejected.repairAttempt.executed, false);
+  assert.strictEqual(rejected.repairAttempt.appliedRepairCount, 0);
+  assert.strictEqual(rejected.insertedSegmentId, null);
+  assert.strictEqual(rejected.repairBranches.length, 0);
+  assert.strictEqual(rejected.admissibilityValidator.accepted, false);
+  assert.ok(rejected.admissibilityValidator.reason);
+
+  report.cases
+    .filter((item) => item.observedOutcome === "success" || item.observedOutcome === "repair-incomplete")
+    .forEach((item) => {
+      assert.strictEqual(item.repairAttempt.executed, true, item.id);
+      assert.strictEqual(item.repairAttempt.appliedRepairCount, 1, item.id);
+      assert.ok(item.insertedSegmentId, item.id);
+      assert.strictEqual(item.oneRepairClosure.insertedSegmentCount, 1, item.id);
+      assert.ok(item.repairedAttempt, item.id);
+      if (item.observedOutcome === "success") {
+        assert.strictEqual(item.repairedAttempt.found, true, item.id);
+      } else {
+        assert.strictEqual(item.repairedAttempt.found, false, item.id);
+        assert.ok(item.oneRepairClosure.stoppedReason, item.id);
+      }
+    });
 }
 
 function assertControls(report) {
@@ -130,9 +174,7 @@ function assertControls(report) {
   assert.strictEqual(report.controls.incompleteRepair, "action-survivability-deficit");
   assert.strictEqual(report.controls.autoSplit, "budget-or-action-scope-exhausted");
   assert.strictEqual(report.controls.deterministicLiveRebuild, true);
-  assert.ok(report.cases.some((item) => item.repairedOutcome === "success"));
-  assert.ok(report.cases.some((item) => item.repairedOutcome === "rejected"));
-  assert.ok(report.cases.some((item) => item.repairedOutcome === "repair-incomplete"));
+  assert.strictEqual(report.controls.observedFromRunner, true);
 }
 
 function main() {
@@ -140,17 +182,19 @@ function main() {
   assert.ok(fs.existsSync(DEFAULT_OUT_MD), `missing markdown report: ${DEFAULT_OUT_MD}`);
   const report = readJson(DEFAULT_OUT);
   assertCommonContract(report);
-  assertFailureIntentMapping(report);
+  assertObservedExecution(report);
+  assertOutcomeSemantics(report);
   assertControls(report);
   assert.deepStrictEqual(CASES.map((item) => item.id), report.cases.map((item) => item.id));
 
   const rebuilt = buildReport();
   assert.deepStrictEqual(normalizeReport(rebuilt), normalizeReport(report));
   const markdown = fs.readFileSync(DEFAULT_OUT_MD, "utf8");
-  assert.ok(markdown.includes("PR-4.6a Adaptive Repair Outcome Contract"));
-  assert.ok(markdown.includes("synthetic-contract-only"));
-  assert.ok(markdown.includes("Production DP keys, dominance, agenda, capacity, and default policy are unchanged."));
-  process.stdout.write(`adaptive repair outcome contract ok: ${report.cases.length} cases\n`);
+  assert.ok(markdown.includes("observed from executed synthetic runs"));
+  assert.ok(markdown.includes("maxAdaptiveRepairs=1"));
+  assert.ok(markdown.includes("300-expansion / 2000-ms"));
+  assert.ok(markdown.includes("not a claim of a complete OnlyUp route"));
+  process.stdout.write(`adaptive repair executed one-repair controls ok: ${report.cases.length} cases\n`);
 }
 
 if (require.main === module) main();

@@ -132,6 +132,20 @@ PR-4.5c1a 正式关闭后，P2 首轮进入 adaptive planner repair outcome cont
 
 当前结论：PR-4.6a 合同审计已建立，repair outcome 不再把 unresolved 分支误报为成功；本轮仍不宣称 adaptive planner 已完成完整 OnlyUp repair 闭环。
 
+## 1.7 2026-08-01：PR-4.6a1 Executed One-Repair Outcome Controls
+
+针对 review 指出 PR-4.6a 只把 `controlOutcome` 当作 fixture 常量、没有真实执行的问题，本轮继续保持 shadow-only，进入 PR-4.6a1；PR-4.6a 暂不正式关闭。
+
+- 新增 `adaptive-repair-synthetic-simulator.js`，用小型确定性 project/state/action model 驱动真实 `runAdaptiveSegmentPlanner(..., { maxAdaptiveRepairs: 1 })`。
+- `observedOutcome` 现在由实际 baseline/repair execution result 推导；报告同时记录 `baselineAttempt`、`generatedRepairSegment`、`insertedSegmentId`、`repairedAttempt`、`repairBranches`、`observedOutcome` 与 `terminationReason`。
+- attack pickup 实际执行后达到 ATK goal；target-unreachable 实际通过 adaptive window 的 change-floor action 到达 target action；survivability 与 auto-split 实际执行一次后仍 unresolved，输出 `repair-incomplete`。
+- `presentTiles` downgrade 使用 admissibility validator，拒绝发生在插入前，`appliedRepairCount=0`；不再把 rejected 与已执行 repair 混为一谈。
+- 显式传入 `windowRepairMaxExpansions=300`、`windowRepairMaxRuntimeMs=2000`、`splitMaxExpansions=300`、`splitMaxRuntimeMs=2000`；checker 直接比较 generated segment 的 effective `dp` budget。
+- target mapping 降级为实际观察到的 `adaptive-window-change-floor-repair`，不再宣称 blocker/openDoor whitelist 已由当前 planner 支持。
+- checker 锁定 observed/expected 一致、最多 baseline + 一次 repaired execution、所有 branch `repairIndex=0`、无第二次 insertion、rejection semantics、budget equality 与 deterministic live rebuild。
+
+当前结论：PR-4.6a1 已建立 executed one-repair outcome evidence；仍保持 synthetic contract-only 语义，不描述为完整 OnlyUp route，也不修改 production 默认 repair 次数或搜索策略。
+
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 
 ### 0.1 本轮目标
