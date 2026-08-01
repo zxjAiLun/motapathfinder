@@ -101,6 +101,7 @@ DP key 必须覆盖：
 | `lib/reach-and-battle-oracle.js` | ✅ 优化 | targeted battle matcher；batch oracle；fast portal discovery (opt-in)；portal dedup；perf diagnostics |
 | `check-progressive-to-milestone.js` | ✅ v4 bridge | progressive planner → milestone suggestion；special target inference；segment DP validation；focused checks |
 | `check-state-key-audit.js` | ✅ | direction-sensitive items/flags/visitedFloors/DP keyMode 审计 |
+| `audit-state-abstraction.js` / `check-state-abstraction-audit.js` | ✅ PR-4.5a shadow-only | candidate-6/7 decision 14–20 action/successor 等价、exact-key split、triggeredAutoEvents、direction registry；不接入 production key |
 | `check-onlyup-floorfly-dedup-safety.js` | ✅ | OnlyUp floorFly dedup 安全审计（确认 target-floor 模式不安全） |
 | `check-progressive-monster-planner.js` | ✅ | synthetic smoke + special target priority + batch cap + targeted matcher + legacy compat + portal compat + portal dedup safety（9 tests） |
 
@@ -136,6 +137,18 @@ DP key 必须覆盖：
 - ✅ State key 审计：方向敏感性、flags、visitedFloors、DP keyMode。
 - ✅ floorFly dedup 安全审计：OnlyUp 确认 target-floor 模式不安全。
 - 🔶 真实 OnlyUp 自动 milestone 生成仍需性能提升（当前 MT1-MT2 56 states/20s）。
+
+### P1.6：State Abstraction Audit（PR-4.5a）✅ 首轮 shadow-only
+
+首轮只审计 candidate-6 / candidate-7 的 decision 14–20 窗口：
+
+- action-set 与 successor-set 等价性；
+- exact key 各字段的 split contribution；
+- `triggeredAutoEvents` 是否存在不可由 key 字段推导的样本冲突；
+- direction dependency registry；
+- shadow canonical projection 碰撞后的一步行为等价。
+
+当前证据显示：当前楼层 mutation-only projection 在该局部窗口的 action-set 和 projection successor-set 均等价，但 exact successor-set 仍被非当前楼层 mutation 分裂。该结果只支持局部审计结论，不支持修改全局 DP key。
 
 ### P2：Adaptive planner 闭环
 

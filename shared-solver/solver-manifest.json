@@ -1710,6 +1710,13 @@
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
+    "shared-solver/check-state-abstraction-audit.js": {
+      "grade": "diagnostic",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-state-key-audit.js": {
       "grade": "diagnostic",
       "allowsNotFound": false,

@@ -2,6 +2,35 @@
 
 更新日期：2026-04-28
 
+## 0.7 2026-08-01：PR-4.5a State Abstraction Audit
+
+本轮正式关闭 PR-4.4j–k 后，进入完全 shadow-only 的状态抽象审计；不修改 production DP key、dominance、agenda、容量或默认策略。
+
+已完成：
+
+- 新增 `audit-state-abstraction.js` 与 `check-state-abstraction-audit.js`，复用 PR-4.4j/j2 工件中的 candidate-6 / candidate-7 完整 checkpoint state。
+- 对 decision 14–20 重放同一公共后缀，并逐状态枚举 primitive action-set 与 successor-set。
+- 输出 exact key 顶层字段及非零嵌套字段的 split contribution；实现当前楼层 mutation-only shadow canonical projection。
+- 输出 `triggeredAutoEvents` 的动态碰撞证据、autoEvent 静态 registry，以及 direction dependency registry。
+- 对 projection collision 做一步 action/successor 行为等价检查；结果落在 `routes/generated/agenda-policy-evaluation/pr-4.5a-state-abstraction-audit.{json,md}`。
+
+首轮结论：
+
+- candidate-6 / candidate-7 在 decision 14–20 共 7 个 shadow collision 点上 action-set 等价，projection successor-set 也等价。
+- exact successor-set 不等价，差异来自非当前楼层 MT1 mutation 仍存在于 exact key；因此不能据此删除全局 mutation 历史。
+- decision 20 exact rejoin 成立。
+- `triggeredAutoEvents` 在本语料中没有非空历史，也没有同 exact key 的冲突见证；结论保持“样本一致但未证明可由其他字段推导”。
+- direction 依赖除 pickaxe/bomb 外，还登记了 changeFloor fallback、floorFly saved leave location / fallback，以及 action approach direction；本轮不扩展 production key。
+
+验证：
+
+```bash
+cd shared-solver
+npm run check:state-abstraction
+npm run check:manifest
+npm run check:no-tower-solver-js
+```
+
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 
 ### 0.1 本轮目标
