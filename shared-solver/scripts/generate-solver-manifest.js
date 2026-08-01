@@ -371,6 +371,13 @@ const TEST_OVERRIDES = {
     cleanCheckout: true,
     notes: "synthetic exact final-state route reconstruction check",
   },
+  "shared-solver/check-adaptive-repair-outcomes.js": {
+    grade: "unit",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "synthetic shadow-only repair outcome contract with deterministic rebuild",
+  },
 };
 
 function autoGradeTest(fileName) {

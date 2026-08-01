@@ -1,0 +1,786 @@
+{
+  "schema": "motapathfinder.pr-4.6a-adaptive-repair-outcome-contract.v1",
+  "status": "completed",
+  "generatedAt": "deterministic-contract",
+  "provenance": {
+    "generationCommit": "65042fe",
+    "source": "shared-solver/lib/adaptive-segment-planner.js",
+    "mode": "shadow-only"
+  },
+  "contract": {
+    "id": "PR-4.6a",
+    "title": "Adaptive Repair Outcome Contract",
+    "maxRepairs": 1,
+    "fixedCaseCount": 5,
+    "supportedFailureClasses": [
+      "atk-deficit",
+      "hp-deficit",
+      "action-survivability-deficit",
+      "target-action-unreachable",
+      "present-tile-overconstrained",
+      "budget-or-action-scope-exhausted"
+    ],
+    "terminationReasons": [
+      "repair-success",
+      "repair-rejected",
+      "repair-incomplete"
+    ],
+    "unresolvedOutcome": "repair-incomplete",
+    "syntheticControlLabel": "synthetic-contract-only"
+  },
+  "cases": [
+    {
+      "id": "atk-deficit-positive",
+      "baselineOutcome": {
+        "status": "failed",
+        "failureClass": "atk-deficit",
+        "failureClassAliases": [],
+        "failedSegmentId": "failed"
+      },
+      "failureClass": "atk-deficit",
+      "failureClassFamily": "attack-resource",
+      "selectedRepairIntent": "attack-resource-or-best-combat",
+      "generatedRepairSegment": {
+        "id": "contract-repair-atk-deficit-1",
+        "label": "PR-4.6a attack-resource repair contract",
+        "generated": true,
+        "generatedBy": {
+          "mode": "contract-adapter",
+          "contractOnly": true,
+          "failureClass": "atk-deficit",
+          "intentKind": "attack-resource-or-best-combat",
+          "reason": "shadow contract control for attack resource or best-combat repair"
+        },
+        "startFrom": null,
+        "goal": {
+          "type": "adaptiveResourceIntent",
+          "minEffectiveHero": {
+            "atk": 120
+          },
+          "resourceIntent": "attack-resource-or-best-combat"
+        },
+        "actionPolicy": {
+          "actionKinds": [
+            "battle",
+            "pickup",
+            "equip",
+            "openDoor",
+            "useTool",
+            "changeFloor"
+          ],
+          "allowedFloors": [
+            "MT1",
+            "MT2"
+          ],
+          "allowChangeFloors": [
+            "MT1:0,0",
+            "MT2:0,0"
+          ],
+          "forbidUnsupportedEvents": true
+        },
+        "dp": {
+          "keyMode": "region",
+          "priorityMode": "combat-first",
+          "stopOnFirstGoal": false,
+          "maxActionsPerState": 9999,
+          "maxExpansions": 300,
+          "maxRuntimeMs": 2000,
+          "goalSkylineLimit": 4
+        }
+      },
+      "plannerProbe": {
+        "usedExistingPlanner": false,
+        "mode": "contract-adapter",
+        "reason": "case is deliberately a shadow contract control; production planner is unchanged"
+      },
+      "repairBudget": {
+        "maxRepairs": 1,
+        "repairMaxExpansions": 300,
+        "repairMaxRuntimeMs": 2000
+      },
+      "repairedOutcome": "success",
+      "terminationReason": "repair-success",
+      "repairAttempt": {
+        "index": 1,
+        "maxRepairCount": 1,
+        "recursion": false,
+        "outcomeEvidence": "synthetic-contract-only",
+        "appliedRepairCount": 1
+      },
+      "scope": {
+        "shadowOnly": true,
+        "productionDpKeyChanged": false,
+        "productionDominanceChanged": false,
+        "productionAgendaChanged": false,
+        "productionCapacityChanged": false,
+        "productionDefaultPolicyChanged": false,
+        "describesCompleteOnlyUpRoute": false
+      }
+    },
+    {
+      "id": "action-survivability-deficit",
+      "baselineOutcome": {
+        "status": "failed",
+        "failureClass": "action-survivability-deficit",
+        "failureClassAliases": [
+          "hp-deficit"
+        ],
+        "failedSegmentId": "failed"
+      },
+      "failureClass": "action-survivability-deficit",
+      "failureClassFamily": "hp-high-survival-low-damage",
+      "selectedRepairIntent": "hp-high-survival-low-damage",
+      "generatedRepairSegment": {
+        "id": "auto-window-failed-1",
+        "label": "自动合并窗口 repair-source..failed",
+        "generated": true,
+        "generatedBy": {
+          "mode": "adaptive-window-repair",
+          "failureClass": "action-survivability-deficit",
+          "failedSegmentId": "failed",
+          "replaceFromSegmentId": "repair-source",
+          "replaceToSegmentId": "failed",
+          "rollbackSegments": 1,
+          "windowSegmentIds": [
+            "repair-source",
+            "failed"
+          ],
+          "missingGoalFields": [
+            "actionSurvivable",
+            "hero.hp"
+          ],
+          "reason": "downstream failure may require reordering sustain resources across multiple previous milestones"
+        },
+        "startFrom": null,
+        "goal": {
+          "type": "heroAtLeast",
+          "floorId": "MT2",
+          "minHero": {
+            "hp": 2500,
+            "def": 80
+          }
+        },
+        "actionPolicy": {
+          "actionKinds": [
+            "battle",
+            "changeFloor",
+            "equip",
+            "interactPickup",
+            "pickup"
+          ],
+          "forbidUnsupportedEvents": true,
+          "allowedFloors": [
+            "MT1",
+            "MT2"
+          ],
+          "allowChangeFloors": [
+            "MT1:0,0",
+            "MT2:0,0"
+          ],
+          "maxFloorFlyPerTarget": 1,
+          "resourceTimingMode": "sustain-prep"
+        },
+        "dp": {
+          "keyMode": "region",
+          "priorityMode": "default",
+          "agendaMode": "best-first",
+          "resourceTimingMode": "sustain-prep",
+          "resourceLookahead": false,
+          "resourceLookaheadActions": 8,
+          "stopOnFirstGoal": false,
+          "maxActionsPerState": 9999,
+          "maxExpansions": 6000,
+          "maxRuntimeMs": 18000,
+          "goalSkylineLimit": 4
+        }
+      },
+      "plannerProbe": {
+        "usedExistingPlanner": true,
+        "mode": "adaptive-window-repair",
+        "segmentId": "auto-window-failed-1",
+        "failureClass": "action-survivability-deficit",
+        "generated": {
+          "id": "auto-window-failed-1",
+          "label": "自动合并窗口 repair-source..failed",
+          "generated": true,
+          "generatedBy": {
+            "mode": "adaptive-window-repair",
+            "failureClass": "action-survivability-deficit",
+            "failedSegmentId": "failed",
+            "replaceFromSegmentId": "repair-source",
+            "replaceToSegmentId": "failed",
+            "rollbackSegments": 1,
+            "windowSegmentIds": [
+              "repair-source",
+              "failed"
+            ],
+            "missingGoalFields": [
+              "actionSurvivable",
+              "hero.hp"
+            ],
+            "reason": "downstream failure may require reordering sustain resources across multiple previous milestones"
+          },
+          "startFrom": null,
+          "goal": {
+            "type": "heroAtLeast",
+            "floorId": "MT2",
+            "minHero": {
+              "hp": 2500,
+              "def": 80
+            }
+          },
+          "actionPolicy": {
+            "actionKinds": [
+              "battle",
+              "changeFloor",
+              "equip",
+              "interactPickup",
+              "pickup"
+            ],
+            "forbidUnsupportedEvents": true,
+            "allowedFloors": [
+              "MT1",
+              "MT2"
+            ],
+            "allowChangeFloors": [
+              "MT1:0,0",
+              "MT2:0,0"
+            ],
+            "maxFloorFlyPerTarget": 1,
+            "resourceTimingMode": "sustain-prep"
+          },
+          "dp": {
+            "keyMode": "region",
+            "priorityMode": "default",
+            "agendaMode": "best-first",
+            "resourceTimingMode": "sustain-prep",
+            "resourceLookahead": false,
+            "resourceLookaheadActions": 8,
+            "stopOnFirstGoal": false,
+            "maxActionsPerState": 9999,
+            "maxExpansions": 6000,
+            "maxRuntimeMs": 18000,
+            "goalSkylineLimit": 4
+          }
+        }
+      },
+      "repairBudget": {
+        "maxRepairs": 1,
+        "repairMaxExpansions": 300,
+        "repairMaxRuntimeMs": 2000
+      },
+      "repairedOutcome": "repair-incomplete",
+      "terminationReason": "repair-incomplete",
+      "repairAttempt": {
+        "index": 1,
+        "maxRepairCount": 1,
+        "recursion": false,
+        "outcomeEvidence": "synthetic-contract-only",
+        "appliedRepairCount": 1
+      },
+      "scope": {
+        "shadowOnly": true,
+        "productionDpKeyChanged": false,
+        "productionDominanceChanged": false,
+        "productionAgendaChanged": false,
+        "productionCapacityChanged": false,
+        "productionDefaultPolicyChanged": false,
+        "describesCompleteOnlyUpRoute": false
+      }
+    },
+    {
+      "id": "target-action-unreachable",
+      "baselineOutcome": {
+        "status": "failed",
+        "failureClass": "target-action-unreachable",
+        "failureClassAliases": [],
+        "failedSegmentId": "failed"
+      },
+      "failureClass": "target-action-unreachable",
+      "failureClassFamily": "blocker-open-door-change-floor",
+      "selectedRepairIntent": "blocker-open-door-change-floor-whitelist",
+      "generatedRepairSegment": {
+        "id": "auto-window-failed-1",
+        "label": "自动合并窗口 repair-source..failed",
+        "generated": true,
+        "generatedBy": {
+          "mode": "adaptive-window-repair",
+          "failureClass": "target-action-unreachable",
+          "failedSegmentId": "failed",
+          "replaceFromSegmentId": "repair-source",
+          "replaceToSegmentId": "failed",
+          "rollbackSegments": 1,
+          "windowSegmentIds": [
+            "repair-source",
+            "failed"
+          ],
+          "missingGoalFields": [
+            "targetAction"
+          ],
+          "reason": "downstream failure may require reordering sustain resources across multiple previous milestones"
+        },
+        "startFrom": null,
+        "goal": {
+          "type": "heroAtLeast",
+          "floorId": "MT2",
+          "minHero": {
+            "hp": 1200
+          },
+          "targetAction": "battle:target-blocker@MT2:1,1"
+        },
+        "actionPolicy": {
+          "actionKinds": [
+            "battle",
+            "changeFloor",
+            "equip",
+            "interactPickup",
+            "pickup"
+          ],
+          "forbidUnsupportedEvents": true,
+          "allowedFloors": [
+            "MT1",
+            "MT2"
+          ],
+          "allowChangeFloors": [
+            "MT1:0,0",
+            "MT2:0,0"
+          ],
+          "maxFloorFlyPerTarget": 1,
+          "resourceTimingMode": "sustain-prep"
+        },
+        "dp": {
+          "keyMode": "region",
+          "priorityMode": "default",
+          "agendaMode": "best-first",
+          "resourceTimingMode": "sustain-prep",
+          "resourceLookahead": false,
+          "resourceLookaheadActions": 8,
+          "stopOnFirstGoal": false,
+          "maxActionsPerState": 9999,
+          "maxExpansions": 6000,
+          "maxRuntimeMs": 18000,
+          "goalSkylineLimit": 4
+        }
+      },
+      "plannerProbe": {
+        "usedExistingPlanner": true,
+        "mode": "adaptive-window-repair",
+        "segmentId": "auto-window-failed-1",
+        "failureClass": "target-action-unreachable",
+        "generated": {
+          "id": "auto-window-failed-1",
+          "label": "自动合并窗口 repair-source..failed",
+          "generated": true,
+          "generatedBy": {
+            "mode": "adaptive-window-repair",
+            "failureClass": "target-action-unreachable",
+            "failedSegmentId": "failed",
+            "replaceFromSegmentId": "repair-source",
+            "replaceToSegmentId": "failed",
+            "rollbackSegments": 1,
+            "windowSegmentIds": [
+              "repair-source",
+              "failed"
+            ],
+            "missingGoalFields": [
+              "targetAction"
+            ],
+            "reason": "downstream failure may require reordering sustain resources across multiple previous milestones"
+          },
+          "startFrom": null,
+          "goal": {
+            "type": "heroAtLeast",
+            "floorId": "MT2",
+            "minHero": {
+              "hp": 1200
+            },
+            "targetAction": "battle:target-blocker@MT2:1,1"
+          },
+          "actionPolicy": {
+            "actionKinds": [
+              "battle",
+              "changeFloor",
+              "equip",
+              "interactPickup",
+              "pickup"
+            ],
+            "forbidUnsupportedEvents": true,
+            "allowedFloors": [
+              "MT1",
+              "MT2"
+            ],
+            "allowChangeFloors": [
+              "MT1:0,0",
+              "MT2:0,0"
+            ],
+            "maxFloorFlyPerTarget": 1,
+            "resourceTimingMode": "sustain-prep"
+          },
+          "dp": {
+            "keyMode": "region",
+            "priorityMode": "default",
+            "agendaMode": "best-first",
+            "resourceTimingMode": "sustain-prep",
+            "resourceLookahead": false,
+            "resourceLookaheadActions": 8,
+            "stopOnFirstGoal": false,
+            "maxActionsPerState": 9999,
+            "maxExpansions": 6000,
+            "maxRuntimeMs": 18000,
+            "goalSkylineLimit": 4
+          }
+        }
+      },
+      "repairBudget": {
+        "maxRepairs": 1,
+        "repairMaxExpansions": 300,
+        "repairMaxRuntimeMs": 2000
+      },
+      "repairedOutcome": "success",
+      "terminationReason": "repair-success",
+      "repairAttempt": {
+        "index": 1,
+        "maxRepairCount": 1,
+        "recursion": false,
+        "outcomeEvidence": "synthetic-contract-only",
+        "appliedRepairCount": 1
+      },
+      "scope": {
+        "shadowOnly": true,
+        "productionDpKeyChanged": false,
+        "productionDominanceChanged": false,
+        "productionAgendaChanged": false,
+        "productionCapacityChanged": false,
+        "productionDefaultPolicyChanged": false,
+        "describesCompleteOnlyUpRoute": false
+      }
+    },
+    {
+      "id": "present-tile-overconstrained",
+      "baselineOutcome": {
+        "status": "failed",
+        "failureClass": "present-tile-overconstrained",
+        "failureClassAliases": [],
+        "failedSegmentId": "failed"
+      },
+      "failureClass": "present-tile-overconstrained",
+      "failureClassFamily": "presentTiles-relaxation",
+      "selectedRepairIntent": "presentTiles-to-preferredPresentTiles",
+      "generatedRepairSegment": {
+        "id": "contract-repair-present-tiles-1",
+        "label": "PR-4.6a presentTiles downgrade contract",
+        "generated": true,
+        "generatedBy": {
+          "mode": "contract-adapter",
+          "contractOnly": true,
+          "failureClass": "present-tile-overconstrained",
+          "intentKind": "presentTiles-to-preferredPresentTiles",
+          "downgrade": true,
+          "presentTilesBefore": [
+            {
+              "floorId": "MT2",
+              "x": 1,
+              "y": 1
+            },
+            {
+              "floorId": "MT2",
+              "x": 2,
+              "y": 1
+            }
+          ],
+          "presentTilesAfter": [
+            {
+              "floorId": "MT2",
+              "x": 1,
+              "y": 1
+            }
+          ],
+          "reason": "shadow contract control for a one-step presentTiles relaxation"
+        },
+        "startFrom": null,
+        "goal": {
+          "type": "adaptivePresentTileRelaxation",
+          "floorId": "MT2",
+          "minHero": {
+            "hp": 1200
+          },
+          "presentTiles": [
+            {
+              "floorId": "MT2",
+              "x": 1,
+              "y": 1
+            }
+          ]
+        },
+        "actionPolicy": {
+          "actionKinds": [
+            "battle",
+            "pickup",
+            "equip",
+            "openDoor",
+            "useTool",
+            "changeFloor"
+          ],
+          "allowedFloors": [
+            "MT1",
+            "MT2"
+          ],
+          "allowChangeFloors": [
+            "MT1:0,0",
+            "MT2:0,0"
+          ],
+          "forbidUnsupportedEvents": true
+        },
+        "dp": {
+          "keyMode": "region",
+          "priorityMode": "default",
+          "stopOnFirstGoal": false,
+          "maxActionsPerState": 9999,
+          "maxExpansions": 300,
+          "maxRuntimeMs": 2000,
+          "goalSkylineLimit": 4
+        }
+      },
+      "plannerProbe": {
+        "usedExistingPlanner": false,
+        "mode": "contract-adapter",
+        "reason": "case is deliberately a shadow contract control; production planner is unchanged"
+      },
+      "repairBudget": {
+        "maxRepairs": 1,
+        "repairMaxExpansions": 300,
+        "repairMaxRuntimeMs": 2000
+      },
+      "repairedOutcome": "rejected",
+      "terminationReason": "repair-rejected",
+      "repairAttempt": {
+        "index": 1,
+        "maxRepairCount": 1,
+        "recursion": false,
+        "outcomeEvidence": "synthetic-contract-only",
+        "appliedRepairCount": 1
+      },
+      "scope": {
+        "shadowOnly": true,
+        "productionDpKeyChanged": false,
+        "productionDominanceChanged": false,
+        "productionAgendaChanged": false,
+        "productionCapacityChanged": false,
+        "productionDefaultPolicyChanged": false,
+        "describesCompleteOnlyUpRoute": false
+      }
+    },
+    {
+      "id": "budget-or-action-scope-exhausted",
+      "baselineOutcome": {
+        "status": "failed",
+        "failureClass": "budget-or-action-scope-exhausted",
+        "failureClassAliases": [],
+        "failedSegmentId": "failed"
+      },
+      "failureClass": "budget-or-action-scope-exhausted",
+      "failureClassFamily": "budget-or-action-scope",
+      "selectedRepairIntent": "auto-split-or-action-scope-expansion",
+      "generatedRepairSegment": {
+        "id": "auto-split-failed-1",
+        "label": "自动切分 failed",
+        "generated": true,
+        "generatedBy": {
+          "mode": "auto-segment-split",
+          "failedSegmentId": "failed",
+          "failureClass": "budget-or-action-scope-exhausted",
+          "bestSeen": {
+            "floorId": "MT1",
+            "hero": {
+              "hp": 1234,
+              "atk": 56,
+              "def": 78,
+              "mdef": 90,
+              "lv": 3,
+              "exp": 12,
+              "equipment": [
+                "IX"
+              ]
+            },
+            "effectiveHero": {
+              "hp": 1234,
+              "atk": 112,
+              "def": 156,
+              "mdef": 180,
+              "lv": 3,
+              "exp": 12
+            }
+          },
+          "reason": "failed segment hit budget/time/action trimming; checkpointing bestSeen before retrying original goal"
+        },
+        "startFrom": null,
+        "goal": {
+          "type": "adaptiveSplitCheckpoint",
+          "floorId": "MT1",
+          "minHero": {
+            "atk": 56,
+            "def": 78,
+            "mdef": 90,
+            "lv": 3,
+            "exp": 12,
+            "hp": 1234
+          },
+          "minEffectiveHero": {
+            "atk": 112,
+            "def": 156,
+            "mdef": 180
+          },
+          "equipmentIncludes": [
+            "IX"
+          ]
+        },
+        "actionPolicy": {
+          "actionKinds": [
+            "battle",
+            "pickup",
+            "equip",
+            "openDoor",
+            "useTool",
+            "changeFloor"
+          ],
+          "forbidUnsupportedEvents": true,
+          "allowedFloors": [
+            "MT1",
+            "MT2"
+          ],
+          "allowChangeFloors": [
+            "MT1:0,0",
+            "MT2:0,0"
+          ]
+        },
+        "dp": {
+          "keyMode": "region",
+          "priorityMode": "combat-first",
+          "stopOnFirstGoal": false,
+          "maxActionsPerState": 9999,
+          "maxExpansions": 300,
+          "maxRuntimeMs": 2000,
+          "goalSkylineLimit": 4
+        }
+      },
+      "plannerProbe": {
+        "usedExistingPlanner": true,
+        "mode": "auto-segment-split",
+        "segmentId": "auto-split-failed-1",
+        "failureClass": "budget-or-action-scope-exhausted",
+        "generated": {
+          "id": "auto-split-failed-1",
+          "label": "自动切分 failed",
+          "generated": true,
+          "generatedBy": {
+            "mode": "auto-segment-split",
+            "failedSegmentId": "failed",
+            "failureClass": "budget-or-action-scope-exhausted",
+            "bestSeen": {
+              "floorId": "MT1",
+              "hero": {
+                "hp": 1234,
+                "atk": 56,
+                "def": 78,
+                "mdef": 90,
+                "lv": 3,
+                "exp": 12,
+                "equipment": [
+                  "IX"
+                ]
+              },
+              "effectiveHero": {
+                "hp": 1234,
+                "atk": 112,
+                "def": 156,
+                "mdef": 180,
+                "lv": 3,
+                "exp": 12
+              }
+            },
+            "reason": "failed segment hit budget/time/action trimming; checkpointing bestSeen before retrying original goal"
+          },
+          "startFrom": null,
+          "goal": {
+            "type": "adaptiveSplitCheckpoint",
+            "floorId": "MT1",
+            "minHero": {
+              "atk": 56,
+              "def": 78,
+              "mdef": 90,
+              "lv": 3,
+              "exp": 12,
+              "hp": 1234
+            },
+            "minEffectiveHero": {
+              "atk": 112,
+              "def": 156,
+              "mdef": 180
+            },
+            "equipmentIncludes": [
+              "IX"
+            ]
+          },
+          "actionPolicy": {
+            "actionKinds": [
+              "battle",
+              "pickup",
+              "equip",
+              "openDoor",
+              "useTool",
+              "changeFloor"
+            ],
+            "forbidUnsupportedEvents": true,
+            "allowedFloors": [
+              "MT1",
+              "MT2"
+            ],
+            "allowChangeFloors": [
+              "MT1:0,0",
+              "MT2:0,0"
+            ]
+          },
+          "dp": {
+            "keyMode": "region",
+            "priorityMode": "combat-first",
+            "stopOnFirstGoal": false,
+            "maxActionsPerState": 9999,
+            "maxExpansions": 300,
+            "maxRuntimeMs": 2000,
+            "goalSkylineLimit": 4
+          }
+        }
+      },
+      "repairBudget": {
+        "maxRepairs": 1,
+        "repairMaxExpansions": 300,
+        "repairMaxRuntimeMs": 2000
+      },
+      "repairedOutcome": "repair-incomplete",
+      "terminationReason": "repair-incomplete",
+      "repairAttempt": {
+        "index": 1,
+        "maxRepairCount": 1,
+        "recursion": false,
+        "outcomeEvidence": "synthetic-contract-only",
+        "appliedRepairCount": 1
+      },
+      "scope": {
+        "shadowOnly": true,
+        "productionDpKeyChanged": false,
+        "productionDominanceChanged": false,
+        "productionAgendaChanged": false,
+        "productionCapacityChanged": false,
+        "productionDefaultPolicyChanged": false,
+        "describesCompleteOnlyUpRoute": false
+      }
+    }
+  ],
+  "controls": {
+    "positiveRepairSuccess": "atk-deficit-positive",
+    "negativeRepairRejected": "present-tile-overconstrained",
+    "incompleteRepair": "action-survivability-deficit",
+    "autoSplit": "budget-or-action-scope-exhausted",
+    "deterministicLiveRebuild": true
+  }
+}

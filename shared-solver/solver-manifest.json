@@ -1388,6 +1388,13 @@
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
+    "shared-solver/check-adaptive-repair-outcomes.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "synthetic shadow-only repair outcome contract with deterministic rebuild"
+    },
     "shared-solver/check-agenda-policy-evaluation.js": {
       "grade": "unit",
       "allowsNotFound": false,

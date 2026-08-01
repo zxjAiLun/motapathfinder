@@ -92,6 +92,8 @@
     "check:agent-boundaries": "node ../tools/check-agent-boundaries.js",
     "check:agent-boundaries:public-dev": "node ../tools/check-agent-boundaries.js --allow-public-layer-dev=1",
     "check:adaptive:onlyup": "node check-adaptive-onlyup.js",
+    "check:adaptive:contract": "node check-adaptive-repair-outcomes.js",
+    "run:adaptive:contract": "node audit-adaptive-repair-outcomes.js",
     "check:onlyup:mt7-special80": "node check-onlyup-mt7-special80.js",
     "check:progressive": "node check-progressive-monster-planner.js",
     "run:region": "node run-region-dp.js",

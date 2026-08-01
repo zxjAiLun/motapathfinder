@@ -120,6 +120,18 @@ PR-4.5b 系列正式关闭后，新增 `mine-state-abstraction-collisions.js` �
 
 当前 c1a 结论：PR-4.5b3 committed artifact 已与当前 runner 规范化一致，c1 inventory 也通过依赖工件 deep compare；全局 projection 安全性仍未建立。
 
+## 1.6 2026-08-01：PR-4.6a Adaptive Repair Outcome Contract
+
+PR-4.5c1a 正式关闭后，P2 首轮进入 adaptive planner repair outcome contract；本轮完全 shadow-only，不修改 production DP key、dominance、agenda、容量或默认策略。
+
+- 新增 `audit-adaptive-repair-outcomes.js` 与 `check-adaptive-repair-outcomes.js`，固定五类 repair case：`atk-deficit`、`action-survivability-deficit`（含 `hp-deficit` alias）、`target-action-unreachable`、`present-tile-overconstrained`、`budget-or-action-scope-exhausted`。
+- 每个 case 都记录 baseline outcome、failure class、selected repair intent、generated repair segment、repair budget、repaired outcome 与 termination reason；合同强制 `maxRepairs=1`，未解决只能输出 `repair-incomplete`。
+- failure → repair intent 映射锁定为 attack resource/best combat、HP/high-survival/low-damage、blocker/open-door/change-floor whitelist、`presentTiles` downgrade、auto-split/action-scope expansion。
+- 复用现有 `adaptive-segment-planner.js` 生成 window repair 与 auto-split segment；attack 与 presentTiles 使用明确标注的 contract-adapter synthetic controls，避免把尚未执行的控制样例描述为完整 OnlyUp 路线。
+- checker 同时锁定 positive success、rejected/incomplete negative、auto-split control、一次 repair/no recursion、shadow-only 边界与 deterministic live rebuild。
+
+当前结论：PR-4.6a 合同审计已建立，repair outcome 不再把 unresolved 分支误报为成功；本轮仍不宣称 adaptive planner 已完成完整 OnlyUp repair 闭环。
+
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 
 ### 0.1 本轮目标

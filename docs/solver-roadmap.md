@@ -105,6 +105,7 @@ DP key 必须覆盖：
 | `bounded-abstraction-counterexample-search.js` / `check-bounded-abstraction-counterexample.js` | ✅ PR-4.5b3 shadow-only | inclusive depth-2 paired expansion、执行错误 incomplete contract、projection-class cross product、true off-diagonal regression 与 successor telemetry；不接入 production key |
 | `mine-state-abstraction-collisions.js` / `check-state-abstraction-collision-inventory.js` | ✅ PR-4.5c1 shadow-only | 读取锁定的 MT1/MT2 artifacts，occurrence/signature 双层 identity、witness integrity、pair cap、分离 risk strata、depth-2 bounded outcomes 与 candidate-6/7 fixed control；不接入 production key |
 | `check-bounded-abstraction-counterexample.js` / `check-state-abstraction-collision-inventory.js` | ✅ PR-4.5c1a shadow-only | b3/c1 committed artifact 的 normalized deep compare、依赖工件一致性、stale-report gates 与 signature coverage 口径；不接入 production key |
+| `audit-adaptive-repair-outcomes.js` / `check-adaptive-repair-outcomes.js` | ✅ PR-4.6a shadow-only | 五类 failure → repair intent 映射、一次 repair outcome contract、auto-split/rejected/incomplete controls 与 deterministic rebuild；不接入 production planner 默认路径 |
 | `check-onlyup-floorfly-dedup-safety.js` | ✅ | OnlyUp floorFly dedup 安全审计（确认 target-floor 模式不安全） |
 | `check-progressive-monster-planner.js` | ✅ | synthetic smoke + special target priority + batch cap + targeted matcher + legacy compat + portal compat + portal dedup safety（9 tests） |
 
@@ -195,6 +196,14 @@ PR-4.5a1 已收紧为可复核契约：固定 7 个 projection collision，使�
 ### P2：Adaptive planner 闭环
 
 目标：失败后不只报告，而是自动提出并执行有限 repair。
+
+#### P2.1：Adaptive Repair Outcome Contract（PR-4.6a）✅ 首轮 shadow-only
+
+- ✅ 固定五类 repair case，并为每个 case 记录 baseline、failure、intent、generated segment、budget、repaired outcome 与 termination reason。
+- ✅ 强制最多一次 repair；未解决明确输出 `repair-incomplete`，禁止把 budget/action-scope 未完成当作成功。
+- ✅ 锁定 failure → repair intent：attack resource/best combat、HP/high-survival/low-damage、blocker/open-door/change-floor whitelist、`presentTiles` downgrade、auto-split/action-scope expansion。
+- ✅ 覆盖 positive success、rejected/incomplete negative、auto-split control 与 deterministic live rebuild。
+- ✅ attack/presentTiles controls 明确标记为 `synthetic-contract-only`，不描述为完整 OnlyUp route；现有 planner 仅通过 shadow adapter 复用，不改变 production 默认行为。
 
 第一批 repair：
 
