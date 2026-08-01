@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * PR-4.5a — State Abstraction Audit
+ * PR-4.5a1 — State Abstraction Audit Contract Tightening
  *
  * This is deliberately shadow-only. It reads the PR-4.4j/j2 artifacts,
  * replays the candidate-6/candidate-7 suffix, and compares the action and
@@ -288,6 +288,8 @@ function describeActionSet(simulator, state, successorCache) {
     actionIds: actions.map((entry) => entry.id),
     enumerationErrors: enumeration.errors,
     actionErrors,
+    allActionsEnumeratedWithoutError: enumeration.errors.length === 0,
+    allActionsAppliedWithoutError: actionErrors.length === 0,
   };
 }
 
@@ -319,8 +321,19 @@ function compareActionSets(left, right) {
   const rightSuccessors = Array.from(new Set(right.actions.flatMap((entry) => entry.exactSuccessors))).sort();
   const leftProjectedSuccessors = Array.from(new Set(left.actions.flatMap((entry) => entry.projectedSuccessors))).sort();
   const rightProjectedSuccessors = Array.from(new Set(right.actions.flatMap((entry) => entry.projectedSuccessors))).sort();
+  const actionSetEquivalent = leftOnly.length === 0 && rightOnly.length === 0;
+  const noEnumerationErrors = (left.enumerationErrors || []).length === 0 && (right.enumerationErrors || []).length === 0;
+  const noActionApplicationErrors = (left.actionErrors || []).length === 0 && (right.actionErrors || []).length === 0;
+  const exactSuccessorRelationEquivalent = actionSetEquivalent &&
+    successorMismatches.every((entry) => entry.exactEqual) &&
+    noEnumerationErrors &&
+    noActionApplicationErrors;
+  const projectedSuccessorRelationEquivalent = actionSetEquivalent &&
+    successorMismatches.every((entry) => entry.projectedEqual) &&
+    noEnumerationErrors &&
+    noActionApplicationErrors;
   return {
-    actionSetEquivalent: leftOnly.length === 0 && rightOnly.length === 0,
+    actionSetEquivalent,
     leftOnlyActionCount: leftOnly.length,
     rightOnlyActionCount: rightOnly.length,
     leftOnlyActions: leftOnly.slice(0, 20),
@@ -332,6 +345,10 @@ function compareActionSets(left, right) {
     projectedSuccessorCount: { left: leftProjectedSuccessors.length, right: rightProjectedSuccessors.length },
     successorMismatches: successorMismatches.slice(0, 20),
     successorMismatchCount: successorMismatches.length,
+    noEnumerationErrors,
+    noActionApplicationErrors,
+    exactSuccessorRelationEquivalent,
+    projectedSuccessorRelationEquivalent,
   };
 }
 
@@ -424,23 +441,43 @@ function omitPath(value, pathParts) {
   return clone;
 }
 
+function mutationsByFloor(mutations) {
+  const entries = Array.isArray(mutations)
+    ? mutations
+    : Object.entries(mutations || {}).map(([floorId, value]) => ({ floorId, ...(value || {}) }));
+  return entries.reduce((result, mutation) => {
+    if (!mutation || !mutation.floorId) return result;
+    result[mutation.floorId] = { ...mutation };
+    return result;
+  }, {});
+}
+
 function keyFieldStats(states) {
   const records = states.map((record) => ({
     label: record.label,
     decision: record.decision,
     key: parseStateKey(record.exactKey) || {},
   }));
+  records.forEach((record) => {
+    // Production state keys retain mutations as an array. The audit-only
+    // normalized view indexes that same value by floor so nested contribution
+    // stats can name mutations.MT1 and mutations.MT1.removed explicitly.
+    record.statsKey = {
+      ...record.key,
+      mutations: mutationsByFloor(record.key.mutations),
+    };
+  });
   const exactGroups = new Set(records.map((record) => canonicalJson(record.key))).size;
   const topLevelFields = ["floorId", "progressSig", "hero", "inventory", "flags", "visitedFloors", "mutations"];
   const buildStat = (field, pathParts) => {
     const values = records.map((record) => {
-      const value = pathParts.length === 1 ? record.key[pathParts[0]] : pathParts.reduce((current, part) => current == null ? undefined : current[part], record.key);
+      const value = pathParts.length === 1 ? record.statsKey[pathParts[0]] : pathParts.reduce((current, part) => current == null ? undefined : current[part], record.statsKey);
       return canonicalJson(value);
     });
     const withoutValues = records.map((record) => {
       const omitted = pathParts.length === 1
-        ? omitPath(record.key, pathParts)
-        : omitPath(record.key, pathParts);
+        ? omitPath(record.statsKey, pathParts)
+        : omitPath(record.statsKey, pathParts);
       return canonicalJson(omitted);
     });
     const distinctValues = new Set(values).size;
@@ -467,22 +504,21 @@ function keyFieldStats(states) {
   const stats = topLevelFields.map((field) => buildStat(field, [field]));
   const nestedPaths = new Set();
   records.forEach((record) => {
-    Object.keys(flatten(record.key.hero || {}, "hero", {})).forEach((field) => nestedPaths.add(field));
-    Object.keys(flatten(record.key.inventory || {}, "inventory", {})).forEach((field) => nestedPaths.add(field));
-    Object.keys(flatten(record.key.flags || {}, "flags", {})).forEach((field) => nestedPaths.add(field));
-    (record.key.mutations || []).forEach((mutation) => {
-      nestedPaths.add(`mutations.${mutation.floorId}`);
-    });
+    Object.keys(flatten(record.statsKey.hero || {}, "hero", {})).forEach((field) => nestedPaths.add(field));
+    Object.keys(flatten(record.statsKey.inventory || {}, "inventory", {})).forEach((field) => nestedPaths.add(field));
+    Object.keys(flatten(record.statsKey.flags || {}, "flags", {})).forEach((field) => nestedPaths.add(field));
+    Object.keys(record.statsKey.mutations || {}).forEach((floorId) => nestedPaths.add(`mutations.${floorId}`));
+    Object.keys(flatten(record.statsKey.mutations || {}, "mutations", {})).forEach((field) => nestedPaths.add(field));
   });
   const nested = Array.from(nestedPaths)
     .sort()
-    .map((field) => buildStat(field, field.split(".")))
-    .filter((stat) => stat.changedPairCount > 0 || stat.collisionGainIfOmitted > 0);
+    .map((field) => buildStat(field, field.split(".")));
   return {
     sampleStateCount: records.length,
     exactUniqueStateCount: exactGroups,
     topLevel: stats,
-    nestedNonZero: nested,
+    nested,
+    nestedNonZero: nested.filter((stat) => stat.changedPairCount > 0 || stat.collisionGainIfOmitted > 0),
   };
 }
 
@@ -591,6 +627,19 @@ function auditTriggeredAutoEvents(project, states) {
 }
 
 function buildDirectionDependencyRegistry(project) {
+  const coverage = {
+    scanned: ["firstArrive", "eachArrive", "autoEvent", "map"],
+    notScannedOrNotProven: [
+      "events",
+      "beforeBattle",
+      "afterBattle",
+      "afterGetItem",
+      "afterOpenDoor",
+      "changeFloor",
+      "parallelDo",
+      "project functions and plugins",
+    ],
+  };
   const projectRefs = [];
   Object.entries(project.floorsById || {}).forEach(([floorId, floor]) => {
     projectRefs.push(...collectDirectionRefs(floor.firstArrive || [], `${floorId}.firstArrive`, [], 40));
@@ -630,6 +679,7 @@ function buildDirectionDependencyRegistry(project) {
     ],
     projectDirectionReferenceCount: projectRefs.length,
     projectDirectionReferences: Array.from(new Set(projectRefs)).slice(0, 40),
+    coverage,
     conclusion: "Direction dependency is registered beyond the pickaxe/bomb heuristic; no production key expansion is proposed by this audit.",
   };
 }
@@ -682,6 +732,10 @@ function buildProjectionCollisionAudit(simulator, sequences, successorCache) {
     actionSetEquivalentAtAllCollisions: collisions.every((entry) => entry.actionSet && entry.actionSet.actionSetEquivalent),
     projectedSuccessorSetEquivalentAtAllCollisions: collisions.every((entry) => entry.actionSet && entry.actionSet.projectedSuccessorSetEquivalent),
     exactSuccessorSetEquivalentAtAllCollisions: collisions.every((entry) => entry.actionSet && entry.actionSet.exactSuccessorSetEquivalent),
+    projectedSuccessorRelationEquivalentAtAllCollisions: collisions.every((entry) => entry.actionSet && entry.actionSet.projectedSuccessorRelationEquivalent),
+    exactSuccessorRelationEquivalentAtAllCollisions: collisions.every((entry) => entry.actionSet && entry.actionSet.exactSuccessorRelationEquivalent),
+    allActionsEnumeratedWithoutErrorAtAllCollisions: collisions.every((entry) => entry.actionSet && entry.actionSet.noEnumerationErrors),
+    allActionsAppliedWithoutErrorAtAllCollisions: collisions.every((entry) => entry.actionSet && entry.actionSet.noActionApplicationErrors),
   };
 }
 
@@ -689,7 +743,7 @@ function buildMarkdown(report) {
   const checks = report.actionSuccessorAudit.decisionChecks || [];
   const fields = report.exactKeySplitContribution.topLevel || [];
   return [
-    "# PR-4.5a State Abstraction Audit",
+    "# PR-4.5a1 State Abstraction Audit Contract",
     "",
     `Status: **${report.status}**`,
     "",
@@ -704,9 +758,9 @@ function buildMarkdown(report) {
     "",
     "## Action / successor equivalence",
     "",
-    "| Decision | Projection collision | Actions equal | Projected successors equal | Exact successors equal |",
-    "|---:|---:|---:|---:|---:|",
-    ...checks.map((entry) => `| ${entry.decision} | ${entry.projectedCollision === true} | ${entry.actionSet ? entry.actionSet.actionSetEquivalent : "n/a"} | ${entry.actionSet ? entry.actionSet.projectedSuccessorSetEquivalent : "n/a"} | ${entry.actionSet ? entry.actionSet.exactSuccessorSetEquivalent : "n/a"} |`),
+    "| Decision | Projection collision | Actions equal | Projected successor set | Projected relation | Exact successor set | Exact relation |",
+    "|---:|---:|---:|---:|---:|---:|---:|",
+    ...checks.map((entry) => `| ${entry.decision} | ${entry.projectedCollision === true} | ${entry.actionSet ? entry.actionSet.actionSetEquivalent : "n/a"} | ${entry.actionSet ? entry.actionSet.projectedSuccessorSetEquivalent : "n/a"} | ${entry.actionSet ? entry.actionSet.projectedSuccessorRelationEquivalent : "n/a"} | ${entry.actionSet ? entry.actionSet.exactSuccessorSetEquivalent : "n/a"} | ${entry.actionSet ? entry.actionSet.exactSuccessorRelationEquivalent : "n/a"} |`),
     "",
     `Projection: **${report.actionSuccessorAudit.projection.name}** — ${report.actionSuccessorAudit.projection.definition}`,
     "",
@@ -717,6 +771,9 @@ function buildMarkdown(report) {
     ...fields.map((field) => `| ${field.field} | ${field.distinctValues} | ${field.collisionGainIfOmitted} | ${field.exclusiveSplitPairCount} |`),
     "",
     `Nested non-zero fields: **${report.exactKeySplitContribution.nestedNonZero.length}**`,
+    ...report.exactKeySplitContribution.nestedNonZero
+      .filter((field) => field.field.startsWith("mutations."))
+      .map((field) => `- **${field.field}**: exclusive split pairs **${field.exclusiveSplitPairCount}**`),
     "",
     "## triggeredAutoEvents",
     "",
@@ -728,6 +785,8 @@ function buildMarkdown(report) {
     "",
     "## Direction dependency registry",
     "",
+    `- coverage scanned: **${report.directionDependencyRegistry.coverage.scanned.join(", ")}**`,
+    `- not scanned or not proven: **${report.directionDependencyRegistry.coverage.notScannedOrNotProven.join(", ")}**`,
     `- currently keyed items: **${report.directionDependencyRegistry.currentStateKeyItems.join(", ")}**`,
     `- project direction references scanned: **${report.directionDependencyRegistry.projectDirectionReferenceCount}**`,
     ...report.directionDependencyRegistry.registry.map((entry) => `- **${entry.id}** (${entry.status}): ${entry.dependency}`),
@@ -736,7 +795,11 @@ function buildMarkdown(report) {
     "",
     `- action-set equivalent at all projection collisions: **${report.actionSuccessorAudit.actionSetEquivalentAtAllCollisions}**`,
     `- projected one-step successor equivalent at all projection collisions: **${report.actionSuccessorAudit.projectedSuccessorSetEquivalentAtAllCollisions}**`,
+    `- projected action-labelled successor relation equivalent at all projection collisions: **${report.actionSuccessorAudit.projectedSuccessorRelationEquivalentAtAllCollisions}**`,
     `- exact one-step successor equivalent at all projection collisions: **${report.actionSuccessorAudit.exactSuccessorSetEquivalentAtAllCollisions}**`,
+    `- exact action-labelled successor relation equivalent at all projection collisions: **${report.actionSuccessorAudit.exactSuccessorRelationEquivalentAtAllCollisions}**`,
+    `- evidence outcome: **${report.evidenceOutcome}**`,
+    "- gates: `" + JSON.stringify(report.gates) + "`",
     `- production semantic change: **${report.scope.productionSemanticChange}**`,
     "",
     "The projection result is evidence for the audited local window only; it is not a proof that non-current-floor mutation history can be removed from a global key.",
@@ -805,11 +868,41 @@ function buildReport(options) {
     candidateExactKeys.left === ancestryReport.ancestryComparison.winningBranch.winningLocalExactStateKey &&
     candidateExactKeys.right === ancestryReport.ancestryComparison.teacherLocalBranch.teacherLocalExactStateKey,
   );
+  const expectedDecisions = Array.from({ length: DECISION_END - DECISION_START + 1 }, (_, index) => DECISION_START + index);
+  const expectedCollisionWindowCovered = actionSuccessorAudit.decisionChecks.length === expectedDecisions.length &&
+    actionSuccessorAudit.decisionChecks.every((entry, index) =>
+      entry.decision === expectedDecisions[index] && entry.available === true && entry.projectedCollision === true,
+    );
+  const replayComplete = replayErrors.length === 0 &&
+    sequences.left.actions.length === DECISION_END - DECISION_START &&
+    sequences.right.actions.length === DECISION_END - DECISION_START;
+  const gates = {
+    sourceCandidatesMatched: candidateExactKeysMatchArtifact,
+    replayComplete,
+    expectedCollisionWindowCovered,
+    allActionsEnumeratedWithoutError: actionSuccessorAudit.allActionsEnumeratedWithoutErrorAtAllCollisions,
+    allActionsAppliedWithoutError: actionSuccessorAudit.allActionsAppliedWithoutErrorAtAllCollisions,
+    projectedActionRelationEquivalent: actionSuccessorAudit.projectedSuccessorRelationEquivalentAtAllCollisions,
+    decision20ExactRejoin: exactRejoinAtDecision20,
+  };
+  const executionComplete = [
+    gates.sourceCandidatesMatched,
+    gates.replayComplete,
+    gates.expectedCollisionWindowCovered,
+    gates.allActionsEnumeratedWithoutError,
+    gates.allActionsAppliedWithoutError,
+    gates.decision20ExactRejoin,
+  ].every(Boolean);
+  const evidenceOutcome = !executionComplete
+    ? "incomplete"
+    : gates.projectedActionRelationEquivalent ? "equivalent" : "mismatch-witness";
 
   return {
-    schema: "motapathfinder.pr-4.5a-state-abstraction-audit.v1",
+    schema: "motapathfinder.pr-4.5a1-state-abstraction-audit.v1",
     generatedAt: new Date().toISOString(),
-    status: replayErrors.length === 0 && candidateExactKeysMatchArtifact ? "completed" : "completed-with-evidence-gaps",
+    status: executionComplete ? "completed" : "completed-with-evidence-gaps",
+    evidenceOutcome,
+    gates,
     scope: {
       shadowOnly: true,
       productionSemanticChange: false,

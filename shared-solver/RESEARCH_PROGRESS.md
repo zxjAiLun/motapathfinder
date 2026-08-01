@@ -1,6 +1,6 @@
 # 研究进度记录
 
-更新日期：2026-04-28
+更新日期：2026-08-01
 
 ## 0.7 2026-08-01：PR-4.5a State Abstraction Audit
 
@@ -30,6 +30,17 @@ npm run check:state-abstraction
 npm run check:manifest
 npm run check:no-tower-solver-js
 ```
+
+## 0.8 2026-08-01：PR-4.5a1 Audit Contract Tightening
+
+根据 review 收紧审计契约；本轮仍完全 shadow-only，不修改 production DP key、dominance、agenda、容量或默认策略。
+
+- 将 mutation 的审计统计视图按 `floorId` 归一化，显式输出 `mutations.MT1`、`mutations.MT2` 及其 `removed` 子字段；production key 仍使用原数组。
+- 在 successor-set 之外增加按 action ID 对齐的 action-labelled successor relation，并将 enumeration/application error 纳入关系安全门。
+- 固定 candidate-6 / candidate-7 decision 14–20 的 7 个 collision、14–19 exact relation 不等价、decision 20 exact relation rejoin，以及 source/replay/coverage/error/rejoin gates。
+- 增加 `evidenceOutcome`（`equivalent` / `mismatch-witness` / `incomplete`）和 direction coverage；未扫描或未证明的事件入口显式列出。
+
+当前 a1 结论：7 个 shadow collision 点均 action-labelled projection relation 等价，14–19 的 exact relation 仍不等价，decision 20 exact relation 等价；审计结果为 `evidenceOutcome=equivalent`，不构成删除全局 mutation 历史的证明。
 
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 

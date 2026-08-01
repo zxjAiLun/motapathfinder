@@ -1,7 +1,17 @@
 {
-  "schema": "motapathfinder.pr-4.5a-state-abstraction-audit.v1",
-  "generatedAt": "2026-08-01T08:24:30.990Z",
+  "schema": "motapathfinder.pr-4.5a1-state-abstraction-audit.v1",
+  "generatedAt": "2026-08-01T09:01:31.469Z",
   "status": "completed",
+  "evidenceOutcome": "equivalent",
+  "gates": {
+    "sourceCandidatesMatched": true,
+    "replayComplete": true,
+    "expectedCollisionWindowCovered": true,
+    "allActionsEnumeratedWithoutError": true,
+    "allActionsAppliedWithoutError": true,
+    "projectedActionRelationEquivalent": true,
+    "decision20ExactRejoin": true
+  },
   "scope": {
     "shadowOnly": true,
     "productionSemanticChange": false,
@@ -225,7 +235,11 @@
               ]
             }
           ],
-          "successorMismatchCount": 5
+          "successorMismatchCount": 5,
+          "noEnumerationErrors": true,
+          "noActionApplicationErrors": true,
+          "exactSuccessorRelationEquivalent": false,
+          "projectedSuccessorRelationEquivalent": true
         },
         "enumeration": {
           "leftErrors": [],
@@ -326,7 +340,11 @@
               ]
             }
           ],
-          "successorMismatchCount": 4
+          "successorMismatchCount": 4,
+          "noEnumerationErrors": true,
+          "noActionApplicationErrors": true,
+          "exactSuccessorRelationEquivalent": false,
+          "projectedSuccessorRelationEquivalent": true
         },
         "enumeration": {
           "leftErrors": [],
@@ -444,7 +462,11 @@
               ]
             }
           ],
-          "successorMismatchCount": 5
+          "successorMismatchCount": 5,
+          "noEnumerationErrors": true,
+          "noActionApplicationErrors": true,
+          "exactSuccessorRelationEquivalent": false,
+          "projectedSuccessorRelationEquivalent": true
         },
         "enumeration": {
           "leftErrors": [],
@@ -545,7 +567,11 @@
               ]
             }
           ],
-          "successorMismatchCount": 4
+          "successorMismatchCount": 4,
+          "noEnumerationErrors": true,
+          "noActionApplicationErrors": true,
+          "exactSuccessorRelationEquivalent": false,
+          "projectedSuccessorRelationEquivalent": true
         },
         "enumeration": {
           "leftErrors": [],
@@ -629,7 +655,11 @@
               ]
             }
           ],
-          "successorMismatchCount": 3
+          "successorMismatchCount": 3,
+          "noEnumerationErrors": true,
+          "noActionApplicationErrors": true,
+          "exactSuccessorRelationEquivalent": false,
+          "projectedSuccessorRelationEquivalent": true
         },
         "enumeration": {
           "leftErrors": [],
@@ -696,7 +726,11 @@
               ]
             }
           ],
-          "successorMismatchCount": 2
+          "successorMismatchCount": 2,
+          "noEnumerationErrors": true,
+          "noActionApplicationErrors": true,
+          "exactSuccessorRelationEquivalent": false,
+          "projectedSuccessorRelationEquivalent": true
         },
         "enumeration": {
           "leftErrors": [],
@@ -728,7 +762,11 @@
             "right": 2
           },
           "successorMismatches": [],
-          "successorMismatchCount": 0
+          "successorMismatchCount": 0,
+          "noEnumerationErrors": true,
+          "noActionApplicationErrors": true,
+          "exactSuccessorRelationEquivalent": true,
+          "projectedSuccessorRelationEquivalent": true
         },
         "enumeration": {
           "leftErrors": [],
@@ -741,7 +779,11 @@
     "projectedCollisionCount": 7,
     "actionSetEquivalentAtAllCollisions": true,
     "projectedSuccessorSetEquivalentAtAllCollisions": true,
-    "exactSuccessorSetEquivalentAtAllCollisions": false
+    "exactSuccessorSetEquivalentAtAllCollisions": false,
+    "projectedSuccessorRelationEquivalentAtAllCollisions": true,
+    "exactSuccessorRelationEquivalentAtAllCollisions": false,
+    "allActionsEnumeratedWithoutErrorAtAllCollisions": true,
+    "allActionsAppliedWithoutErrorAtAllCollisions": true
   },
   "exactKeySplitContribution": {
     "sampleStateCount": 14,
@@ -802,6 +844,288 @@
         "collisionGainIfOmitted": 6,
         "changedPairCount": 90,
         "exclusiveSplitPairCount": 6
+      }
+    ],
+    "nested": [
+      {
+        "field": "flags.__leaveLoc__.MT1.direction",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "flags.__leaveLoc__.MT1.x",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "flags.__leaveLoc__.MT1.y",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "flags.__leaveLoc__.MT2.direction",
+        "distinctValues": 2,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 24,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "flags.__leaveLoc__.MT2.x",
+        "distinctValues": 2,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 24,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "flags.__leaveLoc__.MT2.y",
+        "distinctValues": 2,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 24,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "flags.autoBattle",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "flags.hatred",
+        "distinctValues": 7,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 84,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "flags.shiqu",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.atk",
+        "distinctValues": 4,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 68,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.def",
+        "distinctValues": 4,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 72,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.direction",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.equipment",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.exp",
+        "distinctValues": 7,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 84,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.followers",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.hp",
+        "distinctValues": 7,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 84,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.hpmax",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.lv",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.mana",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.manamax",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.mdef",
+        "distinctValues": 3,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 64,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.money",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.x",
+        "distinctValues": 3,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 60,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "hero.y",
+        "distinctValues": 4,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 68,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "inventory.I600",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "inventory.book",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "inventory.fly",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "mutations.MT1",
+        "distinctValues": 3,
+        "groupsWithoutField": 7,
+        "collisionGainIfOmitted": 6,
+        "changedPairCount": 60,
+        "exclusiveSplitPairCount": 6
+      },
+      {
+        "field": "mutations.MT1.floorId",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "mutations.MT1.removed",
+        "distinctValues": 3,
+        "groupsWithoutField": 7,
+        "collisionGainIfOmitted": 6,
+        "changedPairCount": 60,
+        "exclusiveSplitPairCount": 6
+      },
+      {
+        "field": "mutations.MT1.replaced",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "mutations.MT2",
+        "distinctValues": 6,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 80,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "mutations.MT2.floorId",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "mutations.MT2.removed",
+        "distinctValues": 6,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 80,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "mutations.MT2.replaced",
+        "distinctValues": 1,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 0,
+        "exclusiveSplitPairCount": 0
       }
     ],
     "nestedNonZero": [
@@ -891,6 +1215,38 @@
         "groupsWithoutField": 13,
         "collisionGainIfOmitted": 0,
         "changedPairCount": 68,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "mutations.MT1",
+        "distinctValues": 3,
+        "groupsWithoutField": 7,
+        "collisionGainIfOmitted": 6,
+        "changedPairCount": 60,
+        "exclusiveSplitPairCount": 6
+      },
+      {
+        "field": "mutations.MT1.removed",
+        "distinctValues": 3,
+        "groupsWithoutField": 7,
+        "collisionGainIfOmitted": 6,
+        "changedPairCount": 60,
+        "exclusiveSplitPairCount": 6
+      },
+      {
+        "field": "mutations.MT2",
+        "distinctValues": 6,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 80,
+        "exclusiveSplitPairCount": 0
+      },
+      {
+        "field": "mutations.MT2.removed",
+        "distinctValues": 6,
+        "groupsWithoutField": 13,
+        "collisionGainIfOmitted": 0,
+        "changedPairCount": 80,
         "exclusiveSplitPairCount": 0
       }
     ]
@@ -1097,6 +1453,24 @@
     ],
     "projectDirectionReferenceCount": 0,
     "projectDirectionReferences": [],
+    "coverage": {
+      "scanned": [
+        "firstArrive",
+        "eachArrive",
+        "autoEvent",
+        "map"
+      ],
+      "notScannedOrNotProven": [
+        "events",
+        "beforeBattle",
+        "afterBattle",
+        "afterGetItem",
+        "afterOpenDoor",
+        "changeFloor",
+        "parallelDo",
+        "project functions and plugins"
+      ]
+    },
     "conclusion": "Direction dependency is registered beyond the pickaxe/bomb heuristic; no production key expansion is proposed by this audit."
   },
   "provenance": {
@@ -1105,7 +1479,7 @@
     "sourceReportSha256": "63ef50026429386fac62c2d40558f2bc7ff0e1168b5450c0783016fac6f9ce74",
     "ancestryReport": "shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-candidate2-capacity10-j2.json",
     "ancestryReportSha256": "e85a0bf55d957dea9d5cbcf301b421c48630f8c9a9746aadece798c77e5f7e2f",
-    "generationCommit": "90cea7592aa882f486989e3c30b8397490589da4",
+    "generationCommit": "bd853ffc205916fd6b2fb5e8395745f88922ce71",
     "productionStateKeyModule": "shared-solver/lib/state-key.js",
     "productionStateKeySha256": "f5be4802f9926744bc8e91f30ecb8ab8b09ab73057fdef7ceaa44ddbbec808a5"
   }

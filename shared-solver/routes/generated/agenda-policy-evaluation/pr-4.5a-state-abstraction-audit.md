@@ -1,4 +1,4 @@
-# PR-4.5a State Abstraction Audit
+# PR-4.5a1 State Abstraction Audit Contract
 
 Status: **completed**
 
@@ -13,15 +13,15 @@ This artifact is shadow-only. It does not modify the production DP key, dominanc
 
 ## Action / successor equivalence
 
-| Decision | Projection collision | Actions equal | Projected successors equal | Exact successors equal |
-|---:|---:|---:|---:|---:|
-| 14 | true | true | true | false |
-| 15 | true | true | true | false |
-| 16 | true | true | true | false |
-| 17 | true | true | true | false |
-| 18 | true | true | true | false |
-| 19 | true | true | true | false |
-| 20 | true | true | true | true |
+| Decision | Projection collision | Actions equal | Projected successor set | Projected relation | Exact successor set | Exact relation |
+|---:|---:|---:|---:|---:|---:|---:|
+| 14 | true | true | true | true | false | false |
+| 15 | true | true | true | true | false | false |
+| 16 | true | true | true | true | false | false |
+| 17 | true | true | true | true | false | false |
+| 18 | true | true | true | true | false | false |
+| 19 | true | true | true | true | false | false |
+| 20 | true | true | true | true | true | true |
 
 Projection: **current-floor-mutation-only-v1-shadow** — Build the existing exact state serialization, then retain only the current floor entry in mutations. This is an audit projection, never a production key.
 
@@ -37,7 +37,11 @@ Projection: **current-floor-mutation-only-v1-shadow** — Build the existing exa
 | visitedFloors | 1 | 0 | 0 |
 | mutations | 13 | 6 | 6 |
 
-Nested non-zero fields: **11**
+Nested non-zero fields: **15**
+- **mutations.MT1**: exclusive split pairs **6**
+- **mutations.MT1.removed**: exclusive split pairs **6**
+- **mutations.MT2**: exclusive split pairs **0**
+- **mutations.MT2.removed**: exclusive split pairs **0**
 
 ## triggeredAutoEvents
 
@@ -49,6 +53,8 @@ Nested non-zero fields: **11**
 
 ## Direction dependency registry
 
+- coverage scanned: **firstArrive, eachArrive, autoEvent, map**
+- not scanned or not proven: **events, beforeBattle, afterBattle, afterGetItem, afterOpenDoor, changeFloor, parallelDo, project functions and plugins**
 - currently keyed items: **pickaxe, bomb**
 - project direction references scanned: **0**
 - **state-key.conditional-hero-direction** (production-keyed): inventory.pickaxe > 0 OR inventory.bomb > 0 -> hero.loc.direction is retained in exact/dominance serialization
@@ -60,7 +66,11 @@ Nested non-zero fields: **11**
 
 - action-set equivalent at all projection collisions: **true**
 - projected one-step successor equivalent at all projection collisions: **true**
+- projected action-labelled successor relation equivalent at all projection collisions: **true**
 - exact one-step successor equivalent at all projection collisions: **false**
+- exact action-labelled successor relation equivalent at all projection collisions: **false**
+- evidence outcome: **equivalent**
+- gates: `{"sourceCandidatesMatched":true,"replayComplete":true,"expectedCollisionWindowCovered":true,"allActionsEnumeratedWithoutError":true,"allActionsAppliedWithoutError":true,"projectedActionRelationEquivalent":true,"decision20ExactRejoin":true}`
 - production semantic change: **false**
 
 The projection result is evidence for the audited local window only; it is not a proof that non-current-floor mutation history can be removed from a global key.
@@ -69,4 +79,4 @@ The projection result is evidence for the audited local window only; it is not a
 
 - source report: `shared-solver\routes\generated\agenda-policy-evaluation\mt2-candidate2-capacity10-j.json`
 - ancestry report: `shared-solver\routes\generated\agenda-policy-evaluation\mt2-candidate2-capacity10-j2.json`
-- generation commit: `90cea7592aa882f486989e3c30b8397490589da4`
+- generation commit: `bd853ffc205916fd6b2fb5e8395745f88922ce71`
