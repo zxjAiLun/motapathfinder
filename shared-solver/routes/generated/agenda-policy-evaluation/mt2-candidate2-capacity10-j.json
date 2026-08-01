@@ -124845,7 +124845,7 @@
       ]
     }
   },
-  "conclusion": "Increasing runtime raw goal-archive and checkpoint capacities to 10 allowed the naturally retained MT1 candidate-2 pipeline to reproduce the exact teacher HP3834 state. This establishes a known-witness capacity counterfactual only; it does not establish a global selector conclusion or a default-capacity change.",
+  "conclusion": "The joint 10/10/4 configuration naturally reproduced the exact teacher HP3834 terminal state through an alternate mutation ancestry. The winning route did not pass through the exact teacher entry or teacher-local checkpoint, so known exact teacher-witness capacity recovery remains not-established.",
   "winningAncestry": {
     "winningHpAttemptStartCandidateId": "mt2-local-3582:candidate-6",
     "winningLocalCheckpointExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
@@ -124910,5 +124910,11 @@
     "sourceReportSha256": "7f76d1d5b8af24fbecb893617065837af5cb8037af9aa105ef7158582c253fbe",
     "sourceReport": "shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-candidate2-capacity10-j.json"
   },
-  "j1Conclusion": "Post-processing completed, but the winning HP attempt does not start from the exact teacher-local checkpoint; known exact teacher-witness capacity recovery remains not-established."
+  "j1Conclusion": "Post-processing completed, but the winning HP attempt does not start from the exact teacher-local checkpoint; known exact teacher-witness capacity recovery remains not-established.",
+  "conclusionContract": {
+    "correctedBy": "PR-4.4j2",
+    "terminalExactConvergenceViaAlternateAncestry": true,
+    "knownExactTeacherWitnessRecovery": "not-established",
+    "winningAncestryCapacityDependency": "insufficient-existing-evidence"
+  }
 }

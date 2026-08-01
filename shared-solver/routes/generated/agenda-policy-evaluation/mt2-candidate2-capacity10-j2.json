@@ -1,0 +1,608 @@
+{
+  "schema": "motapathfinder.hp3834-mt2-candidate2-capacity10-ancestry.v1",
+  "generatedAt": "2026-08-01T06:11:43.012Z",
+  "status": "completed",
+  "auditStatus": "completed",
+  "productionSemanticChange": false,
+  "conclusion": "The joint 10/10/4 configuration naturally reproduced the exact teacher HP3834 terminal state through an alternate mutation ancestry. The winning route did not pass through the exact teacher entry or teacher-local checkpoint, so known exact teacher-witness capacity recovery remains not-established.",
+  "candidate6VsTeacherLocal": {
+    "winnerExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+    "teacherExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+    "winnerExactStateKeyHash": "4c07c9e40535fbf8",
+    "teacherExactStateKeyHash": "5fcb8937e15bd360",
+    "heroDiff": {},
+    "inventoryDiff": {},
+    "flagsDiff": {},
+    "visitedFloorsDiff": {},
+    "progressDiff": {},
+    "mt2MutationDiff": {},
+    "mutationsOnlyInWinner": [
+      "MT1:4,1"
+    ],
+    "mutationsOnlyInTeacher": [
+      "MT1:8,1"
+    ],
+    "resourceEquivalent": true,
+    "exactEquivalent": false
+  },
+  "ancestryComparison": {
+    "source": "natural MT1 candidate-2 gate replay",
+    "gateExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":9,\"y\":1,\"direction\":null,\"hp\":1559,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":5,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":36,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+    "gateExactStateKeyHash": "6a97ae159d8770bd",
+    "gateDecisionDepth": 10,
+    "firstDivergenceDecision": 11,
+    "firstDivergenceActions": {
+      "winner": "battle:skeleton@MT1:4,1",
+      "teacherLocal": "battle:skeleton@MT1:8,1"
+    },
+    "winningBranch": {
+      "winningEntryCandidateId": "mt2-entry:candidate-0",
+      "winningEntryExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":3250,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+      "winningEntryRawSortRank": 0,
+      "winningEntrySelectedArchiveRank": 0,
+      "winningEntrySegmentRetained": true,
+      "winningEntryMergedRetained": true,
+      "winningLocalCandidateId": "mt2-local-3582:candidate-6",
+      "winningLocalExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+      "checkpointCandidateId": "mt2-local-3582:candidate-6",
+      "checkpointExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+      "routePrefixLength": 9,
+      "routeSuffixActionCount": 4,
+      "sourceDecisionDepth": 14,
+      "gateDecisionDepth": 10,
+      "replay": {
+        "performed": true,
+        "valid": true,
+        "stepsAttempted": 4,
+        "stepsCompleted": 4,
+        "errors": [],
+        "error": null
+      },
+      "decisions": [
+        {
+          "decisionIndex": 11,
+          "actionSummary": "battle:skeleton@MT1:4,1",
+          "actionFingerprint": "battle|MT1|4|1|skeleton",
+          "preExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":9,\"y\":1,\"direction\":null,\"hp\":1559,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":5,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":36,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+          "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":1,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":12,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+          "postHero": {
+            "hp": 1,
+            "atk": 21,
+            "def": 12,
+            "mdef": 130,
+            "lv": 3,
+            "exp": 6,
+            "loc": {
+              "x": 3,
+              "y": 1,
+              "direction": "right"
+            }
+          }
+        },
+        {
+          "decisionIndex": 12,
+          "actionSummary": "changeFloor@MT1:6,0",
+          "actionFingerprint": "changeFloor|changeFloor@MT1:6,0",
+          "preExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":1,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":12,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+          "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1601,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+          "postHero": {
+            "hp": 1601,
+            "atk": 21,
+            "def": 17,
+            "mdef": 130,
+            "lv": 3,
+            "exp": 6,
+            "loc": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            }
+          }
+        },
+        {
+          "decisionIndex": 13,
+          "actionSummary": "battle:skeleton@MT2:4,1",
+          "actionFingerprint": "battle|MT2|4|1|skeleton",
+          "preExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1601,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+          "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":4506,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+          "postHero": {
+            "hp": 4506,
+            "atk": 21,
+            "def": 19,
+            "mdef": 130,
+            "lv": 3,
+            "exp": 7,
+            "loc": {
+              "x": 5,
+              "y": 1,
+              "direction": "left"
+            }
+          }
+        },
+        {
+          "decisionIndex": 14,
+          "actionSummary": "battle:ghostSoldier@MT2:2,1",
+          "actionFingerprint": "battle|MT2|2|1|ghostSoldier",
+          "preExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":4506,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+          "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+          "postHero": {
+            "hp": 3582,
+            "atk": 31,
+            "def": 19,
+            "mdef": 250,
+            "lv": 3,
+            "exp": 9,
+            "loc": {
+              "x": 3,
+              "y": 1,
+              "direction": "left"
+            }
+          }
+        }
+      ],
+      "decision12EntryExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1601,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+      "decision12EntryExactStateKeyHash": "ef94136a061e88ba",
+      "decision12EntryCandidateId": "mt2-entry:candidate-0",
+      "decision12EntryStageCandidateId": "mt2-entry:candidate-2",
+      "decision14LocalExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+      "decision14LocalExactStateKeyHash": "4c07c9e40535fbf8",
+      "decision14LocalCandidateId": "mt2-local-3582:candidate-6"
+    },
+    "teacherLocalBranch": {
+      "teacherEntryCandidateId": "mt2-entry:candidate-3",
+      "teacherEntryExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":3250,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+      "teacherEntryRawSortRank": 1,
+      "teacherEntrySelectedArchiveRank": 3,
+      "teacherEntrySegmentRetained": true,
+      "teacherEntryMergedRetained": true,
+      "teacherLocalCandidateId": "mt2-local-3582:candidate-7",
+      "teacherLocalExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+      "checkpointCandidateId": "mt2-local-3582:candidate-7",
+      "checkpointExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+      "routePrefixLength": 9,
+      "routeSuffixActionCount": 4,
+      "sourceDecisionDepth": 14,
+      "gateDecisionDepth": 10,
+      "replay": {
+        "performed": true,
+        "valid": true,
+        "stepsAttempted": 4,
+        "stepsCompleted": 4,
+        "errors": [],
+        "error": null
+      },
+      "decisions": [
+        {
+          "decisionIndex": 11,
+          "actionSummary": "battle:skeleton@MT1:8,1",
+          "actionFingerprint": "battle|MT1|8|1|skeleton",
+          "preExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":9,\"y\":1,\"direction\":null,\"hp\":1559,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":5,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":36,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+          "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":9,\"y\":1,\"direction\":null,\"hp\":1,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":12,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+          "postHero": {
+            "hp": 1,
+            "atk": 21,
+            "def": 12,
+            "mdef": 130,
+            "lv": 3,
+            "exp": 6,
+            "loc": {
+              "x": 9,
+              "y": 1,
+              "direction": "left"
+            }
+          }
+        },
+        {
+          "decisionIndex": 12,
+          "actionSummary": "changeFloor@MT1:6,0",
+          "actionFingerprint": "changeFloor|changeFloor@MT1:6,0",
+          "preExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":9,\"y\":1,\"direction\":null,\"hp\":1,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":12,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}",
+          "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1601,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+          "postHero": {
+            "hp": 1601,
+            "atk": 21,
+            "def": 17,
+            "mdef": 130,
+            "lv": 3,
+            "exp": 6,
+            "loc": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            }
+          }
+        },
+        {
+          "decisionIndex": 13,
+          "actionSummary": "battle:skeleton@MT2:4,1",
+          "actionFingerprint": "battle|MT2|4|1|skeleton",
+          "preExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1601,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+          "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":4506,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+          "postHero": {
+            "hp": 4506,
+            "atk": 21,
+            "def": 19,
+            "mdef": 130,
+            "lv": 3,
+            "exp": 7,
+            "loc": {
+              "x": 5,
+              "y": 1,
+              "direction": "left"
+            }
+          }
+        },
+        {
+          "decisionIndex": 14,
+          "actionSummary": "battle:ghostSoldier@MT2:2,1",
+          "actionFingerprint": "battle|MT2|2|1|ghostSoldier",
+          "preExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":4506,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+          "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+          "postHero": {
+            "hp": 3582,
+            "atk": 31,
+            "def": 19,
+            "mdef": 250,
+            "lv": 3,
+            "exp": 9,
+            "loc": {
+              "x": 3,
+              "y": 1,
+              "direction": "left"
+            }
+          }
+        }
+      ],
+      "decision12EntryExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":1601,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+      "decision12EntryExactStateKeyHash": "d74ce433fc73828f",
+      "decision12EntryCandidateId": "mt2-entry:candidate-3",
+      "decision12EntryStageCandidateId": "mt2-entry:candidate-9",
+      "decision14LocalExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+      "decision14LocalExactStateKeyHash": "5fcb8937e15bd360",
+      "decision14LocalCandidateId": "mt2-local-3582:candidate-7"
+    },
+    "sharedContinuation": {
+      "winningBranch": {
+        "performed": true,
+        "valid": true,
+        "stepsAttempted": 13,
+        "stepsCompleted": 13,
+        "finalMatchesTarget": true
+      },
+      "teacherLocalBranch": {
+        "performed": true,
+        "valid": true,
+        "stepsAttempted": 13,
+        "stepsCompleted": 13,
+        "finalMatchesTarget": true
+      }
+    },
+    "firstExactRejoinDecision": 20
+  },
+  "winningEntryAttribution": {
+    "winningEntryCandidateId": "mt2-entry:candidate-0",
+    "winningEntryExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":3250,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+    "winningEntryRawSortRank": 0,
+    "winningEntrySelectedArchiveRank": 0,
+    "winningEntrySegmentRetained": true,
+    "winningEntryMergedRetained": true,
+    "teacherEntryCandidateId": "mt2-entry:candidate-3",
+    "teacherEntryExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":3250,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}",
+    "teacherEntryRawSortRank": 1,
+    "teacherEntrySelectedArchiveRank": 3,
+    "teacherEntrySegmentRetained": true,
+    "teacherEntryMergedRetained": true
+  },
+  "baseline8CrossCheck": {
+    "artifact": "shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-candidate2-natural-search-audit-v2.json",
+    "winnerEntry": {
+      "rawGoalArchive": {
+        "present": true,
+        "rank": 0
+      },
+      "segmentCheckpoint": {
+        "present": true,
+        "rank": 0
+      },
+      "mergedCheckpoint": {
+        "present": true,
+        "rank": 0,
+        "candidateId": "mt2-entry:candidate-0"
+      }
+    },
+    "winnerLocal": {
+      "rawGoalArchive": {
+        "present": false,
+        "rank": null
+      },
+      "segmentCheckpoint": {
+        "present": false,
+        "rank": null
+      },
+      "mergedCheckpoint": {
+        "present": false,
+        "rank": null,
+        "candidateId": null
+      }
+    },
+    "winnerLocalAttempt": {
+      "matchingWinnerLocalInBaseline": [],
+      "sameCandidateIdAttempts": [
+        {
+          "startCandidateId": "mt2-local-3582:candidate-6",
+          "startExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":5231,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":11,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":48,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+          "startExactStateKeyMatches": false,
+          "found": false,
+          "stoppedReason": null
+        }
+      ],
+      "actualWinnerLocalAttemptExecuted": false
+    },
+    "winnerLineageCapacityDependency": "insufficient-existing-evidence"
+  },
+  "isolatedWorkerComparison": {
+    "config": {
+      "candidateLimit": 10,
+      "goalSkylineLimit": 10,
+      "dpSkylineMax": 4,
+      "maxActionsPerState": 256,
+      "maxExpansions": 900,
+      "maxRuntimeMs": 900000,
+      "maxHeapMb": 1400,
+      "maxRssMb": 1800,
+      "memoryCheckIntervalExpansions": 1,
+      "memoryCheckIntervalActions": 1,
+      "childOldSpaceMb": 1600,
+      "agendaMode": "best-first",
+      "goalArchiveAudit": null
+    },
+    "workers": [
+      {
+        "candidateId": "mt2-local-3582:candidate-6",
+        "startExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+        "startExactStateKeyHash": "4c07c9e40535fbf8",
+        "hero": {
+          "hp": 3582,
+          "atk": 31,
+          "def": 19,
+          "mdef": 250,
+          "lv": 3,
+          "exp": 9,
+          "loc": {
+            "x": 3,
+            "y": 1,
+            "direction": "left"
+          }
+        },
+        "processIsolated": true,
+        "pid": 33492,
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "snapshotRoundTripExact": true,
+        "childOldSpaceActuallyApplied": true,
+        "workerReportValid": true,
+        "search": {
+          "found": true,
+          "reachedMilestone": "mt2-hp3834",
+          "finalCandidate": {
+            "id": "mt2-hp3834:candidate-0",
+            "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":3834,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":72,\"def\":35,\"mdef\":290,\"money\":0,\"exp\":1,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":68,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}",
+            "hero": {
+              "hp": 3834,
+              "atk": 72,
+              "def": 35,
+              "mdef": 290,
+              "lv": 4,
+              "exp": 1,
+              "loc": {
+                "x": 3,
+                "y": 5,
+                "direction": "down"
+              }
+            },
+            "routeLength": 9
+          },
+          "segmentResults": [
+            {
+              "segmentId": "mt2-hp3834",
+              "found": true,
+              "attempts": [
+                {
+                  "startCandidateId": "initial#0",
+                  "found": true,
+                  "expansions": 900,
+                  "frontierSize": 15,
+                  "stoppedReason": null,
+                  "expansionBudgetExhausted": true
+                }
+              ]
+            }
+          ],
+          "memory": {
+            "maxHeapMb": 1400,
+            "maxRssMb": 1800,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "peakHeapUsedMb": 258.3,
+            "peakRssMb": 401.4,
+            "heapLimitedCount": 0,
+            "rssLimitedCount": 0,
+            "stoppedReason": null,
+            "stoppedAtExpansion": null,
+            "stoppedAtPhase": null,
+            "searchCompletion": "completed"
+          },
+          "completion": {
+            "classification": "inconclusive",
+            "completeWithinConfiguredActionSet": false,
+            "incompleteAttempts": [
+              {
+                "startCandidateId": "initial#0",
+                "found": true,
+                "goalCount": 1,
+                "expansions": 900,
+                "frontierSize": 15,
+                "stoppedReason": null,
+                "expansionBudgetExhausted": true,
+                "actionTrimmed": 0,
+                "completeWithinConfiguredActionSet": false,
+                "incompleteReasons": [
+                  "frontier-nonempty",
+                  "expansion-budget-exhausted"
+                ],
+                "failureClass": null
+              }
+            ]
+          }
+        },
+        "pipeline": {
+          "stages": [
+            {
+              "segmentId": "mt2-hp3834",
+              "rawGoalCandidateCount": 1,
+              "segmentCandidateCount": 1,
+              "mergedCandidateCount": 1,
+              "mergedCandidateIds": [
+                "mt2-hp3834:candidate-0"
+              ]
+            }
+          ]
+        },
+        "error": null
+      },
+      {
+        "candidateId": "mt2-local-3582:candidate-7",
+        "startExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":3582,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":9,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":44,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}",
+        "startExactStateKeyHash": "5fcb8937e15bd360",
+        "hero": {
+          "hp": 3582,
+          "atk": 31,
+          "def": 19,
+          "mdef": 250,
+          "lv": 3,
+          "exp": 9,
+          "loc": {
+            "x": 3,
+            "y": 1,
+            "direction": "left"
+          }
+        },
+        "processIsolated": true,
+        "pid": 28152,
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "snapshotRoundTripExact": true,
+        "childOldSpaceActuallyApplied": true,
+        "workerReportValid": true,
+        "search": {
+          "found": true,
+          "reachedMilestone": "mt2-hp3834",
+          "finalCandidate": {
+            "id": "mt2-hp3834:candidate-0",
+            "exactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":3834,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":72,\"def\":35,\"mdef\":290,\"money\":0,\"exp\":1,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":68,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}",
+            "hero": {
+              "hp": 3834,
+              "atk": 72,
+              "def": 35,
+              "mdef": 290,
+              "lv": 4,
+              "exp": 1,
+              "loc": {
+                "x": 3,
+                "y": 5,
+                "direction": "down"
+              }
+            },
+            "routeLength": 9
+          },
+          "segmentResults": [
+            {
+              "segmentId": "mt2-hp3834",
+              "found": true,
+              "attempts": [
+                {
+                  "startCandidateId": "initial#0",
+                  "found": true,
+                  "expansions": 900,
+                  "frontierSize": 15,
+                  "stoppedReason": null,
+                  "expansionBudgetExhausted": true
+                }
+              ]
+            }
+          ],
+          "memory": {
+            "maxHeapMb": 1400,
+            "maxRssMb": 1800,
+            "memoryCheckIntervalExpansions": 1,
+            "memoryCheckIntervalActions": 1,
+            "peakHeapUsedMb": 261.1,
+            "peakRssMb": 399.1,
+            "heapLimitedCount": 0,
+            "rssLimitedCount": 0,
+            "stoppedReason": null,
+            "stoppedAtExpansion": null,
+            "stoppedAtPhase": null,
+            "searchCompletion": "completed"
+          },
+          "completion": {
+            "classification": "inconclusive",
+            "completeWithinConfiguredActionSet": false,
+            "incompleteAttempts": [
+              {
+                "startCandidateId": "initial#0",
+                "found": true,
+                "goalCount": 1,
+                "expansions": 900,
+                "frontierSize": 15,
+                "stoppedReason": null,
+                "expansionBudgetExhausted": true,
+                "actionTrimmed": 0,
+                "completeWithinConfiguredActionSet": false,
+                "incompleteReasons": [
+                  "frontier-nonempty",
+                  "expansion-budget-exhausted"
+                ],
+                "failureClass": null
+              }
+            ]
+          }
+        },
+        "pipeline": {
+          "stages": [
+            {
+              "segmentId": "mt2-hp3834",
+              "rawGoalCandidateCount": 1,
+              "segmentCandidateCount": 1,
+              "mergedCandidateCount": 1,
+              "mergedCandidateIds": [
+                "mt2-hp3834:candidate-0"
+              ]
+            }
+          ]
+        },
+        "error": null
+      }
+    ],
+    "sameConfig": true,
+    "workerCount": 2,
+    "allReportsValid": true
+  },
+  "verdict": {
+    "terminalExactConvergenceViaAlternateAncestry": true,
+    "knownExactTeacherWitnessRecovery": "not-established",
+    "winningAncestryCapacityDependency": "insufficient-existing-evidence",
+    "globalDefaultChangeRecommended": "not-established"
+  },
+  "provenance": {
+    "generationCommit": "c90432836a6bc5d56e18e1c2b440b496419633a6",
+    "jReport": "shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-candidate2-capacity10-j.json",
+    "jReportSha256AfterConclusionCorrection": "63ef50026429386fac62c2d40558f2bc7ff0e1168b5450c0783016fac6f9ce74",
+    "baselineReport": "shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt2-candidate2-natural-search-audit-v2.json",
+    "baselineReportSha256": "6fcb14bbd6a8150dacfafcc55b03a1ba70a7798cfc249bc699963912535ef31e",
+    "teacherRoute": "shared-solver\\routes\\generated\\agenda-policy-evaluation\\mt1-mt3-i893-hp8425.current-exact.route.json",
+    "teacherRouteSha256": "0bb866eb09049e3ab6ca0fcfd5c645eb36dbdb4161479ad35a31eb65569c4a74"
+  }
+}
