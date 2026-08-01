@@ -9,7 +9,7 @@
   "hp3834ContinuationWorkersRun": false,
   "matrixClassification": {
     "classification": "raw-goal-archive-capacity-sufficient",
-    "reason": "10/8 retains the winner local while 8/10 does not; raw goal-archive capacity is sufficient in this bounded test.",
+    "reason": "goalSkylineLimit=10 retains the known winner local in the bounded two-segment pipeline; this is parameter-level sufficiency, not proof of direct local archive eviction.",
     "complete": false,
     "outcomes": {
       "8x8": {
@@ -53,7 +53,12 @@
     "noHp3834Pipeline": true,
     "boundedSearchCompletionClassified": true,
     "productionSemanticChangeFalse": true,
-    "globalDefaultChangeNotEstablished": true
+    "globalDefaultChangeNotEstablished": true,
+    "exactRetentionPattern": true,
+    "goalSkylineLimit10BoundedSufficient": true,
+    "candidateLimit10AloneNotSufficient": true,
+    "jointIncreaseNotRequired": true,
+    "allRunsBoundedIncomplete": true
   },
   "config": {
     "agendaMode": "best-first",
@@ -273771,8 +273776,12 @@
     "platform": "win32",
     "worktreeCleanAtStart": false,
     "worktreeCleanAtFinish": false,
-    "rendererCommit": "d2b65ecd8ffe34876de3466daa50a611eba829a6",
-    "renderedAt": "2026-08-01T07:29:32.684Z"
+    "rendererCommit": "c9a88196773f3c6caaadee61a237f02e6113f7dd",
+    "renderedAt": "2026-08-01T07:57:11.488Z"
   },
-  "conclusion": "The local capacity matrix classified the known winner lineage as raw-goal-archive-capacity-sufficient; this is a bounded sufficiency result only and does not establish a global necessary capacity or default change."
+  "conclusion": "GoalSkylineLimit=10 is sufficient for the known winner-local exact state to be generated and retained in this bounded two-segment natural pipeline. The first absence under goalSkylineLimit=8 is production-successor, so direct local raw-archive eviction is not established; no global default change is recommended.",
+  "causalScope": "goalSkylineLimit-parameter-effect-across-bounded-two-segment-pipeline",
+  "directWinnerLocalRawArchiveRejectionEstablished": false,
+  "winnerLocalFirstAbsentUnderGoal8": "production-successor",
+  "mechanismWithinGoalArchiveParameterEffect": "not-established"
 }

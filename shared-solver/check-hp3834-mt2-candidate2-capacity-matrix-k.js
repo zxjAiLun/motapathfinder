@@ -60,6 +60,10 @@ function main() {
   assert(report.mt1Setup && report.mt1Setup.candidate2 && report.mt1Setup.candidate2.exactStateKey, "natural candidate-2 gate is missing");
   assert(report.gates && report.gates.naturalCandidate2Start === true, "natural candidate-2 start gate failed");
   assert(report.gates.noTeacherInjection === true, "teacher injection gate failed");
+  assert(report.causalScope === "goalSkylineLimit-parameter-effect-across-bounded-two-segment-pipeline", "causal scope is missing or too broad");
+  assert(report.directWinnerLocalRawArchiveRejectionEstablished === false, "direct local raw-archive rejection was incorrectly established");
+  assert(report.winnerLocalFirstAbsentUnderGoal8 === "production-successor", "winner-local first absence under goal=8 changed");
+  assert(report.mechanismWithinGoalArchiveParameterEffect === "not-established", "goal-archive mechanism was overclaimed");
   assert(Array.isArray(report.runs) && report.runs.length === 4, "expected four capacity runs");
 
   const seen = new Set();
@@ -87,6 +91,25 @@ function main() {
     }
   }
   assert(seen.size === 4, "capacity matrix is incomplete");
+  const byId = Object.fromEntries(report.runs.map((run) => [run.config.id, run]));
+  assert(byId["8x8"].winnerEntry.mergedRetained === true, "8x8 winner entry regressed");
+  assert(byId["10x8"].winnerEntry.mergedRetained === true, "10x8 winner entry regressed");
+  assert(byId["8x10"].winnerEntry.mergedRetained === true, "8x10 winner entry regressed");
+  assert(byId["10x10"].winnerEntry.mergedRetained === true, "10x10 winner entry regressed");
+  assert(byId["8x8"].winnerLocal.mergedRetained === false, "8x8 winner local retention regressed");
+  assert(byId["10x8"].winnerLocal.mergedRetained === true, "10x8 winner local retention regressed");
+  assert(byId["8x10"].winnerLocal.mergedRetained === false, "8x10 winner local retention regressed");
+  assert(byId["10x10"].winnerLocal.mergedRetained === true, "10x10 winner local retention regressed");
+  assert(byId["8x8"].winnerLocal.firstAbsentStage === "production-successor", "8x8 first absence changed");
+  assert(byId["8x10"].winnerLocal.firstAbsentStage === "production-successor", "8x10 first absence changed");
+  assert(byId["10x8"].winnerLocal.firstAbsentStage === null, "10x8 first absence changed");
+  assert(byId["10x10"].winnerLocal.firstAbsentStage === null, "10x10 first absence changed");
+  assert(report.gates.exactRetentionPattern === true, "exact retention pattern gate failed");
+  assert(report.gates.goalSkylineLimit10BoundedSufficient === true, "goalSkylineLimit=10 sufficiency gate failed");
+  assert(report.gates.candidateLimit10AloneNotSufficient === true, "candidateLimit=10-alone gate failed");
+  assert(report.gates.jointIncreaseNotRequired === true, "joint-increase gate failed");
+  assert(report.gates.allRunsBoundedIncomplete === true, "bounded completeness boundary changed");
+  assert(report.matrixClassification.classification === "raw-goal-archive-capacity-sufficient", "research classification changed");
   const recomputed = classifyMatrix(report.runs);
   assert(report.matrixClassification && report.matrixClassification.classification === recomputed.classification, "matrix classification is not dynamic");
   assert(report.matrixClassification.reason === recomputed.reason, "matrix classification reason is stale");

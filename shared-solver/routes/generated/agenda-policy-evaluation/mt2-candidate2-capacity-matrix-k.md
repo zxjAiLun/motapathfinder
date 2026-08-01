@@ -2,7 +2,7 @@
 
 状态：**completed**；矩阵分类：**raw-goal-archive-capacity-sufficient**。
 
-10/8 retains the winner local while 8/10 does not; raw goal-archive capacity is sufficient in this bounded test.
+goalSkylineLimit=10 retains the known winner local in the bounded two-segment pipeline; this is parameter-level sufficiency, not proof of direct local archive eviction.
 
 本轮从自然 MT1 candidate-2 gate 开始，只执行 `mt2-entry → mt2-local-3582`；没有注入 winner/teacher entry 或 local，也没有执行 HP3834 continuation worker。
 
@@ -24,6 +24,10 @@
 - HP3834 continuation workers: **false**
 - natural candidate-2 start: **true**
 - no teacher injection: **true**
+- causal scope: **goalSkylineLimit-parameter-effect-across-bounded-two-segment-pipeline**
+- direct winner-local raw-archive rejection established: **false**
+- winner-local first absent under goalSkylineLimit=8: **production-successor**
+- mechanism within goal-archive parameter effect: **not-established**
 
 这轮最多证明已知 winner lineage 在某个局部容量配置下是否保留；不能直接推出全局必要条件或修改默认容量。
 

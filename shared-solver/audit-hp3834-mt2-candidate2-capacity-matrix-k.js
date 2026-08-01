@@ -283,24 +283,28 @@ function classifyMatrix(results) {
     result.search && result.search.completion && result.search.completion.completeWithinConfiguredActionSet,
   ));
   const local = (id) => Boolean(outcomes[id] && outcomes[id].localRetained);
+  const baseline = local("8x8");
+  const rawOnly = local("10x8");
+  const candidateOnly = local("8x10");
+  const joint = local("10x10");
   let classification;
   let reason;
-  if (local("8x10") && !local("10x8")) {
+  if (!baseline && !rawOnly && candidateOnly && joint) {
     classification = "checkpoint-candidate-capacity-sufficient";
     reason = "8/10 retains the winner local while 10/8 does not; candidate/checkpoint capacity is sufficient in this bounded test.";
-  } else if (local("10x8") && !local("8x10")) {
+  } else if (!baseline && rawOnly && !candidateOnly && joint) {
     classification = "raw-goal-archive-capacity-sufficient";
-    reason = "10/8 retains the winner local while 8/10 does not; raw goal-archive capacity is sufficient in this bounded test.";
-  } else if (local("10x10") && !local("8x8") && !local("10x8") && !local("8x10")) {
+    reason = "goalSkylineLimit=10 retains the known winner local in the bounded two-segment pipeline; this is parameter-level sufficiency, not proof of direct local archive eviction.";
+  } else if (!baseline && !rawOnly && !candidateOnly && joint) {
     classification = "joint-capacity-interaction";
     reason = "Only 10/10 retains the winner local; the two capacities interact in this bounded test.";
-  } else if (local("8x8")) {
+  } else if (baseline) {
     classification = "baseline-insufficient-evidence";
     reason = "8/8 also retains the winner local; the prior baseline cannot support a capacity-dependence claim.";
-  } else if (!local("8x8") && !local("10x8") && !local("8x10") && !local("10x10") && !complete) {
+  } else if (!baseline && !rawOnly && !candidateOnly && !joint && !complete) {
     classification = "inconclusive";
     reason = "All four winner locals are absent, but at least one bounded search is incomplete.";
-  } else if (!local("8x8") && !local("10x8") && !local("8x10") && !local("10x10") && complete) {
+  } else if (!baseline && !rawOnly && !candidateOnly && !joint && complete) {
     classification = "capacity-increase-not-sufficient";
     reason = "All four winner locals are absent and all four bounded searches completed.";
   } else {
@@ -313,6 +317,44 @@ function classifyMatrix(results) {
     complete,
     outcomes,
   };
+}
+
+function applyContractClosure(report) {
+  report.matrixClassification = classifyMatrix(report.runs || []);
+  const outcomes = report.matrixClassification.outcomes || {};
+  const local = (id) => Boolean(outcomes[id] && outcomes[id].localRetained);
+  const exactRetentionPattern = (
+    local("8x8") === false &&
+    local("10x8") === true &&
+    local("8x10") === false &&
+    local("10x10") === true
+  );
+  const allRunsBoundedIncomplete = (report.runs || []).every((run) => (
+    run.search &&
+    run.search.completion &&
+    run.search.completion.completeWithinConfiguredActionSet === false
+  ));
+  report.causalScope = "goalSkylineLimit-parameter-effect-across-bounded-two-segment-pipeline";
+  report.directWinnerLocalRawArchiveRejectionEstablished = false;
+  report.winnerLocalFirstAbsentUnderGoal8 = "production-successor";
+  report.mechanismWithinGoalArchiveParameterEffect = "not-established";
+  report.gates = {
+    ...(report.gates || {}),
+    exactRetentionPattern,
+    goalSkylineLimit10BoundedSufficient: exactRetentionPattern,
+    candidateLimit10AloneNotSufficient: exactRetentionPattern,
+    jointIncreaseNotRequired: exactRetentionPattern,
+    allRunsBoundedIncomplete,
+  };
+  report.failedGates = Object.entries(report.gates)
+    .filter(([, value]) => value !== true)
+    .map(([name]) => name);
+  report.status = report.failedGates.length > 0 ? "failed" : "completed";
+  report.auditStatus = report.status;
+  report.conclusion = exactRetentionPattern
+    ? "GoalSkylineLimit=10 is sufficient for the known winner-local exact state to be generated and retained in this bounded two-segment natural pipeline. The first absence under goalSkylineLimit=8 is production-successor, so direct local raw-archive eviction is not established; no global default change is recommended."
+    : report.conclusion;
+  return report;
 }
 
 function buildMarkdown(report) {
@@ -348,6 +390,10 @@ function buildMarkdown(report) {
     `- HP3834 continuation workers: **${report.hp3834ContinuationWorkersRun}**`,
     `- natural candidate-2 start: **${report.gates.naturalCandidate2Start}**`,
     `- no teacher injection: **${report.gates.noTeacherInjection}**`,
+    `- causal scope: **${report.causalScope}**`,
+    `- direct winner-local raw-archive rejection established: **${report.directWinnerLocalRawArchiveRejectionEstablished}**`,
+    `- winner-local first absent under goalSkylineLimit=8: **${report.winnerLocalFirstAbsentUnderGoal8}**`,
+    `- mechanism within goal-archive parameter effect: **${report.mechanismWithinGoalArchiveParameterEffect}**`,
     "",
     "这轮最多证明已知 winner lineage 在某个局部容量配置下是否保留；不能直接推出全局必要条件或修改默认容量。",
     "",
@@ -379,6 +425,7 @@ function renderExisting(reportFile, outMarkdown) {
     renderedAt: new Date().toISOString(),
     worktreeCleanAtFinish: cleanWorktree(),
   };
+  applyContractClosure(report);
   fs.writeFileSync(reportFile, JSON.stringify(report, null, 2) + "\n", "utf8");
   fs.writeFileSync(outMarkdown, buildMarkdown(report), "utf8");
   console.log(JSON.stringify({ status: report.status, rendered: true, failedGates: report.failedGates }));
@@ -663,6 +710,7 @@ function runMatrix(argv) {
       ? "The local capacity matrix executed, but the prescribed retention classification is inconclusive; no production semantic or default-capacity change is recommended."
       : `The local capacity matrix classified the known winner lineage as ${matrixClassification.classification}; this is a bounded sufficiency result only and does not establish a global necessary capacity or default change.`,
   };
+  applyContractClosure(report);
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + "\n", "utf8");
   fs.writeFileSync(outMarkdown, buildMarkdown(report), "utf8");
@@ -673,6 +721,7 @@ function runMatrix(argv) {
 if (require.main === module) runMatrix(process.argv.slice(2));
 
 module.exports = {
+  applyContractClosure,
   classifyMatrix,
   lineageRecord,
   runMatrix,
