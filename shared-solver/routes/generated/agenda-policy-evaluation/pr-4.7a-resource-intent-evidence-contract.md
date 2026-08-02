@@ -1,6 +1,6 @@
-# PR-4.7a Resource Intent Scanner Evidence Contract
+# PR-4.7a1 Scanner Score Attribution
 
-Schema: `motapathfinder.pr-4.7a-resource-intent-evidence-contract.v1`
+Schema: `motapathfinder.pr-4.7a1-resource-intent-evidence-contract.v1`
 Status: completed
 Mode: shadow-only
 
@@ -8,7 +8,7 @@ Mode: shadow-only
 
 fixed outputs: stat-gain, equipment, levelup, path-blocker, deferred-resource
 
-Every generated record carries the source action and chain, target tile/floor, before/after delta, damage/cost, failure-class relevance, score decomposition, generated temporary goal, and action policy.
+Every generated record carries the source action and chain, target tile/floor, before/after delta, damage/cost, failure-class relevance, an exact scanner score breakdown, generated temporary goal, and action policy.
 
 ## Observed controls
 
@@ -27,7 +27,8 @@ Every generated record carries the source action and chain, target tile/floor, b
 - atk-deficit controls: stat-gain / equipment / levelup
 - hp-deficit controls: stat-gain / levelup / deferred-resource
 - target-action-unreachable control: path-blocker
-- stable candidate ordering: passed
+- strict unequal-score ordering with reversed input: passed
+- equal-score tie determinism: not-established
 - no available intent returns empty: passed
 - deferred resource direct pickup: not available
 - path blocker observed new action count: 1

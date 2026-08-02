@@ -1,18 +1,18 @@
 {
-  "schema": "motapathfinder.pr-4.7a-resource-intent-evidence-contract.v1",
+  "schema": "motapathfinder.pr-4.7a1-resource-intent-evidence-contract.v1",
   "status": "completed",
-  "generatedAt": "2026-08-02T07:21:52.896Z",
+  "generatedAt": "2026-08-02T07:48:05.252Z",
   "provenance": {
     "mode": "shadow-only",
     "scanner": "shared-solver/lib/resource-intent-scanner.js",
     "syntheticSimulator": "shared-solver/resource-intent-contract-synthetic-simulator.js",
-    "generationCommit": "1168eb6",
+    "generationCommit": "b8746b3",
     "productionPlannerChanged": false,
     "productionDefaultPolicyChanged": false
   },
   "contract": {
-    "id": "PR-4.7a",
-    "title": "Resource Intent Scanner Evidence Contract",
+    "id": "PR-4.7a1",
+    "title": "Scanner Score Attribution",
     "fixedOutputKinds": [
       "stat-gain",
       "equipment",
@@ -31,7 +31,7 @@
       "damage",
       "cost",
       "failureClassRelevance",
-      "score.decomposition",
+      "score.scoreBreakdown",
       "generatedTemporaryGoal",
       "actionPolicy"
     ],
@@ -88,13 +88,29 @@
         ]
       }
     },
-    "stableCandidateOrdering": {
+    "strictScoreOrderingRepeatable": {
       "failureClass": "atk-deficit",
-      "candidateIds": [
+      "forwardInputOrder": [
         "candidate-low",
         "candidate-high"
       ],
+      "reversedInputOrder": [
+        "candidate-high",
+        "candidate-low"
+      ],
       "observedOrder": [
+        {
+          "candidateId": "candidate-high",
+          "sourceAction": "pickup:highAttackCrystal@S1:1,0",
+          "scannerScore": 3360000
+        },
+        {
+          "candidateId": "candidate-low",
+          "sourceAction": "pickup:lowAttackCrystal@S1:1,0",
+          "scannerScore": 960000
+        }
+      ],
+      "reversedObservedOrder": [
         {
           "candidateId": "candidate-high",
           "sourceAction": "pickup:highAttackCrystal@S1:1,0",
@@ -118,9 +134,13 @@
           "scannerScore": 960000
         }
       ],
-      "stable": true,
+      "strictScoreOrderingRepeatable": true,
       "higherCandidate": "candidate-high",
       "lowerCandidate": "candidate-low"
+    },
+    "equalScoreTieDeterminism": {
+      "status": "not-established",
+      "reason": "scanner sorts equal scores without an explicit secondary key"
     },
     "emptyIntentReturnsEmpty": {
       "failureClass": "atk-deficit",
@@ -247,14 +267,22 @@
           "failureClassRelevance": "direct attack stat pickup",
           "score": {
             "scannerScore": 3360000,
-            "decomposition": {
-              "benefit": 20000,
-              "frontierBenefit": 0,
-              "failureRelevance": 500,
-              "actionBonus": 120,
-              "damageCostPenalty": 0,
+            "scoreBreakdown": {
+              "attackContribution": 3200000,
+              "defenseContribution": 0,
+              "magicDefenseContribution": 0,
+              "hpContribution": 0,
+              "survivabilityContribution": 0,
+              "blockedResourceContribution": 0,
+              "targetBattleContribution": 0,
+              "equipmentContribution": 0,
+              "pathContribution": 0,
+              "actionKindContribution": 160000,
+              "damagePenalty": 0,
+              "hpLossPenalty": 0,
               "depthPenalty": 0,
-              "total": 20620
+              "rawTotal": 3360000,
+              "roundedTotal": 3360000
             }
           },
           "generatedTemporaryGoal": {
@@ -443,14 +471,22 @@
           "failureClassRelevance": "attack equipment candidate",
           "score": {
             "scannerScore": 3750000,
-            "decomposition": {
-              "benefit": 16500,
-              "frontierBenefit": 0,
-              "failureRelevance": 500,
-              "actionBonus": 160,
-              "damageCostPenalty": 0,
+            "scoreBreakdown": {
+              "attackContribution": 2400000,
+              "defenseContribution": 0,
+              "magicDefenseContribution": 0,
+              "hpContribution": 0,
+              "survivabilityContribution": 0,
+              "blockedResourceContribution": 0,
+              "targetBattleContribution": 0,
+              "equipmentContribution": 1200000,
+              "pathContribution": 0,
+              "actionKindContribution": 150000,
+              "damagePenalty": 0,
+              "hpLossPenalty": 0,
               "depthPenalty": 0,
-              "total": 17160
+              "rawTotal": 3750000,
+              "roundedTotal": 3750000
             }
           },
           "generatedTemporaryGoal": {
@@ -634,14 +670,22 @@
           "failureClassRelevance": "low-cost combat experience for attack progression",
           "score": {
             "scannerScore": 309998,
-            "decomposition": {
-              "benefit": 900,
-              "frontierBenefit": 0,
-              "failureRelevance": 500,
-              "actionBonus": 80,
-              "damageCostPenalty": 33,
+            "scoreBreakdown": {
+              "attackContribution": 220000,
+              "defenseContribution": 0,
+              "magicDefenseContribution": 0,
+              "hpContribution": 0,
+              "survivabilityContribution": 0,
+              "blockedResourceContribution": 0,
+              "targetBattleContribution": 0,
+              "equipmentContribution": 0,
+              "pathContribution": 0,
+              "actionKindContribution": 90000,
+              "damagePenalty": 1.2000000000000002,
+              "hpLossPenalty": 0.75,
               "depthPenalty": 0,
-              "total": 1447
+              "rawTotal": 309998.05,
+              "roundedTotal": 309998
             }
           },
           "generatedTemporaryGoal": {
@@ -819,14 +863,22 @@
           "failureClassRelevance": "direct HP pickup",
           "score": {
             "scannerScore": 160660,
-            "decomposition": {
-              "benefit": 240,
-              "frontierBenefit": 0,
-              "failureRelevance": 500,
-              "actionBonus": 120,
-              "damageCostPenalty": 0,
+            "scoreBreakdown": {
+              "attackContribution": 0,
+              "defenseContribution": 0,
+              "magicDefenseContribution": 0,
+              "hpContribution": 180,
+              "survivabilityContribution": 480,
+              "blockedResourceContribution": 0,
+              "targetBattleContribution": 0,
+              "equipmentContribution": 0,
+              "pathContribution": 0,
+              "actionKindContribution": 160000,
+              "damagePenalty": 0,
+              "hpLossPenalty": 0,
               "depthPenalty": 0,
-              "total": 860
+              "rawTotal": 160660,
+              "roundedTotal": 160660
             }
           },
           "generatedTemporaryGoal": {
@@ -1010,14 +1062,22 @@
           "failureClassRelevance": "low-damage experience candidate for HP-constrained progress",
           "score": {
             "scannerScore": 89995,
-            "decomposition": {
-              "benefit": 900,
-              "frontierBenefit": 0,
-              "failureRelevance": 500,
-              "actionBonus": 80,
-              "damageCostPenalty": 33,
+            "scoreBreakdown": {
+              "attackContribution": 0,
+              "defenseContribution": 0,
+              "magicDefenseContribution": 0,
+              "hpContribution": 0,
+              "survivabilityContribution": 0,
+              "blockedResourceContribution": 0,
+              "targetBattleContribution": 0,
+              "equipmentContribution": 0,
+              "pathContribution": 0,
+              "actionKindContribution": 90000,
+              "damagePenalty": 4.5,
+              "hpLossPenalty": 0.75,
               "depthPenalty": 0,
-              "total": 1447
+              "rawTotal": 89994.75,
+              "roundedTotal": 89995
             }
           },
           "generatedTemporaryGoal": {
@@ -1196,14 +1256,22 @@
           "failureClassRelevance": "defer HP pickup until its blocker is survivable",
           "score": {
             "scannerScore": 2035105,
-            "decomposition": {
-              "benefit": 680,
-              "frontierBenefit": 600,
-              "failureRelevance": 500,
-              "actionBonus": 80,
-              "damageCostPenalty": 300,
-              "depthPenalty": 25,
-              "total": 1535
+            "scoreBreakdown": {
+              "attackContribution": 0,
+              "defenseContribution": 0,
+              "magicDefenseContribution": 0,
+              "hpContribution": 510,
+              "survivabilityContribution": 1360,
+              "blockedResourceContribution": 3280,
+              "targetBattleContribution": 2000000,
+              "equipmentContribution": 0,
+              "pathContribution": 0,
+              "actionKindContribution": 90000,
+              "damagePenalty": 45,
+              "hpLossPenalty": 0,
+              "depthPenalty": 60000,
+              "rawTotal": 2035105,
+              "roundedTotal": 2035105
             }
           },
           "generatedTemporaryGoal": {
@@ -1365,14 +1433,22 @@
           "failureClassRelevance": "defer HP pickup until its blocker is survivable",
           "score": {
             "scannerScore": 2031771,
-            "decomposition": {
-              "benefit": 428,
-              "frontierBenefit": 600,
-              "failureRelevance": 500,
-              "actionBonus": 80,
-              "damageCostPenalty": 30,
-              "depthPenalty": 25,
-              "total": 1553
+            "scoreBreakdown": {
+              "attackContribution": 0,
+              "defenseContribution": 0,
+              "magicDefenseContribution": 0,
+              "hpContribution": 171,
+              "survivabilityContribution": 456,
+              "blockedResourceContribution": 1148,
+              "targetBattleContribution": 2000000,
+              "equipmentContribution": 0,
+              "pathContribution": 0,
+              "actionKindContribution": 90000,
+              "damagePenalty": 4.5,
+              "hpLossPenalty": 0,
+              "depthPenalty": 60000,
+              "rawTotal": 2031770.5,
+              "roundedTotal": 2031771
             }
           },
           "generatedTemporaryGoal": {
@@ -1592,14 +1668,22 @@
           "failureClassRelevance": "door opening creates a newly reachable floor transition",
           "score": {
             "scannerScore": 430000,
-            "decomposition": {
-              "benefit": 0,
-              "frontierBenefit": 600,
-              "failureRelevance": 900,
-              "actionBonus": 140,
-              "damageCostPenalty": 0,
+            "scoreBreakdown": {
+              "attackContribution": 0,
+              "defenseContribution": 0,
+              "magicDefenseContribution": 0,
+              "hpContribution": 0,
+              "survivabilityContribution": 0,
+              "blockedResourceContribution": 0,
+              "targetBattleContribution": 0,
+              "equipmentContribution": 0,
+              "pathContribution": 350000,
+              "actionKindContribution": 80000,
+              "damagePenalty": 0,
+              "hpLossPenalty": 0,
               "depthPenalty": 0,
-              "total": 1640
+              "rawTotal": 430000,
+              "roundedTotal": 430000
             }
           },
           "generatedTemporaryGoal": {

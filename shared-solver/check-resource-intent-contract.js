@@ -22,16 +22,25 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
 }
 
-function assertScoreDecomposition(score, id) {
-  const decomposition = score && score.decomposition;
-  assert.ok(decomposition, `${id}: missing score decomposition`);
-  const expected = decomposition.benefit +
-    decomposition.frontierBenefit +
-    decomposition.failureRelevance +
-    decomposition.actionBonus -
-    decomposition.damageCostPenalty -
-    decomposition.depthPenalty;
-  assert.strictEqual(decomposition.total, expected, `${id}: score decomposition total`);
+function assertScoreAttribution(score, id) {
+  const breakdown = score && score.scoreBreakdown;
+  assert.ok(breakdown, `${id}: missing scanner score breakdown`);
+  const expected = breakdown.attackContribution +
+    breakdown.defenseContribution +
+    breakdown.magicDefenseContribution +
+    breakdown.hpContribution +
+    breakdown.survivabilityContribution +
+    breakdown.blockedResourceContribution +
+    breakdown.targetBattleContribution +
+    breakdown.equipmentContribution +
+    breakdown.pathContribution +
+    breakdown.actionKindContribution -
+    breakdown.damagePenalty -
+    breakdown.hpLossPenalty -
+    breakdown.depthPenalty;
+  assert.strictEqual(breakdown.rawTotal, expected, `${id}: scanner score raw total`);
+  assert.strictEqual(breakdown.roundedTotal, score.scannerScore, `${id}: rounded total must match scanner score`);
+  assert.strictEqual(score.scannerScore, Math.round(breakdown.rawTotal), `${id}: rounded scanner score`);
   assert.ok(Number.isFinite(score.scannerScore), `${id}: scanner score must be finite`);
 }
 
@@ -47,7 +56,7 @@ function assertEvidenceRecord(record, item) {
   assert.ok(record.cost && Number.isFinite(record.cost.damage), `${id}: cost`);
   assert.strictEqual(record.failureClass, item.failureClass, `${id}: failure class`);
   assert.ok(record.failureClassRelevance, `${id}: failure relevance`);
-  assertScoreDecomposition(record.score, id);
+  assertScoreAttribution(record.score, id);
   assert.ok(record.generatedTemporaryGoal, `${id}: generated temporary goal`);
   assert.ok(record.actionPolicy, `${id}: action policy`);
   assert.ok(record.frontierEvidence, `${id}: frontier evidence`);
@@ -57,7 +66,7 @@ function assertEvidenceRecord(record, item) {
 function assertCommonContract(report) {
   assert.strictEqual(report.schema, CONTRACT_SCHEMA);
   assert.strictEqual(report.status, "completed");
-  assert.strictEqual(report.contract.id, "PR-4.7a");
+  assert.strictEqual(report.contract.id, "PR-4.7a1");
   assert.deepStrictEqual(report.contract.fixedOutputKinds, OUTPUT_KINDS);
   assert.strictEqual(report.contract.deterministicFullReportRebuild, true);
   assert.strictEqual(report.provenance.mode, "shadow-only");
@@ -111,12 +120,16 @@ function assertFailureControls(report) {
     ["path-blocker"],
   );
 
-  const ordering = report.controls.stableCandidateOrdering;
-  assert.strictEqual(ordering.stable, true);
+  const ordering = report.controls.strictScoreOrderingRepeatable;
+  assert.strictEqual(ordering.strictScoreOrderingRepeatable, true);
+  assert.deepStrictEqual(ordering.forwardInputOrder, ["candidate-low", "candidate-high"]);
+  assert.deepStrictEqual(ordering.reversedInputOrder, ["candidate-high", "candidate-low"]);
   assert.strictEqual(ordering.observedOrder[0].candidateId, ordering.higherCandidate);
   assert.strictEqual(ordering.observedOrder[1].candidateId, ordering.lowerCandidate);
+  assert.deepStrictEqual(ordering.observedOrder, ordering.reversedObservedOrder);
   assert.deepStrictEqual(ordering.observedOrder, ordering.repeatedOrder);
   assert.ok(ordering.observedOrder[0].scannerScore > ordering.observedOrder[1].scannerScore);
+  assert.strictEqual(report.controls.equalScoreTieDeterminism.status, "not-established");
 
   const empty = report.controls.emptyIntentReturnsEmpty;
   assert.strictEqual(empty.returnedEmpty, true);
@@ -150,7 +163,8 @@ function main() {
   const markdown = fs.readFileSync(DEFAULT_OUT_MD, "utf8");
   assert.ok(markdown.includes("stat-gain"));
   assert.ok(markdown.includes("deferred-resource"));
-  assert.ok(markdown.includes("stable candidate ordering: passed"));
+  assert.ok(markdown.includes("strict unequal-score ordering with reversed input: passed"));
+  assert.ok(markdown.includes("equal-score tie determinism: not-established"));
   assert.ok(markdown.includes("not labeled as an immediate pickup"));
   assert.ok(markdown.includes("not because the tile is merely typed as a door"));
   process.stdout.write(`resource intent evidence contract ok: ${report.cases.length} cases / ${OUTPUT_KINDS.length} output kinds\n`);

@@ -14,7 +14,7 @@ const DEFAULT_OUT = path.join(
   "pr-4.7a-resource-intent-evidence-contract.json",
 );
 const DEFAULT_OUT_MD = DEFAULT_OUT.replace(/\.json$/i, ".md");
-const CONTRACT_SCHEMA = "motapathfinder.pr-4.7a-resource-intent-evidence-contract.v1";
+const CONTRACT_SCHEMA = "motapathfinder.pr-4.7a1-resource-intent-evidence-contract.v1";
 const OUTPUT_KINDS = Object.freeze([
   "stat-gain",
   "equipment",
@@ -172,49 +172,108 @@ function canonicalOutputKind(scannerKind) {
   return null;
 }
 
-function actionKindBonus(actionKind) {
-  return {
-    pickup: 120,
-    equip: 160,
-    battle: 80,
-    openDoor: 140,
-    changeFloor: 180,
-    useTool: 100,
-  }[actionKind] || 0;
-}
-
-function buildScoreDecomposition(record, caseDef) {
+function buildScannerScoreBreakdown(record, desiredStats, failureClass) {
   const delta = record.delta || {};
+  const blockedResource = record.blockedResource || {};
   const frontier = record.frontierDelta || {};
-  const benefit = Math.round(
-    Math.max(0, number(delta.atk, 0)) * 1000 +
-    Math.max(0, number(delta.def, 0)) * 800 +
-    Math.max(0, number(delta.mdef, 0)) * 120 +
-    Math.max(0, number(delta.hp, 0)) * 4 +
-    Math.max(0, number(delta.lv, 0)) * 700 +
-    Math.max(0, number(delta.exp, 0)) * 2 +
-    (Array.isArray(delta.equipment) ? delta.equipment.length : 0) * 1500
-  );
-  const frontierBenefit = Math.round(
-    Math.max(0, number(frontier.targetFloorProgress, 0)) * 1000 +
-    Math.max(0, number(frontier.floorDelta, 0)) * 900 +
-    Math.max(0, number(frontier.newActionCount, 0)) * 600
-  );
-  const failureRelevance = caseDef.failureClass === "target-action-unreachable" ? 900 : 500;
-  const actionBonus = actionKindBonus(record.actionKind);
-  const damageCostPenalty = Math.round(
-    Math.max(0, number(record.damage, 0)) * 10 + Math.max(0, -number(delta.hp, 0))
-  );
-  const depthPenalty = Math.max(0, number(record.depth, 1) - 1) * 25;
-  const total = benefit + frontierBenefit + failureRelevance + actionBonus - damageCostPenalty - depthPenalty;
+  const damage = number(record.damage, 0);
+  const includes = (stat) => desiredStats.includes(stat);
+  const attackContribution = includes("atk")
+    ? Math.max(0, number(delta.atk, 0)) * 160000 +
+      Math.max(0, number(delta.lv, 0)) * 80000 +
+      Math.max(0, number(delta.exp, 0)) * 1400
+    : 0;
+  const defenseContribution = includes("def")
+    ? Math.max(0, number(delta.def, 0)) * 130000 +
+      Math.max(0, number(delta.lv, 0)) * 70000 +
+      Math.max(0, number(delta.exp, 0)) * 1200
+    : 0;
+  const magicDefenseContribution = includes("mdef")
+    ? Math.max(0, number(delta.mdef, 0)) * 16000 +
+      Math.max(0, number(delta.lv, 0)) * 50000 +
+      Math.max(0, number(delta.exp, 0)) * 1200
+    : 0;
+  const hpContribution = includes("hp")
+    ? Math.max(0, number(delta.hp, 0)) * 3 +
+      Math.max(0, number(delta.def, 0)) * 60000 +
+      Math.max(0, number(delta.mdef, 0)) * 5000
+    : 0;
+  const survivabilityRelevant = [
+    "life-limit-hp-deficit",
+    "action-survivability-deficit",
+    "hp-deficit",
+  ].includes(failureClass);
+  const survivabilityContribution = survivabilityRelevant
+    ? Math.max(0, number(delta.hp, 0)) * 8 +
+      Math.max(0, number(delta.def, 0)) * 90000 +
+      Math.max(0, number(delta.atk, 0)) * 30000
+    : 0;
+  const blockedResourceContribution = survivabilityRelevant
+    ? Math.max(0, number(blockedResource.hpGain, 0)) * 12 +
+      Math.max(0, number(blockedResource.netHpAfterBlocker, 0)) * 4
+    : 0;
+  let targetBattleContribution = 0;
+  if (survivabilityRelevant && record.targetBattleImpact && record.targetBattleImpact.damageReduced > 0) {
+    targetBattleContribution += record.targetBattleImpact.damageReduced * 2;
+  }
+  if (survivabilityRelevant && record.targetBattleImpact && record.targetBattleImpact.survivableAfter) {
+    targetBattleContribution += 2000000;
+  }
+  const equipmentContribution = includes("equipment")
+    ? (delta.equipment || []).length * 900000 + (record.actionKind === "equip" ? 300000 : 0)
+    : 0;
+  let pathContribution = 0;
+  if (includes("path")) {
+    pathContribution += Math.max(0, number(frontier.targetFloorProgress, 0)) * 900000;
+    pathContribution += Math.max(0, number(frontier.floorDelta, 0)) * 700000;
+    pathContribution += Math.max(0, number(frontier.newChangeFloorCount, 0)) * 250000;
+    pathContribution += Math.max(0, number(frontier.newPickupCount, 0)) * 120000;
+    pathContribution += Math.max(0, number(frontier.newBattleCount, 0)) * 80000;
+    pathContribution += Math.max(0, number(frontier.newDoorToolCount, 0)) * 80000;
+    if (["battle", "openDoor", "useTool"].includes(record.actionKind)) pathContribution += 100000;
+    if (frontier.targetFloor != null && frontier.targetFloorProgress <= 0 && record.actionKind === "changeFloor") {
+      pathContribution -= 500000;
+    }
+  }
+  let actionKindContribution = 0;
+  if (record.actionKind === "pickup") actionKindContribution += 160000;
+  if (record.actionKind === "equip") actionKindContribution += 150000;
+  if (record.actionKind === "battle") actionKindContribution += 90000;
+  if (["openDoor", "useTool"].includes(record.actionKind)) actionKindContribution += 80000;
+  if (record.actionKind === "changeFloor") actionKindContribution += 120000;
+  const damagePenalty = Math.max(0, damage) * (includes("hp") ? 1.5 : 0.4);
+  const hpLossPenalty = Math.max(0, -number(delta.hp, 0)) * 0.25;
+  const depthPenalty = Math.max(0, number(record.depth, 1) - 1) * 60000;
+  let rawTotal = 0;
+  rawTotal += attackContribution;
+  rawTotal += defenseContribution;
+  rawTotal += magicDefenseContribution;
+  rawTotal += hpContribution;
+  rawTotal += survivabilityContribution;
+  rawTotal += blockedResourceContribution;
+  rawTotal += targetBattleContribution;
+  rawTotal += equipmentContribution;
+  rawTotal += pathContribution;
+  rawTotal += actionKindContribution;
+  rawTotal -= damagePenalty;
+  rawTotal -= hpLossPenalty;
+  rawTotal -= depthPenalty;
   return {
-    benefit,
-    frontierBenefit,
-    failureRelevance,
-    actionBonus,
-    damageCostPenalty,
+    attackContribution,
+    defenseContribution,
+    magicDefenseContribution,
+    hpContribution,
+    survivabilityContribution,
+    blockedResourceContribution,
+    targetBattleContribution,
+    equipmentContribution,
+    pathContribution,
+    actionKindContribution,
+    damagePenalty,
+    hpLossPenalty,
     depthPenalty,
-    total,
+    rawTotal,
+    roundedTotal: Math.round(rawTotal),
   };
 }
 
@@ -246,8 +305,8 @@ function buildEvidenceRecord(record, intent, caseDef) {
     failureClass: caseDef.failureClass,
     failureClassRelevance: caseDef.relevance,
     score: {
-      scannerScore: Math.round(number(record.score, 0)),
-      decomposition: buildScoreDecomposition(record, caseDef),
+      scannerScore: number(record.score, 0),
+      scoreBreakdown: buildScannerScoreBreakdown(record, intent.desiredStats || [], caseDef.failureClass),
     },
     generatedTemporaryGoal: cloneJson(intent.goal || null),
     actionPolicy: cloneJson(intent.actionPolicy || null),
@@ -314,8 +373,8 @@ function stableOrderingControl() {
     failureClass: "atk-deficit",
     missingGoalFields: [{ field: "effectiveHero.atk", expected: 15, actual: 1 }],
   };
-  const run = () => {
-    const intents = scanResourceIntents(simulator, candidates, failure, {
+  const run = (inputCandidates) => {
+    const intents = scanResourceIntents(simulator, inputCandidates, failure, {
       maxIntentRecords: 24,
       recordsPerIntent: 6,
       maxIntents: 6,
@@ -330,14 +389,19 @@ function stableOrderingControl() {
       scannerScore: Math.round(number(record.score, 0)),
     }));
   };
-  const first = run();
-  const second = run();
+  const forward = run(candidates);
+  const reversed = run(candidates.slice().reverse());
+  const repeated = run(candidates);
   return {
     failureClass: "atk-deficit",
-    candidateIds: candidates.map((candidate) => candidate.id),
-    observedOrder: first,
-    repeatedOrder: second,
-    stable: JSON.stringify(first) === JSON.stringify(second),
+    forwardInputOrder: candidates.map((candidate) => candidate.id),
+    reversedInputOrder: candidates.slice().reverse().map((candidate) => candidate.id),
+    observedOrder: forward,
+    reversedObservedOrder: reversed,
+    repeatedOrder: repeated,
+    strictScoreOrderingRepeatable:
+      JSON.stringify(forward) === JSON.stringify(reversed) &&
+      JSON.stringify(forward) === JSON.stringify(repeated),
     higherCandidate: "candidate-high",
     lowerCandidate: "candidate-low",
   };
@@ -403,8 +467,8 @@ function buildReport() {
       productionDefaultPolicyChanged: false,
     },
     contract: {
-      id: "PR-4.7a",
-      title: "Resource Intent Scanner Evidence Contract",
+      id: "PR-4.7a1",
+      title: "Scanner Score Attribution",
       fixedOutputKinds: OUTPUT_KINDS.slice(),
       requiredEvidenceFields: [
         "sourceAction",
@@ -417,7 +481,7 @@ function buildReport() {
         "damage",
         "cost",
         "failureClassRelevance",
-        "score.decomposition",
+        "score.scoreBreakdown",
         "generatedTemporaryGoal",
         "actionPolicy",
       ],
@@ -431,7 +495,11 @@ function buildReport() {
     controls: {
       fixedOutputKindsObserved: OUTPUT_KINDS.every((kind) => cases.some((item) => item.outputKind === kind)),
       failureIntentControls: failureIntentControls(cases),
-      stableCandidateOrdering: stableOrdering,
+      strictScoreOrderingRepeatable: stableOrdering,
+      equalScoreTieDeterminism: {
+        status: "not-established",
+        reason: "scanner sorts equal scores without an explicit secondary key",
+      },
       emptyIntentReturnsEmpty: emptyIntent,
       deferredResourceNotImmediatePickup: {
         outputKind: deferredCase && deferredCase.outputKind,
@@ -463,7 +531,7 @@ function buildReport() {
 
 function markdownReport(report) {
   const lines = [
-    "# PR-4.7a Resource Intent Scanner Evidence Contract",
+    "# PR-4.7a1 Scanner Score Attribution",
     "",
     `Schema: \`${report.schema}\``,
     "Status: completed",
@@ -473,7 +541,7 @@ function markdownReport(report) {
     "",
     `fixed outputs: ${report.contract.fixedOutputKinds.join(", ")}`,
     "",
-    "Every generated record carries the source action and chain, target tile/floor, before/after delta, damage/cost, failure-class relevance, score decomposition, generated temporary goal, and action policy.",
+    "Every generated record carries the source action and chain, target tile/floor, before/after delta, damage/cost, failure-class relevance, an exact scanner score breakdown, generated temporary goal, and action policy.",
     "",
     "## Observed controls",
     "",
@@ -490,7 +558,8 @@ function markdownReport(report) {
     `- atk-deficit controls: ${report.contract.expectedFailureControls["atk-deficit"].join(" / ")}`,
     `- hp-deficit controls: ${report.contract.expectedFailureControls["hp-deficit"].join(" / ")}`,
     `- target-action-unreachable control: ${report.contract.expectedFailureControls["target-action-unreachable"].join(" / ")}`,
-    `- stable candidate ordering: ${report.controls.stableCandidateOrdering.stable ? "passed" : "failed"}`,
+    `- strict unequal-score ordering with reversed input: ${report.controls.strictScoreOrderingRepeatable.strictScoreOrderingRepeatable ? "passed" : "failed"}`,
+    `- equal-score tie determinism: ${report.controls.equalScoreTieDeterminism.status}`,
     `- no available intent returns empty: ${report.controls.emptyIntentReturnsEmpty.returnedEmpty ? "passed" : "failed"}`,
     `- deferred resource direct pickup: ${report.controls.deferredResourceNotImmediatePickup.directImmediatePickupAvailable ? "available" : "not available"}`,
     `- path blocker observed new action count: ${report.controls.pathBlockerRequiresObservedFrontierAction.newActionCount}`,
