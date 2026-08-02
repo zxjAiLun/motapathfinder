@@ -100,6 +100,7 @@ const DIAG = new Set([
   "solver-config.js",
   "floor-id.js",
   "agenda-policy-evaluation.js",
+  "region-entry-validator.js",
 ]);
 
 const modules = {};

@@ -107,7 +107,7 @@ DP key 必须覆盖：
 | `check-bounded-abstraction-counterexample.js` / `check-state-abstraction-collision-inventory.js` | ✅ PR-4.5c1a shadow-only | b3/c1 committed artifact 的 normalized deep compare、依赖工件一致性、stale-report gates 与 signature coverage 口径；不接入 production key |
 | `adaptive-repair-synthetic-simulator.js` / `audit-adaptive-repair-outcomes.js` / `check-adaptive-repair-outcomes.js` | ✅ PR-4.6a1a shadow-only | deterministic synthetic execution、可执行 presentTiles validator、one-repair-insertion accounting、observed source split、五 case effective budget 与 deterministic rebuild；不接入 production planner 默认路径 |
 | `resource-intent-contract-synthetic-simulator.js` / `audit-resource-intent-contract.js` / `check-resource-intent-contract.js` | ✅ PR-4.7a shadow-only | 五类 scanner output、failure intent controls、stable ordering、empty/deferred/path evidence 与 deterministic rebuild；不接入 production planner 默认路径 |
-| `audit-region-entry-contract.js` / `check-region-entry-contract.js` | ✅ PR-4.8a shadow-only | 统一 `run-region-dp.js` entry contract、三项固定 live probe、schema/reference gates、六项负控制与 deterministic rebuild；不接入 production DP 语义 |
+| `lib/region-entry-validator.js` / `audit-region-entry-contract.js` / `check-region-entry-contract.js` | ✅ PR-4.8a1 shadow-only | 共享 structured entry validator、`run-region-dp.js --validate-only=1`、三项真实 preflight、结构化 Region-2 prefix failure、六项真实 CLI 负控、exact expected map 与 content fingerprint；不接入 production DP 语义 |
 | `check-onlyup-floorfly-dedup-safety.js` | ✅ | OnlyUp floorFly dedup 安全审计（确认 target-floor 模式不安全） |
 | `check-progressive-monster-planner.js` | ✅ | synthetic smoke + special target priority + batch cap + targeted matcher + legacy compat + portal compat + portal dedup safety（9 tests） |
 
@@ -255,14 +255,14 @@ npm run check:resource-intent:contract --prefix shared-solver
 npm run run:resource-intent:contract --prefix shared-solver
 ```
 
-#### PR-4.8a：RegionSpec Entry Contract ✅ shadow-only
+#### PR-4.8a1：Structured RegionSpec Entry Validation ✅ shadow-only
 
-- ✅ 三个固定控制统一通过 `run-region-dp.js --project-root --region-spec --out` 进入：OnlyUp region-1、OnlyUp region-2、WhiteIsland trial-smoke。
-- ✅ entry validator 检查唯一 milestone ID、`startFrom` 引用与环、支持的 goal type、scope/action floor 合法性、有限正 DP budget，以及输入/输出路径可解析性。
-- ✅ 每个控制记录 spec identity/hash、project identity、milestone order、start checkpoint、reached milestone、termination/failure class、route primitive count、bounded budget usage 与 output provenance。
-- ✅ 固定负控覆盖 dangling `startFrom`、重复 milestone ID、未知 floor、unsupported goal、非法预算与 cyclic dependency。
-- ✅ live probe 采用确定的极小预算，只验证入口与报告契约；runner-level failure 作为显式 failure evidence 保存，不作为路线无解结论。
-- ✅ normalized full-report rebuild 通过；不修改 production DP key、dominance、agenda、容量、默认策略或 solver semantics。
+- ✅ 共享 `lib/region-entry-validator.js` 同时服务 `run-region-dp.js`、audit 和 checker；检查唯一 milestone ID、`startFrom` 引用与环、支持 goal type、scope/action floor、有限正 DP budget、边界解析和路径。
+- ✅ `run-region-dp.js --validate-only=1` 三项真实 preflight 均 `exitCode=0 + summaryParsed=true`，不运行 DP、不写 route，并记录 project/spec/milestone/prefix/output 检查。
+- ✅ Region-2 bounded prefix failure 结构化为 `stage=prefix-milestone`、`termination=prefix-budget-exhausted`、`failedSegmentId=mt1-gate-1559`、`usedExpansions=1`，不再泛化为 `runner-error`。
+- ✅ 六个负控写入临时 RegionSpec 文件，经真实 CLI `--validate-only=1` 拒绝，锁定 `exitCode=2`、结构化 error code 和无 route 输出。
+- ✅ checker 为三个固定控制锁定 exact expected map，并检查 `usedExpansions <= configured budget`、`routeWritten === found`、JSON/Markdown deterministic rebuild 与 content-level project fingerprint。
+- ✅ 不修改 production DP key、dominance、agenda、容量、默认策略或搜索结果选择语义。
 
 验收：
 

@@ -6,26 +6,18 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { loadProject } = require("./lib/project-loader");
-const { buildRegionMilestoneSpec, loadRegionSpec } = require("./lib/region-spec");
+const { loadRegionSpec } = require("./lib/region-spec");
+const {
+  SUPPORTED_GOAL_TYPES,
+  buildStartCheckpoint,
+  validateRegionEntryContract,
+} = require("./lib/region-entry-validator");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const ENTRYPOINT = "shared-solver/run-region-dp.js";
-const CONTRACT_SCHEMA = "motapathfinder.pr-4.8a-region-entry-contract.v1";
-const DEFAULT_OUT = path.join(__dirname, "routes", "generated", "agenda-policy-evaluation", "pr-4.8a-region-entry-contract.json");
-const DEFAULT_OUT_MD = path.join(__dirname, "routes", "generated", "agenda-policy-evaluation", "pr-4.8a-region-entry-contract.md");
-
-const SUPPORTED_GOAL_TYPES = new Set(["heroAtLeast", "bossDefeated", "tileRemoved"]);
-const SUPPORTED_ACTION_KINDS = new Set([
-  "battle",
-  "pickup",
-  "interactPickup",
-  "equip",
-  "openDoor",
-  "useTool",
-  "changeFloor",
-  "floorFly",
-  "event",
-]);
+const CONTRACT_SCHEMA = "motapathfinder.pr-4.8a1-structured-entry-validation.v1";
+const DEFAULT_OUT = path.join(__dirname, "routes", "generated", "agenda-policy-evaluation", "pr-4.8a1-structured-entry-validation.json");
+const DEFAULT_OUT_MD = path.join(__dirname, "routes", "generated", "agenda-policy-evaluation", "pr-4.8a1-structured-entry-validation.md");
 
 const CONTROLS = [
   {
@@ -61,6 +53,52 @@ const CONTROLS = [
     },
   },
 ];
+
+const CONTROL_EXPECTATIONS = {
+  "onlyup-region-1": {
+    effectiveMilestoneCount: 18,
+    preflight: { exitCode: 0, summaryParsed: true, valid: true },
+    probe: {
+      exitCode: 0,
+      summaryParsed: true,
+      status: "not-found",
+      termination: "expansion-budget-exhausted",
+      failureClass: "target-action-unreachable",
+      failedSegmentId: "mt1-gate-1559",
+      usedExpansions: 1,
+      routeWritten: false,
+    },
+  },
+  "onlyup-region-2": {
+    effectiveMilestoneCount: 12,
+    preflight: { exitCode: 0, summaryParsed: true, valid: true },
+    probe: {
+      exitCode: 1,
+      summaryParsed: false,
+      status: "not-found",
+      termination: "prefix-budget-exhausted",
+      failureClass: "prefix-budget-exhausted",
+      stage: "prefix-milestone",
+      failedSegmentId: "mt1-gate-1559",
+      usedExpansions: 1,
+      routeWritten: false,
+    },
+  },
+  "whiteisland-trial-smoke": {
+    effectiveMilestoneCount: 1,
+    preflight: { exitCode: 0, summaryParsed: true, valid: true },
+    probe: {
+      exitCode: 0,
+      summaryParsed: true,
+      status: "not-found",
+      termination: "expansion-budget-exhausted",
+      failureClass: "hp-deficit",
+      failedSegmentId: "whiteisland-trial-smoke-goal",
+      usedExpansions: 1,
+      routeWritten: false,
+    },
+  },
+};
 
 const NEGATIVE_CONTROLS = [
   { id: "dangling-startFrom", expectedError: "dangling-startFrom" },
@@ -100,217 +138,24 @@ function hashFile(filePath) {
   return sha256(fs.readFileSync(filePath));
 }
 
+function generationCommit() {
+  try {
+    return childProcess.execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch (error) {
+    return null;
+  }
+}
+
 function relativePath(filePath) {
   return path.relative(REPO_ROOT, filePath).replace(/\\/g, "/") || ".";
 }
 
 function solverRelativePath(filePath) {
   return path.relative(__dirname, filePath).replace(/\\/g, "/") || ".";
-}
-
-function pathIsParseable(filePath) {
-  if (typeof filePath !== "string" || filePath.length === 0) return false;
-  const parsed = path.parse(filePath);
-  return Boolean(parsed.root && parsed.dir != null && parsed.base);
-}
-
-function addError(errors, code, detail) {
-  if (errors.some((entry) => entry.code === code)) return;
-  errors.push({ code, detail });
-}
-
-function extractGoalEntries(milestoneSpec) {
-  return (milestoneSpec && Array.isArray(milestoneSpec.milestones))
-    ? milestoneSpec.milestones.map((milestone) => ({
-      id: milestone.id,
-      goal: milestone.goal || {},
-      dp: milestone.dp || {},
-      actionPolicy: milestone.actionPolicy || {},
-      startFrom: milestone.startFrom || null,
-    }))
-    : [];
-}
-
-function checkMilestoneGraph(milestoneSpec, errors) {
-  const milestones = extractGoalEntries(milestoneSpec);
-  const ids = new Set();
-  milestones.forEach((milestone) => {
-    if (ids.has(milestone.id)) addError(errors, "duplicate-milestone-id", `duplicate milestone id: ${milestone.id}`);
-    ids.add(milestone.id);
-  });
-
-  const edges = new Map();
-  milestones.forEach((milestone) => {
-    if (milestone.startFrom && !ids.has(milestone.startFrom)) {
-      addError(errors, "dangling-startFrom", `${milestone.id} starts from missing milestone ${milestone.startFrom}`);
-    }
-    edges.set(milestone.id, milestone.startFrom || null);
-  });
-
-  const visiting = new Set();
-  const visited = new Set();
-  function visit(id) {
-    if (visited.has(id)) return;
-    if (visiting.has(id)) {
-      addError(errors, "cyclic-milestone-dependency", `cycle reaches ${id}`);
-      return;
-    }
-    visiting.add(id);
-    const parent = edges.get(id);
-    if (parent) visit(parent);
-    visiting.delete(id);
-    visited.add(id);
-  }
-  ids.forEach(visit);
-}
-
-function checkGoalTypes(milestoneSpec, errors) {
-  extractGoalEntries(milestoneSpec).forEach((milestone) => {
-    const type = milestone.goal && milestone.goal.type;
-    if (!SUPPORTED_GOAL_TYPES.has(type)) {
-      addError(errors, "unsupported-goal-type", `${milestone.id} uses unsupported goal type ${type || "<missing>"}`);
-    }
-  });
-}
-
-function checkMilestoneActionPolicies(milestoneSpec, scopeFloors, floors, errors) {
-  extractGoalEntries(milestoneSpec).forEach((milestone) => {
-    const policy = milestone.actionPolicy || {};
-    if (policy.actionKinds != null && (!Array.isArray(policy.actionKinds) || policy.actionKinds.length === 0)) {
-      addError(errors, "invalid-action-scope", `${milestone.id} actionKinds must be non-empty`);
-    }
-    (policy.actionKinds || []).forEach((actionKind) => {
-      if (!SUPPORTED_ACTION_KINDS.has(actionKind)) addError(errors, "unsupported-action-kind", `${milestone.id} uses unsupported action kind ${actionKind}`);
-    });
-    (policy.allowedFloors || []).forEach((floorId) => {
-      if (!scopeFloors.includes(floorId)) addError(errors, "illegal-action-policy-floor", `${milestone.id} action policy floor ${floorId} is outside the region scope`);
-      if (!floors.has(floorId)) addError(errors, "unknown-floor", `${milestone.id} action policy references unknown floor ${floorId}`);
-    });
-  });
-}
-
-function effectiveMilestones(milestoneSpec, spec) {
-  const milestones = (milestoneSpec && milestoneSpec.milestones) || [];
-  const prefix = spec && spec.start && spec.start.milestonePrefix;
-  const fromId = spec && spec.fromMilestoneId || (prefix && prefix.toMilestoneId) || null;
-  const toId = spec && spec.toMilestoneId || null;
-  const fromIndex = fromId ? milestones.findIndex((milestone) => milestone.id === fromId) : -1;
-  const toIndex = toId ? milestones.findIndex((milestone) => milestone.id === toId) : -1;
-  const startIndex = fromIndex >= 0 ? fromIndex + 1 : 0;
-  const endIndex = toIndex >= 0 ? toIndex : milestones.length - 1;
-  if (startIndex > endIndex) return [];
-  return milestones.slice(startIndex, endIndex + 1);
-}
-
-function effectiveActionScopeFloors(milestoneSpec, spec, scopeFloors) {
-  const result = scopeFloors.slice();
-  const prefix = spec && spec.start && spec.start.milestonePrefix;
-  const fromId = spec && spec.fromMilestoneId || (prefix && prefix.toMilestoneId) || null;
-  if (!fromId) return result;
-  const boundary = ((milestoneSpec && milestoneSpec.milestones) || []).find((milestone) => milestone.id === fromId);
-  const boundaryFloors = boundary && boundary.actionPolicy && boundary.actionPolicy.allowedFloors;
-  (boundaryFloors || []).forEach((floorId) => {
-    if (!result.includes(floorId)) result.push(floorId);
-  });
-  return result;
-}
-
-function checkPositiveBudget(budget, label, errors) {
-  if (!budget || typeof budget !== "object") {
-    addError(errors, "invalid-dp-budget", `${label} budget is missing`);
-    return;
-  }
-  ["maxExpansions", "maxRuntimeMs"].forEach((field) => {
-    const value = Number(budget[field]);
-    if (!Number.isFinite(value) || value <= 0) {
-      addError(errors, "invalid-dp-budget", `${label}.${field} must be finite and positive`);
-    }
-  });
-}
-
-function projectFloorIds(project) {
-  return new Set(Object.keys((project && project.floorsById) || {}));
-}
-
-function validateEntryContract(spec, project, paths) {
-  const errors = [];
-  if (!spec || typeof spec !== "object") {
-    addError(errors, "invalid-region-spec", "RegionSpec must be an object");
-    return { valid: false, errors };
-  }
-
-  if (!pathIsParseable(paths.specFile)) addError(errors, "unparseable-input-path", "region spec path is not parseable");
-  if (!pathIsParseable(paths.projectRoot)) addError(errors, "unparseable-input-path", "project root path is not parseable");
-  if (!pathIsParseable(paths.outFile)) addError(errors, "unparseable-output-path", "output path is not parseable");
-  if (!fs.existsSync(paths.specFile)) addError(errors, "missing-input-path", `region spec does not exist: ${paths.specFile}`);
-  if (!fs.existsSync(paths.projectRoot)) addError(errors, "missing-input-path", `project root does not exist: ${paths.projectRoot}`);
-  if (!fs.existsSync(path.join(__dirname, "run-region-dp.js"))) {
-    addError(errors, "missing-entrypoint", ENTRYPOINT);
-  }
-
-  const floors = projectFloorIds(project);
-  const scopeFloors = Array.isArray(spec.scope && spec.scope.floors) ? spec.scope.floors : [];
-  scopeFloors.forEach((floorId) => {
-    if (!floors.has(floorId)) addError(errors, "unknown-floor", `scope references unknown floor ${floorId}`);
-  });
-  const allowedFloors = Array.isArray(spec.actionPolicy && spec.actionPolicy.allowedFloors)
-    ? spec.actionPolicy.allowedFloors
-    : scopeFloors;
-  allowedFloors.forEach((floorId) => {
-    if (!scopeFloors.includes(floorId)) {
-      addError(errors, "illegal-action-policy-floor", `action policy floor ${floorId} is outside the region scope`);
-    }
-    if (!floors.has(floorId)) addError(errors, "unknown-floor", `action policy references unknown floor ${floorId}`);
-  });
-  (spec.actionPolicy && spec.actionPolicy.actionKinds || []).forEach((actionKind) => {
-    if (!SUPPORTED_ACTION_KINDS.has(actionKind)) {
-      addError(errors, "unsupported-action-kind", `unsupported action kind ${actionKind}`);
-    }
-  });
-
-  checkPositiveBudget(spec.search && spec.search.dpBudget, `${spec.id || "region"}.search.dpBudget`, errors);
-
-  const rawMilestones = Array.isArray(spec.segments)
-    ? spec.segments.map((segment, index) => ({
-      id: segment && segment.id || `${spec.id || "region"}-${index + 1}`,
-      goal: segment && segment.goal || {},
-      dp: segment && segment.dp || {},
-      actionPolicy: segment && segment.actionPolicy || {},
-      startFrom: segment && segment.startFrom || null,
-    }))
-    : null;
-  if (rawMilestones) {
-    const rawMilestoneSpec = { milestones: rawMilestones };
-    checkMilestoneGraph(rawMilestoneSpec, errors);
-    checkGoalTypes(rawMilestoneSpec, errors);
-    const activeRawMilestones = effectiveMilestones(rawMilestoneSpec, spec);
-    checkMilestoneActionPolicies({ milestones: activeRawMilestones }, effectiveActionScopeFloors(rawMilestoneSpec, spec, scopeFloors), floors, errors);
-    rawMilestones.forEach((milestone) => checkPositiveBudget(milestone.dp, `${milestone.id}.dp`, errors));
-  }
-
-  let milestoneSpec = null;
-  try {
-    milestoneSpec = buildRegionMilestoneSpec(project, spec);
-  } catch (error) {
-    addError(errors, "invalid-milestone-graph", error.message);
-  }
-  if (milestoneSpec) {
-    checkMilestoneGraph(milestoneSpec, errors);
-    checkGoalTypes(milestoneSpec, errors);
-    const activeMilestoneEntries = effectiveMilestones(milestoneSpec, spec);
-    checkMilestoneActionPolicies({ milestones: activeMilestoneEntries }, effectiveActionScopeFloors(milestoneSpec, spec, scopeFloors), floors, errors);
-    activeMilestoneEntries.forEach((milestone) => {
-      checkPositiveBudget(milestone.dp, `${milestone.id}.dp`, errors);
-      const goalFloor = milestone.goal && milestone.goal.floorId;
-      if (goalFloor && !floors.has(goalFloor)) addError(errors, "unknown-floor", `${milestone.id} goal references unknown floor ${goalFloor}`);
-    });
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    milestoneSpec,
-  };
 }
 
 function projectIdentity(project, projectRoot) {
@@ -323,12 +168,23 @@ function projectIdentity(project, projectRoot) {
     ? project.data.firstData.title || null
     : null;
   const floorOrder = Array.isArray(project && project.floorOrder) ? project.floorOrder.slice() : [];
+  const structuralFingerprintSha256 = hashJson({ title, floorOrder, floorSummary });
+  const contentFingerprintSha256 = hashJson({
+    data: project && project.data || {},
+    floorOrder,
+    floorsById: project && project.floorsById || {},
+    enemysById: project && project.enemysById || {},
+    itemsById: project && project.itemsById || {},
+    mapTilesByNumber: project && project.mapTilesByNumber || {},
+  });
   return {
     root: relativePath(projectRoot),
     title,
     floorCount: floorSummary.length,
     floorOrder,
-    fingerprintSha256: hashJson({ title, floorOrder, floorSummary }),
+    structuralFingerprintSha256,
+    fingerprintSha256: contentFingerprintSha256,
+    fingerprintInputs: ["data", "floorOrder", "floorsById", "enemysById", "itemsById", "mapTilesByNumber"],
   };
 }
 
@@ -342,19 +198,6 @@ function specIdentity(spec, specFile) {
     sourceFile: relativePath(specFile),
     sourceSha256: hashFile(specFile),
     normalizedSha256: hashJson(hashable),
-  };
-}
-
-function startCheckpoint(spec) {
-  const start = spec.start || {};
-  const prefix = start.milestonePrefix || null;
-  return {
-    type: start.type || (prefix ? "milestonePrefix" : "initial"),
-    floorId: start.floorId || null,
-    routeFile: start.routeFile || null,
-    routeName: prefix && prefix.routeName || null,
-    fromMilestoneId: prefix && prefix.fromMilestoneId || null,
-    toMilestoneId: prefix && prefix.toMilestoneId || null,
   };
 }
 
@@ -429,6 +272,88 @@ function compactSummary(summary) {
   };
 }
 
+function compactPreflightSummary(summary) {
+  if (!summary) return null;
+  return {
+    kind: summary.kind || null,
+    schema: summary.schema || null,
+    valid: summary.valid === true,
+    regionId: summary.regionId || null,
+    projectRoot: summary.projectRoot || null,
+    regionSpec: summary.regionSpec || null,
+    outputPath: summary.outputPath || null,
+    startCheckpoint: summary.startCheckpoint || null,
+    milestoneOrder: Array.isArray(summary.milestoneOrder) ? summary.milestoneOrder.slice() : [],
+    boundary: summary.boundary || null,
+    checks: summary.checks || null,
+    errorCodes: (summary.errors || []).map((error) => error.code),
+  };
+}
+
+function structuredErrorEvidence(text) {
+  const parsed = parseFirstJsonObject(text);
+  if (!parsed || parsed.kind !== "region-dp-error") return null;
+  return {
+    kind: parsed.kind,
+    schema: parsed.schema || null,
+    regionId: parsed.regionId || null,
+    stage: parsed.stage || "runner",
+    termination: parsed.termination || "runner-error",
+    failureClass: parsed.failureClass || "runner-error",
+    primaryFailureClass: parsed.primaryFailureClass || null,
+    failedSegmentId: parsed.failedSegmentId || null,
+    usedExpansions: parsed.usedExpansions == null ? null : Number(parsed.usedExpansions),
+    configuredMaxExpansions: parsed.configuredMaxExpansions == null ? null : Number(parsed.configuredMaxExpansions),
+    configuredMaxRuntimeMs: parsed.configuredMaxRuntimeMs == null ? null : Number(parsed.configuredMaxRuntimeMs),
+    errorType: parsed.errorType || "Error",
+    message: parsed.message || null,
+  };
+}
+
+function removeGeneratedOutput(filePath) {
+  if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+}
+
+function spawnRunner(args) {
+  return childProcess.spawnSync(process.execPath, args, {
+    cwd: __dirname,
+    encoding: "utf8",
+    timeout: 30000,
+    windowsHide: true,
+  });
+}
+
+function preflightArgs(control) {
+  return [
+    "run-region-dp.js",
+    `--project-root=${solverRelativePath(control.projectRoot)}`,
+    `--region-spec=${solverRelativePath(control.specFile)}`,
+    `--out=${solverRelativePath(control.outFile)}`,
+    "--validate-only=1",
+    "--structured-errors=1",
+  ];
+}
+
+function runPreflight(control) {
+  removeGeneratedOutput(control.outFile);
+  const args = preflightArgs(control);
+  const result = spawnRunner(args);
+  const summary = parseFirstJsonObject(result.stdout);
+  const errorEvidence = structuredErrorEvidence(result.stderr);
+  return {
+    invoked: true,
+    mode: "validate-only",
+    command: ["node", ...args],
+    exitCode: result.status == null ? null : result.status,
+    signal: result.signal || null,
+    errorCode: result.error && result.error.code ? result.error.code : null,
+    summaryParsed: Boolean(summary),
+    summary: compactPreflightSummary(summary),
+    errorEvidence,
+    outputPathExistsAfter: fs.existsSync(control.outFile),
+  };
+}
+
 function probeArgs(control) {
   const args = [
     "run-region-dp.js",
@@ -438,6 +363,7 @@ function probeArgs(control) {
     `--max-expansions=${control.probe.maxExpansions}`,
     `--max-runtime-ms=${control.probe.maxRuntimeMs}`,
     "--print-failures=0",
+    "--structured-errors=1",
   ];
   if (control.probe.prefixMaxExpansions != null) args.push(`--prefix-max-expansions=${control.probe.prefixMaxExpansions}`);
   if (control.probe.prefixMaxRuntimeMs != null) args.push(`--prefix-max-runtime-ms=${control.probe.prefixMaxRuntimeMs}`);
@@ -445,14 +371,11 @@ function probeArgs(control) {
 }
 
 function runProbe(control) {
+  removeGeneratedOutput(control.outFile);
   const args = probeArgs(control);
-  const result = childProcess.spawnSync(process.execPath, args, {
-    cwd: __dirname,
-    encoding: "utf8",
-    timeout: 30000,
-    windowsHide: true,
-  });
+  const result = spawnRunner(args);
   const summary = parseFirstJsonObject(result.stdout);
+  const errorEvidence = structuredErrorEvidence(result.stderr);
   const errorCode = result.error && result.error.code ? result.error.code : null;
   return {
     invoked: true,
@@ -463,14 +386,44 @@ function runProbe(control) {
     errorCode,
     summaryParsed: Boolean(summary),
     summary: compactSummary(summary),
+    stderrCaptured: String(result.stderr || "").trim().length > 0,
+    stderrParsed: Boolean(errorEvidence),
+    errorEvidence,
+    outputPathExistsAfter: fs.existsSync(control.outFile),
   };
 }
 
 function executionFromProbe(spec, control, probe) {
   const summary = probe.summary;
+  const errorEvidence = probe.errorEvidence;
+  if (!summary && errorEvidence && errorEvidence.stage === "prefix-milestone") {
+    return {
+      status: "not-found",
+      found: false,
+      stage: errorEvidence.stage,
+      startCheckpoint: buildStartCheckpoint(spec),
+      reachedMilestone: null,
+      failedSegmentId: errorEvidence.failedSegmentId,
+      termination: errorEvidence.termination,
+      failureClass: errorEvidence.failureClass,
+      primaryFailureClass: errorEvidence.primaryFailureClass,
+      routePrimitiveCount: 0,
+      budgetUsage: {
+        configuredProbe: {
+          maxExpansions: control.probe.maxExpansions,
+          maxRuntimeMs: control.probe.maxRuntimeMs,
+          prefixMaxExpansions: control.probe.prefixMaxExpansions || null,
+          prefixMaxRuntimeMs: control.probe.prefixMaxRuntimeMs || null,
+        },
+        usedExpansions: errorEvidence.usedExpansions,
+        expansionBudgetExhausted: errorEvidence.termination === "prefix-budget-exhausted",
+      },
+      failureEvidence: errorEvidence,
+    };
+  }
   const failureClass = summary && summary.failureClasses.length > 0
     ? summary.failureClasses[0]
-    : (summary ? null : "runner-error");
+    : (summary ? null : (errorEvidence && errorEvidence.failureClass || "runner-error"));
   let termination = "runner-error";
   if (summary) {
     if (summary.found) termination = "reached-target";
@@ -481,8 +434,10 @@ function executionFromProbe(spec, control, probe) {
   return {
     status: summary ? (summary.found ? "found" : "not-found") : "runner-error",
     found: Boolean(summary && summary.found),
-    startCheckpoint: startCheckpoint(spec),
+    stage: summary ? "region-dp" : (errorEvidence && errorEvidence.stage || "runner"),
+    startCheckpoint: buildStartCheckpoint(spec),
     reachedMilestone: summary && summary.reachedMilestone || null,
+    failedSegmentId: summary && summary.failedSegmentId || errorEvidence && errorEvidence.failedSegmentId || null,
     termination,
     failureClass,
     routePrimitiveCount: summary ? summary.metrics.routeLength : 0,
@@ -493,21 +448,24 @@ function executionFromProbe(spec, control, probe) {
         prefixMaxExpansions: control.probe.prefixMaxExpansions || null,
         prefixMaxRuntimeMs: control.probe.prefixMaxRuntimeMs || null,
       },
-      usedExpansions: summary ? summary.metrics.expansions : null,
+      usedExpansions: summary ? summary.metrics.expansions : errorEvidence && errorEvidence.usedExpansions,
       expansionBudgetExhausted: summary ? summary.expansionBudgetExhausted : null,
     },
+    failureEvidence: errorEvidence,
   };
 }
 
 function outputProvenance(control, probe) {
-  const routeFile = probe.summary && probe.summary.found ? relativePath(control.outFile) : null;
+  const routeWritten = Boolean(probe.summary && probe.summary.found && probe.outputPathExistsAfter);
+  const routeFile = routeWritten ? relativePath(control.outFile) : null;
   return {
     entrypoint: ENTRYPOINT,
     projectRoot: relativePath(control.projectRoot),
     regionSpec: relativePath(control.specFile),
     requestedOutput: relativePath(control.outFile),
-    routeWritten: Boolean(routeFile),
+    routeWritten,
     routeFile,
+    outputPathExistsAfterProbe: probe.outputPathExistsAfter,
     liveVerified: false,
     probeMode: probe.mode,
     command: probe.command,
@@ -520,7 +478,7 @@ function baseNegativeSpec(sourceSpec) {
   delete spec.fromMilestoneId;
   delete spec.toMilestoneId;
   spec.id = "pr-4.8a-negative";
-  spec.label = "PR-4.8a negative control";
+  spec.label = "PR-4.8a1 negative control";
   spec.start = { type: "initial", floorId: "MT1" };
   spec.scope = { floors: ["MT1"] };
   spec.actionPolicy = {
@@ -582,7 +540,7 @@ function makeNegativeSpec(sourceSpec, id) {
       { ...cloneJson(spec.segments[0]), id: "negative-b", startFrom: "negative-a" },
     ];
   }
-  spec.id = `pr-4.8a-negative-${id}`;
+  spec.id = `pr-4.8a1-negative-${id}`;
   return spec;
 }
 
@@ -594,50 +552,89 @@ function buildControl(control) {
     projectRoot: control.projectRoot,
     outFile: control.outFile,
   };
-  const validation = validateEntryContract(spec, project, paths);
-  const milestoneSpec = validation.milestoneSpec || buildRegionMilestoneSpec(project, spec);
+  const validation = validateRegionEntryContract(spec, project, paths);
+  const preflight = runPreflight(control);
   const probe = runProbe(control);
   return {
     id: control.id,
     specIdentity: specIdentity(spec, control.specFile),
     projectIdentity: projectIdentity(project, control.projectRoot),
-    milestoneOrder: effectiveMilestones(milestoneSpec, spec).map((milestone) => milestone.id),
-    startCheckpoint: startCheckpoint(spec),
+    milestoneOrder: validation.effectiveMilestones.map((milestone) => milestone.id),
+    startCheckpoint: buildStartCheckpoint(spec),
     entryValidation: {
       valid: validation.valid,
       errors: validation.errors,
+      boundary: validation.boundary,
     },
+    preflight,
     execution: executionFromProbe(spec, control, probe),
     outputProvenance: outputProvenance(control, probe),
     runnerProbe: probe,
   };
 }
 
-function buildNegativeControls(sourceSpec, project, sourcePaths) {
+function buildNegativeControl(sourceSpec, negative) {
+  const inputDir = path.join(__dirname, "routes", "generated", "region-entry-contract", "negative-inputs");
+  const outputDir = path.join(__dirname, "routes", "generated", "region-entry-contract", "negative-outputs");
+  const specFile = path.join(inputDir, `${negative.id}.json`);
+  const outFile = path.join(outputDir, `${negative.id}.route.json`);
+  const spec = makeNegativeSpec(sourceSpec, negative.id);
+  fs.mkdirSync(inputDir, { recursive: true });
+  fs.mkdirSync(outputDir, { recursive: true });
+  removeGeneratedOutput(specFile);
+  removeGeneratedOutput(outFile);
+  fs.writeFileSync(specFile, `${JSON.stringify(spec, null, 2)}\n`);
+  const inputSha256 = hashFile(specFile);
+  const args = [
+    "run-region-dp.js",
+    `--project-root=${solverRelativePath(CONTROLS[0].projectRoot)}`,
+    `--region-spec=${solverRelativePath(specFile)}`,
+    `--out=${solverRelativePath(outFile)}`,
+    "--validate-only=1",
+    "--structured-errors=1",
+  ];
+  const result = spawnRunner(args);
+  const summary = parseFirstJsonObject(result.stdout);
+  const errorEvidence = structuredErrorEvidence(result.stderr);
+  const outputPathExistsAfter = fs.existsSync(outFile);
+  const observedErrors = summary && Array.isArray(summary.errors)
+    ? summary.errors.map((entry) => entry.code)
+    : [];
+  const specNormalizedSha256 = hashJson({ ...spec, sourceFile: null });
+  removeGeneratedOutput(specFile);
+  removeGeneratedOutput(outFile);
+  return {
+    id: negative.id,
+    expectedError: negative.expectedError,
+    inputPath: relativePath(specFile),
+    inputSha256,
+    specNormalizedSha256,
+    observedErrors,
+    rejected: result.status !== 0 && Boolean(summary && summary.valid === false) && observedErrors.includes(negative.expectedError),
+    cli: {
+      command: ["node", ...args],
+      exitCode: result.status == null ? null : result.status,
+      signal: result.signal || null,
+      errorCode: result.error && result.error.code ? result.error.code : null,
+      summaryParsed: Boolean(summary),
+      summary: compactPreflightSummary(summary),
+      errorEvidence,
+      outputPath: relativePath(outFile),
+      routeOutputExistsAfter: outputPathExistsAfter,
+    },
+  };
+}
+
+function buildNegativeControls(sourceSpec) {
   return NEGATIVE_CONTROLS.map((negative) => {
-    const spec = makeNegativeSpec(sourceSpec, negative.id);
-    const validation = validateEntryContract(spec, project, sourcePaths);
-    const observedErrors = validation.errors.map((entry) => entry.code);
-    return {
-      id: negative.id,
-      expectedError: negative.expectedError,
-      observedErrors,
-      rejected: observedErrors.includes(negative.expectedError),
-      specNormalizedSha256: hashJson({ ...spec, sourceFile: null }),
-    };
+    return buildNegativeControl(sourceSpec, negative);
   });
 }
 
 function buildReport() {
   const sourceControl = CONTROLS[0];
   const sourceSpec = loadRegionSpec(sourceControl.specFile);
-  const sourceProject = loadProject(sourceControl.projectRoot);
   const controls = CONTROLS.map(buildControl);
-  const negativePaths = {
-    specFile: sourceControl.specFile,
-    projectRoot: sourceControl.projectRoot,
-    outFile: path.join(__dirname, "routes", "generated", "region-entry-contract", "negative.route.json"),
-  };
   return {
     schema: CONTRACT_SCHEMA,
     status: "completed",
@@ -646,9 +643,9 @@ function buildReport() {
       mode: "shadow-only",
       entrypoint: ENTRYPOINT,
       runner: "shared-solver/run-region-dp.js",
-      runnerProbeMode: "bounded-entry-probe",
+      runnerProbeMode: "validate-only-preflight-and-bounded-entry-probe",
       deterministicFullReportRebuild: true,
-      generationCommit: null,
+      generationCommit: generationCommit(),
       productionDpKeyChanged: false,
       productionDominanceChanged: false,
       productionAgendaChanged: false,
@@ -657,8 +654,8 @@ function buildReport() {
       describesCompleteTowerRoute: false,
     },
     contract: {
-      id: "PR-4.8a",
-      title: "RegionSpec Entry Contract",
+      id: "PR-4.8a1",
+      title: "Structured RegionSpec Entry Validation",
       unifiedEntry: {
         command: "node shared-solver/run-region-dp.js --project-root=<project-root> --region-spec=<region-spec> --out=<output>",
         requiredPaths: ["project-root", "region-spec", "out"],
@@ -668,6 +665,7 @@ function buildReport() {
         "projectIdentity",
         "milestoneOrder",
         "startCheckpoint",
+        "preflight",
         "reachedMilestone",
         "termination",
         "failureClass",
@@ -676,12 +674,13 @@ function buildReport() {
         "outputProvenance",
       ],
       fixedControls: CONTROLS.map((control) => control.id),
+      fixedExpectedControlOutcomes: CONTROL_EXPECTATIONS,
       negativeControls: NEGATIVE_CONTROLS.map((control) => control.id),
       supportedGoalTypes: [...SUPPORTED_GOAL_TYPES],
       deterministicLiveRebuild: true,
     },
     controls,
-    negativeControls: buildNegativeControls(sourceSpec, sourceProject, negativePaths),
+    negativeControls: buildNegativeControls(sourceSpec),
     scope: {
       shadowOnly: true,
       productionDpKeyChanged: false,
@@ -696,7 +695,7 @@ function buildReport() {
 
 function markdownReport(report) {
   const lines = [
-    "# PR-4.8a RegionSpec Entry Contract",
+    "# PR-4.8a1 Structured RegionSpec Entry Validation",
     "",
     `Schema: \`${report.schema}\``,
     "Status: completed",
@@ -708,11 +707,11 @@ function markdownReport(report) {
     "",
     "## Fixed controls",
     "",
-    "| Control | Spec | Milestones | Entry validation | Probe status | Termination | Failure class | Route primitives |",
-    "| --- | --- | ---: | --- | --- | --- | --- | ---: |",
+    "| Control | Spec | Milestones | Preflight | Entry validation | Probe status | Termination | Failure class | Route primitives |",
+    "| --- | --- | ---: | --- | --- | --- | --- | --- | ---: |",
   ];
   report.controls.forEach((control) => {
-    lines.push(`| ${control.id} | ${control.specIdentity.sourceFile} | ${control.milestoneOrder.length} | ${control.entryValidation.valid ? "passed" : "failed"} | ${control.execution.status} | ${control.execution.termination} | ${control.execution.failureClass || "none"} | ${control.execution.routePrimitiveCount} |`);
+    lines.push(`| ${control.id} | ${control.specIdentity.sourceFile} | ${control.milestoneOrder.length} | exit=${control.preflight.exitCode}, parsed=${control.preflight.summaryParsed} | ${control.entryValidation.valid ? "passed" : "failed"} | ${control.execution.status} | ${control.execution.termination} | ${control.execution.failureClass || "none"} | ${control.execution.routePrimitiveCount} |`);
   });
   lines.push(
     "",
@@ -720,11 +719,11 @@ function markdownReport(report) {
     "",
     "## Negative controls",
     "",
-    "| Negative control | Expected rejection | Observed | Result |",
-    "| --- | --- | --- | --- |",
+    "| Negative control | Expected rejection | CLI exit | Observed | Route output | Result |",
+    "| --- | --- | ---: | --- | --- | --- |",
   );
   report.negativeControls.forEach((control) => {
-    lines.push(`| ${control.id} | ${control.expectedError} | ${control.observedErrors.join(", ")} | ${control.rejected ? "passed" : "failed"} |`);
+    lines.push(`| ${control.id} | ${control.expectedError} | ${control.cli.exitCode} | ${control.observedErrors.join(", ")} | ${control.cli.routeOutputExistsAfter ? "written" : "none"} | ${control.rejected ? "passed" : "failed"} |`);
   });
   lines.push(
     "",
@@ -764,11 +763,12 @@ if (require.main === module) main(process.argv.slice(2));
 module.exports = {
   CONTRACT_SCHEMA,
   CONTROLS,
+  CONTROL_EXPECTATIONS,
   DEFAULT_OUT,
   DEFAULT_OUT_MD,
   NEGATIVE_CONTROLS,
   SUPPORTED_GOAL_TYPES,
   buildReport,
   markdownReport,
-  validateEntryContract,
+  validateRegionEntryContract,
 };

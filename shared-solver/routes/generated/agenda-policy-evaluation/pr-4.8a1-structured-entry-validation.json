@@ -1,0 +1,1332 @@
+{
+  "schema": "motapathfinder.pr-4.8a1-structured-entry-validation.v1",
+  "status": "completed",
+  "generatedAt": "2026-08-02T09:02:45.280Z",
+  "provenance": {
+    "mode": "shadow-only",
+    "entrypoint": "shared-solver/run-region-dp.js",
+    "runner": "shared-solver/run-region-dp.js",
+    "runnerProbeMode": "validate-only-preflight-and-bounded-entry-probe",
+    "deterministicFullReportRebuild": true,
+    "generationCommit": "0c7b397",
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "describesCompleteTowerRoute": false
+  },
+  "contract": {
+    "id": "PR-4.8a1",
+    "title": "Structured RegionSpec Entry Validation",
+    "unifiedEntry": {
+      "command": "node shared-solver/run-region-dp.js --project-root=<project-root> --region-spec=<region-spec> --out=<output>",
+      "requiredPaths": [
+        "project-root",
+        "region-spec",
+        "out"
+      ]
+    },
+    "requiredReportFields": [
+      "specIdentity",
+      "projectIdentity",
+      "milestoneOrder",
+      "startCheckpoint",
+      "preflight",
+      "reachedMilestone",
+      "termination",
+      "failureClass",
+      "routePrimitiveCount",
+      "budgetUsage",
+      "outputProvenance"
+    ],
+    "fixedControls": [
+      "onlyup-region-1",
+      "onlyup-region-2",
+      "whiteisland-trial-smoke"
+    ],
+    "fixedExpectedControlOutcomes": {
+      "onlyup-region-1": {
+        "effectiveMilestoneCount": 18,
+        "preflight": {
+          "exitCode": 0,
+          "summaryParsed": true,
+          "valid": true
+        },
+        "probe": {
+          "exitCode": 0,
+          "summaryParsed": true,
+          "status": "not-found",
+          "termination": "expansion-budget-exhausted",
+          "failureClass": "target-action-unreachable",
+          "failedSegmentId": "mt1-gate-1559",
+          "usedExpansions": 1,
+          "routeWritten": false
+        }
+      },
+      "onlyup-region-2": {
+        "effectiveMilestoneCount": 12,
+        "preflight": {
+          "exitCode": 0,
+          "summaryParsed": true,
+          "valid": true
+        },
+        "probe": {
+          "exitCode": 1,
+          "summaryParsed": false,
+          "status": "not-found",
+          "termination": "prefix-budget-exhausted",
+          "failureClass": "prefix-budget-exhausted",
+          "stage": "prefix-milestone",
+          "failedSegmentId": "mt1-gate-1559",
+          "usedExpansions": 1,
+          "routeWritten": false
+        }
+      },
+      "whiteisland-trial-smoke": {
+        "effectiveMilestoneCount": 1,
+        "preflight": {
+          "exitCode": 0,
+          "summaryParsed": true,
+          "valid": true
+        },
+        "probe": {
+          "exitCode": 0,
+          "summaryParsed": true,
+          "status": "not-found",
+          "termination": "expansion-budget-exhausted",
+          "failureClass": "hp-deficit",
+          "failedSegmentId": "whiteisland-trial-smoke-goal",
+          "usedExpansions": 1,
+          "routeWritten": false
+        }
+      }
+    },
+    "negativeControls": [
+      "dangling-startFrom",
+      "duplicate-milestone-id",
+      "unknown-floor",
+      "unsupported-goal",
+      "invalid-budget",
+      "cyclic-dependency"
+    ],
+    "supportedGoalTypes": [
+      "heroAtLeast",
+      "bossDefeated",
+      "tileRemoved"
+    ],
+    "deterministicLiveRebuild": true
+  },
+  "controls": [
+    {
+      "id": "onlyup-region-1",
+      "specIdentity": {
+        "id": "onlyup-region-1",
+        "tower": "onlyup",
+        "label": "Only Up Region 1: MT1~MT5 blueKing",
+        "sourceFile": "towers/onlyup/region-specs/region-1.json",
+        "sourceSha256": "5158973b2a258200f6f9890cced67539b9475c8d9eeb10b0a52463d134df28ef",
+        "normalizedSha256": "b55827fad861ba50abed33a96ac5df9662284bae3223565d806e9fe3fb5c5a27"
+      },
+      "projectIdentity": {
+        "root": "Only upV2.1/Only upV2.1",
+        "title": "Only Up",
+        "floorCount": 46,
+        "floorOrder": [
+          "sample0",
+          "sample1",
+          "sample2",
+          "New",
+          "World",
+          "MT1",
+          "MT2",
+          "MT3",
+          "MT4",
+          "MT5",
+          "MT6",
+          "MT7",
+          "MT8",
+          "MT9",
+          "MT10",
+          "MT11",
+          "MT12",
+          "MT13",
+          "MT14",
+          "MT15",
+          "MT16",
+          "MT17",
+          "MT18",
+          "MT19",
+          "MT20",
+          "MT21",
+          "MT22",
+          "MT23",
+          "MT24",
+          "MT25",
+          "MT26",
+          "MT27",
+          "MT28",
+          "MT29",
+          "MT30",
+          "MT31",
+          "MT32",
+          "MT33",
+          "MT34",
+          "MT35",
+          "MT36",
+          "MT37",
+          "MT38",
+          "MT39",
+          "MT40"
+        ],
+        "structuralFingerprintSha256": "954efc84bf7cf9f19d19ed2e70e9e05b1459d1c0d69a9db9c532dd67d9e6dfc6",
+        "fingerprintSha256": "d50cdaaff91c21f61611d323814de88fc1117b70a8247a4e64b23eb10b3d12c6",
+        "fingerprintInputs": [
+          "data",
+          "floorOrder",
+          "floorsById",
+          "enemysById",
+          "itemsById",
+          "mapTilesByNumber"
+        ]
+      },
+      "milestoneOrder": [
+        "mt1-gate-1559",
+        "mt2-entry",
+        "mt2-local-3582",
+        "mt2-hp3834",
+        "mt2-left-chain-open",
+        "mt3-first-return",
+        "mt2-redwizard-shield",
+        "mt2-i893-equipped",
+        "mt3-i893-hp8425",
+        "mt4-hp4459",
+        "mt5-early-gem-entry",
+        "mt5-first-sweep",
+        "mt5-third-gate",
+        "mt5-sustain-balance",
+        "mt5-i894-equipped",
+        "mt5-final-stats-before-hp",
+        "mt5-before-blueking",
+        "mt5-blueking-kill"
+      ],
+      "startCheckpoint": {
+        "type": "initial",
+        "floorId": "MT1",
+        "routeFile": null,
+        "routeName": null,
+        "fromMilestoneId": null,
+        "toMilestoneId": null
+      },
+      "entryValidation": {
+        "valid": true,
+        "errors": [],
+        "boundary": {
+          "prefix": null,
+          "fromMilestoneId": null,
+          "toMilestoneId": "mt5-blueking-kill",
+          "fromIndex": -1,
+          "toIndex": 17,
+          "prefixResolved": true,
+          "rangeResolved": true
+        }
+      },
+      "preflight": {
+        "invoked": true,
+        "mode": "validate-only",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-1.json",
+          "--out=routes/generated/region-entry-contract/onlyup-region-1.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-entry-preflight",
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": true,
+          "regionId": "onlyup-region-1",
+          "projectRoot": "../Only upV2.1/Only upV2.1",
+          "regionSpec": "../towers/onlyup/region-specs/region-1.json",
+          "outputPath": "routes/generated/region-entry-contract/onlyup-region-1.route.json",
+          "startCheckpoint": {
+            "type": "initial",
+            "floorId": "MT1",
+            "routeFile": null,
+            "routeName": null,
+            "fromMilestoneId": null,
+            "toMilestoneId": null
+          },
+          "milestoneOrder": [
+            "mt1-gate-1559",
+            "mt2-entry",
+            "mt2-local-3582",
+            "mt2-hp3834",
+            "mt2-left-chain-open",
+            "mt3-first-return",
+            "mt2-redwizard-shield",
+            "mt2-i893-equipped",
+            "mt3-i893-hp8425",
+            "mt4-hp4459",
+            "mt5-early-gem-entry",
+            "mt5-first-sweep",
+            "mt5-third-gate",
+            "mt5-sustain-balance",
+            "mt5-i894-equipped",
+            "mt5-final-stats-before-hp",
+            "mt5-before-blueking",
+            "mt5-blueking-kill"
+          ],
+          "boundary": {
+            "fromMilestoneId": null,
+            "toMilestoneId": "mt5-blueking-kill",
+            "prefixResolved": true,
+            "rangeResolved": true
+          },
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": true,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errorCodes": []
+        },
+        "errorEvidence": null,
+        "outputPathExistsAfter": false
+      },
+      "execution": {
+        "status": "not-found",
+        "found": false,
+        "stage": "region-dp",
+        "startCheckpoint": {
+          "type": "initial",
+          "floorId": "MT1",
+          "routeFile": null,
+          "routeName": null,
+          "fromMilestoneId": null,
+          "toMilestoneId": null
+        },
+        "reachedMilestone": null,
+        "failedSegmentId": "mt1-gate-1559",
+        "termination": "expansion-budget-exhausted",
+        "failureClass": "target-action-unreachable",
+        "routePrimitiveCount": 0,
+        "budgetUsage": {
+          "configuredProbe": {
+            "maxExpansions": 1,
+            "maxRuntimeMs": 100,
+            "prefixMaxExpansions": null,
+            "prefixMaxRuntimeMs": null
+          },
+          "usedExpansions": 1,
+          "expansionBudgetExhausted": true
+        },
+        "failureEvidence": null
+      },
+      "outputProvenance": {
+        "entrypoint": "shared-solver/run-region-dp.js",
+        "projectRoot": "Only upV2.1/Only upV2.1",
+        "regionSpec": "towers/onlyup/region-specs/region-1.json",
+        "requestedOutput": "shared-solver/routes/generated/region-entry-contract/onlyup-region-1.route.json",
+        "routeWritten": false,
+        "routeFile": null,
+        "outputPathExistsAfterProbe": false,
+        "liveVerified": false,
+        "probeMode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-1.json",
+          "--out=routes/generated/region-entry-contract/onlyup-region-1.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0",
+          "--structured-errors=1"
+        ]
+      },
+      "runnerProbe": {
+        "invoked": true,
+        "mode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-1.json",
+          "--out=routes/generated/region-entry-contract/onlyup-region-1.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-dp",
+          "regionId": "onlyup-region-1",
+          "found": false,
+          "proofLevel": "not-found",
+          "completeWithinActionSet": false,
+          "actionTrimmed": 0,
+          "expansionBudgetExhausted": true,
+          "stoppedReasons": [],
+          "failedSegmentId": "mt1-gate-1559",
+          "reachedMilestone": null,
+          "metrics": {
+            "expansions": 1,
+            "routeLength": 0,
+            "illegalWrites": 0,
+            "final": null
+          },
+          "segmentIds": [
+            "mt1-gate-1559"
+          ],
+          "failureClasses": [
+            "target-action-unreachable"
+          ]
+        },
+        "stderrCaptured": false,
+        "stderrParsed": false,
+        "errorEvidence": null,
+        "outputPathExistsAfter": false
+      }
+    },
+    {
+      "id": "onlyup-region-2",
+      "specIdentity": {
+        "id": "onlyup-region-2",
+        "tower": "onlyup",
+        "label": "Only Up Region 2: MT6~MT10 scaffold",
+        "sourceFile": "towers/onlyup/region-specs/region-2.json",
+        "sourceSha256": "1d7f09ebd4251ed6a91c31c3f86d7d53bc3f3880cde6316f94b5f88da1b64963",
+        "normalizedSha256": "1d72855979088b1b53ac0b90d60031c31cd226a9e837fe2ac15184168aa950c7"
+      },
+      "projectIdentity": {
+        "root": "Only upV2.1/Only upV2.1",
+        "title": "Only Up",
+        "floorCount": 46,
+        "floorOrder": [
+          "sample0",
+          "sample1",
+          "sample2",
+          "New",
+          "World",
+          "MT1",
+          "MT2",
+          "MT3",
+          "MT4",
+          "MT5",
+          "MT6",
+          "MT7",
+          "MT8",
+          "MT9",
+          "MT10",
+          "MT11",
+          "MT12",
+          "MT13",
+          "MT14",
+          "MT15",
+          "MT16",
+          "MT17",
+          "MT18",
+          "MT19",
+          "MT20",
+          "MT21",
+          "MT22",
+          "MT23",
+          "MT24",
+          "MT25",
+          "MT26",
+          "MT27",
+          "MT28",
+          "MT29",
+          "MT30",
+          "MT31",
+          "MT32",
+          "MT33",
+          "MT34",
+          "MT35",
+          "MT36",
+          "MT37",
+          "MT38",
+          "MT39",
+          "MT40"
+        ],
+        "structuralFingerprintSha256": "954efc84bf7cf9f19d19ed2e70e9e05b1459d1c0d69a9db9c532dd67d9e6dfc6",
+        "fingerprintSha256": "d50cdaaff91c21f61611d323814de88fc1117b70a8247a4e64b23eb10b3d12c6",
+        "fingerprintInputs": [
+          "data",
+          "floorOrder",
+          "floorsById",
+          "enemysById",
+          "itemsById",
+          "mapTilesByNumber"
+        ]
+      },
+      "milestoneOrder": [
+        "mt6-upper-left-blueking",
+        "mt6-upper-right-blueking",
+        "mt6-lower-attack-pair",
+        "mt6-first-center-guard",
+        "mt6-second-center-guard",
+        "mt7-entry-after-mt6-sweep",
+        "mt7-mt6-defense-sweep",
+        "mt7-mt6-right-crystal-sweep",
+        "mt7-bottom-double-fairy",
+        "mt7-special80-ready",
+        "mt7-left-sword",
+        "mt7-right-exp-crystal"
+      ],
+      "startCheckpoint": {
+        "type": "milestonePrefix",
+        "floorId": null,
+        "routeFile": null,
+        "routeName": "onlyup-chaos-mt5-blueking",
+        "fromMilestoneId": null,
+        "toMilestoneId": "mt5-blueking-kill"
+      },
+      "entryValidation": {
+        "valid": true,
+        "errors": [],
+        "boundary": {
+          "prefix": {
+            "routeName": "onlyup-chaos-mt5-blueking",
+            "toMilestoneId": "mt5-blueking-kill",
+            "candidateLimit": 4
+          },
+          "fromMilestoneId": "mt5-blueking-kill",
+          "toMilestoneId": "mt7-right-exp-crystal",
+          "fromIndex": 17,
+          "toIndex": 29,
+          "prefixResolved": true,
+          "rangeResolved": true
+        }
+      },
+      "preflight": {
+        "invoked": true,
+        "mode": "validate-only",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-2.json",
+          "--out=routes/generated/region-entry-contract/onlyup-region-2.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-entry-preflight",
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": true,
+          "regionId": "onlyup-region-2",
+          "projectRoot": "../Only upV2.1/Only upV2.1",
+          "regionSpec": "../towers/onlyup/region-specs/region-2.json",
+          "outputPath": "routes/generated/region-entry-contract/onlyup-region-2.route.json",
+          "startCheckpoint": {
+            "type": "milestonePrefix",
+            "floorId": null,
+            "routeFile": null,
+            "routeName": "onlyup-chaos-mt5-blueking",
+            "fromMilestoneId": null,
+            "toMilestoneId": "mt5-blueking-kill"
+          },
+          "milestoneOrder": [
+            "mt6-upper-left-blueking",
+            "mt6-upper-right-blueking",
+            "mt6-lower-attack-pair",
+            "mt6-first-center-guard",
+            "mt6-second-center-guard",
+            "mt7-entry-after-mt6-sweep",
+            "mt7-mt6-defense-sweep",
+            "mt7-mt6-right-crystal-sweep",
+            "mt7-bottom-double-fairy",
+            "mt7-special80-ready",
+            "mt7-left-sword",
+            "mt7-right-exp-crystal"
+          ],
+          "boundary": {
+            "fromMilestoneId": "mt5-blueking-kill",
+            "toMilestoneId": "mt7-right-exp-crystal",
+            "prefixResolved": true,
+            "rangeResolved": true
+          },
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": true,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errorCodes": []
+        },
+        "errorEvidence": null,
+        "outputPathExistsAfter": false
+      },
+      "execution": {
+        "status": "not-found",
+        "found": false,
+        "stage": "prefix-milestone",
+        "startCheckpoint": {
+          "type": "milestonePrefix",
+          "floorId": null,
+          "routeFile": null,
+          "routeName": "onlyup-chaos-mt5-blueking",
+          "fromMilestoneId": null,
+          "toMilestoneId": "mt5-blueking-kill"
+        },
+        "reachedMilestone": null,
+        "failedSegmentId": "mt1-gate-1559",
+        "termination": "prefix-budget-exhausted",
+        "failureClass": "prefix-budget-exhausted",
+        "primaryFailureClass": "target-action-unreachable",
+        "routePrimitiveCount": 0,
+        "budgetUsage": {
+          "configuredProbe": {
+            "maxExpansions": 1,
+            "maxRuntimeMs": 100,
+            "prefixMaxExpansions": 1,
+            "prefixMaxRuntimeMs": 100
+          },
+          "usedExpansions": 1,
+          "expansionBudgetExhausted": true
+        },
+        "failureEvidence": {
+          "kind": "region-dp-error",
+          "schema": "motapathfinder.region-dp-error.v1",
+          "regionId": "onlyup-region-2",
+          "stage": "prefix-milestone",
+          "termination": "prefix-budget-exhausted",
+          "failureClass": "prefix-budget-exhausted",
+          "primaryFailureClass": "target-action-unreachable",
+          "failedSegmentId": "mt1-gate-1559",
+          "usedExpansions": 1,
+          "configuredMaxExpansions": 1,
+          "configuredMaxRuntimeMs": 100,
+          "errorType": "Error",
+          "message": "Prefix milestone failed before region onlyup-region-2"
+        }
+      },
+      "outputProvenance": {
+        "entrypoint": "shared-solver/run-region-dp.js",
+        "projectRoot": "Only upV2.1/Only upV2.1",
+        "regionSpec": "towers/onlyup/region-specs/region-2.json",
+        "requestedOutput": "shared-solver/routes/generated/region-entry-contract/onlyup-region-2.route.json",
+        "routeWritten": false,
+        "routeFile": null,
+        "outputPathExistsAfterProbe": false,
+        "liveVerified": false,
+        "probeMode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-2.json",
+          "--out=routes/generated/region-entry-contract/onlyup-region-2.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0",
+          "--structured-errors=1",
+          "--prefix-max-expansions=1",
+          "--prefix-max-runtime-ms=100"
+        ]
+      },
+      "runnerProbe": {
+        "invoked": true,
+        "mode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-2.json",
+          "--out=routes/generated/region-entry-contract/onlyup-region-2.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0",
+          "--structured-errors=1",
+          "--prefix-max-expansions=1",
+          "--prefix-max-runtime-ms=100"
+        ],
+        "exitCode": 1,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": false,
+        "summary": null,
+        "stderrCaptured": true,
+        "stderrParsed": true,
+        "errorEvidence": {
+          "kind": "region-dp-error",
+          "schema": "motapathfinder.region-dp-error.v1",
+          "regionId": "onlyup-region-2",
+          "stage": "prefix-milestone",
+          "termination": "prefix-budget-exhausted",
+          "failureClass": "prefix-budget-exhausted",
+          "primaryFailureClass": "target-action-unreachable",
+          "failedSegmentId": "mt1-gate-1559",
+          "usedExpansions": 1,
+          "configuredMaxExpansions": 1,
+          "configuredMaxRuntimeMs": 100,
+          "errorType": "Error",
+          "message": "Prefix milestone failed before region onlyup-region-2"
+        },
+        "outputPathExistsAfter": false
+      }
+    },
+    {
+      "id": "whiteisland-trial-smoke",
+      "specIdentity": {
+        "id": "whiteisland-trial-smoke",
+        "tower": "whiteisland",
+        "label": "Whiteisland Trial Smoke: A1 local resource timing",
+        "sourceFile": "towers/whiteisland/trial-specs/trial-smoke.json",
+        "sourceSha256": "1009bf1b87b02f3a7f8d5bc813b73299fe1e7e20ce094e7a3b9e73eb09a9c79c",
+        "normalizedSha256": "78564f041b1588620dc0d2b9965695b99f552d12175bddc99b8852cd2d21903c"
+      },
+      "projectIdentity": {
+        "root": "whiteisland（9）",
+        "title": "白色孤岛",
+        "floorCount": 32,
+        "floorOrder": [
+          "sample0",
+          "sample1",
+          "sample2",
+          "New",
+          "Start",
+          "A1",
+          "A2",
+          "A3",
+          "B1",
+          "B2",
+          "B3",
+          "C1",
+          "C2",
+          "C3",
+          "D1",
+          "D2",
+          "D3",
+          "F1",
+          "F2",
+          "F3",
+          "G1",
+          "G2",
+          "G3",
+          "A21",
+          "A22",
+          "A23",
+          "B21",
+          "B22",
+          "B23",
+          "C21",
+          "C22",
+          "C23"
+        ],
+        "structuralFingerprintSha256": "7a6e9bbc35ff906c58a5a1920a4fdda27bb154402b8952a925e9262c92ec4759",
+        "fingerprintSha256": "97b408948bb4fa53c8bdcb72846443741432feacae2210394def88553acbfb22",
+        "fingerprintInputs": [
+          "data",
+          "floorOrder",
+          "floorsById",
+          "enemysById",
+          "itemsById",
+          "mapTilesByNumber"
+        ]
+      },
+      "milestoneOrder": [
+        "whiteisland-trial-smoke-goal"
+      ],
+      "startCheckpoint": {
+        "type": "whiteislandTrial",
+        "floorId": null,
+        "routeFile": null,
+        "routeName": null,
+        "fromMilestoneId": null,
+        "toMilestoneId": null
+      },
+      "entryValidation": {
+        "valid": true,
+        "errors": [],
+        "boundary": {
+          "prefix": null,
+          "fromMilestoneId": null,
+          "toMilestoneId": null,
+          "fromIndex": -1,
+          "toIndex": -1,
+          "prefixResolved": true,
+          "rangeResolved": true
+        }
+      },
+      "preflight": {
+        "invoked": true,
+        "mode": "validate-only",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../whiteisland（9）",
+          "--region-spec=../towers/whiteisland/trial-specs/trial-smoke.json",
+          "--out=routes/generated/region-entry-contract/whiteisland-trial-smoke.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-entry-preflight",
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": true,
+          "regionId": "whiteisland-trial-smoke",
+          "projectRoot": "../whiteisland（9）",
+          "regionSpec": "../towers/whiteisland/trial-specs/trial-smoke.json",
+          "outputPath": "routes/generated/region-entry-contract/whiteisland-trial-smoke.route.json",
+          "startCheckpoint": {
+            "type": "whiteislandTrial",
+            "floorId": null,
+            "routeFile": null,
+            "routeName": null,
+            "fromMilestoneId": null,
+            "toMilestoneId": null
+          },
+          "milestoneOrder": [
+            "whiteisland-trial-smoke-goal"
+          ],
+          "boundary": {
+            "fromMilestoneId": null,
+            "toMilestoneId": null,
+            "prefixResolved": true,
+            "rangeResolved": true
+          },
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": true,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errorCodes": []
+        },
+        "errorEvidence": null,
+        "outputPathExistsAfter": false
+      },
+      "execution": {
+        "status": "not-found",
+        "found": false,
+        "stage": "region-dp",
+        "startCheckpoint": {
+          "type": "whiteislandTrial",
+          "floorId": null,
+          "routeFile": null,
+          "routeName": null,
+          "fromMilestoneId": null,
+          "toMilestoneId": null
+        },
+        "reachedMilestone": null,
+        "failedSegmentId": "whiteisland-trial-smoke-goal",
+        "termination": "expansion-budget-exhausted",
+        "failureClass": "hp-deficit",
+        "routePrimitiveCount": 0,
+        "budgetUsage": {
+          "configuredProbe": {
+            "maxExpansions": 1,
+            "maxRuntimeMs": 100,
+            "prefixMaxExpansions": null,
+            "prefixMaxRuntimeMs": null
+          },
+          "usedExpansions": 1,
+          "expansionBudgetExhausted": true
+        },
+        "failureEvidence": null
+      },
+      "outputProvenance": {
+        "entrypoint": "shared-solver/run-region-dp.js",
+        "projectRoot": "whiteisland（9）",
+        "regionSpec": "towers/whiteisland/trial-specs/trial-smoke.json",
+        "requestedOutput": "shared-solver/routes/generated/region-entry-contract/whiteisland-trial-smoke.route.json",
+        "routeWritten": false,
+        "routeFile": null,
+        "outputPathExistsAfterProbe": false,
+        "liveVerified": false,
+        "probeMode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../whiteisland（9）",
+          "--region-spec=../towers/whiteisland/trial-specs/trial-smoke.json",
+          "--out=routes/generated/region-entry-contract/whiteisland-trial-smoke.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0",
+          "--structured-errors=1"
+        ]
+      },
+      "runnerProbe": {
+        "invoked": true,
+        "mode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../whiteisland（9）",
+          "--region-spec=../towers/whiteisland/trial-specs/trial-smoke.json",
+          "--out=routes/generated/region-entry-contract/whiteisland-trial-smoke.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-dp",
+          "regionId": "whiteisland-trial-smoke",
+          "found": false,
+          "proofLevel": "not-found",
+          "completeWithinActionSet": false,
+          "actionTrimmed": 0,
+          "expansionBudgetExhausted": true,
+          "stoppedReasons": [],
+          "failedSegmentId": "whiteisland-trial-smoke-goal",
+          "reachedMilestone": null,
+          "metrics": {
+            "expansions": 1,
+            "routeLength": 0,
+            "illegalWrites": 0,
+            "final": null
+          },
+          "segmentIds": [
+            "whiteisland-trial-smoke-goal"
+          ],
+          "failureClasses": [
+            "hp-deficit"
+          ]
+        },
+        "stderrCaptured": false,
+        "stderrParsed": false,
+        "errorEvidence": null,
+        "outputPathExistsAfter": false
+      }
+    }
+  ],
+  "negativeControls": [
+    {
+      "id": "dangling-startFrom",
+      "expectedError": "dangling-startFrom",
+      "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/dangling-startFrom.json",
+      "inputSha256": "cb02b8f2d88085b09c87c9acebe033c1186abf66102f76f70bf75887eac1de16",
+      "specNormalizedSha256": "b7b9b4170e1810b27e5173ee879155664fb866f98fc43354dc12f56612d2330b",
+      "observedErrors": [
+        "dangling-startFrom",
+        "invalid-milestone-graph"
+      ],
+      "rejected": true,
+      "cli": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=routes/generated/region-entry-contract/negative-inputs/dangling-startFrom.json",
+          "--out=routes/generated/region-entry-contract/negative-outputs/dangling-startFrom.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 2,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-entry-preflight",
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": false,
+          "regionId": "pr-4.8a1-negative-dangling-startFrom",
+          "projectRoot": "../Only upV2.1/Only upV2.1",
+          "regionSpec": "routes/generated/region-entry-contract/negative-inputs/dangling-startFrom.json",
+          "outputPath": "routes/generated/region-entry-contract/negative-outputs/dangling-startFrom.route.json",
+          "startCheckpoint": {
+            "type": "initial",
+            "floorId": "MT1",
+            "routeFile": null,
+            "routeName": null,
+            "fromMilestoneId": null,
+            "toMilestoneId": null
+          },
+          "milestoneOrder": [
+            "negative-a"
+          ],
+          "boundary": {
+            "fromMilestoneId": null,
+            "toMilestoneId": null,
+            "prefixResolved": true,
+            "rangeResolved": true
+          },
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": false,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errorCodes": [
+            "dangling-startFrom",
+            "invalid-milestone-graph"
+          ]
+        },
+        "errorEvidence": null,
+        "outputPath": "shared-solver/routes/generated/region-entry-contract/negative-outputs/dangling-startFrom.route.json",
+        "routeOutputExistsAfter": false
+      }
+    },
+    {
+      "id": "duplicate-milestone-id",
+      "expectedError": "duplicate-milestone-id",
+      "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/duplicate-milestone-id.json",
+      "inputSha256": "9cb4f2b489c88ba75c445df48f2174d71bb44eb2abec31b0b5e9e3dee590b6d3",
+      "specNormalizedSha256": "5ada9c01a2bec9ce57aaab442110c75bd4986638514b99921f78fccce892f828",
+      "observedErrors": [
+        "duplicate-milestone-id",
+        "invalid-milestone-graph"
+      ],
+      "rejected": true,
+      "cli": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=routes/generated/region-entry-contract/negative-inputs/duplicate-milestone-id.json",
+          "--out=routes/generated/region-entry-contract/negative-outputs/duplicate-milestone-id.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 2,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-entry-preflight",
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": false,
+          "regionId": "pr-4.8a1-negative-duplicate-milestone-id",
+          "projectRoot": "../Only upV2.1/Only upV2.1",
+          "regionSpec": "routes/generated/region-entry-contract/negative-inputs/duplicate-milestone-id.json",
+          "outputPath": "routes/generated/region-entry-contract/negative-outputs/duplicate-milestone-id.route.json",
+          "startCheckpoint": {
+            "type": "initial",
+            "floorId": "MT1",
+            "routeFile": null,
+            "routeName": null,
+            "fromMilestoneId": null,
+            "toMilestoneId": null
+          },
+          "milestoneOrder": [
+            "negative-a",
+            "negative-a"
+          ],
+          "boundary": {
+            "fromMilestoneId": null,
+            "toMilestoneId": null,
+            "prefixResolved": true,
+            "rangeResolved": true
+          },
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": false,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errorCodes": [
+            "duplicate-milestone-id",
+            "invalid-milestone-graph"
+          ]
+        },
+        "errorEvidence": null,
+        "outputPath": "shared-solver/routes/generated/region-entry-contract/negative-outputs/duplicate-milestone-id.route.json",
+        "routeOutputExistsAfter": false
+      }
+    },
+    {
+      "id": "unknown-floor",
+      "expectedError": "unknown-floor",
+      "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/unknown-floor.json",
+      "inputSha256": "69d5e86c0ef86f2646689b78c44955ee83b98633e528a35cb8a67f5c7b287aa1",
+      "specNormalizedSha256": "802b63d49dbf47f7c497302d18f1b295edd5bcaf5a124e61ceda90a0fb78f616",
+      "observedErrors": [
+        "unknown-floor"
+      ],
+      "rejected": true,
+      "cli": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=routes/generated/region-entry-contract/negative-inputs/unknown-floor.json",
+          "--out=routes/generated/region-entry-contract/negative-outputs/unknown-floor.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 2,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-entry-preflight",
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": false,
+          "regionId": "pr-4.8a1-negative-unknown-floor",
+          "projectRoot": "../Only upV2.1/Only upV2.1",
+          "regionSpec": "routes/generated/region-entry-contract/negative-inputs/unknown-floor.json",
+          "outputPath": "routes/generated/region-entry-contract/negative-outputs/unknown-floor.route.json",
+          "startCheckpoint": {
+            "type": "initial",
+            "floorId": "MT1",
+            "routeFile": null,
+            "routeName": null,
+            "fromMilestoneId": null,
+            "toMilestoneId": null
+          },
+          "milestoneOrder": [
+            "negative-a"
+          ],
+          "boundary": {
+            "fromMilestoneId": null,
+            "toMilestoneId": null,
+            "prefixResolved": true,
+            "rangeResolved": true
+          },
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": true,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errorCodes": [
+            "unknown-floor"
+          ]
+        },
+        "errorEvidence": null,
+        "outputPath": "shared-solver/routes/generated/region-entry-contract/negative-outputs/unknown-floor.route.json",
+        "routeOutputExistsAfter": false
+      }
+    },
+    {
+      "id": "unsupported-goal",
+      "expectedError": "unsupported-goal-type",
+      "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/unsupported-goal.json",
+      "inputSha256": "b77a420a51604f923b4692a24e90d4c1a45b7ee42bbc532fda4d1af590d83cff",
+      "specNormalizedSha256": "5273fb680057a1bbb61202075a1a28d106769bd1e04e9e4f406d63143a9af66a",
+      "observedErrors": [
+        "unsupported-goal-type"
+      ],
+      "rejected": true,
+      "cli": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=routes/generated/region-entry-contract/negative-inputs/unsupported-goal.json",
+          "--out=routes/generated/region-entry-contract/negative-outputs/unsupported-goal.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 2,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-entry-preflight",
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": false,
+          "regionId": "pr-4.8a1-negative-unsupported-goal",
+          "projectRoot": "../Only upV2.1/Only upV2.1",
+          "regionSpec": "routes/generated/region-entry-contract/negative-inputs/unsupported-goal.json",
+          "outputPath": "routes/generated/region-entry-contract/negative-outputs/unsupported-goal.route.json",
+          "startCheckpoint": {
+            "type": "initial",
+            "floorId": "MT1",
+            "routeFile": null,
+            "routeName": null,
+            "fromMilestoneId": null,
+            "toMilestoneId": null
+          },
+          "milestoneOrder": [
+            "negative-a"
+          ],
+          "boundary": {
+            "fromMilestoneId": null,
+            "toMilestoneId": null,
+            "prefixResolved": true,
+            "rangeResolved": true
+          },
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": true,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errorCodes": [
+            "unsupported-goal-type"
+          ]
+        },
+        "errorEvidence": null,
+        "outputPath": "shared-solver/routes/generated/region-entry-contract/negative-outputs/unsupported-goal.route.json",
+        "routeOutputExistsAfter": false
+      }
+    },
+    {
+      "id": "invalid-budget",
+      "expectedError": "invalid-dp-budget",
+      "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/invalid-budget.json",
+      "inputSha256": "250cfccc84781fece222a13b46b72db00a4572c0349e9c790bc2e647cad35323",
+      "specNormalizedSha256": "0e1ca16d065c8802f1f1a32f954ee4b025d10e49ae1f1c253f4ad56f6e01f6ce",
+      "observedErrors": [
+        "invalid-dp-budget"
+      ],
+      "rejected": true,
+      "cli": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=routes/generated/region-entry-contract/negative-inputs/invalid-budget.json",
+          "--out=routes/generated/region-entry-contract/negative-outputs/invalid-budget.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 2,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-entry-preflight",
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": false,
+          "regionId": "pr-4.8a1-negative-invalid-budget",
+          "projectRoot": "../Only upV2.1/Only upV2.1",
+          "regionSpec": "routes/generated/region-entry-contract/negative-inputs/invalid-budget.json",
+          "outputPath": "routes/generated/region-entry-contract/negative-outputs/invalid-budget.route.json",
+          "startCheckpoint": {
+            "type": "initial",
+            "floorId": "MT1",
+            "routeFile": null,
+            "routeName": null,
+            "fromMilestoneId": null,
+            "toMilestoneId": null
+          },
+          "milestoneOrder": [
+            "negative-a"
+          ],
+          "boundary": {
+            "fromMilestoneId": null,
+            "toMilestoneId": null,
+            "prefixResolved": true,
+            "rangeResolved": true
+          },
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": true,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errorCodes": [
+            "invalid-dp-budget"
+          ]
+        },
+        "errorEvidence": null,
+        "outputPath": "shared-solver/routes/generated/region-entry-contract/negative-outputs/invalid-budget.route.json",
+        "routeOutputExistsAfter": false
+      }
+    },
+    {
+      "id": "cyclic-dependency",
+      "expectedError": "cyclic-milestone-dependency",
+      "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/cyclic-dependency.json",
+      "inputSha256": "9d2292540c938e6747f92273147e3f346d7fe0a73c975ad6dfe4c8adc4516c50",
+      "specNormalizedSha256": "4c256f4b91a30c91cbc1a8514b70c5d8359d33000075f423a43ee37325691686",
+      "observedErrors": [
+        "cyclic-milestone-dependency",
+        "invalid-milestone-graph"
+      ],
+      "rejected": true,
+      "cli": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=routes/generated/region-entry-contract/negative-inputs/cyclic-dependency.json",
+          "--out=routes/generated/region-entry-contract/negative-outputs/cyclic-dependency.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 2,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-entry-preflight",
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": false,
+          "regionId": "pr-4.8a1-negative-cyclic-dependency",
+          "projectRoot": "../Only upV2.1/Only upV2.1",
+          "regionSpec": "routes/generated/region-entry-contract/negative-inputs/cyclic-dependency.json",
+          "outputPath": "routes/generated/region-entry-contract/negative-outputs/cyclic-dependency.route.json",
+          "startCheckpoint": {
+            "type": "initial",
+            "floorId": "MT1",
+            "routeFile": null,
+            "routeName": null,
+            "fromMilestoneId": null,
+            "toMilestoneId": null
+          },
+          "milestoneOrder": [
+            "negative-a",
+            "negative-b"
+          ],
+          "boundary": {
+            "fromMilestoneId": null,
+            "toMilestoneId": null,
+            "prefixResolved": true,
+            "rangeResolved": true
+          },
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": false,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errorCodes": [
+            "cyclic-milestone-dependency",
+            "invalid-milestone-graph"
+          ]
+        },
+        "errorEvidence": null,
+        "outputPath": "shared-solver/routes/generated/region-entry-contract/negative-outputs/cyclic-dependency.route.json",
+        "routeOutputExistsAfter": false
+      }
+    }
+  ],
+  "scope": {
+    "shadowOnly": true,
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "describesCompleteTowerRoute": false
+  }
+}

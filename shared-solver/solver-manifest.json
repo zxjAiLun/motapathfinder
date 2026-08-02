@@ -822,6 +822,21 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/region-entry-validator.js": {
+      "id": "region-entry-validator",
+      "path": "shared-solver/lib/region-entry-validator.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "diagnostics",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/region-spec.js": {
       "id": "region-spec",
       "path": "shared-solver/lib/region-spec.js",

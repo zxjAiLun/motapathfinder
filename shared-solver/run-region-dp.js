@@ -8,10 +8,15 @@ const { parseKeyValueArgs } = require("./lib/cli-options");
 const { executeActionList } = require("./lib/events");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
+const { buildStartCheckpoint, validateRegionEntryContract } = require("./lib/region-entry-validator");
 const { buildRegionMilestoneSpec, buildRegionProofClaim, loadRegionSpec } = require("./lib/region-spec");
 const { buildRouteRecord, readRouteFile, writeRouteFile } = require("./lib/route-store");
 const { runMilestoneGraph } = require("./lib/segment-dp");
 const { StaticSimulator } = require("./lib/simulator");
+
+const PREFLIGHT_SCHEMA = "motapathfinder.region-entry-preflight.v1";
+const STRUCTURED_ERROR_SCHEMA = "motapathfinder.region-dp-error.v1";
+let runnerStage = "startup";
 
 function parseBoolean(value, fallback) {
   if (value == null) return fallback;
@@ -32,6 +37,10 @@ function resolveMaybeRelative(filePath, baseDir) {
   const cwdPath = path.resolve(process.cwd(), filePath);
   if (fs.existsSync(cwdPath)) return cwdPath;
   return path.resolve(baseDir || process.cwd(), filePath);
+}
+
+function solverRelativePath(filePath) {
+  return path.relative(__dirname, filePath).replace(/\\/g, "/") || ".";
 }
 
 function makeSimulator(project, spec, args) {
@@ -155,7 +164,25 @@ function runPrefixMilestone(project, simulator, regionSpec, args, rank) {
     stopOnFirstGoal: args["prefix-stop-on-first-goal"] == null ? null : parseBoolean(args["prefix-stop-on-first-goal"], false),
   });
   if (!result.found || !result.finalCandidate || !result.finalCandidate.state) {
-    throw new Error(`Prefix milestone failed before region ${regionSpec.id}: ${JSON.stringify(result.failedSegment || null)}`);
+    const failedSegment = result.failedSegment || {};
+    const attempts = failedSegment.attempts || [];
+    const dpAttempts = attempts.map((attempt) => attempt.diagnostics && attempt.diagnostics.dp || {});
+    const usedExpansions = dpAttempts.reduce((sum, dp) => sum + Number(dp.expansions || 0), 0);
+    const expansionBudgetExhausted = dpAttempts.some((dp) => dp.expansionBudgetExhausted === true);
+    const primaryFailureClass = failedSegment.failurePropagation && failedSegment.failurePropagation.primaryFailureClass || failedSegment.failureClass || null;
+    const error = new Error(`Prefix milestone failed before region ${regionSpec.id}`);
+    error.runnerDetails = {
+      stage: "prefix-milestone",
+      regionId: regionSpec.id,
+      failedSegmentId: failedSegment.segmentId || null,
+      termination: expansionBudgetExhausted ? "prefix-budget-exhausted" : "prefix-milestone-failed",
+      failureClass: expansionBudgetExhausted ? "prefix-budget-exhausted" : (primaryFailureClass || "prefix-milestone-failed"),
+      primaryFailureClass,
+      usedExpansions,
+      configuredMaxExpansions: parseOptionalNumber(args["prefix-max-expansions"]),
+      configuredMaxRuntimeMs: parseOptionalNumber(args["prefix-max-runtime-ms"]),
+    };
+    throw error;
   }
   return result.finalCandidate.state;
 }
@@ -178,6 +205,60 @@ function writeJsonIfRequested(filePath, value) {
   const resolved = path.resolve(filePath);
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
   fs.writeFileSync(resolved, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function buildPreflightSummary(regionSpec, regionSpecPath, projectRoot, outPath, project, validation) {
+  const boundary = validation.boundary || {
+    prefix: null,
+    fromMilestoneId: null,
+    toMilestoneId: null,
+    prefixResolved: false,
+    rangeResolved: false,
+  };
+  return {
+    kind: "region-entry-preflight",
+    schema: PREFLIGHT_SCHEMA,
+    valid: validation.valid,
+    regionId: regionSpec.id,
+    projectRoot: solverRelativePath(projectRoot),
+    regionSpec: solverRelativePath(regionSpecPath),
+    outputPath: outPath ? solverRelativePath(outPath) : null,
+    startCheckpoint: buildStartCheckpoint(regionSpec),
+    milestoneOrder: validation.effectiveMilestones.map((milestone) => milestone.id),
+    boundary: {
+      fromMilestoneId: boundary.fromMilestoneId || null,
+      toMilestoneId: boundary.toMilestoneId || null,
+      prefixResolved: Boolean(boundary.prefixResolved),
+      rangeResolved: Boolean(boundary.rangeResolved),
+    },
+    checks: {
+      regionSpecLoaded: true,
+      projectLoaded: Boolean(project),
+      milestoneSpecBuilt: Boolean(validation.milestoneSpec),
+      prefixBoundaryResolved: Boolean(boundary.prefixResolved),
+      outputPathParseable: Boolean(outPath),
+    },
+    errors: validation.errors,
+  };
+}
+
+function runValidationOnly(args) {
+  runnerStage = "load-region-spec";
+  const regionSpecPath = path.resolve(args["region-spec"]);
+  const regionSpec = loadRegionSpec(regionSpecPath);
+  const projectRoot = path.resolve(args["project-root"] || regionSpec.projectRoot || ".");
+  const outPath = args.out ? path.resolve(args.out) : null;
+  runnerStage = "load-project";
+  const project = loadProject(projectRoot);
+  runnerStage = "validate-entry-contract";
+  const validation = validateRegionEntryContract(regionSpec, project, {
+    specFile: regionSpecPath,
+    projectRoot,
+    outFile: outPath,
+  });
+  const summary = buildPreflightSummary(regionSpec, regionSpecPath, projectRoot, outPath, project, validation);
+  console.log(JSON.stringify(summary, null, 2));
+  if (!summary.valid) process.exitCode = 2;
 }
 
 function buildSummary(regionSpec, result, metrics, routePath, proofClaim) {
@@ -207,8 +288,15 @@ function printReplayCommand(projectRoot, routePath) {
 }
 
 function main() {
-  const startedAt = Date.now();
   const args = parseKeyValueArgs(process.argv.slice(2));
+  if (args["validate-only"]) {
+    if (!args["region-spec"]) {
+      throw new Error("--validate-only=1 requires --region-spec");
+    }
+    runValidationOnly(args);
+    return;
+  }
+  const startedAt = Date.now();
   if (args.help || args.h || !args["region-spec"]) {
     console.log([
       "Usage:",
@@ -222,21 +310,28 @@ function main() {
       "  --max-expansions=<n>",
       "  --max-runtime-ms=<n>",
       "  --stop-on-first-goal=0|1",
+      "  --validate-only=1",
+      "  --structured-errors=1",
     ].join("\n"));
     return;
   }
 
+  runnerStage = "load-region-spec";
   const regionSpecPath = path.resolve(args["region-spec"]);
   const regionSpec = loadRegionSpec(regionSpecPath);
   const specDir = path.dirname(regionSpecPath);
   const projectRoot = path.resolve(args["project-root"] || regionSpec.projectRoot || ".");
   const rank = args.rank || regionSpec.rank || "chaos";
+  runnerStage = "load-project";
   const project = loadProject(projectRoot);
+  runnerStage = "build-start-state";
   const simulator = makeSimulator(project, regionSpec, args);
   const initialState = createStartState(project, simulator, regionSpec, args, rank, specDir);
+  runnerStage = "build-milestone-spec";
   const milestoneSpec = buildRegionMilestoneSpec(project, regionSpec);
   const search = regionSpec.search || {};
   const dpBudget = search.dpBudget || {};
+  runnerStage = "run-region-dp";
   const result = runMilestoneGraph(simulator, initialState, milestoneSpec, {
     fromMilestoneId: args["from-milestone"] || regionSpec.fromMilestoneId || null,
     toMilestoneId: args["to-milestone"] || regionSpec.toMilestoneId || null,
@@ -308,7 +403,28 @@ if (require.main === module) {
   try {
     main();
   } catch (error) {
-    console.error(error && error.stack ? error.stack : String(error));
+    const args = parseKeyValueArgs(process.argv.slice(2));
+    if (parseBoolean(args["structured-errors"], false)) {
+      const details = error && error.runnerDetails || {};
+      console.error(JSON.stringify({
+        kind: "region-dp-error",
+        schema: STRUCTURED_ERROR_SCHEMA,
+        valid: false,
+        regionId: details.regionId || null,
+        stage: details.stage || runnerStage,
+        termination: details.termination || "runner-error",
+        failureClass: details.failureClass || "runner-error",
+        primaryFailureClass: details.primaryFailureClass || null,
+        failedSegmentId: details.failedSegmentId || null,
+        usedExpansions: details.usedExpansions == null ? null : details.usedExpansions,
+        configuredMaxExpansions: details.configuredMaxExpansions == null ? null : details.configuredMaxExpansions,
+        configuredMaxRuntimeMs: details.configuredMaxRuntimeMs == null ? null : details.configuredMaxRuntimeMs,
+        errorType: error && error.name || "Error",
+        message: error && error.message ? error.message : String(error),
+      }, null, 2));
+    } else {
+      console.error(error && error.stack ? error.stack : String(error));
+    }
     process.exitCode = 1;
   }
 }
