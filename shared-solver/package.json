@@ -98,6 +98,8 @@
     "run:resource-intent:contract": "node audit-resource-intent-contract.js",
     "check:region:entry:contract": "node check-region-entry-contract.js",
     "run:region:entry:contract": "node audit-region-entry-contract.js",
+    "check:region:route:contract": "node check-region-route-output-contract.js",
+    "run:region:route:contract": "node audit-region-route-output-contract.js",
     "check:onlyup:mt7-special80": "node check-onlyup-mt7-special80.js",
     "check:progressive": "node check-progressive-monster-planner.js",
     "run:region": "node run-region-dp.js",

@@ -1236,3 +1236,14 @@ PR-4.7a1 已按 Review 正式关闭。PR-4.8a core audit 已获批准，但 Revi
 - 六个负控均写入临时 spec 后通过真实 CLI preflight 拒绝，固定 `exitCode=2`、预期 error code、结构化 summary 和无 route 输出；不再只调用 audit 内部函数。
 - checker 固定 region-1、region-2、WhiteIsland 的 exact preflight/probe expected map，检查预算使用不超限、route/found 一致、JSON/Markdown deterministic rebuild，并把 project fingerprint 扩展到 data、floors、enemies、items、map tiles 内容。
 - 本轮仍不修改 production DP key、dominance、agenda、容量、默认策略或搜索结果选择语义，也不构成完整塔路线结论。
+
+### 2026-08-02 更新：PR-4.8b Region Route Output Contract
+
+PR-4.8a/a1 已按 Review 正式关闭。本轮进入 PR-4.8b，继续保持 shadow-only，目标是把“RegionSpec 能进入 runner”推进为“真实短路线能写出并可重放的 route output contract”：
+
+- 新增 OnlyUp 与 Whiteisland 两个真实项目短正控，均通过 `run-region-dp.js` 获得 `found=true`、exit 0，并实际写出 `motapathfinder.route.v1` route。
+- route metadata 现在锁定 RegionSpec ID、source/normalized hash、project content fingerprint、reached milestone、primitive decision count 和最终 floor/hero summary。
+- 审计读取写出的 route，用 route-store resolver 逐项重新解析 decision；拒绝 macro kind/plan 持久化，并比较每一步 exact state key 及最终 exact state/summary。
+- 负控先写入 stale route，再在真实 not-found runner 前显式删除；固定断言 not-found 不留下旧 route。
+- 固定正控只覆盖 MT1 / A1 的短 smoke，不声称完成 MT1-MT5 或 Whiteisland 全塔路线。
+- 本轮不修改 production DP key、dominance、agenda、容量、默认策略或搜索顺序。

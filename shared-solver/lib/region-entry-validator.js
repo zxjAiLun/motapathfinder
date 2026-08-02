@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 
 const { buildRegionMilestoneSpec } = require("./region-spec");
 
@@ -20,6 +21,70 @@ const SUPPORTED_ACTION_KINDS = new Set([
 
 function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.keys(value).sort().reduce((result, key) => {
+    result[key] = stableValue(value[key]);
+    return result;
+  }, {});
+}
+
+function stableStringify(value) {
+  return JSON.stringify(stableValue(value));
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function hashJson(value) {
+  return sha256(stableStringify(value));
+}
+
+function hashFile(filePath) {
+  return sha256(fs.readFileSync(filePath));
+}
+
+function buildRegionSpecIdentity(spec, specFile) {
+  const hashable = cloneJson(spec);
+  delete hashable.sourceFile;
+  return {
+    id: spec && spec.id || null,
+    tower: spec && spec.tower || null,
+    label: spec && spec.label || null,
+    sourceSha256: hashFile(specFile),
+    normalizedSha256: hashJson(hashable),
+  };
+}
+
+function buildProjectFingerprint(project) {
+  const floorSummary = Object.entries((project && project.floorsById) || {}).map(([id, floor]) => ({
+    id,
+    width: Number(floor.width || 0),
+    height: Number(floor.height || 0),
+  })).sort((left, right) => left.id.localeCompare(right.id));
+  const title = project && project.data && project.data.firstData
+    ? project.data.firstData.title || null
+    : null;
+  const floorOrder = Array.isArray(project && project.floorOrder) ? project.floorOrder.slice() : [];
+  return {
+    title,
+    floorCount: floorSummary.length,
+    floorOrder,
+    structuralFingerprintSha256: hashJson({ title, floorOrder, floorSummary }),
+    fingerprintSha256: hashJson({
+      data: project && project.data || {},
+      floorOrder,
+      floorsById: project && project.floorsById || {},
+      enemysById: project && project.enemysById || {},
+      itemsById: project && project.itemsById || {},
+      mapTilesByNumber: project && project.mapTilesByNumber || {},
+    }),
+    fingerprintInputs: ["data", "floorOrder", "floorsById", "enemysById", "itemsById", "mapTilesByNumber"],
+  };
 }
 
 function addError(errors, code, detail) {
@@ -298,6 +363,8 @@ function validateRegionEntryContract(spec, project, paths) {
 module.exports = {
   SUPPORTED_ACTION_KINDS,
   SUPPORTED_GOAL_TYPES,
+  buildProjectFingerprint,
+  buildRegionSpecIdentity,
   buildStartCheckpoint,
   effectiveMilestones,
   validateRegionEntryContract,

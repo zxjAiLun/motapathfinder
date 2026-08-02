@@ -1,0 +1,50 @@
+{
+  "id": "onlyup-region-output-contract-smoke",
+  "tower": "onlyup",
+  "label": "Only Up Region Output Contract Smoke: first MT1 battle",
+  "projectRoot": "Only upV2.1/Only upV2.1",
+  "rank": "chaos",
+  "start": {
+    "type": "initial",
+    "floorId": "MT1"
+  },
+  "scope": {
+    "floors": ["MT1"]
+  },
+  "goal": {
+    "type": "heroAtLeast",
+    "floorId": "MT1",
+    "minHero": {
+      "exp": 2
+    }
+  },
+  "actionPolicy": {
+    "allowedFloors": ["MT1"],
+    "actionKinds": ["battle", "event"]
+  },
+  "search": {
+    "algorithm": "segment-dp",
+    "dpKeyMode": "region",
+    "candidateLimit": 2,
+    "stopOnFirstGoal": false,
+    "dpBudget": {
+      "maxExpansions": 1000,
+      "maxRuntimeMs": 10000
+    }
+  },
+  "candidateLimit": 2,
+  "dpBudget": {
+    "maxExpansions": 1000,
+    "maxRuntimeMs": 10000
+  },
+  "resourceTimingPolicy": {
+    "mode": "smoke-only",
+    "hpPickupPolicy": "not-applicable"
+  },
+  "expectedRegressionTraps": [
+    {
+      "id": "output-contract-only",
+      "description": "This short control exercises route output and replay metadata only; it is not a tower-completeness claim."
+    }
+  ]
+}

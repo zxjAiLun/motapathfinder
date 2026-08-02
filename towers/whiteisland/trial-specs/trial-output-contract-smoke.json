@@ -1,0 +1,56 @@
+{
+  "id": "whiteisland-trial-output-contract-smoke",
+  "tower": "whiteisland",
+  "label": "Whiteisland Trial Output Contract Smoke: first A1 battle",
+  "projectRoot": "whiteisland（9）",
+  "rank": "chaos",
+  "start": {
+    "type": "whiteislandTrial"
+  },
+  "scope": {
+    "floors": ["A1"]
+  },
+  "goal": {
+    "type": "heroAtLeast",
+    "floorId": "A1",
+    "minHero": {
+      "exp": 1
+    }
+  },
+  "actionPolicy": {
+    "allowedFloors": ["A1"],
+    "actionKinds": ["battle", "openDoor"]
+  },
+  "search": {
+    "algorithm": "segment-dp",
+    "dpKeyMode": "region",
+    "candidateLimit": 2,
+    "stopOnFirstGoal": false,
+    "dpBudget": {
+      "maxExpansions": 1000,
+      "maxRuntimeMs": 10000
+    }
+  },
+  "candidateLimit": 2,
+  "dpBudget": {
+    "maxExpansions": 1000,
+    "maxRuntimeMs": 10000
+  },
+  "simulator": {
+    "stopFloorId": "A1",
+    "autoPickupEnabled": true,
+    "autoBattleEnabled": false,
+    "autoLevelUp": false,
+    "searchGraphMode": "primitive"
+  },
+  "resourceTimingPolicy": {
+    "mode": "smoke-only",
+    "hpPickupPolicy": "not-applicable"
+  },
+  "expectedRegressionTraps": [
+    {
+      "id": "output-contract-only",
+      "description": "This short control exercises route output and replay metadata only; it is not a tower-completeness claim."
+    }
+  ]
+}

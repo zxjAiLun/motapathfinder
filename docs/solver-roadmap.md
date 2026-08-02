@@ -271,6 +271,22 @@ npm run check:region:entry:contract --prefix shared-solver
 npm run run:region:entry:contract --prefix shared-solver
 ```
 
+#### PR-4.8b：Region Route Output Contract ✅ shadow-only
+
+- ✅ 新增 OnlyUp 与 Whiteisland 两个真实项目的短 RegionSpec 正控；两者均经 `run-region-dp.js` 写出 route，固定 `found=true`、exit 0 和 route schema。
+- ✅ route metadata 锁定 RegionSpec ID、source/normalized hash、project fingerprint、reached milestone、primitive decision count 与最终 floor/hero summary。
+- ✅ 读取写出的 route 后逐项 resolver replay；每个 decision 必须重新可见、exact pre/post state key 一致，且不得持久化 macro kind 或 macro plan。
+- ✅ 负控在 not-found runner 前写入并删除 stale route，锁定 runner 不会留下旧 route。
+- ✅ JSON/Markdown report deterministic rebuild；只覆盖短跨塔输出/replay smoke，不声称完整 MT1-MT5 或 Whiteisland 全塔路线。
+- ✅ 不修改 production DP key、dominance、agenda、容量、默认策略或搜索顺序。
+
+验收：
+
+```bash
+npm run check:region:route:contract --prefix shared-solver
+npm run run:region:route:contract --prefix shared-solver
+```
+
 排序原则：
 
 | failure | 优先 intent |
@@ -298,7 +314,9 @@ node shared-solver/run-region-dp.js \
 
 - `towers/onlyup/region-specs/region-1.json`
 - `towers/onlyup/region-specs/region-2.json`
+- `towers/onlyup/region-specs/region-output-contract-smoke.json`
 - `towers/whiteisland/trial-specs/trial-smoke.json`
+- `towers/whiteisland/trial-specs/trial-output-contract-smoke.json`
 
 验收：
 

@@ -8,7 +8,12 @@ const { parseKeyValueArgs } = require("./lib/cli-options");
 const { executeActionList } = require("./lib/events");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
-const { buildStartCheckpoint, validateRegionEntryContract } = require("./lib/region-entry-validator");
+const {
+  buildProjectFingerprint,
+  buildRegionSpecIdentity,
+  buildStartCheckpoint,
+  validateRegionEntryContract,
+} = require("./lib/region-entry-validator");
 const { buildRegionMilestoneSpec, buildRegionProofClaim, loadRegionSpec } = require("./lib/region-spec");
 const { buildRouteRecord, readRouteFile, writeRouteFile } = require("./lib/route-store");
 const { runMilestoneGraph } = require("./lib/segment-dp");
@@ -148,6 +153,32 @@ function finalMetrics(result, wallMs, regionSpec, routeRecord, proofClaim) {
     } : null,
     routeLength: routeRecord ? (routeRecord.decisions || []).length : 0,
     illegalWrites: 0,
+  };
+}
+
+function routeFinalSummary(state) {
+  const hero = (state && state.hero) || {};
+  const loc = hero.loc || {};
+  return {
+    floorId: state && state.floorId || null,
+    hero: {
+      hp: Number(hero.hp || 0),
+      hpmax: Number(hero.hpmax || 0),
+      mana: Number(hero.mana || 0),
+      manamax: Number(hero.manamax || 0),
+      atk: Number(hero.atk || 0),
+      def: Number(hero.def || 0),
+      mdef: Number(hero.mdef || 0),
+      money: Number(hero.money || 0),
+      exp: Number(hero.exp || 0),
+      lv: Number(hero.lv || 0),
+      loc: {
+        x: Number(loc.x || 0),
+        y: Number(loc.y || 0),
+        direction: loc.direction || null,
+      },
+      equipment: Array.isArray(hero.equipment) ? hero.equipment.slice() : [],
+    },
   };
 }
 
@@ -351,6 +382,22 @@ function main() {
   if (routePath && result.found && result.finalCandidate && result.finalCandidate.state) {
     const finalState = result.finalCandidate.state;
     finalState.route = Array.isArray(result.finalCandidate.route) ? result.finalCandidate.route.slice() : finalState.route;
+    const regionSpecIdentity = buildRegionSpecIdentity(regionSpec, regionSpecPath);
+    const projectFingerprint = buildProjectFingerprint(project);
+    const regionDpMetadata = {
+      regionId: regionSpec.id,
+      regionSpec: path.relative(process.cwd(), regionSpecPath),
+      regionSpecIdentity,
+      projectFingerprint,
+      reachedMilestone: result.reachedMilestone || null,
+      milestoneRoute: regionSpec.milestoneRoute || null,
+      fromMilestoneId: args["from-milestone"] || regionSpec.fromMilestoneId || null,
+      toMilestoneId: args["to-milestone"] || regionSpec.toMilestoneId || null,
+      scope: regionSpec.scope || null,
+      search,
+      candidateLimit: parseOptionalNumber(args["candidate-limit"]) || Number(search.candidateLimit || 8),
+      proofClaim,
+    };
     routeRecord = buildRouteRecord({
       project,
       simulator,
@@ -366,20 +413,12 @@ function main() {
         snapshotFloors: (regionSpec.scope || {}).floors,
         metadata: {
           kind: "region-dp",
-          regionDp: {
-            regionId: regionSpec.id,
-            regionSpec: path.relative(process.cwd(), regionSpecPath),
-            milestoneRoute: regionSpec.milestoneRoute || null,
-            fromMilestoneId: args["from-milestone"] || regionSpec.fromMilestoneId || null,
-            toMilestoneId: args["to-milestone"] || regionSpec.toMilestoneId || null,
-            scope: regionSpec.scope || null,
-            search,
-            candidateLimit: parseOptionalNumber(args["candidate-limit"]) || Number(search.candidateLimit || 8),
-            proofClaim,
-          },
+          regionDp: regionDpMetadata,
         },
       },
     });
+    regionDpMetadata.primitiveDecisionCount = (routeRecord.decisions || []).length;
+    regionDpMetadata.final = routeFinalSummary(finalState);
     writeRouteFile(routePath, routeRecord);
   } else {
     routePath = null;
