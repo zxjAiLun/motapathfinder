@@ -6,14 +6,27 @@ const path = require("node:path");
 const { chromium } = require("playwright-core");
 
 const {
+  buildRuntimeSnapshotIdentityPair,
+  captureRuntimeSnapshot,
   createStaticServer,
   executeRouteDecision,
   findBrowserExecutable,
   launchRuntimeSession,
+  prepareReplayRouteRecord,
+  projectSupportsRuntimeAutoBattle,
   quickStartRuntime,
+  routeSnapshotFloors,
   stabilizeRuntime,
   waitForRuntimeReady,
 } = require("./lib/live-replay");
+const {
+  buildResumeArtifact,
+  captureRuntimeSaveData,
+  decodeH5SavePackage,
+  encodeH5SavePackage,
+  validateResumeArtifact,
+} = require("./lib/replay-resume-artifact");
+const { loadProject } = require("./lib/project-loader");
 const { readRouteFile } = require("./lib/route-store");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
@@ -138,10 +151,6 @@ async function encodeRuntimeRoute(page, route) {
   return page.evaluate((list) => core.encodeRoute(list), route);
 }
 
-async function captureSaveData(page) {
-  return page.evaluate(() => core.saveData());
-}
-
 async function runDecisions(runtime, decisions, startIndex, endIndex, options) {
   for (let index = startIndex; index < endIndex; index += 1) {
     const decision = decisions[index];
@@ -157,12 +166,13 @@ async function runDecisions(runtime, decisions, startIndex, endIndex, options) {
 }
 
 async function exportH5Segment({ routeRecord, routeFile, projectRoot, checkpointStep, outDir, timeoutMs }) {
-  const decisions = routeRecord.decisions || [];
+  const runtimeRouteRecord = prepareReplayRouteRecord(routeRecord, projectRoot);
+  const decisions = runtimeRouteRecord.decisions || [];
   if (checkpointStep < 0 || checkpointStep >= decisions.length) {
     throw new Error(`Invalid --checkpoint-step=${checkpointStep}; route has ${decisions.length} decisions`);
   }
 
-  const runtime = await launchRuntimeSession(routeRecord, {
+  const runtime = await launchRuntimeSession(runtimeRouteRecord, {
     projectRoot,
     headless: "1",
     timeoutMs,
@@ -173,18 +183,50 @@ async function exportH5Segment({ routeRecord, routeFile, projectRoot, checkpoint
   try {
     await runDecisions(runtime, decisions, 0, checkpointStep, { timeoutMs, progress: 20 });
     const checkpointInfo = await getRuntimeRouteInfo(runtime.page);
-    const checkpointSave = await captureSaveData(runtime.page);
+    const checkpointRuntimeSnapshot = await captureRuntimeSnapshot(runtime.page, {
+      verifyFloors: routeSnapshotFloors(runtimeRouteRecord, {}),
+    });
+    const checkpointSave = await captureRuntimeSaveData(runtime.page);
     const checkpointRoute = nativeRouteForDecisions(decisions.slice(0, checkpointStep));
 
     await runDecisions(runtime, decisions, checkpointStep, decisions.length, { timeoutMs, progress: 20 });
     const finalInfo = await getRuntimeRouteInfo(runtime.page);
+    const finalRuntimeSnapshot = await captureRuntimeSnapshot(runtime.page, {
+      verifyFloors: routeSnapshotFloors(runtimeRouteRecord, {}),
+    });
     const suffixRoute = nativeRouteForDecisions(decisions.slice(checkpointStep));
     const fullRoute = checkpointRoute.concat(suffixRoute);
     const encodedSuffix = await encodeRuntimeRoute(runtime.page, suffixRoute);
     const encodedFull = await encodeRuntimeRoute(runtime.page, fullRoute);
     const encodedPrefix = await encodeRuntimeRoute(runtime.page, checkpointRoute);
 
-    forceSaveAutomation(checkpointSave, { runtimeAutoBattle: true, runtimeAutoPickup: true });
+    const runtimeAutoBattle = projectSupportsRuntimeAutoBattle(projectRoot);
+    const identityOptions = {
+      projectRoot,
+      runtimeAutoBattle,
+      routeStartSnapshot: (runtimeRouteRecord.start || {}).snapshot || null,
+    };
+    const boundarySnapshot = checkpointStep === 0
+      ? (runtimeRouteRecord.start || {}).snapshot
+      : ((decisions[checkpointStep - 1] || {}).postSnapshot);
+    const boundaryIdentity = buildRuntimeSnapshotIdentityPair(
+      boundarySnapshot,
+      checkpointRuntimeSnapshot,
+      identityOptions,
+    );
+    const finalIdentity = buildRuntimeSnapshotIdentityPair(
+      (routeRecord.final || {}).snapshot,
+      finalRuntimeSnapshot,
+      identityOptions,
+    );
+    if (!boundaryIdentity.matches) {
+      throw new Error(`H5 resume checkpoint snapshot mismatch: ${boundaryIdentity.expected} !== ${boundaryIdentity.actual}`);
+    }
+    if (!finalIdentity.matches) {
+      throw new Error(`H5 resume final snapshot mismatch: ${finalIdentity.expected} !== ${finalIdentity.actual}`);
+    }
+
+    forceSaveAutomation(checkpointSave, { runtimeAutoBattle, runtimeAutoPickup: true });
     checkpointSave.route = encodedPrefix;
     checkpointSave.__toReplay__ = encodedSuffix;
     checkpointSave.__solverReplay__ = decisions.slice(checkpointStep);
@@ -196,11 +238,30 @@ async function exportH5Segment({ routeRecord, routeFile, projectRoot, checkpoint
     const suffixRouteFile = path.join(outDir, `${safeName(base)}-suffix.h5route`);
     const fullRouteFile = path.join(outDir, `${safeName(base)}-full.h5route`);
 
-    fs.writeFileSync(h5saveFile, lzString.compressToBase64(JSON.stringify({
+    const project = loadProject(projectRoot);
+    const resumeArtifact = buildResumeArtifact({
+      project,
+      projectRoot,
+      routeRecord,
+      routeFile,
+      checkpointStep,
+      boundarySnapshot,
+      boundaryRuntimeSnapshot: checkpointRuntimeSnapshot,
+      boundaryIdentity,
+      finalSnapshot: (runtimeRouteRecord.final || {}).snapshot,
+      finalRuntimeSnapshot,
+      finalIdentity,
+      nativeName: checkpointInfo.name,
+      nativeVersion: checkpointInfo.version,
+    });
+
+    const savePackage = {
       name: checkpointInfo.name,
       version: checkpointInfo.version,
       data: checkpointSave,
-    })), "utf8");
+      __solverResumeArtifact__: resumeArtifact,
+    };
+    fs.writeFileSync(h5saveFile, encodeH5SavePackage(projectRoot, savePackage), "utf8");
 
     fs.writeFileSync(suffixRouteFile, lzString.compressToBase64(JSON.stringify({
       name: checkpointInfo.name,
@@ -236,6 +297,11 @@ async function exportH5Segment({ routeRecord, routeFile, projectRoot, checkpoint
       encodedSuffix,
       checkpointSave,
       suffixRoute,
+      checkpointRuntimeSnapshot,
+      finalRuntimeSnapshot,
+      boundaryIdentity,
+      finalIdentity,
+      resumeArtifact,
     };
   } finally {
     await Promise.allSettled([
@@ -350,15 +416,22 @@ async function main() {
   const autoPlay = parseBoolean(args["auto-play"], true);
   const headless = parseBoolean(args.headless, true);
   const keepOpen = parseBoolean(args["keep-open"], play);
-  const runtimeAutoBattle = parseBoolean(args["runtime-auto-battle"], true);
+  const runtimeAutoBattle = args["runtime-auto-battle"] == null
+    ? (args.h5save ? projectSupportsRuntimeAutoBattle(projectRoot) : true)
+    : parseBoolean(args["runtime-auto-battle"], true);
   const runtimeAutoPickup = parseBoolean(args["runtime-auto-pickup"], true);
   const postStabilize = parseBoolean(args["post-stabilize"], false);
   if (args.h5save) {
     const h5savePath = path.resolve(args.h5save);
-    const lzString = loadLzString(projectRoot);
-    const savePackage = JSON.parse(lzString.decompressFromBase64(fs.readFileSync(h5savePath, "utf8")));
-    const saveData = savePackage.data;
+    const decoded = decodeH5SavePackage(projectRoot, h5savePath);
+    const saveData = decoded.saveData;
     if (!saveData || !saveData.__toReplay__) throw new Error(`h5save has no __toReplay__: ${h5savePath}`);
+    if (decoded.artifact) {
+      const project = loadProject(projectRoot);
+      const routeFile = args["route-file"] ? resolveRouteFile(args["route-file"]) : null;
+      const routeRecord = routeFile ? readRouteFile(routeFile) : null;
+      validateResumeArtifact(decoded.artifact, { project, routeRecord });
+    }
     await openNativeReplay({
       projectRoot,
       saveData,
@@ -416,7 +489,19 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error.stack || error.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    if (error && error.code) {
+      console.error(`${error.code}: ${error.message}`);
+    } else {
+      console.error(error.stack || error.message);
+    }
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  exportH5Segment,
+  main,
+  openNativeReplay,
+};

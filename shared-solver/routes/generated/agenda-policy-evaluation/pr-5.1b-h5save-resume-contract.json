@@ -1,0 +1,142 @@
+{
+  "schema": "motapathfinder.pr-5.1b-h5save-resume.v1",
+  "status": "completed",
+  "provenance": {
+    "mode": "replay-runtime-h5save-resume-artifact",
+    "deterministicFullReportRebuild": true,
+    "liveRuntimeExecuted": false,
+    "liveRuntimeChecker": "shared-solver/check-replay-h5save-resume-live.js",
+    "productionReplayRuntimeChanged": true,
+    "productionSolverChanged": false,
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "routeSelectionSemanticsChanged": false,
+    "generationCommit": "0e0da55"
+  },
+  "scope": {
+    "shadowOnly": false,
+    "replayRuntimeHardening": true,
+    "noProductionSolverSearchSemanticsChange": true
+  },
+  "input": {
+    "id": "whiteisland-pr-5.1b-route-boundary",
+    "tower": "whiteisland",
+    "projectRoot": "whiteisland（9）",
+    "routeFile": "shared-solver/routes/generated/region-route-output-contract/whiteisland-smoke.route.json",
+    "checkpointStep": 1,
+    "routeDecisionCount": 2
+  },
+  "h5savePackage": {
+    "topLevelKeys": [
+      "name",
+      "version",
+      "data",
+      "__solverResumeArtifact__"
+    ],
+    "encoding": "lz-string base64 JSON",
+    "nativePayload": "h5mota-core.saveData",
+    "artifactSchema": "motapathfinder.replay-resume-artifact.v1"
+  },
+  "projectFingerprint": {
+    "title": "白色孤岛",
+    "floorCount": 32,
+    "floorOrder": [
+      "sample0",
+      "sample1",
+      "sample2",
+      "New",
+      "Start",
+      "A1",
+      "A2",
+      "A3",
+      "B1",
+      "B2",
+      "B3",
+      "C1",
+      "C2",
+      "C3",
+      "D1",
+      "D2",
+      "D3",
+      "F1",
+      "F2",
+      "F3",
+      "G1",
+      "G2",
+      "G3",
+      "A21",
+      "A22",
+      "A23",
+      "B21",
+      "B22",
+      "B23",
+      "C21",
+      "C22",
+      "C23"
+    ],
+    "structuralFingerprintSha256": "7a6e9bbc35ff906c58a5a1920a4fdda27bb154402b8952a925e9262c92ec4759",
+    "fingerprintSha256": "97b408948bb4fa53c8bdcb72846443741432feacae2210394def88553acbfb22",
+    "fingerprintInputs": [
+      "data",
+      "floorOrder",
+      "floorsById",
+      "enemysById",
+      "itemsById",
+      "mapTilesByNumber"
+    ]
+  },
+  "routeFingerprint": {
+    "algorithm": "sha256-stable-json-v1",
+    "sha256": "8d3cfb3ab6f08c59412dce83cc1b1057bb5d4c4becbeaa2fe8143545d8c8498c"
+  },
+  "boundary": {
+    "executedStepCount": 1,
+    "nextStep": 2,
+    "exactStateKeyMatchesRoute": true,
+    "nextDecision": {
+      "index": 2,
+      "kind": "battle",
+      "summary": "battle:greenSlime@A1:6,9",
+      "fingerprint": "battle|A1|6,9|greenSlime",
+      "floorId": "A1",
+      "preExactStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":7,\"y\":11,\"direction\":null,\"hp\":100,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":1,\"def\":1,\"mdef\":0,\"money\":0,\"exp\":0,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":1},\"flags\":{\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"5,10\",\"7,10\",\"8,11\",\"9,11\"],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}",
+      "postExactStateKey": "{\"floorId\":\"A1\",\"progressSig\":\"1000:Start,A1:Start,A1:1001\",\"hero\":{\"x\":6,\"y\":10,\"direction\":null,\"hp\":160,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":1,\"def\":1,\"mdef\":0,\"money\":0,\"exp\":1,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1,\"yellowKey\":2},\"flags\":{\"hatred\":2,\"shiqu\":1,\"shop1\":1},\"visitedFloors\":[\"A1\",\"Start\"],\"mutations\":[{\"floorId\":\"A1\",\"removed\":[\"5,10\",\"6,9\",\"7,10\",\"7,8\",\"8,11\",\"8,7\",\"9,11\"],\"replaced\":[]},{\"floorId\":\"Start\",\"removed\":[\"4,6\",\"6,8\",\"8,6\"],\"replaced\":[]}]}"
+    },
+    "routeSnapshotStored": true,
+    "runtimeSnapshotStored": true,
+    "identityMatches": true,
+    "runtimeSnapshotIdentity": "sha256:54defa5214488db20bccbf473fec3062ebcc1a83db2e7afb3d0d1bb13caef289",
+    "capturedRuntimeSnapshotIdentity": "sha256:54defa5214488db20bccbf473fec3062ebcc1a83db2e7afb3d0d1bb13caef289"
+  },
+  "continuation": {
+    "suffixDecisionCount": 1,
+    "finalExactStateKeyMatchesRoute": true,
+    "routeFinalSnapshotStored": true,
+    "finalRuntimeSnapshotStored": true,
+    "identityMatches": true,
+    "runtimeSnapshotIdentity": "sha256:893278427c34cbb7b7adf45b2fb30524a31442554e24948ad4883d99fd63ccae",
+    "capturedRuntimeSnapshotIdentity": "sha256:893278427c34cbb7b7adf45b2fb30524a31442554e24948ad4883d99fd63ccae"
+  },
+  "freshRuntime": {
+    "required": true,
+    "nativeSaveLoadHelper": "shared-solver/lib/replay-resume-artifact.js:loadRuntimeSaveData",
+    "continuationDriver": "shared-solver/lib/live-replay.js:executeRouteDecision",
+    "liveRuntimeExecuted": false,
+    "liveChecker": "shared-solver/check-replay-h5save-resume-live.js"
+  },
+  "mismatchControls": [
+    {
+      "id": "project-fingerprint-mismatch",
+      "alteredField": "projectFingerprint.fingerprintSha256",
+      "expectedErrorCode": "REPLAY_RESUME_PROJECT_FINGERPRINT_MISMATCH"
+    },
+    {
+      "id": "route-fingerprint-mismatch",
+      "alteredField": "routeFingerprint.sha256",
+      "expectedErrorCode": "REPLAY_RESUME_ROUTE_FINGERPRINT_MISMATCH"
+    }
+  ]
+}

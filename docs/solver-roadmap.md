@@ -405,6 +405,22 @@ npm run check:replay:flag-identity --prefix shared-solver
 npm run check:replay:start-offset:live --prefix shared-solver
 ```
 
+#### PR-5.1b：h5save Resume Artifact Contract ✅ replay-runtime-h5save-resume
+
+- ✅ 在指定 replay boundary 导出原生 `h5mota core.saveData()`，并在同一个 lz-string h5save package 中附带 `__solverResumeArtifact__`。
+- ✅ artifact 同时保存原始 route boundary/final snapshot 与已通过 runtime identity 验证的 runtime snapshot；记录 boundary exact key、下一条 primitive decision、suffix 数量和最终 exact key。
+- ✅ 新项目 runtime 先加载原生 h5save，再验证恢复后的 runtime snapshot identity、display boundary 与 next decision，并继续执行 suffix 到同一最终 runtime identity/display。
+- ✅ project fingerprint 与 route fingerprint 都有 API/CLI 负控；不匹配在 native replay/browser 启动前拒绝，并输出稳定错误码。
+- ✅ 生成的确定性报告明确 live browser smoke 是独立验收；本轮只修改 replay/export runtime，不修改 production solver、DP key、dominance、agenda、容量、默认策略或路线选择。
+
+验收：
+
+```bash
+npm run check:replay:h5save-resume --prefix shared-solver
+npm run run:replay:h5save-resume --prefix shared-solver
+npm run check:replay:h5save-resume:live --prefix shared-solver
+```
+
 ## 5. 风险控制
 
 ### 5.1 `presentTiles` 过拟合

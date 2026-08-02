@@ -428,6 +428,20 @@ const TEST_OVERRIDES = {
     cleanCheckout: true,
     notes: "PR-5.1a1a replay-runtime per-floor __leaveLoc__ merge, non-initial-floor checkpoint continuation, dual mismatch witnesses, direct route-gui CLI gate, and deterministic rebuild",
   },
+  "shared-solver/check-replay-h5save-resume-contract.js": {
+    grade: "closure",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: true,
+    notes: "PR-5.1b deterministic h5save resume-artifact schema, boundary/continuation fields, project/route fingerprint mismatch controls, and report rebuild",
+  },
+  "shared-solver/check-replay-h5save-resume-live.js": {
+    grade: "integration-local",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: false,
+    notes: "PR-5.1b local Chrome/Edge export, fresh native h5save load, next-decision continuation, final identity, and CLI fingerprint mismatch smoke",
+  },
 };
 
 function autoGradeTest(fileName) {
@@ -647,6 +661,7 @@ const manifest = {
         "shared-solver/check-replay-start-offset-contract.js",
         "shared-solver/check-replay-flag-identity-contract.js",
         "shared-solver/check-replay-flag-merge-cli-contract.js",
+        "shared-solver/check-replay-h5save-resume-contract.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],
     },

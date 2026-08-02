@@ -1298,6 +1298,24 @@ npm run check:replay:flag-identity --prefix shared-solver
 npm run check:replay:start-offset:live --prefix shared-solver
 ```
 
+### 2026-08-03 更新：PR-5.1b h5save Resume Artifact Contract
+
+PR-5.1a/a1/a1a 已正式关闭；本轮进入 h5save resume artifact contract，范围仍限定在 replay/export runtime，不改 production solver/search 语义：
+
+- `export-h5-segment.js` 在指定 checkpoint 导出原生 h5save，并在 package 顶层附带 `__solverResumeArtifact__`；artifact 记录 schema、project/route fingerprint、原始 route boundary/final snapshot、已验证 runtime snapshot、boundary exact key、next decision、suffix 与 final identity。
+- `lib/replay-resume-artifact.js` 集中处理 stable route fingerprint、h5save lz-string encode/decode、native saveData load，以及 project/route mismatch 错误码；`REPLAY_RESUME_PROJECT_FINGERPRINT_MISMATCH` 和 `REPLAY_RESUME_ROUTE_FINGERPRINT_MISMATCH` 在 CLI native replay 启动前返回。
+- live checker 使用 WhiteIsland 固定短路线：真实导出 boundary → 新 runtime 加载 native h5save → 验证恢复后的 runtime identity/display/next decision → 执行 suffix → 验证最终 identity/display；另以 OnlyUp project/route 做两条 CLI 负控。
+- 运行时跨楼层恢复产生的 `__leaveLoc__` 与 visited-floor baseline 仍由现有 runtime snapshot identity 规则处理；artifact 另存 canonical runtime snapshot，避免把 route JSON 省略的 runtime-only 字段误判为恢复失败。
+- 确定性 shadow report 与 live browser smoke 分离；本轮不修改 DP key、dominance、agenda、容量、默认策略或路线选择。
+
+专项检查：
+
+```bash
+npm run check:replay:h5save-resume --prefix shared-solver
+npm run run:replay:h5save-resume --prefix shared-solver
+npm run check:replay:h5save-resume:live --prefix shared-solver
+```
+
 专项检查：
 
 ```bash

@@ -100,6 +100,8 @@ API errors return:
 - Live session state is managed by `lib/replay-session.js`.
 - `lib/live-replay.js` preserves actual `flags.__leaveLoc__`; checkpoint start snapshots receive the expected initial cross-floor leave location when the saved route starts on a later floor than the project start floor, and later expected snapshots merge that baseline per floor without overwriting newly recorded locations.
 - `route-gui.js` validates `--from-step` immediately after loading the route and before `listen()`/`openBrowser()`; the process-level error includes `REPLAY_STEP_OUT_OF_RANGE`.
+- `export-h5-segment.js --checkpoint-step=N` writes a native `.h5save` plus suffix/full `.h5route` files. The h5save package includes `__solverResumeArtifact__` with the project/route fingerprints, route boundary, next primitive decision, and verified runtime continuation identities.
+- Loading an artifact with `node export-h5-segment.js --project-root=... --h5save=... --route-file=...` validates both fingerprints before opening the native replay; mismatches return `REPLAY_RESUME_PROJECT_FINGERPRINT_MISMATCH` or `REPLAY_RESUME_ROUTE_FINGERPRINT_MISMATCH`.
 - This is production replay-runtime hardening with no production solver/search semantic change.
 
 ## Validation
@@ -121,6 +123,8 @@ npm run gui:route
 npm run gui:route:live
 npm run check:replay:flag-identity --prefix shared-solver
 npm run check:replay:flag-merge-cli --prefix shared-solver
+npm run check:replay:h5save-resume --prefix shared-solver
+npm run check:replay:h5save-resume:live --prefix shared-solver
 ```
 
 Live debugging smoke with an existing stage route:
