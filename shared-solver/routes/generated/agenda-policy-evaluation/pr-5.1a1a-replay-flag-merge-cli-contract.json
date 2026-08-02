@@ -1,0 +1,117 @@
+{
+  "schema": "motapathfinder.pr-5.1a1a-replay-flag-merge-cli.v1",
+  "status": "completed",
+  "generatedAt": "2026-08-02T16:36:23.926Z",
+  "provenance": {
+    "mode": "replay-runtime-flag-merge-cli",
+    "entrypoint": "shared-solver/route-gui.js",
+    "runtimeLayer": "shared-solver/lib/live-replay.js",
+    "session": "shared-solver/lib/replay-session.js",
+    "fixedInputSource": "PR-4.8b WhiteIsland route plus a real WhiteIsland StaticSimulator checkpoint continuation",
+    "deterministicFullReportRebuild": true,
+    "generationCommit": "62ef1c7",
+    "liveRuntimeExecuted": false,
+    "productionReplayRuntimeChanged": true,
+    "productionSolverChanged": false,
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "routeSelectionSemanticsChanged": false
+  },
+  "scope": {
+    "shadowOnly": false,
+    "replayRuntimeHardening": true,
+    "noProductionSolverSearchSemanticsChange": true,
+    "projectedRuntimeStateIdentity": "template-projected solver-state witness; not a complete runtime exact-state capture",
+    "runtimeSnapshotIdentity": "sha256 of normalized full runtime snapshot including per-floor __leaveLoc__ and floor mutations",
+    "productionSolverSearchSemanticsChanged": false,
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "routeSelectionSemanticsChanged": false
+  },
+  "controls": {
+    "directCli": {
+      "rawInput": "abc",
+      "exitCode": 1,
+      "signal": null,
+      "errorCode": "REPLAY_STEP_OUT_OF_RANGE",
+      "serverStarted": false,
+      "browserOpened": false,
+      "runtimeStarted": false
+    },
+    "checkpointContinuation": {
+      "routeSignature": "c32a973e55d83310bef2888fd5ae8e69bc0751db28aa6f6b0d0b8261ee35e562",
+      "projectRoot": "whiteisland（9）",
+      "sourceFloor": "A1",
+      "checkpointFloor": "A2",
+      "actions": {
+        "initialChangeFloor": "changeFloor@A1:11,2",
+        "checkpointChangeFloor": "changeFloor@A2:11,2",
+        "floorFly": "floorFly:A2@A1:11,2"
+      },
+      "flyRecordPosition": true,
+      "expectedBaseline": {
+        "x": 6,
+        "y": 6,
+        "direction": "down"
+      },
+      "expectedCurrentLeaveLoc": {
+        "x": 11,
+        "y": 2,
+        "direction": "down"
+      },
+      "continuation": {
+        "state": "completed",
+        "runtimeSnapshotIdentity": "sha256:301a1e6fec6c3772ef08e0375174ac32b51da7716c254c1c9d8cc329ef2345aa",
+        "expectedRuntimeSnapshotIdentity": "sha256:301a1e6fec6c3772ef08e0375174ac32b51da7716c254c1c9d8cc329ef2345aa",
+        "runtimeSnapshotIdentityMatches": true,
+        "runtimeProjectedSolverStateMatches": true,
+        "finalHeroLoc": {
+          "x": 11,
+          "y": 2,
+          "direction": "down"
+        },
+        "finalLeaveLoc": {
+          "A1": {
+            "x": 11,
+            "y": 2,
+            "direction": "down"
+          },
+          "A2": {
+            "x": 11,
+            "y": 2,
+            "direction": "down"
+          },
+          "Start": {
+            "x": 6,
+            "y": 6,
+            "direction": "down"
+          }
+        }
+      },
+      "mismatchControls": [
+        {
+          "id": "old-baseline",
+          "alteredFloorId": "Start",
+          "mismatch": "checkpoint.floorFly.old-baseline.flags.__leaveLoc__.Start.x: 6 !== 7",
+          "identityMatches": false,
+          "expectedRuntimeSnapshotIdentity": "sha256:301a1e6fec6c3772ef08e0375174ac32b51da7716c254c1c9d8cc329ef2345aa",
+          "divergentRuntimeSnapshotIdentity": "sha256:332bad55459ed2f823d6c2677c67e23caa7db65f93d48b1162f4ca3fb6e701da"
+        },
+        {
+          "id": "new-leave-location",
+          "alteredFloorId": "A2",
+          "mismatch": "checkpoint.floorFly.new-leave-location.flags.__leaveLoc__.A2.x: 11 !== 10",
+          "identityMatches": false,
+          "expectedRuntimeSnapshotIdentity": "sha256:301a1e6fec6c3772ef08e0375174ac32b51da7716c254c1c9d8cc329ef2345aa",
+          "divergentRuntimeSnapshotIdentity": "sha256:022874b03795f1afc8691339430ff4cb26fe5521bec00c876d8e70921b8afe13"
+        }
+      ]
+    }
+  }
+}

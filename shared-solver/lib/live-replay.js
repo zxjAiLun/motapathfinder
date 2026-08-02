@@ -306,15 +306,28 @@ function isEmptyRuntimeFloorRecord(value) {
 
 function mergeRuntimeStartFlags(normalizedExpected, config) {
   const baselineFlags = config && config.routeStartSnapshot && config.routeStartSnapshot.flags;
-  if (!baselineFlags || !normalizedExpected || !normalizedExpected.flags) return;
+  if (!baselineFlags || !normalizedExpected) return;
   const baselineLeaveLoc = baselineFlags.__leaveLoc__;
+  if (!baselineLeaveLoc || typeof baselineLeaveLoc !== "object" || Array.isArray(baselineLeaveLoc)) return;
   if (
-    baselineLeaveLoc &&
-    typeof baselineLeaveLoc === "object" &&
-    !Object.prototype.hasOwnProperty.call(normalizedExpected.flags, "__leaveLoc__")
+    !normalizedExpected.flags ||
+    typeof normalizedExpected.flags !== "object" ||
+    Array.isArray(normalizedExpected.flags)
   ) {
-    normalizedExpected.flags.__leaveLoc__ = JSON.parse(JSON.stringify(baselineLeaveLoc));
+    normalizedExpected.flags = {};
   }
+  if (
+    !normalizedExpected.flags.__leaveLoc__ ||
+    typeof normalizedExpected.flags.__leaveLoc__ !== "object" ||
+    Array.isArray(normalizedExpected.flags.__leaveLoc__)
+  ) {
+    normalizedExpected.flags.__leaveLoc__ = {};
+  }
+  Object.entries(baselineLeaveLoc).forEach(([floorId, loc]) => {
+    if (!Object.prototype.hasOwnProperty.call(normalizedExpected.flags.__leaveLoc__, floorId)) {
+      normalizedExpected.flags.__leaveLoc__[floorId] = JSON.parse(JSON.stringify(loc));
+    }
+  });
 }
 
 function normalizeRuntimeSnapshotPair(expected, actual, config) {
@@ -378,7 +391,11 @@ function buildRuntimeSnapshotIdentityPair(expected, actual, config) {
   };
 }
 
-function buildRuntimeSolverExactStateKeyFromSnapshot(snapshot, templateExactStateKey, config) {
+// This is a compatibility projection: the persisted boundary key supplies
+// fields that runtime capture does not expose, while the captured snapshot
+// overwrites the fields that are observable.  It must not be described as a
+// complete runtime solver exact-state capture.
+function buildRuntimeProjectedSolverStateKeyFromSnapshot(snapshot, templateExactStateKey, config) {
   if (!snapshot || !templateExactStateKey) return null;
   let template;
   try {
@@ -421,14 +438,14 @@ function buildRuntimeSolverExactStateKeyFromSnapshot(snapshot, templateExactStat
   return JSON.stringify(stableRuntimeValue(projected));
 }
 
-function buildRuntimeSolverExactStateKeyPair(expected, actual, templateExactStateKey, config) {
+function buildRuntimeProjectedSolverStateKeyPair(expected, actual, templateExactStateKey, config) {
   const normalizedPair = normalizeRuntimeSnapshotPair(expected, actual, config);
-  const expectedKey = buildRuntimeSolverExactStateKeyFromSnapshot(
+  const expectedKey = buildRuntimeProjectedSolverStateKeyFromSnapshot(
     normalizedPair.expected,
     templateExactStateKey,
     config,
   );
-  const actualKey = buildRuntimeSolverExactStateKeyFromSnapshot(
+  const actualKey = buildRuntimeProjectedSolverStateKeyFromSnapshot(
     normalizedPair.actual,
     templateExactStateKey,
     config,
@@ -1086,7 +1103,7 @@ async function verifyInitialRuntimeSnapshot(session, routeRecord) {
     actual,
     comparisonOptions,
   );
-  const solverIdentity = buildRuntimeSolverExactStateKeyPair(
+  const projectedIdentity = buildRuntimeProjectedSolverStateKeyPair(
     (routeRecord.start || {}).snapshot,
     actual,
     (routeRecord.start || {}).exactStateKey || null,
@@ -1100,9 +1117,9 @@ async function verifyInitialRuntimeSnapshot(session, routeRecord) {
     expectedRuntimeSnapshotIdentity: identity.expected,
     runtimeSnapshotIdentity: identity.actual,
     runtimeSnapshotIdentityMatches: identity.matches,
-    expectedRuntimeSolverExactStateKey: solverIdentity.expected,
-    runtimeSolverExactStateKey: solverIdentity.actual,
-    runtimeSolverExactStateMatches: solverIdentity.matches,
+    expectedRuntimeProjectedSolverStateKey: projectedIdentity.expected,
+    runtimeProjectedSolverStateKey: projectedIdentity.actual,
+    runtimeProjectedSolverStateMatches: projectedIdentity.matches,
   };
 }
 
@@ -1136,7 +1153,7 @@ async function executeRouteDecision(session, decision, options) {
       routeStartSnapshot: config.routeStartSnapshot || session.routeStartSnapshot || null,
     }),
   );
-  const solverIdentity = buildRuntimeSolverExactStateKeyPair(
+  const projectedIdentity = buildRuntimeProjectedSolverStateKeyPair(
     decision.postSnapshot,
     actual,
     decision.postExactStateKey || null,
@@ -1153,9 +1170,9 @@ async function executeRouteDecision(session, decision, options) {
     expectedRuntimeSnapshotIdentity: identity.expected,
     runtimeSnapshotIdentity: identity.actual,
     runtimeSnapshotIdentityMatches: identity.matches,
-    expectedRuntimeSolverExactStateKey: solverIdentity.expected,
-    runtimeSolverExactStateKey: solverIdentity.actual,
-    runtimeSolverExactStateMatches: solverIdentity.matches,
+    expectedRuntimeProjectedSolverStateKey: projectedIdentity.expected,
+    runtimeProjectedSolverStateKey: projectedIdentity.actual,
+    runtimeProjectedSolverStateMatches: projectedIdentity.matches,
   };
 }
 
@@ -1270,8 +1287,8 @@ async function replayRouteRecordLive(routeRecord, options) {
 module.exports = {
   buildRuntimeSnapshotIdentity,
   buildRuntimeSnapshotIdentityPair,
-  buildRuntimeSolverExactStateKeyFromSnapshot,
-  buildRuntimeSolverExactStateKeyPair,
+  buildRuntimeProjectedSolverStateKeyFromSnapshot,
+  buildRuntimeProjectedSolverStateKeyPair,
   captureRuntimeSnapshot,
   configureRuntimeAutomation,
   createStaticServer,

@@ -4,7 +4,7 @@ const { summarizeSnapshot } = require("./route-snapshot");
 const {
   buildRuntimeSnapshotIdentity,
   buildRuntimeSnapshotIdentityPair,
-  buildRuntimeSolverExactStateKeyPair,
+  buildRuntimeProjectedSolverStateKeyPair,
   describeRuntimeStatus,
   executeRouteDecision,
   launchRuntimeSession,
@@ -319,8 +319,8 @@ class ReplaySession {
       : { expected: null, actual: this.runtimeSnapshotIdentity, matches: false };
     const solverBoundaryExactStateKey =
       (boundary && (boundary.exactStateKey || boundary.postExactStateKey)) || null;
-    const solverIdentity = this.lastRuntimeSnapshot && boundarySnapshot
-      ? buildRuntimeSolverExactStateKeyPair(
+    const projectedIdentity = this.lastRuntimeSnapshot && boundarySnapshot
+      ? buildRuntimeProjectedSolverStateKeyPair(
           boundarySnapshot,
           this.lastRuntimeSnapshot,
           solverBoundaryExactStateKey,
@@ -343,9 +343,9 @@ class ReplaySession {
       runtimeSnapshotIdentity: identity.actual || this.runtimeSnapshotIdentity,
       runtimeSnapshotIdentityMatches: identity.matches,
       runtimeIdentityKind: "runtime-snapshot-compatibility-v1",
-      expectedRuntimeSolverExactStateKey: solverIdentity.expected,
-      runtimeSolverExactStateKey: solverIdentity.actual,
-      runtimeSolverExactStateMatches: solverIdentity.matches,
+      expectedRuntimeProjectedSolverStateKey: projectedIdentity.expected,
+      runtimeProjectedSolverStateKey: projectedIdentity.actual,
+      runtimeProjectedSolverStateMatches: projectedIdentity.matches,
       expectedBoundary: boundarySnapshot
         ? {
             floorId: boundarySnapshot.floorId || null,

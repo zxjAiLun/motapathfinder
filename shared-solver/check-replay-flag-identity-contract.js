@@ -56,6 +56,7 @@ function assertReport(report) {
   });
   assert.strictEqual(checkpoint.continuation.state, "completed");
   assert.strictEqual(checkpoint.continuation.runtimeSnapshotIdentityMatches, true);
+  assert.strictEqual(checkpoint.continuation.runtimeProjectedSolverStateMatches, true);
   assert.strictEqual(
     checkpoint.continuation.runtimeSnapshotIdentity,
     checkpoint.continuation.expectedRuntimeSnapshotIdentity,
@@ -72,6 +73,7 @@ function assertReport(report) {
   });
   assert.strictEqual(crossFloor.continuation.state, "completed");
   assert.strictEqual(crossFloor.continuation.runtimeSnapshotIdentityMatches, true);
+  assert.strictEqual(crossFloor.continuation.runtimeProjectedSolverStateMatches, true);
   assert.deepStrictEqual(crossFloor.continuation.finalHeroLoc, { x: 6, y: 0, direction: "up" });
   assert.notDeepStrictEqual(
     crossFloor.mismatchControl.expectedFinalHeroLoc,

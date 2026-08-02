@@ -9,8 +9,13 @@ const {
   ensureFixedRoute,
 } = require("./audit-replay-start-offset-contract");
 const { buildCrossFloorControl } = require("./audit-replay-flag-identity-contract");
+const { buildCheckpointContinuationControl } = require("./audit-replay-flag-merge-cli-contract");
 const { ReplaySession } = require("./lib/replay-session");
 const { findBrowserExecutable } = require("./lib/live-replay");
+
+function cloneJson(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
 
 function displayOf(status) {
   const displayed = status.display || {};
@@ -71,7 +76,7 @@ async function runValidControl(input, routeRecord, requestedFromStep, expectedPa
     assert.ok(paused.expectedRuntimeSnapshotIdentity, `${id}: expected runtime snapshot identity`);
     assert.strictEqual(paused.runtimeSnapshotIdentityMatches, true, `${id}: runtime snapshot identity at pause`);
     assert.strictEqual(paused.runtimeSnapshotIdentity, paused.expectedRuntimeSnapshotIdentity, `${id}: runtime identity hash at pause`);
-    assert.strictEqual(paused.runtimeSolverExactStateMatches, true, `${id}: reconstructed runtime solver exact state at pause`);
+    assert.strictEqual(paused.runtimeProjectedSolverStateMatches, true, `${id}: runtime projected solver state at pause`);
     const expectedStartLeaveLoc = (((session.routeRecord.start || {}).snapshot || {}).flags || {}).__leaveLoc__ || null;
     if (expectedStartLeaveLoc) {
       assert.deepStrictEqual(
@@ -90,8 +95,8 @@ async function runValidControl(input, routeRecord, requestedFromStep, expectedPa
     assert.strictEqual(final.expectedExactStateKey, routeRecord.final.exactStateKey, `${id}: final exact state`);
     assert.strictEqual(final.runtimeSnapshotIdentityMatches, true, `${id}: final runtime snapshot identity`);
     assert.strictEqual(final.runtimeSnapshotIdentity, final.expectedRuntimeSnapshotIdentity, `${id}: final runtime identity hash`);
-    assert.strictEqual(final.runtimeSolverExactStateMatches, true, `${id}: reconstructed runtime solver exact state`);
-    const expectedFinalLeaveLoc = (((finalExpectedSnapshot(routeRecord) || {}).flags || {}).__leaveLoc__) || expectedStartLeaveLoc;
+    assert.strictEqual(final.runtimeProjectedSolverStateMatches, true, `${id}: runtime projected solver state`);
+    const expectedFinalLeaveLoc = mergeExpectedLeaveLoc(routeRecord) || expectedStartLeaveLoc;
     if (expectedFinalLeaveLoc) {
       assert.deepStrictEqual(
         (((session.lastRuntimeSnapshot || {}).flags || {}).__leaveLoc__) || null,
@@ -120,7 +125,7 @@ async function runValidControl(input, routeRecord, requestedFromStep, expectedPa
         runtimeSnapshotIdentityMatches: final.runtimeSnapshotIdentityMatches,
         runtimeSnapshotIdentity: final.runtimeSnapshotIdentity,
         expectedRuntimeSnapshotIdentity: final.expectedRuntimeSnapshotIdentity,
-        runtimeSolverExactStateMatches: final.runtimeSolverExactStateMatches,
+        runtimeProjectedSolverStateMatches: final.runtimeProjectedSolverStateMatches,
         verifiedSteps: Object.keys(final.stepStatuses).filter((step) => final.stepStatuses[step] === "ok").length,
       },
     };
@@ -129,8 +134,15 @@ async function runValidControl(input, routeRecord, requestedFromStep, expectedPa
   }
 }
 
-function finalExpectedSnapshot(routeRecord) {
-  return (routeRecord.final || {}).snapshot || null;
+function mergeExpectedLeaveLoc(routeRecord) {
+  const expected = cloneJson((((routeRecord.final || {}).snapshot || {}).flags || {}).__leaveLoc__ || null);
+  const baseline = (((routeRecord.start || {}).snapshot || {}).flags || {}).__leaveLoc__ || null;
+  if (!baseline) return expected;
+  const merged = expected && typeof expected === "object" && !Array.isArray(expected) ? expected : {};
+  Object.entries(baseline).forEach(([floorId, loc]) => {
+    if (!Object.prototype.hasOwnProperty.call(merged, floorId)) merged[floorId] = cloneJson(loc);
+  });
+  return merged;
 }
 
 async function runOutOfRangeControl(input, routeRecord, requestedFromStep, id) {
@@ -248,6 +260,36 @@ async function main() {
     },
     expectedFinalLeaveLoc: crossFloor.routeRecord.final.snapshot.flags.__leaveLoc__,
     ...crossFloorResult,
+  });
+
+  const checkpointContinuation = buildCheckpointContinuationControl();
+  const checkpointContinuationResult = await runValidControl(
+    {
+      id: "whiteisland-pr-5.1a1a-checkpoint-continuation",
+      projectRoot: checkpointContinuation.projectRoot,
+      tower: "whiteisland",
+    },
+    checkpointContinuation.checkpoint,
+    0,
+    checkpointContinuation.checkpoint.start.snapshot,
+    "whiteisland-pr-5.1a1a-checkpoint-changeFloor-floorFly",
+  );
+  assert.deepStrictEqual(
+    checkpointContinuationResult.final.displayed,
+    snapshotDisplay(checkpointContinuation.checkpoint.final.snapshot),
+    "checkpoint continuation live final landing",
+  );
+  results.push({
+    id: "whiteisland-pr-5.1a1a-checkpoint-changeFloor-floorFly",
+    kind: "checkpoint-flag-merge",
+    actions: {
+      initialChangeFloor: checkpointContinuation.sourceRoute.decisions[0].summary,
+      checkpointChangeFloor: checkpointContinuation.checkpoint.decisions[0].summary,
+      floorFly: checkpointContinuation.checkpoint.decisions[1].summary,
+    },
+    expectedFinalLeaveLoc: checkpointContinuation.evidence.expectedCurrentLeaveLoc,
+    expectedBaseline: checkpointContinuation.evidence.expectedBaseline,
+    ...checkpointContinuationResult,
   });
   process.stdout.write(`${JSON.stringify({ schema: "motapathfinder.pr-5.1a-replay-start-offset-live.v1", status: "passed", results }, null, 2)}\n`);
 }

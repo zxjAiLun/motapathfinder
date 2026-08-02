@@ -1,14 +1,14 @@
 {
   "schema": "motapathfinder.pr-5.1a1-replay-flag-identity.v1",
   "status": "completed",
-  "generatedAt": "2026-08-02T15:39:07.420Z",
+  "generatedAt": "2026-08-02T16:34:39.755Z",
   "provenance": {
     "mode": "replay-flag-identity-shadow",
     "entrypoint": "shared-solver/lib/live-replay.js",
     "session": "shared-solver/lib/replay-session.js",
     "fixedInputSource": "PR-4.8b WhiteIsland checkpoint plus a real OnlyUp simulator cross-floor control",
     "deterministicFullReportRebuild": true,
-    "generationCommit": "b6efeed",
+    "generationCommit": "62ef1c7",
     "liveRuntimeExecuted": false,
     "productionSolverChanged": false,
     "productionDpKeyChanged": false,
@@ -62,7 +62,7 @@
         "runtimeSnapshotIdentityMatches": true,
         "runtimeSnapshotIdentity": "sha256:119737026a441af9d0f02368faa172eeff5c3bd626b4ee04501df2c5db644b90",
         "expectedRuntimeSnapshotIdentity": "sha256:119737026a441af9d0f02368faa172eeff5c3bd626b4ee04501df2c5db644b90",
-        "runtimeSolverExactStateMatches": true,
+        "runtimeProjectedSolverStateMatches": true,
         "finalHeroLoc": {
           "x": 6,
           "y": 10,
@@ -98,7 +98,7 @@
         "runtimeSnapshotIdentityMatches": true,
         "runtimeSnapshotIdentity": "sha256:47755fb4f6f4a33e35f40d597807794c47286f12821994b1de672bf535fb985b",
         "expectedRuntimeSnapshotIdentity": "sha256:47755fb4f6f4a33e35f40d597807794c47286f12821994b1de672bf535fb985b",
-        "runtimeSolverExactStateMatches": true,
+        "runtimeProjectedSolverStateMatches": true,
         "finalHeroLoc": {
           "x": 6,
           "y": 0,

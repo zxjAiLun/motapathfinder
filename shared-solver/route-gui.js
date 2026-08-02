@@ -307,6 +307,10 @@ async function main() {
     projectRoot,
     liveOptions,
   });
+  // Validate before creating the HTTP server or opening a browser.  This is
+  // the process-level CLI gate; API/session validation remains the same
+  // contract for requests made after the GUI is already running.
+  session.normalizeStep(fromStep);
   const server = createGuiServer({
     routeRecord,
     routeFile,
@@ -341,7 +345,8 @@ async function main() {
 
 if (require.main === module) {
   main().catch((error) => {
-    console.error(error.stack || error.message);
+    const code = error && error.code ? `${error.code}: ` : "";
+    console.error(`${code}${error.stack || error.message}`);
     process.exit(1);
   });
 }

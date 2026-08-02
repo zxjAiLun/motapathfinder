@@ -1279,6 +1279,25 @@ PR-5.1a 的 live exact-state review 要求保留 runtime `__leaveLoc__`、补齐
 - 新增真实 OnlyUp simulator `changeFloor -> floorFly` 控制：`flyRecordPosition=true` 时正确 leave location 回飞到 `(6,0)`，篡改 `__leaveLoc__` 会得到 `(5,0)` 并被 snapshot/hash mismatch 拒绝。
 - `route-gui.js --from-step=abc` 保留原始输入，交给 `ReplaySession.normalizeStep()` 返回 `REPLAY_STEP_OUT_OF_RANGE / HTTP 400`。
 
+### 2026-08-03 更新：PR-5.1a1a Checkpoint Flag Merge & CLI Gate
+
+Review 暂缓关闭 PR-5.1a 系列，指出 checkpoint 后继续跨楼层时 baseline 不能按整对象补入，以及 direct CLI 尚未在 server/browser 前拒绝非法 offset。本轮进入 replay-runtime hardening；不修改 production solver/search 语义：
+
+- `normalizeRuntimeSnapshotPair()` 对 `flags.__leaveLoc__` 改为逐 floor merge：expected 已有的 floor 保持 decision snapshot 值，checkpoint baseline 只补缺失 floor；actual runtime 的新 leave location 不再被覆盖。
+- 新增真实 WhiteIsland StaticSimulator 与 live browser 组合控制：非初始楼层 A2 checkpoint → `changeFloor@A2:11,2` → `floorFly:A2@A1:11,2`；最终 runtime 同时保留 `Start` baseline 与 A2 leave location。
+- 分别篡改旧 `Start` baseline 和新 A2 leave location，两条负控都产生 snapshot diff 与 runtime SHA-256 identity mismatch。
+- `route-gui.js` 在 `createGuiServer()`、`listen()`、`openBrowser()` 和 `session.start()` 之前调用 `session.normalizeStep(fromStep)`；真实 `spawnSync node route-gui.js --from-step=abc` 以非零退出并输出 `REPLAY_STEP_OUT_OF_RANGE`，不启动 server/browser/runtime。
+- `runtimeSolverExactStateKey` 相关 status/API 名称改为 `runtimeProjectedSolverStateKey`；它明确是 boundary template projection，不是完整 runtime exact-state capture；完整 runtime identity 仍由 `runtimeSnapshotIdentity` 提供。
+- 本轮范围标签为 `production replay-runtime hardening; no production solver/search-semantics change`，不修改 DP key、dominance、agenda、容量、默认策略或路线选择。
+
+专项检查：
+
+```bash
+npm run check:replay:flag-merge-cli --prefix shared-solver
+npm run check:replay:flag-identity --prefix shared-solver
+npm run check:replay:start-offset:live --prefix shared-solver
+```
+
 专项检查：
 
 ```bash

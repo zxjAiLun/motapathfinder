@@ -106,6 +106,8 @@
     "run:replay:start-offset": "node audit-replay-start-offset-contract.js",
     "check:replay:flag-identity": "node check-replay-flag-identity-contract.js",
     "run:replay:flag-identity": "node audit-replay-flag-identity-contract.js",
+    "check:replay:flag-merge-cli": "node check-replay-flag-merge-cli-contract.js",
+    "run:replay:flag-merge-cli": "node audit-replay-flag-merge-cli-contract.js",
     "check:replay:start-offset:live": "node check-replay-start-offset-live.js",
     "check:onlyup:mt7-special80": "node check-onlyup-mt7-special80.js",
     "check:progressive": "node check-progressive-monster-planner.js",

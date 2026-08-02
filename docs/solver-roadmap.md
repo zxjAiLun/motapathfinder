@@ -388,6 +388,23 @@ npm run check:replay:start-offset --prefix shared-solver
 npm run check:replay:start-offset:live --prefix shared-solver
 ```
 
+#### PR-5.1a1a：Checkpoint Flag Merge & CLI Gate ✅ replay-runtime-hardening
+
+- ✅ `__leaveLoc__` checkpoint baseline now merges per floor; an explicit post-checkpoint floor location remains authoritative while missing baseline floors are restored.
+- ✅ Added a real WhiteIsland StaticSimulator/browser control: non-initial-floor checkpoint on A2 → `changeFloor@A2` → `floorFly:A2@A1`, retaining the initial `Start` baseline and the later A2 leave location.
+- ✅ Altering either the old `Start` baseline or the new A2 leave location produces both snapshot mismatch and runtime identity mismatch.
+- ✅ `route-gui.js --from-step=abc` is validated before HTTP server creation, browser opening, or live runtime launch; the direct process exits nonzero with `REPLAY_STEP_OUT_OF_RANGE`.
+- ✅ Renamed runtime solver-state compatibility fields to `runtimeProjectedSolverStateKey` / `runtimeProjectedSolverStateMatches`; the docs explicitly identify them as template projections, not complete runtime exact-state capture.
+- ✅ This changes replay-runtime behavior only; production DP key, dominance, agenda, capacity, default policy, and route selection remain unchanged.
+
+验收：
+
+```bash
+npm run check:replay:flag-merge-cli --prefix shared-solver
+npm run check:replay:flag-identity --prefix shared-solver
+npm run check:replay:start-offset:live --prefix shared-solver
+```
+
 ## 5. 风险控制
 
 ### 5.1 `presentTiles` 过拟合

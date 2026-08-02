@@ -269,12 +269,12 @@ async function runShadowContinuation(routeRecord, projectRoot, id) {
   try {
     const started = await session.start({ fromStep: 1 });
     assert.strictEqual(started.runtimeSnapshotIdentityMatches, true, `${id}: start identity`);
-    assert.strictEqual(started.runtimeSolverExactStateMatches, true, `${id}: start solver identity`);
+    assert.strictEqual(started.runtimeProjectedSolverStateMatches, true, `${id}: start projected solver identity`);
     assert.ok(started.runtimeSnapshotIdentity, `${id}: start identity hash`);
     const completed = await session.play({ stepDelayMs: 0 });
     assert.strictEqual(completed.state, "completed", `${id}: completed state`);
     assert.strictEqual(completed.runtimeSnapshotIdentityMatches, true, `${id}: final identity`);
-    assert.strictEqual(completed.runtimeSolverExactStateMatches, true, `${id}: final solver identity`);
+    assert.strictEqual(completed.runtimeProjectedSolverStateMatches, true, `${id}: final projected solver identity`);
     assert.strictEqual(completed.runtimeSnapshotIdentity, completed.expectedRuntimeSnapshotIdentity, `${id}: final identity hash`);
     assert.strictEqual(
       session.lastRuntimeSnapshot.floorId,
@@ -292,7 +292,7 @@ async function runShadowContinuation(routeRecord, projectRoot, id) {
       runtimeSnapshotIdentityMatches: completed.runtimeSnapshotIdentityMatches,
       runtimeSnapshotIdentity: completed.runtimeSnapshotIdentity,
       expectedRuntimeSnapshotIdentity: completed.expectedRuntimeSnapshotIdentity,
-      runtimeSolverExactStateMatches: completed.runtimeSolverExactStateMatches,
+      runtimeProjectedSolverStateMatches: completed.runtimeProjectedSolverStateMatches,
       finalHeroLoc: cloneJson(session.lastRuntimeSnapshot.hero.loc),
       finalLeaveLoc: cloneJson((session.lastRuntimeSnapshot.flags || {}).__leaveLoc__ || null),
     };
