@@ -276,7 +276,7 @@ npm run run:region:entry:contract --prefix shared-solver
 - ✅ 新增 OnlyUp 与 Whiteisland 两个真实项目的短 RegionSpec 正控；两者均经 `run-region-dp.js` 写出 route，固定 `found=true`、exit 0 和 route schema。
 - ✅ route metadata 锁定 RegionSpec ID、source/normalized hash、project fingerprint、reached milestone、primitive decision count 与最终 floor/hero summary。
 - ✅ 读取写出的 route 后逐项 resolver replay；每个 decision 必须重新可见、exact pre/post state key 一致，且不得持久化 macro kind 或 macro plan。
-- ✅ 负控在 not-found runner 前写入并删除 stale route，锁定 runner 不会留下旧 route。
+- ✅ 建立了 route output/replay core contract；stale-output ownership 在 PR-4.8b1 单独补齐。
 - ✅ JSON/Markdown report deterministic rebuild；只覆盖短跨塔输出/replay smoke，不声称完整 MT1-MT5 或 Whiteisland 全塔路线。
 - ✅ 不修改 production DP key、dominance、agenda、容量、默认策略或搜索顺序。
 
@@ -285,6 +285,21 @@ npm run run:region:entry:contract --prefix shared-solver
 ```bash
 npm run check:region:route:contract --prefix shared-solver
 npm run run:region:route:contract --prefix shared-solver
+```
+
+#### PR-4.8b1：Runner-owned Output Cleanup ✅ shadow-only
+
+- ✅ 普通 `run-region-dp.js` 在加载 RegionSpec 前由 runner 自身清理已有 `--out` 文件；not-found 与 prefix structured failure 均不会留下 stale route。
+- ✅ `--validate-only=1` 不执行普通清理；preservation control 固定既有 output 仍存在。
+- ✅ audit `runProbe()` 不再预清理；checker 固定 `staleRouteExistedBeforeRunner=true`、`harnessRemovedOutput=false`、`runnerOwnedCleanup=true`、运行后无 route。
+- ✅ 新增 OnlyUp Region-2 prefix structured failure negative control，固定结构化 stage/termination/failure/failed segment。
+- ✅ 不修改 production DP key、dominance、agenda、容量、默认策略或搜索顺序。
+
+验收：
+
+```bash
+npm run check:region:route:cleanup --prefix shared-solver
+npm run run:region:route:cleanup --prefix shared-solver
 ```
 
 排序原则：

@@ -96,19 +96,48 @@ function assertPositiveControl(control, expectedId) {
 }
 
 function assertNegativeControl(control, expectedId) {
+  const expected = NEGATIVE_CONTROLS.find((candidate) => candidate.id === expectedId);
+  assert.ok(expected, `${expectedId}: fixed negative expectation`);
   assert.strictEqual(control.id, expectedId);
-  assert.strictEqual(control.expectedStatus, "not-found", `${expectedId}: expected status`);
+  assert.strictEqual(control.expectedStatus, expected.expectedStatus, `${expectedId}: expected status`);
+  assert.strictEqual(control.expectedRunnerExitCode, expected.expectedRunnerExitCode, `${expectedId}: expected runner exit`);
   assert.strictEqual(control.entryValidation.valid, true, `${expectedId}: source validation`);
-  assertPreflight(control, "whiteisland-trial-smoke");
-  assert.strictEqual(control.runnerProbe.exitCode, 0, `${expectedId}: runner exit`);
-  assert.strictEqual(control.runnerProbe.summaryParsed, true, `${expectedId}: runner summary`);
-  assert.strictEqual(control.runnerProbe.summary.found, false, `${expectedId}: runner must not find`);
-  assert.strictEqual(control.runnerProbe.errorEvidence, null, `${expectedId}: runner error evidence`);
-  assert.strictEqual(control.staleRouteExistedBeforeRun, true, `${expectedId}: stale route seed`);
-  assert.strictEqual(control.staleRouteRemovedBeforeRun, true, `${expectedId}: stale route removal`);
+  assertPreflight(control, control.specIdentity.id);
+  assert.strictEqual(control.runnerProbe.exitCode, expected.expectedRunnerExitCode, `${expectedId}: runner exit`);
+  assert.strictEqual(control.runnerProbe.staleRouteExistedBeforeRunner, true, `${expectedId}: stale route seed`);
+  assert.strictEqual(control.runnerProbe.harnessRemovedOutput, false, `${expectedId}: harness cleanup`);
+  assert.strictEqual(control.runnerProbe.runnerOwnedCleanup, true, `${expectedId}: runner cleanup`);
+  assert.strictEqual(control.staleRouteExistedBeforeRunner, true, `${expectedId}: report stale route seed`);
+  assert.strictEqual(control.harnessRemovedOutput, false, `${expectedId}: report harness cleanup`);
+  assert.strictEqual(control.runnerOwnedCleanup, true, `${expectedId}: report runner cleanup`);
   assert.strictEqual(control.routeOutputExistsAfterRun, false, `${expectedId}: route output after not-found`);
   assert.strictEqual(control.outputProvenance.routeWritten, false, `${expectedId}: route provenance`);
+  if (expected.expectedStatus === "not-found") {
+    assert.strictEqual(control.runnerProbe.summaryParsed, true, `${expectedId}: runner summary`);
+    assert.strictEqual(control.runnerProbe.summary.found, false, `${expectedId}: runner must not find`);
+    assert.strictEqual(control.runnerProbe.errorEvidence, null, `${expectedId}: runner error evidence`);
+  } else {
+    assert.strictEqual(control.runnerProbe.summaryParsed, false, `${expectedId}: structured failure must not emit summary`);
+    assert.strictEqual(control.runnerProbe.errorEvidence.stage, expected.expectedError.stage, `${expectedId}: error stage`);
+    assert.strictEqual(control.runnerProbe.errorEvidence.termination, expected.expectedError.termination, `${expectedId}: error termination`);
+    assert.strictEqual(control.runnerProbe.errorEvidence.failureClass, expected.expectedError.failureClass, `${expectedId}: error failure class`);
+    assert.strictEqual(control.runnerProbe.errorEvidence.failedSegmentId, expected.expectedError.failedSegmentId, `${expectedId}: error failed segment`);
+  }
   assertCommandHas(control.runnerProbe.command, "--structured-errors=1", `${expectedId}: runner command`);
+}
+
+function assertValidateOnlyPreservation(report) {
+  const preservation = report.validateOnlyPreservation;
+  assert.ok(preservation, "validate-only preservation report");
+  assert.strictEqual(preservation.exitCode, 0, "validate-only preservation exit");
+  assert.strictEqual(preservation.summaryParsed, true, "validate-only preservation summary");
+  assert.strictEqual(preservation.errorEvidence, null, "validate-only preservation error");
+  assert.strictEqual(preservation.staleRouteExistedBeforeRunner, true, "validate-only stale seed");
+  assert.strictEqual(preservation.harnessRemovedOutput, false, "validate-only harness cleanup");
+  assert.strictEqual(preservation.runnerDeletedOutput, false, "validate-only runner deletion");
+  assert.strictEqual(preservation.outputPathExistsAfterRunner, true, "validate-only output preservation");
+  assert.strictEqual(preservation.routePreserved, true, "validate-only route preserved");
+  assertCommandHas(preservation.command, "--validate-only=1", "validate-only preservation command");
 }
 
 function assertReport(report) {
@@ -124,6 +153,9 @@ function assertReport(report) {
   assert.strictEqual(report.provenance.productionCapacityChanged, false);
   assert.strictEqual(report.provenance.productionDefaultPolicyChanged, false);
   assert.strictEqual(report.provenance.describesCompleteTowerRoute, false);
+  assertValidateOnlyPreservation(report);
+  assert.strictEqual(report.contract.id, "PR-4.8b1");
+  assert.strictEqual(report.contract.title, "Runner-owned Output Cleanup");
   assert.deepStrictEqual(report.contract.fixedControls, CONTROLS.map((control) => control.id));
   assert.deepStrictEqual(report.contract.negativeControls, NEGATIVE_CONTROLS.map((control) => control.id));
   assert.deepStrictEqual(report.contract.fixedExpectedControlOutcomes, CONTROL_EXPECTATIONS);
@@ -145,7 +177,7 @@ function main() {
   assertReport(rebuilt);
   assert.deepStrictEqual(normalizeReport(rebuilt), normalizeReport(saved), "full report rebuild must be deterministic");
   assert.strictEqual(markdownReport(rebuilt), savedMarkdown, "markdown rebuild must be deterministic");
-  process.stdout.write(`region route output contract check passed (${saved.controls.length} positive controls, ${saved.negativeControls.length} negative control)\n`);
+  process.stdout.write(`runner-owned output cleanup contract check passed (${saved.controls.length} positive controls, ${saved.negativeControls.length} negative controls)\n`);
 }
 
 if (require.main === module) main();

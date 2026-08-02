@@ -44,6 +44,14 @@ function resolveMaybeRelative(filePath, baseDir) {
   return path.resolve(baseDir || process.cwd(), filePath);
 }
 
+function removeExistingRouteOutput(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return false;
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile()) throw new Error(`Route output path is not a file: ${filePath}`);
+  fs.unlinkSync(filePath);
+  return true;
+}
+
 function solverRelativePath(filePath) {
   return path.relative(__dirname, filePath).replace(/\\/g, "/") || ".";
 }
@@ -347,6 +355,9 @@ function main() {
     return;
   }
 
+  const requestedOutputPath = args.out ? path.resolve(args.out) : null;
+  runnerStage = "cleanup-output";
+  removeExistingRouteOutput(requestedOutputPath);
   runnerStage = "load-region-spec";
   const regionSpecPath = path.resolve(args["region-spec"]);
   const regionSpec = loadRegionSpec(regionSpecPath);
@@ -378,7 +389,7 @@ function main() {
   const proofClaim = buildRegionProofClaim(result, regionSpec);
 
   let routeRecord = null;
-  let routePath = args.out ? path.resolve(args.out) : null;
+  let routePath = requestedOutputPath;
   if (routePath && result.found && result.finalCandidate && result.finalCandidate.state) {
     const finalState = result.finalCandidate.state;
     finalState.route = Array.isArray(result.finalCandidate.route) ? result.finalCandidate.route.slice() : finalState.route;

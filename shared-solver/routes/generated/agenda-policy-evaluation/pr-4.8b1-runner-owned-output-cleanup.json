@@ -1,0 +1,1276 @@
+{
+  "schema": "motapathfinder.pr-4.8b1-runner-owned-output-cleanup.v1",
+  "status": "completed",
+  "generatedAt": "2026-08-02T13:05:43.751Z",
+  "provenance": {
+    "mode": "shadow-only",
+    "entrypoint": "shared-solver/run-region-dp.js",
+    "runner": "shared-solver/run-region-dp.js",
+    "runnerProbeMode": "runner-owned-output-cleanup-with-real-short-routes-and-structured-failure",
+    "deterministicFullReportRebuild": true,
+    "generationCommit": "bd74e06",
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "describesCompleteTowerRoute": false
+  },
+  "contract": {
+    "id": "PR-4.8b1",
+    "title": "Runner-owned Output Cleanup",
+    "unifiedEntry": {
+      "command": "node shared-solver/run-region-dp.js --project-root=<project-root> --region-spec=<region-spec> --out=<output>",
+      "requiredPaths": [
+        "project-root",
+        "region-spec",
+        "out"
+      ]
+    },
+    "requiredReportFields": [
+      "routeOutput.metadata.regionSpecIdentity",
+      "routeOutput.metadata.projectFingerprint",
+      "routeOutput.reachedMilestone",
+      "routeOutput.routePrimitiveCount",
+      "routeOutput.final",
+      "replay.everyDecisionReparsed",
+      "replay.finalExactStateMatches",
+      "replay.finalSummaryMatches",
+      "validateOnlyPreservation.routePreserved",
+      "negativeControls.staleRouteExistedBeforeRunner",
+      "negativeControls.harnessRemovedOutput",
+      "negativeControls.runnerOwnedCleanup",
+      "negativeControls.routeOutputExistsAfterRun"
+    ],
+    "fixedControls": [
+      "onlyup-region-output-contract-smoke",
+      "whiteisland-trial-output-contract-smoke"
+    ],
+    "fixedExpectedControlOutcomes": {
+      "onlyup-region-output-contract-smoke": {
+        "exitCode": 0,
+        "found": true,
+        "reachedMilestone": "onlyup-region-output-contract-smoke-goal",
+        "primitiveDecisionCount": 2,
+        "final": {
+          "floorId": "MT1",
+          "hero": {
+            "hp": 201,
+            "hpmax": 9999,
+            "mana": 0,
+            "manamax": -1,
+            "atk": 3,
+            "def": 0,
+            "mdef": 10,
+            "money": 0,
+            "exp": 2,
+            "lv": 1,
+            "loc": {
+              "x": 2,
+              "y": 7,
+              "direction": "down"
+            },
+            "equipment": []
+          }
+        }
+      },
+      "whiteisland-trial-output-contract-smoke": {
+        "exitCode": 0,
+        "found": true,
+        "reachedMilestone": "whiteisland-trial-output-contract-smoke-goal",
+        "primitiveDecisionCount": 2,
+        "final": {
+          "floorId": "A1",
+          "hero": {
+            "hp": 160,
+            "hpmax": 9999,
+            "mana": 0,
+            "manamax": -1,
+            "atk": 1,
+            "def": 1,
+            "mdef": 0,
+            "money": 0,
+            "exp": 1,
+            "lv": 1,
+            "loc": {
+              "x": 6,
+              "y": 10,
+              "direction": "up"
+            },
+            "equipment": []
+          }
+        }
+      }
+    },
+    "negativeControls": [
+      "whiteisland-trial-output-contract-not-found",
+      "onlyup-region-output-contract-prefix-failure"
+    ],
+    "deterministicLiveRebuild": true
+  },
+  "validateOnlyPreservation": {
+    "command": [
+      "node",
+      "run-region-dp.js",
+      "--project-root=../Only upV2.1/Only upV2.1",
+      "--region-spec=../towers/onlyup/region-specs/region-output-contract-smoke.json",
+      "--out=routes/generated/region-route-output-contract/onlyup-smoke.route.json",
+      "--validate-only=1",
+      "--structured-errors=1"
+    ],
+    "exitCode": 0,
+    "summaryParsed": true,
+    "staleRouteExistedBeforeRunner": true,
+    "harnessRemovedOutput": false,
+    "runnerDeletedOutput": false,
+    "routePreserved": true,
+    "outputPathExistsAfterRunner": true,
+    "errorEvidence": null
+  },
+  "controls": [
+    {
+      "id": "onlyup-region-output-contract-smoke",
+      "specIdentity": {
+        "id": "onlyup-region-output-contract-smoke",
+        "tower": "onlyup",
+        "label": "Only Up Region Output Contract Smoke: first MT1 battle",
+        "sourceSha256": "747a8da1e65def0a0c3444576c80c897692731c2b000f4e1a47280fb4a374541",
+        "normalizedSha256": "0627466faca50f9a1557dacd525df2a295ac271dde69c52af6ff3e603aad830f",
+        "sourceFile": "towers/onlyup/region-specs/region-output-contract-smoke.json"
+      },
+      "projectIdentity": {
+        "title": "Only Up",
+        "floorCount": 46,
+        "floorOrder": [
+          "sample0",
+          "sample1",
+          "sample2",
+          "New",
+          "World",
+          "MT1",
+          "MT2",
+          "MT3",
+          "MT4",
+          "MT5",
+          "MT6",
+          "MT7",
+          "MT8",
+          "MT9",
+          "MT10",
+          "MT11",
+          "MT12",
+          "MT13",
+          "MT14",
+          "MT15",
+          "MT16",
+          "MT17",
+          "MT18",
+          "MT19",
+          "MT20",
+          "MT21",
+          "MT22",
+          "MT23",
+          "MT24",
+          "MT25",
+          "MT26",
+          "MT27",
+          "MT28",
+          "MT29",
+          "MT30",
+          "MT31",
+          "MT32",
+          "MT33",
+          "MT34",
+          "MT35",
+          "MT36",
+          "MT37",
+          "MT38",
+          "MT39",
+          "MT40"
+        ],
+        "structuralFingerprintSha256": "954efc84bf7cf9f19d19ed2e70e9e05b1459d1c0d69a9db9c532dd67d9e6dfc6",
+        "fingerprintSha256": "d50cdaaff91c21f61611d323814de88fc1117b70a8247a4e64b23eb10b3d12c6",
+        "fingerprintInputs": [
+          "data",
+          "floorOrder",
+          "floorsById",
+          "enemysById",
+          "itemsById",
+          "mapTilesByNumber"
+        ],
+        "root": "Only upV2.1/Only upV2.1"
+      },
+      "milestoneOrder": [
+        "onlyup-region-output-contract-smoke-goal"
+      ],
+      "startCheckpoint": {
+        "type": "initial",
+        "floorId": "MT1",
+        "routeFile": null,
+        "routeName": null,
+        "fromMilestoneId": null,
+        "toMilestoneId": null
+      },
+      "entryValidation": {
+        "valid": true,
+        "errors": [],
+        "boundary": {
+          "prefix": null,
+          "fromMilestoneId": null,
+          "toMilestoneId": null,
+          "fromIndex": -1,
+          "toIndex": -1,
+          "prefixResolved": true,
+          "rangeResolved": true
+        }
+      },
+      "preflight": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-output-contract-smoke.json",
+          "--out=routes/generated/region-route-output-contract/onlyup-smoke.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": true,
+          "regionId": "onlyup-region-output-contract-smoke",
+          "milestoneOrder": [
+            "onlyup-region-output-contract-smoke-goal"
+          ],
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": true,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errors": []
+        },
+        "errorEvidence": null,
+        "outputPathExistsAfter": false
+      },
+      "execution": {
+        "status": "found",
+        "found": true,
+        "reachedMilestone": "onlyup-region-output-contract-smoke-goal",
+        "routePrimitiveCount": 2,
+        "final": {
+          "floorId": "MT1",
+          "hero": {
+            "hp": 201,
+            "hpmax": 9999,
+            "mana": 0,
+            "manamax": -1,
+            "atk": 3,
+            "def": 0,
+            "mdef": 10,
+            "money": 0,
+            "exp": 2,
+            "lv": 1,
+            "loc": {
+              "x": 2,
+              "y": 7,
+              "direction": "down"
+            },
+            "equipment": []
+          }
+        }
+      },
+      "routeOutput": {
+        "schema": "motapathfinder.route.v1",
+        "file": "shared-solver/routes/generated/region-route-output-contract/onlyup-smoke.route.json",
+        "metadata": {
+          "regionSpecId": "onlyup-region-output-contract-smoke",
+          "regionSpecIdentity": {
+            "id": "onlyup-region-output-contract-smoke",
+            "tower": "onlyup",
+            "label": "Only Up Region Output Contract Smoke: first MT1 battle",
+            "sourceSha256": "747a8da1e65def0a0c3444576c80c897692731c2b000f4e1a47280fb4a374541",
+            "normalizedSha256": "0627466faca50f9a1557dacd525df2a295ac271dde69c52af6ff3e603aad830f"
+          },
+          "projectFingerprint": {
+            "title": "Only Up",
+            "floorCount": 46,
+            "floorOrder": [
+              "sample0",
+              "sample1",
+              "sample2",
+              "New",
+              "World",
+              "MT1",
+              "MT2",
+              "MT3",
+              "MT4",
+              "MT5",
+              "MT6",
+              "MT7",
+              "MT8",
+              "MT9",
+              "MT10",
+              "MT11",
+              "MT12",
+              "MT13",
+              "MT14",
+              "MT15",
+              "MT16",
+              "MT17",
+              "MT18",
+              "MT19",
+              "MT20",
+              "MT21",
+              "MT22",
+              "MT23",
+              "MT24",
+              "MT25",
+              "MT26",
+              "MT27",
+              "MT28",
+              "MT29",
+              "MT30",
+              "MT31",
+              "MT32",
+              "MT33",
+              "MT34",
+              "MT35",
+              "MT36",
+              "MT37",
+              "MT38",
+              "MT39",
+              "MT40"
+            ],
+            "structuralFingerprintSha256": "954efc84bf7cf9f19d19ed2e70e9e05b1459d1c0d69a9db9c532dd67d9e6dfc6",
+            "fingerprintSha256": "d50cdaaff91c21f61611d323814de88fc1117b70a8247a4e64b23eb10b3d12c6",
+            "fingerprintInputs": [
+              "data",
+              "floorOrder",
+              "floorsById",
+              "enemysById",
+              "itemsById",
+              "mapTilesByNumber"
+            ]
+          },
+          "reachedMilestone": "onlyup-region-output-contract-smoke-goal",
+          "primitiveDecisionCount": 2,
+          "final": {
+            "floorId": "MT1",
+            "hero": {
+              "hp": 201,
+              "hpmax": 9999,
+              "mana": 0,
+              "manamax": -1,
+              "atk": 3,
+              "def": 0,
+              "mdef": 10,
+              "money": 0,
+              "exp": 2,
+              "lv": 1,
+              "loc": {
+                "x": 2,
+                "y": 7,
+                "direction": "down"
+              },
+              "equipment": []
+            }
+          }
+        },
+        "routePrimitiveCount": 2,
+        "reachedMilestone": "onlyup-region-output-contract-smoke-goal",
+        "final": {
+          "floorId": "MT1",
+          "hero": {
+            "hp": 201,
+            "hpmax": 9999,
+            "mana": 0,
+            "manamax": -1,
+            "atk": 3,
+            "def": 0,
+            "mdef": 10,
+            "money": 0,
+            "exp": 2,
+            "lv": 1,
+            "loc": {
+              "x": 2,
+              "y": 7,
+              "direction": "down"
+            },
+            "equipment": []
+          }
+        }
+      },
+      "replay": {
+        "everyDecisionReparsed": true,
+        "reparsedDecisionCount": 2,
+        "persistedMacroActionCount": 0,
+        "decisions": [
+          {
+            "index": 1,
+            "kind": "battle",
+            "summary": "battle:greenSlime@MT1:4,7",
+            "matchType": "postExactState",
+            "candidates": 12
+          },
+          {
+            "index": 2,
+            "kind": "battle",
+            "summary": "battle:redSlime@MT1:2,8",
+            "matchType": "postExactState",
+            "candidates": 16
+          }
+        ],
+        "finalExactStateMatches": true,
+        "finalSummaryMatches": true,
+        "final": {
+          "floorId": "MT1",
+          "hero": {
+            "hp": 201,
+            "hpmax": 9999,
+            "mana": 0,
+            "manamax": -1,
+            "atk": 3,
+            "def": 0,
+            "mdef": 10,
+            "money": 0,
+            "exp": 2,
+            "lv": 1,
+            "loc": {
+              "x": 2,
+              "y": 7,
+              "direction": "down"
+            },
+            "equipment": []
+          }
+        }
+      },
+      "runnerProbe": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-output-contract-smoke.json",
+          "--out=routes/generated/region-route-output-contract/onlyup-smoke.route.json",
+          "--max-expansions=1000",
+          "--max-runtime-ms=10000",
+          "--stop-on-first-goal=0",
+          "--print-failures=0",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-dp",
+          "regionId": "onlyup-region-output-contract-smoke",
+          "found": true,
+          "reachedMilestone": "onlyup-region-output-contract-smoke-goal",
+          "proofClaim": {
+            "proofLevel": "bounded-complete",
+            "completeWithinActionSet": true,
+            "actionTrimmed": 0,
+            "expansionBudgetExhausted": false,
+            "stoppedReasons": []
+          },
+          "metrics": {
+            "expansions": 2,
+            "routeLength": 2,
+            "final": {
+              "floorId": "MT1",
+              "hp": 201,
+              "atk": 3,
+              "def": 0,
+              "mdef": 10,
+              "exp": 2
+            }
+          }
+        },
+        "errorEvidence": null,
+        "staleRouteExistedBeforeRunner": false,
+        "harnessRemovedOutput": false,
+        "runnerOwnedCleanup": false,
+        "outputPathExistsAfter": true,
+        "routeReadError": null
+      },
+      "outputProvenance": {
+        "entrypoint": "shared-solver/run-region-dp.js",
+        "projectRoot": "Only upV2.1/Only upV2.1",
+        "regionSpec": "towers/onlyup/region-specs/region-output-contract-smoke.json",
+        "requestedOutput": "shared-solver/routes/generated/region-route-output-contract/onlyup-smoke.route.json",
+        "routeWritten": true,
+        "outputPathExistsAfterRun": true,
+        "liveVerified": false,
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-output-contract-smoke.json",
+          "--out=routes/generated/region-route-output-contract/onlyup-smoke.route.json",
+          "--max-expansions=1000",
+          "--max-runtime-ms=10000",
+          "--stop-on-first-goal=0",
+          "--print-failures=0",
+          "--structured-errors=1"
+        ]
+      }
+    },
+    {
+      "id": "whiteisland-trial-output-contract-smoke",
+      "specIdentity": {
+        "id": "whiteisland-trial-output-contract-smoke",
+        "tower": "whiteisland",
+        "label": "Whiteisland Trial Output Contract Smoke: first A1 battle",
+        "sourceSha256": "541011cc709dd0046757266707701624ba1a9b33437487a9f960b36376ed6355",
+        "normalizedSha256": "b0880cbf4e7ff9de859dee6e66d32da824af74f19c799966b23711d20a6850ff",
+        "sourceFile": "towers/whiteisland/trial-specs/trial-output-contract-smoke.json"
+      },
+      "projectIdentity": {
+        "title": "白色孤岛",
+        "floorCount": 32,
+        "floorOrder": [
+          "sample0",
+          "sample1",
+          "sample2",
+          "New",
+          "Start",
+          "A1",
+          "A2",
+          "A3",
+          "B1",
+          "B2",
+          "B3",
+          "C1",
+          "C2",
+          "C3",
+          "D1",
+          "D2",
+          "D3",
+          "F1",
+          "F2",
+          "F3",
+          "G1",
+          "G2",
+          "G3",
+          "A21",
+          "A22",
+          "A23",
+          "B21",
+          "B22",
+          "B23",
+          "C21",
+          "C22",
+          "C23"
+        ],
+        "structuralFingerprintSha256": "7a6e9bbc35ff906c58a5a1920a4fdda27bb154402b8952a925e9262c92ec4759",
+        "fingerprintSha256": "97b408948bb4fa53c8bdcb72846443741432feacae2210394def88553acbfb22",
+        "fingerprintInputs": [
+          "data",
+          "floorOrder",
+          "floorsById",
+          "enemysById",
+          "itemsById",
+          "mapTilesByNumber"
+        ],
+        "root": "whiteisland（9）"
+      },
+      "milestoneOrder": [
+        "whiteisland-trial-output-contract-smoke-goal"
+      ],
+      "startCheckpoint": {
+        "type": "whiteislandTrial",
+        "floorId": null,
+        "routeFile": null,
+        "routeName": null,
+        "fromMilestoneId": null,
+        "toMilestoneId": null
+      },
+      "entryValidation": {
+        "valid": true,
+        "errors": [],
+        "boundary": {
+          "prefix": null,
+          "fromMilestoneId": null,
+          "toMilestoneId": null,
+          "fromIndex": -1,
+          "toIndex": -1,
+          "prefixResolved": true,
+          "rangeResolved": true
+        }
+      },
+      "preflight": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../whiteisland（9）",
+          "--region-spec=../towers/whiteisland/trial-specs/trial-output-contract-smoke.json",
+          "--out=routes/generated/region-route-output-contract/whiteisland-smoke.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": true,
+          "regionId": "whiteisland-trial-output-contract-smoke",
+          "milestoneOrder": [
+            "whiteisland-trial-output-contract-smoke-goal"
+          ],
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": true,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errors": []
+        },
+        "errorEvidence": null,
+        "outputPathExistsAfter": false
+      },
+      "execution": {
+        "status": "found",
+        "found": true,
+        "reachedMilestone": "whiteisland-trial-output-contract-smoke-goal",
+        "routePrimitiveCount": 2,
+        "final": {
+          "floorId": "A1",
+          "hero": {
+            "hp": 160,
+            "hpmax": 9999,
+            "mana": 0,
+            "manamax": -1,
+            "atk": 1,
+            "def": 1,
+            "mdef": 0,
+            "money": 0,
+            "exp": 1,
+            "lv": 1,
+            "loc": {
+              "x": 6,
+              "y": 10,
+              "direction": "up"
+            },
+            "equipment": []
+          }
+        }
+      },
+      "routeOutput": {
+        "schema": "motapathfinder.route.v1",
+        "file": "shared-solver/routes/generated/region-route-output-contract/whiteisland-smoke.route.json",
+        "metadata": {
+          "regionSpecId": "whiteisland-trial-output-contract-smoke",
+          "regionSpecIdentity": {
+            "id": "whiteisland-trial-output-contract-smoke",
+            "tower": "whiteisland",
+            "label": "Whiteisland Trial Output Contract Smoke: first A1 battle",
+            "sourceSha256": "541011cc709dd0046757266707701624ba1a9b33437487a9f960b36376ed6355",
+            "normalizedSha256": "b0880cbf4e7ff9de859dee6e66d32da824af74f19c799966b23711d20a6850ff"
+          },
+          "projectFingerprint": {
+            "title": "白色孤岛",
+            "floorCount": 32,
+            "floorOrder": [
+              "sample0",
+              "sample1",
+              "sample2",
+              "New",
+              "Start",
+              "A1",
+              "A2",
+              "A3",
+              "B1",
+              "B2",
+              "B3",
+              "C1",
+              "C2",
+              "C3",
+              "D1",
+              "D2",
+              "D3",
+              "F1",
+              "F2",
+              "F3",
+              "G1",
+              "G2",
+              "G3",
+              "A21",
+              "A22",
+              "A23",
+              "B21",
+              "B22",
+              "B23",
+              "C21",
+              "C22",
+              "C23"
+            ],
+            "structuralFingerprintSha256": "7a6e9bbc35ff906c58a5a1920a4fdda27bb154402b8952a925e9262c92ec4759",
+            "fingerprintSha256": "97b408948bb4fa53c8bdcb72846443741432feacae2210394def88553acbfb22",
+            "fingerprintInputs": [
+              "data",
+              "floorOrder",
+              "floorsById",
+              "enemysById",
+              "itemsById",
+              "mapTilesByNumber"
+            ]
+          },
+          "reachedMilestone": "whiteisland-trial-output-contract-smoke-goal",
+          "primitiveDecisionCount": 2,
+          "final": {
+            "floorId": "A1",
+            "hero": {
+              "hp": 160,
+              "hpmax": 9999,
+              "mana": 0,
+              "manamax": -1,
+              "atk": 1,
+              "def": 1,
+              "mdef": 0,
+              "money": 0,
+              "exp": 1,
+              "lv": 1,
+              "loc": {
+                "x": 6,
+                "y": 10,
+                "direction": "up"
+              },
+              "equipment": []
+            }
+          }
+        },
+        "routePrimitiveCount": 2,
+        "reachedMilestone": "whiteisland-trial-output-contract-smoke-goal",
+        "final": {
+          "floorId": "A1",
+          "hero": {
+            "hp": 160,
+            "hpmax": 9999,
+            "mana": 0,
+            "manamax": -1,
+            "atk": 1,
+            "def": 1,
+            "mdef": 0,
+            "money": 0,
+            "exp": 1,
+            "lv": 1,
+            "loc": {
+              "x": 6,
+              "y": 10,
+              "direction": "up"
+            },
+            "equipment": []
+          }
+        }
+      },
+      "replay": {
+        "everyDecisionReparsed": true,
+        "reparsedDecisionCount": 2,
+        "persistedMacroActionCount": 0,
+        "decisions": [
+          {
+            "index": 1,
+            "kind": "openDoor",
+            "summary": "openDoor:blueDoor@A1:8,11",
+            "matchType": "postExactState",
+            "candidates": 16
+          },
+          {
+            "index": 2,
+            "kind": "battle",
+            "summary": "battle:greenSlime@A1:6,9",
+            "matchType": "postExactState",
+            "candidates": 24
+          }
+        ],
+        "finalExactStateMatches": true,
+        "finalSummaryMatches": true,
+        "final": {
+          "floorId": "A1",
+          "hero": {
+            "hp": 160,
+            "hpmax": 9999,
+            "mana": 0,
+            "manamax": -1,
+            "atk": 1,
+            "def": 1,
+            "mdef": 0,
+            "money": 0,
+            "exp": 1,
+            "lv": 1,
+            "loc": {
+              "x": 6,
+              "y": 10,
+              "direction": "up"
+            },
+            "equipment": []
+          }
+        }
+      },
+      "runnerProbe": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../whiteisland（9）",
+          "--region-spec=../towers/whiteisland/trial-specs/trial-output-contract-smoke.json",
+          "--out=routes/generated/region-route-output-contract/whiteisland-smoke.route.json",
+          "--max-expansions=1000",
+          "--max-runtime-ms=10000",
+          "--stop-on-first-goal=0",
+          "--print-failures=0",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-dp",
+          "regionId": "whiteisland-trial-output-contract-smoke",
+          "found": true,
+          "reachedMilestone": "whiteisland-trial-output-contract-smoke-goal",
+          "proofClaim": {
+            "proofLevel": "bounded-complete",
+            "completeWithinActionSet": true,
+            "actionTrimmed": 0,
+            "expansionBudgetExhausted": false,
+            "stoppedReasons": []
+          },
+          "metrics": {
+            "expansions": 2,
+            "routeLength": 2,
+            "final": {
+              "floorId": "A1",
+              "hp": 160,
+              "atk": 1,
+              "def": 1,
+              "mdef": 0,
+              "exp": 1
+            }
+          }
+        },
+        "errorEvidence": null,
+        "staleRouteExistedBeforeRunner": false,
+        "harnessRemovedOutput": false,
+        "runnerOwnedCleanup": false,
+        "outputPathExistsAfter": true,
+        "routeReadError": null
+      },
+      "outputProvenance": {
+        "entrypoint": "shared-solver/run-region-dp.js",
+        "projectRoot": "whiteisland（9）",
+        "regionSpec": "towers/whiteisland/trial-specs/trial-output-contract-smoke.json",
+        "requestedOutput": "shared-solver/routes/generated/region-route-output-contract/whiteisland-smoke.route.json",
+        "routeWritten": true,
+        "outputPathExistsAfterRun": true,
+        "liveVerified": false,
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../whiteisland（9）",
+          "--region-spec=../towers/whiteisland/trial-specs/trial-output-contract-smoke.json",
+          "--out=routes/generated/region-route-output-contract/whiteisland-smoke.route.json",
+          "--max-expansions=1000",
+          "--max-runtime-ms=10000",
+          "--stop-on-first-goal=0",
+          "--print-failures=0",
+          "--structured-errors=1"
+        ]
+      }
+    }
+  ],
+  "negativeControls": [
+    {
+      "id": "whiteisland-trial-output-contract-not-found",
+      "specIdentity": {
+        "id": "whiteisland-trial-smoke",
+        "tower": "whiteisland",
+        "label": "Whiteisland Trial Smoke: A1 local resource timing",
+        "sourceSha256": "1009bf1b87b02f3a7f8d5bc813b73299fe1e7e20ce094e7a3b9e73eb09a9c79c",
+        "normalizedSha256": "78564f041b1588620dc0d2b9965695b99f552d12175bddc99b8852cd2d21903c",
+        "sourceFile": "towers/whiteisland/trial-specs/trial-smoke.json"
+      },
+      "projectIdentity": {
+        "title": "白色孤岛",
+        "floorCount": 32,
+        "floorOrder": [
+          "sample0",
+          "sample1",
+          "sample2",
+          "New",
+          "Start",
+          "A1",
+          "A2",
+          "A3",
+          "B1",
+          "B2",
+          "B3",
+          "C1",
+          "C2",
+          "C3",
+          "D1",
+          "D2",
+          "D3",
+          "F1",
+          "F2",
+          "F3",
+          "G1",
+          "G2",
+          "G3",
+          "A21",
+          "A22",
+          "A23",
+          "B21",
+          "B22",
+          "B23",
+          "C21",
+          "C22",
+          "C23"
+        ],
+        "structuralFingerprintSha256": "7a6e9bbc35ff906c58a5a1920a4fdda27bb154402b8952a925e9262c92ec4759",
+        "fingerprintSha256": "97b408948bb4fa53c8bdcb72846443741432feacae2210394def88553acbfb22",
+        "fingerprintInputs": [
+          "data",
+          "floorOrder",
+          "floorsById",
+          "enemysById",
+          "itemsById",
+          "mapTilesByNumber"
+        ],
+        "root": "whiteisland（9）"
+      },
+      "expectedStatus": "not-found",
+      "expectedRunnerExitCode": 0,
+      "expectedError": null,
+      "entryValidation": {
+        "valid": true,
+        "errors": []
+      },
+      "preflight": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../whiteisland（9）",
+          "--region-spec=../towers/whiteisland/trial-specs/trial-smoke.json",
+          "--out=routes/generated/region-route-output-contract/whiteisland-not-found.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": true,
+          "regionId": "whiteisland-trial-smoke",
+          "milestoneOrder": [
+            "whiteisland-trial-smoke-goal"
+          ],
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": true,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errors": []
+        },
+        "errorEvidence": null,
+        "outputPathExistsAfter": false
+      },
+      "execution": {
+        "status": "not-found",
+        "found": false,
+        "reachedMilestone": null,
+        "routePrimitiveCount": 0,
+        "termination": "expansion-budget-exhausted",
+        "failureClass": null,
+        "failedSegmentId": null
+      },
+      "staleRouteExistedBeforeRunner": true,
+      "harnessRemovedOutput": false,
+      "runnerOwnedCleanup": true,
+      "routeOutputExistsAfterRun": false,
+      "runnerProbe": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../whiteisland（9）",
+          "--region-spec=../towers/whiteisland/trial-specs/trial-smoke.json",
+          "--out=routes/generated/region-route-output-contract/whiteisland-not-found.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--stop-on-first-goal=0",
+          "--print-failures=0",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-dp",
+          "regionId": "whiteisland-trial-smoke",
+          "found": false,
+          "reachedMilestone": null,
+          "proofClaim": {
+            "proofLevel": "not-found",
+            "completeWithinActionSet": false,
+            "actionTrimmed": 0,
+            "expansionBudgetExhausted": true,
+            "stoppedReasons": []
+          },
+          "metrics": {
+            "expansions": 1,
+            "routeLength": 0,
+            "final": null
+          }
+        },
+        "errorEvidence": null,
+        "staleRouteExistedBeforeRunner": true,
+        "harnessRemovedOutput": false,
+        "runnerOwnedCleanup": true,
+        "outputPathExistsAfter": false,
+        "routeReadError": null
+      },
+      "outputProvenance": {
+        "entrypoint": "shared-solver/run-region-dp.js",
+        "projectRoot": "whiteisland（9）",
+        "regionSpec": "towers/whiteisland/trial-specs/trial-smoke.json",
+        "requestedOutput": "shared-solver/routes/generated/region-route-output-contract/whiteisland-not-found.route.json",
+        "routeWritten": false,
+        "outputPathExistsAfterRun": false,
+        "liveVerified": false,
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../whiteisland（9）",
+          "--region-spec=../towers/whiteisland/trial-specs/trial-smoke.json",
+          "--out=routes/generated/region-route-output-contract/whiteisland-not-found.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--stop-on-first-goal=0",
+          "--print-failures=0",
+          "--structured-errors=1"
+        ]
+      }
+    },
+    {
+      "id": "onlyup-region-output-contract-prefix-failure",
+      "specIdentity": {
+        "id": "onlyup-region-2",
+        "tower": "onlyup",
+        "label": "Only Up Region 2: MT6~MT10 scaffold",
+        "sourceSha256": "1d7f09ebd4251ed6a91c31c3f86d7d53bc3f3880cde6316f94b5f88da1b64963",
+        "normalizedSha256": "1d72855979088b1b53ac0b90d60031c31cd226a9e837fe2ac15184168aa950c7",
+        "sourceFile": "towers/onlyup/region-specs/region-2.json"
+      },
+      "projectIdentity": {
+        "title": "Only Up",
+        "floorCount": 46,
+        "floorOrder": [
+          "sample0",
+          "sample1",
+          "sample2",
+          "New",
+          "World",
+          "MT1",
+          "MT2",
+          "MT3",
+          "MT4",
+          "MT5",
+          "MT6",
+          "MT7",
+          "MT8",
+          "MT9",
+          "MT10",
+          "MT11",
+          "MT12",
+          "MT13",
+          "MT14",
+          "MT15",
+          "MT16",
+          "MT17",
+          "MT18",
+          "MT19",
+          "MT20",
+          "MT21",
+          "MT22",
+          "MT23",
+          "MT24",
+          "MT25",
+          "MT26",
+          "MT27",
+          "MT28",
+          "MT29",
+          "MT30",
+          "MT31",
+          "MT32",
+          "MT33",
+          "MT34",
+          "MT35",
+          "MT36",
+          "MT37",
+          "MT38",
+          "MT39",
+          "MT40"
+        ],
+        "structuralFingerprintSha256": "954efc84bf7cf9f19d19ed2e70e9e05b1459d1c0d69a9db9c532dd67d9e6dfc6",
+        "fingerprintSha256": "d50cdaaff91c21f61611d323814de88fc1117b70a8247a4e64b23eb10b3d12c6",
+        "fingerprintInputs": [
+          "data",
+          "floorOrder",
+          "floorsById",
+          "enemysById",
+          "itemsById",
+          "mapTilesByNumber"
+        ],
+        "root": "Only upV2.1/Only upV2.1"
+      },
+      "expectedStatus": "structured-failure",
+      "expectedRunnerExitCode": 1,
+      "expectedError": {
+        "stage": "prefix-milestone",
+        "termination": "prefix-budget-exhausted",
+        "failureClass": "prefix-budget-exhausted",
+        "failedSegmentId": "mt1-gate-1559"
+      },
+      "entryValidation": {
+        "valid": true,
+        "errors": []
+      },
+      "preflight": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-2.json",
+          "--out=routes/generated/region-route-output-contract/onlyup-prefix-failure.route.json",
+          "--validate-only=1",
+          "--structured-errors=1"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "schema": "motapathfinder.region-entry-preflight.v1",
+          "valid": true,
+          "regionId": "onlyup-region-2",
+          "milestoneOrder": [
+            "mt6-upper-left-blueking",
+            "mt6-upper-right-blueking",
+            "mt6-lower-attack-pair",
+            "mt6-first-center-guard",
+            "mt6-second-center-guard",
+            "mt7-entry-after-mt6-sweep",
+            "mt7-mt6-defense-sweep",
+            "mt7-mt6-right-crystal-sweep",
+            "mt7-bottom-double-fairy",
+            "mt7-special80-ready",
+            "mt7-left-sword",
+            "mt7-right-exp-crystal"
+          ],
+          "checks": {
+            "regionSpecLoaded": true,
+            "projectLoaded": true,
+            "milestoneSpecBuilt": true,
+            "prefixBoundaryResolved": true,
+            "outputPathParseable": true
+          },
+          "errors": []
+        },
+        "errorEvidence": null,
+        "outputPathExistsAfter": false
+      },
+      "execution": {
+        "status": "structured-failure",
+        "found": false,
+        "reachedMilestone": null,
+        "routePrimitiveCount": 0,
+        "termination": "prefix-budget-exhausted",
+        "failureClass": "prefix-budget-exhausted",
+        "failedSegmentId": "mt1-gate-1559"
+      },
+      "staleRouteExistedBeforeRunner": true,
+      "harnessRemovedOutput": false,
+      "runnerOwnedCleanup": true,
+      "routeOutputExistsAfterRun": false,
+      "runnerProbe": {
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-2.json",
+          "--out=routes/generated/region-route-output-contract/onlyup-prefix-failure.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--stop-on-first-goal=0",
+          "--print-failures=0",
+          "--structured-errors=1",
+          "--prefix-max-expansions=1",
+          "--prefix-max-runtime-ms=100"
+        ],
+        "exitCode": 1,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": false,
+        "summary": null,
+        "errorEvidence": {
+          "schema": "motapathfinder.region-dp-error.v1",
+          "stage": "prefix-milestone",
+          "termination": "prefix-budget-exhausted",
+          "failureClass": "prefix-budget-exhausted",
+          "failedSegmentId": "mt1-gate-1559",
+          "message": "Prefix milestone failed before region onlyup-region-2"
+        },
+        "staleRouteExistedBeforeRunner": true,
+        "harnessRemovedOutput": false,
+        "runnerOwnedCleanup": true,
+        "outputPathExistsAfter": false,
+        "routeReadError": null
+      },
+      "outputProvenance": {
+        "entrypoint": "shared-solver/run-region-dp.js",
+        "projectRoot": "Only upV2.1/Only upV2.1",
+        "regionSpec": "towers/onlyup/region-specs/region-2.json",
+        "requestedOutput": "shared-solver/routes/generated/region-route-output-contract/onlyup-prefix-failure.route.json",
+        "routeWritten": false,
+        "outputPathExistsAfterRun": false,
+        "liveVerified": false,
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-2.json",
+          "--out=routes/generated/region-route-output-contract/onlyup-prefix-failure.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--stop-on-first-goal=0",
+          "--print-failures=0",
+          "--structured-errors=1",
+          "--prefix-max-expansions=1",
+          "--prefix-max-runtime-ms=100"
+        ]
+      }
+    }
+  ],
+  "scope": {
+    "shadowOnly": true,
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "describesCompleteTowerRoute": false
+  }
+}

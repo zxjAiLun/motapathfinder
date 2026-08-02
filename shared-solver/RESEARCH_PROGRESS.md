@@ -1247,3 +1247,13 @@ PR-4.8a/a1 已按 Review 正式关闭。本轮进入 PR-4.8b，继续保持 shad
 - 负控先写入 stale route，再在真实 not-found runner 前显式删除；固定断言 not-found 不留下旧 route。
 - 固定正控只覆盖 MT1 / A1 的短 smoke，不声称完成 MT1-MT5 或 Whiteisland 全塔路线。
 - 本轮不修改 production DP key、dominance、agenda、容量、默认策略或搜索顺序。
+
+### 2026-08-02 更新：PR-4.8b1 Runner-owned Output Cleanup
+
+Review 对 PR-4.8b 的 core positives、route provenance、primitive exact replay 和 deterministic rebuild 均批准；唯一 P1 是 stale route 清理由 audit 完成，尚未证明真实 runner 自己安全清理。本轮进入 PR-4.8b1：
+
+- 普通 `run-region-dp.js` 在解析 `--out` 后、加载 RegionSpec 前，由 runner 自身删除已有 route 文件；因此 not-found、prefix structured failure、加载阶段失败都不会把旧 route 留给下游。
+- `--validate-only=1` 在清理分支之前返回；新增 preservation control 证明既有输出会保留，validate-only 不承担普通运行清理。
+- audit 的 `runProbe()` 不再删除输出；negative control 记录 `staleRouteExistedBeforeRunner=true`、`harnessRemovedOutput=false`、`runnerOwnedCleanup=true`、运行后无 route。
+- 增加 OnlyUp Region-2 prefix structured failure 控制，固定 `exitCode=1`、`stage=prefix-milestone`、`termination=prefix-budget-exhausted`、`failedSegmentId=mt1-gate-1559`，并验证 stale route 被 runner 删除。
+- 本轮仍不修改 production DP key、dominance、agenda、容量、默认策略或搜索顺序，也不构成完整塔路线结论。

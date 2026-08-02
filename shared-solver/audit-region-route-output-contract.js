@@ -24,9 +24,9 @@ const { StaticSimulator } = require("./lib/simulator");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const ENTRYPOINT = "shared-solver/run-region-dp.js";
-const CONTRACT_SCHEMA = "motapathfinder.pr-4.8b-region-route-output-contract.v1";
-const DEFAULT_OUT = path.join(__dirname, "routes", "generated", "agenda-policy-evaluation", "pr-4.8b-region-route-output-contract.json");
-const DEFAULT_OUT_MD = path.join(__dirname, "routes", "generated", "agenda-policy-evaluation", "pr-4.8b-region-route-output-contract.md");
+const CONTRACT_SCHEMA = "motapathfinder.pr-4.8b1-runner-owned-output-cleanup.v1";
+const DEFAULT_OUT = path.join(__dirname, "routes", "generated", "agenda-policy-evaluation", "pr-4.8b1-runner-owned-output-cleanup.json");
+const DEFAULT_OUT_MD = path.join(__dirname, "routes", "generated", "agenda-policy-evaluation", "pr-4.8b1-runner-owned-output-cleanup.md");
 
 const CONTROLS = [
   {
@@ -53,6 +53,27 @@ const NEGATIVE_CONTROLS = [
     outFile: path.join(__dirname, "routes", "generated", "region-route-output-contract", "whiteisland-not-found.route.json"),
     probe: { maxExpansions: 1, maxRuntimeMs: 100 },
     expectedStatus: "not-found",
+    expectedRunnerExitCode: 0,
+  },
+  {
+    id: "onlyup-region-output-contract-prefix-failure",
+    specFile: path.join(REPO_ROOT, "towers", "onlyup", "region-specs", "region-2.json"),
+    projectRoot: path.join(REPO_ROOT, "Only upV2.1", "Only upV2.1"),
+    outFile: path.join(__dirname, "routes", "generated", "region-route-output-contract", "onlyup-prefix-failure.route.json"),
+    probe: {
+      maxExpansions: 1,
+      maxRuntimeMs: 100,
+      prefixMaxExpansions: 1,
+      prefixMaxRuntimeMs: 100,
+    },
+    expectedStatus: "structured-failure",
+    expectedRunnerExitCode: 1,
+    expectedError: {
+      stage: "prefix-milestone",
+      termination: "prefix-budget-exhausted",
+      failureClass: "prefix-budget-exhausted",
+      failedSegmentId: "mt1-gate-1559",
+    },
   },
 ];
 
@@ -273,9 +294,34 @@ function runPreflight(control) {
   };
 }
 
+function runValidateOnlyPreservation(control) {
+  removeOutput(control.outFile);
+  fs.mkdirSync(path.dirname(control.outFile), { recursive: true });
+  const sentinel = "pr-4.8b1-validate-only-sentinel";
+  fs.writeFileSync(control.outFile, `${JSON.stringify({ schema: "motapathfinder.route.v1", sentinel }, null, 2)}\n`);
+  const staleRouteExistedBeforeRunner = fs.existsSync(control.outFile);
+  const args = runnerArgs(control, ["--validate-only=1", "--structured-errors=1"]);
+  const result = spawnRunner(args);
+  const outputPathExistsAfterRunner = fs.existsSync(control.outFile);
+  const preservedContent = outputPathExistsAfterRunner && fs.readFileSync(control.outFile, "utf8").includes(sentinel);
+  const runnerDeletedOutput = staleRouteExistedBeforeRunner && !outputPathExistsAfterRunner;
+  removeOutput(control.outFile);
+  return {
+    command: ["node", ...args],
+    exitCode: result.status == null ? null : result.status,
+    summaryParsed: Boolean(parseFirstJsonObject(result.stdout)),
+    staleRouteExistedBeforeRunner,
+    harnessRemovedOutput: false,
+    runnerDeletedOutput,
+    routePreserved: Boolean(staleRouteExistedBeforeRunner && preservedContent),
+    outputPathExistsAfterRunner,
+    errorEvidence: structuredErrorEvidence(result.stderr),
+  };
+}
+
 function runProbe(control) {
-  const outputExistedBeforeRun = fs.existsSync(control.outFile);
-  const outputRemovedBeforeRun = removeOutput(control.outFile);
+  const staleRouteExistedBeforeRunner = fs.existsSync(control.outFile);
+  const harnessRemovedOutput = false;
   const args = runnerArgs(control, [
     `--max-expansions=${control.probe.maxExpansions}`,
     `--max-runtime-ms=${control.probe.maxRuntimeMs}`,
@@ -283,6 +329,8 @@ function runProbe(control) {
     "--print-failures=0",
     "--structured-errors=1",
   ]);
+  if (control.probe.prefixMaxExpansions != null) args.push(`--prefix-max-expansions=${control.probe.prefixMaxExpansions}`);
+  if (control.probe.prefixMaxRuntimeMs != null) args.push(`--prefix-max-runtime-ms=${control.probe.prefixMaxRuntimeMs}`);
   const result = spawnRunner(args);
   const summary = parseFirstJsonObject(result.stdout);
   const outputPathExistsAfter = fs.existsSync(control.outFile);
@@ -294,6 +342,7 @@ function runProbe(control) {
       routeReadError = error.message;
     }
   }
+  const runnerOwnedCleanup = staleRouteExistedBeforeRunner && !harnessRemovedOutput && !outputPathExistsAfter;
   return {
     command: ["node", ...args],
     exitCode: result.status == null ? null : result.status,
@@ -302,8 +351,9 @@ function runProbe(control) {
     summaryParsed: Boolean(summary),
     summary: compactSummary(summary),
     errorEvidence: structuredErrorEvidence(result.stderr),
-    outputExistedBeforeRun,
-    outputRemovedBeforeRun,
+    staleRouteExistedBeforeRunner,
+    harnessRemovedOutput,
+    runnerOwnedCleanup,
     outputPathExistsAfter,
     routeReadError,
   };
@@ -518,34 +568,51 @@ function buildNegativeControl(control) {
   requireCondition(preflight.exitCode === 0 && preflight.summaryParsed && preflight.summary.valid, `${control.id}: negative preflight failed`);
   fs.mkdirSync(path.dirname(control.outFile), { recursive: true });
   fs.writeFileSync(control.outFile, `${JSON.stringify({ schema: "motapathfinder.route.v1", stale: true }, null, 2)}\n`);
-  const staleRouteExistedBeforeRun = fs.existsSync(control.outFile);
   const probe = runProbe(control);
   const found = Boolean(probe.summary && probe.summary.found);
-  const routeOutputExistsAfterRun = fs.existsSync(control.outFile);
+  const routeOutputExistsAfterRun = probe.outputPathExistsAfter;
   if (routeOutputExistsAfterRun) removeOutput(control.outFile);
-  requireCondition(probe.exitCode === 0 && probe.summaryParsed && !found, `${control.id}: not-found negative control unexpectedly found or errored`);
-  requireCondition(staleRouteExistedBeforeRun && probe.outputRemovedBeforeRun, `${control.id}: stale route was not removed before runner`);
-  requireCondition(!routeOutputExistsAfterRun, `${control.id}: not-found run left route output`);
+  requireCondition(probe.staleRouteExistedBeforeRunner, `${control.id}: stale route was not present before runner`);
+  requireCondition(probe.harnessRemovedOutput === false, `${control.id}: harness removed output before runner`);
+  requireCondition(probe.runnerOwnedCleanup === true, `${control.id}: runner did not own stale output cleanup`);
+  requireCondition(!routeOutputExistsAfterRun, `${control.id}: runner left route output`);
+  if (control.expectedStatus === "not-found") {
+    requireCondition(probe.exitCode === control.expectedRunnerExitCode && probe.summaryParsed && !found, `${control.id}: not-found control unexpectedly found or errored`);
+    requireCondition(probe.errorEvidence === null, `${control.id}: unexpected structured error for not-found control`);
+  } else {
+    requireCondition(probe.exitCode === control.expectedRunnerExitCode && !probe.summaryParsed && !found, `${control.id}: structured failure control did not fail as expected`);
+    requireCondition(probe.errorEvidence, `${control.id}: structured failure evidence missing`);
+    Object.entries(control.expectedError || {}).forEach(([key, value]) => {
+      requireCondition(probe.errorEvidence[key] === value, `${control.id}: structured error ${key} mismatch`);
+    });
+  }
+  const evidence = probe.errorEvidence || {};
+  const summary = probe.summary || {};
   return {
     id: control.id,
     ...controlIdentity(spec, project, control),
     expectedStatus: control.expectedStatus,
+    expectedRunnerExitCode: control.expectedRunnerExitCode,
+    expectedError: control.expectedError || null,
     entryValidation: {
       valid: validation.valid,
       errors: validation.errors,
     },
     preflight,
     execution: {
-      status: "not-found",
-      found: false,
-      reachedMilestone: probe.summary.reachedMilestone,
+      status: control.expectedStatus,
+      found,
+      reachedMilestone: summary.reachedMilestone || null,
       routePrimitiveCount: 0,
-      termination: probe.summary.proofClaim && probe.summary.proofClaim.expansionBudgetExhausted
+      termination: summary.proofClaim && summary.proofClaim.expansionBudgetExhausted
         ? "expansion-budget-exhausted"
-        : "not-found",
+        : evidence.termination || "not-found",
+      failureClass: evidence.failureClass || null,
+      failedSegmentId: evidence.failedSegmentId || null,
     },
-    staleRouteExistedBeforeRun,
-    staleRouteRemovedBeforeRun: probe.outputRemovedBeforeRun,
+    staleRouteExistedBeforeRunner: probe.staleRouteExistedBeforeRunner,
+    harnessRemovedOutput: probe.harnessRemovedOutput,
+    runnerOwnedCleanup: probe.runnerOwnedCleanup,
     routeOutputExistsAfterRun,
     runnerProbe: probe,
     outputProvenance: {
@@ -570,7 +637,7 @@ function buildReport() {
       mode: "shadow-only",
       entrypoint: ENTRYPOINT,
       runner: "shared-solver/run-region-dp.js",
-      runnerProbeMode: "real-short-positive-route-and-stale-output-negative-control",
+      runnerProbeMode: "runner-owned-output-cleanup-with-real-short-routes-and-structured-failure",
       deterministicFullReportRebuild: true,
       generationCommit: generationCommit(),
       productionDpKeyChanged: false,
@@ -581,8 +648,8 @@ function buildReport() {
       describesCompleteTowerRoute: false,
     },
     contract: {
-      id: "PR-4.8b",
-      title: "Region Route Output Contract",
+      id: "PR-4.8b1",
+      title: "Runner-owned Output Cleanup",
       unifiedEntry: {
         command: "node shared-solver/run-region-dp.js --project-root=<project-root> --region-spec=<region-spec> --out=<output>",
         requiredPaths: ["project-root", "region-spec", "out"],
@@ -596,7 +663,10 @@ function buildReport() {
         "replay.everyDecisionReparsed",
         "replay.finalExactStateMatches",
         "replay.finalSummaryMatches",
-        "negativeControls.staleRouteRemovedBeforeRun",
+        "validateOnlyPreservation.routePreserved",
+        "negativeControls.staleRouteExistedBeforeRunner",
+        "negativeControls.harnessRemovedOutput",
+        "negativeControls.runnerOwnedCleanup",
         "negativeControls.routeOutputExistsAfterRun",
       ],
       fixedControls: CONTROLS.map((control) => control.id),
@@ -604,6 +674,7 @@ function buildReport() {
       negativeControls: NEGATIVE_CONTROLS.map((control) => control.id),
       deterministicLiveRebuild: true,
     },
+    validateOnlyPreservation: runValidateOnlyPreservation(CONTROLS[0]),
     controls: CONTROLS.map(buildPositiveControl),
     negativeControls: NEGATIVE_CONTROLS.map(buildNegativeControl),
     scope: {
@@ -620,13 +691,13 @@ function buildReport() {
 
 function markdownReport(report) {
   const lines = [
-    "# PR-4.8b Region Route Output Contract",
+    "# PR-4.8b1 Runner-owned Output Cleanup",
     "",
     `Schema: \`${report.schema}\``,
     "Status: completed",
     "Mode: shadow-only",
     "",
-    "The contract uses two real short RegionSpec positives through `run-region-dp.js`. It reads the written route, locks RegionSpec identity and project fingerprint metadata, checks the reached milestone and final summary, and reparses every persisted primitive decision. It is not a full MT1-MT5 or full Whiteisland route claim.",
+    "The contract uses two real short RegionSpec positives through `run-region-dp.js`. It reads the written route, locks RegionSpec identity and project fingerprint metadata, checks the reached milestone and final summary, and reparses every persisted primitive decision. It also proves normal runner-owned stale-output cleanup, preserves pre-existing output in validate-only mode, and exercises a structured prefix failure. It is not a full MT1-MT5 or full Whiteisland route claim.",
     "",
     "## Positive controls",
     "",
@@ -641,15 +712,17 @@ function markdownReport(report) {
     "",
     "Each positive route was written by the real runner and then parsed with the route-store schema. Macro kinds and macro plan fields are rejected from persisted decisions.",
     "",
-    "## Negative control",
+    "## Negative controls",
     "",
-    "| Control | Expected | Stale route existed | Removed before run | Route after run | Result |",
-    "| --- | --- | --- | --- | --- | --- |",
+    "| Control | Expected | Stale before runner | Harness removed | Runner cleanup | Route after run | Result |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
   );
   report.negativeControls.forEach((control) => {
-    lines.push(`| ${control.id} | ${control.expectedStatus} | ${control.staleRouteExistedBeforeRun} | ${control.staleRouteRemovedBeforeRun} | ${control.routeOutputExistsAfterRun} | ${control.execution.status === control.expectedStatus && control.staleRouteRemovedBeforeRun && !control.routeOutputExistsAfterRun ? "passed" : "failed"} |`);
+    lines.push(`| ${control.id} | ${control.expectedStatus} | ${control.staleRouteExistedBeforeRunner} | ${control.harnessRemovedOutput} | ${control.runnerOwnedCleanup} | ${control.routeOutputExistsAfterRun} | ${control.execution.status === control.expectedStatus && control.runnerOwnedCleanup && !control.routeOutputExistsAfterRun ? "passed" : "failed"} |`);
   });
   lines.push(
+    "",
+    `Validate-only preservation: ${report.validateOnlyPreservation.routePreserved ? "passed" : "failed"} (pre-existing output remains and is not deleted by the runner).`,
     "",
     "## Scope boundary",
     "",
@@ -676,7 +749,7 @@ function main(argv) {
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
   fs.writeFileSync(outMd, markdownReport(report));
-  process.stdout.write(`region route output contract wrote ${out} (${report.controls.length} positive controls, ${report.negativeControls.length} negative control)\n`);
+  process.stdout.write(`runner-owned output cleanup contract wrote ${out} (${report.controls.length} positive controls, ${report.negativeControls.length} negative controls)\n`);
   return report;
 }
 

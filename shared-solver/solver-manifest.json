@@ -1657,7 +1657,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "real short OnlyUp and Whiteisland RegionSpec positives with route metadata locks, strict primitive replay, and stale-output negative control; not a full tower route"
+      "notes": "PR-4.8b1 runner-owned cleanup with real short OnlyUp and Whiteisland positives, validate-only preservation, strict primitive replay, and not-found/structured-failure stale-output controls; not a full tower route"
     },
     "shared-solver/check-region-specs.js": {
       "grade": "local-regression",
