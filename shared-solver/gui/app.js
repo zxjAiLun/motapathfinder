@@ -65,6 +65,12 @@ function renderTopbar() {
   const displayed = session.display || session.runtime || {};
   const displayedHero = displayed.hero || {};
   const nextDecision = session.nextDecision || null;
+  const runtimeIdentity = session.runtimeSnapshotIdentity || "-";
+  const runtimeIdentityLabel = session.runtimeSnapshotIdentityMatches === true
+    ? "✓"
+    : session.runtimeSnapshotIdentityMatches === false
+      ? "⚠"
+      : "-";
   const baseline = route.baseline || null;
   const divergence =
     baseline && baseline.divergence ? baseline.divergence : null;
@@ -83,6 +89,7 @@ function renderTopbar() {
     <span class="badge ${escapeHtml(session.state || "idle")}">${escapeHtml(session.state || "idle")}</span>
     <span>Current: ${escapeHtml(session.currentStep || 1)} / ${escapeHtml(session.totalSteps || route.decisionCount)}</span>
     <span>Displayed: ${escapeHtml(displayed.floorId || "-")} hp=${escapeHtml(displayedHero.hp == null ? "-" : displayedHero.hp)} atk=${escapeHtml(displayedHero.atk == null ? "-" : displayedHero.atk)}</span>
+    <span>Runtime identity: ${runtimeIdentityLabel} ${escapeHtml(runtimeIdentity)}</span>
     <span>Next: ${nextDecision ? `#${escapeHtml(nextDecision.index)} ${escapeHtml(nextDecision.summary)}` : "-"}</span>
     ${session.browserUrl ? `<span class="muted">Runtime: ${escapeHtml(session.browserUrl)}</span>` : ""}
     ${baselineLabel}

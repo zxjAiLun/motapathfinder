@@ -39,6 +39,10 @@ function parseNumber(value, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function parseFromStep(value) {
+  return value == null ? 1 : value;
+}
+
 function resolveRouteFile(inputPath, projectRoot) {
   if (!inputPath) throw new Error("Missing required --route-file=<path>.");
   const candidates = [
@@ -280,7 +284,10 @@ async function main() {
   const host = args.host || "127.0.0.1";
   const port = parseNumber(args.port, 0);
   const open = parseBoolean(args.open, true);
-  const fromStep = parseNumber(args["from-step"], 1);
+  // Keep the raw CLI value so ReplaySession.normalizeStep() owns the same
+  // HTTP/API validation contract.  In particular, --from-step=abc must not
+  // silently become step 1.
+  const fromStep = parseFromStep(args["from-step"]);
   const baselineFile = args["baseline-route"]
     ? resolveRouteFile(args["baseline-route"], projectRoot)
     : null;
@@ -339,4 +346,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createGuiServer, parseArgs: parseKeyValueArgs };
+module.exports = { createGuiServer, parseArgs: parseKeyValueArgs, parseFromStep };

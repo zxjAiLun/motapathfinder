@@ -10,6 +10,7 @@ const { createGuiServer } = require("./route-gui");
 const { loadProject } = require("./lib/project-loader");
 const { ReplaySession } = require("./lib/replay-session");
 const { readRouteFile } = require("./lib/route-store");
+const { enrichReplayStartSnapshot } = require("./lib/live-replay");
 const { CONTROLS: PR48_CONTROLS } = require("./audit-region-route-output-contract");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -142,7 +143,7 @@ function ensureFixedRoute(input) {
   };
 }
 
-function buildCheckpointRoute(routeRecord, sourceStep) {
+function buildCheckpointRoute(routeRecord, sourceStep, options) {
   const sourceDecision = routeRecord.decisions[sourceStep - 1];
   requireCondition(sourceDecision, `checkpoint source decision ${sourceStep} is missing`);
   const checkpoint = cloneJson(routeRecord);
@@ -158,15 +159,20 @@ function buildCheckpointRoute(routeRecord, sourceStep) {
       exactStateKey: sourceDecision.postExactStateKey || null,
     },
   };
+  const checkpointStartSnapshot = {
+    ...cloneJson(sourceDecision.postSnapshot),
+    floors: mergeFloorBaseline(
+      ((routeRecord.start || {}).snapshot || {}).floors,
+      (sourceDecision.postSnapshot || {}).floors,
+    ),
+  };
   checkpoint.start = {
     ...cloneJson(routeRecord.start || {}),
-    snapshot: {
-      ...cloneJson(sourceDecision.postSnapshot),
-      floors: mergeFloorBaseline(
-        ((routeRecord.start || {}).snapshot || {}).floors,
-        (sourceDecision.postSnapshot || {}).floors,
-      ),
-    },
+    snapshot: enrichReplayStartSnapshot(
+      checkpointStartSnapshot,
+      options && options.projectRoot,
+      { start: { snapshot: checkpointStartSnapshot } },
+    ),
     stateKey: sourceDecision.postStateKey || sourceDecision.postExactStateKey || null,
     dominanceKey: sourceDecision.postDominanceKey || sourceDecision.postExactStateKey || null,
     exactStateKey: sourceDecision.postExactStateKey || null,
@@ -180,6 +186,15 @@ function buildCheckpointRoute(routeRecord, sourceStep) {
     depth: checkpoint.decisions.length,
     routeLength: checkpoint.decisions.length,
   };
+  if (
+    checkpoint.start.snapshot &&
+    checkpoint.start.snapshot.flags &&
+    checkpoint.start.snapshot.flags.__leaveLoc__
+  ) {
+    checkpoint.metadata.replayCheckpoint.expectedRuntimeFlags = {
+      __leaveLoc__: cloneJson(checkpoint.start.snapshot.flags.__leaveLoc__),
+    };
+  }
   return checkpoint;
 }
 
@@ -230,7 +245,23 @@ function makeShadowReplayApi(counters) {
           actual: cloneJson(runtime.snapshot),
         };
       }
+      const leaveLoc = runtime.snapshot && runtime.snapshot.flags && runtime.snapshot.flags.__leaveLoc__;
+      const previousFloors = runtime.snapshot && runtime.snapshot.floors;
       runtime.snapshot = cloneJson(decision.postSnapshot || {});
+      if (
+        leaveLoc &&
+        runtime.snapshot.flags &&
+        !Object.prototype.hasOwnProperty.call(runtime.snapshot.flags, "__leaveLoc__")
+      ) {
+        runtime.snapshot.flags.__leaveLoc__ = cloneJson(leaveLoc);
+      }
+      if (previousFloors && runtime.snapshot.floors) {
+        Object.entries(previousFloors).forEach(([floorId, floor]) => {
+          if (!Object.prototype.hasOwnProperty.call(runtime.snapshot.floors, floorId)) {
+            runtime.snapshot.floors[floorId] = cloneJson(floor);
+          }
+        });
+      }
       runtime.exactStateKey = decision.postExactStateKey || null;
       runtime.executedSteps.push(decision.index);
       runtime.sideEffects.push({
@@ -447,7 +478,7 @@ async function buildInputReport(input) {
     }));
   }
 
-  const checkpointRoute = buildCheckpointRoute(routeRecord, 1);
+  const checkpointRoute = buildCheckpointRoute(routeRecord, 1, { projectRoot: input.projectRoot });
   controls.push(await runValidControl(input, checkpointRoute, 1, {
     id: `${input.id}-checkpoint-plus-from-step-1`,
     kind: "checkpoint-plus-offset",

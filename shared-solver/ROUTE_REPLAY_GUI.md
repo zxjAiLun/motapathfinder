@@ -38,7 +38,7 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 - `--open=0|1`: opens the GUI URL in the system browser; default `1`.
 - `--host=<host>`: default `127.0.0.1`.
 - `--port=<number>`: default `0` for a free port.
-- `--from-step=<number>`: default `1`; accepts `0..routeLength`, with `0` meaning before decision 1.
+- `--from-step=<number>`: default `1`; accepts `0..routeLength`, with `0` meaning before decision 1. Raw nonnumeric values such as `abc` are passed to the session validator and rejected with `REPLAY_STEP_OUT_OF_RANGE` instead of falling back to `1`.
 - `--step-delay-ms=<number>`: default `1400`.
 - `--fast-forward-delay-ms=<number>`: reserved for fast-forward tuning; default `0`.
 - `--timeout-ms=<number>`: runtime idle/snapshot timeout; default `30000`.
@@ -48,7 +48,7 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 
 ## GUI Layout
 
-- Top bar: route filename, goal, source solver/profile/rank, final hero, runtime state, current step, next decision, displayed runtime floor/hero, and runtime URL.
+- Top bar: route filename, goal, source solver/profile/rank, final hero, runtime state, current step, next decision, displayed runtime floor/hero, runtime snapshot identity hash, and runtime URL.
 - Controls: Start Live, Play, Pause, Step, Restart, Jump to selected, speed preset, and from-step input.
 - Timeline: one row per decision with status, kind, floor, target, enemy/item/tool/equip, damage, exp, HP delta, score, and summary.
 - Detail panel: structured action JSON, estimate/score rows, hero diff, inventory diff, flag diff, and floor mutation diff.
@@ -63,12 +63,13 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 - `Step` executes exactly one decision and verifies the post snapshot.
 - `Jump to selected` restarts runtime, fast-forwards from the beginning through the previous step, verifies every fast-forwarded snapshot, then pauses before the selected step.
 - Completed replay keeps the runtime browser open for visual inspection.
+- Persisted `solverBoundaryExactStateKey` remains the route's solver boundary metadata. `runtimeSnapshotIdentity` is a separate SHA-256 identity over the actual normalized runtime snapshot, including flags such as `__leaveLoc__` and floor mutations. The latter is never presented as the persisted solver exact-state key.
 
 ## Server API
 
 - `GET /api/route`: lightweight metadata and decision rows.
 - `GET /api/route/step/:index`: full decision, pre/post snapshots, score rows, and categorized diffs.
-- `GET /api/session/status`: live session state, current step, statuses, runtime status, and last mismatch.
+- `GET /api/session/status`: live session state, current step, statuses, runtime status, runtime snapshot identity comparison, and last mismatch.
 - `POST /api/session/start` with `{ "fromStep": 1 }`: starts live runtime. The accepted range is `0..routeLength`; out-of-range requests return HTTP 400 with code `REPLAY_STEP_OUT_OF_RANGE`.
 - `POST /api/session/play` with `{ "stepDelayMs": 1400 }`: starts async playback.
 - `POST /api/session/pause`: requests pause after the current decision.
@@ -83,7 +84,10 @@ API errors return:
 ```json
 {
   "ok": false,
-  "error": "message"
+  "error": "message",
+  "code": "REPLAY_STEP_OUT_OF_RANGE",
+  "requestedStep": "abc",
+  "totalSteps": 12
 }
 ```
 
@@ -94,6 +98,7 @@ API errors return:
 - Live runtime helpers are shared with `verify-route-live.js` through `lib/live-replay.js`.
 - Route inspection is implemented in `lib/route-inspector.js`; it computes display diffs from stored `preSnapshot` and `postSnapshot`.
 - Live session state is managed by `lib/replay-session.js`.
+- `lib/live-replay.js` preserves actual `flags.__leaveLoc__`; checkpoint start snapshots receive the expected initial cross-floor leave location when the saved route starts on a later floor than the project start floor.
 
 ## Validation
 
@@ -112,6 +117,7 @@ Manual smoke:
 npm run brute:mt3
 npm run gui:route
 npm run gui:route:live
+npm run check:replay:flag-identity --prefix shared-solver
 ```
 
 Live debugging smoke with an existing stage route:

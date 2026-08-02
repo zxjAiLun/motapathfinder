@@ -3,9 +3,11 @@
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const crypto = require("crypto");
 
 const { chromium } = require("playwright-core");
 const { DEFAULT_HERO_FIELDS, diffSnapshots, summarizeSnapshot } = require("./route-snapshot");
+const { loadProject } = require("./project-loader");
 
 const CHROME_PATHS = [
   "/usr/bin/google-chrome",
@@ -269,6 +271,27 @@ function normalizeSnapshotForRuntime(snapshot, config) {
   return normalized;
 }
 
+function stableRuntimeValue(value) {
+  if (Array.isArray(value)) return value.map((item) => stableRuntimeValue(item));
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((result, key) => {
+        result[key] = stableRuntimeValue(value[key]);
+        return result;
+      }, {});
+  }
+  return value;
+}
+
+function buildRuntimeSnapshotIdentity(snapshot, config) {
+  if (!snapshot) return null;
+  const normalized = normalizeSnapshotForRuntime(snapshot, config || {});
+  const canonical = stableRuntimeValue(normalized);
+  const serialized = JSON.stringify(canonical);
+  return `sha256:${crypto.createHash("sha256").update(serialized).digest("hex")}`;
+}
+
 function isEmptyRuntimeFloorRecord(value) {
   return Boolean(
     value &&
@@ -281,21 +304,30 @@ function isEmptyRuntimeFloorRecord(value) {
   );
 }
 
+function mergeRuntimeStartFlags(normalizedExpected, config) {
+  const baselineFlags = config && config.routeStartSnapshot && config.routeStartSnapshot.flags;
+  if (!baselineFlags || !normalizedExpected || !normalizedExpected.flags) return;
+  const baselineLeaveLoc = baselineFlags.__leaveLoc__;
+  if (
+    baselineLeaveLoc &&
+    typeof baselineLeaveLoc === "object" &&
+    !Object.prototype.hasOwnProperty.call(normalizedExpected.flags, "__leaveLoc__")
+  ) {
+    normalizedExpected.flags.__leaveLoc__ = JSON.parse(JSON.stringify(baselineLeaveLoc));
+  }
+}
+
 function normalizeRuntimeSnapshotPair(expected, actual, config) {
   const normalizedExpected = normalizeSnapshotForRuntime(expected, config);
   const normalizedActual = normalizeSnapshotForRuntime(actual, config);
   if (!normalizedExpected || !normalizedActual) return { expected: normalizedExpected, actual: normalizedActual };
 
-  // __leaveLoc__ is runtime navigation bookkeeping.  A restored checkpoint
-  // can legitimately recreate it even when the persisted route snapshot did
-  // not contain it; it is not part of the solver exactStateKey contract.
-  if (
-    normalizedExpected.flags &&
-    normalizedActual.flags &&
-    !Object.prototype.hasOwnProperty.call(normalizedExpected.flags, "__leaveLoc__")
-  ) {
-    delete normalizedActual.flags.__leaveLoc__;
-  }
+  // A runtime start snapshot may carry a location recorded by the initial
+  // cross-floor restore.  Carry that expected identity into later snapshots;
+  // never erase a value from the actual runtime snapshot.  __leaveLoc__ is
+  // retained because it is included by buildStateKey and can change floorFly
+  // landing coordinates.
+  mergeRuntimeStartFlags(normalizedExpected, config);
 
   // Short RegionSpec route records may omit unchanged visited-floor entries
   // from a later decision snapshot.  Carry the route start floor baseline
@@ -333,6 +365,144 @@ function normalizeRuntimeSnapshotPair(expected, actual, config) {
     }
   }
   return { expected: normalizedExpected, actual: normalizedActual };
+}
+
+function buildRuntimeSnapshotIdentityPair(expected, actual, config) {
+  const normalizedPair = normalizeRuntimeSnapshotPair(expected, actual, config);
+  const expectedIdentity = buildRuntimeSnapshotIdentity(normalizedPair.expected, config);
+  const actualIdentity = buildRuntimeSnapshotIdentity(normalizedPair.actual, config);
+  return {
+    expected: expectedIdentity,
+    actual: actualIdentity,
+    matches: Boolean(expectedIdentity && actualIdentity && expectedIdentity === actualIdentity),
+  };
+}
+
+function buildRuntimeSolverExactStateKeyFromSnapshot(snapshot, templateExactStateKey, config) {
+  if (!snapshot || !templateExactStateKey) return null;
+  let template;
+  try {
+    template = JSON.parse(templateExactStateKey);
+  } catch (error) {
+    return null;
+  }
+  const normalized = normalizeSnapshotForRuntime(snapshot, config || {});
+  const heroSnapshot = normalized.hero || {};
+  const heroLoc = heroSnapshot.loc || {};
+  const hero = { ...(template.hero || {}) };
+  ["hp", "hpmax", "mana", "manamax", "atk", "def", "mdef", "money", "exp", "lv"].forEach((field) => {
+    if (heroSnapshot[field] != null) hero[field] = heroSnapshot[field];
+  });
+  if (hero.x != null && heroLoc.x != null) hero.x = heroLoc.x;
+  if (hero.y != null && heroLoc.y != null) hero.y = heroLoc.y;
+  if (hero.direction !== null && heroLoc.direction != null) hero.direction = heroLoc.direction;
+  if (Array.isArray(heroSnapshot.equipment)) hero.equipment = heroSnapshot.equipment.slice();
+
+  const mutations = Object.keys(normalized.floors || {})
+    .sort()
+    .map((floorId) => {
+      const floor = normalized.floors[floorId] || {};
+      const removed = Array.isArray(floor.removed) ? floor.removed.slice().sort() : [];
+      const replaced = Array.isArray(floor.replaced) ? floor.replaced.slice().sort() : [];
+      if (removed.length === 0 && replaced.length === 0) return null;
+      return { floorId, removed, replaced };
+    })
+    .filter(Boolean);
+
+  const projected = {
+    ...template,
+    floorId: normalized.floorId,
+    hero,
+    inventory: stableRuntimeValue(normalized.inventory || {}),
+    flags: stableRuntimeValue(normalized.flags || {}),
+    visitedFloors: Object.keys(normalized.floors || {}).sort(),
+    mutations,
+  };
+  return JSON.stringify(stableRuntimeValue(projected));
+}
+
+function buildRuntimeSolverExactStateKeyPair(expected, actual, templateExactStateKey, config) {
+  const normalizedPair = normalizeRuntimeSnapshotPair(expected, actual, config);
+  const expectedKey = buildRuntimeSolverExactStateKeyFromSnapshot(
+    normalizedPair.expected,
+    templateExactStateKey,
+    config,
+  );
+  const actualKey = buildRuntimeSolverExactStateKeyFromSnapshot(
+    normalizedPair.actual,
+    templateExactStateKey,
+    config,
+  );
+  return {
+    expected: expectedKey,
+    actual: actualKey,
+    matches: Boolean(expectedKey && actualKey && expectedKey === actualKey),
+  };
+}
+
+function deriveRuntimeStartFlagBaseline(routeRecord, projectRoot) {
+  const startSnapshot = routeRecord && routeRecord.start && routeRecord.start.snapshot;
+  if (!startSnapshot || !startSnapshot.floorId || !projectRoot) return null;
+  try {
+    const project = loadProject(projectRoot);
+    const firstData = project && project.data && project.data.firstData;
+    const initialFloorId = firstData && firstData.floorId;
+    const initialLoc = firstData && firstData.hero && firstData.hero.loc;
+    if (!initialFloorId || initialFloorId === startSnapshot.floorId || !initialLoc) return null;
+    return {
+      __leaveLoc__: {
+        [initialFloorId]: {
+          x: Number(initialLoc.x || 0),
+          y: Number(initialLoc.y || 0),
+          direction: initialLoc.direction || "down",
+        },
+      },
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+function enrichReplayStartSnapshot(snapshot, projectRoot, routeRecord) {
+  if (!snapshot) return snapshot;
+  const enriched = JSON.parse(JSON.stringify(snapshot));
+  const baseline = deriveRuntimeStartFlagBaseline(
+    routeRecord || { start: { snapshot: enriched } },
+    projectRoot,
+  );
+  if (!baseline) return enriched;
+  enriched.flags = enriched.flags || {};
+  enriched.flags.__leaveLoc__ = enriched.flags.__leaveLoc__ || {};
+  Object.entries(baseline.__leaveLoc__ || {}).forEach(([floorId, loc]) => {
+    if (!Object.prototype.hasOwnProperty.call(enriched.flags.__leaveLoc__, floorId)) {
+      enriched.flags.__leaveLoc__[floorId] = loc;
+    }
+  });
+  return enriched;
+}
+
+function prepareReplayRouteRecord(routeRecord, projectRoot) {
+  if (!routeRecord) return routeRecord;
+  const prepared = JSON.parse(JSON.stringify(routeRecord));
+  const originalStartSnapshot = prepared.start && prepared.start.snapshot;
+  if (!originalStartSnapshot) return prepared;
+  const enrichedStartSnapshot = enrichReplayStartSnapshot(
+    originalStartSnapshot,
+    projectRoot,
+    prepared,
+  );
+  if (JSON.stringify(enrichedStartSnapshot) === JSON.stringify(originalStartSnapshot)) return prepared;
+  prepared.start.snapshot = enrichedStartSnapshot;
+  prepared.metadata = prepared.metadata || {};
+  prepared.metadata.replayRuntimeIdentity = {
+    ...prepared.metadata.replayRuntimeIdentity,
+    schema: "runtime-snapshot-identity.v1",
+    expectedStartFlags: {
+      __leaveLoc__: JSON.parse(JSON.stringify(enrichedStartSnapshot.flags.__leaveLoc__)),
+    },
+    source: "initial-cross-floor-restore",
+  };
+  return prepared;
 }
 
 function diffSnapshotSubset(expected, actual, pathSegments) {
@@ -902,17 +1072,37 @@ async function launchRuntimeSession(routeRecord, options) {
 
 async function verifyInitialRuntimeSnapshot(session, routeRecord) {
   const actual = await captureRuntimeSnapshot(session.page, { verifyFloors: session.verifyFloors });
+  const comparisonOptions = Object.assign({}, session.options, {
+    routeStartSnapshot: (routeRecord.start || {}).snapshot || null,
+  });
   const normalizedPair = normalizeRuntimeSnapshotPair(
     (routeRecord.start || {}).snapshot,
     actual,
-    session.options
+    comparisonOptions
   );
   const mismatch = diffSnapshots(normalizedPair.expected, normalizedPair.actual, ["initial"]);
+  const identity = buildRuntimeSnapshotIdentityPair(
+    (routeRecord.start || {}).snapshot,
+    actual,
+    comparisonOptions,
+  );
+  const solverIdentity = buildRuntimeSolverExactStateKeyPair(
+    (routeRecord.start || {}).snapshot,
+    actual,
+    (routeRecord.start || {}).exactStateKey || null,
+    comparisonOptions,
+  );
   return {
     ok: !mismatch,
     mismatch,
     expected: (routeRecord.start || {}).snapshot || null,
     actual,
+    expectedRuntimeSnapshotIdentity: identity.expected,
+    runtimeSnapshotIdentity: identity.actual,
+    runtimeSnapshotIdentityMatches: identity.matches,
+    expectedRuntimeSolverExactStateKey: solverIdentity.expected,
+    runtimeSolverExactStateKey: solverIdentity.actual,
+    runtimeSolverExactStateMatches: solverIdentity.matches,
   };
 }
 
@@ -939,18 +1129,40 @@ async function executeRouteDecision(session, decision, options) {
     }),
     [decision.summary || decision.fingerprint || "step"],
   );
+  const identity = buildRuntimeSnapshotIdentityPair(
+    decision.postSnapshot,
+    actual,
+    Object.assign({}, config, {
+      routeStartSnapshot: config.routeStartSnapshot || session.routeStartSnapshot || null,
+    }),
+  );
+  const solverIdentity = buildRuntimeSolverExactStateKeyPair(
+    decision.postSnapshot,
+    actual,
+    decision.postExactStateKey || null,
+    Object.assign({}, config, {
+      routeStartSnapshot: config.routeStartSnapshot || session.routeStartSnapshot || null,
+    }),
+  );
   if (stepDelayMs > 0 && !mismatch) await session.page.waitForTimeout(stepDelayMs);
   return {
     ok: !mismatch,
     mismatch,
     expected: decision.postSnapshot || null,
     actual,
+    expectedRuntimeSnapshotIdentity: identity.expected,
+    runtimeSnapshotIdentity: identity.actual,
+    runtimeSnapshotIdentityMatches: identity.matches,
+    expectedRuntimeSolverExactStateKey: solverIdentity.expected,
+    runtimeSolverExactStateKey: solverIdentity.actual,
+    runtimeSolverExactStateMatches: solverIdentity.matches,
   };
 }
 
 async function replayRouteFile(routeRecord, options) {
   const config = normalizeReplayOptions(options);
   const projectRoot = config.projectRoot || path.resolve(__dirname, "..", "..");
+  routeRecord = prepareReplayRouteRecord(routeRecord, projectRoot);
   const browserPath = findBrowserExecutable(config.browser);
   if (!browserPath) throw new Error("No Chrome/Edge executable found for live verification.");
 
@@ -1056,6 +1268,10 @@ async function replayRouteRecordLive(routeRecord, options) {
 }
 
 module.exports = {
+  buildRuntimeSnapshotIdentity,
+  buildRuntimeSnapshotIdentityPair,
+  buildRuntimeSolverExactStateKeyFromSnapshot,
+  buildRuntimeSolverExactStateKeyPair,
   captureRuntimeSnapshot,
   configureRuntimeAutomation,
   createStaticServer,
@@ -1064,10 +1280,13 @@ module.exports = {
   diffRouteSnapshot,
   executeRuntimeDecision,
   findBrowserExecutable,
+  deriveRuntimeStartFlagBaseline,
+  enrichReplayStartSnapshot,
   isAutoAdvanceableRuntimeEvent,
   executeRouteDecision,
   launchRuntimeSession,
   projectSupportsRuntimeAutoBattle,
+  prepareReplayRouteRecord,
   quickStartRuntime,
   replayRouteFile,
   replayRouteRecordLive,

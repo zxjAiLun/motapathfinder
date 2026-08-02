@@ -414,6 +414,13 @@ const TEST_OVERRIDES = {
     cleanCheckout: false,
     notes: "PR-5.1a local Chrome/Edge live smoke across both PR-4.8b routes, valid offsets, checkpoint plus offset, and pre-launch out-of-range rejection",
   },
+  "shared-solver/check-replay-flag-identity-contract.js": {
+    grade: "closure",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: true,
+    notes: "PR-5.1a1 shadow-only runtime snapshot identity with preserved __leaveLoc__, checkpoint baseline, real simulator changeFloor/floorFly witness, mismatch rejection, and deterministic rebuild",
+  },
 };
 
 function autoGradeTest(fileName) {
@@ -631,6 +638,7 @@ const manifest = {
         "shared-solver/check-region-entry-contract.js",
         "shared-solver/check-region-route-output-contract.js",
         "shared-solver/check-replay-start-offset-contract.js",
+        "shared-solver/check-replay-flag-identity-contract.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],
     },

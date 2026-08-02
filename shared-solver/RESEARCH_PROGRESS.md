@@ -1266,5 +1266,23 @@ PR-4.8b/b1 已按 Review 正式关闭；下一主线进入 P5 Replay / h5save �
 - `routeLength+1`、负数和非整数由 GUI session API 明确拒绝为 `HTTP 400 / REPLAY_STEP_OUT_OF_RANGE`，在 runtime 启动前返回，不会把越界 offset 静默夹到完成态。
 - 固定复用 PR-4.8b OnlyUp 与 Whiteisland 短 route，覆盖 `from-step=0`、`1`、`routeLength`、checkpoint + offset、正负越界；每个有效控制均检查 resumed exact state、next decision、`lastCompletedStep`、GUI display floor/hero、继续后的 final exact state 和 primitive side-effect 顺序。
 - `ReplaySession`/GUI status 现在暴露 requested/effective offset、expected boundary exact key、next decision 与 runtime/display floor/hero；GUI 输入允许 0，并在 top bar 显示当前 runtime 展示值。
-- live snapshot 对齐保留 checkpoint 的 visited-floor baseline，并忽略不属于 solver exactStateKey 的 runtime `__leaveLoc__` bookkeeping；这避免 Whiteisland checkpoint 恢复时把 runtime 导航元数据误判为 route side-effect 漂移。
+- live snapshot 对齐保留 checkpoint 的 visited-floor baseline，并保留属于 solver flags/exact-state 语义的 runtime `__leaveLoc__`。回放层单独暴露 `runtimeSnapshotIdentity`（包含完整 flags 与 floor mutations），不把它冒充持久化 route boundary `exactStateKey`；Whiteisland checkpoint 的期望初始跨楼层 leave location 在 checkpoint 构造时补入，而不是比较时删除 actual。
 - 不修改 solver、DP key、dominance、agenda、容量、路线选择或默认策略；该报告是 session/API contract 审计，不声称完整塔路线或 live runtime 已由静态检查覆盖。
+
+### 2026-08-02 更新：PR-5.1a1 Replay Flag Identity Hardening
+
+PR-5.1a 的 live exact-state review 要求保留 runtime `__leaveLoc__`、补齐 checkpoint 期望身份，并拒绝 CLI 非数字 offset 静默回退。本轮继续 shadow-only：
+
+- 删除 live replay 对 actual `flags.__leaveLoc__` 的全局删除逻辑；normalized snapshot comparison 现在会报告旗标和后续 floorFly 落点差异。
+- `ReplaySession` status 新增 `runtimeSnapshotIdentity`、`expectedRuntimeSnapshotIdentity` 与匹配结果；它们是由完整实际 runtime snapshot 构造的稳定 SHA-256，和持久化 `solverBoundaryExactStateKey` 分开。
+- checkpoint 起点会从项目初始楼层/hero 位置推导初始跨楼层 restore 写入的 `__leaveLoc__`，并把期望值放进 checkpoint snapshot；不修改 route solver exact key 或路线选择。
+- 新增真实 OnlyUp simulator `changeFloor -> floorFly` 控制：`flyRecordPosition=true` 时正确 leave location 回飞到 `(6,0)`，篡改 `__leaveLoc__` 会得到 `(5,0)` 并被 snapshot/hash mismatch 拒绝。
+- `route-gui.js --from-step=abc` 保留原始输入，交给 `ReplaySession.normalizeStep()` 返回 `REPLAY_STEP_OUT_OF_RANGE / HTTP 400`。
+
+专项检查：
+
+```bash
+npm run check:replay:flag-identity --prefix shared-solver
+npm run check:replay:start-offset --prefix shared-solver
+npm run check:replay:start-offset:live --prefix shared-solver
+```

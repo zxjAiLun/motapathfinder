@@ -2,9 +2,13 @@
 
 const { summarizeSnapshot } = require("./route-snapshot");
 const {
+  buildRuntimeSnapshotIdentity,
+  buildRuntimeSnapshotIdentityPair,
+  buildRuntimeSolverExactStateKeyPair,
   describeRuntimeStatus,
   executeRouteDecision,
   launchRuntimeSession,
+  prepareReplayRouteRecord,
   verifyInitialRuntimeSnapshot,
 } = require("./live-replay");
 
@@ -35,6 +39,7 @@ function stepRangeError(step, total) {
 }
 
 const DEFAULT_LIVE_API = {
+  buildRuntimeSnapshotIdentity,
   describeRuntimeStatus,
   executeRouteDecision,
   launchRuntimeSession,
@@ -43,9 +48,9 @@ const DEFAULT_LIVE_API = {
 
 class ReplaySession {
   constructor({ routeRecord, projectRoot, liveOptions, onEvent, replayApi } = {}) {
-    this.routeRecord = routeRecord;
-    this.decisions = (routeRecord && routeRecord.decisions) || [];
     this.projectRoot = projectRoot;
+    this.routeRecord = prepareReplayRouteRecord(routeRecord, projectRoot);
+    this.decisions = (this.routeRecord && this.routeRecord.decisions) || [];
     this.liveOptions = liveOptions || {};
     this.onEvent = typeof onEvent === "function" ? onEvent : null;
     this.replayApi = Object.assign({}, DEFAULT_LIVE_API, replayApi || {});
@@ -59,6 +64,8 @@ class ReplaySession {
     this.lastError = null;
     this.lastMismatch = null;
     this.runtime = null;
+    this.lastRuntimeSnapshot = null;
+    this.runtimeSnapshotIdentity = null;
     this.pauseRequested = false;
     this.isBusy = false;
   }
@@ -97,6 +104,8 @@ class ReplaySession {
     this.state = "starting";
     this.lastError = null;
     this.lastMismatch = null;
+    this.lastRuntimeSnapshot = null;
+    this.runtimeSnapshotIdentity = null;
     this.pauseRequested = false;
     this.stepStatuses = {};
     this.requestedFromStep = Number(requestedFromStep);
@@ -110,6 +119,7 @@ class ReplaySession {
       const launchOptions = Object.assign({}, this.liveOptions, liveOptions || {}, { projectRoot: this.projectRoot });
       this.runtime = await this.replayApi.launchRuntimeSession(this.routeRecord, launchOptions);
       const initial = await this.replayApi.verifyInitialRuntimeSnapshot(this.runtime, this.routeRecord);
+      this.recordRuntimeSnapshot(initial.actual, launchOptions);
       if (!initial.ok) {
         this.lastMismatch = initial;
         this.state = "failed";
@@ -146,6 +156,16 @@ class ReplaySession {
       runtime.browser && runtime.browser.close ? runtime.browser.close() : Promise.resolve(),
       runtime.server && runtime.server.close ? runtime.server.close() : Promise.resolve(),
     ]);
+    this.lastRuntimeSnapshot = null;
+    this.runtimeSnapshotIdentity = null;
+  }
+
+  recordRuntimeSnapshot(snapshot, options) {
+    if (!snapshot) return;
+    this.lastRuntimeSnapshot = snapshot;
+    this.runtimeSnapshotIdentity = this.replayApi.buildRuntimeSnapshotIdentity
+      ? this.replayApi.buildRuntimeSnapshotIdentity(snapshot, options || this.liveOptions)
+      : buildRuntimeSnapshotIdentity(snapshot, options || this.liveOptions);
   }
 
   async ensureStarted() {
@@ -171,6 +191,7 @@ class ReplaySession {
         routeStartSnapshot: (this.routeRecord && this.routeRecord.start && this.routeRecord.start.snapshot) || null,
       }));
     } catch (error) {
+      this.recordRuntimeSnapshot(result && result.actual, this.liveOptions);
       this.stepStatuses[String(step)] = "failed";
       this.lastError = errorPayload(error);
       this.state = "failed";
@@ -178,6 +199,7 @@ class ReplaySession {
       return this.getStatus();
     }
     if (!result.ok) {
+      this.recordRuntimeSnapshot(result.actual, this.liveOptions);
       this.stepStatuses[String(step)] = "failed";
       this.lastMismatch = {
         step,
@@ -190,6 +212,7 @@ class ReplaySession {
       this.emit("failed", this.lastMismatch);
       return this.getStatus();
     }
+    this.recordRuntimeSnapshot(result.actual, this.liveOptions);
     this.stepStatuses[String(step)] = "ok";
     this.lastCompletedStep = step;
     this.currentStep = step + 1;
@@ -288,6 +311,22 @@ class ReplaySession {
       : boundary && boundary.postSnapshot
         ? boundary.postSnapshot
         : null;
+    const identityConfig = Object.assign({}, this.liveOptions, {
+      routeStartSnapshot: (this.routeRecord && this.routeRecord.start && this.routeRecord.start.snapshot) || null,
+    });
+    const identity = this.lastRuntimeSnapshot && boundarySnapshot
+      ? buildRuntimeSnapshotIdentityPair(boundarySnapshot, this.lastRuntimeSnapshot, identityConfig)
+      : { expected: null, actual: this.runtimeSnapshotIdentity, matches: false };
+    const solverBoundaryExactStateKey =
+      (boundary && (boundary.exactStateKey || boundary.postExactStateKey)) || null;
+    const solverIdentity = this.lastRuntimeSnapshot && boundarySnapshot
+      ? buildRuntimeSolverExactStateKeyPair(
+          boundarySnapshot,
+          this.lastRuntimeSnapshot,
+          solverBoundaryExactStateKey,
+          identityConfig,
+        )
+      : { expected: null, actual: null, matches: false };
     return {
       state: this.state,
       currentStep: this.currentStep,
@@ -296,8 +335,17 @@ class ReplaySession {
       lastCompletedStep: this.lastCompletedStep,
       requestedFromStep: this.requestedFromStep,
       effectiveFromStep: this.effectiveFromStep,
-      expectedExactStateKey:
-        (boundary && (boundary.exactStateKey || boundary.postExactStateKey)) || null,
+      // Kept for API compatibility with PR-5.1a.  This is the persisted
+      // route boundary key, not a hash derived from browser runtime state.
+      expectedExactStateKey: solverBoundaryExactStateKey,
+      solverBoundaryExactStateKey,
+      expectedRuntimeSnapshotIdentity: identity.expected,
+      runtimeSnapshotIdentity: identity.actual || this.runtimeSnapshotIdentity,
+      runtimeSnapshotIdentityMatches: identity.matches,
+      runtimeIdentityKind: "runtime-snapshot-compatibility-v1",
+      expectedRuntimeSolverExactStateKey: solverIdentity.expected,
+      runtimeSolverExactStateKey: solverIdentity.actual,
+      runtimeSolverExactStateMatches: solverIdentity.matches,
       expectedBoundary: boundarySnapshot
         ? {
             floorId: boundarySnapshot.floorId || null,

@@ -371,6 +371,23 @@ npm run run:replay:start-offset --prefix shared-solver
 npm run check:replay:start-offset:live --prefix shared-solver
 ```
 
+#### PR-5.1a1：Replay Flag Identity Hardening ✅ replay-flag-identity-shadow
+
+- ✅ live replay 不再无条件删除 actual `flags.__leaveLoc__`；旗标差异会进入 snapshot mismatch。
+- ✅ 持久化 `solverBoundaryExactStateKey` 与完整 runtime `runtimeSnapshotIdentity` 分开暴露；后者是包含 flags 和 floor mutations 的稳定 SHA-256。
+- ✅ checkpoint 起点在构造时补齐初始跨楼层 restore 产生的期望 `__leaveLoc__`，并保留 visited-floor baseline。
+- ✅ OnlyUp 真实 simulator 控制覆盖 `changeFloor -> floorFly`、`flyRecordPosition=true`、正确回飞坐标，以及篡改 leave location 后的 mismatch 拒绝。
+- ✅ CLI `--from-step=abc` 保留原始值并在 session/API 层拒绝，不再静默回到 step 1。
+- ✅ 不修改 solver、DP key、dominance、agenda、容量、路线选择或默认策略语义。
+
+验收：
+
+```bash
+npm run check:replay:flag-identity --prefix shared-solver
+npm run check:replay:start-offset --prefix shared-solver
+npm run check:replay:start-offset:live --prefix shared-solver
+```
+
 ## 5. 风险控制
 
 ### 5.1 `presentTiles` 过拟合

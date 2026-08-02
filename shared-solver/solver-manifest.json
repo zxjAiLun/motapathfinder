@@ -184,7 +184,8 @@
         "shared-solver/check-resource-intent-contract.js",
         "shared-solver/check-region-entry-contract.js",
         "shared-solver/check-region-route-output-contract.js",
-        "shared-solver/check-replay-start-offset-contract.js"
+        "shared-solver/check-replay-start-offset-contract.js",
+        "shared-solver/check-replay-flag-identity-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -1666,6 +1667,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-replay-flag-identity-contract.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.1a1 shadow-only runtime snapshot identity with preserved __leaveLoc__, checkpoint baseline, real simulator changeFloor/floorFly witness, mismatch rejection, and deterministic rebuild"
     },
     "shared-solver/check-replay-start-offset-contract.js": {
       "grade": "closure",

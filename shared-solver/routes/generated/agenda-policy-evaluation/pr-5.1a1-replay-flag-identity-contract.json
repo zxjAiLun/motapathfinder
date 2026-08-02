@@ -1,0 +1,138 @@
+{
+  "schema": "motapathfinder.pr-5.1a1-replay-flag-identity.v1",
+  "status": "completed",
+  "generatedAt": "2026-08-02T15:39:07.420Z",
+  "provenance": {
+    "mode": "replay-flag-identity-shadow",
+    "entrypoint": "shared-solver/lib/live-replay.js",
+    "session": "shared-solver/lib/replay-session.js",
+    "fixedInputSource": "PR-4.8b WhiteIsland checkpoint plus a real OnlyUp simulator cross-floor control",
+    "deterministicFullReportRebuild": true,
+    "generationCommit": "b6efeed",
+    "liveRuntimeExecuted": false,
+    "productionSolverChanged": false,
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "routeSelectionSemanticsChanged": false
+  },
+  "scope": {
+    "shadowOnly": true,
+    "displaySnapshotCompatibilityIdentity": "normalized snapshot comparison for replay display/continuation compatibility",
+    "runtimeSnapshotIdentity": "sha256 of normalized full runtime snapshot including flags.__leaveLoc__ and floor mutations",
+    "persistedSolverExactStateKey": "reported separately as route boundary metadata; never substituted with display identity",
+    "productionSearchSemanticsChanged": false,
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "routeSelectionSemanticsChanged": false
+  },
+  "controls": {
+    "cliNonnumeric": {
+      "rawInput": "abc",
+      "preservedByRouteGui": "abc",
+      "sessionContract": "REPLAY_STEP_OUT_OF_RANGE / HTTP 400 before runtime launch",
+      "session": {
+        "rejected": true,
+        "code": "REPLAY_STEP_OUT_OF_RANGE",
+        "statusCode": 400,
+        "runtimeLaunched": false,
+        "sessionState": "idle"
+      }
+    },
+    "checkpoint": {
+      "sourceProfile": "whiteisland-trial-output-contract-smoke",
+      "sourceStep": 1,
+      "expectedRuntimeFlags": {
+        "__leaveLoc__": {
+          "Start": {
+            "x": 6,
+            "y": 6,
+            "direction": "down"
+          }
+        }
+      },
+      "continuation": {
+        "id": "whiteisland-checkpoint-flag-identity",
+        "state": "completed",
+        "runtimeSnapshotIdentityMatches": true,
+        "runtimeSnapshotIdentity": "sha256:119737026a441af9d0f02368faa172eeff5c3bd626b4ee04501df2c5db644b90",
+        "expectedRuntimeSnapshotIdentity": "sha256:119737026a441af9d0f02368faa172eeff5c3bd626b4ee04501df2c5db644b90",
+        "runtimeSolverExactStateMatches": true,
+        "finalHeroLoc": {
+          "x": 6,
+          "y": 10,
+          "direction": "up"
+        },
+        "finalLeaveLoc": {
+          "Start": {
+            "x": 6,
+            "y": 6,
+            "direction": "down"
+          }
+        }
+      }
+    },
+    "crossFloor": {
+      "routeSignature": "8653c9338b0b1e5154117985b03de10debc7ced3ea374f7170cd508520cfc0eb",
+      "projectRoot": "Only upV2.1/Only upV2.1",
+      "actions": {
+        "changeFloor": "changeFloor@MT1:6,0",
+        "floorFly": "floorFly:MT1@MT2:6,0"
+      },
+      "flyRecordPosition": true,
+      "leaveLocAfterChangeFloor": {
+        "MT1": {
+          "x": 6,
+          "y": 0,
+          "direction": "up"
+        }
+      },
+      "continuation": {
+        "id": "onlyup-changeFloor-floorFly-identity",
+        "state": "completed",
+        "runtimeSnapshotIdentityMatches": true,
+        "runtimeSnapshotIdentity": "sha256:47755fb4f6f4a33e35f40d597807794c47286f12821994b1de672bf535fb985b",
+        "expectedRuntimeSnapshotIdentity": "sha256:47755fb4f6f4a33e35f40d597807794c47286f12821994b1de672bf535fb985b",
+        "runtimeSolverExactStateMatches": true,
+        "finalHeroLoc": {
+          "x": 6,
+          "y": 0,
+          "direction": "up"
+        },
+        "finalLeaveLoc": {
+          "MT1": {
+            "x": 6,
+            "y": 0,
+            "direction": "up"
+          },
+          "MT2": {
+            "x": 6,
+            "y": 0,
+            "direction": "up"
+          }
+        }
+      },
+      "mismatchControl": {
+        "mismatch": "crossFloor.floorFly.flags.__leaveLoc__.MT1.x: 6 !== 5",
+        "expectedRuntimeSnapshotIdentity": "sha256:47755fb4f6f4a33e35f40d597807794c47286f12821994b1de672bf535fb985b",
+        "divergentRuntimeSnapshotIdentity": "sha256:45608601d022640b8ebdff206f322b0300d08f416b89c4212151b9aa2e6b2fe7",
+        "identityMatches": false,
+        "expectedFinalHeroLoc": {
+          "x": 6,
+          "y": 0,
+          "direction": "up"
+        },
+        "divergentFinalHeroLoc": {
+          "x": 5,
+          "y": 0,
+          "direction": "up"
+        }
+      }
+    }
+  }
+}

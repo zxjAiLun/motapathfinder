@@ -8,6 +8,7 @@ const {
   buildCheckpointRoute,
   ensureFixedRoute,
 } = require("./audit-replay-start-offset-contract");
+const { buildCrossFloorControl } = require("./audit-replay-flag-identity-contract");
 const { ReplaySession } = require("./lib/replay-session");
 const { findBrowserExecutable } = require("./lib/live-replay");
 
@@ -67,6 +68,18 @@ async function runValidControl(input, routeRecord, requestedFromStep, expectedPa
     assert.strictEqual(paused.lastCompletedStep, effectiveFromStep - 1, `${id}: last completed step`);
     assert.deepStrictEqual(displayOf(paused), snapshotDisplay(expectedPauseSnapshot), `${id}: displayed pause floor/hero`);
     assert.strictEqual(paused.nextDecision.index, effectiveFromStep, `${id}: next decision index`);
+    assert.ok(paused.expectedRuntimeSnapshotIdentity, `${id}: expected runtime snapshot identity`);
+    assert.strictEqual(paused.runtimeSnapshotIdentityMatches, true, `${id}: runtime snapshot identity at pause`);
+    assert.strictEqual(paused.runtimeSnapshotIdentity, paused.expectedRuntimeSnapshotIdentity, `${id}: runtime identity hash at pause`);
+    assert.strictEqual(paused.runtimeSolverExactStateMatches, true, `${id}: reconstructed runtime solver exact state at pause`);
+    const expectedStartLeaveLoc = (((session.routeRecord.start || {}).snapshot || {}).flags || {}).__leaveLoc__ || null;
+    if (expectedStartLeaveLoc) {
+      assert.deepStrictEqual(
+        (((session.lastRuntimeSnapshot || {}).flags || {}).__leaveLoc__) || null,
+        expectedStartLeaveLoc,
+        `${id}: runtime __leaveLoc__ at pause`,
+      );
+    }
 
     await session.play({ stepDelayMs: 0 });
     const final = await session.getStatusAsync();
@@ -75,6 +88,17 @@ async function runValidControl(input, routeRecord, requestedFromStep, expectedPa
     assert.strictEqual(final.lastMismatch, null, `${id}: final mismatch`);
     assert.deepStrictEqual(displayOf(final), snapshotDisplay(routeRecord.final.snapshot), `${id}: displayed final floor/hero`);
     assert.strictEqual(final.expectedExactStateKey, routeRecord.final.exactStateKey, `${id}: final exact state`);
+    assert.strictEqual(final.runtimeSnapshotIdentityMatches, true, `${id}: final runtime snapshot identity`);
+    assert.strictEqual(final.runtimeSnapshotIdentity, final.expectedRuntimeSnapshotIdentity, `${id}: final runtime identity hash`);
+    assert.strictEqual(final.runtimeSolverExactStateMatches, true, `${id}: reconstructed runtime solver exact state`);
+    const expectedFinalLeaveLoc = (((finalExpectedSnapshot(routeRecord) || {}).flags || {}).__leaveLoc__) || expectedStartLeaveLoc;
+    if (expectedFinalLeaveLoc) {
+      assert.deepStrictEqual(
+        (((session.lastRuntimeSnapshot || {}).flags || {}).__leaveLoc__) || null,
+        expectedFinalLeaveLoc,
+        `${id}: final runtime __leaveLoc__`,
+      );
+    }
     assert.deepStrictEqual(
       Object.keys(final.stepStatuses).filter((step) => final.stepStatuses[step] === "ok").map(Number),
       routeRecord.decisions.map((decision) => decision.index),
@@ -93,12 +117,20 @@ async function runValidControl(input, routeRecord, requestedFromStep, expectedPa
         lastCompletedStep: final.lastCompletedStep,
         displayed: displayOf(final),
         exactStateKeyMatches: final.expectedExactStateKey === routeRecord.final.exactStateKey,
+        runtimeSnapshotIdentityMatches: final.runtimeSnapshotIdentityMatches,
+        runtimeSnapshotIdentity: final.runtimeSnapshotIdentity,
+        expectedRuntimeSnapshotIdentity: final.expectedRuntimeSnapshotIdentity,
+        runtimeSolverExactStateMatches: final.runtimeSolverExactStateMatches,
         verifiedSteps: Object.keys(final.stepStatuses).filter((step) => final.stepStatuses[step] === "ok").length,
       },
     };
   } finally {
     await session.close();
   }
+}
+
+function finalExpectedSnapshot(routeRecord) {
+  return (routeRecord.final || {}).snapshot || null;
 }
 
 async function runOutOfRangeControl(input, routeRecord, requestedFromStep, id) {
@@ -148,7 +180,7 @@ async function main() {
       ));
     }
 
-    const checkpointRoute = buildCheckpointRoute(routeRecord, 1);
+    const checkpointRoute = buildCheckpointRoute(routeRecord, 1, { projectRoot: input.projectRoot });
     results.push(await runValidControl(
       input,
       checkpointRoute,
@@ -174,7 +206,49 @@ async function main() {
       1.5,
       `${input.id}-from-step-non-integer`,
     ));
+    results.push(await runOutOfRangeControl(
+      input,
+      routeRecord,
+      "abc",
+      `${input.id}-from-step-nonnumeric-cli-value`,
+    ));
   }
+  const crossFloor = buildCrossFloorControl();
+  const crossFloorResult = await runValidControl(
+    {
+      id: "onlyup-pr-5.1a1-cross-floor",
+      projectRoot: crossFloor.projectRoot,
+      tower: "onlyup",
+    },
+    crossFloor.routeRecord,
+    0,
+    crossFloor.routeRecord.start.snapshot,
+    "onlyup-pr-5.1a1-cross-floor-changeFloor-floorFly",
+  );
+  assert.deepStrictEqual(
+    crossFloorResult.final.displayed,
+    {
+      floorId: "MT1",
+      x: 6,
+      y: 0,
+      direction: "up",
+      hp: crossFloor.routeRecord.final.snapshot.hero.hp,
+      atk: crossFloor.routeRecord.final.snapshot.hero.atk,
+      def: crossFloor.routeRecord.final.snapshot.hero.def,
+      mdef: crossFloor.routeRecord.final.snapshot.hero.mdef,
+    },
+    "cross-floor live final landing",
+  );
+  results.push({
+    id: "onlyup-pr-5.1a1-cross-floor-changeFloor-floorFly",
+    kind: "cross-floor-identity",
+    actions: {
+      changeFloor: crossFloor.routeRecord.decisions[0].summary,
+      floorFly: crossFloor.routeRecord.decisions[1].summary,
+    },
+    expectedFinalLeaveLoc: crossFloor.routeRecord.final.snapshot.flags.__leaveLoc__,
+    ...crossFloorResult,
+  });
   process.stdout.write(`${JSON.stringify({ schema: "motapathfinder.pr-5.1a-replay-start-offset-live.v1", status: "passed", results }, null, 2)}\n`);
 }
 
