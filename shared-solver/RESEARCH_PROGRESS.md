@@ -1225,3 +1225,14 @@ scanner 已能正确输出 blocked-hp-resource:
 下一步应让 planner 自动回退到 mt7-bottom-double-fairy 或更早 MT6 skyline，
 寻找同时满足高 HP 与足够 def 的候选，而不是继续沿 mt7-right-exp-crystal 单路线修补。
 ```
+
+### 2026-08-02 更新：PR-4.8a RegionSpec Entry Contract
+
+PR-4.7a1 已按 Review 正式关闭，下一主线切换为 RegionSpec entry contract audit。本轮保持 shadow-only：
+
+- `audit-region-entry-contract.js` 固定 OnlyUp region-1、OnlyUp region-2、WhiteIsland trial-smoke 三个控制，并统一调用 `run-region-dp.js --project-root --region-spec --out`。
+- entry validator 覆盖唯一 milestone ID、合法 `startFrom` 与无环依赖、支持 goal type、scope/action floor、有限正 DP budget 和输入/输出路径。
+- 每个控制输出 spec/project identity、milestone 顺序、start checkpoint、reached milestone、termination/failure class、route primitive count、bounded budget usage 与 output provenance。
+- 六个负控覆盖 dangling `startFrom`、duplicate milestone ID、unknown floor、unsupported goal、invalid budget、cyclic dependency；当前均能被可执行 validator 拒绝。
+- live probe 仅使用确定的极小预算。OnlyUp region-1 与 WhiteIsland trial-smoke 返回 bounded not-found；OnlyUp region-2 的 prefix 在同一预算下显式返回 runner-error。上述结果只说明入口/失败分类可观测，不构成路线无解或完整塔结论。
+- normalized full-report rebuild 已锁定；production DP key、dominance、agenda、容量与默认策略均未修改。

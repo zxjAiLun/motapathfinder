@@ -1,0 +1,629 @@
+{
+  "schema": "motapathfinder.pr-4.8a-region-entry-contract.v1",
+  "status": "completed",
+  "generatedAt": "2026-08-02T08:15:27.560Z",
+  "provenance": {
+    "mode": "shadow-only",
+    "entrypoint": "shared-solver/run-region-dp.js",
+    "runner": "shared-solver/run-region-dp.js",
+    "runnerProbeMode": "bounded-entry-probe",
+    "deterministicFullReportRebuild": true,
+    "generationCommit": null,
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "describesCompleteTowerRoute": false
+  },
+  "contract": {
+    "id": "PR-4.8a",
+    "title": "RegionSpec Entry Contract",
+    "unifiedEntry": {
+      "command": "node shared-solver/run-region-dp.js --project-root=<project-root> --region-spec=<region-spec> --out=<output>",
+      "requiredPaths": [
+        "project-root",
+        "region-spec",
+        "out"
+      ]
+    },
+    "requiredReportFields": [
+      "specIdentity",
+      "projectIdentity",
+      "milestoneOrder",
+      "startCheckpoint",
+      "reachedMilestone",
+      "termination",
+      "failureClass",
+      "routePrimitiveCount",
+      "budgetUsage",
+      "outputProvenance"
+    ],
+    "fixedControls": [
+      "onlyup-region-1",
+      "onlyup-region-2",
+      "whiteisland-trial-smoke"
+    ],
+    "negativeControls": [
+      "dangling-startFrom",
+      "duplicate-milestone-id",
+      "unknown-floor",
+      "unsupported-goal",
+      "invalid-budget",
+      "cyclic-dependency"
+    ],
+    "supportedGoalTypes": [
+      "heroAtLeast",
+      "bossDefeated",
+      "tileRemoved"
+    ],
+    "deterministicLiveRebuild": true
+  },
+  "controls": [
+    {
+      "id": "onlyup-region-1",
+      "specIdentity": {
+        "id": "onlyup-region-1",
+        "tower": "onlyup",
+        "label": "Only Up Region 1: MT1~MT5 blueKing",
+        "sourceFile": "towers/onlyup/region-specs/region-1.json",
+        "sourceSha256": "5158973b2a258200f6f9890cced67539b9475c8d9eeb10b0a52463d134df28ef",
+        "normalizedSha256": "b55827fad861ba50abed33a96ac5df9662284bae3223565d806e9fe3fb5c5a27"
+      },
+      "projectIdentity": {
+        "root": "Only upV2.1/Only upV2.1",
+        "title": "Only Up",
+        "floorCount": 46,
+        "floorOrder": [
+          "sample0",
+          "sample1",
+          "sample2",
+          "New",
+          "World",
+          "MT1",
+          "MT2",
+          "MT3",
+          "MT4",
+          "MT5",
+          "MT6",
+          "MT7",
+          "MT8",
+          "MT9",
+          "MT10",
+          "MT11",
+          "MT12",
+          "MT13",
+          "MT14",
+          "MT15",
+          "MT16",
+          "MT17",
+          "MT18",
+          "MT19",
+          "MT20",
+          "MT21",
+          "MT22",
+          "MT23",
+          "MT24",
+          "MT25",
+          "MT26",
+          "MT27",
+          "MT28",
+          "MT29",
+          "MT30",
+          "MT31",
+          "MT32",
+          "MT33",
+          "MT34",
+          "MT35",
+          "MT36",
+          "MT37",
+          "MT38",
+          "MT39",
+          "MT40"
+        ],
+        "fingerprintSha256": "954efc84bf7cf9f19d19ed2e70e9e05b1459d1c0d69a9db9c532dd67d9e6dfc6"
+      },
+      "milestoneOrder": [
+        "mt1-gate-1559",
+        "mt2-entry",
+        "mt2-local-3582",
+        "mt2-hp3834",
+        "mt2-left-chain-open",
+        "mt3-first-return",
+        "mt2-redwizard-shield",
+        "mt2-i893-equipped",
+        "mt3-i893-hp8425",
+        "mt4-hp4459",
+        "mt5-early-gem-entry",
+        "mt5-first-sweep",
+        "mt5-third-gate",
+        "mt5-sustain-balance",
+        "mt5-i894-equipped",
+        "mt5-final-stats-before-hp",
+        "mt5-before-blueking",
+        "mt5-blueking-kill"
+      ],
+      "startCheckpoint": {
+        "type": "initial",
+        "floorId": "MT1",
+        "routeFile": null,
+        "routeName": null,
+        "fromMilestoneId": null,
+        "toMilestoneId": null
+      },
+      "entryValidation": {
+        "valid": true,
+        "errors": []
+      },
+      "execution": {
+        "status": "not-found",
+        "found": false,
+        "startCheckpoint": {
+          "type": "initial",
+          "floorId": "MT1",
+          "routeFile": null,
+          "routeName": null,
+          "fromMilestoneId": null,
+          "toMilestoneId": null
+        },
+        "reachedMilestone": null,
+        "termination": "expansion-budget-exhausted",
+        "failureClass": "target-action-unreachable",
+        "routePrimitiveCount": 0,
+        "budgetUsage": {
+          "configuredProbe": {
+            "maxExpansions": 1,
+            "maxRuntimeMs": 100,
+            "prefixMaxExpansions": null,
+            "prefixMaxRuntimeMs": null
+          },
+          "usedExpansions": 1,
+          "expansionBudgetExhausted": true
+        }
+      },
+      "outputProvenance": {
+        "entrypoint": "shared-solver/run-region-dp.js",
+        "projectRoot": "Only upV2.1/Only upV2.1",
+        "regionSpec": "towers/onlyup/region-specs/region-1.json",
+        "requestedOutput": "shared-solver/routes/generated/region-entry-contract/onlyup-region-1.route.json",
+        "routeWritten": false,
+        "routeFile": null,
+        "liveVerified": false,
+        "probeMode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-1.json",
+          "--out=routes/generated/region-entry-contract/onlyup-region-1.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0"
+        ]
+      },
+      "runnerProbe": {
+        "invoked": true,
+        "mode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-1.json",
+          "--out=routes/generated/region-entry-contract/onlyup-region-1.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-dp",
+          "regionId": "onlyup-region-1",
+          "found": false,
+          "proofLevel": "not-found",
+          "completeWithinActionSet": false,
+          "actionTrimmed": 0,
+          "expansionBudgetExhausted": true,
+          "stoppedReasons": [],
+          "failedSegmentId": "mt1-gate-1559",
+          "reachedMilestone": null,
+          "metrics": {
+            "expansions": 1,
+            "routeLength": 0,
+            "illegalWrites": 0,
+            "final": null
+          },
+          "segmentIds": [
+            "mt1-gate-1559"
+          ],
+          "failureClasses": [
+            "target-action-unreachable"
+          ]
+        }
+      }
+    },
+    {
+      "id": "onlyup-region-2",
+      "specIdentity": {
+        "id": "onlyup-region-2",
+        "tower": "onlyup",
+        "label": "Only Up Region 2: MT6~MT10 scaffold",
+        "sourceFile": "towers/onlyup/region-specs/region-2.json",
+        "sourceSha256": "1d7f09ebd4251ed6a91c31c3f86d7d53bc3f3880cde6316f94b5f88da1b64963",
+        "normalizedSha256": "1d72855979088b1b53ac0b90d60031c31cd226a9e837fe2ac15184168aa950c7"
+      },
+      "projectIdentity": {
+        "root": "Only upV2.1/Only upV2.1",
+        "title": "Only Up",
+        "floorCount": 46,
+        "floorOrder": [
+          "sample0",
+          "sample1",
+          "sample2",
+          "New",
+          "World",
+          "MT1",
+          "MT2",
+          "MT3",
+          "MT4",
+          "MT5",
+          "MT6",
+          "MT7",
+          "MT8",
+          "MT9",
+          "MT10",
+          "MT11",
+          "MT12",
+          "MT13",
+          "MT14",
+          "MT15",
+          "MT16",
+          "MT17",
+          "MT18",
+          "MT19",
+          "MT20",
+          "MT21",
+          "MT22",
+          "MT23",
+          "MT24",
+          "MT25",
+          "MT26",
+          "MT27",
+          "MT28",
+          "MT29",
+          "MT30",
+          "MT31",
+          "MT32",
+          "MT33",
+          "MT34",
+          "MT35",
+          "MT36",
+          "MT37",
+          "MT38",
+          "MT39",
+          "MT40"
+        ],
+        "fingerprintSha256": "954efc84bf7cf9f19d19ed2e70e9e05b1459d1c0d69a9db9c532dd67d9e6dfc6"
+      },
+      "milestoneOrder": [
+        "mt6-upper-left-blueking",
+        "mt6-upper-right-blueking",
+        "mt6-lower-attack-pair",
+        "mt6-first-center-guard",
+        "mt6-second-center-guard",
+        "mt7-entry-after-mt6-sweep",
+        "mt7-mt6-defense-sweep",
+        "mt7-mt6-right-crystal-sweep",
+        "mt7-bottom-double-fairy",
+        "mt7-special80-ready",
+        "mt7-left-sword",
+        "mt7-right-exp-crystal"
+      ],
+      "startCheckpoint": {
+        "type": "milestonePrefix",
+        "floorId": null,
+        "routeFile": null,
+        "routeName": "onlyup-chaos-mt5-blueking",
+        "fromMilestoneId": null,
+        "toMilestoneId": "mt5-blueking-kill"
+      },
+      "entryValidation": {
+        "valid": true,
+        "errors": []
+      },
+      "execution": {
+        "status": "runner-error",
+        "found": false,
+        "startCheckpoint": {
+          "type": "milestonePrefix",
+          "floorId": null,
+          "routeFile": null,
+          "routeName": "onlyup-chaos-mt5-blueking",
+          "fromMilestoneId": null,
+          "toMilestoneId": "mt5-blueking-kill"
+        },
+        "reachedMilestone": null,
+        "termination": "runner-error",
+        "failureClass": "runner-error",
+        "routePrimitiveCount": 0,
+        "budgetUsage": {
+          "configuredProbe": {
+            "maxExpansions": 1,
+            "maxRuntimeMs": 100,
+            "prefixMaxExpansions": 1,
+            "prefixMaxRuntimeMs": 100
+          },
+          "usedExpansions": null,
+          "expansionBudgetExhausted": null
+        }
+      },
+      "outputProvenance": {
+        "entrypoint": "shared-solver/run-region-dp.js",
+        "projectRoot": "Only upV2.1/Only upV2.1",
+        "regionSpec": "towers/onlyup/region-specs/region-2.json",
+        "requestedOutput": "shared-solver/routes/generated/region-entry-contract/onlyup-region-2.route.json",
+        "routeWritten": false,
+        "routeFile": null,
+        "liveVerified": false,
+        "probeMode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-2.json",
+          "--out=routes/generated/region-entry-contract/onlyup-region-2.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0",
+          "--prefix-max-expansions=1",
+          "--prefix-max-runtime-ms=100"
+        ]
+      },
+      "runnerProbe": {
+        "invoked": true,
+        "mode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../Only upV2.1/Only upV2.1",
+          "--region-spec=../towers/onlyup/region-specs/region-2.json",
+          "--out=routes/generated/region-entry-contract/onlyup-region-2.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0",
+          "--prefix-max-expansions=1",
+          "--prefix-max-runtime-ms=100"
+        ],
+        "exitCode": 1,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": false,
+        "summary": null
+      }
+    },
+    {
+      "id": "whiteisland-trial-smoke",
+      "specIdentity": {
+        "id": "whiteisland-trial-smoke",
+        "tower": "whiteisland",
+        "label": "Whiteisland Trial Smoke: A1 local resource timing",
+        "sourceFile": "towers/whiteisland/trial-specs/trial-smoke.json",
+        "sourceSha256": "1009bf1b87b02f3a7f8d5bc813b73299fe1e7e20ce094e7a3b9e73eb09a9c79c",
+        "normalizedSha256": "78564f041b1588620dc0d2b9965695b99f552d12175bddc99b8852cd2d21903c"
+      },
+      "projectIdentity": {
+        "root": "whiteisland（9）",
+        "title": "白色孤岛",
+        "floorCount": 32,
+        "floorOrder": [
+          "sample0",
+          "sample1",
+          "sample2",
+          "New",
+          "Start",
+          "A1",
+          "A2",
+          "A3",
+          "B1",
+          "B2",
+          "B3",
+          "C1",
+          "C2",
+          "C3",
+          "D1",
+          "D2",
+          "D3",
+          "F1",
+          "F2",
+          "F3",
+          "G1",
+          "G2",
+          "G3",
+          "A21",
+          "A22",
+          "A23",
+          "B21",
+          "B22",
+          "B23",
+          "C21",
+          "C22",
+          "C23"
+        ],
+        "fingerprintSha256": "7a6e9bbc35ff906c58a5a1920a4fdda27bb154402b8952a925e9262c92ec4759"
+      },
+      "milestoneOrder": [
+        "whiteisland-trial-smoke-goal"
+      ],
+      "startCheckpoint": {
+        "type": "whiteislandTrial",
+        "floorId": null,
+        "routeFile": null,
+        "routeName": null,
+        "fromMilestoneId": null,
+        "toMilestoneId": null
+      },
+      "entryValidation": {
+        "valid": true,
+        "errors": []
+      },
+      "execution": {
+        "status": "not-found",
+        "found": false,
+        "startCheckpoint": {
+          "type": "whiteislandTrial",
+          "floorId": null,
+          "routeFile": null,
+          "routeName": null,
+          "fromMilestoneId": null,
+          "toMilestoneId": null
+        },
+        "reachedMilestone": null,
+        "termination": "expansion-budget-exhausted",
+        "failureClass": "hp-deficit",
+        "routePrimitiveCount": 0,
+        "budgetUsage": {
+          "configuredProbe": {
+            "maxExpansions": 1,
+            "maxRuntimeMs": 100,
+            "prefixMaxExpansions": null,
+            "prefixMaxRuntimeMs": null
+          },
+          "usedExpansions": 1,
+          "expansionBudgetExhausted": true
+        }
+      },
+      "outputProvenance": {
+        "entrypoint": "shared-solver/run-region-dp.js",
+        "projectRoot": "whiteisland（9）",
+        "regionSpec": "towers/whiteisland/trial-specs/trial-smoke.json",
+        "requestedOutput": "shared-solver/routes/generated/region-entry-contract/whiteisland-trial-smoke.route.json",
+        "routeWritten": false,
+        "routeFile": null,
+        "liveVerified": false,
+        "probeMode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../whiteisland（9）",
+          "--region-spec=../towers/whiteisland/trial-specs/trial-smoke.json",
+          "--out=routes/generated/region-entry-contract/whiteisland-trial-smoke.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0"
+        ]
+      },
+      "runnerProbe": {
+        "invoked": true,
+        "mode": "bounded-entry-probe",
+        "command": [
+          "node",
+          "run-region-dp.js",
+          "--project-root=../whiteisland（9）",
+          "--region-spec=../towers/whiteisland/trial-specs/trial-smoke.json",
+          "--out=routes/generated/region-entry-contract/whiteisland-trial-smoke.route.json",
+          "--max-expansions=1",
+          "--max-runtime-ms=100",
+          "--print-failures=0"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "summaryParsed": true,
+        "summary": {
+          "kind": "region-dp",
+          "regionId": "whiteisland-trial-smoke",
+          "found": false,
+          "proofLevel": "not-found",
+          "completeWithinActionSet": false,
+          "actionTrimmed": 0,
+          "expansionBudgetExhausted": true,
+          "stoppedReasons": [],
+          "failedSegmentId": "whiteisland-trial-smoke-goal",
+          "reachedMilestone": null,
+          "metrics": {
+            "expansions": 1,
+            "routeLength": 0,
+            "illegalWrites": 0,
+            "final": null
+          },
+          "segmentIds": [
+            "whiteisland-trial-smoke-goal"
+          ],
+          "failureClasses": [
+            "hp-deficit"
+          ]
+        }
+      }
+    }
+  ],
+  "negativeControls": [
+    {
+      "id": "dangling-startFrom",
+      "expectedError": "dangling-startFrom",
+      "observedErrors": [
+        "dangling-startFrom",
+        "invalid-milestone-graph"
+      ],
+      "rejected": true,
+      "specNormalizedSha256": "817b495076c88afebdf746c72cc52666209bd9080a1d0ddd14af5ce26b606050"
+    },
+    {
+      "id": "duplicate-milestone-id",
+      "expectedError": "duplicate-milestone-id",
+      "observedErrors": [
+        "duplicate-milestone-id",
+        "invalid-milestone-graph"
+      ],
+      "rejected": true,
+      "specNormalizedSha256": "295c006c3c29da4ed7917da482d9889dd3ce80b62653fc7da124455fff22ef17"
+    },
+    {
+      "id": "unknown-floor",
+      "expectedError": "unknown-floor",
+      "observedErrors": [
+        "unknown-floor"
+      ],
+      "rejected": true,
+      "specNormalizedSha256": "2180cbb0ce2f88bd68bf3f26c8794c100c30d9f778ce14d3c97e03218033042c"
+    },
+    {
+      "id": "unsupported-goal",
+      "expectedError": "unsupported-goal-type",
+      "observedErrors": [
+        "unsupported-goal-type"
+      ],
+      "rejected": true,
+      "specNormalizedSha256": "fe19fb088cf50ec36bb261b0fd9bc1e5610f67cd9c35067d471639ef182d426d"
+    },
+    {
+      "id": "invalid-budget",
+      "expectedError": "invalid-dp-budget",
+      "observedErrors": [
+        "invalid-dp-budget"
+      ],
+      "rejected": true,
+      "specNormalizedSha256": "47727d59d02e7f87354bd6dfdbdcbc0bd7eaa49a401d0195e46473e7ae31bb80"
+    },
+    {
+      "id": "cyclic-dependency",
+      "expectedError": "cyclic-milestone-dependency",
+      "observedErrors": [
+        "cyclic-milestone-dependency",
+        "invalid-milestone-graph"
+      ],
+      "rejected": true,
+      "specNormalizedSha256": "7c56182c03ff1ed73120eae276a88b6638383f8b344ae1ab5545154c44dcdf82"
+    }
+  ],
+  "scope": {
+    "shadowOnly": true,
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "describesCompleteTowerRoute": false
+  }
+}

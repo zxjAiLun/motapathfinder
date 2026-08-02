@@ -181,7 +181,8 @@
         "shared-solver/check-agenda-policy-evaluation.js",
         "shared-solver/check-route-store-exact.js",
         "shared-solver/check-adaptive-repair-outcomes.js",
-        "shared-solver/check-resource-intent-contract.js"
+        "shared-solver/check-resource-intent-contract.js",
+        "shared-solver/check-region-entry-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -1627,6 +1628,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-region-entry-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "bounded live RegionSpec entry contract with fixed controls, schema gates, negative controls, and deterministic rebuild"
     },
     "shared-solver/check-region-specs.js": {
       "grade": "local-regression",

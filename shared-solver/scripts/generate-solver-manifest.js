@@ -385,6 +385,13 @@ const TEST_OVERRIDES = {
     cleanCheckout: true,
     notes: "synthetic shadow-only resource intent evidence contract with deterministic rebuild",
   },
+  "shared-solver/check-region-entry-contract.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: true,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "bounded live RegionSpec entry contract with fixed controls, schema gates, negative controls, and deterministic rebuild",
+  },
 };
 
 function autoGradeTest(fileName) {
@@ -599,6 +606,7 @@ const manifest = {
         "shared-solver/check-route-store-exact.js",
         "shared-solver/check-adaptive-repair-outcomes.js",
         "shared-solver/check-resource-intent-contract.js",
+        "shared-solver/check-region-entry-contract.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],
     },
