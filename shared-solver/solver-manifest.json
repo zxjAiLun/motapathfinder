@@ -183,7 +183,8 @@
         "shared-solver/check-adaptive-repair-outcomes.js",
         "shared-solver/check-resource-intent-contract.js",
         "shared-solver/check-region-entry-contract.js",
-        "shared-solver/check-region-route-output-contract.js"
+        "shared-solver/check-region-route-output-contract.js",
+        "shared-solver/check-replay-start-offset-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -1665,6 +1666,20 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-replay-start-offset-contract.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.1a GUI session start-offset contract with fixed PR-4.8b cross-tower routes, checkpoint composition, exact boundary status, displayed floor/hero, side-effect ordering, and deterministic rebuild"
+    },
+    "shared-solver/check-replay-start-offset-live.js": {
+      "grade": "integration-local",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": false,
+      "notes": "PR-5.1a local Chrome/Edge live smoke across both PR-4.8b routes, valid offsets, checkpoint plus offset, and pre-launch out-of-range rejection"
     },
     "shared-solver/check-resource-cluster.js": {
       "grade": "local-regression",

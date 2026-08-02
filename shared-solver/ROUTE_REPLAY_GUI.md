@@ -24,7 +24,7 @@ Stage MT5 convenience:
 npm run gui:stage-mt5
 ```
 
-Start from a specific step. Step numbers are 1-based; `--from-step=12` fast-forwards steps 1–11 and pauses before step 12.
+Start from a specific step. Decision numbers are 1-based; `--from-step=12` fast-forwards steps 1–11 and pauses before step 12. `--from-step=0` is an explicit alias for the initial checkpoint and therefore also pauses before decision 1. The accepted range is `0..routeLength`; `routeLength+1` and other values are rejected as out of range.
 
 ```bash
 node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-step=12
@@ -38,7 +38,7 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 - `--open=0|1`: opens the GUI URL in the system browser; default `1`.
 - `--host=<host>`: default `127.0.0.1`.
 - `--port=<number>`: default `0` for a free port.
-- `--from-step=<number>`: default `1`.
+- `--from-step=<number>`: default `1`; accepts `0..routeLength`, with `0` meaning before decision 1.
 - `--step-delay-ms=<number>`: default `1400`.
 - `--fast-forward-delay-ms=<number>`: reserved for fast-forward tuning; default `0`.
 - `--timeout-ms=<number>`: runtime idle/snapshot timeout; default `30000`.
@@ -48,7 +48,7 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 
 ## GUI Layout
 
-- Top bar: route filename, goal, source solver/profile/rank, final hero, runtime state, current step, runtime URL.
+- Top bar: route filename, goal, source solver/profile/rank, final hero, runtime state, current step, next decision, displayed runtime floor/hero, and runtime URL.
 - Controls: Start Live, Play, Pause, Step, Restart, Jump to selected, speed preset, and from-step input.
 - Timeline: one row per decision with status, kind, floor, target, enemy/item/tool/equip, damage, exp, HP delta, score, and summary.
 - Detail panel: structured action JSON, estimate/score rows, hero diff, inventory diff, flag diff, and floor mutation diff.
@@ -56,7 +56,8 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 
 ## Live Control Semantics
 
-- `Start Live` launches a fresh Playwright runtime, initializes automation switches, stabilizes auto-pickup/auto-battle, verifies the initial snapshot, then pauses before the selected step.
+- `Start Live` launches a fresh Playwright runtime, initializes automation switches, stabilizes auto-pickup/auto-battle, verifies the initial snapshot, then pauses before the selected step. The response records both the requested offset and the effective 1-based decision boundary.
+- For every valid offset, `lastCompletedStep` is exactly the last primitive decision executed before the pause. Thus `from-step=N` pauses before decision `N` and reports `lastCompletedStep=N-1`; the `0` alias reports `currentStep=1` and `lastCompletedStep=0`.
 - `Play` executes from the current step until pause, failure, or completion.
 - `Pause` is cooperative: it takes effect between decisions and never interrupts an in-flight move or battle.
 - `Step` executes exactly one decision and verifies the post snapshot.
@@ -68,12 +69,12 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 - `GET /api/route`: lightweight metadata and decision rows.
 - `GET /api/route/step/:index`: full decision, pre/post snapshots, score rows, and categorized diffs.
 - `GET /api/session/status`: live session state, current step, statuses, runtime status, and last mismatch.
-- `POST /api/session/start` with `{ "fromStep": 1 }`: starts live runtime.
+- `POST /api/session/start` with `{ "fromStep": 1 }`: starts live runtime. The accepted range is `0..routeLength`; out-of-range requests return HTTP 400 with code `REPLAY_STEP_OUT_OF_RANGE`.
 - `POST /api/session/play` with `{ "stepDelayMs": 1400 }`: starts async playback.
 - `POST /api/session/pause`: requests pause after the current decision.
 - `POST /api/session/step` with `{ "stepDelayMs": 1400 }`: executes one decision.
 - `POST /api/session/restart`: restarts at step 1.
-- `POST /api/session/jump` with `{ "step": 12 }`: restarts and pauses before step 12.
+- `POST /api/session/jump` with `{ "step": 12 }`: restarts and pauses before step 12; `0` aliases step 1 and out-of-range values are rejected.
 - `POST /api/session/select-step` with `{ "step": 12 }`: updates GUI selection only.
 - `POST /api/session/close`: closes Playwright runtime but keeps the GUI server alive.
 

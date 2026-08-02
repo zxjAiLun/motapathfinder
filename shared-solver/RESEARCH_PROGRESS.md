@@ -1257,3 +1257,14 @@ Review 对 PR-4.8b 的 core positives、route provenance、primitive exact repla
 - audit 的 `runProbe()` 不再删除输出；negative control 记录 `staleRouteExistedBeforeRunner=true`、`harnessRemovedOutput=false`、`runnerOwnedCleanup=true`、运行后无 route。
 - 增加 OnlyUp Region-2 prefix structured failure 控制，固定 `exitCode=1`、`stage=prefix-milestone`、`termination=prefix-budget-exhausted`、`failedSegmentId=mt1-gate-1559`，并验证 stale route 被 runner 删除。
 - 本轮仍不修改 production DP key、dominance、agenda、容量、默认策略或搜索顺序，也不构成完整塔路线结论。
+
+### 2026-08-02 更新：PR-5.1a Replay Start-Offset Contract
+
+PR-4.8b/b1 已按 Review 正式关闭；下一主线进入 P5 Replay / h5save 产品化。本轮先实现 replay start-offset contract，保持 replay-contract-shadow 范围：
+
+- `from-step=0` 是初始 checkpoint 别名，实际在 primitive decision 1 前暂停，`currentStep=1`、`lastCompletedStep=0`；`from-step=N` 的有效范围为 `0..routeLength`。
+- `routeLength+1`、负数和非整数由 GUI session API 明确拒绝为 `HTTP 400 / REPLAY_STEP_OUT_OF_RANGE`，在 runtime 启动前返回，不会把越界 offset 静默夹到完成态。
+- 固定复用 PR-4.8b OnlyUp 与 Whiteisland 短 route，覆盖 `from-step=0`、`1`、`routeLength`、checkpoint + offset、正负越界；每个有效控制均检查 resumed exact state、next decision、`lastCompletedStep`、GUI display floor/hero、继续后的 final exact state 和 primitive side-effect 顺序。
+- `ReplaySession`/GUI status 现在暴露 requested/effective offset、expected boundary exact key、next decision 与 runtime/display floor/hero；GUI 输入允许 0，并在 top bar 显示当前 runtime 展示值。
+- live snapshot 对齐保留 checkpoint 的 visited-floor baseline，并忽略不属于 solver exactStateKey 的 runtime `__leaveLoc__` bookkeeping；这避免 Whiteisland checkpoint 恢复时把 runtime 导航元数据误判为 route side-effect 漂移。
+- 不修改 solver、DP key、dominance、agenda、容量、路线选择或默认策略；该报告是 session/API contract 审计，不声称完整塔路线或 live runtime 已由静态检查覆盖。

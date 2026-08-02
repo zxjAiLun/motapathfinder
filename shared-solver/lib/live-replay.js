@@ -286,6 +286,31 @@ function normalizeRuntimeSnapshotPair(expected, actual, config) {
   const normalizedActual = normalizeSnapshotForRuntime(actual, config);
   if (!normalizedExpected || !normalizedActual) return { expected: normalizedExpected, actual: normalizedActual };
 
+  // __leaveLoc__ is runtime navigation bookkeeping.  A restored checkpoint
+  // can legitimately recreate it even when the persisted route snapshot did
+  // not contain it; it is not part of the solver exactStateKey contract.
+  if (
+    normalizedExpected.flags &&
+    normalizedActual.flags &&
+    !Object.prototype.hasOwnProperty.call(normalizedExpected.flags, "__leaveLoc__")
+  ) {
+    delete normalizedActual.flags.__leaveLoc__;
+  }
+
+  // Short RegionSpec route records may omit unchanged visited-floor entries
+  // from a later decision snapshot.  Carry the route start floor baseline
+  // forward so live replay still validates those persisted mutations instead
+  // of treating the runtime's extra floor as a mismatch.
+  const baselineFloors = config && config.routeStartSnapshot && config.routeStartSnapshot.floors;
+  if (baselineFloors && normalizedExpected.floors) {
+    Object.entries(baselineFloors).forEach(([floorId, baseline]) => {
+      const current = normalizedExpected.floors[floorId];
+      if (!current) {
+        normalizedExpected.floors[floorId] = JSON.parse(JSON.stringify(baseline));
+      }
+    });
+  }
+
   const expectedFloors = normalizedExpected.floors;
   const actualFloors = normalizedActual.floors;
   if (
@@ -906,7 +931,14 @@ async function executeRouteDecision(session, decision, options) {
     console.log(`[trace-live] after ${formatStatus(afterStatus)}`);
   }
   const actual = await captureRuntimeSnapshot(session.page, { verifyFloors: session.verifyFloors });
-  const mismatch = diffRouteSnapshot(decision.postSnapshot, actual, config, [decision.summary || decision.fingerprint || "step"]);
+  const mismatch = diffRouteSnapshot(
+    decision.postSnapshot,
+    actual,
+    Object.assign({}, config, {
+      routeStartSnapshot: config.routeStartSnapshot || session.routeStartSnapshot || null,
+    }),
+    [decision.summary || decision.fingerprint || "step"],
+  );
   if (stepDelayMs > 0 && !mismatch) await session.page.waitForTimeout(stepDelayMs);
   return {
     ok: !mismatch,
@@ -989,7 +1021,12 @@ async function replayRouteFile(routeRecord, options) {
         console.log(`[trace-live] step=${index + 1}/${decisions.length} after ${formatStatus(afterStatus)}`);
       }
       const runtimeSnapshot = await captureRuntimeSnapshot(page, { verifyFloors });
-      const mismatch = diffRouteSnapshot(action.postSnapshot, runtimeSnapshot, config, [action.summary || action.fingerprint || `step${index + 1}`]);
+      const mismatch = diffRouteSnapshot(
+        action.postSnapshot,
+        runtimeSnapshot,
+        Object.assign({}, config, { routeStartSnapshot: (routeRecord.start || {}).snapshot || null }),
+        [action.summary || action.fingerprint || `step${index + 1}`],
+      );
       if (mismatch) {
         console.error("Expected step snapshot:", JSON.stringify(summarizeSnapshot(action.postSnapshot), null, 2));
         console.error("Actual step snapshot:", JSON.stringify(summarizeSnapshot(runtimeSnapshot), null, 2));

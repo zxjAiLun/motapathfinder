@@ -3,6 +3,7 @@
 const state = {
   route: null,
   selectedStep: 1,
+  fromStepInput: 1,
   stepDetail: null,
   session: { state: "idle", stepStatuses: {} },
   polling: null,
@@ -41,15 +42,17 @@ function postJson(url, body) {
 async function loadRoute() {
   state.route = await fetchJson("/api/route");
   state.selectedStep = Math.min(1, state.route.decisionCount || 1);
+  state.fromStepInput = state.selectedStep;
   await loadStep(state.selectedStep);
   renderAll();
 }
 
 async function loadStep(index) {
-  if (!state.route || index < 1 || index > state.route.decisionCount) return;
-  state.selectedStep = index;
-  state.stepDetail = await fetchJson(`/api/route/step/${index}`);
-  await postJson("/api/session/select-step", { step: index }).catch(() => null);
+  const effectiveStep = Number(index) === 0 ? 1 : Number(index);
+  if (!state.route || effectiveStep < 1 || effectiveStep > state.route.decisionCount) return;
+  state.selectedStep = effectiveStep;
+  state.stepDetail = await fetchJson(`/api/route/step/${effectiveStep}`);
+  await postJson("/api/session/select-step", { step: effectiveStep }).catch(() => null);
   renderAll();
 }
 
@@ -59,6 +62,9 @@ function renderTopbar() {
   const source = route.source || {};
   const finalHero = (route.final || {}).hero || {};
   const session = state.session || {};
+  const displayed = session.display || session.runtime || {};
+  const displayedHero = displayed.hero || {};
+  const nextDecision = session.nextDecision || null;
   const baseline = route.baseline || null;
   const divergence =
     baseline && baseline.divergence ? baseline.divergence : null;
@@ -76,6 +82,8 @@ function renderTopbar() {
     <span>Final: ${escapeHtml((route.final || {}).floorId || "-")} hp=${escapeHtml(finalHero.hp)}</span>
     <span class="badge ${escapeHtml(session.state || "idle")}">${escapeHtml(session.state || "idle")}</span>
     <span>Current: ${escapeHtml(session.currentStep || 1)} / ${escapeHtml(session.totalSteps || route.decisionCount)}</span>
+    <span>Displayed: ${escapeHtml(displayed.floorId || "-")} hp=${escapeHtml(displayedHero.hp == null ? "-" : displayedHero.hp)} atk=${escapeHtml(displayedHero.atk == null ? "-" : displayedHero.atk)}</span>
+    <span>Next: ${nextDecision ? `#${escapeHtml(nextDecision.index)} ${escapeHtml(nextDecision.summary)}` : "-"}</span>
     ${session.browserUrl ? `<span class="muted">Runtime: ${escapeHtml(session.browserUrl)}</span>` : ""}
     ${baselineLabel}
   `;
@@ -96,7 +104,7 @@ function renderControls() {
         <option value="1400">1x</option>
         <option value="700">2x</option>
       </select></label>
-      <label>From Step <input id="from-step" type="number" min="1"></label>
+      <label>From Step <input id="from-step" type="number" min="0"></label>
     `;
     $("btn-start").onclick = startLive;
     $("btn-play").onclick = play;
@@ -107,7 +115,11 @@ function renderControls() {
     $("speed").onchange = (event) => {
       state.speedDelayMs = Number(event.target.value);
     };
-    $("from-step").onchange = (event) => loadStep(Number(event.target.value));
+    $("from-step").onchange = (event) => {
+      const requested = Number(event.target.value);
+      state.fromStepInput = Number.isFinite(requested) ? requested : state.selectedStep;
+      return loadStep(requested);
+    };
     state.controlsRendered = true;
   }
 
@@ -131,7 +143,7 @@ function renderControls() {
   }
   $("from-step").max = String((state.route || {}).decisionCount || 1);
   if (document.activeElement !== $("from-step")) {
-    $("from-step").value = String(state.selectedStep);
+    $("from-step").value = String(state.fromStepInput == null ? state.selectedStep : state.fromStepInput);
   }
 }
 
@@ -283,7 +295,9 @@ function ensurePolling() {
 }
 
 async function startLive() {
-  const fromStep = Number($("from-step").value || state.selectedStep || 1);
+  const rawFromStep = $("from-step").value;
+  const fromStep = rawFromStep === "" ? state.selectedStep || 1 : Number(rawFromStep);
+  state.fromStepInput = fromStep;
   state.session = await postJson("/api/session/start", {
     fromStep,
     stepDelayMs: state.speedDelayMs,

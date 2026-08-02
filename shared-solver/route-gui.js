@@ -62,6 +62,9 @@ function sendError(response, error, debug) {
   sendJson(response, error.statusCode || 500, {
     ok: false,
     error: error.message || String(error),
+    code: error.code || null,
+    requestedStep: error.requestedStep == null ? null : error.requestedStep,
+    totalSteps: error.totalSteps == null ? null : error.totalSteps,
     stack: debug ? error.stack : undefined,
   });
 }

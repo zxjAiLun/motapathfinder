@@ -15,20 +15,46 @@ function parseNumber(value, fallback) {
 
 function errorPayload(error) {
   if (!error) return null;
-  return { message: error.message || String(error), stack: error.stack || null };
+  return {
+    message: error.message || String(error),
+    code: error.code || null,
+    statusCode: error.statusCode || null,
+    stack: error.stack || null,
+  };
 }
 
+function stepRangeError(step, total) {
+  const error = new Error(
+    `Replay step ${step} is out of range; expected an integer in [0, ${total}].`,
+  );
+  error.code = "REPLAY_STEP_OUT_OF_RANGE";
+  error.statusCode = 400;
+  error.requestedStep = step;
+  error.totalSteps = total;
+  return error;
+}
+
+const DEFAULT_LIVE_API = {
+  describeRuntimeStatus,
+  executeRouteDecision,
+  launchRuntimeSession,
+  verifyInitialRuntimeSnapshot,
+};
+
 class ReplaySession {
-  constructor({ routeRecord, projectRoot, liveOptions, onEvent } = {}) {
+  constructor({ routeRecord, projectRoot, liveOptions, onEvent, replayApi } = {}) {
     this.routeRecord = routeRecord;
     this.decisions = (routeRecord && routeRecord.decisions) || [];
     this.projectRoot = projectRoot;
     this.liveOptions = liveOptions || {};
     this.onEvent = typeof onEvent === "function" ? onEvent : null;
+    this.replayApi = Object.assign({}, DEFAULT_LIVE_API, replayApi || {});
     this.state = "idle";
     this.currentStep = 1;
     this.selectedStep = 1;
     this.lastCompletedStep = 0;
+    this.requestedFromStep = 1;
+    this.effectiveFromStep = 1;
     this.stepStatuses = {};
     this.lastError = null;
     this.lastMismatch = null;
@@ -47,28 +73,43 @@ class ReplaySession {
 
   normalizeStep(step) {
     const total = this.totalSteps();
-    const number = parseNumber(step, 1);
-    return Math.max(1, Math.min(total + 1, Math.floor(number)));
+    const number = step == null || step === "" ? 1 : Number(step);
+    if (!Number.isFinite(number) || !Number.isInteger(number) || number < 0 || number > total) {
+      throw stepRangeError(step, total);
+    }
+    // The public contract is 1-based decision numbering.  Zero is an
+    // explicit alias for the initial checkpoint, i.e. before decision 1.
+    return Math.max(1, number);
   }
 
   async start({ fromStep, liveOptions } = {}) {
     if (this.isBusy) throw new Error("Replay session is busy.");
+    const requestedFromStep =
+      fromStep != null
+        ? fromStep
+        : liveOptions && liveOptions.fromStep != null
+          ? liveOptions.fromStep
+          : this.liveOptions.fromStep != null
+            ? this.liveOptions.fromStep
+            : 1;
+    const targetStep = this.normalizeStep(requestedFromStep);
     this.isBusy = true;
     this.state = "starting";
     this.lastError = null;
     this.lastMismatch = null;
     this.pauseRequested = false;
     this.stepStatuses = {};
+    this.requestedFromStep = Number(requestedFromStep);
+    this.effectiveFromStep = targetStep;
     this.emit("starting");
     try {
       await this.closeRuntimeOnly();
-      const targetStep = this.normalizeStep(fromStep || this.liveOptions.fromStep || 1);
       this.currentStep = 1;
       this.selectedStep = targetStep;
       this.lastCompletedStep = 0;
       const launchOptions = Object.assign({}, this.liveOptions, liveOptions || {}, { projectRoot: this.projectRoot });
-      this.runtime = await launchRuntimeSession(this.routeRecord, launchOptions);
-      const initial = await verifyInitialRuntimeSnapshot(this.runtime, this.routeRecord);
+      this.runtime = await this.replayApi.launchRuntimeSession(this.routeRecord, launchOptions);
+      const initial = await this.replayApi.verifyInitialRuntimeSnapshot(this.runtime, this.routeRecord);
       if (!initial.ok) {
         this.lastMismatch = initial;
         this.state = "failed";
@@ -124,9 +165,10 @@ class ReplaySession {
     this.emit("step-running", { step });
     let result;
     try {
-      result = await executeRouteDecision(this.runtime, decision, Object.assign({}, this.liveOptions, {
+      result = await this.replayApi.executeRouteDecision(this.runtime, decision, Object.assign({}, this.liveOptions, {
         stepDelayMs: visibleDelay == null ? this.liveOptions.stepDelayMs : visibleDelay,
         traceLive: traceLive == null ? this.liveOptions.traceLive : traceLive,
+        routeStartSnapshot: (this.routeRecord && this.routeRecord.start && this.routeRecord.start.snapshot) || null,
       }));
     } catch (error) {
       this.stepStatuses[String(step)] = "failed";
@@ -228,21 +270,48 @@ class ReplaySession {
   }
 
   async getRuntimeStatus() {
-    if (!this.runtime || !this.runtime.page) return null;
+    if (!this.runtime) return null;
     try {
-      return await describeRuntimeStatus(this.runtime.page);
+      return await this.replayApi.describeRuntimeStatus(this.runtime.page || this.runtime);
     } catch (error) {
       return { error: error.message };
     }
   }
 
   getStatus() {
+    const nextDecision = this.decisions[this.currentStep - 1] || null;
+    const boundary = this.currentStep <= 1
+      ? this.routeRecord && this.routeRecord.start
+      : this.decisions[this.currentStep - 2] || (this.routeRecord && this.routeRecord.final);
+    const boundarySnapshot = boundary && boundary.snapshot
+      ? boundary.snapshot
+      : boundary && boundary.postSnapshot
+        ? boundary.postSnapshot
+        : null;
     return {
       state: this.state,
       currentStep: this.currentStep,
       totalSteps: this.totalSteps(),
       selectedStep: this.selectedStep,
       lastCompletedStep: this.lastCompletedStep,
+      requestedFromStep: this.requestedFromStep,
+      effectiveFromStep: this.effectiveFromStep,
+      expectedExactStateKey:
+        (boundary && (boundary.exactStateKey || boundary.postExactStateKey)) || null,
+      expectedBoundary: boundarySnapshot
+        ? {
+            floorId: boundarySnapshot.floorId || null,
+            hero: boundarySnapshot.hero || null,
+          }
+        : null,
+      nextDecision: nextDecision
+        ? {
+            index: nextDecision.index || this.currentStep,
+            kind: nextDecision.kind || "unknown",
+            summary: nextDecision.summary || nextDecision.fingerprint || "",
+            floorId: nextDecision.floorId || null,
+          }
+        : null,
       browserUrl: this.runtime ? this.runtime.url : null,
       downloadsDir: this.runtime ? this.runtime.downloadsDir : null,
       runtime: null,
@@ -256,6 +325,12 @@ class ReplaySession {
   async getStatusAsync() {
     const status = this.getStatus();
     status.runtime = await this.getRuntimeStatus();
+    status.display = status.runtime
+      ? {
+          floorId: status.runtime.floorId || null,
+          hero: status.runtime.hero || null,
+        }
+      : null;
     return status;
   }
 }

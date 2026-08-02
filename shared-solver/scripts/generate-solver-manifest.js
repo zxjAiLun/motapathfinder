@@ -400,6 +400,20 @@ const TEST_OVERRIDES = {
     cleanCheckout: true,
     notes: "PR-4.8b1 runner-owned cleanup with real short OnlyUp and Whiteisland positives, validate-only preservation, strict primitive replay, and not-found/structured-failure stale-output controls; not a full tower route",
   },
+  "shared-solver/check-replay-start-offset-contract.js": {
+    grade: "closure",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: true,
+    notes: "PR-5.1a GUI session start-offset contract with fixed PR-4.8b cross-tower routes, checkpoint composition, exact boundary status, displayed floor/hero, side-effect ordering, and deterministic rebuild",
+  },
+  "shared-solver/check-replay-start-offset-live.js": {
+    grade: "integration-local",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: false,
+    notes: "PR-5.1a local Chrome/Edge live smoke across both PR-4.8b routes, valid offsets, checkpoint plus offset, and pre-launch out-of-range rejection",
+  },
 };
 
 function autoGradeTest(fileName) {
@@ -616,6 +630,7 @@ const manifest = {
         "shared-solver/check-resource-intent-contract.js",
         "shared-solver/check-region-entry-contract.js",
         "shared-solver/check-region-route-output-contract.js",
+        "shared-solver/check-replay-start-offset-contract.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],
     },

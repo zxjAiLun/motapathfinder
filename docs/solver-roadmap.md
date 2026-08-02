@@ -287,13 +287,13 @@ npm run check:region:route:contract --prefix shared-solver
 npm run run:region:route:contract --prefix shared-solver
 ```
 
-#### PR-4.8b1：Runner-owned Output Cleanup ✅ shadow-only
+#### PR-4.8b1：Runner-owned Output Cleanup ✅ production I/O safety hardening
 
 - ✅ 普通 `run-region-dp.js` 在加载 RegionSpec 前由 runner 自身清理已有 `--out` 文件；not-found 与 prefix structured failure 均不会留下 stale route。
 - ✅ `--validate-only=1` 不执行普通清理；preservation control 固定既有 output 仍存在。
 - ✅ audit `runProbe()` 不再预清理；checker 固定 `staleRouteExistedBeforeRunner=true`、`harnessRemovedOutput=false`、`runnerOwnedCleanup=true`、运行后无 route。
 - ✅ 新增 OnlyUp Region-2 prefix structured failure negative control，固定结构化 stage/termination/failure/failed segment。
-- ✅ 不修改 production DP key、dominance、agenda、容量、默认策略或搜索顺序。
+- ✅ 不修改 production DP key、dominance、agenda、容量、默认策略或搜索顺序；本轮属于 production 文件输出安全加固，不把 I/O 行为变化描述为完全 shadow-only。
 
 验收：
 
@@ -354,6 +354,22 @@ npm run run:region:whiteisland --prefix shared-solver
 - 每次给用户最新路线时，同时给出 GUI 回放命令。
 - 路线保存必须是 primitive decision，不落宏动作。
 - `--from-step=N` 语义写清楚：暂停在第 N 步执行前，`lastCompletedStep=N-1` 是正常行为。
+
+#### PR-5.1a：Replay Start-Offset Contract ✅ replay-contract-shadow
+
+- ✅ `from-step=0` 明确定义为初始 checkpoint 别名：GUI 在 primitive decision 1 前暂停，`currentStep=1`、`lastCompletedStep=0`。
+- ✅ 合法 offset 固定为 `0..routeLength`；`routeLength+1`、负数和非整数通过 GUI API 返回 `HTTP 400 / REPLAY_STEP_OUT_OF_RANGE`，且不启动 runtime。
+- ✅ 使用 PR-4.8b OnlyUp 与 Whiteisland 两个短 route 作为跨塔固定输入，覆盖 `0`、`1`、`routeLength`、checkpoint + offset、越界控制。
+- ✅ session status 暴露请求/有效 offset、恢复后的 `expectedExactStateKey`、下一条 primitive decision、runtime/display floor/hero 与最终 continuation 状态；审计检查每条 decision 副作用恰好一次。
+- ✅ 不修改 solver、DP key、dominance、agenda、容量、路线选择或默认策略；报告是 GUI/session contract 的 shadow audit，live browser smoke 单独记录。
+
+验收：
+
+```bash
+npm run check:replay:start-offset --prefix shared-solver
+npm run run:replay:start-offset --prefix shared-solver
+npm run check:replay:start-offset:live --prefix shared-solver
+```
 
 ## 5. 风险控制
 
