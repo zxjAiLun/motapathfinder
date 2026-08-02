@@ -106,6 +106,7 @@ DP key 必须覆盖：
 | `mine-state-abstraction-collisions.js` / `check-state-abstraction-collision-inventory.js` | ✅ PR-4.5c1 shadow-only | 读取锁定的 MT1/MT2 artifacts，occurrence/signature 双层 identity、witness integrity、pair cap、分离 risk strata、depth-2 bounded outcomes 与 candidate-6/7 fixed control；不接入 production key |
 | `check-bounded-abstraction-counterexample.js` / `check-state-abstraction-collision-inventory.js` | ✅ PR-4.5c1a shadow-only | b3/c1 committed artifact 的 normalized deep compare、依赖工件一致性、stale-report gates 与 signature coverage 口径；不接入 production key |
 | `adaptive-repair-synthetic-simulator.js` / `audit-adaptive-repair-outcomes.js` / `check-adaptive-repair-outcomes.js` | ✅ PR-4.6a1a shadow-only | deterministic synthetic execution、可执行 presentTiles validator、one-repair-insertion accounting、observed source split、五 case effective budget 与 deterministic rebuild；不接入 production planner 默认路径 |
+| `resource-intent-contract-synthetic-simulator.js` / `audit-resource-intent-contract.js` / `check-resource-intent-contract.js` | ✅ PR-4.7a shadow-only | 五类 scanner output、failure intent controls、stable ordering、empty/deferred/path evidence 与 deterministic rebuild；不接入 production planner 默认路径 |
 | `check-onlyup-floorfly-dedup-safety.js` | ✅ | OnlyUp floorFly dedup 安全审计（确认 target-floor 模式不安全） |
 | `check-progressive-monster-planner.js` | ✅ | synthetic smoke + special target priority + batch cap + targeted matcher + legacy compat + portal compat + portal dedup safety（9 tests） |
 
@@ -197,7 +198,7 @@ PR-4.5a1 已收紧为可复核契约：固定 7 个 projection collision，使�
 
 目标：失败后不只报告，而是自动提出并执行有限 repair。
 
-#### P2.1：Adaptive Repair Outcome Contract（PR-4.6a / a1）🔶 a1 executed controls 已完成
+#### P2.1：Adaptive Repair Outcome Contract（PR-4.6a / a1 / a1a）✅ 正式关闭
 
 - ✅ 固定五类 repair case，并为每个 case 记录 baseline、failure、intent、generated segment、budget、repaired outcome 与 termination reason。
 - ✅ 强制最多一次 repair；未解决明确输出 `repair-incomplete`，禁止把 budget/action-scope 未完成当作成功。
@@ -209,7 +210,7 @@ PR-4.5a1 已收紧为可复核契约：固定 7 个 projection collision，使�
 - ✅ synthetic controls 明确标记为 `synthetic-contract-executed`，不描述为完整 OnlyUp route；不改变 production 默认行为。
 - ✅ PR-4.6a1a 增加可执行 presentTiles validator、accepted reverse control，并将 repair insertion 与 branch/final graph execution 分开计数。
 - ✅ 合同术语改为 `one-repair-insertion closure`；success=2 次 graph execution，incomplete=3 次 graph execution。
-- 🔶 PR-4.6a formal close 等待 review 对 a1/a1a evidence 的确认。
+- ✅ Review 已正式关闭 PR-4.6a / a1 / a1a；production planner、DP key、dominance、agenda、容量与默认策略均未修改。
 
 第一批 repair：
 
@@ -237,6 +238,21 @@ scanner 输出应覆盖：
 - `levelup`: 经验差与候选战斗
 - `path-blocker`: 怪、门、事件、楼梯限制
 - `deferred-resource`: 当前拿会亏、后续属性到位再拿更优的资源
+
+#### PR-4.7a：Resource Intent Scanner Evidence Contract ✅ shadow-only
+
+- ✅ 固定 `stat-gain`、`equipment`、`levelup`、`path-blocker`、`deferred-resource` 五类 canonical output。
+- ✅ 每条 evidence 记录 source action/chain、target tile/floor、before/after delta、damage/cost、failure relevance、score decomposition、generated temporary goal 与 action policy。
+- ✅ `atk-deficit` 锁定攻击 pickup / equipment / levelup；`hp-deficit` 锁定 HP / low-damage EXP / deferred HP；`target-action-unreachable` 只接受实际新增 action 的 path blocker。
+- ✅ 同一 failure 下两个候选稳定排序；无可用 intent 返回 empty；deferred resource 不伪装成 immediate pickup；path blocker 不仅依据 tile 类型判断。
+- ✅ normalized full-report rebuild 通过；继续保持 shadow-only，不修改 production planner 默认行为。
+
+验收：
+
+```bash
+npm run check:resource-intent:contract --prefix shared-solver
+npm run run:resource-intent:contract --prefix shared-solver
+```
 
 排序原则：
 

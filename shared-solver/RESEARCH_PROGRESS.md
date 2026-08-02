@@ -157,7 +157,33 @@ PR-4.5c1a 正式关闭后，P2 首轮进入 adaptive planner repair outcome cont
 - `observedOutcomeSource` 区分 `runAdaptiveSegmentPlanner` 与 `admissibility-validator`，顶层不再宣称所有 outcome 都来自 runner。
 - checker 对五个 case 统一校验 generated segment、effective repair budget 与 300/2000 一致，并锁定 validator 双向 control 与 execution accounting。
 
-当前结论：PR-4.6a1a 已补齐 validator 与 execution accounting evidence；PR-4.6a/a1 正式关闭仍等待 review 确认。
+当前结论：PR-4.6a1a 已补齐 validator 与 execution accounting evidence；Review 已正式关闭 PR-4.6a / a1 / a1a，且没有修改 production planner、DP key、dominance、agenda、容量或默认策略。
+
+## 1.9 2026-08-02：PR-4.7a Resource Intent Scanner Evidence Contract
+
+Review 已正式关闭 PR-4.6a 系列，下一主线进入 Resource intent scanner 接入。本轮只建立 scanner evidence contract，继续保持 shadow-only，不修改 production planner 默认行为。
+
+### Contract 实现
+
+- 新增 `resource-intent-contract-synthetic-simulator.js`，提供 deterministic synthetic state/action preview，覆盖属性 pickup、装备、低伤经验、开门产生新楼层 action，以及 blocker 后的 deferred HP resource。
+- 新增 `audit-resource-intent-contract.js` / `check-resource-intent-contract.js`，直接调用现有 `lib/resource-intent-scanner.js`，将实际 scanner record 归一化为五类固定 output：`stat-gain`、`equipment`、`levelup`、`path-blocker`、`deferred-resource`。
+- 每条 evidence 记录固定保存 source action、action chain、target tile/floor、before/after summary、delta、damage/cost、failure-class relevance、score decomposition、generated temporary goal 与 action policy。
+
+### Failure controls
+
+- `atk-deficit`：分别锁定攻击 pickup、攻击 equipment、低成本 levelup 三类 observed intent。
+- `hp-deficit`：分别锁定 HP pickup、低伤 EXP、deferred HP resource 三类 observed intent。
+- `target-action-unreachable`：只接受 door preview 后实际新增的 `changeFloor:S1->S2` action，不把 door tile 类型本身当作 blocker 证据。
+- 同一 failure 的 high/low 两个候选稳定排序；无 action 时 scanner 返回 empty；deferred case 的 direct immediate pickup 不可用，输出为 blocker battle → hypothetical pickup chain。
+
+### 验证与边界
+
+```bash
+npm run check:resource-intent:contract --prefix shared-solver
+npm run run:resource-intent:contract --prefix shared-solver
+```
+
+报告执行 normalized full-report rebuild。该合同建立的是 scanner evidence 与 failure mapping 控制，不声称完整 OnlyUp route、真实大型 corpus 的全量安全映射、blocker/openDoor production repair，或任何 production 默认 planner 变更。
 
 ## 0. 2026-04-26：MT2 3834 分支搜索语义改造进度
 

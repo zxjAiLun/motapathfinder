@@ -378,6 +378,13 @@ const TEST_OVERRIDES = {
     cleanCheckout: true,
     notes: "synthetic shadow-only repair outcome contract with deterministic rebuild",
   },
+  "shared-solver/check-resource-intent-contract.js": {
+    grade: "unit",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "synthetic shadow-only resource intent evidence contract with deterministic rebuild",
+  },
 };
 
 function autoGradeTest(fileName) {
@@ -591,6 +598,7 @@ const manifest = {
         "shared-solver/check-agenda-policy-evaluation.js",
         "shared-solver/check-route-store-exact.js",
         "shared-solver/check-adaptive-repair-outcomes.js",
+        "shared-solver/check-resource-intent-contract.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],
     },

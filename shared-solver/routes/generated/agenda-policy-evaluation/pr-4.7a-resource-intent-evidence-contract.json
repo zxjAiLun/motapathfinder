@@ -1,0 +1,1698 @@
+{
+  "schema": "motapathfinder.pr-4.7a-resource-intent-evidence-contract.v1",
+  "status": "completed",
+  "generatedAt": "2026-08-02T07:21:52.896Z",
+  "provenance": {
+    "mode": "shadow-only",
+    "scanner": "shared-solver/lib/resource-intent-scanner.js",
+    "syntheticSimulator": "shared-solver/resource-intent-contract-synthetic-simulator.js",
+    "generationCommit": "1168eb6",
+    "productionPlannerChanged": false,
+    "productionDefaultPolicyChanged": false
+  },
+  "contract": {
+    "id": "PR-4.7a",
+    "title": "Resource Intent Scanner Evidence Contract",
+    "fixedOutputKinds": [
+      "stat-gain",
+      "equipment",
+      "levelup",
+      "path-blocker",
+      "deferred-resource"
+    ],
+    "requiredEvidenceFields": [
+      "sourceAction",
+      "actionChain",
+      "targetTile",
+      "targetFloor",
+      "before",
+      "after",
+      "beforeAfterDelta",
+      "damage",
+      "cost",
+      "failureClassRelevance",
+      "score.decomposition",
+      "generatedTemporaryGoal",
+      "actionPolicy"
+    ],
+    "expectedFailureControls": {
+      "atk-deficit": [
+        "stat-gain",
+        "equipment",
+        "levelup"
+      ],
+      "hp-deficit": [
+        "stat-gain",
+        "levelup",
+        "deferred-resource"
+      ],
+      "target-action-unreachable": [
+        "path-blocker"
+      ]
+    },
+    "deterministicFullReportRebuild": true
+  },
+  "controls": {
+    "fixedOutputKindsObserved": true,
+    "failureIntentControls": {
+      "atk-deficit": {
+        "observedOutputKinds": [
+          "equipment",
+          "levelup",
+          "stat-gain"
+        ],
+        "sourceCases": [
+          "atk-equipment",
+          "atk-levelup",
+          "atk-pickup"
+        ]
+      },
+      "hp-deficit": {
+        "observedOutputKinds": [
+          "deferred-resource",
+          "levelup",
+          "stat-gain"
+        ],
+        "sourceCases": [
+          "hp-deferred-resource",
+          "hp-low-damage-exp",
+          "hp-pickup"
+        ]
+      },
+      "target-action-unreachable": {
+        "observedOutputKinds": [
+          "path-blocker"
+        ],
+        "sourceCases": [
+          "target-door-path-blocker"
+        ]
+      }
+    },
+    "stableCandidateOrdering": {
+      "failureClass": "atk-deficit",
+      "candidateIds": [
+        "candidate-low",
+        "candidate-high"
+      ],
+      "observedOrder": [
+        {
+          "candidateId": "candidate-high",
+          "sourceAction": "pickup:highAttackCrystal@S1:1,0",
+          "scannerScore": 3360000
+        },
+        {
+          "candidateId": "candidate-low",
+          "sourceAction": "pickup:lowAttackCrystal@S1:1,0",
+          "scannerScore": 960000
+        }
+      ],
+      "repeatedOrder": [
+        {
+          "candidateId": "candidate-high",
+          "sourceAction": "pickup:highAttackCrystal@S1:1,0",
+          "scannerScore": 3360000
+        },
+        {
+          "candidateId": "candidate-low",
+          "sourceAction": "pickup:lowAttackCrystal@S1:1,0",
+          "scannerScore": 960000
+        }
+      ],
+      "stable": true,
+      "higherCandidate": "candidate-high",
+      "lowerCandidate": "candidate-low"
+    },
+    "emptyIntentReturnsEmpty": {
+      "failureClass": "atk-deficit",
+      "intentCount": 0,
+      "intents": [],
+      "returnedEmpty": true
+    },
+    "deferredResourceNotImmediatePickup": {
+      "outputKind": "deferred-resource",
+      "directImmediatePickupAvailable": false,
+      "sourceActionKind": "battle",
+      "actionChain": [
+        "battle:deferredBlocker@S1:7,0",
+        "pickup:deferredPotion@S1:6,0"
+      ],
+      "isDeferred": true
+    },
+    "pathBlockerRequiresObservedFrontierAction": {
+      "sourceAction": "openDoor:lockedDoor@S1:5,0",
+      "targetTile": {
+        "floorId": "S1",
+        "x": 5,
+        "y": 0
+      },
+      "newActionCount": 1,
+      "sampleNewActions": [
+        "changeFloor:S1->S2"
+      ]
+    },
+    "deterministicLiveRebuild": true
+  },
+  "cases": [
+    {
+      "id": "atk-pickup",
+      "failureClass": "atk-deficit",
+      "outputKind": "stat-gain",
+      "scannerKind": "stat-atk",
+      "primaryStat": "atk",
+      "score": 3360000,
+      "desiredStats": [
+        "atk"
+      ],
+      "records": [
+        {
+          "sourceAction": "pickup:attackCrystal@S1:1,0",
+          "sourceActionKind": "pickup",
+          "actionChain": [
+            "pickup:attackCrystal@S1:1,0"
+          ],
+          "sourceTile": {
+            "floorId": "S1",
+            "x": 1,
+            "y": 0
+          },
+          "targetTile": {
+            "floorId": "S1",
+            "x": 1,
+            "y": 0
+          },
+          "targetFloor": "S1",
+          "before": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "after": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 100,
+              "atk": 21,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 100,
+              "atk": 21,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "beforeAfterDelta": {
+            "hp": 0,
+            "atk": 20,
+            "def": 0,
+            "mdef": 0,
+            "rawAtk": 20,
+            "rawDef": 0,
+            "rawMdef": 0,
+            "lv": 0,
+            "exp": 0,
+            "money": 0,
+            "equipment": []
+          },
+          "damage": 0,
+          "cost": {
+            "damage": 0,
+            "hpCost": 0,
+            "moneyCost": 0,
+            "actionCount": 1
+          },
+          "failureClass": "atk-deficit",
+          "failureClassRelevance": "direct attack stat pickup",
+          "score": {
+            "scannerScore": 3360000,
+            "decomposition": {
+              "benefit": 20000,
+              "frontierBenefit": 0,
+              "failureRelevance": 500,
+              "actionBonus": 120,
+              "damageCostPenalty": 0,
+              "depthPenalty": 0,
+              "total": 20620
+            }
+          },
+          "generatedTemporaryGoal": {
+            "type": "adaptiveResourceIntent",
+            "anyRemovedTiles": [
+              {
+                "floorId": "S1",
+                "x": 1,
+                "y": 0,
+                "reason": "Auto stat-atk candidate from pickup:attackCrystal@S1:1,0"
+              }
+            ],
+            "minEffectiveHero": {
+              "atk": 21
+            }
+          },
+          "actionPolicy": {
+            "actionKinds": [
+              "battle",
+              "pickup",
+              "equip",
+              "openDoor",
+              "useTool",
+              "changeFloor",
+              "floorFly",
+              "event"
+            ],
+            "forbidUnsupportedEvents": true,
+            "allowedFloors": [
+              "S1"
+            ],
+            "allowChangeFloors": []
+          },
+          "frontierEvidence": {
+            "targetFloor": null,
+            "targetFloorProgress": 0,
+            "floorDelta": 0,
+            "newActionCount": 0,
+            "newBattleCount": 0,
+            "newPickupCount": 0,
+            "newChangeFloorCount": 0,
+            "newDoorToolCount": 0,
+            "sampleNewActions": []
+          },
+          "targetBattleImpact": null,
+          "blockedResource": null,
+          "deferredResource": {
+            "isDeferred": false,
+            "immediatePickup": false
+          }
+        }
+      ],
+      "generatedTemporaryGoal": {
+        "type": "adaptiveResourceIntent",
+        "anyRemovedTiles": [
+          {
+            "floorId": "S1",
+            "x": 1,
+            "y": 0,
+            "reason": "Auto stat-atk candidate from pickup:attackCrystal@S1:1,0"
+          }
+        ],
+        "minEffectiveHero": {
+          "atk": 21
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "floorFly",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "S1"
+        ],
+        "allowChangeFloors": []
+      },
+      "controls": {
+        "expectedRelevance": "direct attack stat pickup",
+        "directActionCount": 1,
+        "directImmediatePickupAvailable": true
+      }
+    },
+    {
+      "id": "atk-equipment",
+      "failureClass": "atk-deficit",
+      "outputKind": "equipment",
+      "scannerKind": "equipment",
+      "primaryStat": null,
+      "score": 3750000,
+      "desiredStats": [
+        "atk",
+        "equipment"
+      ],
+      "records": [
+        {
+          "sourceAction": "equip:trainingSword@S1:2,0",
+          "sourceActionKind": "equip",
+          "actionChain": [
+            "equip:trainingSword@S1:2,0"
+          ],
+          "sourceTile": {
+            "floorId": "S1",
+            "x": 2,
+            "y": 0
+          },
+          "targetTile": {
+            "floorId": "S1",
+            "x": 2,
+            "y": 0
+          },
+          "targetFloor": "S1",
+          "before": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "after": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 100,
+              "atk": 16,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": [
+                "trainingSword"
+              ]
+            },
+            "effectiveHero": {
+              "hp": 100,
+              "atk": 16,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "beforeAfterDelta": {
+            "hp": 0,
+            "atk": 15,
+            "def": 0,
+            "mdef": 0,
+            "rawAtk": 15,
+            "rawDef": 0,
+            "rawMdef": 0,
+            "lv": 0,
+            "exp": 0,
+            "money": 0,
+            "equipment": [
+              "trainingSword"
+            ]
+          },
+          "damage": 0,
+          "cost": {
+            "damage": 0,
+            "hpCost": 0,
+            "moneyCost": 0,
+            "actionCount": 1
+          },
+          "failureClass": "atk-deficit",
+          "failureClassRelevance": "attack equipment candidate",
+          "score": {
+            "scannerScore": 3750000,
+            "decomposition": {
+              "benefit": 16500,
+              "frontierBenefit": 0,
+              "failureRelevance": 500,
+              "actionBonus": 160,
+              "damageCostPenalty": 0,
+              "depthPenalty": 0,
+              "total": 17160
+            }
+          },
+          "generatedTemporaryGoal": {
+            "type": "adaptiveResourceIntent",
+            "anyRemovedTiles": [
+              {
+                "floorId": "S1",
+                "x": 2,
+                "y": 0,
+                "reason": "Auto equipment candidate from equip:trainingSword@S1:2,0"
+              }
+            ],
+            "equipmentIncludes": [
+              "trainingSword"
+            ]
+          },
+          "actionPolicy": {
+            "actionKinds": [
+              "battle",
+              "pickup",
+              "equip",
+              "openDoor",
+              "useTool",
+              "changeFloor",
+              "floorFly",
+              "event"
+            ],
+            "forbidUnsupportedEvents": true,
+            "allowedFloors": [
+              "S1"
+            ],
+            "allowChangeFloors": []
+          },
+          "frontierEvidence": {
+            "targetFloor": null,
+            "targetFloorProgress": 0,
+            "floorDelta": 0,
+            "newActionCount": 0,
+            "newBattleCount": 0,
+            "newPickupCount": 0,
+            "newChangeFloorCount": 0,
+            "newDoorToolCount": 0,
+            "sampleNewActions": []
+          },
+          "targetBattleImpact": null,
+          "blockedResource": null,
+          "deferredResource": {
+            "isDeferred": false,
+            "immediatePickup": false
+          }
+        }
+      ],
+      "generatedTemporaryGoal": {
+        "type": "adaptiveResourceIntent",
+        "anyRemovedTiles": [
+          {
+            "floorId": "S1",
+            "x": 2,
+            "y": 0,
+            "reason": "Auto equipment candidate from equip:trainingSword@S1:2,0"
+          }
+        ],
+        "equipmentIncludes": [
+          "trainingSword"
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "floorFly",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "S1"
+        ],
+        "allowChangeFloors": []
+      },
+      "controls": {
+        "expectedRelevance": "attack equipment candidate",
+        "directActionCount": 1,
+        "directImmediatePickupAvailable": false
+      }
+    },
+    {
+      "id": "atk-levelup",
+      "failureClass": "atk-deficit",
+      "outputKind": "levelup",
+      "scannerKind": "exp",
+      "primaryStat": null,
+      "score": 309998,
+      "desiredStats": [
+        "atk"
+      ],
+      "records": [
+        {
+          "sourceAction": "battle:lowExpEnemy@S1:4,0",
+          "sourceActionKind": "battle",
+          "actionChain": [
+            "battle:lowExpEnemy@S1:4,0"
+          ],
+          "sourceTile": {
+            "floorId": "S1",
+            "x": 4,
+            "y": 0
+          },
+          "targetTile": {
+            "floorId": "S1",
+            "x": 4,
+            "y": 0
+          },
+          "targetFloor": "S1",
+          "before": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "after": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 97,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 2,
+              "exp": 100,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 97,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 2,
+              "exp": 100
+            }
+          },
+          "beforeAfterDelta": {
+            "hp": -3,
+            "atk": 0,
+            "def": 0,
+            "mdef": 0,
+            "rawAtk": 0,
+            "rawDef": 0,
+            "rawMdef": 0,
+            "lv": 1,
+            "exp": 100,
+            "money": 0,
+            "equipment": []
+          },
+          "damage": 3,
+          "cost": {
+            "damage": 3,
+            "hpCost": 3,
+            "moneyCost": 0,
+            "actionCount": 1
+          },
+          "failureClass": "atk-deficit",
+          "failureClassRelevance": "low-cost combat experience for attack progression",
+          "score": {
+            "scannerScore": 309998,
+            "decomposition": {
+              "benefit": 900,
+              "frontierBenefit": 0,
+              "failureRelevance": 500,
+              "actionBonus": 80,
+              "damageCostPenalty": 33,
+              "depthPenalty": 0,
+              "total": 1447
+            }
+          },
+          "generatedTemporaryGoal": {
+            "type": "adaptiveResourceIntent",
+            "anyRemovedTiles": [
+              {
+                "floorId": "S1",
+                "x": 4,
+                "y": 0,
+                "reason": "Auto exp candidate from battle:lowExpEnemy@S1:4,0"
+              }
+            ]
+          },
+          "actionPolicy": {
+            "actionKinds": [
+              "battle",
+              "pickup",
+              "equip",
+              "openDoor",
+              "useTool",
+              "changeFloor",
+              "floorFly",
+              "event"
+            ],
+            "forbidUnsupportedEvents": true,
+            "allowedFloors": [
+              "S1"
+            ],
+            "allowChangeFloors": []
+          },
+          "frontierEvidence": {
+            "targetFloor": null,
+            "targetFloorProgress": 0,
+            "floorDelta": 0,
+            "newActionCount": 0,
+            "newBattleCount": 0,
+            "newPickupCount": 0,
+            "newChangeFloorCount": 0,
+            "newDoorToolCount": 0,
+            "sampleNewActions": []
+          },
+          "targetBattleImpact": null,
+          "blockedResource": null,
+          "deferredResource": {
+            "isDeferred": false,
+            "immediatePickup": false
+          }
+        }
+      ],
+      "generatedTemporaryGoal": {
+        "type": "adaptiveResourceIntent",
+        "anyRemovedTiles": [
+          {
+            "floorId": "S1",
+            "x": 4,
+            "y": 0,
+            "reason": "Auto exp candidate from battle:lowExpEnemy@S1:4,0"
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "floorFly",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "S1"
+        ],
+        "allowChangeFloors": []
+      },
+      "controls": {
+        "expectedRelevance": "low-cost combat experience for attack progression",
+        "directActionCount": 1,
+        "directImmediatePickupAvailable": false
+      }
+    },
+    {
+      "id": "hp-pickup",
+      "failureClass": "hp-deficit",
+      "outputKind": "stat-gain",
+      "scannerKind": "stat-hp",
+      "primaryStat": "hp",
+      "score": 160660,
+      "desiredStats": [
+        "hp"
+      ],
+      "records": [
+        {
+          "sourceAction": "pickup:redPotion@S1:3,0",
+          "sourceActionKind": "pickup",
+          "actionChain": [
+            "pickup:redPotion@S1:3,0"
+          ],
+          "sourceTile": {
+            "floorId": "S1",
+            "x": 3,
+            "y": 0
+          },
+          "targetTile": {
+            "floorId": "S1",
+            "x": 3,
+            "y": 0
+          },
+          "targetFloor": "S1",
+          "before": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "after": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 160,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 160,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "beforeAfterDelta": {
+            "hp": 60,
+            "atk": 0,
+            "def": 0,
+            "mdef": 0,
+            "rawAtk": 0,
+            "rawDef": 0,
+            "rawMdef": 0,
+            "lv": 0,
+            "exp": 0,
+            "money": 0,
+            "equipment": []
+          },
+          "damage": 0,
+          "cost": {
+            "damage": 0,
+            "hpCost": 0,
+            "moneyCost": 0,
+            "actionCount": 1
+          },
+          "failureClass": "hp-deficit",
+          "failureClassRelevance": "direct HP pickup",
+          "score": {
+            "scannerScore": 160660,
+            "decomposition": {
+              "benefit": 240,
+              "frontierBenefit": 0,
+              "failureRelevance": 500,
+              "actionBonus": 120,
+              "damageCostPenalty": 0,
+              "depthPenalty": 0,
+              "total": 860
+            }
+          },
+          "generatedTemporaryGoal": {
+            "type": "adaptiveResourceIntent",
+            "anyRemovedTiles": [
+              {
+                "floorId": "S1",
+                "x": 3,
+                "y": 0,
+                "reason": "Auto stat-hp candidate from pickup:redPotion@S1:3,0"
+              }
+            ],
+            "minHero": {
+              "hp": 160
+            }
+          },
+          "actionPolicy": {
+            "actionKinds": [
+              "battle",
+              "pickup",
+              "equip",
+              "openDoor",
+              "useTool",
+              "changeFloor",
+              "floorFly",
+              "event"
+            ],
+            "forbidUnsupportedEvents": true,
+            "allowedFloors": [
+              "S1"
+            ],
+            "allowChangeFloors": []
+          },
+          "frontierEvidence": {
+            "targetFloor": null,
+            "targetFloorProgress": 0,
+            "floorDelta": 0,
+            "newActionCount": 0,
+            "newBattleCount": 0,
+            "newPickupCount": 0,
+            "newChangeFloorCount": 0,
+            "newDoorToolCount": 0,
+            "sampleNewActions": []
+          },
+          "targetBattleImpact": null,
+          "blockedResource": null,
+          "deferredResource": {
+            "isDeferred": false,
+            "immediatePickup": false
+          }
+        }
+      ],
+      "generatedTemporaryGoal": {
+        "type": "adaptiveResourceIntent",
+        "anyRemovedTiles": [
+          {
+            "floorId": "S1",
+            "x": 3,
+            "y": 0,
+            "reason": "Auto stat-hp candidate from pickup:redPotion@S1:3,0"
+          }
+        ],
+        "minHero": {
+          "hp": 160
+        }
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "floorFly",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "S1"
+        ],
+        "allowChangeFloors": []
+      },
+      "controls": {
+        "expectedRelevance": "direct HP pickup",
+        "directActionCount": 1,
+        "directImmediatePickupAvailable": true
+      }
+    },
+    {
+      "id": "hp-low-damage-exp",
+      "failureClass": "hp-deficit",
+      "outputKind": "levelup",
+      "scannerKind": "exp",
+      "primaryStat": null,
+      "score": 89995,
+      "desiredStats": [
+        "hp"
+      ],
+      "records": [
+        {
+          "sourceAction": "battle:lowExpEnemy@S1:4,0",
+          "sourceActionKind": "battle",
+          "actionChain": [
+            "battle:lowExpEnemy@S1:4,0"
+          ],
+          "sourceTile": {
+            "floorId": "S1",
+            "x": 4,
+            "y": 0
+          },
+          "targetTile": {
+            "floorId": "S1",
+            "x": 4,
+            "y": 0
+          },
+          "targetFloor": "S1",
+          "before": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "after": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 97,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 2,
+              "exp": 100,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 97,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 2,
+              "exp": 100
+            }
+          },
+          "beforeAfterDelta": {
+            "hp": -3,
+            "atk": 0,
+            "def": 0,
+            "mdef": 0,
+            "rawAtk": 0,
+            "rawDef": 0,
+            "rawMdef": 0,
+            "lv": 1,
+            "exp": 100,
+            "money": 0,
+            "equipment": []
+          },
+          "damage": 3,
+          "cost": {
+            "damage": 3,
+            "hpCost": 3,
+            "moneyCost": 0,
+            "actionCount": 1
+          },
+          "failureClass": "hp-deficit",
+          "failureClassRelevance": "low-damage experience candidate for HP-constrained progress",
+          "score": {
+            "scannerScore": 89995,
+            "decomposition": {
+              "benefit": 900,
+              "frontierBenefit": 0,
+              "failureRelevance": 500,
+              "actionBonus": 80,
+              "damageCostPenalty": 33,
+              "depthPenalty": 0,
+              "total": 1447
+            }
+          },
+          "generatedTemporaryGoal": {
+            "type": "adaptiveResourceIntent",
+            "anyRemovedTiles": [
+              {
+                "floorId": "S1",
+                "x": 4,
+                "y": 0,
+                "reason": "Auto exp candidate from battle:lowExpEnemy@S1:4,0"
+              }
+            ]
+          },
+          "actionPolicy": {
+            "actionKinds": [
+              "battle",
+              "pickup",
+              "equip",
+              "openDoor",
+              "useTool",
+              "changeFloor",
+              "floorFly",
+              "event"
+            ],
+            "forbidUnsupportedEvents": true,
+            "allowedFloors": [
+              "S1"
+            ],
+            "allowChangeFloors": []
+          },
+          "frontierEvidence": {
+            "targetFloor": null,
+            "targetFloorProgress": 0,
+            "floorDelta": 0,
+            "newActionCount": 0,
+            "newBattleCount": 0,
+            "newPickupCount": 0,
+            "newChangeFloorCount": 0,
+            "newDoorToolCount": 0,
+            "sampleNewActions": []
+          },
+          "targetBattleImpact": null,
+          "blockedResource": null,
+          "deferredResource": {
+            "isDeferred": false,
+            "immediatePickup": false
+          }
+        }
+      ],
+      "generatedTemporaryGoal": {
+        "type": "adaptiveResourceIntent",
+        "anyRemovedTiles": [
+          {
+            "floorId": "S1",
+            "x": 4,
+            "y": 0,
+            "reason": "Auto exp candidate from battle:lowExpEnemy@S1:4,0"
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "floorFly",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "S1"
+        ],
+        "allowChangeFloors": []
+      },
+      "controls": {
+        "expectedRelevance": "low-damage experience candidate for HP-constrained progress",
+        "directActionCount": 1,
+        "directImmediatePickupAvailable": false
+      }
+    },
+    {
+      "id": "hp-deferred-resource",
+      "failureClass": "hp-deficit",
+      "outputKind": "deferred-resource",
+      "scannerKind": "blocked-hp-resource",
+      "primaryStat": null,
+      "score": 3050990,
+      "desiredStats": [
+        "hp"
+      ],
+      "records": [
+        {
+          "sourceAction": "battle:deferredBlocker@S1:7,0",
+          "sourceActionKind": "battle",
+          "actionChain": [
+            "battle:deferredBlocker@S1:7,0",
+            "pickup:deferredPotion@S1:6,0"
+          ],
+          "sourceTile": {
+            "floorId": "S1",
+            "x": 7,
+            "y": 0
+          },
+          "targetTile": {
+            "floorId": "S1",
+            "x": 6,
+            "y": 0
+          },
+          "targetFloor": "S1",
+          "before": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 50,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 50,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "after": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 220,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 50,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "beforeAfterDelta": {
+            "hp": 170,
+            "atk": 0,
+            "def": 0,
+            "mdef": 0,
+            "rawAtk": 0,
+            "rawDef": 0,
+            "rawMdef": 0,
+            "lv": 0,
+            "exp": 0,
+            "money": 0,
+            "equipment": []
+          },
+          "damage": 30,
+          "cost": {
+            "damage": 30,
+            "hpCost": 0,
+            "moneyCost": 0,
+            "actionCount": 2
+          },
+          "failureClass": "hp-deficit",
+          "failureClassRelevance": "defer HP pickup until its blocker is survivable",
+          "score": {
+            "scannerScore": 2035105,
+            "decomposition": {
+              "benefit": 680,
+              "frontierBenefit": 600,
+              "failureRelevance": 500,
+              "actionBonus": 80,
+              "damageCostPenalty": 300,
+              "depthPenalty": 25,
+              "total": 1535
+            }
+          },
+          "generatedTemporaryGoal": {
+            "type": "adaptiveResourceIntent",
+            "floorId": "S1",
+            "actionSurvivable": {
+              "summary": "battle:deferredBlocker@S1:7,0"
+            },
+            "minHero": {
+              "hp": 50
+            },
+            "presentTiles": [
+              {
+                "floorId": "S1",
+                "x": 0,
+                "y": 0,
+                "reason": "keep target battle until the blocked HP resource is reachable"
+              },
+              {
+                "floorId": "S1",
+                "x": 6,
+                "y": 0,
+                "reason": "keep blocked HP resource until its blocker is survivable"
+              }
+            ]
+          },
+          "actionPolicy": {
+            "actionKinds": [
+              "battle",
+              "pickup",
+              "equip",
+              "openDoor",
+              "useTool",
+              "changeFloor",
+              "floorFly",
+              "event"
+            ],
+            "forbidUnsupportedEvents": true,
+            "allowedFloors": [
+              "S1"
+            ],
+            "allowChangeFloors": []
+          },
+          "frontierEvidence": {
+            "targetFloor": "S1",
+            "targetFloorProgress": 0,
+            "floorDelta": 0,
+            "newActionCount": 1,
+            "newBattleCount": 1,
+            "newPickupCount": 1,
+            "newChangeFloorCount": 0,
+            "newDoorToolCount": 0,
+            "sampleNewActions": []
+          },
+          "targetBattleImpact": {
+            "beforeDamage": 100,
+            "afterDamage": 100,
+            "damageReduced": 0,
+            "survivableBefore": false,
+            "survivableAfter": true,
+            "minHpToSurvive": null
+          },
+          "blockedResource": {
+            "itemId": "deferredPotion",
+            "floorId": "S1",
+            "x": 6,
+            "y": 0,
+            "hpGain": 200,
+            "defGain": 0,
+            "blockerDamage": 30,
+            "netHpAfterBlocker": 220
+          },
+          "deferredResource": {
+            "isDeferred": true,
+            "immediatePickup": false
+          }
+        },
+        {
+          "sourceAction": "battle:lowExpEnemy@S1:4,0",
+          "sourceActionKind": "battle",
+          "actionChain": [
+            "battle:lowExpEnemy@S1:4,0",
+            "pickup:redPotion@S1:3,0"
+          ],
+          "sourceTile": {
+            "floorId": "S1",
+            "x": 4,
+            "y": 0
+          },
+          "targetTile": {
+            "floorId": "S1",
+            "x": 3,
+            "y": 0
+          },
+          "targetFloor": "S1",
+          "before": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 50,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 50,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "after": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 107,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 100,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 50,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "beforeAfterDelta": {
+            "hp": 57,
+            "atk": 0,
+            "def": 0,
+            "mdef": 0,
+            "rawAtk": 0,
+            "rawDef": 0,
+            "rawMdef": 0,
+            "lv": 0,
+            "exp": 100,
+            "money": 0,
+            "equipment": []
+          },
+          "damage": 3,
+          "cost": {
+            "damage": 3,
+            "hpCost": 0,
+            "moneyCost": 0,
+            "actionCount": 2
+          },
+          "failureClass": "hp-deficit",
+          "failureClassRelevance": "defer HP pickup until its blocker is survivable",
+          "score": {
+            "scannerScore": 2031771,
+            "decomposition": {
+              "benefit": 428,
+              "frontierBenefit": 600,
+              "failureRelevance": 500,
+              "actionBonus": 80,
+              "damageCostPenalty": 30,
+              "depthPenalty": 25,
+              "total": 1553
+            }
+          },
+          "generatedTemporaryGoal": {
+            "type": "adaptiveResourceIntent",
+            "floorId": "S1",
+            "actionSurvivable": {
+              "summary": "battle:deferredBlocker@S1:7,0"
+            },
+            "minHero": {
+              "hp": 50
+            },
+            "presentTiles": [
+              {
+                "floorId": "S1",
+                "x": 0,
+                "y": 0,
+                "reason": "keep target battle until the blocked HP resource is reachable"
+              },
+              {
+                "floorId": "S1",
+                "x": 6,
+                "y": 0,
+                "reason": "keep blocked HP resource until its blocker is survivable"
+              }
+            ]
+          },
+          "actionPolicy": {
+            "actionKinds": [
+              "battle",
+              "pickup",
+              "equip",
+              "openDoor",
+              "useTool",
+              "changeFloor",
+              "floorFly",
+              "event"
+            ],
+            "forbidUnsupportedEvents": true,
+            "allowedFloors": [
+              "S1"
+            ],
+            "allowChangeFloors": []
+          },
+          "frontierEvidence": {
+            "targetFloor": "S1",
+            "targetFloorProgress": 0,
+            "floorDelta": 0,
+            "newActionCount": 1,
+            "newBattleCount": 1,
+            "newPickupCount": 1,
+            "newChangeFloorCount": 0,
+            "newDoorToolCount": 0,
+            "sampleNewActions": []
+          },
+          "targetBattleImpact": {
+            "beforeDamage": 100,
+            "afterDamage": 100,
+            "damageReduced": 0,
+            "survivableBefore": false,
+            "survivableAfter": true,
+            "minHpToSurvive": null
+          },
+          "blockedResource": {
+            "itemId": "redPotion",
+            "floorId": "S1",
+            "x": 3,
+            "y": 0,
+            "hpGain": 60,
+            "defGain": 0,
+            "blockerDamage": 3,
+            "netHpAfterBlocker": 107
+          },
+          "deferredResource": {
+            "isDeferred": true,
+            "immediatePickup": false
+          }
+        }
+      ],
+      "generatedTemporaryGoal": {
+        "type": "adaptiveResourceIntent",
+        "floorId": "S1",
+        "actionSurvivable": {
+          "summary": "battle:deferredBlocker@S1:7,0"
+        },
+        "minHero": {
+          "hp": 50
+        },
+        "presentTiles": [
+          {
+            "floorId": "S1",
+            "x": 0,
+            "y": 0,
+            "reason": "keep target battle until the blocked HP resource is reachable"
+          },
+          {
+            "floorId": "S1",
+            "x": 6,
+            "y": 0,
+            "reason": "keep blocked HP resource until its blocker is survivable"
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "floorFly",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "S1"
+        ],
+        "allowChangeFloors": []
+      },
+      "controls": {
+        "expectedRelevance": "defer HP pickup until its blocker is survivable",
+        "directActionCount": 0,
+        "directImmediatePickupAvailable": false
+      }
+    },
+    {
+      "id": "target-door-path-blocker",
+      "failureClass": "target-action-unreachable",
+      "outputKind": "path-blocker",
+      "scannerKind": "path-blocker",
+      "primaryStat": null,
+      "score": 430000,
+      "desiredStats": [
+        "path"
+      ],
+      "records": [
+        {
+          "sourceAction": "openDoor:lockedDoor@S1:5,0",
+          "sourceActionKind": "openDoor",
+          "actionChain": [
+            "openDoor:lockedDoor@S1:5,0"
+          ],
+          "sourceTile": {
+            "floorId": "S1",
+            "x": 5,
+            "y": 0
+          },
+          "targetTile": {
+            "floorId": "S1",
+            "x": 5,
+            "y": 0
+          },
+          "targetFloor": "S1",
+          "before": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "after": {
+            "floorId": "S1",
+            "hero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0,
+              "money": 0,
+              "equipment": []
+            },
+            "effectiveHero": {
+              "hp": 100,
+              "atk": 1,
+              "def": 10,
+              "mdef": 10,
+              "lv": 1,
+              "exp": 0
+            }
+          },
+          "beforeAfterDelta": {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "mdef": 0,
+            "rawAtk": 0,
+            "rawDef": 0,
+            "rawMdef": 0,
+            "lv": 0,
+            "exp": 0,
+            "money": 0,
+            "equipment": []
+          },
+          "damage": 0,
+          "cost": {
+            "damage": 0,
+            "hpCost": 0,
+            "moneyCost": 0,
+            "actionCount": 1
+          },
+          "failureClass": "target-action-unreachable",
+          "failureClassRelevance": "door opening creates a newly reachable floor transition",
+          "score": {
+            "scannerScore": 430000,
+            "decomposition": {
+              "benefit": 0,
+              "frontierBenefit": 600,
+              "failureRelevance": 900,
+              "actionBonus": 140,
+              "damageCostPenalty": 0,
+              "depthPenalty": 0,
+              "total": 1640
+            }
+          },
+          "generatedTemporaryGoal": {
+            "type": "adaptiveResourceIntent",
+            "anyRemovedTiles": [
+              {
+                "floorId": "S1",
+                "x": 5,
+                "y": 0,
+                "reason": "Auto path-blocker candidate from openDoor:lockedDoor@S1:5,0"
+              }
+            ]
+          },
+          "actionPolicy": {
+            "actionKinds": [
+              "battle",
+              "pickup",
+              "equip",
+              "openDoor",
+              "useTool",
+              "changeFloor",
+              "floorFly",
+              "event"
+            ],
+            "forbidUnsupportedEvents": true,
+            "allowedFloors": [
+              "S1"
+            ],
+            "allowChangeFloors": []
+          },
+          "frontierEvidence": {
+            "targetFloor": "S2",
+            "targetFloorProgress": 0,
+            "floorDelta": 0,
+            "newActionCount": 1,
+            "newBattleCount": 0,
+            "newPickupCount": 0,
+            "newChangeFloorCount": 1,
+            "newDoorToolCount": 0,
+            "sampleNewActions": [
+              "changeFloor:S1->S2"
+            ]
+          },
+          "targetBattleImpact": null,
+          "blockedResource": null,
+          "deferredResource": {
+            "isDeferred": false,
+            "immediatePickup": false
+          }
+        }
+      ],
+      "generatedTemporaryGoal": {
+        "type": "adaptiveResourceIntent",
+        "anyRemovedTiles": [
+          {
+            "floorId": "S1",
+            "x": 5,
+            "y": 0,
+            "reason": "Auto path-blocker candidate from openDoor:lockedDoor@S1:5,0"
+          }
+        ]
+      },
+      "actionPolicy": {
+        "actionKinds": [
+          "battle",
+          "pickup",
+          "equip",
+          "openDoor",
+          "useTool",
+          "changeFloor",
+          "floorFly",
+          "event"
+        ],
+        "forbidUnsupportedEvents": true,
+        "allowedFloors": [
+          "S1"
+        ],
+        "allowChangeFloors": []
+      },
+      "controls": {
+        "expectedRelevance": "door opening creates a newly reachable floor transition",
+        "directActionCount": 1,
+        "directImmediatePickupAvailable": false
+      }
+    }
+  ],
+  "scope": {
+    "shadowOnly": true,
+    "productionDpKeyChanged": false,
+    "productionDominanceChanged": false,
+    "productionAgendaChanged": false,
+    "productionCapacityChanged": false,
+    "productionDefaultPolicyChanged": false,
+    "describesCompleteOnlyUpRoute": false
+  }
+}

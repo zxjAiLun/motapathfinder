@@ -180,7 +180,8 @@
         "shared-solver/check-hybrid-fair-agenda.js",
         "shared-solver/check-agenda-policy-evaluation.js",
         "shared-solver/check-route-store-exact.js",
-        "shared-solver/check-adaptive-repair-outcomes.js"
+        "shared-solver/check-adaptive-repair-outcomes.js",
+        "shared-solver/check-resource-intent-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -1647,6 +1648,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "real OnlyUp prefix + hand-written atk/def threshold; not full auto closure"
+    },
+    "shared-solver/check-resource-intent-contract.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "synthetic shadow-only resource intent evidence contract with deterministic rebuild"
     },
     "shared-solver/check-resource-pocket-order.js": {
       "grade": "local-regression",
