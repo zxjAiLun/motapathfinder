@@ -34,6 +34,14 @@ function errorSummary(error) {
   };
 }
 
+function fingerprintMatchState(validation, failure, field, mismatchCode) {
+  if (validation) {
+    if (field === "route" && validation.routeVerified !== true) return null;
+    return validation[`${field}FingerprintMatches`] === true ? true : null;
+  }
+  return failure && failure.code === mismatchCode ? false : null;
+}
+
 function bindingSummary(nativeSave, validation) {
   const data = nativeSave || {};
   return {
@@ -110,12 +118,18 @@ function buildResumeGuiStatus({
   result.payloadBinding = bindingSummary(nativeSave, validation);
   result.boundary = sectionSummary(artifact && artifact.boundary, false);
   result.continuation = sectionSummary(artifact && artifact.continuation, true);
-  result.projectFingerprintMatches = validation
-    ? validation.projectFingerprintMatches === true
-    : null;
-  result.routeFingerprintMatches = validation
-    ? validation.routeFingerprintMatches === true
-    : null;
+  result.projectFingerprintMatches = fingerprintMatchState(
+    validation,
+    failure,
+    "project",
+    "REPLAY_RESUME_PROJECT_FINGERPRINT_MISMATCH",
+  );
+  result.routeFingerprintMatches = fingerprintMatchState(
+    validation,
+    failure,
+    "route",
+    "REPLAY_RESUME_ROUTE_FINGERPRINT_MISMATCH",
+  );
   result.routeVerified = validation ? validation.routeVerified === true : false;
   result.status = failure ? "failed" : result.routeVerified ? "verified" : "legacy";
   result.mode = result.status;

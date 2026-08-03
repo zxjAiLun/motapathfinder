@@ -1359,3 +1359,19 @@ npm run check:replay:h5save-gui --prefix shared-solver
 npm run check:replay:h5save-resume --prefix shared-solver
 npm run check:manifest --prefix shared-solver
 ```
+
+### 2026-08-03 更新：PR-5.1c1 Resume Status Tri-State
+
+Review 指出 PR-5.1c 的 legacy `routeFingerprintMatches=false` 会把“未检查”误显示为“已检查但不匹配”；本轮只修正 resume GUI projection、前端展示和专项 checker，不修改 loader、ReplaySession 或 production solver/search 语义：
+
+- `lib/replay-resume-gui.js` 现在把 fingerprint match 投影为真正三态：`true=checked and matched`、`false=checked and mismatched`、`null=not checked/unavailable`。成功 legacy 模式的 route fingerprint 为 `null`，`routeVerified` 仍为 `false`。
+- `gui/app.js` 明确显示 `match / mismatch / not checked`；headless Chromium DOM smoke 实际打开 Route GUI，锁定 legacy badge、空 timeline 与 `Route: not checked`，并禁止出现 `mismatch`。
+- checker 新增真实 `route-gui.js` CLI/API 负控：tampered boundary 返回 `REPLAY_RESUME_RUNTIME_IDENTITY_MISMATCH`，missing h5save 返回 `REPLAY_RESUME_H5SAVE_INVALID`；两者都确认 server 已启动并通过 `/api/resume` 读取失败状态。
+- 本轮不修改 h5save loader、ReplaySession、DP key、dominance、agenda、容量、默认策略或路线选择。
+
+专项检查：
+
+```bash
+npm run check:replay:h5save-gui --prefix shared-solver
+npm run check:manifest --prefix shared-solver
+```

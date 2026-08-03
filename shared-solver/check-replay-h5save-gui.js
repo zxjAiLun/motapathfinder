@@ -5,6 +5,7 @@ const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { chromium } = require("playwright-core");
 
 const {
   FIXED_INPUTS,
@@ -15,6 +16,7 @@ const { loadProject } = require("./lib/project-loader");
 const {
   buildRuntimeSnapshotIdentity,
   buildRuntimeSnapshotIdentityPair,
+  findBrowserExecutable,
   prepareReplayRouteRecord,
   projectSupportsRuntimeAutoBattle,
 } = require("./lib/live-replay");
@@ -25,7 +27,7 @@ const {
 } = require("./lib/replay-resume-artifact");
 const { loadResumeArtifactForGui } = require("./lib/replay-resume-gui");
 
-const CHECK_SCHEMA = "motapathfinder.pr-5.1c-replay-h5save-gui.v1";
+const CHECK_SCHEMA = "motapathfinder.pr-5.1c1-replay-h5save-gui.v1";
 
 function requireCondition(condition, message) {
   if (!condition) throw new Error(message);
@@ -233,7 +235,45 @@ async function checkGuiApi({ project, routeRecord, routeFile, resumeInfo, label 
   }
 }
 
-async function checkRouteGuiCli({ projectRoot, h5saveFile, allowUnverifiedRoute, expectedStatus }) {
+async function checkGuiDomSmoke({ project, resumeInfo }) {
+  const browserPath = findBrowserExecutable();
+  assert.ok(browserPath, "Chrome/Edge executable is required for GUI DOM smoke");
+  const server = createGuiServer({
+    routeRecord: null,
+    routeFile: null,
+    session: makeStubSession({ state: "unavailable", resumeOnly: true }),
+    project,
+    debug: true,
+    resumeInfo,
+  });
+  const address = await listen(server);
+  const browser = await chromium.launch({
+    executablePath: browserPath,
+    headless: true,
+  });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => {
+      const element = document.querySelector("#resume-status");
+      return element && element.textContent.includes("Legacy / route unverified");
+    });
+    const text = await page.locator("#resume-status").innerText();
+    assert.ok(text.includes("Route: not checked"), "legacy DOM must show route not checked");
+    assert.ok(!text.includes("mismatch"), "legacy DOM must not show route mismatch");
+    return {
+      status: resumeInfo.status,
+      containsLegacyBadge: text.includes("Legacy / route unverified"),
+      containsNotChecked: text.includes("Route: not checked"),
+      containsMismatch: text.includes("mismatch"),
+    };
+  } finally {
+    await browser.close();
+    await closeServer(server);
+  }
+}
+
+async function checkRouteGuiCli({ projectRoot, h5saveFile, allowUnverifiedRoute, expectedStatus, expectedFailureCode }) {
   const args = [
     "route-gui.js",
     `--project-root=${projectRoot}`,
@@ -287,6 +327,9 @@ async function checkRouteGuiCli({ projectRoot, h5saveFile, allowUnverifiedRoute,
     const baseUrl = (await ready).replace(/\/$/, "");
     const resume = await fetchJson(baseUrl, "/api/resume");
     assert.strictEqual(resume.status, expectedStatus, `route-gui CLI ${expectedStatus} status`);
+    if (expectedFailureCode) {
+      assert.strictEqual(resume.failure && resume.failure.code, expectedFailureCode, "route-gui CLI failure code");
+    }
     assert.ok(stdout.includes("Resume artifact:"), "route-gui CLI prints resume artifact path");
     exitPromise = new Promise((resolve, reject) => {
       if (child.exitCode != null) {
@@ -312,6 +355,7 @@ async function checkRouteGuiCli({ projectRoot, h5saveFile, allowUnverifiedRoute,
     const exitCode = await exitPromise;
     return {
       status: resume.status,
+      failureCode: resume.failure && resume.failure.code || null,
       routeFilePrinted: /^Route file: (?!unavailable)/m.test(stdout),
       metadataOnlyPrinted: stdout.includes("metadata only"),
       exitCode,
@@ -386,6 +430,13 @@ async function main() {
       resumeInfo: failed,
       label: "failed",
     });
+    const failedCli = await checkRouteGuiCli({
+      projectRoot: input.projectRoot,
+      h5saveFile: tamperedFile,
+      allowUnverifiedRoute: false,
+      expectedStatus: "failed",
+      expectedFailureCode: "REPLAY_RESUME_RUNTIME_IDENTITY_MISMATCH",
+    });
 
     const missing = loadResumeArtifactForGui({
       project: fixture.project,
@@ -397,6 +448,13 @@ async function main() {
     });
     assert.strictEqual(missing.status, "failed", "missing h5save must be shown as failed");
     assert.strictEqual(missing.failure.code, "REPLAY_RESUME_H5SAVE_INVALID");
+    const missingCli = await checkRouteGuiCli({
+      projectRoot: input.projectRoot,
+      h5saveFile: path.join(outDir, "missing.h5save"),
+      allowUnverifiedRoute: false,
+      expectedStatus: "failed",
+      expectedFailureCode: "REPLAY_RESUME_H5SAVE_INVALID",
+    });
 
     const legacyFixture = buildLegacyPackage(fixture, input, outDir);
     const legacy = loadResumeArtifactForGui({
@@ -410,6 +468,7 @@ async function main() {
     assert.strictEqual(legacy.status, "legacy", "explicit route-unverified mode must be shown as legacy");
     assert.strictEqual(legacy.mode, "legacy");
     assert.strictEqual(legacy.routeVerified, false);
+    assert.strictEqual(legacy.routeFingerprintMatches, null, "legacy route fingerprint must be not checked");
     const legacyApi = await checkGuiApi({
       project: fixture.project,
       routeRecord: null,
@@ -418,6 +477,10 @@ async function main() {
       label: "legacy",
     });
     assert.strictEqual(legacyApi.decisionCount, 0, "legacy metadata-only GUI must not invent route decisions");
+    const legacyDom = await checkGuiDomSmoke({
+      project: fixture.project,
+      resumeInfo: legacy,
+    });
     const legacyCli = await checkRouteGuiCli({
       projectRoot: input.projectRoot,
       h5saveFile: legacyFixture.h5saveFile,
@@ -448,12 +511,17 @@ async function main() {
         status: legacy.status,
         routeVerified: legacy.routeVerified,
         api: legacyApi,
+        dom: legacyDom,
         cli: legacyCli,
       },
       failure: {
         tamperedBoundary: failed.failure.code,
         missingH5save: missing.failure.code,
         api: failedApi,
+        cli: {
+          tamperedBoundary: failedCli,
+          missingH5save: missingCli,
+        },
       },
     }, null, 2)}\n`);
   } finally {

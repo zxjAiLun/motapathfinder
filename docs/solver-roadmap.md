@@ -436,18 +436,31 @@ npm run run:replay:h5save-resume --prefix shared-solver
 npm run check:replay:h5save-resume:live --prefix shared-solver
 ```
 
-#### PR-5.1c：Route GUI Resume Artifact Integration ✅ route-gui-resume-artifact
+#### PR-5.1c：Route GUI Resume Artifact Integration ⏳ route-gui-resume-artifact
 
 - ✅ `route-gui.js --h5save=<path>` 读取并验证 resume artifact；有 embedded route 时自动定位 route，仍支持显式 `--route-file` 覆盖。
 - ✅ GUI 与 `/api/route`、`/api/resume` 展示 verified / legacy / failed 状态、project/route fingerprint 匹配、boundary 已完成步数、next step、next primitive decision、runtime display、identity 和三类 payload binding。
 - ✅ `--allow-unverified-route=1` 进入明确标记的 legacy metadata-only 模式；没有 route 时不伪造 decision timeline，恢复失败则保留稳定错误码和可读原因。
-- ✅ 新增 verified、legacy、tampered boundary、missing h5save 的 API/GUI checker；范围仍限于 replay GUI/productization，不修改 production DP key、dominance、agenda、容量、默认策略或路线选择。
+- ⏳ Review 要求 legacy route fingerprint 改为 tri-state，并补真实 DOM/CLI 负控；production DP key、dominance、agenda、容量、默认策略或路线选择不变。
 
 验收：
 
 ```bash
 npm run check:replay:h5save-gui --prefix shared-solver
 npm run check:replay:h5save-resume --prefix shared-solver
+npm run check:manifest --prefix shared-solver
+```
+
+#### PR-5.1c1：Resume Status Tri-State ✅ route-gui-resume-tristate
+
+- ✅ legacy 成功验证的 `routeFingerprintMatches` 返回 `null`，明确表示未检查，不再伪装成 mismatch。
+- ✅ 前端区分 `match / mismatch / not checked`；headless DOM smoke 锁定 legacy badge、空 timeline 与 `Route: not checked`。
+- ✅ tampered boundary 与 missing h5save 通过真实 `route-gui.js` CLI 启动后访问 `/api/resume`，分别锁定稳定失败码。
+
+验收：
+
+```bash
+npm run check:replay:h5save-gui --prefix shared-solver
 npm run check:manifest --prefix shared-solver
 ```
 

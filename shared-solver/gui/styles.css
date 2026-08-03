@@ -231,6 +231,9 @@ tr.selected {
 .resume-failed {
     color: var(--red);
 }
+.resume-unchecked {
+    color: var(--muted);
+}
 .resume-verified {
     color: var(--green);
 }

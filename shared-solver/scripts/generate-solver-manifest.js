@@ -447,7 +447,7 @@ const TEST_OVERRIDES = {
     allowsNotFound: false,
     requiresStrictReplay: true,
     cleanCheckout: true,
-    notes: "PR-5.1c Route GUI verified/legacy/failure resume status, boundary/next/payload display, metadata-only legacy mode, API exposure, and deterministic fixture checker",
+    notes: "PR-5.1c1 Route GUI tri-state fingerprint status, verified/legacy/failure projection, headless DOM smoke, metadata-only legacy mode, and real CLI/API tampered/missing h5save controls",
   },
 };
 

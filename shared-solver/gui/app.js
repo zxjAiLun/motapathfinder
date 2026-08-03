@@ -109,6 +109,12 @@ function resumeDisplayText(display) {
   return `${value.floorId || "-"} @ ${loc} ${value.direction || ""} hp=${value.hp == null ? "-" : value.hp} atk=${value.atk == null ? "-" : value.atk} def=${value.def == null ? "-" : value.def}`;
 }
 
+function resumeMatchStatus(value) {
+  if (value === true) return { label: "match", className: "resume-ok" };
+  if (value === false) return { label: "mismatch", className: "resume-failed" };
+  return { label: "not checked", className: "resume-unchecked" };
+}
+
 function renderResume() {
   const resume = state.resume;
   if (!resume || resume.status === "not-loaded") {
@@ -126,6 +132,8 @@ function renderResume() {
   const continuation = resume.continuation || {};
   const next = boundary.nextDecision || null;
   const failure = resume.failure || null;
+  const projectStatus = resumeMatchStatus(resume.projectFingerprintMatches);
+  const routeStatus = resumeMatchStatus(resume.routeFingerprintMatches);
   const bindingRows = [
     ["Native payload", binding.nativeSavePayloadBound, binding.nativeSavePayloadSha256],
     ["Structured suffix", binding.structuredSuffixBound, binding.structuredSuffixSha256],
@@ -136,7 +144,7 @@ function renderResume() {
   $("resume-status").innerHTML = `
     <div class="resume-card">
       <div class="resume-heading"><span class="badge resume-${escapeHtml(status)}">${escapeHtml(statusLabel)}</span><span class="muted">${escapeHtml(resume.h5saveFile || "")}</span></div>
-      <div class="resume-meta"><span>Route verified: <strong>${resume.routeVerified ? "yes" : "no"}</strong></span><span>Project: <strong>${resume.projectFingerprintMatches === true ? "match" : resume.projectFingerprintMatches === false ? "mismatch" : "-"}</strong></span><span>Route: <strong>${resume.routeFingerprintMatches === true ? "match" : resume.routeFingerprintMatches === false ? "mismatch" : "-"}</strong></span></div>
+      <div class="resume-meta"><span>Route verified: <strong>${resume.routeVerified ? "yes" : "no"}</strong></span><span>Project: <strong class="${projectStatus.className}">${escapeHtml(projectStatus.label)}</strong></span><span>Route: <strong class="${routeStatus.className}">${escapeHtml(routeStatus.label)}</strong></span></div>
     </div>
     <div class="resume-card">
       <h3>Boundary / Next</h3>
