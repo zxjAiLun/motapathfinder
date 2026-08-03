@@ -482,6 +482,22 @@ npm run check:replay:h5save-gui --prefix shared-solver
 npm run check:manifest --prefix shared-solver
 ```
 
+#### PR-5.2b：Resume Operation Robustness ✅ route-gui-resume-operation-robustness
+
+- ✅ `/api/resume/play` 先同步校验 session 状态；合法请求返回 `202 accepted`，未启动、busy 或非法状态返回稳定 `409`。
+- ✅ boundary/next gate 或 runtime restore 失败时自动关闭 browser/static server，同时保留最后一次 runtime display 与错误投影。
+- ✅ legacy 的 start/step/play API 负控锁定 `REPLAY_RESUME_INTERACTIVE_REQUIRES_VERIFIED_ARTIFACT`；verified-only 边界不被 GUI 按钮以外的直接调用绕过。
+- ✅ 真实 Chromium 使用 `setInputFiles()` 与 `DataTransfer` drop 触发上传；真实 live smoke 覆盖 suffix `play → pause → paused → play → completed`。
+- ✅ 本轮不修改 production DP key、dominance、agenda、容量、默认策略、路线选择或既有路线 `ReplaySession` 语义。
+
+验收：
+
+```bash
+npm run check:replay:h5save-gui:robustness --prefix shared-solver
+npm run check:replay:h5save-gui:robustness:live --prefix shared-solver
+npm run check:static --prefix shared-solver
+```
+
 ## 5. 风险控制
 
 ### 5.1 `presentTiles` 过拟合

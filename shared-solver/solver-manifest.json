@@ -1755,14 +1755,14 @@
       "allowsNotFound": false,
       "requiresStrictReplay": true,
       "cleanCheckout": false,
-      "notes": "PR-5.2a local Chrome/Edge GUI API flow with a real exported h5save, native loader restore, boundary gate, suffix play, and final verification"
+      "notes": "PR-5.2b local Chrome/Edge GUI API flow with a real exported h5save, asynchronous play acknowledgement, pause/resume, native loader restore, boundary gate, suffix continuation, and final verification"
     },
     "shared-solver/check-replay-h5save-gui-flow.js": {
       "grade": "closure",
       "allowsNotFound": false,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.2a Route GUI h5save upload/drop surface, loader-owned boundary/next gates, suffix step/final projection, invalid upload control, and DOM control smoke"
+      "notes": "PR-5.2b Route GUI asynchronous play acknowledgement, invalid-state/legacy API controls, gate-failure runtime cleanup, real picker/drop upload, and DOM operation smoke"
     },
     "shared-solver/check-replay-h5save-gui.js": {
       "grade": "closure",

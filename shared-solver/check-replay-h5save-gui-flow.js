@@ -21,6 +21,7 @@ const {
   buildResumeArtifact,
   cloneJson,
   encodeH5SavePackage,
+  resumeError,
   validateResumeArtifact,
   verifyResumeNextDecision,
   verifyRuntimeResumeSnapshot,
@@ -28,7 +29,7 @@ const {
 const { ReplayResumeController } = require("./lib/replay-resume-controller");
 const { ReplayResumeSession } = require("./lib/replay-resume-session");
 
-const CHECK_SCHEMA = "motapathfinder.pr-5.2a-replay-h5save-gui-flow.v1";
+const CHECK_SCHEMA = "motapathfinder.pr-5.2b-replay-h5save-gui-robustness.v1";
 
 function requireCondition(condition, message) {
   if (!condition) throw new Error(message);
@@ -63,14 +64,14 @@ function closeServer(server) {
   return new Promise((resolve) => server.close(resolve));
 }
 
-async function requestJson(baseUrl, pathname, body) {
+async function requestJson(baseUrl, pathname, body, expectedStatus = 200) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: body == null ? "GET" : "POST",
     headers: body == null ? undefined : { "Content-Type": "application/json" },
     body: body == null ? undefined : JSON.stringify(body),
   });
   const data = await response.json();
-  assert.strictEqual(response.status, 200, `${pathname} should return 200: ${JSON.stringify(data)}`);
+  assert.strictEqual(response.status, expectedStatus, `${pathname} should return ${expectedStatus}: ${JSON.stringify(data)}`);
   return data;
 }
 
@@ -176,18 +177,18 @@ function buildFixture(input) {
   };
 }
 
-function makeFakeReplayApi(fixture) {
-  return {
+function makeFakeReplayApi(fixture, { failBoundary = false } = {}) {
+  const lifecycle = { closed: false };
+  const api = {
     validateResumeArtifact,
     verifyResumeNextDecision,
-    verifyRuntimeResumeSnapshot,
     launchRuntimeSession: async () => ({
       page: { snapshot: null },
       verifyFloors: [],
       url: "fake://resume-runtime",
       downloadsDir: null,
-      browser: { close: async () => {} },
-      server: { close: async () => {} },
+      browser: { close: async () => { lifecycle.closed = true; } },
+      server: { close: async () => { lifecycle.closed = true; } },
     }),
     loadRuntimeSaveData: async (page) => {
       page.snapshot = cloneJson(fixture.boundaryRuntimeSnapshot);
@@ -199,6 +200,15 @@ function makeFakeReplayApi(fixture) {
       floorId: page.snapshot && page.snapshot.floorId,
       hero: page.snapshot && page.snapshot.hero,
     }),
+    verifyRuntimeResumeSnapshot: (artifact, phase, snapshot, options) => {
+      if (failBoundary && phase === "boundary") {
+        throw resumeError(
+          "REPLAY_RESUME_BOUNDARY_RUNTIME_MISMATCH",
+          "Synthetic boundary gate mismatch.",
+        );
+      }
+      return verifyRuntimeResumeSnapshot(artifact, phase, snapshot, options);
+    },
     executeRouteDecision: async (runtime, decision) => {
       runtime.page.snapshot = runtimeSnapshotWithStartBaseline(
         decision.postSnapshot,
@@ -211,6 +221,8 @@ function makeFakeReplayApi(fixture) {
       };
     },
   };
+  api.lifecycle = lifecycle;
+  return api;
 }
 
 async function checkGuiFlow({ input, fixture }) {
@@ -247,6 +259,9 @@ async function checkGuiFlow({ input, fixture }) {
     assert.strictEqual(loaded.status, "verified", "uploaded h5save must validate before runtime start");
     assert.strictEqual(loaded.operation, null, "upload must not start a runtime implicitly");
 
+    const notStartedPlay = await requestJson(baseUrl, "/api/resume/play", {}, 409);
+    assert.strictEqual(notStartedPlay.code, "REPLAY_RESUME_NOT_STARTED");
+
     const started = await requestJson(baseUrl, "/api/resume/start", {});
     assert.strictEqual(started.status, "verified");
     assert.strictEqual(started.operation.state, "paused", "boundary gate must pause before suffix execution");
@@ -254,7 +269,20 @@ async function checkGuiFlow({ input, fixture }) {
     assert.strictEqual(started.operation.boundaryVerification.identityMatches, true);
     assert.strictEqual(started.operation.nextDecisionVerification.nextDecisionMatches, true);
 
-    let status = started;
+    const accepted = await requestJson(baseUrl, "/api/resume/play", { stepDelayMs: 0 }, 202);
+    assert.strictEqual(accepted.accepted, true, "play must acknowledge asynchronously");
+    let played = await requestJson(baseUrl, "/api/resume/status");
+    const playDeadline = Date.now() + 2000;
+    while (played.operation && played.operation.state === "running" && Date.now() < playDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      played = await requestJson(baseUrl, "/api/resume/status");
+    }
+    assert.strictEqual(played.operation.state, "completed", "accepted play must finish the suffix");
+
+    const restarted = await requestJson(baseUrl, "/api/resume/start", {});
+    assert.strictEqual(restarted.operation.state, "paused");
+
+    let status = restarted;
     for (let index = 0; index < fixture.suffix.length; index += 1) {
       status = await requestJson(baseUrl, "/api/resume/step", { stepDelayMs: 0 });
       assert.strictEqual(status.operation.currentSuffixStep, index + 1);
@@ -273,6 +301,7 @@ async function checkGuiFlow({ input, fixture }) {
 
     return {
       uploaded: loaded.status,
+      playAccepted: accepted.accepted,
       boundary: started.operation.boundaryVerification.identityMatches,
       nextDecision: started.operation.nextDecisionVerification.nextDecisionMatches,
       suffixSteps: fixture.suffix.length,
@@ -285,13 +314,104 @@ async function checkGuiFlow({ input, fixture }) {
   }
 }
 
-async function checkGuiDom({ input, fixture }) {
+async function checkLegacyApi({ input, fixture }) {
+  const controller = new ReplayResumeController({
+    project: fixture.project,
+    projectRoot: input.projectRoot,
+    routeRecord: null,
+    routeFile: null,
+    allowUnverifiedRoute: true,
+    liveOptions: { headless: "1" },
+  });
+  const server = createGuiServer({
+    routeRecord: null,
+    routeFile: null,
+    session: makeStubSession(),
+    project: fixture.project,
+    debug: true,
+    resumeController: controller,
+  });
+  const address = await listen(server);
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    const loaded = await requestJson(baseUrl, "/api/resume/load", {
+      fileName: "legacy-flow.h5save",
+      content: fixture.packageText,
+    });
+    assert.strictEqual(loaded.status, "legacy");
+    const codes = {};
+    for (const endpoint of ["start", "step", "play"]) {
+      const body = endpoint === "step" ? { stepDelayMs: 0 } : {};
+      const result = await requestJson(baseUrl, `/api/resume/${endpoint}`, body, 409);
+      codes[endpoint] = result.code;
+      assert.strictEqual(result.code, "REPLAY_RESUME_INTERACTIVE_REQUIRES_VERIFIED_ARTIFACT");
+    }
+    return { status: loaded.status, rejectionCodes: codes };
+  } finally {
+    await controller.close();
+    await closeServer(server);
+  }
+}
+
+async function checkGateFailureCleanup({ input, fixture }) {
+  const replayApi = makeFakeReplayApi(fixture, { failBoundary: true });
   const controller = new ReplayResumeController({
     project: fixture.project,
     projectRoot: input.projectRoot,
     routeRecord: input.routeRecord,
     routeFile: input.routeFile,
-    liveOptions: { headless: "1" },
+    liveOptions: { headless: "1", timeoutMs: 5000 },
+    sessionFactory: (options) => new ReplayResumeSession(Object.assign({}, options, { replayApi })),
+  });
+  const server = createGuiServer({
+    routeRecord: input.routeRecord,
+    routeFile: input.routeFile,
+    session: makeStubSession(),
+    project: fixture.project,
+    debug: true,
+    resumeController: controller,
+  });
+  const address = await listen(server);
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    await requestJson(baseUrl, "/api/resume/load", {
+      fileName: "gate-failure.h5save",
+      content: fixture.packageText,
+    });
+    const failed = await requestJson(baseUrl, "/api/resume/start", {}, 409);
+    assert.strictEqual(failed.code, "REPLAY_RESUME_BOUNDARY_RUNTIME_MISMATCH");
+    const status = await requestJson(baseUrl, "/api/resume/status");
+    assert.strictEqual(status.operation.state, "failed");
+    assert.strictEqual(status.operation.lastError.code, "REPLAY_RESUME_BOUNDARY_RUNTIME_MISMATCH");
+    assert.strictEqual(status.operation.browserUrl, null, "failed gate must close the runtime");
+    assert.strictEqual(replayApi.lifecycle.closed, true, "failed gate must close browser/server resources");
+    assert.ok(status.operation.runtimeDisplay.floorId, "failed gate must preserve the last captured display");
+    return {
+      failureCode: failed.code,
+      state: status.operation.state,
+      runtimeClosed: replayApi.lifecycle.closed,
+      preservedFloor: status.operation.runtimeDisplay.floorId,
+    };
+  } finally {
+    await controller.close();
+    await closeServer(server);
+  }
+}
+
+async function checkGuiDom({ input, fixture }) {
+  let session;
+  const controller = new ReplayResumeController({
+    project: fixture.project,
+    projectRoot: input.projectRoot,
+    routeRecord: input.routeRecord,
+    routeFile: input.routeFile,
+    liveOptions: { headless: "1", timeoutMs: 5000 },
+    sessionFactory: (options) => {
+      session = new ReplayResumeSession(Object.assign({}, options, {
+        replayApi: makeFakeReplayApi(fixture),
+      }));
+      return session;
+    },
   });
   const server = createGuiServer({
     routeRecord: input.routeRecord,
@@ -314,12 +434,38 @@ async function checkGuiDom({ input, fixture }) {
     assert.ok(controls.includes("Step Suffix"));
     const shell = await page.locator("#resume-status").innerText();
     assert.ok(shell.includes("No resume artifact loaded."));
+
+    await page.setInputFiles("#resume-file", {
+      name: "picker-flow.h5save",
+      mimeType: "text/plain",
+      buffer: Buffer.from(fixture.packageText, "utf8"),
+    });
+    await page.waitForFunction(() => document.querySelector("#resume-status").textContent.includes("Verified"));
+    const encoded = Buffer.from(fixture.packageText, "utf8").toString("base64");
+    await page.evaluate(({ encoded, name }) => {
+      const bytes = Uint8Array.from(atob(encoded), (value) => value.charCodeAt(0));
+      const file = new File([bytes], name, { type: "text/plain" });
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      document.querySelector("#resume-dropzone").dispatchEvent(new DragEvent("drop", {
+        bubbles: true,
+        dataTransfer,
+      }));
+    }, { encoded, name: "drop-flow.h5save" });
+    await page.waitForFunction(() => document.querySelector("#resume-status").textContent.includes("drop-flow.h5save"));
+    await page.click("#resume-start");
+    await page.waitForFunction(() => document.querySelector("#resume-status").textContent.includes("Boundary gate") && document.querySelector("#resume-status").textContent.includes("verified"));
+    await page.click("#resume-step");
+    await page.waitForFunction(() => document.querySelector("#resume-status").textContent.includes("Final gate") && document.querySelector("#resume-status").textContent.includes("✓ verified"));
     return {
       fileInput: await page.locator("#resume-file").count(),
       dropzone: await page.locator("#resume-dropzone").count(),
       hasBoundaryLabel: controls.includes("Load / Start Resume"),
       hasSuffixStep: controls.includes("Step Suffix"),
       initialText: shell,
+      pickerUpload: true,
+      dropUpload: true,
+      boundaryAndFinalRendered: true,
     };
   } finally {
     await browser.close();
@@ -332,6 +478,8 @@ async function main() {
   const input = ensureFixedRoute(FIXED_INPUTS.find((candidate) => candidate.tower === "whiteisland"));
   const fixture = buildFixture(input);
   const flow = await checkGuiFlow({ input, fixture });
+  const legacy = await checkLegacyApi({ input, fixture });
+  const gateFailure = await checkGateFailureCleanup({ input, fixture });
   const dom = await checkGuiDom({ input, fixture });
   process.stdout.write(`${JSON.stringify({
     schema: CHECK_SCHEMA,
@@ -342,6 +490,8 @@ async function main() {
       checkpointStep: fixture.checkpointStep,
     },
     flow,
+    legacy,
+    gateFailure,
     dom,
   }, null, 2)}\n`);
 }

@@ -115,6 +115,8 @@
     "check:replay:h5save-gui": "node check-replay-h5save-gui.js",
     "check:replay:h5save-gui-flow": "node check-replay-h5save-gui-flow.js",
     "check:replay:h5save-gui-flow:live": "node check-replay-h5save-gui-flow-live.js",
+    "check:replay:h5save-gui:robustness": "node check-replay-h5save-gui-flow.js",
+    "check:replay:h5save-gui:robustness:live": "node check-replay-h5save-gui-flow-live.js",
     "check:onlyup:mt7-special80": "node check-onlyup-mt7-special80.js",
     "check:progressive": "node check-progressive-monster-planner.js",
     "run:region": "node run-region-dp.js",

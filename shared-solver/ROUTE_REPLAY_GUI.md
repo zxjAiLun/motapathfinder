@@ -104,7 +104,7 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 - `POST /api/resume/load` with `{ "fileName": "segment.h5save", "content": "<lz-string base64>" }`: decodes and validates an uploaded h5save in memory; it does not start a runtime.
 - `GET /api/resume/status`: returns the same resume artifact projection as `/api/resume`, including `operation` when an interactive resume session exists.
 - `POST /api/resume/start`: restores the verified native save, verifies the boundary and next decision, then pauses before suffix execution.
-- `POST /api/resume/play` with `{ "stepDelayMs": 0 }`: executes and verifies the structured suffix asynchronously.
+- `POST /api/resume/play` with `{ "stepDelayMs": 0 }`: synchronously checks that a verified runtime is paused, returns HTTP `202` with `{ "accepted": true }`, and executes/verifies the structured suffix asynchronously. Not-started, busy, or non-paused states return HTTP `409`.
 - `POST /api/resume/pause`: cooperatively pauses suffix playback.
 - `POST /api/resume/step` with `{ "stepDelayMs": 0 }`: executes exactly one suffix decision and checks its post snapshot.
 - `POST /api/resume/close`: closes the resume browser runtime while keeping the GUI server alive.
@@ -129,6 +129,7 @@ API errors return:
 - Route inspection is implemented in `lib/route-inspector.js`; it computes display diffs from stored `preSnapshot` and `postSnapshot`.
 - Live session state is managed by `lib/replay-session.js`.
 - Interactive h5save state is isolated in `lib/replay-resume-controller.js` and `lib/replay-resume-session.js`; the existing route `ReplaySession` is unchanged. The session validates the artifact before browser startup, loads native save data, pauses at the boundary gate, and only then executes suffix decisions.
+- Gate or restore failures close the resume browser/static server automatically while retaining the last captured runtime display, stable error code, and failed operation projection for diagnosis.
 - `POST /api/resume/load` uses `decodeH5SavePackageText()` and never writes an uploaded payload to a user-selected path. The 32 MiB JSON request cap is owned by the GUI API.
 - `lib/live-replay.js` preserves actual `flags.__leaveLoc__`; checkpoint start snapshots receive the expected initial cross-floor leave location when the saved route starts on a later floor than the project start floor, and later expected snapshots merge that baseline per floor without overwriting newly recorded locations.
 - `route-gui.js` validates `--from-step` immediately after loading the route and before `listen()`/`openBrowser()`; the process-level error includes `REPLAY_STEP_OUT_OF_RANGE`.
@@ -165,6 +166,8 @@ npm run check:replay:h5save-resume --prefix shared-solver
 npm run check:replay:h5save-gui --prefix shared-solver
 npm run check:replay:h5save-gui-flow --prefix shared-solver
 npm run check:replay:h5save-gui-flow:live --prefix shared-solver
+npm run check:replay:h5save-gui:robustness --prefix shared-solver
+npm run check:replay:h5save-gui:robustness:live --prefix shared-solver
 npm run check:replay:h5save-resume:live --prefix shared-solver
 ```
 

@@ -151,7 +151,7 @@ class ReplayResumeSession {
     });
   }
 
-  async closeRuntimeOnly() {
+  async closeRuntimeOnly({ preserveObservation = false } = {}) {
     if (!this.runtime) return;
     const runtime = this.runtime;
     this.runtime = null;
@@ -159,8 +159,10 @@ class ReplayResumeSession {
       runtime.browser && runtime.browser.close ? runtime.browser.close() : Promise.resolve(),
       runtime.server && runtime.server.close ? runtime.server.close() : Promise.resolve(),
     ]);
-    this.lastRuntimeSnapshot = null;
-    this.lastRuntimeStatus = null;
+    if (!preserveObservation) {
+      this.lastRuntimeSnapshot = null;
+      this.lastRuntimeStatus = null;
+    }
   }
 
   async start({ liveOptions } = {}) {
@@ -216,6 +218,16 @@ class ReplayResumeSession {
       this.emit("boundary-verified");
       return this.getStatus();
     } catch (error) {
+      if (this.runtime && !this.lastRuntimeSnapshot) {
+        this.lastRuntimeSnapshot = await this.replayApi.captureRuntimeSnapshot(
+          this.runtime.page,
+          { verifyFloors: this.runtime.verifyFloors },
+        ).catch(() => null);
+      }
+      if (this.runtime && !this.lastRuntimeStatus) {
+        this.lastRuntimeStatus = await this.getRuntimeStatus();
+      }
+      await this.closeRuntimeOnly({ preserveObservation: true });
       this.lastError = errorPayload(error);
       this.state = "failed";
       this.emit("failed", this.lastError);
@@ -325,14 +337,30 @@ class ReplayResumeSession {
     }
   }
 
-  async play({ stepDelayMs } = {}) {
-    if (this.isBusy) throw new Error("Resume session is busy.");
-    await this.ensureStarted();
-    if (this.state !== "paused") throw new Error(`Cannot play while state is ${this.state}.`);
+  startPlay({ stepDelayMs } = {}) {
+    if (this.isBusy) {
+      throw resumeError("REPLAY_RESUME_BUSY", "Resume session is busy.");
+    }
+    if (!this.runtime || ["idle", "closed"].includes(this.state)) {
+      throw resumeError(
+        "REPLAY_RESUME_NOT_STARTED",
+        "Start the resume runtime and pass the boundary gate before playing the suffix.",
+      );
+    }
+    if (this.state !== "paused") {
+      throw resumeError(
+        "REPLAY_RESUME_INVALID_STATE",
+        `Cannot play resume suffix while state is ${this.state}.`,
+      );
+    }
     this.isBusy = true;
     this.pauseRequested = false;
     this.state = "running";
     this.emit("running");
+    return this.finishPlay({ stepDelayMs });
+  }
+
+  async finishPlay({ stepDelayMs } = {}) {
     try {
       while (!this.pauseRequested && this.currentSuffixStep < this.suffix().length && this.state === "running") {
         await this.executeOne({ stepDelayMs });
@@ -343,9 +371,18 @@ class ReplayResumeSession {
       this.pauseRequested = false;
       this.emit("play-stopped");
       return this.getStatus();
+    } catch (error) {
+      this.lastError = errorPayload(error);
+      this.state = "failed";
+      this.emit("failed", this.lastError);
+      return this.getStatus();
     } finally {
       this.isBusy = false;
     }
+  }
+
+  play(options = {}) {
+    return this.startPlay(options);
   }
 
   pause() {

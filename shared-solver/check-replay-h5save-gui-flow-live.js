@@ -49,14 +49,14 @@ function closeServer(server) {
   });
 }
 
-async function requestJson(baseUrl, pathname, body) {
+async function requestJson(baseUrl, pathname, body, expectedStatus = 200) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: body == null ? "GET" : "POST",
     headers: body == null ? undefined : { "Content-Type": "application/json" },
     body: body == null ? undefined : JSON.stringify(body),
   });
   const data = await response.json();
-  assert.strictEqual(response.status, 200, `${pathname} should return 200: ${JSON.stringify(data)}`);
+  assert.strictEqual(response.status, expectedStatus, `${pathname} should return ${expectedStatus}: ${JSON.stringify(data)}`);
   return data;
 }
 
@@ -72,7 +72,7 @@ async function main() {
       routeRecord: input.routeRecord,
       routeFile: input.routeFile,
       projectRoot: input.projectRoot,
-      checkpointStep: 1,
+      checkpointStep: 0,
       outDir,
       timeoutMs: TIMEOUT_MS,
     });
@@ -110,21 +110,35 @@ async function main() {
     assert.strictEqual(started.operation.boundaryVerification.identityMatches, true);
     assert.strictEqual(started.operation.nextDecisionVerification.nextDecisionMatches, true);
 
-    const completed = await requestJson(baseUrl, "/api/resume/play", { stepDelayMs: 0 });
+    const accepted = await requestJson(baseUrl, "/api/resume/play", { stepDelayMs: 1000 }, 202);
+    assert.strictEqual(accepted.accepted, true, "play must return an asynchronous acknowledgement");
+    const pauseRequested = await requestJson(baseUrl, "/api/resume/pause", {});
+    assert.ok(["pausing", "paused"].includes(pauseRequested.operation.state));
     let finalStatus = await requestJson(baseUrl, "/api/resume/status");
-    if (completed.state === "running") {
-      const deadline = Date.now() + TIMEOUT_MS;
-      while (Date.now() < deadline && finalStatus.operation && finalStatus.operation.state === "running") {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        finalStatus = await requestJson(baseUrl, "/api/resume/status");
-      }
+    const pauseDeadline = Date.now() + TIMEOUT_MS;
+    while (Date.now() < pauseDeadline && finalStatus.operation && ["running", "pausing"].includes(finalStatus.operation.state)) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      finalStatus = await requestJson(baseUrl, "/api/resume/status");
+    }
+    assert.strictEqual(finalStatus.operation.state, "paused", "pause must stop between suffix decisions");
+    assert.ok(finalStatus.operation.currentSuffixStep > 0, "pause smoke must complete at least one suffix decision");
+    assert.ok(finalStatus.operation.currentSuffixStep < finalStatus.operation.totalSuffixSteps, "pause smoke must leave work to resume");
+    const pausedStep = finalStatus.operation.currentSuffixStep;
+
+    const resumed = await requestJson(baseUrl, "/api/resume/play", { stepDelayMs: 0 }, 202);
+    assert.strictEqual(resumed.accepted, true, "resume play must be acknowledged asynchronously");
+    finalStatus = await requestJson(baseUrl, "/api/resume/status");
+    const deadline = Date.now() + TIMEOUT_MS;
+    while (Date.now() < deadline && finalStatus.operation && ["running", "pausing"].includes(finalStatus.operation.state)) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      finalStatus = await requestJson(baseUrl, "/api/resume/status");
     }
     assert.strictEqual(finalStatus.operation.state, "completed", "real GUI resume must complete suffix");
     assert.strictEqual(finalStatus.operation.finalVerification.identityMatches, true);
     assert.strictEqual(finalStatus.operation.finalVerification.displayMatches, true);
 
     process.stdout.write(`${JSON.stringify({
-      schema: "motapathfinder.pr-5.2a-replay-h5save-gui-flow-live.v1",
+      schema: "motapathfinder.pr-5.2b-replay-h5save-gui-robustness-live.v1",
       status: "passed",
       input: {
         tower: input.tower,
@@ -132,6 +146,9 @@ async function main() {
         checkpointStep: exported.checkpointStep,
       },
       uploaded: loaded.status,
+      playAccepted: accepted.accepted,
+      pauseState: pausedStep,
+      resumed: resumed.accepted,
       boundaryIdentityMatches: started.operation.boundaryVerification.identityMatches,
       nextDecisionMatches: started.operation.nextDecisionVerification.nextDecisionMatches,
       suffixDecisionCount: finalStatus.operation.totalSuffixSteps,

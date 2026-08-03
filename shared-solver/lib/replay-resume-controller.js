@@ -151,10 +151,16 @@ class ReplayResumeController {
     }).then(() => this.getStatus());
   }
 
-  async play({ stepDelayMs } = {}) {
+  play({ stepDelayMs } = {}) {
     if (!this.session) this.session = this.createSession();
-    await this.session.play({ stepDelayMs });
-    return this.getStatus();
+    const playPromise = this.session.startPlay({ stepDelayMs });
+    playPromise.catch(() => {});
+    return {
+      ok: true,
+      accepted: true,
+      state: "running",
+      operation: this.session.getStatus(),
+    };
   }
 
   pause() {

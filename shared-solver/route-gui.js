@@ -339,8 +339,7 @@ function createGuiServer({
           return;
         }
         if (url.pathname === "/api/resume/play") {
-          resumeController.play({ stepDelayMs: body.stepDelayMs }).catch(() => {});
-          sendJson(response, 200, { ok: true, state: "running" });
+          sendJson(response, 202, resumeController.play({ stepDelayMs: body.stepDelayMs }));
           return;
         }
         if (url.pathname === "/api/resume/pause") {
