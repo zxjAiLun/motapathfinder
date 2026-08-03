@@ -184,6 +184,40 @@ tr.selected {
     gap: 10px;
     border-bottom: 1px solid var(--line);
 }
+.resume-loader {
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+}
+.resume-loader input[type="file"] {
+    width: 100%;
+    box-sizing: border-box;
+}
+.resume-dropzone {
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--muted);
+}
+.resume-dropzone:hover,
+.resume-dropzone.dragover {
+    border-color: var(--blue);
+    color: var(--blue);
+    background: rgba(88, 166, 255, 0.08);
+}
+.resume-operation-controls {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.resume-operation-controls button {
+    font-size: 12px;
+}
 .resume-card {
     border: 1px solid var(--line);
     border-radius: 8px;

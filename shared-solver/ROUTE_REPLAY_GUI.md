@@ -25,6 +25,11 @@ node route-gui.js --project-root="../whiteisland（9）" --h5save=routes/latest/
 node route-gui.js --project-root="../whiteisland（9）" --h5save=routes/latest/h5/segment.h5save --allow-unverified-route=1 --open=0
 ```
 
+启动 GUI 后，也可以在 Resume Artifact 面板通过 file picker 或 drag/drop
+加载 h5save。上传内容只在 server 内存中解码和校验；verified artifact 才能
+点击 `Load / Start Resume` 启动 interactive resume。legacy artifact 仍只提供
+metadata，不允许启动 runtime。
+
 When `--h5save` is supplied without `--route-file`, the GUI uses the artifact's
 embedded route path when that file is available. The default remains route
 verified. `--allow-unverified-route=1` is an explicit legacy mode: the GUI
@@ -69,6 +74,7 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 - Detail panel: structured action JSON, estimate/score rows, hero diff, inventory diff, flag diff, and floor mutation diff.
 - Runtime panel: current session status, last mismatch, and runtime snapshot/debug metadata.
 - Resume Artifact panel: verified/legacy/failed status, project/route match, boundary and next decision, runtime display/identity, native/structured/encoded payload bindings, continuation summary, and recovery failure code/message.
+- Resume operation controls: h5save file picker/dropzone, loader-owned boundary/next gate, `Step Suffix`, `Play Suffix`, `Pause`, `Close Runtime`, suffix progress, per-step status, and final verification.
 
 ## Live Control Semantics
 
@@ -95,6 +101,13 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 - `POST /api/session/jump` with `{ "step": 12 }`: restarts and pauses before step 12; `0` aliases step 1 and out-of-range values are rejected.
 - `POST /api/session/select-step` with `{ "step": 12 }`: updates GUI selection only.
 - `POST /api/session/close`: closes Playwright runtime but keeps the GUI server alive.
+- `POST /api/resume/load` with `{ "fileName": "segment.h5save", "content": "<lz-string base64>" }`: decodes and validates an uploaded h5save in memory; it does not start a runtime.
+- `GET /api/resume/status`: returns the same resume artifact projection as `/api/resume`, including `operation` when an interactive resume session exists.
+- `POST /api/resume/start`: restores the verified native save, verifies the boundary and next decision, then pauses before suffix execution.
+- `POST /api/resume/play` with `{ "stepDelayMs": 0 }`: executes and verifies the structured suffix asynchronously.
+- `POST /api/resume/pause`: cooperatively pauses suffix playback.
+- `POST /api/resume/step` with `{ "stepDelayMs": 0 }`: executes exactly one suffix decision and checks its post snapshot.
+- `POST /api/resume/close`: closes the resume browser runtime while keeping the GUI server alive.
 
 API errors return:
 
@@ -115,6 +128,8 @@ API errors return:
 - Live runtime helpers are shared with `verify-route-live.js` through `lib/live-replay.js`.
 - Route inspection is implemented in `lib/route-inspector.js`; it computes display diffs from stored `preSnapshot` and `postSnapshot`.
 - Live session state is managed by `lib/replay-session.js`.
+- Interactive h5save state is isolated in `lib/replay-resume-controller.js` and `lib/replay-resume-session.js`; the existing route `ReplaySession` is unchanged. The session validates the artifact before browser startup, loads native save data, pauses at the boundary gate, and only then executes suffix decisions.
+- `POST /api/resume/load` uses `decodeH5SavePackageText()` and never writes an uploaded payload to a user-selected path. The 32 MiB JSON request cap is owned by the GUI API.
 - `lib/live-replay.js` preserves actual `flags.__leaveLoc__`; checkpoint start snapshots receive the expected initial cross-floor leave location when the saved route starts on a later floor than the project start floor, and later expected snapshots merge that baseline per floor without overwriting newly recorded locations.
 - `route-gui.js` validates `--from-step` immediately after loading the route and before `listen()`/`openBrowser()`; the process-level error includes `REPLAY_STEP_OUT_OF_RANGE`.
 - `lib/replay-resume-gui.js` owns the GUI-safe resume status projection. It catches decode/validation failures and exposes only stable `{ code, message }` recovery reasons, without leaking a stack into the normal GUI.
@@ -148,6 +163,8 @@ npm run check:replay:flag-identity --prefix shared-solver
 npm run check:replay:flag-merge-cli --prefix shared-solver
 npm run check:replay:h5save-resume --prefix shared-solver
 npm run check:replay:h5save-gui --prefix shared-solver
+npm run check:replay:h5save-gui-flow --prefix shared-solver
+npm run check:replay:h5save-gui-flow:live --prefix shared-solver
 npm run check:replay:h5save-resume:live --prefix shared-solver
 ```
 

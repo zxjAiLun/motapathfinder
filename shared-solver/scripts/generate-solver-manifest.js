@@ -449,6 +449,20 @@ const TEST_OVERRIDES = {
     cleanCheckout: true,
     notes: "PR-5.1c1 Route GUI tri-state fingerprint status, verified/legacy/failure projection, headless DOM smoke, metadata-only legacy mode, and real CLI/API tampered/missing h5save controls",
   },
+  "shared-solver/check-replay-h5save-gui-flow.js": {
+    grade: "closure",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: true,
+    notes: "PR-5.2a Route GUI h5save upload/drop surface, loader-owned boundary/next gates, suffix step/final projection, invalid upload control, and DOM control smoke",
+  },
+  "shared-solver/check-replay-h5save-gui-flow-live.js": {
+    grade: "integration-local",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: false,
+    notes: "PR-5.2a local Chrome/Edge GUI API flow with a real exported h5save, native loader restore, boundary gate, suffix play, and final verification",
+  },
 };
 
 function autoGradeTest(fileName) {
@@ -670,6 +684,7 @@ const manifest = {
         "shared-solver/check-replay-flag-merge-cli-contract.js",
         "shared-solver/check-replay-h5save-resume-contract.js",
         "shared-solver/check-replay-h5save-gui.js",
+        "shared-solver/check-replay-h5save-gui-flow.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],
     },

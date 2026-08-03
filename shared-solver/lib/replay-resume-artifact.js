@@ -531,11 +531,12 @@ function encodeH5SavePackage(projectRoot, savePackage) {
   return loadLzString(projectRoot).compressToBase64(JSON.stringify(savePackage));
 }
 
-function decodeH5SavePackage(projectRoot, filePath) {
+function decodeH5SavePackageText(projectRoot, encodedText) {
   const lzString = loadLzString(projectRoot);
   let savePackage;
   try {
-    savePackage = JSON.parse(lzString.decompressFromBase64(fs.readFileSync(filePath, "utf8")));
+    const decoded = lzString.decompressFromBase64(String(encodedText || "").trim());
+    savePackage = JSON.parse(decoded);
   } catch (error) {
     throw resumeError("REPLAY_RESUME_H5SAVE_INVALID", `Unable to decode h5save: ${error.message}`);
   }
@@ -547,6 +548,15 @@ function decodeH5SavePackage(projectRoot, filePath) {
     saveData: savePackage.data,
     artifact: savePackage.__solverResumeArtifact__ || null,
   };
+}
+
+function decodeH5SavePackage(projectRoot, filePath) {
+  try {
+    return decodeH5SavePackageText(projectRoot, fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    if (error && error.code === "REPLAY_RESUME_H5SAVE_INVALID") throw error;
+    throw resumeError("REPLAY_RESUME_H5SAVE_INVALID", `Unable to read h5save: ${error.message}`);
+  }
 }
 
 function stripResumeHelpers(saveData) {
@@ -591,6 +601,7 @@ module.exports = {
   captureRuntimeSaveData,
   cloneJson,
   decodeH5SavePackage,
+  decodeH5SavePackageText,
   encodeH5SavePackage,
   loadRuntimeSaveData,
   resumeError,

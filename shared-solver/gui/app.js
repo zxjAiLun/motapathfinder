@@ -10,6 +10,7 @@ const state = {
   polling: null,
   speedDelayMs: 1400,
   controlsRendered: false,
+  resumeControlsRendered: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -119,6 +120,7 @@ function renderResume() {
   const resume = state.resume;
   if (!resume || resume.status === "not-loaded") {
     $("resume-status").innerHTML = '<div class="muted">No resume artifact loaded.</div>';
+    renderResumeControls();
     return;
   }
   const status = resume.status || "failed";
@@ -132,6 +134,7 @@ function renderResume() {
   const continuation = resume.continuation || {};
   const next = boundary.nextDecision || null;
   const failure = resume.failure || null;
+  const operation = resume.operation || null;
   const projectStatus = resumeMatchStatus(resume.projectFingerprintMatches);
   const routeStatus = resumeMatchStatus(resume.routeFingerprintMatches);
   const bindingRows = [
@@ -156,8 +159,72 @@ function renderResume() {
       <table><thead><tr><th>Binding</th><th>Status</th><th>SHA-256</th></tr></thead><tbody>${bindingRows}</tbody></table>
       <div class="resume-meta"><span>All bindings verified: <strong class="${binding.verified ? "resume-ok" : "resume-failed"}">${binding.verified ? "yes" : "no"}</strong></span><span>Suffix decisions: <strong>${escapeHtml(continuation.suffixDecisionCount == null ? "-" : continuation.suffixDecisionCount)}</strong></span><span>Final: <strong>${escapeHtml(resumeDisplayText(continuation.runtimeDisplay))}</strong></span></div>
     </div>
+    <div class="resume-card">
+      <h3>Interactive resume</h3>
+      <div class="resume-meta"><span>State: <strong>${escapeHtml(operation ? operation.state : "not started")}</strong></span><span>Suffix: <strong>${escapeHtml(operation ? `${operation.currentSuffixStep}/${operation.totalSuffixSteps}` : "-")}</strong></span><span>Next: <strong>${escapeHtml(operation && operation.nextStep == null ? "-" : operation ? operation.nextStep : "-")}</strong></span></div>
+      <div class="resume-grid"><span>Boundary gate</span><strong class="${operation && operation.boundaryVerification && operation.boundaryVerification.identityMatches ? "resume-ok" : "resume-unchecked"}">${operation && operation.boundaryVerification && operation.boundaryVerification.identityMatches ? "✓ verified" : "not checked"}</strong><span>Next decision gate</span><strong class="${operation && operation.nextDecisionVerification && operation.nextDecisionVerification.nextDecisionMatches ? "resume-ok" : "resume-unchecked"}">${operation && operation.nextDecisionVerification && operation.nextDecisionVerification.nextDecisionMatches ? "✓ verified" : "not checked"}</strong><span>Final gate</span><strong class="${operation && operation.finalVerification && operation.finalVerification.identityMatches ? "resume-ok" : "resume-unchecked"}">${operation && operation.finalVerification && operation.finalVerification.identityMatches ? "✓ verified" : "not checked"}</strong><span>Runtime</span><strong>${escapeHtml(operation ? resumeDisplayText(operation.runtimeDisplay) : "-")}</strong></div>
+      ${operation && operation.lastError ? `<div class="resume-error"><strong>${escapeHtml(operation.lastError.code || "RESUME_RUNTIME_FAILED")}</strong><div>${escapeHtml(operation.lastError.message || "")}</div></div>` : ""}
+    </div>
     ${failure ? `<div class="resume-card resume-error"><h3>Recovery failure</h3><div><strong>${escapeHtml(failure.code || "UNKNOWN")}</strong></div><div>${escapeHtml(failure.message || "")}</div></div>` : ""}
   `;
+  renderResumeControls();
+}
+
+async function loadResumeFile(file) {
+  if (!file) return;
+  try {
+    const content = await file.text();
+    state.resume = await postJson("/api/resume/load", {
+      fileName: file.name,
+      content,
+    });
+    renderAll();
+  } catch (error) {
+    state.resume = Object.assign({}, state.resume || {}, {
+      status: "failed",
+      mode: "failed",
+      failure: { code: "REPLAY_RESUME_UPLOAD_FAILED", message: error.message },
+    });
+    renderAll();
+  }
+}
+
+function renderResumeControls() {
+  if (!state.resumeControlsRendered) {
+    const fileInput = $("resume-file");
+    const dropzone = $("resume-dropzone");
+    fileInput.onchange = (event) => loadResumeFile(event.target.files && event.target.files[0]);
+    dropzone.ondragover = (event) => {
+      event.preventDefault();
+      dropzone.classList.add("dragover");
+    };
+    dropzone.ondragleave = () => dropzone.classList.remove("dragover");
+    dropzone.ondrop = (event) => {
+      event.preventDefault();
+      dropzone.classList.remove("dragover");
+      loadResumeFile(event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0]);
+    };
+    dropzone.onclick = () => fileInput.click();
+    dropzone.onkeydown = (event) => {
+      if (event.key === "Enter" || event.key === " ") fileInput.click();
+    };
+    $("resume-start").onclick = startResume;
+    $("resume-play").onclick = playResume;
+    $("resume-pause").onclick = pauseResume;
+    $("resume-step").onclick = stepResume;
+    $("resume-close").onclick = closeResume;
+    state.resumeControlsRendered = true;
+  }
+  const resume = state.resume || {};
+  const operation = resume.operation || {};
+  const verified = resume.status === "verified";
+  const active = ["starting", "running", "pausing"].includes(operation.state);
+  const paused = operation.state === "paused";
+  $("resume-start").disabled = !verified || active || !!operation.busy;
+  $("resume-play").disabled = !verified || !paused || !!operation.busy;
+  $("resume-pause").disabled = !active;
+  $("resume-step").disabled = !verified || !paused || !!operation.busy;
+  $("resume-close").disabled = !operation.state || operation.state === "closed" || operation.state === "idle";
 }
 
 function renderControls() {
@@ -359,6 +426,19 @@ async function refreshSessionStatus() {
     });
     renderAll();
   }
+  await refreshResumeStatus();
+}
+
+async function refreshResumeStatus() {
+  try {
+    state.resume = await fetchJson("/api/resume");
+    renderAll();
+  } catch (error) {
+    state.resume = Object.assign({}, state.resume || {}, {
+      failure: { code: "REPLAY_RESUME_STATUS_UNAVAILABLE", message: error.message },
+    });
+    renderAll();
+  }
 }
 
 function ensurePolling() {
@@ -406,6 +486,36 @@ async function jumpToStep(step) {
 }
 async function jumpToSelected() {
   await jumpToStep(state.selectedStep);
+}
+
+async function startResume() {
+  state.resume = await postJson("/api/resume/start", {
+    liveOptions: { headless: "0" },
+  });
+  ensurePolling();
+  renderAll();
+}
+
+async function playResume() {
+  await postJson("/api/resume/play", { stepDelayMs: state.speedDelayMs });
+  ensurePolling();
+  await refreshResumeStatus();
+}
+
+async function pauseResume() {
+  state.resume = await postJson("/api/resume/pause", {});
+  renderAll();
+}
+
+async function stepResume() {
+  state.resume = await postJson("/api/resume/step", { stepDelayMs: state.speedDelayMs });
+  ensurePolling();
+  renderAll();
+}
+
+async function closeResume() {
+  state.resume = await postJson("/api/resume/close", {});
+  renderAll();
 }
 
 loadRoute()

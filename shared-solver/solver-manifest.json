@@ -188,7 +188,8 @@
         "shared-solver/check-replay-flag-identity-contract.js",
         "shared-solver/check-replay-flag-merge-cli-contract.js",
         "shared-solver/check-replay-h5save-resume-contract.js",
-        "shared-solver/check-replay-h5save-gui.js"
+        "shared-solver/check-replay-h5save-gui.js",
+        "shared-solver/check-replay-h5save-gui-flow.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -874,9 +875,41 @@
       },
       "notes": "auto-classified; refine in solver-manifest"
     },
+    "shared-solver/lib/replay-resume-controller.js": {
+      "id": "replay-resume-controller",
+      "path": "shared-solver/lib/replay-resume-controller.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/replay-resume-gui.js": {
       "id": "replay-resume-gui",
       "path": "shared-solver/lib/replay-resume-gui.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/replay-resume-session.js": {
+      "id": "replay-resume-session",
+      "path": "shared-solver/lib/replay-resume-session.js",
       "layer": "unclassified",
       "status": "supporting",
       "role": "supporting",
@@ -1716,6 +1749,20 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.1a1a replay-runtime per-floor __leaveLoc__ merge, non-initial-floor checkpoint continuation, dual mismatch witnesses, direct route-gui CLI gate, and deterministic rebuild"
+    },
+    "shared-solver/check-replay-h5save-gui-flow-live.js": {
+      "grade": "integration-local",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": false,
+      "notes": "PR-5.2a local Chrome/Edge GUI API flow with a real exported h5save, native loader restore, boundary gate, suffix play, and final verification"
+    },
+    "shared-solver/check-replay-h5save-gui-flow.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.2a Route GUI h5save upload/drop surface, loader-owned boundary/next gates, suffix step/final projection, invalid upload control, and DOM control smoke"
     },
     "shared-solver/check-replay-h5save-gui.js": {
       "grade": "closure",

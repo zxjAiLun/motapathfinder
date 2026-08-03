@@ -436,12 +436,12 @@ npm run run:replay:h5save-resume --prefix shared-solver
 npm run check:replay:h5save-resume:live --prefix shared-solver
 ```
 
-#### PR-5.1c：Route GUI Resume Artifact Integration ⏳ route-gui-resume-artifact
+#### PR-5.1c：Route GUI Resume Artifact Integration ✅ route-gui-resume-artifact
 
 - ✅ `route-gui.js --h5save=<path>` 读取并验证 resume artifact；有 embedded route 时自动定位 route，仍支持显式 `--route-file` 覆盖。
 - ✅ GUI 与 `/api/route`、`/api/resume` 展示 verified / legacy / failed 状态、project/route fingerprint 匹配、boundary 已完成步数、next step、next primitive decision、runtime display、identity 和三类 payload binding。
 - ✅ `--allow-unverified-route=1` 进入明确标记的 legacy metadata-only 模式；没有 route 时不伪造 decision timeline，恢复失败则保留稳定错误码和可读原因。
-- ⏳ Review 要求 legacy route fingerprint 改为 tri-state，并补真实 DOM/CLI 负控；production DP key、dominance、agenda、容量、默认策略或路线选择不变。
+- ✅ Review 要求的 legacy route fingerprint tri-state、真实 DOM smoke 与 CLI/API 负控已在 PR-5.1c1 收口；production DP key、dominance、agenda、容量、默认策略或路线选择不变。
 
 验收：
 
@@ -460,6 +460,24 @@ npm run check:manifest --prefix shared-solver
 验收：
 
 ```bash
+npm run check:replay:h5save-gui --prefix shared-solver
+npm run check:manifest --prefix shared-solver
+```
+
+#### PR-5.2a：GUI Resume Operation Flow ✅ route-gui-resume-operation-flow
+
+- ✅ Route GUI 支持通过 file picker 或 drag/drop 将 h5save 内容上传到内存，复用 production h5save decoder/validator；上传不会自动启动 runtime。
+- ✅ 新增独立 resume controller/session，不改既有 `ReplaySession`；verified artifact 才能启动 interactive resume，legacy 仍保持 metadata-only。
+- ✅ loader-owned restore 在任何 suffix decision 前执行 boundary runtime identity/display 与 next decision gate；GUI/API 暴露 gate、suffix 当前进度、逐步状态和 final verification。
+- ✅ `Step Suffix`、`Play Suffix`、`Pause`、`Close Runtime` 只操作 resume session；invalid upload 返回稳定 `REPLAY_RESUME_H5SAVE_INVALID`。
+- ✅ WhiteIsland 固定短路线覆盖真实上传/API/DOM flow；独立 live smoke 使用真实导出的 h5save、Chromium runtime、boundary pause、suffix continuation 和 final identity/display。
+- ✅ 本轮仍不修改 production DP key、dominance、agenda、容量、默认策略、路线选择或既有路线 `ReplaySession` 语义。
+
+验收：
+
+```bash
+npm run check:replay:h5save-gui-flow --prefix shared-solver
+npm run check:replay:h5save-gui-flow:live --prefix shared-solver
 npm run check:replay:h5save-gui --prefix shared-solver
 npm run check:manifest --prefix shared-solver
 ```

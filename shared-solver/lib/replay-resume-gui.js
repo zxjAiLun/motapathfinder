@@ -2,6 +2,7 @@
 
 const {
   decodeH5SavePackage,
+  decodeH5SavePackageText,
   validateResumeArtifact,
 } = require("./replay-resume-artifact");
 
@@ -141,6 +142,7 @@ function loadResumeArtifactForGui({
   project,
   projectRoot,
   h5saveFile,
+  h5saveText,
   routeRecord,
   routeFile,
   allowUnverifiedRoute,
@@ -151,7 +153,9 @@ function loadResumeArtifactForGui({
 
   let decoded;
   try {
-    decoded = decodeH5SavePackage(projectRoot, h5saveFile);
+    decoded = h5saveText != null
+      ? decodeH5SavePackageText(projectRoot, h5saveText)
+      : decodeH5SavePackage(projectRoot, h5saveFile);
   } catch (error) {
     return buildResumeGuiStatus({
       h5saveFile,

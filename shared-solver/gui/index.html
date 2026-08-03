@@ -17,6 +17,18 @@
     <section class="panel detail-panel">
       <div class="panel-title">Resume Artifact</div>
       <div id="resume-status" class="resume-status"></div>
+      <div class="resume-loader">
+        <label for="resume-file">选择 h5save</label>
+        <input id="resume-file" type="file" accept=".h5save,.txt,application/octet-stream,text/plain">
+        <div id="resume-dropzone" class="resume-dropzone" tabindex="0">将 h5save 拖到这里，或点击上方选择文件</div>
+        <div id="resume-operation-controls" class="resume-operation-controls">
+          <button id="resume-start">Load / Start Resume</button>
+          <button id="resume-play">Play Suffix</button>
+          <button id="resume-pause">Pause</button>
+          <button id="resume-step">Step Suffix</button>
+          <button id="resume-close">Close Runtime</button>
+        </div>
+      </div>
       <div class="panel-title">Step Detail</div>
       <div id="details" class="details"></div>
       <div class="panel-title">Runtime</div>

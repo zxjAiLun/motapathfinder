@@ -18,6 +18,7 @@ const { loadProject } = require("./lib/project-loader");
 const { parseKeyValueArgs, resolveProjectRoot } = require("./lib/cli-options");
 const { decodeH5SavePackage } = require("./lib/replay-resume-artifact");
 const { loadResumeArtifactForGui } = require("./lib/replay-resume-gui");
+const { ReplayResumeController } = require("./lib/replay-resume-controller");
 
 const GUI_DIR = path.resolve(__dirname, "gui");
 const MIME_TYPES = {
@@ -163,15 +164,24 @@ function sendError(response, error, debug) {
   });
 }
 
-function readJsonBody(request) {
+function readJsonBody(request, maxBytes = 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let body = "";
+    let settled = false;
     request.on("data", (chunk) => {
+      if (settled) return;
       body += chunk;
-      if (body.length > 1024 * 1024)
-        reject(new Error("Request body too large."));
+      if (body.length > maxBytes) {
+        settled = true;
+        const error = new Error("Request body too large.");
+        error.statusCode = 413;
+        reject(error);
+        request.resume();
+      }
     });
     request.on("end", () => {
+      if (settled) return;
+      settled = true;
       if (!body.trim()) {
         resolve({});
         return;
@@ -239,6 +249,7 @@ function createGuiServer({
   baselineRecord,
   baselineFile,
   resumeInfo,
+  resumeController,
 }) {
   const displayRouteRecord = routeRecord || emptyRouteRecord();
   const routeSummary = buildRouteSummary(displayRouteRecord, routeFile, project);
@@ -249,6 +260,16 @@ function createGuiServer({
     baselineSummary && routeRecord
       ? findDivergence(displayRouteRecord, baselineRecord)
       : null;
+  async function currentResumeStatus() {
+    if (resumeController && typeof resumeController.getStatusAsync === "function") {
+      return resumeController.getStatusAsync();
+    }
+    return resumeInfo || {
+      status: "not-loaded",
+      mode: "none",
+      requested: false,
+    };
+  }
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url || "/", "http://127.0.0.1");
     try {
@@ -263,7 +284,7 @@ function createGuiServer({
       if (request.method === "GET" && url.pathname === "/api/route") {
         sendJson(response, 200, {
           ...routeSummary,
-          resume: resumeInfo || null,
+          resume: await currentResumeStatus(),
           baseline: baselineSummary
             ? {
                 divergence: divergence || { identical: true },
@@ -285,12 +306,59 @@ function createGuiServer({
         return;
       }
 
-      if (request.method === "GET" && url.pathname === "/api/resume") {
-        sendJson(response, 200, resumeInfo || {
-          status: "not-loaded",
-          mode: "none",
-          requested: false,
-        });
+      if (
+        request.method === "GET" &&
+        (url.pathname === "/api/resume" || url.pathname === "/api/resume/status")
+      ) {
+        sendJson(response, 200, await currentResumeStatus());
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname.startsWith("/api/resume/")
+      ) {
+        if (!resumeController) {
+          throw Object.assign(new Error("Interactive resume controller is unavailable."), {
+            code: "REPLAY_RESUME_CONTROLLER_UNAVAILABLE",
+            statusCode: 409,
+          });
+        }
+        const body = await readJsonBody(request, 32 * 1024 * 1024);
+        if (url.pathname === "/api/resume/load") {
+          sendJson(response, 200, await resumeController.load({
+            fileName: body.fileName || body.name,
+            content: body.content,
+          }));
+          return;
+        }
+        if (url.pathname === "/api/resume/start") {
+          sendJson(response, 200, await resumeController.start({
+            liveOptions: body.liveOptions || {},
+          }));
+          return;
+        }
+        if (url.pathname === "/api/resume/play") {
+          resumeController.play({ stepDelayMs: body.stepDelayMs }).catch(() => {});
+          sendJson(response, 200, { ok: true, state: "running" });
+          return;
+        }
+        if (url.pathname === "/api/resume/pause") {
+          sendJson(response, 200, resumeController.pause());
+          return;
+        }
+        if (url.pathname === "/api/resume/step") {
+          sendJson(response, 200, await resumeController.step({
+            stepDelayMs: body.stepDelayMs,
+          }));
+          return;
+        }
+        if (url.pathname === "/api/resume/close") {
+          sendJson(response, 200, await resumeController.close());
+          return;
+        }
+        response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+        response.end("Not Found");
         return;
       }
 
@@ -434,6 +502,15 @@ async function main() {
     downloadsDir: args["downloads-dir"],
     fromStep,
   };
+  const resumeController = new ReplayResumeController({
+    project,
+    projectRoot,
+    routeRecord,
+    routeFile,
+    allowUnverifiedRoute,
+    h5saveFile,
+    liveOptions,
+  });
   const session = routeRecord
     ? new ReplaySession({
         routeRecord,
@@ -454,6 +531,7 @@ async function main() {
     baselineRecord,
     baselineFile,
     resumeInfo,
+    resumeController,
   });
   const address = await listen(server, host, port);
   const guiUrl = `http://${host}:${address.port}/`;
@@ -466,6 +544,7 @@ async function main() {
   const shutdown = async () => {
     console.log("\nClosing Route GUI...");
     await session.close().catch(() => null);
+    await resumeController.close().catch(() => null);
     await new Promise((resolve) => server.close(resolve));
     process.exit(0);
   };

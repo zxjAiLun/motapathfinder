@@ -1375,3 +1375,25 @@ Review 指出 PR-5.1c 的 legacy `routeFingerprintMatches=false` 会把“未检
 npm run check:replay:h5save-gui --prefix shared-solver
 npm run check:manifest --prefix shared-solver
 ```
+
+### 2026-08-03 更新：PR-5.2a GUI Resume Operation Flow
+
+PR-5.1c/c1 已按 Review 正式关闭；本轮进入 GUI resume 操作流，范围仍限定在
+replay GUI/productization，不修改 production solver/search 语义：
+
+- `shared-solver/lib/replay-resume-controller.js` 管理当前 GUI artifact 和可选 runtime；`POST /api/resume/load` 接收 file picker/drag-drop 的 h5save 文本，仅在内存中解码和验证，不写入用户路径。
+- `shared-solver/lib/replay-resume-session.js` 是独立于既有 `ReplaySession` 的 resume 状态机。verified artifact 才能启动；legacy、failed 或未加载 artifact 不允许 interactive runtime。
+- `start` 先执行 loader-owned native `loadData()`，再验证 boundary runtime identity/display 与 next decision；状态停在 `paused` 后才允许 suffix `step/play`。
+- 每个 suffix decision 使用现有 runtime action/post-snapshot contract；最后一个 suffix step 自动执行 final runtime identity/display verification。GUI/API 同时暴露 boundary gate、next gate、suffix progress、per-step status 和 final gate。
+- `gui/index.html` / `gui/app.js` / `gui/styles.css` 新增 h5save file picker、drag/drop、`Load / Start Resume`、`Step Suffix`、`Play Suffix`、`Pause`、`Close Runtime`，并保持 legacy `match / mismatch / not checked` 三态展示。
+- 新增 `check-replay-h5save-gui-flow.js` 覆盖真实 API 上传、boundary pause、suffix step、final projection、invalid upload 和 Chromium DOM controls；`check-replay-h5save-gui-flow-live.js` 使用真实 WhiteIsland 导出的 h5save 与 Chromium runtime 完成同一操作流。
+- 本轮不修改 `shared-solver/lib/replay-session.js`、state key、dominance、agenda、capacity、默认策略、路线选择或 solver/search semantics。
+
+专项检查：
+
+```bash
+npm run check:replay:h5save-gui-flow --prefix shared-solver
+npm run check:replay:h5save-gui-flow:live --prefix shared-solver
+npm run check:replay:h5save-gui --prefix shared-solver
+npm run check:manifest --prefix shared-solver
+```
