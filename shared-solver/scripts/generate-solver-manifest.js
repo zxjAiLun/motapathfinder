@@ -454,7 +454,7 @@ const TEST_OVERRIDES = {
     allowsNotFound: false,
     requiresStrictReplay: true,
     cleanCheckout: true,
-    notes: "PR-5.2b Route GUI asynchronous play acknowledgement, invalid-state/legacy API controls, gate-failure runtime cleanup, real picker/drop upload, and DOM operation smoke",
+    notes: "PR-5.2c Route GUI cached failure status retention, busy/completed/failed play controls, legacy API controls, gate-failure cleanup, real picker/drop upload, and DOM operation smoke",
   },
   "shared-solver/check-replay-h5save-gui-flow-live.js": {
     grade: "integration-local",

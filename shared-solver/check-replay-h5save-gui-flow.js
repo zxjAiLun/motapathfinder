@@ -29,7 +29,7 @@ const {
 const { ReplayResumeController } = require("./lib/replay-resume-controller");
 const { ReplayResumeSession } = require("./lib/replay-resume-session");
 
-const CHECK_SCHEMA = "motapathfinder.pr-5.2b-replay-h5save-gui-robustness.v1";
+const CHECK_SCHEMA = "motapathfinder.pr-5.2c-replay-h5save-gui-status-controls.v1";
 
 function requireCondition(condition, message) {
   if (!condition) throw new Error(message);
@@ -177,8 +177,20 @@ function buildFixture(input) {
   };
 }
 
-function makeFakeReplayApi(fixture, { failBoundary = false } = {}) {
+function makeFakeReplayApi(
+  fixture,
+  { failBoundary = false, holdSuffix = false, failSuffix = false } = {},
+) {
   const lifecycle = { closed: false };
+  let shouldFailSuffix = failSuffix;
+  let releaseSuffix;
+  const suffixStarted = new Promise((resolve) => {
+    releaseSuffix = resolve;
+  });
+  let suffixStartedResolve;
+  const suffixStartedSignal = new Promise((resolve) => {
+    suffixStartedResolve = resolve;
+  });
   const api = {
     validateResumeArtifact,
     verifyResumeNextDecision,
@@ -210,10 +222,21 @@ function makeFakeReplayApi(fixture, { failBoundary = false } = {}) {
       return verifyRuntimeResumeSnapshot(artifact, phase, snapshot, options);
     },
     executeRouteDecision: async (runtime, decision) => {
+      if (holdSuffix) {
+        suffixStartedResolve();
+        await suffixStarted;
+      }
       runtime.page.snapshot = runtimeSnapshotWithStartBaseline(
         decision.postSnapshot,
         fixture.runtimeRouteRecord.start.snapshot,
       );
+      if (shouldFailSuffix) {
+        return {
+          ok: false,
+          actual: cloneJson(runtime.page.snapshot),
+          mismatch: "Synthetic suffix mismatch.",
+        };
+      }
       return {
         ok: true,
         actual: cloneJson(runtime.page.snapshot),
@@ -222,6 +245,11 @@ function makeFakeReplayApi(fixture, { failBoundary = false } = {}) {
     },
   };
   api.lifecycle = lifecycle;
+  api.controls = {
+    suffixStarted: suffixStartedSignal,
+    releaseSuffix: () => releaseSuffix(),
+    setFailSuffix: (value) => { shouldFailSuffix = value === true; },
+  };
   return api;
 }
 
@@ -386,13 +414,87 @@ async function checkGateFailureCleanup({ input, fixture }) {
     assert.strictEqual(status.operation.browserUrl, null, "failed gate must close the runtime");
     assert.strictEqual(replayApi.lifecycle.closed, true, "failed gate must close browser/server resources");
     assert.ok(status.operation.runtimeDisplay.floorId, "failed gate must preserve the last captured display");
+    assert.ok(
+      status.operation.runtimeStatus && status.operation.runtimeStatus.floorId,
+      "failed gate must preserve the last runtime status",
+    );
     return {
       failureCode: failed.code,
       state: status.operation.state,
       runtimeClosed: replayApi.lifecycle.closed,
       preservedFloor: status.operation.runtimeDisplay.floorId,
+      preservedRuntimeStatus: status.operation.runtimeStatus.floorId,
     };
   } finally {
+    await controller.close();
+    await closeServer(server);
+  }
+}
+
+async function checkPlayStateControls({ input, fixture }) {
+  const replayApi = makeFakeReplayApi(fixture, { holdSuffix: true });
+  const controller = new ReplayResumeController({
+    project: fixture.project,
+    projectRoot: input.projectRoot,
+    routeRecord: input.routeRecord,
+    routeFile: input.routeFile,
+    liveOptions: { headless: "1", timeoutMs: 5000 },
+    sessionFactory: (options) => new ReplayResumeSession(Object.assign({}, options, { replayApi })),
+  });
+  const server = createGuiServer({
+    routeRecord: input.routeRecord,
+    routeFile: input.routeFile,
+    session: makeStubSession(),
+    project: fixture.project,
+    debug: true,
+    resumeController: controller,
+  });
+  const address = await listen(server);
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    await requestJson(baseUrl, "/api/resume/load", {
+      fileName: "play-state-controls.h5save",
+      content: fixture.packageText,
+    });
+    await requestJson(baseUrl, "/api/resume/start", {});
+
+    const accepted = await requestJson(baseUrl, "/api/resume/play", {}, 202);
+    assert.strictEqual(accepted.accepted, true);
+    await replayApi.controls.suffixStarted;
+    const busy = await requestJson(baseUrl, "/api/resume/play", {}, 409);
+    assert.strictEqual(busy.code, "REPLAY_RESUME_BUSY");
+    replayApi.controls.releaseSuffix();
+
+    let status = await requestJson(baseUrl, "/api/resume/status");
+    const completionDeadline = Date.now() + 2000;
+    while (status.operation && status.operation.state === "running" && Date.now() < completionDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      status = await requestJson(baseUrl, "/api/resume/status");
+    }
+    assert.strictEqual(status.operation.state, "completed");
+    const completed = await requestJson(baseUrl, "/api/resume/play", {}, 409);
+    assert.strictEqual(completed.code, "REPLAY_RESUME_INVALID_STATE");
+
+    replayApi.controls.setFailSuffix(true);
+    await requestJson(baseUrl, "/api/resume/start", {});
+    await requestJson(baseUrl, "/api/resume/play", {}, 202);
+    status = await requestJson(baseUrl, "/api/resume/status");
+    const failureDeadline = Date.now() + 2000;
+    while (status.operation && status.operation.state === "running" && Date.now() < failureDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      status = await requestJson(baseUrl, "/api/resume/status");
+    }
+    assert.strictEqual(status.operation.state, "failed");
+    const failed = await requestJson(baseUrl, "/api/resume/play", {}, 409);
+    assert.strictEqual(failed.code, "REPLAY_RESUME_INVALID_STATE");
+
+    return {
+      busy: busy.code,
+      completed: completed.code,
+      failed: failed.code,
+    };
+  } finally {
+    replayApi.controls.releaseSuffix();
     await controller.close();
     await closeServer(server);
   }
@@ -480,6 +582,7 @@ async function main() {
   const flow = await checkGuiFlow({ input, fixture });
   const legacy = await checkLegacyApi({ input, fixture });
   const gateFailure = await checkGateFailureCleanup({ input, fixture });
+  const playStates = await checkPlayStateControls({ input, fixture });
   const dom = await checkGuiDom({ input, fixture });
   process.stdout.write(`${JSON.stringify({
     schema: CHECK_SCHEMA,
@@ -492,6 +595,7 @@ async function main() {
     flow,
     legacy,
     gateFailure,
+    playStates,
     dom,
   }, null, 2)}\n`);
 }

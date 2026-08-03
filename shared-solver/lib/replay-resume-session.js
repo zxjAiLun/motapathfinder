@@ -442,7 +442,8 @@ class ReplayResumeSession {
   }
 
   async getStatusAsync() {
-    this.lastRuntimeStatus = await this.getRuntimeStatus();
+    const runtimeStatus = await this.getRuntimeStatus();
+    if (runtimeStatus != null) this.lastRuntimeStatus = runtimeStatus;
     return this.getStatus();
   }
 }

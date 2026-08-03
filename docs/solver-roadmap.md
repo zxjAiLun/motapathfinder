@@ -498,6 +498,19 @@ npm run check:replay:h5save-gui:robustness:live --prefix shared-solver
 npm run check:static --prefix shared-solver
 ```
 
+#### PR-5.2c：Resume Status Retention and Play State Controls ✅ route-gui-resume-status-controls
+
+- ✅ failed gate/restore 后的 `lastRuntimeStatus` 不会因后续异步 status poll 在 runtime 已关闭时被清空；非空 runtime status 仍会正常刷新缓存。
+- ✅ 真实 GUI API checker exact-lock `busy`、`completed` 和 `failed` 状态下的 `POST /api/resume/play` 为 HTTP `409`，分别覆盖 `REPLAY_RESUME_BUSY` 与 `REPLAY_RESUME_INVALID_STATE`。
+- ✅ 本轮只补 resume operation 的诊断与边界控制，不修改 production DP key、dominance、agenda、容量、默认策略、路线选择或既有路线 `ReplaySession` 语义。
+
+验收：
+
+```bash
+npm run check:replay:h5save-gui:robustness --prefix shared-solver
+npm run check:static --prefix shared-solver
+```
+
 ## 5. 风险控制
 
 ### 5.1 `presentTiles` 过拟合
