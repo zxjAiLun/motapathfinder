@@ -2,6 +2,11 @@
 
 const { syncProgress } = require("./progress");
 const { getActivePerfTracker } = require("./perf");
+const {
+  normalizeSolverModel,
+  projectHeroForSolverModel,
+  projectSolverState,
+} = require("./solver-model");
 
 function cloneState(state) {
   const tracker = getActivePerfTracker();
@@ -15,6 +20,9 @@ function cloneState(state) {
   }
   if (cloned.meta && cloned.meta.__floorScout) {
     delete cloned.meta.__floorScout;
+  }
+  if (cloned.meta && cloned.meta.solverModel) {
+    projectSolverState(cloned);
   }
   return cloned;
 }
@@ -50,16 +58,24 @@ function createInitialState(project, options) {
   const config = options || {};
   const hero = cloneState((project.data.firstData || {}).hero || {});
   const inventory = flattenInventory(hero.items || {});
+  const initialFlags = cloneState(hero.flags || {});
   delete hero.items;
+  const configuredModel = config.solverModel || config.model || null;
+  const solverModel = configuredModel == null
+    ? null
+    : normalizeSolverModel(configuredModel);
+  const projectedHero = solverModel && solverModel.explicit
+    ? projectHeroForSolverModel(hero, solverModel)
+    : hero;
 
   if (config.rank === "easy") inventory.I581 = 1;
   else if (config.rank === "hard") inventory.I582 = 1;
 
   const state = {
     floorId: project.data.firstData.floorId,
-    hero,
+    hero: projectedHero,
     inventory,
-    flags: cloneState(hero.flags || {}),
+    flags: initialFlags,
     floorStates: {},
     visitedFloors: {},
     triggeredAutoEvents: {},
@@ -73,6 +89,7 @@ function createInitialState(project, options) {
       autoBattleCount: 0,
     },
   };
+  if (solverModel && solverModel.explicit) state.meta.solverModel = solverModel;
   syncProgress(state);
   return state;
 }

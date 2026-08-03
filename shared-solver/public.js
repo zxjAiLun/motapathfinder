@@ -10,6 +10,12 @@ const {
   buildDpStateKey,
   searchDP,
 } = require("./lib/dp-search");
+const {
+  normalizeSolverModel,
+  projectHeroForSolverModel,
+  projectSolverState,
+  validateSolverModel,
+} = require("./lib/solver-model");
 const { estimateBattleSurvivability } = require("./lib/battle-thresholds");
 const {
   buildSegmentActionProvider,
@@ -68,6 +74,10 @@ module.exports = {
   applyAction,
 
   buildDpStateKey,
+  normalizeSolverModel,
+  projectHeroForSolverModel,
+  projectSolverState,
+  validateSolverModel,
   estimateBattleSurvivability,
   buildRouteRecord,
   createStateFromSnapshot,

@@ -1,14 +1,14 @@
 {
   "schema": "motapathfinder.pr-4.8b1-runner-owned-output-cleanup.v1",
   "status": "completed",
-  "generatedAt": "2026-08-02T13:05:43.751Z",
+  "generatedAt": "2026-08-03T19:03:11.990Z",
   "provenance": {
     "mode": "shadow-only",
     "entrypoint": "shared-solver/run-region-dp.js",
     "runner": "shared-solver/run-region-dp.js",
     "runnerProbeMode": "runner-owned-output-cleanup-with-real-short-routes-and-structured-failure",
     "deterministicFullReportRebuild": true,
-    "generationCommit": "bd74e06",
+    "generationCommit": "0d3ec79",
     "productionDpKeyChanged": false,
     "productionDominanceChanged": false,
     "productionAgendaChanged": false,
@@ -56,9 +56,9 @@
           "floorId": "MT1",
           "hero": {
             "hp": 201,
-            "hpmax": 9999,
+            "hpmax": 0,
             "mana": 0,
-            "manamax": -1,
+            "manamax": 0,
             "atk": 3,
             "def": 0,
             "mdef": 10,
@@ -134,8 +134,8 @@
         "id": "onlyup-region-output-contract-smoke",
         "tower": "onlyup",
         "label": "Only Up Region Output Contract Smoke: first MT1 battle",
-        "sourceSha256": "747a8da1e65def0a0c3444576c80c897692731c2b000f4e1a47280fb4a374541",
-        "normalizedSha256": "0627466faca50f9a1557dacd525df2a295ac271dde69c52af6ff3e603aad830f",
+        "sourceSha256": "50c6618e5ed66aa36e5bf9c8bef1d1a619bab3f8c3f56153df10fec1e8a31cb5",
+        "normalizedSha256": "617f5421700263911992ac5148e9aca3e3e3359a1fb46b2a8db55e047081f852",
         "sourceFile": "towers/onlyup/region-specs/region-output-contract-smoke.json"
       },
       "projectIdentity": {
@@ -266,9 +266,9 @@
           "floorId": "MT1",
           "hero": {
             "hp": 201,
-            "hpmax": 9999,
+            "hpmax": 0,
             "mana": 0,
-            "manamax": -1,
+            "manamax": 0,
             "atk": 3,
             "def": 0,
             "mdef": 10,
@@ -293,8 +293,8 @@
             "id": "onlyup-region-output-contract-smoke",
             "tower": "onlyup",
             "label": "Only Up Region Output Contract Smoke: first MT1 battle",
-            "sourceSha256": "747a8da1e65def0a0c3444576c80c897692731c2b000f4e1a47280fb4a374541",
-            "normalizedSha256": "0627466faca50f9a1557dacd525df2a295ac271dde69c52af6ff3e603aad830f"
+            "sourceSha256": "50c6618e5ed66aa36e5bf9c8bef1d1a619bab3f8c3f56153df10fec1e8a31cb5",
+            "normalizedSha256": "617f5421700263911992ac5148e9aca3e3e3359a1fb46b2a8db55e047081f852"
           },
           "projectFingerprint": {
             "title": "Only Up",
@@ -363,9 +363,9 @@
             "floorId": "MT1",
             "hero": {
               "hp": 201,
-              "hpmax": 9999,
+              "hpmax": 0,
               "mana": 0,
-              "manamax": -1,
+              "manamax": 0,
               "atk": 3,
               "def": 0,
               "mdef": 10,
@@ -387,9 +387,9 @@
           "floorId": "MT1",
           "hero": {
             "hp": 201,
-            "hpmax": 9999,
+            "hpmax": 0,
             "mana": 0,
-            "manamax": -1,
+            "manamax": 0,
             "atk": 3,
             "def": 0,
             "mdef": 10,
@@ -431,9 +431,9 @@
           "floorId": "MT1",
           "hero": {
             "hp": 201,
-            "hpmax": 9999,
+            "hpmax": 0,
             "mana": 0,
-            "manamax": -1,
+            "manamax": 0,
             "atk": 3,
             "def": 0,
             "mdef": 10,
@@ -1070,8 +1070,8 @@
         "id": "onlyup-region-2",
         "tower": "onlyup",
         "label": "Only Up Region 2: MT6~MT10 scaffold",
-        "sourceSha256": "1d7f09ebd4251ed6a91c31c3f86d7d53bc3f3880cde6316f94b5f88da1b64963",
-        "normalizedSha256": "1d72855979088b1b53ac0b90d60031c31cd226a9e837fe2ac15184168aa950c7",
+        "sourceSha256": "f14dc189eb67ad8950ecb8467ce3f135e2aaa8d22bc27ec0c72c31890162b434",
+        "normalizedSha256": "ddd223388b78597447beb51cf7666275d5f36d4080521b4feb78d58f47891450",
         "sourceFile": "towers/onlyup/region-specs/region-2.json"
       },
       "projectIdentity": {

@@ -1300,6 +1300,21 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/solver-model.js": {
+      "id": "solver-model",
+      "path": "shared-solver/lib/solver-model.js",
+      "layer": "domain",
+      "status": "canonical",
+      "role": "simulation-core",
+      "correctnessSource": true,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/stage-policy.js": {
       "id": "stage-policy",
       "path": "shared-solver/lib/stage-policy.js",
@@ -1889,6 +1904,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "synthetic exact final-state route reconstruction check"
+    },
+    "shared-solver/check-solver-model-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.3a manual model authority, legacy compatibility, compact solver state/key projection, and invalid-model controls"
     },
     "shared-solver/check-stage-acceptance.js": {
       "grade": "local-regression",

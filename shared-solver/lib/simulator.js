@@ -22,6 +22,7 @@ const { getFrontierFeatures, getScore, getSearchRank } = require("./search-cache
 const { buildWalkReachability, isTransitTile, stepOntoTile } = require("./step-simulator");
 const { ToolRegistry } = require("./tool-registry");
 const { syncProgress } = require("./progress");
+const { normalizeSolverModel, projectSolverState } = require("./solver-model");
 const {
   appendRouteStep,
   cloneState,
@@ -340,6 +341,7 @@ class StaticSimulator {
   constructor(project, options) {
     const config = options || {};
     this.project = project;
+    this.solverModel = normalizeSolverModel(config.solverModel || config.model || null);
     this.unsafeDominanceFloors = buildUnsafeDominanceFloors(project);
     this.stopFloorId = config.stopFloorId || "MT11";
     this.scoreFn = config.scoreFn || defaultScore;
@@ -557,7 +559,11 @@ class StaticSimulator {
   }
 
   createInitialState(options) {
-    const state = createInitialState(this.project, options);
+    const stateOptions = { ...(options || {}) };
+    if (stateOptions.solverModel == null && this.solverModel.explicit) {
+      stateOptions.solverModel = this.solverModel;
+    }
+    const state = createInitialState(this.project, stateOptions);
     this.autoResolver.initializeFlags(state);
     applyFloorArrival(this.project, state, state.floorId, { choiceResolver: this.choiceResolver });
     return this.stabilizeState(state);
@@ -2487,6 +2493,10 @@ class StaticSimulator {
       choiceResolver: this.choiceResolver,
       resolvePickupAt: (currentState, x, y) => this.resolvePickupAt(currentState, x, y),
     });
+    projectSolverState(
+      stabilized,
+      this.solverModel.explicit ? this.solverModel : null,
+    );
     syncProgress(stabilized);
     return stabilized;
   }

@@ -4,6 +4,27 @@
   "label": "Only Up Region 2: MT6~MT10 scaffold",
   "projectRoot": "Only upV2.1/Only upV2.1",
   "rank": "chaos",
+  "model": {
+    "heroFields": {
+      "hp": "dominance",
+      "atk": "key",
+      "def": "key",
+      "mdef": "key",
+      "lv": "key",
+      "exp": "key",
+      "equipment": "key",
+      "hpmax": "disabled",
+      "mana": "disabled",
+      "manamax": "disabled",
+      "money": "disabled",
+      "followers": "disabled"
+    },
+    "mechanics": {
+      "keys": false,
+      "doors": false,
+      "pointAllocation": false
+    }
+  },
   "milestoneRoute": "onlyup-chaos-mt5-blueking",
   "fromMilestoneId": "mt5-blueking-kill",
   "toMilestoneId": "mt7-right-exp-crystal",

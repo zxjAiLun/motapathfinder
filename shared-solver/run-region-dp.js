@@ -59,6 +59,7 @@ function solverRelativePath(filePath) {
 function makeSimulator(project, spec, args) {
   const simulatorConfig = spec.simulator || {};
   return new StaticSimulator(project, {
+    solverModel: spec.model || null,
     stopFloorId: args["stop-floor"] || simulatorConfig.stopFloorId || null,
     battleResolver: new FunctionBackedBattleResolver(project, {
       autoLevelUp: simulatorConfig.autoLevelUp !== false,
@@ -308,6 +309,7 @@ function buildSummary(regionSpec, result, metrics, routePath, proofClaim) {
     tower: regionSpec.tower,
     found: result.found,
     proofClaim,
+    model: regionSpec.model || null,
     routeFile: routePath || null,
     reachedMilestone: result.reachedMilestone,
     failedSegmentId: result.failedSegment && result.failedSegment.segmentId,
@@ -400,6 +402,7 @@ function main() {
       regionSpec: path.relative(process.cwd(), regionSpecPath),
       regionSpecIdentity,
       projectFingerprint,
+      model: regionSpec.model || null,
       reachedMilestone: result.reachedMilestone || null,
       milestoneRoute: regionSpec.milestoneRoute || null,
       fromMilestoneId: args["from-milestone"] || regionSpec.fromMilestoneId || null,

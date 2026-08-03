@@ -1430,3 +1430,14 @@ npm run check:static --prefix shared-solver
 npm run check:replay:h5save-gui:robustness --prefix shared-solver
 npm run check:static --prefix shared-solver
 ```
+
+### 2026-08-04 更新：PR-5.3a Manual Solver Model Contract
+
+本轮将“塔的原始 runtime 状态”和“求解器维护的 compact state/key”正式分层，但只接受手动声明，不把自动检测设为启动门：
+
+- `shared-solver/lib/solver-model.js` 定义字段模式、机制开关、规范化和 fingerprint；手动模型优先，未配置塔回退到 conservative legacy model。
+- `createInitialState()`、`StaticSimulator.stabilizeState()` 和 `buildDpStateKey()` 使用同一个显式模型。Only Up RegionSpec 关闭 `hpmax`、`mana`、`manamax`、`money`、`followers` 及 keys/doors/point allocation，保留 HP dominance、战斗/成长/装备 key。
+- runtime snapshot、h5save 和 `live-replay.js` 未改变；模型 projection 只作用于 solver state。区域 route audit 的重放路径同步传入 RegionSpec model。
+- `check-solver-model-contract.js` 验证 legacy 字段保留、compact hero、DP key 排除 disabled 字段、fingerprint、污染后重新投影和非法配置负控。
+
+本轮明确不做：自动 analyzer、objective-aware GUI、launcher GUI、自动建议覆盖手动配置，以及与模型投影无关的 solver/search 语义改造。

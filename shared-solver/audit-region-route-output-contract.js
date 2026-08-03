@@ -87,9 +87,9 @@ const CONTROL_EXPECTATIONS = {
       floorId: "MT1",
       hero: {
         hp: 201,
-        hpmax: 9999,
+        hpmax: 0,
         mana: 0,
-        manamax: -1,
+        manamax: 0,
         atk: 3,
         def: 0,
         mdef: 10,
@@ -362,6 +362,7 @@ function runProbe(control) {
 function buildSimulator(project, spec) {
   const simulatorConfig = spec.simulator || {};
   return new StaticSimulator(project, {
+    solverModel: spec.model || null,
     stopFloorId: simulatorConfig.stopFloorId || null,
     battleResolver: new FunctionBackedBattleResolver(project, {
       autoLevelUp: simulatorConfig.autoLevelUp !== false,

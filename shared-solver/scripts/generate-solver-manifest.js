@@ -11,6 +11,7 @@ const CORE_DOMAIN = new Set([
   "state.js",
   "state-key.js",
   "start-state-loader.js",
+  "solver-model.js",
 ]);
 const CORE_SIM = new Set([
   "simulator.js",
@@ -392,6 +393,13 @@ const TEST_OVERRIDES = {
     requiresStrictReplay: false,
     cleanCheckout: true,
     notes: "bounded live RegionSpec entry contract with fixed controls, schema gates, negative controls, and deterministic rebuild",
+  },
+  "shared-solver/check-solver-model-contract.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "PR-5.3a manual model authority, legacy compatibility, compact solver state/key projection, and invalid-model controls",
   },
   "shared-solver/check-region-route-output-contract.js": {
     grade: "closure",

@@ -4,6 +4,10 @@ const { getProgress, compareProgress } = require("./progress");
 const { estimateNextFloorDistance, getFloorOrder } = require("./score");
 const { cloneState, getDecisionDepth, listFloorMutationSummary } = require("./state");
 const { buildStateKey } = require("./state-key");
+const {
+  SOLVER_HERO_FIELDS,
+  getSolverModel,
+} = require("./solver-model");
 const { createCheckpointPool } = require("./floor-checkpoints");
 const { createChildNode, createRootNode, reconstructActionEntries, reconstructActionTrace } = require("./search-nodes");
 
@@ -27,10 +31,23 @@ function stableObject(object) {
     }, {});
 }
 
+function buildModelHeroKey(hero, model) {
+  return SOLVER_HERO_FIELDS.reduce((result, field) => {
+    if (((model.heroFields || {})[field]) !== "key") return result;
+    if (field === "equipment" || field === "followers") {
+      result[field] = stableArray(hero[field]);
+    } else {
+      result[field] = Number(hero[field] || 0);
+    }
+    return result;
+  }, {});
+}
+
 function buildDpStateKey(simulator, state, options) {
   const config = options || {};
   const keyMode = String(config.dpKeyMode || config.keyMode || "location");
   const hero = state.hero || {};
+  const solverModel = getSolverModel(state, config.solverModel || config.model);
   let region = null;
   if (keyMode === "region") {
     try {
@@ -39,7 +56,7 @@ function buildDpStateKey(simulator, state, options) {
       region = null;
     }
   }
-  return JSON.stringify({
+  const baseKey = {
     floorId: state.floorId,
     keyMode,
     regionKey: region
@@ -48,22 +65,26 @@ function buildDpStateKey(simulator, state, options) {
         ? ""
         : `${state.floorId}:${hero.loc && hero.loc.x},${hero.loc && hero.loc.y}`,
     reachableEndpointsKey: region ? region.reachableEndpointsKey : "",
-    hero: {
-      atk: Number(hero.atk || 0),
-      def: Number(hero.def || 0),
-      mdef: Number(hero.mdef || 0),
-      lv: Number(hero.lv || 0),
-      exp: Number(hero.exp || 0),
-      money: Number(hero.money || 0),
-      mana: Number(hero.mana || 0),
-      equipment: stableArray(hero.equipment),
-      followers: stableArray(hero.followers),
-    },
+    hero: solverModel.explicit
+      ? buildModelHeroKey(hero, solverModel)
+      : {
+        atk: Number(hero.atk || 0),
+        def: Number(hero.def || 0),
+        mdef: Number(hero.mdef || 0),
+        lv: Number(hero.lv || 0),
+        exp: Number(hero.exp || 0),
+        money: Number(hero.money || 0),
+        mana: Number(hero.mana || 0),
+        equipment: stableArray(hero.equipment),
+        followers: stableArray(hero.followers),
+      },
     inventory: stableObject(state.inventory),
     flags: stableObject(state.flags),
     visitedFloors: Object.keys(state.visitedFloors || {}).sort(),
     mutations: listFloorMutationSummary(state.floorStates || {}),
-  });
+  };
+  if (solverModel.explicit) baseKey.solverModel = solverModel.fingerprint;
+  return JSON.stringify(baseKey);
 }
 
 function heroHp(state) {

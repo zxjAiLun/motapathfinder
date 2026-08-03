@@ -34,6 +34,10 @@ require("../../shared-solver/lib/segment-dp");
 ### Keys and Routes
 
 - `buildDpStateKey(simulator, state, options)`
+- `normalizeSolverModel(rawModel)`
+- `validateSolverModel(rawModel)`
+- `projectHeroForSolverModel(hero, model)`
+- `projectSolverState(state, modelOverride)`
 - `buildRouteRecord(input)`
 - `readRouteFile(filePath)`
 - `writeRouteFile(filePath, routeRecord)`
@@ -76,6 +80,37 @@ Region tasks use one schema across towers:
 ```
 
 `run-region-dp.js` accepts direct goals or a `milestoneRoute`. Direct goals are normalized into a one-segment milestone graph; `milestoneRoute` reuses the existing segment DP graph.
+
+### Manual Solver Model
+
+An explicit `RegionSpec.model` is authoritative for the solver state and DP identity:
+
+```json
+{
+  "model": {
+    "heroFields": {
+      "hp": "dominance",
+      "atk": "key",
+      "def": "key",
+      "mdef": "key",
+      "lv": "key",
+      "exp": "key",
+      "hpmax": "disabled",
+      "mana": "disabled",
+      "manamax": "disabled",
+      "money": "disabled",
+      "followers": "disabled"
+    },
+    "mechanics": {
+      "keys": false,
+      "doors": false,
+      "pointAllocation": false
+    }
+  }
+}
+```
+
+Supported field modes are `disabled`, `value`, `dominance`, `key`, `objective`, and `snapshot-only`. An explicit model projects the solver hero and makes `buildDpStateKey()` include only `key` fields. A RegionSpec without a model retains the conservative legacy model. Runtime snapshots and h5save data are not projected by this contract.
 
 ## Proof Claim
 

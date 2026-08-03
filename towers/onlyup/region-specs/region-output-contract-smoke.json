@@ -4,6 +4,27 @@
   "label": "Only Up Region Output Contract Smoke: first MT1 battle",
   "projectRoot": "Only upV2.1/Only upV2.1",
   "rank": "chaos",
+  "model": {
+    "heroFields": {
+      "hp": "dominance",
+      "atk": "key",
+      "def": "key",
+      "mdef": "key",
+      "lv": "key",
+      "exp": "key",
+      "equipment": "key",
+      "hpmax": "disabled",
+      "mana": "disabled",
+      "manamax": "disabled",
+      "money": "disabled",
+      "followers": "disabled"
+    },
+    "mechanics": {
+      "keys": false,
+      "doors": false,
+      "pointAllocation": false
+    }
+  },
   "start": {
     "type": "initial",
     "floorId": "MT1"

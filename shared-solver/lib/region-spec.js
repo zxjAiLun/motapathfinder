@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { getMilestoneSpec, validateMilestoneSpec } = require("./milestone-spec");
+const { normalizeSolverModel, validateSolverModel } = require("./solver-model");
 
 const DEFAULT_SEARCH = {
   algorithm: "segment-dp",
@@ -60,6 +61,9 @@ function normalizeRegionSpec(rawSpec, sourceFile) {
   spec.rank = spec.rank || "chaos";
   spec.start = spec.start || { type: "initial" };
   spec.scope = spec.scope || {};
+  if (spec.model == null && spec.solverModel != null) spec.model = spec.solverModel;
+  delete spec.solverModel;
+  if (spec.model != null) spec.model = normalizeSolverModel(spec.model);
   spec.actionPolicy = {
     actionKinds: DEFAULT_ACTION_KINDS.slice(),
     ...(spec.actionPolicy || {}),
@@ -118,6 +122,13 @@ function validateRegionSpec(spec) {
   }
   if (!spec.resourceTimingPolicy || typeof spec.resourceTimingPolicy !== "object") {
     errors.push(`${spec.id || "unknown"}: resourceTimingPolicy is required`);
+  }
+  if (spec.model != null) {
+    try {
+      validateSolverModel(spec.model);
+    } catch (error) {
+      errors.push(`${spec.id || "unknown"}: ${error.message}`);
+    }
   }
   if (!Array.isArray(spec.expectedRegressionTraps) || spec.expectedRegressionTraps.length === 0) {
     errors.push(`${spec.id || "unknown"}: expectedRegressionTraps must be a non-empty array`);
