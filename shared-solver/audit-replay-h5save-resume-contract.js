@@ -89,6 +89,14 @@ function buildReport() {
     finalRouteSnapshot,
     identityOptions,
   );
+  const shadowSuffix = routeRecord.decisions.slice(checkpointStep);
+  const shadowSaveData = {
+    floorId: boundaryRouteSnapshot.floorId,
+    hero: cloneJson(boundaryRouteSnapshot.hero),
+    route: "encoded-prefix-fixture",
+    __toReplay__: "encoded-suffix-fixture",
+    __solverReplay__: shadowSuffix,
+  };
   const artifact = buildResumeArtifact({
     project,
     projectRoot: relativePath(input.projectRoot),
@@ -101,15 +109,28 @@ function buildReport() {
     finalSnapshot: finalRouteSnapshot,
     finalRuntimeSnapshot: finalRouteSnapshot,
     finalIdentity,
+    nativeSaveData: shadowSaveData,
+    structuredSuffix: shadowSuffix,
+    encodedSuffix: shadowSaveData.__toReplay__,
     nativeName: "Islands",
     nativeVersion: "Ver 2.8.2",
   });
-  const validation = validateResumeArtifact(artifact, { project, routeRecord });
+  const validation = validateResumeArtifact(artifact, {
+    project,
+    routeRecord,
+    saveData: shadowSaveData,
+  });
 
   const projectMismatch = cloneJson(artifact);
   projectMismatch.projectFingerprint.fingerprintSha256 = "0".repeat(64);
   const routeMismatch = cloneJson(artifact);
   routeMismatch.routeFingerprint.sha256 = "0".repeat(64);
+  const nativePayloadMismatchData = cloneJson(shadowSaveData);
+  nativePayloadMismatchData.hero.hp += 1;
+  const structuredSuffixMismatchData = cloneJson(shadowSaveData);
+  structuredSuffixMismatchData.__solverReplay__[0].summary = `${structuredSuffixMismatchData.__solverReplay__[0].summary}:tampered`;
+  const encodedSuffixMismatchData = cloneJson(shadowSaveData);
+  encodedSuffixMismatchData.__toReplay__ = `${encodedSuffixMismatchData.__toReplay__}:tampered`;
 
   requireCondition(boundaryIdentity.matches, "shadow boundary identity must match");
   requireCondition(finalIdentity.matches, "shadow final identity must match");
@@ -152,6 +173,9 @@ function buildReport() {
       encoding: "lz-string base64 JSON",
       nativePayload: "h5mota-core.saveData",
       artifactSchema: RESUME_ARTIFACT_SCHEMA,
+      nativePayloadSha256Stored: Boolean(artifact.nativeSave.nativeSavePayloadSha256),
+      structuredSuffixSha256Stored: Boolean(artifact.nativeSave.structuredSuffixSha256),
+      encodedSuffixSha256Stored: Boolean(artifact.nativeSave.encodedSuffixSha256),
     },
     projectFingerprint: artifact.projectFingerprint,
     routeFingerprint: artifact.routeFingerprint,
@@ -175,6 +199,17 @@ function buildReport() {
       runtimeSnapshotIdentity: artifact.continuation.runtimeSnapshotIdentity,
       capturedRuntimeSnapshotIdentity: artifact.continuation.capturedRuntimeSnapshotIdentity,
     },
+    loaderOwned: {
+      productionEntryPoint: "shared-solver/export-h5-segment.js:openNativeReplay",
+      artifactPreflightBeforeBrowser: true,
+      routeFileRequiredByDefault: true,
+      legacyRouteIdentityUsesArtifactFloors: true,
+      storedRuntimeIdentityRecomputed: true,
+      boundaryVerificationBeforeSuffix: true,
+      suffixDecisionCountBeforeBoundaryVerification: 0,
+      nextDecisionVerificationBeforeSuffix: true,
+      finalVerificationAfterSuffix: true,
+    },
     freshRuntime: {
       required: true,
       nativeSaveLoadHelper: "shared-solver/lib/replay-resume-artifact.js:loadRuntimeSaveData",
@@ -192,6 +227,44 @@ function buildReport() {
         id: "route-fingerprint-mismatch",
         alteredField: "routeFingerprint.sha256",
         expectedErrorCode: captureErrorCode(() => validateResumeArtifact(routeMismatch, { project, routeRecord })),
+      },
+      {
+        id: "route-file-required",
+        alteredField: "routeRecord omitted while requireRoute=true",
+        expectedErrorCode: captureErrorCode(() => validateResumeArtifact(artifact, {
+          project,
+          saveData: shadowSaveData,
+          requireRoute: true,
+        })),
+      },
+    ],
+    bindingControls: [
+      {
+        id: "native-save-payload-mismatch",
+        alteredField: "data.hero.hp",
+        expectedErrorCode: captureErrorCode(() => validateResumeArtifact(artifact, {
+          project,
+          routeRecord,
+          saveData: nativePayloadMismatchData,
+        })),
+      },
+      {
+        id: "structured-suffix-mismatch",
+        alteredField: "data.__solverReplay__[0].summary",
+        expectedErrorCode: captureErrorCode(() => validateResumeArtifact(artifact, {
+          project,
+          routeRecord,
+          saveData: structuredSuffixMismatchData,
+        })),
+      },
+      {
+        id: "encoded-suffix-mismatch",
+        alteredField: "data.__toReplay__",
+        expectedErrorCode: captureErrorCode(() => validateResumeArtifact(artifact, {
+          project,
+          routeRecord,
+          saveData: encodedSuffixMismatchData,
+        })),
       },
     ],
   };
@@ -226,11 +299,29 @@ function markdownReport(report) {
     `| final runtime snapshot stored | ${report.continuation.finalRuntimeSnapshotStored} |`,
     `| identity matches | ${report.continuation.identityMatches} |`,
     "",
+    "## Loader-owned verification",
+    "",
+    "| Contract | Value |",
+    "| --- | --- |",
+    `| production entry point | ${report.loaderOwned.productionEntryPoint} |`,
+    `| artifact preflight before browser | ${report.loaderOwned.artifactPreflightBeforeBrowser} |`,
+    `| route file required by default | ${report.loaderOwned.routeFileRequiredByDefault} |`,
+    `| legacy identity uses artifact floor set | ${report.loaderOwned.legacyRouteIdentityUsesArtifactFloors} |`,
+    `| stored runtime identity recomputed | ${report.loaderOwned.storedRuntimeIdentityRecomputed} |`,
+    `| suffix decisions before boundary verification | ${report.loaderOwned.suffixDecisionCountBeforeBoundaryVerification} |`,
+    `| final verification after suffix | ${report.loaderOwned.finalVerificationAfterSuffix} |`,
+    "",
     "## Mismatch controls",
     "",
     "| Control | Altered field | Expected error |",
     "| --- | --- | --- |",
     ...report.mismatchControls.map((control) => `| ${control.id} | ${control.alteredField} | ${control.expectedErrorCode} |`),
+    "",
+    "## Payload binding controls",
+    "",
+    "| Control | Altered field | Expected error |",
+    "| --- | --- | --- |",
+    ...report.bindingControls.map((control) => `| ${control.id} | ${control.alteredField} | ${control.expectedErrorCode} |`),
     "",
     "## Scope",
     "",

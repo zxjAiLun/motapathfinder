@@ -14,7 +14,7 @@
     "productionCapacityChanged": false,
     "productionDefaultPolicyChanged": false,
     "routeSelectionSemanticsChanged": false,
-    "generationCommit": "0e0da55"
+    "generationCommit": "353a69a"
   },
   "scope": {
     "shadowOnly": false,
@@ -38,7 +38,10 @@
     ],
     "encoding": "lz-string base64 JSON",
     "nativePayload": "h5mota-core.saveData",
-    "artifactSchema": "motapathfinder.replay-resume-artifact.v1"
+    "artifactSchema": "motapathfinder.replay-resume-artifact.v1",
+    "nativePayloadSha256Stored": true,
+    "structuredSuffixSha256Stored": true,
+    "encodedSuffixSha256Stored": true
   },
   "projectFingerprint": {
     "title": "白色孤岛",
@@ -120,6 +123,17 @@
     "runtimeSnapshotIdentity": "sha256:893278427c34cbb7b7adf45b2fb30524a31442554e24948ad4883d99fd63ccae",
     "capturedRuntimeSnapshotIdentity": "sha256:893278427c34cbb7b7adf45b2fb30524a31442554e24948ad4883d99fd63ccae"
   },
+  "loaderOwned": {
+    "productionEntryPoint": "shared-solver/export-h5-segment.js:openNativeReplay",
+    "artifactPreflightBeforeBrowser": true,
+    "routeFileRequiredByDefault": true,
+    "legacyRouteIdentityUsesArtifactFloors": true,
+    "storedRuntimeIdentityRecomputed": true,
+    "boundaryVerificationBeforeSuffix": true,
+    "suffixDecisionCountBeforeBoundaryVerification": 0,
+    "nextDecisionVerificationBeforeSuffix": true,
+    "finalVerificationAfterSuffix": true
+  },
   "freshRuntime": {
     "required": true,
     "nativeSaveLoadHelper": "shared-solver/lib/replay-resume-artifact.js:loadRuntimeSaveData",
@@ -137,6 +151,28 @@
       "id": "route-fingerprint-mismatch",
       "alteredField": "routeFingerprint.sha256",
       "expectedErrorCode": "REPLAY_RESUME_ROUTE_FINGERPRINT_MISMATCH"
+    },
+    {
+      "id": "route-file-required",
+      "alteredField": "routeRecord omitted while requireRoute=true",
+      "expectedErrorCode": "REPLAY_RESUME_ROUTE_REQUIRED"
+    }
+  ],
+  "bindingControls": [
+    {
+      "id": "native-save-payload-mismatch",
+      "alteredField": "data.hero.hp",
+      "expectedErrorCode": "REPLAY_RESUME_NATIVE_PAYLOAD_MISMATCH"
+    },
+    {
+      "id": "structured-suffix-mismatch",
+      "alteredField": "data.__solverReplay__[0].summary",
+      "expectedErrorCode": "REPLAY_RESUME_STRUCTURED_SUFFIX_ROUTE_MISMATCH"
+    },
+    {
+      "id": "encoded-suffix-mismatch",
+      "alteredField": "data.__toReplay__",
+      "expectedErrorCode": "REPLAY_RESUME_ENCODED_SUFFIX_MISMATCH"
     }
   ]
 }

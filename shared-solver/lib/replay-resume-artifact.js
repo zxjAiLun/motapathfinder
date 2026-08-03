@@ -5,6 +5,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { buildProjectFingerprint } = require("./region-entry-validator");
+const {
+  buildRuntimeSnapshotIdentity,
+  buildRuntimeSnapshotIdentityPair,
+  prepareReplayRouteRecord,
+  projectSupportsRuntimeAutoBattle,
+} = require("./live-replay");
 
 const RESUME_ARTIFACT_SCHEMA = "motapathfinder.replay-resume-artifact.v1";
 
@@ -27,6 +33,10 @@ function stableStringify(value) {
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function hashStableJson(value) {
+  return `sha256:${sha256(stableStringify(value))}`;
 }
 
 function portablePath(value) {
@@ -113,6 +123,18 @@ function summarizeResumeDecision(decision) {
   };
 }
 
+function buildNativeSavePayloadSha256(saveData) {
+  return hashStableJson(stripResumeHelpers(saveData));
+}
+
+function buildStructuredSuffixSha256(suffix) {
+  return hashStableJson(Array.isArray(suffix) ? suffix : []);
+}
+
+function buildEncodedSuffixSha256(encodedSuffix) {
+  return hashStableJson(String(encodedSuffix == null ? "" : encodedSuffix));
+}
+
 function boundaryForStep(routeRecord, checkpointStep) {
   const step = Number(checkpointStep);
   if (step === 0) return routeRecord && routeRecord.start;
@@ -131,6 +153,9 @@ function buildResumeArtifact({
   finalSnapshot,
   finalRuntimeSnapshot,
   finalIdentity,
+  nativeSaveData,
+  structuredSuffix,
+  encodedSuffix,
   nativeName,
   nativeVersion,
 }) {
@@ -175,15 +200,163 @@ function buildResumeArtifact({
       name: nativeName || null,
       version: nativeVersion || null,
       format: "h5mota-core.saveData + lz-string base64",
+      nativeSavePayloadSha256: nativeSaveData ? buildNativeSavePayloadSha256(nativeSaveData) : null,
+      structuredSuffixSha256: structuredSuffix ? buildStructuredSuffixSha256(structuredSuffix) : null,
+      encodedSuffixSha256: encodedSuffix != null ? buildEncodedSuffixSha256(encodedSuffix) : null,
     },
   };
 }
 
-function validateResumeArtifact(artifact, { project, routeRecord } = {}) {
+function resumeRuntimeIdentityOptions(projectRoot, routeRecord) {
+  const runtimeRouteRecord = routeRecord && projectRoot
+    ? prepareReplayRouteRecord(routeRecord, projectRoot)
+    : routeRecord;
+  return {
+    projectRoot: projectRoot || null,
+    runtimeAutoBattle: projectRoot ? projectSupportsRuntimeAutoBattle(projectRoot) : false,
+    routeStartSnapshot: projectRoot && runtimeRouteRecord && runtimeRouteRecord.start
+      ? runtimeRouteRecord.start.snapshot
+      : null,
+  };
+}
+
+function verifyStoredRuntimeIdentity(artifact, sectionName, routeSnapshot, projectRoot, routeRecord) {
+  const section = artifact[sectionName] || {};
+  const storedSnapshot = sectionName === "continuation" ? section.finalSnapshot : section.snapshot;
+  const identityOptions = resumeRuntimeIdentityOptions(projectRoot, routeRecord);
+  let expected;
+  let actual;
+  let matches;
+  if (routeRecord && routeSnapshot) {
+    const pair = buildRuntimeSnapshotIdentityPair(routeSnapshot, storedSnapshot, identityOptions);
+    expected = pair.expected;
+    actual = pair.actual;
+    matches = pair.matches;
+  } else {
+    actual = buildRuntimeSnapshotIdentity(storedSnapshot, identityOptions);
+    expected = actual;
+    matches = Boolean(actual && section.runtimeSnapshotIdentity === section.capturedRuntimeSnapshotIdentity);
+  }
+  if (
+    !section.identityMatches ||
+    !matches ||
+    section.runtimeSnapshotIdentity !== expected ||
+    section.capturedRuntimeSnapshotIdentity !== actual
+  ) {
+    throw resumeError(
+      "REPLAY_RESUME_RUNTIME_IDENTITY_MISMATCH",
+      `${sectionName} runtime snapshot identity does not match its stored snapshot and route boundary.`,
+    );
+  }
+  return { expected, actual, matches };
+}
+
+function resumeSnapshotDisplay(snapshot) {
+  const hero = snapshot && snapshot.hero || {};
+  const loc = hero.loc || {};
+  return {
+    floorId: snapshot && snapshot.floorId || null,
+    x: loc.x,
+    y: loc.y,
+    direction: loc.direction,
+    hp: hero.hp,
+    atk: hero.atk,
+    def: hero.def,
+    mdef: hero.mdef,
+  };
+}
+
+function verifyRuntimeResumeSnapshot(artifact, phase, actualSnapshot, {
+  projectRoot,
+  routeRecord,
+} = {}) {
+  const sectionName = phase === "final" ? "continuation" : "boundary";
+  const errorCode = phase === "final"
+    ? "REPLAY_RESUME_FINAL_RUNTIME_MISMATCH"
+    : "REPLAY_RESUME_BOUNDARY_RUNTIME_MISMATCH";
+  const section = artifact && artifact[sectionName] || {};
+  const storedSnapshot = sectionName === "continuation" ? section.finalSnapshot : section.snapshot;
+  const routeSnapshot = phase === "final"
+    ? section.routeFinalSnapshot
+    : section.routeSnapshot;
+  const identityOptions = resumeRuntimeIdentityOptions(projectRoot, routeRecord);
+  const identity = routeRecord && routeSnapshot
+    ? buildRuntimeSnapshotIdentityPair(routeSnapshot, actualSnapshot, identityOptions)
+    : {
+      expected: section.runtimeSnapshotIdentity,
+      actual: buildRuntimeSnapshotIdentity(actualSnapshot, identityOptions),
+      matches: Boolean(section.capturedRuntimeSnapshotIdentity && section.capturedRuntimeSnapshotIdentity === buildRuntimeSnapshotIdentity(actualSnapshot, identityOptions)),
+    };
+  const displayMatches = stableStringify(resumeSnapshotDisplay(actualSnapshot)) === stableStringify(resumeSnapshotDisplay(storedSnapshot));
+  if (
+    !identity.matches ||
+    identity.expected !== section.runtimeSnapshotIdentity ||
+    identity.actual !== section.capturedRuntimeSnapshotIdentity ||
+    !displayMatches
+  ) {
+    throw resumeError(
+      errorCode,
+      `Loaded runtime ${phase} does not match the embedded resume artifact boundary.`,
+    );
+  }
+  return {
+    identityMatches: true,
+    expectedRuntimeSnapshotIdentity: identity.expected,
+    runtimeSnapshotIdentity: identity.actual,
+    displayMatches,
+  };
+}
+
+function verifyResumeNextDecision(artifact, solverReplay, { routeRecord, projectRoot } = {}) {
+  const suffix = Array.isArray(solverReplay) ? solverReplay : [];
+  const boundary = artifact && artifact.boundary || {};
+  if (suffix.length !== Number((artifact.continuation || {}).suffixDecisionCount)) {
+    throw resumeError(
+      "REPLAY_RESUME_STRUCTURED_SUFFIX_MISMATCH",
+      "Loaded structured suffix length does not match the resume artifact.",
+    );
+  }
+  const actualNextDecision = summarizeResumeDecision(suffix[0] || null);
+  if (stableStringify(actualNextDecision) !== stableStringify(boundary.nextDecision)) {
+    throw resumeError(
+      "REPLAY_RESUME_NEXT_DECISION_MISMATCH",
+      "Loaded structured suffix first decision does not match the resume artifact.",
+    );
+  }
+  if (routeRecord) {
+    const runtimeRouteRecord = projectRoot
+      ? prepareReplayRouteRecord(routeRecord, projectRoot)
+      : routeRecord;
+    const step = Number(boundary.executedStepCount);
+    const expectedNextDecision = summarizeResumeDecision((runtimeRouteRecord.decisions || [])[step] || null);
+    if (stableStringify(actualNextDecision) !== stableStringify(expectedNextDecision)) {
+      throw resumeError(
+        "REPLAY_RESUME_NEXT_DECISION_MISMATCH",
+        "Loaded structured suffix first decision does not match the selected route.",
+      );
+    }
+  }
+  return { nextDecisionMatches: true, nextDecision: actualNextDecision };
+}
+
+function validateResumeArtifact(artifact, {
+  project,
+  routeRecord,
+  projectRoot,
+  saveData,
+  requireRoute = false,
+  allowUnverifiedRoute = false,
+} = {}) {
   if (!artifact || artifact.schema !== RESUME_ARTIFACT_SCHEMA) {
     throw resumeError(
       "REPLAY_RESUME_ARTIFACT_SCHEMA_MISMATCH",
       `Unsupported replay resume artifact schema: ${artifact && artifact.schema || "missing"}.`,
+    );
+  }
+  if (requireRoute && !routeRecord && !allowUnverifiedRoute) {
+    throw resumeError(
+      "REPLAY_RESUME_ROUTE_REQUIRED",
+      "A route file is required to verify an embedded replay resume artifact; pass --allow-unverified-route=1 only for legacy replay.",
     );
   }
   if (project) {
@@ -211,29 +384,142 @@ function validateResumeArtifact(artifact, { project, routeRecord } = {}) {
   }
   const boundary = artifact.boundary || {};
   const continuation = artifact.continuation || {};
+  const step = Number(boundary.executedStepCount);
+  const nextStep = Number(boundary.nextStep);
   if (
-    !Number.isInteger(Number(boundary.executedStepCount)) ||
-    !Number.isInteger(Number(boundary.nextStep)) ||
+    !Number.isInteger(step) ||
+    step < 0 ||
+    !Number.isInteger(nextStep) ||
     !boundary.snapshot ||
+    !boundary.routeSnapshot ||
     !continuation.finalSnapshot ||
+    !continuation.routeFinalSnapshot ||
     boundary.identityMatches !== true ||
-    continuation.identityMatches !== true
+    continuation.identityMatches !== true ||
+    !boundary.runtimeSnapshotIdentity ||
+    !boundary.capturedRuntimeSnapshotIdentity ||
+    !continuation.runtimeSnapshotIdentity ||
+    !continuation.capturedRuntimeSnapshotIdentity ||
+    !artifact.nativeSave ||
+    !artifact.nativeSave.nativeSavePayloadSha256 ||
+    !artifact.nativeSave.structuredSuffixSha256 ||
+    !artifact.nativeSave.encodedSuffixSha256
   ) {
     throw resumeError(
       "REPLAY_RESUME_BOUNDARY_INVALID",
       "Replay resume artifact has an invalid boundary snapshot or step.",
     );
   }
-  if (Number(boundary.nextStep) !== Number(boundary.executedStepCount) + 1) {
+  if (nextStep !== step + 1) {
     throw resumeError(
       "REPLAY_RESUME_BOUNDARY_INVALID",
       "Replay resume artifact next step does not follow the executed step count.",
     );
   }
+  if (routeRecord) {
+    const runtimeRouteRecord = projectRoot
+      ? prepareReplayRouteRecord(routeRecord, projectRoot)
+      : routeRecord;
+    const decisions = runtimeRouteRecord.decisions || [];
+    if (step > decisions.length) {
+      throw resumeError(
+        "REPLAY_RESUME_BOUNDARY_ROUTE_MISMATCH",
+        "Replay resume boundary step is outside the selected route.",
+      );
+    }
+    const routeBoundary = step === 0
+      ? runtimeRouteRecord.start
+      : decisions[step - 1];
+    if (!routeBoundary) {
+      throw resumeError(
+        "REPLAY_RESUME_BOUNDARY_ROUTE_MISMATCH",
+        "Replay resume boundary is missing from the selected route.",
+      );
+    }
+    const expectedBoundarySnapshot = step === 0
+      ? runtimeRouteRecord.start.snapshot
+      : routeBoundary.postSnapshot;
+    const expectedBoundaryExactStateKey = routeBoundary.exactStateKey || routeBoundary.postExactStateKey || null;
+    if (
+      artifact.boundary.exactStateKey !== expectedBoundaryExactStateKey ||
+      stableStringify(artifact.boundary.routeSnapshot) !== stableStringify(expectedBoundarySnapshot)
+    ) {
+      throw resumeError(
+        "REPLAY_RESUME_BOUNDARY_ROUTE_MISMATCH",
+        "Replay resume boundary metadata does not match the selected route boundary.",
+      );
+    }
+    const expectedNextDecision = summarizeResumeDecision(decisions[step] || null);
+    if (stableStringify(artifact.boundary.nextDecision) !== stableStringify(expectedNextDecision)) {
+      throw resumeError(
+        "REPLAY_RESUME_NEXT_DECISION_MISMATCH",
+        "Replay resume next decision does not match the selected route.",
+      );
+    }
+    if (Number(continuation.suffixDecisionCount) !== decisions.length - step) {
+      throw resumeError(
+        "REPLAY_RESUME_CONTINUATION_ROUTE_MISMATCH",
+        "Replay resume suffix decision count does not match the selected route.",
+      );
+    }
+    if (
+      continuation.finalExactStateKey !== (runtimeRouteRecord.final && runtimeRouteRecord.final.exactStateKey) ||
+      stableStringify(continuation.routeFinalSnapshot) !== stableStringify(runtimeRouteRecord.final && runtimeRouteRecord.final.snapshot)
+    ) {
+      throw resumeError(
+        "REPLAY_RESUME_CONTINUATION_ROUTE_MISMATCH",
+        "Replay resume final metadata does not match the selected route.",
+      );
+    }
+    if (saveData && stableStringify(saveData.__solverReplay__) !== stableStringify(decisions.slice(step))) {
+      throw resumeError(
+        "REPLAY_RESUME_STRUCTURED_SUFFIX_ROUTE_MISMATCH",
+        "Embedded structured suffix does not match the selected route suffix.",
+      );
+    }
+  }
+
+  verifyStoredRuntimeIdentity(
+    artifact,
+    "boundary",
+    artifact.boundary.routeSnapshot,
+    projectRoot,
+    routeRecord,
+  );
+  verifyStoredRuntimeIdentity(
+    artifact,
+    "continuation",
+    artifact.continuation.routeFinalSnapshot,
+    projectRoot,
+    routeRecord,
+  );
+
+  if (saveData) {
+    if (buildNativeSavePayloadSha256(saveData) !== artifact.nativeSave.nativeSavePayloadSha256) {
+      throw resumeError(
+        "REPLAY_RESUME_NATIVE_PAYLOAD_MISMATCH",
+        "Native save payload does not match the embedded resume artifact.",
+      );
+    }
+    if (buildStructuredSuffixSha256(saveData.__solverReplay__) !== artifact.nativeSave.structuredSuffixSha256) {
+      throw resumeError(
+        "REPLAY_RESUME_STRUCTURED_SUFFIX_MISMATCH",
+        "Structured suffix does not match the embedded resume artifact.",
+      );
+    }
+    if (buildEncodedSuffixSha256(saveData.__toReplay__) !== artifact.nativeSave.encodedSuffixSha256) {
+      throw resumeError(
+        "REPLAY_RESUME_ENCODED_SUFFIX_MISMATCH",
+        "Encoded native suffix does not match the embedded resume artifact.",
+      );
+    }
+  }
   return {
     projectFingerprintMatches: Boolean(project),
     routeFingerprintMatches: Boolean(routeRecord),
     boundaryValid: true,
+    routeVerified: Boolean(routeRecord),
+    payloadBindingVerified: Boolean(saveData),
   };
 }
 
@@ -297,8 +583,11 @@ async function loadRuntimeSaveData(page, saveData, options) {
 module.exports = {
   RESUME_ARTIFACT_SCHEMA,
   buildProjectFingerprint,
+  buildEncodedSuffixSha256,
+  buildNativeSavePayloadSha256,
   buildReplayRouteFingerprint,
   buildResumeArtifact,
+  buildStructuredSuffixSha256,
   captureRuntimeSaveData,
   cloneJson,
   decodeH5SavePackage,
@@ -309,4 +598,6 @@ module.exports = {
   stripResumeHelpers,
   summarizeResumeDecision,
   validateResumeArtifact,
+  verifyResumeNextDecision,
+  verifyRuntimeResumeSnapshot,
 };

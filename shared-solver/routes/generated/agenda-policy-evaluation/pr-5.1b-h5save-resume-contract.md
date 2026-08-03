@@ -25,12 +25,33 @@
 | final runtime snapshot stored | true |
 | identity matches | true |
 
+## Loader-owned verification
+
+| Contract | Value |
+| --- | --- |
+| production entry point | shared-solver/export-h5-segment.js:openNativeReplay |
+| artifact preflight before browser | true |
+| route file required by default | true |
+| legacy identity uses artifact floor set | true |
+| stored runtime identity recomputed | true |
+| suffix decisions before boundary verification | 0 |
+| final verification after suffix | true |
+
 ## Mismatch controls
 
 | Control | Altered field | Expected error |
 | --- | --- | --- |
 | project-fingerprint-mismatch | projectFingerprint.fingerprintSha256 | REPLAY_RESUME_PROJECT_FINGERPRINT_MISMATCH |
 | route-fingerprint-mismatch | routeFingerprint.sha256 | REPLAY_RESUME_ROUTE_FINGERPRINT_MISMATCH |
+| route-file-required | routeRecord omitted while requireRoute=true | REPLAY_RESUME_ROUTE_REQUIRED |
+
+## Payload binding controls
+
+| Control | Altered field | Expected error |
+| --- | --- | --- |
+| native-save-payload-mismatch | data.hero.hp | REPLAY_RESUME_NATIVE_PAYLOAD_MISMATCH |
+| structured-suffix-mismatch | data.__solverReplay__[0].summary | REPLAY_RESUME_STRUCTURED_SUFFIX_ROUTE_MISMATCH |
+| encoded-suffix-mismatch | data.__toReplay__ | REPLAY_RESUME_ENCODED_SUFFIX_MISMATCH |
 
 ## Scope
 

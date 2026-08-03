@@ -11,45 +11,19 @@ const {
   ensureFixedRoute,
 } = require("./audit-replay-start-offset-contract");
 const { loadProject } = require("./lib/project-loader");
-const {
-  buildRuntimeSnapshotIdentityPair,
-  captureRuntimeSnapshot,
-  executeRouteDecision,
-  findBrowserExecutable,
-  launchRuntimeSession,
-  prepareReplayRouteRecord,
-  projectSupportsRuntimeAutoBattle,
-  routeSnapshotFloors,
-  stabilizeRuntime,
-  waitForRuntimeIdle,
-} = require("./lib/live-replay");
+const { findBrowserExecutable } = require("./lib/live-replay");
 const {
   decodeH5SavePackage,
-  loadRuntimeSaveData,
+  encodeH5SavePackage,
   summarizeResumeDecision,
   validateResumeArtifact,
 } = require("./lib/replay-resume-artifact");
-const { exportH5Segment } = require("./export-h5-segment");
+const { exportH5Segment, openNativeReplay } = require("./export-h5-segment");
 
 const TIMEOUT_MS = 30000;
 
 function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
-}
-
-function displayOfSnapshot(snapshot) {
-  const hero = (snapshot && snapshot.hero) || {};
-  const loc = hero.loc || {};
-  return {
-    floorId: snapshot && snapshot.floorId || null,
-    x: loc.x,
-    y: loc.y,
-    direction: loc.direction,
-    hp: hero.hp,
-    atk: hero.atk,
-    def: hero.def,
-    mdef: hero.mdef,
-  };
 }
 
 function runCli(args) {
@@ -75,6 +49,36 @@ function assertCliMismatch(result, expectedCode, label) {
   assert.ok(!result.output.includes("Runtime URL:"), `${label}: runtime URL must not be printed`);
 }
 
+function assertCliSuccess(result, label) {
+  assert.strictEqual(result.exitCode, 0, `${label}: CLI must succeed\n${result.output}`);
+  assert.strictEqual(result.errorCode, null, `${label}: no resume error code`);
+  assert.ok(result.output.includes("Replay opened:"), `${label}: native replay opened`);
+  assert.ok(result.output.includes("Runtime URL:"), `${label}: runtime URL printed`);
+}
+
+function writeTamperedH5Save(projectRoot, outDir, savePackage, id, mutate) {
+  const tampered = cloneJson(savePackage);
+  mutate(tampered);
+  const filePath = path.join(outDir, `${id}.h5save`);
+  fs.writeFileSync(filePath, encodeH5SavePackage(projectRoot, tampered), "utf8");
+  return filePath;
+}
+
+function displayOfStatus(status) {
+  const hero = status && status.hero || {};
+  const loc = hero.loc || {};
+  return {
+    floorId: status && status.floorId || null,
+    x: loc.x,
+    y: loc.y,
+    direction: loc.direction,
+    hp: hero.hp,
+    atk: hero.atk,
+    def: hero.def,
+    mdef: hero.mdef,
+  };
+}
+
 async function main() {
   const browserInput = FIXED_INPUTS.find((candidate) => candidate.tower === "whiteisland");
   const wrongProjectInput = FIXED_INPUTS.find((candidate) => candidate.tower === "onlyup");
@@ -88,7 +92,7 @@ async function main() {
   const projectRoot = input.projectRoot;
   const routeFile = input.routeFile;
   const checkpointStep = 1;
-  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "motapathfinder-pr-5.1b-"));
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "motapathfinder-pr-5.1b1-"));
 
   try {
     const exported = await exportH5Segment({
@@ -100,16 +104,15 @@ async function main() {
       timeoutMs: TIMEOUT_MS,
     });
     const decoded = decodeH5SavePackage(projectRoot, exported.h5saveFile);
-    const project = loadProject(projectRoot);
-    const validation = validateResumeArtifact(decoded.artifact, { project, routeRecord });
     const artifact = decoded.artifact;
-    const runtimeRouteRecord = prepareReplayRouteRecord(routeRecord, projectRoot);
-    const runtimeAutoBattle = projectSupportsRuntimeAutoBattle(projectRoot);
-    const identityOptions = {
+    const project = loadProject(projectRoot);
+    const validation = validateResumeArtifact(decoded.artifact, {
+      project,
+      routeRecord,
       projectRoot,
-      runtimeAutoBattle,
-      routeStartSnapshot: runtimeRouteRecord.start.snapshot,
-    };
+      saveData: decoded.saveData,
+      requireRoute: true,
+    });
 
     assert.deepStrictEqual(
       Object.keys(decoded.savePackage),
@@ -118,6 +121,7 @@ async function main() {
     );
     assert.strictEqual(validation.projectFingerprintMatches, true, "project fingerprint validation");
     assert.strictEqual(validation.routeFingerprintMatches, true, "route fingerprint validation");
+    assert.strictEqual(validation.payloadBindingVerified, true, "native/suffix payload binding");
     assert.strictEqual(artifact.boundary.executedStepCount, checkpointStep, "boundary executed step count");
     assert.strictEqual(artifact.boundary.nextStep, checkpointStep + 1, "boundary next step");
     assert.strictEqual(artifact.boundary.exactStateKey, routeRecord.decisions[checkpointStep - 1].postExactStateKey, "boundary exact state key");
@@ -131,24 +135,35 @@ async function main() {
     assert.strictEqual(artifact.continuation.identityMatches, true, "exported final identity");
     assert.strictEqual(artifact.continuation.runtimeSnapshotIdentity, artifact.continuation.capturedRuntimeSnapshotIdentity, "exported final identity hashes");
 
-    const projectMismatch = cloneJson(artifact);
-    projectMismatch.projectFingerprint.fingerprintSha256 = "0".repeat(64);
-    assert.throws(
-      () => validateResumeArtifact(projectMismatch, { project, routeRecord }),
-      (error) => error && error.code === "REPLAY_RESUME_PROJECT_FINGERPRINT_MISMATCH",
-      "project fingerprint mismatch control",
-    );
-    const routeMismatch = cloneJson(artifact);
-    routeMismatch.routeFingerprint.sha256 = "0".repeat(64);
-    assert.throws(
-      () => validateResumeArtifact(routeMismatch, { project, routeRecord }),
-      (error) => error && error.code === "REPLAY_RESUME_ROUTE_FINGERPRINT_MISMATCH",
-      "route fingerprint mismatch control",
-    );
+    const loaderResult = await openNativeReplay({
+      projectRoot,
+      saveData: decoded.saveData,
+      resumeArtifact: artifact,
+      routeRecord,
+      encodedSuffixRoute: decoded.saveData.__toReplay__,
+      rank: decoded.saveData.hard || "chaos",
+      timeoutMs: TIMEOUT_MS,
+      headless: true,
+      keepOpen: false,
+      autoPlay: true,
+      runtimeAutoBattle: false,
+      runtimeAutoPickup: true,
+      postStabilize: false,
+    });
+    assert.strictEqual(loaderResult.artifactValidation.routeVerified, true, "loader route verification");
+    assert.strictEqual(loaderResult.artifactValidation.payloadBindingVerified, true, "loader payload binding");
+    assert.strictEqual(loaderResult.boundaryVerification.identityMatches, true, "loader-owned boundary identity");
+    assert.strictEqual(loaderResult.boundaryVerification.displayMatches, true, "loader-owned boundary display");
+    assert.strictEqual(loaderResult.nextDecisionVerification.nextDecisionMatches, true, "loader-owned next decision");
+    assert.strictEqual(loaderResult.suffixDecisionCountBeforeBoundaryVerification, 0, "no suffix decision before boundary verification");
+    assert.strictEqual(loaderResult.finalVerification.identityMatches, true, "loader-owned final identity");
+    assert.strictEqual(loaderResult.finalVerification.displayMatches, true, "loader-owned final display");
+    assert.strictEqual(loaderResult.suffixDecisionCount, routeRecord.decisions.length - checkpointStep, "loader suffix execution count");
 
     const projectMismatchCli = runCli([
       `--project-root=${wrongProject.projectRoot}`,
       `--h5save=${exported.h5saveFile}`,
+      `--route-file=${routeFile}`,
     ]);
     assertCliMismatch(
       projectMismatchCli,
@@ -165,99 +180,103 @@ async function main() {
       "REPLAY_RESUME_ROUTE_FINGERPRINT_MISMATCH",
       "route fingerprint CLI mismatch",
     );
+    const routeRequiredCli = runCli([
+      `--project-root=${projectRoot}`,
+      `--h5save=${exported.h5saveFile}`,
+    ]);
+    assertCliMismatch(
+      routeRequiredCli,
+      "REPLAY_RESUME_ROUTE_REQUIRED",
+      "route file required by default",
+    );
+    const legacyUnverifiedRouteCli = runCli([
+      `--project-root=${projectRoot}`,
+      `--h5save=${exported.h5saveFile}`,
+      "--allow-unverified-route=1",
+    ]);
+    assertCliSuccess(legacyUnverifiedRouteCli, "explicit legacy unverified-route mode");
 
-    const runtime = await launchRuntimeSession(runtimeRouteRecord, {
-      projectRoot,
-      headless: "1",
-      timeoutMs: TIMEOUT_MS,
-      runtimeAutoBattle,
-      runtimeAutoPickup: true,
-    });
-    try {
-      await loadRuntimeSaveData(runtime.page, decoded.saveData, {
-        runtimeAutoBattle,
-        runtimeAutoPickup: true,
-      });
-      await waitForRuntimeIdle(runtime.page, TIMEOUT_MS);
-      await stabilizeRuntime(runtime.page, TIMEOUT_MS, runtime.options);
-
-      const loadedSnapshot = await captureRuntimeSnapshot(runtime.page, {
-        verifyFloors: routeSnapshotFloors(runtimeRouteRecord, {}),
-      });
-      const loadedIdentity = buildRuntimeSnapshotIdentityPair(
-        artifact.boundary.snapshot,
-        loadedSnapshot,
-        identityOptions,
-      );
-      assert.strictEqual(loadedIdentity.matches, true, "fresh runtime boundary identity");
-      assert.strictEqual(loadedIdentity.expected, artifact.boundary.runtimeSnapshotIdentity, "fresh runtime expected boundary identity");
-      assert.strictEqual(loadedIdentity.actual, artifact.boundary.capturedRuntimeSnapshotIdentity, "fresh runtime captured boundary identity");
-      assert.deepStrictEqual(displayOfSnapshot(loadedSnapshot), displayOfSnapshot(artifact.boundary.snapshot), "fresh runtime boundary display");
-
-      const stepResults = [];
-      for (let index = checkpointStep; index < routeRecord.decisions.length; index += 1) {
-        const result = await executeRouteDecision(runtime, routeRecord.decisions[index], {
-          timeoutMs: TIMEOUT_MS,
-          idleTimeoutMs: TIMEOUT_MS,
-          stepDelayMs: 0,
-          runtimeAutoBattle,
-          runtimeAutoPickup: true,
-          routeStartSnapshot: runtimeRouteRecord.start.snapshot,
-        });
-        assert.strictEqual(result.ok, true, `fresh runtime continuation step ${index + 1}`);
-        assert.strictEqual(result.runtimeSnapshotIdentityMatches, true, `fresh runtime continuation identity ${index + 1}`);
-        stepResults.push({ index: index + 1, summary: routeRecord.decisions[index].summary });
-      }
-
-      const finalSnapshot = await captureRuntimeSnapshot(runtime.page, {
-        verifyFloors: routeSnapshotFloors(runtimeRouteRecord, {}),
-      });
-      const finalIdentity = buildRuntimeSnapshotIdentityPair(
-        artifact.continuation.finalSnapshot,
-        finalSnapshot,
-        identityOptions,
-      );
-      assert.strictEqual(finalIdentity.matches, true, "fresh runtime final identity");
-      assert.strictEqual(finalIdentity.expected, artifact.continuation.runtimeSnapshotIdentity, "fresh runtime expected final identity");
-      assert.strictEqual(finalIdentity.actual, artifact.continuation.capturedRuntimeSnapshotIdentity, "fresh runtime captured final identity");
-      assert.deepStrictEqual(displayOfSnapshot(finalSnapshot), displayOfSnapshot(routeRecord.final.snapshot), "fresh runtime final display");
-
-      process.stdout.write(`${JSON.stringify({
-        schema: "motapathfinder.pr-5.1b-h5save-resume-live.v1",
-        status: "passed",
-        input: {
-          tower: input.tower,
-          routeFile,
-          checkpointStep,
+    const tamperControls = [
+      {
+        id: "tampered-native-save-payload",
+        expectedCode: "REPLAY_RESUME_NATIVE_PAYLOAD_MISMATCH",
+        mutate: (savePackage) => {
+          savePackage.data.hero.hp = Number(savePackage.data.hero.hp || 0) + 1;
         },
-        package: {
-          artifactSchema: artifact.schema,
-          topLevelKeys: Object.keys(decoded.savePackage),
-          projectFingerprintMatches: validation.projectFingerprintMatches,
-          routeFingerprintMatches: validation.routeFingerprintMatches,
+      },
+      {
+        id: "tampered-boundary-snapshot",
+        expectedCode: "REPLAY_RESUME_RUNTIME_IDENTITY_MISMATCH",
+        mutate: (savePackage) => {
+          savePackage.__solverResumeArtifact__.boundary.snapshot.hero.hp += 1;
         },
-        boundary: {
-          loadedRuntimeIdentityMatches: loadedIdentity.matches,
-          nextDecision: artifact.boundary.nextDecision,
-          displayed: displayOfSnapshot(loadedSnapshot),
+      },
+      {
+        id: "tampered-structured-suffix",
+        expectedCode: "REPLAY_RESUME_STRUCTURED_SUFFIX_ROUTE_MISMATCH",
+        mutate: (savePackage) => {
+          savePackage.data.__solverReplay__[0].summary = `${savePackage.data.__solverReplay__[0].summary}:tampered`;
         },
-        continuation: {
-          steps: stepResults,
-          finalIdentityMatches: finalIdentity.matches,
-          displayed: displayOfSnapshot(finalSnapshot),
+      },
+      {
+        id: "tampered-final-snapshot",
+        expectedCode: "REPLAY_RESUME_RUNTIME_IDENTITY_MISMATCH",
+        mutate: (savePackage) => {
+          savePackage.__solverResumeArtifact__.continuation.finalSnapshot.hero.hp += 1;
         },
-        mismatchControls: [
-          { id: "project-fingerprint-mismatch", errorCode: projectMismatchCli.errorCode, runtimeLaunched: false },
-          { id: "route-fingerprint-mismatch", errorCode: routeMismatchCli.errorCode, runtimeLaunched: false },
-        ],
-      }, null, 2)}\n`);
-    } finally {
-      await Promise.allSettled([
-        runtime.context && runtime.context.close ? runtime.context.close() : Promise.resolve(),
-        runtime.browser && runtime.browser.close ? runtime.browser.close() : Promise.resolve(),
-        runtime.server && runtime.server.close ? runtime.server.close() : Promise.resolve(),
+      },
+    ];
+    const tamperResults = tamperControls.map((control) => {
+      const tamperedFile = writeTamperedH5Save(projectRoot, outDir, decoded.savePackage, control.id, control.mutate);
+      const result = runCli([
+        `--project-root=${projectRoot}`,
+        `--h5save=${tamperedFile}`,
+        `--route-file=${routeFile}`,
       ]);
-    }
+      assertCliMismatch(result, control.expectedCode, control.id);
+      return {
+        id: control.id,
+        errorCode: result.errorCode,
+        suffixExecutedBeforeReject: false,
+      };
+    });
+
+    process.stdout.write(`${JSON.stringify({
+      schema: "motapathfinder.pr-5.1b1-loader-owned-resume-live.v1",
+      status: "passed",
+      input: {
+        tower: input.tower,
+        routeFile,
+        checkpointStep,
+      },
+      package: {
+        artifactSchema: artifact.schema,
+        topLevelKeys: Object.keys(decoded.savePackage),
+        projectFingerprintMatches: validation.projectFingerprintMatches,
+        routeFingerprintMatches: validation.routeFingerprintMatches,
+        payloadBindingVerified: validation.payloadBindingVerified,
+      },
+      loaderOwned: {
+        boundaryIdentityMatches: loaderResult.boundaryVerification.identityMatches,
+        boundaryDisplayMatches: loaderResult.boundaryVerification.displayMatches,
+        nextDecisionMatches: loaderResult.nextDecisionVerification.nextDecisionMatches,
+        suffixDecisionCountBeforeBoundaryVerification: loaderResult.suffixDecisionCountBeforeBoundaryVerification,
+        suffixDecisionCount: loaderResult.suffixDecisionCount,
+        finalIdentityMatches: loaderResult.finalVerification.identityMatches,
+        finalDisplayMatches: loaderResult.finalVerification.displayMatches,
+        finalDisplay: displayOfStatus(loaderResult.status),
+      },
+      routePolicy: {
+        defaultRouteRequiredErrorCode: routeRequiredCli.errorCode,
+        legacyUnverifiedRouteAllowed: legacyUnverifiedRouteCli.exitCode === 0,
+      },
+      mismatchControls: [
+        { id: "project-fingerprint-mismatch", errorCode: projectMismatchCli.errorCode, suffixExecutedBeforeReject: false },
+        { id: "route-fingerprint-mismatch", errorCode: routeMismatchCli.errorCode, suffixExecutedBeforeReject: false },
+        { id: "route-file-required", errorCode: routeRequiredCli.errorCode, suffixExecutedBeforeReject: false },
+        ...tamperResults,
+      ],
+    }, null, 2)}\n`);
   } finally {
     fs.rmSync(outDir, { recursive: true, force: true });
   }

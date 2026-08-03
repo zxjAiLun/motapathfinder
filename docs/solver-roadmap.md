@@ -421,6 +421,21 @@ npm run run:replay:h5save-resume --prefix shared-solver
 npm run check:replay:h5save-resume:live --prefix shared-solver
 ```
 
+#### PR-5.1b1：Loader-Owned Resume Verification ✅ replay-runtime-h5save-resume
+
+- ✅ resume artifact 的 production loader 在创建 HTTP server/browser 之前完成 schema、project fingerprint、route fingerprint、boundary/final exact metadata、stored runtime identity 重算，以及 native payload / structured suffix / encoded suffix binding 校验。
+- ✅ route file 默认必需；无 route 时返回 `REPLAY_RESUME_ROUTE_REQUIRED`，只有显式 `--allow-unverified-route=1` 才进入 legacy unverified-route 模式。
+- ✅ `openNativeReplay()` 在 `loadData()` 后、任何 structured suffix decision 前 capture 并验证 boundary runtime identity/display 与 next decision；suffix 执行完成后由同一 loader 验证 final runtime identity/display。
+- ✅ live checker 锁定四类真实 h5save 篡改控制，并确认拒绝发生在 browser/native replay 打开和 suffix 执行之前；本轮仍不修改 production DP key、dominance、agenda、容量或默认策略。
+
+验收：
+
+```bash
+npm run check:replay:h5save-resume --prefix shared-solver
+npm run run:replay:h5save-resume --prefix shared-solver
+npm run check:replay:h5save-resume:live --prefix shared-solver
+```
+
 ## 5. 风险控制
 
 ### 5.1 `presentTiles` 过拟合

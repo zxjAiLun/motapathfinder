@@ -44,6 +44,9 @@ function assertReport(report) {
   );
   assert.strictEqual(report.h5savePackage.encoding, "lz-string base64 JSON");
   assert.strictEqual(report.h5savePackage.artifactSchema, "motapathfinder.replay-resume-artifact.v1");
+  assert.strictEqual(report.h5savePackage.nativePayloadSha256Stored, true);
+  assert.strictEqual(report.h5savePackage.structuredSuffixSha256Stored, true);
+  assert.strictEqual(report.h5savePackage.encodedSuffixSha256Stored, true);
 
   assert.strictEqual(report.boundary.executedStepCount, 1);
   assert.strictEqual(report.boundary.nextStep, 2);
@@ -62,17 +65,43 @@ function assertReport(report) {
   assert.strictEqual(report.continuation.identityMatches, true);
   assert.strictEqual(report.continuation.runtimeSnapshotIdentity, report.continuation.capturedRuntimeSnapshotIdentity);
 
+  assert.strictEqual(report.loaderOwned.productionEntryPoint, "shared-solver/export-h5-segment.js:openNativeReplay");
+  assert.strictEqual(report.loaderOwned.artifactPreflightBeforeBrowser, true);
+  assert.strictEqual(report.loaderOwned.routeFileRequiredByDefault, true);
+  assert.strictEqual(report.loaderOwned.legacyRouteIdentityUsesArtifactFloors, true);
+  assert.strictEqual(report.loaderOwned.storedRuntimeIdentityRecomputed, true);
+  assert.strictEqual(report.loaderOwned.boundaryVerificationBeforeSuffix, true);
+  assert.strictEqual(report.loaderOwned.suffixDecisionCountBeforeBoundaryVerification, 0);
+  assert.strictEqual(report.loaderOwned.nextDecisionVerificationBeforeSuffix, true);
+  assert.strictEqual(report.loaderOwned.finalVerificationAfterSuffix, true);
+
   assert.strictEqual(report.freshRuntime.required, true);
   assert.strictEqual(report.freshRuntime.liveRuntimeExecuted, false);
   assert.strictEqual(report.freshRuntime.liveChecker, "shared-solver/check-replay-h5save-resume-live.js");
 
   assert.deepStrictEqual(
     report.mismatchControls.map((control) => control.id),
-    ["project-fingerprint-mismatch", "route-fingerprint-mismatch"],
+    ["project-fingerprint-mismatch", "route-fingerprint-mismatch", "route-file-required"],
   );
   assert.deepStrictEqual(
     report.mismatchControls.map((control) => control.expectedErrorCode),
-    ["REPLAY_RESUME_PROJECT_FINGERPRINT_MISMATCH", "REPLAY_RESUME_ROUTE_FINGERPRINT_MISMATCH"],
+    [
+      "REPLAY_RESUME_PROJECT_FINGERPRINT_MISMATCH",
+      "REPLAY_RESUME_ROUTE_FINGERPRINT_MISMATCH",
+      "REPLAY_RESUME_ROUTE_REQUIRED",
+    ],
+  );
+  assert.deepStrictEqual(
+    report.bindingControls.map((control) => control.id),
+    ["native-save-payload-mismatch", "structured-suffix-mismatch", "encoded-suffix-mismatch"],
+  );
+  assert.deepStrictEqual(
+    report.bindingControls.map((control) => control.expectedErrorCode),
+    [
+      "REPLAY_RESUME_NATIVE_PAYLOAD_MISMATCH",
+      "REPLAY_RESUME_STRUCTURED_SUFFIX_ROUTE_MISMATCH",
+      "REPLAY_RESUME_ENCODED_SUFFIX_MISMATCH",
+    ],
   );
 }
 

@@ -1316,6 +1316,24 @@ npm run run:replay:h5save-resume --prefix shared-solver
 npm run check:replay:h5save-resume:live --prefix shared-solver
 ```
 
+### 2026-08-03 更新：PR-5.1b1 Loader-Owned Resume Verification
+
+Review 指出 PR-5.1b 的 artifact/export contract 已成立，但 production loader 仍未真正拥有 resume verification：此前 validator 会信任 artifact 中的 identity 字段，`openNativeReplay()` 也没有在 suffix 前验证实际 boundary、next decision，或在 suffix 后验证 final state。本轮进入 PR-5.1b1，范围仍限定在 replay/export runtime，不改 production solver/search 语义：
+
+- `lib/replay-resume-artifact.js` 现在对选定 route 做 exact boundary step/key/snapshot、next decision、suffix count、final key/snapshot 检查，并从存储 snapshot 重新计算 runtime identity；不再把 `identityMatches` 当作唯一证据。
+- artifact 绑定 native `saveData` payload、`__solverReplay__` structured suffix 和 `__toReplay__` encoded suffix 的 stable SHA-256。route file 默认必需；省略时 loader 在创建 browser/server 前返回 `REPLAY_RESUME_ROUTE_REQUIRED`，只有显式 `--allow-unverified-route=1` 才允许 legacy unverified-route 模式。该模式只省略 selected-route fingerprint/exact-route 对照，仍用 artifact 自带 floor set 做 native payload 与 boundary/final runtime identity 校验。
+- `openNativeReplay()` 在 `loadData()` 后先等待 runtime idle，capture 实际 boundary，验证 boundary runtime identity/display 与首个 next decision，然后才执行 structured suffix；suffix 完成后由同一 production loader 验证 final runtime identity/display。返回结果显式记录 boundary 前 suffix 执行数为 0。
+- live checker 使用真实 WhiteIsland h5save 和 fresh browser runtime，锁定 project/route/无 route 三个前置拒绝，以及 native payload、boundary snapshot、structured suffix、final snapshot 四个篡改控制；所有控制都确认没有打印 `Replay opened` 或 `Runtime URL`，即没有进入 replay runtime。
+- 确定性 report/checker 同步锁定三种 payload binding、route policy、stored identity 重算和 loader verification 顺序；production DP key、dominance、agenda、capacity、默认策略与路线选择语义均未修改。
+
+专项检查：
+
+```bash
+npm run check:replay:h5save-resume --prefix shared-solver
+npm run run:replay:h5save-resume --prefix shared-solver
+npm run check:replay:h5save-resume:live --prefix shared-solver
+```
+
 专项检查：
 
 ```bash

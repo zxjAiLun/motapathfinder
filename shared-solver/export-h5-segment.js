@@ -18,6 +18,7 @@ const {
   routeSnapshotFloors,
   stabilizeRuntime,
   waitForRuntimeReady,
+  waitForRuntimeIdle,
 } = require("./lib/live-replay");
 const {
   buildResumeArtifact,
@@ -25,6 +26,8 @@ const {
   decodeH5SavePackage,
   encodeH5SavePackage,
   validateResumeArtifact,
+  verifyResumeNextDecision,
+  verifyRuntimeResumeSnapshot,
 } = require("./lib/replay-resume-artifact");
 const { loadProject } = require("./lib/project-loader");
 const { readRouteFile } = require("./lib/route-store");
@@ -126,6 +129,19 @@ function collectVerifyFloors(saveData, decisions) {
   return Array.from(floors).filter(Boolean);
 }
 
+function collectResumeArtifactFloors(artifact) {
+  const floors = new Set();
+  [
+    artifact && artifact.boundary && artifact.boundary.snapshot,
+    artifact && artifact.boundary && artifact.boundary.routeSnapshot,
+    artifact && artifact.continuation && artifact.continuation.finalSnapshot,
+    artifact && artifact.continuation && artifact.continuation.routeFinalSnapshot,
+  ].forEach((snapshot) => {
+    Object.keys((snapshot && snapshot.floors) || {}).forEach((floorId) => floors.add(floorId));
+  });
+  return Array.from(floors).filter(Boolean);
+}
+
 async function getRuntimeRouteInfo(page) {
   return page.evaluate(() => ({
     name: core.firstData.name,
@@ -145,6 +161,24 @@ async function getRuntimeRouteInfo(page) {
       equipment: core.clone(core.status.hero.equipment || []),
     },
   }));
+}
+
+async function closeReplayServer(server) {
+  if (!server) return;
+  try {
+    if (server.server && typeof server.server.closeAllConnections === "function") {
+      server.server.closeAllConnections();
+    }
+    const closePromise = typeof server.close === "function"
+      ? Promise.resolve(server.close()).catch(() => {})
+      : Promise.resolve();
+    await Promise.race([
+      closePromise,
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]);
+  } catch (error) {
+    // Browser shutdown and the bounded server close are best-effort cleanup.
+  }
 }
 
 async function encodeRuntimeRoute(page, route) {
@@ -251,6 +285,9 @@ async function exportH5Segment({ routeRecord, routeFile, projectRoot, checkpoint
       finalSnapshot: (runtimeRouteRecord.final || {}).snapshot,
       finalRuntimeSnapshot,
       finalIdentity,
+      nativeSaveData: checkpointSave,
+      structuredSuffix: decisions.slice(checkpointStep),
+      encodedSuffix,
       nativeName: checkpointInfo.name,
       nativeVersion: checkpointInfo.version,
     });
@@ -311,7 +348,34 @@ async function exportH5Segment({ routeRecord, routeFile, projectRoot, checkpoint
   }
 }
 
-async function openNativeReplay({ projectRoot, saveData, suffixRoute, encodedSuffixRoute, rank, timeoutMs, headless, keepOpen, autoPlay, runtimeAutoBattle, runtimeAutoPickup, postStabilize }) {
+async function openNativeReplay({
+  projectRoot,
+  saveData,
+  resumeArtifact,
+  routeRecord,
+  allowUnverifiedRoute,
+  suffixRoute,
+  encodedSuffixRoute,
+  rank,
+  timeoutMs,
+  headless,
+  keepOpen,
+  autoPlay,
+  runtimeAutoBattle,
+  runtimeAutoPickup,
+  postStabilize,
+}) {
+  let artifactValidation = null;
+  if (resumeArtifact) {
+    artifactValidation = validateResumeArtifact(resumeArtifact, {
+      project: loadProject(projectRoot),
+      routeRecord,
+      projectRoot,
+      saveData,
+      requireRoute: true,
+      allowUnverifiedRoute: allowUnverifiedRoute === true,
+    });
+  }
   const browserPath = findBrowserExecutable();
   if (!browserPath) throw new Error("No Chrome/Edge executable found for native replay.");
   const server = await createStaticServer(projectRoot);
@@ -327,6 +391,14 @@ async function openNativeReplay({ projectRoot, saveData, suffixRoute, encodedSuf
     await quickStartRuntime(page, rank || "chaos", { timeoutMs });
     forceSaveAutomation(saveData, { runtimeAutoBattle, runtimeAutoPickup });
     const solverReplay = Array.isArray(saveData.__solverReplay__) ? saveData.__solverReplay__ : null;
+    const runtimeRouteRecord = routeRecord && prepareReplayRouteRecord(routeRecord, projectRoot);
+    const verifyFloors = runtimeRouteRecord
+      ? routeSnapshotFloors(runtimeRouteRecord, {})
+      : Array.from(new Set([
+        ...collectVerifyFloors(saveData, solverReplay),
+        ...collectResumeArtifactFloors(resumeArtifact),
+      ]));
+    let suffixExecutedCount = 0;
     const loadData = stripReplayHelpers(saveData);
     await page.evaluate(({ data, route, encodedRoute, playNative, enableAutoBattle, enableAutoPickup }) => new Promise((resolve) => {
       const list = route || (encodedRoute ? core.decodeRoute(encodedRoute) : []);
@@ -349,6 +421,30 @@ async function openNativeReplay({ projectRoot, saveData, suffixRoute, encodedSuf
       enableAutoBattle: runtimeAutoBattle !== false,
       enableAutoPickup: runtimeAutoPickup !== false,
     });
+    await waitForRuntimeIdle(page, timeoutMs);
+    if (postStabilize || resumeArtifact) {
+      await stabilizeRuntime(page, timeoutMs, {
+        idleTimeoutMs: timeoutMs,
+        projectRoot,
+        runtimeAutoBattle: runtimeAutoBattle !== false,
+      });
+    }
+
+    const suffixDecisionCountBeforeBoundaryVerification = suffixExecutedCount;
+    let boundaryVerification = null;
+    let nextDecisionVerification = null;
+    let finalVerification = null;
+    if (resumeArtifact) {
+      const boundarySnapshot = await captureRuntimeSnapshot(page, { verifyFloors });
+      boundaryVerification = verifyRuntimeResumeSnapshot(resumeArtifact, "boundary", boundarySnapshot, {
+        projectRoot,
+        routeRecord: runtimeRouteRecord,
+      });
+      nextDecisionVerification = verifyResumeNextDecision(resumeArtifact, solverReplay, {
+        projectRoot,
+        routeRecord: runtimeRouteRecord,
+      });
+    }
     if (solverReplay && autoPlay) {
       console.log(`Structured solver replay: ${solverReplay.length} decisions`);
       const session = {
@@ -357,7 +453,7 @@ async function openNativeReplay({ projectRoot, saveData, suffixRoute, encodedSuf
         page,
         server,
         rank: rank || "chaos",
-        verifyFloors: collectVerifyFloors(saveData, solverReplay),
+        verifyFloors,
         url: server.url,
         timeoutMs,
         visibleReplay: !headless,
@@ -367,6 +463,7 @@ async function openNativeReplay({ projectRoot, saveData, suffixRoute, encodedSuf
           idleTimeoutMs: timeoutMs,
           runtimeAutoBattle: runtimeAutoBattle !== false,
           runtimeAutoPickup: runtimeAutoPickup !== false,
+          routeStartSnapshot: runtimeRouteRecord && runtimeRouteRecord.start && runtimeRouteRecord.start.snapshot || null,
         },
       };
       for (let index = 0; index < solverReplay.length; index += 1) {
@@ -378,9 +475,17 @@ async function openNativeReplay({ projectRoot, saveData, suffixRoute, encodedSuf
           runtimeAutoBattle: runtimeAutoBattle !== false,
           runtimeAutoPickup: runtimeAutoPickup !== false,
         });
+        suffixExecutedCount += 1;
         if ((index + 1) % 5 === 0 || index + 1 === solverReplay.length) {
           console.log(`Structured replayed ${index + 1}/${solverReplay.length}`);
         }
+      }
+      if (resumeArtifact) {
+        const finalSnapshot = await captureRuntimeSnapshot(page, { verifyFloors });
+        finalVerification = verifyRuntimeResumeSnapshot(resumeArtifact, "final", finalSnapshot, {
+          projectRoot,
+          routeRecord: runtimeRouteRecord,
+        });
       }
     } else if (postStabilize) {
       await stabilizeRuntime(page, timeoutMs, {
@@ -398,11 +503,20 @@ async function openNativeReplay({ projectRoot, saveData, suffixRoute, encodedSuf
       console.log("Browser is kept open. Press Ctrl+C in this terminal when done.");
       await new Promise(() => {});
     }
+    return {
+      status,
+      artifactValidation,
+      boundaryVerification,
+      nextDecisionVerification,
+      finalVerification,
+      suffixDecisionCount: suffixExecutedCount,
+      suffixDecisionCountBeforeBoundaryVerification,
+    };
   } finally {
     if (!keepOpen) {
       await Promise.allSettled([
         browser.close(),
-        new Promise((resolve) => server.close(resolve)),
+        closeReplayServer(server),
       ]);
     }
   }
@@ -426,15 +540,14 @@ async function main() {
     const decoded = decodeH5SavePackage(projectRoot, h5savePath);
     const saveData = decoded.saveData;
     if (!saveData || !saveData.__toReplay__) throw new Error(`h5save has no __toReplay__: ${h5savePath}`);
-    if (decoded.artifact) {
-      const project = loadProject(projectRoot);
-      const routeFile = args["route-file"] ? resolveRouteFile(args["route-file"]) : null;
-      const routeRecord = routeFile ? readRouteFile(routeFile) : null;
-      validateResumeArtifact(decoded.artifact, { project, routeRecord });
-    }
+    const routeFile = args["route-file"] ? resolveRouteFile(args["route-file"]) : null;
+    const routeRecord = routeFile ? readRouteFile(routeFile) : null;
     await openNativeReplay({
       projectRoot,
       saveData,
+      resumeArtifact: decoded.artifact,
+      routeRecord,
+      allowUnverifiedRoute: parseBoolean(args["allow-unverified-route"], false),
       encodedSuffixRoute: saveData.__toReplay__,
       rank: saveData.hard || args.rank || "chaos",
       timeoutMs,
@@ -476,6 +589,8 @@ async function main() {
     await openNativeReplay({
       projectRoot,
       saveData: exported.checkpointSave,
+      resumeArtifact: exported.resumeArtifact,
+      routeRecord,
       suffixRoute: exported.suffixRoute,
       rank: ((routeRecord.source || {}).rank) || args.rank || "chaos",
       timeoutMs,
