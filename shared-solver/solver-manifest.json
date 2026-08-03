@@ -187,7 +187,8 @@
         "shared-solver/check-replay-start-offset-contract.js",
         "shared-solver/check-replay-flag-identity-contract.js",
         "shared-solver/check-replay-flag-merge-cli-contract.js",
-        "shared-solver/check-replay-h5save-resume-contract.js"
+        "shared-solver/check-replay-h5save-resume-contract.js",
+        "shared-solver/check-replay-h5save-gui.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -860,6 +861,22 @@
     "shared-solver/lib/replay-resume-artifact.js": {
       "id": "replay-resume-artifact",
       "path": "shared-solver/lib/replay-resume-artifact.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/replay-resume-gui.js": {
+      "id": "replay-resume-gui",
+      "path": "shared-solver/lib/replay-resume-gui.js",
       "layer": "unclassified",
       "status": "supporting",
       "role": "supporting",
@@ -1699,6 +1716,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.1a1a replay-runtime per-floor __leaveLoc__ merge, non-initial-floor checkpoint continuation, dual mismatch witnesses, direct route-gui CLI gate, and deterministic rebuild"
+    },
+    "shared-solver/check-replay-h5save-gui.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.1c Route GUI verified/legacy/failure resume status, boundary/next/payload display, metadata-only legacy mode, API exposure, and deterministic fixture checker"
     },
     "shared-solver/check-replay-h5save-resume-contract.js": {
       "grade": "closure",

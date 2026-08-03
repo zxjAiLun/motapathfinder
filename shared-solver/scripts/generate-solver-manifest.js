@@ -442,6 +442,13 @@ const TEST_OVERRIDES = {
     cleanCheckout: false,
     notes: "PR-5.1b local Chrome/Edge export, fresh native h5save load, next-decision continuation, final identity, and CLI fingerprint mismatch smoke",
   },
+  "shared-solver/check-replay-h5save-gui.js": {
+    grade: "closure",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: true,
+    notes: "PR-5.1c Route GUI verified/legacy/failure resume status, boundary/next/payload display, metadata-only legacy mode, API exposure, and deterministic fixture checker",
+  },
 };
 
 function autoGradeTest(fileName) {
@@ -662,6 +669,7 @@ const manifest = {
         "shared-solver/check-replay-flag-identity-contract.js",
         "shared-solver/check-replay-flag-merge-cli-contract.js",
         "shared-solver/check-replay-h5save-resume-contract.js",
+        "shared-solver/check-replay-h5save-gui.js",
       ],
       requiredCommands: ["check:no-tower-solver-js"],
     },

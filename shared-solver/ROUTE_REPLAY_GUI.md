@@ -18,6 +18,19 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --headl
 npm run gui:route:live
 ```
 
+h5save resume artifact:
+
+```bash
+node route-gui.js --project-root="../whiteisland（9）" --h5save=routes/latest/h5/segment.h5save --open=0
+node route-gui.js --project-root="../whiteisland（9）" --h5save=routes/latest/h5/segment.h5save --allow-unverified-route=1 --open=0
+```
+
+When `--h5save` is supplied without `--route-file`, the GUI uses the artifact's
+embedded route path when that file is available. The default remains route
+verified. `--allow-unverified-route=1` is an explicit legacy mode: the GUI
+shows artifact metadata without inventing a decision timeline, and marks the
+route as unverified.
+
 Stage MT5 convenience:
 
 ```bash
@@ -45,6 +58,8 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 - `--browser=<path>`: optional Chrome/Edge executable path.
 - `--keep-open=0|1`: live runtime stays open by default.
 - `--debug=0|1`: includes stack traces in API error payloads.
+- `--h5save=<path>`: optional lz-string h5save package containing `__solverResumeArtifact__`.
+- `--allow-unverified-route=0|1`: default `0`; only `1` permits legacy metadata-only resume without a selected route.
 
 ## GUI Layout
 
@@ -53,6 +68,7 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 - Timeline: one row per decision with status, kind, floor, target, enemy/item/tool/equip, damage, exp, HP delta, score, and summary.
 - Detail panel: structured action JSON, estimate/score rows, hero diff, inventory diff, flag diff, and floor mutation diff.
 - Runtime panel: current session status, last mismatch, and runtime snapshot/debug metadata.
+- Resume Artifact panel: verified/legacy/failed status, project/route match, boundary and next decision, runtime display/identity, native/structured/encoded payload bindings, continuation summary, and recovery failure code/message.
 
 ## Live Control Semantics
 
@@ -68,6 +84,7 @@ node route-gui.js --route-file=routes/latest/mt1-mt3.route.json --live=1 --from-
 ## Server API
 
 - `GET /api/route`: lightweight metadata and decision rows.
+- `GET /api/resume`: normalized resume artifact status. The same object is embedded as `resume` in `/api/route`.
 - `GET /api/route/step/:index`: full decision, pre/post snapshots, score rows, and categorized diffs.
 - `GET /api/session/status`: live session state, current step, statuses, runtime status, runtime snapshot identity comparison, projected solver-state compatibility comparison, and last mismatch.
 - `POST /api/session/start` with `{ "fromStep": 1 }`: starts live runtime. The accepted range is `0..routeLength`; out-of-range requests return HTTP 400 with code `REPLAY_STEP_OUT_OF_RANGE`.
@@ -100,6 +117,9 @@ API errors return:
 - Live session state is managed by `lib/replay-session.js`.
 - `lib/live-replay.js` preserves actual `flags.__leaveLoc__`; checkpoint start snapshots receive the expected initial cross-floor leave location when the saved route starts on a later floor than the project start floor, and later expected snapshots merge that baseline per floor without overwriting newly recorded locations.
 - `route-gui.js` validates `--from-step` immediately after loading the route and before `listen()`/`openBrowser()`; the process-level error includes `REPLAY_STEP_OUT_OF_RANGE`.
+- `lib/replay-resume-gui.js` owns the GUI-safe resume status projection. It catches decode/validation failures and exposes only stable `{ code, message }` recovery reasons, without leaking a stack into the normal GUI.
+- With a verified artifact, `route-gui.js` keeps the existing route timeline/session semantics and adds resume metadata through `/api/route` and `/api/resume`; it does not change solver search or DP state identity.
+- With an explicit legacy artifact and no route, the server serves a metadata-only route record and an unavailable session so the GUI can explain the recovery state without pretending that suffix decisions are replayable.
 - `export-h5-segment.js --checkpoint-step=N` writes a native `.h5save` plus suffix/full `.h5route` files. The h5save package includes `__solverResumeArtifact__` with the project/route fingerprints, route boundary, next primitive decision, verified runtime continuation identities, and SHA-256 bindings for the native payload and both suffix encodings.
 - Loading an artifact with `node export-h5-segment.js --project-root=... --h5save=... --route-file=...` performs all resume verification in the production loader before opening the native replay. It checks the exact route boundary/next/final contract, recomputes stored runtime identities, verifies the loaded boundary before any structured suffix decision, and verifies the final runtime after the suffix.
 - Artifact mode requires `--route-file` by default and returns `REPLAY_RESUME_ROUTE_REQUIRED` before browser startup when it is omitted. `--allow-unverified-route=1` is an explicit legacy escape hatch; its result is marked `routeVerified: false`, but native payload and embedded boundary/final runtime identities are still verified using the artifact's own floor set.
@@ -126,6 +146,7 @@ npm run gui:route:live
 npm run check:replay:flag-identity --prefix shared-solver
 npm run check:replay:flag-merge-cli --prefix shared-solver
 npm run check:replay:h5save-resume --prefix shared-solver
+npm run check:replay:h5save-gui --prefix shared-solver
 npm run check:replay:h5save-resume:live --prefix shared-solver
 ```
 

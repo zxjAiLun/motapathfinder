@@ -2,6 +2,7 @@
 
 const state = {
   route: null,
+  resume: null,
   selectedStep: 1,
   fromStepInput: 1,
   stepDetail: null,
@@ -41,6 +42,7 @@ function postJson(url, body) {
 
 async function loadRoute() {
   state.route = await fetchJson("/api/route");
+  state.resume = state.route.resume || await fetchJson("/api/resume").catch(() => null);
   state.selectedStep = Math.min(1, state.route.decisionCount || 1);
   state.fromStepInput = state.selectedStep;
   await loadStep(state.selectedStep);
@@ -93,6 +95,60 @@ function renderTopbar() {
     <span>Next: ${nextDecision ? `#${escapeHtml(nextDecision.index)} ${escapeHtml(nextDecision.summary)}` : "-"}</span>
     ${session.browserUrl ? `<span class="muted">Runtime: ${escapeHtml(session.browserUrl)}</span>` : ""}
     ${baselineLabel}
+  `;
+}
+
+function shortHash(value) {
+  const text = String(value || "");
+  return text.length > 24 ? `${text.slice(0, 16)}…${text.slice(-8)}` : text || "-";
+}
+
+function resumeDisplayText(display) {
+  const value = display || {};
+  const loc = value.x == null || value.y == null ? "-" : `${value.x},${value.y}`;
+  return `${value.floorId || "-"} @ ${loc} ${value.direction || ""} hp=${value.hp == null ? "-" : value.hp} atk=${value.atk == null ? "-" : value.atk} def=${value.def == null ? "-" : value.def}`;
+}
+
+function renderResume() {
+  const resume = state.resume;
+  if (!resume || resume.status === "not-loaded") {
+    $("resume-status").innerHTML = '<div class="muted">No resume artifact loaded.</div>';
+    return;
+  }
+  const status = resume.status || "failed";
+  const statusLabel = {
+    verified: "✓ Verified",
+    legacy: "⚠ Legacy / route unverified",
+    failed: "✕ Resume failed",
+  }[status] || status;
+  const binding = resume.payloadBinding || {};
+  const boundary = resume.boundary || {};
+  const continuation = resume.continuation || {};
+  const next = boundary.nextDecision || null;
+  const failure = resume.failure || null;
+  const bindingRows = [
+    ["Native payload", binding.nativeSavePayloadBound, binding.nativeSavePayloadSha256],
+    ["Structured suffix", binding.structuredSuffixBound, binding.structuredSuffixSha256],
+    ["Encoded suffix", binding.encodedSuffixBound, binding.encodedSuffixSha256],
+  ].map(([label, bound, hash]) => `
+    <tr><td>${escapeHtml(label)}</td><td class="${bound ? "resume-ok" : "resume-failed"}">${bound ? "✓ bound" : "✕ missing"}</td><td><code>${escapeHtml(shortHash(hash))}</code></td></tr>
+  `).join("");
+  $("resume-status").innerHTML = `
+    <div class="resume-card">
+      <div class="resume-heading"><span class="badge resume-${escapeHtml(status)}">${escapeHtml(statusLabel)}</span><span class="muted">${escapeHtml(resume.h5saveFile || "")}</span></div>
+      <div class="resume-meta"><span>Route verified: <strong>${resume.routeVerified ? "yes" : "no"}</strong></span><span>Project: <strong>${resume.projectFingerprintMatches === true ? "match" : resume.projectFingerprintMatches === false ? "mismatch" : "-"}</strong></span><span>Route: <strong>${resume.routeFingerprintMatches === true ? "match" : resume.routeFingerprintMatches === false ? "mismatch" : "-"}</strong></span></div>
+    </div>
+    <div class="resume-card">
+      <h3>Boundary / Next</h3>
+      <div class="resume-grid"><span>Completed</span><strong>${escapeHtml(boundary.executedStepCount == null ? "-" : boundary.executedStepCount)}</strong><span>Next step</span><strong>${escapeHtml(boundary.nextStep == null ? "-" : boundary.nextStep)}</strong><span>Runtime</span><strong>${escapeHtml(resumeDisplayText(boundary.runtimeDisplay))}</strong><span>Identity</span><strong class="${boundary.identityMatches ? "resume-ok" : "resume-failed"}">${boundary.identityMatches ? "✓ match" : "✕ mismatch"}</strong></div>
+      <div class="resume-next"><span>Next decision:</span> ${next ? `<code>#${escapeHtml(next.index)} ${escapeHtml(next.summary || "")}</code>` : "-"}</div>
+    </div>
+    <div class="resume-card">
+      <h3>Payload binding</h3>
+      <table><thead><tr><th>Binding</th><th>Status</th><th>SHA-256</th></tr></thead><tbody>${bindingRows}</tbody></table>
+      <div class="resume-meta"><span>All bindings verified: <strong class="${binding.verified ? "resume-ok" : "resume-failed"}">${binding.verified ? "yes" : "no"}</strong></span><span>Suffix decisions: <strong>${escapeHtml(continuation.suffixDecisionCount == null ? "-" : continuation.suffixDecisionCount)}</strong></span><span>Final: <strong>${escapeHtml(resumeDisplayText(continuation.runtimeDisplay))}</strong></span></div>
+    </div>
+    ${failure ? `<div class="resume-card resume-error"><h3>Recovery failure</h3><div><strong>${escapeHtml(failure.code || "UNKNOWN")}</strong></div><div>${escapeHtml(failure.message || "")}</div></div>` : ""}
   `;
 }
 
@@ -261,6 +317,7 @@ function renderRuntime() {
 
 function renderAll() {
   renderTopbar();
+  renderResume();
   renderControls();
   renderTimeline();
   renderDetails();

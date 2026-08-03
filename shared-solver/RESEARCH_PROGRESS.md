@@ -1341,3 +1341,21 @@ npm run check:replay:flag-identity --prefix shared-solver
 npm run check:replay:start-offset --prefix shared-solver
 npm run check:replay:start-offset:live --prefix shared-solver
 ```
+
+### 2026-08-03 更新：PR-5.1c Route GUI Resume Artifact Integration
+
+PR-5.1b/b1 已正式关闭；本轮把已验证的 h5save resume artifact 接入 Route GUI，范围仍限定在 replay GUI/productization，不修改 production solver/search 语义：
+
+- `route-gui.js --h5save=<path>` 现在先解码并验证 artifact；如果没有显式 `--route-file`，默认使用 artifact 中的 embedded route path，并保持 route verification 为默认要求。
+- GUI detail panel、`GET /api/route` 中的 `resume` 字段和 `GET /api/resume` 统一展示 `verified`、`legacy`、`failed` 三种状态，以及 project/route fingerprint、boundary completed/next step、next primitive decision、runtime display/identity、native payload、structured suffix、encoded suffix 三类 binding 和 continuation final display。
+- `--allow-unverified-route=1` 是显式 legacy metadata-only 模式；没有 route 时不生成虚假的 decision timeline，decode/validation 失败则保留稳定 error code/message，方便 GUI 展示恢复原因。
+- 新增 `check-replay-h5save-gui.js`，以 WhiteIsland 固定短路线覆盖 verified API/CLI、tampered boundary、missing h5save、legacy metadata-only API/CLI，并检查 `/api/route` 与 `/api/resume` 的一致 payload。
+- 本轮没有修改 production DP key、dominance、agenda、容量、默认策略或路线选择；既有 `ReplaySession`/live replay 语义保持不变。
+
+专项检查：
+
+```bash
+npm run check:replay:h5save-gui --prefix shared-solver
+npm run check:replay:h5save-resume --prefix shared-solver
+npm run check:manifest --prefix shared-solver
+```

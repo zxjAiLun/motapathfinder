@@ -178,6 +178,76 @@ tr.selected {
     display: grid;
     gap: 12px;
 }
+.resume-status {
+    padding: 10px 12px;
+    display: grid;
+    gap: 10px;
+    border-bottom: 1px solid var(--line);
+}
+.resume-card {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    overflow: hidden;
+}
+.resume-card h3 {
+    margin: 0;
+    padding: 7px 9px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel-2);
+    font-size: 12px;
+}
+.resume-card > div:not(.resume-heading):not(.resume-meta):not(.resume-grid):not(.resume-next) {
+    padding: 8px 9px;
+}
+.resume-heading,
+.resume-meta,
+.resume-grid,
+.resume-next {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 8px 9px;
+}
+.resume-heading {
+    justify-content: space-between;
+}
+.resume-meta {
+    color: var(--muted);
+    font-size: 12px;
+}
+.resume-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
+}
+.resume-grid span {
+    color: var(--muted);
+}
+.resume-ok {
+    color: var(--green);
+}
+.resume-failed {
+    color: var(--red);
+}
+.resume-verified {
+    color: var(--green);
+}
+.resume-legacy {
+    color: var(--yellow);
+}
+.resume-error {
+    border-color: rgba(248, 81, 73, 0.6);
+    color: var(--red);
+}
+.resume-error h3 {
+    color: var(--red);
+}
+.resume-card code {
+    color: var(--purple);
+    word-break: break-all;
+}
 .card {
     border: 1px solid var(--line);
     border-radius: 8px;

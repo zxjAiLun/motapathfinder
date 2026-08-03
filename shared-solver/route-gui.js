@@ -16,6 +16,8 @@ const {
 const { ReplaySession } = require("./lib/replay-session");
 const { loadProject } = require("./lib/project-loader");
 const { parseKeyValueArgs, resolveProjectRoot } = require("./lib/cli-options");
+const { decodeH5SavePackage } = require("./lib/replay-resume-artifact");
+const { loadResumeArtifactForGui } = require("./lib/replay-resume-gui");
 
 const GUI_DIR = path.resolve(__dirname, "gui");
 const MIME_TYPES = {
@@ -53,6 +55,94 @@ function resolveRouteFile(inputPath, projectRoot) {
   ].filter(Boolean);
   const found = candidates.find((candidate) => fs.existsSync(candidate));
   return found || candidates[0];
+}
+
+function resolveH5SaveFile(inputPath, projectRoot) {
+  if (!inputPath) return null;
+  const candidates = [
+    path.resolve(process.cwd(), inputPath),
+    projectRoot ? path.resolve(projectRoot, inputPath) : null,
+    path.resolve(__dirname, inputPath),
+  ].filter(Boolean);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+function resolveEmbeddedRouteFile(routePath, projectRoot) {
+  if (!routePath) return null;
+  const repoRoot = path.resolve(__dirname, "..");
+  const candidates = [
+    path.resolve(process.cwd(), routePath),
+    path.resolve(repoRoot, routePath),
+    projectRoot ? path.resolve(projectRoot, routePath) : null,
+    path.resolve(__dirname, routePath),
+  ].filter(Boolean);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+function emptyRouteRecord() {
+  return {
+    schema: "motapathfinder.route-gui-resume-only.v1",
+    source: {},
+    goal: {},
+    stats: {},
+    start: {},
+    final: {},
+    decisions: [],
+    notes: [],
+  };
+}
+
+function unavailableSession(resumeInfo) {
+  const error = new Error(
+    resumeInfo && resumeInfo.failure && resumeInfo.failure.message
+      ? resumeInfo.failure.message
+      : "Route file is unavailable; this GUI is showing resume artifact metadata only.",
+  );
+  error.code = resumeInfo && resumeInfo.failure && resumeInfo.failure.code
+    ? resumeInfo.failure.code
+    : "REPLAY_GUI_ROUTE_REQUIRED";
+  error.statusCode = 409;
+  const status = {
+    state: "unavailable",
+    currentStep: 1,
+    totalSteps: 0,
+    selectedStep: 1,
+    lastCompletedStep: 0,
+    stepStatuses: {},
+    busy: false,
+    resumeOnly: true,
+    lastError: {
+      code: error.code,
+      message: error.message,
+    },
+    lastMismatch: null,
+  };
+  const normalizeStep = (step) => {
+    const number = step == null || step === "" ? 1 : Number(step);
+    if (!Number.isInteger(number) || number < 0 || number > 1) {
+      const rangeError = new Error(
+        `Replay step ${step} is out of range; expected an integer in [0, 1].`,
+      );
+      rangeError.code = "REPLAY_STEP_OUT_OF_RANGE";
+      rangeError.statusCode = 400;
+      throw rangeError;
+    }
+    return 1;
+  };
+  const rejected = () => Promise.reject(error);
+  return {
+    normalizeStep,
+    getStatus() { return Object.assign({}, status); },
+    async getStatusAsync() { return Object.assign({}, status); },
+    selectStep() { return Object.assign({}, status); },
+    pause() { return Object.assign({}, status); },
+    close: async () => Object.assign({}, status, { state: "closed" }),
+    start: rejected,
+    play: rejected,
+    step: rejected,
+    restart: rejected,
+    jumpToStep: rejected,
+  };
 }
 
 function sendJson(response, statusCode, payload) {
@@ -148,14 +238,16 @@ function createGuiServer({
   debug,
   baselineRecord,
   baselineFile,
+  resumeInfo,
 }) {
-  const routeSummary = buildRouteSummary(routeRecord, routeFile, project);
+  const displayRouteRecord = routeRecord || emptyRouteRecord();
+  const routeSummary = buildRouteSummary(displayRouteRecord, routeFile, project);
   const baselineSummary = baselineRecord
     ? buildRouteSummary(baselineRecord, baselineFile, project)
     : null;
   const divergence =
-    baselineSummary && routeSummary
-      ? findDivergence(routeRecord, baselineRecord)
+    baselineSummary && routeRecord
+      ? findDivergence(displayRouteRecord, baselineRecord)
       : null;
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url || "/", "http://127.0.0.1");
@@ -171,6 +263,7 @@ function createGuiServer({
       if (request.method === "GET" && url.pathname === "/api/route") {
         sendJson(response, 200, {
           ...routeSummary,
+          resume: resumeInfo || null,
           baseline: baselineSummary
             ? {
                 divergence: divergence || { identical: true },
@@ -192,12 +285,21 @@ function createGuiServer({
         return;
       }
 
+      if (request.method === "GET" && url.pathname === "/api/resume") {
+        sendJson(response, 200, resumeInfo || {
+          status: "not-loaded",
+          mode: "none",
+          requested: false,
+        });
+        return;
+      }
+
       const stepMatch = url.pathname.match(/^\/api\/route\/step\/(\d+)$/);
       if (request.method === "GET" && stepMatch) {
         sendJson(
           response,
           200,
-          buildStepDetail(routeRecord, Number(stepMatch[1]), project),
+          buildStepDetail(displayRouteRecord, Number(stepMatch[1]), project),
         );
         return;
       }
@@ -277,9 +379,39 @@ async function listen(server, host, port) {
 async function main() {
   const args = parseKeyValueArgs(process.argv.slice(2));
   const projectRoot = resolveProjectRoot(args, path.resolve(__dirname, ".."));
-  const routeFile = resolveRouteFile(args["route-file"], projectRoot);
-  const routeRecord = readRouteFile(routeFile);
   const project = loadProject(projectRoot);
+  const allowUnverifiedRoute = parseBoolean(args["allow-unverified-route"], false);
+  const h5saveFile = args.h5save
+    ? resolveH5SaveFile(args.h5save, projectRoot)
+    : null;
+  let decodedResume = null;
+  if (h5saveFile) {
+    try {
+      decodedResume = decodeH5SavePackage(projectRoot, h5saveFile);
+    } catch (error) {
+      decodedResume = null;
+    }
+  }
+  let routeFile = null;
+  if (args["route-file"]) {
+    routeFile = resolveRouteFile(args["route-file"], projectRoot);
+  } else if (h5saveFile && !allowUnverifiedRoute) {
+    routeFile = resolveEmbeddedRouteFile(
+      decodedResume && decodedResume.artifact && decodedResume.artifact.routeFile,
+      projectRoot,
+    );
+  } else if (!h5saveFile) {
+    routeFile = resolveRouteFile(args["route-file"], projectRoot);
+  }
+  const routeRecord = routeFile ? readRouteFile(routeFile) : null;
+  const resumeInfo = loadResumeArtifactForGui({
+    project,
+    projectRoot,
+    h5saveFile,
+    routeRecord,
+    routeFile,
+    allowUnverifiedRoute,
+  });
   const live = parseBoolean(args.live, false);
   const host = args.host || "127.0.0.1";
   const port = parseNumber(args.port, 0);
@@ -302,11 +434,13 @@ async function main() {
     downloadsDir: args["downloads-dir"],
     fromStep,
   };
-  const session = new ReplaySession({
-    routeRecord,
-    projectRoot,
-    liveOptions,
-  });
+  const session = routeRecord
+    ? new ReplaySession({
+        routeRecord,
+        projectRoot,
+        liveOptions,
+      })
+    : unavailableSession(resumeInfo);
   // Validate before creating the HTTP server or opening a browser.  This is
   // the process-level CLI gate; API/session validation remains the same
   // contract for requests made after the GUI is already running.
@@ -319,11 +453,14 @@ async function main() {
     debug: parseBoolean(args.debug, false),
     baselineRecord,
     baselineFile,
+    resumeInfo,
   });
   const address = await listen(server, host, port);
   const guiUrl = `http://${host}:${address.port}/`;
   console.log(`Route GUI: ${guiUrl}`);
-  console.log(`Route file: ${routeFile}`);
+  if (routeFile) console.log(`Route file: ${routeFile}`);
+  if (h5saveFile) console.log(`Resume artifact: ${h5saveFile}`);
+  if (!routeFile) console.log("Route file: unavailable; showing resume artifact metadata only.");
   if (open) openBrowser(guiUrl);
 
   const shutdown = async () => {
@@ -335,7 +472,7 @@ async function main() {
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
 
-  if (live) {
+  if (live && routeRecord) {
     console.log(`Starting live runtime at step ${fromStep}...`);
     session.start({ fromStep }).catch((error) => {
       console.error(`Live session failed: ${error.message}`);
@@ -351,4 +488,10 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createGuiServer, parseArgs: parseKeyValueArgs, parseFromStep };
+module.exports = {
+  createGuiServer,
+  parseArgs: parseKeyValueArgs,
+  parseFromStep,
+  resolveEmbeddedRouteFile,
+  resolveH5SaveFile,
+};
