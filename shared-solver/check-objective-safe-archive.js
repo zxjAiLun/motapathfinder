@@ -26,6 +26,7 @@ const { searchDP } = require("./lib/dp-search");
 const {
   compileObjectiveSpec,
   ObjectiveSpecError,
+  validateObjectiveSpec,
 } = require("./lib/objective-spec");
 const { buildRegionProofClaim } = require("./lib/region-spec");
 const { composeRouteRecords, ROUTE_SCHEMA } = require("./lib/route-store");
@@ -200,11 +201,13 @@ function checkRouteLengthArchiveRetention() {
       return { actions: [] };
     },
     applyAction: (state, action) => {
+      // Production-like: do not write state.route.  Real simulators apply with
+      // storeRoute:false, so only decisionDepth advances during search and the
+      // full route is reconstructed from the node parent chain at the end.
       const index = TARGETS[action.summary];
       const target = LEVELS[index] || LEVELS[0];
       const depth = Number((state.meta || {}).decisionDepth || 0) + 1;
-      const next = makeState(target.hero, target.inventory, depth);
-      next.route = (Array.isArray(state.route) ? state.route.slice() : []).concat(action.summary);
+      const next = makeState(target.hero, target.inventory, 0);
       next.meta.decisionDepth = depth;
       return next;
     },
@@ -243,6 +246,8 @@ function checkRouteLengthArchiveRetention() {
   );
   assert.strictEqual(objectiveAware.bestGoalState.inventory.key, "a");
   assert.strictEqual(objectiveAware.bestGoalState.route.length, 1);
+  assert.strictEqual(objectiveAware.goalState.inventory.key, "a");
+  assert.strictEqual(objectiveAware.route.length, 1);
   assert.strictEqual(objectiveAware.diagnostics.dp.goalArchiveTrimmed, true);
 }
 
@@ -322,6 +327,63 @@ function checkObjectiveSearchCompatibilityNegativeControls() {
     }, null),
     "OBJECTIVE_INVALID_DIRECTION",
   );
+  // Score descriptors carry a direction that flips the effective weight sign.
+  // min-score + positive hero.hp weight minimizes HP, which same-key HP
+  // dominance contradicts, so it must be rejected.
+  expectCode(
+    () => compileObjectiveSpec({
+      mode: "max-final-hp",
+      tieBreakers: [{ kind: "score", direction: "min", terms: [{ path: "hero.hp", weight: 1 }] }],
+    }, null),
+    "OBJECTIVE_NON_MONOTONE_WEIGHT",
+  );
+  // min-score + negative route.weight maximizes route length after the
+  // direction flip, which conflicts with dominance.
+  expectCode(
+    () => compileObjectiveSpec({
+      mode: "max-final-hp",
+      tieBreakers: [{ kind: "score", direction: "min", terms: [{ path: "route.length", weight: -1 }] }],
+    }, null),
+    "OBJECTIVE_NON_MONOTONE_WEIGHT",
+  );
+  expectCode(
+    () => compileObjectiveSpec({
+      mode: "max-final-hp",
+      tieBreakers: [{ kind: "score", direction: "min", terms: [{ path: "decisionDepth", weight: -1 }] }],
+    }, null),
+    "OBJECTIVE_NON_MONOTONE_WEIGHT",
+  );
+  // The direction-flipped safe forms must be accepted.
+  const minRoute = compileObjectiveSpec({
+    mode: "max-final-hp",
+    tieBreakers: [{ kind: "score", direction: "min", terms: [{ path: "route.length", weight: 1 }] }],
+  }, null);
+  assert.strictEqual(minRoute.searchPreserving, true, "min score + positive route weight minimizes route length");
+  const minHp = compileObjectiveSpec({
+    mode: "max-final-hp",
+    tieBreakers: [{ kind: "score", direction: "min", terms: [{ path: "hero.hp", weight: -1 }] }],
+  }, null);
+  assert.strictEqual(minHp.searchPreserving, true, "min score + negative hp weight maximizes hp");
+  const minDepth = compileObjectiveSpec({
+    mode: "max-final-hp",
+    tieBreakers: [{ kind: "score", direction: "min", terms: [{ path: "decisionDepth", weight: 1 }] }],
+  }, null);
+  assert.strictEqual(minDepth.searchPreserving, true, "min score + positive depth weight minimizes depth");
+  // validateObjectiveSpec must run the full search-compatibility check, not
+  // just syntax normalization, so direct validator callers get the same answer
+  // as the compile path.
+  expectCode(
+    () => validateObjectiveSpec({ mode: "maximize", field: "hero.hpmax" }, valueModel),
+    "OBJECTIVE_FIELD_NOT_SEARCH_PRESERVED",
+  );
+  expectCode(
+    () => validateObjectiveSpec({
+      mode: "maximize-score",
+      terms: [{ path: "hero.hp", weight: -1 }],
+    }, null),
+    "OBJECTIVE_NON_MONOTONE_WEIGHT",
+  );
+  assert.strictEqual(validateObjectiveSpec({ mode: "max-final-hp" }, null), true);
   // Allowed references remain accepted.
   const ok = compileObjectiveSpec({
     mode: "maximize-score",
@@ -455,12 +517,17 @@ function main() {
   checkProofClaimScope();
   checkComposedRouteObjectiveMetadata();
   process.stdout.write(JSON.stringify({
-    schema: "motapathfinder.pr-5.3b1-objective-safe-archive.v1",
+    schema: "motapathfinder.pr-5.3b2-objective-safe-archive.v1",
     status: "passed",
     controls: {
       archiveCapCounterexample: true,
       objectiveWinnerRetainedByTerminalComparator: true,
       routeLengthWinnerRetainedByTerminalComparator: true,
+      productionStoreRouteFalseReconciled: true,
+      scoreDirectionMinHpRejected: true,
+      scoreDirectionMinRouteRejected: true,
+      scoreDirectionFlippedSafeAccepted: true,
+      validateObjectiveSpecRunsSearchCompatibility: true,
       dpKeyDominanceAgendaUntouched: true,
       hpmaxValueRejected: true,
       negativeHpWeightRejected: true,

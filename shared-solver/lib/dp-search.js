@@ -2056,6 +2056,13 @@ function searchDP(simulator, initialState, options) {
   // DP key, dominance, agenda, or action pruning.
   activeGoalNodes.forEach((node) => attachRouteToNodeState(node));
   const goalSkylineNodes = selectGoalSkylineNodes(activeGoalNodes, config);
+  // Re-derive bestGoalNode from the route-attached, objective-ordered archive.
+  // bestGoalNode was captured at enqueue time when state.route was still empty
+  // (production applyAction uses storeRoute:false), so route-length-sensitive
+  // objectives could have selected the wrong winner.  The top of the ordered
+  // archive is the objective winner; fall back to the enqueue-time node only if
+  // no active goal state survived.
+  if (goalSkylineNodes.length > 0) bestGoalNode = goalSkylineNodes[0];
   const goalArchiveLimit = Math.max(1, Number(config.goalSkylineLimit || 8));
   const goalArchiveObjectiveAware = typeof config.goalStateComparator === "function";
   const goalArchiveTrimmed = activeGoalNodes.length > goalArchiveLimit ||

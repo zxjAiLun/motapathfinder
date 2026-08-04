@@ -440,25 +440,30 @@ function validateObjectiveSearchCompatibility(spec, descriptors, model, options)
     }
     // inventory.* is part of the DP identity, so both directions are safe.
   };
-  const validateTerms = (terms, errorPath) => {
+  const validateTerms = (terms, errorPath, direction) => {
+    const effectiveWeight = (term) => {
+      const weight = Number(term.weight);
+      return direction === "min" ? -weight : weight;
+    };
     (terms || []).forEach((term, index) => {
       const termPath = `${errorPath}[${index}]`;
       const path = term.path;
+      const weight = effectiveWeight(term);
       if (path === "hero.hp") {
-        if (Number(term.weight) < 0) {
+        if (weight < 0) {
           fail(
             "OBJECTIVE_NON_MONOTONE_WEIGHT",
-            `${termPath} negative hero.hp weight conflicts with HP dominance`,
+            `${termPath} effective hero.hp weight (after score direction) conflicts with HP dominance; only a maximized hp term is preserved by same-key dominance`,
             termPath,
           );
         }
         return;
       }
       if (path === "decisionDepth" || path === "route.length") {
-        if (Number(term.weight) > 0) {
+        if (weight > 0) {
           fail(
             "OBJECTIVE_NON_MONOTONE_WEIGHT",
-            `${termPath} positive weight on ${path} conflicts with dominance; use a negative (minimizing) weight`,
+            `${termPath} effective weight on ${path} (after score direction) conflicts with dominance; only a minimizing term is preserved`,
             termPath,
           );
         }
@@ -482,7 +487,7 @@ function validateObjectiveSearchCompatibility(spec, descriptors, model, options)
     if (!descriptor || descriptor.kind === "clear") return;
     const errorPath = `objective.descriptors[${index}]`;
     if (descriptor.kind === "score") {
-      validateTerms(descriptor.terms, `${errorPath}.terms`);
+      validateTerms(descriptor.terms, `${errorPath}.terms`, descriptor.direction);
       return;
     }
     validateField(descriptor.path, descriptor.direction, errorPath);
@@ -647,7 +652,11 @@ function compileObjectiveSpec(rawSpec, solverModel, options) {
 }
 
 function validateObjectiveSpec(rawSpec, solverModel, options) {
-  normalizeObjectiveSpec(rawSpec, solverModel, options);
+  // Validate through the full compile path so Objective-Search compatibility
+  // (field mode preservation, dominance conflicts, score direction, direction
+  // legality) is enforced for direct validator callers, not only for the
+  // region-spec compile path.
+  compileObjectiveSpec(rawSpec, solverModel, options);
   return true;
 }
 
