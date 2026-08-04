@@ -3822,11 +3822,42 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     });
   };
   const history = [];
+  const shouldStop = typeof config.shouldStop === "function"
+    ? config.shouldStop
+    : () => false;
   for (
     let segmentIndex = 0;
     segmentIndex < segments.length;
     segmentIndex += 1
   ) {
+    if (shouldStop()) {
+      const cancelledSummary = {
+        segmentId: segments[segmentIndex].id,
+        label: segments[segmentIndex].label || null,
+        found: false,
+        failureClass: "cancelled",
+        failureReason: "cancel-requested",
+        failurePropagation: {
+          primaryFailureClass: "cancelled",
+          failureClass: "cancelled",
+          reason: "cancel-requested",
+        },
+        startCandidatesTried: 0,
+        candidates: [],
+        attempts: [],
+      };
+      return finishResult({
+        found: false,
+        reachedMilestone: segments[segmentIndex].startFrom || null,
+        failedSegment: cancelledSummary,
+        finalCandidates: frontier || [],
+        segmentResults: [...segmentResults, cancelledSummary],
+        checkpointResults,
+        evaluationAttemptLedger,
+        stoppedReason: "cancel-requested",
+        cancelled: true,
+      });
+    }
     const segment = segments[segmentIndex];
     const execution = runSegmentAgainstFrontier(
       simulator,

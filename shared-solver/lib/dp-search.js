@@ -1004,6 +1004,9 @@ function searchDP(simulator, initialState, options) {
   const config = options || {};
   const observer = createDpObserver(config);
   const goalStateComparator = resolveGoalStateComparator(config);
+  const shouldStop = typeof config.shouldStop === "function"
+    ? config.shouldStop
+    : () => false;
   const maxExpansions = Number(config.maxExpansions || 1000);
   const maxActionsPerState = Number(config.maxActionsPerState || 256);
   const agendaMode = String(config.dpAgendaMode || config.agendaMode || "best-first");
@@ -1799,6 +1802,10 @@ function searchDP(simulator, initialState, options) {
       stoppedReason = "time-limit";
       break;
     }
+    if (shouldStop()) {
+      stoppedReason = "cancel-requested";
+      break;
+    }
     if (stopForMemoryIfNeeded("before-expansion", expansions, expansions + 1, expansions === 0)) break;
     if (stopOnFirstGoal && firstGoalNode) break;
     const selected = popNext();
@@ -2126,6 +2133,8 @@ function searchDP(simulator, initialState, options) {
     fallbackRoute: null,
     expansions,
     frontierSize,
+    stoppedReason,
+    cancelled: stoppedReason === "cancel-requested",
     checkpointPool: createCheckpointPool(config.checkpointOptions),
     results: [bestGoalState, firstGoalState, ...goalSkylineStates].filter((state, index, list) => state && list.indexOf(state) === index),
     diagnostics: {
@@ -2201,6 +2210,7 @@ function searchDP(simulator, initialState, options) {
         dpSkylineMax: skylineMax,
         actionProviderMode: config.actionProviderMode || "primitive",
         stoppedReason,
+        cancelled: stoppedReason === "cancel-requested",
         maxRuntimeMs,
         maxHeapMb,
         maxRssMb,
