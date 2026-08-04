@@ -172,14 +172,24 @@ function createProgressObserver(progress) {
   };
 }
 
-function objectiveStateFromSnapshot(snapshot, decisionCount) {
-  const count = Math.max(0, Number(decisionCount) || 0);
+function objectiveStateFromSnapshot(snapshot, metrics) {
+  const decisionDepth = typeof metrics === "object"
+    ? Math.max(0, Number(metrics.decisionDepth || 0))
+    : Math.max(0, Number(metrics || 0));
+  const routeLength = typeof metrics === "object"
+    ? Math.max(0, Number(metrics.routeLength == null ? metrics.decisionDepth : metrics.routeLength))
+    : decisionDepth;
   return {
     hero: (snapshot && snapshot.hero) || {},
     inventory: (snapshot && snapshot.inventory) || {},
-    route: Array.from({ length: count }, () => null),
-    meta: { decisionDepth: count },
+    route: Array.from({ length: routeLength }, () => null),
+    meta: { decisionDepth },
   };
+}
+
+function routeLengthOfState(state) {
+  if (state && Array.isArray(state.route)) return state.route.length;
+  return getDecisionDepthSafe(state);
 }
 
 // The authoritative final objective value is the one buildRouteRecord computed
@@ -199,22 +209,25 @@ function stableObjectiveValue(value) {
   return JSON.stringify(value == null ? null : (typeof value === "object" ? JSON.parse(JSON.stringify(value)) : value));
 }
 
-function bestKnownFromState(task, state, kind, claim, decisionCount, objectiveValueOverride) {
+function bestKnownFromState(task, state, kind, claim, metrics, objectiveValueOverride) {
   if (!state) return null;
   const hero = (state.hero || {});
+  const decisionDepth = typeof metrics === "object" ? metrics.decisionDepth : metrics;
+  const routeLength = typeof metrics === "object" ? metrics.routeLength : metrics;
   const evaluation = objectiveValueOverride == null && task && task.objective && task.objective.explicit
-    ? task.objective.evaluateState(objectiveStateFromSnapshot(state, decisionCount))
+    ? task.objective.evaluateState(objectiveStateFromSnapshot(state, metrics))
     : null;
   return {
     kind,
-    goalReached: kind === "goal-candidate" || kind === "verified-route",
+    goalReached: kind === "goal-candidate" || kind === "verified-route" || kind === "route-artifact",
     verified: kind === "verified-route",
     floorId: state.floorId || null,
     objectiveValue: objectiveValueOverride != null ? objectiveValueOverride : (evaluation ? evaluation.value : null),
     objectiveFingerprint: task && task.objective && task.objective.explicit
       ? task.objective.fingerprint
       : null,
-    routeLength: decisionCount == null ? null : decisionCount,
+    routeLength: routeLength == null ? null : routeLength,
+    decisionDepth: decisionDepth == null ? null : decisionDepth,
     hero: {
       hp: hero.hp == null ? null : hero.hp,
       atk: hero.atk == null ? null : hero.atk,
@@ -322,12 +335,16 @@ async function executeSolveJob(task, {
   let verificationStatus = null;
   let objectiveValue = null;
   if (result.found && result.finalCandidate && result.finalCandidate.state) {
+    const candidateState = result.finalCandidate.state;
     progress.setBestKnown(bestKnownFromState(
       task,
-      result.finalCandidate.state,
+      candidateState,
       "goal-candidate",
       claimedObjective,
-      getDecisionDepthSafe(result.finalCandidate.state),
+      {
+        decisionDepth: getDecisionDepthSafe(candidateState),
+        routeLength: routeLengthOfState(candidateState),
+      },
     ));
     progress.setPhase("route-build");
     const finalState = result.finalCandidate.state;
@@ -360,18 +377,26 @@ async function executeSolveJob(task, {
         objectiveSpec: objective,
       },
     });
-    const decisionCount = (routeRecord && routeRecord.decisions || []).length;
+    const decisionDepth = (routeRecord && routeRecord.decisions || []).length;
+    const artifactRouteLength = (routeRecord && routeRecord.stats && routeRecord.stats.routeLength) != null
+      ? Number(routeRecord.stats.routeLength)
+      : decisionDepth;
     progress.setPhase("strict-replay");
     if (routeRecord && routeRecord.final && routeRecord.final.snapshot) {
       // The authoritative objective value is the one buildRouteRecord computed
       // from the simulator-replayed final state and persisted in metadata.
       objectiveValue = objectiveValueFromRouteRecord(task, routeRecord);
+      let verifiedMetrics;
+      let bestKnownKind;
       if (normalizedTask.verification.strictReplay !== false) {
         // Real runtime strict replay: actually execute the route in the
         // runtime and verify every step + final snapshot + objective.  The
-        // artifact's own metadata is not treated as verification.
+        // runtime returns the true route length (auto-steps included) and the
+        // objective verification; the artifact's own metadata is not treated as
+        // verification.
+        let replayResult;
         try {
-          await replayRouteFile(routeRecord, {
+          replayResult = await replayRouteFile(routeRecord, {
             projectRoot,
             headless: "1",
             keepOpen: false,
@@ -385,33 +410,38 @@ async function executeSolveJob(task, {
         } catch (error) {
           throw makeStrictReplayFailure(error);
         }
-        // Result value, artifact metadata value, and the strict replay
-        // recomputed value must agree; otherwise the job cannot be completed.
-        const replayValue = verifyRouteObjective(
-          routeRecord,
-          routeRecord.final.snapshot,
-          decisionCount,
-        );
+        const runtimeValue = replayResult &&
+          replayResult.objectiveVerification &&
+          replayResult.objectiveVerification.value;
         const metadataValue = routeRecord.metadata && routeRecord.metadata.finalObjectiveValue;
         if (
-          replayValue.value == null ||
-          stableObjectiveValue(replayValue.value) !== stableObjectiveValue(objectiveValue.value) ||
+          runtimeValue == null ||
+          stableObjectiveValue(runtimeValue) !== stableObjectiveValue(objectiveValue.value) ||
           stableObjectiveValue(metadataValue) !== stableObjectiveValue(objectiveValue.value)
         ) {
           throw makeStrictReplayFailure(new Error(
-            `objective value mismatch: result=${JSON.stringify(objectiveValue.value)} metadata=${JSON.stringify(metadataValue)} replay=${JSON.stringify(replayValue.value)}`,
+            `objective value mismatch: result=${JSON.stringify(objectiveValue.value)} metadata=${JSON.stringify(metadataValue)} runtime=${JSON.stringify(runtimeValue)}`,
           ));
         }
+        verifiedMetrics = {
+          decisionDepth,
+          routeLength: replayResult && replayResult.runtimeRouteLength != null
+            ? Number(replayResult.runtimeRouteLength)
+            : artifactRouteLength,
+        };
+        bestKnownKind = "verified-route";
       } else {
         strictReplayVerified = false;
         verificationStatus = "not-requested";
+        verifiedMetrics = { decisionDepth, routeLength: artifactRouteLength };
+        bestKnownKind = "route-artifact";
       }
       progress.setBestKnown(bestKnownFromState(
         task,
         routeRecord.final.snapshot,
-        "verified-route",
+        bestKnownKind,
         claimedObjective,
-        decisionCount,
+        verifiedMetrics,
         objectiveValue && objectiveValue.value,
       ));
     }
@@ -424,7 +454,10 @@ async function executeSolveJob(task, {
         progressState,
         "progress-state",
         claimedObjective,
-        getDecisionDepthSafe(progressState),
+        {
+          decisionDepth: getDecisionDepthSafe(progressState),
+          routeLength: routeLengthOfState(progressState),
+        },
       ));
     }
   }

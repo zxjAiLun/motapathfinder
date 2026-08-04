@@ -146,23 +146,30 @@ function readRouteFile(filePath) {
   return record;
 }
 
-function objectiveStateFromRouteSnapshot(snapshot, decisionCount) {
-  const count = Math.max(0, Number(decisionCount) || 0);
+function objectiveStateFromRouteSnapshot(snapshot, metrics) {
+  const decisionDepth = typeof metrics === "object"
+    ? Math.max(0, Number(metrics.decisionDepth || 0))
+    : Math.max(0, Number(metrics || 0));
+  const routeLength = typeof metrics === "object"
+    ? Math.max(0, Number(metrics.routeLength == null ? metrics.decisionDepth : metrics.routeLength))
+    : decisionDepth;
   return {
     hero: (snapshot && snapshot.hero) || {},
     inventory: (snapshot && snapshot.inventory) || {},
-    route: Array.from({ length: count }, () => null),
-    meta: { decisionDepth: count },
+    route: Array.from({ length: routeLength }, () => null),
+    meta: { decisionDepth },
   };
 }
 
 // Recompute objective metadata after composing routes.  The suffix metadata
-// only reflects the suffix's own decision count / final snapshot; a composed
-// route's route-length / decision-depth objective values change once prefix and
-// suffix are concatenated.  This must be fail-closed: recompute from the
-// composed final snapshot and composed decision count, or drop the stale
-// metadata rather than persisting a value that strict live replay would reject.
-function recomputeComposedObjectiveMetadata(metadata, finalSnapshot, decisionCount) {
+// only reflects the suffix's own metrics; a composed route's route-length /
+// decision-depth objective values change once prefix and suffix are
+// concatenated.  decisionDepth is the composed decision count; routeLength is
+// the composed full route length (rawRoute steps, which include auto-steps and
+// are NOT the same as the decision count).  This is fail-closed: recompute from
+// the composed final snapshot and composed metrics, or drop the stale metadata
+// rather than persisting a value that strict live replay would reject.
+function recomputeComposedObjectiveMetadata(metadata, finalSnapshot, metrics) {
   if (!metadata || !metadata.objectiveSpec || !metadata.objectiveFingerprint) return;
   const objective = compileObjectiveSpec(
     metadata.objectiveSpec,
@@ -171,7 +178,7 @@ function recomputeComposedObjectiveMetadata(metadata, finalSnapshot, decisionCou
   );
   if (!objective.explicit) return;
   const evaluation = objective.evaluateState(
-    objectiveStateFromRouteSnapshot(finalSnapshot, decisionCount),
+    objectiveStateFromRouteSnapshot(finalSnapshot, metrics),
   );
   Object.assign(metadata, objectiveMetadata(objective, evaluation));
 }
@@ -231,10 +238,14 @@ function composeRouteRecords(prefixRecord, suffixRecord, options) {
   notes.push(
     `Composed from ${config.prefixFile || "prefix route"} and ${config.suffixFile || "suffix route"}; exact boundary verified.`,
   );
+  const composedRawRoute = rawPrefix.concat(rawSuffix);
   recomputeComposedObjectiveMetadata(
     metadata,
     suffix.final && suffix.final.snapshot,
-    decisions.length,
+    {
+      decisionDepth: decisions.length,
+      routeLength: composedRawRoute.length,
+    },
   );
   return {
     schema: ROUTE_SCHEMA,
@@ -250,12 +261,12 @@ function composeRouteRecords(prefixRecord, suffixRecord, options) {
         ? Number(prefix.stats.generated) + Number(suffix.stats.generated)
         : null,
       depth: decisions.length,
-      routeLength: decisions.length,
+      routeLength: composedRawRoute.length,
     },
     start: cloneJson(prefix.start),
     final: cloneJson(suffix.final),
     decisions,
-    rawRoute: rawPrefix.concat(rawSuffix),
+    rawRoute: composedRawRoute,
     notes,
   };
 }
@@ -1195,7 +1206,19 @@ function buildRouteRecord(input) {
     );
   }
   if (objective.explicit) {
-    Object.assign(routeMetadata, objectiveMetadata(objective, objective.evaluateState(strictFinalState)));
+    // Objective metrics are split: decisionDepth is the decision count, while
+    // routeLength is the FULL candidate route length (auto-steps included),
+    // which is what the objective's route.length reads and what the runtime
+    // replay reproduces.  The decisions-replay state may under-count auto
+    // steps, so it must not drive route.length objective values.
+    const fullRouteLength = Array.isArray(finalState.route)
+      ? finalState.route.length
+      : decisions.length;
+    const objectiveEvaluationState = objectiveStateFromRouteSnapshot(strictFinalState, {
+      decisionDepth: decisions.length,
+      routeLength: fullRouteLength,
+    });
+    Object.assign(routeMetadata, objectiveMetadata(objective, objective.evaluateState(objectiveEvaluationState)));
   }
   const projectRoot = options.projectRoot || path.resolve(__dirname, "..", "..");
   return {

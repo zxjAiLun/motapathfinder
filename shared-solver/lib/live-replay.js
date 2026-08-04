@@ -285,17 +285,22 @@ function stableRuntimeValue(value) {
   return value;
 }
 
-function objectiveStateFromRuntimeSnapshot(snapshot, decisionCount) {
-  const count = Math.max(0, Number(decisionCount) || 0);
+function objectiveStateFromRuntimeSnapshot(snapshot, metrics) {
+  const decisionDepth = typeof metrics === "object"
+    ? Number(metrics.decisionDepth || 0)
+    : Number(metrics || 0);
+  const routeLength = typeof metrics === "object"
+    ? Number(metrics.routeLength == null ? metrics.decisionDepth : metrics.routeLength)
+    : decisionDepth;
   return {
     hero: (snapshot && snapshot.hero) || {},
     inventory: (snapshot && snapshot.inventory) || {},
-    route: Array.from({ length: count }, () => null),
-    meta: { decisionDepth: count },
+    route: Array.from({ length: Math.max(0, routeLength) }, () => null),
+    meta: { decisionDepth: Math.max(0, decisionDepth) },
   };
 }
 
-function verifyRouteObjective(routeRecord, runtimeSnapshot, decisionCount) {
+function verifyRouteObjective(routeRecord, runtimeSnapshot, metrics) {
   const metadata = (routeRecord && routeRecord.metadata) || {};
   if (!metadata.objectiveSpec && !metadata.objectiveFingerprint) return null;
   if (!metadata.objectiveSpec || !metadata.objectiveFingerprint) {
@@ -314,7 +319,7 @@ function verifyRouteObjective(routeRecord, runtimeSnapshot, decisionCount) {
     throw error;
   }
   const evaluation = objective.evaluateState(
-    objectiveStateFromRuntimeSnapshot(runtimeSnapshot, decisionCount),
+    objectiveStateFromRuntimeSnapshot(runtimeSnapshot, metrics),
   );
   if (
     JSON.stringify(stableRuntimeValue(evaluation.value)) !==
@@ -1371,10 +1376,15 @@ async function replayRouteFile(routeRecord, options) {
     }
 
     const finalRuntimeSnapshot = await captureRuntimeSnapshot(page, { verifyFloors });
+    const finalStatus = await describeRuntimeStatus(page).catch(() => null);
+    const decisionDepth = decisions.length;
+    const runtimeRouteLength = finalStatus && finalStatus.routeLength != null
+      ? Number(finalStatus.routeLength)
+      : decisionDepth;
     const objectiveVerification = verifyRouteObjective(
       routeRecord,
       finalRuntimeSnapshot,
-      decisions.length,
+      { decisionDepth, routeLength: runtimeRouteLength },
     );
 
     console.log("Live route replay passed.");
@@ -1389,6 +1399,13 @@ async function replayRouteFile(routeRecord, options) {
       console.log("Browser is kept open for inspection. Press Ctrl+C in this terminal when done.");
       await new Promise(() => {});
     }
+    return {
+      finalRuntimeSnapshot,
+      decisionDepth,
+      runtimeRouteLength,
+      objectiveVerification,
+      lastSuccessfulAction,
+    };
   } finally {
     await browser.close();
     await server.close();
