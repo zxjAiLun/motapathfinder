@@ -125,8 +125,25 @@ async function main() {
     "decisionDepth",
   );
 
+  // Legacy task without an explicit ObjectiveSpec must still complete with a
+  // successful runtime replay; objective stays null.
+  const legacyTask = compileSolveTask({
+    schema: SOLVE_TASK_SCHEMA,
+    tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
+    search: { algorithm: "segment-dp", maxExpansions: 1000, maxRuntimeMs: 10000, candidateLimit: 2 },
+    verification: { strictReplay: true },
+  });
+  assert.strictEqual(legacyTask.objective.explicit, false, "legacy task must have no explicit objective");
+  const legacyManager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
+  const legacyJob = legacyManager.submit(legacyTask);
+  const legacySettled = await waitForJob(legacyManager, legacyJob.id, 180000);
+  assert.strictEqual(legacySettled.state, "completed", "legacy objective-less job must complete after a successful runtime replay");
+  assert.strictEqual(legacySettled.result.objective, null, "legacy job result objective must be null");
+  assert.strictEqual(legacySettled.result.route.strictReplayVerified, true);
+  assert.strictEqual(legacySettled.result.route.verificationStatus, "verified");
+
   process.stdout.write(JSON.stringify({
-    schema: "motapathfinder.pr-5.3c2-solver-job-live.v1",
+    schema: "motapathfinder.pr-5.3c3-solver-job-live.v1",
     status: "passed",
     taskFingerprint: task.taskFingerprint,
     jobId: job.id,
@@ -136,6 +153,7 @@ async function main() {
     strictReplayRecomputed: true,
     autoStepRouteLength: routeLengthRecord.stats.routeLength,
     autoStepDecisions: routeLengthRecord.decisions.length,
+    legacyObjectiveOmittedCompleted: true,
     objectiveFingerprint: objective.fingerprint,
   }, null, 2) + "\n");
 }

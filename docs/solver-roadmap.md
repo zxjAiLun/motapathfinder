@@ -712,3 +712,12 @@ PR-5.3c1 正式关闭，c2 修复队列取消竞态与路线指标完整性：
 - Manager：`_startReserved` 在 reserved job 已被取消时重新 `_pump()`（队列不卡死）；executor 创建/同步启动异常统一进 `_settleError` → `INTERNAL_ERROR` envelope；`submit` 走 `compileExecutableSolveTask` 执行预检。
 - 路线指标拆分 `decisionDepth`（决策数）与 `routeLength`（完整路线长，含 auto-step）：`verifyRouteObjective` 接受 `{decisionDepth, routeLength}`；`replayRouteFile` 返回真实 runtime route length 与 objective verification；`buildRouteRecord` 的 route-length metadata 使用完整候选 route 长；compose 用 rawRoute 全长，`stats.depth` 与 `stats.routeLength` 分开展示。
 - Progress：`goalCandidateImproved` 由搜索器用 Objective comparator 确认并携带 objective projection，accumulator 不再自行 `>=` 比较（min/lexicographic/non-scalar 正确）；inventory 目标投影真实值；route.length 入队阶段标记 inexact，route 重建后发布精确值；`strictReplay:false` 发布 `route-artifact`（verified=false）；bestKnown routeLength 用完整路线长。
+
+### 2026-08-04 更新：PR-5.3c3 Optional Objective Verification & Exact Progress Metrics
+
+PR-5.3c 系列正式关闭，c3 收尾：
+
+- strict replay 的 objective 对账仅在显式 ObjectiveSpec 存在时执行；legacy 无 objective 任务只验证 runtime route replay（`objective: null`、`verificationStatus: "verified"`），无 null dereference。
+- 实时 bestKnown 拆分 `decisionDepth` 与 `routeLength`：route 重建前 `routeLength: null` + `routeLengthExact:false`，重建/回放后发布真实值 + `routeLengthExact:true`。
+- `compileExecutableSolveTask` 真实加载项目并计算 fingerprint，外部 fingerprint 不能替代实际值。
+- terminal progress 同时发给 subscriber 并写入 `progress.ndjson`。

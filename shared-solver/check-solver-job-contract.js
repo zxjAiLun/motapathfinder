@@ -25,6 +25,8 @@ const { classifyJobFailure, buildSolverJobResult } = require("./lib/solver-job-r
 const { SolverProgressAccumulator } = require("./lib/solver-progress");
 const { compileObjectiveSpec } = require("./lib/objective-spec");
 const { composeRouteRecords, ROUTE_SCHEMA } = require("./lib/route-store");
+const { compileExecutableSolveTask } = require("./lib/solve-task");
+const { FileJobStore } = require("./lib/file-job-store");
 
 const ROOT = path.resolve(__dirname, "..");
 const SMOKE_SPEC_FILE = path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json");
@@ -449,6 +451,9 @@ function checkProgressLifecycleEvents() {
   assert.strictEqual(snapshot.bestKnown.goalReached, true);
   assert.strictEqual(snapshot.bestKnown.floorId, "MT3");
   assert.strictEqual(snapshot.bestKnown.objectiveValue, 8);
+  assert.strictEqual(snapshot.bestKnown.decisionDepth, 6, "realtime candidate must carry the decision depth");
+  assert.strictEqual(snapshot.bestKnown.routeLength, null, "realtime candidate must not fake a route length from decision depth");
+  assert.strictEqual(snapshot.bestKnown.routeLengthExact, false, "realtime candidate route length must be marked inexact");
   // A later min-direction improvement with a SMALLER value must be accepted
   // (the search comparator confirmed it), not rejected by a >= check.
   accumulator.handleDpEvent({
@@ -494,12 +499,16 @@ function checkProgressLifecycleEvents() {
     goalReached: true,
     verified: false,
     floorId: "MT5",
+    decisionDepth: 9,
+    routeLength: 14,
+    routeLengthExact: true,
     objectiveValue: -14,
     objectiveValueExact: true,
-    routeLength: 14,
   });
   snapshot = published[published.length - 1];
   assert.strictEqual(snapshot.bestKnown.objectiveValue, -14, "the post-rebuild accurate goal candidate must replace the inexact one");
+  assert.strictEqual(snapshot.bestKnown.routeLength, 14, "the post-rebuild candidate must carry the real route length");
+  assert.strictEqual(snapshot.bestKnown.routeLengthExact, true, "the post-rebuild route length must be marked exact");
   accumulator.handleDpEvent({ eventType: "segmentCompleted", segmentId: "seg-2", segmentIndex: 1, segmentTotal: 4 });
   snapshot = published[published.length - 1];
   assert.strictEqual(snapshot.segment, null, "segment must clear after segmentCompleted");
@@ -641,6 +650,53 @@ function checkComposedRouteKeepsFullRouteLength() {
   assert.strictEqual(composed.metadata.finalObjectiveValue, -5, "composed route-length objective must reflect the full route length, not the decision count");
 }
 
+function checkExecutablePreflightRejectsMalformedProject() {
+  // An existing-but-malformed projectRoot with a supplied fingerprint must be
+  // rejected: the supplied fingerprint cannot substitute for the real project.
+  const malformedRoot = path.join(__dirname, "routes", "generated", "c2-malformed-project");
+  fs.mkdirSync(malformedRoot, { recursive: true });
+  fs.writeFileSync(path.join(malformedRoot, "not-a-project.txt"), "placeholder", "utf8");
+  const rawTask = {
+    schema: SOLVE_TASK_SCHEMA,
+    tower: {
+      id: "malformed",
+      projectRoot: malformedRoot,
+      projectFingerprint: "deadbeefdeadbeef",
+      region: { spec: baseRegionSpec() },
+    },
+    search: { maxExpansions: 100 },
+    verification: { strictReplay: false },
+  };
+  assert.throws(
+    () => compileExecutableSolveTask(rawTask),
+    (error) => error && error.code === "INVALID_TASK",
+    "a malformed existing projectRoot must fail executable preflight even with a supplied fingerprint",
+  );
+}
+
+async function checkTerminalProgressPersisted() {
+  const storeRoot = path.join(__dirname, "routes", "generated", "c2-job-store");
+  const jobStore = new FileJobStore({ root: storeRoot });
+  const spec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
+  const task = compileSolveTask({
+    schema: SOLVE_TASK_SCHEMA,
+    tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
+    objective: { mode: "max-final-hp" },
+    search: { algorithm: "segment-dp", maxExpansions: 1000, maxRuntimeMs: 10000, candidateLimit: 2 },
+    verification: { strictReplay: false },
+  });
+  const manager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true, jobStore });
+  const job = manager.submit(task);
+  const settled = await waitForJob(manager, job.id, 120000);
+  assert.ok(["completed", "failed", "cancelled"].includes(settled.state));
+  const lines = jobStore.readProgressLines(job.id);
+  assert.ok(lines.length >= 2, "progress.ndjson must contain progress events");
+  const last = lines[lines.length - 1];
+  assert.strictEqual(last.phase, settled.state, "the last persisted progress line must be the terminal event");
+  assert.strictEqual(last.status, settled.state);
+  assert.strictEqual(last.jobId, job.id);
+}
+
 async function main() {
   checkStateMachine();
   checkProgressContract();
@@ -658,8 +714,10 @@ async function main() {
   await checkRouteLengthObjectiveResult();
   await checkStrictReplayFailureMapping();
   checkComposedRouteKeepsFullRouteLength();
+  checkExecutablePreflightRejectsMalformedProject();
+  await checkTerminalProgressPersisted();
   process.stdout.write(JSON.stringify({
-    schema: "motapathfinder.pr-5.3c2-solver-job-contract.v1",
+    schema: "motapathfinder.pr-5.3c3-solver-job-contract.v1",
     status: "passed",
     controls: {
       stateMachineTransitions: true,
@@ -688,6 +746,10 @@ async function main() {
       strictReplayFailedMappedCorrectly: true,
       routeLengthObjectiveValueConsistent: true,
       composedRouteKeepsFullRouteLength: true,
+      realtimeCandidateRouteLengthInexact: true,
+      postRebuildRouteLengthExact: true,
+      malformedProjectRejectedByExecutablePreflight: true,
+      terminalProgressPersistedToNdjson: true,
       resultIdentityBoundToTask: true,
       microJobQueuedToCompleted: true,
     },
