@@ -3,6 +3,7 @@
 const { SolverJob, SolverJobError, executeInProcessExecutor, finalizeJob } = require("./solver-job");
 const { serializeError } = require("./solver-job-result");
 const { compileSolveTask, SolveTaskError } = require("./solve-task");
+const { createWorkerExecutor } = require("./solver-worker-runner");
 
 let sequence = 0;
 
@@ -14,24 +15,37 @@ function defaultJobIdGenerator() {
 // Owns job lifecycle: queueing, worker execution, progress fan-out,
 // cancellation, result capture, and optional file persistence.  It is not a
 // second solver — it only drives the existing pipeline via an executor.
+//
+// By default jobs run in a dedicated child-process worker so the calling
+// process (GUI/API/CLI main thread) is never blocked by CPU-bound search.
+// `allowInProcess: true` opts into same-process execution for tests and
+// embedded embedding only.
 class SolverJobManager {
   constructor({
     maxConcurrentJobs = 1,
     createExecutor,
+    allowInProcess = false,
     jobIdGenerator,
     jobStore,
     context,
   } = {}) {
     this.maxConcurrentJobs = Math.max(1, Number(maxConcurrentJobs) || 1);
+    this.allowInProcess = Boolean(allowInProcess);
     this.createExecutor = typeof createExecutor === "function"
       ? createExecutor
       : null;
+    this.executorKind = this.createExecutor
+      ? "custom"
+      : this.allowInProcess
+        ? "in-process"
+        : "worker";
     this.jobIdGenerator = jobIdGenerator || defaultJobIdGenerator;
     this.jobStore = jobStore || null;
     this.context = context || null;
     this.jobs = new Map();
     this.queue = [];
     this.runningCount = 0;
+    this.startingCount = 0;
   }
 
   submit(rawTask, options) {
@@ -66,16 +80,10 @@ class SolverJobManager {
     }
     job.cancelRequested = true;
     if (job.state === "queued") {
-      // Remove from queue and settle immediately.
+      // Remove from queue and settle immediately.  A deferred _startReserved
+      // will observe state !== "queued" and free its slot.
       this.queue = this.queue.filter((entry) => entry.id !== job.id);
-      job.failure = {
-        failureClass: "CANCELLED",
-        message: "The job was cancelled by request.",
-        retryable: false,
-        details: {},
-      };
-      job.transition("cancelled");
-      if (this.jobStore) this.jobStore.saveStatus(job.id, job.toJSON()).catch(() => {});
+      this._settleCancel(job);
       return true;
     }
     if (job.executor && typeof job.executor.cancel === "function") {
@@ -98,12 +106,22 @@ class SolverJobManager {
   }
 
   _pump() {
-    while (this.runningCount < this.maxConcurrentJobs && this.queue.length > 0) {
+    // Reserve starting slots synchronously so maxConcurrentJobs is honored even
+    // when many jobs are submitted in the same tick: the reservation is taken
+    // before any setImmediate(_startReserved) executes.
+    while (
+      this.runningCount + this.startingCount < this.maxConcurrentJobs &&
+      this.queue.length > 0
+    ) {
       const job = this.queue.shift();
-      // Defer execution so progress subscribers (registered after submit)
-      // attach before the synchronous search pipeline starts.
-      setImmediate(() => this._start(job));
+      this.startingCount += 1;
+      setImmediate(() => this._startReserved(job));
     }
+  }
+
+  _startReserved(job) {
+    this.startingCount = Math.max(0, this.startingCount - 1);
+    this._start(job);
   }
 
   _start(job) {
@@ -130,8 +148,15 @@ class SolverJobManager {
         onProgress,
         context: this.context,
       });
-    } else {
+    } else if (this.allowInProcess) {
       executor = executeInProcessExecutor({
+        job,
+        task: job.task,
+        onProgress,
+        context: this.context,
+      });
+    } else {
+      executor = createWorkerExecutor({
         job,
         task: job.task,
         onProgress,
@@ -143,31 +168,7 @@ class SolverJobManager {
       (execution) => {
         this._settle(job, execution);
       },
-      (error) => {
-        const terminal = job.state === "cancelled" || job.state === "failed" || job.state === "completed";
-        if (job.cancelRequested || (error && (error.code === "CANCELLED" || error.message === "The job was cancelled by request."))) {
-          job.failure = {
-            failureClass: "CANCELLED",
-            message: "The job was cancelled by request.",
-            retryable: false,
-            details: {},
-          };
-          if (!terminal) job.transition("cancelled");
-        } else {
-          job.failure = {
-            failureClass: "INTERNAL_ERROR",
-            message: error && error.message ? error.message : String(error),
-            retryable: false,
-            details: serializeError(error),
-          };
-          if (!terminal) job.transition("failed");
-        }
-        if (this.jobStore) {
-          this.jobStore.saveError(job.id, job.failure).catch(() => {});
-          this.jobStore.saveStatus(job.id, job.toJSON()).catch(() => {});
-        }
-        this._finishPump();
-      },
+      (error) => this._settleError(job, error),
     );
   }
 
@@ -175,14 +176,10 @@ class SolverJobManager {
     try {
       finalizeJob(job, execution);
     } catch (error) {
-      job.failure = {
-        failureClass: "INTERNAL_ERROR",
-        message: error && error.message ? error.message : String(error),
-        retryable: false,
-        details: serializeError(error),
-      };
-      if (job.state !== "cancelled") job.transition("failed");
+      this._settleError(job, error);
+      return;
     }
+    this._publishTerminalProgress(job);
     if (this.jobStore) {
       this.jobStore.saveResult(job.id, job.result || null).catch(() => {});
       this.jobStore.saveError(job.id, job.failure || null).catch(() => {});
@@ -191,21 +188,123 @@ class SolverJobManager {
     this._finishPump();
   }
 
-  _settleFailure(job, error) {
-    job.failure = {
-      failureClass: "INTERNAL_ERROR",
-      message: error && error.message ? error.message : String(error),
+  _settleCancel(job) {
+    const failure = {
+      failureClass: "CANCELLED",
+      message: "The job was cancelled by request.",
       retryable: false,
-      details: serializeError(error),
+      details: {},
     };
-    if (job.state !== "cancelled" && job.state !== "failed" && job.state !== "completed") {
-      job.transition("failed");
-    }
+    job.failure = failure;
+    job.result = {
+      schema: "motapathfinder.solver-job-result.v1",
+      jobId: job.id,
+      taskFingerprint: job.task && job.task.taskFingerprint || null,
+      status: "cancelled",
+      createdAt: job.createdAt,
+      startedAt: job.startedAt,
+      finishedAt: new Date().toISOString(),
+      found: false,
+      failure,
+      proof: null,
+      objective: null,
+      route: null,
+      identity: {
+        taskFingerprint: job.task && job.task.taskFingerprint || null,
+        towerFingerprint: job.task && job.task.towerFingerprint || null,
+        solverModelFingerprint: job.task && job.task.solverModelFingerprint || null,
+        objectiveFingerprint: job.task && job.task.objectiveFingerprint || null,
+        routeFingerprint: null,
+      },
+      diagnostics: null,
+    };
+    job.transition("cancelled");
+    this._publishTerminalProgress(job);
     if (this.jobStore) {
+      this.jobStore.saveResult(job.id, job.result).catch(() => {});
+      this.jobStore.saveError(job.id, job.failure).catch(() => {});
+      this.jobStore.saveStatus(job.id, job.toJSON()).catch(() => {});
+    }
+  }
+
+  _settleError(job, error) {
+    const terminal = job.state === "cancelled" || job.state === "failed" || job.state === "completed";
+    let failure;
+    if (job.cancelRequested || (error && (error.code === "CANCELLED" || error.message === "The job was cancelled by request."))) {
+      failure = {
+        failureClass: "CANCELLED",
+        message: "The job was cancelled by request.",
+        retryable: false,
+        details: {},
+      };
+    } else if (error && error.code === "STRICT_REPLAY_FAILED") {
+      failure = {
+        failureClass: "STRICT_REPLAY_FAILED",
+        message: error.message || "Strict runtime replay failed.",
+        retryable: false,
+        details: serializeError(error),
+      };
+    } else {
+      failure = {
+        failureClass: "INTERNAL_ERROR",
+        message: error && error.message ? error.message : String(error),
+        retryable: false,
+        details: serializeError(error),
+      };
+    }
+    job.failure = failure;
+    job.result = {
+      schema: "motapathfinder.solver-job-result.v1",
+      jobId: job.id,
+      taskFingerprint: job.task && job.task.taskFingerprint || null,
+      status: failure.failureClass === "CANCELLED" ? "cancelled" : "failed",
+      createdAt: job.createdAt,
+      startedAt: job.startedAt,
+      finishedAt: new Date().toISOString(),
+      found: false,
+      failure,
+      proof: null,
+      objective: null,
+      route: null,
+      identity: {
+        taskFingerprint: job.task && job.task.taskFingerprint || null,
+        towerFingerprint: job.task && job.task.towerFingerprint || null,
+        solverModelFingerprint: job.task && job.task.solverModelFingerprint || null,
+        objectiveFingerprint: job.task && job.task.objectiveFingerprint || null,
+        routeFingerprint: null,
+      },
+      diagnostics: null,
+    };
+    if (!terminal) {
+      job.transition(failure.failureClass === "CANCELLED" ? "cancelled" : "failed");
+    }
+    this._publishTerminalProgress(job);
+    if (this.jobStore) {
+      this.jobStore.saveResult(job.id, job.result).catch(() => {});
       this.jobStore.saveError(job.id, job.failure).catch(() => {});
       this.jobStore.saveStatus(job.id, job.toJSON()).catch(() => {});
     }
     this._finishPump();
+  }
+
+  _publishTerminalProgress(job) {
+    if (job.state === "queued" || job.state === "running") return;
+    const previous = job.lastProgress || {};
+    const snapshot = {
+      schema: "motapathfinder.solver-progress.v1",
+      jobId: job.id,
+      taskFingerprint: job.task && job.task.taskFingerprint || null,
+      sequence: (Number(previous.sequence) || 0) + 1,
+      timestamp: new Date().toISOString(),
+      status: job.state,
+      phase: job.state,
+      segment: null,
+      search: previous.search || { expansions: 0, generated: 0, accepted: 0, goalCandidates: 0, actionTrimmed: 0 },
+      budget: previous.budget || null,
+      bestKnown: previous.bestKnown || null,
+      proof: previous.proof || null,
+    };
+    job.publishProgress(snapshot);
   }
 
   _finishPump() {
@@ -214,7 +313,7 @@ class SolverJobManager {
   }
 
   get running() {
-    return this.runningCount;
+    return this.runningCount + this.startingCount;
   }
 
   get queued() {

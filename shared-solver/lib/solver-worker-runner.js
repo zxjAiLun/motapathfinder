@@ -1,28 +1,49 @@
 "use strict";
 
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { fork } = require("node:child_process");
 
 const WORKER_PATH = path.join(__dirname, "..", "solver-job-worker.js");
 
+const CANCEL_GRACE_MS = 5000;
+
+function cancelTokenPathFor(jobId) {
+  return path.join(os.tmpdir(), `motapath-cancel-${String(jobId).replace(/[^A-Za-z0-9_-]/g, "_")}.token`);
+}
+
 // Spawns a dedicated child process for a solve job so the Launcher/GUI/API
-// main thread is never blocked by CPU-bound search.
+// main thread is never blocked by CPU-bound search.  Cancellation writes a
+// cancel-token file that the worker's synchronous shouldStop() can observe even
+// while the worker's event loop is blocked; a grace period then force-kills the
+// worker.
 function createWorkerExecutor({ job, task, onProgress, context }) {
+  const jobId = job && job.id || "job-unknown";
+  const cancelTokenPath = cancelTokenPathFor(jobId);
   const child = fork(WORKER_PATH, [], {
     stdio: ["ignore", "ignore", "inherit", "ipc"],
     windowsHide: true,
   });
   let settled = false;
   let cancelRequested = false;
+  let graceTimer = null;
   const payload = {
     type: "start",
-    jobId: job && job.id || "job-unknown",
+    jobId,
+    cancelTokenPath,
     task: task && task.compiled ? task.toJSON() : task,
   };
   const promise = new Promise((resolve, reject) => {
     const settle = (fn, value) => {
       if (settled) return;
       settled = true;
+      if (graceTimer) clearTimeout(graceTimer);
+      try {
+        fs.unlinkSync(cancelTokenPath);
+      } catch (error) {
+        // best-effort token cleanup
+      }
       try {
         child.kill();
       } catch (error) {
@@ -64,13 +85,30 @@ function createWorkerExecutor({ job, task, onProgress, context }) {
     execute: () => promise,
     cancel: () => {
       cancelRequested = true;
+      // Atomically create the cancel token so the worker's synchronous
+      // shouldStop() sees it even while the search blocks the event loop.
+      try {
+        fs.writeFileSync(cancelTokenPath, "cancel\n", "utf8");
+      } catch (error) {
+        // ignore; the IPC cancel below remains as a fallback
+      }
       try {
         if (child.connected) child.send({ type: "cancel" });
       } catch (error) {
         // ignore
       }
+      if (!graceTimer) {
+        graceTimer = setTimeout(() => {
+          try {
+            child.kill();
+          } catch (error) {
+            // ignore
+          }
+        }, CANCEL_GRACE_MS);
+      }
     },
     dispose: () => {
+      if (graceTimer) clearTimeout(graceTimer);
       try {
         child.kill();
       } catch (error) {
@@ -80,4 +118,4 @@ function createWorkerExecutor({ job, task, onProgress, context }) {
   };
 }
 
-module.exports = { createWorkerExecutor };
+module.exports = { CANCEL_GRACE_MS, createWorkerExecutor };
