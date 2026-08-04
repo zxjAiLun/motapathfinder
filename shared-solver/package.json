@@ -22,6 +22,8 @@
     "check:key-audit": "node audit-state-dependencies.js",
     "check:state-abstraction": "node check-state-abstraction-audit.js",
     "check:solver-model": "node check-solver-model-contract.js",
+    "check:objective-spec": "node check-objective-spec-contract.js",
+    "check:objective-spec:live": "node check-objective-spec-live.js",
     "check:solver-model:runtime": "node check-solver-model-runtime-boundary-live.js",
     "run:state-abstraction": "node audit-state-abstraction.js",
     "check:state-abstraction:bounded": "node check-bounded-abstraction-counterexample.js",

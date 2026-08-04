@@ -35,6 +35,7 @@ const CORRECTNESS = new Set([
   "segment-dp.js",
   "milestone-spec.js",
   "region-spec.js",
+  "objective-spec.js",
   "adaptive-segment-planner.js",
   "dominance.js",
   "search-nodes.js",
@@ -268,6 +269,20 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
 }
 
 const TEST_OVERRIDES = {
+  "shared-solver/check-objective-spec-contract.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: true,
+    notes: "ObjectiveSpec normalization/comparison/proof controls plus a short real RegionSpec route artifact",
+  },
+  "shared-solver/check-objective-spec-live.js": {
+    grade: "integration-local",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: false,
+    notes: "real Chromium replay recomputes and verifies the persisted terminal objective value",
+  },
   "shared-solver/check-mt5-51533-next-smoke.js": {
     grade: "smoke",
     allowsNotFound: true,

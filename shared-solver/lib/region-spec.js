@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { getMilestoneSpec, validateMilestoneSpec } = require("./milestone-spec");
+const { compileObjectiveSpec, validateObjectiveSpec } = require("./objective-spec");
 const { normalizeSolverModel, validateSolverModel } = require("./solver-model");
 
 const DEFAULT_SEARCH = {
@@ -64,6 +65,11 @@ function normalizeRegionSpec(rawSpec, sourceFile) {
   if (spec.model == null && spec.solverModel != null) spec.model = spec.solverModel;
   delete spec.solverModel;
   if (spec.model != null) spec.model = normalizeSolverModel(spec.model);
+  if (spec.objective == null && spec.objectiveSpec != null) spec.objective = spec.objectiveSpec;
+  delete spec.objectiveSpec;
+  if (spec.objective != null) {
+    spec.objective = compileObjectiveSpec(spec.objective, spec.model).toJSON();
+  }
   spec.actionPolicy = {
     actionKinds: DEFAULT_ACTION_KINDS.slice(),
     ...(spec.actionPolicy || {}),
@@ -126,6 +132,13 @@ function validateRegionSpec(spec) {
   if (spec.model != null) {
     try {
       validateSolverModel(spec.model);
+    } catch (error) {
+      errors.push(`${spec.id || "unknown"}: ${error.message}`);
+    }
+  }
+  if (spec.objective != null) {
+    try {
+      validateObjectiveSpec(spec.objective, spec.model);
     } catch (error) {
       errors.push(`${spec.id || "unknown"}: ${error.message}`);
     }
@@ -204,7 +217,13 @@ function iterAttemptDpDiagnostics(result) {
   return items;
 }
 
-function buildRegionProofClaim(result, regionSpec) {
+function buildRegionProofClaim(result, regionSpec, objectiveSpec) {
+  const objective = objectiveSpec && objectiveSpec.compiled
+    ? objectiveSpec
+    : compileObjectiveSpec(
+      objectiveSpec || (regionSpec && regionSpec.objective) || null,
+      regionSpec && regionSpec.model,
+    );
   const attempts = iterAttemptDpDiagnostics(result);
   const actionTrimmed = attempts.reduce((sum, attempt) => sum + Number(attempt.dp.actionTrimmed || 0), 0);
   const stoppedReasons = attempts
@@ -233,6 +252,19 @@ function buildRegionProofClaim(result, regionSpec) {
   if (stoppedReasons.length > 0) notes.push(`stoppedReason present: ${[...new Set(stoppedReasons)].join(",")}`);
   if (expansionBudgetExhaustedSegments.length > 0) notes.push(`expansion budget exhausted: ${[...new Set(expansionBudgetExhaustedSegments)].join(",")}`);
   if (unsafeStopOnFirstGoalSegments.length > 0) notes.push(`non-final stopOnFirstGoal=true: ${[...new Set(unsafeStopOnFirstGoalSegments)].join(",")}`);
+  const objectiveEarlyStopSegments = objective.requiresOptimizationProof
+    ? stopOnFirstGoalSegments
+    : [];
+  const objectiveClaim = !result || !result.found
+    ? "not-found"
+    : !objective.explicit || !objective.requiresOptimizationProof
+      ? "goal-found"
+      : completeWithinActionSet && objectiveEarlyStopSegments.length === 0
+        ? "bounded-optimal"
+        : "candidate-only";
+  if (objectiveClaim === "candidate-only") {
+    notes.push("objective optimization was not exhaustively established; result is candidate-only");
+  }
   return {
     found: Boolean(result && result.found),
     proofLevel,
@@ -244,6 +276,18 @@ function buildRegionProofClaim(result, regionSpec) {
     stopOnFirstGoalSegments: [...new Set(stopOnFirstGoalSegments)],
     unsafeStopOnFirstGoal: unsafeStopOnFirstGoalSegments.length > 0,
     unsafeStopOnFirstGoalSegments: [...new Set(unsafeStopOnFirstGoalSegments)],
+    objective: {
+      schema: objective.schema,
+      explicit: objective.explicit,
+      mode: objective.mode,
+      fingerprint: objective.fingerprint,
+      requireGoal: objective.requireGoal,
+      terminalOnly: objective.terminalOnly,
+      allowsFirstGoalStop: objective.allowsFirstGoalStop,
+      requiresOptimizationProof: objective.requiresOptimizationProof,
+      earlyStopSegments: [...new Set(objectiveEarlyStopSegments)],
+      claim: objectiveClaim,
+    },
     notes,
   };
 }

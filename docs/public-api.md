@@ -109,6 +109,24 @@ SolverModel v1 supports `disabled`, `value`, `key`, and `snapshot-only` for all 
 
 The full normalized model is owned by the simulator/job context; search states retain only `meta.modelFingerprint`. Explicit route snapshots are partial solver expectations: they omit disabled fields, carry `partial: true`, and record `solverModelFingerprint` plus `solverSnapshotHeroFields` in route metadata. Live replay compares that subset against a complete raw runtime capture, so disabled fields are neither defaulted to zero nor written back to the runtime.
 
+### ObjectiveSpec
+
+`RegionSpec.objective` is a terminal candidate-ordering contract, separate from `SolverModel`:
+
+```json
+{
+  "objective": {
+    "mode": "max-final-hp",
+    "requireGoal": true,
+    "tieBreakers": ["min-decision-depth"]
+  }
+}
+```
+
+Version 1 supports `clear`, `max-final-hp`, `maximize`, `maximize-score`, and `lexicographic`. Objective fields such as `hero.hpmax` must be maintained by the SolverModel; disabled or snapshot-only fields are rejected before search. Weighted score terms are numeric and terminal-only. Objective ordering never changes DP keys, HP dominance, action legality, or intermediate state identity.
+
+Route metadata persists `objectiveSpec`, `objectiveFingerprint`, `finalObjectiveValue`, and `objectiveComparisonTrace`. Strict replay recomputes the final value and rejects a mismatch. `clear` may report `goal-found`; optimization objectives report `bounded-optimal` only after a complete bounded search, otherwise `candidate-only`.
+
 ## Proof Claim
 
 Region output includes:

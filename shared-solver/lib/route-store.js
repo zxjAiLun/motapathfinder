@@ -8,6 +8,7 @@ const { createInitialState, ensureFloorState, getDecisionDepth } = require("./st
 const { buildDominanceKey, buildStateKey } = require("./state-key");
 const { isDecisionStep } = require("./updown-candidate-policy");
 const { buildSolverSnapshot, diffSnapshotSubset } = require("./route-snapshot");
+const { compileObjectiveSpec, objectiveMetadata } = require("./objective-spec");
 const { getSolverSnapshotHeroFields, normalizeSolverModel } = require("./solver-model");
 
 const ROUTE_SCHEMA = "motapathfinder.route.v1";
@@ -159,6 +160,11 @@ function composeRouteRecords(prefixRecord, suffixRecord, options) {
   }
   if (prefixFinalExactStateKey !== suffixStartExactStateKey) {
     throw new Error("route-store: composed route exact boundary mismatch");
+  }
+  const prefixObjectiveFingerprint = prefix.metadata && prefix.metadata.objectiveFingerprint || null;
+  const suffixObjectiveFingerprint = suffix.metadata && suffix.metadata.objectiveFingerprint || null;
+  if (prefixObjectiveFingerprint !== suffixObjectiveFingerprint && (prefixObjectiveFingerprint || suffixObjectiveFingerprint)) {
+    throw new Error("route-store: composed route objective fingerprint mismatch");
   }
   const prefixDecisions = Array.isArray(prefix.decisions) ? prefix.decisions : [];
   const suffixDecisions = Array.isArray(suffix.decisions) ? suffix.decisions : [];
@@ -1067,6 +1073,10 @@ function buildRouteRecord(input) {
   const structuredSource = input.nodes || input.actionEntries || finalState.routeTrace || [];
   const snapshotFloors = inferStructuredSnapshotFloors(structuredSource) || resolveSnapshotFloors(project, initialState, finalState, options);
   const solverModel = simulator && simulator.solverModel ? simulator.solverModel : null;
+  const objective = compileObjectiveSpec(
+    options.objectiveSpec || options.objective || null,
+    solverModel,
+  );
   const snapshotOptions = {
     floorIds: snapshotFloors,
     solverModel,
@@ -1078,11 +1088,17 @@ function buildRouteRecord(input) {
   const solverSnapshotHeroFields = getSolverSnapshotHeroFields(solverModel);
   // Keep the caller-owned metadata reference: run-region-dp fills the
   // primitive count and final summary after route construction.
-  const routeMetadata = options.metadata == null ? null : options.metadata;
+  const routeMetadata = options.metadata == null
+    ? (solverModel && solverModel.explicit || objective.explicit ? {} : null)
+    : options.metadata;
   if (solverModel && solverModel.explicit) {
     const metadata = routeMetadata || {};
     metadata.solverModelFingerprint = solverModel.fingerprint;
     metadata.solverSnapshotHeroFields = solverSnapshotHeroFields || [];
+  }
+  if (objective.explicit) {
+    routeMetadata.objectiveSpec = objective.toJSON();
+    routeMetadata.objectiveFingerprint = objective.fingerprint;
   }
   const decisions = [];
   const context = {
@@ -1142,6 +1158,9 @@ function buildRouteRecord(input) {
     throw new Error(
       `route-store: strict replay final exact state differs from source final state; source=${expectedExactStateKey}; replay=${strictFinalExactStateKey}`,
     );
+  }
+  if (objective.explicit) {
+    Object.assign(routeMetadata, objectiveMetadata(objective, objective.evaluateState(strictFinalState)));
   }
   const projectRoot = options.projectRoot || path.resolve(__dirname, "..", "..");
   return {

@@ -1448,3 +1448,16 @@ npm run check:static --prefix shared-solver
 - explicit route 的 solver snapshot 只输出 active hero fields，并带 `partial: true`；route metadata 记录 `solverModelFingerprint` 与 `solverSnapshotHeroFields`。runtime capture/h5save 继续保留完整 raw 数据，live replay 对 solver subset 做 comparison，不把 disabled 字段写回 runtime。
 - v1 拒绝 `objective`、非 HP `dominance` 和 mechanics 开关；这些语义在真正有 comparator/action execution 前不伪装成已支持能力。
 - `check-solver-model-runtime-boundary-live.js` 使用真实 Only Up 短路线和 Chromium，确认 boundary/final replay 通过，`hpmax=9999`、`manamax=-1` 等 runtime 原值在 restore 与 suffix 后保留。
+
+### 2026-08-04 更新：PR-5.3b ObjectiveSpec Contract & Terminal Candidate Ordering
+
+Review 已批准 PR-5.3a/a1 并正式关闭；本轮进入 ObjectiveSpec，但保持目标函数与 DP 正确性剪枝隔离：
+
+- `shared-solver/lib/objective-spec.js` 定义 v1 objective schema、稳定 fingerprint、字段引用验证、终局 value 和 comparator trace。首批支持 `clear`、`max-final-hp`、`maximize`、`maximize-score` 与 `lexicographic`。
+- `hero.*` objective path 必须由 SolverModel 维护；disabled、snapshot-only、未知字段、非数字字段和非法 weighted term 在 RegionSpec normalize/preflight 阶段拒绝。`inventory.*` 仅作为 terminal score term 使用。
+- `segment-dp` 保留相同 DP key 内的既有 HP dominance 和代表状态选择；ObjectiveSpec 只对已满足 segment goal 的候选以及最终候选做排序，`maximize-score` 不进入中间状态评分或动作合法性。
+- proof claim 分离为 `goal-found`、`bounded-optimal` 和 `candidate-only`：最大化目标在 first-goal 强停或预算/动作集不完整时不能宣称最优。
+- route metadata 保存 `objectiveSpec`、`objectiveFingerprint`、最终 value 与 comparison trace；strict replay 重新计算最终 objective，resume route fingerprint 绑定 objective fingerprint，避免相同状态下不同目标误用 artifact。
+- `check-objective-spec-contract.js` 已覆盖 legacy 行为、max HP、tie-breaker、lexicographic、custom score、disabled/weight 负控、DP key 不变、early-stop proof 降级、strict objective 重算和 artifact binding。
+
+本轮不修改 DP key、HP dominance、action enumeration、state projection、milestone planning、adaptive repair、GUI 或 Launcher。

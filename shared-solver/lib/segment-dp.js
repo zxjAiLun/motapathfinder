@@ -11,6 +11,7 @@ const {
   resourceTimingRoles,
 } = require("./resource-timing-model");
 const { formatActionLabel } = require("./enemy-labels");
+const { compareLegacyStates } = require("./objective-spec");
 const { buildSolverSnapshot } = require("./route-snapshot");
 const {
   cloneState,
@@ -1614,19 +1615,7 @@ function candidateOutcomeScore(candidate) {
 }
 
 function compareCandidateStates(left, right) {
-  if (!right) return -1;
-  if (!left) return 1;
-  const leftHero = summarizeHero(left);
-  const rightHero = summarizeHero(right);
-  const hpDiff = rightHero.hp - leftHero.hp;
-  if (hpDiff !== 0) return hpDiff;
-  for (const field of ["atk", "def", "mdef"]) {
-    const diff =
-      effectiveHeroValue(right, field) - effectiveHeroValue(left, field);
-    if (diff !== 0) return diff;
-  }
-  if (rightHero.exp !== leftHero.exp) return rightHero.exp - leftHero.exp;
-  return routeLength(left) - routeLength(right);
+  return compareLegacyStates(left, right);
 }
 
 function addTag(record, tag) {
@@ -1659,6 +1648,15 @@ function compactTraceEntry(project, entry) {
 
 function selectGoalSkyline(simulator, states, segment, options) {
   const config = options || {};
+  const objective = config.objectiveSpec && config.objectiveSpec.explicit
+    ? config.objectiveSpec
+    : null;
+  const objectiveOrdersCandidates = Boolean(
+    objective && (
+      objective.requiresOptimizationProof ||
+      ((objective.spec || {}).tieBreakers || []).length > 0
+    ),
+  );
   const limit = Math.max(
     1,
     number(
@@ -1777,10 +1775,18 @@ function selectGoalSkyline(simulator, states, segment, options) {
   const selected = [];
   const selectedIds = new Set();
   const compareGoalRecords = (left, right) => {
+    if (objectiveOrdersCandidates) {
+      const objectiveDiff = objective.compareCandidates(left, right);
+      if (objectiveDiff !== 0) return objectiveDiff;
+    }
     const tagDiff = right.tags.length - left.tags.length;
     if (tagDiff !== 0) return tagDiff;
     const stateDiff = compareCandidateStates(left.state, right.state);
     if (stateDiff !== 0) return stateDiff;
+    if (objective && !objectiveOrdersCandidates) {
+      const objectiveDiff = objective.compareCandidates(left, right);
+      if (objectiveDiff !== 0) return objectiveDiff;
+    }
     return candidateOutcomeScore(right) - candidateOutcomeScore(left);
   };
   const keepCandidate = (record) => {
@@ -1829,6 +1835,16 @@ function normalizeCandidateRecord(candidate, index, fallbackSegmentId) {
 }
 
 function selectCandidateSkyline(simulator, candidates, segment, options) {
+  const config = options || {};
+  const objective = config.objectiveSpec && config.objectiveSpec.explicit
+    ? config.objectiveSpec
+    : null;
+  const objectiveOrdersCandidates = Boolean(
+    objective && (
+      objective.requiresOptimizationProof ||
+      ((objective.spec || {}).tieBreakers || []).length > 0
+    ),
+  );
   const limit = Math.max(
     1,
     number(
@@ -1881,10 +1897,18 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
     return record;
   });
   const compareGoalRecords = (left, right) => {
+    if (objectiveOrdersCandidates) {
+      const objectiveDiff = objective.compareCandidates(left, right);
+      if (objectiveDiff !== 0) return objectiveDiff;
+    }
     const tagDiff = right.tags.length - left.tags.length;
     if (tagDiff !== 0) return tagDiff;
     const stateDiff = compareCandidateStates(left.state, right.state);
     if (stateDiff !== 0) return stateDiff;
+    if (objective && !objectiveOrdersCandidates) {
+      const objectiveDiff = objective.compareCandidates(left, right);
+      if (objectiveDiff !== 0) return objectiveDiff;
+    }
     return candidateOutcomeScore(right) - candidateOutcomeScore(left);
   };
   const rolePickers = [
@@ -2595,6 +2619,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
       : [result.bestGoalState || result.goalState || result.firstGoalState].filter(Boolean);
   const goalSkyline = selectGoalSkyline(simulator, goalStates, segment, {
     candidateLimit: config.candidateLimit || dpConfig.goalSkylineLimit,
+    objectiveSpec: config.objectiveSpec || null,
     preserveSkylineRoles:
       config.preserveSkylineRoles === true ||
       dpConfig.preserveSkylineRoles === true,
@@ -3005,6 +3030,10 @@ function runSegmentAgainstFrontier(
   config,
   overrides,
 ) {
+  const objectiveSpec = config && config.objectiveSpec &&
+    (!config.objectiveTerminalSegmentId || config.objectiveTerminalSegmentId === segment.id)
+    ? config.objectiveSpec
+    : null;
   const candidateLimit = segmentCandidateLimit(
     segment,
     config || {},
@@ -3097,6 +3126,7 @@ function runSegmentAgainstFrontier(
       observerCaptureMode: config && config.observerCaptureMode,
       observerCaptureDominanceWitnesses: config && config.observerCaptureDominanceWitnesses === true,
       observerCaptureWitnessStates: config && config.observerCaptureWitnessStates === true,
+      objectiveSpec,
       dpOverrides,
     });
     attempts.push(result);
@@ -3136,6 +3166,7 @@ function runSegmentAgainstFrontier(
   }
   const merged = mergeMilestoneFrontier(simulator, nextCandidates, segment, {
     candidateLimit,
+    objectiveSpec,
     preserveSkylineRoles: Boolean(
       (config || {}).preserveSkylineRoles ||
       (config || {}).qualityFloor ||
@@ -3279,11 +3310,15 @@ function candidateMeetsQualityFloor(candidate, qualityFloor) {
   return qualityFloorMissing(candidate, qualityFloor).length === 0;
 }
 
-function rankFinalCandidates(candidates, qualityFloor) {
+function rankFinalCandidates(candidates, qualityFloor, objectiveSpec) {
   const ranked = (candidates || []).slice().sort((left, right) => {
     const leftPass = candidateMeetsQualityFloor(left, qualityFloor);
     const rightPass = candidateMeetsQualityFloor(right, qualityFloor);
     if (leftPass !== rightPass) return leftPass ? -1 : 1;
+    if (objectiveSpec && objectiveSpec.explicit) {
+      const objectiveDiff = objectiveSpec.compareCandidates(left, right);
+      if (objectiveDiff !== 0) return objectiveDiff;
+    }
     const stateDiff = compareCandidateStates(
       left && left.state,
       right && right.state,
@@ -3294,8 +3329,8 @@ function rankFinalCandidates(candidates, qualityFloor) {
   return ranked;
 }
 
-function buildQualityFloorFailure(segment, candidates, qualityFloor) {
-  const ranked = rankFinalCandidates(candidates || [], null);
+function buildQualityFloorFailure(segment, candidates, qualityFloor, objectiveSpec) {
+  const ranked = rankFinalCandidates(candidates || [], null, objectiveSpec);
   const best = ranked[0] || null;
   const missing = best
     ? qualityFloorMissing(best, qualityFloor)
@@ -3614,12 +3649,26 @@ function summarizeMemoryAttempts(attempts, config) {
 
 function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   const config = options || {};
-  const globalBudget = config.globalBudget || createGlobalBudget(config);
-  const graphConfig = globalBudget ? { ...config, globalBudget } : config;
+  const objective = config.objectiveSpec && config.objectiveSpec.compiled
+    ? config.objectiveSpec
+    : null;
+  const objectiveStopPolicy = objective
+    ? objective.getStopPolicy(config.stopOnFirstGoal)
+    : null;
+  const objectiveConfig = objective &&
+    objective.requiresOptimizationProof &&
+    config.stopOnFirstGoal == null
+    ? { ...config, stopOnFirstGoal: false }
+    : config;
+  const globalBudget = objectiveConfig.globalBudget || createGlobalBudget(objectiveConfig);
+  const graphConfigBase = globalBudget
+    ? { ...objectiveConfig, globalBudget }
+    : objectiveConfig;
   const finishResult = (result) => ({
     ...result,
     budget: summarizeGlobalBudget(globalBudget),
-    memory: summarizeMemoryAttempts(result.evaluationAttemptLedger, config),
+    memory: summarizeMemoryAttempts(result.evaluationAttemptLedger, objectiveConfig),
+    objectiveStopPolicy,
   });
   const rangeError = milestoneRangeError(
     milestoneSpec,
@@ -3658,6 +3707,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     config.fromMilestoneId,
     config.toMilestoneId,
   );
+  const graphConfig = objective && segments.length > 0
+    ? { ...graphConfigBase, objectiveTerminalSegmentId: segments[segments.length - 1].id }
+    : graphConfigBase;
   const checkpointResults = [];
   const configuredInitialFrontier = Array.isArray(config.initialFrontier) && config.initialFrontier.length > 0
     ? config.initialFrontier
@@ -3735,7 +3787,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     const finalSegment = executionSegmentIndex >= segments.length - 1;
     const found = finalSegment && retainedCandidates.length > 0;
     const finalCandidates = retainedCandidates.length > 0
-      ? rankFinalCandidates(retainedCandidates, config.qualityFloor || null)
+      ? rankFinalCandidates(retainedCandidates, config.qualityFloor || null, config.objectiveSpec || null)
       : (fallbackCandidates || []);
     return finishResult({
       found,
@@ -3905,7 +3957,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     });
     frontier = execution.merged;
   }
-  frontier = rankFinalCandidates(frontier, config.qualityFloor || null);
+  frontier = rankFinalCandidates(frontier, config.qualityFloor || null, config.objectiveSpec || null);
   const final = frontier[0] || null;
   if (
     final &&
@@ -3917,6 +3969,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       finalSegment,
       frontier,
       config.qualityFloor,
+      config.objectiveSpec || null,
     );
     segmentResults.push(failedSummary);
     return finishResult({
@@ -3947,6 +4000,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
           passed: Boolean(final),
           floor: config.qualityFloor,
         }
+      : null,
+    objective: objective && final
+      ? objective.evaluateState(final.state)
       : null,
   });
 }

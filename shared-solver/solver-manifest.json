@@ -679,6 +679,21 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/objective-spec.js": {
+      "id": "objective-spec",
+      "path": "shared-solver/lib/objective-spec.js",
+      "layer": "search/correctness",
+      "status": "canonical",
+      "role": "correctness-search",
+      "correctnessSource": true,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": true,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/parallel-expander.js": {
       "id": "parallel-expander",
       "path": "shared-solver/lib/parallel-expander.js",
@@ -1687,6 +1702,20 @@
       "requiresStrictReplay": true,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-objective-spec-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "ObjectiveSpec normalization/comparison/proof controls plus a short real RegionSpec route artifact"
+    },
+    "shared-solver/check-objective-spec-live.js": {
+      "grade": "integration-local",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": false,
+      "notes": "real Chromium replay recomputes and verifies the persisted terminal objective value"
     },
     "shared-solver/check-onlyup-floorfly-dedup-safety.js": {
       "grade": "local-regression",

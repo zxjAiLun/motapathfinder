@@ -6,6 +6,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const { chromium } = require("playwright-core");
+const { compileObjectiveSpec } = require("./objective-spec");
 const { DEFAULT_HERO_FIELDS, diffSnapshots, summarizeSnapshot } = require("./route-snapshot");
 const { loadProject } = require("./project-loader");
 
@@ -282,6 +283,55 @@ function stableRuntimeValue(value) {
       }, {});
   }
   return value;
+}
+
+function objectiveStateFromRuntimeSnapshot(snapshot, decisionCount) {
+  const count = Math.max(0, Number(decisionCount) || 0);
+  return {
+    hero: (snapshot && snapshot.hero) || {},
+    inventory: (snapshot && snapshot.inventory) || {},
+    route: Array.from({ length: count }, () => null),
+    meta: { decisionDepth: count },
+  };
+}
+
+function verifyRouteObjective(routeRecord, runtimeSnapshot, decisionCount) {
+  const metadata = (routeRecord && routeRecord.metadata) || {};
+  if (!metadata.objectiveSpec && !metadata.objectiveFingerprint) return null;
+  if (!metadata.objectiveSpec || !metadata.objectiveFingerprint) {
+    const error = new Error("Route objective metadata is incomplete.");
+    error.code = "REPLAY_OBJECTIVE_METADATA_INVALID";
+    throw error;
+  }
+  const objective = compileObjectiveSpec(
+    metadata.objectiveSpec,
+    null,
+    { maintainedHeroFields: metadata.solverSnapshotHeroFields },
+  );
+  if (objective.fingerprint !== metadata.objectiveFingerprint) {
+    const error = new Error("Route objective fingerprint does not match its persisted spec.");
+    error.code = "REPLAY_OBJECTIVE_FINGERPRINT_MISMATCH";
+    throw error;
+  }
+  const evaluation = objective.evaluateState(
+    objectiveStateFromRuntimeSnapshot(runtimeSnapshot, decisionCount),
+  );
+  if (
+    JSON.stringify(stableRuntimeValue(evaluation.value)) !==
+    JSON.stringify(stableRuntimeValue(metadata.finalObjectiveValue))
+  ) {
+    const error = new Error(
+      `Route final objective mismatch: expected=${JSON.stringify(metadata.finalObjectiveValue)} actual=${JSON.stringify(evaluation.value)}`,
+    );
+    error.code = "REPLAY_OBJECTIVE_VALUE_MISMATCH";
+    throw error;
+  }
+  return {
+    matches: true,
+    fingerprint: objective.fingerprint,
+    value: evaluation.value,
+    comparisonTrace: evaluation.trace,
+  };
 }
 
 function buildRuntimeSnapshotIdentity(snapshot, config) {
@@ -1320,11 +1370,21 @@ async function replayRouteFile(routeRecord, options) {
       if (stepDelayMs > 0) await page.waitForTimeout(stepDelayMs);
     }
 
+    const finalRuntimeSnapshot = await captureRuntimeSnapshot(page, { verifyFloors });
+    const objectiveVerification = verifyRouteObjective(
+      routeRecord,
+      finalRuntimeSnapshot,
+      decisions.length,
+    );
+
     console.log("Live route replay passed.");
     console.log(`Verified steps: ${lastSuccessfulAction + 1}/${decisions.length}`);
     console.log(`Goal: ${((routeRecord.goal || {}).type) || "floor"}${(routeRecord.goal || {}).floorId ? ` -> ${(routeRecord.goal || {}).floorId}` : ""}`);
     const finalHero = (((routeRecord.final || {}).snapshot || {}).hero) || {};
     console.log(`Final replay state: floor=${(routeRecord.final || {}).floorId}, hp=${finalHero.hp}, atk=${finalHero.atk}, def=${finalHero.def}, mdef=${finalHero.mdef}`);
+    if (objectiveVerification) {
+      console.log(`Final objective verified: fingerprint=${objectiveVerification.fingerprint}, value=${JSON.stringify(objectiveVerification.value)}`);
+    }
     if (keepOpen) {
       console.log("Browser is kept open for inspection. Press Ctrl+C in this terminal when done.");
       await new Promise(() => {});
@@ -1362,6 +1422,7 @@ module.exports = {
   quickStartRuntime,
   replayRouteFile,
   replayRouteRecordLive,
+  verifyRouteObjective,
   routeSnapshotFloors,
   stabilizeRuntime,
   verifyInitialRuntimeSnapshot,

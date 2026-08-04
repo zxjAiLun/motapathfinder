@@ -651,3 +651,16 @@ npm run check:region-specs --prefix shared-solver
 npm run check:region:route:contract --prefix shared-solver
 npm run check:static --prefix shared-solver
 ```
+
+### 2026-08-04 更新：PR-5.3b ObjectiveSpec Contract & Terminal Candidate Ordering
+
+PR-5.3a/a1 已正式关闭；本轮固定“目标是什么、候选怎样比较、何时可以声明目标成立”，不把目标函数引入 DP pruning：
+
+- 新增 `shared-solver/lib/objective-spec.js`，支持 `clear`、`max-final-hp`、`maximize`、`maximize-score` 和 `lexicographic`，生成稳定 objective fingerprint。
+- Objective 字段引用经过 SolverModel 维护字段验证；disabled/snapshot-only 字段、未知字段、非数字 weighted term 和非法 weight 在搜索前拒绝。
+- Objective 只参与已到达 goal 的候选排序；相同 DP key 的代表、HP dominance、action enumeration、state identity、milestone planning 和 adaptive repair 保持原语义。`maximize-score` 明确 terminal-only。
+- `stopOnFirstGoal` 在含最大化项时允许显式强制，但 proof claim 降级为 `candidate-only`；清理目标可报告 `goal-found`，只有完整预算内搜索才能报告优化目标 `bounded-optimal`。
+- Route metadata 持久化 `objectiveSpec`、`objectiveFingerprint`、`finalObjectiveValue` 和 `objectiveComparisonTrace`；strict live replay 会重新计算 final objective，objective fingerprint 也进入 resume route fingerprint。
+- 新增 `check-objective-spec-contract.js`，覆盖 legacy comparator、三类目标排序、lexicographic、disabled 字段/weight 负控、DP key 不变、forced early stop 降级、route metadata 和 artifact fingerprint binding。
+
+本轮明确不做：objective-aware DP dominance、objective-aware action pruning、GUI、自动 analyzer、Solver Launcher 和新的搜索策略。

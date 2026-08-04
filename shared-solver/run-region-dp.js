@@ -7,6 +7,7 @@ const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { parseKeyValueArgs } = require("./lib/cli-options");
 const { executeActionList } = require("./lib/events");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
+const { compileObjectiveSpec } = require("./lib/objective-spec");
 const { loadProject } = require("./lib/project-loader");
 const {
   buildProjectFingerprint,
@@ -137,7 +138,7 @@ function summarizeSegment(segment) {
   };
 }
 
-function finalMetrics(result, wallMs, regionSpec, routeRecord, proofClaim) {
+function finalMetrics(result, wallMs, regionSpec, routeRecord, proofClaim, objective) {
   const finalState = result.finalCandidate && result.finalCandidate.state;
   const hero = (finalState && finalState.hero) || {};
   return {
@@ -147,6 +148,14 @@ function finalMetrics(result, wallMs, regionSpec, routeRecord, proofClaim) {
     proofLevel: proofClaim.proofLevel,
     completeWithinActionSet: proofClaim.completeWithinActionSet,
     proofClaim,
+    objective: objective && objective.explicit
+      ? {
+          mode: objective.mode,
+          fingerprint: objective.fingerprint,
+          finalValue: result.objective ? result.objective.value : null,
+          comparisonTrace: result.objective ? result.objective.trace : [],
+        }
+      : null,
     expansions: (result.segmentResults || []).reduce((sum, segment) => {
       const attempts = segment.attempts || [];
       return sum + attempts.reduce((inner, attempt) => inner + Number((((attempt.diagnostics || {}).dp || {}).expansions) || 0), 0);
@@ -301,7 +310,7 @@ function runValidationOnly(args) {
   if (!summary.valid) process.exitCode = 2;
 }
 
-function buildSummary(regionSpec, result, metrics, routePath, proofClaim) {
+function buildSummary(regionSpec, result, metrics, routePath, proofClaim, objective) {
   return {
     kind: "region-dp",
     regionId: regionSpec.id,
@@ -309,6 +318,14 @@ function buildSummary(regionSpec, result, metrics, routePath, proofClaim) {
     tower: regionSpec.tower,
     found: result.found,
     proofClaim,
+    objective: objective && objective.explicit
+      ? {
+          spec: objective.toJSON(),
+          fingerprint: objective.fingerprint,
+          stopPolicy: result.objectiveStopPolicy || null,
+          finalValue: result.objective ? result.objective.value : null,
+        }
+      : null,
     model: regionSpec.model || null,
     routeFile: routePath || null,
     reachedMilestone: result.reachedMilestone,
@@ -370,6 +387,7 @@ function main() {
   const project = loadProject(projectRoot);
   runnerStage = "build-start-state";
   const simulator = makeSimulator(project, regionSpec, args);
+  const objective = compileObjectiveSpec(regionSpec.objective, simulator.solverModel);
   const initialState = createStartState(project, simulator, regionSpec, args, rank, specDir);
   runnerStage = "build-milestone-spec";
   const milestoneSpec = buildRegionMilestoneSpec(project, regionSpec);
@@ -386,9 +404,10 @@ function main() {
     stopOnFirstGoal: args["stop-on-first-goal"] == null
       ? (search.stopOnFirstGoal == null ? null : parseBoolean(search.stopOnFirstGoal, false))
       : parseBoolean(args["stop-on-first-goal"], false),
+    objectiveSpec: objective,
     enableFailureBacktracking: parseBoolean(args["failure-backtracking"], parseBoolean(regionSpec.enableFailureBacktracking, true)),
   });
-  const proofClaim = buildRegionProofClaim(result, regionSpec);
+  const proofClaim = buildRegionProofClaim(result, regionSpec, objective);
 
   let routeRecord = null;
   let routePath = requestedOutputPath;
@@ -403,6 +422,7 @@ function main() {
       regionSpecIdentity,
       projectFingerprint,
       solverModelFingerprint: regionSpec.model && regionSpec.model.fingerprint || null,
+      objectiveFingerprint: objective.explicit ? objective.fingerprint : null,
       reachedMilestone: result.reachedMilestone || null,
       milestoneRoute: regionSpec.milestoneRoute || null,
       fromMilestoneId: args["from-milestone"] || regionSpec.fromMilestoneId || null,
@@ -429,6 +449,7 @@ function main() {
           kind: "region-dp",
           regionDp: regionDpMetadata,
         },
+        objectiveSpec: objective,
       },
     });
     regionDpMetadata.primitiveDecisionCount = (routeRecord.decisions || []).length;
@@ -438,8 +459,8 @@ function main() {
     routePath = null;
   }
 
-  const metrics = finalMetrics(result, Date.now() - startedAt, regionSpec, routeRecord, proofClaim);
-  const summary = buildSummary(regionSpec, result, metrics, routePath, proofClaim);
+  const metrics = finalMetrics(result, Date.now() - startedAt, regionSpec, routeRecord, proofClaim, objective);
+  const summary = buildSummary(regionSpec, result, metrics, routePath, proofClaim, objective);
   console.log(JSON.stringify(summary, null, 2));
   if (routePath) {
     console.log(`Route written: ${routePath}`);
@@ -473,6 +494,7 @@ if (require.main === module) {
         configuredMaxExpansions: details.configuredMaxExpansions == null ? null : details.configuredMaxExpansions,
         configuredMaxRuntimeMs: details.configuredMaxRuntimeMs == null ? null : details.configuredMaxRuntimeMs,
         errorType: error && error.name || "Error",
+        errorCode: error && error.code || null,
         message: error && error.message ? error.message : String(error),
       }, null, 2));
     } else {

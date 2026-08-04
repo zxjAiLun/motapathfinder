@@ -104,6 +104,8 @@ function buildReplayRouteFingerprint(routeRecord) {
       snapshot: cloneJson(routeRecord && routeRecord.final && routeRecord.final.snapshot),
     },
   };
+  const objectiveFingerprint = routeRecord && routeRecord.metadata && routeRecord.metadata.objectiveFingerprint;
+  if (objectiveFingerprint) input.objectiveFingerprint = objectiveFingerprint;
   return {
     algorithm: "sha256-stable-json-v1",
     sha256: sha256(stableStringify(input)),
