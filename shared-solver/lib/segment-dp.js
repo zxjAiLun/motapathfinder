@@ -3069,7 +3069,24 @@ function runSegmentAgainstFrontier(
   const attempts = [];
   let memoryLimited = false;
   let memoryStopReason = null;
+  const lifecycle = config && config.observer ? config.observer : null;
+  if (lifecycle && typeof lifecycle.emit === "function") {
+    lifecycle.emit("segmentStarted", () => ({
+      segmentId: segment.id,
+      segmentIndex: Number((config && config.segmentIndex) || 0),
+      segmentTotal: Number((config && config.segmentTotal) || 0),
+    }));
+  }
   for (const [candidateIndex, candidate] of inputFrontier.entries()) {
+    if (lifecycle && typeof lifecycle.emit === "function") {
+      lifecycle.emit("attemptStarted", () => ({
+        segmentId: segment.id,
+        segmentIndex: Number((config && config.segmentIndex) || 0),
+        segmentTotal: Number((config && config.segmentTotal) || 0),
+        attempt: candidateIndex + 1,
+        startCandidates: inputFrontier.length,
+      }));
+    }
     const configuredRemainingRuntimeMs = config && config.deadlineMs
       ? Math.max(0, number(config.deadlineMs, 0) - Date.now())
       : null;
@@ -3180,6 +3197,13 @@ function runSegmentAgainstFrontier(
     );
     if (typeof global.gc === "function") global.gc();
     if (memoryLimited) break;
+  }
+  if (lifecycle && typeof lifecycle.emit === "function") {
+    lifecycle.emit("segmentCompleted", () => ({
+      segmentId: segment.id,
+      segmentIndex: Number((config && config.segmentIndex) || 0),
+      segmentTotal: Number((config && config.segmentTotal) || 0),
+    }));
   }
   const merged = mergeMilestoneFrontier(simulator, nextCandidates, segment, {
     candidateLimit,
@@ -3863,7 +3887,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       simulator,
       segment,
       frontier,
-      graphConfig,
+      { ...graphConfig, segmentIndex, segmentTotal: segments.length },
       {},
     );
     appendLedger(execution, "initial");

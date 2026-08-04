@@ -1645,7 +1645,13 @@ function searchDP(simulator, initialState, options) {
       }
       goalNodes.push(node);
       goalArchiveRecordAccepted(node);
-      if (!bestGoalNode || goalStateComparator(state, bestGoalNode.state) > 0) bestGoalNode = node;
+      const improvedGoal = !bestGoalNode || goalStateComparator(state, bestGoalNode.state) > 0;
+      if (improvedGoal) bestGoalNode = node;
+      if (observer && improvedGoal) {
+        observer.emit("goalCandidateImproved", () => observerStatePayload(simulator, state, node, config, {
+          reasonCode: "goal-candidate-improved",
+        }));
+      }
       if (observer) {
         emitStateEvent("goalAccepted", state, node, () => ({
           reasonCode: "goal-predicate-accepted",

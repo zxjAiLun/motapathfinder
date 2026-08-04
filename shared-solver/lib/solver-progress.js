@@ -25,6 +25,20 @@ function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function depthOf(event) {
+  const depth = Number((event && event.decisionDepth) || 0);
+  return depth > 0 ? depth : null;
+}
+
+function summarizeDpHero(hero) {
+  const source = hero || {};
+  return {
+    hp: source.hp == null ? null : source.hp,
+    atk: source.atk == null ? null : source.atk,
+    def: source.def == null ? null : source.def,
+  };
+}
+
 // Aggregates low-level DP observer events into throttled, honest progress
 // snapshots.  Never emits a fake completion percentage: the search space size
 // is unknown, so only the budget-consumed ratio is provided.
@@ -37,6 +51,7 @@ class SolverProgressAccumulator {
     expansionEvery = 200,
     maxExpansions = 0,
     maxRuntimeMs = 0,
+    objective = null,
   }) {
     this.jobId = jobId || null;
     this.taskFingerprint = taskFingerprint || null;
@@ -45,6 +60,7 @@ class SolverProgressAccumulator {
     this.expansionEvery = Math.max(1, Number(expansionEvery) || 1);
     this.maxExpansions = Number(maxExpansions) || 0;
     this.maxRuntimeMs = Number(maxRuntimeMs) || 0;
+    this.objective = objective || null;
     this.sequence = 0;
     this.status = "queued";
     this.phase = "queued";
@@ -81,6 +97,7 @@ class SolverProgressAccumulator {
 
   setSegment(segment) {
     this.segment = segment ? cloneJson(segment) : null;
+    this.publish(true);
   }
 
   setBestKnown(bestKnown) {
@@ -93,6 +110,46 @@ class SolverProgressAccumulator {
 
   setProof(proof) {
     this.proof = proof ? cloneJson(proof) : null;
+    this.publish(true);
+  }
+
+  _objectiveStateFromDpEvent(event) {
+    const depth = Number((event && event.decisionDepth) || 0);
+    return {
+      hero: (event && event.hero) || {},
+      floorId: event && event.floorId,
+      route: Array.from({ length: depth }, () => null),
+      meta: { decisionDepth: depth },
+    };
+  }
+
+  _bestKnownGoalCandidate(event) {
+    if (!event) return;
+    const state = this._objectiveStateFromDpEvent(event);
+    const value = this.objective && this.objective.explicit
+      ? this.objective.evaluateState(state).value
+      : null;
+    const candidate = {
+      kind: "goal-candidate",
+      goalReached: true,
+      verified: false,
+      floorId: state.floorId || null,
+      objectiveValue: value,
+      objectiveFingerprint: this.objective && this.objective.explicit
+        ? this.objective.fingerprint
+        : null,
+      routeLength: depthOf(event),
+      hero: summarizeDpHero((event && event.hero) || {}),
+      proofClaim: "candidate-only",
+    };
+    const previous = this.bestKnown;
+    if (previous && previous.kind === "goal-candidate") {
+      const improved = previous.objectiveValue == null ||
+        candidate.objectiveValue == null ||
+        candidate.objectiveValue >= previous.objectiveValue;
+      if (!improved) return;
+    }
+    this.bestKnown = candidate;
     this.publish(true);
   }
 
@@ -111,8 +168,32 @@ class SolverProgressAccumulator {
       case "goalAccepted":
         this.counters.goalCandidates += 1;
         break;
-      case "actionTrimmed":
-        this.counters.actionTrimmed += 1;
+      case "goalCandidateImproved":
+        this._bestKnownGoalCandidate(event);
+        break;
+      case "actionSetGenerated":
+        this.counters.actionTrimmed += Math.max(0, Number(event.trimmedCount) || 0);
+        this.publish(false);
+        break;
+      case "segmentStarted":
+        this.setSegment({
+          id: event.segmentId || null,
+          index: Number(event.segmentIndex) || 0,
+          total: Number(event.segmentTotal) || 0,
+          attempt: 0,
+        });
+        this.setPhase("segment-search");
+        break;
+      case "attemptStarted":
+        this.setSegment({
+          id: event.segmentId || null,
+          index: Number(event.segmentIndex) || 0,
+          total: Number(event.segmentTotal) || 0,
+          attempt: Number(event.attempt) || 1,
+        });
+        break;
+      case "segmentCompleted":
+        this.setSegment(null);
         break;
       default:
         return;
@@ -169,6 +250,9 @@ class SolverProgressAccumulator {
 }
 
 function bestKnownProgressState({ foundGoal, floorId, objectiveValue, routeLength, hero }) {
+  // progress-state is a reached-but-not-goal state: goalReached must stay false
+  // even when a state object exists, so the GUI cannot confuse the farthest
+  // progress state with an actual goal candidate.
   return {
     kind: "progress-state",
     goalReached: Boolean(foundGoal),
