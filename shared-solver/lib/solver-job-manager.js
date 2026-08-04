@@ -347,6 +347,8 @@ function createSolveTaskErrorResult(error) {
   if (error instanceof SolveTaskError) {
     return {
       failureClass: "INVALID_TASK",
+      code: error.code || "INVALID_TASK",
+      path: error.path || null,
       message: error.message,
       retryable: false,
       details: { code: error.code, path: error.path },
@@ -354,6 +356,8 @@ function createSolveTaskErrorResult(error) {
   }
   return {
     failureClass: "INVALID_TASK",
+    code: error && error.code || "INVALID_TASK",
+    path: error && error.path || null,
     message: error && error.message ? error.message : String(error),
     retryable: false,
     details: serializeError(error),
