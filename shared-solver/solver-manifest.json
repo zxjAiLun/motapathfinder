@@ -176,6 +176,8 @@
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
         "shared-solver/check-objective-safe-archive.js",
+        "shared-solver/check-solve-task-contract.js",
+        "shared-solver/check-solver-job-contract.js",
         "shared-solver/check-teacher-search-observer.js",
         "shared-solver/check-teacher-dominance-audit.js",
         "shared-solver/check-hybrid-fair-agenda.js",
@@ -1498,6 +1500,111 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
+    },
+    "shared-solver/lib/file-job-store.js": {
+      "id": "file-job-store",
+      "path": "shared-solver/lib/file-job-store.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/solve-task.js": {
+      "id": "solve-task",
+      "path": "shared-solver/lib/solve-task.js",
+      "layer": "unclassified",
+      "status": "canonical",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/solver-job.js": {
+      "id": "solver-job",
+      "path": "shared-solver/lib/solver-job.js",
+      "layer": "unclassified",
+      "status": "canonical",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/solver-job-manager.js": {
+      "id": "solver-job-manager",
+      "path": "shared-solver/lib/solver-job-manager.js",
+      "layer": "unclassified",
+      "status": "canonical",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/solver-job-result.js": {
+      "id": "solver-job-result",
+      "path": "shared-solver/lib/solver-job-result.js",
+      "layer": "unclassified",
+      "status": "canonical",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/solver-progress.js": {
+      "id": "solver-progress",
+      "path": "shared-solver/lib/solver-progress.js",
+      "layer": "unclassified",
+      "status": "canonical",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/solver-worker-runner.js": {
+      "id": "solver-worker-runner",
+      "path": "shared-solver/lib/solver-worker-runner.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
     }
   },
   "tests": {
@@ -2025,6 +2132,27 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-solve-task-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.3c SolveTask schema, stable task identity, external compiled:true trust boundary, budget validation, legacy region compatibility"
+    },
+    "shared-solver/check-solver-job-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.3c job state machine, honest progress, failure classification, cancel, identity binding, micro job lifecycle"
+    },
+    "shared-solver/check-solver-job-live.js": {
+      "grade": "integration-local",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": false,
+      "notes": "real Chromium short SolveTask job queued->completed with strict route replay"
     }
   }
 }
