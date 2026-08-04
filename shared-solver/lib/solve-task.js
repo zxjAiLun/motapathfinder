@@ -342,10 +342,27 @@ function validateSolveTask(rawTask, context) {
   return true;
 }
 
+// Executable-job variant: requires the project root to exist and be loadable
+// with a real project fingerprint, so a misspelled projectRoot fails before a
+// worker is spawned.  Template tasks that only carry a trusted fingerprint can
+// still use compileSolveTask.
+function compileExecutableSolveTask(rawTask, context) {
+  const task = compileSolveTask(rawTask, context);
+  const projectRoot = task.normalizedTask.tower.projectRoot;
+  if (!projectRoot || typeof projectRoot !== "string" || !fs.existsSync(projectRoot)) {
+    fail("INVALID_TASK", "tower.projectRoot must exist to submit an executable job", "tower.projectRoot");
+  }
+  if (!task.towerFingerprint) {
+    fail("INVALID_TASK", "project fingerprint is empty; the project at projectRoot could not be loaded", "tower.projectFingerprint");
+  }
+  return task;
+}
+
 module.exports = {
   SOLVE_TASK_SCHEMA,
   SolveTaskError,
   buildEffectiveSearch,
+  compileExecutableSolveTask,
   compileSolveTask,
   fingerprintJson,
   normalizeSearch,

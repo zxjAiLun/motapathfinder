@@ -2,7 +2,7 @@
 
 const { SolverJob, SolverJobError, executeInProcessExecutor, finalizeJob } = require("./solver-job");
 const { serializeError } = require("./solver-job-result");
-const { compileSolveTask, SolveTaskError } = require("./solve-task");
+const { compileExecutableSolveTask, SolveTaskError } = require("./solve-task");
 const { createWorkerExecutor } = require("./solver-worker-runner");
 
 let sequence = 0;
@@ -49,7 +49,9 @@ class SolverJobManager {
   }
 
   submit(rawTask, options) {
-    const task = compileSolveTask(rawTask, this.context);
+    // Executable-job preflight: projectRoot must exist and be loadable with a
+    // real fingerprint before a worker is spawned.
+    const task = compileExecutableSolveTask(rawTask, this.context);
     const job = new SolverJob({
       id: this.jobIdGenerator(),
       task,
@@ -121,6 +123,12 @@ class SolverJobManager {
 
   _startReserved(job) {
     this.startingCount = Math.max(0, this.startingCount - 1);
+    if (job.state !== "queued") {
+      // The reserved job was cancelled while queued; release the reservation
+      // and advance the queue so later jobs are not starved.
+      this._pump();
+      return;
+    }
     this._start(job);
   }
 
@@ -130,8 +138,7 @@ class SolverJobManager {
     try {
       job.transition("running");
     } catch (error) {
-      this.runningCount -= 1;
-      this._settleFailure(job, error);
+      this._settleError(job, error);
       return;
     }
     const onProgress = (snapshot) => {
@@ -141,35 +148,41 @@ class SolverJobManager {
       }
     };
     let executor;
-    if (this.createExecutor) {
-      executor = this.createExecutor({
-        job,
-        task: job.task,
-        onProgress,
-        context: this.context,
-      });
-    } else if (this.allowInProcess) {
-      executor = executeInProcessExecutor({
-        job,
-        task: job.task,
-        onProgress,
-        context: this.context,
-      });
-    } else {
-      executor = createWorkerExecutor({
-        job,
-        task: job.task,
-        onProgress,
-        context: this.context,
-      });
+    try {
+      if (this.createExecutor) {
+        executor = this.createExecutor({
+          job,
+          task: job.task,
+          onProgress,
+          context: this.context,
+        });
+      } else if (this.allowInProcess) {
+        executor = executeInProcessExecutor({
+          job,
+          task: job.task,
+          onProgress,
+          context: this.context,
+        });
+      } else {
+        executor = createWorkerExecutor({
+          job,
+          task: job.task,
+          onProgress,
+          context: this.context,
+        });
+      }
+      job.executor = executor;
+      executor.execute().then(
+        (execution) => {
+          this._settle(job, execution);
+        },
+        (error) => this._settleError(job, error),
+      );
+    } catch (error) {
+      // Synchronous executor creation/start failures must become an
+      // INTERNAL_ERROR result envelope, not an uncaught setImmediate throw.
+      this._settleError(job, error);
     }
-    job.executor = executor;
-    executor.execute().then(
-      (execution) => {
-        this._settle(job, execution);
-      },
-      (error) => this._settleError(job, error),
-    );
   }
 
   _settle(job, execution) {
