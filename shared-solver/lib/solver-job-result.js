@@ -147,6 +147,7 @@ function buildSolverJobResult({
   objective,
   routeRecord,
   strictReplayVerified,
+  verificationStatus,
   diagnostics,
 }) {
   const started = startedAt ? Date.parse(startedAt) : null;
@@ -177,6 +178,7 @@ function buildSolverJobResult({
       ? {
           record: cloneJson(routeRecord),
           strictReplayVerified: Boolean(strictReplayVerified),
+          verificationStatus: verificationStatus || (strictReplayVerified ? "verified" : "not-requested"),
           fingerprint: routeFingerprint,
         }
       : null,

@@ -8,7 +8,7 @@ const { buildRegionMilestoneSpec, buildRegionProofClaim } = require("./region-sp
 const { runMilestoneGraph } = require("./segment-dp");
 const { buildRouteRecord } = require("./route-store");
 const { executeActionList } = require("./events");
-const { verifyRouteObjective } = require("./live-replay");
+const { verifyRouteObjective, replayRouteFile } = require("./live-replay");
 const { SolverProgressAccumulator } = require("./solver-progress");
 const { classifyJobFailure, buildSolverJobResult } = require("./solver-job-result");
 const { SOLVE_TASK_SCHEMA } = require("./solve-task");
@@ -159,7 +159,11 @@ function createProgressObserver(progress) {
       "candidateGenerated",
       "skylineInserted",
       "goalAccepted",
-      "actionTrimmed",
+      "goalCandidateImproved",
+      "actionSetGenerated",
+      "segmentStarted",
+      "attemptStarted",
+      "segmentCompleted",
       "budgetStopped",
     ],
     onEvent(event) {
@@ -168,32 +172,49 @@ function createProgressObserver(progress) {
   };
 }
 
-function objectiveValueFor(task, finalState) {
-  if (!task || !task.objective || !task.objective.explicit || !finalState) return null;
-  const evaluation = task.objective.evaluateState(finalState);
+function objectiveStateFromSnapshot(snapshot, decisionCount) {
+  const count = Math.max(0, Number(decisionCount) || 0);
   return {
-    fingerprint: task.objective.fingerprint,
-    value: evaluation.value,
-    comparisonTrace: evaluation.trace || [],
+    hero: (snapshot && snapshot.hero) || {},
+    inventory: (snapshot && snapshot.inventory) || {},
+    route: Array.from({ length: count }, () => null),
+    meta: { decisionDepth: count },
   };
 }
 
-function bestKnownFromState(task, state, kind, claim) {
+// The authoritative final objective value is the one buildRouteRecord computed
+// from the simulator-replayed final state, persisted as metadata.finalObjectiveValue.
+// Runtime snapshots cannot reconstruct route.length/decisionDepth for arbitrary
+// auto-step counts, so the job result must project the artifact metadata value.
+function objectiveValueFromRouteRecord(task, routeRecord) {
+  if (!task || !task.objective || !task.objective.explicit || !routeRecord || !routeRecord.metadata) return null;
+  return {
+    fingerprint: task.objective.fingerprint,
+    value: routeRecord.metadata.finalObjectiveValue,
+    comparisonTrace: routeRecord.metadata.objectiveComparisonTrace || [],
+  };
+}
+
+function stableObjectiveValue(value) {
+  return JSON.stringify(value == null ? null : (typeof value === "object" ? JSON.parse(JSON.stringify(value)) : value));
+}
+
+function bestKnownFromState(task, state, kind, claim, decisionCount, objectiveValueOverride) {
   if (!state) return null;
   const hero = (state.hero || {});
-  const evaluation = task && task.objective && task.objective.explicit
-    ? task.objective.evaluateState(state)
+  const evaluation = objectiveValueOverride == null && task && task.objective && task.objective.explicit
+    ? task.objective.evaluateState(objectiveStateFromSnapshot(state, decisionCount))
     : null;
-  const base = {
+  return {
     kind,
-    goalReached: Boolean(state),
+    goalReached: kind === "goal-candidate" || kind === "verified-route",
     verified: kind === "verified-route",
     floorId: state.floorId || null,
-    objectiveValue: evaluation ? evaluation.value : null,
+    objectiveValue: objectiveValueOverride != null ? objectiveValueOverride : (evaluation ? evaluation.value : null),
     objectiveFingerprint: task && task.objective && task.objective.explicit
       ? task.objective.fingerprint
       : null,
-    routeLength: Array.isArray(state.route) ? state.route.length : null,
+    routeLength: decisionCount == null ? null : decisionCount,
     hero: {
       hp: hero.hp == null ? null : hero.hp,
       atk: hero.atk == null ? null : hero.atk,
@@ -201,7 +222,13 @@ function bestKnownFromState(task, state, kind, claim) {
     },
     proofClaim: claim || "candidate-only",
   };
-  return base;
+}
+
+function makeStrictReplayFailure(error) {
+  const failure = new Error(`Strict runtime replay failed: ${error && error.message || String(error)}`);
+  failure.code = "STRICT_REPLAY_FAILED";
+  failure.cause = error;
+  return failure;
 }
 
 function buildDiagnosticsSummary(result, proofClaim) {
@@ -233,6 +260,7 @@ async function executeSolveJob(task, {
   const stopRequested = typeof shouldStop === "function"
     ? shouldStop
     : () => false;
+  const objective = task && task.objective ? task.objective : null;
   const progress = new SolverProgressAccumulator({
     jobId: jobId || "job-unknown",
     taskFingerprint: task && task.taskFingerprint || null,
@@ -241,6 +269,7 @@ async function executeSolveJob(task, {
     },
     maxExpansions: normalizedTask.search && normalizedTask.search.maxExpansions || 0,
     maxRuntimeMs: normalizedTask.search && normalizedTask.search.maxRuntimeMs || 0,
+    objective,
   });
   progress.setStatus("running");
   progress.setStartedAt(new Date().toISOString());
@@ -253,7 +282,6 @@ async function executeSolveJob(task, {
   }
   const regionSpec = normalizedTask.tower.region.spec;
   const rank = normalizedTask.tower.rank || regionSpec.rank || "chaos";
-  const objective = task && task.objective ? task.objective : null;
   const simulator = makeSimulator(project, regionSpec, task);
   const initialState = createStartState(project, simulator, regionSpec, rank);
 
@@ -291,6 +319,7 @@ async function executeSolveJob(task, {
 
   let routeRecord = null;
   let strictReplayVerified = false;
+  let verificationStatus = null;
   let objectiveValue = null;
   if (result.found && result.finalCandidate && result.finalCandidate.state) {
     progress.setBestKnown(bestKnownFromState(
@@ -298,6 +327,7 @@ async function executeSolveJob(task, {
       result.finalCandidate.state,
       "goal-candidate",
       claimedObjective,
+      getDecisionDepthSafe(result.finalCandidate.state),
     ));
     progress.setPhase("route-build");
     const finalState = result.finalCandidate.state;
@@ -330,25 +360,61 @@ async function executeSolveJob(task, {
         objectiveSpec: objective,
       },
     });
+    const decisionCount = (routeRecord && routeRecord.decisions || []).length;
     progress.setPhase("strict-replay");
     if (routeRecord && routeRecord.final && routeRecord.final.snapshot) {
-      const replayed = verifyRouteObjective(
-        routeRecord,
-        routeRecord.final.snapshot,
-        (routeRecord.decisions || []).length,
-      );
-      strictReplayVerified = replayed.matches === true;
-      if (!strictReplayVerified && normalizedTask.verification.strictReplay !== false) {
-        throw new Error("strict-replay-failed");
+      // The authoritative objective value is the one buildRouteRecord computed
+      // from the simulator-replayed final state and persisted in metadata.
+      objectiveValue = objectiveValueFromRouteRecord(task, routeRecord);
+      if (normalizedTask.verification.strictReplay !== false) {
+        // Real runtime strict replay: actually execute the route in the
+        // runtime and verify every step + final snapshot + objective.  The
+        // artifact's own metadata is not treated as verification.
+        try {
+          await replayRouteFile(routeRecord, {
+            projectRoot,
+            headless: "1",
+            keepOpen: false,
+            timeoutMs: 60000,
+            stepDelayMs: 0,
+            fastForwardDelayMs: 0,
+            runtimeAutoBattle: 1,
+          });
+          strictReplayVerified = true;
+          verificationStatus = "verified";
+        } catch (error) {
+          throw makeStrictReplayFailure(error);
+        }
+        // Result value, artifact metadata value, and the strict replay
+        // recomputed value must agree; otherwise the job cannot be completed.
+        const replayValue = verifyRouteObjective(
+          routeRecord,
+          routeRecord.final.snapshot,
+          decisionCount,
+        );
+        const metadataValue = routeRecord.metadata && routeRecord.metadata.finalObjectiveValue;
+        if (
+          replayValue.value == null ||
+          stableObjectiveValue(replayValue.value) !== stableObjectiveValue(objectiveValue.value) ||
+          stableObjectiveValue(metadataValue) !== stableObjectiveValue(objectiveValue.value)
+        ) {
+          throw makeStrictReplayFailure(new Error(
+            `objective value mismatch: result=${JSON.stringify(objectiveValue.value)} metadata=${JSON.stringify(metadataValue)} replay=${JSON.stringify(replayValue.value)}`,
+          ));
+        }
+      } else {
+        strictReplayVerified = false;
+        verificationStatus = "not-requested";
       }
       progress.setBestKnown(bestKnownFromState(
         task,
         routeRecord.final.snapshot,
         "verified-route",
         claimedObjective,
+        decisionCount,
+        objectiveValue && objectiveValue.value,
       ));
     }
-    objectiveValue = objectiveValueFor(task, routeRecord.final.snapshot || finalState);
   } else {
     routeRecord = null;
     const progressState = result && result.bestProgressState || (result && result.finalCandidates && result.finalCandidates[0] && result.finalCandidates[0].state);
@@ -358,6 +424,7 @@ async function executeSolveJob(task, {
         progressState,
         "progress-state",
         claimedObjective,
+        getDecisionDepthSafe(progressState),
       ));
     }
   }
@@ -369,9 +436,15 @@ async function executeSolveJob(task, {
     proofClaim,
     routeRecord,
     strictReplayVerified,
+    verificationStatus,
     objectiveValue,
     cancelled: false,
   };
+}
+
+function getDecisionDepthSafe(state) {
+  const depth = state && state.meta && state.meta.decisionDepth;
+  return Number.isFinite(Number(depth)) ? Number(depth) : null;
 }
 
 function executeInProcessExecutor({ job, task, onProgress, context }) {
@@ -393,12 +466,28 @@ function executeInProcessExecutor({ job, task, onProgress, context }) {
 
 function finalizeJob(job, execution) {
   if (job.cancelRequested || execution.cancelled) {
-    job.failure = {
+    const failure = {
       failureClass: "CANCELLED",
       message: "The job was cancelled by request.",
       retryable: false,
       details: {},
     };
+    job.failure = failure;
+    job.result = buildSolverJobResult({
+      jobId: job.id,
+      task: job.task,
+      status: "cancelled",
+      createdAt: job.createdAt,
+      startedAt: job.startedAt,
+      finishedAt: new Date().toISOString(),
+      found: false,
+      failure,
+      proofClaim: null,
+      objective: null,
+      routeRecord: null,
+      strictReplayVerified: false,
+      diagnostics: { cancelled: true },
+    });
     job.transition("cancelled");
     return;
   }
@@ -408,6 +497,21 @@ function finalizeJob(job, execution) {
   });
   if (failure) {
     job.failure = failure;
+    job.result = buildSolverJobResult({
+      jobId: job.id,
+      task: job.task,
+      status: "failed",
+      createdAt: job.createdAt,
+      startedAt: job.startedAt,
+      finishedAt: new Date().toISOString(),
+      found: false,
+      failure,
+      proofClaim: execution.proofClaim || null,
+      objective: null,
+      routeRecord: execution.routeRecord || null,
+      strictReplayVerified: false,
+      diagnostics: buildDiagnosticsSummary(execution.result, execution.proofClaim),
+    });
     job.transition("failed");
     return;
   }
