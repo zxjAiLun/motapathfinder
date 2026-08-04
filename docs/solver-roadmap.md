@@ -664,3 +664,31 @@ PR-5.3a/a1 已正式关闭；本轮固定“目标是什么、候选怎样比较
 - 新增 `check-objective-spec-contract.js`，覆盖 legacy comparator、三类目标排序、lexicographic、disabled 字段/weight 负控、DP key 不变、forced early stop 降级、route metadata 和 artifact fingerprint binding。
 
 本轮明确不做：objective-aware DP dominance、objective-aware action pruning、GUI、自动 analyzer、Solver Launcher 和新的搜索策略。
+
+### 2026-08-04 更新：PR-5.3b1/b2 Objective-Safe Archive & Proof Scope
+
+PR-5.3b 正式关闭。b1 修复终局候选被旧 HP-first goal archive 在排序前丢弃的问题；b2 修复 score direction 绕过兼容性校验和真实 `storeRoute:false` 搜索下 `bestGoalState` 的 route length 错误：
+
+- `searchDP` 增加纯终局钩子 `goalStateComparator`，只用于 goal archive 排序、`bestGoalNode`、goal archive audit 和 final goal result；不进入 `bestByKey`、`isBetterForSameDpKey()`、agenda、action ranking 或中间剪枝。`searchSegmentDP` 只在 objective 命中的最后一个 segment 传入 `(left, right) => -objective.compareCandidates(left, right)`。
+- 搜索结束后先为 active goal nodes 重建 route，再按 objective comparator 排序并从归档首位重新确定 `bestGoalNode`，保证 `bestGoalState`、`goalState`、`result.route` 一致指向目标最优状态。
+- Objective-Search 兼容性预检：`hero.<field>` 必须 `key` mode；`hero.hp` 只允许 max；`decisionDepth`/`route.length` 只允许 min；`inventory.*` 两个方向安全；score descriptor 的 `direction` 会翻转有效权重符号后校验（`OBJECTIVE_FIELD_NOT_SEARCH_PRESERVED` / `OBJECTIVE_CONFLICTS_WITH_DOMINANCE` / `OBJECTIVE_INVALID_DIRECTION` / `OBJECTIVE_NON_MONOTONE_WEIGHT`）。
+- `validateObjectiveSpec()` 走完整 compile 路径，直接调用公开 validator 的 SolveTask/Launcher 也能捕获兼容性错误。
+- Proof claim 记录 `goalArchiveObjectiveAware`、`goalArchiveTrimmed`、`milestoneFrontierTrimmed`、`searchPreserving`；截断时只能报告 `bounded-optimal-within-retained-frontier` 或 `candidate-only`。
+- `composeRouteRecords` 按组合后 final snapshot 与总决策数重算 objective metadata。
+- 新增 `check-objective-safe-archive.js`，覆盖 ≥9 goal states archive-cap 反例、production `storeRoute:false` 下的 `bestGoalState` 重定、score direction 负控与安全等价形式、proof claim 截断降级、composed route objective metadata 重算。
+
+### 2026-08-04 更新：PR-5.3c Solver Job & Progress Contract
+
+PR-5.3b 系列正式关闭，进入 Job/Progress 合同：
+
+- 新增 `shared-solver/lib/solve-task.js`：把 `RegionSpec + SolverModel + ObjectiveSpec + search` 固化为 `motapathfinder.solve-task.v1`，生成稳定 `taskFingerprint`（绑定 tower identity、normalized RegionSpec、model/objective fingerprint、search budget、action policy、schema version；排除 jobId、createdAt、绝对路径、UI label、输出路径）。外部输入中的 `compiled:true` 一律剥离重新编译，不能绕过 Objective-Search 兼容性。
+- 新增 `solver-job.js` + `solver-job-manager.js`：`queued/running/completed/failed/cancelled` 状态机（`JOB_INVALID_STATE_TRANSITION`），`JOB_PAUSE_UNSUPPORTED` 结构化拒绝，`submit/getJob/cancel/subscribe` API，`maxConcurrentJobs` 队列。
+- 新增 `solver-progress.js`：`motapathfinder.solver-progress.v1`，sequence 单调、无虚假 percent（只提供 budget 消耗比例），由 DP observer 事件聚合，bestKnown 区分 `progress-state` / `goal-candidate` / `verified-route`。
+- 新增 `solver-job-result.js`：`motapathfinder.solver-job-result.v1`，结果绑定 task/model/objective/tower/route fingerprint；失败分类（`EXPANSION_BUDGET_EXHAUSTED`、`ACTION_TRIMMED`、`POLICY_FILTERED`、`MILESTONE_OVERCONSTRAINED` 均为可重试、不等于无解；`CANCELLED`、`STRICT_REPLAY_FAILED`、`INTERNAL_ERROR` 等）。
+- 新增 `solver-worker-runner.js` + `solver-job-worker.js`：child process 执行，不阻塞主线程，cooperative `shouldStop` 取消。
+- 新增 `file-job-store.js`：`runs/jobs/<jobId>/` 原子落盘（tmp + fsync + rename）。
+- 新增 `run-solve-task.js` CLI：`--progress-format=ndjson`。
+- `searchDP` / `runMilestoneGraph` 增加 `shouldStop` 钩子：取消后 `stoppedReason = "cancel-requested"`、`failureClass = "cancelled"`，不报告为 no-route。
+- 新增 `check-solve-task-contract.js`、`check-solver-job-contract.js`、`check-solver-job-live.js`（真实 Chromium smoke）。
+
+本轮明确不做：Launcher GUI、真正的 pause/resume（frontier 不可序列化）、自动重试、分布式调度、数据库。

@@ -123,9 +123,9 @@ The full normalized model is owned by the simulator/job context; search states r
 }
 ```
 
-Version 1 supports `clear`, `max-final-hp`, `maximize`, `maximize-score`, and `lexicographic`. Objective fields such as `hero.hpmax` must be maintained by the SolverModel; disabled or snapshot-only fields are rejected before search. Weighted score terms are numeric and terminal-only. Objective ordering never changes DP keys, HP dominance, action legality, or intermediate state identity.
+Version 1 supports `clear`, `max-final-hp`, `maximize`, `maximize-score`, and `lexicographic`. Objective-Search compatibility is enforced at preflight: `hero.<field>` must be a `key`-mode field, `hero.hp` may only be maximized (or carry a non-negative score weight), `decisionDepth`/`route.length` may only be minimized, and score descriptors' `direction` flips the effective weight sign before validation. Rejections use `OBJECTIVE_FIELD_NOT_SEARCH_PRESERVED`, `OBJECTIVE_CONFLICTS_WITH_DOMINANCE`, `OBJECTIVE_INVALID_DIRECTION`, or `OBJECTIVE_NON_MONOTONE_WEIGHT`. Objective ordering never changes DP keys, HP dominance, action legality, or intermediate state identity.
 
-Route metadata persists `objectiveSpec`, `objectiveFingerprint`, `finalObjectiveValue`, and `objectiveComparisonTrace`. Strict replay recomputes the final value and rejects a mismatch. `clear` may report `goal-found`; optimization objectives report `bounded-optimal` only after a complete bounded search, otherwise `candidate-only`.
+Route metadata persists `objectiveSpec`, `objectiveFingerprint`, `finalObjectiveValue`, and `objectiveComparisonTrace`. Strict replay recomputes the final value and rejects a mismatch. `clear` may report `goal-found`; optimization objectives report `bounded-optimal` only after a complete bounded search with an untrimmed, objective-aware goal archive and milestone frontier, otherwise `bounded-optimal-within-retained-frontier` or `candidate-only`.
 
 ## Proof Claim
 
@@ -149,6 +149,29 @@ If `actionTrimmed > 0`, `time-limit`, expansion budget exhaustion, or non-final 
 - `ReplaySession`
 - `verifyRouteLive(routeRecordOrFile, options)`
 - `replayRouteRecordLive(routeRecord, options)`
+
+## SolveTask / SolverJob Contract
+
+`shared-solver/lib/solve-task.js`, `solver-job.js`, `solver-job-manager.js`, `solver-progress.js`, `solver-job-result.js`, and `solver-worker-runner.js` provide the backend contract for the Solver Launcher:
+
+```js
+const { compileSolveTask } = require("../shared-solver/lib/solve-task");
+const { SolverJobManager } = require("../shared-solver/lib/solver-job-manager");
+const { createWorkerExecutor } = require("../shared-solver/lib/solver-worker-runner");
+
+const task = compileSolveTask(rawTask, context);
+const manager = new SolverJobManager({ maxConcurrentJobs: 1, createExecutor: createWorkerExecutor });
+const job = manager.submit(task);
+manager.subscribe(job.id, (snapshot) => { /* solver-progress.v1 */ });
+manager.cancel(job.id);
+```
+
+- `compileSolveTask(rawTask)` normalizes `{ schema, tower, model, objective, search, verification }` into a stable `taskFingerprint` binding tower identity, normalized RegionSpec, SolverModel/ObjectiveSpec fingerprints, search budgets, and action policy. External `compiled:true` markers are always stripped and recompiled.
+- `SolverJob` states: `queued -> running -> {completed, failed, cancelled}`; `queued -> cancelled` is legal; illegal transitions throw `JOB_INVALID_STATE_TRANSITION`. `pause` throws `JOB_PAUSE_UNSUPPORTED` (no serializable frontier yet).
+- Progress uses `motapathfinder.solver-progress.v1` with a monotonic `sequence`, no fake completion percent (only budget-consumed ratios), and `bestKnown.kind` distinguishing `progress-state`, `goal-candidate`, and `verified-route`.
+- Results use `motapathfinder.solver-job-result.v1` and bind `taskFingerprint`, `solverModelFingerprint`, `objectiveFingerprint`, `towerFingerprint`, and the route artifact fingerprint. Failure classes treat budget exhaustion, action trimming, policy filtering, and milestone over-constraint as retryable incomplete-search conditions, never as a proven no-route.
+
+The Launcher should consume only this API; it must not read `diagnostics.dp` internals or reimplement candidate comparison.
 
 ## Agent Output Contract
 
