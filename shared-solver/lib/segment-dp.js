@@ -11,7 +11,7 @@ const {
   resourceTimingRoles,
 } = require("./resource-timing-model");
 const { formatActionLabel } = require("./enemy-labels");
-const { compareLegacyStates } = require("./objective-spec");
+const { compareLegacyStates, objectiveProjector } = require("./objective-spec");
 const { buildSolverSnapshot } = require("./route-snapshot");
 const {
   cloneState,
@@ -2570,6 +2570,9 @@ function searchSegmentDP(simulator, startState, segment, options) {
     // reach the DP key, same-key HP dominance, agenda, or intermediate pruning.
     goalStateComparator: config.objectiveSpec && config.objectiveSpec.explicit
       ? (left, right) => -config.objectiveSpec.compareCandidates(left, right)
+      : undefined,
+    objectiveProjector: config.objectiveSpec && config.objectiveSpec.explicit
+      ? objectiveProjector(config.objectiveSpec)
       : undefined,
     observerCaptureMode: dpConfig.observerCaptureMode || config.observerCaptureMode || "off",
     observerCaptureDominanceWitnesses: dpConfig.observerCaptureDominanceWitnesses === true || config.observerCaptureDominanceWitnesses === true,

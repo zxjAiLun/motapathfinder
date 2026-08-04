@@ -671,6 +671,28 @@ function objectiveMetadata(objective, evaluation) {
   };
 }
 
+// Builds the stable objective projection carried by the search's
+// goalCandidateImproved events.  The search confirms a candidate is better via
+// its objective comparator; the projection carries the fingerprint/value/trace
+// so progress consumers never re-derive improvement themselves.  route.length
+// cannot be evaluated exactly at goal-enqueue time (the full route is
+// reconstructed only at the end), so it is projected as inexact with a null
+// value and the accurate candidate is published after the archive rebuild.
+function objectiveProjector(objective) {
+  if (!objective || !objective.explicit) return null;
+  const specJson = JSON.stringify(objective.spec || {});
+  const hasRouteLength = specJson.includes("route.length");
+  return function projectObjectiveState(state) {
+    const evaluation = objective.evaluateState(state);
+    return {
+      objectiveFingerprint: objective.fingerprint,
+      objectiveValue: hasRouteLength ? null : evaluation.value,
+      objectiveComparisonTrace: hasRouteLength ? [] : evaluation.trace,
+      objectiveValueExact: !hasRouteLength,
+    };
+  };
+}
+
 module.exports = {
   OBJECTIVE_MODES,
   OBJECTIVE_SPEC_SCHEMA,
@@ -680,5 +702,6 @@ module.exports = {
   fingerprintSpec,
   normalizeObjectiveSpec,
   objectiveMetadata,
+  objectiveProjector,
   validateObjectiveSpec,
 };

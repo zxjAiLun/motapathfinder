@@ -1650,6 +1650,9 @@ function searchDP(simulator, initialState, options) {
       if (observer && improvedGoal) {
         observer.emit("goalCandidateImproved", () => observerStatePayload(simulator, state, node, config, {
           reasonCode: "goal-candidate-improved",
+          ...(typeof config.objectiveProjector === "function"
+            ? config.objectiveProjector(state)
+            : {}),
         }));
       }
       if (observer) {

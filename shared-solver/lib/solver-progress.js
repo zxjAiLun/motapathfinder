@@ -18,6 +18,7 @@ const PROGRESS_PHASES = [
 const BEST_KNOWN_KINDS = [
   "progress-state",
   "goal-candidate",
+  "route-artifact",
   "verified-route",
 ];
 
@@ -113,43 +114,28 @@ class SolverProgressAccumulator {
     this.publish(true);
   }
 
-  _objectiveStateFromDpEvent(event) {
-    const depth = Number((event && event.decisionDepth) || 0);
-    return {
-      hero: (event && event.hero) || {},
-      floorId: event && event.floorId,
-      route: Array.from({ length: depth }, () => null),
-      meta: { decisionDepth: depth },
-    };
-  }
-
   _bestKnownGoalCandidate(event) {
     if (!event) return;
-    const state = this._objectiveStateFromDpEvent(event);
-    const value = this.objective && this.objective.explicit
-      ? this.objective.evaluateState(state).value
-      : null;
-    const candidate = {
+    // The search already confirmed this candidate improves the current best
+    // using the objective comparator; the accumulator must not re-derive
+    // improvement with >= (wrong for min / lexicographic / non-scalar values).
+    // It projects the search's own objective fingerprint/value/trace/exactness.
+    const exact = event.objectiveValueExact === true;
+    this.bestKnown = {
       kind: "goal-candidate",
       goalReached: true,
       verified: false,
-      floorId: state.floorId || null,
-      objectiveValue: value,
-      objectiveFingerprint: this.objective && this.objective.explicit
-        ? this.objective.fingerprint
-        : null,
+      floorId: event.floorId || null,
+      objectiveValue: exact ? event.objectiveValue : null,
+      objectiveFingerprint: event.objectiveFingerprint || null,
+      objectiveComparisonTrace: exact && Array.isArray(event.objectiveComparisonTrace)
+        ? event.objectiveComparisonTrace
+        : [],
+      objectiveValueExact: exact,
       routeLength: depthOf(event),
       hero: summarizeDpHero((event && event.hero) || {}),
       proofClaim: "candidate-only",
     };
-    const previous = this.bestKnown;
-    if (previous && previous.kind === "goal-candidate") {
-      const improved = previous.objectiveValue == null ||
-        candidate.objectiveValue == null ||
-        candidate.objectiveValue >= previous.objectiveValue;
-      if (!improved) return;
-    }
-    this.bestKnown = candidate;
     this.publish(true);
   }
 
