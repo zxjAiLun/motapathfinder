@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Solver Launcher</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>Solver Launcher</h1>
+    <div id="health" class="muted">connecting…</div>
+  </header>
+
+  <main>
+    <section id="builder">
+      <h2>SolveTask Builder</h2>
+
+      <div class="grid">
+        <fieldset id="tower-field">
+          <legend>Tower / Region</legend>
+          <label>Tower <select id="tower-select"></select></label>
+          <label>Region <select id="region-select"></select></label>
+          <label>Rank <input id="rank-input" value="chaos"></label>
+          <div id="tower-meta" class="muted small"></div>
+        </fieldset>
+
+        <fieldset id="model-field">
+          <legend>SolverModel（手动配置权威）</legend>
+          <table id="model-table">
+            <thead><tr><th>字段</th><th>mode</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </fieldset>
+
+        <fieldset id="objective-field">
+          <legend>ObjectiveSpec</legend>
+          <label>Mode
+            <select id="objective-mode">
+              <option value="clear">Clear / legacy</option>
+              <option value="max-final-hp" selected>Max final HP</option>
+              <option value="maximize">Maximize field</option>
+              <option value="maximize-score">Weighted score</option>
+              <option value="lexicographic">Lexicographic</option>
+            </select>
+          </label>
+          <label id="objective-field-wrap" style="display:none">Field <input id="objective-field" placeholder="hero.atk"></label>
+          <div id="score-terms-wrap" style="display:none">
+            <label>Score terms（JSON）<textarea id="score-terms" rows="4">[{"path":"hero.hp","weight":1}]</textarea></label>
+          </div>
+          <div id="lex-items-wrap" style="display:none">
+            <label>Objectives（JSON 数组）<textarea id="lex-items" rows="4">["clear","max-final-hp"]</textarea></label>
+          </div>
+        </fieldset>
+
+        <fieldset id="search-field">
+          <legend>Search</legend>
+          <label>maxExpansions <input id="s-max-expansions" type="number" value="50000" min="1"></label>
+          <label>maxRuntimeMs <input id="s-max-runtime" type="number" value="0" min="0"></label>
+          <label>maxActionsPerState <input id="s-max-actions" type="number" value="256" min="1"></label>
+          <label>candidateLimit <input id="s-candidate-limit" type="number" value="8" min="1"></label>
+          <label>goalSkylineLimit <input id="s-goal-skyline" type="number" value="8" min="1"></label>
+          <label>dpSkylineMax <input id="s-dp-skyline" type="number" value="1" min="1"></label>
+          <label><input id="s-stop-first" type="checkbox"> stopOnFirstGoal</label>
+        </fieldset>
+
+        <fieldset id="verification-field">
+          <legend>Verification</legend>
+          <label><input id="strict-replay" type="checkbox" checked> strictReplay（真实 runtime replay）</label>
+          <p class="muted small">关闭时生成 route artifact，但不会标记为 runtime verified。</p>
+        </fieldset>
+      </div>
+
+      <div class="actions">
+        <button id="validate-btn">Validate / Preflight</button>
+        <button id="submit-btn" class="primary">Submit Job</button>
+      </div>
+
+      <fieldset id="preview-field">
+        <legend>Normalized Preview</legend>
+        <div id="preflight-result" class="small">
+          <div class="muted">点击 Validate 查看 normalized task、fingerprint 与 preflight 结果。</div>
+        </div>
+        <pre id="normalized-task" class="scroll"></pre>
+      </fieldset>
+    </section>
+
+    <section id="jobs">
+      <h2>Jobs</h2>
+      <div class="filters">
+        <button data-filter="all" class="filter-btn active">All</button>
+        <button data-filter="active" class="filter-btn">Active</button>
+        <button data-filter="completed" class="filter-btn">Completed</button>
+        <button data-filter="failed" class="filter-btn">Failed</button>
+        <button data-filter="cancelled" class="filter-btn">Cancelled</button>
+      </div>
+      <table id="job-table">
+        <thead>
+          <tr>
+            <th>jobId</th><th>state</th><th>phase</th><th>created</th>
+            <th>objective</th><th>strictReplay</th><th>bestKnown</th><th>actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div id="job-detail"></div>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
