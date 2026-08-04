@@ -71,6 +71,7 @@ function main() {
   const manager = new SolverJobManager({
     maxConcurrentJobs: 1,
     createExecutor: useWorker ? createWorkerExecutor : null,
+    allowInProcess: !useWorker,
     jobStore,
   });
   const job = manager.submit(task);

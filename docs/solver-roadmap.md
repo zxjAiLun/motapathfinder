@@ -692,3 +692,15 @@ PR-5.3b 系列正式关闭，进入 Job/Progress 合同：
 - 新增 `check-solve-task-contract.js`、`check-solver-job-contract.js`、`check-solver-job-live.js`（真实 Chromium smoke）。
 
 本轮明确不做：Launcher GUI、真正的 pause/resume（frontier 不可序列化）、自动重试、分布式调度、数据库。
+
+### 2026-08-04 更新：PR-5.3c1 Job Runtime Semantics & Verification Boundary
+
+PR-5.3c 正式关闭，c1 修复 job 运行时语义与验证边界：
+
+- SolveTask 生成唯一 `effectiveSearch`：预算优先级 `task.search` > `regionSpec.search` 顶层 > `regionSpec.search.dpBudget` > `regionSpec.dpBudget` > defaults；`maxExpansions >= 1`（拒绝 0，因为 `searchDP` 会把 0 执行成 1000）；有效 rank 与真实项目 fingerprint 进入 task fingerprint（提供的 projectFingerprint 与项目内容不匹配则 `INVALID_TASK`）。
+- Manager `_pump` 同步预留 starting slot，`maxConcurrentJobs` 在同步提交多个 job 时仍生效；默认使用 child-process worker executor（`allowInProcess` 显式 opt-in）。
+- 取消改用 cancel-token 文件：worker 的 `shouldStop()` 同步 `fs.existsSync` 检测，CPU 密集搜索阻塞事件循环时也能中止；超 grace period 强制 `child.kill()`；取消后只 settle 一次。
+- Job 在 `strictReplay:true` 时内部真实执行 runtime replay（`replayRouteFile`），失败映射 `STRICT_REPLAY_FAILED`；`strictReplay:false` 输出 `verificationStatus: "not-requested"`。
+- Job result objective 采用 route artifact metadata 的权威值（buildRouteRecord 从模拟器重放计算），保证 route.length/decisionDepth 目标正确；result value、metadata value、strict replay 重算值三方一致才能 completed。
+- Progress 增加 `segmentStarted` / `attemptStarted` / `segmentCompleted` / `goalCandidateImproved` 生命周期事件，`actionSetGenerated.trimmedCount` 计入 trimming，`progress-state.goalReached=false`，搜索期间实时发布 goal-candidate bestKnown，completed/failed/cancelled terminal progress 由 manager 发布。
+- 失败/取消任务也生成统一的 `solver-job-result.v1` envelope。

@@ -27,6 +27,7 @@ const { compileObjectiveSpec } = require("./lib/objective-spec");
 
 const ROOT = path.resolve(__dirname, "..");
 const SMOKE_SPEC_FILE = path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json");
+const REGION1_SPEC_FILE = path.join(ROOT, "towers", "onlyup", "region-specs", "region-1.json");
 const ONLY_UP_ROOT = path.join(ROOT, "Only upV2.1", "Only upV2.1");
 
 function baseRegionSpec() {
@@ -220,29 +221,34 @@ async function checkMicroJobLifecycle() {
     tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
     objective: { mode: "max-final-hp" },
     search: { algorithm: "segment-dp", maxExpansions: 1000, maxRuntimeMs: 10000, candidateLimit: 2 },
+    verification: { strictReplay: false },
   });
-  const manager = new SolverJobManager({ maxConcurrentJobs: 1 });
+  const manager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
   const job = manager.submit(task);
   const phases = [];
   let lastSequence = 0;
   let mono = true;
+  let terminalSeen = false;
   manager.subscribe(job.id, (snapshot) => {
     phases.push(snapshot.phase);
     if (snapshot.sequence <= lastSequence) mono = false;
     lastSequence = snapshot.sequence;
     if (snapshot.percent !== undefined) mono = false;
+    if (snapshot.phase === "completed") terminalSeen = true;
   });
   const settled = await waitForJob(manager, job.id, 120000);
   assert.strictEqual(settled.state, "completed", "micro job must complete");
   assert.strictEqual(mono, true, "progress sequence must be monotonic without a fake percent");
+  assert.strictEqual(terminalSeen, true, "a completed terminal progress snapshot must be published");
   ["preflight", "segment-search", "route-build", "strict-replay"].forEach((phase) => {
     assert.ok(phases.includes(phase), `progress must pass through ${phase}`);
   });
   assert.strictEqual(settled.result.found, true);
-  assert.strictEqual(settled.result.route.strictReplayVerified, true);
+  assert.strictEqual(settled.result.route.strictReplayVerified, false, "strictReplay=false must not claim verification");
+  assert.strictEqual(settled.result.route.verificationStatus, "not-requested");
   assert.strictEqual(settled.result.identity.taskFingerprint, task.taskFingerprint);
   const expectedValue = settled.result.route.record.metadata.finalObjectiveValue;
-  assert.strictEqual(settled.result.objective.value, expectedValue, "bestKnown/objective value must agree with the ObjectiveSpec evaluation");
+  assert.strictEqual(settled.result.objective.value, expectedValue, "objective value must agree with the ObjectiveSpec evaluation");
 }
 
 async function checkCancelQueued() {
@@ -255,20 +261,26 @@ async function checkCancelQueued() {
 }
 
 async function checkWorkerCancel() {
-  // A worker job with a large budget is cancelled mid-run; the settled state
-  // must be cancelled and never completed.
-  const spec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
+  // A genuinely long worker job (region-1 with a huge budget) is cancelled; the
+  // settled state must be cancelled, never completed, and the search must be
+  // aborted (expansions far below the budget).
+  const spec = JSON.parse(fs.readFileSync(REGION1_SPEC_FILE, "utf8"));
   const task = compileSolveTask({
     schema: SOLVE_TASK_SCHEMA,
-    tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
-    objective: { mode: "max-final-hp" },
-    search: { algorithm: "segment-dp", maxExpansions: 100000000, maxRuntimeMs: 0, candidateLimit: 2 },
+    tower: { id: "onlyup-region1", projectRoot: ONLY_UP_ROOT, region: { spec } },
+    search: { algorithm: "segment-dp", maxExpansions: 100000000, maxRuntimeMs: 0, candidateLimit: 8 },
+    verification: { strictReplay: false },
   });
   const manager = new SolverJobManager({
     maxConcurrentJobs: 1,
     createExecutor: createWorkerExecutor,
   });
   const job = manager.submit(task);
+  let lastExpansions = 0;
+  manager.subscribe(job.id, (snapshot) => {
+    lastExpansions = Math.max(lastExpansions, snapshot.search.expansions || 0);
+  });
+  const startedAt = Date.now();
   setTimeout(() => {
     try {
       manager.cancel(job.id);
@@ -278,7 +290,196 @@ async function checkWorkerCancel() {
   }, 300);
   const settled = await waitForJob(manager, job.id, 120000);
   assert.strictEqual(settled.state, "cancelled", "cancel must settle to cancelled");
+  assert.ok(Date.now() - startedAt < 30000, "a cancelled worker job must stop within a bounded time");
+  assert.ok(
+    lastExpansions < 1000000,
+    `cancelled search must be aborted, not naturally finished: expansions=${lastExpansions}`,
+  );
   assert.ok(settled.result === null || settled.result.status !== "completed", "a cancelled job must never output completed");
+  assert.strictEqual(settled.failure.failureClass, "CANCELLED");
+}
+
+async function checkConcurrencyBarrier() {
+  // maxConcurrentJobs=1 must never run two executors at the same time, even
+  // when jobs are submitted synchronously in the same tick.
+  const task = compileSolveTask(baseTask({ verification: { strictReplay: false } }));
+  const started = [];
+  let releaseFirst;
+  let releaseSecond;
+  const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+  const secondGate = new Promise((resolve) => { releaseSecond = resolve; });
+  const mockExecution = { cancelled: false, result: { found: true }, proofClaim: null, objectiveValue: null, routeRecord: null, strictReplayVerified: false };
+  const manager = new SolverJobManager({
+    maxConcurrentJobs: 1,
+    allowInProcess: true,
+    createExecutor: ({ job }) => {
+      started.push(job.id);
+      if (started.length === 1) {
+        return {
+          execute: () => firstGate.then(() => mockExecution),
+          cancel() {}, dispose() {},
+        };
+      }
+      if (started.length === 2) {
+        return {
+          execute: () => secondGate.then(() => mockExecution),
+          cancel() {}, dispose() {},
+        };
+      }
+      return {
+        execute: () => Promise.resolve(mockExecution),
+        cancel() {}, dispose() {},
+      };
+    },
+  });
+  const jobA = manager.submit(task);
+  const jobB = manager.submit(task);
+  const jobC = manager.submit(task);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.strictEqual(started.length, 1, "only one executor may start with maxConcurrentJobs=1");
+  assert.strictEqual(manager.getJob(jobA.id).state, "running");
+  assert.strictEqual(manager.getJob(jobB.id).state, "queued");
+  assert.strictEqual(manager.getJob(jobC.id).state, "queued");
+  releaseFirst();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.strictEqual(started.length, 2, "after releasing the first job, exactly one more executor starts");
+  assert.strictEqual(manager.getJob(jobB.id).state, "running");
+  assert.strictEqual(manager.getJob(jobC.id).state, "queued", "the third job must wait for the second slot");
+  releaseSecond();
+  await waitForJob(manager, jobA.id, 5000);
+  await waitForJob(manager, jobB.id, 5000);
+  await waitForJob(manager, jobC.id, 5000);
+}
+
+function checkDefaultManagerUsesWorker() {
+  const workerManager = new SolverJobManager({ maxConcurrentJobs: 1 });
+  assert.strictEqual(workerManager.executorKind, "worker", "the default manager must use a worker executor");
+  const inProcess = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
+  assert.strictEqual(inProcess.executorKind, "in-process", "allowInProcess=true opts into same-process execution");
+}
+
+function checkProgressLifecycleEvents() {
+  const objective = compileObjectiveSpec({ mode: "max-final-hp" }, null);
+  const published = [];
+  const accumulator = new SolverProgressAccumulator({
+    jobId: "job-lifecycle",
+    taskFingerprint: "fp-lifecycle",
+    onPublish: (snapshot) => published.push(snapshot),
+    throttleMs: 0,
+    expansionEvery: 1000,
+    objective,
+  });
+  accumulator.setStatus("running");
+  accumulator.setPhase("preflight");
+  // segment lifecycle events
+  accumulator.handleDpEvent({ eventType: "segmentStarted", segmentId: "seg-2", segmentIndex: 1, segmentTotal: 4 });
+  let snapshot = published[published.length - 1];
+  assert.strictEqual(snapshot.phase, "segment-search");
+  assert.strictEqual(snapshot.segment.index, 1);
+  assert.strictEqual(snapshot.segment.total, 4);
+  assert.strictEqual(snapshot.segment.attempt, 0);
+  accumulator.handleDpEvent({ eventType: "attemptStarted", segmentId: "seg-2", segmentIndex: 1, segmentTotal: 4, attempt: 2 });
+  snapshot = published[published.length - 1];
+  assert.strictEqual(snapshot.segment.attempt, 2, "attempt index must advance within a segment");
+  // realtime goal candidate improvement is published before search ends
+  accumulator.handleDpEvent({
+    eventType: "goalCandidateImproved",
+    floorId: "MT3",
+    hero: { hp: 150, atk: 5, def: 1 },
+    decisionDepth: 6,
+  });
+  snapshot = published[published.length - 1];
+  assert.strictEqual(snapshot.bestKnown.kind, "goal-candidate");
+  assert.strictEqual(snapshot.bestKnown.goalReached, true);
+  assert.strictEqual(snapshot.bestKnown.floorId, "MT3");
+  assert.strictEqual(snapshot.bestKnown.routeLength, 6);
+  accumulator.handleDpEvent({ eventType: "segmentCompleted", segmentId: "seg-2", segmentIndex: 1, segmentTotal: 4 });
+  snapshot = published[published.length - 1];
+  assert.strictEqual(snapshot.segment, null, "segment must clear after segmentCompleted");
+  // action trimming is counted from actionSetGenerated.trimmedCount
+  accumulator.handleDpEvent({ eventType: "actionSetGenerated", trimmedCount: 7 });
+  accumulator.flush();
+  snapshot = published[published.length - 1];
+  assert.strictEqual(snapshot.search.actionTrimmed, 7, "action trimming must be reflected in progress");
+  // progress-state bestKnown must NOT claim goalReached
+  accumulator.setBestKnown({
+    kind: "progress-state",
+    goalReached: false,
+    floorId: "MT2",
+    objectiveValue: 90,
+    routeLength: 3,
+  });
+  snapshot = published[published.length - 1];
+  assert.strictEqual(snapshot.bestKnown.goalReached, false, "progress-state must not look like a reached goal");
+}
+
+async function checkFailedJobResultEnvelope() {
+  // A job whose search is over-constrained fails with a unified result envelope.
+  const spec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
+  const task = compileSolveTask({
+    schema: SOLVE_TASK_SCHEMA,
+    tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
+    objective: { mode: "max-final-hp" },
+    search: { algorithm: "segment-dp", maxExpansions: 1, maxRuntimeMs: 0, candidateLimit: 2 },
+    verification: { strictReplay: false },
+  });
+  const manager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
+  const job = manager.submit(task);
+  const settled = await waitForJob(manager, job.id, 120000);
+  assert.ok(["failed", "completed"].includes(settled.state), `expected failed (or completed) but got ${settled.state}`);
+  if (settled.state === "failed") {
+    assert.strictEqual(settled.result.status, "failed", "failed jobs must carry the unified result envelope");
+    assert.strictEqual(settled.result.found, false);
+    assert.ok(settled.result.failure, "failed result must carry the failure classification");
+    assert.strictEqual(settled.result.identity.taskFingerprint, task.taskFingerprint, "failed result identity must stay bound to the task");
+    assert.ok(["EXPANSION_BUDGET_EXHAUSTED", "GOAL_NOT_REACHED"].includes(settled.result.failure.failureClass));
+  }
+}
+
+async function checkRouteLengthObjectiveResult() {
+  // route.length objective values must be consistent between the job result,
+  // the route artifact metadata, and the strict replay recomputation.
+  const spec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
+  const task = compileSolveTask({
+    schema: SOLVE_TASK_SCHEMA,
+    tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
+    objective: { mode: "maximize-score", terms: [{ path: "route.length", weight: -1 }] },
+    search: { algorithm: "segment-dp", maxExpansions: 1000, maxRuntimeMs: 10000, candidateLimit: 2 },
+    verification: { strictReplay: false },
+  });
+  const manager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
+  const job = manager.submit(task);
+  const settled = await waitForJob(manager, job.id, 120000);
+  assert.strictEqual(settled.state, "completed", "route-length objective job must complete");
+  const metadataValue = settled.result.route.record.metadata.finalObjectiveValue;
+  assert.strictEqual(
+    settled.result.objective.value,
+    metadataValue,
+    "job result objective value must equal the route artifact metadata value",
+  );
+  assert.ok(
+    Number(settled.result.objective.value) < 0,
+    "route-length minimization must yield a negative objective value",
+  );
+}
+
+async function checkStrictReplayFailureMapping() {
+  // A tampered route must map to STRICT_REPLAY_FAILED, not INTERNAL_ERROR.
+  const task = compileSolveTask(baseTask({ verification: { strictReplay: false } }));
+  const manager = new SolverJobManager({
+    maxConcurrentJobs: 1,
+    allowInProcess: true,
+    createExecutor: () => ({
+      execute: () => Promise.reject(Object.assign(new Error("tampered route"), { code: "STRICT_REPLAY_FAILED" })),
+      cancel() {}, dispose() {},
+    }),
+  });
+  const job = manager.submit(task);
+  const settled = await waitForJob(manager, job.id, 5000);
+  assert.strictEqual(settled.state, "failed");
+  assert.strictEqual(settled.failure.failureClass, "STRICT_REPLAY_FAILED");
+  assert.strictEqual(settled.result.status, "failed");
+  assert.strictEqual(settled.result.found, false);
 }
 
 async function main() {
@@ -286,11 +487,17 @@ async function main() {
   checkProgressContract();
   checkFailureClassification();
   checkResultIdentityBinding();
+  checkDefaultManagerUsesWorker();
+  checkProgressLifecycleEvents();
   await checkMicroJobLifecycle();
   await checkCancelQueued();
   await checkWorkerCancel();
+  await checkConcurrencyBarrier();
+  await checkFailedJobResultEnvelope();
+  await checkRouteLengthObjectiveResult();
+  await checkStrictReplayFailureMapping();
   process.stdout.write(JSON.stringify({
-    schema: "motapathfinder.pr-5.3c-solver-job-contract.v1",
+    schema: "motapathfinder.pr-5.3c1-solver-job-contract.v1",
     status: "passed",
     controls: {
       stateMachineTransitions: true,
@@ -300,10 +507,20 @@ async function main() {
       budgetExhaustedRetryable: true,
       actionTrimmedRetryable: true,
       cancelIsCancelledNotCompleted: true,
-      workerCancelSettlesCancelled: true,
+      workerCancelStopsInBoundedTime: true,
+      cancelledSearchAbortedNotNaturalFinish: true,
+      defaultManagerUsesWorker: true,
+      maxConcurrentSlotsHonored: true,
+      progressStateGoalReachedFalse: true,
+      realtimeGoalCandidatePublished: true,
+      segmentIndexTotalAttemptAdvance: true,
+      actionTrimmingReflectedInProgress: true,
+      terminalCompletedProgressPublished: true,
+      failedResultEnvelopeUnified: true,
+      routeLengthObjectiveValueConsistent: true,
+      strictReplayFailedMappedCorrectly: true,
       resultIdentityBoundToTask: true,
       microJobQueuedToCompleted: true,
-      phasesIncludePreflightSegmentStrictReplay: true,
     },
   }, null, 2) + "\n");
 }

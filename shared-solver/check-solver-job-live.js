@@ -47,20 +47,28 @@ async function main() {
     tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
     objective: { mode: "max-final-hp" },
     search: { algorithm: "segment-dp", maxExpansions: 1000, maxRuntimeMs: 10000, candidateLimit: 2 },
+    verification: { strictReplay: true },
   });
-  const manager = new SolverJobManager({ maxConcurrentJobs: 1 });
+  const manager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
   const job = manager.submit(task);
   const phases = [];
   manager.subscribe(job.id, (snapshot) => phases.push(snapshot.phase));
-  const settled = await waitForJob(manager, job.id, 120000);
+  const settled = await waitForJob(manager, job.id, 180000);
   assert.strictEqual(settled.state, "completed", "live job must complete");
   ["preflight", "segment-search", "strict-replay", "finalizing"].forEach((phase) => {
     assert.ok(phases.includes(phase), `live progress must pass through ${phase}`);
   });
-  assert.ok(phases.includes("completed") || phases.includes("finalizing"));
   assert.strictEqual(settled.result.found, true);
+  assert.strictEqual(
+    settled.result.route.strictReplayVerified,
+    true,
+    "the job itself must perform the real strict runtime replay and verify it",
+  );
+  assert.strictEqual(settled.result.route.verificationStatus, "verified");
   const routeRecord = settled.result.route.record;
   assert.ok(routeRecord, "completed job must carry a route artifact");
+  // The job already ran the real Chromium replay internally; re-run it here as
+  // an independent confirmation of the strict-replay authority.
   await replayRouteFile(routeRecord, {
     projectRoot: ONLY_UP_ROOT,
     headless: "1",
@@ -73,12 +81,13 @@ async function main() {
   const objective = verifyRouteObjective(routeRecord, routeRecord.final.snapshot, routeRecord.decisions.length);
   assert.strictEqual(objective.matches, true);
   process.stdout.write(JSON.stringify({
-    schema: "motapathfinder.pr-5.3c-solver-job-live.v1",
+    schema: "motapathfinder.pr-5.3c1-solver-job-live.v1",
     status: "passed",
     taskFingerprint: task.taskFingerprint,
     jobId: job.id,
     phases: [...new Set(phases)],
     routeDecisionCount: routeRecord.decisions.length,
+    strictReplayVerifiedInsideJob: true,
     strictReplayRecomputed: true,
     objectiveFingerprint: objective.fingerprint,
   }, null, 2) + "\n");
