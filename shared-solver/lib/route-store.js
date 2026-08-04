@@ -7,7 +7,8 @@ const childProcess = require("child_process");
 const { createInitialState, ensureFloorState, getDecisionDepth } = require("./state");
 const { buildDominanceKey, buildStateKey } = require("./state-key");
 const { isDecisionStep } = require("./updown-candidate-policy");
-const { buildSolverSnapshot } = require("./route-snapshot");
+const { buildSolverSnapshot, diffSnapshotSubset } = require("./route-snapshot");
+const { getSolverSnapshotHeroFields, normalizeSolverModel } = require("./solver-model");
 
 const ROUTE_SCHEMA = "motapathfinder.route.v1";
 
@@ -251,7 +252,10 @@ function createStateFromSnapshot(project, snapshot, options) {
     throw new Error("Cannot restore state from missing route snapshot.");
   }
   const config = options || {};
-  const state = createInitialState(project, { rank: config.rank || null });
+  const state = createInitialState(project, {
+    rank: config.rank || null,
+    solverModel: config.solverModel || null,
+  });
   state.floorId = snapshot.floorId;
   state.hero = cloneJson(snapshot.hero) || {};
   state.inventory = cloneJson(snapshot.inventory) || {};
@@ -272,6 +276,10 @@ function createStateFromSnapshot(project, snapshot, options) {
     autoPickupCount: Number(config.autoPickupCount || 0),
     autoBattleCount: Number(config.autoBattleCount || 0),
   };
+  if (config.solverModel) {
+    const solverModel = normalizeSolverModel(config.solverModel);
+    if (solverModel.explicit) state.meta.modelFingerprint = solverModel.fingerprint;
+  }
   applySnapshotFloorMutations(project, state, snapshot.floors || {});
   return state;
 }
@@ -491,12 +499,17 @@ function compareTuples(left, right) {
   return 0;
 }
 
-function snapshotMatches(project, state, expectedSnapshot) {
-  if (!project || !state || !expectedSnapshot || expectedSnapshot.partial) return false;
+function snapshotMatches(project, state, expectedSnapshot, simulator) {
+  if (!project || !state || !expectedSnapshot) return false;
   try {
     const floorIds = Object.keys(expectedSnapshot.floors || {});
-    const actual = buildSolverSnapshot(project, state, { floorIds });
-    return JSON.stringify(actual) === JSON.stringify(expectedSnapshot);
+    const actual = buildSolverSnapshot(project, state, {
+      floorIds,
+      solverModel: simulator && simulator.solverModel,
+    });
+    return expectedSnapshot.partial
+      ? diffSnapshotSubset(expectedSnapshot, actual) == null
+      : JSON.stringify(actual) === JSON.stringify(expectedSnapshot);
   } catch (error) {
     return false;
   }
@@ -582,7 +595,12 @@ function resolveRecordedAction(simulator, state, decision, options) {
         return false;
       }
     })();
-    const postSnapshotMatches = snapshotMatches(config.project || simulator.project, postState, expectedPostSnapshot);
+    const postSnapshotMatches = snapshotMatches(
+      config.project || simulator.project,
+      postState,
+      expectedPostSnapshot,
+      simulator,
+    );
     const fingerprintMatches = Boolean(expectedFingerprint) && normalized.fingerprint === expectedFingerprint;
     const pathMatches = Array.isArray(expected.path) && expected.path.length > 0 && samePath(normalized.path, expected.path);
     const structuralFields = [];
@@ -907,7 +925,10 @@ function pushDecision(context, action) {
 function pushStructuredDecision(context, entry) {
   const { project, decisions, snapshotOptions } = context;
   const preState = entry.preState || context.currentState || (entry.preSnapshot
-    ? createStateFromSnapshot(project, entry.preSnapshot, { rank: context.rank || null })
+      ? createStateFromSnapshot(project, entry.preSnapshot, {
+          rank: context.rank || null,
+          solverModel: context.solverModel,
+        })
     : null);
   const normalized = normalizeAction(entry.actionEntry);
   if (!hasStructuredActionFields(normalized)) {
@@ -918,7 +939,10 @@ function pushStructuredDecision(context, entry) {
   const postSnapshot = entry.postSnapshot || (postState ? buildSolverSnapshot(project, postState, snapshotOptions) : null);
   if (!postState) {
     if (postSnapshot) {
-      postState = createStateFromSnapshot(project, postSnapshot, { rank: context.rank || null });
+      postState = createStateFromSnapshot(project, postSnapshot, {
+        rank: context.rank || null,
+        solverModel: context.solverModel,
+      });
       decisions.push({
         index: decisions.length + 1,
         ...normalized,
@@ -1042,16 +1066,31 @@ function buildRouteRecord(input) {
   const initialState = input.initialState || simulator.createInitialState({ rank: options.rank || "chaos" });
   const structuredSource = input.nodes || input.actionEntries || finalState.routeTrace || [];
   const snapshotFloors = inferStructuredSnapshotFloors(structuredSource) || resolveSnapshotFloors(project, initialState, finalState, options);
-  const snapshotOptions = { floorIds: snapshotFloors };
+  const solverModel = simulator && simulator.solverModel ? simulator.solverModel : null;
+  const snapshotOptions = {
+    floorIds: snapshotFloors,
+    solverModel,
+  };
   const startSnapshotOptions = {
     floorIds: resolveStartSnapshotFloors(project, initialState, options),
+    solverModel,
   };
+  const solverSnapshotHeroFields = getSolverSnapshotHeroFields(solverModel);
+  // Keep the caller-owned metadata reference: run-region-dp fills the
+  // primitive count and final summary after route construction.
+  const routeMetadata = options.metadata == null ? null : options.metadata;
+  if (solverModel && solverModel.explicit) {
+    const metadata = routeMetadata || {};
+    metadata.solverModelFingerprint = solverModel.fingerprint;
+    metadata.solverSnapshotHeroFields = solverSnapshotHeroFields || [];
+  }
   const decisions = [];
   const context = {
     project,
     simulator,
     decisions,
     snapshotOptions,
+    solverModel,
     currentState: initialState,
     rank: options.rank || "chaos",
   };
@@ -1119,7 +1158,7 @@ function buildRouteRecord(input) {
       type: options.goalType || "floor",
       floorId: options.toFloor || finalState.floorId,
     },
-    metadata: options.metadata || null,
+    metadata: routeMetadata,
     stats: {
       expanded: options.expanded == null ? null : Number(options.expanded),
       generated: options.generated == null ? null : Number(options.generated),

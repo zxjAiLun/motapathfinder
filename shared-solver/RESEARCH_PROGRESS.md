@@ -1435,9 +1435,16 @@ npm run check:static --prefix shared-solver
 
 本轮将“塔的原始 runtime 状态”和“求解器维护的 compact state/key”正式分层，但只接受手动声明，不把自动检测设为启动门：
 
-- `shared-solver/lib/solver-model.js` 定义字段模式、机制开关、规范化和 fingerprint；手动模型优先，未配置塔回退到 conservative legacy model。
-- `createInitialState()`、`StaticSimulator.stabilizeState()` 和 `buildDpStateKey()` 使用同一个显式模型。Only Up RegionSpec 关闭 `hpmax`、`mana`、`manamax`、`money`、`followers` 及 keys/doors/point allocation，保留 HP dominance、战斗/成长/装备 key。
-- runtime snapshot、h5save 和 `live-replay.js` 未改变；模型 projection 只作用于 solver state。区域 route audit 的重放路径同步传入 RegionSpec model。
+- `shared-solver/lib/solver-model.js` 定义字段模式、规范化和 fingerprint；手动模型优先，未配置塔回退到 conservative legacy model。v1 只接受已执行的字段语义，未执行 mechanics 不再属于公开模型。
+- `createInitialState()`、`StaticSimulator.stabilizeState()` 和 `buildDpStateKey()` 使用同一个显式模型。Only Up RegionSpec 关闭 `hpmax`、`mana`、`manamax`、`money`、`followers`，保留 HP dominance、战斗/成长/装备 key；mechanics 开关不进入 authoritative v1。
+- solver state 的完整模型由 simulator/job 持有，节点只保留 model fingerprint；模型 projection 只作用于 solver state。区域 route audit 的重放路径同步传入 RegionSpec model。
 - `check-solver-model-contract.js` 验证 legacy 字段保留、compact hero、DP key 排除 disabled 字段、fingerprint、污染后重新投影和非法配置负控。
 
 本轮明确不做：自动 analyzer、objective-aware GUI、launcher GUI、自动建议覆盖手动配置，以及与模型投影无关的 solver/search 语义改造。
+
+### 2026-08-04 更新：PR-5.3a1 Model Ownership & Runtime Snapshot Boundary
+
+- `cloneState()` 不再对每个节点执行第二次完整 SolverModel projection；旧格式节点只做一次兼容迁移，新的 state meta 只含 `modelFingerprint`。`buildDpStateKey()` 的 model 来源顺序为显式 options、simulator-owned model、legacy fallback。
+- explicit route 的 solver snapshot 只输出 active hero fields，并带 `partial: true`；route metadata 记录 `solverModelFingerprint` 与 `solverSnapshotHeroFields`。runtime capture/h5save 继续保留完整 raw 数据，live replay 对 solver subset 做 comparison，不把 disabled 字段写回 runtime。
+- v1 拒绝 `objective`、非 HP `dominance` 和 mechanics 开关；这些语义在真正有 comparator/action execution 前不伪装成已支持能力。
+- `check-solver-model-runtime-boundary-live.js` 使用真实 Only Up 短路线和 Chromium，确认 boundary/final replay 通过，`hpmax=9999`、`manamax=-1` 等 runtime 原值在 restore 与 suffix 后保留。

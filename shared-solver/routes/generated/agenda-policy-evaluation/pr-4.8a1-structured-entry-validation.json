@@ -1,14 +1,14 @@
 {
   "schema": "motapathfinder.pr-4.8a1-structured-entry-validation.v1",
   "status": "completed",
-  "generatedAt": "2026-08-03T19:10:10.339Z",
+  "generatedAt": "2026-08-04T06:12:17.259Z",
   "provenance": {
     "mode": "shadow-only",
     "entrypoint": "shared-solver/run-region-dp.js",
     "runner": "shared-solver/run-region-dp.js",
     "runnerProbeMode": "validate-only-preflight-and-bounded-entry-probe",
     "deterministicFullReportRebuild": true,
-    "generationCommit": "0d3ec79",
+    "generationCommit": "3c5b3d8",
     "productionDpKeyChanged": false,
     "productionDominanceChanged": false,
     "productionAgendaChanged": false,
@@ -125,8 +125,8 @@
         "tower": "onlyup",
         "label": "Only Up Region 1: MT1~MT5 blueKing",
         "sourceFile": "towers/onlyup/region-specs/region-1.json",
-        "sourceSha256": "2b6d360f387dcd618173c481048cc68caf27ae81339ced2ffcaf28eeb65c837d",
-        "normalizedSha256": "857a7b3a95c0eef2ce198086cb0dff0229c11a3385b2f5ac39a0f7d81155dc1c"
+        "sourceSha256": "630b794db6870c6b5a33d86a79d113b0cc768e1b539ede113088d5c50ae8760f",
+        "normalizedSha256": "745ce0d833753363e1e77b7f123f5eb51f7c5e7ee7f838081a33879e2105ee69"
       },
       "projectIdentity": {
         "root": "Only upV2.1/Only upV2.1",
@@ -407,8 +407,8 @@
         "tower": "onlyup",
         "label": "Only Up Region 2: MT6~MT10 scaffold",
         "sourceFile": "towers/onlyup/region-specs/region-2.json",
-        "sourceSha256": "f14dc189eb67ad8950ecb8467ce3f135e2aaa8d22bc27ec0c72c31890162b434",
-        "normalizedSha256": "ddd223388b78597447beb51cf7666275d5f36d4080521b4feb78d58f47891450"
+        "sourceSha256": "7c98973efb85bfe9768145b5bc6c4dcb2a368463662f156305affac14708f8f6",
+        "normalizedSha256": "379ace0dcd90531e24f355d501b3bd0cb1728fc0e8eba2b8a2f76c0ab1bbe627"
       },
       "projectIdentity": {
         "root": "Only upV2.1/Only upV2.1",
@@ -925,8 +925,8 @@
       "id": "dangling-startFrom",
       "expectedError": "dangling-startFrom",
       "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/dangling-startFrom.json",
-      "inputSha256": "75b2092f52faffd893f935b5ded118aef6db290211ae0f01902b14ce33144c3b",
-      "specNormalizedSha256": "0a187faed5271e048836f5e87681d8cbfb9ba473101cacf9087256e1ddb9f4d9",
+      "inputSha256": "7958bd576c00f4fe00b4d99d775f406c44117a049bf388d6de4f91a3e79a35cd",
+      "specNormalizedSha256": "22d5d56a2856a78367dfac548ddf9ca8ccde038c67625d8843d53bb2ec048fde",
       "observedErrors": [
         "dangling-startFrom",
         "invalid-milestone-graph"
@@ -992,8 +992,8 @@
       "id": "duplicate-milestone-id",
       "expectedError": "duplicate-milestone-id",
       "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/duplicate-milestone-id.json",
-      "inputSha256": "c820a19ad0efe558114b7402e36793c29017699495bf4beb4965444ec43b67f1",
-      "specNormalizedSha256": "549235a50ed039721490fbe65144c7b456dd860c2af3eccdb2074d99661dc7d5",
+      "inputSha256": "e7783e9ec7ae46ccb81858cbf30d3f88042b958e0d7973232948fb14549d17e0",
+      "specNormalizedSha256": "41032dd85ada0ec975044b214f8b93901aacaf2fd2fc3f9440551bf71f40f734",
       "observedErrors": [
         "duplicate-milestone-id",
         "invalid-milestone-graph"
@@ -1060,8 +1060,8 @@
       "id": "unknown-floor",
       "expectedError": "unknown-floor",
       "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/unknown-floor.json",
-      "inputSha256": "0fcb1461bc733dce3af554d22414dfd5f15282bd5ae901e536f01b6f1d1b1806",
-      "specNormalizedSha256": "77b91e05e76afb534b067c7082a7baa2a3d317ade7f94266d0918e5b32c7a3a8",
+      "inputSha256": "2b05a9bcbc6d08f287ebd8ffcd4d81d8a1cadf4a2a9ff7c4067485e14d08de20",
+      "specNormalizedSha256": "6766119f27a02dd35d8ae58f6e51a5f98e23019edf056e50d3c386d609802895",
       "observedErrors": [
         "unknown-floor"
       ],
@@ -1125,8 +1125,8 @@
       "id": "unsupported-goal",
       "expectedError": "unsupported-goal-type",
       "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/unsupported-goal.json",
-      "inputSha256": "42c95e49cedca4e6f17b353203c7677f94f2655808adc5ccda3ffe79225652e1",
-      "specNormalizedSha256": "537f2e399ef70ac7b5cb36d3d2662aa44e17b66a525eedcf90e47a4421fba377",
+      "inputSha256": "236bd809d994f28c376e216b96250e986bc3ef1041c12803a52cce9e4d31eec7",
+      "specNormalizedSha256": "c4523f0bfb0e20dde4844e974117fa37898f970b5c081ddd70e4a85ad04cdd9b",
       "observedErrors": [
         "unsupported-goal-type"
       ],
@@ -1190,8 +1190,8 @@
       "id": "invalid-budget",
       "expectedError": "invalid-dp-budget",
       "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/invalid-budget.json",
-      "inputSha256": "ca0498b6230cd52843d5096d351f3734e07f9fb98bd1aa34c0cd6b6ec61b1313",
-      "specNormalizedSha256": "d3acae0ce0fd3c79ae663e756514c2969642d0c6764c0e8f15ff223ddddcb235",
+      "inputSha256": "02d3848a802be06e39b031bee4891c9cc7a55a098e479ecdc1eaf6596d5e48a2",
+      "specNormalizedSha256": "0842759cd43769dae7786237bf908dc4b8db86a10eb132aee2a3fe1fea3c9d8d",
       "observedErrors": [
         "invalid-dp-budget"
       ],
@@ -1255,8 +1255,8 @@
       "id": "cyclic-dependency",
       "expectedError": "cyclic-milestone-dependency",
       "inputPath": "shared-solver/routes/generated/region-entry-contract/negative-inputs/cyclic-dependency.json",
-      "inputSha256": "57f9e00a7151f81446a013db57c44ecaccd145d79faec86ee7cf1d89781d3038",
-      "specNormalizedSha256": "ab97397bb7dfdb9957138bd0bfe0dad32d363f8295396e0f94922f1fa25f936b",
+      "inputSha256": "220ff7d476f412ec054b25c3783d13ba48b11e3f4b07eae0c44f0b9a0b394b6a",
+      "specNormalizedSha256": "a15340fa085a2512518f324c7ebe05949abeed1c6eabe1d0dabf191d6c4f4b94",
       "observedErrors": [
         "cyclic-milestone-dependency",
         "invalid-milestone-graph"

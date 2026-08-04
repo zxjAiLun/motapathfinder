@@ -47,6 +47,17 @@ function snapshotDisplay(snapshot) {
   };
 }
 
+function assertRuntimeIdentity(status, id, phase) {
+  assert.ok(status.expectedRuntimeSnapshotIdentity, `${id}: expected runtime snapshot identity ${phase}`);
+  assert.strictEqual(status.runtimeSnapshotIdentityMatches, true, `${id}: runtime snapshot comparison ${phase}`);
+  if (status.runtimeSnapshotComparisonKind === "partial-solver-vs-runtime-raw") {
+    assert.strictEqual(status.runtimeSnapshotRawIdentityMatches, false, `${id}: partial/raw identity separation ${phase}`);
+    assert.notStrictEqual(status.runtimeSnapshotIdentity, status.expectedRuntimeSnapshotIdentity, `${id}: partial/raw hashes ${phase}`);
+  } else {
+    assert.strictEqual(status.runtimeSnapshotIdentity, status.expectedRuntimeSnapshotIdentity, `${id}: runtime identity hash ${phase}`);
+  }
+}
+
 function liveOptions(input) {
   return {
     headless: "1",
@@ -73,9 +84,7 @@ async function runValidControl(input, routeRecord, requestedFromStep, expectedPa
     assert.strictEqual(paused.lastCompletedStep, effectiveFromStep - 1, `${id}: last completed step`);
     assert.deepStrictEqual(displayOf(paused), snapshotDisplay(expectedPauseSnapshot), `${id}: displayed pause floor/hero`);
     assert.strictEqual(paused.nextDecision.index, effectiveFromStep, `${id}: next decision index`);
-    assert.ok(paused.expectedRuntimeSnapshotIdentity, `${id}: expected runtime snapshot identity`);
-    assert.strictEqual(paused.runtimeSnapshotIdentityMatches, true, `${id}: runtime snapshot identity at pause`);
-    assert.strictEqual(paused.runtimeSnapshotIdentity, paused.expectedRuntimeSnapshotIdentity, `${id}: runtime identity hash at pause`);
+    assertRuntimeIdentity(paused, id, "at pause");
     assert.strictEqual(paused.runtimeProjectedSolverStateMatches, true, `${id}: runtime projected solver state at pause`);
     const expectedStartLeaveLoc = (((session.routeRecord.start || {}).snapshot || {}).flags || {}).__leaveLoc__ || null;
     if (expectedStartLeaveLoc) {
@@ -93,8 +102,7 @@ async function runValidControl(input, routeRecord, requestedFromStep, expectedPa
     assert.strictEqual(final.lastMismatch, null, `${id}: final mismatch`);
     assert.deepStrictEqual(displayOf(final), snapshotDisplay(routeRecord.final.snapshot), `${id}: displayed final floor/hero`);
     assert.strictEqual(final.expectedExactStateKey, routeRecord.final.exactStateKey, `${id}: final exact state`);
-    assert.strictEqual(final.runtimeSnapshotIdentityMatches, true, `${id}: final runtime snapshot identity`);
-    assert.strictEqual(final.runtimeSnapshotIdentity, final.expectedRuntimeSnapshotIdentity, `${id}: final runtime identity hash`);
+    assertRuntimeIdentity(final, id, "at final");
     assert.strictEqual(final.runtimeProjectedSolverStateMatches, true, `${id}: runtime projected solver state`);
     const expectedFinalLeaveLoc = mergeExpectedLeaveLoc(routeRecord) || expectedStartLeaveLoc;
     if (expectedFinalLeaveLoc) {

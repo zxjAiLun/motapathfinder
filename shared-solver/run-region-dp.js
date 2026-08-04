@@ -402,7 +402,7 @@ function main() {
       regionSpec: path.relative(process.cwd(), regionSpecPath),
       regionSpecIdentity,
       projectFingerprint,
-      model: regionSpec.model || null,
+      solverModelFingerprint: regionSpec.model && regionSpec.model.fingerprint || null,
       reachedMilestone: result.reachedMilestone || null,
       milestoneRoute: regionSpec.milestoneRoute || null,
       fromMilestoneId: args["from-milestone"] || regionSpec.fromMilestoneId || null,

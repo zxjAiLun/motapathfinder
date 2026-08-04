@@ -33,9 +33,7 @@ function main() {
   const spec = loadRegionSpec(ONLYUP_SPEC);
   assert.strictEqual(spec.model.explicit, true);
   assert.strictEqual(spec.model.mode, "manual");
-  assert.strictEqual(spec.model.mechanics.keys, false);
-  assert.strictEqual(spec.model.mechanics.doors, false);
-  assert.strictEqual(spec.model.mechanics.pointAllocation, false);
+  assert.deepStrictEqual(spec.model.mechanics, {});
 
   const project = loadProject(ONLYUP_ROOT);
   const legacyState = createInitialState(project, { rank: "chaos" });
@@ -52,6 +50,7 @@ function main() {
     autoBattleEnabled: true,
     searchGraphMode: "primitive",
   });
+  const legacyComparableState = legacySimulator.createInitialState({ rank: "chaos" });
   const legacyDpKey = buildDpStateKey(
     legacySimulator,
     legacySimulator.createInitialState({ rank: "chaos" }),
@@ -86,7 +85,15 @@ function main() {
       "manual maintained field must be projected: hero." + field,
     );
   });
-  assert.strictEqual(state.meta.solverModel.fingerprint, spec.model.fingerprint);
+  assert.strictEqual(state.meta.solverModel, undefined);
+  assert.strictEqual(state.meta.modelFingerprint, spec.model.fingerprint);
+  assert.ok(
+    JSON.stringify(state).length < JSON.stringify(legacyComparableState).length,
+    "compact state JSON must be smaller than legacy state JSON",
+  );
+  const clonedCompact = structuredClone(state);
+  assert.strictEqual(clonedCompact.meta.solverModel, undefined);
+  assert.strictEqual(clonedCompact.meta.modelFingerprint, spec.model.fingerprint);
 
   const dpKey = buildDpStateKey(simulator, state, { dpKeyMode: "region" });
   ["hpmax", "mana", "manamax", "money", "followers"].forEach((field) => {
@@ -135,7 +142,19 @@ function main() {
  );
   expectThrows(
     () => validateSolverModel({ mechanics: { shops: false } }),
-    /not supported/,
+    /not part of authoritative|not supported/,
+  );
+  expectThrows(
+    () => validateSolverModel({ heroFields: { atk: "dominance" } }),
+    /dominance mode is only implemented for hp/,
+  );
+  expectThrows(
+    () => validateSolverModel({ heroFields: { exp: "objective" } }),
+    /objective mode is reserved/,
+  );
+  expectThrows(
+    () => validateSolverModel({ capabilities: { pointAllocation: false } }),
+    /not part of authoritative/,
   );
 
   process.stdout.write(JSON.stringify({
@@ -152,7 +171,7 @@ function main() {
     legacyDpKeyPreserved: true,
     dpKeyOmitsDisabledFields: true,
     projectionReappliedAfterMutation: true,
-    invalidModelControls: 3,
+    invalidModelControls: 6,
   }, null, 2) + "\n");
 }
 

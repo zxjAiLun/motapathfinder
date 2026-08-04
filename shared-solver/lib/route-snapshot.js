@@ -1,6 +1,10 @@
 "use strict";
 
 const { getTileNumberAt } = require("./state");
+const {
+  getSolverSnapshotHeroFields,
+  normalizeSolverModel,
+} = require("./solver-model");
 
 const DEFAULT_HERO_FIELDS = ["hp", "hpmax", "mana", "manamax", "atk", "def", "mdef", "money", "exp", "lv"];
 
@@ -42,6 +46,12 @@ function normalizeFlags(flags) {
 function normalizeHero(hero, heroFields) {
   const fields = heroFields || DEFAULT_HERO_FIELDS;
   const normalized = fields.reduce((result, field) => {
+    if (field === "equipment" || field === "followers") {
+      if (Object.prototype.hasOwnProperty.call(hero || {}, field)) {
+        result[field] = Array.isArray(hero[field]) ? hero[field].slice() : hero[field];
+      }
+      return result;
+    }
     result[field] = Number((hero || {})[field] || 0);
     return result;
   }, {});
@@ -50,7 +60,9 @@ function normalizeHero(hero, heroFields) {
     y: Number((((hero || {}).loc || {}).y) || 0),
     direction: ((((hero || {}).loc || {}).direction) || "down"),
   };
-  normalized.equipment = Array.isArray((hero || {}).equipment) ? hero.equipment.slice() : [];
+  if (!heroFields) {
+    normalized.equipment = Array.isArray((hero || {}).equipment) ? hero.equipment.slice() : [];
+  }
   return normalized;
 }
 
@@ -92,18 +104,59 @@ function buildSolverFloorMutationSnapshot(project, state, floorId) {
 
 function buildSolverSnapshot(project, state, options) {
   const config = options || {};
+  const solverModel = config.solverModel == null
+    ? null
+    : (config.solverModel.schema === "motapathfinder.solver-model.v1"
+      ? config.solverModel
+      : normalizeSolverModel(config.solverModel));
+  const explicitModel = solverModel && solverModel.explicit ? solverModel : null;
+  const heroFields = explicitModel
+    ? getSolverSnapshotHeroFields(explicitModel)
+    : config.heroFields;
   const floorIds = config.floorIds || Object.keys(project.floorsById || {});
   const floors = {};
   floorIds.forEach((floorId) => {
     floors[floorId] = buildSolverFloorMutationSnapshot(project, state, floorId);
   });
-  return {
+  const snapshot = {
     floorId: state.floorId,
-    hero: normalizeHero(state.hero, config.heroFields),
+    hero: normalizeHero(state.hero, heroFields),
     inventory: stableObject(state.inventory),
     flags: normalizeFlags(state.flags),
     floors,
   };
+  if (explicitModel) snapshot.partial = true;
+  return snapshot;
+}
+
+function diffSnapshotSubset(expected, actual, pathSegments) {
+  const prefix = pathSegments || [];
+  if (expected && expected.partial === true && prefix.length === 0) {
+    const clone = JSON.parse(JSON.stringify(expected));
+    delete clone.partial;
+    return diffSnapshotSubset(clone, actual, prefix);
+  }
+  if (expected && typeof expected === "object" && !Array.isArray(expected)) {
+    if (!actual || typeof actual !== "object" || Array.isArray(actual)) {
+      return `${prefix.join(".")}: object mismatch`;
+    }
+    for (const key of Object.keys(expected).sort()) {
+      const mismatch = diffSnapshotSubset(expected[key], actual[key], prefix.concat(key));
+      if (mismatch) return mismatch;
+    }
+    return null;
+  }
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(actual)) return `${prefix.join(".")}: array mismatch`;
+    if (expected.length !== actual.length) return `${prefix.join(".")}: length mismatch (${expected.length} !== ${actual.length})`;
+    for (let index = 0; index < expected.length; index += 1) {
+      const mismatch = diffSnapshotSubset(expected[index], actual[index], prefix.concat(String(index)));
+      if (mismatch) return mismatch;
+    }
+    return null;
+  }
+  if (expected !== actual) return `${prefix.join(".")}: ${JSON.stringify(expected)} !== ${JSON.stringify(actual)}`;
+  return null;
 }
 
 function summarizeSnapshot(snapshot) {
@@ -154,6 +207,7 @@ function diffSnapshots(expected, actual, pathSegments) {
 module.exports = {
   DEFAULT_HERO_FIELDS,
   buildSolverSnapshot,
+  diffSnapshotSubset,
   diffSnapshots,
   normalizeHero,
   summarizeSnapshot,

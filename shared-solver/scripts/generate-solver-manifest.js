@@ -401,6 +401,13 @@ const TEST_OVERRIDES = {
     cleanCheckout: true,
     notes: "PR-5.3a manual model authority, legacy compatibility, compact solver state/key projection, and invalid-model controls",
   },
+  "shared-solver/check-solver-model-runtime-boundary-live.js": {
+    grade: "integration-local",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: false,
+    notes: "PR-5.3a1 real Chromium compact-model replay; verifies partial solver snapshots, raw runtime identity separation, and disabled-field preservation",
+  },
   "shared-solver/check-region-route-output-contract.js": {
     grade: "closure",
     allowsNotFound: false,

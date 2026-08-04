@@ -100,17 +100,14 @@ An explicit `RegionSpec.model` is authoritative for the solver state and DP iden
       "manamax": "disabled",
       "money": "disabled",
       "followers": "disabled"
-    },
-    "mechanics": {
-      "keys": false,
-      "doors": false,
-      "pointAllocation": false
     }
   }
 }
 ```
 
-Supported field modes are `disabled`, `value`, `dominance`, `key`, `objective`, and `snapshot-only`. An explicit model projects the solver hero and makes `buildDpStateKey()` include only `key` fields. A RegionSpec without a model retains the conservative legacy model. Runtime snapshots and h5save data are not projected by this contract.
+SolverModel v1 supports `disabled`, `value`, `key`, and `snapshot-only` for all fields, plus `dominance` for `hp` only. `objective`, non-HP `dominance`, and mechanics switches are rejected until their execution semantics exist. An explicit model projects the solver hero and makes `buildDpStateKey()` include only `key` fields. A RegionSpec without a model retains the conservative legacy model.
+
+The full normalized model is owned by the simulator/job context; search states retain only `meta.modelFingerprint`. Explicit route snapshots are partial solver expectations: they omit disabled fields, carry `partial: true`, and record `solverModelFingerprint` plus `solverSnapshotHeroFields` in route metadata. Live replay compares that subset against a complete raw runtime capture, so disabled fields are neither defaulted to zero nor written back to the runtime.
 
 ## Proof Claim
 

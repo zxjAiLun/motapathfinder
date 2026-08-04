@@ -384,11 +384,46 @@ function buildRuntimeSnapshotIdentityPair(expected, actual, config) {
   const normalizedPair = normalizeRuntimeSnapshotPair(expected, actual, config);
   const expectedIdentity = buildRuntimeSnapshotIdentity(normalizedPair.expected, config);
   const actualIdentity = buildRuntimeSnapshotIdentity(normalizedPair.actual, config);
+  const partialExpected = Boolean(normalizedPair.expected && normalizedPair.expected.partial === true);
+  const projectedActual = partialExpected
+    ? projectSnapshotToExpectedShape(normalizedPair.expected, normalizedPair.actual)
+    : normalizedPair.actual;
+  const projectedExpectedIdentity = partialExpected
+    ? buildRuntimeSnapshotIdentity(normalizedPair.expected, config)
+    : expectedIdentity;
+  const projectedActualIdentity = partialExpected
+    ? buildRuntimeSnapshotIdentity(projectedActual, config)
+    : actualIdentity;
+  const comparisonMismatch = partialExpected
+    ? diffSnapshotSubset(normalizedPair.expected, normalizedPair.actual)
+    : null;
   return {
     expected: expectedIdentity,
     actual: actualIdentity,
-    matches: Boolean(expectedIdentity && actualIdentity && expectedIdentity === actualIdentity),
+    matches: partialExpected
+      ? comparisonMismatch == null
+      : Boolean(expectedIdentity && actualIdentity && expectedIdentity === actualIdentity),
+    rawMatches: Boolean(expectedIdentity && actualIdentity && expectedIdentity === actualIdentity),
+    projectedExpected: projectedExpectedIdentity,
+    projectedActual: projectedActualIdentity,
+    comparisonKind: partialExpected ? "partial-solver-vs-runtime-raw" : "runtime-raw-exact",
   };
+}
+
+function projectSnapshotToExpectedShape(expected, actual) {
+  if (expected == null || actual == null) return actual;
+  if (Array.isArray(expected)) {
+    return expected.map((item, index) => projectSnapshotToExpectedShape(item, actual[index]));
+  }
+  if (typeof expected === "object") {
+    return Object.keys(expected).reduce((result, key) => {
+      result[key] = key === "partial"
+        ? true
+        : projectSnapshotToExpectedShape(expected[key], actual[key]);
+      return result;
+    }, {});
+  }
+  return actual;
 }
 
 // This is a compatibility projection: the persisted boundary key supplies
@@ -407,8 +442,10 @@ function buildRuntimeProjectedSolverStateKeyFromSnapshot(snapshot, templateExact
   const heroSnapshot = normalized.hero || {};
   const heroLoc = heroSnapshot.loc || {};
   const hero = { ...(template.hero || {}) };
-  ["hp", "hpmax", "mana", "manamax", "atk", "def", "mdef", "money", "exp", "lv"].forEach((field) => {
-    if (heroSnapshot[field] != null) hero[field] = heroSnapshot[field];
+  ["hp", "hpmax", "mana", "manamax", "atk", "def", "mdef", "money", "exp", "lv", "equipment", "followers"].forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(hero, field) && heroSnapshot[field] != null) {
+      hero[field] = heroSnapshot[field];
+    }
   });
   if (hero.x != null && heroLoc.x != null) hero.x = heroLoc.x;
   if (hero.y != null && heroLoc.y != null) hero.y = heroLoc.y;
@@ -1097,7 +1134,12 @@ async function verifyInitialRuntimeSnapshot(session, routeRecord) {
     actual,
     comparisonOptions
   );
-  const mismatch = diffSnapshots(normalizedPair.expected, normalizedPair.actual, ["initial"]);
+  const mismatch = diffRouteSnapshot(
+    normalizedPair.expected,
+    normalizedPair.actual,
+    comparisonOptions,
+    ["initial"],
+  );
   const identity = buildRuntimeSnapshotIdentityPair(
     (routeRecord.start || {}).snapshot,
     actual,
@@ -1117,6 +1159,10 @@ async function verifyInitialRuntimeSnapshot(session, routeRecord) {
     expectedRuntimeSnapshotIdentity: identity.expected,
     runtimeSnapshotIdentity: identity.actual,
     runtimeSnapshotIdentityMatches: identity.matches,
+    runtimeSnapshotRawIdentityMatches: identity.rawMatches,
+    runtimeSnapshotComparisonKind: identity.comparisonKind,
+    expectedRuntimeSnapshotProjectedIdentity: identity.projectedExpected,
+    runtimeSnapshotProjectedIdentity: identity.projectedActual,
     expectedRuntimeProjectedSolverStateKey: projectedIdentity.expected,
     runtimeProjectedSolverStateKey: projectedIdentity.actual,
     runtimeProjectedSolverStateMatches: projectedIdentity.matches,
@@ -1170,6 +1216,10 @@ async function executeRouteDecision(session, decision, options) {
     expectedRuntimeSnapshotIdentity: identity.expected,
     runtimeSnapshotIdentity: identity.actual,
     runtimeSnapshotIdentityMatches: identity.matches,
+    runtimeSnapshotRawIdentityMatches: identity.rawMatches,
+    runtimeSnapshotComparisonKind: identity.comparisonKind,
+    expectedRuntimeSnapshotProjectedIdentity: identity.projectedExpected,
+    runtimeSnapshotProjectedIdentity: identity.projectedActual,
     expectedRuntimeProjectedSolverStateKey: projectedIdentity.expected,
     runtimeProjectedSolverStateKey: projectedIdentity.actual,
     runtimeProjectedSolverStateMatches: projectedIdentity.matches,
@@ -1220,7 +1270,12 @@ async function replayRouteFile(routeRecord, options) {
       initialRuntimeSnapshot,
       config
     );
-    const initialMismatch = diffSnapshots(normalizedInitialPair.expected, normalizedInitialPair.actual, ["initial"]);
+    const initialMismatch = diffRouteSnapshot(
+      normalizedInitialPair.expected,
+      normalizedInitialPair.actual,
+      config,
+      ["initial"],
+    );
     if (initialMismatch) {
       console.error("Expected initial snapshot:", JSON.stringify(summarizeSnapshot((routeRecord.start || {}).snapshot), null, 2));
       console.error("Actual initial snapshot:", JSON.stringify(summarizeSnapshot(initialRuntimeSnapshot), null, 2));

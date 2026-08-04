@@ -5,7 +5,6 @@ const { getActivePerfTracker } = require("./perf");
 const {
   normalizeSolverModel,
   projectHeroForSolverModel,
-  projectSolverState,
 } = require("./solver-model");
 
 function cloneState(state) {
@@ -22,7 +21,11 @@ function cloneState(state) {
     delete cloned.meta.__floorScout;
   }
   if (cloned.meta && cloned.meta.solverModel) {
-    projectSolverState(cloned);
+    // Migrate old serialized nodes without re-projecting the hero on every
+    // clone. New search states only carry the model fingerprint.
+    const model = normalizeSolverModel(cloned.meta.solverModel);
+    cloned.meta.modelFingerprint = model.fingerprint;
+    delete cloned.meta.solverModel;
   }
   return cloned;
 }
@@ -89,7 +92,7 @@ function createInitialState(project, options) {
       autoBattleCount: 0,
     },
   };
-  if (solverModel && solverModel.explicit) state.meta.solverModel = solverModel;
+  if (solverModel && solverModel.explicit) state.meta.modelFingerprint = solverModel.fingerprint;
   syncProgress(state);
   return state;
 }

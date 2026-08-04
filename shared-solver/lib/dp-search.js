@@ -47,7 +47,11 @@ function buildDpStateKey(simulator, state, options) {
   const config = options || {};
   const keyMode = String(config.dpKeyMode || config.keyMode || "location");
   const hero = state.hero || {};
-  const solverModel = getSolverModel(state, config.solverModel || config.model);
+  const solverModel = getSolverModel(
+    state,
+    config.solverModel || config.model,
+    simulator && simulator.solverModel,
+  );
   let region = null;
   if (keyMode === "region") {
     try {

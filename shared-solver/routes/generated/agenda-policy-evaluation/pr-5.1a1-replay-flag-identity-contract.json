@@ -1,14 +1,14 @@
 {
   "schema": "motapathfinder.pr-5.1a1-replay-flag-identity.v1",
   "status": "completed",
-  "generatedAt": "2026-08-02T16:34:39.755Z",
+  "generatedAt": "2026-08-04T06:15:22.181Z",
   "provenance": {
     "mode": "replay-flag-identity-shadow",
     "entrypoint": "shared-solver/lib/live-replay.js",
     "session": "shared-solver/lib/replay-session.js",
     "fixedInputSource": "PR-4.8b WhiteIsland checkpoint plus a real OnlyUp simulator cross-floor control",
     "deterministicFullReportRebuild": true,
-    "generationCommit": "62ef1c7",
+    "generationCommit": "3c5b3d8",
     "liveRuntimeExecuted": false,
     "productionSolverChanged": false,
     "productionDpKeyChanged": false,

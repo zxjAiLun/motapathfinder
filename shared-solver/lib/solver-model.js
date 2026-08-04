@@ -11,6 +11,12 @@ const SOLVER_MODEL_MODES = [
   "objective",
   "snapshot-only",
 ];
+const SUPPORTED_SOLVER_MODEL_MODES = [
+  "disabled",
+  "value",
+  "key",
+  "snapshot-only",
+];
 const SOLVER_HERO_FIELDS = [
   "hp",
   "hpmax",
@@ -92,6 +98,9 @@ function buildModel({ explicit, mode, heroFields, mechanics, capabilities }) {
 
 function collectModelErrors(rawModel) {
   const errors = [];
+  const internalNormalizedModel = rawModel &&
+    rawModel.schema === SOLVER_MODEL_SCHEMA &&
+    typeof rawModel.fingerprint === "string";
   if (rawModel == null) return errors;
   if (typeof rawModel !== "object" || Array.isArray(rawModel)) {
     return ["model must be an object"];
@@ -103,6 +112,12 @@ function collectModelErrors(rawModel) {
   if (rawModel.mechanics != null &&
       (typeof rawModel.mechanics !== "object" || Array.isArray(rawModel.mechanics))) {
     errors.push("model.mechanics must be an object");
+  } else if (
+    rawModel.mechanics != null &&
+    Object.keys(rawModel.mechanics).length > 0 &&
+    !internalNormalizedModel
+  ) {
+    errors.push("model.mechanics is not part of authoritative SolverModel v1");
   }
   const heroFields = rawModel.heroFields || {};
   Object.keys(heroFields).forEach((field) => {
@@ -110,25 +125,28 @@ function collectModelErrors(rawModel) {
       errors.push(`model.heroFields.${field} is not supported`);
       return;
     }
-    if (!SOLVER_MODEL_MODES.includes(String(heroFields[field]))) {
+    const mode = String(heroFields[field]);
+    if (!SOLVER_MODEL_MODES.includes(mode)) {
       errors.push(
         `model.heroFields.${field} must be one of ${SOLVER_MODEL_MODES.join(", ")}`,
       );
-    }
-  });
-  const mechanics = rawModel.mechanics || {};
-  Object.keys(mechanics).forEach((mechanic) => {
-    if (!SOLVER_MECHANICS.includes(mechanic)) {
-      errors.push(`model.mechanics.${mechanic} is not supported`);
       return;
     }
-    if (typeof mechanics[mechanic] !== "boolean") {
-      errors.push(`model.mechanics.${mechanic} must be boolean`);
+    if (mode === "objective") {
+      errors.push(`model.heroFields.${field} objective mode is reserved for a later contract`);
+    } else if (mode === "dominance" && field !== "hp") {
+      errors.push(`model.heroFields.${field} dominance mode is only implemented for hp`);
     }
   });
   if (rawModel.capabilities != null &&
       (typeof rawModel.capabilities !== "object" || Array.isArray(rawModel.capabilities))) {
     errors.push("model.capabilities must be an object");
+  } else {
+    SOLVER_MECHANICS.forEach((mechanic) => {
+      if (rawModel.capabilities && Object.prototype.hasOwnProperty.call(rawModel.capabilities, mechanic)) {
+        errors.push(`model.capabilities.${mechanic} is not part of authoritative SolverModel v1`);
+      }
+    });
   }
   return errors;
 }
@@ -155,32 +173,21 @@ function normalizeSolverModel(rawModel) {
     ...LEGACY_HERO_FIELDS,
     ...(raw.heroFields || {}),
   };
-  const mechanics = {
-    ...LEGACY_MECHANICS,
-    ...(raw.mechanics || {}),
-  };
+  // Mechanics are deliberately absent from the authoritative explicit v1
+  // contract.  The simulator's existing action/effect rules remain the
+  // source of truth until a mechanics-aware contract is implemented.
+  const mechanics = {};
   const capabilities = {
     ...(raw.capabilities || {}),
   };
 
-  // Capabilities are a compact authoring convenience. Explicit heroFields and
-  // mechanics remain the final values when both forms are provided.
+  // Capabilities are a compact authoring convenience. Explicit heroFields
+  // remain the final values when both forms are provided.
   ["mana", "hpmax", "manamax"].forEach((field) => {
     if (capabilities[field] === false && !(raw.heroFields && field in raw.heroFields)) {
       heroFields[field] = "disabled";
     }
   });
-  if (capabilities.pointAllocation === false &&
-      !(raw.mechanics && "pointAllocation" in raw.mechanics)) {
-    mechanics.pointAllocation = false;
-  }
-  ["keys", "doors"].forEach((mechanic) => {
-    if (capabilities[mechanic] != null &&
-        !(raw.mechanics && mechanic in raw.mechanics)) {
-      mechanics[mechanic] = Boolean(capabilities[mechanic]);
-    }
-  });
-
   return buildModel({
     explicit: true,
     mode: raw.mode || "manual",
@@ -195,10 +202,14 @@ function validateSolverModel(rawModel) {
   return true;
 }
 
-function getSolverModel(state, override) {
+function getSolverModel(state, override, simulatorModel) {
   if (override != null) return normalizeSolverModel(override);
-  const configured = state && state.meta && state.meta.solverModel;
-  return configured ? configured : normalizeSolverModel(null);
+  if (simulatorModel != null) {
+    return simulatorModel.schema === SOLVER_MODEL_SCHEMA
+      ? simulatorModel
+      : normalizeSolverModel(simulatorModel);
+  }
+  return normalizeSolverModel(null);
 }
 
 function isSolverFieldMaintained(model, field) {
@@ -224,12 +235,24 @@ function projectHeroForSolverModel(hero, model) {
 
 function projectSolverState(state, modelOverride) {
   if (!state || !state.hero) return state;
-  const model = getSolverModel(state, modelOverride);
-  if (!model.explicit) return state;
   if (!state.meta) state.meta = {};
-  state.meta.solverModel = model;
+  const embeddedModel = state.meta.solverModel;
+  const modelSource = modelOverride != null ? modelOverride : embeddedModel;
+  if (modelSource == null) return state;
+  const model = normalizeSolverModel(modelSource);
+  delete state.meta.solverModel;
+  if (!model.explicit) return state;
+  state.meta.modelFingerprint = model.fingerprint;
   state.hero = projectHeroForSolverModel(state.hero, model);
   return state;
+}
+
+function getSolverSnapshotHeroFields(model) {
+  const normalized = model == null
+    ? normalizeSolverModel(null)
+    : (model.schema === SOLVER_MODEL_SCHEMA ? model : normalizeSolverModel(model));
+  if (!normalized.explicit) return null;
+  return SOLVER_HERO_FIELDS.filter((field) => isSolverFieldMaintained(normalized, field));
 }
 
 module.exports = {
@@ -238,8 +261,10 @@ module.exports = {
   SOLVER_HERO_FIELDS,
   SOLVER_MECHANICS,
   SOLVER_MODEL_MODES,
+  SUPPORTED_SOLVER_MODEL_MODES,
   SOLVER_MODEL_SCHEMA,
   getSolverModel,
+  getSolverSnapshotHeroFields,
   isSolverFieldMaintained,
   normalizeSolverModel,
   projectHeroForSolverModel,

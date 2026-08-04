@@ -1,7 +1,7 @@
 {
   "schema": "motapathfinder.pr-5.1a1a-replay-flag-merge-cli.v1",
   "status": "completed",
-  "generatedAt": "2026-08-02T16:36:23.926Z",
+  "generatedAt": "2026-08-04T06:15:24.096Z",
   "provenance": {
     "mode": "replay-runtime-flag-merge-cli",
     "entrypoint": "shared-solver/route-gui.js",
@@ -9,7 +9,7 @@
     "session": "shared-solver/lib/replay-session.js",
     "fixedInputSource": "PR-4.8b WhiteIsland route plus a real WhiteIsland StaticSimulator checkpoint continuation",
     "deterministicFullReportRebuild": true,
-    "generationCommit": "62ef1c7",
+    "generationCommit": "3c5b3d8",
     "liveRuntimeExecuted": false,
     "productionReplayRuntimeChanged": true,
     "productionSolverChanged": false,

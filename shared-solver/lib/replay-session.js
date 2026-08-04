@@ -316,7 +316,15 @@ class ReplaySession {
     });
     const identity = this.lastRuntimeSnapshot && boundarySnapshot
       ? buildRuntimeSnapshotIdentityPair(boundarySnapshot, this.lastRuntimeSnapshot, identityConfig)
-      : { expected: null, actual: this.runtimeSnapshotIdentity, matches: false };
+      : {
+          expected: null,
+          actual: this.runtimeSnapshotIdentity,
+          matches: false,
+          rawMatches: false,
+          projectedExpected: null,
+          projectedActual: null,
+          comparisonKind: null,
+        };
     const solverBoundaryExactStateKey =
       (boundary && (boundary.exactStateKey || boundary.postExactStateKey)) || null;
     const projectedIdentity = this.lastRuntimeSnapshot && boundarySnapshot
@@ -342,6 +350,10 @@ class ReplaySession {
       expectedRuntimeSnapshotIdentity: identity.expected,
       runtimeSnapshotIdentity: identity.actual || this.runtimeSnapshotIdentity,
       runtimeSnapshotIdentityMatches: identity.matches,
+      runtimeSnapshotRawIdentityMatches: identity.rawMatches,
+      runtimeSnapshotComparisonKind: identity.comparisonKind,
+      expectedRuntimeSnapshotProjectedIdentity: identity.projectedExpected,
+      runtimeSnapshotProjectedIdentity: identity.projectedActual,
       runtimeIdentityKind: "runtime-snapshot-compatibility-v1",
       expectedRuntimeProjectedSolverStateKey: projectedIdentity.expected,
       runtimeProjectedSolverStateKey: projectedIdentity.actual,

@@ -635,12 +635,13 @@ redSwordsman@MT7:3,10（褐泥妖偶）
 
 PR-5.2 系列已正式关闭；本轮进入手动世界模型主线。手动配置是求解器的权威输入，自动扫描、objective-aware GUI、launcher GUI 和 auto assistant 均不属于本轮。
 
-- 新增 `shared-solver/lib/solver-model.js`，定义 `disabled`、`value`、`dominance`、`key`、`objective`、`snapshot-only` 六种字段模式，并为模型生成稳定 fingerprint。
+- 新增 `shared-solver/lib/solver-model.js`，定义手动字段模式并为模型生成稳定 fingerprint；本轮只开放 `disabled`、`value`、`key`、`snapshot-only`，以及仅对 `hp` 实现的 `dominance`。
 - `RegionSpec.model` 经过统一 normalize/validate；配置优先级固定为手动模型 > preset > 自动建议 > legacy default。本轮只实现手动模型和 conservative legacy fallback，不引入自动 analyzer。
 - `createInitialState()` 与 simulator stabilization 会按显式模型投影 compact solver hero；`buildDpStateKey()` 只序列化模型声明为 `key` 的 hero 字段，并把模型 fingerprint 纳入 identity。
-- 未配置模型的塔继续使用历史字段与 key 语义。Only Up 的三个 RegionSpec 显式关闭 `hpmax`、`mana`、`manamax`、`money`、`followers` 以及 keys/doors/point allocation，同时保留 HP dominance 和战斗/成长/装备 key。
-- runtime snapshot、h5save 和 `live-replay.js` 的原始捕获层保持不变；solver model 与 runtime snapshot 分层。region route audit 的回放 simulator 也使用同一 RegionSpec model，避免 compact exact key 与 legacy replay state 混用。
+- 未配置模型的塔继续使用历史字段与 key 语义。Only Up 的三个 RegionSpec 显式关闭 `hpmax`、`mana`、`manamax`、`money`、`followers`，同时保留 HP dominance 和战斗/成长/装备 key；未执行的 mechanics 开关不再进入 authoritative v1。
+- `PR-5.3a1` 将完整 SolverModel 收归 simulator/job，state 只保留 fingerprint；explicit route snapshot 变成 `partial` solver expectation，runtime 仍捕获完整 raw snapshot，并按 active field 子集验证。disabled 字段不会补零，也不会写回 runtime。
 - 新增 `check-solver-model-contract.js`，覆盖 legacy 保留、Only Up compact hero、DP key 排除项、模型 fingerprint、投影重应用和非法配置负控。
+- 新增 `check-solver-model-runtime-boundary-live.js`，通过真实 Chromium 验证 compact route 的 boundary/final replay、raw runtime identity 分层和 disabled hero 字段保留。
 
 专项检查：
 

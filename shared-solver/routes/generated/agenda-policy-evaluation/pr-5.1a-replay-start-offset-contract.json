@@ -1,14 +1,14 @@
 {
   "schema": "motapathfinder.pr-5.1a-replay-start-offset.v1",
   "status": "completed",
-  "generatedAt": "2026-08-03T19:13:32.954Z",
+  "generatedAt": "2026-08-04T06:15:20.612Z",
   "provenance": {
     "mode": "replay-contract-shadow",
     "entrypoint": "shared-solver/route-gui.js",
     "session": "shared-solver/lib/replay-session.js",
     "fixedInputSource": "PR-4.8b OnlyUp and WhiteIsland short route outputs",
     "deterministicFullReportRebuild": true,
-    "generationCommit": "0d3ec79",
+    "generationCommit": "3c5b3d8",
     "productionSolverChanged": false,
     "productionDpKeyChanged": false,
     "productionDominanceChanged": false,
@@ -71,21 +71,17 @@
         "floorId": "MT1",
         "hero": {
           "hp": 201,
-          "hpmax": 0,
-          "mana": 0,
-          "manamax": 0,
           "atk": 3,
           "def": 0,
           "mdef": 10,
-          "money": 0,
-          "exp": 2,
           "lv": 1,
+          "exp": 2,
+          "equipment": [],
           "loc": {
             "x": 2,
             "y": 7,
             "direction": "down"
-          },
-          "equipment": []
+          }
         }
       },
       "controls": [
@@ -113,21 +109,17 @@
               "floorId": "MT1",
               "hero": {
                 "hp": 201,
-                "hpmax": 0,
-                "mana": 0,
-                "manamax": 0,
                 "atk": 2,
                 "def": 0,
                 "mdef": 10,
-                "money": 0,
-                "exp": 0,
                 "lv": 1,
+                "exp": 0,
+                "equipment": [],
                 "loc": {
                   "x": 6,
                   "y": 7,
                   "direction": "down"
-                },
-                "equipment": []
+                }
               }
             },
             "executedPrefix": [],
@@ -149,21 +141,17 @@
               "floorId": "MT1",
               "hero": {
                 "hp": 201,
-                "hpmax": 0,
-                "mana": 0,
-                "manamax": 0,
                 "atk": 3,
                 "def": 0,
                 "mdef": 10,
-                "money": 0,
-                "exp": 2,
                 "lv": 1,
+                "exp": 2,
+                "equipment": [],
                 "loc": {
                   "x": 2,
                   "y": 7,
                   "direction": "down"
-                },
-                "equipment": []
+                }
               }
             }
           }
@@ -192,21 +180,17 @@
               "floorId": "MT1",
               "hero": {
                 "hp": 201,
-                "hpmax": 0,
-                "mana": 0,
-                "manamax": 0,
                 "atk": 2,
                 "def": 0,
                 "mdef": 10,
-                "money": 0,
-                "exp": 0,
                 "lv": 1,
+                "exp": 0,
+                "equipment": [],
                 "loc": {
                   "x": 6,
                   "y": 7,
                   "direction": "down"
-                },
-                "equipment": []
+                }
               }
             },
             "executedPrefix": [],
@@ -228,21 +212,17 @@
               "floorId": "MT1",
               "hero": {
                 "hp": 201,
-                "hpmax": 0,
-                "mana": 0,
-                "manamax": 0,
                 "atk": 3,
                 "def": 0,
                 "mdef": 10,
-                "money": 0,
-                "exp": 2,
                 "lv": 1,
+                "exp": 2,
+                "equipment": [],
                 "loc": {
                   "x": 2,
                   "y": 7,
                   "direction": "down"
-                },
-                "equipment": []
+                }
               }
             }
           }
@@ -271,21 +251,17 @@
               "floorId": "MT1",
               "hero": {
                 "hp": 281,
-                "hpmax": 0,
-                "mana": 0,
-                "manamax": 0,
                 "atk": 2,
                 "def": 0,
                 "mdef": 10,
-                "money": 0,
-                "exp": 1,
                 "lv": 1,
+                "exp": 1,
+                "equipment": [],
                 "loc": {
                   "x": 5,
                   "y": 7,
                   "direction": "left"
-                },
-                "equipment": []
+                }
               }
             },
             "executedPrefix": [
@@ -309,21 +285,17 @@
               "floorId": "MT1",
               "hero": {
                 "hp": 201,
-                "hpmax": 0,
-                "mana": 0,
-                "manamax": 0,
                 "atk": 3,
                 "def": 0,
                 "mdef": 10,
-                "money": 0,
-                "exp": 2,
                 "lv": 1,
+                "exp": 2,
+                "equipment": [],
                 "loc": {
                   "x": 2,
                   "y": 7,
                   "direction": "down"
-                },
-                "equipment": []
+                }
               }
             }
           }
@@ -357,21 +329,17 @@
               "floorId": "MT1",
               "hero": {
                 "hp": 281,
-                "hpmax": 0,
-                "mana": 0,
-                "manamax": 0,
                 "atk": 2,
                 "def": 0,
                 "mdef": 10,
-                "money": 0,
-                "exp": 1,
                 "lv": 1,
+                "exp": 1,
+                "equipment": [],
                 "loc": {
                   "x": 5,
                   "y": 7,
                   "direction": "left"
-                },
-                "equipment": []
+                }
               }
             },
             "executedPrefix": [],
@@ -392,21 +360,17 @@
               "floorId": "MT1",
               "hero": {
                 "hp": 201,
-                "hpmax": 0,
-                "mana": 0,
-                "manamax": 0,
                 "atk": 3,
                 "def": 0,
                 "mdef": 10,
-                "money": 0,
-                "exp": 2,
                 "lv": 1,
+                "exp": 2,
+                "equipment": [],
                 "loc": {
                   "x": 2,
                   "y": 7,
                   "direction": "down"
-                },
-                "equipment": []
+                }
               }
             }
           }
