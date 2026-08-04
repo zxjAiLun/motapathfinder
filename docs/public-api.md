@@ -171,6 +171,18 @@ manager.cancel(job.id);
 - Progress uses `motapathfinder.solver-progress.v1` with a monotonic `sequence`, no fake completion percent (only budget-consumed ratios), segment/attempt lifecycle fields, realtime `bestKnown` projected by the search (`progress-state` with `goalReached:false`, `goal-candidate`, `route-artifact`, `verified-route`), and terminal `completed`/`failed`/`cancelled` snapshots. Realtime goal candidates carry `decisionDepth` (known at enqueue) with `routeLength:null` + `routeLengthExact:false`; the accurate `routeLength` + `routeLengthExact:true` is published only after route reconstruction / runtime replay. `route.length` candidates are also marked `objectiveValueExact:false` until the route is rebuilt.
 - Results use `motapathfinder.solver-job-result.v1` and bind `taskFingerprint`, `solverModelFingerprint`, `objectiveFingerprint`, `towerFingerprint`, and the route artifact fingerprint. Failure classes treat budget exhaustion, action trimming, policy filtering, and milestone over-constraint as retryable incomplete-search conditions, never as a proven no-route. `strictReplay:true` runs a real runtime replay inside the job (`STRICT_REPLAY_FAILED` on mismatch; the 3-way objective reconciliation applies only when an explicit ObjectiveSpec exists, so legacy objective-less jobs verify the route replay alone); `strictReplay:false` reports `verificationStatus: "not-requested"`. Route metrics distinguish `decisionDepth` from the full `routeLength` (auto-steps included).
 
+
+
+## Solver Launcher
+
+
+ode run-solver-launcher.js serves a localhost-only GUI (launcher/ui) backed by the public contracts:
+
+- GET /api/health, /api/towers, /api/towers/:id, /api/towers/:id/regions, /api/towers/:id/regions/:rid`n- POST /api/tasks/validate (normalized task + fingerprints) and POST /api/jobs (202)
+- GET /api/jobs, /api/jobs/:id, /api/jobs/:id/result, /api/jobs/:id/route; POST /api/jobs/:id/cancel; GET /api/jobs/:id/events (SSE)
+- Status mapping: INVALID_TASK 400, JOB_NOT_FOUND 404, JOB_INVALID_STATE_TRANSITION/JOB_PAUSE_UNSUPPORTED 409, accepted 202.
+
+The Launcher only edits public inputs, calls preflight, submits jobs, subscribes to progress, reads results, and cancels; it never reads diagnostics.dp internals or reimplements solver semantics.
 The Launcher should consume only this API; it must not read `diagnostics.dp` internals or reimplement candidate comparison.
 
 ## Solver Launcher

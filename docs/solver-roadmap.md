@@ -720,6 +720,17 @@ PR-5.3c 系列正式关闭，c3 收尾：
 - strict replay 的 objective 对账仅在显式 ObjectiveSpec 存在时执行；legacy 无 objective 任务只验证 runtime route replay（`objective: null`、`verificationStatus: "verified"`），无 null dereference。
 - 实时 bestKnown 拆分 `decisionDepth` 与 `routeLength`：route 重建前 `routeLength: null` + `routeLengthExact:false`，重建/回放后发布真实值 + `routeLengthExact:true`。
 - `compileExecutableSolveTask` 真实加载项目并计算 fingerprint，外部 fingerprint 不能替代实际值。
+
+
+### 2026-08-04 更新：PR-5.3d Solver Launcher GUI MVP
+
+PR-5.3c 系列已关闭，Launcher 只消费公开合同：
+
+- launcher/server.js + outer.js + job-api.js + 	ower-registry.js + un-solver-launcher.js：Node 内置 HTTP，默认 localhost-only；Tower Registry 服务端校验项目/fingerprint/region 列表并拒绝路径穿越。
+- API：towers/regions 查询、task validate、job 创建/列表/详情/result/route/cancel、SSE events（snapshot replay + Last-Event-ID + heartbeat + terminal close）；HTTP 映射 400/404/409/202。
+- UI（launcher/ui/）：manual SolveTask builder（Tower/Region、SolverModel 矩阵、Objective、Search、Verification、Preview）+ Job dashboard（无虚假百分比、bestKnown exactness、decisionDepth/routeLength 分离、failureClass/retryable）。
+- 重启语义：terminal jobs 从 FileJobStore 恢复；stale running 显示 interrupted。
+- check-launcher-api.js（静态套件）与 check-launcher-ui-live.js（真实 Chromium）覆盖 API 与 UI 控制。
 - terminal progress 同时发给 subscriber 并写入 `progress.ndjson`。
 
 ### 2026-08-04 更新：PR-5.3d Solver Launcher GUI MVP

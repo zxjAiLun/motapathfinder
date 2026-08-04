@@ -31,9 +31,7 @@
     "check:launcher:live": "node check-launcher-ui-live.js",
     "launcher": "node run-solver-launcher.js",
     "run:solve-task": "node run-solve-task.js",
-    "launcher": "node run-solver-launcher.js",
-    "check:launcher": "node check-launcher-api.js",
-    "check:launcher:live": "node check-launcher-ui-live.js",
+    
     "check:objective-spec:live": "node check-objective-spec-live.js",
     "check:solver-model:runtime": "node check-solver-model-runtime-boundary-live.js",
     "run:state-abstraction": "node audit-state-abstraction.js",
