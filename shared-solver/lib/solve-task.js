@@ -1,10 +1,13 @@
 "use strict";
 
+const fs = require("node:fs");
 const crypto = require("node:crypto");
 
 const { normalizeRegionSpec, validateRegionSpec } = require("./region-spec");
 const { compileObjectiveSpec } = require("./objective-spec");
 const { normalizeSolverModel, SOLVER_MODEL_SCHEMA } = require("./solver-model");
+const { loadProject } = require("./project-loader");
+const { buildProjectFingerprint } = require("./region-entry-validator");
 
 const SOLVE_TASK_SCHEMA = "motapathfinder.solve-task.v1";
 const SUPPORTED_ALGORITHMS = ["segment-dp"];
@@ -93,7 +96,9 @@ function normalizeSearch(rawSearch) {
   if (!SUPPORTED_ALGORITHMS.includes(String(search.algorithm || ""))) {
     fail("INVALID_TASK", `search.algorithm must be one of ${SUPPORTED_ALGORITHMS.join(", ")}`, "search.algorithm");
   }
-  search.maxExpansions = finiteNumber(search.maxExpansions, "search.maxExpansions", 0) ?? DEFAULT_SEARCH.maxExpansions;
+  // maxExpansions=0 is rejected: searchDP would execute it as 1000, so the
+  // fingerprint would not match the real execution budget.
+  search.maxExpansions = finiteNumber(search.maxExpansions, "search.maxExpansions", 1) ?? DEFAULT_SEARCH.maxExpansions;
   search.maxRuntimeMs = finiteNumber(search.maxRuntimeMs, "search.maxRuntimeMs", 0) ?? DEFAULT_SEARCH.maxRuntimeMs;
   search.maxActionsPerState = finiteNumber(search.maxActionsPerState, "search.maxActionsPerState", 1) ?? DEFAULT_SEARCH.maxActionsPerState;
   search.candidateLimit = finiteNumber(search.candidateLimit, "search.candidateLimit", 1) ?? DEFAULT_SEARCH.candidateLimit;
@@ -112,6 +117,85 @@ function normalizeSearch(rawSearch) {
     }
   }
   return search;
+}
+
+const BUDGET_KEYS = [
+  "maxExpansions",
+  "maxRuntimeMs",
+  "maxActionsPerState",
+  "candidateLimit",
+  "goalSkylineLimit",
+  "dpSkylineMax",
+];
+
+function pickDefined(source, keys) {
+  return keys.reduce((result, key) => {
+    if (source && source[key] != null) result[key] = source[key];
+    return result;
+  }, {});
+}
+
+// Effective search merges budgets with fixed priority:
+//   task.search top-level > task.search.dpBudget > regionSpec.search top-level
+//   > regionSpec.search.dpBudget > regionSpec.dpBudget > SolveTask defaults
+function buildEffectiveSearch(rawTask, regionSpec) {
+  const rawSearch = (rawTask && rawTask.search) || {};
+  const regionSearch = (regionSpec && regionSpec.search) || {};
+  const mergedBudget = {
+    ...pickDefined(regionSpec && regionSpec.dpBudget, BUDGET_KEYS),
+    ...pickDefined(regionSearch.dpBudget, BUDGET_KEYS),
+    ...pickDefined(regionSearch, BUDGET_KEYS),
+    ...pickDefined(rawSearch.dpBudget, BUDGET_KEYS),
+    ...pickDefined(rawSearch, BUDGET_KEYS),
+  };
+  const merged = {
+    ...regionSearch,
+    ...rawSearch,
+    ...mergedBudget,
+  };
+  delete merged.dpBudget;
+  return normalizeSearch(merged);
+}
+
+function resolveEffectiveRank(rawTask, regionSpec) {
+  return (rawTask && rawTask.tower && rawTask.tower.rank) ||
+    (regionSpec && regionSpec.rank) ||
+    "chaos";
+}
+
+// The project fingerprint must reflect the actual tower content, not just the
+// tower id.  A provided fingerprint is verified against the project; when none
+// is provided it is computed from the project at projectRoot.  If the project
+// cannot be loaded (e.g. synthetic tasks), the provided fingerprint is kept.
+function resolveProjectFingerprint(rawTask, regionSpec, context) {
+  const tower = (rawTask && rawTask.tower) || {};
+  const provided = tower.projectFingerprint ||
+    (context && context.projectFingerprint) ||
+    null;
+  const projectRoot = tower.projectRoot || (regionSpec && regionSpec.projectRoot) || (context && context.projectRoot) || null;
+  if (projectRoot) {
+    let actual = null;
+    try {
+      if (fs.existsSync(projectRoot)) {
+        const project = loadProject(projectRoot);
+        actual = buildProjectFingerprint(project).fingerprintSha256;
+      }
+    } catch (error) {
+      actual = null;
+    }
+    if (actual) {
+      if (provided) {
+        const providedValue = typeof provided === "string"
+          ? provided
+          : (provided && provided.fingerprintSha256) || null;
+        if (providedValue && providedValue !== actual) {
+          fail("INVALID_TASK", "tower.projectFingerprint does not match the project at projectRoot", "tower.projectFingerprint");
+        }
+      }
+      return actual;
+    }
+  }
+  return provided || null;
 }
 
 function normalizeRegionPart(rawRegion, context) {
@@ -155,10 +239,9 @@ function compileSolveTask(rawTask, context) {
     ...((context || {}).objectiveOptions || {}),
   });
 
-  const search = normalizeSearch({
-    ...(regionSpec.search || {}),
-    ...(raw.search || {}),
-  });
+  const search = buildEffectiveSearch(raw, regionSpec);
+  const effectiveRank = resolveEffectiveRank(raw, regionSpec);
+  const projectFingerprint = resolveProjectFingerprint(raw, regionSpec, context);
 
   const verification = {
     strictReplay: raw.verification == null
@@ -172,13 +255,17 @@ function compileSolveTask(rawTask, context) {
   }
 
   // Fingerprint binds everything that changes solver behavior across launches:
-  // tower identity, normalized region spec, model, objective, search, action
-  // policy, verification policy, and schema version.  It excludes jobId,
-  // createdAt, absolute project root, UI labels, and progress parameters.
+  // tower identity, effective project fingerprint, effective rank, normalized
+  // region spec, model, objective, effective search, action policy,
+  // verification policy, and schema version.  It excludes jobId, createdAt,
+  // absolute project root, UI labels, and progress parameters.  The effective
+  // search and rank are the exact values used to execute the task, so the
+  // fingerprint cannot drift from execution semantics.
   const regionHashable = cloneJson(regionSpec);
   delete regionHashable.sourceFile;
   delete regionHashable.label;
   delete regionHashable.projectRoot;
+  delete regionHashable.rank;
   const searchHashable = FINGERPRINT_SEARCH_FIELDS.reduce((result, key) => {
     result[key] = search[key];
     return result;
@@ -187,7 +274,8 @@ function compileSolveTask(rawTask, context) {
   const fingerprintPayload = {
     schema: SOLVE_TASK_SCHEMA,
     towerId: tower.id,
-    towerFingerprint: tower.projectFingerprint || null,
+    towerFingerprint: projectFingerprint,
+    rank: effectiveRank,
     regionSpec: regionHashable,
     solverModelFingerprint: model ? model.fingerprint : null,
     objectiveFingerprint: objective.explicit ? objective.fingerprint : null,
@@ -197,7 +285,7 @@ function compileSolveTask(rawTask, context) {
   };
   const taskFingerprint = fingerprintJson(fingerprintPayload);
 
-  const towerFingerprint = tower.projectFingerprint || null;
+  const towerFingerprint = projectFingerprint;
   const regionFingerprint = fingerprintJson(regionHashable);
   const solverModelFingerprint = model ? model.fingerprint : null;
   const objectiveFingerprint = objective.explicit ? objective.fingerprint : null;
@@ -207,8 +295,8 @@ function compileSolveTask(rawTask, context) {
     tower: {
       id: tower.id,
       projectRoot,
-      projectFingerprint: tower.projectFingerprint || null,
-      rank: tower.rank || regionSpec.rank || "chaos",
+      projectFingerprint,
+      rank: effectiveRank,
       region: { spec: regionSpec },
     },
     model: model || null,
@@ -226,6 +314,7 @@ function compileSolveTask(rawTask, context) {
     maxRuntimeMs: search.maxRuntimeMs,
     maxActionsPerState: search.maxActionsPerState,
     stopOnFirstGoal: search.stopOnFirstGoal,
+    rank: effectiveRank,
     ...(search.actionPolicy ? { actionPolicy: search.actionPolicy } : {}),
   };
 
@@ -256,9 +345,11 @@ function validateSolveTask(rawTask, context) {
 module.exports = {
   SOLVE_TASK_SCHEMA,
   SolveTaskError,
+  buildEffectiveSearch,
   compileSolveTask,
   fingerprintJson,
   normalizeSearch,
+  resolveEffectiveRank,
   stripExternalCompiledMarker,
   validateSolveTask,
 };

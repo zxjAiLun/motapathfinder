@@ -43,12 +43,14 @@ function baseRegionSpec(overrides) {
 }
 
 function baseTask(overrides) {
+  const { tower: towerOverride, ...rest } = overrides || {};
   return {
     schema: SOLVE_TASK_SCHEMA,
     tower: {
       id: "onlyup-synthetic",
       projectRoot: "/absolute/path/to/onlyup",
       region: { spec: baseRegionSpec() },
+      ...(towerOverride || {}),
     },
     objective: { mode: "max-final-hp" },
     search: {
@@ -59,7 +61,7 @@ function baseTask(overrides) {
       goalSkylineLimit: 8,
     },
     verification: { strictReplay: true },
-    ...(overrides || {}),
+    ...rest,
   };
 }
 
@@ -141,6 +143,11 @@ function checkBudgetValidation() {
     "INVALID_TASK",
   );
   expectCode(
+    () => compileSolveTask(baseTask({ search: { maxExpansions: 0 } })),
+    "INVALID_TASK",
+    "maxExpansions=0 is rejected because searchDP would execute it as 1000",
+  );
+  expectCode(
     () => compileSolveTask(baseTask({ search: { maxRuntimeMs: -1 } })),
     "INVALID_TASK",
   );
@@ -163,6 +170,72 @@ function checkBudgetValidation() {
   const ok = compileSolveTask(baseTask());
   assert.strictEqual(ok.taskFingerprint.length, 16);
   assert.ok(Number.isFinite(ok.executeConfig.maxExpansions));
+}
+
+function checkEffectiveSearchSemantics() {
+  // Nested regionSpec.search.dpBudget is inherited when no task budget is set.
+  const nestedBudgetSpec = baseRegionSpec({
+    search: {
+      algorithm: "segment-dp",
+      dpKeyMode: "region",
+      candidateLimit: 2,
+      dpBudget: { maxExpansions: 1234, maxRuntimeMs: 5678 },
+    },
+  });
+  const inherited = compileSolveTask(baseTask({
+    tower: { id: "onlyup-synthetic", region: { spec: nestedBudgetSpec } },
+    search: undefined,
+  }));
+  assert.strictEqual(inherited.normalizedTask.search.maxExpansions, 1234, "regionSpec.search.dpBudget.maxExpansions must be inherited");
+  assert.strictEqual(inherited.normalizedTask.search.maxRuntimeMs, 5678);
+  assert.strictEqual(inherited.executeConfig.maxExpansions, 1234, "executeConfig must come from the same effective search");
+
+  // Task-level search overrides the nested dpBudget.
+  const overridden = compileSolveTask(baseTask({
+    tower: { id: "onlyup-synthetic", region: { spec: nestedBudgetSpec } },
+    search: { maxExpansions: 999 },
+  }));
+  assert.strictEqual(overridden.normalizedTask.search.maxExpansions, 999, "task search must override nested dpBudget");
+  assert.strictEqual(overridden.executeConfig.maxExpansions, 999);
+  assert.notStrictEqual(overridden.taskFingerprint, inherited.taskFingerprint);
+
+  // Effective rank enters the fingerprint.
+  const rankEasy = compileSolveTask(baseTask({ tower: { id: "onlyup-synthetic", rank: "easy" } }));
+  const rankHard = compileSolveTask(baseTask({ tower: { id: "onlyup-synthetic", rank: "hard" } }));
+  assert.notStrictEqual(rankEasy.taskFingerprint, rankHard.taskFingerprint, "rank must change the task fingerprint");
+  assert.strictEqual(rankEasy.normalizedTask.tower.rank, "easy");
+}
+
+function checkProjectFingerprintBinding() {
+  // A provided fingerprint is verified against the project at projectRoot.
+  const realRoot = path.join(ROOT, "Only upV2.1", "Only upV2.1");
+  const computed = compileSolveTask(baseTask({
+    tower: { id: "onlyup-synthetic", projectRoot: realRoot, region: { spec: baseRegionSpec() } },
+  }));
+  assert.ok(computed.towerFingerprint, "the project fingerprint must be computed from real project content");
+  assert.strictEqual(typeof computed.towerFingerprint, "string");
+  // Same content, same fingerprint; a wrong provided fingerprint is rejected.
+  const withCorrect = compileSolveTask(baseTask({
+    tower: {
+      id: "onlyup-synthetic",
+      projectRoot: realRoot,
+      projectFingerprint: computed.towerFingerprint,
+      region: { spec: baseRegionSpec() },
+    },
+  }));
+  assert.strictEqual(withCorrect.taskFingerprint, computed.taskFingerprint);
+  expectCode(
+    () => compileSolveTask(baseTask({
+      tower: {
+        id: "onlyup-synthetic",
+        projectRoot: realRoot,
+        projectFingerprint: "deadbeefdeadbeef",
+        region: { spec: baseRegionSpec() },
+      },
+    })),
+    "INVALID_TASK",
+    "a projectFingerprint that does not match the project content must be rejected",
+  );
 }
 
 function checkLegacyRegionWithoutModelObjective() {
@@ -201,14 +274,22 @@ function main() {
   checkFingerprintStability();
   checkInputTrustBoundary();
   checkBudgetValidation();
+  checkEffectiveSearchSemantics();
+  checkProjectFingerprintBinding();
   checkLegacyRegionWithoutModelObjective();
   checkRealRegionSpecCompile();
   process.stdout.write(JSON.stringify({
-    schema: "motapathfinder.pr-5.3c-solve-task-contract.v1",
+    schema: "motapathfinder.pr-5.3c1-solve-task-contract.v1",
     status: "passed",
     controls: {
       fingerprintStableAcrossKeyOrderAndPaths: true,
       fingerprintChangesWithModelObjectiveBudget: true,
+      rankChangesFingerprint: true,
+      projectContentBindsFingerprint: true,
+      wrongProjectFingerprintRejected: true,
+      nestedDpBudgetInherited: true,
+      taskSearchOverridesDpBudget: true,
+      maxExpansionsZeroRejected: true,
       normalizedRoundTripPreservesFingerprint: true,
       externalCompiledRejected: true,
       sourceFileInjectionIgnored: true,
