@@ -173,6 +173,23 @@ manager.cancel(job.id);
 
 The Launcher should consume only this API; it must not read `diagnostics.dp` internals or reimplement candidate comparison.
 
+## Solver Launcher
+
+`shared-solver/launcher/` is a localhost-only GUI built on the public contracts:
+
+```bash
+npm run launcher --prefix shared-solver
+```
+
+Endpoints (localhost only by default):
+
+- `GET /api/health`, `GET /api/towers`, `GET /api/towers/:id`, `GET /api/towers/:id/regions`, `GET /api/towers/:id/regions/:regionId`
+- `POST /api/tasks/validate` — compile/preflight only, returns normalized task + fingerprints
+- `POST /api/jobs` (202), `GET /api/jobs`, `GET /api/jobs/:id`, `GET /api/jobs/:id/result`, `GET /api/jobs/:id/route` (artifact download), `POST /api/jobs/:id/cancel`
+- `GET /api/jobs/:id/events` — SSE (`progress` / `terminal` / `heartbeat`), monotonic sequence, `Last-Event-ID` resumption
+
+The tower registry validates `projectRoot` and computes the project fingerprint server-side; the Launcher never exposes arbitrary file reads. After a server restart, terminal jobs are recovered from `FileJobStore`; stale `queued`/`running` records are shown as `Interrupted` (a view-model state only, not a SolverJob state).
+
 ## Agent Output Contract
 
 Each agent run should write one run directory containing:

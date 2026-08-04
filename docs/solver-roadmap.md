@@ -721,3 +721,12 @@ PR-5.3c 系列正式关闭，c3 收尾：
 - 实时 bestKnown 拆分 `decisionDepth` 与 `routeLength`：route 重建前 `routeLength: null` + `routeLengthExact:false`，重建/回放后发布真实值 + `routeLengthExact:true`。
 - `compileExecutableSolveTask` 真实加载项目并计算 fingerprint，外部 fingerprint 不能替代实际值。
 - terminal progress 同时发给 subscriber 并写入 `progress.ndjson`。
+
+### 2026-08-04 更新：PR-5.3d Solver Launcher GUI MVP
+
+5.3 系列关闭。Launcher 只消费公开 SolveTask/SolverJob/SolverProgress/SolverJobResult 合同：
+
+- `shared-solver/launcher/`：Node 内置 http 服务器（默认 127.0.0.1）、tower registry（服务端计算 project fingerprint、防路径穿越）、稳定 API（task preflight、job CRUD、SSE progress）。
+- `shared-solver/launcher/ui/`：手动 SolveTask 构建器 + Job dashboard；禁止虚假完成百分比，bestKnown exactness、decisionDepth/routeLength 分离展示。
+- `shared-solver/run-solver-launcher.js` CLI：`npm run launcher --prefix shared-solver`。
+- 重启后 terminal jobs 从 FileJobStore 恢复；stale queued/running 显示为 `Interrupted`（仅 view-model）。

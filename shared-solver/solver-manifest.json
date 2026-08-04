@@ -178,6 +178,7 @@
         "shared-solver/check-objective-safe-archive.js",
         "shared-solver/check-solve-task-contract.js",
         "shared-solver/check-solver-job-contract.js",
+        "shared-solver/check-launcher-api.js",
         "shared-solver/check-teacher-search-observer.js",
         "shared-solver/check-teacher-dominance-audit.js",
         "shared-solver/check-hybrid-fair-agenda.js",
@@ -196,6 +197,9 @@
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
+      ],
+      "paths": [
+        "shared-solver/check-launcher-api.js"
       ]
     }
   },
@@ -1605,6 +1609,66 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
+    },
+    "shared-solver/launcher/server.js": {
+      "id": "launcher-server",
+      "path": "shared-solver/launcher/server.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/launcher/router.js": {
+      "id": "launcher-router",
+      "path": "shared-solver/launcher/router.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/launcher/job-api.js": {
+      "id": "launcher-job-api",
+      "path": "shared-solver/launcher/job-api.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/launcher/tower-registry.js": {
+      "id": "launcher-tower-registry",
+      "path": "shared-solver/launcher/tower-registry.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
     }
   },
   "tests": {
@@ -2153,6 +2217,20 @@
       "requiresStrictReplay": true,
       "cleanCheckout": false,
       "notes": "real Chromium short SolveTask job queued->completed with strict route replay"
+    },
+    "shared-solver/check-launcher-api.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.3d launcher API contract: registry path safety, task preflight, job lifecycle, SSE, restart persistence"
+    },
+    "shared-solver/check-launcher-ui-live.js": {
+      "grade": "integration-local",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": false,
+      "notes": "real Chromium launcher UI smoke: builder, preflight, worker job verified-route, refresh recovery, route metrics"
     }
   }
 }
