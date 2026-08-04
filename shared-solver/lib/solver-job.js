@@ -214,20 +214,21 @@ function bestKnownFromState(task, state, kind, claim, metrics, objectiveValueOve
   const hero = (state.hero || {});
   const decisionDepth = typeof metrics === "object" ? metrics.decisionDepth : metrics;
   const routeLength = typeof metrics === "object" ? metrics.routeLength : metrics;
-  const evaluation = objectiveValueOverride == null && task && task.objective && task.objective.explicit
+  const objectiveEvaluation = objectiveValueOverride == null && task && task.objective && task.objective.explicit
     ? task.objective.evaluateState(objectiveStateFromSnapshot(state, metrics))
     : null;
+  const hasExplicitObjective = task && task.objective && task.objective.explicit;
   return {
     kind,
     goalReached: kind === "goal-candidate" || kind === "verified-route" || kind === "route-artifact",
     verified: kind === "verified-route",
     floorId: state.floorId || null,
-    objectiveValue: objectiveValueOverride != null ? objectiveValueOverride : (evaluation ? evaluation.value : null),
-    objectiveFingerprint: task && task.objective && task.objective.explicit
-      ? task.objective.fingerprint
-      : null,
-    routeLength: routeLength == null ? null : routeLength,
     decisionDepth: decisionDepth == null ? null : decisionDepth,
+    routeLength: routeLength == null ? null : routeLength,
+    routeLengthExact: routeLength != null,
+    objectiveValue: objectiveValueOverride != null ? objectiveValueOverride : (objectiveEvaluation ? objectiveEvaluation.value : null),
+    objectiveFingerprint: hasExplicitObjective ? task.objective.fingerprint : null,
+    objectiveValueExact: hasExplicitObjective && (objectiveValueOverride != null || objectiveEvaluation != null),
     hero: {
       hp: hero.hp == null ? null : hero.hp,
       atk: hero.atk == null ? null : hero.atk,
@@ -390,10 +391,9 @@ async function executeSolveJob(task, {
       let bestKnownKind;
       if (normalizedTask.verification.strictReplay !== false) {
         // Real runtime strict replay: actually execute the route in the
-        // runtime and verify every step + final snapshot + objective.  The
-        // runtime returns the true route length (auto-steps included) and the
-        // objective verification; the artifact's own metadata is not treated as
-        // verification.
+        // runtime and verify every step + final snapshot.  The runtime returns
+        // the true route length (auto-steps included).  The artifact's own
+        // metadata is not treated as verification.
         let replayResult;
         try {
           replayResult = await replayRouteFile(routeRecord, {
@@ -410,18 +410,23 @@ async function executeSolveJob(task, {
         } catch (error) {
           throw makeStrictReplayFailure(error);
         }
-        const runtimeValue = replayResult &&
-          replayResult.objectiveVerification &&
-          replayResult.objectiveVerification.value;
-        const metadataValue = routeRecord.metadata && routeRecord.metadata.finalObjectiveValue;
-        if (
-          runtimeValue == null ||
-          stableObjectiveValue(runtimeValue) !== stableObjectiveValue(objectiveValue.value) ||
-          stableObjectiveValue(metadataValue) !== stableObjectiveValue(objectiveValue.value)
-        ) {
-          throw makeStrictReplayFailure(new Error(
-            `objective value mismatch: result=${JSON.stringify(objectiveValue.value)} metadata=${JSON.stringify(metadataValue)} runtime=${JSON.stringify(runtimeValue)}`,
-          ));
+        // The 3-way objective reconciliation only applies when an explicit
+        // ObjectiveSpec exists.  Legacy tasks without an objective verify the
+        // route runtime replay only; objectiveValue stays null.
+        if (objective && objective.explicit) {
+          const runtimeValue = replayResult &&
+            replayResult.objectiveVerification &&
+            replayResult.objectiveVerification.value;
+          const metadataValue = routeRecord.metadata && routeRecord.metadata.finalObjectiveValue;
+          if (
+            runtimeValue == null ||
+            stableObjectiveValue(runtimeValue) !== stableObjectiveValue(objectiveValue.value) ||
+            stableObjectiveValue(metadataValue) !== stableObjectiveValue(objectiveValue.value)
+          ) {
+            throw makeStrictReplayFailure(new Error(
+              `objective value mismatch: result=${JSON.stringify(objectiveValue.value)} metadata=${JSON.stringify(metadataValue)} runtime=${JSON.stringify(runtimeValue)}`,
+            ));
+          }
         }
         verifiedMetrics = {
           decisionDepth,

@@ -26,11 +26,6 @@ function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
-function depthOf(event) {
-  const depth = Number((event && event.decisionDepth) || 0);
-  return depth > 0 ? depth : null;
-}
-
 function summarizeDpHero(hero) {
   const source = hero || {};
   return {
@@ -121,18 +116,23 @@ class SolverProgressAccumulator {
     // improvement with >= (wrong for min / lexicographic / non-scalar values).
     // It projects the search's own objective fingerprint/value/trace/exactness.
     const exact = event.objectiveValueExact === true;
+    // At goal-enqueue time the full route has not been reconstructed yet, so
+    // decisionDepth is known but routeLength is not.  Never fill the
+    // routeLength field with the decision depth.
     this.bestKnown = {
       kind: "goal-candidate",
       goalReached: true,
       verified: false,
       floorId: event.floorId || null,
+      decisionDepth: event.decisionDepth == null ? null : Number(event.decisionDepth),
+      routeLength: null,
+      routeLengthExact: false,
       objectiveValue: exact ? event.objectiveValue : null,
       objectiveFingerprint: event.objectiveFingerprint || null,
       objectiveComparisonTrace: exact && Array.isArray(event.objectiveComparisonTrace)
         ? event.objectiveComparisonTrace
         : [],
       objectiveValueExact: exact,
-      routeLength: depthOf(event),
       hero: summarizeDpHero((event && event.hero) || {}),
       proofClaim: "candidate-only",
     };
