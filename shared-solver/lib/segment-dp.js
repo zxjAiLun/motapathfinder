@@ -1805,7 +1805,10 @@ function selectGoalSkyline(simulator, states, segment, options) {
     );
   }
   records.sort(compareGoalRecords).forEach(keepCandidate);
-  return selected.slice(0, limit).sort(compareGoalRecords);
+  const goalSkyline = selected.slice(0, limit).sort(compareGoalRecords);
+  goalSkyline.goalArchiveTrimmed = records.length > limit;
+  goalSkyline.goalArchiveCandidateCount = records.length;
+  return goalSkyline;
 }
 
 function normalizeCandidateRecord(candidate, index, fallbackSegmentId) {
@@ -1975,7 +1978,10 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
     );
   }
   records.sort(compareGoalRecords).forEach(keepCandidate);
-  return selected.slice(0, limit).sort(compareGoalRecords);
+  const frontier = selected.slice(0, limit).sort(compareGoalRecords);
+  frontier.milestoneFrontierTrimmed = records.length > limit;
+  frontier.milestoneFrontierCandidateCount = records.length;
+  return frontier;
 }
 
 function compactState(state) {
@@ -2559,6 +2565,12 @@ function searchSegmentDP(simulator, startState, segment, options) {
         ? "resource-first"
         : dpConfig.priorityMode || dpConfig.dpPriorityMode || "default",
     actionProviderMode: actionProviderMode || "segment-provider",
+    // The objective comparator is a pure terminal hook: it only orders the
+    // reached goal archive / bestGoalNode / final goal result.  It must not
+    // reach the DP key, same-key HP dominance, agenda, or intermediate pruning.
+    goalStateComparator: config.objectiveSpec && config.objectiveSpec.explicit
+      ? (left, right) => -config.objectiveSpec.compareCandidates(left, right)
+      : undefined,
     observerCaptureMode: dpConfig.observerCaptureMode || config.observerCaptureMode || "off",
     observerCaptureDominanceWitnesses: dpConfig.observerCaptureDominanceWitnesses === true || config.observerCaptureDominanceWitnesses === true,
     observerCaptureWitnessStates: dpConfig.observerCaptureWitnessStates === true || config.observerCaptureWitnessStates === true,
@@ -2728,6 +2740,8 @@ function searchSegmentDP(simulator, startState, segment, options) {
       goalSkyline: {
         primaryOutput: true,
         count: goalSkyline.length,
+        goalArchiveTrimmed: goalSkyline.goalArchiveTrimmed === true,
+        goalArchiveCandidateCount: goalSkyline.goalArchiveCandidateCount,
         candidates: goalSkyline.map((candidate) => ({
           id: candidate.id,
           tags: candidate.tags,
@@ -2784,7 +2798,7 @@ function mergeMilestoneFrontier(simulator, candidates, segment, options) {
     segment,
     options,
   );
-  return selected.map((record, index) => ({
+  const merged = selected.map((record, index) => ({
     id: `${segment.id}:candidate-${index}`,
     state: record.state,
     route: record.route,
@@ -2794,6 +2808,9 @@ function mergeMilestoneFrontier(simulator, candidates, segment, options) {
     tags: record.tags,
     score: record.score,
   }));
+  merged.milestoneFrontierTrimmed = selected.milestoneFrontierTrimmed === true;
+  merged.milestoneFrontierCandidateCount = selected.milestoneFrontierCandidateCount;
+  return merged;
 }
 
 function mergeFailurePropagation(attempts) {
@@ -3195,6 +3212,8 @@ function runSegmentAgainstFrontier(
     startCandidatesTried: attempts.length,
     startCandidatesAvailable: (frontier || []).length,
     candidates: compactSegmentCandidates(merged),
+    milestoneFrontierTrimmed: merged.milestoneFrontierTrimmed === true,
+    milestoneFrontierCandidateCount: merged.milestoneFrontierCandidateCount,
     attempts: attempts.map((attempt) => ({
       startCandidateId: attempt.startCandidateId,
       found: attempt.found,

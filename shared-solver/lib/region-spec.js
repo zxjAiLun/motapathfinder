@@ -211,6 +211,7 @@ function iterAttemptDpDiagnostics(result) {
         label: segment.label,
         found: attempt.found,
         dp,
+        goalSkyline: ((attempt.diagnostics || {}).goalSkyline) || null,
       });
     }
   }
@@ -255,16 +256,45 @@ function buildRegionProofClaim(result, regionSpec, objectiveSpec) {
   const objectiveEarlyStopSegments = objective.requiresOptimizationProof
     ? stopOnFirstGoalSegments
     : [];
+  // Candidate retention scope: the objective only orders already-reached goal
+  // candidates, so the goal archive cap and milestone candidate frontier are
+  // part of the proof scope.  A truncated archive or frontier, a non
+  // objective-aware archive, or an objective the DP cannot preserve must all
+  // downgrade the objective claim.
+  const goalArchiveTrimmed = attempts.some((attempt) =>
+    attempt.dp.goalArchiveTrimmed === true ||
+    ((attempt.goalSkyline || {}).goalArchiveTrimmed === true),
+  );
+  const goalArchiveObjectiveAware = attempts.length > 0 &&
+    attempts.every((attempt) => attempt.dp.goalArchiveObjectiveAware === true);
+  const milestoneFrontierTrimmed = (result.segmentResults || []).some(
+    (segment) => segment.milestoneFrontierTrimmed === true,
+  );
+  const searchPreserving = objective.searchPreserving !== false;
   const objectiveClaim = !result || !result.found
     ? "not-found"
     : !objective.explicit || !objective.requiresOptimizationProof
       ? "goal-found"
-      : completeWithinActionSet && objectiveEarlyStopSegments.length === 0
+      : completeWithinActionSet &&
+        objectiveEarlyStopSegments.length === 0 &&
+        searchPreserving &&
+        goalArchiveObjectiveAware &&
+        !goalArchiveTrimmed &&
+        !milestoneFrontierTrimmed
         ? "bounded-optimal"
-        : "candidate-only";
+        : completeWithinActionSet && objectiveEarlyStopSegments.length === 0
+          ? "bounded-optimal-within-retained-frontier"
+          : "candidate-only";
   if (objectiveClaim === "candidate-only") {
     notes.push("objective optimization was not exhaustively established; result is candidate-only");
   }
+  if (objectiveClaim === "bounded-optimal-within-retained-frontier") {
+    notes.push("objective optimum is only established within the retained goal/milestone candidate frontier");
+  }
+  if (goalArchiveTrimmed) notes.push("goal archive was capped by goalSkylineLimit; objective optimum may have been discarded");
+  if (milestoneFrontierTrimmed) notes.push("milestone candidate frontier was capped by candidateLimit; objective optimum may have been discarded");
+  if (!goalArchiveObjectiveAware) notes.push("goal archive was not fully ordered by the objective comparator; objective claim is limited");
+  if (!searchPreserving) notes.push("objective references fields the DP may discard; bounded-optimal cannot be claimed");
   return {
     found: Boolean(result && result.found),
     proofLevel,
@@ -286,6 +316,10 @@ function buildRegionProofClaim(result, regionSpec, objectiveSpec) {
       allowsFirstGoalStop: objective.allowsFirstGoalStop,
       requiresOptimizationProof: objective.requiresOptimizationProof,
       earlyStopSegments: [...new Set(objectiveEarlyStopSegments)],
+      goalArchiveObjectiveAware,
+      goalArchiveTrimmed,
+      milestoneFrontierTrimmed,
+      searchPreserving,
       claim: objectiveClaim,
     },
     notes,

@@ -126,6 +126,23 @@ function compareGoalStates(left, right) {
   return routeLengthOfState(right) - routeLengthOfState(left);
 }
 
+// The goal-state comparator is a pure terminal hook.  It orders which reached
+// goal states are retained in the goal archive / bestGoalNode / final goal
+// result, and may be replaced per-segment (e.g. with an ObjectiveSpec-aware
+// comparator on the final segment).  It must never be used for bestByKey,
+// isBetterForSameDpKey, the agenda, action ranking, or intermediate pruning.
+// The default delegates to compareGoalStates and tolerates both raw states and
+// node/candidate records.
+function resolveGoalStateComparator(config) {
+  const custom = config && config.goalStateComparator;
+  if (typeof custom === "function") return custom;
+  return (left, right) => {
+    const leftState = left && left.state ? left.state : left;
+    const rightState = right && right.state ? right.state : right;
+    return compareGoalStates(leftState, rightState);
+  };
+}
+
 class BinaryHeap {
   constructor(compare) {
     this.compare = compare;
@@ -448,10 +465,11 @@ function selectGoalSkylineNodes(goalNodes, options) {
   const config = options || {};
   const limit = Math.max(1, Number(config.goalSkylineLimit || 8));
   const preserveGoalArchive = config.preserveGoalArchive === true;
+  const goalComparator = resolveGoalStateComparator(config);
   const sorted = (goalNodes || [])
     .filter(Boolean)
     .slice()
-    .sort((left, right) => compareGoalStates(right.state, left.state));
+    .sort((left, right) => goalComparator(right, left));
   const selected = [];
   const seenKeys = new Set();
   for (const node of sorted) {
@@ -487,8 +505,10 @@ function compactGoalArchiveNode(simulator, node, config) {
   };
 }
 
-function describeGoalArchiveComparison(left, right) {
+function describeGoalArchiveComparison(left, right, goalComparator) {
   if (!left || !right) return null;
+  const customComparator = typeof goalComparator === "function";
+  const compare = customComparator ? goalComparator : compareGoalStates;
   const fields = [
     "hp",
     "effectiveAtk",
@@ -502,8 +522,8 @@ function describeGoalArchiveComparison(left, right) {
     "routeLength",
   ];
   const comparison = {
-    comparator: "compareGoalStates",
-    result: compareGoalStates(left, right),
+    comparator: customComparator ? "goalStateComparator" : "compareGoalStates",
+    result: compare(left, right),
     hpDiff: heroHp(left) - heroHp(right),
     effectiveAtkDiff: effectiveHeroValue(left, "atk") - effectiveHeroValue(right, "atk"),
     effectiveDefDiff: effectiveHeroValue(left, "def") - effectiveHeroValue(right, "def"),
@@ -553,9 +573,10 @@ function buildGoalArchiveAudit({
   const activeNodeIds = new Set(activeGoalNodes.map((node) => node.nodeId));
   const selectedNodeIds = new Set(selectedGoalNodes.map((node) => node.nodeId));
   const goalArchiveCapacity = Math.max(1, Number(config.goalSkylineLimit || 8));
+  const goalComparator = resolveGoalStateComparator(config);
   const sortedActive = activeGoalNodes
     .slice()
-    .sort((left, right) => compareGoalStates(right.state, left.state));
+    .sort((left, right) => goalComparator(right, left));
   const sortedIndex = new Map(sortedActive.map((node, index) => [node.nodeId, index]));
   const selectedIndex = new Map(selectedGoalNodes.map((node, index) => [node.nodeId, index]));
   const targetRecords = targetKeys.map((exactStateKey) => {
@@ -618,7 +639,11 @@ function buildGoalArchiveAudit({
       actualReplacementWitness: firstEviction && firstEviction.replacement || null,
       capacityBoundaryWitness,
       comparison: firstEviction && firstEviction.comparison || capacityBoundaryNode
-        ? describeGoalArchiveComparison(targetNode && targetNode.state, capacityBoundaryNode && capacityBoundaryNode.state)
+        ? describeGoalArchiveComparison(
+          targetNode && targetNode.state,
+          capacityBoundaryNode && capacityBoundaryNode.state,
+          goalComparator,
+        )
         : null,
       initialInsertion: firstInsertion || null,
     };
@@ -978,6 +1003,7 @@ function createDpObserver(config) {
 function searchDP(simulator, initialState, options) {
   const config = options || {};
   const observer = createDpObserver(config);
+  const goalStateComparator = resolveGoalStateComparator(config);
   const maxExpansions = Number(config.maxExpansions || 1000);
   const maxActionsPerState = Number(config.maxActionsPerState || 256);
   const agendaMode = String(config.dpAgendaMode || config.agendaMode || "best-first");
@@ -1616,7 +1642,7 @@ function searchDP(simulator, initialState, options) {
       }
       goalNodes.push(node);
       goalArchiveRecordAccepted(node);
-      if (!bestGoalNode || compareGoalStates(state, bestGoalNode.state) > 0) bestGoalNode = node;
+      if (!bestGoalNode || goalStateComparator(state, bestGoalNode.state) > 0) bestGoalNode = node;
       if (observer) {
         emitStateEvent("goalAccepted", state, node, () => ({
           reasonCode: "goal-predicate-accepted",
@@ -2013,17 +2039,6 @@ function searchDP(simulator, initialState, options) {
     const active = bestByKey.get(node.key);
     return Boolean(active && active.nodeId === node.nodeId);
   });
-  const goalSkylineNodes = selectGoalSkylineNodes(activeGoalNodes, config);
-  const goalArchiveAudit = buildGoalArchiveAudit({
-    simulator,
-    config,
-    goalNodes,
-    activeGoalNodes,
-    selectedGoalNodes: goalSkylineNodes,
-    accepted: goalArchiveAuditAccepted,
-    events: goalArchiveAuditEvents,
-  });
-
   const attachRouteToNodeState = (node) => {
     if (!node || !node.state) return null;
     node.state.route = initialRoutePrefix.concat(reconstructActionEntries(nodes, node));
@@ -2034,6 +2049,28 @@ function searchDP(simulator, initialState, options) {
     }
     return node.state;
   };
+  // Attach routes before the goal archive is ordered so route-length-aware
+  // objective comparators (and the legacy route-length tie-break) see the real
+  // route length instead of an empty route.  The objective comparator must only
+  // influence archive retention / bestGoalNode / final goal result, never the
+  // DP key, dominance, agenda, or action pruning.
+  activeGoalNodes.forEach((node) => attachRouteToNodeState(node));
+  const goalSkylineNodes = selectGoalSkylineNodes(activeGoalNodes, config);
+  const goalArchiveLimit = Math.max(1, Number(config.goalSkylineLimit || 8));
+  const goalArchiveObjectiveAware = typeof config.goalStateComparator === "function";
+  const goalArchiveTrimmed = activeGoalNodes.length > goalArchiveLimit ||
+    goalSkylineNodes.length < activeGoalNodes.length;
+  const goalArchiveEvictedCount = Math.max(0, goalNodes.length - activeGoalNodes.length);
+  const goalArchiveAudit = buildGoalArchiveAudit({
+    simulator,
+    config,
+    goalNodes,
+    activeGoalNodes,
+    selectedGoalNodes: goalSkylineNodes,
+    accepted: goalArchiveAuditAccepted,
+    events: goalArchiveAuditEvents,
+  });
+
   const firstGoalState = attachRouteToNodeState(firstGoalNode);
   const bestGoalState = attachRouteToNodeState(bestGoalNode);
   const goalSkylineStates = goalSkylineNodes
@@ -2257,6 +2294,11 @@ function searchDP(simulator, initialState, options) {
         foundBestGoal: Boolean(bestGoalState),
         goalSkylineLimit: Math.max(1, Number(config.goalSkylineLimit || 8)),
         goalSkylineCount: goalSkylineStates.length,
+        goalArchiveObjectiveAware,
+        goalArchiveTrimmed,
+        goalArchiveEvictedCount,
+        activeGoalCount: activeGoalNodes.length,
+        goalNodeCount: goalNodes.length,
         observerEnabled: Boolean(observer),
         observerErrors: observer ? observer.errorCount : 0,
         landmarkArchiveCount: landmarkArchive.length,

@@ -146,6 +146,36 @@ function readRouteFile(filePath) {
   return record;
 }
 
+function objectiveStateFromRouteSnapshot(snapshot, decisionCount) {
+  const count = Math.max(0, Number(decisionCount) || 0);
+  return {
+    hero: (snapshot && snapshot.hero) || {},
+    inventory: (snapshot && snapshot.inventory) || {},
+    route: Array.from({ length: count }, () => null),
+    meta: { decisionDepth: count },
+  };
+}
+
+// Recompute objective metadata after composing routes.  The suffix metadata
+// only reflects the suffix's own decision count / final snapshot; a composed
+// route's route-length / decision-depth objective values change once prefix and
+// suffix are concatenated.  This must be fail-closed: recompute from the
+// composed final snapshot and composed decision count, or drop the stale
+// metadata rather than persisting a value that strict live replay would reject.
+function recomputeComposedObjectiveMetadata(metadata, finalSnapshot, decisionCount) {
+  if (!metadata || !metadata.objectiveSpec || !metadata.objectiveFingerprint) return;
+  const objective = compileObjectiveSpec(
+    metadata.objectiveSpec,
+    null,
+    { maintainedHeroFields: metadata.solverSnapshotHeroFields },
+  );
+  if (!objective.explicit) return;
+  const evaluation = objective.evaluateState(
+    objectiveStateFromRouteSnapshot(finalSnapshot, decisionCount),
+  );
+  Object.assign(metadata, objectiveMetadata(objective, evaluation));
+}
+
 function composeRouteRecords(prefixRecord, suffixRecord, options) {
   const prefix = prefixRecord || {};
   const suffix = suffixRecord || {};
@@ -200,6 +230,11 @@ function composeRouteRecords(prefixRecord, suffixRecord, options) {
   });
   notes.push(
     `Composed from ${config.prefixFile || "prefix route"} and ${config.suffixFile || "suffix route"}; exact boundary verified.`,
+  );
+  recomputeComposedObjectiveMetadata(
+    metadata,
+    suffix.final && suffix.final.snapshot,
+    decisions.length,
   );
   return {
     schema: ROUTE_SCHEMA,

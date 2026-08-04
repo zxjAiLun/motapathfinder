@@ -157,6 +157,9 @@ function validateNumericPath(path, model, options, errorPath) {
 
 function descriptorForField(path, direction, model, options, errorPath) {
   const descriptor = validateNumericPath(path, model, options, errorPath);
+  if (direction !== "max" && direction !== "min") {
+    fail("OBJECTIVE_INVALID_DIRECTION", `${errorPath}.direction must be max or min`, errorPath);
+  }
   descriptor.direction = direction;
   return descriptor;
 }
@@ -335,9 +338,13 @@ function normalizeObjectiveSpec(rawSpec, solverModel, options) {
 function descriptorFromJson(descriptor, model, options, errorPath) {
   if (descriptor && descriptor.kind === "clear") return { kind: "clear", token: "clear" };
   if (descriptor && descriptor.kind === "score") {
+    const direction = descriptor.direction || "max";
+    if (direction !== "max" && direction !== "min") {
+      fail("OBJECTIVE_INVALID_DIRECTION", `${errorPath}.direction must be max or min`, `${errorPath}.direction`);
+    }
     return {
       kind: "score",
-      direction: descriptor.direction || "max",
+      direction,
       terms: normalizeTerms(descriptor.terms, model, options, `${errorPath}.terms`),
     };
   }
@@ -370,6 +377,118 @@ function descriptorsForSpec(spec, model, options) {
     ),
     ...tieBreakers,
   ];
+}
+
+// Objective–Search compatibility: the ObjectiveSpec only orders already-reached
+// terminal candidates.  The DP key, same-key HP dominance, agenda, and action
+// pruning decide which states survive the search.  An objective that optimizes
+// a field the search can discard is not safe to call "bounded-optimal".
+//
+// Allowed references:
+//   - hero.<field>  -> field must be `key` mode (all values are explored).
+//   - hero.hp       -> max only (same-key dominance retains higher HP).
+//   - inventory.*   -> inventory is part of the DP identity.
+//   - decisionDepth -> min only (dominance keeps shorter depth when HP equal).
+//   - route.length  -> min only.
+// Rejected references fail with OBJECTIVE_FIELD_NOT_SEARCH_PRESERVED,
+// OBJECTIVE_CONFLICTS_WITH_DOMINANCE, OBJECTIVE_INVALID_DIRECTION, or
+// OBJECTIVE_NON_MONOTONE_WEIGHT.
+function validateObjectiveSearchCompatibility(spec, descriptors, model, options) {
+  // Live-replay recompiles a persisted objective from metadata without the
+  // original model.  It was already validated at search preflight time, so
+  // skip re-validation there and treat it as search-preserving.
+  if (options && Array.isArray(options.maintainedHeroFields)) return true;
+  const normalized = model == null
+    ? normalizeSolverModel(null)
+    : (model.schema === "motapathfinder.solver-model.v1"
+      ? model
+      : normalizeSolverModel(model));
+  const heroFields = (normalized && normalized.heroFields) || {};
+  const validateField = (path, direction, errorPath) => {
+    if (path === "decisionDepth" || path === "route.length") {
+      if (direction !== "min") {
+        fail(
+          "OBJECTIVE_INVALID_DIRECTION",
+          `${errorPath} may only be optimized in the min direction; same-key dominance retains shorter depth/route`,
+          errorPath,
+        );
+      }
+      return;
+    }
+    const heroMatch = /^hero\.([A-Za-z][A-Za-z0-9_]*)$/.exec(path);
+    if (heroMatch) {
+      const field = heroMatch[1];
+      if (field === "hp") {
+        if (direction === "min") {
+          fail(
+            "OBJECTIVE_CONFLICTS_WITH_DOMINANCE",
+            `${errorPath} hero.hp cannot be minimized; same-key HP dominance retains higher HP`,
+            errorPath,
+          );
+        }
+        return;
+      }
+      const mode = heroFields[field];
+      if (mode !== "key") {
+        fail(
+          "OBJECTIVE_FIELD_NOT_SEARCH_PRESERVED",
+          `${errorPath} references hero.${field} in ${mode || "unknown"} mode; only key-mode fields are preserved by the DP for terminal optimization`,
+          errorPath,
+        );
+      }
+      return;
+    }
+    // inventory.* is part of the DP identity, so both directions are safe.
+  };
+  const validateTerms = (terms, errorPath) => {
+    (terms || []).forEach((term, index) => {
+      const termPath = `${errorPath}[${index}]`;
+      const path = term.path;
+      if (path === "hero.hp") {
+        if (Number(term.weight) < 0) {
+          fail(
+            "OBJECTIVE_NON_MONOTONE_WEIGHT",
+            `${termPath} negative hero.hp weight conflicts with HP dominance`,
+            termPath,
+          );
+        }
+        return;
+      }
+      if (path === "decisionDepth" || path === "route.length") {
+        if (Number(term.weight) > 0) {
+          fail(
+            "OBJECTIVE_NON_MONOTONE_WEIGHT",
+            `${termPath} positive weight on ${path} conflicts with dominance; use a negative (minimizing) weight`,
+            termPath,
+          );
+        }
+        return;
+      }
+      const heroMatch = /^hero\.([A-Za-z][A-Za-z0-9_]*)$/.exec(path);
+      if (heroMatch) {
+        const field = heroMatch[1];
+        const mode = heroFields[field];
+        if (mode !== "key") {
+          fail(
+            "OBJECTIVE_FIELD_NOT_SEARCH_PRESERVED",
+            `${termPath} references hero.${field} in ${mode || "unknown"} mode; only key-mode fields are preserved by the DP for terminal optimization`,
+            termPath,
+          );
+        }
+      }
+    });
+  };
+  (descriptors || []).forEach((descriptor, index) => {
+    if (!descriptor || descriptor.kind === "clear") return;
+    const errorPath = `objective.descriptors[${index}]`;
+    if (descriptor.kind === "score") {
+      validateTerms(descriptor.terms, `${errorPath}.terms`);
+      return;
+    }
+    validateField(descriptor.path, descriptor.direction, errorPath);
+  });
+  void options;
+  return true;
 }
 
 function readPath(state, path) {
@@ -428,6 +547,7 @@ function buildLegacyObjective() {
     fingerprint: null,
     requireGoal: false,
     terminalOnly: true,
+    searchPreserving: true,
     allowsFirstGoalStop: true,
     requiresOptimizationProof: false,
     getStopPolicy(requested) {
@@ -456,6 +576,15 @@ function compileObjectiveSpec(rawSpec, solverModel, options) {
   const spec = normalizeObjectiveSpec(rawSpec, solverModel, options);
   if (!spec) return buildLegacyObjective();
   const descriptors = descriptorsForSpec(spec, solverModel, options);
+  // Reject objectives that optimize fields the current DP dominance/key can
+  // discard, unless a solver model is unavailable (e.g. live replay, where the
+  // objective was already validated at search preflight time).
+  const searchPreserving = validateObjectiveSearchCompatibility(
+    spec,
+    descriptors,
+    solverModel,
+    options,
+  );
   const optimizationDescriptors = descriptors.filter((descriptor) => descriptor.kind !== "clear");
   const requiresOptimizationProof = spec.mode === "clear"
     ? false
@@ -470,6 +599,7 @@ function compileObjectiveSpec(rawSpec, solverModel, options) {
     fingerprint: spec.fingerprint,
     requireGoal: true,
     terminalOnly: true,
+    searchPreserving,
     allowsFirstGoalStop: spec.mode === "clear" || optimizationDescriptors.length === 0,
     requiresOptimizationProof,
     getStopPolicy(requested) {
