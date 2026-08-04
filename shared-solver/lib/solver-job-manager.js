@@ -318,6 +318,11 @@ class SolverJobManager {
       proof: previous.proof || null,
     };
     job.publishProgress(snapshot);
+    // Terminal progress must also be persisted so progress.ndjson ends with a
+    // completed/failed/cancelled event, not a stale finalizing line.
+    if (this.jobStore) {
+      this.jobStore.appendProgress(job.id, snapshot).catch(() => {});
+    }
   }
 
   _finishPump() {

@@ -342,18 +342,36 @@ function validateSolveTask(rawTask, context) {
   return true;
 }
 
-// Executable-job variant: requires the project root to exist and be loadable
-// with a real project fingerprint, so a misspelled projectRoot fails before a
-// worker is spawned.  Template tasks that only carry a trusted fingerprint can
-// still use compileSolveTask.
+// Executable-job variant: requires the project root to exist and actually be
+// loadable with a real project fingerprint, so a misspelled or malformed
+// projectRoot fails before a worker is spawned.  The supplied fingerprint can
+// never substitute for the actual project fingerprint here: the project is
+// loaded and its real fingerprint is computed; a supplied fingerprint must
+// match it.  Template tasks that only carry a trusted fingerprint can still use
+// compileSolveTask.
 function compileExecutableSolveTask(rawTask, context) {
   const task = compileSolveTask(rawTask, context);
   const projectRoot = task.normalizedTask.tower.projectRoot;
   if (!projectRoot || typeof projectRoot !== "string" || !fs.existsSync(projectRoot)) {
     fail("INVALID_TASK", "tower.projectRoot must exist to submit an executable job", "tower.projectRoot");
   }
-  if (!task.towerFingerprint) {
+  let actual = null;
+  try {
+    const project = loadProject(projectRoot);
+    actual = buildProjectFingerprint(project).fingerprintSha256;
+  } catch (error) {
+    fail(
+      "INVALID_TASK",
+      `project at projectRoot could not be loaded: ${error && error.message ? error.message : String(error)}`,
+      "tower.projectRoot",
+    );
+  }
+  if (!actual) {
     fail("INVALID_TASK", "project fingerprint is empty; the project at projectRoot could not be loaded", "tower.projectFingerprint");
+  }
+  const supplied = task.normalizedTask.tower.projectFingerprint;
+  if (supplied && supplied !== actual) {
+    fail("INVALID_TASK", "tower.projectFingerprint does not match the project at projectRoot", "tower.projectFingerprint");
   }
   return task;
 }
