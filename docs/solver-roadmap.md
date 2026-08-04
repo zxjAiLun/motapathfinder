@@ -704,3 +704,11 @@ PR-5.3c 正式关闭，c1 修复 job 运行时语义与验证边界：
 - Job result objective 采用 route artifact metadata 的权威值（buildRouteRecord 从模拟器重放计算），保证 route.length/decisionDepth 目标正确；result value、metadata value、strict replay 重算值三方一致才能 completed。
 - Progress 增加 `segmentStarted` / `attemptStarted` / `segmentCompleted` / `goalCandidateImproved` 生命周期事件，`actionSetGenerated.trimmedCount` 计入 trimming，`progress-state.goalReached=false`，搜索期间实时发布 goal-candidate bestKnown，completed/failed/cancelled terminal progress 由 manager 发布。
 - 失败/取消任务也生成统一的 `solver-job-result.v1` envelope。
+
+### 2026-08-04 更新：PR-5.3c2 Queue Cancellation & Route Metric Integrity
+
+PR-5.3c1 正式关闭，c2 修复队列取消竞态与路线指标完整性：
+
+- Manager：`_startReserved` 在 reserved job 已被取消时重新 `_pump()`（队列不卡死）；executor 创建/同步启动异常统一进 `_settleError` → `INTERNAL_ERROR` envelope；`submit` 走 `compileExecutableSolveTask` 执行预检。
+- 路线指标拆分 `decisionDepth`（决策数）与 `routeLength`（完整路线长，含 auto-step）：`verifyRouteObjective` 接受 `{decisionDepth, routeLength}`；`replayRouteFile` 返回真实 runtime route length 与 objective verification；`buildRouteRecord` 的 route-length metadata 使用完整候选 route 长；compose 用 rawRoute 全长，`stats.depth` 与 `stats.routeLength` 分开展示。
+- Progress：`goalCandidateImproved` 由搜索器用 Objective comparator 确认并携带 objective projection，accumulator 不再自行 `>=` 比较（min/lexicographic/non-scalar 正确）；inventory 目标投影真实值；route.length 入队阶段标记 inexact，route 重建后发布精确值；`strictReplay:false` 发布 `route-artifact`（verified=false）；bestKnown routeLength 用完整路线长。

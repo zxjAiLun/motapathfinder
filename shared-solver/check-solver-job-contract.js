@@ -24,6 +24,7 @@ const { createWorkerExecutor } = require("./lib/solver-worker-runner");
 const { classifyJobFailure, buildSolverJobResult } = require("./lib/solver-job-result");
 const { SolverProgressAccumulator } = require("./lib/solver-progress");
 const { compileObjectiveSpec } = require("./lib/objective-spec");
+const { composeRouteRecords, ROUTE_SCHEMA } = require("./lib/route-store");
 
 const ROOT = path.resolve(__dirname, "..");
 const SMOKE_SPEC_FILE = path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json");
@@ -64,6 +65,24 @@ function baseTask(overrides) {
       goalSkylineLimit: 8,
     },
     verification: { strictReplay: true },
+    ...(overrides || {}),
+  };
+}
+
+function executableTask(overrides) {
+  const spec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
+  return {
+    schema: SOLVE_TASK_SCHEMA,
+    tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
+    objective: { mode: "max-final-hp" },
+    search: {
+      algorithm: "segment-dp",
+      maxExpansions: 1000,
+      maxRuntimeMs: 10000,
+      candidateLimit: 2,
+      goalSkylineLimit: 8,
+    },
+    verification: { strictReplay: false },
     ...(overrides || {}),
   };
 }
@@ -229,12 +248,16 @@ async function checkMicroJobLifecycle() {
   let lastSequence = 0;
   let mono = true;
   let terminalSeen = false;
+  let finalBestKnownKind = null;
   manager.subscribe(job.id, (snapshot) => {
     phases.push(snapshot.phase);
     if (snapshot.sequence <= lastSequence) mono = false;
     lastSequence = snapshot.sequence;
     if (snapshot.percent !== undefined) mono = false;
     if (snapshot.phase === "completed") terminalSeen = true;
+    if (snapshot.bestKnown && (snapshot.phase === "strict-replay" || snapshot.phase === "finalizing" || snapshot.phase === "completed")) {
+      finalBestKnownKind = snapshot.bestKnown.kind;
+    }
   });
   const settled = await waitForJob(manager, job.id, 120000);
   assert.strictEqual(settled.state, "completed", "micro job must complete");
@@ -246,18 +269,50 @@ async function checkMicroJobLifecycle() {
   assert.strictEqual(settled.result.found, true);
   assert.strictEqual(settled.result.route.strictReplayVerified, false, "strictReplay=false must not claim verification");
   assert.strictEqual(settled.result.route.verificationStatus, "not-requested");
+  assert.notStrictEqual(finalBestKnownKind, "verified-route", "strictReplay=false must never publish a verified-route bestKnown");
   assert.strictEqual(settled.result.identity.taskFingerprint, task.taskFingerprint);
   const expectedValue = settled.result.route.record.metadata.finalObjectiveValue;
   assert.strictEqual(settled.result.objective.value, expectedValue, "objective value must agree with the ObjectiveSpec evaluation");
 }
 
 async function checkCancelQueued() {
-  const task = compileSolveTask(baseTask());
-  const manager = new SolverJobManager({ maxConcurrentJobs: 1 });
-  const job = manager.submit(task);
+  const manager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
+  const job = manager.submit(executableTask());
   const cancelled = manager.cancel(job.id);
   assert.strictEqual(cancelled, true);
   assert.strictEqual(manager.getJob(job.id).state, "cancelled");
+}
+
+async function checkCancelReservedDoesNotStarveQueue() {
+  // Cancel a job that has a starting slot reserved but has not yet started;
+  // the queued successor must eventually run.
+  const manager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
+  const jobA = manager.submit(executableTask());
+  const jobB = manager.submit(executableTask());
+  // jobA's _startReserved is deferred via setImmediate; cancel before it fires.
+  manager.cancel(jobA.id);
+  assert.strictEqual(manager.getJob(jobA.id).state, "cancelled");
+  const settled = await waitForJob(manager, jobB.id, 120000);
+  assert.ok(["completed", "failed"].includes(settled.state), `job B must eventually start and settle, got ${settled.state}`);
+  assert.notStrictEqual(settled.state, "queued");
+}
+
+async function checkExecutorSyncThrow() {
+  // A synchronous executor creation/start throw must become an INTERNAL_ERROR
+  // result envelope, not an uncaught exception.
+  const manager = new SolverJobManager({
+    maxConcurrentJobs: 1,
+    allowInProcess: true,
+    createExecutor: () => {
+      throw new Error("fork resource failure");
+    },
+  });
+  const job = manager.submit(executableTask());
+  const settled = await waitForJob(manager, job.id, 10000);
+  assert.strictEqual(settled.state, "failed");
+  assert.strictEqual(settled.failure.failureClass, "INTERNAL_ERROR");
+  assert.strictEqual(settled.result.status, "failed");
+  assert.strictEqual(settled.result.identity.taskFingerprint, job.task.taskFingerprint);
 }
 
 async function checkWorkerCancel() {
@@ -302,7 +357,6 @@ async function checkWorkerCancel() {
 async function checkConcurrencyBarrier() {
   // maxConcurrentJobs=1 must never run two executors at the same time, even
   // when jobs are submitted synchronously in the same tick.
-  const task = compileSolveTask(baseTask({ verification: { strictReplay: false } }));
   const started = [];
   let releaseFirst;
   let releaseSecond;
@@ -332,9 +386,9 @@ async function checkConcurrencyBarrier() {
       };
     },
   });
-  const jobA = manager.submit(task);
-  const jobB = manager.submit(task);
-  const jobC = manager.submit(task);
+  const jobA = manager.submit(executableTask());
+  const jobB = manager.submit(executableTask());
+  const jobC = manager.submit(executableTask());
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.strictEqual(started.length, 1, "only one executor may start with maxConcurrentJobs=1");
   assert.strictEqual(manager.getJob(jobA.id).state, "running");
@@ -359,7 +413,6 @@ function checkDefaultManagerUsesWorker() {
 }
 
 function checkProgressLifecycleEvents() {
-  const objective = compileObjectiveSpec({ mode: "max-final-hp" }, null);
   const published = [];
   const accumulator = new SolverProgressAccumulator({
     jobId: "job-lifecycle",
@@ -367,7 +420,6 @@ function checkProgressLifecycleEvents() {
     onPublish: (snapshot) => published.push(snapshot),
     throttleMs: 0,
     expansionEvery: 1000,
-    objective,
   });
   accumulator.setStatus("running");
   accumulator.setPhase("preflight");
@@ -381,18 +433,73 @@ function checkProgressLifecycleEvents() {
   accumulator.handleDpEvent({ eventType: "attemptStarted", segmentId: "seg-2", segmentIndex: 1, segmentTotal: 4, attempt: 2 });
   snapshot = published[published.length - 1];
   assert.strictEqual(snapshot.segment.attempt, 2, "attempt index must advance within a segment");
-  // realtime goal candidate improvement is published before search ends
+  // Realtime goal-candidate improvement is accepted directly from the search's
+  // projection; the accumulator must not re-derive improvement with >=.
   accumulator.handleDpEvent({
     eventType: "goalCandidateImproved",
     floorId: "MT3",
     hero: { hp: 150, atk: 5, def: 1 },
     decisionDepth: 6,
+    objectiveFingerprint: "fp-min",
+    objectiveValue: 8,
+    objectiveValueExact: true,
   });
   snapshot = published[published.length - 1];
   assert.strictEqual(snapshot.bestKnown.kind, "goal-candidate");
   assert.strictEqual(snapshot.bestKnown.goalReached, true);
   assert.strictEqual(snapshot.bestKnown.floorId, "MT3");
-  assert.strictEqual(snapshot.bestKnown.routeLength, 6);
+  assert.strictEqual(snapshot.bestKnown.objectiveValue, 8);
+  // A later min-direction improvement with a SMALLER value must be accepted
+  // (the search comparator confirmed it), not rejected by a >= check.
+  accumulator.handleDpEvent({
+    eventType: "goalCandidateImproved",
+    floorId: "MT4",
+    hero: { hp: 140, atk: 6, def: 1 },
+    decisionDepth: 7,
+    objectiveFingerprint: "fp-min",
+    objectiveValue: 5,
+    objectiveValueExact: true,
+  });
+  snapshot = published[published.length - 1];
+  assert.strictEqual(snapshot.bestKnown.objectiveValue, 5, "min-direction improvement with a smaller value must be accepted");
+  // Lexicographic values are projected as-is by the search, never compared
+  // with array coercion in the accumulator.
+  accumulator.handleDpEvent({
+    eventType: "goalCandidateImproved",
+    floorId: "MT4",
+    hero: { hp: 140, atk: 6, def: 1 },
+    decisionDepth: 7,
+    objectiveFingerprint: "fp-lex",
+    objectiveValue: [100, 4],
+    objectiveValueExact: true,
+  });
+  snapshot = published[published.length - 1];
+  assert.deepStrictEqual(snapshot.bestKnown.objectiveValue, [100, 4], "lexicographic objective values must be projected verbatim");
+  // route.length objectives are marked inexact during enqueue (route not yet
+  // rebuilt) and only the post-search publish carries the accurate value.
+  accumulator.handleDpEvent({
+    eventType: "goalCandidateImproved",
+    floorId: "MT5",
+    hero: { hp: 130, atk: 7, def: 1 },
+    decisionDepth: 9,
+    objectiveFingerprint: "fp-route",
+    objectiveValue: null,
+    objectiveValueExact: false,
+  });
+  snapshot = published[published.length - 1];
+  assert.strictEqual(snapshot.bestKnown.objectiveValueExact, false, "route.length candidates must be marked inexact at enqueue time");
+  assert.strictEqual(snapshot.bestKnown.objectiveValue, null, "inexact candidates must not fake an objective value");
+  accumulator.setBestKnown({
+    kind: "goal-candidate",
+    goalReached: true,
+    verified: false,
+    floorId: "MT5",
+    objectiveValue: -14,
+    objectiveValueExact: true,
+    routeLength: 14,
+  });
+  snapshot = published[published.length - 1];
+  assert.strictEqual(snapshot.bestKnown.objectiveValue, -14, "the post-rebuild accurate goal candidate must replace the inexact one");
   accumulator.handleDpEvent({ eventType: "segmentCompleted", segmentId: "seg-2", segmentIndex: 1, segmentTotal: 4 });
   snapshot = published[published.length - 1];
   assert.strictEqual(snapshot.segment, null, "segment must clear after segmentCompleted");
@@ -465,7 +572,6 @@ async function checkRouteLengthObjectiveResult() {
 
 async function checkStrictReplayFailureMapping() {
   // A tampered route must map to STRICT_REPLAY_FAILED, not INTERNAL_ERROR.
-  const task = compileSolveTask(baseTask({ verification: { strictReplay: false } }));
   const manager = new SolverJobManager({
     maxConcurrentJobs: 1,
     allowInProcess: true,
@@ -474,12 +580,65 @@ async function checkStrictReplayFailureMapping() {
       cancel() {}, dispose() {},
     }),
   });
-  const job = manager.submit(task);
+  const job = manager.submit(executableTask());
   const settled = await waitForJob(manager, job.id, 5000);
   assert.strictEqual(settled.state, "failed");
   assert.strictEqual(settled.failure.failureClass, "STRICT_REPLAY_FAILED");
   assert.strictEqual(settled.result.status, "failed");
   assert.strictEqual(settled.result.found, false);
+}
+
+function checkComposedRouteKeepsFullRouteLength() {
+  const objective = compileObjectiveSpec({
+    mode: "maximize-score",
+    terms: [{ path: "route.length", weight: -1 }],
+  }, null);
+  const fingerprint = objective.fingerprint;
+  const spec = objective.toJSON();
+  const makeSnapshot = (floorId, hp) => ({
+    floorId,
+    hero: { hp, atk: 10, def: 10, mdef: 0, lv: 1, exp: 0, money: 0, loc: { x: 1, y: 1, direction: "down" }, equipment: [] },
+    inventory: {},
+    flags: {},
+    floors: {},
+  });
+  const makeDecision = (index, pre, post, summary) => ({
+    index,
+    summary,
+    preExactStateKey: pre,
+    postExactStateKey: post,
+    fingerprint: `fp:${summary}`,
+  });
+  const prefix = {
+    schema: ROUTE_SCHEMA,
+    source: { commit: "x", solver: "solve-task", rank: "chaos" },
+    goal: { type: "region", floorId: "MT2" },
+    metadata: { objectiveSpec: spec, objectiveFingerprint: fingerprint },
+    start: { snapshot: makeSnapshot("MT1", 100), exactStateKey: "k0" },
+    final: { snapshot: makeSnapshot("MT2", 80), exactStateKey: "k1" },
+    decisions: [makeDecision(1, "k0", "k1", "a")],
+    rawRoute: ["a1", "a2"],
+  };
+  const suffix = {
+    schema: ROUTE_SCHEMA,
+    source: { commit: "x", solver: "solve-task", rank: "chaos" },
+    goal: { type: "region", floorId: "MT3" },
+    metadata: {
+      objectiveSpec: spec,
+      objectiveFingerprint: fingerprint,
+      finalObjectiveValue: -3,
+      objectiveComparisonTrace: [],
+    },
+    start: { snapshot: makeSnapshot("MT2", 80), exactStateKey: "k1" },
+    final: { snapshot: makeSnapshot("MT3", 60), exactStateKey: "k2" },
+    decisions: [makeDecision(1, "k1", "k2", "b")],
+    rawRoute: ["b1", "b2", "b3"],
+  };
+  const composed = composeRouteRecords(prefix, suffix);
+  assert.strictEqual(composed.decisions.length, 2, "composed decision count is the sum of decision steps");
+  assert.strictEqual(composed.rawRoute.length, 5);
+  assert.strictEqual(composed.stats.routeLength, 5, "composed routeLength must be the full rawRoute length (auto-steps included)");
+  assert.strictEqual(composed.metadata.finalObjectiveValue, -5, "composed route-length objective must reflect the full route length, not the decision count");
 }
 
 async function main() {
@@ -491,13 +650,16 @@ async function main() {
   checkProgressLifecycleEvents();
   await checkMicroJobLifecycle();
   await checkCancelQueued();
+  await checkCancelReservedDoesNotStarveQueue();
+  await checkExecutorSyncThrow();
   await checkWorkerCancel();
   await checkConcurrencyBarrier();
   await checkFailedJobResultEnvelope();
   await checkRouteLengthObjectiveResult();
   await checkStrictReplayFailureMapping();
+  checkComposedRouteKeepsFullRouteLength();
   process.stdout.write(JSON.stringify({
-    schema: "motapathfinder.pr-5.3c1-solver-job-contract.v1",
+    schema: "motapathfinder.pr-5.3c2-solver-job-contract.v1",
     status: "passed",
     controls: {
       stateMachineTransitions: true,
@@ -511,14 +673,21 @@ async function main() {
       cancelledSearchAbortedNotNaturalFinish: true,
       defaultManagerUsesWorker: true,
       maxConcurrentSlotsHonored: true,
+      cancelReservedQueuedDoesNotStarveQueue: true,
+      executorSyncThrowBecomesInternalError: true,
       progressStateGoalReachedFalse: true,
       realtimeGoalCandidatePublished: true,
+      minDirectionImprovementAccepted: true,
+      lexicographicValueProjectedVerbatim: true,
+      routeLengthInexactThenAccurate: true,
       segmentIndexTotalAttemptAdvance: true,
       actionTrimmingReflectedInProgress: true,
       terminalCompletedProgressPublished: true,
+      strictReplayFalseNeverVerifiedRoute: true,
       failedResultEnvelopeUnified: true,
-      routeLengthObjectiveValueConsistent: true,
       strictReplayFailedMappedCorrectly: true,
+      routeLengthObjectiveValueConsistent: true,
+      composedRouteKeepsFullRouteLength: true,
       resultIdentityBoundToTask: true,
       microJobQueuedToCompleted: true,
     },

@@ -39,6 +39,30 @@ function waitForJob(manager, id, timeoutMs) {
   });
 }
 
+async function checkRouteMetricsStrictReplay(objective, label) {
+  const spec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
+  const task = compileSolveTask({
+    schema: SOLVE_TASK_SCHEMA,
+    tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
+    objective,
+    search: { algorithm: "segment-dp", maxExpansions: 1000, maxRuntimeMs: 10000, candidateLimit: 2 },
+    verification: { strictReplay: true },
+  });
+  const manager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
+  const job = manager.submit(task);
+  const settled = await waitForJob(manager, job.id, 180000);
+  assert.strictEqual(settled.state, "completed", `${label} job must complete with strictReplay:true`);
+  assert.strictEqual(settled.result.route.strictReplayVerified, true, `${label} must be runtime verified`);
+  assert.strictEqual(settled.result.route.verificationStatus, "verified");
+  const metadataValue = settled.result.route.record.metadata.finalObjectiveValue;
+  assert.strictEqual(
+    settled.result.objective.value,
+    metadataValue,
+    `${label}: result objective value must equal the route artifact metadata value`,
+  );
+  return settled.result.route.record;
+}
+
 async function main() {
   assert.ok(findBrowserExecutable(), "Chrome/Edge executable is required for SolverJob live replay");
   const spec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
@@ -80,8 +104,29 @@ async function main() {
   });
   const objective = verifyRouteObjective(routeRecord, routeRecord.final.snapshot, routeRecord.decisions.length);
   assert.strictEqual(objective.matches, true);
+
+  // Auto-step routes distinguish decisionDepth from the full routeLength.
+  const routeLengthRecord = await checkRouteMetricsStrictReplay(
+    { mode: "maximize-score", terms: [{ path: "route.length", weight: -1 }] },
+    "route.length",
+  );
+  assert.ok(
+    routeLengthRecord.stats.routeLength > routeLengthRecord.decisions.length,
+    `auto-step routes must have routeLength > decisions.length (got ${routeLengthRecord.stats.routeLength} vs ${routeLengthRecord.decisions.length})`,
+  );
+  assert.strictEqual(
+    routeLengthRecord.metadata.finalObjectiveValue,
+    -Number(routeLengthRecord.stats.routeLength),
+    "route-length objective metadata must reflect the full route length, not the decision count",
+  );
+
+  await checkRouteMetricsStrictReplay(
+    { mode: "maximize-score", terms: [{ path: "decisionDepth", weight: -1 }] },
+    "decisionDepth",
+  );
+
   process.stdout.write(JSON.stringify({
-    schema: "motapathfinder.pr-5.3c1-solver-job-live.v1",
+    schema: "motapathfinder.pr-5.3c2-solver-job-live.v1",
     status: "passed",
     taskFingerprint: task.taskFingerprint,
     jobId: job.id,
@@ -89,6 +134,8 @@ async function main() {
     routeDecisionCount: routeRecord.decisions.length,
     strictReplayVerifiedInsideJob: true,
     strictReplayRecomputed: true,
+    autoStepRouteLength: routeLengthRecord.stats.routeLength,
+    autoStepDecisions: routeLengthRecord.decisions.length,
     objectiveFingerprint: objective.fingerprint,
   }, null, 2) + "\n");
 }
