@@ -2935,12 +2935,13 @@ function effectiveSegmentBudgets(milestoneSpec, config) {
     const initialOnly = index === 0 && !(config && config.fromMilestoneId);
     const segmentConfig = config || {};
     const initialCap = resolveStartCandidateLimit(segment, segmentConfig, {}, initialOnly ? 1 : null);
-    const candidateCap = segmentCandidateLimit(segment, segmentConfig, {});
-    // The initial segment starts from a single candidate; later segments can
-    // start from up to the shared start-candidate cap (falling back to the
-    // candidate limit, the max merged-frontier size the executor produces).
+    // A later segment's input frontier is produced by earlier phases and is not
+    // deterministically bounded by this segment's candidateLimit (a configured
+    // repair can retain more candidates via repairCandidateLimit).  When there
+    // is no explicit start cap, keep initial null instead of substituting a
+    // number that under-reports what the executor may attempt.
     const attemptCaps = {
-      initial: initialOnly ? 1 : (initialCap != null ? initialCap : candidateCap),
+      initial: initialOnly ? 1 : initialCap,
       configuredRepair: numericOption((segment.dp || {}).repairStartCandidateLimit, null),
       backtrackRetry: backtrackCandidateLimit(segment, segmentConfig),
     };
@@ -4182,6 +4183,7 @@ module.exports = {
   resolveStartCandidateLimit,
   runMilestoneGraph,
   searchSegmentDP,
+  segmentCandidateLimit,
   summarizeEffectiveHero,
   summarizeHero,
   summarizeSegmentFailure,

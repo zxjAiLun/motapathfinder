@@ -25,7 +25,7 @@ const { classifyJobFailure, buildSolverJobResult } = require("./lib/solver-job-r
 const { SolverProgressAccumulator } = require("./lib/solver-progress");
 const { compileObjectiveSpec } = require("./lib/objective-spec");
 const { composeRouteRecords, ROUTE_SCHEMA } = require("./lib/route-store");
-const { effectiveSegmentBudgets, manualSearchOverrides, resolveStartCandidateLimit, withManualBudgetAuthority } = require("./lib/segment-dp");
+const { effectiveSegmentBudgets, manualSearchOverrides, resolveStartCandidateLimit, segmentCandidateLimit, withManualBudgetAuthority } = require("./lib/segment-dp");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
 const { FileJobStore } = require("./lib/file-job-store");
 
@@ -738,7 +738,8 @@ function checkEffectiveSegmentBudgetsReflectManual() {
   assert.strictEqual(overridden[0].perAttempt.maxExpansions, 50000, "manual maxExpansions must override segment budgets");
   assert.strictEqual(overridden[0].perAttempt.maxRuntimeMs, 0, "manual maxRuntimeMs=0 must override segment budgets");
   assert.strictEqual(overridden[1].perAttempt.maxExpansions, 50000);
-  assert.ok(overridden[1].attemptCaps.initial >= 1, "effective budgets must report the per-phase attempt cap");
+  assert.strictEqual(overridden[0].attemptCaps.initial, 1, "the initial segment starts from a single candidate");
+  assert.strictEqual(overridden[1].attemptCaps.initial, null, "a later segment without an explicit start cap is frontier-dependent (null)");
   assert.ok(overridden[1].attemptCaps.backtrackRetry >= 8, "backtrack retry cap must match backtrackCandidateLimit");
   const defaults = effectiveSegmentBudgets(milestoneSpec, {});
   assert.strictEqual(defaults[0].perAttempt.maxExpansions, 300, "without manual config the segment budget stays");
@@ -899,6 +900,41 @@ function checkAttemptCapResolverConsistency() {
   assert.strictEqual(segA.attemptCaps.initial, 1, "the initial segment starts from a single candidate");
 }
 
+function checkFrontierDependentInitialCapIsNull() {
+  // A later segment WITHOUT an explicit start cap must report initial null,
+  // never the segment's own candidateLimit: the input frontier is produced by
+  // earlier phases (a configured repair can retain more candidates via
+  // repairCandidateLimit), so the executor may attempt more than candidateLimit.
+  const milestoneSpec = {
+    milestones: [
+      { id: "seg-a", dp: {} },
+      {
+        id: "seg-b",
+        dp: {
+          repairCandidateLimit: 8,
+          repairStartCandidateLimit: 4,
+        },
+      },
+    ],
+  };
+  const budgets = effectiveSegmentBudgets(milestoneSpec, { candidateLimit: 2, maxExpansions: 1000, maxRuntimeMs: 0 });
+  const segB = budgets.find((entry) => entry.segmentId === "seg-b");
+  assert.strictEqual(segB.attemptCaps.initial, null, "frontier-dependent initial cap must be null, not candidateLimit");
+  assert.strictEqual(segB.attemptCaps.configuredRepair, 4, "configured repair start cap comes from repairStartCandidateLimit");
+  // The configured repair run itself uses repairCandidateLimit as its
+  // candidate limit, so its merged output (the next segment's input frontier)
+  // can exceed the task's candidateLimit.
+  const repairSegment = { id: "seg-b", dp: { repairCandidateLimit: 8, goalSkylineLimit: 8 } };
+  const repairRunCandidateLimit = segmentCandidateLimit(repairSegment, {}, { candidateLimit: 8 });
+  assert.strictEqual(repairRunCandidateLimit, 8, "configured repair can retain more candidates than the task candidateLimit");
+  // With an explicit start cap, the shared resolver value is reported as-is.
+  const explicit = effectiveSegmentBudgets(
+    { milestones: [{ id: "seg-a", dp: {} }, { id: "seg-b", dp: { startCandidateLimit: 3 } }] },
+    { candidateLimit: 2, maxExpansions: 1000, maxRuntimeMs: 0 },
+  );
+  assert.strictEqual(explicit.find((entry) => entry.segmentId === "seg-b").attemptCaps.initial, 3);
+}
+
 async function checkTerminalProgressPersisted() {
   const storeRoot = path.join(__dirname, "routes", "generated", "c2-job-store");
   const jobStore = new FileJobStore({ root: storeRoot });
@@ -943,6 +979,7 @@ async function main() {
   await checkTerminalProgressPersisted();
   checkEffectiveSegmentBudgetsReflectManual();
   checkAttemptCapResolverConsistency();
+  checkFrontierDependentInitialCapIsNull();
   checkProgressBudgetSourceAndCompatAliases();
   await checkManualBudgetOverridesSegmentBudget();
   checkManualBudgetAuthorityAppliesToRepairOverrides();
@@ -987,6 +1024,7 @@ async function main() {
       repairBacktrackBudgetAuthority: true,
       effectiveSegmentsPerAttemptScope: true,
       attemptCapResolverConsistency: true,
+      frontierDependentInitialCapNull: true,
       progressBudgetSourcePreserved: true,
       progressBudgetCompatAliases: true,
       configuredRepairUnlimitedRuntime: true,
