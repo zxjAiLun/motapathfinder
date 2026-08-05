@@ -98,7 +98,8 @@ async function main() {
   try {
     const page = await browser.newPage();
 
-    // 1. Open the Launcher and wait for the tower registry.    
+    // 1. Open the Launcher and wait for the tower registry.
+    
     await page.goto(base, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector("#tower-select option", { state: "attached", timeout: 15000 });
     const towerOptions = await page.locator("#tower-select option").count();
@@ -111,7 +112,8 @@ async function main() {
     await page.waitForSelector("#region-select option", { state: "attached", timeout: 15000 });
     const regionOptions = await page.locator("#region-select option").count();
     assert.ok(regionOptions >= 1, "region registry must populate the region selector");
-    await page.selectOption("#region-select", "region-output-contract-smoke");    await waitFor(async () => {
+    await page.selectOption("#region-select", "region-output-contract-smoke");
+    await waitFor(async () => {
       const value = await page.locator("#model-followers").inputValue().catch(() => "pending");
       return value === "disabled";
     }, 10000, 200);
@@ -123,7 +125,8 @@ async function main() {
     assert.strictEqual(await page.locator("#model-hp").inputValue(), "dominance");
 
     // 4-5. max-final-hp default; run preflight.
-    assert.strictEqual(await page.locator("#objective-mode").inputValue(), "max-final-hp");    
+    assert.strictEqual(await page.locator("#objective-mode").inputValue(), "max-final-hp");
+    
     await page.click('#validate-btn');
     await waitFor(async () => {
       const text = await page.locator("#preflight-result").innerText().catch(() => "");
@@ -139,12 +142,15 @@ async function main() {
     await page.fill("#s-candidate-limit", "2");
     await page.fill("#s-goal-skyline", "8");
 
-    // 6-9. Submit a default worker job and wait for verified-route.    
+    // 6-9. Submit a default worker job and wait for verified-route.
+    
     await page.click('#submit-btn');
-    await page.waitForSelector("#job-detail .metrics", { timeout: 15000 });    await waitFor(async () => {
+    await page.waitForSelector("#job-detail .metrics", { timeout: 15000 });
+    await waitFor(async () => {
       const text = await page.locator("#job-detail").innerText().catch(() => "");
       return text.includes("路线已通过 runtime replay");
-    }, 120000, 300);    const detailText = await page.locator("#job-detail").innerText();
+    }, 120000, 300);
+    const detailText = await page.locator("#job-detail").innerText();
     assert.ok(detailText.includes("decisionDepth"), "dashboard must display decisionDepth");
     assert.ok(detailText.includes("routeLength"), "dashboard must display routeLength");
     assert.ok(detailText.includes("预算消耗"), "dashboard must label budget ratios as consumption");
@@ -153,7 +159,8 @@ async function main() {
     const bodyText = await page.evaluate(() => document.body.innerText);
     assert.ok(!/完成\s*[0-9]+%/.test(bodyText), "the UI must not show a fake completion percentage");
 
-    // 16. Refresh: terminal job + result recoverable.    
+    // 16. Refresh: terminal job + result recoverable.
+    
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitFor(async () => {
       const text = await page.locator("#job-table").innerText().catch(() => "");
@@ -204,6 +211,8 @@ async function main() {
     const exhaustTask = buildTask();
     exhaustTask.tower.region.spec = exhaustSpec;
     exhaustTask.search.maxExpansions = 5;
+    exhaustTask.search.maxRuntimeMs = 0; // unlimited: time ×2 must never appear
+    console.error("M exhaust submit");
     const exhaustJobId = await submitViaApi(page, base, exhaustTask, "exhausted");
     const exhaustResult = await fetchJobResult(page, base, exhaustJobId);
     assert.strictEqual(exhaustResult.failure.failureClass, "EXPANSION_BUDGET_EXHAUSTED");
@@ -212,6 +221,28 @@ async function main() {
       const text = await page.locator("#job-table").innerText().catch(() => "");
       return text.includes("未完成") && text.includes("扩展预算 ×2");
     }, 20000, 300);
+    // Retry buttons must be narrowed by failureClass: an expansion-exhausted
+    // job (with unlimited runtime) offers only expansion ×2.
+    const exhaustRowText = await page.locator(`.job-row:has-text("${exhaustJobId}")`).innerText();
+    assert.ok(exhaustRowText.includes("扩展预算 ×2"), "expansion-exhausted job must offer expansion ×2");
+    assert.ok(!exhaustRowText.includes("运行时间 ×2"), "expansion-exhausted / unlimited-runtime job must not offer time ×2");
+    assert.ok(!exhaustRowText.includes("动作候选 ×2"), "expansion-exhausted job must not offer action-cap ×2");
+    // A runtime-exhausted job offers time ×2 only.
+    const runtimeTask = buildTask();
+    runtimeTask.tower.region.spec = JSON.parse(JSON.stringify(exhaustSpec));
+    runtimeTask.search.maxRuntimeMs = 1;
+    runtimeTask.search.maxExpansions = 100000;
+    console.error("M runtime submit");
+    const runtimeJobId = await submitViaApi(page, base, runtimeTask, "runtime-exhausted");
+    const runtimeResult = await fetchJobResult(page, base, runtimeJobId);
+    assert.strictEqual(runtimeResult.failure.failureClass, "RUNTIME_BUDGET_EXHAUSTED");
+    await waitFor(async () => {
+      const text = await page.locator("#job-table").innerText().catch(() => "");
+      return text.includes("运行时间 ×2");
+    }, 20000, 300);
+    const runtimeRowText = await page.locator(`.job-row:has-text("${runtimeJobId}")`).innerText();
+    assert.ok(runtimeRowText.includes("运行时间 ×2"), "runtime-exhausted job must offer time ×2");
+    assert.ok(!runtimeRowText.includes("扩展预算 ×2"), "runtime-exhausted job must not offer expansion ×2");
     const jobsBeforeRetry = (await (await fetch(`${base}/api/jobs`)).json()).jobs.length;
     await page.locator(".retry-btn[data-scale=\"exp2\"]").first().click();
     await waitFor(async () => {
@@ -223,6 +254,7 @@ async function main() {
     const routeTask = buildTask();
     routeTask.objective = { mode: "maximize-score", terms: [{ path: "route.length", weight: -1 }] };
     routeTask.verification.strictReplay = true;
+    console.error("M route submit");
     const routeJobId = await submitViaApi(page, base, routeTask, "route-length");
     const routeResult = await page.evaluate(async ({ base, jobId }) => {
       const response = await fetch(`${base}/api/jobs/${jobId}/result`);
@@ -254,6 +286,9 @@ async function main() {
         legacyBestKnownNotObjective: true,
         incompleteSearchShowsNotDone: true,
         retryDoublesBudgetResubmits: true,
+        retryNarrowedByFailureClass: true,
+        runtimeExhaustedTime2Only: true,
+        unlimitedRuntimeNoTime2: true,
       },
     }, null, 2) + "\n");
   } finally {

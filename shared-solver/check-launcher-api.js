@@ -161,8 +161,10 @@ async function main() {
   assert.ok(budgetValidate.payload.effectiveSegments, "validate must return effectiveSegments");
   assert.ok(budgetValidate.payload.effectiveSegments.length >= 1);
   budgetValidate.payload.effectiveSegments.forEach((entry) => {
-    assert.strictEqual(entry.maxExpansions, 50000, "manual maxExpansions must appear as the effective segment budget");
-    assert.strictEqual(entry.maxRuntimeMs, 0, "manual maxRuntimeMs=0 must appear as the effective segment budget");
+    assert.strictEqual(entry.budgetScope, "per-attempt", "effective budgets must declare per-attempt scope");
+    assert.strictEqual(entry.perAttempt.maxExpansions, 50000, "manual maxExpansions must appear as the per-attempt cap");
+    assert.strictEqual(entry.perAttempt.maxRuntimeMs, 0, "manual maxRuntimeMs=0 must appear as the per-attempt cap");
+    assert.ok(entry.maxStartAttempts >= 1, "effective budgets must report the start-candidate (attempt) cap");
   });
 
   // 2c. maxRuntimeMs=0 job must never be RUNTIME_BUDGET_EXHAUSTED through the API.
@@ -253,6 +255,7 @@ async function main() {
       registryPathTraversalRejected: true,
       validateReturnsEffectiveSegmentBudgets: true,
       planningPreflightFailureNotSilentlyValid: true,
+      effectiveSegmentsPerAttemptScope: true,
       maxRuntimeMsZeroNotExhausted: true,
       taskValidateReturnsFingerprints: true,
       invalidObjectiveStructured400: true,

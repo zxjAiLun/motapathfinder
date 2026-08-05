@@ -730,15 +730,50 @@ function checkEffectiveSegmentBudgetsReflectManual() {
       { id: "seg-2", dp: { maxExpansions: 400, maxRuntimeMs: 20000 } },
     ],
   };
-  const overridden = effectiveSegmentBudgets(milestoneSpec, { maxExpansions: 50000, maxRuntimeMs: 0 });
+  // The budget applies per candidate attempt, so effective segments must state
+  // the per-attempt scope explicitly and the start-candidate cap (attempts).
+  const overridden = effectiveSegmentBudgets(milestoneSpec, { maxExpansions: 50000, maxRuntimeMs: 0, candidateLimit: 8 });
   assert.strictEqual(overridden.length, 2);
-  overridden.forEach((entry) => {
-    assert.strictEqual(entry.maxExpansions, 50000, "manual maxExpansions must override segment budgets");
-    assert.strictEqual(entry.maxRuntimeMs, 0, "manual maxRuntimeMs=0 must override segment budgets");
-  });
+  assert.strictEqual(overridden[0].budgetScope, "per-attempt", "effective budgets must declare per-attempt scope");
+  assert.strictEqual(overridden[0].perAttempt.maxExpansions, 50000, "manual maxExpansions must override segment budgets");
+  assert.strictEqual(overridden[0].perAttempt.maxRuntimeMs, 0, "manual maxRuntimeMs=0 must override segment budgets");
+  assert.strictEqual(overridden[1].perAttempt.maxExpansions, 50000);
+  assert.ok(overridden[1].maxStartAttempts >= 1, "effective budgets must report the start-candidate (attempt) cap");
   const defaults = effectiveSegmentBudgets(milestoneSpec, {});
-  assert.strictEqual(defaults[0].maxExpansions, 300, "without manual config the segment budget stays");
-  assert.strictEqual(defaults[0].maxRuntimeMs, 15000);
+  assert.strictEqual(defaults[0].perAttempt.maxExpansions, 300, "without manual config the segment budget stays");
+  assert.strictEqual(defaults[0].perAttempt.maxRuntimeMs, 15000);
+}
+
+function checkProgressBudgetSourceAndCompatAliases() {
+  // d1 established budget.source and the flat per-attempt aliases; d2 moved the
+  // fields under current/total.  The schema must keep source and the aliases so
+  // pre-d2 consumers do not silently lose the budget contract.
+  const published = [];
+  const accumulator = new SolverProgressAccumulator({
+    jobId: "job-budget-src",
+    taskFingerprint: "fp-budget-src",
+    onPublish: (snapshot) => published.push(snapshot),
+    throttleMs: 0,
+    expansionEvery: 1,
+    maxExpansions: 1000,
+    maxRuntimeMs: 100,
+    budgetSource: "launcher-override",
+  });
+  accumulator.setStatus("running");
+  accumulator.setPhase("segment-search");
+  accumulator.handleDpEvent({ eventType: "segmentStarted", segmentId: "s", segmentIndex: 0, segmentTotal: 1 });
+  accumulator.handleDpEvent({ eventType: "attemptStarted", segmentId: "s", segmentIndex: 0, segmentTotal: 1, attempt: 1 });
+  accumulator.handleDpEvent({ eventType: "agendaPopped" });
+  accumulator.flush();
+  const snapshot = published[published.length - 1];
+  assert.strictEqual(snapshot.budget.source, "launcher-override", "budget.source must be preserved");
+  assert.strictEqual(snapshot.budget.scope, "per-attempt");
+  assert.strictEqual(snapshot.budget.current.expansions, 1);
+  assert.strictEqual(snapshot.budget.total.expansions, 1);
+  assert.strictEqual(snapshot.budget.expansions, 1, "deprecated flat alias must mirror current");
+  assert.strictEqual(snapshot.budget.expansionBudgetUsedRatio, 0.001, "deprecated flat alias must mirror current ratio");
+  // Runtime ratio is clamped to <=1.
+  assert.ok(snapshot.budget.current.runtimeBudgetUsedRatio == null || snapshot.budget.current.runtimeBudgetUsedRatio <= 1);
 }
 function checkManualBudgetAuthorityAppliesToRepairOverrides() {
   // The task search budget is the authority for every segment DP execution,
@@ -872,6 +907,7 @@ async function main() {
   checkExecutablePreflightRejectsMalformedProject();
   await checkTerminalProgressPersisted();
   checkEffectiveSegmentBudgetsReflectManual();
+  checkProgressBudgetSourceAndCompatAliases();
   await checkManualBudgetOverridesSegmentBudget();
   checkManualBudgetAuthorityAppliesToRepairOverrides();
   await checkConfiguredRepairUnlimitedRuntime();
@@ -913,6 +949,9 @@ async function main() {
       manualBudgetOverridesSegmentBudget: true,
       maxRuntimeMsZeroNeverRuntimeExhausted: true,
       repairBacktrackBudgetAuthority: true,
+      effectiveSegmentsPerAttemptScope: true,
+      progressBudgetSourcePreserved: true,
+      progressBudgetCompatAliases: true,
       configuredRepairUnlimitedRuntime: true,
       resultIdentityBoundToTask: true,
       microJobQueuedToCompleted: true,

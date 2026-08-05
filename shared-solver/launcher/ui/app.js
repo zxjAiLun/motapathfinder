@@ -131,15 +131,28 @@ function failureHtml(failure) {
   return `<div class="failure ${esc(failure.failureClass)}"><span class="state-warn">${esc(label)}</span><span class="muted small">${esc(retryable)}</span><div class="small muted">${esc(failure.message || "")}</div></div>`;
 }
 
-function retryActions(job, maxRuntimeMs) {
+function budgetMaxRuntimeMs(job, progress) {
+  const fromBudget = progress.budget && progress.budget.maxRuntimeMs;
+  if (fromBudget != null) return fromBudget;
+  const fromTask = job.search && job.search.maxRuntimeMs;
+  return fromTask != null ? fromTask : 0;
+}
+
+function retryActions(job, failureClass, maxRuntimeMs) {
   const buttons = [];
   if (["completed", "failed", "cancelled"].includes(job.state)) {
     buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="1">按原配置重试</button>`);
     if (job.state === "failed") {
-      buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="exp2">扩展预算 ×2</button>`);
-      // maxRuntimeMs=0 表示已不限时，"运行时间 ×2" 是无操作，不显示。
-      if (Number(maxRuntimeMs) > 0) {
+      // 按 failureClass 精确生成预算型 Retry，不把非预算失败包装成可加预算。
+      if (failureClass === "RUNTIME_BUDGET_EXHAUSTED" && Number(maxRuntimeMs) > 0) {
         buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="time2">运行时间 ×2</button>`);
+      } else if (failureClass === "EXPANSION_BUDGET_EXHAUSTED") {
+        buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="exp2">扩展预算 ×2</button>`);
+      } else if (failureClass === "ACTION_TRIMMED") {
+        buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="actions2">动作候选 ×2</button>`);
+      }
+      if (["GOAL_NOT_REACHED", "ACTION_TRIMMED"].includes(failureClass)) {
+        buttons.push(`<button class="config-btn" data-job="${esc(job.id)}">打开配置</button>`);
       }
     }
   }
@@ -300,8 +313,9 @@ async function validateTask() {
   if (status === 200 && payload.valid) {
     const identity = payload.identity;
     const segments = (payload.effectiveSegments || []).map((segment) => {
-      const runtime = segment.maxRuntimeMs > 0 ? `${segment.maxRuntimeMs}ms` : "不限";
-      return `<div>${esc(segment.segmentId)}：exp=${esc(segment.maxExpansions)} · runtime=${runtime}</div>`;
+      const per = segment.perAttempt || segment;
+      const runtime = per.maxRuntimeMs > 0 ? `${per.maxRuntimeMs}ms` : "不限";
+      return `<div>${esc(segment.segmentId)}：每次 attempt exp≤${esc(per.maxExpansions)} · runtime=${runtime} · 最多 ${esc(segment.maxStartAttempts ?? "—")} 个起始候选</div>`;
     }).join("");
     $("preflight-result").innerHTML = [
       `<div class="state-ok">preflight 通过</div>`,
@@ -309,7 +323,7 @@ async function validateTask() {
       `<div class="small">model fingerprint: <code>${esc(identity.solverModelFingerprint || "—")}</code></div>`,
       `<div class="small">objective fingerprint: <code>${esc(identity.objectiveFingerprint || "—（legacy）")}</code></div>`,
       `<div class="small">objective: explicit=${payload.objective.explicit} searchPreserving=${payload.objective.searchPreserving} terminalOnly=${payload.objective.terminalOnly}</div>`,
-      segments ? `<div class="small">有效分段预算：</div>${segments}` : "",
+      segments ? `<div class="small">每次 attempt 上限（预算作用于每个候选 attempt，非整个 segment 总量）：</div>${segments}` : "",
     ].join("");
   } else {
     const failure = (payload && payload.failure) || {};
@@ -371,7 +385,7 @@ function renderJobs() {
       `<div class="small muted">${esc(progress.phase || job.phase || "—")} · ${formatTime(job.createdAt)}</div>`,
       `<div class="small">${bestKnownHtml(bestKnown)}</div>`,
       failureClass ? failureHtml(job.failure || progress.failure) : "",
-      `<div class="job-actions">${retryActions(job, progress.budget && progress.budget.maxRuntimeMs)}</div>`,
+      `<div class="job-actions">${retryActions(job, failureClass, budgetMaxRuntimeMs(job, progress))}</div>`,
     ].join("");
     list.appendChild(row);
   });
@@ -388,6 +402,11 @@ function renderJobs() {
       await refreshJobs();
     });
   });
+  list.querySelectorAll(".config-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelector(".col-center").scrollIntoView({ behavior: "smooth" });
+    });
+  });
   list.querySelectorAll(".retry-btn").forEach((button) => {
     button.addEventListener("click", async () => {
       // Retry re-submits the original job task with the scaled budget, so the
@@ -401,6 +420,7 @@ function renderJobs() {
       const scale = button.dataset.scale;
       if (scale === "exp2") task.search = { ...task.search, maxExpansions: (Number(task.search.maxExpansions) || 0) * 2 };
       if (scale === "time2") task.search = { ...task.search, maxRuntimeMs: (Number(task.search.maxRuntimeMs) || 0) * 2 };
+      if (scale === "actions2") task.search = { ...task.search, maxActionsPerState: (Number(task.search.maxActionsPerState) || 0) * 2 };
       const { status, payload } = await api("POST", "/api/jobs", task);
       if (status === 202 && payload.job) {
         await refreshJobs();
@@ -437,8 +457,8 @@ async function renderJobDetail(jobId) {
       metric("actionTrimmed", search.actionTrimmed ?? "—"),
       metric("decisionDepth", bestKnown && bestKnown.decisionDepth != null ? String(bestKnown.decisionDepth) : "—"),
       metric("routeLength", bestKnown && bestKnown.routeLengthExact ? String(bestKnown.routeLength) : '<span class="state-warn">待路线重建</span>'),
-      metric("expansion 预算消耗（当前 attempt）", budget.maxExpansions > 0 ? `${(((budget.current || {}).expansionBudgetUsedRatio || 0) * 100).toFixed(1)}%` : "—"),
-      metric("runtime 预算消耗（当前 attempt）", budget.maxRuntimeMs > 0 ? `${(((budget.current || {}).runtimeBudgetUsedRatio || 0) * 100).toFixed(1)}%` : "—"),
+      metric("expansion 预算消耗（当前 attempt）", budget.current && budget.maxExpansions > 0 ? `${((budget.current.expansionBudgetUsedRatio || 0) * 100).toFixed(1)}%` : "—"),
+      metric("runtime 预算消耗（当前 attempt）", budget.current && budget.maxRuntimeMs > 0 ? `${((budget.current.runtimeBudgetUsedRatio || 0) * 100).toFixed(1)}%` : "—"),
       metric("累计 expansions", (budget.total && budget.total.expansions) ?? "—"),
       metric("累计 elapsedMs", (budget.total && budget.total.elapsedMs) != null ? `${budget.total.elapsedMs}ms` : "—"),
       metric("proof claim", esc((progress.proof && progress.proof.claim) || "—")),
