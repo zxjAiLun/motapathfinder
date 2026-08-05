@@ -764,3 +764,10 @@ PR-5.3c 系列已关闭，Launcher 只消费公开合同：
 - Retry 按 failureClass 精确映射；`SolverJob.toJSON` 携带 task search budget。
 - `budget.source` 恢复；flat 别名镜像 current；runtime ratio clamp ≤ 1。
 - 空 current 显示 —；修复 `docs/public-api.md` 格式。
+
+
+### 2026-08-04 更新：PR-5.3d4 Attempt Cap Truthfulness Closure
+
+- `resolveStartCandidateLimit` 作为执行/preflight 共享 resolver；execution 消费 `segment.dp.startCandidateLimit`。
+- `effectiveSegments.attemptCaps` 按阶段报告（initial / configuredRepair / backtrackRetry），不再低报。
+- ACTION_TRIMMED Chromium 控制、打开配置载入原 task、failureClass 精确建议文案。
