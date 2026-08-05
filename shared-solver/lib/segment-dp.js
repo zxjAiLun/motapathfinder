@@ -2867,6 +2867,24 @@ function cloneStateWithoutRouteTrace(state) {
   }
 }
 
+// Shared resolver for the start-candidate cap (attempts).  The execution path
+// supplies the current frontier length as the floor; preflight reports the
+// deterministic cap and leaves the frontier-dependent fallback as null so the
+// reported value never claims to be the real executed count when it depends on
+// runtime frontier sizes.
+function resolveStartCandidateLimit(segment, config, overrides, frontierLength) {
+  return numericOption(
+    overrides && overrides.startCandidateLimit,
+    numericOption(
+      config && config.startCandidateLimit,
+      numericOption(
+        segment && segment.dp && segment.dp.startCandidateLimit,
+        frontierLength == null ? null : (frontierLength || 1),
+      ),
+    ),
+  );
+}
+
 function segmentCandidateLimit(segment, config, overrides) {
   return numericOption(
     overrides && overrides.candidateLimit,
@@ -2895,9 +2913,9 @@ function manualSearchOverrides(config) {
 
 // Effective per-attempt budgets after applying the top-level manual override.
 // The task budget applies per candidate attempt (each searchSegmentDP run gets
-// the full manual cap), so this reports the per-attempt scope explicitly and
-// the cap on start candidates (attempts) rather than a per-segment total.
-// Used by the Launcher preflight so the UI and the executed search agree.
+// the full manual cap).  Attempt caps are reported per phase, computed with the
+// SAME resolvers the execution path uses, so preflight never claims a value the
+// executor will not honor.  Used by the Launcher preflight.
 function effectiveSegmentBudgets(milestoneSpec, config) {
   const segments = milestoneRange(
     milestoneSpec,
@@ -2914,26 +2932,23 @@ function effectiveSegmentBudgets(milestoneSpec, config) {
         ? overrides.maxRuntimeMs
         : number((segment.dp || {}).maxRuntimeMs, 15000),
     };
-    // The initial segment starts from a single candidate; later segments can
-    // start from up to the start-candidate cap.
     const initialOnly = index === 0 && !(config && config.fromMilestoneId);
-    const maxStartAttempts = initialOnly
-      ? 1
-      : numericOption(
-        config && config.startCandidateLimit,
-        numericOption(
-          (segment.dp || {}).startCandidateLimit,
-          numericOption(
-            config && config.candidateLimit,
-            numericOption((segment.dp || {}).goalSkylineLimit, 8),
-          ),
-        ),
-      );
+    const segmentConfig = config || {};
+    const initialCap = resolveStartCandidateLimit(segment, segmentConfig, {}, initialOnly ? 1 : null);
+    const candidateCap = segmentCandidateLimit(segment, segmentConfig, {});
+    // The initial segment starts from a single candidate; later segments can
+    // start from up to the shared start-candidate cap (falling back to the
+    // candidate limit, the max merged-frontier size the executor produces).
+    const attemptCaps = {
+      initial: initialOnly ? 1 : (initialCap != null ? initialCap : candidateCap),
+      configuredRepair: numericOption((segment.dp || {}).repairStartCandidateLimit, null),
+      backtrackRetry: backtrackCandidateLimit(segment, segmentConfig),
+    };
     return {
       segmentId: segment.id,
       budgetScope: "per-attempt",
       perAttempt,
-      maxStartAttempts,
+      attemptCaps,
     };
   });
 }
@@ -3133,12 +3148,11 @@ function runSegmentAgainstFrontier(
     config || {},
     overrides || {},
   );
-  const startLimit = numericOption(
-    overrides && overrides.startCandidateLimit,
-    numericOption(
-      config && config.startCandidateLimit,
-      (frontier || []).length || 1,
-    ),
+  const startLimit = resolveStartCandidateLimit(
+    segment,
+    config || {},
+    overrides || {},
+    (frontier || []).length,
   );
   const inputFrontier = (frontier || []).slice(0, startLimit);
   const globalBudget = config && config.globalBudget;
@@ -4165,6 +4179,7 @@ module.exports = {
   buildSegmentGoalPredicate,
   effectiveSegmentBudgets,
   manualSearchOverrides,
+  resolveStartCandidateLimit,
   runMilestoneGraph,
   searchSegmentDP,
   summarizeEffectiveHero,
