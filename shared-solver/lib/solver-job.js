@@ -107,6 +107,7 @@ class SolverJob {
       startedAt: this.startedAt,
       finishedAt: this.finishedAt,
       cancelRequested: this.cancelRequested,
+      failure: this.failure || null,
       lastProgress: this.lastProgress || null,
     };
   }

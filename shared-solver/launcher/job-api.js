@@ -3,6 +3,9 @@
 const { compileSolveTask, compileExecutableSolveTask, SolveTaskError } = require("../lib/solve-task");
 const { SolverJobError } = require("../lib/solver-job");
 const { createSolveTaskErrorResult } = require("../lib/solver-job-manager");
+const { buildRegionMilestoneSpec } = require("../lib/region-spec");
+const { effectiveSegmentBudgets } = require("../lib/segment-dp");
+const { loadProject } = require("../lib/project-loader");
 
 const TERMINAL_STATES = ["completed", "failed", "cancelled"];
 
@@ -68,6 +71,20 @@ function createJobApi({ manager, jobStore, registry, context }) {
     try {
       const task = compileSolveTask(body, context);
       const objective = task.objective;
+      // Effective per-segment budgets: the task search overrides the
+      // RegionSpec/segment budgets, so preflight reports what will actually be
+      // executed, not what the RegionSpec ships.
+      let effectiveSegments = [];
+      try {
+        const projectRoot = task.normalizedTask.tower.projectRoot;
+        if (projectRoot) {
+          const project = loadProject(projectRoot);
+          const milestoneSpec = buildRegionMilestoneSpec(project, task.normalizedTask.tower.region.spec);
+          effectiveSegments = effectiveSegmentBudgets(milestoneSpec, task.executeConfig);
+        }
+      } catch (error) {
+        effectiveSegments = [];
+      }
       writeJson(res, 200, {
         valid: true,
         normalizedTask: task.toJSON(),
@@ -86,6 +103,7 @@ function createJobApi({ manager, jobStore, registry, context }) {
           fingerprint: objective.fingerprint,
         },
         effectiveSearch: task.normalizedTask.search,
+        effectiveSegments,
       });
     } catch (error) {
       writeJson(res, 400, {
@@ -151,16 +169,20 @@ function createJobApi({ manager, jobStore, registry, context }) {
     const jobId = params.jobId;
     const job = manager.getJob(jobId);
     if (job) {
-      writeJson(res, 200, { job: jobSummaryFromStatus(job.toJSON()) });
+      const task = job.task && job.task.normalizedTask ? job.task.toJSON() : (job.task || null);
+      writeJson(res, 200, { job: jobSummaryFromStatus(job.toJSON()), task });
       return;
     }
     if (jobStore && jobStore.readStatus(jobId)) {
       const status = jobStore.readStatus(jobId);
       const interrupted = !TERMINAL_STATES.includes(status.state);
-      writeJson(res, 200, { job: jobSummaryFromStatus(status, {
-        interrupted,
-        state: interrupted ? "interrupted" : status.state,
-      }) });
+      writeJson(res, 200, {
+        job: jobSummaryFromStatus(status, {
+          interrupted,
+          state: interrupted ? "interrupted" : status.state,
+        }),
+        task: jobStore.readTask(jobId) || null,
+      });
       return;
     }
     writeJson(res, 404, { failure: { failureClass: "JOB_NOT_FOUND", code: "JOB_NOT_FOUND", message: `job not found: ${jobId}` } });

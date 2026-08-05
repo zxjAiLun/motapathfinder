@@ -139,6 +139,35 @@ async function main() {
   assert.strictEqual(rejected.payload.failure.failureClass, "INVALID_TASK");
   assert.ok(rejected.payload.failure.code, "structured error must carry a code");
 
+  // 2b. Validate returns effective per-segment budgets with the manual search
+  //     override applied (not the RegionSpec's own budgets).
+  const budgetTask = baseTask();
+  budgetTask.search = { ...budgetTask.search, maxExpansions: 50000, maxRuntimeMs: 0 };
+  const budgetValidate = await jsonFetch(base, "POST", "/api/tasks/validate", budgetTask);
+  assert.strictEqual(budgetValidate.status, 200);
+  assert.ok(budgetValidate.payload.effectiveSegments, "validate must return effectiveSegments");
+  assert.ok(budgetValidate.payload.effectiveSegments.length >= 1);
+  budgetValidate.payload.effectiveSegments.forEach((entry) => {
+    assert.strictEqual(entry.maxExpansions, 50000, "manual maxExpansions must appear as the effective segment budget");
+    assert.strictEqual(entry.maxRuntimeMs, 0, "manual maxRuntimeMs=0 must appear as the effective segment budget");
+  });
+
+  // 2c. maxRuntimeMs=0 job must never be RUNTIME_BUDGET_EXHAUSTED through the API.
+  const unlimitedJob = await jsonFetch(base, "POST", "/api/jobs", budgetTask);
+  assert.strictEqual(unlimitedJob.status, 202);
+  await waitFor(async () => {
+    const result = await jsonFetch(base, "GET", `/api/jobs/${unlimitedJob.payload.job.id}/result`);
+    return result.payload && result.payload.result && result.payload.state === "completed";
+  }, 120000, 100);
+  const unlimitedResult = await jsonFetch(base, "GET", `/api/jobs/${unlimitedJob.payload.job.id}/result`);
+  assert.strictEqual(unlimitedResult.payload.result.found, true);
+  assert.notStrictEqual(
+    unlimitedResult.payload.result.failure && unlimitedResult.payload.result.failure.failureClass,
+    "RUNTIME_BUDGET_EXHAUSTED",
+    "maxRuntimeMs=0 must never be classified as runtime budget exhausted",
+  );
+
+  // 4. POST job -> 202.
   // 4. POST job -> 202.
   const created = await jsonFetch(base, "POST", "/api/jobs", baseTask());
   assert.strictEqual(created.status, 202);
@@ -205,10 +234,12 @@ async function main() {
   await restarted.close();
 
   process.stdout.write(JSON.stringify({
-    schema: "motapathfinder.pr-5.3d-launcher-api.v1",
+    schema: "motapathfinder.pr-5.3d1-launcher-api.v1",
     status: "passed",
     controls: {
       registryPathTraversalRejected: true,
+      validateReturnsEffectiveSegmentBudgets: true,
+      maxRuntimeMsZeroNotExhausted: true,
       taskValidateReturnsFingerprints: true,
       invalidObjectiveStructured400: true,
       jobCreate202: true,

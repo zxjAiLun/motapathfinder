@@ -47,6 +47,7 @@ class SolverProgressAccumulator {
     expansionEvery = 200,
     maxExpansions = 0,
     maxRuntimeMs = 0,
+    budgetSource = "task-search",
     objective = null,
   }) {
     this.jobId = jobId || null;
@@ -56,6 +57,7 @@ class SolverProgressAccumulator {
     this.expansionEvery = Math.max(1, Number(expansionEvery) || 1);
     this.maxExpansions = Number(maxExpansions) || 0;
     this.maxRuntimeMs = Number(maxRuntimeMs) || 0;
+    this.budgetSource = budgetSource || "task-search";
     this.objective = objective || null;
     this.sequence = 0;
     this.status = "queued";
@@ -192,14 +194,20 @@ class SolverProgressAccumulator {
   snapshot() {
     this.sequence += 1;
     const expansions = this.counters.expansions;
+    const elapsedMs = this.startedAt
+      ? Math.max(0, Date.now() - Date.parse(this.startedAt))
+      : 0;
     const budget = {
+      source: this.budgetSource,
       maxExpansions: this.maxExpansions,
       maxRuntimeMs: this.maxRuntimeMs,
+      expansions,
+      elapsedMs,
       expansionBudgetUsedRatio: this.maxExpansions > 0
         ? Number((expansions / this.maxExpansions).toFixed(4))
         : null,
-      runtimeBudgetUsedRatio: this.maxRuntimeMs > 0 && this.startedAt
-        ? Number((Math.max(0, Date.now() - Date.parse(this.startedAt)) / this.maxRuntimeMs).toFixed(4))
+      runtimeBudgetUsedRatio: this.maxRuntimeMs > 0
+        ? Number((elapsedMs / this.maxRuntimeMs).toFixed(4))
         : null,
       expansionBudgetExhausted: this.maxExpansions > 0 && expansions >= this.maxExpansions,
       actionTrimmed: this.counters.actionTrimmed,
