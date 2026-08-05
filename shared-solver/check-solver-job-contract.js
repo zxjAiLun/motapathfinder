@@ -1037,7 +1037,8 @@ async function main() {
 if (require.main === module) {
   main().catch((error) => {
     console.error(error && error.stack ? error.stack : String(error));
-    process.exitCode = 1;
+    // Hard exit: a lingering worker child must not keep the process alive.
+    process.exit(1);
   });
 }
 
