@@ -142,8 +142,37 @@ async function main() {
   assert.strictEqual(legacySettled.result.route.strictReplayVerified, true);
   assert.strictEqual(legacySettled.result.route.verificationStatus, "verified");
 
+  // PR-5.4a Commit 3: two-region composite strict replay in the real runtime.
+  const { compileSolveTaskV2 } = require("./lib/solve-task-v2");
+  const regionBSpec = JSON.parse(JSON.stringify(spec));
+  regionBSpec.id = "onlyup-region-b";
+  regionBSpec.actionPolicy = { actionKinds: ["pickup", "interactPickup", "equip", "openDoor", "useTool", "changeFloor", "floorFly", "event"] };
+  regionBSpec.goal = { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 2 } };
+  const multiRegionTask = compileSolveTaskV2({
+    schema: "motapathfinder.solve-task.v2",
+    tower: {
+      id: "onlyup-v2.1",
+      projectRoot: ONLY_UP_ROOT,
+      regions: [{ spec }, { spec: regionBSpec }],
+    },
+    model: legacyTask.normalizedTask.model || JSON.parse(JSON.stringify(spec.model)),
+    objective: { mode: "max-final-hp" },
+    search: { algorithm: "segment-dp", maxExpansions: 1000, maxRuntimeMs: 10000, candidateLimit: 2, regionCandidateLimit: 8 },
+    verification: { strictReplay: true },
+  });
+  const multiManager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
+  const multiJob = multiManager.submit(multiRegionTask);
+  const multiSettled = await waitForJob(multiManager, multiJob.id, 180000);
+  assert.strictEqual(multiSettled.state, "completed", "two-region composite strict replay must complete");
+  assert.strictEqual(multiSettled.result.route.record.schema, "motapathfinder.multi-region-route.v1");
+  assert.strictEqual(multiSettled.result.route.record.boundaryFingerprintsMatch, true);
+  assert.strictEqual(multiSettled.result.route.verificationStatus, "verified");
+  assert.strictEqual(multiSettled.result.route.strictReplayVerified, true);
+  assert.strictEqual(multiSettled.result.regions.length, 2);
+  assert.ok(multiSettled.result.regions.every((r) => r.status === "completed"));
+
   process.stdout.write(JSON.stringify({
-    schema: "motapathfinder.pr-5.3c3-solver-job-live.v1",
+    schema: "motapathfinder.pr-5.4a-solver-job-live.v1",
     status: "passed",
     taskFingerprint: task.taskFingerprint,
     jobId: job.id,
@@ -154,6 +183,7 @@ async function main() {
     autoStepRouteLength: routeLengthRecord.stats.routeLength,
     autoStepDecisions: routeLengthRecord.decisions.length,
     legacyObjectiveOmittedCompleted: true,
+    multiRegionCompositeReplayVerified: true,
     objectiveFingerprint: objective.fingerprint,
   }, null, 2) + "\n");
 }

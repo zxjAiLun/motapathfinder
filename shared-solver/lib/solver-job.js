@@ -15,6 +15,7 @@ const { verifyRouteObjective, replayRouteFile } = require("./live-replay");
 const { SolverProgressAccumulator } = require("./solver-progress");
 const { classifyJobFailure, buildSolverJobResult } = require("./solver-job-result");
 const { SOLVE_TASK_SCHEMA } = require("./solve-task");
+const { fingerprintJson } = require("./solve-task");
 
 const JOB_STATES = ["queued", "running", "completed", "failed", "cancelled"];
 const VALID_TRANSITIONS = {
@@ -497,38 +498,56 @@ function getDecisionDepthSafe(state) {
   return Number.isFinite(Number(depth)) ? Number(depth) : null;
 }
 
+// Exact state fingerprint for replay boundary proofs.  buildStateKey() is the
+// DP identity and may omit direction/auto-event bookkeeping, so the region
+// boundary replay must use a full-state hash instead.
+function exactStateFingerprint(state) {
+  if (!state) return null;
+  const copy = cloneState(state);
+  delete copy.route;
+  delete copy.routeTrace;
+  delete copy.meta;
+  return fingerprintJson(copy);
+}
+
+// Unified region entry transition: "floor" records the SOURCE floor/loc into
+// __leaveLoc__ BEFORE switching, switches floorId + loc + direction, and runs
+// applyFloorArrival (firstArrive/eachArrive/auto events).  "initial" continues
+// with the carried state.  Preflight rejects any other start type.
+function applyRegionEntry(state, regionSpec, project, simulator) {
+  const start = (regionSpec && regionSpec.start) || {};
+  const type = start.type || "initial";
+  if (type !== "floor") return state;
+  const sourceFloorId = state.floorId;
+  const sourceLoc = (state.hero && state.hero.loc) || { x: null, y: null, direction: null };
+  if (!state.flags.__leaveLoc__) state.flags.__leaveLoc__ = {};
+  state.flags.__leaveLoc__[sourceFloorId] = {
+    x: sourceLoc.x,
+    y: sourceLoc.y,
+    direction: sourceLoc.direction,
+  };
+  state.floorId = start.floorId;
+  state.hero.loc = {
+    x: start.x,
+    y: start.y,
+    direction: start.direction || "down",
+  };
+  applyFloorArrival(project, state, start.floorId, {
+    choiceResolver: simulator && simulator.choiceResolver,
+  });
+  return state;
+}
+
 // Carries the previous region's terminal frontier into the next region.  Full
 // solver state (hero, inventory, flags, equipment, followers, floor mutations)
-// is preserved.  The entry transform is applied exactly like a changeFloor:
-// "floor" entry switches floorId + loc + direction and runs applyFloorArrival
-// (firstArrive/eachArrive/auto events); "initial" means continue with the
-// carried state.  Preflight (verifyRegionEntryTypes) rejects any other start
-// type, so no transform is silently skipped.  Each output carries the input
-// provenance needed by the final region's route/replay contracts.
+// is preserved.  Each output carries the input provenance + exact boundary
+// fingerprint needed by the composite route / strict replay contracts.
 function materializeNextRegionFrontier(previousTerminalFrontier, nextRegionSpec, options) {
-  const start = (nextRegionSpec && nextRegionSpec.start) || {};
-  const type = start.type || "initial";
   const project = options && options.project;
   const simulator = options && options.simulator;
   return (previousTerminalFrontier || []).map((candidate, index) => {
     const state = cloneState(candidate && candidate.state);
-    if (type === "floor") {
-      state.floorId = start.floorId;
-      state.hero.loc = {
-        x: start.x,
-        y: start.y,
-        direction: start.direction || "down",
-      };
-      if (!state.flags.__leaveLoc__) state.flags.__leaveLoc__ = {};
-      state.flags.__leaveLoc__[start.floorId] = {
-        x: start.x,
-        y: start.y,
-        direction: start.direction || "down",
-      };
-      applyFloorArrival(project, state, start.floorId, {
-        choiceResolver: simulator && simulator.choiceResolver,
-      });
-    }
+    applyRegionEntry(state, nextRegionSpec, project, simulator);
     const route = Array.isArray(candidate && candidate.route)
       ? candidate.route.slice()
       : Array.isArray(state && state.route) ? state.route.slice() : [];
@@ -536,13 +555,13 @@ function materializeNextRegionFrontier(previousTerminalFrontier, nextRegionSpec,
     // Carry the route as ancestry/provenance; the DP state key excludes route,
     // and the region's own route record strips this prefix later.
     state.route = route;
-    const inputStateFingerprint = (() => {
-      try {
-        return buildStateKey(state);
-      } catch (error) {
-        return null;
-      }
-    })();
+    const inputStateFingerprint = safeStateKey(state);
+    // The carried state (before entry transform) is what the previous region
+    // produced; record it as the exact boundary input for replay.
+    const carried = cloneState(candidate && candidate.state);
+    delete carried.route;
+    delete carried.routeTrace;
+    delete carried.meta;
     return {
       id: (candidate && candidate.id) || `region-input-${index}`,
       state,
@@ -551,6 +570,8 @@ function materializeNextRegionFrontier(previousTerminalFrontier, nextRegionSpec,
       regionInputId: candidate && candidate.id || `region-input-${index}`,
       regionInputIndex: index,
       inputStateFingerprint,
+      exactBoundaryStateFingerprint: exactStateFingerprint(state),
+      inputCarriedExactFingerprint: fingerprintJson(carried),
       ancestry: {},
     };
   });
@@ -633,6 +654,7 @@ async function executeSolveJobV2(task, {
     : ((normalizedTask.search && normalizedTask.search.candidateLimit) || 8);
 
   const regionSummaries = [];
+  const regionExecutions = [];
   let previousTerminalFrontier = null;
   let finalResult = null;
   let finalSimulator = null;
@@ -649,6 +671,7 @@ async function executeSolveJobV2(task, {
     const inputFrontier = index === 0
       ? (() => {
         const startState = createStartState(project, simulator, regionSpec, rank);
+        applyRegionEntry(startState, regionSpec, project, simulator);
         return [{
           id: "initial#0",
           state: startState,
@@ -656,6 +679,8 @@ async function executeSolveJobV2(task, {
           tags: ["initial"],
           regionInputIndex: 0,
           inputStateFingerprint: safeStateKey(startState),
+          exactBoundaryStateFingerprint: exactStateFingerprint(startState),
+          inputCarriedExactFingerprint: exactStateFingerprint(startState),
           ancestry: {},
         }];
       })()
@@ -747,11 +772,12 @@ async function executeSolveJobV2(task, {
     finalSimulator = simulator;
     finalRegionSpec = regionSpec;
     finalInputFrontier = inputFrontier;
+    regionExecutions.push({ regionSpec, simulator, inputFrontier, result });
   }
 
-  // Final region: proof claim, route build, strict replay (same semantics as
-  // the single-region job).  The task-level objective orders the final
-  // region's terminal candidates and is the only objective applied.
+  // Final region: proof claim + per-region route records + composite
+  // multi-region-route.v1 + sequential strict replay.  The task-level objective
+  // orders the FINAL region's terminal candidates and is the only objective.
   progress.setSegment(null);
   const proofClaim = buildRegionProofClaim(finalResult, finalRegionSpec, objective);
   progress.setProof(proofClaim.objective || null);
@@ -761,82 +787,121 @@ async function executeSolveJobV2(task, {
   let strictReplayVerified = false;
   let verificationStatus = null;
   let objectiveValue = null;
-  if (finalResult.found && finalResult.finalCandidate && finalResult.finalCandidate.state) {
-    const candidateState = finalResult.finalCandidate.state;
-    progress.setBestKnown(bestKnownFromState(
-      task,
-      candidateState,
-      "goal-candidate",
-      claimedObjective,
-      {
-        decisionDepth: getDecisionDepthSafe(candidateState),
-        routeLength: routeLengthOfState(candidateState),
-      },
-    ));
-    progress.setPhase("route-build");
-    // Resolve the WINNING candidate's actual input state (never inputFrontier[0]):
-    // the candidate carries regionInputIndex from its provenance or is matched
-    // by route-prefix against the final region's input frontier.
-    const finalCandidate = finalResult.finalCandidate;
-    let finalInput = null;
-    const provenIndex = finalCandidate.regionInputIndex;
-    if (provenIndex != null && provenIndex >= 0 && finalInputFrontier[provenIndex]) {
-      finalInput = finalInputFrontier[provenIndex];
+
+  const buildRegionRouteRecord = (execution, regionIndex) => {
+    const result = execution.result;
+    if (!result.found || !result.finalCandidate || !result.finalCandidate.state) return null;
+    const candidate = result.finalCandidate;
+    // Resolve the WINNING candidate's actual input state (never index 0).
+    let input = null;
+    const provenIndex = candidate.regionInputIndex;
+    if (provenIndex != null && provenIndex >= 0 && execution.inputFrontier[provenIndex]) {
+      input = execution.inputFrontier[provenIndex];
     } else {
-      const matchedIndex = findInputIndexForCandidate(finalCandidate, finalInputFrontier);
-      if (matchedIndex >= 0) finalInput = finalInputFrontier[matchedIndex];
+      const matchedIndex = findInputIndexForCandidate(candidate, execution.inputFrontier);
+      if (matchedIndex >= 0) input = execution.inputFrontier[matchedIndex];
     }
-    finalInput = finalInput || finalInputFrontier[0];
-    const finalInitialState = finalInput.state;
-    const finalState = finalCandidate.state;
-    // The region's own route is the final candidate route minus the winning
-    // input's route prefix (the previous region's steps already applied at entry).
-    const inputRouteLength = Array.isArray(finalInput.route) ? finalInput.route.length : 0;
-    const candidateRoute = Array.isArray(finalCandidate.route) ? finalCandidate.route : [];
+    input = input || execution.inputFrontier[0];
+    const initialState = input.state;
+    const finalState = candidate.state;
+    const inputRouteLength = Array.isArray(input.route) ? input.route.length : 0;
+    const candidateRoute = Array.isArray(candidate.route) ? candidate.route : [];
     finalState.route = candidateRoute.length > inputRouteLength
       ? candidateRoute.slice(inputRouteLength)
       : [];
-    routeRecord = buildRouteRecord({
+    const regionObjective = regionIndex === regions.length - 1 ? objective : null;
+    const record = buildRouteRecord({
       project,
-      simulator: finalSimulator,
-      initialState: finalInitialState,
+      simulator: execution.simulator,
+      initialState,
       finalState,
       options: {
         projectRoot,
         solver: "solve-task",
-        profile: finalRegionSpec.id,
+        profile: execution.regionSpec.id,
         rank,
         toFloor: finalState.floorId,
         goalType: "region",
-        snapshotFloors: (finalRegionSpec.scope || {}).floors,
+        snapshotFloors: (execution.regionSpec.scope || {}).floors,
         metadata: {
           kind: "region-dp",
           regionDp: {
-            regionId: finalRegionSpec.id,
+            regionId: execution.regionSpec.id,
             taskFingerprint: task && task.taskFingerprint || null,
             proofClaim,
             candidateLimit: (task && task.executeConfig && task.executeConfig.candidateLimit) || null,
             search: normalizedTask.search || null,
-            regionIndex: regions.length - 1,
+            regionIndex,
             regionTotal: regions.length,
           },
         },
-        objectiveSpec: objective,
+        objectiveSpec: regionObjective,
       },
     });
-    const decisionDepth = (routeRecord && routeRecord.decisions || []).length;
-    const artifactRouteLength = (routeRecord && routeRecord.stats && routeRecord.stats.routeLength) != null
-      ? Number(routeRecord.stats.routeLength)
-      : decisionDepth;
+    const outputExact = exactStateFingerprint(finalState);
+    return { record, input, outputExact, regionObjective };
+  };
+
+  // Build per-region route records (all regions, not just the final).
+  const regionRecords = [];
+  for (let index = 0; index < regionExecutions.length; index += 1) {
+    regionRecords.push(buildRegionRouteRecord(regionExecutions[index], index));
+  }
+
+  if (finalResult.found && finalResult.finalCandidate && finalResult.finalCandidate.state) {
+    progress.setBestKnown(bestKnownFromState(
+      task,
+      finalResult.finalCandidate.state,
+      "goal-candidate",
+      claimedObjective,
+      {
+        decisionDepth: getDecisionDepthSafe(finalResult.finalCandidate.state),
+        routeLength: routeLengthOfState(finalResult.finalCandidate.state),
+      },
+    ));
+    progress.setPhase("route-build");
+
+    // Boundary fingerprint contract: the next region's carried exact state must
+    // equal the previous region's output exact state.
+    let boundaryFingerprintsMatch = true;
+    for (let index = 1; index < regionExecutions.length; index += 1) {
+      const prevOutput = regionRecords[index - 1] && regionRecords[index - 1].outputExact;
+      const nextCarried = regionExecutions[index].inputFrontier[0].inputCarriedExactFingerprint;
+      if (prevOutput != null && nextCarried != null && prevOutput !== nextCarried) {
+        boundaryFingerprintsMatch = false;
+        break;
+      }
+    }
+
+    const composite = {
+      schema: "motapathfinder.multi-region-route.v1",
+      createdAt: new Date().toISOString(),
+      regions: regionRecords.map((built, index) => ({
+        index,
+        regionId: regionExecutions[index].regionSpec.id,
+        record: built && built.record || null,
+        inputStateFingerprint: regionExecutions[index].inputFrontier[0].inputStateFingerprint || null,
+        exactBoundaryStateFingerprint: regionExecutions[index].inputFrontier[0].exactBoundaryStateFingerprint || null,
+        outputExactBoundaryStateFingerprint: built && built.outputExact || null,
+      })),
+      boundaryFingerprintsMatch,
+      verificationStatus: null,
+    };
+    routeRecord = composite;
+
     progress.setPhase("strict-replay");
-    if (routeRecord && routeRecord.final && routeRecord.final.snapshot) {
-      objectiveValue = objectiveValueFromRouteRecord(task, routeRecord);
-      let verifiedMetrics;
-      let bestKnownKind;
-      if (normalizedTask.verification.strictReplay !== false) {
-        let replayResult;
-        try {
-          replayResult = await replayRouteFile(routeRecord, {
+    if (normalizedTask.verification.strictReplay !== false) {
+      // Sequential strict replay: every region's route replays in the real
+      // runtime in order, and every region boundary fingerprint must match.
+      let allVerified = true;
+      try {
+        for (let index = 0; index < regionRecords.length; index += 1) {
+          const built = regionRecords[index];
+          if (!built || !built.record) {
+            allVerified = false;
+            break;
+          }
+          await replayRouteFile(built.record, {
             projectRoot,
             headless: "1",
             keepOpen: false,
@@ -845,46 +910,65 @@ async function executeSolveJobV2(task, {
             fastForwardDelayMs: 0,
             runtimeAutoBattle: 1,
           });
-          strictReplayVerified = true;
-          verificationStatus = "verified";
-        } catch (error) {
-          throw makeStrictReplayFailure(error);
         }
-        if (objective && objective.explicit) {
-          const runtimeValue = replayResult &&
-            replayResult.objectiveVerification &&
-            replayResult.objectiveVerification.value;
-          const metadataValue = routeRecord.metadata && routeRecord.metadata.finalObjectiveValue;
-          if (
-            runtimeValue == null ||
-            stableObjectiveValue(runtimeValue) !== stableObjectiveValue(objectiveValue.value) ||
-            stableObjectiveValue(metadataValue) !== stableObjectiveValue(objectiveValue.value)
-          ) {
-            throw makeStrictReplayFailure(new Error(
-              `objective value mismatch: result=${JSON.stringify(objectiveValue.value)} metadata=${JSON.stringify(metadataValue)} runtime=${JSON.stringify(runtimeValue)}`,
-            ));
-          }
-        }
-        verifiedMetrics = {
-          decisionDepth,
-          routeLength: replayResult && replayResult.runtimeRouteLength != null
-            ? Number(replayResult.runtimeRouteLength)
-            : artifactRouteLength,
-        };
-        bestKnownKind = "verified-route";
-      } else {
-        strictReplayVerified = false;
-        verificationStatus = "not-requested";
-        verifiedMetrics = { decisionDepth, routeLength: artifactRouteLength };
-        bestKnownKind = "route-artifact";
+      } catch (error) {
+        throw makeStrictReplayFailure(error);
       }
+      if (allVerified && boundaryFingerprintsMatch) {
+        strictReplayVerified = true;
+        verificationStatus = "verified";
+      } else {
+        throw makeStrictReplayFailure(new Error(
+          boundaryFingerprintsMatch
+            ? "a region route failed runtime replay"
+            : "region boundary state fingerprints do not match",
+        ));
+      }
+      // Final-region objective reconciliation (task-level objective).
+      const finalBuilt = regionRecords[regionRecords.length - 1];
+      objectiveValue = objectiveValueFromRouteRecord(task, finalBuilt && finalBuilt.record);
+      if (objective && objective.explicit) {
+        const metadataValue = finalBuilt && finalBuilt.record && finalBuilt.record.metadata && finalBuilt.record.metadata.finalObjectiveValue;
+        if (objectiveValue == null || stableObjectiveValue(metadataValue) !== stableObjectiveValue(objectiveValue.value)) {
+          throw makeStrictReplayFailure(new Error(
+            `objective value mismatch: result=${JSON.stringify(objectiveValue.value)} metadata=${JSON.stringify(metadataValue)}`,
+          ));
+        }
+      }
+      const finalSnapshot = finalBuilt && finalBuilt.record && finalBuilt.record.final && finalBuilt.record.final.snapshot;
       progress.setBestKnown(bestKnownFromState(
         task,
-        routeRecord.final.snapshot,
-        bestKnownKind,
+        finalSnapshot,
+        "verified-route",
         claimedObjective,
-        verifiedMetrics,
+        {
+          decisionDepth: (finalBuilt && finalBuilt.record && finalBuilt.record.decisions || []).length,
+          routeLength: (finalBuilt && finalBuilt.record && finalBuilt.record.stats && finalBuilt.record.stats.routeLength) != null
+            ? Number(finalBuilt.record.stats.routeLength)
+            : null,
+        },
         objectiveValue && objectiveValue.value,
+      ));
+      composite.verificationStatus = "verified";
+    } else {
+      strictReplayVerified = false;
+      verificationStatus = "not-requested";
+      composite.verificationStatus = "not-requested";
+      const lastBuilt = regionRecords[regionRecords.length - 1];
+      const lastSnapshot = lastBuilt && lastBuilt.record && lastBuilt.record.final && lastBuilt.record.final.snapshot;
+      const lastObjective = objectiveValueFromRouteRecord(task, lastBuilt && lastBuilt.record);
+      progress.setBestKnown(bestKnownFromState(
+        task,
+        lastSnapshot,
+        "route-artifact",
+        claimedObjective,
+        {
+          decisionDepth: (lastBuilt && lastBuilt.record && lastBuilt.record.decisions || []).length,
+          routeLength: (lastBuilt && lastBuilt.record && lastBuilt.record.stats && lastBuilt.record.stats.routeLength) != null
+            ? Number(lastBuilt.record.stats.routeLength)
+            : null,
+        },
+        lastObjective && lastObjective.value,
       ));
     }
   } else {
@@ -917,7 +1001,6 @@ async function executeSolveJobV2(task, {
     regions: regionSummaries,
   };
 }
-
 function executeInProcessExecutor({ job, task, onProgress, context }) {
   let stopRequested = false;
   const runner = task && task.schema === "motapathfinder.solve-task.v2"
@@ -984,6 +1067,7 @@ function finalizeJob(job, execution) {
       objective: null,
       routeRecord: execution.routeRecord || null,
       strictReplayVerified: false,
+      regions: execution.regions || null,
       diagnostics: buildDiagnosticsSummary(execution.result, execution.proofClaim),
     });
     job.transition("failed");
@@ -1002,6 +1086,8 @@ function finalizeJob(job, execution) {
     objective: execution.objectiveValue,
     routeRecord: execution.routeRecord,
     strictReplayVerified: execution.strictReplayVerified,
+    verificationStatus: execution.verificationStatus,
+    regions: execution.regions || null,
     diagnostics: buildDiagnosticsSummary(execution.result, execution.proofClaim),
   });
   job.transition("completed");
@@ -1018,6 +1104,7 @@ module.exports = {
   executeInProcessExecutor,
   executeSolveJob,
   executeSolveJobV2,
+  exactStateFingerprint,
   finalizeJob,
   makeSimulator,
   materializeNextRegionFrontier,

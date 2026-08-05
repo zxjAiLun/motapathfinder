@@ -1,8 +1,32 @@
 "use strict";
 
+const crypto = require("node:crypto");
+
 const { buildReplayRouteFingerprint } = require("./replay-resume-artifact");
 
 const SOLVER_JOB_RESULT_SCHEMA = "motapathfinder.solver-job-result.v1";
+
+const MULTI_REGION_ROUTE_SCHEMA = "motapathfinder.multi-region-route.v1";
+
+function buildCompositeRouteFingerprint(composite) {
+  const input = {
+    schema: composite && composite.schema || null,
+    regions: (composite && composite.regions || []).map((region) => ({
+      index: region && region.index,
+      regionId: region && region.regionId || null,
+      recordFingerprint: region && region.record ? buildReplayRouteFingerprint(region.record) : null,
+      inputStateFingerprint: region && region.inputStateFingerprint || null,
+      exactBoundaryStateFingerprint: region && region.exactBoundaryStateFingerprint || null,
+      outputExactBoundaryStateFingerprint: region && region.outputExactBoundaryStateFingerprint || null,
+    })),
+    boundaryFingerprintsMatch: Boolean(composite && composite.boundaryFingerprintsMatch),
+    verificationStatus: composite && composite.verificationStatus || null,
+  };
+  return crypto.createHash("sha256")
+    .update(JSON.stringify(input))
+    .digest("hex")
+    .slice(0, 16);
+}
 
 const FAILURE_CLASSES = [
   "INVALID_TASK",
@@ -149,12 +173,16 @@ function buildSolverJobResult({
   strictReplayVerified,
   verificationStatus,
   diagnostics,
+  regions,
 }) {
   const started = startedAt ? Date.parse(startedAt) : null;
   const finished = finishedAt ? Date.parse(finishedAt) : null;
-  const routeFingerprint = routeRecord && typeof buildReplayRouteFingerprint === "function"
-    ? buildReplayRouteFingerprint(routeRecord)
-    : null;
+  const isComposite = Boolean(routeRecord && routeRecord.schema === "motapathfinder.multi-region-route.v1");
+  const routeFingerprint = isComposite
+    ? buildCompositeRouteFingerprint(routeRecord)
+    : (routeRecord && typeof buildReplayRouteFingerprint === "function"
+      ? buildReplayRouteFingerprint(routeRecord)
+      : null);
   return {
     schema: SOLVER_JOB_RESULT_SCHEMA,
     jobId,
@@ -174,6 +202,7 @@ function buildSolverJobResult({
           comparisonTrace: objective.comparisonTrace || [],
         }
       : null,
+    regions: regions ? cloneJson(regions) : null,
     route: routeRecord
       ? {
           record: cloneJson(routeRecord),

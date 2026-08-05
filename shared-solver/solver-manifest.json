@@ -195,7 +195,8 @@
         "shared-solver/check-replay-h5save-resume-contract.js",
         "shared-solver/check-replay-h5save-gui.js",
         "shared-solver/check-replay-h5save-gui-flow.js",
-        "shared-solver/check-multi-region-contract.js"
+        "shared-solver/check-multi-region-contract.js",
+        "shared-solver/check-multi-region-route-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -2250,6 +2251,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4a sequential region execution: state transfer, failure stop, boundary pruning"
+    },
+    "shared-solver/check-multi-region-route-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.4a Commit 3: multi-region-route.v1 composite, exact boundary fingerprints, result regions, unified entry"
     }
   }
 }
