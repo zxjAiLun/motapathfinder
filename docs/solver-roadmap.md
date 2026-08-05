@@ -726,7 +726,9 @@ PR-5.3c 系列正式关闭，c3 收尾：
 
 PR-5.3c 系列已关闭，Launcher 只消费公开合同：
 
-- launcher/server.js + outer.js + job-api.js + 	ower-registry.js + un-solver-launcher.js：Node 内置 HTTP，默认 localhost-only；Tower Registry 服务端校验项目/fingerprint/region 列表并拒绝路径穿越。
+- launcher/server.js + 
+outer.js + job-api.js + 	ower-registry.js + 
+un-solver-launcher.js：Node 内置 HTTP，默认 localhost-only；Tower Registry 服务端校验项目/fingerprint/region 列表并拒绝路径穿越。
 - API：towers/regions 查询、task validate、job 创建/列表/详情/result/route/cancel、SSE events（snapshot replay + Last-Event-ID + heartbeat + terminal close）；HTTP 映射 400/404/409/202。
 - UI（launcher/ui/）：manual SolveTask builder（Tower/Region、SolverModel 矩阵、Objective、Search、Verification、Preview）+ Job dashboard（无虚假百分比、bestKnown exactness、decisionDepth/routeLength 分离、failureClass/retryable）。
 - 重启语义：terminal jobs 从 FileJobStore 恢复；stale running 显示 interrupted。
@@ -741,3 +743,11 @@ PR-5.3c 系列已关闭，Launcher 只消费公开合同：
 - `shared-solver/launcher/ui/`：手动 SolveTask 构建器 + Job dashboard；禁止虚假完成百分比，bestKnown exactness、decisionDepth/routeLength 分离展示。
 - `shared-solver/run-solver-launcher.js` CLI：`npm run launcher --prefix shared-solver`。
 - 重启后 terminal jobs 从 FileJobStore 恢复；stale queued/running 显示为 `Interrupted`（仅 view-model）。
+
+
+### 2026-08-04 更新：PR-5.3d1 Launcher UX & Effective Budget Integrity
+
+- 手动 Search 是执行权威：`runMilestoneGraph` 主 segment 循环无条件应用任务级 `dpOverrides`（含 decomposer generated segment），`maxRuntimeMs=0` 表示不限时、绝不产生 `RUNTIME_BUDGET_EXHAUSTED`；新增 `manualSearchOverrides()` / `effectiveSegmentBudgets()`。
+- Preflight 返回每个 segment 的 `effectiveSegments`（手动覆盖后的 `maxExpansions/maxRuntimeMs`）。
+- Progress budget 携带 `source/expansions/elapsedMs`；`SolverJob.toJSON` 携带 `failure`。
+- UI：failureClass 中文映射 + 未完成（黄色 incomplete）语义、legacy 显示 `Legacy · HP`、终态无 Cancel、Retry ×2 重提原 task、三栏 Builder + 底部 Job dashboard。

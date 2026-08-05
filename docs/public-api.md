@@ -183,6 +183,9 @@ ode run-solver-launcher.js serves a localhost-only GUI (launcher/ui) backed by t
 - Status mapping: INVALID_TASK 400, JOB_NOT_FOUND 404, JOB_INVALID_STATE_TRANSITION/JOB_PAUSE_UNSUPPORTED 409, accepted 202.
 
 The Launcher only edits public inputs, calls preflight, submits jobs, subscribes to progress, reads results, and cancels; it never reads diagnostics.dp internals or reimplements solver semantics.
+
+The task search budget is the execution authority: `runMilestoneGraph` applies the task-level `maxExpansions/maxRuntimeMs/maxActionsPerState/goalSkylineLimit/dpSkylineMax/stopOnFirstGoal` as unconditional per-segment overrides (including generated segments); `maxRuntimeMs=0` means unlimited and never yields `RUNTIME_BUDGET_EXHAUSTED`. `POST /api/tasks/validate` returns `effectiveSegments` (the per-segment budgets that will actually be executed) and progress `budget` carries `source/expansions/elapsedMs`. Jobs expose `failure` in their summary so the UI can distinguish incomplete-search (retryable) from execution errors.
+
 The Launcher should consume only this API; it must not read `diagnostics.dp` internals or reimplement candidate comparison.
 
 ## Solver Launcher

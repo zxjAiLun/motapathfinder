@@ -8,3 +8,4 @@ profiles/*
 !profiles/window-mt5.json
 *.cpuprofile
 .tmp-*.js
+runs/

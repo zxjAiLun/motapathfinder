@@ -55,6 +55,13 @@ async function submitViaApi(page, base, task, label) {
   return jobId;
 }
 
+async function fetchJobResult(page, base, jobId) {
+  return page.evaluate(async ({ base, jobId }) => {
+    const response = await fetch(`${base}/api/jobs/${jobId}/result`);
+    const payload = await response.json();
+    return payload.result;
+  }, { base, jobId });
+}
 function buildTask() {
   const spec = JSON.parse(fs.readFileSync(
     path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json"),
@@ -91,7 +98,8 @@ async function main() {
   try {
     const page = await browser.newPage();
 
-    // 1. Open the Launcher and wait for the tower registry.    await page.goto(base, { waitUntil: "domcontentloaded" });
+    // 1. Open the Launcher and wait for the tower registry.    
+    await page.goto(base, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector("#tower-select option", { state: "attached", timeout: 15000 });
     const towerOptions = await page.locator("#tower-select option").count();
     assert.ok(towerOptions >= 1, "tower registry must populate the tower selector");
@@ -115,7 +123,8 @@ async function main() {
     assert.strictEqual(await page.locator("#model-hp").inputValue(), "dominance");
 
     // 4-5. max-final-hp default; run preflight.
-    assert.strictEqual(await page.locator("#objective-mode").inputValue(), "max-final-hp");    await page.click("#validate-btn");
+    assert.strictEqual(await page.locator("#objective-mode").inputValue(), "max-final-hp");    
+    await page.click('#validate-btn');
     await waitFor(async () => {
       const text = await page.locator("#preflight-result").innerText().catch(() => "");
       return text.includes("preflight 通过");
@@ -130,7 +139,8 @@ async function main() {
     await page.fill("#s-candidate-limit", "2");
     await page.fill("#s-goal-skyline", "8");
 
-    // 6-9. Submit a default worker job and wait for verified-route.    await page.click("#submit-btn");
+    // 6-9. Submit a default worker job and wait for verified-route.    
+    await page.click('#submit-btn');
     await page.waitForSelector("#job-detail .metrics", { timeout: 15000 });    await waitFor(async () => {
       const text = await page.locator("#job-detail").innerText().catch(() => "");
       return text.includes("路线已通过 runtime replay");
@@ -143,12 +153,19 @@ async function main() {
     const bodyText = await page.evaluate(() => document.body.innerText);
     assert.ok(!/完成\s*[0-9]+%/.test(bodyText), "the UI must not show a fake completion percentage");
 
-    // 16. Refresh: terminal job + result recoverable.    await page.reload({ waitUntil: "domcontentloaded" });
+    // 16. Refresh: terminal job + result recoverable.    
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await waitFor(async () => {
       const text = await page.locator("#job-table").innerText().catch(() => "");
       return text.includes("completed");
     }, 20000, 300);
 
+    // 7b. A terminal job must offer Retry, never Cancel.
+    const tableAfterDone = await page.locator("#job-table").innerText();
+    assert.ok(tableAfterDone.includes("按原配置重试"), "a terminal job must offer Retry");
+    assert.ok(!tableAfterDone.includes("Cancel"), "a terminal job must not offer Cancel");
+
+    // 13. strictReplay:false job → route-artifact bestKnown, not verified-route.
     // 13. strictReplay:false job → route-artifact bestKnown, not verified-route.
     const noReplayTask = buildTask();
     noReplayTask.verification.strictReplay = false;
@@ -172,6 +189,35 @@ async function main() {
     assert.strictEqual(legacyResult.found, true);
     assert.strictEqual(legacyResult.objective, null);
     assert.strictEqual(legacyResult.route.verificationStatus, "verified");
+    assert.strictEqual(legacyResult.route.verificationStatus, "verified");
+    // 6b. Legacy bestKnown must not be labelled as an objective.
+    await waitFor(async () => {
+      const text = await page.locator("#job-table").innerText().catch(() => "");
+      return text.includes("Legacy · HP");
+    }, 20000, 300);
+
+    // 5b. An incomplete search shows "未完成", not a generic failure, and
+    //     offers a ×2 retry that resubmits the original task with a doubled budget.
+    const exhaustSpec = JSON.parse(fs.readFileSync(
+      path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json"), "utf8"));
+    exhaustSpec.goal = { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 999 } };
+    const exhaustTask = buildTask();
+    exhaustTask.tower.region.spec = exhaustSpec;
+    exhaustTask.search.maxExpansions = 5;
+    const exhaustJobId = await submitViaApi(page, base, exhaustTask, "exhausted");
+    const exhaustResult = await fetchJobResult(page, base, exhaustJobId);
+    assert.strictEqual(exhaustResult.failure.failureClass, "EXPANSION_BUDGET_EXHAUSTED");
+    assert.strictEqual(exhaustResult.failure.retryable, true);
+    await waitFor(async () => {
+      const text = await page.locator("#job-table").innerText().catch(() => "");
+      return text.includes("未完成") && text.includes("扩展预算 ×2");
+    }, 20000, 300);
+    const jobsBeforeRetry = (await (await fetch(`${base}/api/jobs`)).json()).jobs.length;
+    await page.locator(".retry-btn[data-scale=\"exp2\"]").first().click();
+    await waitFor(async () => {
+      const jobsAfter = (await (await fetch(`${base}/api/jobs`)).json()).jobs.length;
+      return jobsAfter > jobsBeforeRetry;
+    }, 15000, 300);
 
     // 11. Auto-step job: decisionDepth=1, routeLength=5.
     const routeTask = buildTask();
@@ -190,7 +236,7 @@ async function main() {
     assert.strictEqual(routeResult.route.verificationStatus, "verified");
 
     process.stdout.write(JSON.stringify({
-      schema: "motapathfinder.pr-5.3d-launcher-ui-live.v1",
+      schema: "motapathfinder.pr-5.3d1-launcher-ui-live.v1",
       status: "passed",
       port,
       controls: {
@@ -204,6 +250,10 @@ async function main() {
         legacyObjectiveOmittedCompleted: true,
         autoStepDepth1RouteLength5: true,
         dashboardShowsDecisionDepthRouteLength: true,
+        terminalJobNoCancel: true,
+        legacyBestKnownNotObjective: true,
+        incompleteSearchShowsNotDone: true,
+        retryDoublesBudgetResubmits: true,
       },
     }, null, 2) + "\n");
   } finally {

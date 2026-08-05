@@ -23,14 +23,26 @@ const BEST_KNOWN_LABELS = {
   "verified-route": "路线已通过 runtime replay",
 };
 
+// failureClass -> UI 文案。预算耗尽 / action 截断 / 未达到目标是"未完成"语义，不是执行错误。
+const FAILURE_LABELS = {
+  "RUNTIME_BUDGET_EXHAUSTED": "未完成 · 时间预算耗尽",
+  "EXPANSION_BUDGET_EXHAUSTED": "未完成 · 扩展预算耗尽",
+  "ACTION_TRIMMED": "未完成 · 动作候选被截断",
+  "GOAL_NOT_REACHED": "当前完整搜索范围内未达到目标",
+  "STRICT_REPLAY_FAILED": "路线运行时验证失败",
+  "INTERNAL_ERROR": "执行错误",
+};
+
+const RETRYABLE_FAILURES = ["RUNTIME_BUDGET_EXHAUSTED", "EXPANSION_BUDGET_EXHAUSTED", "ACTION_TRIMMED", "GOAL_NOT_REACHED"];
+
 const state = {
   tower: null,
-  region: null,
   towerFingerprint: null,
   regionSpec: null,
   jobs: [],
   activeJob: null,
   eventSource: null,
+  lastTask: null,
 };
 
 function $(id) {
@@ -69,9 +81,69 @@ function formatTime(iso) {
 
 async function refreshHealth() {
   const { payload } = await api("GET", "/api/health");
-  $("health").textContent = payload && payload.status === "ok"
-    ? `ok · live=${payload.liveJobs} queued=${payload.queuedJobs}`
-    : "unreachable";
+  const dot = $("health");
+  const text = $("health-text");
+  if (payload && payload.status === "ok") {
+    dot.className = "health-dot ok";
+    text.textContent = "服务正常";
+  } else {
+    dot.className = "health-dot err";
+    text.textContent = "无法连接";
+  }
+}
+
+function stateBadge(state, failureClass) {
+  const isIncomplete = failureClass && RETRYABLE_FAILURES.includes(failureClass);
+  if (state === "failed" && isIncomplete) {
+    return `<span class="badge incomplete">未完成</span>`;
+  }
+  const label = { completed: "已完成", failed: "执行错误", cancelled: "已取消", queued: "排队中", running: "运行中", interrupted: "已中断" }[state] || state;
+  return `<span class="badge ${esc(state)}">${esc(label)}</span>`;
+}
+
+function bestKnownHtml(bestKnown) {
+  if (!bestKnown) return '<span class="muted">—</span>';
+  const label = BEST_KNOWN_LABELS[bestKnown.kind] || bestKnown.kind;
+  const routeLen = bestKnown.routeLengthExact
+    ? esc(bestKnown.routeLength)
+    : '<span class="state-warn">待路线重建</span>';
+  let objectiveText;
+  if (!bestKnown.objectiveFingerprint) {
+    // 无显式 ObjectiveSpec：legacy 任务的数值是 HP / 传统排序值，不是 objective。
+    const hp = bestKnown.hero && bestKnown.hero.hp != null ? bestKnown.hero.hp : "—";
+    objectiveText = `Legacy · HP ${esc(hp)}`;
+  } else if (bestKnown.objectiveValueExact) {
+    objectiveText = esc(JSON.stringify(bestKnown.objectiveValue));
+  } else {
+    objectiveText = '<span class="state-warn">暂不可精确计算</span>';
+  }
+  return [
+    `<span class="badge ${esc(bestKnown.kind)}">${esc(label)}</span>`,
+    `<div class="small muted">decisionDepth=${esc(bestKnown.decisionDepth ?? "—")} · routeLength=${routeLen}</div>`,
+    `<div class="small muted">${objectiveText}${bestKnown.verified ? ' · <span class="state-ok">verified</span>' : ""}</div>`,
+  ].join("");
+}
+
+function failureHtml(failure) {
+  if (!failure) return "";
+  const label = FAILURE_LABELS[failure.failureClass] || failure.failureClass || "未知";
+  const retryable = failure.retryable ? " · 可增加预算后重试" : "";
+  return `<div class="failure ${esc(failure.failureClass)}"><span class="state-warn">${esc(label)}</span><span class="muted small">${esc(retryable)}</span><div class="small muted">${esc(failure.message || "")}</div></div>`;
+}
+
+function retryActions(job) {
+  const buttons = [];
+  if (["completed", "failed", "cancelled"].includes(job.state)) {
+    buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="1">按原配置重试</button>`);
+    if (job.state === "failed") {
+      buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="exp2">扩展预算 ×2</button>`);
+      buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="time2">运行时间 ×2</button>`);
+    }
+  }
+  if (["queued", "running"].includes(job.state)) {
+    buttons.push(`<button class="cancel-btn danger" data-job="${esc(job.id)}">Cancel</button>`);
+  }
+  return buttons.join(" ");
 }
 
 async function loadTowers() {
@@ -81,7 +153,7 @@ async function loadTowers() {
   (payload.towers || []).forEach((tower) => {
     const option = document.createElement("option");
     option.value = tower.id;
-    option.textContent = `${tower.label} (${tower.regionCount} regions)`;
+    option.textContent = `${tower.label} (${tower.regionCount} 区域)`;
     select.appendChild(option);
   });
   if (select.options.length > 0) {
@@ -116,10 +188,9 @@ async function loadRegion() {
   const regionId = $("region-select").value;
   const { payload } = await api("GET", `/api/towers/${encodeURIComponent(towerId)}/regions/${encodeURIComponent(regionId)}`);
   if (!payload || !payload.region) return;
-  state.region = payload.region;
   const spec = payload.region.spec;
+  state.regionSpec = spec;
   $("rank-input").value = spec.rank || "chaos";
-  renderModelTable();
   if (spec.model && spec.model.heroFields) {
     MODEL_FIELDS.forEach(([field]) => {
       const input = $(`model-${field}`);
@@ -127,21 +198,25 @@ async function loadRegion() {
     });
   }
   const objective = spec.objective;
-  if (objective) {
-    $("objective-mode").value = objective.mode || "clear";
-    if (objective.field) $("objective-field").value = objective.field;
-    if (objective.terms) $("score-terms").value = JSON.stringify(objective.terms, null, 2);
-    if (objective.objectives) $("lex-items").value = JSON.stringify(objective.objectives, null, 2);
+  if (objective && objective.mode) {
+    $("objective-mode").value = objective.mode;
     updateObjectiveVisibility();
   }
+  renderModelTable();
 }
 
 function renderModelTable() {
   const tbody = $("model-table").querySelector("tbody");
+  // Collect existing values BEFORE clearing the tbody so RegionSpec-prefilled
+  // SolverModel fields survive re-renders.
+  const existingValues = {};
+  MODEL_FIELDS.forEach(([field]) => {
+    const input = $(`model-${field}`);
+    if (input) existingValues[field] = input.value;
+  });
   tbody.innerHTML = "";
   MODEL_FIELDS.forEach(([field, mode]) => {
-    const existing = $(`model-${field}`) ? $(`model-${field}`).value : null;
-    const selected = existing || mode;
+    const selected = existingValues[field] || mode;
     const row = document.createElement("tr");
     row.innerHTML = `<td>${esc(field)}</td><td><select id="model-${esc(field)}">${MODEL_MODES.map((m) => `<option value="${m}" ${m === selected ? "selected" : ""}>${m}</option>`).join("")}</select></td>`;
     tbody.appendChild(row);
@@ -150,9 +225,25 @@ function renderModelTable() {
 
 function updateObjectiveVisibility() {
   const mode = $("objective-mode").value;
-  $("objective-field-wrap").style.display = mode === "maximize" ? "flex" : "none";
+  $("objective-field-wrap").style.display = mode === "maximize" ? "block" : "none";
   $("score-terms-wrap").style.display = mode === "maximize-score" ? "block" : "none";
   $("lex-items-wrap").style.display = mode === "lexicographic" ? "block" : "none";
+  let json = "";
+  if (mode === "max-final-hp") json = '{"mode":"max-final-hp"}';
+  else if (mode === "maximize") json = JSON.stringify({ mode: "maximize", field: $("objective-field").value || "hero.atk" }, null, 2);
+  else if (mode === "maximize-score") json = JSON.stringify({ mode: "maximize-score", terms: safeJson($("score-terms").value, []) }, null, 2);
+  else if (mode === "lexicographic") json = JSON.stringify({ mode: "lexicographic", objectives: safeJson($("lex-items").value, []) }, null, 2);
+  else json = "";
+  $("objective-json").value = json;
+}
+
+function safeJson(text, fallback) {
+  try {
+    const parsed = JSON.parse(text || "");
+    return parsed == null ? fallback : parsed;
+  } catch (error) {
+    return fallback;
+  }
 }
 
 function buildTask() {
@@ -160,25 +251,20 @@ function buildTask() {
   MODEL_FIELDS.forEach(([field]) => {
     heroFields[field] = $(`model-${field}`).value;
   });
-  const objectiveMode = $("objective-mode").value;
+  const mode = $("objective-mode").value;
   let objective = null;
-  if (objectiveMode === "max-final-hp") {
-    objective = { mode: "max-final-hp" };
-  } else if (objectiveMode === "maximize") {
-    objective = { mode: "maximize", field: $("objective-field").value || "hero.atk" };
-  } else if (objectiveMode === "maximize-score") {
-    objective = { mode: "maximize-score", terms: JSON.parse($("score-terms").value || "[]") };
-  } else if (objectiveMode === "lexicographic") {
-    objective = { mode: "lexicographic", objectives: JSON.parse($("lex-items").value || "[]") };
-  }
-  return {
+  if (mode === "max-final-hp") objective = { mode: "max-final-hp" };
+  else if (mode === "maximize") objective = { mode: "maximize", field: $("objective-field").value || "hero.atk" };
+  else if (mode === "maximize-score") objective = { mode: "maximize-score", terms: safeJson($("score-terms").value, []) };
+  else if (mode === "lexicographic") objective = { mode: "lexicographic", objectives: safeJson($("lex-items").value, []) };
+  const task = {
     schema: "motapathfinder.solve-task.v1",
     tower: {
       id: state.tower ? state.tower.id : "unknown",
       projectRoot: state.tower ? state.tower.projectRoot : null,
       projectFingerprint: state.towerFingerprint || undefined,
       rank: $("rank-input").value || "chaos",
-      region: { spec: state.region ? state.region.spec : {} },
+      region: { spec: state.regionSpec || {} },
     },
     model: { heroFields },
     objective,
@@ -194,6 +280,7 @@ function buildTask() {
     },
     verification: { strictReplay: $("strict-replay").checked },
   };
+  return task;
 }
 
 async function validateTask() {
@@ -204,17 +291,22 @@ async function validateTask() {
     $("preflight-result").innerHTML = `<div class="state-err">构建任务失败：${esc(error.message)}</div>`;
     return;
   }
-  const { status, payload } = await api("POST", "/api/tasks/validate", task);
+  state.lastTask = task;
   $("normalized-task").textContent = JSON.stringify(task, null, 2);
+  const { status, payload } = await api("POST", "/api/tasks/validate", task);
   if (status === 200 && payload.valid) {
     const identity = payload.identity;
+    const segments = (payload.effectiveSegments || []).map((segment) => {
+      const runtime = segment.maxRuntimeMs > 0 ? `${segment.maxRuntimeMs}ms` : "不限";
+      return `<div>${esc(segment.segmentId)}：exp=${esc(segment.maxExpansions)} · runtime=${runtime}</div>`;
+    }).join("");
     $("preflight-result").innerHTML = [
       `<div class="state-ok">preflight 通过</div>`,
-      `<div>task fingerprint: <code>${esc(identity.taskFingerprint)}</code></div>`,
-      `<div>tower fingerprint: <code>${esc(identity.towerFingerprint || "—")}</code></div>`,
-      `<div>model fingerprint: <code>${esc(identity.solverModelFingerprint || "—")}</code></div>`,
-      `<div>objective fingerprint: <code>${esc(identity.objectiveFingerprint || "—")}</code></div>`,
-      `<div>objective: explicit=${payload.objective.explicit} searchPreserving=${payload.objective.searchPreserving} terminalOnly=${payload.objective.terminalOnly}</div>`,
+      `<div class="small">task fingerprint: <code>${esc(identity.taskFingerprint)}</code></div>`,
+      `<div class="small">model fingerprint: <code>${esc(identity.solverModelFingerprint || "—")}</code></div>`,
+      `<div class="small">objective fingerprint: <code>${esc(identity.objectiveFingerprint || "—（legacy）")}</code></div>`,
+      `<div class="small">objective: explicit=${payload.objective.explicit} searchPreserving=${payload.objective.searchPreserving} terminalOnly=${payload.objective.terminalOnly}</div>`,
+      segments ? `<div class="small">有效分段预算：</div>${segments}` : "",
     ].join("");
   } else {
     const failure = (payload && payload.failure) || {};
@@ -230,6 +322,7 @@ async function submitJob() {
     alert(`构建任务失败：${error.message}`);
     return;
   }
+  state.lastTask = task;
   const { status, payload } = await api("POST", "/api/jobs", task);
   if (status === 202 && payload.job) {
     await refreshJobs();
@@ -241,22 +334,6 @@ async function submitJob() {
   }
 }
 
-function bestKnownHtml(bestKnown) {
-  if (!bestKnown) return '<span class="muted">—</span>';
-  const label = BEST_KNOWN_LABELS[bestKnown.kind] || bestKnown.kind;
-  const routeLen = bestKnown.routeLengthExact
-    ? esc(bestKnown.routeLength)
-    : '<span class="state-warn">待路线重建</span>';
-  const objective = bestKnown.objectiveValueExact
-    ? esc(JSON.stringify(bestKnown.objectiveValue))
-    : '<span class="state-warn">暂不可精确计算</span>';
-  return [
-    `<span class="badge ${esc(bestKnown.kind)}">${esc(label)}</span>`,
-    `<div class="small muted">decisionDepth=${esc(bestKnown.decisionDepth ?? "—")} · routeLength=${routeLen}</div>`,
-    `<div class="small muted">objective=${objective}${bestKnown.verified ? ' · <span class="state-ok">verified</span>' : ""}</div>`,
-  ].join("");
-}
-
 async function refreshJobs() {
   const { payload } = await api("GET", "/api/jobs");
   state.jobs = (payload.jobs || []);
@@ -266,41 +343,67 @@ async function refreshJobs() {
 function renderJobs() {
   const filter = document.querySelector(".filter-btn.active");
   const filterName = filter ? filter.dataset.filter : "all";
-  const tbody = $("job-table").querySelector("tbody");
-  tbody.innerHTML = "";
-  state.jobs
+  const list = $("job-table");
+  list.innerHTML = "";
+  const visible = state.jobs
     .filter((job) => {
       if (filterName === "all") return true;
       if (filterName === "active") return ["queued", "running", "interrupted"].includes(job.state);
+      if (filterName === "failed") return job.state === "failed" || (job.failure && RETRYABLE_FAILURES.includes(job.failure.failureClass));
       return job.state === filterName;
     })
-    .forEach((job) => {
-      const row = document.createElement("tr");
-      const progress = job.lastProgress || {};
-      const bestKnown = progress.bestKnown || job.bestKnown || null;
-      row.innerHTML = [
-        `<td><a href="#" data-job="${esc(job.id)}">${esc(job.id)}</a></td>`,
-        `<td><span class="badge ${esc(job.state)}">${esc(job.state)}</span></td>`,
-        `<td>${esc(progress.phase || job.phase || "—")}</td>`,
-        `<td>${formatTime(job.createdAt)}</td>`,
-        `<td class="small">${esc(job.objectiveSummary || "—")}</td>`,
-        `<td>${job.strictReplay == null ? "—" : (job.strictReplay ? "true" : "false")}</td>`,
-        `<td class="small">${bestKnownHtml(bestKnown)}</td>`,
-        `<td><button class="cancel-btn danger" data-job="${esc(job.id)}" ${["completed", "failed", "cancelled"].includes(job.state) ? "disabled" : ""}>Cancel</button></td>`,
-      ].join("");
-      tbody.appendChild(row);
-    });
-  tbody.querySelectorAll("a[data-job]").forEach((anchor) => {
+    .slice(0, 40);
+  if (visible.length === 0) {
+    list.innerHTML = '<div class="muted small">暂无任务</div>';
+    return;
+  }
+  visible.forEach((job) => {
+    const progress = job.lastProgress || {};
+    const bestKnown = progress.bestKnown || job.bestKnown || null;
+    const failureClass = (job.failure && job.failure.failureClass) || (progress.failure && progress.failure.failureClass);
+    const row = document.createElement("div");
+    row.className = "job-row";
+    row.innerHTML = [
+      `<div class="job-row-head"><a href="#" data-job="${esc(job.id)}" class="job-link">${esc(job.id)}</a>${stateBadge(job.state, failureClass)}</div>`,
+      `<div class="small muted">${esc(progress.phase || job.phase || "—")} · ${formatTime(job.createdAt)}</div>`,
+      `<div class="small">${bestKnownHtml(bestKnown)}</div>`,
+      failureClass ? failureHtml(job.failure || progress.failure) : "",
+      `<div class="job-actions">${retryActions(job)}</div>`,
+    ].join("");
+    list.appendChild(row);
+  });
+  list.querySelectorAll("a[data-job]").forEach((anchor) => {
     anchor.addEventListener("click", (event) => {
       event.preventDefault();
       if (state.eventSource) state.eventSource.close();
       renderJobDetail(anchor.dataset.job);
     });
   });
-  tbody.querySelectorAll(".cancel-btn").forEach((button) => {
+  list.querySelectorAll(".cancel-btn").forEach((button) => {
     button.addEventListener("click", async () => {
       await api("POST", `/api/jobs/${encodeURIComponent(button.dataset.job)}/cancel`);
       await refreshJobs();
+    });
+  });
+  list.querySelectorAll(".retry-btn").forEach((button) => {
+    button.addEventListener("click", async () => {
+      // Retry re-submits the original job task with the scaled budget, so the
+      // new SolveTask genuinely inherits the failed job config.
+      const detail = await api("GET", `/api/jobs/${encodeURIComponent(button.dataset.job)}`);
+      const task = detail.payload && detail.payload.task ? JSON.parse(JSON.stringify(detail.payload.task)) : null;
+      if (!task || !task.search) {
+        alert("无法读取原任务配置");
+        return;
+      }
+      const scale = button.dataset.scale;
+      if (scale === "exp2") task.search = { ...task.search, maxExpansions: (Number(task.search.maxExpansions) || 0) * 2 };
+      if (scale === "time2") task.search = { ...task.search, maxRuntimeMs: (Number(task.search.maxRuntimeMs) || 0) * 2 };
+      const { status, payload } = await api("POST", "/api/jobs", task);
+      if (status === 202 && payload.job) {
+        await refreshJobs();
+        if (state.eventSource) state.eventSource.close();
+        renderJobDetail(payload.job.id);
+      }
     });
   });
 }
@@ -313,14 +416,15 @@ async function renderJobDetail(jobId) {
   state.activeJob = jobId;
   const { payload } = await api("GET", `/api/jobs/${encodeURIComponent(jobId)}`);
   const job = payload.job;
-  $("job-detail").innerHTML = `<fieldset><legend>Job ${esc(job.id)}</legend><div class="metrics" id="job-metrics"></div><div id="job-best" class="small"></div><div id="job-result"></div></fieldset>`;
-  const detail = $("job-detail");
+  $("current-job-title").textContent = `当前 Job ${job.id}`;
+  $("job-detail").innerHTML = `<div class="metrics" id="job-metrics"></div><div id="job-best" class="small"></div><div id="job-result"></div>`;
   const renderMetrics = (progress) => {
     const search = progress.search || {};
     const budget = progress.budget || {};
     const bestKnown = progress.bestKnown || null;
+    const failureClass = (job.failure && job.failure.failureClass) || progress.failureClass;
     const metrics = [
-      metric("state", `<span class="badge ${esc(job.state)}">${esc(job.state)}</span>`),
+      metric("state", stateBadge(job.state, failureClass)),
       metric("phase", esc(progress.phase || "—")),
       metric("segment", progress.segment ? `${esc(progress.segment.id)} ${progress.segment.attempt}/${progress.segment.total}` : "—"),
       metric("expansions", search.expansions ?? "—"),
@@ -330,8 +434,8 @@ async function renderJobDetail(jobId) {
       metric("actionTrimmed", search.actionTrimmed ?? "—"),
       metric("decisionDepth", bestKnown && bestKnown.decisionDepth != null ? String(bestKnown.decisionDepth) : "—"),
       metric("routeLength", bestKnown && bestKnown.routeLengthExact ? String(bestKnown.routeLength) : '<span class="state-warn">待路线重建</span>'),
-      metric("expansion 预算消耗", budget.expansionBudgetUsedRatio == null ? "—" : `${(budget.expansionBudgetUsedRatio * 100).toFixed(1)}%`),
-      metric("runtime 预算消耗", budget.runtimeBudgetUsedRatio == null ? "—" : `${(budget.runtimeBudgetUsedRatio * 100).toFixed(1)}%`),
+      metric("expansion 预算消耗", budget.maxExpansions > 0 ? `${((budget.expansionBudgetUsedRatio || 0) * 100).toFixed(1)}%` : "—"),
+      metric("runtime 预算消耗", budget.maxRuntimeMs > 0 ? `${((budget.runtimeBudgetUsedRatio || 0) * 100).toFixed(1)}%` : "—"),
       metric("proof claim", esc((progress.proof && progress.proof.claim) || "—")),
     ];
     $("job-metrics").innerHTML = metrics.join("");
@@ -341,17 +445,15 @@ async function renderJobDetail(jobId) {
   if (state.eventSource) state.eventSource.close();
   state.eventSource = new EventSource(`/api/jobs/${encodeURIComponent(jobId)}/events`);
   state.eventSource.addEventListener("progress", (event) => {
-    const snapshot = JSON.parse(event.data);
-    renderMetrics(snapshot);
+    renderMetrics(JSON.parse(event.data));
   });
   state.eventSource.addEventListener("terminal", (event) => {
-    const snapshot = JSON.parse(event.data);
-    renderMetrics(snapshot);
+    renderMetrics(JSON.parse(event.data));
     state.eventSource.close();
     refreshJobs();
     loadResult(jobId);
   });
-  state.eventSource.onerror = () => { /* reconnect handled by EventSource */ };
+  state.eventSource.onerror = () => { /* EventSource 自动重连 */ };
   loadResult(jobId);
 }
 
@@ -364,10 +466,13 @@ async function loadResult(jobId) {
   }
   const failure = result.failure;
   const route = result.route;
+  const objectiveText = result.objective == null
+    ? "无显式 ObjectiveSpec（legacy）"
+    : esc(JSON.stringify(result.objective.value));
   const html = [
-    `<h3>Result (${esc(result.status)})</h3>`,
-    `<div class="small muted">found=${result.found} · taskFingerprint=${esc(result.taskFingerprint)}</div>`,
-    failure ? `<div class="state-err">failureClass=${esc(failure.failureClass)} · retryable=${failure.retryable} · ${esc(failure.message)}</div>` : "",
+    `<h3>Result（${esc(result.status)}）</h3>`,
+    `<div class="small muted">found=${result.found} · objective=${objectiveText}</div>`,
+    failure ? failureHtml(failure) : "",
     route ? [
       `<div class="small">verificationStatus=${esc(route.verificationStatus)} · strictReplayVerified=${route.strictReplayVerified}</div>`,
       `<div class="small">decisionDepth=${esc(route.record.stats && route.record.stats.depth)} · routeLength=${esc(route.record.stats && route.record.stats.routeLength)}</div>`,
@@ -397,6 +502,7 @@ async function poll() {
 window.addEventListener("DOMContentLoaded", async () => {
   renderModelTable();
   $("objective-mode").addEventListener("change", updateObjectiveVisibility);
+  $("objective-field").addEventListener("change", updateObjectiveVisibility);
   $("tower-select").addEventListener("change", loadRegions);
   $("region-select").addEventListener("change", loadRegion);
   $("validate-btn").addEventListener("click", validateTask);
