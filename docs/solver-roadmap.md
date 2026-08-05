@@ -771,3 +771,9 @@ PR-5.3c 系列已关闭，Launcher 只消费公开合同：
 - `resolveStartCandidateLimit` 作为执行/preflight 共享 resolver；execution 消费 `segment.dp.startCandidateLimit`。
 - `effectiveSegments.attemptCaps` 按阶段报告（initial / configuredRepair / backtrackRetry），不再低报。
 - ACTION_TRIMMED Chromium 控制、打开配置载入原 task、failureClass 精确建议文案。
+
+
+### 2026-08-04 更新：PR-5.3d5 Frontier-dependent Cap & Builder Restore Closure
+
+- 后续 segment 无显式 start cap 时 `attemptCaps.initial` 为 `null`（frontier-dependent，不低报为 candidateLimit）；configured repair 可用 `repairCandidateLimit` 扩宽 frontier。
+- `loadTaskIntoBuilder` 完整恢复 Tower/Region/Objective/Verification/Search。
