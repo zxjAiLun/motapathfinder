@@ -99,6 +99,7 @@ class SolverJob {
   }
 
   toJSON() {
+    const search = this.task && this.task.normalizedTask && this.task.normalizedTask.search;
     return {
       id: this.id,
       state: this.state,
@@ -108,6 +109,13 @@ class SolverJob {
       finishedAt: this.finishedAt,
       cancelRequested: this.cancelRequested,
       failure: this.failure || null,
+      search: search
+        ? {
+          maxExpansions: search.maxExpansions,
+          maxRuntimeMs: search.maxRuntimeMs,
+          maxActionsPerState: search.maxActionsPerState,
+        }
+        : null,
       lastProgress: this.lastProgress || null,
     };
   }

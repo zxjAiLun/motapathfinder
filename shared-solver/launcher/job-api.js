@@ -52,6 +52,7 @@ function jobSummaryFromStatus(status, extra) {
     phase: progress.phase || null,
     bestKnown: progress.bestKnown || null,
     failure: status && status.failure || null,
+    search: status && status.search || null,
     ...(extra || {}),
   };
 }

@@ -239,6 +239,7 @@ class SolverProgressAccumulator {
       ? Math.max(0, Date.now() - this.attempt.startedAt)
       : 0;
     const attemptExpansions = attemptActive ? this.attempt.expansions : 0;
+    const clampRatio = (value) => (value == null ? null : Math.min(1, value));
     const current = attemptActive ? {
       segmentId: this.attempt.segmentId,
       attempt: this.attempt.attempt,
@@ -247,10 +248,10 @@ class SolverProgressAccumulator {
       maxExpansions: this.maxExpansions,
       maxRuntimeMs: this.maxRuntimeMs,
       expansionBudgetUsedRatio: this.maxExpansions > 0
-        ? Number((attemptExpansions / this.maxExpansions).toFixed(4))
+        ? clampRatio(Number((attemptExpansions / this.maxExpansions).toFixed(4)))
         : null,
       runtimeBudgetUsedRatio: this.maxRuntimeMs > 0
-        ? Number((attemptElapsedMs / this.maxRuntimeMs).toFixed(4))
+        ? clampRatio(Number((attemptElapsedMs / this.maxRuntimeMs).toFixed(4)))
         : null,
       expansionBudgetExhausted: this.maxExpansions > 0 && attemptExpansions >= this.maxExpansions,
     } : null;
@@ -258,12 +259,20 @@ class SolverProgressAccumulator {
       // The task budget applies per attempt (each DP run gets the full manual
       // budget), so only the current attempt's ratio is meaningful; total
       // counters are reported separately and never divided by a per-attempt cap.
+      source: this.budgetSource,
       scope: "per-attempt",
       current,
       total: { expansions, elapsedMs },
       maxExpansions: this.maxExpansions,
       maxRuntimeMs: this.maxRuntimeMs,
       actionTrimmed: this.counters.actionTrimmed,
+      // Deprecated flat aliases of `current` (kept for pre-d2 consumers);
+      // they reflect the active attempt only and are never total/per-attempt.
+      expansions: current ? current.expansions : null,
+      elapsedMs: current ? current.elapsedMs : null,
+      expansionBudgetUsedRatio: current ? current.expansionBudgetUsedRatio : null,
+      runtimeBudgetUsedRatio: current ? current.runtimeBudgetUsedRatio : null,
+      expansionBudgetExhausted: current ? current.expansionBudgetExhausted : false,
     };
     return {
       schema: SOLVER_PROGRESS_SCHEMA,

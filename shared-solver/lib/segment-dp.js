@@ -2893,7 +2893,10 @@ function manualSearchOverrides(config) {
   return overrides;
 }
 
-// Effective per-segment budgets after applying the top-level manual override.
+// Effective per-attempt budgets after applying the top-level manual override.
+// The task budget applies per candidate attempt (each searchSegmentDP run gets
+// the full manual cap), so this reports the per-attempt scope explicitly and
+// the cap on start candidates (attempts) rather than a per-segment total.
 // Used by the Launcher preflight so the UI and the executed search agree.
 function effectiveSegmentBudgets(milestoneSpec, config) {
   const segments = milestoneRange(
@@ -2902,15 +2905,37 @@ function effectiveSegmentBudgets(milestoneSpec, config) {
     config && config.toMilestoneId,
   );
   const overrides = manualSearchOverrides(config);
-  return segments.map((segment) => ({
-    segmentId: segment.id,
-    maxExpansions: overrides.maxExpansions != null
-      ? overrides.maxExpansions
-      : number((segment.dp || {}).maxExpansions, 8000),
-    maxRuntimeMs: overrides.maxRuntimeMs != null
-      ? overrides.maxRuntimeMs
-      : number((segment.dp || {}).maxRuntimeMs, 15000),
-  }));
+  return segments.map((segment, index) => {
+    const perAttempt = {
+      maxExpansions: overrides.maxExpansions != null
+        ? overrides.maxExpansions
+        : number((segment.dp || {}).maxExpansions, 8000),
+      maxRuntimeMs: overrides.maxRuntimeMs != null
+        ? overrides.maxRuntimeMs
+        : number((segment.dp || {}).maxRuntimeMs, 15000),
+    };
+    // The initial segment starts from a single candidate; later segments can
+    // start from up to the start-candidate cap.
+    const initialOnly = index === 0 && !(config && config.fromMilestoneId);
+    const maxStartAttempts = initialOnly
+      ? 1
+      : numericOption(
+        config && config.startCandidateLimit,
+        numericOption(
+          (segment.dp || {}).startCandidateLimit,
+          numericOption(
+            config && config.candidateLimit,
+            numericOption((segment.dp || {}).goalSkylineLimit, 8),
+          ),
+        ),
+      );
+    return {
+      segmentId: segment.id,
+      budgetScope: "per-attempt",
+      perAttempt,
+      maxStartAttempts,
+    };
+  });
 }
 
 // The task-level search budget is the authority for EVERY segment DP
