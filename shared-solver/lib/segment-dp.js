@@ -2877,6 +2877,42 @@ function segmentCandidateLimit(segment, config, overrides) {
   );
 }
 
+// The top-level (task/Launcher) search budget is the authority for the main
+// segment search.  Generated segments from the milestone decomposer carry their
+// own dp budgets, so these overrides must apply unconditionally -- including
+// maxRuntimeMs=0 (unlimited time).  Only explicitly-set fields are included so
+// callers that do not provide a budget keep the segment's own budgets.
+function manualSearchOverrides(config) {
+  const overrides = {};
+  if (config && config.maxExpansions != null) overrides.maxExpansions = config.maxExpansions;
+  if (config && config.maxRuntimeMs != null) overrides.maxRuntimeMs = config.maxRuntimeMs;
+  if (config && config.maxActionsPerState != null) overrides.maxActionsPerState = config.maxActionsPerState;
+  if (config && config.goalSkylineLimit != null) overrides.goalSkylineLimit = config.goalSkylineLimit;
+  if (config && config.dpSkylineMax != null) overrides.dpSkylineMax = config.dpSkylineMax;
+  if (config && config.stopOnFirstGoal != null) overrides.stopOnFirstGoal = config.stopOnFirstGoal;
+  return overrides;
+}
+
+// Effective per-segment budgets after applying the top-level manual override.
+// Used by the Launcher preflight so the UI and the executed search agree.
+function effectiveSegmentBudgets(milestoneSpec, config) {
+  const segments = milestoneRange(
+    milestoneSpec,
+    config && config.fromMilestoneId,
+    config && config.toMilestoneId,
+  );
+  const overrides = manualSearchOverrides(config);
+  return segments.map((segment) => ({
+    segmentId: segment.id,
+    maxExpansions: overrides.maxExpansions != null
+      ? overrides.maxExpansions
+      : number((segment.dp || {}).maxExpansions, 8000),
+    maxRuntimeMs: overrides.maxRuntimeMs != null
+      ? overrides.maxRuntimeMs
+      : number((segment.dp || {}).maxRuntimeMs, 15000),
+  }));
+}
+
 function segmentDpOverrides(segment, config, overrides) {
   const dpConfig = (segment || {}).dp || {};
   const repair = (overrides && overrides.dpOverrides) || {};
@@ -3891,7 +3927,10 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       segment,
       frontier,
       { ...graphConfig, segmentIndex, segmentTotal: segments.length },
-      {},
+      {
+        candidateLimit: graphConfig.candidateLimit != null ? graphConfig.candidateLimit : undefined,
+        dpOverrides: manualSearchOverrides(graphConfig),
+      },
     );
     appendLedger(execution, "initial");
     if (execution.merged.length === 0) {
@@ -4087,6 +4126,8 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
 module.exports = {
   buildSegmentActionProvider,
   buildSegmentGoalPredicate,
+  effectiveSegmentBudgets,
+  manualSearchOverrides,
   runMilestoneGraph,
   searchSegmentDP,
   summarizeEffectiveHero,

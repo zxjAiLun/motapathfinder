@@ -25,6 +25,7 @@ const { classifyJobFailure, buildSolverJobResult } = require("./lib/solver-job-r
 const { SolverProgressAccumulator } = require("./lib/solver-progress");
 const { compileObjectiveSpec } = require("./lib/objective-spec");
 const { composeRouteRecords, ROUTE_SCHEMA } = require("./lib/route-store");
+const { effectiveSegmentBudgets } = require("./lib/segment-dp");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
 const { FileJobStore } = require("./lib/file-job-store");
 
@@ -674,6 +675,48 @@ function checkExecutablePreflightRejectsMalformedProject() {
   );
 }
 
+
+async function checkManualBudgetOverridesSegmentBudget() {
+  // The task search budget is the execution authority.  A segment-local dp
+  // budget must be overridden by the manual budget, and maxRuntimeMs=0
+  // (unlimited) must never produce RUNTIME_BUDGET_EXHAUSTED.
+  const spec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
+  spec.dp = { maxExpansions: 100000, maxRuntimeMs: 1 };
+  const manager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
+  const job = manager.submit({
+    schema: SOLVE_TASK_SCHEMA,
+    tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
+    objective: { mode: "max-final-hp" },
+    search: { algorithm: "segment-dp", maxExpansions: 1000, maxRuntimeMs: 0, candidateLimit: 2 },
+    verification: { strictReplay: false },
+  });
+  const settled = await waitForJob(manager, job.id, 120000);
+  assert.strictEqual(settled.state, "completed", "maxRuntimeMs=0 must override the segment-local 1ms budget");
+  assert.strictEqual(settled.result.found, true);
+  assert.notStrictEqual(
+    settled.result.failure && settled.result.failure.failureClass,
+    "RUNTIME_BUDGET_EXHAUSTED",
+    "maxRuntimeMs=0 must never be classified as runtime budget exhausted",
+  );
+}
+
+function checkEffectiveSegmentBudgetsReflectManual() {
+  const milestoneSpec = {
+    milestones: [
+      { id: "seg-1", dp: { maxExpansions: 300, maxRuntimeMs: 15000 } },
+      { id: "seg-2", dp: { maxExpansions: 400, maxRuntimeMs: 20000 } },
+    ],
+  };
+  const overridden = effectiveSegmentBudgets(milestoneSpec, { maxExpansions: 50000, maxRuntimeMs: 0 });
+  assert.strictEqual(overridden.length, 2);
+  overridden.forEach((entry) => {
+    assert.strictEqual(entry.maxExpansions, 50000, "manual maxExpansions must override segment budgets");
+    assert.strictEqual(entry.maxRuntimeMs, 0, "manual maxRuntimeMs=0 must override segment budgets");
+  });
+  const defaults = effectiveSegmentBudgets(milestoneSpec, {});
+  assert.strictEqual(defaults[0].maxExpansions, 300, "without manual config the segment budget stays");
+  assert.strictEqual(defaults[0].maxRuntimeMs, 15000);
+}
 async function checkTerminalProgressPersisted() {
   const storeRoot = path.join(__dirname, "routes", "generated", "c2-job-store");
   const jobStore = new FileJobStore({ root: storeRoot });
@@ -716,8 +759,10 @@ async function main() {
   checkComposedRouteKeepsFullRouteLength();
   checkExecutablePreflightRejectsMalformedProject();
   await checkTerminalProgressPersisted();
+  checkEffectiveSegmentBudgetsReflectManual();
+  await checkManualBudgetOverridesSegmentBudget();
   process.stdout.write(JSON.stringify({
-    schema: "motapathfinder.pr-5.3c3-solver-job-contract.v1",
+    schema: "motapathfinder.pr-5.3d1-solver-job-contract.v1",
     status: "passed",
     controls: {
       stateMachineTransitions: true,
@@ -750,6 +795,9 @@ async function main() {
       postRebuildRouteLengthExact: true,
       malformedProjectRejectedByExecutablePreflight: true,
       terminalProgressPersistedToNdjson: true,
+      effectiveSegmentBudgetsReflectManual: true,
+      manualBudgetOverridesSegmentBudget: true,
+      maxRuntimeMsZeroNeverRuntimeExhausted: true,
       resultIdentityBoundToTask: true,
       microJobQueuedToCompleted: true,
     },
