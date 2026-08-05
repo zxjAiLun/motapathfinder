@@ -3,6 +3,7 @@
 const { SolverJob, SolverJobError, executeInProcessExecutor, finalizeJob } = require("./solver-job");
 const { serializeError } = require("./solver-job-result");
 const { compileExecutableSolveTask, SolveTaskError } = require("./solve-task");
+const { compileExecutableSolveTaskV2 } = require("./solve-task-v2");
 const { createWorkerExecutor } = require("./solver-worker-runner");
 
 let sequence = 0;
@@ -50,8 +51,12 @@ class SolverJobManager {
 
   submit(rawTask, options) {
     // Executable-job preflight: projectRoot must exist and be loadable with a
-    // real fingerprint before a worker is spawned.
-    const task = compileExecutableSolveTask(rawTask, this.context);
+    // real fingerprint before a worker is spawned.  v2 tasks compile through
+    // the ordered-region contract.
+    const isV2 = rawTask && rawTask.schema === "motapathfinder.solve-task.v2";
+    const task = isV2
+      ? compileExecutableSolveTaskV2(rawTask, this.context)
+      : compileExecutableSolveTask(rawTask, this.context);
     const job = new SolverJob({
       id: this.jobIdGenerator(),
       task,
@@ -312,6 +317,7 @@ class SolverJobManager {
       status: job.state,
       phase: job.state,
       segment: null,
+      region: previous.region || null,
       search: previous.search || { expansions: 0, generated: 0, accepted: 0, goalCandidates: 0, actionTrimmed: 0 },
       budget: previous.budget || null,
       bestKnown: previous.bestKnown || null,

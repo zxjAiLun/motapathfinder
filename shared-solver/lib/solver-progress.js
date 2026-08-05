@@ -6,6 +6,7 @@ const PROGRESS_PHASES = [
   "queued",
   "preflight",
   "planning",
+  "region-transition",
   "segment-search",
   "route-build",
   "strict-replay",
@@ -63,6 +64,7 @@ class SolverProgressAccumulator {
     this.status = "queued";
     this.phase = "queued";
     this.segment = null;
+    this.region = null;
     this.bestKnown = null;
     this.proof = null;
     this.startedAt = null;
@@ -107,6 +109,13 @@ class SolverProgressAccumulator {
 
   setSegment(segment) {
     this.segment = segment ? cloneJson(segment) : null;
+    this.publish(true);
+  }
+
+  // Multi-region coordinate: region.id/index/current/total is distinct from
+  // the segment coordinate.  outgoingCandidates is the boundary frontier size.
+  setRegion(region) {
+    this.region = region ? cloneJson(region) : null;
     this.publish(true);
   }
 
@@ -283,6 +292,7 @@ class SolverProgressAccumulator {
       status: this.status,
       phase: this.phase,
       segment: this.segment ? cloneJson(this.segment) : null,
+      region: this.region ? cloneJson(this.region) : null,
       search: cloneJson(this.counters),
       budget,
       bestKnown: this.bestKnown ? cloneJson(this.bestKnown) : null,

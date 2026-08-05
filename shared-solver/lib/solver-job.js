@@ -5,9 +5,10 @@ const { FunctionBackedBattleResolver } = require("./battle-resolver");
 const { StaticSimulator } = require("./simulator");
 const { getMilestoneSpec } = require("./milestone-spec");
 const { buildRegionMilestoneSpec, buildRegionProofClaim } = require("./region-spec");
-const { runMilestoneGraph } = require("./segment-dp");
+const { runMilestoneGraph, buildSegmentGoalPredicate } = require("./segment-dp");
 const { buildRouteRecord } = require("./route-store");
 const { executeActionList } = require("./events");
+const { cloneState } = require("./state");
 const { verifyRouteObjective, replayRouteFile } = require("./live-replay");
 const { SolverProgressAccumulator } = require("./solver-progress");
 const { classifyJobFailure, buildSolverJobResult } = require("./solver-job-result");
@@ -494,9 +495,375 @@ function getDecisionDepthSafe(state) {
   return Number.isFinite(Number(depth)) ? Number(depth) : null;
 }
 
+// Carries the previous region's terminal frontier into the next region.  Full
+// solver state (hero, inventory, flags, equipment, followers, floor mutations)
+// is preserved; only the explicitly declared entry transform is applied (a
+// region with start.type "floor" switches the active floor; start.type
+// "initial" means "continue with the carried state").  The route is kept for
+// ancestry without ever entering the DP state key.
+function materializeNextRegionFrontier(previousTerminalFrontier, nextRegionSpec, options) {
+  const start = (nextRegionSpec && nextRegionSpec.start) || {};
+  return (previousTerminalFrontier || []).map((candidate, index) => {
+    const state = cloneState(candidate && candidate.state);
+    if (start.type === "floor" && start.floorId) {
+      state.floorId = start.floorId;
+    }
+    const route = Array.isArray(candidate && candidate.route)
+      ? candidate.route.slice()
+      : Array.isArray(state && state.route) ? state.route.slice() : [];
+    delete state.routeTrace;
+    // Carry the route as ancestry/provenance; the DP state key excludes route,
+    // and the region's own route record strips this prefix later.
+    state.route = route;
+    return {
+      id: (candidate && candidate.id) || `region-input-${index}`,
+      state,
+      route,
+      tags: ["region-transition"],
+    };
+  });
+}
+
+// Multi-region coordinate: region.id/index/current/total is distinct from
+// the segment coordinate.  outgoingCandidates is the boundary frontier size.
+// Checks whether the carried state already reaches a region's terminal goal;
+// if so the region completes trivially (the search would otherwise return an
+// inconsistent candidate whose state is the entry but whose route explored).
+function regionGoalSatisfied(project, simulator, milestoneSpec, state) {
+  const segments = Array.isArray(milestoneSpec && milestoneSpec.milestones)
+    ? milestoneSpec.milestones
+    : [];
+  const last = segments[segments.length - 1];
+  if (!last || !last.goal || Object.keys(last.goal).length === 0) return false;
+  const predicate = buildSegmentGoalPredicate(project, last, simulator);
+  return predicate(state);
+}
+
+// Strictly sequential multi-region execution.  Each region receives the
+// previous region's terminal frontier (materialized), runs the existing
+// region/segment solver per input candidate, merges/prunes the terminal
+// candidates at the region boundary (regionCandidateLimit), and passes the
+// frontier onward.  A region failure stops the sequence.  The task-level
+// objective only orders the FINAL region's terminal candidates.
+async function executeSolveJobV2(task, {
+  jobId,
+  onProgress,
+  shouldStop,
+  context,
+} = {}) {
+  const normalizedTask = task && task.normalizedTask ? task.normalizedTask : task;
+  const projectRoot = normalizedTask && normalizedTask.tower && normalizedTask.tower.projectRoot;
+  if (!projectRoot) {
+    throw new Error("SolveTask is missing tower.projectRoot");
+  }
+  const stopRequested = typeof shouldStop === "function"
+    ? shouldStop
+    : () => false;
+  const objective = task && task.objective ? task.objective : null;
+  const rank = normalizedTask.tower.rank || "chaos";
+  const regions = task && task.regions && task.regions.length > 0
+    ? task.regions
+    : [{ spec: normalizedTask.tower.region.spec, effectiveSearch: task.search }];
+  const progress = new SolverProgressAccumulator({
+    jobId: jobId || "job-unknown",
+    taskFingerprint: task && task.taskFingerprint || null,
+    onPublish: (snapshot) => {
+      if (typeof onProgress === "function") onProgress(snapshot);
+    },
+    maxExpansions: normalizedTask.search && normalizedTask.search.maxExpansions || 0,
+    maxRuntimeMs: normalizedTask.search && normalizedTask.search.maxRuntimeMs || 0,
+    objective,
+  });
+  progress.setStatus("running");
+  progress.setStartedAt(new Date().toISOString());
+
+  progress.setPhase("preflight");
+  const project = loadProject(projectRoot);
+  const regionCandidateLimit = normalizedTask.search && normalizedTask.search.regionCandidateLimit != null
+    ? Number(normalizedTask.search.regionCandidateLimit)
+    : ((normalizedTask.search && normalizedTask.search.candidateLimit) || 8);
+
+  const regionSummaries = [];
+  let previousTerminalFrontier = null;
+  let finalResult = null;
+  let finalSimulator = null;
+  let finalRegionSpec = null;
+  let finalInitialState = null;
+
+  for (let index = 0; index < regions.length; index += 1) {
+    const regionEntry = regions[index];
+    const regionSpec = regionEntry.spec || regionEntry;
+    const isFinal = index === regions.length - 1;
+    progress.setPhase("region-transition");
+    const simulator = makeSimulator(project, regionSpec, task);
+    const milestoneSpec = buildRegionMilestoneSpec(project, regionSpec);
+    const inputFrontier = index === 0
+      ? [{
+        id: "initial#0",
+        state: createStartState(project, simulator, regionSpec, rank),
+        route: [],
+        tags: ["initial"],
+      }]
+      : materializeNextRegionFrontier(previousTerminalFrontier, regionSpec, {
+        rank,
+        solverModel: normalizedTask.model || null,
+      });
+    const incomingCandidates = inputFrontier.length;
+    progress.setRegion({
+      id: regionSpec.id,
+      index,
+      current: index + 1,
+      total: regions.length,
+      incomingCandidates,
+      outgoingCandidates: 0,
+    });
+    progress.setPhase("segment-search");
+    let result;
+    const entrySatisfied = inputFrontier.find((candidate) =>
+      regionGoalSatisfied(project, simulator, milestoneSpec, candidate.state),
+    );
+    if (entrySatisfied) {
+      // The carried frontier already reaches the region's terminal goal; the
+      // region completes trivially with that candidate.  Running the search
+      // would produce an inconsistent final candidate (entry state with an
+      // explored route), so the boundary transfer short-circuits.
+      result = {
+        found: true,
+        finalCandidate: entrySatisfied,
+        finalCandidates: [entrySatisfied],
+        segmentResults: [],
+        checkpointResults: [],
+        evaluationAttemptLedger: [],
+        entryGoalSatisfied: true,
+      };
+    } else {
+      result = runMilestoneGraph(simulator, inputFrontier[0].state, milestoneSpec, {
+        ...(task && task.executeConfig || {}),
+        objectiveSpec: isFinal ? objective : null,
+        observer: createProgressObserver(progress),
+        shouldStop: stopRequested,
+        initialFrontier: inputFrontier,
+      });
+    }
+    if (stopRequested() || result.stoppedReason === "cancel-requested" || result.cancelled === true) {
+      progress.setPhase("cancelled");
+      progress.flush();
+      return {
+        result,
+        proofClaim: null,
+        routeRecord: null,
+        strictReplayVerified: false,
+        cancelled: true,
+        regions: regionSummaries,
+      };
+    }
+    let outgoing = Array.isArray(result.finalCandidates) ? result.finalCandidates : [];
+    const boundaryTrimmed = outgoing.length > regionCandidateLimit;
+    if (boundaryTrimmed) outgoing = outgoing.slice(0, regionCandidateLimit);
+    const regionSummary = {
+      index,
+      id: regionSpec.id,
+      status: result.found ? "completed" : "failed",
+      incomingCandidates,
+      outgoingCandidates: outgoing.length,
+      regionCandidateLimit,
+      boundaryTrimmed,
+      failure: result.found ? null : ({
+        failureClass: (result.failedSegment && result.failedSegment.failureClass) || "REGION_NOT_REACHED",
+        segmentId: result.failedSegment && result.failedSegment.segmentId || null,
+        message: (result.failedSegment && (result.failedSegment.failureReason || result.failedSegment.failureClass)) || "region goal not reached",
+        retryable: Boolean(result.failedSegment && result.failedSegment.failurePropagation && result.failedSegment.failurePropagation.retryable),
+      }),    };
+    regionSummaries.push(regionSummary);
+    progress.setRegion({
+      ...(progress.region || {}),
+      outgoingCandidates: outgoing.length,
+      boundaryTrimmed,
+    });
+    if (!result.found) {
+      progress.setPhase("failed");
+      progress.flush();
+      return {
+        result,
+        proofClaim: null,
+        routeRecord: null,
+        strictReplayVerified: false,
+        cancelled: false,
+        regions: regionSummaries,
+      };
+    }
+    previousTerminalFrontier = outgoing;
+    finalResult = result;
+    finalSimulator = simulator;
+    finalRegionSpec = regionSpec;
+    finalInitialState = inputFrontier[0].state;
+  }
+
+  // Final region: proof claim, route build, strict replay (same semantics as
+  // the single-region job).  The task-level objective orders the final
+  // region's terminal candidates and is the only objective applied.
+  progress.setSegment(null);
+  const proofClaim = buildRegionProofClaim(finalResult, finalRegionSpec, objective);
+  progress.setProof(proofClaim.objective || null);
+  const claimedObjective = (proofClaim && proofClaim.objective && proofClaim.objective.claim) || "candidate-only";
+
+  let routeRecord = null;
+  let strictReplayVerified = false;
+  let verificationStatus = null;
+  let objectiveValue = null;
+  if (finalResult.found && finalResult.finalCandidate && finalResult.finalCandidate.state) {
+    const candidateState = finalResult.finalCandidate.state;
+    progress.setBestKnown(bestKnownFromState(
+      task,
+      candidateState,
+      "goal-candidate",
+      claimedObjective,
+      {
+        decisionDepth: getDecisionDepthSafe(candidateState),
+        routeLength: routeLengthOfState(candidateState),
+      },
+    ));
+    progress.setPhase("route-build");
+    const finalState = finalResult.finalCandidate.state;
+    // The region's own route is the final candidate route minus the input
+    // frontier prefix (the previous region's steps already applied at entry).
+    const inputRouteLength = Array.isArray(finalInitialState && finalInitialState.route)
+      ? finalInitialState.route.length
+      : 0;
+    const candidateRoute = Array.isArray(finalResult.finalCandidate.route)
+      ? finalResult.finalCandidate.route
+      : [];
+    finalState.route = candidateRoute.length > inputRouteLength
+      ? candidateRoute.slice(inputRouteLength)
+      : [];
+    routeRecord = buildRouteRecord({
+      project,
+      simulator: finalSimulator,
+      initialState: finalInitialState,
+      finalState,
+      options: {
+        projectRoot,
+        solver: "solve-task",
+        profile: finalRegionSpec.id,
+        rank,
+        toFloor: finalState.floorId,
+        goalType: "region",
+        snapshotFloors: (finalRegionSpec.scope || {}).floors,
+        metadata: {
+          kind: "region-dp",
+          regionDp: {
+            regionId: finalRegionSpec.id,
+            taskFingerprint: task && task.taskFingerprint || null,
+            proofClaim,
+            candidateLimit: (task && task.executeConfig && task.executeConfig.candidateLimit) || null,
+            search: normalizedTask.search || null,
+            regionIndex: regions.length - 1,
+            regionTotal: regions.length,
+          },
+        },
+        objectiveSpec: objective,
+      },
+    });
+    const decisionDepth = (routeRecord && routeRecord.decisions || []).length;
+    const artifactRouteLength = (routeRecord && routeRecord.stats && routeRecord.stats.routeLength) != null
+      ? Number(routeRecord.stats.routeLength)
+      : decisionDepth;
+    progress.setPhase("strict-replay");
+    if (routeRecord && routeRecord.final && routeRecord.final.snapshot) {
+      objectiveValue = objectiveValueFromRouteRecord(task, routeRecord);
+      let verifiedMetrics;
+      let bestKnownKind;
+      if (normalizedTask.verification.strictReplay !== false) {
+        let replayResult;
+        try {
+          replayResult = await replayRouteFile(routeRecord, {
+            projectRoot,
+            headless: "1",
+            keepOpen: false,
+            timeoutMs: 60000,
+            stepDelayMs: 0,
+            fastForwardDelayMs: 0,
+            runtimeAutoBattle: 1,
+          });
+          strictReplayVerified = true;
+          verificationStatus = "verified";
+        } catch (error) {
+          throw makeStrictReplayFailure(error);
+        }
+        if (objective && objective.explicit) {
+          const runtimeValue = replayResult &&
+            replayResult.objectiveVerification &&
+            replayResult.objectiveVerification.value;
+          const metadataValue = routeRecord.metadata && routeRecord.metadata.finalObjectiveValue;
+          if (
+            runtimeValue == null ||
+            stableObjectiveValue(runtimeValue) !== stableObjectiveValue(objectiveValue.value) ||
+            stableObjectiveValue(metadataValue) !== stableObjectiveValue(objectiveValue.value)
+          ) {
+            throw makeStrictReplayFailure(new Error(
+              `objective value mismatch: result=${JSON.stringify(objectiveValue.value)} metadata=${JSON.stringify(metadataValue)} runtime=${JSON.stringify(runtimeValue)}`,
+            ));
+          }
+        }
+        verifiedMetrics = {
+          decisionDepth,
+          routeLength: replayResult && replayResult.runtimeRouteLength != null
+            ? Number(replayResult.runtimeRouteLength)
+            : artifactRouteLength,
+        };
+        bestKnownKind = "verified-route";
+      } else {
+        strictReplayVerified = false;
+        verificationStatus = "not-requested";
+        verifiedMetrics = { decisionDepth, routeLength: artifactRouteLength };
+        bestKnownKind = "route-artifact";
+      }
+      progress.setBestKnown(bestKnownFromState(
+        task,
+        routeRecord.final.snapshot,
+        bestKnownKind,
+        claimedObjective,
+        verifiedMetrics,
+        objectiveValue && objectiveValue.value,
+      ));
+    }
+  } else {
+    routeRecord = null;
+    const progressState = finalResult && finalResult.bestProgressState || (finalResult && finalResult.finalCandidates && finalResult.finalCandidates[0] && finalResult.finalCandidates[0].state);
+    if (progressState) {
+      progress.setBestKnown(bestKnownFromState(
+        task,
+        progressState,
+        "progress-state",
+        claimedObjective,
+        {
+          decisionDepth: getDecisionDepthSafe(progressState),
+          routeLength: routeLengthOfState(progressState),
+        },
+      ));
+    }
+  }
+
+  progress.setPhase("finalizing");
+  progress.flush();
+  return {
+    result: finalResult,
+    proofClaim,
+    routeRecord,
+    strictReplayVerified,
+    verificationStatus,
+    objectiveValue,
+    cancelled: false,
+    regions: regionSummaries,
+  };
+}
+
 function executeInProcessExecutor({ job, task, onProgress, context }) {
   let stopRequested = false;
-  const promise = executeSolveJob(task, {
+  const runner = task && task.schema === "motapathfinder.solve-task.v2"
+    ? executeSolveJobV2
+    : executeSolveJob;
+  const promise = runner(task, {
     jobId: job.id,
     onProgress,
     shouldStop: () => stopRequested,
@@ -590,6 +957,8 @@ module.exports = {
   createStartState,
   executeInProcessExecutor,
   executeSolveJob,
+  executeSolveJobV2,
   finalizeJob,
   makeSimulator,
+  materializeNextRegionFrontier,
 };

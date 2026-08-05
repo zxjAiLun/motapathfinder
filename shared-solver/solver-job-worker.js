@@ -10,7 +10,7 @@
 // search.  IPC "cancel" is still accepted for pre-start cancellation.
 const fs = require("node:fs");
 const { compileSolveTask } = require("./lib/solve-task");
-const { executeSolveJob } = require("./lib/solver-job");
+const { executeSolveJob, executeSolveJobV2 } = require("./lib/solver-job");
 const { serializeError } = require("./lib/solver-job-result");
 
 let stopRequested = false;
@@ -47,11 +47,18 @@ process.on("message", async (message) => {
   try {
     let compiledTask = task;
     if (!task || !task.compiled || !task.objective) {
-      compiledTask = compileSolveTask(task, {
-        projectRoot: task && task.tower && task.tower.projectRoot || null,
-      });
+      compiledTask = task && task.schema === "motapathfinder.solve-task.v2"
+        ? require("./lib/solve-task-v2").compileSolveTaskV2(task, {
+          projectRoot: task && task.tower && task.tower.projectRoot || null,
+        })
+        : compileSolveTask(task, {
+          projectRoot: task && task.tower && task.tower.projectRoot || null,
+        });
     }
-    const execution = await executeSolveJob(compiledTask, {
+    const runner = compiledTask && compiledTask.schema === "motapathfinder.solve-task.v2"
+      ? executeSolveJobV2
+      : executeSolveJob;
+    const execution = await runner(compiledTask, {
       jobId,
       onProgress: (snapshot) => {
         if (!isStopRequested()) {
