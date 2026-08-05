@@ -182,6 +182,54 @@ async function main() {
     "maxRuntimeMs=0 must never be classified as runtime budget exhausted",
   );
 
+  // PR-5.4a Commit 4: ordered-region solve-task.v2 through the API.
+  const v2SpecA = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
+  const v2SpecB = JSON.parse(JSON.stringify(v2SpecA));
+  v2SpecB.id = "onlyup-region-b";
+  v2SpecB.goal = { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 2 } };
+  v2SpecB.actionPolicy = { actionKinds: ["pickup", "interactPickup", "equip", "openDoor", "useTool", "changeFloor", "floorFly", "event"] };
+  const v2Task = {
+    schema: "motapathfinder.solve-task.v2",
+    tower: { id: "onlyup-v2.1", projectRoot: ONLY_UP_ROOT, regions: [{ spec: v2SpecA }, { spec: v2SpecB }] },
+    model: {
+      heroFields: {
+        hp: "dominance", atk: "key", def: "key", mdef: "key", lv: "key", exp: "key",
+        money: "disabled", equipment: "key", followers: "disabled",
+        hpmax: "disabled", mana: "disabled", manamax: "disabled",
+      },
+    },
+    objective: { mode: "max-final-hp" },
+    search: { algorithm: "segment-dp", maxExpansions: 1000, maxRuntimeMs: 10000, candidateLimit: 2, regionCandidateLimit: 8 },
+    verification: { strictReplay: false },
+  };
+  const v2Validate = await jsonFetch(base, "POST", "/api/tasks/validate", v2Task);
+  assert.strictEqual(v2Validate.status, 200, "v2 preflight must succeed");
+  assert.ok(v2Validate.payload.valid);
+  assert.strictEqual(v2Validate.payload.normalizedTask.schema, "motapathfinder.solve-task.v2");
+  assert.strictEqual(v2Validate.payload.normalizedTask.tower.regions.length, 2);
+  // Per-region grouped effective segments preserve the ordered sequence.
+  assert.ok(Array.isArray(v2Validate.payload.effectiveSegments), "v2 preflight must group budgets per region");
+  assert.strictEqual(v2Validate.payload.effectiveSegments.length, 2);
+  assert.strictEqual(v2Validate.payload.effectiveSegments[0].regionId, v2SpecA.id);
+  assert.strictEqual(v2Validate.payload.effectiveSegments[1].regionId, v2SpecB.id);
+  assert.ok(Array.isArray(v2Validate.payload.effectiveSegments[0].effectiveSegments));
+  assert.ok(v2Validate.payload.identity.regionFingerprints && v2Validate.payload.identity.regionFingerprints.length === 2);
+
+  // Submit the ordered v2 job; the stored task must round-trip the region order.
+  const v2Created = await jsonFetch(base, "POST", "/api/jobs", v2Task);
+  assert.strictEqual(v2Created.status, 202);
+  const v2JobId = v2Created.payload.job.id;
+  await waitFor(async () => {
+    const result = await jsonFetch(base, "GET", `/api/jobs/${v2JobId}/result`);
+    return result.payload && result.payload.result && ["completed", "failed"].includes(result.payload.state);
+  }, 120000, 100);
+  const v2Detail = await jsonFetch(base, "GET", `/api/jobs/${v2JobId}`);
+  assert.ok(v2Detail.payload && v2Detail.payload.task, "job detail must expose the task for restore");
+  assert.strictEqual(v2Detail.payload.task.schema, "motapathfinder.solve-task.v2");
+  assert.strictEqual(v2Detail.payload.task.tower.regions.length, 2);
+  assert.strictEqual(v2Detail.payload.task.tower.regions[0].spec.id, v2SpecA.id, "region order must round-trip");
+  assert.strictEqual(v2Detail.payload.task.tower.regions[1].spec.id, v2SpecB.id, "region order must round-trip");
+
   // 4. POST job -> 202.
   // 4. POST job -> 202.
   const created = await jsonFetch(base, "POST", "/api/jobs", baseTask());
@@ -256,6 +304,8 @@ async function main() {
       validateReturnsEffectiveSegmentBudgets: true,
       planningPreflightFailureNotSilentlyValid: true,
       effectiveSegmentsPerAttemptScope: true,
+      orderedRegionV2ValidateGrouped: true,
+      orderedRegionV2RoundTrip: true,
       maxRuntimeMsZeroNotExhausted: true,
       taskValidateReturnsFingerprints: true,
       invalidObjectiveStructured400: true,

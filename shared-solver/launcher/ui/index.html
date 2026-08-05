@@ -16,6 +16,7 @@
     <div class="run-bar">
       <label>Tower <select id="tower-select"></select></label>
       <label>Region <select id="region-select"></select></label>
+      <button id="region-add-btn" type="button">＋ 添加 Region</button>
       <label>Rank <input id="rank-input" value="chaos"></label>
       <label>目标
         <select id="objective-mode">
@@ -28,6 +29,10 @@
       </label>
       <button id="validate-btn">Validate</button>
       <button id="submit-btn" class="primary">Run Job</button>
+    </div>
+    <div id="region-order-wrap" class="region-order-wrap">
+      <span class="muted small">Region 顺序（≥1 时输出 solve-task.v2；空时走 v1 单区）</span>
+      <div id="region-order-list" class="region-order-list"></div>
     </div>
   </header>
 
@@ -76,6 +81,7 @@
           <label>maxRuntimeMs（0=不限） <input id="s-max-runtime" type="number" value="0" min="0"></label>
           <label>maxActionsPerState <input id="s-max-actions" type="number" value="256" min="1"></label>
           <label>candidateLimit <input id="s-candidate-limit" type="number" value="8" min="1"></label>
+          <label>regionCandidateLimit <input id="s-region-candidate-limit" type="number" value="8" min="1"></label>
           <label>goalSkylineLimit <input id="s-goal-skyline" type="number" value="8" min="1"></label>
           <label>dpSkylineMax <input id="s-dp-skyline" type="number" value="1" min="1"></label>
           <label class="inline"><input id="s-stop-first" type="checkbox"> stopOnFirstGoal</label>

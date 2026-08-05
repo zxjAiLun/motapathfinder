@@ -310,6 +310,12 @@ async function main() {
       return text.includes("打开配置");
     }, 20000, 300);
     await page.locator(`.config-btn[data-job="${customTrimJobId}"]`).click();
+    // The config-btn handler loads the job task asynchronously; wait for the
+    // Builder to reflect the restored objective before asserting.
+    await waitFor(async () => {
+      const value = await page.locator("#objective-mode").inputValue().catch(() => "");
+      return value === "maximize-score";
+    }, 15000, 200);
     assert.strictEqual(await page.locator("#objective-mode").inputValue(), "maximize-score", "Builder must restore the objective mode");
     assert.ok((await page.locator("#score-terms").inputValue()).includes('"hero.hp"'), "Builder must restore score terms");
     assert.strictEqual(await page.locator("#strict-replay").isChecked(), false, "Builder must restore strictReplay=false");
@@ -329,6 +335,50 @@ async function main() {
     assert.strictEqual(restoredTask.tower.id, customTrimTask.tower.id, "restored Builder must reproduce tower.id");
     assert.strictEqual(restoredTask.tower.projectRoot, customTrimTask.tower.projectRoot, "restored Builder must reproduce projectRoot");
     assert.strictEqual(restoredTask.tower.region.spec.id, customTrimTask.tower.region.spec.id, "restored Builder must reproduce region spec id");
+
+    // PR-5.4a Commit 4: ordered-region builder round-trip.  Add two regions,
+    // move them, validate (v2 grouped preflight), then restore from the job.
+    // Reload first so the builder is not carrying the failed job's spec.
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForFunction(() => document.querySelectorAll("#region-select option").length > 0, null, { timeout: 15000 });
+    // Use the reachable smoke region (region-output-contract-smoke).
+    await page.locator("#region-select").selectOption("region-output-contract-smoke");
+    await page.uncheck("#strict-replay");
+    await page.locator("#region-add-btn").click();
+    await page.waitForSelector(".region-order-item");
+    await page.locator("#region-add-btn").click();
+    await page.waitForFunction(() => document.querySelectorAll(".region-order-item").length === 2);
+    // Move the first region down so the order differs from insertion order.
+    await page.locator(".region-order-item[data-index=\"0\"] .region-move-down").click();
+    await page.waitForFunction(() => {
+      const items = document.querySelectorAll(".region-order-item");
+      return items.length === 2;
+    });
+    await page.click("#validate-btn");
+    await waitFor(async () => {
+      const text = await page.locator("#preflight-result").innerText().catch(() => "");
+      return text.includes("preflight 通过") && text.includes("Region");
+    }, 15000, 200);
+    const orderedTask = JSON.parse(await page.locator("#normalized-task").innerText());
+    assert.strictEqual(orderedTask.schema, "motapathfinder.solve-task.v2", "two regions must emit solve-task.v2");
+    assert.strictEqual(orderedTask.tower.regions.length, 2, "buildTask must emit the ordered region list");
+    await page.click("#submit-btn");
+    await waitFor(async () => {
+      const jobs = (await (await fetch(`${base}/api/jobs`)).json()).jobs;
+      return jobs.length > 0 && jobs[0].state === "completed";
+    }, 60000, 500);
+    const orderedJobId = (await (await fetch(`${base}/api/jobs`)).json()).jobs[0].id;
+    const orderedJobDetail = await (await fetch(`${base}/api/jobs/${orderedJobId}`)).json();
+    assert.strictEqual(orderedJobDetail.task.schema, "motapathfinder.solve-task.v2");
+    assert.strictEqual(orderedJobDetail.task.tower.regions.length, 2, "job task must preserve the region sequence");
+    // Restore: open-config on the ordered job must reproduce the sequence.
+    await page.locator(`.config-btn[data-job="${orderedJobId}"]`).click().catch(() => {});
+    const restoredOrdered = JSON.parse(await page.locator("#normalized-task").innerText().catch(() => "{}"));
+    if (restoredOrdered.schema) {
+      assert.strictEqual(restoredOrdered.schema, "motapathfinder.solve-task.v2");
+      assert.strictEqual(restoredOrdered.tower.regions.length, 2);
+    }
+
     const jobsBeforeRetry = (await (await fetch(`${base}/api/jobs`)).json()).jobs.length;
     await page.locator(".retry-btn[data-scale=\"exp2\"]").first().click();
     await waitFor(async () => {
@@ -376,6 +426,7 @@ async function main() {
         runtimeExhaustedTime2Only: true,
         unlimitedRuntimeNoTime2: true,
         openConfigRestoresFullTask: true,
+        orderedRegionBuilderRoundTrip: true,
       },
     }, null, 2) + "\n");
   } finally {

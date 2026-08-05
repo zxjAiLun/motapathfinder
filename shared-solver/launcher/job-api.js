@@ -1,6 +1,7 @@
 "use strict";
 
 const { compileSolveTask, compileExecutableSolveTask, SolveTaskError } = require("../lib/solve-task");
+const { compileSolveTaskV2, compileExecutableSolveTaskV2 } = require("../lib/solve-task-v2");
 const { SolverJobError } = require("../lib/solver-job");
 const { createSolveTaskErrorResult } = require("../lib/solver-job-manager");
 const { buildRegionMilestoneSpec } = require("../lib/region-spec");
@@ -70,12 +71,14 @@ function createJobApi({ manager, jobStore, registry, context }) {
       return;
     }
     try {
-      const task = compileSolveTask(body, context);
+      const isV2 = body && body.schema === "motapathfinder.solve-task.v2";
+      const task = isV2 ? compileSolveTaskV2(body, context) : compileSolveTask(body, context);
       const objective = task.objective;
       // Effective per-segment budgets: the task search overrides the
       // RegionSpec/segment budgets, so preflight reports what will actually be
       // executed, not what the RegionSpec ships.  A build failure must not be
-      // silently swallowed as "valid with no segments".
+      // silently swallowed as "valid with no segments".  For v2 the budgets are
+      // grouped per region in order.
       let effectiveSegments = [];
       let effectiveSegmentsStatus = "ok";
       let effectiveSegmentsFailure = null;
@@ -83,8 +86,18 @@ function createJobApi({ manager, jobStore, registry, context }) {
       if (projectRoot) {
         try {
           const project = loadProject(projectRoot);
-          const milestoneSpec = buildRegionMilestoneSpec(project, task.normalizedTask.tower.region.spec);
-          effectiveSegments = effectiveSegmentBudgets(milestoneSpec, task.executeConfig);
+          if (isV2) {
+            effectiveSegments = task.regions.map((region) => {
+              const milestoneSpec = buildRegionMilestoneSpec(project, region.spec);
+              return {
+                regionId: region.spec.id,
+                effectiveSegments: effectiveSegmentBudgets(milestoneSpec, task.executeConfig),
+              };
+            });
+          } else {
+            const milestoneSpec = buildRegionMilestoneSpec(project, task.normalizedTask.tower.region.spec);
+            effectiveSegments = effectiveSegmentBudgets(milestoneSpec, task.executeConfig);
+          }
         } catch (error) {
           effectiveSegmentsStatus = "unavailable";
           effectiveSegmentsFailure = {
@@ -109,7 +122,8 @@ function createJobApi({ manager, jobStore, registry, context }) {
         identity: {
           taskFingerprint: task.taskFingerprint,
           towerFingerprint: task.towerFingerprint,
-          regionFingerprint: task.regionFingerprint,
+          regionFingerprint: task.regionFingerprint || (task.regionFingerprints && task.regionFingerprints[0]) || null,
+          regionFingerprints: task.regionFingerprints || null,
           solverModelFingerprint: task.solverModelFingerprint,
           objectiveFingerprint: task.objectiveFingerprint,
         },

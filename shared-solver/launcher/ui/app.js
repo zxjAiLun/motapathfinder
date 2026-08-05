@@ -39,6 +39,7 @@ const state = {
   tower: null,
   towerFingerprint: null,
   regionSpec: null,
+  regionOrder: [],
   jobs: [],
   activeJob: null,
   eventSource: null,
@@ -149,6 +150,20 @@ async function restoreTowerAndRegion(task) {
     towerSelect.value = task.tower.id;
     await loadRegions();
   }
+  // v2: restore the ordered region sequence exactly (order + content).
+  if (Array.isArray(task.tower.regions) && task.tower.regions.length >= 1) {
+    state.regionOrder = task.tower.regions.map((entry) =>
+      JSON.parse(JSON.stringify(entry && entry.spec ? entry.spec : entry)),
+    );
+    renderRegionOrder();
+    if (state.regionOrder[0]) {
+      state.regionSpec = state.regionOrder[0];
+      const firstOption = Array.from($("region-select").options || []).find((o) =>
+        state.regionOrder[0].id && String(state.regionOrder[0].id).endsWith(o.value));
+      if (firstOption) $("region-select").value = firstOption.value;
+    }
+    return;
+  }
   const spec = task.tower.region && task.tower.region.spec;
   if (spec) {
     // Keep the job's own exact RegionSpec (not the registry's current copy).
@@ -191,6 +206,7 @@ async function loadTaskIntoBuilder(task) {
     $("s-max-runtime").value = search.maxRuntimeMs ?? "";
     $("s-max-actions").value = search.maxActionsPerState ?? "";
     $("s-candidate-limit").value = search.candidateLimit ?? "";
+    $("s-region-candidate-limit").value = search.regionCandidateLimit ?? search.candidateLimit ?? "";
     $("s-goal-skyline").value = search.goalSkylineLimit ?? "";
     $("s-dp-skyline").value = search.dpSkylineMax ?? "";
     $("s-stop-first").checked = Boolean(search.stopOnFirstGoal);
@@ -269,6 +285,49 @@ async function loadRegions() {
   }
 }
 
+function renderRegionOrder() {
+  const list = $("region-order-list");
+  if (!list) return;
+  list.innerHTML = state.regionOrder.length === 0
+    ? `<div class="muted small">（空：使用 v1 单区构建）</div>`
+    : state.regionOrder.map((spec, index) => {
+      const label = (spec && spec.label) || (spec && spec.id) || `region-${index}`;
+      return `<div class="region-order-item" data-index="${index}">
+        <span class="region-order-index">${index + 1}</span>
+        <span class="region-order-label">${esc(label)}</span>
+        <button type="button" class="region-move-up" data-index="${index}" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button type="button" class="region-move-down" data-index="${index}" ${index === state.regionOrder.length - 1 ? "disabled" : ""}>↓</button>
+        <button type="button" class="region-remove" data-index="${index}">✕</button>
+      </div>`;
+    }).join("");
+  list.querySelectorAll(".region-move-up").forEach((button) => {
+    button.addEventListener("click", () => moveRegionOrder(Number(button.dataset.index), -1));
+  });
+  list.querySelectorAll(".region-move-down").forEach((button) => {
+    button.addEventListener("click", () => moveRegionOrder(Number(button.dataset.index), 1));
+  });
+  list.querySelectorAll(".region-remove").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.regionOrder.splice(Number(button.dataset.index), 1);
+      renderRegionOrder();
+    });
+  });
+}
+
+function moveRegionOrder(index, delta) {
+  const target = index + delta;
+  if (target < 0 || target >= state.regionOrder.length) return;
+  const [item] = state.regionOrder.splice(index, 1);
+  state.regionOrder.splice(target, 0, item);
+  renderRegionOrder();
+}
+
+function addCurrentRegionToOrder() {
+  if (!state.regionSpec) return;
+  state.regionOrder.push(JSON.parse(JSON.stringify(state.regionSpec)));
+  renderRegionOrder();
+}
+
 async function loadRegion() {
   const towerId = $("tower-select").value;
   const regionId = $("region-select").value;
@@ -344,13 +403,12 @@ function buildTask() {
   else if (mode === "maximize-score") objective = { mode: "maximize-score", terms: safeJson($("score-terms").value, []) };
   else if (mode === "lexicographic") objective = { mode: "lexicographic", objectives: safeJson($("lex-items").value, []) };
   const task = {
-    schema: "motapathfinder.solve-task.v1",
+    schema: state.regionOrder.length >= 1 ? "motapathfinder.solve-task.v2" : "motapathfinder.solve-task.v1",
     tower: {
       id: state.tower ? state.tower.id : "unknown",
       projectRoot: state.tower ? state.tower.projectRoot : null,
       projectFingerprint: state.towerFingerprint || undefined,
       rank: $("rank-input").value || "chaos",
-      region: { spec: state.regionSpec || {} },
     },
     model: { heroFields },
     objective,
@@ -360,12 +418,18 @@ function buildTask() {
       maxRuntimeMs: Number($("s-max-runtime").value) || 0,
       maxActionsPerState: Number($("s-max-actions").value) || 256,
       candidateLimit: Number($("s-candidate-limit").value) || 8,
+      regionCandidateLimit: Number($("s-region-candidate-limit").value) || Number($("s-candidate-limit").value) || 8,
       goalSkylineLimit: Number($("s-goal-skyline").value) || 8,
       dpSkylineMax: Number($("s-dp-skyline").value) || 1,
       stopOnFirstGoal: $("s-stop-first").checked,
     },
     verification: { strictReplay: $("strict-replay").checked },
   };
+  if (state.regionOrder.length >= 1) {
+    task.tower.regions = state.regionOrder.map((spec) => ({ spec: JSON.parse(JSON.stringify(spec)) }));
+  } else {
+    task.tower.region = { spec: state.regionSpec || {} };
+  }
   return task;
 }
 
@@ -382,7 +446,7 @@ async function validateTask() {
   const { status, payload } = await api("POST", "/api/tasks/validate", task);
   if (status === 200 && payload.valid) {
     const identity = payload.identity;
-    const segments = (payload.effectiveSegments || []).map((segment) => {
+    const segmentText = (segment) => {
       const per = segment.perAttempt || segment;
       const runtime = per.maxRuntimeMs > 0 ? `${per.maxRuntimeMs}ms` : "不限";
       const caps = segment.attemptCaps || {};
@@ -392,7 +456,13 @@ async function validateTask() {
         `回溯重试 ≤${caps.backtrackRetry ?? "?"}`,
       ].join(" · ");
       return `<div>${esc(segment.segmentId)}：每次 attempt exp≤${esc(per.maxExpansions)} · runtime=${runtime} · ${capText}</div>`;
-    }).join("");
+    };
+    const segments = Array.isArray(payload.effectiveSegments) && payload.effectiveSegments.length > 0
+      && payload.effectiveSegments[0] && Array.isArray(payload.effectiveSegments[0].effectiveSegments)
+      ? payload.effectiveSegments.map((regionEntry) =>
+        `<div class="region-group"><strong>Region ${esc(regionEntry.regionId)}</strong>${regionEntry.effectiveSegments.map(segmentText).join("")}</div>`,
+      ).join("")
+      : payload.effectiveSegments.map(segmentText).join("");
     $("preflight-result").innerHTML = [
       `<div class="state-ok">preflight 通过</div>`,
       `<div class="small">task fingerprint: <code>${esc(identity.taskFingerprint)}</code></div>`,
@@ -609,6 +679,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("objective-field").addEventListener("change", updateObjectiveVisibility);
   $("tower-select").addEventListener("change", loadRegions);
   $("region-select").addEventListener("change", loadRegion);
+  $("region-add-btn").addEventListener("click", addCurrentRegionToOrder);
+  renderRegionOrder();
   $("validate-btn").addEventListener("click", validateTask);
   $("submit-btn").addEventListener("click", submitJob);
   initFilters();
