@@ -139,27 +139,59 @@ function failureHtml(failure) {
   return `<div class="failure ${esc(failure.failureClass)}"><span class="state-warn">${esc(label)}</span><span class="muted small">${recommendationText}</span><div class="small muted">${esc(failure.message || "")}</div></div>`;
 }
 
+function restoreTowerAndRegion(task) {
+  if (!task || !task.tower) return;
+  if (task.tower.id) {
+    const towerSelect = $("tower-select");
+    const option = Array.from(towerSelect.options || []).find((o) => o.value === task.tower.id);
+    if (option) towerSelect.value = option.value;
+  }
+  const spec = task.tower.region && task.tower.region.spec;
+  if (spec) {
+    // The region select values are file stems (e.g. "region-1") while the spec
+    // id is prefixed ("onlyup-region-1"); match by suffix so the Builder's
+    // state.regionSpec and the select agree on the restored job's region.
+    const regionSelect = $("region-select");
+    const regionOption = Array.from(regionSelect.options || []).find((o) => spec.id && String(spec.id).endsWith(o.value));
+    if (regionOption) regionSelect.value = regionOption.value;
+    state.regionSpec = spec;
+    if (spec.model && spec.model.heroFields) {
+      MODEL_FIELDS.forEach(([field]) => {
+        const input = $(`model-${field}`);
+        if (input && spec.model.heroFields[field]) input.value = spec.model.heroFields[field];
+      });
+    }
+  }
+}
+
+function restoreObjective(objective) {
+  const mode = objective && objective.mode ? objective.mode : "clear";
+  $("objective-mode").value = mode;
+  if (objective) {
+    if (objective.field) $("objective-field").value = objective.field;
+    if (objective.terms) $("score-terms").value = JSON.stringify(objective.terms, null, 2);
+    if (objective.objectives) $("lex-items").value = JSON.stringify(objective.objectives, null, 2);
+  }
+  updateObjectiveVisibility();
+}
+
 function loadTaskIntoBuilder(task) {
-  if (!task || !task.search) return;
-  const search = task.search;
-  $("s-max-expansions").value = search.maxExpansions ?? "";
-  $("s-max-runtime").value = search.maxRuntimeMs ?? "";
-  $("s-max-actions").value = search.maxActionsPerState ?? "";
-  $("s-candidate-limit").value = search.candidateLimit ?? "";
-  $("s-goal-skyline").value = search.goalSkylineLimit ?? "";
-  $("s-dp-skyline").value = search.dpSkylineMax ?? "";
-  $("s-stop-first").checked = Boolean(search.stopOnFirstGoal);
+  if (!task) return;
+  if (task.tower) restoreTowerAndRegion(task);
+  if (task.search) {
+    const search = task.search;
+    $("s-max-expansions").value = search.maxExpansions ?? "";
+    $("s-max-runtime").value = search.maxRuntimeMs ?? "";
+    $("s-max-actions").value = search.maxActionsPerState ?? "";
+    $("s-candidate-limit").value = search.candidateLimit ?? "";
+    $("s-goal-skyline").value = search.goalSkylineLimit ?? "";
+    $("s-dp-skyline").value = search.dpSkylineMax ?? "";
+    $("s-stop-first").checked = Boolean(search.stopOnFirstGoal);
+  }
   if (task.tower && task.tower.rank) $("rank-input").value = task.tower.rank;
-  if (task.objective && task.objective.mode) {
-    $("objective-mode").value = task.objective.mode;
-    updateObjectiveVisibility();
-  }
-  if (task.model && task.model.heroFields) {
-    MODEL_FIELDS.forEach(([field]) => {
-      const input = $(`model-${field}`);
-      if (input && task.model.heroFields[field]) input.value = task.model.heroFields[field];
-    });
-  }
+  restoreObjective(task.objective || null);
+  // verification.strictReplay must be restored too (default true).
+  $("strict-replay").checked = !task.verification || task.verification.strictReplay !== false;
 }
 
 function budgetMaxRuntimeMs(job, progress) {

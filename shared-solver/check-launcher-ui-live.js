@@ -272,6 +272,37 @@ async function main() {
     const newestJobId = (await (await fetch(`${base}/api/jobs`)).json()).jobs[0].id;
     const newestTask = (await (await fetch(`${base}/api/jobs/${newestJobId}`)).json()).task;
     assert.strictEqual(newestTask.search.maxActionsPerState, 2, "actions2 retry must double maxActionsPerState");
+
+    // P2: "打开配置" must restore the failed job's FULL task into the Builder
+    // (objective mode/terms, verification, search) so buildTask() reproduces
+    // the original task, not a hybrid with current Builder state.
+    const customTrimTask = buildTask();
+    customTrimTask.tower.region.spec = JSON.parse(JSON.stringify(exhaustSpec));
+    customTrimTask.search.maxActionsPerState = 1;
+    customTrimTask.search.maxExpansions = 100;
+    customTrimTask.search.maxRuntimeMs = 10000;
+    customTrimTask.objective = { mode: "maximize-score", terms: [{ path: "hero.hp", weight: 1 }] };
+    customTrimTask.verification.strictReplay = false;
+    const customTrimJobId = await submitViaApi(page, base, customTrimTask, "custom-trim");
+    const customTrimResult = await fetchJobResult(page, base, customTrimJobId);
+    assert.strictEqual(customTrimResult.failure.failureClass, "ACTION_TRIMMED");
+    await waitFor(async () => {
+      const text = await page.locator(`.job-row:has-text("${customTrimJobId}")`).innerText().catch(() => "");
+      return text.includes("打开配置");
+    }, 20000, 300);
+    await page.locator(`.config-btn[data-job="${customTrimJobId}"]`).click();
+    assert.strictEqual(await page.locator("#objective-mode").inputValue(), "maximize-score", "Builder must restore the objective mode");
+    assert.ok((await page.locator("#score-terms").inputValue()).includes('"hero.hp"'), "Builder must restore score terms");
+    assert.strictEqual(await page.locator("#strict-replay").isChecked(), false, "Builder must restore strictReplay=false");
+    assert.strictEqual(await page.locator("#s-max-actions").inputValue(), "1", "Builder must restore maxActionsPerState");
+    await page.click("#validate-btn");
+    await waitFor(async () => {
+      const text = await page.locator("#preflight-result").innerText().catch(() => "");
+      return text.includes("preflight 通过");
+    }, 15000, 200);
+    const restoredTask = JSON.parse(await page.locator("#normalized-task").innerText());
+    assert.strictEqual(restoredTask.verification.strictReplay, false, "restored Builder must reproduce strictReplay=false");
+    assert.strictEqual(restoredTask.search.maxActionsPerState, 1, "restored Builder must reproduce maxActionsPerState");
     const jobsBeforeRetry = (await (await fetch(`${base}/api/jobs`)).json()).jobs.length;
     await page.locator(".retry-btn[data-scale=\"exp2\"]").first().click();
     await waitFor(async () => {
@@ -318,6 +349,7 @@ async function main() {
         retryNarrowedByFailureClass: true,
         runtimeExhaustedTime2Only: true,
         unlimitedRuntimeNoTime2: true,
+        openConfigRestoresFullTask: true,
       },
     }, null, 2) + "\n");
   } finally {
