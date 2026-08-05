@@ -278,6 +278,25 @@ async function main() {
     // the original task, not a hybrid with current Builder state.
     const customTrimTask = buildTask();
     customTrimTask.tower.region.spec = JSON.parse(JSON.stringify(exhaustSpec));
+    // The user-submitted SolverModel differs from the RegionSpec defaults
+    // (hp dominance -> key, money disabled -> key); the restored Builder must
+    // reproduce the job's own model, not the RegionSpec's.
+    customTrimTask.model = {
+      heroFields: {
+        hp: "key",
+        hpmax: "disabled",
+        mana: "disabled",
+        manamax: "disabled",
+        atk: "key",
+        def: "key",
+        mdef: "key",
+        lv: "key",
+        exp: "key",
+        money: "key",
+        equipment: "key",
+        followers: "disabled",
+      },
+    };
     customTrimTask.search.maxActionsPerState = 1;
     customTrimTask.search.maxExpansions = 100;
     customTrimTask.search.maxRuntimeMs = 10000;
@@ -303,6 +322,13 @@ async function main() {
     const restoredTask = JSON.parse(await page.locator("#normalized-task").innerText());
     assert.strictEqual(restoredTask.verification.strictReplay, false, "restored Builder must reproduce strictReplay=false");
     assert.strictEqual(restoredTask.search.maxActionsPerState, 1, "restored Builder must reproduce maxActionsPerState");
+    // The restored Builder must reproduce the job's OWN SolverModel (task.model),
+    // not the RegionSpec defaults: hp key (spec dominance), money key (spec disabled).
+    assert.strictEqual(restoredTask.model.heroFields.hp, "key", "restored Builder must reproduce task.model.hp");
+    assert.strictEqual(restoredTask.model.heroFields.money, "key", "restored Builder must reproduce task.model.money");
+    assert.strictEqual(restoredTask.tower.id, customTrimTask.tower.id, "restored Builder must reproduce tower.id");
+    assert.strictEqual(restoredTask.tower.projectRoot, customTrimTask.tower.projectRoot, "restored Builder must reproduce projectRoot");
+    assert.strictEqual(restoredTask.tower.region.spec.id, customTrimTask.tower.region.spec.id, "restored Builder must reproduce region spec id");
     const jobsBeforeRetry = (await (await fetch(`${base}/api/jobs`)).json()).jobs.length;
     await page.locator(".retry-btn[data-scale=\"exp2\"]").first().click();
     await waitFor(async () => {

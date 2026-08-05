@@ -139,29 +139,35 @@ function failureHtml(failure) {
   return `<div class="failure ${esc(failure.failureClass)}"><span class="state-warn">${esc(label)}</span><span class="muted small">${recommendationText}</span><div class="small muted">${esc(failure.message || "")}</div></div>`;
 }
 
-function restoreTowerAndRegion(task) {
+async function restoreTowerAndRegion(task) {
   if (!task || !task.tower) return;
-  if (task.tower.id) {
-    const towerSelect = $("tower-select");
-    const option = Array.from(towerSelect.options || []).find((o) => o.value === task.tower.id);
-    if (option) towerSelect.value = option.value;
+  const towerSelect = $("tower-select");
+  if (task.tower.id && towerSelect.value !== task.tower.id) {
+    // Programmatic select changes never fire the change handler; call
+    // loadRegions so state.tower / towerFingerprint / region options are
+    // actually re-synced for the restored tower.
+    towerSelect.value = task.tower.id;
+    await loadRegions();
   }
   const spec = task.tower.region && task.tower.region.spec;
   if (spec) {
+    // Keep the job's own exact RegionSpec (not the registry's current copy).
+    state.regionSpec = JSON.parse(JSON.stringify(spec));
     // The region select values are file stems (e.g. "region-1") while the spec
-    // id is prefixed ("onlyup-region-1"); match by suffix so the Builder's
-    // state.regionSpec and the select agree on the restored job's region.
-    const regionSelect = $("region-select");
-    const regionOption = Array.from(regionSelect.options || []).find((o) => spec.id && String(spec.id).endsWith(o.value));
-    if (regionOption) regionSelect.value = regionOption.value;
-    state.regionSpec = spec;
-    if (spec.model && spec.model.heroFields) {
-      MODEL_FIELDS.forEach(([field]) => {
-        const input = $(`model-${field}`);
-        if (input && spec.model.heroFields[field]) input.value = spec.model.heroFields[field];
-      });
-    }
+    // id is prefixed ("onlyup-region-1"); match by suffix.
+    const regionOption = Array.from($("region-select").options || []).find((o) => spec.id && String(spec.id).endsWith(o.value));
+    if (regionOption) $("region-select").value = regionOption.value;
   }
+}
+
+// The normalized task carries the user-submitted SolverModel separately from
+// region.spec.model; restore task.model so the Builder reproduces the exact
+// model fingerprint that actually ran.
+function restoreModel(model) {
+  MODEL_FIELDS.forEach(([field, fallback]) => {
+    const input = $(`model-${field}`);
+    if (input) input.value = (model && model.heroFields && model.heroFields[field]) || fallback;
+  });
 }
 
 function restoreObjective(objective) {
@@ -175,9 +181,10 @@ function restoreObjective(objective) {
   updateObjectiveVisibility();
 }
 
-function loadTaskIntoBuilder(task) {
+async function loadTaskIntoBuilder(task) {
   if (!task) return;
-  if (task.tower) restoreTowerAndRegion(task);
+  await restoreTowerAndRegion(task);
+  restoreModel(task.model);
   if (task.search) {
     const search = task.search;
     $("s-max-expansions").value = search.maxExpansions ?? "";
@@ -380,7 +387,7 @@ async function validateTask() {
       const runtime = per.maxRuntimeMs > 0 ? `${per.maxRuntimeMs}ms` : "不限";
       const caps = segment.attemptCaps || {};
       const capText = [
-        `初始 ≤${caps.initial ?? "?"}`,
+        caps.initial == null ? "初始=随 frontier" : `初始 ≤${caps.initial}`,
         caps.configuredRepair != null ? `修复 ≤${caps.configuredRepair}` : "修复=随 frontier",
         `回溯重试 ≤${caps.backtrackRetry ?? "?"}`,
       ].join(" · ");
@@ -475,7 +482,7 @@ function renderJobs() {
     button.addEventListener("click", async () => {
       const detail = await api("GET", `/api/jobs/${encodeURIComponent(button.dataset.job)}`);
       const task = detail.payload && detail.payload.task;
-      if (task) loadTaskIntoBuilder(task);
+      if (task) await loadTaskIntoBuilder(task);
       document.querySelector(".col-center").scrollIntoView({ behavior: "smooth" });
     });
   });
