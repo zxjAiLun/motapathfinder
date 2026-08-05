@@ -172,21 +172,9 @@ manager.cancel(job.id);
 - Results use `motapathfinder.solver-job-result.v1` and bind `taskFingerprint`, `solverModelFingerprint`, `objectiveFingerprint`, `towerFingerprint`, and the route artifact fingerprint. Failure classes treat budget exhaustion, action trimming, policy filtering, and milestone over-constraint as retryable incomplete-search conditions, never as a proven no-route. `strictReplay:true` runs a real runtime replay inside the job (`STRICT_REPLAY_FAILED` on mismatch; the 3-way objective reconciliation applies only when an explicit ObjectiveSpec exists, so legacy objective-less jobs verify the route replay alone); `strictReplay:false` reports `verificationStatus: "not-requested"`. Route metrics distinguish `decisionDepth` from the full `routeLength` (auto-steps included).
 
 
+## Solver Launcher Budget Authority
 
-## Solver Launcher
-
-
-ode run-solver-launcher.js serves a localhost-only GUI (launcher/ui) backed by the public contracts:
-
-- GET /api/health, /api/towers, /api/towers/:id, /api/towers/:id/regions, /api/towers/:id/regions/:rid`n- POST /api/tasks/validate (normalized task + fingerprints) and POST /api/jobs (202)
-- GET /api/jobs, /api/jobs/:id, /api/jobs/:id/result, /api/jobs/:id/route; POST /api/jobs/:id/cancel; GET /api/jobs/:id/events (SSE)
-- Status mapping: INVALID_TASK 400, JOB_NOT_FOUND 404, JOB_INVALID_STATE_TRANSITION/JOB_PAUSE_UNSUPPORTED 409, accepted 202.
-
-The Launcher only edits public inputs, calls preflight, submits jobs, subscribes to progress, reads results, and cancels; it never reads diagnostics.dp internals or reimplements solver semantics.
-
-The task search budget is the execution authority: `runMilestoneGraph` applies the task-level `maxExpansions/maxRuntimeMs/maxActionsPerState/goalSkylineLimit/dpSkylineMax/stopOnFirstGoal` as unconditional per-segment overrides (including generated segments); `maxRuntimeMs=0` means unlimited and never yields `RUNTIME_BUDGET_EXHAUSTED`. `POST /api/tasks/validate` returns `effectiveSegments` (the per-segment budgets that will actually be executed) and progress `budget` carries `source/expansions/elapsedMs`. Jobs expose `failure` in their summary so the UI can distinguish incomplete-search (retryable) from execution errors. The task budget also governs repair/backtrack attempts (`withManualBudgetAuthority` applies the manual overrides last). Progress `budget` uses `scope: "per-attempt"` with `current` (active attempt counters/ratios, never exceeding 1) and `total` (job-level counters) kept separate. If the planning milestone build fails, `/api/tasks/validate` returns a structured 400 (`PLANNING_PREFLIGHT_FAILED`) instead of a silently-empty `effectiveSegments`.
-
-The Launcher should consume only this API; it must not read `diagnostics.dp` internals or reimplement candidate comparison.
+The task search budget is the execution authority: `runMilestoneGraph` applies the task-level `maxExpansions/maxRuntimeMs/maxActionsPerState/goalSkylineLimit/dpSkylineMax/stopOnFirstGoal` as unconditional per-attempt overrides (including generated segments, and repair/backtrack attempts via `withManualBudgetAuthority`); `maxRuntimeMs=0` means unlimited and never yields `RUNTIME_BUDGET_EXHAUSTED`. `POST /api/tasks/validate` returns `effectiveSegments` with `budgetScope: "per-attempt"`, `perAttempt` caps, and `maxStartAttempts` (the start-candidate cap); a planning build failure returns a structured 400 (`PLANNING_PREFLIGHT_FAILED`). Progress `budget` keeps `source`, `scope: "per-attempt"`, `current` (active attempt counters/ratios, clamped to ≤ 1), `total` (job-level counters), plus deprecated flat aliases mirroring `current`. Jobs expose `failure` in their summary so the UI can distinguish incomplete-search (retryable) from execution errors.
 
 ## Solver Launcher
 

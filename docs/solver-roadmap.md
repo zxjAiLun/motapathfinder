@@ -756,3 +756,11 @@ PR-5.3c 系列已关闭，Launcher 只消费公开合同：
 - 任务级预算覆盖所有 repair/backtrack DP：`withManualBudgetAuthority` 在 `tryRepairFromConfiguredMilestone`、`tryRepairFromPreviousMilestone`、expanded-previous-segment、backtrack retry 的 override 合并后最后应用 `manualSearchOverrides`；`maxRuntimeMs=0` 在 repair 上同样不限时。
 - Progress `budget.scope="per-attempt"`：`current`（活动 attempt 的 counters + ratios ≤1）与 `total`（job 累计 counters）分离，累计 total 不再除以 per-attempt cap。
 - validate 在 milestone 构建失败时返回结构化 400（`PLANNING_PREFLIGHT_FAILED`），不再静默返回 `valid:true + effectiveSegments:[]`。
+
+
+### 2026-08-04 更新：PR-5.3d3 Final Public Contract Closure
+
+- `effectiveSegmentBudgets` 返回 per-attempt scope（`budgetScope`、`perAttempt`、`maxStartAttempts`），preflight 与 progress 视图一致。
+- Retry 按 failureClass 精确映射；`SolverJob.toJSON` 携带 task search budget。
+- `budget.source` 恢复；flat 别名镜像 current；runtime ratio clamp ≤ 1。
+- 空 current 显示 —；修复 `docs/public-api.md` 格式。
