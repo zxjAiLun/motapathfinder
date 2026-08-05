@@ -177,6 +177,7 @@
         "shared-solver/check-dp-observer.js",
         "shared-solver/check-objective-safe-archive.js",
         "shared-solver/check-solve-task-contract.js",
+        "shared-solver/check-solve-task-v2-contract.js",
         "shared-solver/check-solver-job-contract.js",
         "shared-solver/check-launcher-api.js",
         "shared-solver/check-teacher-search-observer.js",
@@ -1669,6 +1670,9 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
+    },
+    "shared-solver/lib/solve-task-v2.js": {
+      "note": "solve-task.v2 ordered-region contract (PR-5.4a)"
     }
   },
   "tests": {
@@ -2231,6 +2235,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": false,
       "notes": "real Chromium launcher UI smoke: builder, preflight, worker job verified-route, refresh recovery, route metrics"
+    },
+    "shared-solver/check-solve-task-v2-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.4a v2 ordered-region contract: schema, fingerprint, explicit model, regionCandidateLimit, non-goals"
     }
   }
 }

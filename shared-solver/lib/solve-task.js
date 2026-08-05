@@ -383,6 +383,7 @@ module.exports = {
   compileExecutableSolveTask,
   compileSolveTask,
   fingerprintJson,
+  normalizeRegionPart,
   normalizeSearch,
   resolveEffectiveRank,
   stripExternalCompiledMarker,
