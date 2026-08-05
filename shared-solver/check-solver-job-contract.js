@@ -25,7 +25,7 @@ const { classifyJobFailure, buildSolverJobResult } = require("./lib/solver-job-r
 const { SolverProgressAccumulator } = require("./lib/solver-progress");
 const { compileObjectiveSpec } = require("./lib/objective-spec");
 const { composeRouteRecords, ROUTE_SCHEMA } = require("./lib/route-store");
-const { effectiveSegmentBudgets } = require("./lib/segment-dp");
+const { effectiveSegmentBudgets, manualSearchOverrides, withManualBudgetAuthority } = require("./lib/segment-dp");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
 const { FileJobStore } = require("./lib/file-job-store");
 
@@ -143,11 +143,25 @@ function checkProgressContract() {
   });
   accumulator.setStatus("running");
   accumulator.setPhase("preflight");
+  // Per-attempt budget scope: an attempt starts with a fresh counter; the
+  // ratio divides the ATTEMPT's own expansions by the per-attempt cap.
+  accumulator.handleDpEvent({ eventType: "segmentStarted", segmentId: "seg-1", segmentIndex: 0, segmentTotal: 2 });
+  accumulator.handleDpEvent({ eventType: "attemptStarted", segmentId: "seg-1", segmentIndex: 0, segmentTotal: 2, attempt: 1 });
   for (let index = 0; index < 5; index += 1) {
     accumulator.handleDpEvent({ eventType: "agendaPopped" });
     accumulator.handleDpEvent({ eventType: "candidateGenerated" });
     accumulator.handleDpEvent({ eventType: "goalAccepted" });
   }
+  accumulator.flush();
+  const firstAttemptSnapshot = published[published.length - 1];
+  // A second attempt must reset the per-attempt counter; the ratio never
+  // exceeds 1 while the total continues to accumulate.
+  accumulator.handleDpEvent({ eventType: "attemptStarted", segmentId: "seg-1", segmentIndex: 0, segmentTotal: 2, attempt: 2 });
+  for (let index = 0; index < 7; index += 1) {
+    accumulator.handleDpEvent({ eventType: "agendaPopped" });
+  }
+  accumulator.flush();
+  const secondAttemptSnapshot = published[published.length - 1];
   accumulator.setPhase("segment-search");
   accumulator.setBestKnown({ kind: "goal-candidate", goalReached: true, objectiveValue: 100 });
   accumulator.setPhase("completed");
@@ -160,10 +174,19 @@ function checkProgressContract() {
     assert.strictEqual(snapshot.percent, undefined, "progress must never contain a fake percent field");
     assert.strictEqual(snapshot.schema, "motapathfinder.solver-progress.v1");
   });
-  const budgetSnapshot = published.find((snapshot) => snapshot.phase === "segment-search");
-  assert.strictEqual(budgetSnapshot.search.expansions, 5);
-  assert.strictEqual(budgetSnapshot.budget.expansionBudgetUsedRatio, 0.005);
-  assert.ok(budgetSnapshot.budget.expansionBudgetExhausted === false);
+  // Flushed right after attempt 1's 5 expansions: current==total==5.
+  assert.strictEqual(firstAttemptSnapshot.search.expansions, 5);
+  assert.strictEqual(firstAttemptSnapshot.budget.scope, "per-attempt");
+  assert.strictEqual(firstAttemptSnapshot.budget.current.expansions, 5, "current tracks the active attempt's own expansions");
+  assert.strictEqual(firstAttemptSnapshot.budget.current.expansionBudgetUsedRatio, 0.005);
+  assert.strictEqual(firstAttemptSnapshot.budget.total.expansions, 5, "total accumulates across the job");
+  assert.strictEqual(firstAttemptSnapshot.budget.current.expansionBudgetExhausted, false);
+  // After a second attempt (7 more), the total continues but the current ratio
+  // reflects only the active attempt, so it never exceeds 1.
+  assert.strictEqual(secondAttemptSnapshot.budget.current.expansions, 7, "the second attempt resets its own counter");
+  assert.strictEqual(secondAttemptSnapshot.budget.current.expansionBudgetUsedRatio, 0.007);
+  assert.ok(secondAttemptSnapshot.budget.current.expansionBudgetUsedRatio <= 1, "per-attempt ratio must never exceed 1");
+  assert.strictEqual(secondAttemptSnapshot.budget.total.expansions, 12, "total counters accumulate independently");
 }
 
 function checkFailureClassification() {
@@ -717,6 +740,95 @@ function checkEffectiveSegmentBudgetsReflectManual() {
   assert.strictEqual(defaults[0].maxExpansions, 300, "without manual config the segment budget stays");
   assert.strictEqual(defaults[0].maxRuntimeMs, 15000);
 }
+function checkManualBudgetAuthorityAppliesToRepairOverrides() {
+  // The task search budget is the authority for every segment DP execution,
+  // including configured-repair and backtrack retry paths: their own
+  // (repair/backtrack) overrides are merged first, then the manual overrides
+  // are applied last, so maxRuntimeMs=0 stays unlimited on repairs.
+  const config = {
+    maxExpansions: 50000,
+    maxRuntimeMs: 0,
+    maxActionsPerState: 256,
+    goalSkylineLimit: 8,
+    dpSkylineMax: 1,
+    stopOnFirstGoal: false,
+  };
+  const configuredRepair = withManualBudgetAuthority(config, {
+    dpOverrides: {
+      stopOnFirstGoal: false,
+      maxExpansions: 300,
+      maxRuntimeMs: 1,
+      goalSkylineLimit: 4,
+    },
+  });
+  assert.strictEqual(configuredRepair.dpOverrides.maxRuntimeMs, 0, "manual maxRuntimeMs=0 must override the configured-repair runtime");
+  assert.strictEqual(configuredRepair.dpOverrides.maxExpansions, 50000, "manual maxExpansions must override the configured-repair expansions");
+  assert.strictEqual(configuredRepair.dpOverrides.goalSkylineLimit, 8, "manual goalSkylineLimit must override the repair value");
+  // Backtrack-style overrides (local budget + backtrack doubling) also get the
+  // manual authority applied last.
+  const backtrack = withManualBudgetAuthority(config, {
+    candidateLimit: 4,
+    dpOverrides: {
+      stopOnFirstGoal: false,
+      maxExpansions: 2400,
+      maxRuntimeMs: 10000,
+      goalSkylineLimit: 8,
+    },
+  });
+  assert.strictEqual(backtrack.dpOverrides.maxRuntimeMs, 0, "manual maxRuntimeMs=0 must override backtrack runtime");
+  assert.strictEqual(backtrack.dpOverrides.maxExpansions, 50000, "manual maxExpansions must override backtrack expansions");
+  // A caller without a manual budget keeps the repair/backtrack values.
+  const noManual = withManualBudgetAuthority({}, {
+    dpOverrides: { maxExpansions: 300, maxRuntimeMs: 1 },
+  });
+  assert.strictEqual(noManual.dpOverrides.maxRuntimeMs, 1, "without a manual budget the repair budget stays");
+  assert.strictEqual(noManual.dpOverrides.maxExpansions, 300);
+}
+
+async function checkConfiguredRepairUnlimitedRuntime() {
+  // End-to-end: a segment that requires a configured-repair re-run must NOT be
+  // classified RUNTIME_BUDGET_EXHAUSTED when the task sets maxRuntimeMs=0.
+  const base = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
+  const spec = {
+    ...base,
+    id: "onlyup-repair-unlimited",
+    segments: [
+      {
+        id: "seg-a",
+        label: "seg-a",
+        goal: { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 1 } },
+        dp: { maxExpansions: 1000, maxRuntimeMs: 100 },
+      },
+      {
+        id: "seg-b",
+        label: "seg-b",
+        repairStartFrom: "seg-a",
+        goal: { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 999 } },
+        dp: {
+          maxExpansions: 1000,
+          maxRuntimeMs: 50,
+          repairMaxExpansions: 300,
+          repairMaxRuntimeMs: 1,
+        },
+      },
+    ],
+  };
+  const manager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
+  const job = manager.submit({
+    schema: SOLVE_TASK_SCHEMA,
+    tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
+    objective: { mode: "max-final-hp" },
+    search: { algorithm: "segment-dp", maxExpansions: 2000, maxRuntimeMs: 0, candidateLimit: 2 },
+    verification: { strictReplay: false },
+  });
+  const settled = await waitForJob(manager, job.id, 120000);
+  assert.notStrictEqual(
+    settled.result.failure && settled.result.failure.failureClass,
+    "RUNTIME_BUDGET_EXHAUSTED",
+    "repair execution with maxRuntimeMs=0 must never be runtime budget exhausted",
+  );
+}
+
 async function checkTerminalProgressPersisted() {
   const storeRoot = path.join(__dirname, "routes", "generated", "c2-job-store");
   const jobStore = new FileJobStore({ root: storeRoot });
@@ -761,6 +873,8 @@ async function main() {
   await checkTerminalProgressPersisted();
   checkEffectiveSegmentBudgetsReflectManual();
   await checkManualBudgetOverridesSegmentBudget();
+  checkManualBudgetAuthorityAppliesToRepairOverrides();
+  await checkConfiguredRepairUnlimitedRuntime();
   process.stdout.write(JSON.stringify({
     schema: "motapathfinder.pr-5.3d1-solver-job-contract.v1",
     status: "passed",
@@ -798,6 +912,8 @@ async function main() {
       effectiveSegmentBudgetsReflectManual: true,
       manualBudgetOverridesSegmentBudget: true,
       maxRuntimeMsZeroNeverRuntimeExhausted: true,
+      repairBacktrackBudgetAuthority: true,
+      configuredRepairUnlimitedRuntime: true,
       resultIdentityBoundToTask: true,
       microJobQueuedToCompleted: true,
     },

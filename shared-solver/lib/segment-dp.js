@@ -2913,6 +2913,19 @@ function effectiveSegmentBudgets(milestoneSpec, config) {
   }));
 }
 
+// The task-level search budget is the authority for EVERY segment DP
+// execution, including repair/backtrack paths.  After a path merges its own
+// (repair/backtrack) overrides, the manual overrides are applied last so
+// maxRuntimeMs=0 stays unlimited on repair attempts too.
+function withManualBudgetAuthority(config, overrides) {
+  const merged = { ...(overrides || {}) };
+  merged.dpOverrides = {
+    ...(merged.dpOverrides || {}),
+    ...manualSearchOverrides(config),
+  };
+  return merged;
+}
+
 function segmentDpOverrides(segment, config, overrides) {
   const dpConfig = (segment || {}).dp || {};
   const repair = (overrides && overrides.dpOverrides) || {};
@@ -3511,11 +3524,11 @@ function tryRepairFromPreviousMilestone(
     previousSegment,
     previous.inputFrontier,
     config || {},
-    {
+    withManualBudgetAuthority(config || {}, {
       candidateLimit: backtrackCandidateLimit(previousSegment, config || {}),
       dpOverrides: backtrackDpOverrides(previousSegment, config || {}),
       preserveSkylineRoles: true,
-    },
+    }),
   );
   expandedPrevious.summary.backtrack = {
     mode: "expanded-previous-segment",
@@ -3540,9 +3553,9 @@ function tryRepairFromPreviousMilestone(
     currentSegment,
     rankedFrontier,
     config || {},
-    {
+    withManualBudgetAuthority(config || {}, {
       preserveSkylineRoles: true,
-    },
+    }),
   );
   repairedCurrent.summary.backtrack = {
     mode: "retry-current-segment",
@@ -3587,7 +3600,7 @@ function tryRepairFromConfiguredMilestone(
     currentSegment,
     start.merged,
     config || {},
-    {
+    withManualBudgetAuthority(config || {}, {
       candidateLimit: numericOption(
         dpConfig.repairCandidateLimit,
         numericOption(dpConfig.goalSkylineLimit, 8),
@@ -3620,7 +3633,7 @@ function tryRepairFromConfiguredMilestone(
         dpAgendaMode: dpConfig.dpAgendaMode,
         fairnessEvery: dpConfig.fairnessEvery,
       },
-    },
+    }),
   );
   repairedCurrent.summary.backtrack = {
     mode: "configured-milestone-window",
@@ -3927,10 +3940,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       segment,
       frontier,
       { ...graphConfig, segmentIndex, segmentTotal: segments.length },
-      {
+      withManualBudgetAuthority(graphConfig, {
         candidateLimit: graphConfig.candidateLimit != null ? graphConfig.candidateLimit : undefined,
-        dpOverrides: manualSearchOverrides(graphConfig),
-      },
+      }),
     );
     appendLedger(execution, "initial");
     if (execution.merged.length === 0) {
@@ -4133,6 +4145,7 @@ module.exports = {
   summarizeEffectiveHero,
   summarizeHero,
   summarizeSegmentFailure,
+  withManualBudgetAuthority,
   __testHooks: {
     allocateGlobalAttemptBudget,
     BLOCKER_TILE_NUMBER: reachAndBattleOracle.BLOCKER_TILE_NUMBER,
