@@ -75,6 +75,18 @@ class SolverProgressAccumulator {
     };
     this.lastPublishAt = 0;
     this.lastPublishExpansion = 0;
+    // The task-level budget applies per segment/attempt (each DP run gets the
+    // full manual budget), not as one global run budget.  `attempt` tracks the
+    // active attempt's own counters so ratios never mix attempt expansion
+    // counts with a budget cap that is per-attempt.
+    this.attempt = {
+      segmentId: null,
+      index: 0,
+      total: 0,
+      attempt: 0,
+      expansions: 0,
+      startedAt: null,
+    };
   }
 
   setStatus(status) {
@@ -146,6 +158,7 @@ class SolverProgressAccumulator {
     switch (event.eventType) {
       case "agendaPopped":
         this.counters.expansions += 1;
+        if (this.attempt.startedAt != null) this.attempt.expansions += 1;
         break;
       case "candidateGenerated":
         this.counters.generated += 1;
@@ -164,6 +177,14 @@ class SolverProgressAccumulator {
         this.publish(false);
         break;
       case "segmentStarted":
+        this.attempt = {
+          segmentId: event.segmentId || null,
+          index: Number(event.segmentIndex) || 0,
+          total: Number(event.segmentTotal) || 0,
+          attempt: 0,
+          expansions: 0,
+          startedAt: null,
+        };
         this.setSegment({
           id: event.segmentId || null,
           index: Number(event.segmentIndex) || 0,
@@ -173,6 +194,14 @@ class SolverProgressAccumulator {
         this.setPhase("segment-search");
         break;
       case "attemptStarted":
+        this.attempt = {
+          segmentId: event.segmentId || null,
+          index: Number(event.segmentIndex) || 0,
+          total: Number(event.segmentTotal) || 0,
+          attempt: Number(event.attempt) || 1,
+          expansions: 0,
+          startedAt: Date.now(),
+        };
         this.setSegment({
           id: event.segmentId || null,
           index: Number(event.segmentIndex) || 0,
@@ -181,6 +210,14 @@ class SolverProgressAccumulator {
         });
         break;
       case "segmentCompleted":
+        this.attempt = {
+          segmentId: null,
+          index: 0,
+          total: 0,
+          attempt: 0,
+          expansions: 0,
+          startedAt: null,
+        };
         this.setSegment(null);
         break;
       default:
@@ -197,19 +234,35 @@ class SolverProgressAccumulator {
     const elapsedMs = this.startedAt
       ? Math.max(0, Date.now() - Date.parse(this.startedAt))
       : 0;
-    const budget = {
-      source: this.budgetSource,
+    const attemptActive = this.attempt && this.attempt.startedAt != null;
+    const attemptElapsedMs = attemptActive
+      ? Math.max(0, Date.now() - this.attempt.startedAt)
+      : 0;
+    const attemptExpansions = attemptActive ? this.attempt.expansions : 0;
+    const current = attemptActive ? {
+      segmentId: this.attempt.segmentId,
+      attempt: this.attempt.attempt,
+      expansions: attemptExpansions,
+      elapsedMs: attemptElapsedMs,
       maxExpansions: this.maxExpansions,
       maxRuntimeMs: this.maxRuntimeMs,
-      expansions,
-      elapsedMs,
       expansionBudgetUsedRatio: this.maxExpansions > 0
-        ? Number((expansions / this.maxExpansions).toFixed(4))
+        ? Number((attemptExpansions / this.maxExpansions).toFixed(4))
         : null,
       runtimeBudgetUsedRatio: this.maxRuntimeMs > 0
-        ? Number((elapsedMs / this.maxRuntimeMs).toFixed(4))
+        ? Number((attemptElapsedMs / this.maxRuntimeMs).toFixed(4))
         : null,
-      expansionBudgetExhausted: this.maxExpansions > 0 && expansions >= this.maxExpansions,
+      expansionBudgetExhausted: this.maxExpansions > 0 && attemptExpansions >= this.maxExpansions,
+    } : null;
+    const budget = {
+      // The task budget applies per attempt (each DP run gets the full manual
+      // budget), so only the current attempt's ratio is meaningful; total
+      // counters are reported separately and never divided by a per-attempt cap.
+      scope: "per-attempt",
+      current,
+      total: { expansions, elapsedMs },
+      maxExpansions: this.maxExpansions,
+      maxRuntimeMs: this.maxRuntimeMs,
       actionTrimmed: this.counters.actionTrimmed,
     };
     return {

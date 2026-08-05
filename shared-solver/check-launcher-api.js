@@ -139,6 +139,19 @@ async function main() {
   assert.strictEqual(rejected.payload.failure.failureClass, "INVALID_TASK");
   assert.ok(rejected.payload.failure.code, "structured error must carry a code");
 
+  // 2a. Planning preflight failure must not be silently valid: a task with
+  //     an existing-but-unloadable projectRoot gets a structured 400.
+  const malformedRoot = path.join(__dirname, "routes", "generated", "launcher-malformed-project");
+  fs.mkdirSync(malformedRoot, { recursive: true });
+  fs.writeFileSync(path.join(malformedRoot, "not-a-project.txt"), "x", "utf8");
+  const malformedTask = baseTask();
+  malformedTask.tower.projectRoot = malformedRoot;
+  malformedTask.tower.projectFingerprint = "deadbeefdeadbeef";
+  const malformedValidate = await jsonFetch(base, "POST", "/api/tasks/validate", malformedTask);
+  assert.strictEqual(malformedValidate.status, 400, "planning preflight failure must return 400, not valid:true");
+  assert.strictEqual(malformedValidate.payload.valid, false);
+  assert.strictEqual(malformedValidate.payload.failure.failureClass, "PLANNING_PREFLIGHT_FAILED");
+
   // 2b. Validate returns effective per-segment budgets with the manual search
   //     override applied (not the RegionSpec's own budgets).
   const budgetTask = baseTask();
@@ -239,6 +252,7 @@ async function main() {
     controls: {
       registryPathTraversalRejected: true,
       validateReturnsEffectiveSegmentBudgets: true,
+      planningPreflightFailureNotSilentlyValid: true,
       maxRuntimeMsZeroNotExhausted: true,
       taskValidateReturnsFingerprints: true,
       invalidObjectiveStructured400: true,

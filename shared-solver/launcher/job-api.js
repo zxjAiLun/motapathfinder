@@ -73,17 +73,34 @@ function createJobApi({ manager, jobStore, registry, context }) {
       const objective = task.objective;
       // Effective per-segment budgets: the task search overrides the
       // RegionSpec/segment budgets, so preflight reports what will actually be
-      // executed, not what the RegionSpec ships.
+      // executed, not what the RegionSpec ships.  A build failure must not be
+      // silently swallowed as "valid with no segments".
       let effectiveSegments = [];
-      try {
-        const projectRoot = task.normalizedTask.tower.projectRoot;
-        if (projectRoot) {
+      let effectiveSegmentsStatus = "ok";
+      let effectiveSegmentsFailure = null;
+      const projectRoot = task.normalizedTask.tower.projectRoot;
+      if (projectRoot) {
+        try {
           const project = loadProject(projectRoot);
           const milestoneSpec = buildRegionMilestoneSpec(project, task.normalizedTask.tower.region.spec);
           effectiveSegments = effectiveSegmentBudgets(milestoneSpec, task.executeConfig);
+        } catch (error) {
+          effectiveSegmentsStatus = "unavailable";
+          effectiveSegmentsFailure = {
+            failureClass: "PLANNING_PREFLIGHT_FAILED",
+            code: "PLANNING_PREFLIGHT_FAILED",
+            message: error && error.message ? error.message : String(error),
+            retryable: false,
+          };
+          writeJson(res, 400, {
+            valid: false,
+            failure: effectiveSegmentsFailure,
+            effectiveSegmentsStatus,
+          });
+          return;
         }
-      } catch (error) {
-        effectiveSegments = [];
+      } else {
+        effectiveSegmentsStatus = "not-applicable";
       }
       writeJson(res, 200, {
         valid: true,
@@ -104,6 +121,7 @@ function createJobApi({ manager, jobStore, registry, context }) {
         },
         effectiveSearch: task.normalizedTask.search,
         effectiveSegments,
+        effectiveSegmentsStatus,
       });
     } catch (error) {
       writeJson(res, 400, {
