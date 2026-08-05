@@ -153,7 +153,7 @@ async function main() {
 
   // 4. Exact boundary fingerprint distinguishes states (the replay boundary
   //    proof uses exact fingerprints, not the DP identity key).
-  const { exactStateFingerprint, projectedSnapshotsMatch } = require("./lib/solver-job");
+  const { exactStateFingerprint, findUniqueInputIndexForCandidate, projectedSnapshotsMatch } = require("./lib/solver-job");
   const stateA = {
     floorId: "MT1",
     hero: { hp: 100, loc: { x: 1, y: 1, direction: "down" } },
@@ -218,6 +218,45 @@ async function main() {
   equipmentPolluted.hero.equipment = ["sword"];
   assert.strictEqual(projectedSnapshotsMatch(baseSnap, equipmentPolluted), false, "an equipment difference must fail the boundary projection");
 
+  // 7. Provenance ambiguity is fail-closed: multiple inputs whose routes are
+  //    both prefixes of the output route must NOT silently pick the first.
+  const stepA = { summary: "pickup:A" };
+  const stepB = { summary: "pickup:B" };
+  const stepC = { summary: "pickup:C" };
+  assert.strictEqual(
+    findUniqueInputIndexForCandidate(
+      { route: [stepA, stepB, stepC] },
+      [{ route: [stepA] }, { route: [stepA, stepB] }],
+    ),
+    -1,
+    "two prefix inputs must be reported as ambiguous, not the first match",
+  );
+  assert.strictEqual(
+    findUniqueInputIndexForCandidate(
+      { route: [stepA, stepC] },
+      [{ route: [stepA] }, { route: [stepA, stepB] }],
+    ),
+    0,
+    "a unique prefix input must resolve to that input",
+  );
+  assert.strictEqual(
+    findUniqueInputIndexForCandidate(
+      { route: [stepB, stepC] },
+      [{ route: [stepA] }, { route: [stepA, stepB] }],
+    ),
+    -1,
+    "no prefix input must remain unresolved",
+  );
+
+  // 8. followers projection: identical followers pass; polluted followers fail.
+  const followersSnap = JSON.parse(JSON.stringify(baseSnap));
+  followersSnap.hero.followers = ["ally-1"];
+  const followersSame = JSON.parse(JSON.stringify(followersSnap));
+  assert.strictEqual(projectedSnapshotsMatch(followersSnap, followersSame), true, "identical followers must pass the projection");
+  const followersPolluted = JSON.parse(JSON.stringify(followersSnap));
+  followersPolluted.hero.followers = ["ally-2"];
+  assert.strictEqual(projectedSnapshotsMatch(followersSnap, followersPolluted), false, "polluted followers must fail the projection");
+
   process.stdout.write(JSON.stringify({
     schema: "motapathfinder.pr-5.4a-multi-region-route.v1",
     status: "passed",
@@ -233,6 +272,9 @@ async function main() {
     winnerChainFollowsNonFirstCandidate: true,
     projectionRejectsReplacedPollution: true,
     projectionRejectsEquipmentPollution: true,
+    provenanceAmbiguityFailClosed: true,
+    followersProjectionPasses: true,
+    followersPollutionRejected: true,
     },
   }, null, 2) + "\n");
 }

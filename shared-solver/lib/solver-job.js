@@ -639,8 +639,12 @@ function safeStateKey(state) {
 
 // Finds which input frontier candidate a merged/output candidate descended
 // from, by matching the output route's prefix against the input route.
-function findInputIndexForCandidate(candidate, inputFrontier) {
+// Accepts ONLY a unique match: zero matches (unknown provenance) or multiple
+// matches (ambiguous provenance) both return -1 so the caller fails closed
+// with INVALID_PROVENANCE instead of silently picking the first candidate.
+function findUniqueInputIndexForCandidate(candidate, inputFrontier) {
   const route = Array.isArray(candidate && candidate.route) ? candidate.route : [];
+  let matchedIndex = -1;
   for (let index = 0; index < (inputFrontier || []).length; index += 1) {
     const inputRoute = inputFrontier[index].route || [];
     if (inputRoute.length > route.length) continue;
@@ -654,9 +658,12 @@ function findInputIndexForCandidate(candidate, inputFrontier) {
         break;
       }
     }
-    if (match) return index;
+    if (match) {
+      if (matchedIndex !== -1) return -1; // ambiguous: multiple inputs match
+      matchedIndex = index;
+    }
   }
-  return -1;
+  return matchedIndex;
 }
 
 // Strictly sequential multi-region execution.  Each region receives the
@@ -775,8 +782,13 @@ async function executeSolveJobV2(task, {
     // Attach input provenance to every boundary candidate so the next region's
     // route/replay contracts know which carried state each candidate came from.
     outgoing = outgoing.map((candidate, outIndex) => {
-      const inputIndex = findInputIndexForCandidate(candidate, inputFrontier);
-      const input = inputIndex >= 0 ? inputFrontier[inputIndex] : null;
+      const inputIndex = findUniqueInputIndexForCandidate(candidate, inputFrontier);
+      if (inputIndex < 0) {
+        throw makeInvalidProvenanceError(
+          `output candidate ${outIndex} in region ${index} has no unique input provenance`,
+        );
+      }
+      const input = inputFrontier[inputIndex];
       return {
         ...candidate,
         regionInputIndex: inputIndex,
@@ -845,8 +857,16 @@ async function executeSolveJobV2(task, {
     if (provenIndex != null && provenIndex >= 0 && inputFrontier[provenIndex]) {
       input = inputFrontier[provenIndex];
     } else {
-      const matchedIndex = findInputIndexForCandidate(candidate, inputFrontier);
-      if (matchedIndex >= 0) input = inputFrontier[matchedIndex];
+      // Fail-closed: accept only a UNIQUE route-prefix match.  Zero matches or
+      // multiple matches are ambiguous provenance and reject the composite.
+      const matchedIndex = findUniqueInputIndexForCandidate(candidate, inputFrontier);
+      if (matchedIndex >= 0) {
+        input = inputFrontier[matchedIndex];
+      } else {
+        throw makeInvalidProvenanceError(
+          "winner candidate input provenance is not unique or could not be resolved",
+        );
+      }
     }
     if (!input || !inputFrontier) {
       throw makeInvalidProvenanceError("winner candidate input provenance could not be resolved");
@@ -1205,6 +1225,7 @@ module.exports = {
   executeSolveJobV2,
   exactStateFingerprint,
   finalizeJob,
+  findUniqueInputIndexForCandidate,
   makeSimulator,
   materializeNextRegionFrontier,
   projectedSnapshotsMatch,

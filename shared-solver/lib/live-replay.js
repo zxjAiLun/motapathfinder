@@ -506,6 +506,7 @@ function buildRuntimeProjectedSolverStateKeyFromSnapshot(snapshot, templateExact
   if (hero.y != null && heroLoc.y != null) hero.y = heroLoc.y;
   if (hero.direction !== null && heroLoc.direction != null) hero.direction = heroLoc.direction;
   if (Array.isArray(heroSnapshot.equipment)) hero.equipment = heroSnapshot.equipment.slice();
+  if (Array.isArray(heroSnapshot.followers)) hero.followers = heroSnapshot.followers.slice();
 
   const mutations = Object.keys(normalized.floors || {})
     .sort()
@@ -1012,15 +1013,25 @@ async function captureRuntimeSnapshot(page, options) {
     });
 
     const normalizedHero = heroFields.reduce((result, field) => {
-      result[field] = Number(hero[field] || 0);
+      // Array-typed hero fields (equipment/followers) must be preserved as
+      // arrays; numeric coercion would turn them into NaN/0 and break the
+      // runtime boundary projection for solver models that track them.
+      if (field === "equipment" || field === "followers") {
+        result[field] = Array.isArray(hero[field]) ? hero[field].slice() : [];
+      } else {
+        result[field] = Number(hero[field] || 0);
+      }
       return result;
     }, {});
+    // Always expose the array-typed hero fields so the runtime boundary
+    // projection can compare them even when heroFields is the numeric default.
+    normalizedHero.equipment = Array.isArray(hero.equipment) ? hero.equipment.slice() : [];
+    normalizedHero.followers = Array.isArray(hero.followers) ? hero.followers.slice() : [];
     normalizedHero.loc = {
       direction: (((hero || {}).loc || {}).direction) || "down",
       x: Number((((hero || {}).loc || {}).x) || 0),
       y: Number((((hero || {}).loc || {}).y) || 0),
     };
-    normalizedHero.equipment = Array.isArray(hero.equipment) ? hero.equipment.slice() : [];
 
     const flags = Object.keys(hero.flags || {})
       .sort()
