@@ -131,13 +131,16 @@ function failureHtml(failure) {
   return `<div class="failure ${esc(failure.failureClass)}"><span class="state-warn">${esc(label)}</span><span class="muted small">${esc(retryable)}</span><div class="small muted">${esc(failure.message || "")}</div></div>`;
 }
 
-function retryActions(job) {
+function retryActions(job, maxRuntimeMs) {
   const buttons = [];
   if (["completed", "failed", "cancelled"].includes(job.state)) {
     buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="1">按原配置重试</button>`);
     if (job.state === "failed") {
       buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="exp2">扩展预算 ×2</button>`);
-      buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="time2">运行时间 ×2</button>`);
+      // maxRuntimeMs=0 表示已不限时，"运行时间 ×2" 是无操作，不显示。
+      if (Number(maxRuntimeMs) > 0) {
+        buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="time2">运行时间 ×2</button>`);
+      }
     }
   }
   if (["queued", "running"].includes(job.state)) {
@@ -368,7 +371,7 @@ function renderJobs() {
       `<div class="small muted">${esc(progress.phase || job.phase || "—")} · ${formatTime(job.createdAt)}</div>`,
       `<div class="small">${bestKnownHtml(bestKnown)}</div>`,
       failureClass ? failureHtml(job.failure || progress.failure) : "",
-      `<div class="job-actions">${retryActions(job)}</div>`,
+      `<div class="job-actions">${retryActions(job, progress.budget && progress.budget.maxRuntimeMs)}</div>`,
     ].join("");
     list.appendChild(row);
   });
@@ -434,8 +437,10 @@ async function renderJobDetail(jobId) {
       metric("actionTrimmed", search.actionTrimmed ?? "—"),
       metric("decisionDepth", bestKnown && bestKnown.decisionDepth != null ? String(bestKnown.decisionDepth) : "—"),
       metric("routeLength", bestKnown && bestKnown.routeLengthExact ? String(bestKnown.routeLength) : '<span class="state-warn">待路线重建</span>'),
-      metric("expansion 预算消耗", budget.maxExpansions > 0 ? `${((budget.expansionBudgetUsedRatio || 0) * 100).toFixed(1)}%` : "—"),
-      metric("runtime 预算消耗", budget.maxRuntimeMs > 0 ? `${((budget.runtimeBudgetUsedRatio || 0) * 100).toFixed(1)}%` : "—"),
+      metric("expansion 预算消耗（当前 attempt）", budget.maxExpansions > 0 ? `${(((budget.current || {}).expansionBudgetUsedRatio || 0) * 100).toFixed(1)}%` : "—"),
+      metric("runtime 预算消耗（当前 attempt）", budget.maxRuntimeMs > 0 ? `${(((budget.current || {}).runtimeBudgetUsedRatio || 0) * 100).toFixed(1)}%` : "—"),
+      metric("累计 expansions", (budget.total && budget.total.expansions) ?? "—"),
+      metric("累计 elapsedMs", (budget.total && budget.total.elapsedMs) != null ? `${budget.total.elapsedMs}ms` : "—"),
       metric("proof claim", esc((progress.proof && progress.proof.claim) || "—")),
     ];
     $("job-metrics").innerHTML = metrics.join("");
