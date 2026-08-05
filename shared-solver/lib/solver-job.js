@@ -498,16 +498,55 @@ function getDecisionDepthSafe(state) {
   return Number.isFinite(Number(depth)) ? Number(depth) : null;
 }
 
-// Exact state fingerprint for replay boundary proofs.  buildStateKey() is the
-// DP identity and may omit direction/auto-event bookkeeping, so the region
-// boundary replay must use a full-state hash instead.
+// Canonical boundary state fingerprint for replay boundary proofs.
+// buildStateKey() is the DP identity and may omit direction/auto-event
+// bookkeeping, so the region boundary replay uses a canonical full-state hash
+// that only excludes the declared non-behavioral route fields (route/routeTrace
+// and UI-ish meta decorations), NOT the whole meta object.
 function exactStateFingerprint(state) {
   if (!state) return null;
   const copy = cloneState(state);
   delete copy.route;
   delete copy.routeTrace;
-  delete copy.meta;
   return fingerprintJson(copy);
+}
+
+// Compares the behavioral projection of a solver snapshot with a runtime
+// snapshot (captureRuntimeSnapshot shape): floorId, hero numeric fields + loc,
+// inventory, flags (ignoring bookkeeping), and floor mutations.
+function projectedSnapshotsMatch(solverSnapshot, runtimeSnapshot) {
+  if (!solverSnapshot || !runtimeSnapshot) return false;
+  if (solverSnapshot.floorId !== runtimeSnapshot.floorId) return false;
+  const sh = solverSnapshot.hero || {};
+  const rh = runtimeSnapshot.hero || {};
+  for (const field of ["hp", "atk", "def", "mdef", "lv", "exp", "money"]) {
+    // A solver snapshot may omit fields the solver model does not track; the
+    // runtime always reports them, so treat an absent solver field as untracked.
+    if (sh[field] == null) continue;
+    if (sh[field] !== rh[field]) return false;
+  }
+  const sl = sh.loc || {};
+  const rl = rh.loc || {};
+  if (sl.x !== rl.x || sl.y !== rl.y || sl.direction !== rl.direction) return false;
+  const si = solverSnapshot.inventory || {};
+  const ri = runtimeSnapshot.inventory || {};
+  for (const key of new Set([...Object.keys(si), ...Object.keys(ri)])) {
+    if ((si[key] || 0) !== (ri[key] || 0)) return false;
+  }
+  const sf = solverSnapshot.flags || {};
+  const rf = runtimeSnapshot.flags || {};
+  for (const key of new Set([...Object.keys(sf), ...Object.keys(rf)])) {
+    if (key === "__leaveLoc__") continue;
+    if ((sf[key] || 0) !== (rf[key] || 0)) return false;
+  }
+  const sfl = solverSnapshot.floors || {};
+  const rfl = runtimeSnapshot.floors || {};
+  for (const floorId of new Set([...Object.keys(sfl), ...Object.keys(rfl)])) {
+    const sRemoved = ((sfl[floorId] || {}).removed || []).slice().sort();
+    const rRemoved = ((rfl[floorId] || {}).removed || []).slice().sort();
+    if (JSON.stringify(sRemoved) !== JSON.stringify(rRemoved)) return false;
+  }
+  return true;
 }
 
 // Unified region entry transition: "floor" records the SOURCE floor/loc into
@@ -557,11 +596,7 @@ function materializeNextRegionFrontier(previousTerminalFrontier, nextRegionSpec,
     state.route = route;
     const inputStateFingerprint = safeStateKey(state);
     // The carried state (before entry transform) is what the previous region
-    // produced; record it as the exact boundary input for replay.
-    const carried = cloneState(candidate && candidate.state);
-    delete carried.route;
-    delete carried.routeTrace;
-    delete carried.meta;
+    // produced; record it as the canonical exact boundary input for replay.
     return {
       id: (candidate && candidate.id) || `region-input-${index}`,
       state,
@@ -571,7 +606,7 @@ function materializeNextRegionFrontier(previousTerminalFrontier, nextRegionSpec,
       regionInputIndex: index,
       inputStateFingerprint,
       exactBoundaryStateFingerprint: exactStateFingerprint(state),
-      inputCarriedExactFingerprint: fingerprintJson(carried),
+      inputCarriedExactFingerprint: exactStateFingerprint(candidate && candidate.state),
       ancestry: {},
     };
   });
@@ -772,12 +807,13 @@ async function executeSolveJobV2(task, {
     finalSimulator = simulator;
     finalRegionSpec = regionSpec;
     finalInputFrontier = inputFrontier;
-    regionExecutions.push({ regionSpec, simulator, inputFrontier, result });
+    regionExecutions.push({ regionSpec, simulator, inputFrontier, result, outgoing });
   }
 
-  // Final region: proof claim + per-region route records + composite
-  // multi-region-route.v1 + sequential strict replay.  The task-level objective
-  // orders the FINAL region's terminal candidates and is the only objective.
+  // Final region: proof claim + winner-chain route records + composite
+  // multi-region-route.v1 + sequential strict replay with runtime boundary
+  // continuity.  The task-level objective orders the FINAL region's terminal
+  // candidates and is the only objective.
   progress.setSegment(null);
   const proofClaim = buildRegionProofClaim(finalResult, finalRegionSpec, objective);
   progress.setProof(proofClaim.objective || null);
@@ -788,28 +824,50 @@ async function executeSolveJobV2(task, {
   let verificationStatus = null;
   let objectiveValue = null;
 
-  const buildRegionRouteRecord = (execution, regionIndex) => {
-    const result = execution.result;
-    if (!result.found || !result.finalCandidate || !result.finalCandidate.state) return null;
-    const candidate = result.finalCandidate;
-    // Resolve the WINNING candidate's actual input state (never index 0).
+  const resolveInputCandidate = (candidate, inputFrontier) => {
     let input = null;
-    const provenIndex = candidate.regionInputIndex;
-    if (provenIndex != null && provenIndex >= 0 && execution.inputFrontier[provenIndex]) {
-      input = execution.inputFrontier[provenIndex];
+    const provenIndex = candidate && candidate.regionInputIndex;
+    if (provenIndex != null && provenIndex >= 0 && inputFrontier[provenIndex]) {
+      input = inputFrontier[provenIndex];
     } else {
-      const matchedIndex = findInputIndexForCandidate(candidate, execution.inputFrontier);
-      if (matchedIndex >= 0) input = execution.inputFrontier[matchedIndex];
+      const matchedIndex = findInputIndexForCandidate(candidate, inputFrontier);
+      if (matchedIndex >= 0) input = inputFrontier[matchedIndex];
     }
-    input = input || execution.inputFrontier[0];
-    const initialState = input.state;
-    const finalState = candidate.state;
-    const inputRouteLength = Array.isArray(input.route) ? input.route.length : 0;
-    const candidateRoute = Array.isArray(candidate.route) ? candidate.route : [];
+    return input || (inputFrontier && inputFrontier[0]) || null;
+  };
+
+  // Winner chain: backtrack from the final winner through each region's actual
+  // input/output candidates.  Every region record follows this chain, so a
+  // final winner descended from a non-first candidate produces a continuous
+  // composite route.
+  const lastIndex = regionExecutions.length - 1;
+  const winnerOutputs = new Array(regionExecutions.length);
+  const winnerInputs = new Array(regionExecutions.length);
+  winnerOutputs[lastIndex] = finalResult.finalCandidate;
+  for (let index = lastIndex; index > 0; index -= 1) {
+    const input = resolveInputCandidate(winnerOutputs[index], regionExecutions[index].inputFrontier);
+    winnerInputs[index] = input;
+    const parentIndex = input && input.regionInputIndex;
+    const prevOutgoing = regionExecutions[index - 1].outgoing || [];
+    const parent = (parentIndex != null && parentIndex >= 0 && prevOutgoing[parentIndex])
+      ? prevOutgoing[parentIndex]
+      : null;
+    winnerOutputs[index - 1] = parent || (regionExecutions[index - 1].result && regionExecutions[index - 1].result.finalCandidate) || null;
+  }
+  winnerInputs[0] = regionExecutions[0].inputFrontier[0];
+
+  const buildWinnerRegionRecord = (execution, outputCandidate, inputCandidate, regionIndex) => {
+    if (!outputCandidate || !outputCandidate.state) return null;
+    const finalState = outputCandidate.state;
+    const initialState = inputCandidate ? inputCandidate.state : finalState;
+    const inputRouteLength = Array.isArray(inputCandidate && inputCandidate.route)
+      ? inputCandidate.route.length
+      : 0;
+    const candidateRoute = Array.isArray(outputCandidate.route) ? outputCandidate.route : [];
     finalState.route = candidateRoute.length > inputRouteLength
       ? candidateRoute.slice(inputRouteLength)
       : [];
-    const regionObjective = regionIndex === regions.length - 1 ? objective : null;
+    const regionObjective = regionIndex === regionExecutions.length - 1 ? objective : null;
     const record = buildRouteRecord({
       project,
       simulator: execution.simulator,
@@ -832,20 +890,24 @@ async function executeSolveJobV2(task, {
             candidateLimit: (task && task.executeConfig && task.executeConfig.candidateLimit) || null,
             search: normalizedTask.search || null,
             regionIndex,
-            regionTotal: regions.length,
+            regionTotal: regionExecutions.length,
           },
         },
         objectiveSpec: regionObjective,
       },
     });
-    const outputExact = exactStateFingerprint(finalState);
-    return { record, input, outputExact, regionObjective };
+    return { record, input: inputCandidate, outputExact: exactStateFingerprint(finalState), outputCandidate };
   };
 
-  // Build per-region route records (all regions, not just the final).
+  // Build the per-region records along the winner chain.
   const regionRecords = [];
   for (let index = 0; index < regionExecutions.length; index += 1) {
-    regionRecords.push(buildRegionRouteRecord(regionExecutions[index], index));
+    regionRecords.push(buildWinnerRegionRecord(
+      regionExecutions[index],
+      winnerOutputs[index],
+      winnerInputs[index],
+      index,
+    ));
   }
 
   if (finalResult.found && finalResult.finalCandidate && finalResult.finalCandidate.state) {
@@ -861,13 +923,13 @@ async function executeSolveJobV2(task, {
     ));
     progress.setPhase("route-build");
 
-    // Boundary fingerprint contract: the next region's carried exact state must
-    // equal the previous region's output exact state.
+    // Boundary fingerprint contract along the winner chain: the next region's
+    // carried exact state must equal the previous region's chain output.
     let boundaryFingerprintsMatch = true;
     for (let index = 1; index < regionExecutions.length; index += 1) {
-      const prevOutput = regionRecords[index - 1] && regionRecords[index - 1].outputExact;
-      const nextCarried = regionExecutions[index].inputFrontier[0].inputCarriedExactFingerprint;
-      if (prevOutput != null && nextCarried != null && prevOutput !== nextCarried) {
+      const prevOutput = winnerOutputs[index - 1];
+      const nextCarried = winnerInputs[index] && winnerInputs[index].inputCarriedExactFingerprint;
+      if (prevOutput && nextCarried != null && exactStateFingerprint(prevOutput.state) !== nextCarried) {
         boundaryFingerprintsMatch = false;
         break;
       }
@@ -880,8 +942,9 @@ async function executeSolveJobV2(task, {
         index,
         regionId: regionExecutions[index].regionSpec.id,
         record: built && built.record || null,
-        inputStateFingerprint: regionExecutions[index].inputFrontier[0].inputStateFingerprint || null,
-        exactBoundaryStateFingerprint: regionExecutions[index].inputFrontier[0].exactBoundaryStateFingerprint || null,
+        regionInputIndex: winnerInputs[index] && winnerInputs[index].regionInputIndex,
+        inputStateFingerprint: winnerInputs[index] ? winnerInputs[index].inputStateFingerprint : null,
+        exactBoundaryStateFingerprint: winnerInputs[index] ? winnerInputs[index].exactBoundaryStateFingerprint : null,
         outputExactBoundaryStateFingerprint: built && built.outputExact || null,
       })),
       boundaryFingerprintsMatch,
@@ -891,9 +954,14 @@ async function executeSolveJobV2(task, {
 
     progress.setPhase("strict-replay");
     if (normalizedTask.verification.strictReplay !== false) {
-      // Sequential strict replay: every region's route replays in the real
-      // runtime in order, and every region boundary fingerprint must match.
+      // Sequential strict replay with RUNTIME boundary continuity: every
+      // region's route replays in the real runtime in order, the returned
+      // finalRuntimeSnapshot is saved, and each region's runtime final must
+      // match its expected solver output so the composite is a continuous
+      // runtime path, not isolated restores.
+      const runtimeFinals = [];
       let allVerified = true;
+      let runtimeContinuity = true;
       try {
         for (let index = 0; index < regionRecords.length; index += 1) {
           const built = regionRecords[index];
@@ -901,7 +969,7 @@ async function executeSolveJobV2(task, {
             allVerified = false;
             break;
           }
-          await replayRouteFile(built.record, {
+          const replayResult = await replayRouteFile(built.record, {
             projectRoot,
             headless: "1",
             keepOpen: false,
@@ -910,22 +978,31 @@ async function executeSolveJobV2(task, {
             fastForwardDelayMs: 0,
             runtimeAutoBattle: 1,
           });
+          runtimeFinals.push(replayResult && replayResult.finalRuntimeSnapshot || null);
+          const expected = built.record && built.record.final && built.record.final.snapshot;
+          if (expected && replayResult && !projectedSnapshotsMatch(expected, replayResult.finalRuntimeSnapshot)) {
+            runtimeContinuity = false;
+            break;
+          }
         }
       } catch (error) {
         throw makeStrictReplayFailure(error);
       }
-      if (allVerified && boundaryFingerprintsMatch) {
-        strictReplayVerified = true;
-        verificationStatus = "verified";
-      } else {
+      if (!(allVerified && boundaryFingerprintsMatch && runtimeContinuity)) {
         throw makeStrictReplayFailure(new Error(
-          boundaryFingerprintsMatch
-            ? "a region route failed runtime replay"
-            : "region boundary state fingerprints do not match",
+          runtimeContinuity
+            ? (boundaryFingerprintsMatch
+              ? "a region route failed runtime replay"
+              : "region boundary state fingerprints do not match")
+            : "runtime final state does not continue across region boundaries",
         ));
       }
+      strictReplayVerified = true;
+      verificationStatus = "verified";
+      composite.verificationStatus = "verified";
+      composite.runtimeContinuity = true;
       // Final-region objective reconciliation (task-level objective).
-      const finalBuilt = regionRecords[regionRecords.length - 1];
+      const finalBuilt = regionRecords[lastIndex];
       objectiveValue = objectiveValueFromRouteRecord(task, finalBuilt && finalBuilt.record);
       if (objective && objective.explicit) {
         const metadataValue = finalBuilt && finalBuilt.record && finalBuilt.record.metadata && finalBuilt.record.metadata.finalObjectiveValue;
@@ -949,12 +1026,11 @@ async function executeSolveJobV2(task, {
         },
         objectiveValue && objectiveValue.value,
       ));
-      composite.verificationStatus = "verified";
     } else {
       strictReplayVerified = false;
       verificationStatus = "not-requested";
       composite.verificationStatus = "not-requested";
-      const lastBuilt = regionRecords[regionRecords.length - 1];
+      const lastBuilt = regionRecords[lastIndex];
       const lastSnapshot = lastBuilt && lastBuilt.record && lastBuilt.record.final && lastBuilt.record.final.snapshot;
       const lastObjective = objectiveValueFromRouteRecord(task, lastBuilt && lastBuilt.record);
       progress.setBestKnown(bestKnownFromState(

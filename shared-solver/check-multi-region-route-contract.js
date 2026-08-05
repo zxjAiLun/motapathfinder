@@ -170,6 +170,37 @@ async function main() {
     "exactStateFingerprint must distinguish direction (unlike the DP identity key)",
   );
 
+  // 5. Winner-chain ancestry: Region A produces two candidates; A0 ranks
+  //    first locally (max HP, battled the redSlime at 2,8) but only A1 (which
+  //    kept the redSlime present) can satisfy Region B's presentTiles gate.
+  //    The composite Region A record must follow A1, never default to A0.
+  const redSlimeSpec = JSON.parse(JSON.stringify(regionB()));
+  redSlimeSpec.goal = {
+    type: "heroAtLeast",
+    floorId: "MT1",
+    minHero: { exp: 2 },
+    presentTiles: [{ floorId: "MT1", x: 2, y: 8 }],
+  };
+  const ancestry = await runJob(v2Task([{ spec: smoke }, { spec: redSlimeSpec }]));
+  assert.strictEqual(ancestry.state, "completed", "Region B must succeed via the candidate that kept the redSlime");
+  const ancestryComposite = ancestry.result.route.record;
+  assert.strictEqual(ancestryComposite.schema, "motapathfinder.multi-region-route.v1");
+  assert.strictEqual(ancestryComposite.boundaryFingerprintsMatch, true);
+  const regionAEntry = ancestryComposite.regions[0];
+  // The winning chain must have used the non-first candidate: Region B's
+  // winner came from input index 1 (the candidate that kept the redSlime),
+  // never defaulting to input 0.
+  assert.strictEqual(
+    ancestryComposite.regions[1].regionInputIndex,
+    1,
+    "the composite must follow the non-first winner candidate into Region B",
+  );
+  // Region A's record in the chain must be the candidate that kept the
+  // redSlime (2,8 present), i.e. not the local-first candidate A0.
+  const ancestrySnapshot = regionAEntry.record.final.snapshot;
+  const removed = (ancestrySnapshot.floors && ancestrySnapshot.floors.MT1 && ancestrySnapshot.floors.MT1.removed) || [];
+  assert.ok(!removed.includes("2,8"), "the Region A record in the winning chain must NOT have removed the redSlime (2,8)");
+
   process.stdout.write(JSON.stringify({
     schema: "motapathfinder.pr-5.4a-multi-region-route.v1",
     status: "passed",
@@ -182,6 +213,7 @@ async function main() {
       resultRegionsSuccessSemantics: true,
       resultRegionsFailureSemantics: true,
       exactFingerprintDistinguishesDirection: true,
+    winnerChainFollowsNonFirstCandidate: true,
     },
   }, null, 2) + "\n");
 }
