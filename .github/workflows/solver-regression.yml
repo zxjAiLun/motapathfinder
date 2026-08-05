@@ -22,3 +22,18 @@ jobs:
       - run: npm run check:pocket
       - run: npm run check:key-audit
       - run: npm run check:stage:short
+
+  shared-solver:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run check:solver-job
+      - run: npm run check:launcher
+

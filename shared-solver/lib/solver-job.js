@@ -513,18 +513,22 @@ function exactStateFingerprint(state) {
 
 // Compares the behavioral projection of a solver snapshot with a runtime
 // snapshot (captureRuntimeSnapshot shape): floorId, hero numeric fields + loc,
-// inventory, flags (ignoring bookkeeping), and floor mutations.
+// equipment + followers (when tracked), inventory, flags (ignoring
+// bookkeeping), and BOTH floor mutations (removed + replaced).
 function projectedSnapshotsMatch(solverSnapshot, runtimeSnapshot) {
   if (!solverSnapshot || !runtimeSnapshot) return false;
   if (solverSnapshot.floorId !== runtimeSnapshot.floorId) return false;
   const sh = solverSnapshot.hero || {};
   const rh = runtimeSnapshot.hero || {};
-  for (const field of ["hp", "atk", "def", "mdef", "lv", "exp", "money"]) {
+  for (const field of ["hp", "hpmax", "mana", "manamax", "atk", "def", "mdef", "lv", "exp", "money"]) {
     // A solver snapshot may omit fields the solver model does not track; the
     // runtime always reports them, so treat an absent solver field as untracked.
     if (sh[field] == null) continue;
     if (sh[field] !== rh[field]) return false;
   }
+  // Equipment / followers are only compared when the solver tracks them.
+  if (sh.equipment != null && JSON.stringify(sh.equipment || []) !== JSON.stringify(rh.equipment || [])) return false;
+  if (sh.followers != null && JSON.stringify(sh.followers || []) !== JSON.stringify(rh.followers || [])) return false;
   const sl = sh.loc || {};
   const rl = rh.loc || {};
   if (sl.x !== rl.x || sl.y !== rl.y || sl.direction !== rl.direction) return false;
@@ -545,6 +549,9 @@ function projectedSnapshotsMatch(solverSnapshot, runtimeSnapshot) {
     const sRemoved = ((sfl[floorId] || {}).removed || []).slice().sort();
     const rRemoved = ((rfl[floorId] || {}).removed || []).slice().sort();
     if (JSON.stringify(sRemoved) !== JSON.stringify(rRemoved)) return false;
+    const sReplaced = ((sfl[floorId] || {}).replaced || []).slice().sort();
+    const rReplaced = ((rfl[floorId] || {}).replaced || []).slice().sort();
+    if (JSON.stringify(sReplaced) !== JSON.stringify(rReplaced)) return false;
   }
   return true;
 }
@@ -614,6 +621,14 @@ function materializeNextRegionFrontier(previousTerminalFrontier, nextRegionSpec,
 
 // Multi-region coordinate: region.id/index/current/total is distinct from
 // the segment coordinate.  outgoingCandidates is the boundary frontier size.
+function makeInvalidProvenanceError(message) {
+  const error = new Error(message);
+  error.code = "INVALID_PROVENANCE";
+  error.failureClass = "INVALID_PROVENANCE";
+  error.retryable = false;
+  return error;
+}
+
 function safeStateKey(state) {
   try {
     return buildStateKey(state);
@@ -833,7 +848,10 @@ async function executeSolveJobV2(task, {
       const matchedIndex = findInputIndexForCandidate(candidate, inputFrontier);
       if (matchedIndex >= 0) input = inputFrontier[matchedIndex];
     }
-    return input || (inputFrontier && inputFrontier[0]) || null;
+    if (!input || !inputFrontier) {
+      throw makeInvalidProvenanceError("winner candidate input provenance could not be resolved");
+    }
+    return input;
   };
 
   // Winner chain: backtrack from the final winner through each region's actual
@@ -852,7 +870,12 @@ async function executeSolveJobV2(task, {
     const parent = (parentIndex != null && parentIndex >= 0 && prevOutgoing[parentIndex])
       ? prevOutgoing[parentIndex]
       : null;
-    winnerOutputs[index - 1] = parent || (regionExecutions[index - 1].result && regionExecutions[index - 1].result.finalCandidate) || null;
+    if (!parent || !parent.state) {
+      throw makeInvalidProvenanceError(
+        `winner chain parent candidate for region ${index - 1} could not be resolved (parentIndex=${parentIndex})`,
+      );
+    }
+    winnerOutputs[index - 1] = parent;
   }
   winnerInputs[0] = regionExecutions[0].inputFrontier[0];
 
@@ -1184,4 +1207,5 @@ module.exports = {
   finalizeJob,
   makeSimulator,
   materializeNextRegionFrontier,
+  projectedSnapshotsMatch,
 };

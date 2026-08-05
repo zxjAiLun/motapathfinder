@@ -150,7 +150,11 @@ async function main() {
   const malformedValidate = await jsonFetch(base, "POST", "/api/tasks/validate", malformedTask);
   assert.strictEqual(malformedValidate.status, 400, "planning preflight failure must return 400, not valid:true");
   assert.strictEqual(malformedValidate.payload.valid, false);
-  assert.strictEqual(malformedValidate.payload.failure.failureClass, "PLANNING_PREFLIGHT_FAILED");
+  // The validate contract matches the submit contract: an unloadable project is
+  // an INVALID_TASK at executable preflight (the effectiveSegments planning
+  // failure only applies to a loadable project whose segment plan fails).
+  assert.strictEqual(malformedValidate.payload.failure.failureClass, "INVALID_TASK");
+  assert.ok(malformedValidate.payload.failure.code, "structured error must carry a code");
 
   // 2b. Validate returns effective per-segment budgets with the manual search
   //     override applied (not the RegionSpec's own budgets).
@@ -214,6 +218,18 @@ async function main() {
   assert.strictEqual(v2Validate.payload.effectiveSegments[1].regionId, v2SpecB.id);
   assert.ok(Array.isArray(v2Validate.payload.effectiveSegments[0].effectiveSegments));
   assert.ok(v2Validate.payload.identity.regionFingerprints && v2Validate.payload.identity.regionFingerprints.length === 2);
+
+  // An unsupported region start.type must be rejected at VALIDATE (executable
+  // contract matches submit), not silently accepted until submit.
+  const badStartV2 = JSON.parse(JSON.stringify(v2Task));
+  badStartV2.tower.regions[1].spec = {
+    ...JSON.parse(JSON.stringify(v2SpecB)),
+    start: { type: "bogus" },
+  };
+  const badStartValidate = await jsonFetch(base, "POST", "/api/tasks/validate", badStartV2);
+  assert.strictEqual(badStartValidate.status, 400, "unsupported start must be rejected at validate");
+  assert.strictEqual(badStartValidate.payload.valid, false);
+  assert.strictEqual(badStartValidate.payload.failure.failureClass, "INVALID_TASK");
 
   // Submit the ordered v2 job; the stored task must round-trip the region order.
   const v2Created = await jsonFetch(base, "POST", "/api/jobs", v2Task);
@@ -306,6 +322,7 @@ async function main() {
       effectiveSegmentsPerAttemptScope: true,
       orderedRegionV2ValidateGrouped: true,
       orderedRegionV2RoundTrip: true,
+    unsupportedStartRejectedAtValidate: true,
       maxRuntimeMsZeroNotExhausted: true,
       taskValidateReturnsFingerprints: true,
       invalidObjectiveStructured400: true,
@@ -323,7 +340,7 @@ async function main() {
 if (require.main === module) {
   main().catch((error) => {
     console.error(error && error.stack ? error.stack : String(error));
-    process.exitCode = 1;
+    process.exit(1);
   });
 }
 

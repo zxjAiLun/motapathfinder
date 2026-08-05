@@ -153,7 +153,7 @@ async function main() {
 
   // 4. Exact boundary fingerprint distinguishes states (the replay boundary
   //    proof uses exact fingerprints, not the DP identity key).
-  const { exactStateFingerprint } = require("./lib/solver-job");
+  const { exactStateFingerprint, projectedSnapshotsMatch } = require("./lib/solver-job");
   const stateA = {
     floorId: "MT1",
     hero: { hp: 100, loc: { x: 1, y: 1, direction: "down" } },
@@ -201,6 +201,23 @@ async function main() {
   const removed = (ancestrySnapshot.floors && ancestrySnapshot.floors.MT1 && ancestrySnapshot.floors.MT1.removed) || [];
   assert.ok(!removed.includes("2,8"), "the Region A record in the winning chain must NOT have removed the redSlime (2,8)");
 
+  // 6. Runtime projection completeness + negative pollution: the boundary
+  //    replay projection must detect replaced-tile and equipment differences.
+  const baseSnap = {
+    floorId: "MT1",
+    hero: { hp: 100, atk: 3, def: 1, mdef: 10, lv: 1, exp: 2, money: 0, hpmax: 120, mana: 0, manamax: 0, loc: { x: 5, y: 7, direction: "down" }, equipment: [], followers: [] },
+    inventory: { book: 1 },
+    flags: { autoBattle: 1 },
+    floors: { MT1: { removed: ["2,7"], replaced: [] } },
+  };
+  assert.strictEqual(projectedSnapshotsMatch(baseSnap, JSON.parse(JSON.stringify(baseSnap))), true, "matching snapshots must pass");
+  const replacedPolluted = JSON.parse(JSON.stringify(baseSnap));
+  replacedPolluted.floors.MT1.replaced = ["3,9"];
+  assert.strictEqual(projectedSnapshotsMatch(baseSnap, replacedPolluted), false, "a replaced-tile difference must fail the boundary projection");
+  const equipmentPolluted = JSON.parse(JSON.stringify(baseSnap));
+  equipmentPolluted.hero.equipment = ["sword"];
+  assert.strictEqual(projectedSnapshotsMatch(baseSnap, equipmentPolluted), false, "an equipment difference must fail the boundary projection");
+
   process.stdout.write(JSON.stringify({
     schema: "motapathfinder.pr-5.4a-multi-region-route.v1",
     status: "passed",
@@ -214,6 +231,8 @@ async function main() {
       resultRegionsFailureSemantics: true,
       exactFingerprintDistinguishesDirection: true,
     winnerChainFollowsNonFirstCandidate: true,
+    projectionRejectsReplacedPollution: true,
+    projectionRejectsEquipmentPollution: true,
     },
   }, null, 2) + "\n");
 }

@@ -336,23 +336,27 @@ async function main() {
     assert.strictEqual(restoredTask.tower.projectRoot, customTrimTask.tower.projectRoot, "restored Builder must reproduce projectRoot");
     assert.strictEqual(restoredTask.tower.region.spec.id, customTrimTask.tower.region.spec.id, "restored Builder must reproduce region spec id");
 
-    // PR-5.4a Commit 4: ordered-region builder round-trip.  Add two regions,
-    // move them, validate (v2 grouped preflight), then restore from the job.
+    // PR-5.4a Commit 4/5: ordered-region builder round-trip with two DIFFERENT
+    // regions, real open-config restore (no .catch), and order assertions.
     // Reload first so the builder is not carrying the failed job's spec.
     await page.reload({ waitUntil: "networkidle" });
     await page.waitForFunction(() => document.querySelectorAll("#region-select option").length > 0, null, { timeout: 15000 });
-    // Use the reachable smoke region (region-output-contract-smoke).
-    await page.locator("#region-select").selectOption("region-output-contract-smoke");
     await page.uncheck("#strict-replay");
+    // Insert order: A = smoke, B = region-1.
+    await page.locator("#region-select").selectOption("region-output-contract-smoke");
     await page.locator("#region-add-btn").click();
-    await page.waitForSelector(".region-order-item");
+    await page.waitForFunction(() => document.querySelectorAll(".region-order-item").length === 1);
+    await page.locator("#region-select").selectOption("region-1");
     await page.locator("#region-add-btn").click();
     await page.waitForFunction(() => document.querySelectorAll(".region-order-item").length === 2);
-    // Move the first region down so the order differs from insertion order.
+    const insertOrder = await page.locator(".region-order-label").allInnerTexts();
+    assert.ok(insertOrder[0].includes("Output Contract Smoke"), "insertion order A first");
+    assert.ok(insertOrder[1].includes("Region 1"), "insertion order B second");
+    // Move A down -> order becomes [B, A].
     await page.locator(".region-order-item[data-index=\"0\"] .region-move-down").click();
     await page.waitForFunction(() => {
-      const items = document.querySelectorAll(".region-order-item");
-      return items.length === 2;
+      const first = document.querySelector(".region-order-label");
+      return first && first.textContent.includes("Region 1");
     });
     await page.click("#validate-btn");
     await waitFor(async () => {
@@ -362,21 +366,82 @@ async function main() {
     const orderedTask = JSON.parse(await page.locator("#normalized-task").innerText());
     assert.strictEqual(orderedTask.schema, "motapathfinder.solve-task.v2", "two regions must emit solve-task.v2");
     assert.strictEqual(orderedTask.tower.regions.length, 2, "buildTask must emit the ordered region list");
-    await page.click("#submit-btn");
+    assert.strictEqual(orderedTask.tower.regions[0].spec.id, "onlyup-region-1", "the moved-down order must place region-1 first");
+    assert.strictEqual(orderedTask.tower.regions[1].spec.id, "onlyup-region-output-contract-smoke");
+
+    // Real restore round-trip via a fast-failing v2 job (region A unreachable).
+    const smokeSpecForV2 = JSON.parse(fs.readFileSync(path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json"), "utf8"));
+    const v2ExhaustSpec = JSON.parse(JSON.stringify(smokeSpecForV2));
+    v2ExhaustSpec.goal = { type: "heroAtLeast", floorId: "MT99", minHero: {} };
+    exhaustSpec.goal = { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 999 } };
+    const region1Spec = JSON.parse(fs.readFileSync(
+      path.join(ROOT, "towers", "onlyup", "region-specs", "region-1.json"), "utf8",
+    ));
+    const v2FailTask = {
+      schema: "motapathfinder.solve-task.v2",
+      tower: { id: "onlyup-v2.1", projectRoot: ONLY_UP_ROOT, regions: [{ spec: v2ExhaustSpec }, { spec: region1Spec }] },
+      model: JSON.parse(JSON.stringify(smokeSpecForV2.model)),
+      objective: { mode: "max-final-hp" },
+      search: { algorithm: "segment-dp", maxExpansions: 1000, maxRuntimeMs: 10000, candidateLimit: 2, regionCandidateLimit: 8 },
+      verification: { strictReplay: false },
+    };
+    const v2FailCreated = await (await fetch(`${base}/api/jobs`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(v2FailTask),
+    })).json();
+    const v2FailJobId = v2FailCreated.job.id;
     await waitFor(async () => {
-      const jobs = (await (await fetch(`${base}/api/jobs`)).json()).jobs;
-      return jobs.length > 0 && jobs[0].state === "completed";
-    }, 60000, 500);
-    const orderedJobId = (await (await fetch(`${base}/api/jobs`)).json()).jobs[0].id;
-    const orderedJobDetail = await (await fetch(`${base}/api/jobs/${orderedJobId}`)).json();
-    assert.strictEqual(orderedJobDetail.task.schema, "motapathfinder.solve-task.v2");
-    assert.strictEqual(orderedJobDetail.task.tower.regions.length, 2, "job task must preserve the region sequence");
-    // Restore: open-config on the ordered job must reproduce the sequence.
-    await page.locator(`.config-btn[data-job="${orderedJobId}"]`).click().catch(() => {});
-    const restoredOrdered = JSON.parse(await page.locator("#normalized-task").innerText().catch(() => "{}"));
-    if (restoredOrdered.schema) {
-      assert.strictEqual(restoredOrdered.schema, "motapathfinder.solve-task.v2");
-      assert.strictEqual(restoredOrdered.tower.regions.length, 2);
+      const st = await (await fetch(`${base}/api/jobs/${v2FailJobId}`)).json();
+      return ["completed", "failed"].includes(st.job.state);
+    }, 90000, 500);
+    const v2FailConfig = page.locator(`.config-btn[data-job="${v2FailJobId}"]`);
+    await v2FailConfig.waitFor({ timeout: 15000 });
+    await v2FailConfig.click();
+    await waitFor(async () => {
+      const labels = await page.locator(".region-order-label").allInnerTexts().catch(() => []);
+      return labels.length === 2 && labels[1].includes("Region 1");
+    }, 15000, 200);
+    await page.click("#validate-btn");
+    await waitFor(async () => {
+      const text = await page.locator("#preflight-result").innerText().catch(() => "");
+      return text.includes("preflight 通过");
+    }, 15000, 200);
+    const restoredOrdered = JSON.parse(await page.locator("#normalized-task").innerText());
+    assert.strictEqual(restoredOrdered.schema, "motapathfinder.solve-task.v2");
+    assert.strictEqual(restoredOrdered.tower.regions.length, 2, "restored Builder must reproduce the region count");
+    assert.strictEqual(restoredOrdered.tower.regions[0].spec.id, v2ExhaustSpec.id, "restored Builder must reproduce the exact spec id");
+    assert.strictEqual(restoredOrdered.tower.regions[1].spec.id, "onlyup-region-1", "restored Builder must reproduce the order");
+    // Remove the first region (region-1) -> only the exhaust region remains.
+    await page.locator(".region-order-item[data-index=\"0\"] .region-remove").click();
+    await page.waitForFunction(() => document.querySelectorAll(".region-order-item").length === 1);
+    await page.click("#validate-btn");
+    await waitFor(async () => {
+      const text = await page.locator("#preflight-result").innerText().catch(() => "");
+      return text.includes("preflight 通过");
+    }, 15000, 200);
+    const afterRemove = JSON.parse(await page.locator("#normalized-task").innerText());
+    assert.strictEqual(afterRemove.tower.regions.length, 1, "removing a region must shrink the sequence");
+    assert.strictEqual(afterRemove.tower.regions[0].spec.id, "onlyup-region-1", "removing the first region must leave region-1");
+
+    // v2 -> v1 restore residue check: open a v1 job and the ordered list clears.
+    const v1JobId = (await (await fetch(`${base}/api/jobs`)).json()).jobs.find((entry) => {
+      return entry && entry.id !== v2FailJobId;
+    })?.id;
+    if (v1JobId) {
+      const v1Config = page.locator(`.config-btn[data-job="${v1JobId}"]`);
+      if (await v1Config.count()) {
+        await v1Config.click();
+        await waitFor(async () => {
+          const count = await page.locator(".region-order-item").count().catch(() => 0);
+          return count === 0;
+        }, 15000, 200);
+        await page.click("#validate-btn");
+        await waitFor(async () => {
+          const text = await page.locator("#preflight-result").innerText().catch(() => "");
+          return text.includes("preflight 通过");
+        }, 15000, 200);
+        const v1Restored = JSON.parse(await page.locator("#normalized-task").innerText());
+        assert.strictEqual(v1Restored.schema, "motapathfinder.solve-task.v1", "a v1 restore must not leave a v2 region order behind");
+      }
     }
 
     const jobsBeforeRetry = (await (await fetch(`${base}/api/jobs`)).json()).jobs.length;

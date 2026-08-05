@@ -166,6 +166,10 @@ async function restoreTowerAndRegion(task) {
   }
   const spec = task.tower.region && task.tower.region.spec;
   if (spec) {
+    // A v1 restore must never leave a stale ordered region list behind: the
+    // next submit would otherwise still emit a v2 task from the old order.
+    state.regionOrder = [];
+    renderRegionOrder();
     // Keep the job's own exact RegionSpec (not the registry's current copy).
     state.regionSpec = JSON.parse(JSON.stringify(spec));
     // The region select values are file stems (e.g. "region-1") while the spec
@@ -237,13 +241,13 @@ function retryActions(job, failureClass, maxRuntimeMs) {
       } else if (failureClass === "ACTION_TRIMMED") {
         buttons.push(`<button class="retry-btn" data-job="${esc(job.id)}" data-scale="actions2">动作候选 ×2</button>`);
       }
-      if (["GOAL_NOT_REACHED", "ACTION_TRIMMED"].includes(failureClass)) {
-        buttons.push(`<button class="config-btn" data-job="${esc(job.id)}">打开配置</button>`);
-      }
     }
   }
   if (["queued", "running"].includes(job.state)) {
     buttons.push(`<button class="cancel-btn danger" data-job="${esc(job.id)}">Cancel</button>`);
+  } else {
+    // Any terminal job (completed or failed) can be restored into the Builder.
+    buttons.push(`<button class="config-btn" data-job="${esc(job.id)}">打开配置</button>`);
   }
   return buttons.join(" ");
 }
@@ -270,6 +274,10 @@ async function loadRegions() {
   state.tower = payload.tower;
   state.towerFingerprint = payload.tower.projectFingerprint;
   $("tower-meta").textContent = `projectRoot=${payload.tower.projectRoot}\nfingerprint=${payload.tower.projectFingerprint || "—"}`;
+  // A tower switch must never carry the previous tower's ordered region list
+  // into a new tower (that would build a mixed Tower A regions + Tower B task).
+  state.regionOrder = [];
+  renderRegionOrder();
   const { payload: regionPayload } = await api("GET", `/api/towers/${encodeURIComponent(towerId)}/regions`);
   const select = $("region-select");
   select.innerHTML = "";

@@ -262,6 +262,15 @@ class SolverJobManager {
         retryable: false,
         details: serializeError(error),
       };
+    } else if (error && error.code === "INVALID_PROVENANCE") {
+      // Fail-closed: a composite route whose winner ancestry cannot be uniquely
+      // resolved must never be emitted as a verified artifact.
+      failure = {
+        failureClass: "INVALID_PROVENANCE",
+        message: error.message || "Winner candidate provenance could not be resolved.",
+        retryable: false,
+        details: serializeError(error),
+      };
     } else {
       failure = {
         failureClass: "INTERNAL_ERROR",

@@ -71,8 +71,11 @@ function createJobApi({ manager, jobStore, registry, context }) {
       return;
     }
     try {
+      // The validate contract must match the submit contract exactly: an
+      // executable preflight, so a task that would be rejected at submit is
+      // rejected here too (foreign floors/milestones, unsupported entries).
       const isV2 = body && body.schema === "motapathfinder.solve-task.v2";
-      const task = isV2 ? compileSolveTaskV2(body, context) : compileSolveTask(body, context);
+      const task = isV2 ? compileExecutableSolveTaskV2(body, context) : compileExecutableSolveTask(body, context);
       const objective = task.objective;
       // Effective per-segment budgets: the task search overrides the
       // RegionSpec/segment budgets, so preflight reports what will actually be
