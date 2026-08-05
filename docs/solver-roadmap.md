@@ -777,3 +777,9 @@ PR-5.3c 系列已关闭，Launcher 只消费公开合同：
 
 - 后续 segment 无显式 start cap 时 `attemptCaps.initial` 为 `null`（frontier-dependent，不低报为 candidateLimit）；configured repair 可用 `repairCandidateLimit` 扩宽 frontier。
 - `loadTaskIntoBuilder` 完整恢复 Tower/Region/Objective/Verification/Search。
+
+
+### 2026-08-04 更新：PR-5.3d6 Exact Model & Tower Restore Closure
+
+- `loadTaskIntoBuilder` 恢复独立 `task.model`（用户提交的 SolverModel），Tower 切换时 `await loadRegions()` 同步 `state.tower/fingerprint/region options`；`state.regionSpec` 保留 job 自身 spec。
+- UI 对 `attemptCaps.initial=null` 显示「初始=随 frontier」。
