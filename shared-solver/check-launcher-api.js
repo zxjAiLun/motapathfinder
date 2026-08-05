@@ -164,7 +164,7 @@ async function main() {
     assert.strictEqual(entry.budgetScope, "per-attempt", "effective budgets must declare per-attempt scope");
     assert.strictEqual(entry.perAttempt.maxExpansions, 50000, "manual maxExpansions must appear as the per-attempt cap");
     assert.strictEqual(entry.perAttempt.maxRuntimeMs, 0, "manual maxRuntimeMs=0 must appear as the per-attempt cap");
-    assert.ok(entry.maxStartAttempts >= 1, "effective budgets must report the start-candidate (attempt) cap");
+    assert.ok(entry.attemptCaps && entry.attemptCaps.initial >= 1, "effective budgets must report per-phase attempt caps");
   });
 
   // 2c. maxRuntimeMs=0 job must never be RUNTIME_BUDGET_EXHAUSTED through the API.

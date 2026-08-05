@@ -124,11 +124,42 @@ function bestKnownHtml(bestKnown) {
   ].join("");
 }
 
+const FAILURE_RECOMMENDATIONS = {
+  "RUNTIME_BUDGET_EXHAUSTED": "可增加运行时间后重试",
+  "EXPANSION_BUDGET_EXHAUSTED": "可增加扩展预算后重试",
+  "ACTION_TRIMMED": "可扩大动作候选后重试",
+  "GOAL_NOT_REACHED": "可调整搜索范围后重试",
+};
+
 function failureHtml(failure) {
   if (!failure) return "";
   const label = FAILURE_LABELS[failure.failureClass] || failure.failureClass || "未知";
-  const retryable = failure.retryable ? " · 可增加预算后重试" : "";
-  return `<div class="failure ${esc(failure.failureClass)}"><span class="state-warn">${esc(label)}</span><span class="muted small">${esc(retryable)}</span><div class="small muted">${esc(failure.message || "")}</div></div>`;
+  const recommendation = failure.retryable ? (FAILURE_RECOMMENDATIONS[failure.failureClass] || "可重试") : "";
+  const recommendationText = recommendation ? ` · ${esc(recommendation)}` : "";
+  return `<div class="failure ${esc(failure.failureClass)}"><span class="state-warn">${esc(label)}</span><span class="muted small">${recommendationText}</span><div class="small muted">${esc(failure.message || "")}</div></div>`;
+}
+
+function loadTaskIntoBuilder(task) {
+  if (!task || !task.search) return;
+  const search = task.search;
+  $("s-max-expansions").value = search.maxExpansions ?? "";
+  $("s-max-runtime").value = search.maxRuntimeMs ?? "";
+  $("s-max-actions").value = search.maxActionsPerState ?? "";
+  $("s-candidate-limit").value = search.candidateLimit ?? "";
+  $("s-goal-skyline").value = search.goalSkylineLimit ?? "";
+  $("s-dp-skyline").value = search.dpSkylineMax ?? "";
+  $("s-stop-first").checked = Boolean(search.stopOnFirstGoal);
+  if (task.tower && task.tower.rank) $("rank-input").value = task.tower.rank;
+  if (task.objective && task.objective.mode) {
+    $("objective-mode").value = task.objective.mode;
+    updateObjectiveVisibility();
+  }
+  if (task.model && task.model.heroFields) {
+    MODEL_FIELDS.forEach(([field]) => {
+      const input = $(`model-${field}`);
+      if (input && task.model.heroFields[field]) input.value = task.model.heroFields[field];
+    });
+  }
 }
 
 function budgetMaxRuntimeMs(job, progress) {
@@ -315,7 +346,13 @@ async function validateTask() {
     const segments = (payload.effectiveSegments || []).map((segment) => {
       const per = segment.perAttempt || segment;
       const runtime = per.maxRuntimeMs > 0 ? `${per.maxRuntimeMs}ms` : "不限";
-      return `<div>${esc(segment.segmentId)}：每次 attempt exp≤${esc(per.maxExpansions)} · runtime=${runtime} · 最多 ${esc(segment.maxStartAttempts ?? "—")} 个起始候选</div>`;
+      const caps = segment.attemptCaps || {};
+      const capText = [
+        `初始 ≤${caps.initial ?? "?"}`,
+        caps.configuredRepair != null ? `修复 ≤${caps.configuredRepair}` : "修复=随 frontier",
+        `回溯重试 ≤${caps.backtrackRetry ?? "?"}`,
+      ].join(" · ");
+      return `<div>${esc(segment.segmentId)}：每次 attempt exp≤${esc(per.maxExpansions)} · runtime=${runtime} · ${capText}</div>`;
     }).join("");
     $("preflight-result").innerHTML = [
       `<div class="state-ok">preflight 通过</div>`,
@@ -403,7 +440,10 @@ function renderJobs() {
     });
   });
   list.querySelectorAll(".config-btn").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
+      const detail = await api("GET", `/api/jobs/${encodeURIComponent(button.dataset.job)}`);
+      const task = detail.payload && detail.payload.task;
+      if (task) loadTaskIntoBuilder(task);
       document.querySelector(".col-center").scrollIntoView({ behavior: "smooth" });
     });
   });

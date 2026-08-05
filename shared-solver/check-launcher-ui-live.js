@@ -243,6 +243,35 @@ async function main() {
     const runtimeRowText = await page.locator(`.job-row:has-text("${runtimeJobId}")`).innerText();
     assert.ok(runtimeRowText.includes("运行时间 ×2"), "runtime-exhausted job must offer time ×2");
     assert.ok(!runtimeRowText.includes("扩展预算 ×2"), "runtime-exhausted job must not offer expansion ×2");
+
+    // ACTION_TRIMMED job offers action-cap ×2 (not budget ×2); clicking it
+    // resubmits with the original task's maxActionsPerState doubled.
+    const trimTask = buildTask();
+    trimTask.tower.region.spec = JSON.parse(JSON.stringify(exhaustSpec));
+    trimTask.search.maxActionsPerState = 1;
+    trimTask.search.maxExpansions = 100;
+    trimTask.search.maxRuntimeMs = 10000;
+    const trimJobId = await submitViaApi(page, base, trimTask, "action-trimmed");
+    const trimResult = await fetchJobResult(page, base, trimJobId);
+    assert.strictEqual(trimResult.failure.failureClass, "ACTION_TRIMMED");
+    await waitFor(async () => {
+      const text = await page.locator(`.job-row:has-text("${trimJobId}")`).innerText().catch(() => "");
+      return text.includes("动作候选 ×2");
+    }, 20000, 300);
+    const trimRowText = await page.locator(`.job-row:has-text("${trimJobId}")`).innerText();
+    assert.ok(trimRowText.includes("动作候选 ×2"), "action-trimmed job must offer action-cap ×2");
+    assert.ok(!trimRowText.includes("扩展预算 ×2"), "action-trimmed job must not offer expansion ×2");
+    assert.ok(!trimRowText.includes("运行时间 ×2"), "action-trimmed job must not offer time ×2");
+    const jobsBeforeTrimRetry = (await (await fetch(`${base}/api/jobs`)).json()).jobs.length;
+    await page.locator(`.retry-btn[data-scale="actions2"][data-job="${trimJobId}"]`).click();
+    await waitFor(async () => {
+      const jobsAfter = (await (await fetch(`${base}/api/jobs`)).json()).jobs.length;
+      return jobsAfter > jobsBeforeTrimRetry;
+    }, 15000, 300);
+    // The newest job carries the doubled action cap.
+    const newestJobId = (await (await fetch(`${base}/api/jobs`)).json()).jobs[0].id;
+    const newestTask = (await (await fetch(`${base}/api/jobs/${newestJobId}`)).json()).task;
+    assert.strictEqual(newestTask.search.maxActionsPerState, 2, "actions2 retry must double maxActionsPerState");
     const jobsBeforeRetry = (await (await fetch(`${base}/api/jobs`)).json()).jobs.length;
     await page.locator(".retry-btn[data-scale=\"exp2\"]").first().click();
     await waitFor(async () => {

@@ -25,7 +25,7 @@ const { classifyJobFailure, buildSolverJobResult } = require("./lib/solver-job-r
 const { SolverProgressAccumulator } = require("./lib/solver-progress");
 const { compileObjectiveSpec } = require("./lib/objective-spec");
 const { composeRouteRecords, ROUTE_SCHEMA } = require("./lib/route-store");
-const { effectiveSegmentBudgets, manualSearchOverrides, withManualBudgetAuthority } = require("./lib/segment-dp");
+const { effectiveSegmentBudgets, manualSearchOverrides, resolveStartCandidateLimit, withManualBudgetAuthority } = require("./lib/segment-dp");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
 const { FileJobStore } = require("./lib/file-job-store");
 
@@ -738,7 +738,8 @@ function checkEffectiveSegmentBudgetsReflectManual() {
   assert.strictEqual(overridden[0].perAttempt.maxExpansions, 50000, "manual maxExpansions must override segment budgets");
   assert.strictEqual(overridden[0].perAttempt.maxRuntimeMs, 0, "manual maxRuntimeMs=0 must override segment budgets");
   assert.strictEqual(overridden[1].perAttempt.maxExpansions, 50000);
-  assert.ok(overridden[1].maxStartAttempts >= 1, "effective budgets must report the start-candidate (attempt) cap");
+  assert.ok(overridden[1].attemptCaps.initial >= 1, "effective budgets must report the per-phase attempt cap");
+  assert.ok(overridden[1].attemptCaps.backtrackRetry >= 8, "backtrack retry cap must match backtrackCandidateLimit");
   const defaults = effectiveSegmentBudgets(milestoneSpec, {});
   assert.strictEqual(defaults[0].perAttempt.maxExpansions, 300, "without manual config the segment budget stays");
   assert.strictEqual(defaults[0].perAttempt.maxRuntimeMs, 15000);
@@ -864,6 +865,40 @@ async function checkConfiguredRepairUnlimitedRuntime() {
   );
 }
 
+function checkAttemptCapResolverConsistency() {
+  // Preflight and execution must share the same start-candidate resolver so the
+  // reported attempt caps match what the executor will actually honor.
+  const segment = { id: "seg-b", dp: { startCandidateLimit: 2, goalSkylineLimit: 8 } };
+  const config = { candidateLimit: 8 };
+  // Execution with a frontier of 5 candidates caps at 2.
+  const executedCap = resolveStartCandidateLimit(segment, config, {}, 5);
+  assert.strictEqual(executedCap, 2, "execution must honor segment.dp.startCandidateLimit");
+  // Preflight (no frontier) reports the same deterministic cap.
+  const preflightCap = resolveStartCandidateLimit(segment, config, {}, null);
+  assert.strictEqual(preflightCap, 2, "preflight must report the same deterministic cap");
+  // Without a segment cap, execution falls back to the frontier length while
+  // preflight reports null (frontier-dependent, never a fake number).
+  const plainExec = resolveStartCandidateLimit({ id: "seg", dp: {} }, config, {}, 5);
+  assert.strictEqual(plainExec, 5, "execution falls back to the frontier length");
+  const plainPreflight = resolveStartCandidateLimit({ id: "seg", dp: {} }, config, {}, null);
+  assert.strictEqual(plainPreflight, null, "preflight reports null when the cap is frontier-dependent");
+  // effectiveSegmentBudgets uses the shared resolver: a later segment with
+  // dp.startCandidateLimit=2 reports attemptCaps.initial === 2, and the
+  // backtrack retry cap matches backtrackCandidateLimit (>= 8).
+  const milestoneSpec = {
+    milestones: [
+      { id: "seg-a", dp: {} },
+      { id: "seg-b", dp: { startCandidateLimit: 2, goalSkylineLimit: 8 } },
+    ],
+  };
+  const budgets = effectiveSegmentBudgets(milestoneSpec, { candidateLimit: 8, maxExpansions: 1000, maxRuntimeMs: 0 });
+  const segB = budgets.find((entry) => entry.segmentId === "seg-b");
+  assert.strictEqual(segB.attemptCaps.initial, 2, "preflight must report the shared resolver cap");
+  assert.ok(segB.attemptCaps.backtrackRetry >= 8, "backtrack retry cap must be >= 8");
+  const segA = budgets.find((entry) => entry.segmentId === "seg-a");
+  assert.strictEqual(segA.attemptCaps.initial, 1, "the initial segment starts from a single candidate");
+}
+
 async function checkTerminalProgressPersisted() {
   const storeRoot = path.join(__dirname, "routes", "generated", "c2-job-store");
   const jobStore = new FileJobStore({ root: storeRoot });
@@ -907,6 +942,7 @@ async function main() {
   checkExecutablePreflightRejectsMalformedProject();
   await checkTerminalProgressPersisted();
   checkEffectiveSegmentBudgetsReflectManual();
+  checkAttemptCapResolverConsistency();
   checkProgressBudgetSourceAndCompatAliases();
   await checkManualBudgetOverridesSegmentBudget();
   checkManualBudgetAuthorityAppliesToRepairOverrides();
@@ -950,6 +986,7 @@ async function main() {
       maxRuntimeMsZeroNeverRuntimeExhausted: true,
       repairBacktrackBudgetAuthority: true,
       effectiveSegmentsPerAttemptScope: true,
+      attemptCapResolverConsistency: true,
       progressBudgetSourcePreserved: true,
       progressBudgetCompatAliases: true,
       configuredRepairUnlimitedRuntime: true,
