@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const path = require("node:path");
 
 const {
   SOLVE_TASK_SCHEMA,
@@ -17,6 +18,7 @@ const { compileObjectiveSpec } = require("./objective-spec");
 const { normalizeSolverModel } = require("./solver-model");
 const { loadProject } = require("./project-loader");
 const { buildProjectFingerprint } = require("./region-entry-validator");
+const { getMilestoneSpec } = require("./milestone-spec");
 
 // v2 schema carries an ORDERED, non-empty region sequence plus a single
 // task-level SolverModel / Objective / Search.  v1 is left untouched; a v2
@@ -93,7 +95,12 @@ function normalizeRegions(rawTask) {
         );
       }
     }
-    return { spec: normalizeRegionPart(rawRegion, null), raw: rawRegion };
+    const spec = normalizeRegionPart(rawRegion, null);
+    // The tower owns the project in v2: a region spec's projectRoot hint is
+    // redundant and its relative resolution is ambiguous, so it is stripped.
+    // Same-project verification is by project fingerprint + referenced content.
+    delete spec.projectRoot;
+    return { spec, raw: rawRegion };
   });
 }
 
@@ -276,8 +283,70 @@ function validateSolveTaskV2(rawTask, context) {
   return true;
 }
 
-// Executable v2 variant: the project must load with a real fingerprint.  Also
-// rejects cross-tower/project region specs (all regions belong to the tower).
+// The project identity is the authority for "all regions belong to this tower":
+// every referenced scope floor must exist in the task project, and a referenced
+// milestoneRoute must resolve there.  String tower ids are NOT compared (the
+// task uses "onlyup-v2.1" while RegionSpecs use "onlyup"); the loaded project
+// is the ground truth.  A spec pointing at a different project fails on its
+// floors/milestones (and the task project fingerprint is already validated).
+function verifyRegionsBelongToProject(project, regions) {
+  if (!project || !project.floorsById) {
+    fail("INVALID_TASK", "project could not be loaded for region verification", "tower.projectRoot");
+  }
+  regions.forEach(({ spec }, index) => {
+    for (const floorId of (spec.scope && spec.scope.floors) || []) {
+      if (!project.floorsById[floorId]) {
+        fail(
+          "INVALID_TASK",
+          `tower.regions[${index}] scope references unknown floor ${floorId} in the task project`,
+          `tower.regions[${index}].spec.scope.floors`,
+        );
+      }
+    }
+    if (spec.milestoneRoute) {
+      try {
+        getMilestoneSpec(project, spec.milestoneRoute);
+      } catch (error) {
+        fail(
+          "INVALID_TASK",
+          `tower.regions[${index}] milestoneRoute not found in the task project`,
+          `tower.regions[${index}].spec.milestoneRoute`,
+        );
+      }
+    }
+  });
+}
+
+// Region entry semantics must be fully interpretable before an executable job
+// is accepted.  Only "initial" (continue with the carried state) and a
+// "floor" entry with an explicit floorId/x/y/direction are supported; any
+// other start type is rejected rather than silently treated as a continue.
+function verifyRegionEntryTypes(regions) {
+  regions.forEach(({ spec }, index) => {
+    const start = spec.start || {};
+    const type = start.type || "initial";
+    if (type === "initial") return;
+    if (type === "floor") {
+      if (start.floorId == null || start.x == null || start.y == null) {
+        fail(
+          "INVALID_TASK",
+          `tower.regions[${index}] start.type "floor" requires floorId/x/y/direction`,
+          `tower.regions[${index}].spec.start`,
+        );
+      }
+      return;
+    }
+    fail(
+      "INVALID_TASK",
+      `tower.regions[${index}] start.type "${type}" is not supported for region transitions`,
+      `tower.regions[${index}].spec.start`,
+    );
+  });
+}
+
+// Executable v2 variant: the project must load with a real fingerprint, all
+// regions must belong to the same project, and every region entry must be
+// fully interpretable.
 function compileExecutableSolveTaskV2(rawTask, context) {
   const task = compileSolveTaskV2(rawTask, context);
   const projectRoot = task.normalizedTask.tower.projectRoot;
@@ -285,8 +354,9 @@ function compileExecutableSolveTaskV2(rawTask, context) {
     fail("INVALID_TASK", "tower.projectRoot must exist to submit an executable job", "tower.projectRoot");
   }
   let actual = null;
+  let project = null;
   try {
-    const project = loadProject(projectRoot);
+    project = loadProject(projectRoot);
     actual = buildProjectFingerprint(project).fingerprintSha256;
   } catch (error) {
     fail(
@@ -302,6 +372,8 @@ function compileExecutableSolveTaskV2(rawTask, context) {
   if (supplied && supplied !== actual) {
     fail("INVALID_TASK", "tower.projectFingerprint does not match the project at projectRoot", "tower.projectFingerprint");
   }
+  verifyRegionsBelongToProject(project, task.regions);
+  verifyRegionEntryTypes(task.regions);
   return task;
 }
 

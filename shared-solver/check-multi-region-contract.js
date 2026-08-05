@@ -114,18 +114,50 @@ async function main() {
     `solo B must fail with a not-reached class, got ${solo.failure.failureClass}`,
   );
 
-  // 3. A region failure stops the sequence: B fails, C never runs.
-  const failSeq = await runJob(v2Task([{ spec: smoke }, { spec: regionB() }, { spec: regionC() }]));
+  // 3. A region failure stops the sequence: A succeeds, B (unreachable exp 999)
+  //    fails, and C (sentinel) must never run.  Only A and B appear in progress.
+  const failSeq = await runJob(v2Task([{ spec: smoke }, { spec: regionC() }, { spec: regionB() }]));
   assert.strictEqual(failSeq.state, "failed");
+  const failRegion = failSeq.lastProgress && failSeq.lastProgress.region;
+  assert.ok(failRegion, "progress must carry a region coordinate for the failing region");
+  assert.strictEqual(failRegion.current, 2, "the sequence must stop at the failing region (B, index 1)");
+  assert.strictEqual(failRegion.total, 3, "the region coordinate must still report the full total");
+  assert.strictEqual(failRegion.id, "onlyup-region-c", "the failing region is the unreachable one");
 
-  // 4. Region boundary pruning: with regionCandidateLimit=1, A's outgoing
-  //    frontier is capped to 1 and the pruning is recorded.
-  const pruned = await runJob(v2Task([{ spec: smoke }, { spec: regionB() }], { regionCandidateLimit: 1 }));
-  assert.strictEqual(pruned.state, "completed", "boundary pruning must not break the run");
-  const regionProgress = pruned.lastProgress && pruned.lastProgress.region;
+  // 4. Region boundary pruning actually trims: with regionCandidateLimit=1 the
+  //    outgoing frontier is capped and the trimming is recorded.
+  const trimSnapshots = [];
+  const trimTask = compileSolveTaskV2(v2Task([{ spec: smoke }, { spec: regionB() }], { regionCandidateLimit: 1 }));
+  const { executeSolveJobV2 } = require("./lib/solver-job");
+  await executeSolveJobV2(trimTask, {
+    jobId: "trim",
+    onProgress: (snapshot) => trimSnapshots.push(snapshot),
+    shouldStop: () => false,
+  });
+  const regionASnapshot = trimSnapshots.filter((s) => s.region && s.region.current === 1).pop();
+  assert.ok(regionASnapshot, "a progress snapshot for region A must exist");
+  assert.strictEqual(regionASnapshot.region.outgoingCandidates, 1, "regionCandidateLimit=1 must trim A's outgoing frontier to 1");
+  assert.strictEqual(regionASnapshot.region.boundaryTrimmed, true, "the trimming must be recorded");
+  const trimJob = await runJob(v2Task([{ spec: smoke }, { spec: regionB() }], { regionCandidateLimit: 1 }));
+  assert.strictEqual(trimJob.state, "completed", "boundary pruning must not break the run");
+  const regionProgress = trimJob.lastProgress && trimJob.lastProgress.region;
   assert.ok(regionProgress, "progress must carry a region coordinate");
   assert.ok(regionProgress.total === 2 && regionProgress.current === 2, "region coordinate must report current/total");
-  assert.ok("outgoingCandidates" in regionProgress, "region coordinate must report outgoingCandidates");
+
+  // 5. Same-project rejection: a region referencing a floor outside the task
+  //    project must fail executable preflight.
+  const foreignSpec = JSON.parse(JSON.stringify(smoke));
+  foreignSpec.scope = { floors: ["FLOOR_DOES_NOT_EXIST"] };
+  assert.throws(
+    () => {
+      const manager = new SolverJobManager({ maxConcurrentJobs: 1, allowInProcess: true });
+      manager.submit(v2Task([{ spec: foreignSpec }, { spec: regionB() }]));
+    },
+    (error) => error && error.code === "INVALID_TASK",
+    "a region with a foreign floor must be rejected at executable preflight",
+  );
+  const { compileSolveTaskV2: compileV2 } = require("./lib/solve-task-v2");
+  assert.strictEqual(compileV2(v2Task([{ spec: smoke }, { spec: regionB() }])).normalizedTask.tower.regions.length, 2);
 
   process.stdout.write(JSON.stringify({
     schema: "motapathfinder.pr-5.4a-multi-region-execution.v1",

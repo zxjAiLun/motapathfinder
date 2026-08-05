@@ -17,6 +17,7 @@ const path = require("node:path");
 const { SOLVE_TASK_SCHEMA, compileSolveTask } = require("./lib/solve-task");
 const {
   SOLVE_TASK_V2_SCHEMA,
+  compileExecutableSolveTaskV2,
   compileSolveTaskV2,
   validateSolveTaskV2,
 } = require("./lib/solve-task-v2");
@@ -157,6 +158,27 @@ function main() {
   assert.strictEqual(normalized.schema, SOLVE_TASK_V2_SCHEMA);
   assert.ok(normalized.objective && normalized.objective.mode === "max-final-hp");
   assert.ok(!("objective" in normalized.tower.regions[0]), "region entries must not carry objectives");
+
+  // 10. Same-project verification at executable preflight: a region referencing
+  //     a floor that does not exist in the task project must be rejected.
+  const foreign = v2Task();
+  foreign.tower.regions[0].spec = {
+    ...JSON.parse(JSON.stringify(readSpec(SMOKE_SPEC))),
+    scope: { floors: ["FLOOR_DOES_NOT_EXIST"] },
+  };
+  assert.throws(
+    () => compileExecutableSolveTaskV2(foreign),
+    (error) => error && error.code === "INVALID_TASK",
+    "a foreign-floor region must be rejected at executable preflight",
+  );
+  // An unsupported region start.type is also rejected at executable preflight.
+  const badStart = v2Task();
+  badStart.tower.regions[1].spec = { ...JSON.parse(JSON.stringify(readSpec(REGION_1_SPEC))), start: { type: "bogus" } };
+  assert.throws(
+    () => compileExecutableSolveTaskV2(badStart),
+    (error) => error && error.code === "INVALID_TASK",
+    "an unsupported region start.type must be rejected at executable preflight",
+  );
 
   process.stdout.write(JSON.stringify({
     schema: "motapathfinder.pr-5.4a-solve-task-v2-contract.v1",

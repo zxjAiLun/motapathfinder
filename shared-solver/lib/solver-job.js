@@ -5,10 +5,12 @@ const { FunctionBackedBattleResolver } = require("./battle-resolver");
 const { StaticSimulator } = require("./simulator");
 const { getMilestoneSpec } = require("./milestone-spec");
 const { buildRegionMilestoneSpec, buildRegionProofClaim } = require("./region-spec");
-const { runMilestoneGraph, buildSegmentGoalPredicate } = require("./segment-dp");
+const { runMilestoneGraph } = require("./segment-dp");
 const { buildRouteRecord } = require("./route-store");
 const { executeActionList } = require("./events");
+const { applyFloorArrival } = require("./events");
 const { cloneState } = require("./state");
+const { buildStateKey } = require("./state-key");
 const { verifyRouteObjective, replayRouteFile } = require("./live-replay");
 const { SolverProgressAccumulator } = require("./solver-progress");
 const { classifyJobFailure, buildSolverJobResult } = require("./solver-job-result");
@@ -497,16 +499,35 @@ function getDecisionDepthSafe(state) {
 
 // Carries the previous region's terminal frontier into the next region.  Full
 // solver state (hero, inventory, flags, equipment, followers, floor mutations)
-// is preserved; only the explicitly declared entry transform is applied (a
-// region with start.type "floor" switches the active floor; start.type
-// "initial" means "continue with the carried state").  The route is kept for
-// ancestry without ever entering the DP state key.
+// is preserved.  The entry transform is applied exactly like a changeFloor:
+// "floor" entry switches floorId + loc + direction and runs applyFloorArrival
+// (firstArrive/eachArrive/auto events); "initial" means continue with the
+// carried state.  Preflight (verifyRegionEntryTypes) rejects any other start
+// type, so no transform is silently skipped.  Each output carries the input
+// provenance needed by the final region's route/replay contracts.
 function materializeNextRegionFrontier(previousTerminalFrontier, nextRegionSpec, options) {
   const start = (nextRegionSpec && nextRegionSpec.start) || {};
+  const type = start.type || "initial";
+  const project = options && options.project;
+  const simulator = options && options.simulator;
   return (previousTerminalFrontier || []).map((candidate, index) => {
     const state = cloneState(candidate && candidate.state);
-    if (start.type === "floor" && start.floorId) {
+    if (type === "floor") {
       state.floorId = start.floorId;
+      state.hero.loc = {
+        x: start.x,
+        y: start.y,
+        direction: start.direction || "down",
+      };
+      if (!state.flags.__leaveLoc__) state.flags.__leaveLoc__ = {};
+      state.flags.__leaveLoc__[start.floorId] = {
+        x: start.x,
+        y: start.y,
+        direction: start.direction || "down",
+      };
+      applyFloorArrival(project, state, start.floorId, {
+        choiceResolver: simulator && simulator.choiceResolver,
+      });
     }
     const route = Array.isArray(candidate && candidate.route)
       ? candidate.route.slice()
@@ -515,28 +536,56 @@ function materializeNextRegionFrontier(previousTerminalFrontier, nextRegionSpec,
     // Carry the route as ancestry/provenance; the DP state key excludes route,
     // and the region's own route record strips this prefix later.
     state.route = route;
+    const inputStateFingerprint = (() => {
+      try {
+        return buildStateKey(state);
+      } catch (error) {
+        return null;
+      }
+    })();
     return {
       id: (candidate && candidate.id) || `region-input-${index}`,
       state,
       route,
       tags: ["region-transition"],
+      regionInputId: candidate && candidate.id || `region-input-${index}`,
+      regionInputIndex: index,
+      inputStateFingerprint,
+      ancestry: {},
     };
   });
 }
 
 // Multi-region coordinate: region.id/index/current/total is distinct from
 // the segment coordinate.  outgoingCandidates is the boundary frontier size.
-// Checks whether the carried state already reaches a region's terminal goal;
-// if so the region completes trivially (the search would otherwise return an
-// inconsistent candidate whose state is the entry but whose route explored).
-function regionGoalSatisfied(project, simulator, milestoneSpec, state) {
-  const segments = Array.isArray(milestoneSpec && milestoneSpec.milestones)
-    ? milestoneSpec.milestones
-    : [];
-  const last = segments[segments.length - 1];
-  if (!last || !last.goal || Object.keys(last.goal).length === 0) return false;
-  const predicate = buildSegmentGoalPredicate(project, last, simulator);
-  return predicate(state);
+function safeStateKey(state) {
+  try {
+    return buildStateKey(state);
+  } catch (error) {
+    return null;
+  }
+}
+
+// Finds which input frontier candidate a merged/output candidate descended
+// from, by matching the output route's prefix against the input route.
+function findInputIndexForCandidate(candidate, inputFrontier) {
+  const route = Array.isArray(candidate && candidate.route) ? candidate.route : [];
+  for (let index = 0; index < (inputFrontier || []).length; index += 1) {
+    const inputRoute = inputFrontier[index].route || [];
+    if (inputRoute.length > route.length) continue;
+    let match = true;
+    for (let step = 0; step < inputRoute.length; step += 1) {
+      const left = inputRoute[step];
+      const right = route[step];
+      const same = left === right || Boolean(left && right && left.summary === right.summary && left.index === right.index);
+      if (!same) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return index;
+  }
+  return -1;
 }
 
 // Strictly sequential multi-region execution.  Each region receives the
@@ -588,7 +637,7 @@ async function executeSolveJobV2(task, {
   let finalResult = null;
   let finalSimulator = null;
   let finalRegionSpec = null;
-  let finalInitialState = null;
+  let finalInputFrontier = null;
 
   for (let index = 0; index < regions.length; index += 1) {
     const regionEntry = regions[index];
@@ -598,14 +647,22 @@ async function executeSolveJobV2(task, {
     const simulator = makeSimulator(project, regionSpec, task);
     const milestoneSpec = buildRegionMilestoneSpec(project, regionSpec);
     const inputFrontier = index === 0
-      ? [{
-        id: "initial#0",
-        state: createStartState(project, simulator, regionSpec, rank),
-        route: [],
-        tags: ["initial"],
-      }]
+      ? (() => {
+        const startState = createStartState(project, simulator, regionSpec, rank);
+        return [{
+          id: "initial#0",
+          state: startState,
+          route: [],
+          tags: ["initial"],
+          regionInputIndex: 0,
+          inputStateFingerprint: safeStateKey(startState),
+          ancestry: {},
+        }];
+      })()
       : materializeNextRegionFrontier(previousTerminalFrontier, regionSpec, {
         rank,
+        project,
+        simulator,
         solverModel: normalizedTask.model || null,
       });
     const incomingCandidates = inputFrontier.length;
@@ -618,33 +675,13 @@ async function executeSolveJobV2(task, {
       outgoingCandidates: 0,
     });
     progress.setPhase("segment-search");
-    let result;
-    const entrySatisfied = inputFrontier.find((candidate) =>
-      regionGoalSatisfied(project, simulator, milestoneSpec, candidate.state),
-    );
-    if (entrySatisfied) {
-      // The carried frontier already reaches the region's terminal goal; the
-      // region completes trivially with that candidate.  Running the search
-      // would produce an inconsistent final candidate (entry state with an
-      // explored route), so the boundary transfer short-circuits.
-      result = {
-        found: true,
-        finalCandidate: entrySatisfied,
-        finalCandidates: [entrySatisfied],
-        segmentResults: [],
-        checkpointResults: [],
-        evaluationAttemptLedger: [],
-        entryGoalSatisfied: true,
-      };
-    } else {
-      result = runMilestoneGraph(simulator, inputFrontier[0].state, milestoneSpec, {
-        ...(task && task.executeConfig || {}),
-        objectiveSpec: isFinal ? objective : null,
-        observer: createProgressObserver(progress),
-        shouldStop: stopRequested,
-        initialFrontier: inputFrontier,
-      });
-    }
+    const result = runMilestoneGraph(simulator, inputFrontier[0].state, milestoneSpec, {
+      ...(task && task.executeConfig || {}),
+      objectiveSpec: isFinal ? objective : null,
+      observer: createProgressObserver(progress),
+      shouldStop: stopRequested,
+      initialFrontier: inputFrontier,
+    });
     if (stopRequested() || result.stoppedReason === "cancel-requested" || result.cancelled === true) {
       progress.setPhase("cancelled");
       progress.flush();
@@ -660,6 +697,19 @@ async function executeSolveJobV2(task, {
     let outgoing = Array.isArray(result.finalCandidates) ? result.finalCandidates : [];
     const boundaryTrimmed = outgoing.length > regionCandidateLimit;
     if (boundaryTrimmed) outgoing = outgoing.slice(0, regionCandidateLimit);
+    // Attach input provenance to every boundary candidate so the next region's
+    // route/replay contracts know which carried state each candidate came from.
+    outgoing = outgoing.map((candidate, outIndex) => {
+      const inputIndex = findInputIndexForCandidate(candidate, inputFrontier);
+      const input = inputIndex >= 0 ? inputFrontier[inputIndex] : null;
+      return {
+        ...candidate,
+        regionInputIndex: inputIndex,
+        regionInputId: input ? input.id : null,
+        inputStateFingerprint: input ? input.inputStateFingerprint : null,
+        ancestry: input ? { ...(input.ancestry || {}) } : {},
+      };
+    });
     const regionSummary = {
       index,
       id: regionSpec.id,
@@ -696,7 +746,7 @@ async function executeSolveJobV2(task, {
     finalResult = result;
     finalSimulator = simulator;
     finalRegionSpec = regionSpec;
-    finalInitialState = inputFrontier[0].state;
+    finalInputFrontier = inputFrontier;
   }
 
   // Final region: proof claim, route build, strict replay (same semantics as
@@ -724,15 +774,25 @@ async function executeSolveJobV2(task, {
       },
     ));
     progress.setPhase("route-build");
-    const finalState = finalResult.finalCandidate.state;
-    // The region's own route is the final candidate route minus the input
-    // frontier prefix (the previous region's steps already applied at entry).
-    const inputRouteLength = Array.isArray(finalInitialState && finalInitialState.route)
-      ? finalInitialState.route.length
-      : 0;
-    const candidateRoute = Array.isArray(finalResult.finalCandidate.route)
-      ? finalResult.finalCandidate.route
-      : [];
+    // Resolve the WINNING candidate's actual input state (never inputFrontier[0]):
+    // the candidate carries regionInputIndex from its provenance or is matched
+    // by route-prefix against the final region's input frontier.
+    const finalCandidate = finalResult.finalCandidate;
+    let finalInput = null;
+    const provenIndex = finalCandidate.regionInputIndex;
+    if (provenIndex != null && provenIndex >= 0 && finalInputFrontier[provenIndex]) {
+      finalInput = finalInputFrontier[provenIndex];
+    } else {
+      const matchedIndex = findInputIndexForCandidate(finalCandidate, finalInputFrontier);
+      if (matchedIndex >= 0) finalInput = finalInputFrontier[matchedIndex];
+    }
+    finalInput = finalInput || finalInputFrontier[0];
+    const finalInitialState = finalInput.state;
+    const finalState = finalCandidate.state;
+    // The region's own route is the final candidate route minus the winning
+    // input's route prefix (the previous region's steps already applied at entry).
+    const inputRouteLength = Array.isArray(finalInput.route) ? finalInput.route.length : 0;
+    const candidateRoute = Array.isArray(finalCandidate.route) ? finalCandidate.route : [];
     finalState.route = candidateRoute.length > inputRouteLength
       ? candidateRoute.slice(inputRouteLength)
       : [];
