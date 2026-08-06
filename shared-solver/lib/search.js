@@ -2,7 +2,7 @@
 
 const path = require("node:path");
 
-const { getDecisionDepth } = require("./state");
+const { getDecisionDepth, getRawRouteLength } = require("./state");
 const { compareProgress, getProgress } = require("./progress");
 const { BinaryHeap } = require("./priority-queue");
 const { createPerfTracker, setActivePerfTracker } = require("./perf");
@@ -360,7 +360,7 @@ function createRank(simulator, state, score) {
   return {
     score: score || getScore(simulator, state),
     decisionDepth,
-    routeLength: Array.isArray(state.route) && state.route.length > 0 ? state.route.length : decisionDepth,
+    routeLength: getRawRouteLength(state),
   };
 }
 
@@ -475,7 +475,7 @@ function getEffectiveConfluenceRoutePolicy(simulator, state, stats, config, comm
 }
 
 function effectiveRouteLength(state) {
-  return Array.isArray(state && state.route) && state.route.length > 0 ? state.route.length : getDecisionDepth(state);
+  return getRawRouteLength(state);
 }
 
 function registerConfluenceState(simulator, confluenceBestByKey, state, stats, config, commit, activeRecords) {

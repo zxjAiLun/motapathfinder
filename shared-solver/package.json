@@ -171,7 +171,8 @@
     "check:multi-region": "node check-multi-region-contract.js",
     "check:multi-region-route": "node check-multi-region-route-contract.js",
     "check:perf-baseline": "node check-perf-baseline-contract.js",
-    "bench:baseline": "node bench-perf-baseline.js"
+    "bench:baseline": "node bench-perf-baseline.js",
+    "check:route-free-state": "node check-route-free-state-contract.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

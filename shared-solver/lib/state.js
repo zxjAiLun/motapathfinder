@@ -47,6 +47,7 @@ function ensureMeta(state) {
   if (state.meta == null) state.meta = {};
   if (typeof state.meta.rank === "undefined") state.meta.rank = null;
   if (typeof state.meta.decisionDepth !== "number") state.meta.decisionDepth = 0;
+  if (typeof state.meta.rawRouteLength !== "number") state.meta.rawRouteLength = 0;
   if (typeof state.meta.autoStepCount !== "number") state.meta.autoStepCount = 0;
   if (typeof state.meta.autoPickupCount !== "number") state.meta.autoPickupCount = 0;
   if (typeof state.meta.autoBattleCount !== "number") state.meta.autoBattleCount = 0;
@@ -55,6 +56,22 @@ function ensureMeta(state) {
 
 function getDecisionDepth(state) {
   return Number(ensureMeta(state).decisionDepth || 0);
+}
+
+// Unified raw route length reader.  Raw route length counts EVERY route-visible
+// step (decisions AND auto moves/pickups/battles/events), so it is the length
+// that would be materialized into the final route; decisionDepth alone is NOT
+// exact when auto steps exist.  Legacy states fall back to the existing route
+// array length, then to decisionDepth.
+function getRawRouteLength(state) {
+  const meta = state && state.meta;
+  if (meta && typeof meta.rawRouteLength === "number" && meta.rawRouteLength > 0) {
+    return meta.rawRouteLength;
+  }
+  if (state && Array.isArray(state.route) && state.route.length > 0) {
+    return state.route.length;
+  }
+  return getDecisionDepth(state);
 }
 
 function createInitialState(project, options) {
@@ -87,6 +104,7 @@ function createInitialState(project, options) {
     meta: {
       rank: config.rank || null,
       decisionDepth: 0,
+      rawRouteLength: 0,
       autoStepCount: 0,
       autoPickupCount: 0,
       autoBattleCount: 0,
@@ -198,6 +216,9 @@ function replaceTileAt(state, floorId, x, y, number) {
 function appendRouteStep(state, step, options) {
   const config = options || {};
   const meta = ensureMeta(state);
+  // Raw route length advances on EVERY step (decisions and auto steps), so it
+  // stays accurate even when the materialized route array is suppressed.
+  meta.rawRouteLength += 1;
   if (config.storeRoute !== false && meta.__storeRoute !== false) {
     if (!Array.isArray(state.route)) state.route = [];
     state.route.push(step);
@@ -240,6 +261,7 @@ module.exports = {
   ensureFloorState,
   floorHasCoordinate,
   getDecisionDepth,
+  getRawRouteLength,
   getBaseTileNumber,
   getInventoryCount,
   getTileDefinitionAt,

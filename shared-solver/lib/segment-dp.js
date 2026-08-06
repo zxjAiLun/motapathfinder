@@ -16,6 +16,7 @@ const { buildSolverSnapshot } = require("./route-snapshot");
 const {
   cloneState,
   getDecisionDepth,
+  getRawRouteLength,
   getTileDefinitionAt,
 } = require("./state");
 const { getFloorOrder } = require("./floor-id");
@@ -1583,7 +1584,7 @@ function buildMonsterOnlyActionProvider(simulator, segment, config, stats) {
 }
 
 function routeLength(state) {
-  return Array.isArray((state || {}).route) ? state.route.length : 0;
+  return getRawRouteLength(state);
 }
 
 function goalCandidateScore(state) {
@@ -2370,12 +2371,8 @@ function searchSegmentDP(simulator, startState, segment, options) {
         const leftDepth = getDecisionDepth(left);
         const rightDepth = getDecisionDepth(right);
         if (leftDepth !== rightDepth) return leftDepth < rightDepth;
-        const leftRoute = Array.isArray(left.route)
-          ? left.route.length
-          : leftDepth;
-        const rightRoute = Array.isArray(right.route)
-          ? right.route.length
-          : rightDepth;
+        const leftRoute = getRawRouteLength(left);
+        const rightRoute = getRawRouteLength(right);
         return leftRoute < rightRoute;
       },
       describeComparison: (left, right) => {
@@ -2659,6 +2656,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
         expansionBudgetExhausted,
         oracle: oracleDiagnostics || null,
         depth: (result.diagnostics && result.diagnostics.depth) || null,
+        routeFree: (result.diagnostics && result.diagnostics.routeFree) || null,
         resourceTiming: resourceTimingEnabled
           ? {
               model: resourceTimingOptions.model,

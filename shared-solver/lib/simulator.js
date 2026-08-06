@@ -30,6 +30,7 @@ const {
   createInitialState,
   floorHasCoordinate,
   getDecisionDepth,
+  getRawRouteLength,
   getTileDefinitionAt,
   getInventoryCount,
   removeTileAt,
@@ -591,8 +592,8 @@ class StaticSimulator {
 
   compareResultStates(left, right) {
     return this.compareRanks(
-      { score: getScore(this, left), decisionDepth: getDecisionDepth(left), routeLength: Array.isArray(left.route) && left.route.length > 0 ? left.route.length : getDecisionDepth(left) },
-      { score: getScore(this, right), decisionDepth: getDecisionDepth(right), routeLength: Array.isArray(right.route) && right.route.length > 0 ? right.route.length : getDecisionDepth(right) }
+      { score: getScore(this, left), decisionDepth: getDecisionDepth(left), routeLength: getRawRouteLength(left) },
+      { score: getScore(this, right), decisionDepth: getDecisionDepth(right), routeLength: getRawRouteLength(right) }
     );
   }
 

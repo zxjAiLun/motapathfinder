@@ -2,7 +2,7 @@
 
 const { getProgress, compareProgress } = require("./progress");
 const { estimateNextFloorDistance, getFloorOrder } = require("./score");
-const { cloneState, getDecisionDepth, listFloorMutationSummary } = require("./state");
+const { cloneState, getDecisionDepth, getRawRouteLength, listFloorMutationSummary } = require("./state");
 const { buildStateKey } = require("./state-key");
 const {
   SOLVER_HERO_FIELDS,
@@ -104,9 +104,7 @@ function effectiveHeroValue(state, field) {
 }
 
 function routeLengthOfState(state) {
-  return Array.isArray((state || {}).route)
-    ? state.route.length
-    : getDecisionDepth(state);
+  return getRawRouteLength(state);
 }
 
 function compareGoalStates(left, right) {
@@ -288,8 +286,8 @@ function isBetterForSameDpKey(left, right, dominanceConfig) {
   const leftDepth = getDecisionDepth(left);
   const rightDepth = getDecisionDepth(right);
   if (leftDepth !== rightDepth) return leftDepth < rightDepth;
-  const leftRoute = Array.isArray(left.route) ? left.route.length : leftDepth;
-  const rightRoute = Array.isArray(right.route) ? right.route.length : rightDepth;
+  const leftRoute = getRawRouteLength(left);
+  const rightRoute = getRawRouteLength(right);
   return leftRoute < rightRoute;
 }
 
@@ -372,7 +370,7 @@ function buildDpAgendaRank(simulator, state, sourceAction, sequence, options) {
   const progress = getProgress(state);
   const hero = state.hero || {};
   const nextDistance = estimateNextFloorDistance(state, simulator.project);
-  const routeLength = Array.isArray(state.route) ? state.route.length : getDecisionDepth(state);
+  const routeLength = getRawRouteLength(state);
   return {
     priorityMode: String(config.dpPriorityMode || "default"),
     bestFloorRank: Number(progress.bestFloorRank || 0),
@@ -1014,6 +1012,11 @@ function searchDP(simulator, initialState, options) {
   const trackPerfPhase = (name, fn) => (perfActive ? timeActivePhase(name, fn) : fn());
   let depthSum = 0;
   let depthMax = 0;
+  // Route-free invariant diagnostics: canonical search states must never carry
+  // a materialized route array (only the boundary materialization does).
+  let routeFreeStateViolations = 0;
+  let materializedRouteStateCount = 0;
+  let maxRawRouteLength = 0;
   const observer = createDpObserver(config);
   const goalStateComparator = resolveGoalStateComparator(config);
   const shouldStop = typeof config.shouldStop === "function"
@@ -1055,6 +1058,10 @@ function searchDP(simulator, initialState, options) {
     : [];
   const rootState = cloneState(initialState);
   rootState.route = [];
+  // The carried route prefix's length survives on the canonical state as the
+  // raw route length; the in-search state itself stays route-free.
+  if (!rootState.meta) rootState.meta = {};
+  rootState.meta.rawRouteLength = initialRoutePrefix.length;
   if (typeof config.stateAnnotator === "function") {
     try {
       config.stateAnnotator(rootState, null, null);
@@ -1373,6 +1380,14 @@ function searchDP(simulator, initialState, options) {
   };
 
   const enqueue = (state, sourceAction, parentNode) => {
+    // Route-free invariant: states entering the canonical DP must not carry a
+    // materialized route array.  Count violations (diagnostic only).
+    if (Array.isArray(state.route) && state.route.length > 0) {
+      routeFreeStateViolations += 1;
+      materializedRouteStateCount += 1;
+    }
+    const rawLength = getRawRouteLength(state);
+    if (rawLength > maxRawRouteLength) maxRawRouteLength = rawLength;
     const key = trackPerfPhase("buildDpStateKey", () => buildDpStateKey(simulator, state, config));
     const existingSkyline = bestByKey instanceof SkylineSet ? bestByKey.getAll(key) : null;
     const timingConflict = existingSkyline &&
@@ -2087,22 +2102,30 @@ function searchDP(simulator, initialState, options) {
     const active = bestByKey.get(node.key);
     return Boolean(active && active.nodeId === node.nodeId);
   });
+  // Route materialization returns a DETACHED clone: the canonical node.state in
+  // the nodes Map must never gain a materialized route array.  The parent
+  // pointer chain + actionEntry._routePatch remain the only reconstruction
+  // source.
   const attachRouteToNodeState = (node) => {
     if (!node || !node.state) return null;
-    node.state.route = initialRoutePrefix.concat(reconstructActionEntries(nodes, node));
+    const materialized = cloneState(node.state);
+    materialized.route = initialRoutePrefix.concat(reconstructActionEntries(nodes, node));
     if (captureTrace) {
-      node.state.routeTrace = initialRouteTracePrefix.concat(reconstructActionTrace(nodes, node));
-    } else if (Object.prototype.hasOwnProperty.call(node.state, "routeTrace")) {
-      delete node.state.routeTrace;
+      materialized.routeTrace = initialRouteTracePrefix.concat(reconstructActionTrace(nodes, node));
+    } else if (Object.prototype.hasOwnProperty.call(materialized, "routeTrace")) {
+      delete materialized.routeTrace;
     }
-    return node.state;
+    materialized.meta.rawRouteLength = materialized.route.length;
+    return materialized;
   };
-  // Attach routes before the goal archive is ordered so route-length-aware
-  // objective comparators (and the legacy route-length tie-break) see the real
-  // route length instead of an empty route.  The objective comparator must only
-  // influence archive retention / bestGoalNode / final goal result, never the
-  // DP key, dominance, agenda, or action pruning.
-  activeGoalNodes.forEach((node) => attachRouteToNodeState(node));
+  // Goal-archive ordering reads route length from the canonical state via
+  // getRawRouteLength (meta.rawRouteLength is maintained in-search by
+  // appendRouteStep), so no in-place route attach is needed here.
+  activeGoalNodes.forEach((node) => {
+    if (!node || !node.state) return;
+    // Ensure the comparator never sees a stale in-place route.
+    node.state.route = [];
+  });
   const goalSkylineNodes = selectGoalSkylineNodes(activeGoalNodes, config);
   // Re-derive bestGoalNode from the route-attached, objective-ordered archive.
   // bestGoalNode was captured at enqueue time when state.route was still empty
@@ -2213,6 +2236,11 @@ function searchDP(simulator, initialState, options) {
       depth: {
         avgDecisionDepth: expansions > 0 ? depthSum / expansions : 0,
         maxDecisionDepth: depthMax,
+      },
+      routeFree: {
+        stateViolations: routeFreeStateViolations,
+        materializedRouteStateCount,
+        maxRawRouteLength,
       },
       pruneReasons: {
         "dp-lower-hp-same-state": rejectedByHigherHp,
@@ -2384,5 +2412,7 @@ function searchDP(simulator, initialState, options) {
 module.exports = {
   buildDpStateKey,
   compareDpBest,
+  compareGoalStates,
+  routeLengthOfState,
   searchDP,
 };

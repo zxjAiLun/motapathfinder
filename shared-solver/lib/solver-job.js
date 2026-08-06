@@ -508,6 +508,14 @@ function exactStateFingerprint(state) {
   const copy = cloneState(state);
   delete copy.route;
   delete copy.routeTrace;
+  // Derived route counters are NOT part of the behavioral boundary identity:
+  // rawRouteLength is reconstructable from the route, and __storeRoute is a
+  // transient suppression flag.  Excluding them keeps the boundary fingerprint
+  // stable across the route-free refactor.
+  if (copy.meta) {
+    delete copy.meta.rawRouteLength;
+    delete copy.meta.__storeRoute;
+  }
   return fingerprintJson(copy);
 }
 

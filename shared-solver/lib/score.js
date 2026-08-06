@@ -1,7 +1,7 @@
 "use strict";
 
 const { getFrontierFeatures } = require("./search-cache");
-const { getDecisionDepth } = require("./state");
+const { getDecisionDepth, getRawRouteLength } = require("./state");
 const { getInventoryCount } = require("./state");
 const { getFloorOrder } = require("./floor-id");
 
@@ -72,7 +72,7 @@ function defaultSearchRank(state, score, context) {
     primary: resolvedScore.primary,
     tertiary: resolvedScore.tertiary,
     decisionDepth: getDecisionDepth(state),
-    routeLength: Array.isArray(state.route) && state.route.length > 0 ? state.route.length : getDecisionDepth(state),
+    routeLength: getRawRouteLength(state),
   };
 }
 

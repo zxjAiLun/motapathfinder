@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 
-const { getDecisionDepth } = require("./state");
+const { getDecisionDepth, getRawRouteLength } = require("./state");
 const {
   SOLVER_HERO_FIELDS,
   isSolverFieldMaintained,
@@ -94,7 +94,9 @@ function stateFromCandidate(candidate) {
 }
 
 function routeLength(state) {
-  return Array.isArray(state && state.route) ? state.route.length : 0;
+  // Route length must read the unified raw route length (auto steps included),
+  // not only the materialized array (which is absent during search).
+  return getRawRouteLength(state);
 }
 
 function effectiveHeroValue(state, field) {

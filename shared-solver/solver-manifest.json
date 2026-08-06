@@ -197,7 +197,8 @@
         "shared-solver/check-replay-h5save-gui-flow.js",
         "shared-solver/check-multi-region-contract.js",
         "shared-solver/check-multi-region-route-contract.js",
-        "shared-solver/check-perf-baseline-contract.js"
+        "shared-solver/check-perf-baseline-contract.js",
+        "shared-solver/check-route-free-state-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -2266,6 +2267,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4b Commit 1: deterministic perf baseline schema, result parity, structural stability"
+    },
+    "shared-solver/check-route-free-state-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.4b Commit 2: canonical DP route-free state, rawRouteLength semantics, Commit-1 parity"
     }
   }
 }
