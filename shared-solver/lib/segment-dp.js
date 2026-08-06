@@ -2658,6 +2658,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
         maxActionsPerState,
         expansionBudgetExhausted,
         oracle: oracleDiagnostics || null,
+        depth: (result.diagnostics && result.diagnostics.depth) || null,
         resourceTiming: resourceTimingEnabled
           ? {
               model: resourceTimingOptions.model,

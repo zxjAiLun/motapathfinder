@@ -196,7 +196,8 @@
         "shared-solver/check-replay-h5save-gui.js",
         "shared-solver/check-replay-h5save-gui-flow.js",
         "shared-solver/check-multi-region-contract.js",
-        "shared-solver/check-multi-region-route-contract.js"
+        "shared-solver/check-multi-region-route-contract.js",
+        "shared-solver/check-perf-baseline-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -2258,6 +2259,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4a Commit 3: multi-region-route.v1 composite, exact boundary fingerprints, result regions, unified entry"
+    },
+    "shared-solver/check-perf-baseline-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.4b Commit 1: deterministic perf baseline schema, result parity, structural stability"
     }
   }
 }

@@ -169,7 +169,9 @@
     "diagnose:window-repair:mt5": "node diagnose-window-repair.js --route=routes/latest/mt5-problem-before-9-10.route.json --report=routes/generated/window-repair-mt5-final-fly.json --out=routes/generated/window-repair-mt5-final-fly.diagnosis.json",
     "check:solve-task-v2": "node check-solve-task-v2-contract.js",
     "check:multi-region": "node check-multi-region-contract.js",
-    "check:multi-region-route": "node check-multi-region-route-contract.js"
+    "check:multi-region-route": "node check-multi-region-route-contract.js",
+    "check:perf-baseline": "node check-perf-baseline-contract.js",
+    "bench:baseline": "node bench-perf-baseline.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

@@ -23,6 +23,7 @@ const { buildWalkReachability, isTransitTile, stepOntoTile } = require("./step-s
 const { ToolRegistry } = require("./tool-registry");
 const { syncProgress } = require("./progress");
 const { normalizeSolverModel, projectSolverState } = require("./solver-model");
+const { timeActivePhase } = require("./perf");
 const {
   appendRouteStep,
   cloneState,
@@ -514,14 +515,18 @@ class StaticSimulator {
     const key = buildStateKey(state);
     const cached = this.cacheGet("reachability", key);
     if (cached) return cached;
-    const startedAt = Date.now();
-    const reachability = buildWalkReachability(this.project, state, {
-      battleResolver: this.battleResolver,
-      executeActionList,
-      choiceResolver: this.choiceResolver,
-      stabilizeState: (nextState) => this.stabilizeState(nextState),
+    // Perf-tracker hook (no-op unless a tracker is active): reachability BFS is
+    // one of the search hot phases the PR-5.4b baseline measures separately.
+    return timeActivePhase("reachability", () => {
+      const startedAt = Date.now();
+      const reachability = buildWalkReachability(this.project, state, {
+        battleResolver: this.battleResolver,
+        executeActionList,
+        choiceResolver: this.choiceResolver,
+        stabilizeState: (nextState) => this.stabilizeState(nextState),
+      });
+      return this.cacheSet("reachability", key, reachability, null, Date.now() - startedAt);
     });
-    return this.cacheSet("reachability", key, reachability, null, Date.now() - startedAt);
   }
 
   clonePrimitiveActions(value) {
@@ -657,14 +662,16 @@ class StaticSimulator {
     const cacheKey = buildStateKey(state);
     const cached = this.cacheGet("primitiveActions", cacheKey, (value) => this.clonePrimitiveActions(value));
     if (cached) return cached;
-    const startedAt = Date.now();
-    const floor = this.project.floorsById[state.floorId];
-    const reachability = this.getWalkReachability(state);
-    const actions = [];
-    const helper = {
-      findAdjacencyActions: (predicate, buildAction) =>
-        findAdjacencyActions(this.project, reachability, predicate, buildAction),
-    };
+    // Perf-tracker hook: action generation is one of the baseline hot phases.
+    return timeActivePhase("enumerateActions", () => {
+      const startedAt = Date.now();
+      const floor = this.project.floorsById[state.floorId];
+      const reachability = this.getWalkReachability(state);
+      const actions = [];
+      const helper = {
+        findAdjacencyActions: (predicate, buildAction) =>
+          findAdjacencyActions(this.project, reachability, predicate, buildAction),
+      };
 
     actions.push(
       ...helper.findAdjacencyActions(
@@ -714,7 +721,8 @@ class StaticSimulator {
     actions.push(...battleActions);
 
     const result = { actions, battleActions };
-    return this.cacheSet("primitiveActions", cacheKey, result, (value) => this.clonePrimitiveActions(value), Date.now() - startedAt);
+      return this.cacheSet("primitiveActions", cacheKey, result, (value) => this.clonePrimitiveActions(value), Date.now() - startedAt);
+    });
   }
 
   enumerateMacroActions(state, primitiveActions, battleActions) {
@@ -933,7 +941,7 @@ class StaticSimulator {
       .forEach((action) => {
         let nextState = null;
         try {
-          nextState = this.applyAction(state, action, { storeRoute: false });
+          nextState = this._applyActionInner(state, action, { storeRoute: false });
         } catch (error) {
           return;
         }
@@ -1288,7 +1296,7 @@ class StaticSimulator {
     }
     const startedAt = Date.now();
     try {
-      const nextState = this.applyAction(state, action, { storeRoute: false });
+      const nextState = this._applyActionInner(state, action, { storeRoute: false });
       this.cacheSet("resourcePreviewApply", key, { valid: true, state: cloneState(nextState) }, null, Date.now() - startedAt);
       return nextState;
     } catch (error) {
@@ -2028,7 +2036,7 @@ class StaticSimulator {
       plan.push(action.summary);
       totalDamage += Number((action.estimate || {}).damage || 0);
       totalExp += Number((action.estimate || {}).exp || 0);
-      preview = this.applyAction(preview, action, { storeRoute: false });
+      preview = this._applyActionInner(preview, action, { storeRoute: false });
       if (Number((preview.hero || {}).lv || 0) > startLevel) break;
     }
 
@@ -2228,6 +2236,11 @@ class StaticSimulator {
   }
 
   applyAction(state, action, options) {
+    // Perf-tracker hook: action application is one of the baseline hot phases.
+    return timeActivePhase("applyAction", () => this._applyActionInner(state, action, options));
+  }
+
+  _applyActionInner(state, action, options) {
     const config = options || {};
     let nextState = action.travelState ? cloneState(action.travelState) : cloneState(state);
     if (!action.travelState) {
@@ -2462,7 +2475,7 @@ class StaticSimulator {
       if (!battleAction) {
         throw new Error(`Unable to replay fightToLevelUp step: ${summary}`);
       }
-      nextState = this.applyAction(nextState, battleAction, { storeRoute: config.storeRoute !== false });
+      nextState = this._applyActionInner(nextState, battleAction, { storeRoute: config.storeRoute !== false });
     });
     return nextState;
   }
@@ -2479,7 +2492,7 @@ class StaticSimulator {
       if (!primitiveAction) {
         throw new Error(`Unable to replay resourcePocket step: ${entry.summary || entry.fingerprint}`);
       }
-      nextState = this.applyAction(nextState, primitiveAction, { storeRoute: config.storeRoute !== false });
+      nextState = this._applyActionInner(nextState, primitiveAction, { storeRoute: config.storeRoute !== false });
     });
     return nextState;
   }

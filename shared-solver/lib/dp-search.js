@@ -10,6 +10,7 @@ const {
 } = require("./solver-model");
 const { createCheckpointPool } = require("./floor-checkpoints");
 const { createChildNode, createRootNode, reconstructActionEntries, reconstructActionTrace } = require("./search-nodes");
+const { getActivePerfTracker, timeActivePhase } = require("./perf");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -1002,6 +1003,17 @@ function createDpObserver(config) {
 
 function searchDP(simulator, initialState, options) {
   const config = options || {};
+  // PR-5.4b perf hooks: only active when a perf tracker is installed (the
+  // benchmark sets one); zero measurable overhead in normal search.
+  const perfTracker = getActivePerfTracker();
+  const perfActive = Boolean(perfTracker && perfTracker.enabled);
+  const trackPerfCount = (name, amount) => {
+    if (!perfActive) return;
+    perfTracker.increment(name, amount);
+  };
+  const trackPerfPhase = (name, fn) => (perfActive ? timeActivePhase(name, fn) : fn());
+  let depthSum = 0;
+  let depthMax = 0;
   const observer = createDpObserver(config);
   const goalStateComparator = resolveGoalStateComparator(config);
   const shouldStop = typeof config.shouldStop === "function"
@@ -1361,7 +1373,7 @@ function searchDP(simulator, initialState, options) {
   };
 
   const enqueue = (state, sourceAction, parentNode) => {
-    const key = buildDpStateKey(simulator, state, config);
+    const key = trackPerfPhase("buildDpStateKey", () => buildDpStateKey(simulator, state, config));
     const existingSkyline = bestByKey instanceof SkylineSet ? bestByKey.getAll(key) : null;
     const timingConflict = existingSkyline &&
       config.dominanceConfig &&
@@ -1384,6 +1396,7 @@ function searchDP(simulator, initialState, options) {
         )
       : !isBetterForSameDpKey(state, bestByKey.get(key) && bestByKey.get(key).state, config.dominanceConfig);
     if (dominated) {
+      trackPerfCount("dominated");
       const existing = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);
       const existingState = existing && existing.state;
       const hpDiff = existingState ? heroHp(state) - heroHp(existingState) : null;
@@ -1631,6 +1644,7 @@ function searchDP(simulator, initialState, options) {
       fairEnqueueExpansions.set(node.nodeId, expansions);
     }
     registered += 1;
+    trackPerfCount("registered");
     recordStatProgress(state, actionForEntry, parentNode, node);
     if (!bestSeenNode || compareDpBest(state, bestSeenNode.state) > 0) bestSeenNode = node;
     const progressDiff = bestProgressNode ? compareProgress(state, bestProgressNode.state) : 1;
@@ -1871,6 +1885,12 @@ function searchDP(simulator, initialState, options) {
     const state = entry.state;
     if (!continueAfterGoal && isGoalState(state)) continue;
     expansions += 1;
+    trackPerfCount("expanded");
+    if (perfActive) {
+      const nodeDepth = getDecisionDepth(state);
+      depthSum += nodeDepth;
+      if (nodeDepth > depthMax) depthMax = nodeDepth;
+    }
     let actions = [];
     try {
       actions = typeof config.actionProvider === "function"
@@ -1923,6 +1943,7 @@ function searchDP(simulator, initialState, options) {
       .forEach((action, actionIndex) => {
         if (stopAfterSuccessorBatch) return;
         generated += 1;
+        trackPerfCount("generated");
         recordAction(actionStats, action, "expanded");
         const candidateId = `${entry.nodeId}:${actionIndex}`;
         if (observer) observer.emit("candidateGenerated", () => observerStatePayload(simulator, state, entry, config, {
@@ -1962,7 +1983,10 @@ function searchDP(simulator, initialState, options) {
             : action;
           const childNode = enqueue(nextState, observedAction, entry);
           if (childNode) recordAction(actionStats, action, "kept");
-          else recordAction(actionStats, action, "dominated");
+          else {
+            trackPerfCount("dominated");
+            recordAction(actionStats, action, "dominated");
+          }
         });
         const actionOrdinal = actionIndex + 1;
         if (
@@ -2177,6 +2201,10 @@ function searchDP(simulator, initialState, options) {
         generatedActions: generated,
         keptActions: registered,
         expansionsPerSec: expansions > 0 ? expansions / Math.max(0.001, (Date.now() - startedAt) / 1000) : 0,
+      },
+      depth: {
+        avgDecisionDepth: expansions > 0 ? depthSum / expansions : 0,
+        maxDecisionDepth: depthMax,
       },
       pruneReasons: {
         "dp-lower-hp-same-state": rejectedByHigherHp,
