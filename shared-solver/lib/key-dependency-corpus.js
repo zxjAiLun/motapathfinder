@@ -1,19 +1,26 @@
 "use strict";
 
 /**
- * PR-5.4c Commit 1 — Key Dependency Corpus (observation only).
+ * PR-5.4c Commit 1 Repair — Key Dependency Corpus (observation only).
  *
  * For real DP states captured from a representative search, records:
- *   - current exact DP key (region mode)
- *   - structural projection (legacy region signature + TowerIR reachability)
- *   - resource projection (hero numeric fields, inventory, flags)
- *   - event / hazard projection (triggered auto events, auto counters, depth)
- *   - legal action set + per-action successor exact fingerprints
+ *   - legacy reference (current exact DP key + legacy region signature)
+ *   - TowerIR StructuralKey candidate (startComponentId + reachable
+ *     components/POIs/endpoints + mutation fingerprint; NO exact loc, NO legacy
+ *     regionKey)
+ *   - resource identity label (atk/def/mdef/lv/exp/money/mana/equipment/
+ *     inventory/behavior flags/visited floors; NO hp)
+ *   - dominance label (hp, route/depth — recorded, not automatically a key)
+ *   - event/hazard label (triggered auto events)
+ *   - canonical action identity (summary + stable full-action fingerprint)
+ *   - multi-layer successor fingerprints (exact, dp key, candidate keys,
+ *     behavior projections, terminal)
  *
- * The analysis groups states by the candidate decomposition and reports
- * "merge hazard" candidates: states with an identical decomposition whose legal
- * action SETS or per-action SUCCESSORS differ — the exact signals Commit 2's
- * Dual-Key shadow will exploit.  Nothing here touches production.
+ * The analysis computes real candidate-key collision groups and classifies
+ * pair differences as dominance-safe / metadata-only / unsafe using
+ * dominance-aware rules (action-superset, shared-action successor behavior
+ * equality, successor HP monotonicity).  Zero collisions yield
+ * "insufficient-collisions", never "safe".  Production is untouched.
  */
 
 const { buildDpStateKey } = require("./dp-search");
@@ -33,282 +40,372 @@ function stableValue(value) {
     }, {});
 }
 
-function actionFingerprint(action) {
-  if (!action) return null;
-  if (typeof action.summary === "string" && action.summary.length > 0) return action.summary;
-  if (action.kind) return `${action.kind}:${(action.floorId || "")}:${action.x != null ? action.x + "," + action.y : ""}`;
-  return JSON.stringify(stableValue(action));
+// Behavior-relevant flag audit (smoke/MT1 scope): autoBattle (auto-battle
+// gate), shiqu (千夜 event state), hatred (battle-modifying counter).  All
+// three affect combat/event behavior; no UI/diagnostic-only flags were found
+// in the scope.  The full flags object is treated as behavior identity; a
+// future CEGAR pass may exclude proven-UI flags.
+function behaviorRelevantFlags(state) {
+  return stableValue(state.flags || {});
 }
 
-function buildStateDecomposition(simulator, project, ir, state, options) {
+function heroNumbers(state) {
+  const hero = state.hero || {};
+  return {
+    atk: Number(hero.atk || 0),
+    def: Number(hero.def || 0),
+    mdef: Number(hero.mdef || 0),
+    lv: Number(hero.lv || 0),
+    exp: Number(hero.exp || 0),
+    money: Number(hero.money || 0),
+    mana: Number(hero.mana || 0),
+  };
+}
+
+function buildTowerIrProjection(ir, project, state) {
+  const result = evaluateTowerIRReachability(ir, project, state);
+  return {
+    floorId: state.floorId,
+    startComponentId: result.startComponentId,
+    reachableComponentIds: (result.reachableComponentIds || []).slice().sort(),
+    reachablePoiIds: (result.reachablePoiIds || []).slice().sort(),
+    reachableEndpoints: (result.reachableEndpointDescriptors || []).map((endpoint) =>
+      `${endpoint.kind}:${endpoint.tileId || ""}@${endpoint.x},${endpoint.y}${endpoint.targetId ? "->" + endpoint.targetId : ""}`,
+    ).sort(),
+    mutationFingerprint: fingerprintJson(listFloorMutationSummary(state.floorStates || {})),
+  };
+}
+
+// Per-state projection (cheap; no actions/successors).
+function buildStateProjection(simulator, project, ir, state, options) {
   const config = options || {};
-  const exactKey = buildDpStateKey(simulator, state, {
+  const exactDpKey = buildDpStateKey(simulator, state, {
     dpKeyMode: config.dpKeyMode || "region",
     solverModel: config.solverModel,
     model: config.model,
   });
-
   const regionSignature = simulator.buildReachableRegionSignature(state);
-  const structural = {
-    floorId: state.floorId,
-    loc: [Number(state.hero.loc.x), Number(state.hero.loc.y)],
+
+  const legacyReference = {
+    exactDpKey,
     regionKey: regionSignature.regionKey,
     reachableEndpointsKey: regionSignature.reachableEndpointsKey,
-    mutations: listFloorMutationSummary(state.floorStates || {}),
+    mutationSummary: listFloorMutationSummary(state.floorStates || {}),
   };
 
-  let towerIr = null;
-  if (ir) {
-    try {
-      const irResult = evaluateTowerIRReachability(ir, project, state);
-      towerIr = {
-        startComponentId: irResult.startComponentId,
-        reachableComponentIds: irResult.reachableComponentIds,
-        reachablePoiIds: irResult.reachablePoiIds,
-        reachableEndpoints: (irResult.reachableEndpointDescriptors || []).map((endpoint) => ({
-          kind: endpoint.kind,
-          floorId: endpoint.floorId,
-          x: endpoint.x,
-          y: endpoint.y,
-          tileId: endpoint.tileId || null,
-          targetId: endpoint.targetId || null,
-        })),
-      };
-    } catch (error) {
-      towerIr = { error: String(error && error.message || error) };
-    }
-  }
+  const structuralCandidate = buildTowerIrProjection(ir, project, state);
 
   const hero = state.hero || {};
-  const resource = {
-    hero: {
-      hp: Number(hero.hp || 0),
-      atk: Number(hero.atk || 0),
-      def: Number(hero.def || 0),
-      mdef: Number(hero.mdef || 0),
-      lv: Number(hero.lv || 0),
-      exp: Number(hero.exp || 0),
-      money: Number(hero.money || 0),
-      mana: Number(hero.mana || 0),
-    },
+  const resourceIdentity = {
+    ...heroNumbers(state),
+    equipment: Array.isArray(hero.equipment) ? hero.equipment.slice().sort() : [],
     inventory: stableValue(state.inventory || {}),
-    flags: stableValue(state.flags || {}),
+    flags: behaviorRelevantFlags(state),
     visitedFloors: Object.keys(state.visitedFloors || {}).sort(),
   };
 
   const meta = state.meta || {};
-  const event = {
-    triggeredAutoEvents: stableValue(state.triggeredAutoEvents || {}),
-    autoStepCount: Number(meta.autoStepCount || 0),
-    autoPickupCount: Number(meta.autoPickupCount || 0),
-    autoBattleCount: Number(meta.autoBattleCount || 0),
+  const dominanceLabel = {
+    hp: Number(hero.hp || 0),
+    rawRouteLength: Number(meta.rawRouteLength || 0),
     decisionDepth: Number(meta.decisionDepth || 0),
   };
 
-  // Legal action set + successor fingerprints (observation only).
-  const actionRecords = [];
-  const actionSummaries = [];
-  try {
-    const enumerated = simulator.enumeratePrimitiveActions(state);
-    const actions = (enumerated && enumerated.actions) || [];
-    for (const action of actions) {
-      const summary = actionFingerprint(action);
-      actionSummaries.push(summary);
-      let successorFingerprint = null;
-      let successorError = null;
-      try {
-        const successor = simulator.applyAction(cloneState(state), action, { storeRoute: false });
-        successorFingerprint = exactStateFingerprint(successor);
-      } catch (error) {
-        successorError = String(error && error.message || error);
-      }
-      actionRecords.push({ action: summary, successorFingerprint, successorError });
-    }
-  } catch (error) {
-    actionRecords.push({ action: "__enumerateError__", successorFingerprint: null, successorError: String(error && error.message || error) });
-  }
-  actionSummaries.sort();
+  const eventHazardLabel = stableValue(state.triggeredAutoEvents || {});
+
+  const candidateStructuralResourceKey = fingerprintJson({ structural: structuralCandidate, resource: resourceIdentity });
+  const candidateFullBehaviorKey = fingerprintJson({ structural: structuralCandidate, resource: resourceIdentity, event: eventHazardLabel });
+  const legacyDecompositionKey = fingerprintJson({ legacy: legacyReference, resource: resourceIdentity, event: eventHazardLabel });
 
   return {
-    exactKey,
-    structural,
-    towerIr,
-    resource,
-    event,
-    actionSet: Array.from(new Set(actionSummaries)).sort(),
-    actions: actionRecords,
-    decompositionKey: fingerprintJson({ structural, resource, event }),
-    decompositionKeyWithTowerIr: fingerprintJson({ structural, towerIr, resource, event }),
+    stateFingerprint: exactStateFingerprint(state),
+    legacyReference,
+    structuralCandidate,
+    resourceIdentity,
+    dominanceLabel,
+    eventHazardLabel,
+    candidateStructuralResourceKey,
+    candidateFullBehaviorKey,
+    legacyDecompositionKey,
   };
 }
 
-// Which candidate field groups actually vary in the corpus, and which
-// correlate with action-set differences.
-function analyzeKeyDependencyCorpus(entries) {
-  const exactKeySet = new Set();
-  const structuralSet = new Set();
-  const resourceSet = new Set();
-  const eventSet = new Set();
-  const decompositionSet = new Set();
-  const actionSetByDecomposition = new Map();
+// Canonical action identity: summary for display, stable full-action
+// fingerprint for behavior comparison (distinguishes same-summary-different-
+// payload actions via the travel-state fingerprint).
+function buildActionIdentity(action) {
+  if (!action) return null;
+  const travelStateFingerprint = action.travelState ? exactStateFingerprint(action.travelState) : null;
+  const payload = {
+    kind: action.kind || null,
+    summary: action.summary || null,
+    floorId: action.floorId || null,
+    x: action.x != null ? action.x : null,
+    y: action.y != null ? action.y : null,
+    target: action.target || null,
+    direction: action.direction || null,
+    path: Array.isArray(action.path) ? action.path.slice() : [],
+    travelStateFingerprint,
+  };
+  return {
+    actionSummary: typeof action.summary === "string" && action.summary.length > 0
+      ? action.summary
+      : `${action.kind || "unknown"}:${payload.floorId || ""}:${payload.x != null ? payload.x + "," + payload.y : ""}`,
+    actionFingerprint: fingerprintJson(payload),
+    actionPayload: payload,
+  };
+}
 
-  entries.forEach((entry) => {
-    exactKeySet.add(entry.decomposition.exactKey);
-    structuralSet.add(fingerprintJson(entry.decomposition.structural));
-    resourceSet.add(fingerprintJson(entry.decomposition.resource));
-    eventSet.add(fingerprintJson(entry.decomposition.event));
-    decompositionSet.add(entry.decomposition.decompositionKey);
-    const actionSignature = fingerprintJson(entry.decomposition.actionSet);
-    const existing = actionSetByDecomposition.get(entry.decomposition.decompositionKey);
-    if (existing && existing !== actionSignature) existing.conflict = true;
-    actionSetByDecomposition.set(entry.decomposition.decompositionKey, {
-      signature: actionSignature,
-      conflict: Boolean(existing && existing.conflict),
-    });
-  });
-
-  // Hero field variance across the corpus.
-  const heroVariance = {};
-  const inventoryVariance = {};
-  const flagsVariance = {};
-  entries.forEach((entry) => {
-    const hero = entry.decomposition.resource.hero;
-    Object.keys(hero).forEach((field) => {
-      const value = hero[field];
-      if (!(field in heroVariance)) heroVariance[field] = new Set();
-      heroVariance[field].add(value);
-    });
-    Object.keys(entry.decomposition.resource.inventory || {}).forEach((item) => {
-      if (!(item in inventoryVariance)) inventoryVariance[item] = new Set();
-      inventoryVariance[item].add(entry.decomposition.resource.inventory[item]);
-    });
-    Object.keys(entry.decomposition.resource.flags || {}).forEach((flag) => {
-      if (!(flag in flagsVariance)) flagsVariance[flag] = new Set();
-      flagsVariance[flag].add(entry.decomposition.resource.flags[flag]);
-    });
-  });
-  const summarize = (variation) => Object.fromEntries(
-    Object.entries(variation).map(([key, values]) => [key, values.size]),
-  );
-
-  // Merge hazard candidates: states sharing a decomposition whose action SETS
-  // or per-action SUCCESSORS differ.
-  const groups = new Map();
-  entries.forEach((entry, index) => {
-    const key = entry.decomposition.decompositionKey;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push({ index, entry });
-  });
-  const hazards = [];
-  const collectGroupHazards = (group, label) => {
-    if (group.length < 2) return;
-    const actionSets = new Map();
-    group.forEach(({ entry }) => {
-      const signature = fingerprintJson(entry.decomposition.actionSet);
-      if (!actionSets.has(signature)) actionSets.set(signature, []);
-      actionSets.get(signature).push(entry.decomposition.exactKey);
-    });
-    if (actionSets.size > 1) {
-      hazards.push({
-        kind: "actionSet",
-        group: label,
-        decompositionKey: group[0].entry.decomposition.decompositionKey,
-        exactKeys: group.map(({ entry }) => entry.decomposition.exactKey),
-        distinctActionSetCount: actionSets.size,
-        actionSets: Array.from(actionSets.entries()).map(([signature, keys]) => ({ actionSetSignature: signature, exactKeys: keys })),
-      });
-    }
-    const byAction = new Map();
-    group.forEach(({ entry }) => {
-      entry.decomposition.actions.forEach((record) => {
-        if (!byAction.has(record.action)) byAction.set(record.action, []);
-        byAction.get(record.action).push({ successorFingerprint: record.successorFingerprint, exactKey: entry.decomposition.exactKey });
-      });
-    });
-    byAction.forEach((records, action) => {
-      const fingerprints = new Set(records.map((record) => record.successorFingerprint));
-      if (fingerprints.size > 1) {
-        hazards.push({
-          kind: "successor",
-          group: label,
-          decompositionKey: group[0].entry.decomposition.decompositionKey,
-          action,
-          distinctSuccessorCount: fingerprints.size,
-          records: records.slice(0, 8),
-        });
+function buildStateBehavior(simulator, project, ir, state, options) {
+  const config = options || {};
+  const projection = buildStateProjection(simulator, project, ir, state, config);
+  const actionSet = [];
+  const actions = [];
+  try {
+    const enumerated = simulator.enumeratePrimitiveActions(state);
+    const rawActions = (enumerated && enumerated.actions) || [];
+    for (const action of rawActions) {
+      const identity = buildActionIdentity(action);
+      if (!identity) continue;
+      let successor = null;
+      let successorError = null;
+      try {
+        const nextState = simulator.applyAction(cloneState(state), action, { storeRoute: false });
+        const successorProjection = buildStateProjection(simulator, project, ir, nextState, config);
+        successor = {
+          exactStateFingerprint: exactStateFingerprint(nextState),
+          currentDpKey: successorProjection.legacyReference.exactDpKey,
+          candidateStructuralResourceKey: successorProjection.candidateStructuralResourceKey,
+          candidateFullBehaviorKey: successorProjection.candidateFullBehaviorKey,
+          structuralCandidate: successorProjection.structuralCandidate,
+          resourceIdentity: successorProjection.resourceIdentity,
+          dominanceLabel: successorProjection.dominanceLabel,
+          eventHazardLabel: successorProjection.eventHazardLabel,
+          terminal: Boolean(nextState.hero && nextState.hero.hp <= 0) ? false : null,
+        };
+      } catch (error) {
+        successorError = String(error && error.message || error);
       }
+      actionSet.push(identity.actionFingerprint);
+      actions.push({ identity, successor, successorError });
+    }
+  } catch (error) {
+    actions.push({ identity: { actionSummary: "__enumerateError__", actionFingerprint: "__enumerateError__" }, successor: null, successorError: String(error && error.message || error) });
+  }
+  return { projection, actionSet: Array.from(new Set(actionSet)).sort(), actions };
+}
+
+// Behavior projection of a successor used for equivalence comparison: the
+// candidate key fields (structural + resource + event), excluding dominance.
+function successorBehaviorKey(successor) {
+  if (!successor) return null;
+  return fingerprintJson({
+    structural: successor.structuralCandidate,
+    resource: successor.resourceIdentity,
+    event: successor.eventHazardLabel,
+  });
+}
+
+// Dominance-aware pair classification.
+// left/right are behavior entries { projection, actionSet, actions }.
+function classifyPair(left, right) {
+  const leftHp = left.projection.dominanceLabel.hp;
+  const rightHp = right.projection.dominanceLabel.hp;
+  const low = leftHp <= rightHp ? left : right;
+  const high = leftHp <= rightHp ? right : left;
+
+  const lowSet = new Set(low.actionSet);
+  const highSet = new Set(high.actionSet);
+  const actionOnlyLeft = low.actionSet.filter((action) => !highSet.has(action));
+  const actionOnlyRight = high.actionSet.filter((action) => !lowSet.has(action));
+  const sharedActions = low.actionSet.filter((action) => highSet.has(action));
+  const summarizeActions = (fingerprints) => {
+    const all = [low, high];
+    return fingerprints.map((fingerprint) => {
+      for (const entry of all) {
+        const record = entry.actions.find((item) => item.identity && item.identity.actionFingerprint === fingerprint);
+        if (record && record.identity) return { fingerprint, summary: record.identity.actionSummary };
+      }
+      return { fingerprint, summary: null };
     });
   };
-  groups.forEach((group) => collectGroupHazards(group, "decomposition"));
 
-  // Same-EXACT-KEY grouping: the DP key merges states that may still differ in
-  // the candidate decomposition fields (decisionDepth, auto counters, triggered
-  // events).  If such merged states behave differently, the merge is a hazard
-  // candidate for Commit 2's dual-key shadow.
-  const keyGroups = new Map();
-  entries.forEach((entry, index) => {
-    if (!keyGroups.has(entry.decomposition.exactKey)) keyGroups.set(entry.decomposition.exactKey, []);
-    keyGroups.get(entry.decomposition.exactKey).push({ index, entry });
-  });
-  const exactKeyMergeHazards = [];
-  keyGroups.forEach((group) => {
-    if (group.length < 2) return;
-    const actionSets = new Set(group.map(({ entry }) => fingerprintJson(entry.decomposition.actionSet)));
-    const distinctDecompositions = new Set(group.map(({ entry }) => entry.decomposition.decompositionKey));
-    if (actionSets.size > 1) {
-      exactKeyMergeHazards.push({
-        kind: "exactKeyActionSet",
-        exactKey: group[0].entry.decomposition.exactKey,
-        stateCount: group.length,
-        distinctDecompositionCount: distinctDecompositions.size,
-        distinctActionSetCount: actionSets.size,
-        exactKeys: group.map(({ entry }) => entry.decomposition.exactKey),
-      });
+  const lowActionsByFingerprint = new Map(low.actions.map((record) => [record.identity && record.identity.actionFingerprint, record]));
+  const highActionsByFingerprint = new Map(high.actions.map((record) => [record.identity && record.identity.actionFingerprint, record]));
+
+  const successorBehaviorDiffs = [];
+  const hpMonotonicityViolations = [];
+  sharedActions.forEach((action) => {
+    const lowRecord = lowActionsByFingerprint.get(action);
+    const highRecord = highActionsByFingerprint.get(action);
+    if (!lowRecord || !highRecord || !lowRecord.successor || !highRecord.successor) return;
+    const lowBehavior = successorBehaviorKey(lowRecord.successor);
+    const highBehavior = successorBehaviorKey(highRecord.successor);
+    if (lowBehavior !== highBehavior) {
+      successorBehaviorDiffs.push({ action, lowBehavior, highBehavior });
     }
-    const byAction = new Map();
-    group.forEach(({ entry }) => {
-      entry.decomposition.actions.forEach((record) => {
-        if (!byAction.has(record.action)) byAction.set(record.action, []);
-        byAction.get(record.action).push({ successorFingerprint: record.successorFingerprint, exactKey: entry.decomposition.exactKey });
-      });
-    });
-    byAction.forEach((records, action) => {
-      const fingerprints = new Set(records.map((record) => record.successorFingerprint));
-      if (fingerprints.size > 1) {
-        exactKeyMergeHazards.push({
-          kind: "exactKeySuccessor",
-          exactKey: group[0].entry.decomposition.exactKey,
-          action,
-          distinctSuccessorCount: fingerprints.size,
-        });
-      }
+    if (highRecord.successor.dominanceLabel.hp < lowRecord.successor.dominanceLabel.hp) {
+      hpMonotonicityViolations.push({ action, lowHp: lowRecord.successor.dominanceLabel.hp, highHp: highRecord.successor.dominanceLabel.hp });
+    }
+  });
+
+  // Metadata-only: no behavior differences, identical HP, only
+  // decisionDepth/route/counter fields differ.
+  const metadataDiffs = [];
+  const metaFields = ["rawRouteLength", "decisionDepth"];
+  metaFields.forEach((field) => {
+    if (left.projection.dominanceLabel[field] !== right.projection.dominanceLabel[field]) {
+      metadataDiffs.push(field);
+    }
+  });
+  const hpEqual = leftHp === rightHp;
+  const actionSetEqual = actionOnlyLeft.length === 0 && actionOnlyRight.length === 0;
+  const noSuccessorDiffs = successorBehaviorDiffs.length === 0;
+  const noHpViolations = hpMonotonicityViolations.length === 0;
+
+  if (!noSuccessorDiffs) {
+    return { classification: "unsafe", reason: "shared action produced different successor behavior", successorBehaviorDiffs: successorBehaviorDiffs.slice(0, 4), hpMonotonicityViolations: hpMonotonicityViolations.slice(0, 4) };
+  }
+  if (!noHpViolations) {
+    return { classification: "unsafe", reason: "successor HP not monotonic for high-HP state", hpMonotonicityViolations: hpMonotonicityViolations.slice(0, 4), actionOnlyLeft: summarizeActions(actionOnlyLeft), actionOnlyRight: summarizeActions(actionOnlyRight) };
+  }
+  if (!actionSetEqual) {
+    if (actionOnlyLeft.length === 0) {
+      return { classification: "dominance-safe", sub: "action-superset", reason: "high-HP action set is a superset of low-HP action set", actionOnlyRight: summarizeActions(actionOnlyRight).slice(0, 8) };
+    }
+    return { classification: "unsafe", reason: "low-HP state has actions the high-HP state lacks", actionOnlyLeft: summarizeActions(actionOnlyLeft).slice(0, 8), actionOnlyRight: summarizeActions(actionOnlyRight).slice(0, 8) };
+  }
+  if (hpEqual && metadataDiffs.length > 0 && noSuccessorDiffs && noHpViolations) {
+    return { classification: "metadata-only", reason: `identical HP/behavior; only metadata differs (${metadataDiffs.join(",")})`, metadataDiffs };
+  }
+  if (hpEqual) {
+    return { classification: "unclassified", reason: "identical HP and action sets but unclassified difference" };
+  }
+  return { classification: "dominance-safe", reason: "identical action sets and successor behavior; HP differs monotonically", actionOnlyRight: [], actionOnlyLeft: [] };
+}
+
+// Collision analysis for a candidate key field.
+function analyzeCandidateKeyCollisions(entries, keyField) {
+  const groups = new Map();
+  entries.forEach((entry) => {
+    const key = entry.projection[keyField];
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  });
+  const collisionGroups = Array.from(groups.values()).filter((group) => group.length >= 2);
+  const uniqueKeyCount = groups.size;
+  const collisionGroupCount = collisionGroups.length;
+  const statesInCollisionGroups = collisionGroups.reduce((sum, group) => sum + group.length, 0);
+  const maxCollisionGroupSize = collisionGroups.reduce((max, group) => Math.max(max, group.length), 0);
+  return {
+    candidate: keyField,
+    uniqueKeyCount,
+    collisionGroupCount,
+    statesInCollisionGroups,
+    maxCollisionGroupSize,
+    evidenceStatus: collisionGroupCount > 0 ? "collisions-present" : "insufficient-collisions",
+  };
+}
+
+// Full analysis: projections for all states, behavior only for states in
+// candidate-key collision groups, then pair classification.
+// entries: [{ state, projection }]; buildBehavior(state) -> behavior entry.
+function analyzeKeyDependencyCorpus(entries, buildBehavior, options) {
+  const config = options || {};
+
+  const behaviorKeyCollisions = analyzeCandidateKeyCollisions(entries, "candidateFullBehaviorKey");
+  const structuralResourceCollisions = analyzeCandidateKeyCollisions(entries, "candidateStructuralResourceKey");
+  const legacyCollisions = analyzeCandidateKeyCollisions(entries, "legacyDecompositionKey");
+
+  // Phase 2: behavior only for states inside full-behavior-key collision groups.
+  const collisionStates = new Set();
+  const groups = new Map();
+  entries.forEach((entry) => {
+    const key = entry.projection.candidateFullBehaviorKey;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  });
+  let behaviorBuilt = 0;
+  Array.from(groups.values()).forEach((group) => {
+    if (group.length < 2) return;
+    group.forEach((entry) => {
+      collisionStates.add(entry.projection.stateFingerprint);
+      entry.behavior = buildBehavior(entry.state);
+      behaviorBuilt += 1;
     });
   });
+
+  // Classify pairs within each collision group (all pairs).
+  const classifications = [];
+  const unsafeWitnesses = [];
+  Array.from(groups.values()).forEach((group) => {
+    if (group.length < 2) return;
+    for (let i = 0; i < group.length; i += 1) {
+      for (let j = i + 1; j < group.length; j += 1) {
+        const left = group[i];
+        const right = group[j];
+        if (!left.behavior || !right.behavior) continue;
+        const result = classifyPair(left.behavior, right.behavior);
+        const witness = {
+          classification: result.classification,
+          candidateKey: left.projection.candidateFullBehaviorKey,
+          left: {
+            stateFingerprint: left.projection.stateFingerprint,
+            hp: left.projection.dominanceLabel.hp,
+            decisionDepth: left.projection.dominanceLabel.decisionDepth,
+            eventHazardLabel: left.projection.eventHazardLabel,
+          },
+          right: {
+            stateFingerprint: right.projection.stateFingerprint,
+            hp: right.projection.dominanceLabel.hp,
+            decisionDepth: right.projection.dominanceLabel.decisionDepth,
+            eventHazardLabel: right.projection.eventHazardLabel,
+          },
+          actionOnlyLeft: result.actionOnlyLeft || [],
+          actionOnlyRight: result.actionOnlyRight || [],
+          sharedActionSuccessorDiffs: result.successorBehaviorDiffs || [],
+          reason: result.reason,
+        };
+        classifications.push(witness);
+        if (result.classification === "unsafe") unsafeWitnesses.push(witness);
+      }
+    }
+  });
+
+  const summarize = (items) => items.reduce((acc, item) => { acc[item.classification] = (acc[item.classification] || 0) + 1; return acc; }, {});
+  const classificationCounts = summarize(classifications);
+  const unsafeCount = classificationCounts.unsafe || 0;
+  const dominanceSafeCount = classificationCounts["dominance-safe"] || 0;
+  const metadataOnlyCount = classificationCounts["metadata-only"] || 0;
+  const unclassifiedCount = classificationCounts.unclassified || 0;
 
   return {
     schema: "motapathfinder.key-dependency-corpus.v1",
-    stateCount: entries.length,
-    uniqueExactKeys: exactKeySet.size,
-    uniqueStructuralSignatures: structuralSet.size,
-    uniqueResourceLabels: resourceSet.size,
-    uniqueEventLabels: eventSet.size,
-    uniqueDecompositions: decompositionSet.size,
-    heroFieldVariance: summarize(heroVariance),
-    inventoryVariance: summarize(inventoryVariance),
-    flagsVariance: summarize(flagsVariance),
-    actionSetConflictCount: Array.from(actionSetByDecomposition.values()).filter((value) => value.conflict).length,
-    mergeHazardCandidates: hazards.slice(0, 40),
-    mergeHazardCount: hazards.length,
-    byHazardKind: hazards.reduce((acc, hazard) => { acc[hazard.kind] = (acc[hazard.kind] || 0) + 1; return acc; }, {}),
-    exactKeyMergeHazardCandidates: exactKeyMergeHazards.slice(0, 40),
-    exactKeyMergeHazardCount: exactKeyMergeHazards.length,
-    exactKeyGroupsWithMultipleStates: Array.from(keyGroups.values()).filter((group) => group.length >= 2).length,
+    capturedStateCount: entries.length,
+    behaviorKeyCollisions,
+    structuralResourceCollisions,
+    legacyCollisions,
+    candidateGroupsAnalyzed: Array.from(groups.values()).filter((group) => group.length >= 2).length,
+    statesInCandidateCollisionGroups: collisionStates.size,
+    behaviorBuilt,
+    classificationCounts,
+    dominanceSafeCount,
+    metadataOnlyCount,
+    unsafeCount,
+    unclassifiedCount,
+    unsafeWitnesses: unsafeWitnesses.slice(0, (config.maxWitnesses || 20)),
   };
 }
 
 module.exports = {
-  actionFingerprint,
+  analyzeCandidateKeyCollisions,
   analyzeKeyDependencyCorpus,
-  buildStateDecomposition,
+  behaviorRelevantFlags,
+  buildActionIdentity,
+  buildStateBehavior,
+  buildStateProjection,
+  classifyPair,
+  heroNumbers,
   stableValue,
+  successorBehaviorKey,
 };

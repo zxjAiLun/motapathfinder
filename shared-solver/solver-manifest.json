@@ -2289,7 +2289,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.4c Commit 1: key dependency corpus - exact key + structural/resource/event projections + action/successor fingerprints, observation only"
+      "notes": "PR-5.4c Commit 1 Repair: TowerIR structural candidate + resource/event labels, candidate collision groups, dominance-aware classification (dominance-safe/metadata-only/unsafe), canonical action identity"
     }
   }
 }
