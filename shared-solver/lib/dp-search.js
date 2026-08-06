@@ -1396,7 +1396,7 @@ function searchDP(simulator, initialState, options) {
         )
       : !isBetterForSameDpKey(state, bestByKey.get(key) && bestByKey.get(key).state, config.dominanceConfig);
     if (dominated) {
-      trackPerfCount("dominated");
+      trackPerfCount("dominanceRejected");
       const existing = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);
       const existingState = existing && existing.state;
       const hpDiff = existingState ? heroHp(state) - heroHp(existingState) : null;
@@ -1517,6 +1517,7 @@ function searchDP(simulator, initialState, options) {
       ? bestByKey.getAll(key).map((candidate) => candidate.nodeId)
       : [node.nodeId];
     if (!skylineInserted) {
+      trackPerfCount("skylineCapacityRejected");
       if (observer) {
         observer.emit("candidateRejected", () => observerStatePayload(simulator, state, { key }, config, {
           reasonCode: "skyline-capacity-rejected",
@@ -1887,9 +1888,19 @@ function searchDP(simulator, initialState, options) {
     expansions += 1;
     trackPerfCount("expanded");
     if (perfActive) {
-      const nodeDepth = getDecisionDepth(state);
+      // Node depth (from search-nodes) is authoritative here: the segment-DP
+      // states do not carry meta.decisionDepth (the DP tracks depth on nodes).
+      const entryNode = nodes.get(entry.nodeId);
+      const nodeDepth = entryNode && typeof entryNode.depth === "number"
+        ? entryNode.depth
+        : getDecisionDepth(state);
       depthSum += nodeDepth;
       if (nodeDepth > depthMax) depthMax = nodeDepth;
+      // Synchronous in-search memory sampling: process.memoryUsage() cannot run
+      // on the event loop during the search, so sample here at intervals.
+      if (expansions % 32 === 0) {
+        perfTracker.recordMemorySample(process.memoryUsage());
+      }
     }
     let actions = [];
     try {
@@ -1983,10 +1994,7 @@ function searchDP(simulator, initialState, options) {
             : action;
           const childNode = enqueue(nextState, observedAction, entry);
           if (childNode) recordAction(actionStats, action, "kept");
-          else {
-            trackPerfCount("dominated");
-            recordAction(actionStats, action, "dominated");
-          }
+          else recordAction(actionStats, action, "dominated");
         });
         const actionOrdinal = actionIndex + 1;
         if (

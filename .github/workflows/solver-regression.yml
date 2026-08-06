@@ -36,4 +36,5 @@ jobs:
       - run: npm ci
       - run: npm run check:solver-job
       - run: npm run check:launcher
+      - run: npm run check:perf-baseline
 

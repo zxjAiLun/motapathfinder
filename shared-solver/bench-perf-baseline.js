@@ -1,15 +1,20 @@
 "use strict";
 
 /**
- * PR-5.4b Commit 1 — deterministic performance baseline.
+ * PR-5.4b Commit 1 (Repair) — deterministic performance baseline.
  *
- * Runs a FIXED OnlyUp region (the smoke region) with a FIXED task and budget
- * through the canonical segment-DP path, with the perf tracker active, and
- * emits a fixed-schema JSON report.  Does NOT change any search semantics,
- * does NOT remove state.route, does NOT build TowerIR, and does NOT introduce
- * Rust.
+ * Two fixed workloads:
+ * - "smoke-contract": the smoke region with its default goal (exp 2).  Tiny
+ *   search (~2 expansions).  Used ONLY for contract checks and CI; NOT used
+ *   for performance conclusions.
+ * - "representative-baseline": a fixed MT1 segment with a deeper goal
+ *   (exp 9), which produces a meaningful frontier and route depth (avg depth
+ *   ~8, max ~12, ~100+ expansions).  Used to compare Commit 1 vs Commit 2.
  *
- * Output schema: motapathfinder.perf-baseline.v1
+ * Both run through the canonical segment-DP path with the perf tracker active.
+ * Memory peaks are sampled synchronously INSIDE the search loop (a setInterval
+ * sampler cannot run during CPU-bound search).  Output schema:
+ * motapathfinder.perf-baseline.v1.
  */
 
 const fs = require("node:fs");
@@ -18,6 +23,8 @@ const path = require("node:path");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
 const { executeSolveJob } = require("./lib/solver-job");
 const { createPerfTracker, setActivePerfTracker } = require("./lib/perf");
+const { buildReplayRouteFingerprint } = require("./lib/replay-resume-artifact");
+const { exactStateFingerprint } = require("./lib/solver-job");
 
 const ROOT = path.resolve(__dirname, "..");
 const SMOKE_SPEC_FILE = path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json");
@@ -25,8 +32,25 @@ const ONLY_UP_ROOT = path.join(ROOT, "Only upV2.1", "Only upV2.1");
 
 const BASELINE_SCHEMA = "motapathfinder.perf-baseline.v1";
 
-function buildBaselineTask() {
+const PROFILES = {
+  "smoke-contract": {
+    maxExpansions: 1000,
+    maxRuntimeMs: 10000,
+    candidateLimit: 2,
+    goalExp: 2,
+  },
+  "representative-baseline": {
+    maxExpansions: 3000,
+    maxRuntimeMs: 0,
+    candidateLimit: 2,
+    goalExp: 9,
+  },
+};
+
+function buildBaselineTask(profile) {
+  const config = PROFILES[profile] || PROFILES["smoke-contract"];
   const spec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
+  spec.goal = { type: "heroAtLeast", floorId: "MT1", minHero: { exp: config.goalExp } };
   return compileExecutableSolveTask({
     schema: "motapathfinder.solve-task.v1",
     tower: {
@@ -37,9 +61,9 @@ function buildBaselineTask() {
     objective: { mode: "max-final-hp" },
     search: {
       algorithm: "segment-dp",
-      maxExpansions: 1000,
-      maxRuntimeMs: 10000,
-      candidateLimit: 2,
+      maxExpansions: config.maxExpansions,
+      maxRuntimeMs: config.maxRuntimeMs,
+      candidateLimit: config.candidateLimit,
       goalSkylineLimit: 8,
     },
     verification: { strictReplay: false },
@@ -47,8 +71,7 @@ function buildBaselineTask() {
 }
 
 function collectSearchDepth(execution) {
-  // The canonical single-region result carries segment diagnostics; the DP
-  // depth lives on each segment attempt's diagnostics.dp.depth.
+  // The DP depth lives on each segment attempt's diagnostics.dp.depth.
   const diagnostics = execution && execution.result && execution.result.diagnostics;
   let depth = diagnostics && (diagnostics.depth || (diagnostics.dp && diagnostics.dp.depth));
   if (!depth) {
@@ -73,21 +96,40 @@ function collectSearchDepth(execution) {
   };
 }
 
+function collectResultParity(execution, task) {
+  const record = execution.routeRecord || null;
+  const decisions = (record && record.decisions) || [];
+  const winnerState = execution.result && execution.result.finalCandidate && execution.result.finalCandidate.state;
+  const routeFingerprint = record ? buildReplayRouteFingerprint(record) : null;
+  // The DP's own dominance diagnostics (for rejection-counter alignment).
+  const att = (execution.result && execution.result.segmentResults || [])[0]
+    && (execution.result.segmentResults[0].attempts || [])[0];
+  const dpDiag = att && att.diagnostics && att.diagnostics.dp;
+  return {
+    found: Boolean(execution.result && execution.result.found),
+    failureClass: execution.result && execution.result.failedSegment && execution.result.failedSegment.failureClass || null,
+    stoppedReason: execution.result && execution.result.stoppedReason || null,
+    routeDecisionCount: decisions.length,
+    routeFingerprint: routeFingerprint ? routeFingerprint.hash || JSON.stringify(routeFingerprint) : null,
+    winnerExactFingerprint: winnerState ? exactStateFingerprint(winnerState) : null,
+    decisionSummaries: decisions.map((decision) => (decision && decision.summary) || (decision && decision.kind) || String(decision)),
+    objectiveValue: execution.objectiveValue ? execution.objectiveValue.value : null,
+    taskFingerprint: task && task.taskFingerprint || null,
+    dpRejections: dpDiag
+      ? {
+          rejectedByHigherHp: Number(dpDiag.rejectedByHigherHp || 0),
+          sameHpRejected: Number(dpDiag.sameHpRejected || 0),
+        }
+      : null,
+  };
+}
+
 async function runPerfBaseline(options) {
   const config = options || {};
-  const task = config.task || buildBaselineTask();
+  const profile = config.profile || "smoke-contract";
+  const task = config.task || buildBaselineTask(profile);
   const tracker = createPerfTracker({ enabled: true });
   setActivePerfTracker(tracker);
-
-  let peakRssMb = 0;
-  let peakHeapUsedMb = 0;
-  const sampler = setInterval(() => {
-    const memory = process.memoryUsage();
-    const rss = memory.rss / 1024 / 1024;
-    const heap = memory.heapUsed / 1024 / 1024;
-    if (rss > peakRssMb) peakRssMb = rss;
-    if (heap > peakHeapUsedMb) peakHeapUsedMb = heap;
-  }, 5);
 
   const wallStarted = Date.now();
   try {
@@ -101,16 +143,23 @@ async function runPerfBaseline(options) {
     const perf = tracker.snapshot({});
     const depth = collectSearchDepth(execution);
     const search = task.normalizedTask.search || {};
-    // The search is synchronous, so the interval sampler cannot fire during it;
-    // the post-search memory usage is the practical high-water mark for a
-    // synchronous search (measured before any explicit GC).
-    const peakRss = Math.max(peakRssMb, perf.rssMb);
-    const peakHeap = Math.max(peakHeapUsedMb, perf.heapUsedMb);
+    const parity = collectResultParity(execution, task);
+    const endRssMb = Number(perf.rssMb);
+    const endHeapUsedMb = Number(perf.heapUsedMb);
+    // Peak RSS: process-level high-water (maxRSS) is authoritative, with the
+    // in-loop sampled peak and the end RSS as supplemental maxima.
+    const maxRssKb = Number((process.resourceUsage && process.resourceUsage().maxRSS) || 0);
+    const peakRssMb = Math.max(maxRssKb / 1024, Number(perf.peakRssMb || 0), endRssMb);
+    const peakHeapUsedMb = Math.max(Number(perf.peakHeapUsedMb || 0), endHeapUsedMb);
     return {
       schema: BASELINE_SCHEMA,
+      profile,
       task: {
         taskFingerprint: task.taskFingerprint,
         regionId: task.normalizedTask.tower.region.spec.id,
+        goalExp: (task.normalizedTask.tower.region.spec.goal || {}).minHero
+          ? (task.normalizedTask.tower.region.spec.goal.minHero).exp
+          : null,
         search: {
           maxExpansions: Number(search.maxExpansions),
           maxRuntimeMs: Number(search.maxRuntimeMs),
@@ -118,26 +167,23 @@ async function runPerfBaseline(options) {
           goalSkylineLimit: Number(search.goalSkylineLimit),
         },
       },
-      result: {
-        found: Boolean(execution.result && execution.result.found),
-        strictReplayVerified: Boolean(execution.strictReplayVerified),
-        routeDecisionCount: execution.routeRecord && execution.routeRecord.decisions
-          ? execution.routeRecord.decisions.length
-          : null,
-      },
+      result: parity,
       perf: {
         wallMs,
         cpuUserMs: perf.cpuUserMs,
         cpuSystemMs: perf.cpuSystemMs,
         cpuUtilization: perf.cpuUtilization,
-        rssMb: Number(perf.rssMb.toFixed(1)),
-        heapUsedMb: Number(perf.heapUsedMb.toFixed(1)),
-        peakRssMb: Number(peakRss.toFixed(1)),
-        peakHeapUsedMb: Number(peakHeap.toFixed(1)),
+        endRssMb: Number(endRssMb.toFixed(1)),
+        endHeapUsedMb: Number(endHeapUsedMb.toFixed(1)),
+        peakRssMb: Number(peakRssMb.toFixed(1)),
+        peakHeapUsedMb: Number(peakHeapUsedMb.toFixed(1)),
+        maxRssKb,
+        memorySampleCount: perf.memorySampleCount,
         expanded: perf.expanded,
         generated: perf.generated,
         registered: perf.registered,
-        dominated: Number(perf.dominated || 0),
+        dominanceRejected: Number(perf.dominanceRejected || 0),
+        skylineCapacityRejected: Number(perf.skylineCapacityRejected || 0),
         duplicates: perf.duplicates,
         expandedPerSec: Number(perf.expandedPerSec.toFixed(2)),
         generatedPerSec: Number(perf.generatedPerSec.toFixed(2)),
@@ -148,20 +194,19 @@ async function runPerfBaseline(options) {
       meta: {
         ranAt: new Date().toISOString(),
         nodeVersion: process.version,
-        cwd: process.cwd(),
       },
     };
   } finally {
-    clearInterval(sampler);
     setActivePerfTracker(null);
   }
 }
 
 async function main() {
-  const outputPath = process.argv.includes("--output")
-    ? process.argv[process.argv.indexOf("--output") + 1]
-    : null;
-  const report = await runPerfBaseline();
+  const args = process.argv.slice(2);
+  const outputPath = args.includes("--output") ? args[args.indexOf("--output") + 1] : null;
+  const profileArg = args.includes("--profile") ? args[args.indexOf("--profile") + 1] : null;
+  const profile = PROFILES[profileArg] ? profileArg : "smoke-contract";
+  const report = await runPerfBaseline({ profile });
   if (outputPath) {
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
@@ -177,4 +222,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { BASELINE_SCHEMA, buildBaselineTask, runPerfBaseline, main };
+module.exports = { BASELINE_SCHEMA, PROFILES, buildBaselineTask, collectResultParity, runPerfBaseline, main };

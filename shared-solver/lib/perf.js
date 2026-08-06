@@ -27,6 +27,9 @@ function createPerfTracker(options) {
     registered: 0,
     duplicates: 0,
   };
+  let peakRssBytes = 0;
+  let peakHeapBytes = 0;
+  let memorySampleCount = 0;
   let lastLiveAt = startedAt;
   const liveIntervalMs = Number(config.liveIntervalMs || 5000);
 
@@ -67,6 +70,17 @@ function createPerfTracker(options) {
     counters[name] = Number(counters[name] || 0) + Number(amount || 1);
   }
 
+  // Synchronous in-search memory sampling: the caller (the search loop) calls
+  // this with process.memoryUsage() at intervals.  This is the ONLY reliable
+  // way to observe peak heap during CPU-bound synchronous search, where the
+  // event loop (and any setInterval sampler) cannot run.
+  function recordMemorySample(memory) {
+    if (!enabled || !memory) return;
+    memorySampleCount += 1;
+    if (memory.heapUsed > peakHeapBytes) peakHeapBytes = memory.heapUsed;
+    if (memory.rss > peakRssBytes) peakRssBytes = memory.rss;
+  }
+
   function snapshot(extra) {
     const wallMs = nowMs() - startedAt;
     const cpu = process.cpuUsage(startedCpu);
@@ -90,10 +104,14 @@ function createPerfTracker(options) {
       generated,
       registered,
       duplicates,
+      ...counters,
       expandedPerSec: wallMs > 0 ? expanded / (wallMs / 1000) : 0,
       generatedPerSec: wallMs > 0 ? generated / (wallMs / 1000) : 0,
       rssMb: memory.rss / 1024 / 1024,
       heapUsedMb: memory.heapUsed / 1024 / 1024,
+      peakRssMb: peakRssBytes > 0 ? peakRssBytes / 1024 / 1024 : memory.rss / 1024 / 1024,
+      peakHeapUsedMb: peakHeapBytes > 0 ? peakHeapBytes / 1024 / 1024 : memory.heapUsed / 1024 / 1024,
+      memorySampleCount,
       phaseMs: Object.fromEntries(Object.entries(phaseMs).map(([key, value]) => [key, value.ms])),
       phaseCounts: Object.fromEntries(Object.entries(phaseMs).map(([key, value]) => [key, value.count])),
       ...(extra || {}),
@@ -147,6 +165,7 @@ function createPerfTracker(options) {
     timePhase,
     timePhaseAsync,
     increment,
+    recordMemorySample,
     snapshot,
     formatLiveSummary,
     maybePrintLive,
