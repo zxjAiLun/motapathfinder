@@ -465,10 +465,17 @@ function selectGoalSkylineNodes(goalNodes, options) {
   const limit = Math.max(1, Number(config.goalSkylineLimit || 8));
   const preserveGoalArchive = config.preserveGoalArchive === true;
   const goalComparator = resolveGoalStateComparator(config);
+  // Terminal ordering MUST compare materialized states (detached clones carrying
+  // real route arrays) so route-length objectives see the real entry count, not
+  // the canonical empty route.  `stateForNode` supplies those clones; without it
+  // the comparator falls back to node.state (which stays route-free).
+  const stateOf = typeof config.stateForNode === "function"
+    ? config.stateForNode
+    : (node) => node && node.state;
   const sorted = (goalNodes || [])
     .filter(Boolean)
     .slice()
-    .sort((left, right) => goalComparator(right, left));
+    .sort((left, right) => goalComparator(stateOf(right), stateOf(left)));
   const selected = [];
   const seenKeys = new Set();
   for (const node of sorted) {
@@ -2127,7 +2134,17 @@ function searchDP(simulator, initialState, options) {
     materialized.meta.rawRouteLength = canonicalRawRouteLength;
     return materialized;
   };
-  const goalSkylineNodes = selectGoalSkylineNodes(activeGoalNodes, config);
+  const goalSkylineNodes = selectGoalSkylineNodes(activeGoalNodes, {
+    ...config,
+    // Terminal ordering must compare detached materialized clones so
+    // route-length objectives see the real materialized entry count; the
+    // canonical node states stay route-free.
+    stateForNode: (node) => {
+      if (!node) return null;
+      const materialized = attachRouteToNodeState(node);
+      return materialized || node.state;
+    },
+  });
   // Re-derive bestGoalNode from the route-attached, objective-ordered archive.
   // bestGoalNode was captured at enqueue time when state.route was still empty
   // (production applyAction uses storeRoute:false), so route-length-sensitive

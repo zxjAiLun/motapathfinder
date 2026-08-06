@@ -49,12 +49,16 @@ function ensureMeta(state) {
   if (typeof meta.rank === "undefined") meta.rank = null;
   if (typeof meta.decisionDepth !== "number") meta.decisionDepth = 0;
   // Migrate legacy states exactly once: an explicit rawRouteLength (including 0)
-  // is authoritative; only when absent do we derive it from the existing route
-  // array length, else from decisionDepth.
+  // is authoritative; only when absent do we derive it from the KNOWN LOWER
+  // BOUND of the existing materialized route array length and the decision
+  // depth.  This keeps legacy canonical states (route=[], decisionDepth>0)
+  // from being collapsed to 0: rawRouteLength must be >= decisionDepth, since
+  // every decision is at least one route step.
   if (!Object.prototype.hasOwnProperty.call(meta, "rawRouteLength")) {
-    meta.rawRouteLength = Array.isArray(state.route)
-      ? state.route.length
-      : meta.decisionDepth;
+    meta.rawRouteLength = Math.max(
+      Array.isArray(state.route) ? state.route.length : 0,
+      Number(meta.decisionDepth || 0),
+    );
   }
   if (typeof meta.autoStepCount !== "number") meta.autoStepCount = 0;
   if (typeof meta.autoPickupCount !== "number") meta.autoPickupCount = 0;
@@ -64,6 +68,22 @@ function ensureMeta(state) {
 
 function getDecisionDepth(state) {
   return Number(ensureMeta(state).decisionDepth || 0);
+}
+
+// Materialized route length: the decision/replay entry count that appears in
+// the materialized route array.  This is intentionally DISTINCT from
+// rawRouteLength (decision + auto steps).  During canonical search the
+// materialized array is empty; the terminal ordering must use the materialized
+// clones (which carry real route arrays), never the canonical empty array.
+function getMaterializedRouteLength(state) {
+  const meta = state && state.meta;
+  if (meta && typeof meta.materializedRouteLength === "number") {
+    return meta.materializedRouteLength;
+  }
+  if (state && Array.isArray(state.route) && state.route.length > 0) {
+    return state.route.length;
+  }
+  return getDecisionDepth(state);
 }
 
 // Unified raw route length reader.  Raw route length counts EVERY route-visible
@@ -270,6 +290,7 @@ module.exports = {
   ensureFloorState,
   floorHasCoordinate,
   getDecisionDepth,
+  getMaterializedRouteLength,
   getRawRouteLength,
   getBaseTileNumber,
   getInventoryCount,

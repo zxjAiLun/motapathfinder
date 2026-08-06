@@ -227,6 +227,9 @@ async function main() {
     controls: {
       unknownProfileFailClosed: true,
       cliUnknownProfileNonZeroExit: true,
+      commit1RouteFingerprintParity: true,
+      commit1WinnerFingerprintParity: true,
+      commit1DecisionSummariesParity: true,
       smokeResultParityExact: true,
       smokeOutputSchemaStable: true,
       representativeWorkloadNonTrivial: true,
