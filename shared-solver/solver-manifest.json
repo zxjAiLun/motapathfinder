@@ -199,7 +199,8 @@
         "shared-solver/check-multi-region-route-contract.js",
         "shared-solver/check-perf-baseline-contract.js",
         "shared-solver/check-route-free-state-contract.js",
-        "shared-solver/check-tower-ir-shadow-contract.js"
+        "shared-solver/check-tower-ir-shadow-contract.js",
+        "shared-solver/check-key-dependency-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -2282,6 +2283,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4b Commit 3: single-Region TowerIR compile determinism, structure, shadow parity on representative corpus, observation isolation, immutability"
+    },
+    "shared-solver/check-key-dependency-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.4c Commit 1: key dependency corpus - exact key + structural/resource/event projections + action/successor fingerprints, observation only"
     }
   }
 }
