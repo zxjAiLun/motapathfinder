@@ -127,6 +127,23 @@ async function main() {
   const repTask = buildBaselineTask("representative-baseline");
   const repBaseline = await runPerfBaseline({ profile: "representative-baseline", task: repTask });
   assertReportShape(repBaseline, "representative");
+  // Cross-version parity with Commit 1 (PR-5.4b route-free refactor must not
+  // change the search outcome or fingerprints).
+  assert.strictEqual(
+    repBaseline.result.routeFingerprint,
+    '{"algorithm":"sha256-stable-json-v1","sha256":"c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13"}',
+    "representative routeFingerprint must match Commit 1",
+  );
+  assert.strictEqual(
+    repBaseline.result.winnerExactFingerprint,
+    "a2ff379819ac9003",
+    "representative winner exact fingerprint must match Commit 1",
+  );
+  assert.deepStrictEqual(
+    repBaseline.result.decisionSummaries,
+    ["battle:blackSlime@MT1:8,7", "battle:redSlime@MT1:10,8", "battle:blackSlime@MT1:3,10", "battle:slimelord@MT1:9,4", "battle:slimelord@MT1:3,4", "battle:bat@MT1:4,11"],
+    "decision summaries must match Commit 1",
+  );
   assert.strictEqual(
     repBaseline.profile,
     "representative-baseline",

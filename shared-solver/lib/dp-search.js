@@ -1013,9 +1013,9 @@ function searchDP(simulator, initialState, options) {
   let depthSum = 0;
   let depthMax = 0;
   // Route-free invariant diagnostics: canonical search states must never carry
-  // a materialized route array (only the boundary materialization does).
-  let routeFreeStateViolations = 0;
-  let materializedRouteStateCount = 0;
+  // a non-empty materialized route array (the search applies with
+  // storeRoute:false and the enqueue copy drops the route field entirely).
+  let nonEmptyRouteStateCount = 0;
   let maxRawRouteLength = 0;
   const observer = createDpObserver(config);
   const goalStateComparator = resolveGoalStateComparator(config);
@@ -1059,9 +1059,14 @@ function searchDP(simulator, initialState, options) {
   const rootState = cloneState(initialState);
   rootState.route = [];
   // The carried route prefix's length survives on the canonical state as the
-  // raw route length; the in-search state itself stays route-free.
+  // raw route length; the in-search state itself stays route-free.  The true
+  // cumulative raw length (decisions + auto steps) from the caller's state is
+  // authoritative and must NEVER be re-derived from the materialized prefix.
   if (!rootState.meta) rootState.meta = {};
-  rootState.meta.rawRouteLength = initialRoutePrefix.length;
+  rootState.meta.rawRouteLength = Math.max(
+    getRawRouteLength(initialState),
+    initialRoutePrefix.length,
+  );
   if (typeof config.stateAnnotator === "function") {
     try {
       config.stateAnnotator(rootState, null, null);
@@ -1380,11 +1385,12 @@ function searchDP(simulator, initialState, options) {
   };
 
   const enqueue = (state, sourceAction, parentNode) => {
-    // Route-free invariant: states entering the canonical DP must not carry a
-    // materialized route array.  Count violations (diagnostic only).
+    // Route-free invariant (compat mode): canonical states must not carry a
+    // NON-EMPTY materialized route array.  The search applies with
+    // storeRoute:false, so real states keep an empty route field; synthetic
+    // tests may carry one and are only counted here for diagnostics.
     if (Array.isArray(state.route) && state.route.length > 0) {
-      routeFreeStateViolations += 1;
-      materializedRouteStateCount += 1;
+      nonEmptyRouteStateCount += 1;
     }
     const rawLength = getRawRouteLength(state);
     if (rawLength > maxRawRouteLength) maxRawRouteLength = rawLength;
@@ -2105,9 +2111,12 @@ function searchDP(simulator, initialState, options) {
   // Route materialization returns a DETACHED clone: the canonical node.state in
   // the nodes Map must never gain a materialized route array.  The parent
   // pointer chain + actionEntry._routePatch remain the only reconstruction
-  // source.
+  // source.  state.route.length is the materialized decision/replay-entry
+  // count; meta.rawRouteLength is the decision+auto cumulative step count and
+  // must NOT be overwritten by the shorter materialized route length.
   const attachRouteToNodeState = (node) => {
     if (!node || !node.state) return null;
+    const canonicalRawRouteLength = getRawRouteLength(node.state);
     const materialized = cloneState(node.state);
     materialized.route = initialRoutePrefix.concat(reconstructActionEntries(nodes, node));
     if (captureTrace) {
@@ -2115,17 +2124,9 @@ function searchDP(simulator, initialState, options) {
     } else if (Object.prototype.hasOwnProperty.call(materialized, "routeTrace")) {
       delete materialized.routeTrace;
     }
-    materialized.meta.rawRouteLength = materialized.route.length;
+    materialized.meta.rawRouteLength = canonicalRawRouteLength;
     return materialized;
   };
-  // Goal-archive ordering reads route length from the canonical state via
-  // getRawRouteLength (meta.rawRouteLength is maintained in-search by
-  // appendRouteStep), so no in-place route attach is needed here.
-  activeGoalNodes.forEach((node) => {
-    if (!node || !node.state) return;
-    // Ensure the comparator never sees a stale in-place route.
-    node.state.route = [];
-  });
   const goalSkylineNodes = selectGoalSkylineNodes(activeGoalNodes, config);
   // Re-derive bestGoalNode from the route-attached, objective-ordered archive.
   // bestGoalNode was captured at enqueue time when state.route was still empty
@@ -2238,8 +2239,7 @@ function searchDP(simulator, initialState, options) {
         maxDecisionDepth: depthMax,
       },
       routeFree: {
-        stateViolations: routeFreeStateViolations,
-        materializedRouteStateCount,
+        nonEmptyRouteStateCount,
         maxRawRouteLength,
       },
       pruneReasons: {

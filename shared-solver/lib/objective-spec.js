@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 
-const { getDecisionDepth, getRawRouteLength } = require("./state");
+const { getDecisionDepth } = require("./state");
 const {
   SOLVER_HERO_FIELDS,
   isSolverFieldMaintained,
@@ -94,9 +94,12 @@ function stateFromCandidate(candidate) {
 }
 
 function routeLength(state) {
-  // Route length must read the unified raw route length (auto steps included),
-  // not only the materialized array (which is absent during search).
-  return getRawRouteLength(state);
+  // The `route.length` objective path reads the MATERIALIZED route entry count
+  // (0 when no route is attached during search).  This is intentionally NOT
+  // getRawRouteLength: the raw cumulative counter (decisions + auto steps) is a
+  // separate search-side quantity, while the route-length objective is defined
+  // over the materialized decision/replay entries.
+  return Array.isArray(state && state.route) ? state.route.length : 0;
 }
 
 function effectiveHeroValue(state, field) {

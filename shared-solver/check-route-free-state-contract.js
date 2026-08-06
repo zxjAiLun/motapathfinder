@@ -28,15 +28,9 @@ const { compareGoalStates, routeLengthOfState, searchDP } = require("./lib/dp-se
 const { buildDominanceSummary } = require("./lib/dominance");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
 const { executeSolveJob } = require("./lib/solver-job");
-const { buildBaselineTask, runPerfBaseline } = require("./bench-perf-baseline");
 
 const ROOT = path.resolve(__dirname, "..");
 const ONLY_UP_ROOT = path.join(ROOT, "Only upV2.1", "Only upV2.1");
-
-// Commit 1 reference fingerprints (captured before this refactor).
-const COMMIT1_REPRESENTATIVE_ROUTE_FINGERPRINT =
-  '{"algorithm":"sha256-stable-json-v1","sha256":"c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13"}';
-const COMMIT1_REPRESENTATIVE_WINNER_FINGERPRINT = "a2ff379819ac9003";
 
 function checkScalarCounters() {
   // 1 decision + 1 auto move + 1 auto pickup + 1 auto battle, storeRoute on.
@@ -76,6 +70,30 @@ function checkLegacyMigration() {
   // Deterministic: repeated reads do not accumulate.
   assert.strictEqual(getRawRouteLength(legacyRoute), 3);
   assert.strictEqual(getRawRouteLength(legacyRoute), 3);
+
+  // Legacy MUTATION migration: appending to a legacy state must preserve the
+  // prefix cumulative length, not restart from 0.
+  const legacyPrefix = { route: ["a", "b", "c"], meta: { decisionDepth: 1 } };
+  appendRouteStep(legacyPrefix, "d", {});
+  assert.strictEqual(legacyPrefix.meta.rawRouteLength, 4, "legacy route prefix 3 + 1 append must yield 4");
+  assert.strictEqual(getRawRouteLength(legacyPrefix), 4, "getRawRouteLength must read the migrated value");
+
+  const legacyDepthAppend = { meta: { decisionDepth: 5 } };
+  appendRouteStep(legacyDepthAppend, "e", {});
+  assert.strictEqual(legacyDepthAppend.meta.rawRouteLength, 6, "legacy decisionDepth 5 + 1 append must yield 6");
+
+  // Explicit rawRouteLength=0 is authoritative and must NOT fall back to a
+  // stale route array.
+  const zeroAuthoritative = { route: ["x", "y"], meta: { rawRouteLength: 0, decisionDepth: 1 } };
+  assert.strictEqual(getRawRouteLength(zeroAuthoritative), 0, "explicit rawRouteLength=0 must be authoritative");
+
+  // Repeated ensureMeta must not double-migrate.
+  const { ensureMeta } = require("./lib/state");
+  const legacyRepeat = { route: ["p", "q"], meta: { decisionDepth: 2 } };
+  ensureMeta(legacyRepeat);
+  assert.strictEqual(legacyRepeat.meta.rawRouteLength, 2, "first ensureMeta migrates from route.length");
+  ensureMeta(legacyRepeat);
+  assert.strictEqual(legacyRepeat.meta.rawRouteLength, 2, "second ensureMeta must not re-migrate");
 }
 
 function checkTieBreakSemantics() {
@@ -127,29 +145,20 @@ async function checkCanonicalRouteFreeGate() {
   const att = (execution.result.segmentResults || [])[0] && (execution.result.segmentResults[0].attempts || [])[0];
   const dp = att && att.diagnostics && att.diagnostics.dp;
   assert.ok(dp && dp.routeFree, "attempt diagnostics must carry routeFree");
-  assert.strictEqual(dp.routeFree.stateViolations, 0, "no canonical state may carry a materialized route");
-  assert.strictEqual(dp.routeFree.materializedRouteStateCount, 0, "materializedRouteStateCount must be 0");
+  assert.strictEqual(dp.routeFree.nonEmptyRouteStateCount, 0, "no canonical state may carry a non-empty route");
   assert.ok(dp.routeFree.maxRawRouteLength > 0, "raw route length must be tracked");
 
-  // The detached result state's rawRouteLength matches its materialized route.
+  // The detached result state's rawRouteLength must carry the CANONICAL
+  // decision+auto cumulative length, and must NOT be compressed back to the
+  // shorter materialized route entry count.
   const fc = execution.result.finalCandidate && execution.result.finalCandidate.state;
   assert.ok(fc && fc.meta, "final candidate must carry meta");
-  assert.strictEqual(fc.meta.rawRouteLength, fc.route.length, "materialized result rawRouteLength must equal its route length");
+  assert.ok(
+    fc.meta.rawRouteLength > fc.route.length,
+    `canonical rawRouteLength must exceed the materialized route entry count (raw=${fc.meta.rawRouteLength}, route=${fc.route.length})`,
+  );
   // rawRouteLength is monotone: >= decisionDepth (auto steps included).
   assert.ok(fc.meta.rawRouteLength >= fc.meta.decisionDepth, "rawRouteLength must be monotone above decisionDepth");
-}
-
-async function checkParityWithCommit1() {
-  const report = await runPerfBaseline({ profile: "representative-baseline" });
-  assert.strictEqual(report.result.found, true, "representative must still reach its goal");
-  assert.strictEqual(report.result.routeFingerprint, COMMIT1_REPRESENTATIVE_ROUTE_FINGERPRINT, "routeFingerprint must match Commit 1");
-  assert.strictEqual(report.result.winnerExactFingerprint, COMMIT1_REPRESENTATIVE_WINNER_FINGERPRINT, "winner exact fingerprint must match Commit 1");
-  assert.deepStrictEqual(
-    report.result.decisionSummaries,
-    ["battle:blackSlime@MT1:8,7", "battle:redSlime@MT1:10,8", "battle:blackSlime@MT1:3,10", "battle:slimelord@MT1:9,4", "battle:slimelord@MT1:3,4", "battle:bat@MT1:4,11"],
-    "decision summaries must match Commit 1",
-  );
-  assert.strictEqual(report.result.objectiveValue, 1346, "objective value must match Commit 1");
 }
 
 async function main() {
@@ -157,7 +166,6 @@ async function main() {
   checkLegacyMigration();
   checkTieBreakSemantics();
   await checkCanonicalRouteFreeGate();
-  await checkParityWithCommit1();
 
   process.stdout.write(JSON.stringify({
     schema: "motapathfinder.pr-5.4b-route-free-state.v1",

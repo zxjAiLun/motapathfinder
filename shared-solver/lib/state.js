@@ -45,13 +45,21 @@ function flattenInventory(heroItems) {
 
 function ensureMeta(state) {
   if (state.meta == null) state.meta = {};
-  if (typeof state.meta.rank === "undefined") state.meta.rank = null;
-  if (typeof state.meta.decisionDepth !== "number") state.meta.decisionDepth = 0;
-  if (typeof state.meta.rawRouteLength !== "number") state.meta.rawRouteLength = 0;
-  if (typeof state.meta.autoStepCount !== "number") state.meta.autoStepCount = 0;
-  if (typeof state.meta.autoPickupCount !== "number") state.meta.autoPickupCount = 0;
-  if (typeof state.meta.autoBattleCount !== "number") state.meta.autoBattleCount = 0;
-  return state.meta;
+  const meta = state.meta;
+  if (typeof meta.rank === "undefined") meta.rank = null;
+  if (typeof meta.decisionDepth !== "number") meta.decisionDepth = 0;
+  // Migrate legacy states exactly once: an explicit rawRouteLength (including 0)
+  // is authoritative; only when absent do we derive it from the existing route
+  // array length, else from decisionDepth.
+  if (!Object.prototype.hasOwnProperty.call(meta, "rawRouteLength")) {
+    meta.rawRouteLength = Array.isArray(state.route)
+      ? state.route.length
+      : meta.decisionDepth;
+  }
+  if (typeof meta.autoStepCount !== "number") meta.autoStepCount = 0;
+  if (typeof meta.autoPickupCount !== "number") meta.autoPickupCount = 0;
+  if (typeof meta.autoBattleCount !== "number") meta.autoBattleCount = 0;
+  return meta;
 }
 
 function getDecisionDepth(state) {
@@ -61,11 +69,12 @@ function getDecisionDepth(state) {
 // Unified raw route length reader.  Raw route length counts EVERY route-visible
 // step (decisions AND auto moves/pickups/battles/events), so it is the length
 // that would be materialized into the final route; decisionDepth alone is NOT
-// exact when auto steps exist.  Legacy states fall back to the existing route
-// array length, then to decisionDepth.
+// exact when auto steps exist.  An explicit meta.rawRouteLength (including 0)
+// is authoritative; legacy states without the field fall back to the existing
+// route array length, then to decisionDepth.
 function getRawRouteLength(state) {
   const meta = state && state.meta;
-  if (meta && typeof meta.rawRouteLength === "number" && meta.rawRouteLength > 0) {
+  if (meta && typeof meta.rawRouteLength === "number") {
     return meta.rawRouteLength;
   }
   if (state && Array.isArray(state.route) && state.route.length > 0) {
