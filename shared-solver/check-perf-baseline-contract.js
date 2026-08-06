@@ -14,9 +14,11 @@
  */
 
 const assert = require("node:assert");
+const { spawnSync } = require("node:child_process");
+const path = require("node:path");
 
 const { executeSolveJob } = require("./lib/solver-job");
-const { BASELINE_SCHEMA, buildBaselineTask, collectResultParity, runPerfBaseline } = require("./bench-perf-baseline");
+const { BASELINE_SCHEMA, buildBaselineTask, collectResultParity, requireKnownProfile, runPerfBaseline } = require("./bench-perf-baseline");
 
 const REQUIRED_PHASES = ["cloneState", "reachability", "buildDpStateKey", "enumerateActions", "applyAction"];
 
@@ -66,6 +68,24 @@ function extractDpRejectionTotals(task) {
 }
 
 async function main() {
+  // ---- unknown/misspelled profiles must fail closed ----
+  assert.throws(
+    () => requireKnownProfile("representatve-baseline"),
+    (error) => error && /Unknown baseline profile/.test(error.message),
+    "requireKnownProfile must reject an unknown profile",
+  );
+  await assert.rejects(
+    () => runPerfBaseline({ profile: "unknown" }),
+    (error) => error && /Unknown baseline profile/.test(error.message),
+    "runPerfBaseline must reject an unknown explicit profile",
+  );
+  const cliProbe = spawnSync(
+    process.execPath,
+    [path.join(__dirname, "bench-perf-baseline.js"), "--profile", "representatve-baseline"],
+    { encoding: "utf8", timeout: 30000 },
+  );
+  assert.notStrictEqual(cliProbe.status, 0, "CLI --profile with an unknown value must exit non-zero");
+
   // ---- smoke-contract: parity with the plain execution ----
   const smokeTask = buildBaselineTask("smoke-contract");
   const smokeBaseline = await runPerfBaseline({ profile: "smoke-contract", task: smokeTask });
@@ -188,6 +208,8 @@ async function main() {
     schema: "motapathfinder.pr-5.4b-perf-baseline.v1",
     status: "passed",
     controls: {
+      unknownProfileFailClosed: true,
+      cliUnknownProfileNonZeroExit: true,
       smokeResultParityExact: true,
       smokeOutputSchemaStable: true,
       representativeWorkloadNonTrivial: true,

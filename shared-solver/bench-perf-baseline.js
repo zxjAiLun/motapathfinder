@@ -47,8 +47,17 @@ const PROFILES = {
   },
 };
 
+function requireKnownProfile(profile) {
+  if (!Object.prototype.hasOwnProperty.call(PROFILES, profile)) {
+    throw new Error(
+      `Unknown baseline profile: ${profile}. Expected one of: ${Object.keys(PROFILES).join(", ")}`,
+    );
+  }
+  return profile;
+}
+
 function buildBaselineTask(profile) {
-  const config = PROFILES[profile] || PROFILES["smoke-contract"];
+  const config = PROFILES[requireKnownProfile(profile || "smoke-contract")];
   const spec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
   spec.goal = { type: "heroAtLeast", floorId: "MT1", minHero: { exp: config.goalExp } };
   return compileExecutableSolveTask({
@@ -125,7 +134,7 @@ function collectResultParity(execution, task) {
 }
 
 function resolveProfile(config) {
-  if (config && config.profile) return config.profile;
+  if (config && config.profile) return requireKnownProfile(config.profile);
   if (config && config.task) {
     // A task passed without an explicit profile must BE one of the fixed
     // profile tasks; derive its identity from the task fingerprint.
@@ -228,7 +237,9 @@ async function main() {
   const args = process.argv.slice(2);
   const outputPath = args.includes("--output") ? args[args.indexOf("--output") + 1] : null;
   const profileArg = args.includes("--profile") ? args[args.indexOf("--profile") + 1] : null;
-  const profile = PROFILES[profileArg] ? profileArg : "smoke-contract";
+  // An explicitly provided but unknown profile must FAIL, never silently
+  // degrade to the smoke-contract default.
+  const profile = profileArg ? requireKnownProfile(profileArg) : "smoke-contract";
   const report = await runPerfBaseline({ profile });
   if (outputPath) {
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -245,4 +256,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { BASELINE_SCHEMA, PROFILES, buildBaselineTask, collectResultParity, runPerfBaseline, main };
+module.exports = { BASELINE_SCHEMA, PROFILES, buildBaselineTask, collectResultParity, requireKnownProfile, runPerfBaseline, main };
