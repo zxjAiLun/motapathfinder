@@ -2578,6 +2578,8 @@ function searchSegmentDP(simulator, startState, segment, options) {
     stopOnFirstGoal: dpConfig.stopOnFirstGoal === true,
     continueAfterGoal: dpConfig.continueAfterGoal === true,
     captureTrace,
+    captureExpandedStates: dpConfig.captureExpandedStates === true || config.captureExpandedStates === true,
+    captureExpandedStateLimit: number(dpConfig.captureExpandedStateLimit, config.captureExpandedStateLimit || 0),
     initialRouteTracePrefix: prefixTrace,
     goalSkylineLimit: number(dpConfig.goalSkylineLimit, 8),
     landmarkArchiveLimit: number(dpConfig.landmarkArchiveLimit, 0),
@@ -2657,6 +2659,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
         oracle: oracleDiagnostics || null,
         depth: (result.diagnostics && result.diagnostics.depth) || null,
         routeFree: (result.diagnostics && result.diagnostics.routeFree) || null,
+        capturedExpandedStates: (result.diagnostics && result.diagnostics.capturedExpandedStates) || [],
         resourceTiming: resourceTimingEnabled
           ? {
               model: resourceTimingOptions.model,
@@ -3246,6 +3249,8 @@ function runSegmentAgainstFrontier(
         (overrides || {}).preserveSkylineRoles,
       ),
       captureTrace: config && config.captureTrace === true,
+      captureExpandedStates: config && config.captureExpandedStates === true,
+      captureExpandedStateLimit: config && config.captureExpandedStateLimit,
       observer: config && config.observer,
       observerIncludeExactStateKey: config && config.observerIncludeExactStateKey === true,
       observerCaptureMode: config && config.observerCaptureMode,

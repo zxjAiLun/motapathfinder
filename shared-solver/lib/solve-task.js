@@ -315,6 +315,8 @@ function compileSolveTask(rawTask, context) {
     maxActionsPerState: search.maxActionsPerState,
     stopOnFirstGoal: search.stopOnFirstGoal,
     rank: effectiveRank,
+    captureExpandedStates: search.captureExpandedStates === true ? true : undefined,
+    captureExpandedStateLimit: Number(search.captureExpandedStateLimit || 0) || undefined,
     ...(search.actionPolicy ? { actionPolicy: search.actionPolicy } : {}),
   };
 

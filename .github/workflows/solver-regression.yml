@@ -38,4 +38,5 @@ jobs:
       - run: npm run check:launcher
       - run: npm run check:perf-baseline
       - run: npm run check:route-free-state
+      - run: npm run check:tower-ir-shadow
 

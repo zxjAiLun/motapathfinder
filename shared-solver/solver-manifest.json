@@ -198,7 +198,8 @@
         "shared-solver/check-multi-region-contract.js",
         "shared-solver/check-multi-region-route-contract.js",
         "shared-solver/check-perf-baseline-contract.js",
-        "shared-solver/check-route-free-state-contract.js"
+        "shared-solver/check-route-free-state-contract.js",
+        "shared-solver/check-tower-ir-shadow-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -2274,6 +2275,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4b Commit 2: canonical DP route-free state, rawRouteLength semantics, Commit-1 parity"
+    },
+    "shared-solver/check-tower-ir-shadow-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.4b Commit 3: single-Region TowerIR compile determinism, structure, shadow parity on representative corpus, observation isolation, immutability"
     }
   }
 }

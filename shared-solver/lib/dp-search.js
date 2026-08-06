@@ -1024,6 +1024,17 @@ function searchDP(simulator, initialState, options) {
   // storeRoute:false and the enqueue copy drops the route field entirely).
   let nonEmptyRouteStateCount = 0;
   let maxRawRouteLength = 0;
+  // Test-mode state corpus capture (TowerIR shadow contract): records a capped,
+  // deduped set of expanded states for shadow evaluation.
+  const captureEnabled = config.captureExpandedStates === true;
+  const captureLimit = Math.max(1, Number(config.captureExpandedStateLimit || 0));
+  const capturedExpandedStates = [];
+  const capturedStateKeys = new Set();
+  // TowerIR shadow observation hook (test/diagnostic only): runs per expanded
+  // state, NEVER affects the search.  Any throw is swallowed.
+  const shadowCheckState = typeof config.towerIrShadowCheckState === "function"
+    ? config.towerIrShadowCheckState
+    : null;
   const observer = createDpObserver(config);
   const goalStateComparator = resolveGoalStateComparator(config);
   const shouldStop = typeof config.shouldStop === "function"
@@ -1915,6 +1926,20 @@ function searchDP(simulator, initialState, options) {
     if (!continueAfterGoal && isGoalState(state)) continue;
     expansions += 1;
     trackPerfCount("expanded");
+    if (shadowCheckState) {
+      try {
+        shadowCheckState(state);
+      } catch (error) {
+        // Observation must never affect the search.
+      }
+    }
+    if (captureEnabled && capturedExpandedStates.length < captureLimit) {
+      const captureKey = getDecisionDepth(state) + ":" + getRawRouteLength(state) + ":" + buildStateKey(state);
+      if (!capturedStateKeys.has(captureKey)) {
+        capturedStateKeys.add(captureKey);
+        capturedExpandedStates.push(state);
+      }
+    }
     if (perfActive) {
       // Node depth (from search-nodes) is authoritative here: the segment-DP
       // states do not carry meta.decisionDepth (the DP tracks depth on nodes).
@@ -2259,6 +2284,7 @@ function searchDP(simulator, initialState, options) {
         nonEmptyRouteStateCount,
         maxRawRouteLength,
       },
+      capturedExpandedStates: captureEnabled ? capturedExpandedStates.slice() : [],
       pruneReasons: {
         "dp-lower-hp-same-state": rejectedByHigherHp,
         "dp-same-hp-not-shorter": sameHpRejected,
