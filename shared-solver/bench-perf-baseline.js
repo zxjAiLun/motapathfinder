@@ -124,10 +124,33 @@ function collectResultParity(execution, task) {
   };
 }
 
+function resolveProfile(config) {
+  if (config && config.profile) return config.profile;
+  if (config && config.task) {
+    // A task passed without an explicit profile must BE one of the fixed
+    // profile tasks; derive its identity from the task fingerprint.
+    const fingerprint = config.task.taskFingerprint;
+    for (const [profile] of Object.entries(PROFILES)) {
+      if (buildBaselineTask(profile).taskFingerprint === fingerprint) return profile;
+    }
+    throw new Error("task does not match any fixed baseline profile; pass an explicit --profile");
+  }
+  return "smoke-contract";
+}
+
 async function runPerfBaseline(options) {
   const config = options || {};
-  const profile = config.profile || "smoke-contract";
+  const profile = resolveProfile(config);
   const task = config.task || buildBaselineTask(profile);
+  // Strong profile/task binding: when a profile is requested, the task must be
+  // that profile's fixed task (same fingerprint).  A mismatched task must never
+  // be silently reported under the wrong profile.
+  const expectedTask = buildBaselineTask(profile);
+  if (expectedTask.taskFingerprint !== task.taskFingerprint) {
+    throw new Error(
+      `profile "${profile}" requires its fixed baseline task (fingerprint ${expectedTask.taskFingerprint}); got ${task.taskFingerprint}`,
+    );
+  }
   const tracker = createPerfTracker({ enabled: true });
   setActivePerfTracker(tracker);
 

@@ -7,7 +7,7 @@
  *
  * 1. smoke-contract: fast contract + CI; result parity with the plain
  *    execution must be EXACT (route fingerprint, winner exact fingerprint,
- *    decision canonical IDs, objective value, found, decision count).
+ *    decision summaries, objective value, found, decision count).
  * 2. representative-baseline: must show non-trivial depth/expansions and
  *    in-search memory samples (sampleCount > 1); rejection counters must align
  *    with the DP's own dominance diagnostics; peak memory must be >= end.
@@ -68,8 +68,10 @@ function extractDpRejectionTotals(task) {
 async function main() {
   // ---- smoke-contract: parity with the plain execution ----
   const smokeTask = buildBaselineTask("smoke-contract");
-  const smokeBaseline = await runPerfBaseline({ task: smokeTask });
+  const smokeBaseline = await runPerfBaseline({ profile: "smoke-contract", task: smokeTask });
   assertReportShape(smokeBaseline, "smoke-baseline");
+  assert.strictEqual(smokeBaseline.profile, "smoke-contract", "smoke report must carry its true profile");
+  assert.strictEqual(smokeBaseline.task.goalExp, 2, "smoke profile must have goalExp 2");
   const smokeReference = await runReferenceParity(smokeTask);
   assert.strictEqual(smokeBaseline.result.found, smokeReference.found, "smoke: found must match the plain execution");
   assert.strictEqual(
@@ -90,7 +92,7 @@ async function main() {
   assert.deepStrictEqual(
     smokeBaseline.result.decisionSummaries,
     smokeReference.decisionSummaries,
-    "smoke: primitive decision canonical IDs must match",
+    "smoke: decision summaries must match",
   );
   assert.strictEqual(
     smokeBaseline.result.objectiveValue,
@@ -103,8 +105,14 @@ async function main() {
 
   // ---- representative-baseline: non-trivial workload + in-search samples ----
   const repTask = buildBaselineTask("representative-baseline");
-  const repBaseline = await runPerfBaseline({ task: repTask });
+  const repBaseline = await runPerfBaseline({ profile: "representative-baseline", task: repTask });
   assertReportShape(repBaseline, "representative");
+  assert.strictEqual(
+    repBaseline.profile,
+    "representative-baseline",
+    "the representative report must carry its true profile, never a silent smoke fallback",
+  );
+  assert.strictEqual(repBaseline.task.goalExp, 9, "representative profile must have goalExp 9");
   assert.strictEqual(repBaseline.result.found, true, "representative baseline must reach its goal");
   assert.ok(
     repBaseline.perf.expanded >= 64,
@@ -142,7 +150,7 @@ async function main() {
   assert.deepStrictEqual(
     repBaseline.result.decisionSummaries,
     repReference.decisionSummaries,
-    "representative: decision canonical IDs must match",
+    "representative: decision summaries must match",
   );
   assert.strictEqual(
     repBaseline.result.objectiveValue,
