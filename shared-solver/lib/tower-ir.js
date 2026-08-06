@@ -41,6 +41,18 @@ function sha256Hex(value) {
   return crypto.createHash("sha256").update(String(value)).digest("hex");
 }
 
+// Recursively freezes the compiled IR so runtime code cannot mutate it.
+function deepFreeze(value) {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  if (Array.isArray(value)) {
+    value.forEach(deepFreeze);
+  } else {
+    Object.keys(value).forEach((key) => deepFreeze(value[key]));
+  }
+  return value;
+}
+
 // Static, state-independent classification of a base-map cell.  Mirrors the
 // walk's isEndpointTile / isTransitTile predicates (step-simulator.js) applied
 // to the BASE tile definition (no removed/replaced overlay).
@@ -86,10 +98,11 @@ function buildSourceFingerprint(project, regionSpec) {
   const floorSummaries = floors.map((floorId) => {
     const floor = project.floorsById[floorId];
     if (!floor) return { floorId, missing: true };
-    const changeFloorKeys = Object.keys(floor.changeFloor || {})
-      .sort()
-      .map((key) => `${key}=>${(floor.changeFloor[key] || {}).floorId || (floor.changeFloor[key] || {}).stair || ""}`);
-    const eventKeys = Object.keys(floor.events || {}).sort();
+    const hashField = (field) => {
+      const value = floor[field];
+      if (value == null) return null;
+      return sha256Hex(stableStringify(value)).slice(0, 16);
+    };
     const mapDigest = floor.map
       ? sha256Hex(floor.map.map((row) => (row || []).join(",")).join("|")).slice(0, 16)
       : null;
@@ -98,9 +111,21 @@ function buildSourceFingerprint(project, regionSpec) {
       width: floor.width,
       height: floor.height,
       mapDigest,
-      changeFloorKeys: changeFloorKeys.slice(0, 400),
-      eventCount: eventKeys.length,
-      eventKeySample: eventKeys.slice(0, 200),
+      // Full structural hashes: event payloads and topology hooks must be
+      // covered completely, not sampled (a payload change on an existing
+      // coordinate must change the source fingerprint).
+      eventsDigest: hashField("events"),
+      changeFloorDigest: hashField("changeFloor"),
+      autoEventDigest: hashField("autoEvent"),
+      firstArriveDigest: hashField("firstArrive"),
+      eachArriveDigest: hashField("eachArrive"),
+      parallelDoDigest: hashField("parallelDo"),
+      beforeBattleDigest: hashField("beforeBattle"),
+      afterBattleDigest: hashField("afterBattle"),
+      afterGetItemDigest: hashField("afterGetItem"),
+      afterOpenDoorDigest: hashField("afterOpenDoor"),
+      flyPointDigest: hashField("flyPoint"),
+      undergroundDigest: hashField("underGround"),
     };
   });
   const actionPolicy = {
@@ -124,7 +149,12 @@ function compileTowerIR(project, regionSpec, options) {
   if (scope.length === 0) {
     throw new Error("TowerIR compile requires a non-empty region scope.floors");
   }
+  const seenFloors = new Set();
   for (const floorId of scope) {
+    if (seenFloors.has(floorId)) {
+      throw new Error(`TowerIR scope contains a duplicate floor: ${floorId}`);
+    }
+    seenFloors.add(floorId);
     if (!project.floorsById[floorId]) {
       throw new Error(`TowerIR scope references unknown floor: ${floorId}`);
     }
@@ -333,7 +363,7 @@ function compileTowerIR(project, regionSpec, options) {
     },
   };
   ir.irFingerprint = sha256Hex(stableStringify(ir)).slice(0, 16);
-  return ir;
+  return deepFreeze(ir);
 }
 
 module.exports = {
@@ -341,5 +371,6 @@ module.exports = {
   buildSourceFingerprint,
   classifyStaticCell,
   compileTowerIR,
+  deepFreeze,
   stableStringify,
 };

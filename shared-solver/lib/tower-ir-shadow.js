@@ -58,6 +58,115 @@ function canonicalEndpoint(floorId, kind, x, y, tileId, transitionTarget) {
   return `${kind}:${tileId || ""}@${x},${y}`;
 }
 
+// ---- TowerIR endpoint generation (independent of the legacy classifier) ----
+// Endpoints are derived from ir.pois (kind/tileId/transition), never by
+// re-scanning the project tile definitions, so POI compile errors are visible.
+function collectTowerIrEndpoints(ir, project, state, dyn, reachableComponents, reachableOpenPois, reachableReplacedCells) {
+  const floorId = dyn.floorId;
+  const floorPois = ir.pois.filter((poi) => poi.floorId === floorId);
+  const poiById = new Map(ir.pois.map((poi) => [poi.poiId, poi]));
+  const removedKeys = new Set(dyn.removed);
+  const replacedMap = new Map(dyn.replaced.map((entry) => [entry.key, entry.number]));
+  const isTransitTileDefinition = (tile) => {
+    if (!tile) return true;
+    if (tile.cls === "items") return false;
+    if (tile.trigger != null && tile.trigger !== "null" && tile.trigger !== "passNet") return false;
+    if (isEnemyTile(tile) || isDoorTile(tile)) return false;
+    return tile.canPass === true;
+  };
+  const isOpenPoi = (poi) => {
+    if (removedKeys.has(poi.mutationKey)) return true;
+    if (replacedMap.has(poi.mutationKey)) {
+      const tile = project.mapTilesByNumber[String(replacedMap.get(poi.mutationKey))];
+      return isTransitTileDefinition(tile);
+    }
+    return false;
+  };
+  const openPoiByCell = new Map();
+  floorPois.filter(isOpenPoi).forEach((poi) => {
+    const key = `${floorId}:${coordinateKey(poi.x, poi.y)}`;
+    if (!openPoiByCell.has(key)) openPoiByCell.set(key, []);
+    openPoiByCell.get(key).push(poi);
+  });
+  const firstOpenPoiAt = (x, y) => {
+    const list = openPoiByCell.get(`${floorId}:${coordinateKey(x, y)}`);
+    return list && list.length > 0 ? list[0] : null;
+  };
+  const replacedByCell = new Map();
+  reachableReplacedCells.forEach((key) => replacedByCell.set(key, true));
+
+  // A present POI is reachable when a reachable component is adjacent (static)
+  // OR a reachable open POI / replaced cell is adjacent (dynamic).
+  const reachable = (poi) => {
+    if ((poi.adjacentComponentIds || []).some((componentId) => reachableComponents.has(componentId))) return true;
+    return DIRECTIONS.some((direction) => {
+      const x = poi.x + DIRECTION_DELTAS[direction].x;
+      const y = poi.y + DIRECTION_DELTAS[direction].y;
+      const key = `${floorId}:${coordinateKey(x, y)}`;
+      const adjacentOpen = firstOpenPoiAt(x, y);
+      if (adjacentOpen && reachableOpenPois.has(adjacentOpen.poiId)) return true;
+      if (replacedByCell.has(key)) return true;
+      return false;
+    });
+  };
+
+  const presentReachable = [];
+  const presentReachableIds = [];
+  floorPois.forEach((poi) => {
+    if (isOpenPoi(poi)) return;
+    if (!reachable(poi)) return;
+    presentReachable.push(poi);
+    presentReachableIds.push(poi.poiId);
+  });
+
+  // Group by coordinate and apply the legacy precedence
+  // (changeFloor separate; item > enemy > door > event), using the POI's own
+  // kind/tileId/transition.
+  const byCoordinate = new Map();
+  presentReachable.forEach((poi) => {
+    const key = `${poi.x},${poi.y}`;
+    if (!byCoordinate.has(key)) byCoordinate.set(key, []);
+    byCoordinate.get(key).push(poi);
+  });
+  const PRECEDENCE = { changeFloor: 0, item: 1, enemy: 2, door: 3, event: 4 };
+  const endpointStrings = [];
+  const endpointDescriptors = [];
+  const endpointPoiIds = [];
+  const pushEndpoint = (poi) => {
+    const target = (poi.transition && (poi.transition.targetFloorId || poi.transition.stair)) || null;
+    const canonical = canonicalEndpoint(poi.floorId, poi.kind, poi.x, poi.y, poi.tileId || null, target);
+    endpointStrings.push(canonical);
+    endpointDescriptors.push({
+      kind: poi.kind,
+      floorId: poi.floorId,
+      x: poi.x,
+      y: poi.y,
+      tileId: poi.tileId || null,
+      targetId: target,
+      interactable: true,
+      poiId: poi.poiId,
+    });
+    endpointPoiIds.push(poi.poiId);
+  };
+  Array.from(byCoordinate.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .forEach(([, pois]) => {
+      const ordered = pois.slice().sort((a, b) => (PRECEDENCE[a.kind] ?? 9) - (PRECEDENCE[b.kind] ?? 9));
+      const changeFloors = ordered.filter((poi) => poi.kind === "changeFloor");
+      const tilePois = ordered.filter((poi) => poi.kind !== "changeFloor" && poi.kind !== "event");
+      const events = ordered.filter((poi) => poi.kind === "event");
+      changeFloors.forEach(pushEndpoint);
+      const tilePick = tilePois[0];
+      if (tilePick) pushEndpoint(tilePick);
+      else if (events[0]) pushEndpoint(events[0]);
+    });
+  return {
+    reachableEndpointStrings: Array.from(new Set(endpointStrings)).sort(),
+    reachableEndpointDescriptors: endpointDescriptors,
+    reachablePoiIds: presentReachableIds.sort(),
+  };
+}
+
 // ---- Legacy structural reference (grid flood fill, no HP/battle/hazard) ----
 // Uses the walk's exact transit/endpoint predicates against the base tile
 // definition + the dynamic removed/replaced overlay.  Independent of the
@@ -341,33 +450,30 @@ function evaluateTowerIRReachability(ir, project, state, options) {
     reachableCells.add(cellKey);
   });
 
-  // Endpoints use the shared classifier (same precedence as the legacy walk) so
-  // endpoint differences can only arise from reachable-cell differences.
-  const bareCells = Array.from(reachableCells).map((key) => {
-    const [, coord] = key.split(":");
-    return coord;
-  }).sort();
-  const reachableEndpointStrings = collectEndpointsFromCells(project, state, floorId, bareCells);
-  const reachableEndpointDescriptors = descriptorsFromCanonicalEndpoints(floorId, reachableEndpointStrings);
-  const reachablePoiIds = [];
-  floorPois.forEach((poi) => {
-    if (isOpenPoi(poi)) return;
-    const canonical = canonicalEndpoint(poi.floorId, poi.kind, poi.x, poi.y, poi.tileId || null, (poi.transition && (poi.transition.targetFloorId || poi.transition.stair)) || null);
-    if (reachableEndpointStrings.includes(canonical)) reachablePoiIds.push(poi.poiId);
-  });
+  // Endpoints are generated from ir.pois (independent of the legacy
+  // classifier), so POI kind/tileId/transition compile errors are visible.
+  const towerIrEndpoints = collectTowerIrEndpoints(
+    ir,
+    project,
+    state,
+    dyn,
+    reachableComponents,
+    reachableOpenPois,
+    reachableReplacedCells,
+  );
 
   const regionSemanticSignature = fingerprintJson({
     floorId,
     reachableComponents: Array.from(reachableComponents).sort(),
     reachableCells: Array.from(reachableCells).sort(),
-    reachableEndpoints: reachableEndpointStrings,
+    reachableEndpoints: towerIrEndpoints.reachableEndpointStrings,
   });
 
   return {
     startComponentId,
     reachableComponentIds: Array.from(reachableComponents).sort(),
-    reachablePoiIds: reachablePoiIds.sort(),
-    reachableEndpointDescriptors,
+    reachablePoiIds: towerIrEndpoints.reachablePoiIds,
+    reachableEndpointDescriptors: towerIrEndpoints.reachableEndpointDescriptors,
     reachableCells: Array.from(reachableCells).sort(),
     regionSemanticSignature,
     diagnostics: {
@@ -385,30 +491,60 @@ function evaluateTowerIRReachability(ir, project, state, options) {
 function compareShadowSemantics(legacyResult, irResult) {
   const legacyCells = new Set(legacyResult.reachableCells);
   const irCells = new Set((irResult.reachableCells || []).map((key) => {
-    const [floorId, coord] = key.split(":");
+    const [, coord] = key.split(":");
     return coord;
   }));
-  const legacyEndpoints = new Set(legacyResult.reachableEndpoints);
-  const irEndpoints = new Set(irResult.reachableEndpoints || []);
+  const legacyOnlyCells = Array.from(legacyCells).filter((cell) => !irCells.has(cell)).sort();
+  const irOnlyCells = Array.from(irCells).filter((cell) => !legacyCells.has(cell)).sort();
+  const cellDiff = legacyOnlyCells.length > 0 || irOnlyCells.length > 0;
 
-  const cellDiff = legacyCells.size !== irCells.size;
+  const legacyEndpoints = new Set(legacyResult.reachableEndpoints || []);
+  const irEndpoints = new Set(irResult.reachableEndpoints || []);
   const legacyOnlyEndpoints = Array.from(legacyEndpoints).filter((entry) => !irEndpoints.has(entry)).sort();
   const irOnlyEndpoints = Array.from(irEndpoints).filter((entry) => !legacyEndpoints.has(entry)).sort();
 
-  if (cellDiff || legacyOnlyEndpoints.length > 0 || irOnlyEndpoints.length > 0) {
-    let mismatchClass = null;
-    if (legacyOnlyEndpoints.length > 0 || irOnlyEndpoints.length > 0) mismatchClass = "endpointSet";
-    else mismatchClass = "component";
-    return {
-      match: false,
-      mismatchClass,
-      legacyOnlyEndpoints,
-      irOnlyEndpoints,
-      legacyCellsCount: legacyCells.size,
-      irCellsCount: irCells.size,
-    };
+  // Classify endpoint mismatches: same coordinate with a different kind ->
+  // endpointKind; same coordinate+kind with a different changeFloor target ->
+  // transition; otherwise endpointMissing / endpointUnexpected.
+  const classifyEndpoint = (entry) => {
+    const kindMatch = /^([a-zA-Z]+):(.*)@(\d+),(\d+)$/.exec(entry);
+    if (kindMatch) {
+      return { kind: kindMatch[1], x: Number(kindMatch[3]), y: Number(kindMatch[4]), key: `${kindMatch[3]},${kindMatch[4]}`, target: null };
+    }
+    const changeMatch = /^changeFloor:(\d+),(\d+)->(.*)$/.exec(entry);
+    if (changeMatch) {
+      return { kind: "changeFloor", x: Number(changeMatch[1]), y: Number(changeMatch[2]), key: `${changeMatch[1]},${changeMatch[2]}`, target: changeMatch[3] || null };
+    }
+    return null;
+  };
+  const legacyClassified = legacyOnlyEndpoints.map(classifyEndpoint).filter(Boolean);
+  const irClassified = irOnlyEndpoints.map(classifyEndpoint).filter(Boolean);
+  let mismatchClass = null;
+  if (cellDiff) mismatchClass = "cellSet";
+  for (const left of legacyClassified) {
+    const counterpart = irClassified.find((right) => right && right.x === left.x && right.y === left.y);
+    if (counterpart) {
+      if (counterpart.kind !== left.kind) { mismatchClass = mismatchClass || "endpointKind"; }
+      else if (left.kind === "changeFloor" && left.target !== counterpart.target) { mismatchClass = mismatchClass || "transition"; }
+    } else if (!mismatchClass) {
+      mismatchClass = "endpointMissing";
+    }
   }
-  return { match: true, mismatchClass: null, legacyOnlyEndpoints: [], irOnlyEndpoints: [], legacyCellsCount: legacyCells.size, irCellsCount: irCells.size };
+  for (const right of irClassified) {
+    const counterpart = legacyClassified.find((left) => left && left.x === right.x && left.y === right.y);
+    if (!counterpart && !mismatchClass) mismatchClass = "endpointUnexpected";
+  }
+
+  return {
+    match: !cellDiff && legacyOnlyEndpoints.length === 0 && irOnlyEndpoints.length === 0,
+    mismatchClass,
+    legacyOnlyEndpoints,
+    irOnlyEndpoints,
+    legacyOnlyCells,
+    irOnlyCells,
+    legacyCellsCount: legacyCells.size,
+    irCellsCount: irCells.size,
+  };
 }
 
 function createTowerIrShadow(ir, project, options) {
@@ -417,28 +553,27 @@ function createTowerIrShadow(ir, project, options) {
     enabled: true,
     irFingerprint: ir.irFingerprint,
     statesChecked: 0,
-    matches: 0,
-    mismatches: 0,
+    uniqueStatesEvaluated: 0,
+    cachedChecks: 0,
+    matchedChecks: 0,
+    mismatchedChecks: 0,
     legacyElapsedMs: 0,
     towerIrElapsedMs: 0,
-    cacheHits: 0,
-    cacheMisses: 0,
     mismatchByClass: {},
     firstMismatchWitnesses: [],
     maxWitnesses: Number(config.maxWitnesses || 8),
   };
   const cache = new Map();
-  let checked = 0;
 
   function checkState(state) {
     diagnostics.statesChecked += 1;
     const dyn = projectStateToTowerIRDynamicState(ir, state);
     const cacheKey = dyn.dynamicFingerprint;
     if (cache.has(cacheKey)) {
-      diagnostics.cacheHits += 1;
+      diagnostics.cachedChecks += 1;
       return cache.get(cacheKey);
     }
-    diagnostics.cacheMisses += 1;
+    diagnostics.uniqueStatesEvaluated += 1;
 
     const legacyStarted = Date.now();
     const legacyResult = computeLegacyStructuralReachability(project, state);
@@ -459,9 +594,9 @@ function createTowerIrShadow(ir, project, options) {
     cache.set(cacheKey, result);
 
     if (comparison.match) {
-      diagnostics.matches += 1;
+      diagnostics.matchedChecks += 1;
     } else {
-      diagnostics.mismatches += 1;
+      diagnostics.mismatchedChecks += 1;
       diagnostics.mismatchByClass[comparison.mismatchClass] = (diagnostics.mismatchByClass[comparison.mismatchClass] || 0) + 1;
       if (diagnostics.firstMismatchWitnesses.length < diagnostics.maxWitnesses) {
         diagnostics.firstMismatchWitnesses.push({
@@ -469,14 +604,15 @@ function createTowerIrShadow(ir, project, options) {
           floorId: state.floorId,
           loc: `${state.hero.loc.x},${state.hero.loc.y}`,
           mutationSummary: Object.keys((state.floorStates || {})[state.floorId] || {}).join(","),
+          legacyOnlyCells: comparison.legacyOnlyCells.slice(0, 10),
+          towerIrOnlyCells: comparison.irOnlyCells.slice(0, 10),
           legacyOnlyEndpoints: comparison.legacyOnlyEndpoints.slice(0, 10),
-          irOnlyEndpoints: comparison.irOnlyEndpoints.slice(0, 10),
+          towerIrOnlyEndpoints: comparison.irOnlyEndpoints.slice(0, 10),
           legacySignature: fingerprintJson(legacyResult),
           towerIrSignature: irResult.regionSemanticSignature,
         });
       }
     }
-    checked += 1;
     return result;
   }
 
@@ -485,12 +621,14 @@ function createTowerIrShadow(ir, project, options) {
       enabled: diagnostics.enabled,
       irFingerprint: diagnostics.irFingerprint,
       statesChecked: diagnostics.statesChecked,
-      matches: diagnostics.matches,
-      mismatches: diagnostics.mismatches,
+      uniqueStatesEvaluated: diagnostics.uniqueStatesEvaluated,
+      cachedChecks: diagnostics.cachedChecks,
+      matchedChecks: diagnostics.matchedChecks,
+      mismatchedChecks: diagnostics.mismatchedChecks,
+      matches: diagnostics.matchedChecks,
+      mismatches: diagnostics.mismatchedChecks,
       legacyElapsedMs: Number(diagnostics.legacyElapsedMs.toFixed(2)),
       towerIrElapsedMs: Number(diagnostics.towerIrElapsedMs.toFixed(2)),
-      cacheHits: diagnostics.cacheHits,
-      cacheMisses: diagnostics.cacheMisses,
       mismatchByClass: diagnostics.mismatchByClass,
       firstMismatchWitnesses: diagnostics.firstMismatchWitnesses.slice(0, diagnostics.maxWitnesses),
     };
@@ -506,6 +644,7 @@ module.exports = {
   ENDPOINT_KINDS,
   canonicalEndpoint,
   collectEndpointsFromCells,
+  collectTowerIrEndpoints,
   descriptorsFromCanonicalEndpoints,
   compareShadowSemantics,
   computeLegacyStructuralReachability,
