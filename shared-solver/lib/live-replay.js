@@ -713,6 +713,7 @@ async function restoreRuntimeSnapshotStart(page, snapshot, options) {
         if (hero.loc.direction != null) core.setHeroLoc("direction", hero.loc.direction, true);
       }
       if (Array.isArray(hero.equipment)) core.status.hero.equipment = hero.equipment.slice();
+      if (Array.isArray(hero.followers)) core.status.hero.followers = hero.followers.slice();
 
       core.status.hero.items = core.status.hero.items || {};
       core.status.hero.items.tools = {};

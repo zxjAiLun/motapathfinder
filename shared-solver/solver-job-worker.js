@@ -35,6 +35,26 @@ function cleanupToken() {
   }
 }
 
+// Sends a terminal message to the parent and then actively closes the IPC
+// channel and exits.  The worker must NOT rely on the parent's SIGTERM to tear
+// it down: the IPC channel keeps the child's event loop alive, so without an
+// explicit disconnect+exit the child process leaks and the parent CLI never
+// terminates after the job completes.
+function sendTerminalAndExit(message, exitCode) {
+  cleanupToken();
+  if (!process.connected) {
+    process.exit(exitCode);
+    return;
+  }
+  process.send(message, () => {
+    try {
+      process.disconnect();
+    } finally {
+      process.exit(exitCode);
+    }
+  });
+}
+
 process.on("message", async (message) => {
   if (!message || typeof message !== "object") return;
   if (message.type === "cancel") {
@@ -68,22 +88,31 @@ process.on("message", async (message) => {
       shouldStop: () => isStopRequested(),
     });
     if (isStopRequested() || execution.cancelled) {
-      process.send({ type: "failed", jobId, error: {
+      sendTerminalAndExit({ type: "failed", jobId, error: {
         name: "Error",
         code: "CANCELLED",
         message: "The job was cancelled by request.",
         stack: null,
-      } });
+      } }, 1);
       return;
     }
-    process.send({ type: "completed", jobId, result: execution });
+    sendTerminalAndExit({ type: "completed", jobId, result: execution }, 0);
   } catch (error) {
-    process.send({ type: "failed", jobId, error: serializeError(error) });
-  } finally {
-    cleanupToken();
+    sendTerminalAndExit({ type: "failed", jobId, error: serializeError(error) }, 1);
   }
 });
 
 process.on("SIGTERM", () => {
+  // Never leave a SIGTERM unhandled: a bare "stopRequested = true" would keep
+  // the IPC channel alive and leak the child process after the parent tries to
+  // tear the worker down.  Clean up the token and exit.
   stopRequested = true;
+  cleanupToken();
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  stopRequested = true;
+  cleanupToken();
+  process.exit(0);
 });

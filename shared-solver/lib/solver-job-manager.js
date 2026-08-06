@@ -197,6 +197,7 @@ class SolverJobManager {
       this._settleError(job, error);
       return;
     }
+    this._disposeExecutor(job);
     this._publishTerminalProgress(job);
     if (this.jobStore) {
       this.jobStore.saveResult(job.id, job.result || null).catch(() => {});
@@ -204,6 +205,18 @@ class SolverJobManager {
       this.jobStore.saveStatus(job.id, job.toJSON()).catch(() => {});
     }
     this._finishPump();
+  }
+
+  // Uniform resource-reclamation contract: every terminal settlement (success,
+  // failure, cancel) releases the executor (e.g. kills a worker child).
+  _disposeExecutor(job) {
+    try {
+      if (job && job.executor && typeof job.executor.dispose === "function") {
+        job.executor.dispose();
+      }
+    } catch (error) {
+      // best-effort; the executor's own settle path already cleans up
+    }
   }
 
   _settleCancel(job) {
@@ -214,6 +227,7 @@ class SolverJobManager {
       details: {},
     };
     job.failure = failure;
+    this._disposeExecutor(job);
     job.result = {
       schema: "motapathfinder.solver-job-result.v1",
       jobId: job.id,
@@ -247,6 +261,7 @@ class SolverJobManager {
 
   _settleError(job, error) {
     const terminal = job.state === "cancelled" || job.state === "failed" || job.state === "completed";
+    this._disposeExecutor(job);
     let failure;
     if (job.cancelRequested || (error && (error.code === "CANCELLED" || error.message === "The job was cancelled by request."))) {
       failure = {

@@ -257,6 +257,30 @@ async function main() {
   followersPolluted.hero.followers = ["ally-2"];
   assert.strictEqual(projectedSnapshotsMatch(followersSnap, followersPolluted), false, "polluted followers must fail the projection");
 
+  // 9. Result-envelope contract for fail-closed provenance: an executor that
+  //    rejects with INVALID_PROVENANCE must surface as a failed job with
+  //    failureClass INVALID_PROVENANCE and no route artifact.
+  const envelopeManager = new SolverJobManager({
+    maxConcurrentJobs: 1,
+    allowInProcess: true,
+    createExecutor: () => ({
+      execute: () => {
+        const error = new Error("winner candidate input provenance could not be resolved");
+        error.code = "INVALID_PROVENANCE";
+        error.failureClass = "INVALID_PROVENANCE";
+        return Promise.reject(error);
+      },
+      cancel() {},
+      dispose() {},
+    }),
+  });
+  const envelopeJob = envelopeManager.submit(v2Task([{ spec: smoke }, { spec: regionB() }]));
+  const envelopeSettled = await waitForJob(envelopeManager, envelopeJob.id, 30000);
+  assert.strictEqual(envelopeSettled.state, "failed", "ambiguous provenance must fail the job");
+  assert.strictEqual(envelopeSettled.failure.failureClass, "INVALID_PROVENANCE");
+  assert.strictEqual(envelopeSettled.result.found, false);
+  assert.strictEqual(envelopeSettled.result.route, null, "a failed provenance job must not emit a route artifact");
+
   process.stdout.write(JSON.stringify({
     schema: "motapathfinder.pr-5.4a-multi-region-route.v1",
     status: "passed",
@@ -275,6 +299,7 @@ async function main() {
     provenanceAmbiguityFailClosed: true,
     followersProjectionPasses: true,
     followersPollutionRejected: true,
+    invalidProvenanceEnvelope: true,
     },
   }, null, 2) + "\n");
 }

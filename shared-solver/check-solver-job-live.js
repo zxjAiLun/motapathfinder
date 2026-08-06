@@ -14,7 +14,7 @@ const path = require("node:path");
 
 const { compileSolveTask, SOLVE_TASK_SCHEMA } = require("./lib/solve-task");
 const { SolverJobManager } = require("./lib/solver-job-manager");
-const { findBrowserExecutable, replayRouteFile, verifyRouteObjective } = require("./lib/live-replay");
+const { findBrowserExecutable, replayRouteFile, verifyRouteObjective, launchRuntimeSession, captureRuntimeSnapshot, prepareReplayRouteRecord } = require("./lib/live-replay");
 
 const ROOT = path.resolve(__dirname, "..");
 const SMOKE_SPEC_FILE = path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json");
@@ -171,6 +171,44 @@ async function main() {
   assert.strictEqual(multiSettled.result.regions.length, 2);
   assert.ok(multiSettled.result.regions.every((r) => r.status === "completed"));
 
+  // Repair 5b: followers restore -> capture round-trip through the real game
+  // page.  A route start snapshot carrying followers must survive
+  // restoreRuntimeSnapshotStart and come back unchanged from
+  // captureRuntimeSnapshot (the array must not be coerced to a number).
+  // Reuse the proven replay path (replayRouteFile restores the start snapshot
+  // in the real game page and captures the runtime final): a 0-step record
+  // whose start snapshot carries followers must round-trip them through the
+  // restore -> capture chain, proving the followers array is not dropped.
+  const followersRoundTrip = JSON.parse(JSON.stringify(multiSettled.result.route.record.regions[0].record));
+  followersRoundTrip.decisions = [];
+  followersRoundTrip.final = JSON.parse(JSON.stringify(followersRoundTrip.start));
+  followersRoundTrip.start.snapshot.hero.followers = [];
+  const rtResult = await replayRouteFile(followersRoundTrip, {
+    projectRoot: ONLY_UP_ROOT,
+    headless: "1",
+    keepOpen: false,
+    timeoutMs: 60000,
+    stepDelayMs: 0,
+    fastForwardDelayMs: 0,
+    runtimeAutoBattle: 1,
+  });
+  // The game project always runs with an empty followers list, so the round-trip
+  // signal is that the runtime capture keeps the array shape (never coerces it
+  // to a number, which is exactly what the pre-fix capture did).
+  assert.ok(
+    Array.isArray(rtResult.finalRuntimeSnapshot.hero.followers),
+    "captured followers must stay an array through the restore -> capture chain",
+  );
+  assert.deepStrictEqual(
+    rtResult.finalRuntimeSnapshot.hero.followers,
+    [],
+    "restored empty followers must round-trip unchanged",
+  );
+  assert.ok(
+    Array.isArray(rtResult.finalRuntimeSnapshot.hero.equipment),
+    "captured equipment must stay an array through the restore -> capture chain",
+  );
+
   process.stdout.write(JSON.stringify({
     schema: "motapathfinder.pr-5.4a-solver-job-live.v1",
     status: "passed",
@@ -184,6 +222,7 @@ async function main() {
     autoStepDecisions: routeLengthRecord.decisions.length,
     legacyObjectiveOmittedCompleted: true,
     multiRegionCompositeReplayVerified: true,
+    followersRestoreCaptureRoundTrip: true,
     objectiveFingerprint: objective.fingerprint,
   }, null, 2) + "\n");
 }
