@@ -200,7 +200,8 @@
         "shared-solver/check-perf-baseline-contract.js",
         "shared-solver/check-route-free-state-contract.js",
         "shared-solver/check-tower-ir-shadow-contract.js",
-        "shared-solver/check-key-dependency-contract.js"
+        "shared-solver/check-key-dependency-contract.js",
+        "shared-solver/check-dual-key-shadow-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -2290,6 +2291,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4c Commit 1 Repair 3: complete travel-variant-set dominance coverage (findChoiceRecords, no first-record-only), equivalent vs metadata-only split, exact goal predicate floorId+exp"
+    },
+    "shared-solver/check-dual-key-shadow-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.4c Commit 2: dual-key registry shadow - candidate key observed vs production registry, decision disagreement, unsafe fail-visible, isolation negative control"
     }
   }
 }

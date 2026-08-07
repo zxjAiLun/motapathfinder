@@ -174,7 +174,8 @@
     "bench:baseline": "node bench-perf-baseline.js",
     "check:route-free-state": "node check-route-free-state-contract.js",
     "check:tower-ir-shadow": "node check-tower-ir-shadow-contract.js",
-    "check:key-dependency": "node check-key-dependency-contract.js"
+    "check:key-dependency": "node check-key-dependency-contract.js",
+    "check:dual-key-shadow": "node check-dual-key-shadow-contract.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

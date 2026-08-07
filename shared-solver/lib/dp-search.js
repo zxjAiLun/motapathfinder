@@ -1035,6 +1035,12 @@ function searchDP(simulator, initialState, options) {
   const shadowCheckState = typeof config.towerIrShadowCheckState === "function"
     ? config.towerIrShadowCheckState
     : null;
+  // Dual-key shadow recorder (observation only): records each enqueue decision
+  // (state + exact key + production keep/reject/replace) for the post-search
+  // candidate-key shadow.  Never affects the search; throws are swallowed.
+  const candidateKeyShadowRecorder = typeof config.candidateKeyShadowRecorder === "function"
+    ? config.candidateKeyShadowRecorder
+    : null;
   const observer = createDpObserver(config);
   const goalStateComparator = resolveGoalStateComparator(config);
   const shouldStop = typeof config.shouldStop === "function"
@@ -1434,6 +1440,23 @@ function searchDP(simulator, initialState, options) {
               : existingSkyline.every((n) => !isBetterForSameDpKey(state, n.state, config.dominanceConfig))
         )
       : !isBetterForSameDpKey(state, bestByKey.get(key) && bestByKey.get(key).state, config.dominanceConfig);
+    if (candidateKeyShadowRecorder) {
+      try {
+        const existingForRecorder = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);
+        const existingStateForRecorder = existingForRecorder && existingForRecorder.state;
+        const hpDiffForRecorder = existingStateForRecorder ? heroHp(state) - heroHp(existingStateForRecorder) : null;
+        const productionDecision = dominated
+          ? "reject"
+          : (!existingStateForRecorder ? "keep-new" : (hpDiffForRecorder > 0 ? "replace" : "keep-same-hp"));
+        candidateKeyShadowRecorder({
+          state: cloneState(state),
+          exactDpKey: key,
+          productionDecision,
+        });
+      } catch (error) {
+        // Observation must never affect the search.
+      }
+    }
     if (dominated) {
       trackPerfCount("dominanceRejected");
       const existing = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);

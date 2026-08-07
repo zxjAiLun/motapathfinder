@@ -84,6 +84,23 @@ function buildTerminalProjection(state, goalPredicate) {
   return { alive, dead, goalReached, terminalClass };
 }
 
+// TowerIR StructuralKey + ResourceIdentity + EventHazardLabel candidate DP key.
+// HP is intentionally NOT part of the identity (dominance label only).
+function buildCandidateDpKey(simulator, project, ir, state, options) {
+  const config = options || {};
+  const structuralCandidate = buildTowerIrProjection(ir, project, state);
+  const hero = state.hero || {};
+  const resourceIdentity = {
+    ...heroNumbers(state),
+    equipment: Array.isArray(hero.equipment) ? hero.equipment.slice().sort() : [],
+    inventory: stableValue(state.inventory || {}),
+    flags: behaviorRelevantFlags(state),
+    visitedFloors: Object.keys(state.visitedFloors || {}).sort(),
+  };
+  const eventHazardLabel = stableValue(state.triggeredAutoEvents || {});
+  return fingerprintJson({ structural: structuralCandidate, resource: resourceIdentity, event: eventHazardLabel });
+}
+
 // Per-state projection (cheap; no actions/successors).
 function buildStateProjection(simulator, project, ir, state, options) {
   const config = options || {};
@@ -132,7 +149,7 @@ function buildStateProjection(simulator, project, ir, state, options) {
   };
 
   const candidateStructuralResourceKey = fingerprintJson({ structural: structuralCandidate, resource: resourceIdentity });
-  const candidateFullBehaviorKey = fingerprintJson({ structural: structuralCandidate, resource: resourceIdentity, event: eventHazardLabel });
+  const candidateFullBehaviorKey = buildCandidateDpKey(simulator, project, ir, state, options);
   const legacyDecompositionKey = fingerprintJson({ legacy: legacyReference, resource: resourceIdentity, event: eventHazardLabel });
 
   return {
@@ -307,6 +324,60 @@ function isCoveringVariant(lowRecord, highRecord) {
   return true;
 }
 
+// Coverage of low variants by high variants for the shared choices.  Returns
+// unmatched low variants (empty when every low variant has a covering high
+// variant).  Travel variant fingerprints are diagnostic only; safety uses
+// successor behavior equality + terminal compatibility + successor HP.
+function computeVariantCoverage(low, high, sharedChoices, diagnostics) {
+  const unmatchedLowVariants = [];
+  const travelVariantDiffs = [];
+  const travelDiffs = [];
+  let lowVariantsCovered = 0;
+  let highOnlyVariantCount = 0;
+  let variantPairsChecked = 0;
+  sharedChoices.forEach((choice) => {
+    const lowRecords = findChoiceRecords(low, choice);
+    const highRecords = findChoiceRecords(high, choice);
+    const usedCovering = new Set();
+    lowRecords.forEach((lowRecord) => {
+      let covering = null;
+      for (const highRecord of highRecords) {
+        variantPairsChecked += 1;
+        if (isCoveringVariant(lowRecord, highRecord)) { covering = highRecord; break; }
+      }
+      if (covering) {
+        lowVariantsCovered += 1;
+        usedCovering.add(covering);
+        if (lowRecord.travelVariant && covering.travelVariant && lowRecord.travelVariant.travelVariantFingerprint !== covering.travelVariant.travelVariantFingerprint) {
+          travelVariantDiffs.push({ choice, lowVariant: lowRecord.travelVariant.travelVariantFingerprint, highVariant: covering.travelVariant.travelVariantFingerprint });
+        }
+        const lowTravel = lowRecord.travelVariant ? fingerprintJson({ structural: lowRecord.travelVariant.variant.travelStructural, resource: lowRecord.travelVariant.variant.travelResource, event: lowRecord.travelVariant.variant.travelEvent }) : null;
+        const highTravel = covering.travelVariant ? fingerprintJson({ structural: covering.travelVariant.variant.travelStructural, resource: covering.travelVariant.variant.travelResource, event: covering.travelVariant.variant.travelEvent }) : null;
+        if (lowTravel && highTravel && lowTravel !== highTravel) {
+          travelDiffs.push({ choice, lowTravel, highTravel });
+        }
+      } else {
+        unmatchedLowVariants.push({
+          choice,
+          travelVariantFingerprint: lowRecord.travelVariant ? lowRecord.travelVariant.travelVariantFingerprint : null,
+          successorBehavior: successorBehaviorKey(lowRecord.successor),
+          successorHp: lowRecord.successor ? lowRecord.successor.dominanceLabel.hp : null,
+          terminalProjection: lowRecord.successor ? lowRecord.successor.terminalProjection : null,
+        });
+      }
+    });
+    highRecords.forEach((highRecord) => {
+      if (!usedCovering.has(highRecord)) highOnlyVariantCount += 1;
+    });
+  });
+  if (diagnostics) {
+    diagnostics.lowVariantsCovered += lowVariantsCovered;
+    diagnostics.highOnlyVariantCount += highOnlyVariantCount;
+    diagnostics.variantPairsChecked += variantPairsChecked;
+  }
+  return { unmatchedLowVariants, travelVariantDiffs, travelDiffs, lowVariantsCovered, highOnlyVariantCount, variantPairsChecked };
+}
+
 // Dominance-aware pair classification over COMPLETE variant sets.  left/right
 // are behavior entries.
 function classifyPair(left, right) {
@@ -354,61 +425,27 @@ function classifyPair(left, right) {
   }
 
   // Choice-set equivalence: the low-HP choice set must be a subset of high-HP.
-  if (actionOnlyLow.length > 0) {
-    return { classification: "unsafe", reason: "low-HP state has choices the high-HP state lacks", actionOnlyLow: summarizeChoices(actionOnlyLow, [low, high]), actionOnlyHigh: summarizeChoices(actionOnlyHigh, [low, high]) };
+  // Equal-HP pairs are symmetric: BOTH choice sets must be equal.
+  const hpEqual = leftHp === rightHp;
+  if (actionOnlyLow.length > 0 || (hpEqual && actionOnlyHigh.length > 0)) {
+    return { classification: "unsafe", reason: hpEqual
+      ? "equal-HP states must share identical choice sets"
+      : "low-HP state has choices the high-HP state lacks", actionOnlyLow: summarizeChoices(actionOnlyLow, [low, high]), actionOnlyHigh: summarizeChoices(actionOnlyHigh, [low, high]) };
   }
 
-  // Variant-set dominance coverage per shared choice.
-  const unmatchedLowVariants = [];
-  const highOnlyVariantCount = { value: 0 };
-  let lowVariantsCovered = 0;
-  let variantPairsChecked = 0;
-  const travelVariantDiffs = [];
-  const travelDiffs = [];
-  sharedChoices.forEach((choice) => {
-    const lowRecords = findChoiceRecords(low, choice);
-    const highRecords = findChoiceRecords(high, choice);
-    lowRecords.forEach((lowRecord) => {
-      let covering = null;
-      for (const highRecord of highRecords) {
-        variantPairsChecked += 1;
-        if (isCoveringVariant(lowRecord, highRecord)) { covering = highRecord; break; }
-      }
-      if (covering) {
-        lowVariantsCovered += 1;
-        if (lowRecord.travelVariant && covering.travelVariant && lowRecord.travelVariant.travelVariantFingerprint !== covering.travelVariant.travelVariantFingerprint) {
-          travelVariantDiffs.push({ choice, lowVariant: lowRecord.travelVariant.travelVariantFingerprint, highVariant: covering.travelVariant.travelVariantFingerprint });
-        }
-        const lowTravel = lowRecord.travelVariant ? fingerprintJson({ structural: lowRecord.travelVariant.variant.travelStructural, resource: lowRecord.travelVariant.variant.travelResource, event: lowRecord.travelVariant.variant.travelEvent }) : null;
-        const highTravel = covering.travelVariant ? fingerprintJson({ structural: covering.travelVariant.variant.travelStructural, resource: covering.travelVariant.variant.travelResource, event: covering.travelVariant.variant.travelEvent }) : null;
-        if (lowTravel && highTravel && lowTravel !== highTravel) {
-          travelDiffs.push({ choice, lowTravel, highTravel });
-        }
-      } else {
-        unmatchedLowVariants.push({
-          choice,
-          travelVariantFingerprint: lowRecord.travelVariant ? lowRecord.travelVariant.travelVariantFingerprint : null,
-          successorBehavior: successorBehaviorKey(lowRecord.successor),
-          successorHp: lowRecord.successor ? lowRecord.successor.dominanceLabel.hp : null,
-          terminalProjection: lowRecord.successor ? lowRecord.successor.terminalProjection : null,
-        });
-      }
-    });
-    const usedCovering = new Set();
-    lowRecords.forEach((lowRecord) => {
-      for (const highRecord of highRecords) {
-        if (isCoveringVariant(lowRecord, highRecord)) { usedCovering.add(highRecord); break; }
-      }
-    });
-    highRecords.forEach((highRecord) => {
-      if (!usedCovering.has(highRecord)) highOnlyVariantCount.value += 1;
-    });
-  });
-  if (unmatchedLowVariants.length > 0) {
+  // Variant-set dominance coverage: every low variant needs a covering high
+  // variant.  Equal-HP pairs are symmetric: BOTH directions must cover.
+  const coverageLowToHigh = computeVariantCoverage(low, high, sharedChoices);
+  let coverageHighToLow = null;
+  if (hpEqual) coverageHighToLow = computeVariantCoverage(high, low, sharedChoices);
+  const allUnmatched = coverageLowToHigh.unmatchedLowVariants.concat(coverageHighToLow ? coverageHighToLow.unmatchedLowVariants : []);
+  const travelVariantDiffs = coverageLowToHigh.travelVariantDiffs.concat(coverageHighToLow ? coverageHighToLow.travelVariantDiffs : []);
+  const travelDiffs = coverageLowToHigh.travelDiffs.concat(coverageHighToLow ? coverageHighToLow.travelDiffs : []);
+  if (allUnmatched.length > 0) {
     return {
       classification: "unsafe",
-      reason: "a low-HP travel variant has no dominance-covering high-HP variant",
-      unmatchedLowVariants: unmatchedLowVariants.slice(0, 8),
+      reason: hpEqual ? "an equal-HP travel variant has no symmetric covering variant" : "a low-HP travel variant has no dominance-covering high-HP variant",
+      unmatchedLowVariants: allUnmatched.slice(0, 8),
       travelVariantDiffs: travelVariantDiffs.slice(0, 8),
       actionOnlyLow: [],
       actionOnlyHigh: [],
@@ -416,7 +453,6 @@ function classifyPair(left, right) {
   }
 
   // Metadata / equivalent / dominance-safe.
-  const hpEqual = leftHp === rightHp;
   const metadataDiffFields = [];
   const metaFields = ["rawRouteLength", "materializedRouteLength", "decisionDepth", "autoStepCount", "autoPickupCount", "autoBattleCount"];
   metaFields.forEach((field) => {
@@ -424,13 +460,18 @@ function classifyPair(left, right) {
       metadataDiffFields.push(field);
     }
   });
+  const coverageStats = {
+    lowVariantsCovered: coverageLowToHigh.lowVariantsCovered + (coverageHighToLow ? coverageHighToLow.lowVariantsCovered : 0),
+    highOnlyVariantCount: coverageLowToHigh.highOnlyVariantCount + (coverageHighToLow ? coverageHighToLow.highOnlyVariantCount : 0),
+    variantPairsChecked: coverageLowToHigh.variantPairsChecked + (coverageHighToLow ? coverageHighToLow.variantPairsChecked : 0),
+  };
   if (hpEqual && metadataDiffFields.length > 0) {
-    return { classification: "metadata-only", reason: `identical HP/behavior; only metadata differs (${metadataDiffFields.join(",")})`, metadataDiffs: metadataDiffFields, travelDiffs: travelDiffs.slice(0, 8), travelVariantDiffs: travelVariantDiffs.slice(0, 8), highOnlyVariantCount: highOnlyVariantCount.value, lowVariantsCovered, variantPairsChecked };
+    return { classification: "metadata-only", reason: `identical HP/behavior; only metadata differs (${metadataDiffFields.join(",")})`, metadataDiffs: metadataDiffFields, travelDiffs: travelDiffs.slice(0, 8), travelVariantDiffs: travelVariantDiffs.slice(0, 8), ...coverageStats };
   }
   if (hpEqual) {
-    return { classification: "equivalent", reason: "identical HP, choice sets, and behavior; no metadata difference", travelDiffs: travelDiffs.slice(0, 8), travelVariantDiffs: travelVariantDiffs.slice(0, 8), highOnlyVariantCount: highOnlyVariantCount.value, lowVariantsCovered, variantPairsChecked };
+    return { classification: "equivalent", reason: "identical HP, choice sets, and behavior; no metadata difference", travelDiffs: travelDiffs.slice(0, 8), travelVariantDiffs: travelVariantDiffs.slice(0, 8), ...coverageStats };
   }
-  return { classification: "dominance-safe", reason: "identical choice sets and successor behavior; HP differs monotonically", travelDiffs: travelDiffs.slice(0, 8), travelVariantDiffs: travelVariantDiffs.slice(0, 8), highOnlyVariantCount: highOnlyVariantCount.value, lowVariantsCovered, variantPairsChecked, actionOnlyLow: [], actionOnlyHigh: [] };
+  return { classification: "dominance-safe", reason: "identical choice sets and successor behavior; HP differs monotonically", travelDiffs: travelDiffs.slice(0, 8), travelVariantDiffs: travelVariantDiffs.slice(0, 8), ...coverageStats, actionOnlyLow: [], actionOnlyHigh: [] };
 }
 
 function analyzeCandidateKeyCollisions(entries, keyField) {
@@ -479,10 +520,33 @@ function analyzeKeyDependencyCorpus(entries, buildBehavior, options) {
   const classifications = [];
   const witnesses = [];
   const analysisErrorWitnesses = [];
+  // Duplicate-choice diagnostics computed ONCE per unique state (not per pair).
+  const uniqueDuplicateStateFingerprints = new Set();
+  let duplicateChoiceUniqueCount = 0;
+  let maxVariantsPerChoice = 0;
+  entries.forEach((entry) => {
+    const behavior = entry.behavior;
+    if (!behavior) return;
+    const countsByChoice = new Map();
+    behavior.actions.forEach((record) => {
+      if (!record.choice || record.choice.actionChoiceFingerprint === "__enumerateError__") return;
+      const key = record.choice.actionChoiceFingerprint;
+      countsByChoice.set(key, (countsByChoice.get(key) || 0) + 1);
+    });
+    let hasDuplicate = false;
+    countsByChoice.forEach((count) => {
+      if (count > 1) {
+        hasDuplicate = true;
+        duplicateChoiceUniqueCount += 1;
+        maxVariantsPerChoice = Math.max(maxVariantsPerChoice, count);
+      }
+    });
+    if (hasDuplicate) uniqueDuplicateStateFingerprints.add(entry.projection.stateFingerprint);
+  });
   const variantDiagnostics = {
-    statesWithDuplicateChoices: 0,
-    duplicateChoiceCount: 0,
-    maxVariantsPerChoice: 0,
+    statesWithDuplicateChoices: uniqueDuplicateStateFingerprints.size,
+    duplicateChoiceCount: duplicateChoiceUniqueCount,
+    maxVariantsPerChoice,
     variantPairsChecked: 0,
     lowVariantsCovered: 0,
     unmatchedLowVariantCount: 0,
@@ -509,24 +573,6 @@ function analyzeKeyDependencyCorpus(entries, buildBehavior, options) {
         const left = group[i];
         const right = group[j];
         if (!left.behavior || !right.behavior) continue;
-        // Duplicate-choice diagnostics (per behavior).
-        [left.behavior, right.behavior].forEach((behavior) => {
-          const countsByChoice = new Map();
-          behavior.actions.forEach((record) => {
-            if (!record.choice || record.choice.actionChoiceFingerprint === "__enumerateError__") return;
-            const key = record.choice.actionChoiceFingerprint;
-            countsByChoice.set(key, (countsByChoice.get(key) || 0) + 1);
-          });
-          let hasDuplicate = false;
-          countsByChoice.forEach((count) => {
-            if (count > 1) {
-              hasDuplicate = true;
-              variantDiagnostics.duplicateChoiceCount += 1;
-              variantDiagnostics.maxVariantsPerChoice = Math.max(variantDiagnostics.maxVariantsPerChoice, count);
-            }
-          });
-          if (hasDuplicate) variantDiagnostics.statesWithDuplicateChoices += 1;
-        });
         const result = classifyPair(left.behavior, right.behavior);
         const lowHp = left.projection.dominanceLabel.hp <= right.projection.dominanceLabel.hp ? left : right;
         const highHp = left.projection.dominanceLabel.hp <= right.projection.dominanceLabel.hp ? right : left;
@@ -625,10 +671,12 @@ module.exports = {
   behaviorRelevantFlags,
   buildActionChoiceIdentity,
   buildActionTravelVariant,
+  buildCandidateDpKey,
   buildStateBehavior,
   buildStateProjection,
   buildTerminalProjection,
   classifyPair,
+  computeVariantCoverage,
   findChoiceRecords,
   heroNumbers,
   isCoveringVariant,
