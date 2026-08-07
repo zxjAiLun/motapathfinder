@@ -67,6 +67,7 @@ async function runRepresentative(options) {
     verification: { strictReplay: config.strictReplay === true },
   });
   if (config.recorder) task.executeConfig.candidateKeyShadowRecorder = config.recorder;
+  if (config.dpKeyProfile) task.executeConfig.dpKeyProfile = config.dpKeyProfile;
   if (config.dpStateKeyBuilder) task.executeConfig.dpStateKeyBuilder = config.dpStateKeyBuilder;
   const tracker = createPerfTracker({ enabled: true });
   setActivePerfTracker(tracker);
@@ -108,9 +109,29 @@ function extractCorrectness(execution) {
     found: execution.result.found,
     winnerExactFingerprint: winnerState ? require("./lib/solver-job").exactStateFingerprint(winnerState) : null,
     routeFingerprint: routeFingerprintString,
-    decisionSummaries: execution.result.finalCandidate ? execution.result.finalCandidate.decisionSummaries : null,
-    objectiveValue: execution.result.finalCandidate ? execution.result.finalCandidate.objectiveValue : null,
+    decisionSummaries: execution.routeRecord ? execution.routeRecord.decisions.map((decision) => decision.summary) : null,
+    objectiveFingerprint: execution.objectiveValue ? execution.objectiveValue.fingerprint : null,
+    objectiveValue: execution.objectiveValue ? execution.objectiveValue.value : null,
     strictReplayVerified: execution.strictReplayVerified,
+  };
+}
+
+function extractSearchScale(run) {
+  const dp = run.dp;
+  const generated = dp && dp.actionsGeneratedByKind
+    ? Object.values(dp.actionsGeneratedByKind).reduce((sum, value) => sum + (value || 0), 0)
+    : null;
+  const registered = dp && dp.actionsKeptByKind
+    ? Object.values(dp.actionsKeptByKind).reduce((sum, value) => sum + (value || 0), 0)
+    : null;
+  const dominanceRejected = dp ? Number(dp.rejectedByHigherHp || 0) + Number(dp.sameHpRejected || 0) : null;
+  return {
+    expanded: dp ? Number(dp.expansions) : null,
+    generated,
+    registered,
+    dominanceRejected,
+    finalActiveStates: run.registry ? Number(run.registry.finalActiveStates) : null,
+    finalUniqueKeys: run.registry ? Number(run.registry.finalUniqueKeys) : null,
   };
 }
 
@@ -208,11 +229,34 @@ async function main() {
   assert.ok(brokenSnapshot.shadowUnsafeMerge > 0, "BROKEN key must surface unsafe merges");
   assert.ok(brokenSnapshot.unsafeWitnesses.length > 0, "BROKEN key must surface witnesses");
 
-  // Gate B: experimental A/B only when Gate A passed; runs REAL strict replay.
+  // Gate B: experimental A/B only when Gate A passed; runs REAL strict replay
+  // via the guarded experimental profile (default-off, scope fail-closed).
   let gateB = null;
   if (gateAPassed) {
-    const builder = (state) => buildCandidateDpKey(simulator, project, smokeIr, state, { goalPredicate: GOAL_PREDICATE, profile: minimalSafe.profile });
-    const runB = await runRepresentative({ dpStateKeyBuilder: builder, strictReplay: true });
+    const guarded = require("./lib/guarded-candidate-key").createGuardedKeyResolver({
+      simulator,
+      project,
+      ir: smokeIr,
+      regionSpec: smokeSpec,
+      options: { goalPredicate: GOAL_PREDICATE },
+    });
+    assert.strictEqual(guarded.guard.floors.join(","), "MT1", "guarded profile must bind MT1 scope");
+    // Fail-closed: unknown profile and out-of-scope floor must throw.
+    assert.throws(
+      () => guarded.resolver(init, { dpKeyProfile: "not-a-profile" }),
+      (error) => error && /unknown dpKeyProfile/.test(error.message),
+      "unknown dpKeyProfile must throw",
+    );
+    assert.throws(
+      () => guarded.resolver({ floorId: "MT9" }, { dpKeyProfile: "experimental-mt1-tower-ir-v1" }),
+      (error) => error && /outside bound scope/.test(error.message),
+      "out-of-scope floor must throw (fail-closed)",
+    );
+    const runB = await runRepresentative({
+      dpKeyProfile: "experimental-mt1-tower-ir-v1",
+      dpStateKeyBuilder: guarded.resolver,
+      strictReplay: true,
+    });
     const correctnessB = extractCorrectness(runB.execution);
     const exactCorrectness = JSON.stringify(correctnessA) === JSON.stringify(correctnessB);
     const bothStrictReplayVerified = correctnessA.strictReplayVerified === true && correctnessB.strictReplayVerified === true;
@@ -227,24 +271,13 @@ async function main() {
     const applyA = runA.perf.phaseMs && runA.perf.phaseMs.applyAction;
     const applyB = runB.perf.phaseMs && runB.perf.phaseMs.applyAction;
     gateB = {
+      guard: guarded.guard,
       correctnessExact: exactCorrectness,
       strictReplayVerifiedBoth: bothStrictReplayVerified,
       correctnessA,
       correctnessB,
-      scaleA: {
-        expanded: runA.dp && runA.dp.expansions,
-        generated: runA.dp && runA.dp.generatedActions,
-        registered: runA.dp && runA.dp.keptActions,
-        finalActiveStates: runA.registry && runA.registry.finalActiveStates,
-        finalUniqueKeys: runA.registry && runA.registry.finalUniqueKeys,
-      },
-      scaleB: {
-        expanded: runB.dp && runB.dp.expansions,
-        generated: runB.dp && runB.dp.generatedActions,
-        registered: runB.dp && runB.dp.keptActions,
-        finalActiveStates: runB.registry && runB.registry.finalActiveStates,
-        finalUniqueKeys: runB.registry && runB.registry.finalUniqueKeys,
-      },
+      scaleA: extractSearchScale(runA),
+      scaleB: extractSearchScale(runB),
       keyPhaseA: { totalMs: keyPhaseA != null ? Number(keyPhaseA.toFixed(2)) : null, calls: keyPhaseACalls != null ? keyPhaseACalls : null },
       keyPhaseB: { totalMs: keyPhaseB != null ? Number(keyPhaseB.toFixed(2)) : null, calls: keyPhaseBCalls != null ? keyPhaseBCalls : null },
       reachabilityA: reachabilityA != null ? Number(reachabilityA.toFixed(2)) : null,

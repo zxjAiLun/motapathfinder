@@ -43,4 +43,5 @@ jobs:
       - run: npm run check:key-dependency
       - run: npm run check:dual-key-shadow
       - run: npm run check:candidate-key-promotion
+      - run: npm run check:candidate-key-paired-benchmark
 

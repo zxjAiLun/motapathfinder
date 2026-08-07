@@ -1986,7 +1986,7 @@ function searchDP(simulator, initialState, options) {
     try {
       actions = typeof config.actionProvider === "function"
         ? config.actionProvider(simulator, state, entry)
-        : simulator.enumeratePrimitiveActions(state).actions;
+        : trackPerfPhase("enumerateActions", () => simulator.enumeratePrimitiveActions(state)).actions;
     } catch (error) {
       invalid += 1;
       if (observer) observer.emit("actionProviderError", () => observerStatePayload(simulator, state, entry, config, {
@@ -2046,7 +2046,7 @@ function searchDP(simulator, initialState, options) {
         try {
           const applier = typeof config.actionApplier === "function"
             ? config.actionApplier
-            : (s, a) => simulator.applyAction(s, a, { storeRoute: false });
+            : (s, a) => trackPerfPhase("applyAction", () => simulator.applyAction(s, a, { storeRoute: false }));
           const result = applier(state, action);
           nextStates = Array.isArray(result) ? result : [result];
         } catch (error) {

@@ -341,8 +341,9 @@ function createDualKeyShadow(options) {
     else if (splitExactKeyCount > 0) partitionRelation = "strict-refinement";
     else if (mergedCandidateKeyCount > 0) partitionRelation = "strict-coarsening";
 
-    // Split field distribution: aggregate over ALL split exact keys (not just
-    // the witness sample), classifying each into only-start-component or other.
+    // Split field distribution: aggregate over ALL split exact keys and ALL
+    // candidate representatives (canonical vs every other), classifying each
+    // exact key into only-start-component or other.
     const splitFieldDistribution = {};
     let splitExactKeysOnlyStartComponent = 0;
     let splitExactKeysWithOtherDifferences = 0;
@@ -354,24 +355,28 @@ function createDualKeyShadow(options) {
         if (!byCandidate.has(record.candidateKey)) byCandidate.set(record.candidateKey, record);
       });
       const candidateKeys = Array.from(candidateSet);
-      const first = byCandidate.get(candidateKeys[0]);
-      const second = byCandidate.get(candidateKeys[1]);
-      if (!first || !second || !first.candidateProjection || !second.candidateProjection) return;
-      const differing = diffCandidateProjections(first.candidateProjection, second.candidateProjection);
-      const flatFields = [];
-      Object.keys(differing).forEach((group) => {
-        (differing[group] || []).forEach((field) => {
-          const fullField = group === "eventHazardLabel" ? group : `${group}.${field}`;
-          flatFields.push(fullField);
-          splitFieldDistribution[fullField] = (splitFieldDistribution[fullField] || 0) + 1;
+      const canonical = byCandidate.get(candidateKeys[0]);
+      if (!canonical || !canonical.candidateProjection) return;
+      const flatFields = new Set();
+      candidateKeys.slice(1).forEach((otherKey) => {
+        const other = byCandidate.get(otherKey);
+        if (!other || !other.candidateProjection) return;
+        const differing = diffCandidateProjections(canonical.candidateProjection, other.candidateProjection);
+        Object.keys(differing).forEach((group) => {
+          (differing[group] || []).forEach((field) => {
+            const fullField = group === "eventHazardLabel" ? group : `${group}.${field}`;
+            flatFields.add(fullField);
+            splitFieldDistribution[fullField] = (splitFieldDistribution[fullField] || 0) + 1;
+          });
         });
       });
-      const onlyStartComponent = flatFields.length === 1 && flatFields[0] === "structuralCandidate.startComponentId";
+      const onlyStartComponent = flatFields.size === 1 && flatFields.has("structuralCandidate.startComponentId");
       if (onlyStartComponent) splitExactKeysOnlyStartComponent += 1;
       else splitExactKeysWithOtherDifferences += 1;
     });
 
-    // Split / merge witnesses (field-level, capped).
+    // Split / merge witnesses (field-level, capped).  Canonical representative
+    // vs EVERY other candidate representative per exact key.
     if (splitWitnesses.length === 0) {
       exactKeyToCandidateKeys.forEach((candidateSet, exactDpKey) => {
         if (candidateSet.size <= 1) return;
@@ -381,17 +386,19 @@ function createDualKeyShadow(options) {
           if (!byCandidate.has(record.candidateKey)) byCandidate.set(record.candidateKey, record);
         });
         const candidateKeys = Array.from(candidateSet);
-        const first = byCandidate.get(candidateKeys[0]);
-        const second = byCandidate.get(candidateKeys[1]);
-        if (first && second && first.candidateProjection && second.candidateProjection) {
+        const canonical = byCandidate.get(candidateKeys[0]);
+        if (!canonical || !canonical.candidateProjection) return;
+        candidateKeys.slice(1).forEach((otherKey) => {
+          const other = byCandidate.get(otherKey);
+          if (!other || !other.candidateProjection) return;
           splitWitnesses.push({
             exactDpKey,
-            candidateKeys,
-            differingProjectionFields: diffCandidateProjections(first.candidateProjection, second.candidateProjection),
-            stateA: { hp: heroHp(first.state), loc: `${first.state.hero.loc.x},${first.state.hero.loc.y}`, triggeredAutoEvents: first.state.triggeredAutoEvents },
-            stateB: { hp: heroHp(second.state), loc: `${second.state.hero.loc.x},${second.state.hero.loc.y}`, triggeredAutoEvents: second.state.triggeredAutoEvents },
+            candidateKeys: [canonical.candidateKey, otherKey],
+            differingProjectionFields: diffCandidateProjections(canonical.candidateProjection, other.candidateProjection),
+            stateA: { hp: heroHp(canonical.state), loc: `${canonical.state.hero.loc.x},${canonical.state.hero.loc.y}`, triggeredAutoEvents: canonical.state.triggeredAutoEvents },
+            stateB: { hp: heroHp(other.state), loc: `${other.state.hero.loc.x},${other.state.hero.loc.y}`, triggeredAutoEvents: other.state.triggeredAutoEvents },
           });
-        }
+        });
       });
     }
     if (mergeWitnesses.length === 0) {

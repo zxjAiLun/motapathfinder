@@ -202,7 +202,8 @@
         "shared-solver/check-tower-ir-shadow-contract.js",
         "shared-solver/check-key-dependency-contract.js",
         "shared-solver/check-dual-key-shadow-contract.js",
-        "shared-solver/check-candidate-key-promotion-contract.js"
+        "shared-solver/check-candidate-key-promotion-contract.js",
+        "shared-solver/check-candidate-key-paired-benchmark.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -2306,6 +2307,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4c Commit 3 Repair: start-component ablation profile, split field distribution (32/32 only startComponentId), real strict-replay Gate B -> PROMOTION_CANDIDATE (without-start-component, delta 0)"
+    },
+    "shared-solver/check-candidate-key-paired-benchmark.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.4d: guarded MT1 candidate key profile (fail-closed, fingerprint-bound) + paired A/B performance gate with real strict replay"
     }
   }
 }
