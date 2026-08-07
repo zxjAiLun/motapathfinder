@@ -2308,6 +2308,18 @@ function searchDP(simulator, initialState, options) {
         maxRawRouteLength,
       },
       capturedExpandedStates: captureEnabled ? capturedExpandedStates.slice() : [],
+      registry: (() => {
+        let finalUniqueKeys = 0;
+        let finalActiveStates = 0;
+        if (bestByKey instanceof SkylineSet) {
+          finalUniqueKeys = bestByKey.map.size;
+          bestByKey.map.forEach((entries) => { finalActiveStates += entries.length; });
+        } else {
+          finalUniqueKeys = bestByKey.size;
+          finalActiveStates = bestByKey.size;
+        }
+        return { finalUniqueKeys, finalActiveStates };
+      })(),
       pruneReasons: {
         "dp-lower-hp-same-state": rejectedByHigherHp,
         "dp-same-hp-not-shorter": sameHpRejected,

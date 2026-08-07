@@ -2661,6 +2661,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
         depth: (result.diagnostics && result.diagnostics.depth) || null,
         routeFree: (result.diagnostics && result.diagnostics.routeFree) || null,
         capturedExpandedStates: (result.diagnostics && result.diagnostics.capturedExpandedStates) || [],
+        registry: (result.diagnostics && result.diagnostics.registry) || null,
         resourceTiming: resourceTimingEnabled
           ? {
               model: resourceTimingOptions.model,

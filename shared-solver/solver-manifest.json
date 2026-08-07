@@ -2297,7 +2297,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.4c Commit 2: dual-key registry shadow - candidate key observed vs production registry, decision disagreement, unsafe fail-visible, isolation negative control"
+      "notes": "PR-5.4c Commit 2 Repair: independent candidate key builds (no exact-key cache in gate), equivalent->reject accounting, event vs occupancy split, negative state delta, perf-tracker key phase estimate"
     }
   }
 }

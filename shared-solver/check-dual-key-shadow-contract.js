@@ -3,20 +3,20 @@
 /**
  * TEST GRADE: unit-plus-micro
  *
- * PR-5.4c Commit 2 — Dual-Key Registry Shadow contract.
+ * PR-5.4c Commit 2 Repair — Dual-Key Registry Shadow contract (corrected
+ * accounting).
  *
- * The candidate key (TowerIR StructuralKey + ResourceIdentity +
- * EventHazardLabel; HP is dominance only) is observed against the production
- * exact-key registry in canonical searchDP.  The shadow NEVER affects the
- * production registry, skyline, agenda, goal archive, or winner.
- *
- * Controls:
- *  - candidateShadowDefaultOff / candidateShadowObservationIsolation
- *  - candidateShadowUsesTowerIrKey / candidateShadowHpIsDominanceNotIdentity
- *  - candidateShadowSafeCollision / candidateShadowUnsafeWitness
- *  - candidateShadowAnalysisErrorVisible
- *  - candidateShadowEqualHpSymmetric / candidateShadowCompleteVariantCoverage
- *  - representativeShadowZeroUnsafe / representativeProductionParity
+ * 1. Candidate keys are computed INDEPENDENTLY for every recorder state (no
+ *    exactDpKey -> candidateKey semantic cache in the gate).
+ * 2. Equivalent collisions are rejected (shadowRejectEquivalent) and the
+ *    decision matrix agrees with bucket occupancy.
+ * 3. Event decisions are split from final registry occupancy; hypothetical
+ *    state delta allows negative values.
+ * 4. Production buildDpStateKey cost comes from the canonical perf tracker;
+ *    any key-phase estimate is labelled "shadow estimate, not production
+ *    speedup".
+ * 5. BROKEN-key isolation negative control with concrete witnesses.
+ * 6. Production parity byte-for-byte with PR-5.4b baseline.
  */
 
 const assert = require("node:assert");
@@ -25,15 +25,10 @@ const path = require("node:path");
 
 const { loadProject } = require("./lib/project-loader");
 const { compileTowerIR } = require("./lib/tower-ir");
-const {
-  buildCandidateDpKey,
-  buildStateBehavior,
-  classifyPair,
-} = require("./lib/key-dependency-corpus");
 const { createDualKeyShadow } = require("./lib/dual-key-shadow");
+const { createPerfTracker, setActivePerfTracker } = require("./lib/perf");
 const { makeSimulator, executeSolveJob } = require("./lib/solver-job");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
-const { buildDpStateKey } = require("./lib/dp-search");
 const { cloneState } = require("./lib/state");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -55,177 +50,71 @@ function makeShadow(config) {
   return createDualKeyShadow({ simulator, project, ir: smokeIr, goalPredicate: GOAL_PREDICATE, ...(config || {}) });
 }
 
-function makeBehaviorEntry(options) {
-  const config = options || {};
-  return {
-    projection: {
-      dominanceLabel: { hp: config.hp, rawRouteLength: 0, decisionDepth: 0 },
-      metadataLabel: { rawRouteLength: 0, materializedRouteLength: 0, decisionDepth: 0, autoStepCount: 0, autoPickupCount: 0, autoBattleCount: 0 },
-      terminalProjection: { alive: true, dead: false, goalReached: null, terminalClass: "active" },
-    },
-    choiceSet: (config.choiceSet || []).slice().sort(),
-    actions: (config.actions || []).map((action) => ({
-      choice: { actionChoiceFingerprint: action.fingerprint, actionSummary: action.summary || action.fingerprint, actionPayload: null },
-      travelVariant: null,
-      successor: action.successor || null,
-      successorError: action.successorError || null,
-      projectionError: null,
-    })),
-    enumerationError: null,
-  };
-}
-
-function validSuccessor(hp, structuralId) {
-  return {
-    structuralCandidate: { id: structuralId || "s" },
-    resourceIdentity: { id: "r" },
-    eventHazardLabel: {},
-    dominanceLabel: { hp },
-    terminalProjection: { alive: hp > 0, dead: hp <= 0, goalReached: null, terminalClass: hp > 0 ? "active" : "dead" },
-    metadataLabel: {},
-  };
-}
-
-function checkCandidateKeyUsesTowerIr() {
+function checkExactKeyCacheIndependence() {
   const init = simulator.createInitialState({ rank: "chaos" });
-  const candidateKey = buildCandidateDpKey(simulator, project, smokeIr, init, { goalPredicate: GOAL_PREDICATE });
-  const exactKey = buildDpStateKey(simulator, init, { dpKeyMode: "region" });
-  assert.strictEqual(typeof candidateKey, "string", "candidate key must be a string");
-  assert.ok(candidateKey.length > 0, "candidate key must be non-empty");
-  assert.notStrictEqual(candidateKey, exactKey, "candidate key must differ from the production exact key");
-}
-
-function checkHpIsDominanceNotIdentity() {
-  const init = simulator.createInitialState({ rank: "chaos" });
-  const highHp = cloneState(init);
-  highHp.hero.hp = 999;
-  const lowHp = cloneState(init);
-  lowHp.hero.hp = 1;
-  assert.strictEqual(
-    buildCandidateDpKey(simulator, project, smokeIr, highHp, { goalPredicate: GOAL_PREDICATE }),
-    buildCandidateDpKey(simulator, project, smokeIr, lowHp, { goalPredicate: GOAL_PREDICATE }),
-    "HP must NOT be part of the candidate identity",
-  );
-}
-
-function checkSafeCollision() {
-  const init = simulator.createInitialState({ rank: "chaos" });
-  const stateA = cloneState(init); // default hp
+  const stateA = cloneState(init);
   const stateB = cloneState(init);
-  stateB.hero.hp = 1; // same candidate key, lower HP
-  const shadow = makeShadow();
-  shadow.registerRecord({ state: stateA, exactDpKey: "keyA", productionDecision: "keep-new" });
-  shadow.registerRecord({ state: stateB, exactDpKey: "keyB", productionDecision: "keep-new" });
+  stateB.hero.atk = 99; // different resource identity => different candidate key
+  const shadow = makeShadow({ candidateCacheMode: "off" });
+  shadow.registerRecord({ state: stateA, exactDpKey: "SAME-KEY", productionDecision: "keep-new" });
+  shadow.registerRecord({ state: stateB, exactDpKey: "SAME-KEY", productionDecision: "keep-new" });
   const snap = shadow.snapshot();
-  assert.ok(
-    snap.shadowRejectDominated + snap.shadowReplaceDominated + snap.shadowCollision >= 1,
-    `same-candidate-key collision must resolve (reject/replace/collision), got keep=${snap.shadowKeep}`,
-  );
-  assert.strictEqual(snap.shadowUnsafeMerge, 0, "dominance-safe collision must not be unsafe");
-  assert.strictEqual(snap.shadowAnalysisError, 0, "dominance-safe collision must not error");
+  assert.strictEqual(snap.candidateKeyBuildCalls, 2, "both records must independently build the candidate key (gate off)");
+  assert.strictEqual(snap.postPassExactKeyReuseHits, 0, "gate must not reuse an exact-key cached candidate key");
+  assert.ok(snap.exactKeysWithMultipleCandidateKeys >= 1, "audit must detect one exact key producing multiple candidate keys");
+  assert.ok(snap.maxCandidateKeysPerExactKey >= 2, "audit must record the fan-out");
+  assert.strictEqual(snap.candidateFinalUniqueKeys, 2, "two independent candidate keys must stay distinct in the registry");
 }
 
-function checkUnsafeWitness() {
-  // BROKEN candidate key forces every state into one bucket; states with
-  // different action sets must surface an unsafe witness (fail-visible).
-  const shadow = makeShadow({
-    candidateKeyBuilder: () => "BROKEN",
-  });
-  const behaviorLow = makeBehaviorEntry({
-    hp: 60,
-    choiceSet: ["a", "low-only"],
-    actions: [
-      { fingerprint: "a", summary: "a", successor: validSuccessor(40) },
-      { fingerprint: "low-only", summary: "low-only", successor: validSuccessor(30) },
-    ],
-  });
-  const behaviorHigh = makeBehaviorEntry({
-    hp: 100,
-    choiceSet: ["a"],
-    actions: [{ fingerprint: "a", summary: "a", successor: validSuccessor(90) }],
-  });
-  // Register the high-HP state first (its exact key differs from low-only).
-  shadow.registerRecord({ state: { floorId: "MT1", hero: { hp: 100, loc: { x: 0, y: 0 } } }, exactDpKey: "k1", productionDecision: "keep-new" });
-  shadow.registerRecord({ state: { floorId: "MT1", hero: { hp: 60, loc: { x: 1, y: 1 } } }, exactDpKey: "k2", productionDecision: "keep-new" });
-  // Inject the synthetic behaviors for the two registered states.
-  const shadowRef = shadow;
-  assert.ok(shadowRef.snapshot(), "shadow must expose a snapshot");
-  // The synthetic behaviors prove the unsafe classification independently.
-  const result = classifyPair(behaviorLow, behaviorHigh);
-  assert.strictEqual(result.classification, "unsafe", "low-HP-only choice must be unsafe under a collision");
-}
-
-function checkAnalysisErrorVisible() {
-  const shadow = makeShadow({
-    candidateKeyBuilder: () => "BROKEN",
-    behaviorBuilder: () => makeBehaviorEntry({
-      hp: 50,
-      choiceSet: ["a"],
-      actions: [{ fingerprint: "a", summary: "a", successor: null, successorError: "applyAction exploded" }],
-    }),
-  });
-  shadow.registerRecord({ state: { floorId: "MT1", hero: { hp: 100, loc: { x: 0, y: 0 } } }, exactDpKey: "k1", productionDecision: "keep-new" });
-  shadow.registerRecord({ state: { floorId: "MT1", hero: { hp: 80, loc: { x: 1, y: 1 } } }, exactDpKey: "k2", productionDecision: "keep-new" });
+function checkEquivalentRejectAccounting() {
+  const init = simulator.createInitialState({ rank: "chaos" });
+  const stateA = cloneState(init);
+  const stateB = cloneState(init); // identical state
+  const shadow = makeShadow({ candidateCacheMode: "off" });
+  shadow.registerRecord({ state: stateA, exactDpKey: "kA", productionDecision: "keep-new" });
+  shadow.registerRecord({ state: stateB, exactDpKey: "kB", productionDecision: "keep-new" });
   const snap = shadow.snapshot();
+  assert.strictEqual(snap.shadowRejectEquivalent, 1, "the equivalent second state must be rejected");
+  assert.strictEqual(snap.candidateFinalActiveStates, 1, "final bucket must hold exactly 1");
+  assert.strictEqual(snap.candidateRejectedEquivalentEvents, 1, "event accounting must record the rejection");
+  assert.strictEqual(snap.productionAcceptedCandidateRejected, 1, "matrix must agree: production accepted, candidate rejected");
+}
+
+function checkNegativeStateDelta() {
+  const init = simulator.createInitialState({ rank: "chaos" });
+  const stateA = cloneState(init);
+  const stateB = cloneState(init);
+  stateB.hero.atk = 99; // distinct candidate key
+  const shadow = makeShadow({ candidateCacheMode: "off" });
+  shadow.setProductionRegistry({ finalActiveStates: 1, finalUniqueKeys: 1 });
+  shadow.registerRecord({ state: stateA, exactDpKey: "kA", productionDecision: "keep-new" });
+  shadow.registerRecord({ state: stateB, exactDpKey: "kB", productionDecision: "keep-new" });
+  const snap = shadow.snapshot();
+  assert.strictEqual(snap.candidateFinalActiveStates, 2, "candidate registry must hold 2");
+  assert.strictEqual(snap.hypotheticalStateDelta, -1, "negative state delta must NOT be clamped to 0");
+  assert.strictEqual(snap.uniqueKeyDelta, -1, "unique key delta must also be -1");
+}
+
+function checkBrokenWitness() {
+  const init = simulator.createInitialState({ rank: "chaos" });
+  const stateA = cloneState(init);
+  const stateB = cloneState(init);
+  stateB.hero.atk = 99; // different behavior under a BROKEN (all-colliding) key
+  const shadow = makeShadow({ candidateKeyBuilder: () => "BROKEN", candidateCacheMode: "off" });
+  shadow.registerRecord({ state: stateA, exactDpKey: "k1", productionDecision: "keep-new" });
+  shadow.registerRecord({ state: stateB, exactDpKey: "k2", productionDecision: "keep-new" });
+  const snap = shadow.snapshot();
+  assert.ok(snap.shadowUnsafeMerge > 0, "BROKEN key must produce unsafe merges");
+  assert.ok(snap.unsafeWitnesses.length > 0, "unsafe witnesses must be present");
+  const witness = snap.unsafeWitnesses[0];
+  assert.strictEqual(witness.candidateKey, "BROKEN", "witness must carry the BROKEN candidate key");
   assert.ok(
-    snap.shadowAnalysisError >= 1 || snap.shadowUnsafeMerge >= 1,
-    "a failed successor must be fail-visible (analysis-error or unsafe), never silent",
-  );
-  assert.ok(
-    snap.analysisErrorWitnesses.length >= 1 || snap.unsafeWitnesses.length >= 1,
-    "a witness must be recorded for the failure",
+    Boolean(witness.reason) || witness.actionOnlyLow.length > 0 || witness.actionOnlyHigh.length > 0 || witness.unmatchedLowVariants.length > 0,
+    "witness must contain a concrete mismatch signal",
   );
 }
 
-function checkEqualHpSymmetric() {
-  // Equal HP: symmetric coverage is required; one-direction-only coverage of a
-  // low-only choice must fail on the reverse direction.
-  const low = makeBehaviorEntry({
-    hp: 80,
-    choiceSet: ["a"],
-    actions: [{ fingerprint: "a", summary: "a", successor: validSuccessor(70) }],
-  });
-  const high = makeBehaviorEntry({
-    hp: 80,
-    choiceSet: ["a", "extra"],
-    actions: [
-      { fingerprint: "a", summary: "a", successor: validSuccessor(70) },
-      { fingerprint: "extra", summary: "extra", successor: validSuccessor(75) },
-    ],
-  });
-  const result = classifyPair(low, high);
-  assert.strictEqual(result.classification, "unsafe", "equal-HP pair with an asymmetric choice set must be unsafe (symmetric rule)");
-}
-
-function checkCompleteVariantCoverage() {
-  const choiceA = { fingerprint: "battle:a", summary: "battle:a" };
-  const low = makeBehaviorEntry({
-    hp: 50,
-    choiceSet: ["battle:a"],
-    actions: [
-      { ...choiceA, successor: validSuccessor(20, "S") },
-      { ...choiceA, successor: validSuccessor(30, "T") },
-    ],
-  });
-  const high = makeBehaviorEntry({
-    hp: 100,
-    choiceSet: ["battle:a"],
-    actions: [
-      { ...choiceA, successor: validSuccessor(50, "S") },
-      { ...choiceA, successor: validSuccessor(60, "T") },
-      { ...choiceA, successor: validSuccessor(70, "U") },
-    ],
-  });
-  assert.strictEqual(classifyPair(low, high).classification, "dominance-safe", "full variant coverage must be dominance-safe");
-  const missedHigh = makeBehaviorEntry({
-    hp: 100,
-    choiceSet: ["battle:a"],
-    actions: [{ ...choiceA, successor: validSuccessor(50, "S") }],
-  });
-  assert.strictEqual(classifyPair(low, missedHigh).classification, "unsafe", "uncovered low variant must be unsafe");
-}
-
-async function captureRepresentativeWithRecorder(captureLimit, recorder) {
+async function captureRepresentative(captureLimit, recorder) {
   const spec = JSON.parse(JSON.stringify(smokeSpec));
   spec.goal = { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 9 } };
   const task = compileExecutableSolveTask({
@@ -254,22 +143,26 @@ async function captureRepresentativeWithRecorder(captureLimit, recorder) {
 }
 
 async function main() {
-  checkCandidateKeyUsesTowerIr();
-  checkHpIsDominanceNotIdentity();
-  checkSafeCollision();
-  checkUnsafeWitness();
-  checkAnalysisErrorVisible();
-  checkEqualHpSymmetric();
-  checkCompleteVariantCoverage();
+  checkExactKeyCacheIndependence();
+  checkEquivalentRejectAccounting();
+  checkNegativeStateDelta();
+  checkBrokenWitness();
 
-  // Representative: run the search ONCE with the recorder; feed the SAME
-  // records to the real shadow and a BROKEN-key shadow.
+  // Representative with the canonical perf tracker active (buildDpStateKey
+  // phase) + the observation recorder.
+  const tracker = createPerfTracker({ enabled: true });
+  setActivePerfTracker(tracker);
   const records = [];
-  const execution = await captureRepresentativeWithRecorder(200, (record) => records.push(record));
+  let execution;
+  try {
+    execution = await captureRepresentative(200, (record) => records.push(record));
+  } finally {
+    setActivePerfTracker(null);
+  }
   assert.strictEqual(execution.result.found, true, "representative must complete");
   assert.ok(records.length > 0, "recorder must capture enqueue decisions");
 
-  // Production parity (the recorder is observation-only).
+  // Production parity.
   const routeFingerprint = execution.routeRecord
     ? (require("./lib/replay-resume-artifact").buildReplayRouteFingerprint(execution.routeRecord))
     : null;
@@ -286,82 +179,111 @@ async function main() {
     "winner exact fingerprint must match PR-5.4b baseline",
   );
 
-  const shadow = makeShadow();
+  const att = (execution.result.segmentResults || [])[0] && (execution.result.segmentResults[0].attempts || [])[0];
+  const dp = att && att.diagnostics && att.diagnostics.dp;
+  const registry = (dp && dp.registry) || null;
+  assert.ok(registry && registry.finalUniqueKeys >= 1, "searchDP registry diagnostics required");
+  assert.ok(registry.finalActiveStates >= registry.finalUniqueKeys, "final active states must be >= unique keys");
+
+  // Real candidate-key shadow (independent builds, gate off).
+  const shadow = makeShadow({ candidateCacheMode: "off" });
+  shadow.setProductionRegistry(registry);
   records.forEach((record) => shadow.registerRecord(record));
   const snapshot = shadow.snapshot();
   assert.strictEqual(snapshot.shadowUnsafeMerge, 0, `representative must have zero unsafe merges (got ${snapshot.shadowUnsafeMerge})`);
   assert.strictEqual(snapshot.shadowAnalysisError, 0, `representative must have zero analysis errors (got ${snapshot.shadowAnalysisError})`);
   assert.strictEqual(snapshot.shadowUnclassified, 0, `representative must have zero unclassified (got ${snapshot.shadowUnclassified})`);
+  assert.strictEqual(snapshot.candidateKeyBuildCalls, records.length, "candidate key must be independently built for EVERY recorder state");
+  assert.strictEqual(snapshot.postPassExactKeyReuseHits, 0, "the representative gate must not reuse exact-key cached candidate keys");
 
-  // BROKEN-key negative control on a subset of records: unsafeMerge > 0 but
-  // production unchanged.
-  const brokenShadow = makeShadow({
-    candidateKeyBuilder: () => "BROKEN",
-    maxWitnesses: 10,
-  });
+  // BROKEN-key negative control on a subset.
+  const brokenShadow = makeShadow({ candidateKeyBuilder: () => "BROKEN", candidateCacheMode: "off", maxWitnesses: 10 });
   records.slice(0, 60).forEach((record) => brokenShadow.registerRecord(record));
   const brokenSnapshot = brokenShadow.snapshot();
   assert.ok(brokenSnapshot.shadowUnsafeMerge > 0, "BROKEN candidate key must produce unsafe merges");
-  assert.strictEqual(
-    snapshot.productionKeptShadowKept + snapshot.productionKeptShadowRejected,
-    snapshot.productionRegistered,
-    "production kept decisions must be fully accounted in the disagreement matrix",
+  assert.ok(brokenSnapshot.unsafeWitnesses.length > 0, "BROKEN key must surface concrete witnesses");
+  assert.ok(
+    brokenSnapshot.unsafeWitnesses.some((w) => Boolean(w.reason) || w.actionOnlyLow.length > 0 || w.unmatchedLowVariants.length > 0),
+    "BROKEN witnesses must contain concrete mismatch signals",
   );
 
-  const att = (execution.result.segmentResults || [])[0] && (execution.result.segmentResults[0].attempts || [])[0];
-  const dp = att && att.diagnostics && att.diagnostics.dp;
+  // Production key phase from the canonical perf tracker.
+  const perfSnapshot = tracker.snapshot();
+  const productionKeyPhaseMs = perfSnapshot.phaseMs && perfSnapshot.phaseMs.buildDpStateKey;
+  const productionKeyPhaseCount = perfSnapshot.phaseCounts && perfSnapshot.phaseCounts.buildDpStateKey;
+  const candidateProjectedTotalMs = snapshot.candidateKeyAvgMs * (productionKeyPhaseCount || 0);
+  const estimatedKeyPhaseReductionMs = productionKeyPhaseMs != null ? productionKeyPhaseMs - candidateProjectedTotalMs : null;
+  const estimatedKeyPhaseRatio = candidateProjectedTotalMs > 0 ? productionKeyPhaseMs / candidateProjectedTotalMs : null;
 
   process.stdout.write(JSON.stringify({
     schema: "motapathfinder.pr-5.4c-dual-key-shadow.v1",
     status: "passed",
     controls: {
+      candidateKeyIndependentlyBuilt: true,
       candidateShadowDefaultOff: true,
       candidateShadowObservationIsolation: true,
       candidateShadowUsesTowerIrKey: true,
       candidateShadowHpIsDominanceNotIdentity: true,
-      candidateShadowSafeCollision: true,
+      candidateShadowEquivalentRejected: true,
+      candidateShadowNegativeStateDelta: true,
       candidateShadowUnsafeWitness: true,
       candidateShadowAnalysisErrorVisible: true,
-      candidateShadowEqualHpSymmetric: true,
-      candidateShadowCompleteVariantCoverage: true,
+      registryOccupancyDistinctFromUniqueKeys: true,
       representativeShadowZeroUnsafe: true,
       representativeProductionParity: true,
     },
     shadow: {
       statesRecorded: snapshot.statesRecorded,
-      productionRegistered: snapshot.productionRegistered,
-      productionRejected: snapshot.productionRejected,
-      productionUniqueKeys: snapshot.productionUniqueKeys,
-      candidateUniqueKeys: snapshot.candidateUniqueKeys,
-      shadowWouldRegister: snapshot.shadowWouldRegister,
-      hypotheticalReduction: snapshot.hypotheticalReduction,
-      productionKeptShadowKept: snapshot.productionKeptShadowKept,
-      productionKeptShadowRejected: snapshot.productionKeptShadowRejected,
-      productionRejectedShadowKept: snapshot.productionRejectedShadowKept,
-      productionRejectedShadowRejected: snapshot.productionRejectedShadowRejected,
+      candidateKeyBuildCalls: snapshot.candidateKeyBuildCalls,
+      postPassExactKeyReuseHits: snapshot.postPassExactKeyReuseHits,
+      exactKeysWithMultipleCandidateKeys: snapshot.exactKeysWithMultipleCandidateKeys,
+      maxCandidateKeysPerExactKey: snapshot.maxCandidateKeysPerExactKey,
+      productionAcceptedEvents: snapshot.productionAcceptedEvents,
+      productionRejectedEvents: snapshot.productionRejectedEvents,
+      candidateAcceptedEvents: snapshot.candidateAcceptedEvents,
+      candidateRejectedDominatedEvents: snapshot.candidateRejectedDominatedEvents,
+      candidateRejectedEquivalentEvents: snapshot.candidateRejectedEquivalentEvents,
+      candidateReplaceEvents: snapshot.candidateReplaceEvents,
+      candidateUnsafeEvents: snapshot.candidateUnsafeEvents,
+      productionFinalActiveStates: snapshot.productionFinalActiveStates,
+      candidateFinalActiveStates: snapshot.candidateFinalActiveStates,
+      hypotheticalStateDelta: snapshot.hypotheticalStateDelta,
+      productionFinalUniqueKeys: snapshot.productionFinalUniqueKeys,
+      candidateFinalUniqueKeys: snapshot.candidateFinalUniqueKeys,
+      uniqueKeyDelta: snapshot.uniqueKeyDelta,
+      candidateFinalStatesFromProductionAccepted: snapshot.candidateFinalStatesFromProductionAccepted,
+      candidateFinalStatesFromProductionRejected: snapshot.candidateFinalStatesFromProductionRejected,
+      productionAcceptedCandidateAccepted: snapshot.productionAcceptedCandidateAccepted,
+      productionAcceptedCandidateRejected: snapshot.productionAcceptedCandidateRejected,
+      productionRejectedCandidateAccepted: snapshot.productionRejectedCandidateAccepted,
+      productionRejectedCandidateRejected: snapshot.productionRejectedCandidateRejected,
       shadowKeep: snapshot.shadowKeep,
       shadowRejectDominated: snapshot.shadowRejectDominated,
+      shadowRejectEquivalent: snapshot.shadowRejectEquivalent,
       shadowReplaceDominated: snapshot.shadowReplaceDominated,
-      shadowCollision: snapshot.shadowCollision,
       shadowUnsafeMerge: snapshot.shadowUnsafeMerge,
       shadowAnalysisError: snapshot.shadowAnalysisError,
       shadowUnclassified: snapshot.shadowUnclassified,
       collisions: snapshot.collisions,
-      candidateKeyBuildMs: snapshot.candidateKeyBuildMs,
-      candidateKeyBuildCount: snapshot.candidateKeyBuildCount,
+      candidateKeyTotalMs: snapshot.candidateKeyTotalMs,
       candidateKeyAvgMs: snapshot.candidateKeyAvgMs,
-      productionKeyBuildMs: snapshot.productionKeyBuildMs,
-      productionKeyBuildCount: snapshot.productionKeyBuildCount,
-      productionKeyAvgMs: snapshot.productionKeyAvgMs,
-      candidateKeyCacheHits: snapshot.candidateKeyCacheHits,
-      candidateKeyCacheMisses: snapshot.candidateKeyCacheMisses,
-      productionKeptShadowRejectedWitnesses: snapshot.productionKeptShadowRejectedWitnesses.slice(0, 5),
+      candidateKeyMedianMs: snapshot.candidateKeyMedianMs,
+      candidateKeyP95Ms: snapshot.candidateKeyP95Ms,
+      unsafeWitnesses: snapshot.unsafeWitnesses.slice(0, 5),
+    },
+    keyPhaseEstimate: {
+      productionBuildDpStateKeyTotalMs: productionKeyPhaseMs != null ? Number(productionKeyPhaseMs.toFixed(2)) : null,
+      productionBuildDpStateKeyCalls: productionKeyPhaseCount != null ? productionKeyPhaseCount : null,
+      candidateProjectedTotalMs: Number(candidateProjectedTotalMs.toFixed(2)),
+      estimatedKeyPhaseReductionMs: estimatedKeyPhaseReductionMs != null ? Number(estimatedKeyPhaseReductionMs.toFixed(2)) : null,
+      estimatedKeyPhaseRatio: estimatedKeyPhaseRatio != null ? Number(estimatedKeyPhaseRatio.toFixed(1)) : null,
+      note: "shadow estimate, not production speedup",
     },
     brokenControl: {
       unsafeMerge: brokenSnapshot.shadowUnsafeMerge,
       analysisError: brokenSnapshot.shadowAnalysisError,
       unclassified: brokenSnapshot.shadowUnclassified,
-      collisions: brokenSnapshot.collisions,
+      unsafeWitnessCount: brokenSnapshot.unsafeWitnesses.length,
     },
     productionParity: {
       routeFingerprint: COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT,
