@@ -2289,7 +2289,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.4c Commit 1 Repair: TowerIR structural candidate + resource/event labels, candidate collision groups, dominance-aware classification (dominance-safe/metadata-only/unsafe), canonical action identity"
+      "notes": "PR-5.4c Commit 1 Repair 2: action choice vs travel variant separation, fail-visible successor errors, terminal projection with real goal predicate, dominance-aware classification"
     }
   }
 }

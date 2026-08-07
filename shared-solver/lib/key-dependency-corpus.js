@@ -1,26 +1,23 @@
 "use strict";
 
 /**
- * PR-5.4c Commit 1 Repair — Key Dependency Corpus (observation only).
+ * PR-5.4c Commit 1 Repair 2 — Key Dependency Corpus (observation only).
  *
- * For real DP states captured from a representative search, records:
- *   - legacy reference (current exact DP key + legacy region signature)
- *   - TowerIR StructuralKey candidate (startComponentId + reachable
- *     components/POIs/endpoints + mutation fingerprint; NO exact loc, NO legacy
- *     regionKey)
- *   - resource identity label (atk/def/mdef/lv/exp/money/mana/equipment/
- *     inventory/behavior flags/visited floors; NO hp)
- *   - dominance label (hp, route/depth — recorded, not automatically a key)
- *   - event/hazard label (triggered auto events)
- *   - canonical action identity (summary + stable full-action fingerprint)
- *   - multi-layer successor fingerprints (exact, dp key, candidate keys,
- *     behavior projections, terminal)
+ * Normalizes the equivalence evidence:
+ *   - action CHOICE identity (what the player chose) is separated from the
+ *     travel VARIANT (path / derived arrival state / HP).  Action-set
+ *     equivalence uses actionChoiceFingerprint only; travelState and HP never
+ *     pollute the choice identity.
+ *   - successor failures (enumeration / applyAction / projection errors) are
+ *     fail-visible and classified as analysis-error, never silently skipped
+ *     into safe.
+ *   - terminal projection (alive / dead / goalReached / terminalClass) uses the
+ *     real workload goal predicate and participates in classification.
+ *   - witnesses use explicit lowHpState / highHpState direction.
+ *   - metadata label covers rawRouteLength / materializedRouteLength /
+ *     decisionDepth / auto counters (recorded, not in the candidate key).
  *
- * The analysis computes real candidate-key collision groups and classifies
- * pair differences as dominance-safe / metadata-only / unsafe using
- * dominance-aware rules (action-superset, shared-action successor behavior
- * equality, successor HP monotonicity).  Zero collisions yield
- * "insufficient-collisions", never "safe".  Production is untouched.
+ * Production is untouched.
  */
 
 const { buildDpStateKey } = require("./dp-search");
@@ -40,11 +37,8 @@ function stableValue(value) {
     }, {});
 }
 
-// Behavior-relevant flag audit (smoke/MT1 scope): autoBattle (auto-battle
-// gate), shiqu (千夜 event state), hatred (battle-modifying counter).  All
-// three affect combat/event behavior; no UI/diagnostic-only flags were found
-// in the scope.  The full flags object is treated as behavior identity; a
-// future CEGAR pass may exclude proven-UI flags.
+// Behavior-relevant flag audit (smoke/MT1 scope): autoBattle, shiqu, hatred all
+// affect combat/event behavior; no UI/diagnostic-only flags were found.
 function behaviorRelevantFlags(state) {
   return stableValue(state.flags || {});
 }
@@ -74,6 +68,20 @@ function buildTowerIrProjection(ir, project, state) {
     ).sort(),
     mutationFingerprint: fingerprintJson(listFloorMutationSummary(state.floorStates || {})),
   };
+}
+
+function buildTerminalProjection(state, goalPredicate) {
+  const hp = Number(state.hero && state.hero.hp || 0);
+  const alive = hp > 0;
+  const dead = hp <= 0;
+  let goalReached = null;
+  if (typeof goalPredicate === "function") {
+    try { goalReached = goalPredicate(state) === true; } catch (error) { goalReached = null; }
+  }
+  let terminalClass = "active";
+  if (dead) terminalClass = "dead";
+  else if (goalReached === true) terminalClass = "goal";
+  return { alive, dead, goalReached, terminalClass };
 }
 
 // Per-state projection (cheap; no actions/successors).
@@ -108,10 +116,20 @@ function buildStateProjection(simulator, project, ir, state, options) {
   const dominanceLabel = {
     hp: Number(hero.hp || 0),
     rawRouteLength: Number(meta.rawRouteLength || 0),
+    materializedRouteLength: Number(meta.materializedRouteLength || 0),
     decisionDepth: Number(meta.decisionDepth || 0),
   };
 
   const eventHazardLabel = stableValue(state.triggeredAutoEvents || {});
+
+  const metadataLabel = {
+    rawRouteLength: Number(meta.rawRouteLength || 0),
+    materializedRouteLength: Number(meta.materializedRouteLength || 0),
+    decisionDepth: Number(meta.decisionDepth || 0),
+    autoStepCount: Number(meta.autoStepCount || 0),
+    autoPickupCount: Number(meta.autoPickupCount || 0),
+    autoBattleCount: Number(meta.autoBattleCount || 0),
+  };
 
   const candidateStructuralResourceKey = fingerprintJson({ structural: structuralCandidate, resource: resourceIdentity });
   const candidateFullBehaviorKey = fingerprintJson({ structural: structuralCandidate, resource: resourceIdentity, event: eventHazardLabel });
@@ -124,79 +142,130 @@ function buildStateProjection(simulator, project, ir, state, options) {
     resourceIdentity,
     dominanceLabel,
     eventHazardLabel,
+    metadataLabel,
+    terminalProjection: buildTerminalProjection(state, config.goalPredicate),
     candidateStructuralResourceKey,
     candidateFullBehaviorKey,
     legacyDecompositionKey,
   };
 }
 
-// Canonical action identity: summary for display, stable full-action
-// fingerprint for behavior comparison (distinguishes same-summary-different-
-// payload actions via the travel-state fingerprint).
-function buildActionIdentity(action) {
+// Action CHOICE identity: what the player chose.  Excludes travelState, HP,
+// path, stance, and route/depth/meta so that dominance comparisons are not
+// polluted by arrival-state differences.
+function buildActionChoiceIdentity(action) {
   if (!action) return null;
-  const travelStateFingerprint = action.travelState ? exactStateFingerprint(action.travelState) : null;
+  const target = action.target && typeof action.target === "object" ? action.target : null;
+  const x = action.x != null ? action.x : (target && target.x != null ? target.x : null);
+  const y = action.y != null ? action.y : (target && target.y != null ? target.y : null);
+  let eventChoicePath = null;
+  if (Array.isArray(action.choicePath)) eventChoicePath = action.choicePath.slice();
+  else if (typeof action.choicePath === "string") eventChoicePath = action.choicePath;
   const payload = {
     kind: action.kind || null,
-    summary: action.summary || null,
     floorId: action.floorId || null,
-    x: action.x != null ? action.x : null,
-    y: action.y != null ? action.y : null,
-    target: action.target || null,
-    direction: action.direction || null,
-    path: Array.isArray(action.path) ? action.path.slice() : [],
-    travelStateFingerprint,
+    x,
+    y,
+    targetId: action.enemyId || action.targetId || action.itemId || action.doorId || action.toolId || (action.target && typeof action.target === "string" ? action.target : null) || null,
+    eventChoicePath,
+    changeFloorTarget: action.changeFloorTarget || action.targetFloorId || (action.changeFloor && (action.changeFloor.floorId || action.changeFloor.stair)) || null,
   };
   return {
     actionSummary: typeof action.summary === "string" && action.summary.length > 0
       ? action.summary
-      : `${action.kind || "unknown"}:${payload.floorId || ""}:${payload.x != null ? payload.x + "," + payload.y : ""}`,
-    actionFingerprint: fingerprintJson(payload),
+      : `${action.kind || "unknown"}:${payload.floorId || ""}:${x != null ? x + "," + y : ""}`,
+    actionChoiceFingerprint: fingerprintJson(payload),
     actionPayload: payload,
   };
+}
+
+// Action TRAVEL VARIANT identity: how the hero arrives at the interaction point
+// (path, stance, derived travel state).  Recorded separately; never part of the
+// choice identity.
+function buildActionTravelVariant(action, simulator, project, ir, options) {
+  if (!action) return null;
+  const config = options || {};
+  const variant = {
+    stance: action.stance || null,
+    direction: action.direction || null,
+    pathLength: Array.isArray(action.path) ? action.path.length : null,
+    pathEndpoint: Array.isArray(action.path) && action.path.length > 0 ? action.path[action.path.length - 1] : null,
+  };
+  if (action.travelState && action.travelState.hero) {
+    const projection = buildStateProjection(simulator, project, ir, action.travelState, config);
+    variant.travelStructural = projection.structuralCandidate;
+    variant.travelResource = projection.resourceIdentity;
+    variant.travelEvent = projection.eventHazardLabel;
+    variant.travelDominance = projection.dominanceLabel;
+  }
+  return { travelVariantFingerprint: fingerprintJson(variant), variant };
 }
 
 function buildStateBehavior(simulator, project, ir, state, options) {
   const config = options || {};
   const projection = buildStateProjection(simulator, project, ir, state, config);
-  const actionSet = [];
+  const choiceSet = [];
   const actions = [];
+  let enumerationError = null;
   try {
     const enumerated = simulator.enumeratePrimitiveActions(state);
     const rawActions = (enumerated && enumerated.actions) || [];
     for (const action of rawActions) {
-      const identity = buildActionIdentity(action);
-      if (!identity) continue;
+      const choice = buildActionChoiceIdentity(action);
+      if (!choice) continue;
+      let travelVariant = null;
       let successor = null;
       let successorError = null;
+      let projectionError = null;
+      try {
+        travelVariant = buildActionTravelVariant(action, simulator, project, ir, config);
+      } catch (error) {
+        projectionError = `travelProjection:${String(error && error.message || error)}`;
+      }
       try {
         const nextState = simulator.applyAction(cloneState(state), action, { storeRoute: false });
-        const successorProjection = buildStateProjection(simulator, project, ir, nextState, config);
-        successor = {
-          exactStateFingerprint: exactStateFingerprint(nextState),
-          currentDpKey: successorProjection.legacyReference.exactDpKey,
-          candidateStructuralResourceKey: successorProjection.candidateStructuralResourceKey,
-          candidateFullBehaviorKey: successorProjection.candidateFullBehaviorKey,
-          structuralCandidate: successorProjection.structuralCandidate,
-          resourceIdentity: successorProjection.resourceIdentity,
-          dominanceLabel: successorProjection.dominanceLabel,
-          eventHazardLabel: successorProjection.eventHazardLabel,
-          terminal: Boolean(nextState.hero && nextState.hero.hp <= 0) ? false : null,
-        };
+        try {
+          const successorProjection = buildStateProjection(simulator, project, ir, nextState, config);
+          successor = {
+            exactStateFingerprint: exactStateFingerprint(nextState),
+            currentDpKey: successorProjection.legacyReference.exactDpKey,
+            candidateStructuralResourceKey: successorProjection.candidateStructuralResourceKey,
+            candidateFullBehaviorKey: successorProjection.candidateFullBehaviorKey,
+            structuralCandidate: successorProjection.structuralCandidate,
+            resourceIdentity: successorProjection.resourceIdentity,
+            eventHazardLabel: successorProjection.eventHazardLabel,
+            dominanceLabel: successorProjection.dominanceLabel,
+            terminalProjection: successorProjection.terminalProjection,
+            metadataLabel: successorProjection.metadataLabel,
+          };
+        } catch (error) {
+          projectionError = `successorProjection:${String(error && error.message || error)}`;
+        }
       } catch (error) {
         successorError = String(error && error.message || error);
       }
-      actionSet.push(identity.actionFingerprint);
-      actions.push({ identity, successor, successorError });
+      choiceSet.push(choice.actionChoiceFingerprint);
+      actions.push({
+        choice,
+        travelVariant,
+        successor,
+        successorError,
+        projectionError,
+      });
     }
   } catch (error) {
-    actions.push({ identity: { actionSummary: "__enumerateError__", actionFingerprint: "__enumerateError__" }, successor: null, successorError: String(error && error.message || error) });
+    enumerationError = String(error && error.message || error);
+    actions.push({
+      choice: { actionSummary: "__enumerateError__", actionChoiceFingerprint: "__enumerateError__", actionPayload: null },
+      travelVariant: null,
+      successor: null,
+      successorError: enumerationError,
+      projectionError: null,
+    });
   }
-  return { projection, actionSet: Array.from(new Set(actionSet)).sort(), actions };
+  return { projection, choiceSet: Array.from(new Set(choiceSet)).sort(), actions, enumerationError };
 }
 
-// Behavior projection of a successor used for equivalence comparison: the
-// candidate key fields (structural + resource + event), excluding dominance.
 function successorBehaviorKey(successor) {
   if (!successor) return null;
   return fingerprintJson({
@@ -206,85 +275,136 @@ function successorBehaviorKey(successor) {
   });
 }
 
-// Dominance-aware pair classification.
-// left/right are behavior entries { projection, actionSet, actions }.
+function findChoiceRecord(behavior, choiceFingerprint) {
+  return behavior.actions.find((record) => record.choice && record.choice.actionChoiceFingerprint === choiceFingerprint);
+}
+
+// Dominance-aware pair classification.  left/right are behavior entries.
 function classifyPair(left, right) {
   const leftHp = left.projection.dominanceLabel.hp;
   const rightHp = right.projection.dominanceLabel.hp;
   const low = leftHp <= rightHp ? left : right;
   const high = leftHp <= rightHp ? right : left;
 
-  const lowSet = new Set(low.actionSet);
-  const highSet = new Set(high.actionSet);
-  const actionOnlyLeft = low.actionSet.filter((action) => !highSet.has(action));
-  const actionOnlyRight = high.actionSet.filter((action) => !lowSet.has(action));
-  const sharedActions = low.actionSet.filter((action) => highSet.has(action));
-  const summarizeActions = (fingerprints) => {
-    const all = [low, high];
-    return fingerprints.map((fingerprint) => {
-      for (const entry of all) {
-        const record = entry.actions.find((item) => item.identity && item.identity.actionFingerprint === fingerprint);
-        if (record && record.identity) return { fingerprint, summary: record.identity.actionSummary };
-      }
-      return { fingerprint, summary: null };
-    });
-  };
+  const lowSet = new Set(low.choiceSet);
+  const highSet = new Set(high.choiceSet);
+  const actionOnlyLow = low.choiceSet.filter((choice) => !highSet.has(choice));
+  const actionOnlyHigh = high.choiceSet.filter((choice) => !lowSet.has(choice));
+  const sharedChoices = low.choiceSet.filter((choice) => highSet.has(choice));
+  const summarizeChoices = (fingerprints) => fingerprints.map((fingerprint) => {
+    for (const entry of [low, high]) {
+      const record = findChoiceRecord(entry, fingerprint);
+      if (record && record.choice) return { fingerprint, summary: record.choice.actionSummary };
+    }
+    return { fingerprint, summary: null };
+  });
 
-  const lowActionsByFingerprint = new Map(low.actions.map((record) => [record.identity && record.identity.actionFingerprint, record]));
-  const highActionsByFingerprint = new Map(high.actions.map((record) => [record.identity && record.identity.actionFingerprint, record]));
+  // Fail-visible: shared choice with missing/error records.
+  const analysisErrors = [];
+  sharedChoices.forEach((choice) => {
+    const lowRecord = findChoiceRecord(low, choice);
+    const highRecord = findChoiceRecord(high, choice);
+    if (!lowRecord || !highRecord) {
+      analysisErrors.push({ choice, reason: "missing action record on one side" });
+      return;
+    }
+    if (lowRecord.successorError || highRecord.successorError) {
+      analysisErrors.push({ choice, reason: `applyAction error (low:${lowRecord.successorError || "none"}, high:${highRecord.successorError || "none"})` });
+      return;
+    }
+    if (lowRecord.projectionError || highRecord.projectionError) {
+      analysisErrors.push({ choice, reason: `projection error (low:${lowRecord.projectionError || "none"}, high:${highRecord.projectionError || "none"})` });
+    }
+  });
+  if (analysisErrors.length > 0) {
+    return { classification: "analysis-error", reason: "shared choice has missing/failed successor evidence", analysisErrors: analysisErrors.slice(0, 8) };
+  }
 
-  const successorBehaviorDiffs = [];
+  // Terminal equivalence.
+  const terminalDiffs = [];
+  const lowTerminal = low.projection.terminalProjection;
+  const highTerminal = high.projection.terminalProjection;
+  if (lowTerminal.goalReached === true && highTerminal.goalReached === false) {
+    terminalDiffs.push({ kind: "goal", reason: "low-HP state reached goal but high-HP state did not" });
+  }
+  if (lowTerminal.alive === true && highTerminal.dead === true) {
+    terminalDiffs.push({ kind: "dead", reason: "low-HP state alive but high-HP state dead" });
+  }
+  sharedChoices.forEach((choice) => {
+    const lowRecord = findChoiceRecord(low, choice);
+    const highRecord = findChoiceRecord(high, choice);
+    const lowClass = lowRecord && lowRecord.successor && lowRecord.successor.terminalProjection.terminalClass;
+    const highClass = highRecord && highRecord.successor && highRecord.successor.terminalProjection.terminalClass;
+    if (lowClass && highClass && lowClass !== highClass) {
+      terminalDiffs.push({ kind: "terminalClass", choice, lowClass, highClass });
+    }
+  });
+  if (terminalDiffs.length > 0) {
+    return { classification: "unsafe", reason: "terminal/goal equivalence violated", terminalDiffs: terminalDiffs.slice(0, 8), actionOnlyLow: summarizeChoices(actionOnlyLow), actionOnlyHigh: summarizeChoices(actionOnlyHigh) };
+  }
+
+  // Choice-set equivalence.
+  if (actionOnlyLow.length > 0) {
+    return { classification: "unsafe", reason: "low-HP state has choices the high-HP state lacks", actionOnlyLow: summarizeChoices(actionOnlyLow), actionOnlyHigh: summarizeChoices(actionOnlyHigh) };
+  }
+
+  // Shared-choice equivalence: travel variant + successor.
+  const travelDiffs = [];
+  const travelVariantDiffs = [];
+  const successorDiffs = [];
   const hpMonotonicityViolations = [];
-  sharedActions.forEach((action) => {
-    const lowRecord = lowActionsByFingerprint.get(action);
-    const highRecord = highActionsByFingerprint.get(action);
-    if (!lowRecord || !highRecord || !lowRecord.successor || !highRecord.successor) return;
-    const lowBehavior = successorBehaviorKey(lowRecord.successor);
-    const highBehavior = successorBehaviorKey(highRecord.successor);
-    if (lowBehavior !== highBehavior) {
-      successorBehaviorDiffs.push({ action, lowBehavior, highBehavior });
+  sharedChoices.forEach((choice) => {
+    const lowRecord = findChoiceRecord(low, choice);
+    const highRecord = findChoiceRecord(high, choice);
+    const lowSuccessor = lowRecord.successor;
+    const highSuccessor = highRecord.successor;
+    // Successor behavior projection equality.
+    if (successorBehaviorKey(lowSuccessor) !== successorBehaviorKey(highSuccessor)) {
+      successorDiffs.push({ choice, lowBehavior: successorBehaviorKey(lowSuccessor), highBehavior: successorBehaviorKey(highSuccessor) });
     }
-    if (highRecord.successor.dominanceLabel.hp < lowRecord.successor.dominanceLabel.hp) {
-      hpMonotonicityViolations.push({ action, lowHp: lowRecord.successor.dominanceLabel.hp, highHp: highRecord.successor.dominanceLabel.hp });
+    // Successor HP monotonicity.
+    if (highSuccessor.dominanceLabel.hp < lowSuccessor.dominanceLabel.hp) {
+      hpMonotonicityViolations.push({ choice, lowHp: lowSuccessor.dominanceLabel.hp, highHp: highSuccessor.dominanceLabel.hp });
+    }
+    // Travel variant differences (path/stance/arrival state): reported
+    // separately, never treated as an action-only difference.
+    if (lowRecord.travelVariant && highRecord.travelVariant) {
+      if (lowRecord.travelVariant.travelVariantFingerprint !== highRecord.travelVariant.travelVariantFingerprint) {
+        travelVariantDiffs.push({ choice, lowVariant: lowRecord.travelVariant.travelVariantFingerprint, highVariant: highRecord.travelVariant.travelVariantFingerprint });
+      }
+      const lowTravel = fingerprintJson({ structural: lowRecord.travelVariant.variant.travelStructural, resource: lowRecord.travelVariant.variant.travelResource, event: lowRecord.travelVariant.variant.travelEvent });
+      const highTravel = fingerprintJson({ structural: highRecord.travelVariant.variant.travelStructural, resource: highRecord.travelVariant.variant.travelResource, event: highRecord.travelVariant.variant.travelEvent });
+      if (lowTravel !== highTravel) {
+        travelDiffs.push({ choice, lowTravel, highTravel });
+      }
     }
   });
+  const travelVariantCount = travelVariantDiffs.length;
+  if (successorDiffs.length > 0) {
+    return { classification: "unsafe", reason: "shared choice produced different successor behavior", successorDiffs: successorDiffs.slice(0, 8), travelDiffs: travelDiffs.slice(0, 8), travelVariantDiffs: travelVariantDiffs.slice(0, 8), actionOnlyLow: [], actionOnlyHigh: [] };
+  }
+  if (hpMonotonicityViolations.length > 0) {
+    return { classification: "unsafe", reason: "successor HP not monotonic for high-HP state", hpMonotonicityViolations: hpMonotonicityViolations.slice(0, 8), travelDiffs: travelDiffs.slice(0, 8), travelVariantDiffs: travelVariantDiffs.slice(0, 8) };
+  }
 
-  // Metadata-only: no behavior differences, identical HP, only
-  // decisionDepth/route/counter fields differ.
-  const metadataDiffs = [];
-  const metaFields = ["rawRouteLength", "decisionDepth"];
-  metaFields.forEach((field) => {
-    if (left.projection.dominanceLabel[field] !== right.projection.dominanceLabel[field]) {
-      metadataDiffs.push(field);
-    }
-  });
+  // Metadata-only: identical HP, identical behavior, only metadata differs.
   const hpEqual = leftHp === rightHp;
-  const actionSetEqual = actionOnlyLeft.length === 0 && actionOnlyRight.length === 0;
-  const noSuccessorDiffs = successorBehaviorDiffs.length === 0;
-  const noHpViolations = hpMonotonicityViolations.length === 0;
-
-  if (!noSuccessorDiffs) {
-    return { classification: "unsafe", reason: "shared action produced different successor behavior", successorBehaviorDiffs: successorBehaviorDiffs.slice(0, 4), hpMonotonicityViolations: hpMonotonicityViolations.slice(0, 4) };
-  }
-  if (!noHpViolations) {
-    return { classification: "unsafe", reason: "successor HP not monotonic for high-HP state", hpMonotonicityViolations: hpMonotonicityViolations.slice(0, 4), actionOnlyLeft: summarizeActions(actionOnlyLeft), actionOnlyRight: summarizeActions(actionOnlyRight) };
-  }
-  if (!actionSetEqual) {
-    if (actionOnlyLeft.length === 0) {
-      return { classification: "dominance-safe", sub: "action-superset", reason: "high-HP action set is a superset of low-HP action set", actionOnlyRight: summarizeActions(actionOnlyRight).slice(0, 8) };
+  const metadataDiffFields = [];
+  const metaFields = ["rawRouteLength", "materializedRouteLength", "decisionDepth", "autoStepCount", "autoPickupCount", "autoBattleCount"];
+  metaFields.forEach((field) => {
+    if (left.projection.metadataLabel[field] !== right.projection.metadataLabel[field]) {
+      metadataDiffFields.push(field);
     }
-    return { classification: "unsafe", reason: "low-HP state has actions the high-HP state lacks", actionOnlyLeft: summarizeActions(actionOnlyLeft).slice(0, 8), actionOnlyRight: summarizeActions(actionOnlyRight).slice(0, 8) };
-  }
-  if (hpEqual && metadataDiffs.length > 0 && noSuccessorDiffs && noHpViolations) {
-    return { classification: "metadata-only", reason: `identical HP/behavior; only metadata differs (${metadataDiffs.join(",")})`, metadataDiffs };
+  });
+  if (hpEqual && actionOnlyLow.length === 0 && successorDiffs.length === 0 && hpMonotonicityViolations.length === 0) {
+    return { classification: "metadata-only", reason: `identical HP/behavior; only metadata differs (${metadataDiffFields.join(",")})`, metadataDiffs: metadataDiffFields, travelDiffs: travelDiffs.slice(0, 8), travelVariantDiffs: travelVariantDiffs.slice(0, 8), travelVariantCount };
   }
   if (hpEqual) {
-    return { classification: "unclassified", reason: "identical HP and action sets but unclassified difference" };
+    return { classification: "unclassified", reason: "identical HP and choice sets but unclassified difference", travelDiffs: travelDiffs.slice(0, 8), travelVariantDiffs: travelVariantDiffs.slice(0, 8), travelVariantCount };
   }
-  return { classification: "dominance-safe", reason: "identical action sets and successor behavior; HP differs monotonically", actionOnlyRight: [], actionOnlyLeft: [] };
+  return { classification: "dominance-safe", reason: "identical choice sets and successor behavior; HP differs monotonically", travelDiffs: travelDiffs.slice(0, 8), travelVariantDiffs: travelVariantDiffs.slice(0, 8), travelVariantCount, actionOnlyLow: [], actionOnlyHigh: [] };
 }
 
-// Collision analysis for a candidate key field.
 function analyzeCandidateKeyCollisions(entries, keyField) {
   const groups = new Map();
   entries.forEach((entry) => {
@@ -293,22 +413,16 @@ function analyzeCandidateKeyCollisions(entries, keyField) {
     groups.get(key).push(entry);
   });
   const collisionGroups = Array.from(groups.values()).filter((group) => group.length >= 2);
-  const uniqueKeyCount = groups.size;
-  const collisionGroupCount = collisionGroups.length;
-  const statesInCollisionGroups = collisionGroups.reduce((sum, group) => sum + group.length, 0);
-  const maxCollisionGroupSize = collisionGroups.reduce((max, group) => Math.max(max, group.length), 0);
   return {
     candidate: keyField,
-    uniqueKeyCount,
-    collisionGroupCount,
-    statesInCollisionGroups,
-    maxCollisionGroupSize,
-    evidenceStatus: collisionGroupCount > 0 ? "collisions-present" : "insufficient-collisions",
+    uniqueKeyCount: groups.size,
+    collisionGroupCount: collisionGroups.length,
+    statesInCollisionGroups: collisionGroups.reduce((sum, group) => sum + group.length, 0),
+    maxCollisionGroupSize: collisionGroups.reduce((max, group) => Math.max(max, group.length), 0),
+    evidenceStatus: collisionGroups.length > 0 ? "collisions-present" : "insufficient-collisions",
   };
 }
 
-// Full analysis: projections for all states, behavior only for states in
-// candidate-key collision groups, then pair classification.
 // entries: [{ state, projection }]; buildBehavior(state) -> behavior entry.
 function analyzeKeyDependencyCorpus(entries, buildBehavior, options) {
   const config = options || {};
@@ -317,14 +431,13 @@ function analyzeKeyDependencyCorpus(entries, buildBehavior, options) {
   const structuralResourceCollisions = analyzeCandidateKeyCollisions(entries, "candidateStructuralResourceKey");
   const legacyCollisions = analyzeCandidateKeyCollisions(entries, "legacyDecompositionKey");
 
-  // Phase 2: behavior only for states inside full-behavior-key collision groups.
-  const collisionStates = new Set();
   const groups = new Map();
   entries.forEach((entry) => {
     const key = entry.projection.candidateFullBehaviorKey;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(entry);
   });
+  const collisionStates = new Set();
   let behaviorBuilt = 0;
   Array.from(groups.values()).forEach((group) => {
     if (group.length < 2) return;
@@ -335,9 +448,20 @@ function analyzeKeyDependencyCorpus(entries, buildBehavior, options) {
     });
   });
 
-  // Classify pairs within each collision group (all pairs).
   const classifications = [];
-  const unsafeWitnesses = [];
+  const witnesses = [];
+  const analysisErrorWitnesses = [];
+  const counts = {
+    dominanceSafe: 0,
+    metadataOnly: 0,
+    unsafe: 0,
+    analysisError: 0,
+    unclassified: 0,
+    actionChoiceOnlyMismatch: 0,
+    travelVariantMismatch: 0,
+    successorMismatch: 0,
+    terminalMismatch: 0,
+  };
   Array.from(groups.values()).forEach((group) => {
     if (group.length < 2) return;
     for (let i = 0; i < group.length; i += 1) {
@@ -346,38 +470,55 @@ function analyzeKeyDependencyCorpus(entries, buildBehavior, options) {
         const right = group[j];
         if (!left.behavior || !right.behavior) continue;
         const result = classifyPair(left.behavior, right.behavior);
+        const lowHp = left.projection.dominanceLabel.hp <= right.projection.dominanceLabel.hp ? left : right;
+        const highHp = left.projection.dominanceLabel.hp <= right.projection.dominanceLabel.hp ? right : left;
         const witness = {
           classification: result.classification,
           candidateKey: left.projection.candidateFullBehaviorKey,
-          left: {
-            stateFingerprint: left.projection.stateFingerprint,
-            hp: left.projection.dominanceLabel.hp,
-            decisionDepth: left.projection.dominanceLabel.decisionDepth,
-            eventHazardLabel: left.projection.eventHazardLabel,
+          lowHpState: {
+            stateFingerprint: lowHp.projection.stateFingerprint,
+            hp: lowHp.projection.dominanceLabel.hp,
+            decisionDepth: lowHp.projection.dominanceLabel.decisionDepth,
+            metadata: lowHp.projection.metadataLabel,
+            eventHazardLabel: lowHp.projection.eventHazardLabel,
           },
-          right: {
-            stateFingerprint: right.projection.stateFingerprint,
-            hp: right.projection.dominanceLabel.hp,
-            decisionDepth: right.projection.dominanceLabel.decisionDepth,
-            eventHazardLabel: right.projection.eventHazardLabel,
+          highHpState: {
+            stateFingerprint: highHp.projection.stateFingerprint,
+            hp: highHp.projection.dominanceLabel.hp,
+            decisionDepth: highHp.projection.dominanceLabel.decisionDepth,
+            metadata: highHp.projection.metadataLabel,
+            eventHazardLabel: highHp.projection.eventHazardLabel,
           },
-          actionOnlyLeft: result.actionOnlyLeft || [],
-          actionOnlyRight: result.actionOnlyRight || [],
-          sharedActionSuccessorDiffs: result.successorBehaviorDiffs || [],
+          actionOnlyLow: result.actionOnlyLow || [],
+          actionOnlyHigh: result.actionOnlyHigh || [],
+          sharedChoiceTravelDiffs: result.travelDiffs || [],
+          sharedChoiceTravelVariantDiffs: (result.travelVariantDiffs || []).slice(0, 6),
+          sharedChoiceSuccessorDiffs: result.successorDiffs || [],
+          terminalDiffs: result.terminalDiffs || [],
           reason: result.reason,
         };
-        classifications.push(witness);
-        if (result.classification === "unsafe") unsafeWitnesses.push(witness);
+        classifications.push(result.classification);
+        if (result.classification === "analysis-error") {
+          counts.analysisError += 1;
+          if (analysisErrorWitnesses.length < (config.maxWitnesses || 20)) analysisErrorWitnesses.push(witness);
+        } else if (result.classification === "unsafe") {
+          counts.unsafe += 1;
+          if (witness.actionOnlyLow.length > 0 || witness.actionOnlyHigh.length > 0) counts.actionChoiceOnlyMismatch += 1;
+          if (witness.sharedChoiceTravelVariantDiffs.length > 0) counts.travelVariantMismatch += 1;
+          if (witness.sharedChoiceSuccessorDiffs.length > 0) counts.successorMismatch += 1;
+          if (witness.terminalDiffs.length > 0) counts.terminalMismatch += 1;
+          if (witnesses.length < (config.maxWitnesses || 20)) witnesses.push(witness);
+        } else if (result.classification === "dominance-safe") {
+          counts.dominanceSafe += 1;
+          if ((result.travelVariantDiffs || []).length > 0) counts.travelVariantMismatch += 1;
+        } else if (result.classification === "metadata-only") {
+          counts.metadataOnly += 1;
+        } else {
+          counts.unclassified += 1;
+        }
       }
     }
   });
-
-  const summarize = (items) => items.reduce((acc, item) => { acc[item.classification] = (acc[item.classification] || 0) + 1; return acc; }, {});
-  const classificationCounts = summarize(classifications);
-  const unsafeCount = classificationCounts.unsafe || 0;
-  const dominanceSafeCount = classificationCounts["dominance-safe"] || 0;
-  const metadataOnlyCount = classificationCounts["metadata-only"] || 0;
-  const unclassifiedCount = classificationCounts.unclassified || 0;
 
   return {
     schema: "motapathfinder.key-dependency-corpus.v1",
@@ -388,12 +529,20 @@ function analyzeKeyDependencyCorpus(entries, buildBehavior, options) {
     candidateGroupsAnalyzed: Array.from(groups.values()).filter((group) => group.length >= 2).length,
     statesInCandidateCollisionGroups: collisionStates.size,
     behaviorBuilt,
-    classificationCounts,
-    dominanceSafeCount,
-    metadataOnlyCount,
-    unsafeCount,
-    unclassifiedCount,
-    unsafeWitnesses: unsafeWitnesses.slice(0, (config.maxWitnesses || 20)),
+    classificationCounts: { ...counts },
+    dominanceSafeCount: counts.dominanceSafe,
+    metadataOnlyCount: counts.metadataOnly,
+    unsafeCount: counts.unsafe,
+    analysisErrorCount: counts.analysisError,
+    unclassifiedCount: counts.unclassified,
+    mismatchBreakdown: {
+      actionChoiceOnly: counts.actionChoiceOnlyMismatch,
+      travelVariant: counts.travelVariantMismatch,
+      successor: counts.successorMismatch,
+      terminal: counts.terminalMismatch,
+    },
+    unsafeWitnesses: witnesses,
+    analysisErrorWitnesses,
   };
 }
 
@@ -401,9 +550,11 @@ module.exports = {
   analyzeCandidateKeyCollisions,
   analyzeKeyDependencyCorpus,
   behaviorRelevantFlags,
-  buildActionIdentity,
+  buildActionChoiceIdentity,
+  buildActionTravelVariant,
   buildStateBehavior,
   buildStateProjection,
+  buildTerminalProjection,
   classifyPair,
   heroNumbers,
   stableValue,

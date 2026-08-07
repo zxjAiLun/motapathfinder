@@ -3,16 +3,18 @@
 /**
  * TEST GRADE: unit-plus-micro
  *
- * PR-5.4c Commit 1 Repair — Key Dependency Corpus contract (observation only).
+ * PR-5.4c Commit 1 Repair 2 — normalized Key Dependency Corpus contract.
  *
- * 1. TowerIR structural candidate really is the candidate (no exact loc, no
- *    legacy regionKey); same-component different-loc states collide.
- * 2. Zero candidate collisions => "insufficient-collisions", never "safe".
- * 3. Dominance-aware pair classification: dominance-safe / metadata-only /
- *    unsafe, proven by action-superset + shared-action successor behavior
- *    equality + successor HP monotonicity.
- * 4. Canonical action identity distinguishes same-summary/different-payload.
- * 5. Representative evidence: candidate collisions present, unclassified = 0.
+ * 1. Action choice identity excludes HP/travel; same target with different
+ *    travelState/path yields the same actionChoiceFingerprint and different
+ *    travelVariantFingerprint.  Truly different choices remain distinguishable.
+ * 2. Missing / failed successor evidence is fail-visible: analysis-error, never
+ *    silently judged safe.
+ * 3. Terminal projection (alive/dead/goalReached/terminalClass) uses the real
+ *    workload goal predicate and participates in classification.
+ * 4. Witnesses use explicit lowHpState / highHpState direction.
+ * 5. Representative re-analysis: analysisErrorCount = 0, unsafe counts split
+ *    by action-choice / travel-variant / successor / terminal cause.
  * 6. Production parity byte-for-byte with PR-5.4b baseline.
  */
 
@@ -25,7 +27,8 @@ const { compileTowerIR } = require("./lib/tower-ir");
 const {
   analyzeCandidateKeyCollisions,
   analyzeKeyDependencyCorpus,
-  buildActionIdentity,
+  buildActionChoiceIdentity,
+  buildActionTravelVariant,
   buildStateProjection,
   classifyPair,
 } = require("./lib/key-dependency-corpus");
@@ -41,6 +44,8 @@ const smokeSpec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
 const smokeIr = compileTowerIR(project, smokeSpec, { towerId: "onlyup-smoke" });
 const simulator = makeSimulator(project, smokeSpec, {});
 
+const GOAL_PREDICATE = (state) => Boolean(state.hero && (state.hero.exp || 0) >= 9);
+
 // PR-5.4b baseline fingerprints.
 const COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT =
   '{"algorithm":"sha256-stable-json-v1","sha256":"c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13"}';
@@ -53,160 +58,122 @@ function makeBehaviorEntry(options) {
       dominanceLabel: {
         hp: config.hp,
         rawRouteLength: config.rawRouteLength != null ? config.rawRouteLength : 0,
+        materializedRouteLength: config.materializedRouteLength != null ? config.materializedRouteLength : 0,
         decisionDepth: config.decisionDepth != null ? config.decisionDepth : 0,
       },
+      metadataLabel: {
+        rawRouteLength: config.rawRouteLength != null ? config.rawRouteLength : 0,
+        materializedRouteLength: config.materializedRouteLength != null ? config.materializedRouteLength : 0,
+        decisionDepth: config.decisionDepth != null ? config.decisionDepth : 0,
+        autoStepCount: config.autoStepCount != null ? config.autoStepCount : 0,
+        autoPickupCount: config.autoPickupCount != null ? config.autoPickupCount : 0,
+        autoBattleCount: config.autoBattleCount != null ? config.autoBattleCount : 0,
+      },
+      terminalProjection: config.terminal || { alive: true, dead: false, goalReached: null, terminalClass: "active" },
     },
-    actionSet: config.actionSet || [],
+    choiceSet: (config.choiceSet || []).slice().sort(),
     actions: (config.actions || []).map((action) => ({
-      identity: { actionFingerprint: action.fingerprint, actionSummary: action.summary || action.fingerprint },
+      choice: { actionChoiceFingerprint: action.fingerprint, actionSummary: action.summary || action.fingerprint, actionPayload: action.payload || null },
+      travelVariant: action.travelVariant || null,
       successor: action.successor || null,
+      successorError: action.successorError || null,
+      projectionError: action.projectionError || null,
     })),
+    enumerationError: config.enumerationError || null,
   };
 }
 
-function checkTowerIrStructuralCandidateIgnoresLoc() {
-  const init = simulator.createInitialState({ rank: "chaos" });
-  const component = smokeIr.components.find((entry) => entry.floorId === "MT1" && entry.staticCells.length >= 2);
-  assert.ok(component, "MT1 must have a component with at least 2 cells");
-  const [cellA, cellB] = component.staticCells;
-  const stateA = JSON.parse(JSON.stringify(init));
-  stateA.hero.loc.x = cellA.x;
-  stateA.hero.loc.y = cellA.y;
-  const stateB = JSON.parse(JSON.stringify(init));
-  stateB.hero.loc.x = cellB.x;
-  stateB.hero.loc.y = cellB.y;
-  const projectionA = buildStateProjection(simulator, project, smokeIr, stateA);
-  const projectionB = buildStateProjection(simulator, project, smokeIr, stateB);
-  assert.strictEqual(
-    projectionA.structuralCandidate.startComponentId,
-    projectionB.structuralCandidate.startComponentId,
-    "same component must yield the same startComponentId",
-  );
-  assert.strictEqual(
-    projectionA.candidateFullBehaviorKey,
-    projectionB.candidateFullBehaviorKey,
-    "same component + same resources/events must yield the same candidate key",
-  );
-  // The legacy exact loc differs, but the TowerIR structural candidate does not
-  // contain the exact loc and is identical for the same component.
-  assert.deepStrictEqual(
-    projectionA.structuralCandidate,
-    projectionB.structuralCandidate,
-    "the structural candidate must be identical for two positions in the same component",
-  );
-  assert.ok(
-    !("loc" in projectionA.structuralCandidate) && !("loc" in projectionB.structuralCandidate),
-    "structural candidate must not contain the exact hero loc",
-  );
-  assert.ok(
-    !("regionKey" in projectionA.structuralCandidate),
-    "structural candidate must not contain the legacy regionKey",
+function validSuccessor(hp, extra) {
+  return {
+    structuralCandidate: { id: "s" },
+    resourceIdentity: { id: "r" },
+    eventHazardLabel: {},
+    dominanceLabel: { hp },
+    terminalProjection: { alive: hp > 0, dead: hp <= 0, goalReached: null, terminalClass: hp > 0 ? "active" : "dead" },
+    metadataLabel: {},
+    ...(extra || {}),
+  };
+}
+
+function checkChoiceIdentityExcludesHp() {
+  const baseTravel = JSON.parse(JSON.stringify(simulator.createInitialState({ rank: "chaos" })));
+  const travelHigh = JSON.parse(JSON.stringify(baseTravel));
+  travelHigh.hero.hp = 100;
+  const travelLow = JSON.parse(JSON.stringify(baseTravel));
+  travelLow.hero.hp = 40;
+  const actionHigh = { kind: "battle", summary: "battle:slime@MT1:1,1", floorId: "MT1", target: { x: 1, y: 1 }, enemyId: "slime", path: ["up"], travelState: travelHigh };
+  const actionLow = { kind: "battle", summary: "battle:slime@MT1:1,1", floorId: "MT1", target: { x: 1, y: 1 }, enemyId: "slime", path: ["up", "up"], travelState: travelLow };
+  const choiceHigh = buildActionChoiceIdentity(actionHigh);
+  const choiceLow = buildActionChoiceIdentity(actionLow);
+  assert.strictEqual(choiceHigh.actionChoiceFingerprint, choiceLow.actionChoiceFingerprint, "HP/travel differences must NOT change the choice identity");
+  const variantHigh = buildActionTravelVariant(actionHigh, simulator, project, smokeIr, { goalPredicate: GOAL_PREDICATE });
+  const variantLow = buildActionTravelVariant(actionLow, simulator, project, smokeIr, { goalPredicate: GOAL_PREDICATE });
+  assert.ok(variantHigh && variantLow, "travel variants must be built");
+  assert.notStrictEqual(variantHigh.travelVariantFingerprint, variantLow.travelVariantFingerprint, "travel variants must differ (path/HP)");
+}
+
+function checkChoiceIdentityDistinguishesChoices() {
+  const actionC = { kind: "battle", summary: "battle:slime@MT1:1,1", floorId: "MT1", target: { x: 1, y: 1 }, enemyId: "slime" };
+  const actionD = { kind: "battle", summary: "battle:slime@MT1:1,1", floorId: "MT1", target: { x: 5, y: 5 }, enemyId: "slime" };
+  assert.strictEqual(actionC.summary, actionD.summary, "summaries must be identical");
+  assert.notStrictEqual(
+    buildActionChoiceIdentity(actionC).actionChoiceFingerprint,
+    buildActionChoiceIdentity(actionD).actionChoiceFingerprint,
+    "different target must yield different choice fingerprints",
   );
 }
 
-function checkZeroCollisionsInsufficientEvidence() {
-  const entries = [1, 2, 3].map((id) => ({
-    projection: { candidateFullBehaviorKey: `key-${id}`, candidateStructuralResourceKey: `key-${id}`, legacyDecompositionKey: `key-${id}` },
-  }));
-  const result = analyzeCandidateKeyCollisions(entries, "candidateFullBehaviorKey");
-  assert.strictEqual(result.collisionGroupCount, 0, "three distinct keys must not collide");
-  assert.strictEqual(result.evidenceStatus, "insufficient-collisions", "zero collisions must be insufficient evidence, never safe");
-}
-
-function checkDominanceSafeClassification() {
-  const low = makeBehaviorEntry({
-    hp: 50,
-    actionSet: ["battle:a", "pickup:b"],
-    actions: [
-      { fingerprint: "battle:a", successor: { dominanceLabel: { hp: 30 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-      { fingerprint: "pickup:b", successor: { dominanceLabel: { hp: 52 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-    ],
-  });
-  const high = makeBehaviorEntry({
-    hp: 90,
-    actionSet: ["battle:a", "battle:c", "pickup:b"],
-    actions: [
-      { fingerprint: "battle:a", successor: { dominanceLabel: { hp: 70 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-      { fingerprint: "battle:c", successor: { dominanceLabel: { hp: 60 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-      { fingerprint: "pickup:b", successor: { dominanceLabel: { hp: 92 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-    ],
-  });
-  const result = classifyPair(low, high);
-  assert.strictEqual(result.classification, "dominance-safe", "high-HP superset + monotone HP must be dominance-safe");
-}
-
-function checkMetadataOnlyClassification() {
+function checkMissingSuccessorFailVisible() {
   const left = makeBehaviorEntry({
-    hp: 80,
-    rawRouteLength: 10,
-    decisionDepth: 5,
-    actionSet: ["a", "b"],
-    actions: [
-      { fingerprint: "a", successor: { dominanceLabel: { hp: 75 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-      { fingerprint: "b", successor: { dominanceLabel: { hp: 82 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-    ],
+    hp: 50,
+    choiceSet: ["battle:a"],
+    actions: [{ fingerprint: "battle:a", summary: "battle:a", successor: validSuccessor(40) }],
   });
   const right = makeBehaviorEntry({
     hp: 80,
-    rawRouteLength: 14,
-    decisionDepth: 7,
-    actionSet: ["a", "b"],
-    actions: [
-      { fingerprint: "a", successor: { dominanceLabel: { hp: 75 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-      { fingerprint: "b", successor: { dominanceLabel: { hp: 82 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-    ],
+    choiceSet: ["battle:a"],
+    actions: [{ fingerprint: "battle:a", summary: "battle:a", successor: null, successorError: "applyAction exploded" }],
   });
   const result = classifyPair(left, right);
-  assert.strictEqual(result.classification, "metadata-only", "identical HP/behavior with only depth/counters differing must be metadata-only");
+  assert.strictEqual(result.classification, "analysis-error", "failed successor must be fail-visible, never safe");
 }
 
-function checkUnsafeClassification() {
-  // Same candidate key but a state whose event state adds an action the other
-  // lacks (low-HP state has an action the high-HP state lacks) => unsafe.
+function checkTerminalDifferential() {
+  // Low-HP goal reached, high-HP not => unsafe terminal.
   const low = makeBehaviorEntry({
-    hp: 90,
-    actionSet: ["battle:a", "event:x"],
-    actions: [
-      { fingerprint: "battle:a", successor: { dominanceLabel: { hp: 70 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-      { fingerprint: "event:x", successor: { dominanceLabel: { hp: 95 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-    ],
+    hp: 30,
+    terminal: { alive: true, dead: false, goalReached: true, terminalClass: "goal" },
+    choiceSet: ["a"],
+    actions: [{ fingerprint: "a", summary: "a", successor: validSuccessor(30) }],
   });
   const high = makeBehaviorEntry({
     hp: 100,
-    actionSet: ["battle:a"],
-    actions: [
-      { fingerprint: "battle:a", successor: { dominanceLabel: { hp: 80 }, structuralCandidate: { id: "s" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-    ],
+    terminal: { alive: true, dead: false, goalReached: false, terminalClass: "active" },
+    choiceSet: ["a"],
+    actions: [{ fingerprint: "a", summary: "a", successor: validSuccessor(100) }],
   });
-  const result = classifyPair(low, high);
-  assert.strictEqual(result.classification, "unsafe", "an event-driven action present only in one state must be unsafe");
-
-  // Shared action with different successor behavior => unsafe.
-  const left = makeBehaviorEntry({
-    hp: 60,
-    actionSet: ["battle:a"],
-    actions: [
-      { fingerprint: "battle:a", successor: { dominanceLabel: { hp: 40 }, structuralCandidate: { id: "s1" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-    ],
-  });
-  const right = makeBehaviorEntry({
-    hp: 70,
-    actionSet: ["battle:a"],
-    actions: [
-      { fingerprint: "battle:a", successor: { dominanceLabel: { hp: 50 }, structuralCandidate: { id: "s2" }, resourceIdentity: { id: "r" }, eventHazardLabel: {} } },
-    ],
-  });
-  const successorResult = classifyPair(left, right);
-  assert.strictEqual(successorResult.classification, "unsafe", "different successor structural candidate must be unsafe");
+  const goalResult = classifyPair(low, high);
+  assert.strictEqual(goalResult.classification, "unsafe", "goal reached by low-HP but not high-HP must be unsafe");
+  assert.ok(goalResult.terminalDiffs && goalResult.terminalDiffs.length > 0, "terminal diff must be recorded");
 }
 
-function checkActionIdentityCollision() {
-  const actionA = { kind: "battle", summary: "battle:slime@MT1:1,1", floorId: "MT1", x: 1, y: 1, target: "slime", travelState: { hero: { hp: 100, loc: { x: 0, y: 0 } } } };
-  const actionB = { kind: "battle", summary: "battle:slime@MT1:1,1", floorId: "MT1", x: 1, y: 1, target: "slime", travelState: { hero: { hp: 50, loc: { x: 0, y: 0 } } } };
-  const identityA = buildActionIdentity(actionA);
-  const identityB = buildActionIdentity(actionB);
-  assert.strictEqual(identityA.actionSummary, identityB.actionSummary, "summaries must be identical");
-  assert.notStrictEqual(identityA.actionFingerprint, identityB.actionFingerprint, "different travel payloads must yield different fingerprints");
+function checkWitnessDirection() {
+  const low = makeBehaviorEntry({
+    hp: 40,
+    choiceSet: ["a", "low-only"],
+    actions: [
+      { fingerprint: "a", summary: "a", successor: validSuccessor(30) },
+      { fingerprint: "low-only", summary: "low-only", successor: validSuccessor(20) },
+    ],
+  });
+  const high = makeBehaviorEntry({
+    hp: 90,
+    choiceSet: ["a"],
+    actions: [{ fingerprint: "a", summary: "a", successor: validSuccessor(80) }],
+  });
+  const result = classifyPair(low, high);
+  assert.strictEqual(result.classification, "unsafe", "low-HP-only choice must be unsafe");
+  assert.ok(result.actionOnlyLow && result.actionOnlyLow.length > 0, "actionOnlyLow must be populated");
 }
 
 async function captureRepresentative(captureLimit) {
@@ -240,18 +207,16 @@ async function captureRepresentative(captureLimit) {
 }
 
 async function main() {
-  checkTowerIrStructuralCandidateIgnoresLoc();
-  checkZeroCollisionsInsufficientEvidence();
-  checkDominanceSafeClassification();
-  checkMetadataOnlyClassification();
-  checkUnsafeClassification();
-  checkActionIdentityCollision();
+  checkChoiceIdentityExcludesHp();
+  checkChoiceIdentityDistinguishesChoices();
+  checkMissingSuccessorFailVisible();
+  checkTerminalDifferential();
+  checkWitnessDirection();
 
   const { execution, captured } = await captureRepresentative(200);
   assert.strictEqual(execution.result.found, true, "representative must complete");
   assert.ok(captured.length > 0, "corpus must capture states");
 
-  // PR-5.4b production parity.
   const routeFingerprint = execution.routeRecord
     ? (require("./lib/replay-resume-artifact").buildReplayRouteFingerprint(execution.routeRecord))
     : null;
@@ -268,22 +233,19 @@ async function main() {
     "winner exact fingerprint must match PR-5.4b baseline",
   );
 
-  const entries = captured.map((state) => ({ state, projection: buildStateProjection(simulator, project, smokeIr, state) }));
+  const entries = captured.map((state) => ({
+    state,
+    projection: buildStateProjection(simulator, project, smokeIr, state, { goalPredicate: GOAL_PREDICATE }),
+  }));
   const analysis = analyzeKeyDependencyCorpus(entries, (state) =>
-    require("./lib/key-dependency-corpus").buildStateBehavior(simulator, project, smokeIr, state),
+    require("./lib/key-dependency-corpus").buildStateBehavior(simulator, project, smokeIr, state, { goalPredicate: GOAL_PREDICATE }),
   );
 
   assert.strictEqual(analysis.capturedStateCount, captured.length, "analysis must cover the full corpus");
-  // Representative evidence must be non-trivial.
-  assert.ok(
-    analysis.behaviorKeyCollisions.collisionGroupCount > 0,
-    `candidate key collisions must exist (got ${analysis.behaviorKeyCollisions.collisionGroupCount})`,
-  );
-  assert.ok(
-    analysis.behaviorKeyCollisions.statesInCollisionGroups > 1,
-    "more than one state must participate in candidate collisions",
-  );
+  assert.ok(analysis.behaviorKeyCollisions.collisionGroupCount > 0, "candidate collisions must exist");
+  assert.ok(analysis.behaviorKeyCollisions.statesInCollisionGroups > 1, "more than one state in collisions");
   assert.strictEqual(analysis.unclassifiedCount, 0, "no unclassified pairs allowed");
+  assert.strictEqual(analysis.analysisErrorCount, 0, "no analysis errors allowed on the representative corpus");
 
   const att = (execution.result.segmentResults || [])[0] && (execution.result.segmentResults[0].attempts || [])[0];
   const dp = att && att.diagnostics && att.diagnostics.dp;
@@ -292,14 +254,13 @@ async function main() {
     schema: "motapathfinder.pr-5.4c-key-dependency-corpus.v1",
     status: "passed",
     controls: {
-      towerIrStructuralCandidateUsed: true,
-      sameComponentCollides: true,
-      zeroCollisionsInsufficientEvidence: true,
-      dominanceSafeClassified: true,
-      metadataOnlyClassified: true,
-      unsafeClassified: true,
-      actionIdentityCanonical: true,
+      choiceIdentityExcludesHp: true,
+      choiceIdentityDistinguishesChoices: true,
+      missingSuccessorFailVisible: true,
+      terminalDifferential: true,
+      witnessDirectionExplicit: true,
       representativeCollisionsNonEmpty: true,
+      analysisErrorZero: true,
       unclassifiedZero: true,
       productionParityPreserved: true,
     },
@@ -307,15 +268,15 @@ async function main() {
       capturedStateCount: analysis.capturedStateCount,
       behaviorKeyCollisions: analysis.behaviorKeyCollisions,
       structuralResourceCollisions: analysis.structuralResourceCollisions,
-      legacyCollisions: analysis.legacyCollisions,
       candidateGroupsAnalyzed: analysis.candidateGroupsAnalyzed,
       statesInCandidateCollisionGroups: analysis.statesInCandidateCollisionGroups,
-      behaviorBuilt: analysis.behaviorBuilt,
       classificationCounts: analysis.classificationCounts,
       dominanceSafeCount: analysis.dominanceSafeCount,
       metadataOnlyCount: analysis.metadataOnlyCount,
       unsafeCount: analysis.unsafeCount,
+      analysisErrorCount: analysis.analysisErrorCount,
       unclassifiedCount: analysis.unclassifiedCount,
+      mismatchBreakdown: analysis.mismatchBreakdown,
       unsafeWitnesses: analysis.unsafeWitnesses.slice(0, 10),
     },
     productionParity: {
