@@ -230,31 +230,44 @@ async function main() {
   assert.ok(brokenSnapshot.unsafeWitnesses.length > 0, "BROKEN key must surface witnesses");
 
   // Gate B: experimental A/B only when Gate A passed; runs REAL strict replay
-  // via the guarded experimental profile (default-off, scope fail-closed).
+  // via the guarded experimental profile (self-contained, pinned baseline).
   let gateB = null;
   if (gateAPassed) {
-    const guarded = require("./lib/guarded-candidate-key").createGuardedKeyResolver({
-      simulator,
+    const guardedModule = require("./lib/guarded-candidate-key");
+    const referenceTask = (() => {
+      const spec = JSON.parse(JSON.stringify(smokeSpec));
+      spec.goal = { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 9 } };
+      return require("./lib/solve-task").compileExecutableSolveTask({
+        schema: "motapathfinder.solve-task.v1",
+        tower: { id: "onlyup-smoke", projectRoot: ONLY_UP_ROOT, region: { spec } },
+        objective: { mode: "max-final-hp" },
+        search: { algorithm: "segment-dp", maxExpansions: 3000, candidateLimit: 2, goalSkylineLimit: 8 },
+        verification: { strictReplay: false },
+      });
+    })();
+    const normalizedSpec = (referenceTask.normalizedTask || referenceTask).tower.region.spec;
+    const resolution = guardedModule.resolveDpKeyProfile({
       project,
-      ir: smokeIr,
-      regionSpec: smokeSpec,
-      options: { goalPredicate: GOAL_PREDICATE },
+      regionSpec: normalizedSpec,
+      simulator,
+      dpKeyProfile: guardedModule.EXPERIMENTAL_PROFILE,
+      options: { towerId: "onlyup-smoke", goalPredicate: GOAL_PREDICATE },
     });
-    assert.strictEqual(guarded.guard.floors.join(","), "MT1", "guarded profile must bind MT1 scope");
+    assert.ok(resolution.builder, "experimental profile must resolve a builder by itself");
+    assert.strictEqual(resolution.guard.floors.join(","), "MT1", "guarded profile must bind MT1 scope");
     // Fail-closed: unknown profile and out-of-scope floor must throw.
     assert.throws(
-      () => guarded.resolver(init, { dpKeyProfile: "not-a-profile" }),
+      () => guardedModule.resolveDpKeyProfile({ project, regionSpec: normalizedSpec, simulator, dpKeyProfile: "not-a-profile" }),
       (error) => error && /unknown dpKeyProfile/.test(error.message),
       "unknown dpKeyProfile must throw",
     );
     assert.throws(
-      () => guarded.resolver({ floorId: "MT9" }, { dpKeyProfile: "experimental-mt1-tower-ir-v1" }),
+      () => resolution.builder({ floorId: "MT9" }, { dpKeyProfile: guardedModule.EXPERIMENTAL_PROFILE }),
       (error) => error && /outside bound scope/.test(error.message),
       "out-of-scope floor must throw (fail-closed)",
     );
     const runB = await runRepresentative({
-      dpKeyProfile: "experimental-mt1-tower-ir-v1",
-      dpStateKeyBuilder: guarded.resolver,
+      dpKeyProfile: guardedModule.EXPERIMENTAL_PROFILE,
       strictReplay: true,
     });
     const correctnessB = extractCorrectness(runB.execution);
@@ -271,7 +284,7 @@ async function main() {
     const applyA = runA.perf.phaseMs && runA.perf.phaseMs.applyAction;
     const applyB = runB.perf.phaseMs && runB.perf.phaseMs.applyAction;
     gateB = {
-      guard: guarded.guard,
+      guard: resolution.guard,
       correctnessExact: exactCorrectness,
       strictReplayVerifiedBoth: bothStrictReplayVerified,
       correctnessA,
