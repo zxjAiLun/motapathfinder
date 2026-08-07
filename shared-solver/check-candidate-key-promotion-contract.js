@@ -64,7 +64,7 @@ async function runRepresentative(options) {
       candidateLimit: 2,
       goalSkylineLimit: 8,
     },
-    verification: { strictReplay: false },
+    verification: { strictReplay: config.strictReplay === true },
   });
   if (config.recorder) task.executeConfig.candidateKeyShadowRecorder = config.recorder;
   if (config.dpStateKeyBuilder) task.executeConfig.dpStateKeyBuilder = config.dpStateKeyBuilder;
@@ -72,12 +72,19 @@ async function runRepresentative(options) {
   setActivePerfTracker(tracker);
   let execution;
   try {
-    execution = await executeSolveJob(task, {
-      jobId: "candidate-key-promotion",
-      onProgress: () => {},
-      shouldStop: () => false,
-      context: {},
-    });
+    // Quiet the strict-replay live logs so the contract JSON stays clean.
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      execution = await executeSolveJob(task, {
+        jobId: "candidate-key-promotion",
+        onProgress: () => {},
+        shouldStop: () => false,
+        context: {},
+      });
+    } finally {
+      console.log = originalLog;
+    }
   } finally {
     setActivePerfTracker(null);
   }
@@ -127,9 +134,9 @@ function pickMinimalSafe(profiles, registry, records, behaviorCache) {
 }
 
 async function main() {
-  // Representative production run (A) with the recorder.
+  // Representative production run (A) with the recorder + real strict replay.
   const records = [];
-  const runA = await runRepresentative({ recorder: (record) => records.push(record) });
+  const runA = await runRepresentative({ recorder: (record) => records.push(record), strictReplay: true });
   assert.strictEqual(runA.execution.result.found, true, "representative (A) must complete");
   assert.ok(records.length > 0, "recorder must capture enqueue decisions");
   const registry = runA.registry;
@@ -151,7 +158,7 @@ async function main() {
   }
 
   // Candidate profile matrix + minimality (Gate A).
-  const { results, minimalSafe } = pickMinimalSafe(["current-full", "normalized-resource", "without-event-label"], registry, records, sharedBehaviorCache);
+  const { results, minimalSafe } = pickMinimalSafe(["current-full", "normalized-resource", "without-event-label", "without-start-component"], registry, records, sharedBehaviorCache);
   assert.ok(minimalSafe, "at least one candidate profile must be safe (0 unsafe/error/unclassified)");
   const minimalSnapshot = minimalSafe.snapshot;
   const gateASafe = minimalSnapshot.shadowUnsafeMerge === 0
@@ -159,12 +166,25 @@ async function main() {
     && minimalSnapshot.shadowUnclassified === 0;
   const gateADeltaNonNegative = minimalSnapshot.hypotheticalStateDelta >= 0;
   const gateAPassed = gateASafe && gateADeltaNonNegative;
+  const withoutStartComponentEntry = results.find((entry) => entry.profile === "without-start-component");
+  assert.ok(withoutStartComponentEntry, "without-start-component profile must be evaluated");
+  const withoutStartComponentSafe = withoutStartComponentEntry.snapshot.shadowUnsafeMerge === 0
+    && withoutStartComponentEntry.snapshot.shadowAnalysisError === 0
+    && withoutStartComponentEntry.snapshot.shadowUnclassified === 0;
+
+  const init = simulator.createInitialState({ rank: "chaos" });
+
+  // Unknown candidate profile must fail closed (never silent fallback).
+  assert.throws(
+    () => buildCandidateDpKey(simulator, project, smokeIr, init, { profile: "without-start-compnent-typo" }),
+    (error) => error && /unknown candidate profile/.test(error.message),
+    "an explicit unknown profile must throw",
+  );
 
   // Negative controls.
   // Negative control: dropping a behavior-relevant field (atk) must surface
   // unsafe witnesses.  Constructed synthetically (deterministic), since the
   // representative corpus may not exercise a pure atk-only difference.
-  const init = simulator.createInitialState({ rank: "chaos" });
   const stateAtkLow = JSON.parse(JSON.stringify(init));
   const stateAtkHigh = JSON.parse(JSON.stringify(init));
   stateAtkHigh.hero.atk = 99;
@@ -188,21 +208,27 @@ async function main() {
   assert.ok(brokenSnapshot.shadowUnsafeMerge > 0, "BROKEN key must surface unsafe merges");
   assert.ok(brokenSnapshot.unsafeWitnesses.length > 0, "BROKEN key must surface witnesses");
 
-  // Gate B: experimental A/B only when Gate A passed.
+  // Gate B: experimental A/B only when Gate A passed; runs REAL strict replay.
   let gateB = null;
   if (gateAPassed) {
     const builder = (state) => buildCandidateDpKey(simulator, project, smokeIr, state, { goalPredicate: GOAL_PREDICATE, profile: minimalSafe.profile });
-    const runB = await runRepresentative({ dpStateKeyBuilder: builder });
+    const runB = await runRepresentative({ dpStateKeyBuilder: builder, strictReplay: true });
     const correctnessB = extractCorrectness(runB.execution);
     const exactCorrectness = JSON.stringify(correctnessA) === JSON.stringify(correctnessB);
+    const bothStrictReplayVerified = correctnessA.strictReplayVerified === true && correctnessB.strictReplayVerified === true;
     const keyPhaseA = runA.perf.phaseMs && runA.perf.phaseMs.buildDpStateKey;
     const keyPhaseACalls = runA.perf.phaseCounts && runA.perf.phaseCounts.buildDpStateKey;
     const keyPhaseB = runB.perf.phaseMs && runB.perf.phaseMs.buildDpStateKey;
     const keyPhaseBCalls = runB.perf.phaseCounts && runB.perf.phaseCounts.buildDpStateKey;
     const reachabilityA = runA.perf.phaseMs && runA.perf.phaseMs.reachability;
     const reachabilityB = runB.perf.phaseMs && runB.perf.phaseMs.reachability;
+    const enumerateA = runA.perf.phaseMs && runA.perf.phaseMs.enumerateActions;
+    const enumerateB = runB.perf.phaseMs && runB.perf.phaseMs.enumerateActions;
+    const applyA = runA.perf.phaseMs && runA.perf.phaseMs.applyAction;
+    const applyB = runB.perf.phaseMs && runB.perf.phaseMs.applyAction;
     gateB = {
       correctnessExact: exactCorrectness,
+      strictReplayVerifiedBoth: bothStrictReplayVerified,
       correctnessA,
       correctnessB,
       scaleA: {
@@ -223,24 +249,31 @@ async function main() {
       keyPhaseB: { totalMs: keyPhaseB != null ? Number(keyPhaseB.toFixed(2)) : null, calls: keyPhaseBCalls != null ? keyPhaseBCalls : null },
       reachabilityA: reachabilityA != null ? Number(reachabilityA.toFixed(2)) : null,
       reachabilityB: reachabilityB != null ? Number(reachabilityB.toFixed(2)) : null,
+      enumerateActionsA: enumerateA != null ? Number(enumerateA.toFixed(2)) : null,
+      enumerateActionsB: enumerateB != null ? Number(enumerateB.toFixed(2)) : null,
+      applyActionA: applyA != null ? Number(applyA.toFixed(2)) : null,
+      applyActionB: applyB != null ? Number(applyB.toFixed(2)) : null,
       wallA: Number(runA.perf.wallMs.toFixed(2)),
       wallB: Number(runB.perf.wallMs.toFixed(2)),
     };
   }
 
-  const decision = gateAPassed && gateB && gateB.correctnessExact ? "PROMOTION_CANDIDATE" : "NO_PROMOTION";
+  const decision = gateAPassed && gateB && gateB.correctnessExact && gateB.strictReplayVerifiedBoth ? "PROMOTION_CANDIDATE" : "NO_PROMOTION";
 
   process.stdout.write(JSON.stringify({
     schema: "motapathfinder.pr-5.4c-candidate-key-promotion.v1",
     status: "passed",
     controls: {
       partitionAuditComplete: true,
-      splitMergeWitnessesFieldLevel: true,
+      splitFieldDistributionComplete: true,
+      withoutStartComponentProfileEvaluated: true,
+      unknownCandidateProfileFailClosed: true,
       candidateProfileMatrix: true,
       cegarMinimality: true,
       gateASafetyZero: gateASafe,
       gateADeltaNonNegative: gateADeltaNonNegative,
-      gateBExactCorrectness: Boolean(gateB && gateB.correctnessExact),
+      gateBSkippedWhenGateAFails: gateB === null,
+      gateBStrictReplayVerifiedWhenRun: gateB ? gateB.strictReplayVerifiedBoth : false,
       negativeControlMissingAtk: true,
       negativeControlBrokenKey: true,
       experimentalIsolationDefaultOff: true,
@@ -255,6 +288,9 @@ async function main() {
       mergedExtraExactKeyCount: audit.mergedExtraExactKeyCount,
       maxExactKeysPerCandidateKey: audit.maxExactKeysPerCandidateKey,
       partitionRelation: audit.partitionRelation,
+      splitFieldDistribution: audit.splitFieldDistribution,
+      splitExactKeysOnlyStartComponent: audit.splitExactKeysOnlyStartComponent,
+      splitExactKeysWithOtherDifferences: audit.splitExactKeysWithOtherDifferences,
       splitWitnessSample: audit.splitWitnesses.slice(0, 2),
       mergeWitnessSample: audit.mergeWitnesses.slice(0, 2),
     },
@@ -280,7 +316,17 @@ async function main() {
       hypotheticalStateDelta: minimalSnapshot.hypotheticalStateDelta,
       partitionRelation: minimalSnapshot.partitionAudit.partitionRelation,
     } : null,
-    gateA: { passed: gateAPassed, safe: gateASafe, deltaNonNegative: gateADeltaNonNegative },
+    withoutStartComponent: {
+      safe: withoutStartComponentSafe,
+      finalActiveStates: withoutStartComponentEntry.snapshot.candidateFinalActiveStates,
+      finalUniqueKeys: withoutStartComponentEntry.snapshot.candidateFinalUniqueKeys,
+      hypotheticalStateDelta: withoutStartComponentEntry.snapshot.hypotheticalStateDelta,
+      partitionRelation: withoutStartComponentEntry.snapshot.partitionAudit.partitionRelation,
+      shadowUnsafeMerge: withoutStartComponentEntry.snapshot.shadowUnsafeMerge,
+      mergedCandidateKeyCount: withoutStartComponentEntry.snapshot.partitionAudit.mergedCandidateKeyCount,
+      splitExactKeyCount: withoutStartComponentEntry.snapshot.partitionAudit.splitExactKeyCount,
+    },
+    gateA: { passed: gateAPassed, safe: gateASafe, deltaNonNegative: gateADeltaNonNegative, minimalProfile: minimalSafe ? minimalSafe.profile : null },
     gateB,
     negativeControls: {
       missingAtkUnsafe: missingAtkSnapshot.shadowUnsafeMerge,

@@ -2305,7 +2305,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.4c Commit 3: partition audit, candidate profile minimality, MT1 promotion gate (Gate A shadow, Gate B experimental A/B via dpStateKeyBuilder)"
+      "notes": "PR-5.4c Commit 3 Repair: start-component ablation profile, split field distribution (32/32 only startComponentId), real strict-replay Gate B -> PROMOTION_CANDIDATE (without-start-component, delta 0)"
     }
   }
 }

@@ -91,16 +91,30 @@ const CANDIDATE_PROFILES = {
   "current-full": { normalizeResource: false, includeEventLabel: true, includeFollowers: false },
   "normalized-resource": { normalizeResource: true, includeEventLabel: true, includeFollowers: false },
   "without-event-label": { normalizeResource: false, includeEventLabel: false, includeFollowers: false },
+  // Root-cause ablation: current-full minus startComponentId only (single
+  // variable).  Tests whether the split witness's pinned field is redundant
+  // anchor rather than behavior identity.
+  "without-start-component": { normalizeResource: false, includeEventLabel: true, includeFollowers: false, dropStartComponent: true },
   // Negative control: dropping atk (a behavior-relevant field) must surface
   // unsafe witnesses, proving the classifier catches missing fields.
   "missing-atk": { normalizeResource: false, includeEventLabel: true, includeFollowers: false, dropAtk: true },
 };
 
+// Fail-closed profile resolution: omitted -> current-full; an EXPLICIT unknown
+// profile string must throw (never silently fall back).
+function resolveCandidateProfile(config) {
+  if (config.profile == null) return CANDIDATE_PROFILES["current-full"];
+  const profile = CANDIDATE_PROFILES[config.profile];
+  if (!profile) throw new Error(`unknown candidate profile: ${config.profile}`);
+  return profile;
+}
+
 // Structured candidate projection (fields only, for partition audit diffing).
 function buildCandidateProjection(simulator, project, ir, state, options) {
   const config = options || {};
-  const profile = CANDIDATE_PROFILES[config.profile] || CANDIDATE_PROFILES["current-full"];
+  const profile = resolveCandidateProfile(config);
   const structuralCandidate = buildTowerIrProjection(ir, project, state);
+  if (profile.dropStartComponent) delete structuralCandidate.startComponentId;
   const hero = state.hero || {};
   const heroNumbersForProfile = heroNumbers(state);
   if (profile.dropAtk) delete heroNumbersForProfile.atk;
@@ -715,6 +729,7 @@ module.exports = {
   findChoiceRecords,
   heroNumbers,
   isCoveringVariant,
+  resolveCandidateProfile,
   stableValue,
   successorBehaviorKey,
 };

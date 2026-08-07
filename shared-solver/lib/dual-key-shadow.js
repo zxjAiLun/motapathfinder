@@ -341,6 +341,36 @@ function createDualKeyShadow(options) {
     else if (splitExactKeyCount > 0) partitionRelation = "strict-refinement";
     else if (mergedCandidateKeyCount > 0) partitionRelation = "strict-coarsening";
 
+    // Split field distribution: aggregate over ALL split exact keys (not just
+    // the witness sample), classifying each into only-start-component or other.
+    const splitFieldDistribution = {};
+    let splitExactKeysOnlyStartComponent = 0;
+    let splitExactKeysWithOtherDifferences = 0;
+    exactKeyToCandidateKeys.forEach((candidateSet, exactDpKey) => {
+      if (candidateSet.size <= 1) return;
+      const records = recordsByExactKey.get(exactDpKey) || [];
+      const byCandidate = new Map();
+      records.forEach((record) => {
+        if (!byCandidate.has(record.candidateKey)) byCandidate.set(record.candidateKey, record);
+      });
+      const candidateKeys = Array.from(candidateSet);
+      const first = byCandidate.get(candidateKeys[0]);
+      const second = byCandidate.get(candidateKeys[1]);
+      if (!first || !second || !first.candidateProjection || !second.candidateProjection) return;
+      const differing = diffCandidateProjections(first.candidateProjection, second.candidateProjection);
+      const flatFields = [];
+      Object.keys(differing).forEach((group) => {
+        (differing[group] || []).forEach((field) => {
+          const fullField = group === "eventHazardLabel" ? group : `${group}.${field}`;
+          flatFields.push(fullField);
+          splitFieldDistribution[fullField] = (splitFieldDistribution[fullField] || 0) + 1;
+        });
+      });
+      const onlyStartComponent = flatFields.length === 1 && flatFields[0] === "structuralCandidate.startComponentId";
+      if (onlyStartComponent) splitExactKeysOnlyStartComponent += 1;
+      else splitExactKeysWithOtherDifferences += 1;
+    });
+
     // Split / merge witnesses (field-level, capped).
     if (splitWitnesses.length === 0) {
       exactKeyToCandidateKeys.forEach((candidateSet, exactDpKey) => {
@@ -409,6 +439,9 @@ function createDualKeyShadow(options) {
         mergedExtraExactKeyCount,
         maxExactKeysPerCandidateKey,
         partitionRelation,
+        splitFieldDistribution,
+        splitExactKeysOnlyStartComponent,
+        splitExactKeysWithOtherDifferences,
         splitWitnesses: splitWitnesses.slice(0, (config.maxWitnesses || 20)),
         mergeWitnesses: mergeWitnesses.slice(0, (config.maxWitnesses || 20)),
       },
