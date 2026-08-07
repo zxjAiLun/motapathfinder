@@ -1418,7 +1418,11 @@ function searchDP(simulator, initialState, options) {
     }
     const rawLength = getRawRouteLength(state);
     if (rawLength > maxRawRouteLength) maxRawRouteLength = rawLength;
-    const key = trackPerfPhase("buildDpStateKey", () => buildDpStateKey(simulator, state, config));
+    const key = trackPerfPhase("buildDpStateKey", () => (
+      typeof config.dpStateKeyBuilder === "function"
+        ? config.dpStateKeyBuilder(state, config)
+        : buildDpStateKey(simulator, state, config)
+    ));
     const existingSkyline = bestByKey instanceof SkylineSet ? bestByKey.getAll(key) : null;
     const timingConflict = existingSkyline &&
       config.dominanceConfig &&

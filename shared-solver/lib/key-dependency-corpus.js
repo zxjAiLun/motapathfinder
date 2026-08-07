@@ -84,21 +84,54 @@ function buildTerminalProjection(state, goalPredicate) {
   return { alive, dead, goalReached, terminalClass };
 }
 
+// Candidate identity profiles for the promotion gate.  Each profile selects
+// which fields feed the candidate key.  Ablation is driven by observed split
+// causes, never by dropping behavior-relevant fields blindly.
+const CANDIDATE_PROFILES = {
+  "current-full": { normalizeResource: false, includeEventLabel: true, includeFollowers: false },
+  "normalized-resource": { normalizeResource: true, includeEventLabel: true, includeFollowers: false },
+  "without-event-label": { normalizeResource: false, includeEventLabel: false, includeFollowers: false },
+  // Negative control: dropping atk (a behavior-relevant field) must surface
+  // unsafe witnesses, proving the classifier catches missing fields.
+  "missing-atk": { normalizeResource: false, includeEventLabel: true, includeFollowers: false, dropAtk: true },
+};
+
+// Structured candidate projection (fields only, for partition audit diffing).
+function buildCandidateProjection(simulator, project, ir, state, options) {
+  const config = options || {};
+  const profile = CANDIDATE_PROFILES[config.profile] || CANDIDATE_PROFILES["current-full"];
+  const structuralCandidate = buildTowerIrProjection(ir, project, state);
+  const hero = state.hero || {};
+  const heroNumbersForProfile = heroNumbers(state);
+  if (profile.dropAtk) delete heroNumbersForProfile.atk;
+  const resourceIdentity = {
+    ...heroNumbersForProfile,
+    equipment: Array.isArray(hero.equipment) ? hero.equipment.slice().sort() : [],
+  };
+  if (profile.includeFollowers) {
+    resourceIdentity.followers = Array.isArray(hero.followers) ? hero.followers.slice().sort() : [];
+  }
+  const normalizeResource = (object) => {
+    if (!profile.normalizeResource) return stableValue(object || {});
+    // Match production stableObject semantics: drop null and zero values.
+    return Object.keys(object || {}).sort().reduce((acc, key) => {
+      const value = object[key];
+      if (value == null || value === 0) return acc;
+      acc[key] = value;
+      return acc;
+    }, {});
+  };
+  resourceIdentity.inventory = normalizeResource(state.inventory);
+  resourceIdentity.flags = normalizeResource(state.flags);
+  resourceIdentity.visitedFloors = Object.keys(state.visitedFloors || {}).sort();
+  const eventHazardLabel = profile.includeEventLabel ? stableValue(state.triggeredAutoEvents || {}) : null;
+  return { structuralCandidate, resourceIdentity, eventHazardLabel };
+}
+
 // TowerIR StructuralKey + ResourceIdentity + EventHazardLabel candidate DP key.
 // HP is intentionally NOT part of the identity (dominance label only).
 function buildCandidateDpKey(simulator, project, ir, state, options) {
-  const config = options || {};
-  const structuralCandidate = buildTowerIrProjection(ir, project, state);
-  const hero = state.hero || {};
-  const resourceIdentity = {
-    ...heroNumbers(state),
-    equipment: Array.isArray(hero.equipment) ? hero.equipment.slice().sort() : [],
-    inventory: stableValue(state.inventory || {}),
-    flags: behaviorRelevantFlags(state),
-    visitedFloors: Object.keys(state.visitedFloors || {}).sort(),
-  };
-  const eventHazardLabel = stableValue(state.triggeredAutoEvents || {});
-  return fingerprintJson({ structural: structuralCandidate, resource: resourceIdentity, event: eventHazardLabel });
+  return fingerprintJson(buildCandidateProjection(simulator, project, ir, state, options));
 }
 
 // Per-state projection (cheap; no actions/successors).
@@ -666,12 +699,14 @@ function analyzeKeyDependencyCorpus(entries, buildBehavior, options) {
 }
 
 module.exports = {
+  CANDIDATE_PROFILES,
   analyzeCandidateKeyCollisions,
   analyzeKeyDependencyCorpus,
   behaviorRelevantFlags,
   buildActionChoiceIdentity,
   buildActionTravelVariant,
   buildCandidateDpKey,
+  buildCandidateProjection,
   buildStateBehavior,
   buildStateProjection,
   buildTerminalProjection,

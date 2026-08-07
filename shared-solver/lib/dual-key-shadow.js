@@ -24,12 +24,30 @@ const { exactStateFingerprint } = require("./solver-job");
 const { buildDpStateKey } = require("./dp-search");
 const {
   buildCandidateDpKey,
+  buildCandidateProjection,
   buildStateBehavior,
   classifyPair,
 } = require("./key-dependency-corpus");
 
 function heroHp(state) {
   return Number(state && state.hero && state.hero.hp || 0);
+}
+
+// Field-level difference between two candidate projections.
+function diffCandidateProjections(left, right) {
+  const differing = { structuralCandidate: [], resourceIdentity: [], eventHazardLabel: [] };
+  const diffKeys = (a, b, out) => {
+    const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+    keys.forEach((key) => {
+      const av = a ? a[key] : undefined;
+      const bv = b ? b[key] : undefined;
+      if (JSON.stringify(av) !== JSON.stringify(bv)) out.push(key);
+    });
+  };
+  diffKeys(left.structuralCandidate, right.structuralCandidate, differing.structuralCandidate);
+  diffKeys(left.resourceIdentity, right.resourceIdentity, differing.resourceIdentity);
+  diffKeys(left.eventHazardLabel, right.eventHazardLabel, differing.eventHazardLabel);
+  return differing;
 }
 
 function percentile(sortedValues, p) {
@@ -79,9 +97,17 @@ function createDualKeyShadow(options) {
     maxCandidateKeysPerExactKey: 0,
   };
 
-  const behaviorCache = new Map(); // stateFingerprint -> behavior entry
+  // Shared behavior cache across shadows/profiles avoids recomputing per-state
+  // behavior (actions/successors) for every profile evaluation.
+  const behaviorCache = config.behaviorCache || new Map(); // stateFingerprint -> behavior entry
   const buckets = new Map(); // candidateKey -> [ { state, behavior, hp, fromProductionAccepted } ]
-  const candidateKeyByExactKey = new Map(); // audit only (not used to shortcut builds)
+  // Partition audit: exact key -> Set<candidateKey> and the reverse.
+  const exactKeyToCandidateKeys = new Map(); // exactKey -> Set<candidateKey>
+  const candidateKeyToExactKeys = new Map(); // candidateKey -> Set<exactKey>
+  const recordsByExactKey = new Map(); // exactKey -> [record]
+  const recordsByCandidateKey = new Map(); // candidateKey -> [record]
+  const splitWitnesses = [];
+  const mergeWitnesses = [];
   const productionAcceptedExactKeys = new Set();
   const unsafeWitnesses = [];
   const analysisErrorWitnesses = [];
@@ -92,7 +118,7 @@ function createDualKeyShadow(options) {
     const started = performance.now();
     const candidateKey = typeof config.candidateKeyBuilder === "function"
       ? config.candidateKeyBuilder(state)
-      : buildCandidateDpKey(simulator, project, ir, state, { goalPredicate });
+      : buildCandidateDpKey(simulator, project, ir, state, { goalPredicate, profile: config.profile });
     diagnostics.candidateKeyTotalMs += performance.now() - started;
     diagnostics.candidateKeyBuildCalls += 1;
     diagnostics.candidateKeySampleMs.push(performance.now() - started);
@@ -157,27 +183,31 @@ function createDualKeyShadow(options) {
     if (candidateCacheMode === "off") {
       candidateKey = buildCandidateKeyForState(state);
     } else {
-      if (candidateKeyByExactKey.has(exactDpKey)) {
+      if (exactKeyToCandidateKeys.has(exactDpKey)) {
         diagnostics.postPassExactKeyReuseHits += 1;
-        candidateKey = candidateKeyByExactKey.get(exactDpKey);
+        candidateKey = Array.from(exactKeyToCandidateKeys.get(exactDpKey))[0];
       } else {
         candidateKey = buildCandidateKeyForState(state);
-        candidateKeyByExactKey.set(exactDpKey, candidateKey);
       }
     }
     record.candidateKey = candidateKey;
+    record.candidateProjection = config.candidateKeyBuilder
+      ? null
+      : buildCandidateProjection(simulator, project, ir, state, { goalPredicate, profile: config.profile });
 
-    // Audit: how many distinct candidate keys does one exact key produce?
-    if (candidateKeyByExactKey.has(exactDpKey)) {
-      const seen = candidateKeyByExactKey.get(exactDpKey);
-      if (!seen.includes(candidateKey)) {
-        seen.push(candidateKey);
-        diagnostics.exactKeysWithMultipleCandidateKeys += 1;
-        diagnostics.maxCandidateKeysPerExactKey = Math.max(diagnostics.maxCandidateKeysPerExactKey, seen.length);
-      }
-    } else {
-      candidateKeyByExactKey.set(exactDpKey, [candidateKey]);
+    // Partition audit: exactKey -> Set<candidateKey> and reverse.
+    if (!exactKeyToCandidateKeys.has(exactDpKey)) {
+      exactKeyToCandidateKeys.set(exactDpKey, new Set());
+      recordsByExactKey.set(exactDpKey, []);
     }
+    exactKeyToCandidateKeys.get(exactDpKey).add(candidateKey);
+    recordsByExactKey.get(exactDpKey).push(record);
+    if (!candidateKeyToExactKeys.has(candidateKey)) {
+      candidateKeyToExactKeys.set(candidateKey, new Set());
+      recordsByCandidateKey.set(candidateKey, []);
+    }
+    candidateKeyToExactKeys.get(candidateKey).add(exactDpKey);
+    recordsByCandidateKey.get(candidateKey).push(record);
 
     const bucket = buckets.get(candidateKey);
     if (!bucket || bucket.length === 0) {
@@ -281,6 +311,81 @@ function createDualKeyShadow(options) {
     const candidateKeyMedianMs = percentile(sortedSamples, 50);
     const candidateKeyP95Ms = percentile(sortedSamples, 95);
 
+    // Partition audit metrics.
+    const uniqueExactKeys = exactKeyToCandidateKeys.size;
+    const uniqueCandidateKeys = candidateKeyToExactKeys.size;
+    let splitExactKeyCount = 0;
+    let splitExtraCandidateKeyCount = 0;
+    let maxCandidateKeysPerExactKey = 0;
+    exactKeyToCandidateKeys.forEach((candidateSet) => {
+      const size = candidateSet.size;
+      if (size > 1) {
+        splitExactKeyCount += 1;
+        splitExtraCandidateKeyCount += size - 1;
+      }
+      maxCandidateKeysPerExactKey = Math.max(maxCandidateKeysPerExactKey, size);
+    });
+    let mergedCandidateKeyCount = 0;
+    let mergedExtraExactKeyCount = 0;
+    let maxExactKeysPerCandidateKey = 0;
+    candidateKeyToExactKeys.forEach((exactSet) => {
+      const size = exactSet.size;
+      if (size > 1) {
+        mergedCandidateKeyCount += 1;
+        mergedExtraExactKeyCount += size - 1;
+      }
+      maxExactKeysPerCandidateKey = Math.max(maxExactKeysPerCandidateKey, size);
+    });
+    let partitionRelation = "equal";
+    if (splitExactKeyCount > 0 && mergedCandidateKeyCount > 0) partitionRelation = "non-comparable";
+    else if (splitExactKeyCount > 0) partitionRelation = "strict-refinement";
+    else if (mergedCandidateKeyCount > 0) partitionRelation = "strict-coarsening";
+
+    // Split / merge witnesses (field-level, capped).
+    if (splitWitnesses.length === 0) {
+      exactKeyToCandidateKeys.forEach((candidateSet, exactDpKey) => {
+        if (candidateSet.size <= 1) return;
+        const records = recordsByExactKey.get(exactDpKey) || [];
+        const byCandidate = new Map();
+        records.forEach((record) => {
+          if (!byCandidate.has(record.candidateKey)) byCandidate.set(record.candidateKey, record);
+        });
+        const candidateKeys = Array.from(candidateSet);
+        const first = byCandidate.get(candidateKeys[0]);
+        const second = byCandidate.get(candidateKeys[1]);
+        if (first && second && first.candidateProjection && second.candidateProjection) {
+          splitWitnesses.push({
+            exactDpKey,
+            candidateKeys,
+            differingProjectionFields: diffCandidateProjections(first.candidateProjection, second.candidateProjection),
+            stateA: { hp: heroHp(first.state), loc: `${first.state.hero.loc.x},${first.state.hero.loc.y}`, triggeredAutoEvents: first.state.triggeredAutoEvents },
+            stateB: { hp: heroHp(second.state), loc: `${second.state.hero.loc.x},${second.state.hero.loc.y}`, triggeredAutoEvents: second.state.triggeredAutoEvents },
+          });
+        }
+      });
+    }
+    if (mergeWitnesses.length === 0) {
+      candidateKeyToExactKeys.forEach((exactSet, candidateKey) => {
+        if (exactSet.size <= 1) return;
+        const records = recordsByCandidateKey.get(candidateKey) || [];
+        const byExact = new Map();
+        records.forEach((record) => {
+          if (!byExact.has(record.exactDpKey)) byExact.set(record.exactDpKey, record);
+        });
+        const exactKeys = Array.from(exactSet);
+        const first = byExact.get(exactKeys[0]);
+        const second = byExact.get(exactKeys[1]);
+        if (first && second) {
+          mergeWitnesses.push({
+            candidateKey,
+            exactKeys: exactKeys.slice(0, 4),
+            stateA: { hp: heroHp(first.state), loc: `${first.state.hero.loc.x},${first.state.hero.loc.y}` },
+            stateB: { hp: heroHp(second.state), loc: `${second.state.hero.loc.x},${second.state.hero.loc.y}` },
+          });
+        }
+      });
+    }
+
     const hypotheticalStateDelta = productionFinalActiveStates != null
       ? productionFinalActiveStates - candidateFinalActiveStates
       : null;
@@ -293,8 +398,20 @@ function createDualKeyShadow(options) {
       statesRecorded: diagnostics.statesRecorded,
       candidateKeyBuildCalls: diagnostics.candidateKeyBuildCalls,
       postPassExactKeyReuseHits: diagnostics.postPassExactKeyReuseHits,
-      exactKeysWithMultipleCandidateKeys: diagnostics.exactKeysWithMultipleCandidateKeys,
-      maxCandidateKeysPerExactKey: diagnostics.maxCandidateKeysPerExactKey,
+      profile: config.profile || "current-full",
+      partitionAudit: {
+        uniqueExactKeys,
+        uniqueCandidateKeys,
+        splitExactKeyCount,
+        splitExtraCandidateKeyCount,
+        maxCandidateKeysPerExactKey,
+        mergedCandidateKeyCount,
+        mergedExtraExactKeyCount,
+        maxExactKeysPerCandidateKey,
+        partitionRelation,
+        splitWitnesses: splitWitnesses.slice(0, (config.maxWitnesses || 20)),
+        mergeWitnesses: mergeWitnesses.slice(0, (config.maxWitnesses || 20)),
+      },
       productionAcceptedEvents: diagnostics.productionAcceptedEvents,
       productionRejectedEvents: diagnostics.productionRejectedEvents,
       candidateAcceptedEvents: diagnostics.candidateAcceptedEvents,
@@ -336,5 +453,6 @@ function createDualKeyShadow(options) {
 
 module.exports = {
   createDualKeyShadow,
+  diffCandidateProjections,
   heroHp,
 };

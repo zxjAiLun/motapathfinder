@@ -61,8 +61,8 @@ function checkExactKeyCacheIndependence() {
   const snap = shadow.snapshot();
   assert.strictEqual(snap.candidateKeyBuildCalls, 2, "both records must independently build the candidate key (gate off)");
   assert.strictEqual(snap.postPassExactKeyReuseHits, 0, "gate must not reuse an exact-key cached candidate key");
-  assert.ok(snap.exactKeysWithMultipleCandidateKeys >= 1, "audit must detect one exact key producing multiple candidate keys");
-  assert.ok(snap.maxCandidateKeysPerExactKey >= 2, "audit must record the fan-out");
+  assert.ok(snap.partitionAudit.splitExactKeyCount >= 1, "audit must detect one exact key producing multiple candidate keys");
+  assert.ok(snap.partitionAudit.maxCandidateKeysPerExactKey >= 2, "audit must record the fan-out");
   assert.strictEqual(snap.candidateFinalUniqueKeys, 2, "two independent candidate keys must stay distinct in the registry");
 }
 
@@ -236,8 +236,11 @@ async function main() {
       statesRecorded: snapshot.statesRecorded,
       candidateKeyBuildCalls: snapshot.candidateKeyBuildCalls,
       postPassExactKeyReuseHits: snapshot.postPassExactKeyReuseHits,
-      exactKeysWithMultipleCandidateKeys: snapshot.exactKeysWithMultipleCandidateKeys,
-      maxCandidateKeysPerExactKey: snapshot.maxCandidateKeysPerExactKey,
+      exactKeysWithMultipleCandidateKeys: snapshot.partitionAudit.splitExactKeyCount,
+      maxCandidateKeysPerExactKey: snapshot.partitionAudit.maxCandidateKeysPerExactKey,
+      splitExtraCandidateKeyCount: snapshot.partitionAudit.splitExtraCandidateKeyCount,
+      mergedCandidateKeyCount: snapshot.partitionAudit.mergedCandidateKeyCount,
+      partitionRelation: snapshot.partitionAudit.partitionRelation,
       productionAcceptedEvents: snapshot.productionAcceptedEvents,
       productionRejectedEvents: snapshot.productionRejectedEvents,
       candidateAcceptedEvents: snapshot.candidateAcceptedEvents,

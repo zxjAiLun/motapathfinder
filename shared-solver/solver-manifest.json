@@ -201,7 +201,8 @@
         "shared-solver/check-route-free-state-contract.js",
         "shared-solver/check-tower-ir-shadow-contract.js",
         "shared-solver/check-key-dependency-contract.js",
-        "shared-solver/check-dual-key-shadow-contract.js"
+        "shared-solver/check-dual-key-shadow-contract.js",
+        "shared-solver/check-candidate-key-promotion-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -2298,6 +2299,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4c Commit 2 Repair: independent candidate key builds (no exact-key cache in gate), equivalent->reject accounting, event vs occupancy split, negative state delta, perf-tracker key phase estimate"
+    },
+    "shared-solver/check-candidate-key-promotion-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.4c Commit 3: partition audit, candidate profile minimality, MT1 promotion gate (Gate A shadow, Gate B experimental A/B via dpStateKeyBuilder)"
     }
   }
 }
