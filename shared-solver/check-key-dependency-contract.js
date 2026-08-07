@@ -44,7 +44,8 @@ const smokeSpec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
 const smokeIr = compileTowerIR(project, smokeSpec, { towerId: "onlyup-smoke" });
 const simulator = makeSimulator(project, smokeSpec, {});
 
-const GOAL_PREDICATE = (state) => Boolean(state.hero && (state.hero.exp || 0) >= 9);
+// The real SolveTask goal predicate: heroAtLeast floorId=MT1 minHero exp>=9.
+const GOAL_PREDICATE = (state) => Boolean(state.floorId === "MT1" && state.hero && (state.hero.exp || 0) >= 9);
 
 // PR-5.4b baseline fingerprints.
 const COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT =
@@ -176,6 +177,89 @@ function checkWitnessDirection() {
   assert.ok(result.actionOnlyLow && result.actionOnlyLow.length > 0, "actionOnlyLow must be populated");
 }
 
+// A choice with MULTIPLE records per side is the production reality; the
+// classifier must consume the complete variant set.
+function checkMultiVariantCoverage() {
+  const choiceA = { fingerprint: "battle:a", summary: "battle:a" };
+  // low: variants A1 (S/20) and A2 (T/30); high: A3 (S/50), A4 (T/60), A5 (U/70).
+  const low = makeBehaviorEntry({
+    hp: 50,
+    choiceSet: ["battle:a"],
+    actions: [
+      { ...choiceA, successor: validSuccessor(20, { structuralCandidate: { id: "S" } }) },
+      { ...choiceA, successor: validSuccessor(30, { structuralCandidate: { id: "T" } }) },
+    ],
+  });
+  const high = makeBehaviorEntry({
+    hp: 100,
+    choiceSet: ["battle:a"],
+    actions: [
+      { ...choiceA, successor: validSuccessor(50, { structuralCandidate: { id: "S" } }) },
+      { ...choiceA, successor: validSuccessor(60, { structuralCandidate: { id: "T" } }) },
+      { ...choiceA, successor: validSuccessor(70, { structuralCandidate: { id: "U" } }) },
+    ],
+  });
+  const covered = classifyPair(low, high);
+  assert.strictEqual(covered.classification, "dominance-safe", "every low variant covered must be dominance-safe");
+
+  // Missed low variant => unsafe (unmatched-low-travel-variant).
+  const lowMissed = makeBehaviorEntry({
+    hp: 50,
+    choiceSet: ["battle:a"],
+    actions: [
+      { ...choiceA, successor: validSuccessor(20, { structuralCandidate: { id: "S" } }) },
+      { ...choiceA, successor: validSuccessor(30, { structuralCandidate: { id: "T" } }) },
+    ],
+  });
+  const highPartial = makeBehaviorEntry({
+    hp: 100,
+    choiceSet: ["battle:a"],
+    actions: [
+      { ...choiceA, successor: validSuccessor(50, { structuralCandidate: { id: "S" } }) },
+    ],
+  });
+  const missed = classifyPair(lowMissed, highPartial);
+  assert.strictEqual(missed.classification, "unsafe", "uncovered low variant must be unsafe");
+  assert.ok(missed.unmatchedLowVariants && missed.unmatchedLowVariants.length > 0, "unmatched low variants must be reported");
+
+  // High-only extra variant is allowed.
+  const lowSingle = makeBehaviorEntry({
+    hp: 50,
+    choiceSet: ["battle:a"],
+    actions: [{ ...choiceA, successor: validSuccessor(20, { structuralCandidate: { id: "S" } }) }],
+  });
+  const highExtra = makeBehaviorEntry({
+    hp: 100,
+    choiceSet: ["battle:a"],
+    actions: [
+      { ...choiceA, successor: validSuccessor(50, { structuralCandidate: { id: "S" } }) },
+      { ...choiceA, successor: validSuccessor(70, { structuralCandidate: { id: "U" } }) },
+    ],
+  });
+  const extra = classifyPair(lowSingle, highExtra);
+  assert.strictEqual(extra.classification, "dominance-safe", "high-only extra variants must not break dominance-safe");
+}
+
+// A failure on the SECOND variant of a choice must be fail-visible.
+function checkNonFirstVariantFailure() {
+  const choiceA = { fingerprint: "battle:a", summary: "battle:a" };
+  const low = makeBehaviorEntry({
+    hp: 50,
+    choiceSet: ["battle:a"],
+    actions: [
+      { ...choiceA, successor: validSuccessor(20) },
+      { ...choiceA, successor: null, successorError: "applyAction exploded on variant 2" },
+    ],
+  });
+  const high = makeBehaviorEntry({
+    hp: 100,
+    choiceSet: ["battle:a"],
+    actions: [{ ...choiceA, successor: validSuccessor(80) }],
+  });
+  const result = classifyPair(low, high);
+  assert.strictEqual(result.classification, "analysis-error", "a non-first variant failure must be analysis-error");
+}
+
 async function captureRepresentative(captureLimit) {
   const spec = JSON.parse(JSON.stringify(smokeSpec));
   spec.goal = { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 9 } };
@@ -212,6 +296,8 @@ async function main() {
   checkMissingSuccessorFailVisible();
   checkTerminalDifferential();
   checkWitnessDirection();
+  checkMultiVariantCoverage();
+  checkNonFirstVariantFailure();
 
   const { execution, captured } = await captureRepresentative(200);
   assert.strictEqual(execution.result.found, true, "representative must complete");
@@ -259,6 +345,8 @@ async function main() {
       missingSuccessorFailVisible: true,
       terminalDifferential: true,
       witnessDirectionExplicit: true,
+      multiVariantCoverage: true,
+      nonFirstVariantFailureFailVisible: true,
       representativeCollisionsNonEmpty: true,
       analysisErrorZero: true,
       unclassifiedZero: true,
@@ -272,11 +360,13 @@ async function main() {
       statesInCandidateCollisionGroups: analysis.statesInCandidateCollisionGroups,
       classificationCounts: analysis.classificationCounts,
       dominanceSafeCount: analysis.dominanceSafeCount,
+      equivalentCount: analysis.equivalentCount,
       metadataOnlyCount: analysis.metadataOnlyCount,
       unsafeCount: analysis.unsafeCount,
       analysisErrorCount: analysis.analysisErrorCount,
       unclassifiedCount: analysis.unclassifiedCount,
       mismatchBreakdown: analysis.mismatchBreakdown,
+      variantDiagnostics: analysis.variantDiagnostics,
       unsafeWitnesses: analysis.unsafeWitnesses.slice(0, 10),
     },
     productionParity: {

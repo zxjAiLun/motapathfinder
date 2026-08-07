@@ -2289,7 +2289,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.4c Commit 1 Repair 2: action choice vs travel variant separation, fail-visible successor errors, terminal projection with real goal predicate, dominance-aware classification"
+      "notes": "PR-5.4c Commit 1 Repair 3: complete travel-variant-set dominance coverage (findChoiceRecords, no first-record-only), equivalent vs metadata-only split, exact goal predicate floorId+exp"
     }
   }
 }
