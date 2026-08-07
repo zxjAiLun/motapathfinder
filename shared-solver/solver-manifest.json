@@ -2313,7 +2313,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.4d: guarded MT1 candidate key profile (fail-closed, fingerprint-bound) + paired A/B performance gate with real strict replay"
+      "notes": "PR-5.4d Repair: dpKeyProfile alone selects guarded experimental builder (pinned approved-baseline fingerprints, semantic drift fail-closed), registered=acceptedStates, paired-round correctness pinned"
     }
   }
 }

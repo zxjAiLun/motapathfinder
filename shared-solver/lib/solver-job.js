@@ -327,8 +327,29 @@ async function executeSolveJob(task, {
     total: segments.length,
     attempt: 1,
   });
+  // dpKeyProfile resolution at the execution boundary: the profile ALONE
+  // selects the guarded experimental builder (or throws for unknown profiles).
+  const executeConfig = { ...(task && task.executeConfig || {}) };
+  const profileResolution = (() => {
+    try {
+      return require("./guarded-candidate-key").resolveDpKeyProfile({
+        project,
+        regionSpec,
+        simulator,
+        dpKeyProfile: executeConfig.dpKeyProfile || null,
+        options: { towerId: normalizedTask.tower && normalizedTask.tower.id },
+      });
+    } catch (error) {
+      progress.setPhase("failed");
+      progress.flush();
+      throw error;
+    }
+  })();
+  if (profileResolution.builder) {
+    executeConfig.dpStateKeyBuilder = profileResolution.builder;
+  }
   const result = runMilestoneGraph(simulator, initialState, milestoneSpec, {
-    ...(task && task.executeConfig || {}),
+    ...executeConfig,
     objectiveSpec: objective,
     observer: createProgressObserver(progress),
     shouldStop: stopRequested,
