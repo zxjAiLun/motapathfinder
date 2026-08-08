@@ -512,6 +512,11 @@ async function executeSolveJob(task, {
     objectiveValue,
     cancelled: false,
     simulator,
+    profileSelection: {
+      requestedProfile: profileResolution.requestedProfile,
+      effectiveProfile: profileResolution.effectiveProfile,
+      selectionReason: profileResolution.selectionReason,
+    },
   };
 }
 

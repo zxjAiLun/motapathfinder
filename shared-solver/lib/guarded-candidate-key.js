@@ -2,18 +2,24 @@
 
 /**
  * PR-5.4d Repair — Self-Contained Guarded MT1 Candidate Key + Pinned Baseline.
+ * PR-5.4f — MT1 Default Promotion + Explicit Rollback.
  *
- * dpKeyProfile is now a REAL selection interface:
- *   - "production-region" (default) / absent -> buildDpStateKey (byte-for-byte)
- *   - "experimental-mt1-tower-ir-v1" -> the guarded TowerIR candidate builder,
- *     selected by the profile ALONE (no dpStateKeyBuilder injection required).
+ * dpKeyProfile is a REAL selection interface with three distinct semantics:
+ *   - "production-region" (EXPLICIT) -> old key path, builder=null (rollback).
+ *     NEVER auto-promoted, even on an approved MT1 scope.
+ *   - omitted (implicit default) -> SCOPE-AWARE FALLBACK: the approved MT1
+ *     scope resolves to the guarded TowerIR candidate builder; any other
+ *     scope stays production-region (never throws, never expands the promo).
+ *   - "experimental-mt1-tower-ir-v1" (EXPLICIT) -> the guarded candidate
+ *     builder, fail-closed on any baseline fingerprint / scope drift.
  *   - any other explicit profile -> throw before DP starts (fail-closed).
  *
- * The experimental profile is PINNED to the approved MT1 baseline via expected
+ * The candidate profile is PINNED to the approved MT1 baseline via expected
  * fingerprints (project / region spec / TowerIR source / TowerIR).  Runtime
  * project or region semantic drift (enemy stats, items, map, events, stale IR)
- * fails closed: the actual compiled fingerprints are compared to the pinned
- * approved-baseline values and any mismatch throws.
+ * fails closed for EXPLICIT experimental selection: the actual compiled
+ * fingerprints are compared to the pinned approved-baseline values and any
+ * mismatch throws.
  */
 
 const { buildDpStateKey } = require("./dp-search");
@@ -107,10 +113,16 @@ function createGuardedResolver(input) {
   const guard = computeBaselineGuard(project, regionSpec, ir);
   const allowedFloors = guard.floors.slice();
 
+  // The resolver is installed ONLY as the candidate builder (production uses
+  // builder=null and the built-in buildDpStateKey).  Therefore an ABSENT
+  // searchConfig.dpKeyProfile (implicit default) means the promoted candidate
+  // path, not production.  An EXPLICIT production-region inside the resolver is
+  // reachable only if a caller injects it directly (rollback installs builder=null,
+  // so this is not hit by the real execution path).
   function resolver(state, searchConfig) {
     const profile = searchConfig && searchConfig.dpKeyProfile
       ? searchConfig.dpKeyProfile
-      : PRODUCTION_PROFILE;
+      : EXPERIMENTAL_PROFILE;
     if (profile === PRODUCTION_PROFILE) {
       return buildDpStateKey(simulator, state, searchConfig);
     }
@@ -131,39 +143,100 @@ function createGuardedResolver(input) {
   return { resolver, guard, pinned };
 }
 
-// Execution-boundary profile resolution.  dpKeyProfile ALONE selects the
-// builder; unknown profiles throw.  Experimental compiles the TowerIR and
-// validates against the pinned approved baseline.
-function resolveDpKeyProfile(input) {
-  const { project, regionSpec, simulator, dpKeyProfile } = input;
-  const options = input.options || {};
-  const profile = dpKeyProfile || PRODUCTION_PROFILE;
-  if (profile === PRODUCTION_PROFILE) {
-    return { profile: PRODUCTION_PROFILE, builder: null, guard: null };
-  }
-  if (profile !== EXPERIMENTAL_PROFILE) {
-    throw new Error(`unknown dpKeyProfile: ${profile}`);
-  }
-  const towerId = options.towerId || (regionSpec && regionSpec.id) || "region";
-  const ir = compileTowerIR(project, regionSpec, { towerId });
-  const pf = buildProjectFingerprint(project);
-  const actual = {
-    projectFingerprint: pf.fingerprintSha256,
-    projectStructuralFingerprint: pf.structuralFingerprintSha256,
-    regionSpecFingerprint: computeRegionSpecFingerprint(regionSpec),
-    towerIrSourceFingerprint: ir.sourceFingerprint,
-    towerIrFingerprint: ir.irFingerprint,
-    candidateProfileVersion: deriveCandidateProfileVersion(CANDIDATE_PROFILE),
-  };
-  assertMatchesApprovedBaseline(actual, APPROVED_MT1_BASELINE);
-  const { resolver, guard } = createGuardedResolver({
+// Non-throwing: does the given ACTUAL baseline guard match the approved MT1
+// baseline?  Used by the implicit default path to decide whether the approved
+// MT1 scope applies (fall back to production instead of throwing on drift).
+function guardMatchesApprovedBaseline(actual) {
+  return Object.keys(EXPECTED_FIELD_OF).every((expectedKey) => {
+    const actualField = EXPECTED_FIELD_OF[expectedKey];
+    return actual[actualField] === APPROVED_MT1_BASELINE[expectedKey];
+  });
+}
+
+// Builds the guarded candidate resolution for an approved MT1 scope.  Assumes
+// the caller has already confirmed (or will assert) the baseline match; it
+// reuses the already-compiled TowerIR rather than recompiling.
+function buildApprovedCandidateResolution(project, regionSpec, ir, simulator, options, reason, requestedProfile) {
+  const guard = computeBaselineGuard(project, regionSpec, ir);
+  const { resolver } = createGuardedResolver({
     simulator,
     project,
     ir,
     regionSpec,
     options: { ...options, pinned: APPROVED_MT1_BASELINE },
   });
-  return { profile: EXPERIMENTAL_PROFILE, builder: resolver, guard };
+  return {
+    profile: EXPERIMENTAL_PROFILE,
+    builder: resolver,
+    guard,
+    requestedProfile,
+    effectiveProfile: EXPERIMENTAL_PROFILE,
+    selectionReason: reason,
+  };
+}
+
+// Execution-boundary profile resolution.  dpKeyProfile selects the builder.
+//   - explicit "production-region" -> rollback (builder=null), never promoted.
+//   - omitted -> scope-aware fallback: approved MT1 -> candidate, else production.
+//   - explicit "experimental-mt1-tower-ir-v1" -> guarded candidate, fail-closed.
+//   - unknown -> throw before DP starts.
+function resolveDpKeyProfile(input) {
+  const { project, regionSpec, simulator, dpKeyProfile } = input;
+  const options = input.options || {};
+  const requested = dpKeyProfile == null ? null : String(dpKeyProfile);
+
+  // 1) Explicit rollback. production-region ALWAYS selects the old key path,
+  //    even on an approved MT1 scope; it must never auto-promote back.
+  if (requested === PRODUCTION_PROFILE) {
+    return {
+      profile: PRODUCTION_PROFILE,
+      builder: null,
+      guard: null,
+      requestedProfile: PRODUCTION_PROFILE,
+      effectiveProfile: PRODUCTION_PROFILE,
+      selectionReason: "explicit-rollback",
+    };
+  }
+
+  // 2) Implicit default (profile omitted): SCOPE-AWARE FALLBACK.  Only the
+  //    approved MT1 scope resolves to the promoted candidate; every other scope
+  //    stays production-region (never throws, never expands the promotion).
+  if (requested == null) {
+    const towerId = options.towerId || (regionSpec && regionSpec.id) || "region";
+    const ir = compileTowerIR(project, regionSpec, { towerId });
+    const guard = computeBaselineGuard(project, regionSpec, ir);
+    if (guardMatchesApprovedBaseline(guard)) {
+      return buildApprovedCandidateResolution(project, regionSpec, ir, simulator, options, "approved-mt1-default", null);
+    }
+    return {
+      profile: PRODUCTION_PROFILE,
+      builder: null,
+      guard: null,
+      requestedProfile: null,
+      effectiveProfile: PRODUCTION_PROFILE,
+      selectionReason: "scope-unapproved-fallback",
+    };
+  }
+
+  // 3) Explicit experimental: preserve the existing fail-closed guard.
+  if (requested === EXPERIMENTAL_PROFILE) {
+    const towerId = options.towerId || (regionSpec && regionSpec.id) || "region";
+    const ir = compileTowerIR(project, regionSpec, { towerId });
+    const pf = buildProjectFingerprint(project);
+    const actual = {
+      projectFingerprint: pf.fingerprintSha256,
+      projectStructuralFingerprint: pf.structuralFingerprintSha256,
+      regionSpecFingerprint: computeRegionSpecFingerprint(regionSpec),
+      towerIrSourceFingerprint: ir.sourceFingerprint,
+      towerIrFingerprint: ir.irFingerprint,
+      candidateProfileVersion: deriveCandidateProfileVersion(CANDIDATE_PROFILE),
+    };
+    assertMatchesApprovedBaseline(actual, APPROVED_MT1_BASELINE);
+    return buildApprovedCandidateResolution(project, regionSpec, ir, simulator, options, "explicit-experimental", EXPERIMENTAL_PROFILE);
+  }
+
+  // 4) Unknown explicit profile: fail closed before DP starts.
+  throw new Error(`unknown dpKeyProfile: ${requested}`);
 }
 
 module.exports = {
@@ -173,5 +246,6 @@ module.exports = {
   PRODUCTION_PROFILE,
   assertMatchesApprovedBaseline,
   createGuardedResolver,
+  guardMatchesApprovedBaseline,
   resolveDpKeyProfile,
 };
