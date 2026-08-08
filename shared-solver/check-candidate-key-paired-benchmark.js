@@ -28,6 +28,7 @@ const { makeSimulator, executeSolveJob } = require("./lib/solver-job");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
 const {
   EXPERIMENTAL_PROFILE,
+  PRODUCTION_PROFILE,
   resolveDpKeyProfile,
 } = require("./lib/guarded-candidate-key");
 
@@ -159,8 +160,8 @@ function buildReferenceTask() {
   });
 }
 
-function checkProfileAloneSelectsExperimentalBuilder(normalizedSpec) {
-  // dpKeyProfile ALONE (no dpStateKeyBuilder) must drive the candidate path.
+function checkProfileSelectionSemantics(normalizedSpec) {
+  // dpKeyProfile ALONE (no dpStateKeyBuilder) drives the candidate path.
   const resolution = resolveDpKeyProfile({
     project,
     regionSpec: normalizedSpec,
@@ -170,13 +171,27 @@ function checkProfileAloneSelectsExperimentalBuilder(normalizedSpec) {
   });
   assert.ok(resolution.builder, "experimental profile must resolve a builder by itself");
   assert.strictEqual(resolution.profile, EXPERIMENTAL_PROFILE, "resolved profile must be experimental");
-  const productionResolution = resolveDpKeyProfile({
+  // Explicit rollback: production-region NEVER auto-promotes, even on approved MT1.
+  const rollback = resolveDpKeyProfile({
+    project,
+    regionSpec: normalizedSpec,
+    simulator,
+    dpKeyProfile: PRODUCTION_PROFILE,
+  });
+  assert.strictEqual(rollback.builder, null, "explicit production-region must NOT inject a builder");
+  assert.strictEqual(rollback.effectiveProfile, PRODUCTION_PROFILE, "rollback must resolve to production");
+  assert.strictEqual(rollback.selectionReason, "explicit-rollback", "rollback must carry explicit-rollback reason");
+  // Implicit default on approved MT1 scope -> promoted candidate (Gate A).
+  const promotedDefault = resolveDpKeyProfile({
     project,
     regionSpec: normalizedSpec,
     simulator,
     dpKeyProfile: null,
+    options: { towerId: "onlyup-smoke", goalPredicate: GOAL_PREDICATE },
   });
-  assert.strictEqual(productionResolution.builder, null, "absent profile must not inject a builder");
+  assert.ok(promotedDefault.builder, "omitted profile on approved MT1 must promote to a candidate builder");
+  assert.strictEqual(promotedDefault.effectiveProfile, EXPERIMENTAL_PROFILE, "omitted profile must resolve to experimental on approved scope");
+  assert.strictEqual(promotedDefault.selectionReason, "approved-mt1-default", "omitted profile must carry approved-mt1-default reason");
   return resolution.guard;
 }
 
@@ -257,13 +272,14 @@ async function main() {
   const smoke = process.argv.includes("--smoke");
   const referenceTask = buildReferenceTask();
   const normalizedSpec = (referenceTask.normalizedTask || referenceTask).tower.region.spec;
-  const guard = checkProfileAloneSelectsExperimentalBuilder(normalizedSpec);
+  const guard = checkProfileSelectionSemantics(normalizedSpec);
   await checkUnknownProfileFailClosed(normalizedSpec);
   checkSemanticDriftFailClosed(normalizedSpec);
 
   // Correctness gate: A + B with real strict replay; B selected by profile
-  // ALONE (no builder injection).
-  const runA = await runSearch({ strictReplay: true });
+  // ALONE (no builder injection).  A is the EXPLICIT rollback path now that the
+  // omitted profile defaults to the promoted candidate on approved MT1.
+  const runA = await runSearch({ dpKeyProfile: PRODUCTION_PROFILE, strictReplay: true });
   const runB = await runSearch({ dpKeyProfile: EXPERIMENTAL_PROFILE, strictReplay: true });
   assert.strictEqual(runA.correctness.strictReplayVerified, true, "A strict replay must verify");
   assert.strictEqual(runB.correctness.strictReplayVerified, true, "B strict replay must verify");
@@ -276,13 +292,15 @@ async function main() {
   assert.strictEqual(runA.scale.registered, 156, "A canonical registered must be 156");
   assert.strictEqual(runB.scale.registered, 156, "B canonical registered must be 156");
 
-  // Paired benchmark rounds (search-only).  B selected by profile alone.
-  // `--smoke` runs a single A/B pair for fast CI feedback; the full 8-round
-  // order runs in qualification CI only.
+  // Paired benchmark rounds (search-only).  A = explicit rollback, B = explicit
+  // experimental.  `--smoke` runs a single A/B pair for fast CI feedback; the
+  // full 8-round order runs in qualification CI only.
   const pairedOrder = smoke ? ["A", "B"] : ["A", "B", "B", "A", "A", "B", "B", "A"];
   const rounds = [];
   for (const side of pairedOrder) {
-    const run = await runSearch(side === "B" ? { dpKeyProfile: EXPERIMENTAL_PROFILE } : {});
+    const run = await runSearch(side === "B"
+      ? { dpKeyProfile: EXPERIMENTAL_PROFILE }
+      : { dpKeyProfile: PRODUCTION_PROFILE });
     // Per-round correctness pinned to baseline (cheap, no browser).
     assert.strictEqual(run.correctness.winnerExactFingerprint, COMMIT2_REPRESENTATIVE_WINNER_FINGERPRINT, `${side} round winner must match baseline`);
     assert.strictEqual(run.correctness.routeFingerprint, COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT, `${side} round route must match baseline`);
@@ -314,12 +332,14 @@ async function main() {
     keyBuildTotalMs: median(field(aRounds, "keyBuildTotalMs")),
     enumerateTotalMs: median(field(aRounds, "enumerateTotalMs")),
     applyTotalMs: median(field(aRounds, "applyTotalMs")),
+    reachabilityTotalMs: median(field(aRounds, "reachabilityTotalMs")),
     wallMs: median(field(aRounds, "wallMs")),
   };
   const medianB = {
     keyBuildTotalMs: median(field(bRounds, "keyBuildTotalMs")),
     enumerateTotalMs: median(field(bRounds, "enumerateTotalMs")),
     applyTotalMs: median(field(bRounds, "applyTotalMs")),
+    reachabilityTotalMs: median(field(bRounds, "reachabilityTotalMs")),
     wallMs: median(field(bRounds, "wallMs")),
   };
 
@@ -334,6 +354,13 @@ async function main() {
   const reachabilityTotalReduced = Boolean(
     medianB.reachabilityTotalMs != null && medianA.reachabilityTotalMs != null &&
     medianB.reachabilityTotalMs < medianA.reachabilityTotalMs,
+  );
+  // P2-2 regression guard: reachabilityTotalMs must be measured on both sides,
+  // not silently undefined (which previously made reachabilityTotalReduced a
+  // hard false).
+  assert.ok(
+    typeof medianA.reachabilityTotalMs === "number" && typeof medianB.reachabilityTotalMs === "number",
+    "reachabilityTotalMs must be measured on both A and B",
   );
   const reachabilityAttribution = {
     A: {

@@ -29,6 +29,7 @@ const { createPerfTracker, setActivePerfTracker } = require("./lib/perf");
 const { makeSimulator, executeSolveJob } = require("./lib/solver-job");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
 const { buildCandidateDpKey } = require("./lib/key-dependency-corpus");
+const { PRODUCTION_PROFILE } = require("./lib/guarded-candidate-key");
 
 const ROOT = path.resolve(__dirname, "..");
 const ONLY_UP_ROOT = path.join(ROOT, "Only upV2.1", "Only upV2.1");
@@ -155,9 +156,11 @@ function pickMinimalSafe(profiles, registry, records, behaviorCache) {
 }
 
 async function main() {
-  // Representative production run (A) with the recorder + real strict replay.
+  // Representative production run (A) via EXPLICIT rollback (the omitted
+  // profile now defaults to the promoted candidate on approved MT1), with the
+  // recorder + real strict replay.
   const records = [];
-  const runA = await runRepresentative({ recorder: (record) => records.push(record), strictReplay: true });
+  const runA = await runRepresentative({ dpKeyProfile: PRODUCTION_PROFILE, recorder: (record) => records.push(record), strictReplay: true });
   assert.strictEqual(runA.execution.result.found, true, "representative (A) must complete");
   assert.ok(records.length > 0, "recorder must capture enqueue decisions");
   const registry = runA.registry;
