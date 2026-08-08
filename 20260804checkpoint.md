@@ -546,18 +546,18 @@ PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 gua
 - **PR-5.4b**：perf baseline + canonical route-free state + TowerIR shadow 已关闭。热点明确：`buildDpStateKey ≈ reachability ≈ 18.7s`（代表基线主导项）。
 - **PR-5.4c**：StructuralKey 研究已关闭，**决策翻转 PROMOTION_CANDIDATE**。TowerIR structural candidate 把 62 exact keys 拆成 99（strict-refinement），split field distribution 证明 **32/32 split 唯一来自 `structuralCandidate.startComponentId`**；删除它后 `62→62 / equal partition / 0 unsafe`。即 TowerIR reachable closure 本身够用，startComponentId 是冗余 anchor，**无需 battle-closure-aware 新算法**。
 - **PR-5.4d**：guarded experimental profile 已关闭，**GUARDED_PROFILE_APPROVED**。`dpKeyProfile` 成为真正选择接口（execution-boundary `resolveDpKeyProfile`：production-region 默认 / experimental-mt1-tower-ir-v1 单独启用 / 未知 profile 在 DP 前 fail-closed）；pinned `APPROVED_MT1_BASELINE` 绑定 6 项权威指纹（project/projectStructural/regionSpec 结构化/towerIrSource/towerIr/candidateProfileVersion），语义漂移（enemy stats/RegionSpec/wrong floor）全部 fail-closed。Paired 结果：**A key 38s vs B key 0.2s（~189x）；wall 42s vs 25s（~0.6x）**，A/B correctness byte-exact + strict replay 双验证。
-- **PR-5.4e（进行中）**：MT1 Workload Matrix + Default-Promotion Decision。6 个真实 MT1 workload（exp6/8/9 阈值 + maximize-atk 第二 objective + 两个 tileRemoved 终点），每个 A/B 双语料 partition audit + exact correctness + 结构计数 + 真实 reachability 归因。
+- **PR-5.4e（Repair 完成）**：MT1 Workload Matrix + Default-Promotion Decision。6 个真实 MT1 workload（exp6/8/9 阈值 + maximize-atk 第二 objective + 两个 tileRemoved 终点），每个 A/B 双语料 partition audit + exact correctness + 结构计数 + 真实 reachability 归因。**Repair 收口 3 个 P1 + 2 个 P2**：partition audit 改按每个 workload 自己的权威 goal predicate（`buildSegmentGoalPredicate`，不再硬编码 exp>=9）；6 个 workload 全部建立真实 pinned baseline（winner/route/objective fp/value，A==pin && B==pin，未 pin 则 fail-closed）；reachability cache stats 改从真正参与 solve 的 simulator 读取（`executeSolveJob` 返回内部 simulator，不再是闲置 sim 的 0/0）；partition audit 改 cheap-equality-first，只有实际发生 merge 才跑 behavior CEGAR（当前 6 个 workload 均 equal partition → 不跑，matrix 从 ~4min/workload 降到单 workload 几十秒）。verdict 现为 **MT1_DEFAULT_PROMOTION_ELIGIBLE**。
 
 **PR-5.4e 已发现的重要事实**：smoke RegionSpec 自带 `dpBudget.maxRuntimeMs: 10000`（10s 时间预算）。在时间预算下 production 搜索是**时间受限非确定**的——tile4_1 workload 的 A 搜索两次跑出不同 winner（54/31 expansions，val 1199/1019）。合同必须 `maxRuntimeMs=0`（跑到底）才能做确定性 A/B 对比。这是 production 求解器的真实属性，需后续单独处理。
 
-reachability 真实归因（perf tracker `reachability` phase + simulator cache stats）：**production A 266 次 BFS/34s vs experimental B 123 次/13s**——候选 key 消除 key-path 冗余 walk，总 reachability 工作量**下降**而非转移。
+reachability 真实归因（perf tracker `reachability` phase + simulator cache stats）：**production A 266 次 BFS/34s vs experimental B 123 次/13s**——候选 key 消除 key-path 冗余 walk，总 reachability 工作量**下降**而非转移。Repair 后 cache stats 来自真实 solve simulator（A hits=151/misses=266，B hits=26/misses=123）。
 
 ## 下一主线最值得做的事
 
-1. **PR-5.4e 收口**：等待全量 6-workload matrix 结果。若全部 exact correctness + equal partition + 0 unsafe → `MT1_DEFAULT_PROMOTION_ELIGIBLE`；任一 divergence → `KEEP_GUARDED_EXPERIMENTAL` + 最小 witness。
-2. **MT1 默认晋级决策**（若 eligible）：把 experimental profile 切为 MT1 默认（guarded），下一轮做实际 default switch。
-3. **production 时间预算非确定性**：`dpBudget.maxRuntimeMs` 下的搜索结果依赖机器速度，需要确定性 budget 语义（按 expansion 而非 wall time）或文档化非确定。
-4. **reachability 缓存/复用**（性能下一热点）：enumerateActions 内的 walk 是 B 侧新热点，候选 key 已把总 BFS 从 266 降到 123，进一步做 cache/reuse。
+1. **PR-5.4e 默认晋级开关**：matrix 已全部 exact correctness + equal partition + 0 unsafe + 全 pin → 已满足 `MT1_DEFAULT_PROMOTION_ELIGIBLE`。下一步做实际 default switch（把 experimental profile 切为 MT1 默认 guarded），并做一轮新的全塔回归。
+2. **production 时间预算非确定性**：`dpBudget.maxRuntimeMs` 下的搜索结果依赖机器速度，需要确定性 budget 语义（按 expansion 而非 wall time）或文档化非确定。
+3. **reachability 缓存/复用**（性能下一热点）：enumerateActions 内的 walk 是 B 侧新热点，候选 key 已把总 BFS 从 266 降到 123，进一步做 cache/reuse。
+4. **fast CI <3min**（P2-2，未排期）：当前 fast ≈5min（solver-job 95s + route-free 50s + tower-ir 28s + candidate-smoke 104s）。candidate-key-smoke 实际仍跑 4 次 solve（strict A/B + timed A/B）。要达标需在 fast 内部按分支并行，wall = max(各分支)。
 5. **multi-Region / CompactState / Rust core**：在 MT1 默认晋级后再推进。
 
 直到出现第一条：
