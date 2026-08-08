@@ -110,7 +110,7 @@ function loadSolverConfig(projectRoot, project, args) {
   const checkpointPath =
     (args || {})["checkpoint-store"] ||
     (rawConfig.checkpoints && rawConfig.checkpoints.path) ||
-    `solver/checkpoints/${profileName}.checkpoint-skyline.json`;
+    `.runtime/solver-checkpoints/${profileName}.checkpoint-skyline.json`;
   const checkpointEnabled = parseBooleanFlag((args || {})["checkpoint-enabled"], rawConfig.checkpoints ? rawConfig.checkpoints.enabled !== false : true);
   return {
     configPath: fs.existsSync(configPath) ? configPath : null,

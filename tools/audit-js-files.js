@@ -9,7 +9,6 @@ const repoRoot = path.resolve(__dirname, "..");
 const docsDir = path.join(repoRoot, "docs");
 const inventoryPath = path.join(docsDir, "js-inventory.md");
 const entrypointsPath = path.join(docsDir, "solver-entrypoints.md");
-const legacyBaselinePath = path.join(docsDir, "legacy-tower-solver-js-baseline.json");
 const solverManifestPath = path.join(repoRoot, "shared-solver", "solver-manifest.json");
 
 let cachedSolverManifest = null;
@@ -117,7 +116,7 @@ const EXCLUDED_DIRS = new Set([
   "venv",
 ]);
 
-const LEGACY_TOWER_SOLVER_ROOTS = [
+const FORBIDDEN_TOWER_SOLVER_ROOTS = [
   "Only upV2.1/Only upV2.1/solver/",
   "whiteisland（9）/solver/",
 ];
@@ -163,7 +162,7 @@ function classifyFile(relPath) {
   if (relPath.startsWith("shared-solver/")) {
     return manifestCategory(relPath, "canonical solver");
   }
-  if (isLegacyTowerSolverPath(relPath)) return "legacy solver candidate";
+  if (isForbiddenTowerSolverPath(relPath)) return "forbidden tower solver js";
   if (relPath.startsWith("routes/") || relPath.includes("/routes/")) return "suspicious route js";
   if (relPath.startsWith("logs/") || relPath.includes("/logs/")) return "suspicious log js";
   if (relPath.includes("/project/")) return "tower project data/runtime";
@@ -178,8 +177,8 @@ function isTowerRuntimePath(relPath) {
   return TOWER_RUNTIME_DIRS.some((dirName) => parts.includes(dirName));
 }
 
-function isLegacyTowerSolverPath(relPath) {
-  return LEGACY_TOWER_SOLVER_ROOTS.some((root) => relPath.startsWith(root));
+function isForbiddenTowerSolverPath(relPath) {
+  return FORBIDDEN_TOWER_SOLVER_ROOTS.some((root) => relPath.startsWith(root));
 }
 
 function recommendedAction(category, relPath) {
@@ -211,8 +210,8 @@ function recommendedAction(category, relPath) {
       return "stable public API surface for agents; keep thin";
     case "solver support":
       return "keep as supporting solver module";
-    case "legacy solver candidate":
-      return "freeze; archive later; do not add or edit solver JS here";
+    case "forbidden tower solver js":
+      return "remove; tower-local solver implementations are forbidden; all solver code belongs in shared-solver/";
     case "tower project data/runtime":
       return "leave untouched as h5mota project/runtime";
     case "suspicious route js":
@@ -406,10 +405,6 @@ function writeEntrypoints(rows) {
     findExisting("whiteisland（9）/solver.sh"),
     findExisting("whiteisland（9）/solver.config.json"),
   ].filter(Boolean);
-  const legacySolvers = rows
-    .filter((row) => row.category === "legacy solver candidate")
-    .map((row) => row.path)
-    .sort();
 
   const lines = [];
   lines.push("# Solver Entrypoints");
@@ -424,9 +419,9 @@ function writeEntrypoints(rows) {
   lines.push("- Public-layer write boundaries are documented in `docs/development-boundaries.md`.");
   lines.push("- Region/segment canonical DP is the correctness path; `linear-main` / beam / macro search is auxiliary exploration. See `docs/solver-architecture.md`.");
   lines.push("- Experimental modules (`resource-timing`, `resource-deferral`, `milestone-decomposer`) are candidate generators, not impossibility proofs.");
-  lines.push("- Tower `solver/` directories are legacy copies and are frozen.");
+  lines.push("- Tower-local `solver/` directories are forbidden; `npm run check:no-tower-solver-js --prefix shared-solver` fails if solver JS appears under them.");
   lines.push("- Tower project/runtime JavaScript under `project/`, `libs/`, `extensions/`, `_server/`, and `main.js` is not solver code and should remain in place.");
-  lines.push("- New solver work should land in `shared-solver/`, `tools/`, or documented agent sandboxes, not inside tower `solver/` directories.");
+  lines.push("- New solver work should land in `shared-solver/`, `tools/`, or documented agent sandboxes only.");
   lines.push("- Smoke-grade checks may pass with `found=false`; only closure-grade checks assert found + strict replay.");
   lines.push("");
   lines.push("## Tower Wrappers");
@@ -471,22 +466,16 @@ function writeEntrypoints(rows) {
   for (const entrypoint of sharedCli) lines.push(`- \`${entrypoint}\``);
   if (sharedCli.length === 0) lines.push("- None found.");
   lines.push("");
-  lines.push("## Legacy Solver Copies");
-  lines.push("");
-  lines.push("These files are inventoried for migration/archive only. Do not edit them for new solver behavior.");
-  lines.push("");
-  for (const legacyPath of legacySolvers) lines.push(`- \`${legacyPath}\``);
-  if (legacySolvers.length === 0) lines.push("- None found.");
-  lines.push("");
   lines.push("## Checks");
   lines.push("");
   lines.push("- Regenerate inventory: `node tools/audit-js-files.js`");
   lines.push("- Check solver manifest coverage: `node tools/audit-js-files.js --check-manifest`");
-  lines.push("- Freeze legacy tower solver JS: `npm run check:no-tower-solver-js --prefix shared-solver`");
+  lines.push("- Forbid tower-local solver JS: `npm run check:no-tower-solver-js --prefix shared-solver`");
+  lines.push("- CI fast layer (every push/PR): manifest, no-tower-solver-js, solver-job, launcher, route-free-state, tower-ir-shadow, candidate-key-smoke");
+  lines.push("- CI qualification layer (marker commits `docs: record/close/baseline/promotion/qualification`, PRs requesting qualification, or `workflow_dispatch`): key-dependency, dual-key-shadow, perf-baseline, candidate-key-promotion, candidate-key-paired-benchmark, MT1 workload matrix (6 parallel workloads)");
   lines.push("- Check public-layer writes: `npm run check:public-layer-boundaries --prefix shared-solver`");
   lines.push("- Check strict agent output writes: `npm run check:agent-boundaries --prefix shared-solver -- --agent=<agent-name>`");
   lines.push("- Teacher divergence audit: `npm run check:teacher-divergence --prefix shared-solver`");
-  lines.push("- Refresh legacy baseline only after intentional archive/freeze reset: `node tools/audit-js-files.js --refresh-legacy-baseline`");
   lines.push("- Refresh solver manifest module list: `node shared-solver/scripts/generate-solver-manifest.js`");
   lines.push("");
   lines.push("## Shared-Solver Module Boundaries");
@@ -500,84 +489,20 @@ function writeEntrypoints(rows) {
   lines.push("| Replay | Route schema, route snapshots, live replay sessions, GUI playback | `shared-solver/lib/route-store.js`, `shared-solver/lib/route-snapshot.js`, `shared-solver/lib/replay-session.js`, `shared-solver/route-gui.js` |");
   lines.push("| CLI | Thin command wrappers only; no core search logic should live here | `shared-solver/run-segmented-dp.js`, `shared-solver/run-adaptive-segment-dp.js`, `shared-solver/verify-route-live.js` |");
   lines.push("");
-  lines.push("Legacy tower copies of replay/search files, including `solver/route-gui.js` and `solver/lib/replay-session.js`, should be archived in a later phase after shared replay commands cover the same workflows.");
   fs.writeFileSync(entrypointsPath, `${lines.join("\n")}\n`);
 }
 
-function writeLegacyBaseline(rows) {
-  const legacyRows = rows
-    .filter((row) => isLegacyTowerSolverPath(row.path))
-    .map((row) => ({
-      path: row.path,
-      sha256: row.sha256,
-      category: row.category,
-      recommendedAction: row.recommendedAction,
-    }))
-    .sort((left, right) => left.path.localeCompare(right.path));
-
-  const baseline = {
-    generatedBy: "node tools/audit-js-files.js",
-    policy: "Legacy tower solver JavaScript is frozen. New or modified JS under these roots should fail check:no-tower-solver-js.",
-    legacyRoots: LEGACY_TOWER_SOLVER_ROOTS,
-    excludedDirs: [...EXCLUDED_DIRS].sort(),
-    files: legacyRows,
-  };
-  fs.writeFileSync(legacyBaselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
-}
-
 function checkNoTowerSolverJs() {
-  if (!fs.existsSync(legacyBaselinePath)) {
-    console.error(`Missing baseline: ${relativePath(legacyBaselinePath)}`);
-    console.error("Run `node tools/audit-js-files.js` first.");
+  const rows = collectInventory().filter((row) => isForbiddenTowerSolverPath(row.path));
+
+  if (rows.length > 0) {
+    console.error("Tower-local solver JS must not exist; all solver code belongs in shared-solver/.");
+    console.error("Found under forbidden roots:");
+    for (const row of rows) console.error(`  - ${row.path}`);
     process.exit(1);
   }
 
-  const baseline = JSON.parse(fs.readFileSync(legacyBaselinePath, "utf8"));
-  const baselineByPath = new Map((baseline.files || []).map((entry) => [entry.path, entry]));
-  const rows = collectInventory().filter((row) => isLegacyTowerSolverPath(row.path));
-  const currentByPath = new Map(rows.map((row) => [row.path, row]));
-
-  const added = [];
-  const modified = [];
-  const missing = [];
-
-  for (const row of rows) {
-    const baselineEntry = baselineByPath.get(row.path);
-    if (!baselineEntry) {
-      added.push(row.path);
-    } else if (baselineEntry.sha256 !== row.sha256) {
-      modified.push(row.path);
-    }
-  }
-
-  for (const pathName of baselineByPath.keys()) {
-    if (!currentByPath.has(pathName)) missing.push(pathName);
-  }
-
-  if (added.length > 0 || modified.length > 0) {
-    console.error("Legacy tower solver JS freeze check failed.");
-    if (added.length > 0) {
-      console.error("");
-      console.error("New legacy solver JS files:");
-      for (const pathName of added) console.error(`  - ${pathName}`);
-    }
-    if (modified.length > 0) {
-      console.error("");
-      console.error("Modified legacy solver JS files:");
-      for (const pathName of modified) console.error(`  - ${pathName}`);
-    }
-    if (missing.length > 0) {
-      console.error("");
-      console.error("Missing baseline files (warning only, likely archive/delete work):");
-      for (const pathName of missing) console.error(`  - ${pathName}`);
-    }
-    process.exit(1);
-  }
-
-  console.log(`Legacy tower solver JS freeze check passed (${rows.length} files).`);
-  if (missing.length > 0) {
-    console.log(`Warning: ${missing.length} baseline files are missing; regenerate baseline after intentional archive/delete work.`);
-  }
+  console.log(`Tower-local solver JS check passed (no JS under ${FORBIDDEN_TOWER_SOLVER_ROOTS.join(", ")}).`);
 }
 
 function checkSolverManifest() {
@@ -694,12 +619,6 @@ function main() {
   const rows = collectInventory();
   writeInventory(rows);
   writeEntrypoints(rows);
-  if (args.has("--refresh-legacy-baseline") || !fs.existsSync(legacyBaselinePath)) {
-    writeLegacyBaseline(rows);
-    console.log(`Wrote ${relativePath(legacyBaselinePath)}`);
-  } else {
-    console.log(`Kept existing ${relativePath(legacyBaselinePath)}`);
-  }
   console.log(`Wrote ${relativePath(inventoryPath)}`);
   console.log(`Wrote ${relativePath(entrypointsPath)}`);
   if (fs.existsSync(solverManifestPath)) {

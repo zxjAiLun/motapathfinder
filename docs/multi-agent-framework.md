@@ -56,14 +56,12 @@ const solver = require("../../shared-solver/public");
 
 ```js
 require("../../shared-solver/lib/segment-dp");
-require("../../Only upV2.1/Only upV2.1/solver/lib/simulator");
-require("../../whiteisland（9）/solver/lib/search");
 ```
 
 原因：
 
 - `shared-solver/lib/**` 是内部结构，后续会重构。
-- 塔内 `solver/**` 是 legacy 拷贝，不再维护。
+- 塔内 `solver/**` 已删除且被禁止（`check:no-tower-solver-js` 把关），不存在合法入口。
 - 公共 API 才能保证多 agent 结果可复现、可比较。
 
 公共 API 说明见：

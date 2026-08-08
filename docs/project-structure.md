@@ -1,16 +1,16 @@
 # 项目结构与代码边界
 
-本文定义仓库的目录职责、solver 代码边界、旧塔内 solver 的处理策略，以及后续新增文件应放在哪里。
+本文定义仓库的目录职责、solver 代码边界、塔内 solver 的禁止策略，以及后续新增文件应放在哪里。
 
 ## 1. 当前结论
 
-`shared-solver/` 是唯一 canonical solver。Only Up、Whiteisland 等塔目录只保留塔项目本体、包装入口、路线与日志，不再新增塔内 solver JS。
+`shared-solver/` 是唯一 canonical solver。Only Up、Whiteisland 等塔目录只保留塔项目本体、包装入口、路线与日志，塔内不允许出现 solver JS。
 
 核心原则：
 
 - 公共求解逻辑只进入 `shared-solver/**`。
 - 塔项目原生 JS 不归 solver 管，除非任务明确要求改塔本体。
-- 旧 `*/solver/**` 是 legacy 拷贝，只能归档或冻结，不能继续开发。
+- 塔内 `*/solver/**` 已删除且被禁止；任何新出现的塔内 solver JS 会使 `check:no-tower-solver-js` 失败。
 - 新的实验 agent、benchmark、区域 spec 必须进入独立目录，不能污染塔目录。
 
 ## 2. 顶层目录职责
@@ -43,7 +43,7 @@ npm run audit:js --prefix shared-solver
 | --- | --- | --- |
 | `shared-solver/**/*.js` | refined by `shared-solver/solver-manifest.json` (core / support / experimental / exploration / test / cli / archive-candidate) | 按 manifest status 维护；experimental/exploration 不是正确性证明 |
 | `shared-solver/solver-manifest.json` | module identity | 新增 lib 模块后运行 `npm run manifest:refresh --prefix shared-solver` 并 `npm run check:manifest --prefix shared-solver` |
-| `*/solver/**/*.js` | legacy solver candidate | 冻结；后续归档 |
+| `*/solver/**/*.js` | forbidden tower solver js | 禁止出现；存在即 fail `check:no-tower-solver-js`；solver 代码只能进 `shared-solver/` |
 | `*/project/**/*.js` | tower project data/runtime | 不动，属于 h5mota 项目 |
 | `*/libs/**/*.js` | tower runtime/library | 不动，属于 h5mota 项目 |
 | `tools/**/*.js` | repo tools | 保留 |
@@ -55,12 +55,12 @@ npm run audit:js --prefix shared-solver
 
 - `docs/js-inventory.md`
 - `docs/solver-entrypoints.md`
-- `docs/legacy-tower-solver-js-baseline.json`
 
 相关检查：
 
 ```bash
 npm run check:manifest --prefix shared-solver
+npm run check:no-tower-solver-js --prefix shared-solver
 npm run check:teacher-divergence --prefix shared-solver
 npm run check:mt5-51533-next-smoke --prefix shared-solver
 npm run check:static --prefix shared-solver

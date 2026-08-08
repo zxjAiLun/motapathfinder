@@ -2,7 +2,7 @@
 
 See `docs/project-structure.md` for the full directory ownership model and `docs/multi-agent-framework.md` for strict external-agent write rules.
 
-This repository now treats `shared-solver/` as the canonical solver and tower `solver/` directories as frozen legacy copies.
+This repository treats `shared-solver/` as the only solver implementation. Tower-local `solver/` directories were removed and are forbidden from reappearing.
 
 ## P0: Stop Expanding Solver Sprawl
 
@@ -21,10 +21,12 @@ Generated agent/search outputs can be written under:
 - `logs/generated/**`
 - `benchmarks/results/**`
 
-Do not add or modify solver code under:
+Tower-local `solver/` directories were removed and must not reappear:
 
 - `Only upV2.1/Only upV2.1/solver/**`
 - `whiteisland（9）/solver/**`
+
+Any JS under these roots fails `npm run check:no-tower-solver-js --prefix shared-solver`. Solver code belongs only in `shared-solver/`.
 
 Do not write project/runtime changes during solver-public-layer work:
 
@@ -42,7 +44,7 @@ Public-layer development check:
 npm run check:public-layer-boundaries --prefix shared-solver
 ```
 
-Legacy tower solver freeze check:
+Tower-local solver ban check:
 
 ```bash
 npm run check:no-tower-solver-js --prefix shared-solver
