@@ -177,7 +177,9 @@
     "check:key-dependency": "node check-key-dependency-contract.js",
     "check:dual-key-shadow": "node check-dual-key-shadow-contract.js",
     "check:candidate-key-promotion": "node check-candidate-key-promotion-contract.js",
-    "check:candidate-key-paired-benchmark": "node check-candidate-key-paired-benchmark.js"
+    "check:candidate-key-paired-benchmark": "node check-candidate-key-paired-benchmark.js",
+    "check:candidate-key-smoke": "node check-candidate-key-paired-benchmark.js --smoke",
+    "check:mt1-workload-matrix": "node check-mt1-workload-matrix-contract.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

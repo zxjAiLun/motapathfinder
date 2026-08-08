@@ -120,6 +120,9 @@ async function runSearch(options) {
       enumerateCalls: perf.phaseCounts && perf.phaseCounts.enumerateActions != null ? perf.phaseCounts.enumerateActions : null,
       applyTotalMs: perf.phaseMs && perf.phaseMs.applyAction != null ? perf.phaseMs.applyAction : null,
       applyCalls: perf.phaseCounts && perf.phaseCounts.applyAction != null ? perf.phaseCounts.applyAction : null,
+      reachabilityTotalMs: perf.phaseMs && perf.phaseMs.reachability != null ? perf.phaseMs.reachability : null,
+      reachabilityComputations: perf.phaseCounts && perf.phaseCounts.reachability != null ? perf.phaseCounts.reachability : null,
+      reachabilityCache: simulator.getReachabilityCacheStats(),
       wallMs: perf.wallMs,
     },
   };
@@ -130,6 +133,13 @@ function median(values) {
   const sorted = values.slice().sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function medianCacheStats(cacheStats) {
+  const hits = median(cacheStats.map((stats) => Number(stats.hits || 0)));
+  const misses = median(cacheStats.map((stats) => Number(stats.misses || 0)));
+  const stores = median(cacheStats.map((stats) => Number(stats.stores || 0)));
+  return { hits, misses, stores };
 }
 
 function buildReferenceTask() {
@@ -239,6 +249,7 @@ function checkSemanticDriftFailClosed(normalizedSpec) {
 }
 
 async function main() {
+  const smoke = process.argv.includes("--smoke");
   const referenceTask = buildReferenceTask();
   const normalizedSpec = (referenceTask.normalizedTask || referenceTask).tower.region.spec;
   const guard = checkProfileAloneSelectsExperimentalBuilder(normalizedSpec);
@@ -261,7 +272,9 @@ async function main() {
   assert.strictEqual(runB.scale.registered, 156, "B canonical registered must be 156");
 
   // Paired benchmark rounds (search-only).  B selected by profile alone.
-  const pairedOrder = ["A", "B", "B", "A", "A", "B", "B", "A"];
+  // `--smoke` runs a single A/B pair for fast CI feedback; the full 8-round
+  // order runs in qualification CI only.
+  const pairedOrder = smoke ? ["A", "B"] : ["A", "B", "B", "A", "A", "B", "B", "A"];
   const rounds = [];
   for (const side of pairedOrder) {
     const run = await runSearch(side === "B" ? { dpKeyProfile: EXPERIMENTAL_PROFILE } : {});
@@ -277,6 +290,9 @@ async function main() {
       enumerateCalls: run.phases.enumerateCalls,
       applyTotalMs: run.phases.applyTotalMs,
       applyCalls: run.phases.applyCalls,
+      reachabilityTotalMs: run.phases.reachabilityTotalMs,
+      reachabilityComputations: run.phases.reachabilityComputations,
+      reachabilityCache: run.phases.reachabilityCache,
       wallMs: run.phases.wallMs,
       expanded: run.scale.expanded,
       generated: run.scale.generated,
@@ -302,15 +318,33 @@ async function main() {
     wallMs: median(field(bRounds, "wallMs")),
   };
 
-  // Reachability attribution: timing shift observed + call attribution level.
+  // Reachability attribution: REAL instrumentation (reachability phase counts +
+  // walk cache stats), not enumerateActions-call substitution.  The candidate
+  // key eliminates the redundant key-path walks, so the TOTAL reachability work
+  // drops (rather than merely shifting to enumeration).
   const reachabilityTimingShiftObserved = Boolean(
     medianB.keyBuildTotalMs < medianA.keyBuildTotalMs &&
-    medianB.enumerateTotalMs > medianA.enumerateTotalMs,
+    medianB.reachabilityTotalMs > medianA.reachabilityTotalMs,
   );
-  // The walk reachability cache mode in this solver: none exposed (LRU inside
-  // the simulator is not stat-exposed); call counts are the phase counts.
-  const reachabilityCalls = { A: median(field(aRounds, "enumerateCalls")), B: median(field(bRounds, "enumerateCalls")) };
-  const reachabilityCallAttributionComplete = reachabilityCalls.A != null && reachabilityCalls.B != null;
+  const reachabilityTotalReduced = Boolean(
+    medianB.reachabilityTotalMs != null && medianA.reachabilityTotalMs != null &&
+    medianB.reachabilityTotalMs < medianA.reachabilityTotalMs,
+  );
+  const reachabilityAttribution = {
+    A: {
+      computations: median(field(aRounds, "reachabilityComputations")),
+      totalMs: median(field(aRounds, "reachabilityTotalMs")),
+      cache: medianCacheStats(field(aRounds, "reachabilityCache")),
+    },
+    B: {
+      computations: median(field(bRounds, "reachabilityComputations")),
+      totalMs: median(field(bRounds, "reachabilityTotalMs")),
+      cache: medianCacheStats(field(bRounds, "reachabilityCache")),
+    },
+  };
+  const reachabilityCallAttributionComplete = Boolean(
+    reachabilityAttribution.A.computations != null && reachabilityAttribution.B.computations != null,
+  );
 
   // Structural counters must be real numbers, all pinned to baseline.
   [aRounds, bRounds].forEach((roundSet) => {
@@ -350,6 +384,7 @@ async function main() {
       registeredCanonical: true,
       pairedRoundCorrectnessPinned: true,
       reachabilityTimingShiftObserved,
+      reachabilityTotalReduced,
       reachabilityCallAttributionComplete,
     },
     guard,
@@ -362,6 +397,7 @@ async function main() {
       scaleB: runB.scale,
     },
     pairedBenchmark: {
+      mode: smoke ? "smoke" : "full",
       order: pairedOrder.join("/"),
       rounds: rounds.map((round, index) => ({ pair: Math.floor(index / 2) + 1, ...round })),
       medianA,
@@ -369,9 +405,9 @@ async function main() {
       keyPhaseRatio: medianB.keyBuildTotalMs > 0 ? Number((medianA.keyBuildTotalMs / medianB.keyBuildTotalMs).toFixed(1)) : null,
       wallRegressionFactor: Number(wallRegressionFactor.toFixed(2)),
       reachability: {
-        cacheMode: "none-exposed",
-        reachabilityCalls,
+        attribution: reachabilityAttribution,
         timingShiftObserved: reachabilityTimingShiftObserved,
+        totalReduced: reachabilityTotalReduced,
       },
     },
     verdict,

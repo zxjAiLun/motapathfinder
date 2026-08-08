@@ -70,6 +70,6 @@
   },
   "checkpoints": {
     "enabled": true,
-    "path": "solver/checkpoints/linear-main.checkpoint-skyline.json"
+    "path": ".runtime/solver-checkpoints/linear-main.checkpoint-skyline.json"
   }
 }

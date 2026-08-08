@@ -203,7 +203,8 @@
         "shared-solver/check-key-dependency-contract.js",
         "shared-solver/check-dual-key-shadow-contract.js",
         "shared-solver/check-candidate-key-promotion-contract.js",
-        "shared-solver/check-candidate-key-paired-benchmark.js"
+        "shared-solver/check-candidate-key-paired-benchmark.js",
+        "shared-solver/check-mt1-workload-matrix-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -409,6 +410,21 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/dual-key-shadow.js": {
+      "id": "dual-key-shadow",
+      "path": "shared-solver/lib/dual-key-shadow.js",
+      "layer": "search/correctness",
+      "status": "canonical",
+      "role": "shadow-audit",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/effect-vm.js": {
       "id": "effect-vm",
       "path": "shared-solver/lib/effect-vm.js",
@@ -604,12 +620,42 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/guarded-candidate-key.js": {
+      "id": "guarded-candidate-key",
+      "path": "shared-solver/lib/guarded-candidate-key.js",
+      "layer": "search/correctness",
+      "status": "canonical",
+      "role": "candidate-key-guard",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/iterative-route-repair.js": {
       "id": "iterative-route-repair",
       "path": "shared-solver/lib/iterative-route-repair.js",
       "layer": "route",
       "status": "canonical",
       "role": "route-replay",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/key-dependency-corpus.js": {
+      "id": "key-dependency-corpus",
+      "path": "shared-solver/lib/key-dependency-corpus.js",
+      "layer": "search/correctness",
+      "status": "canonical",
+      "role": "corpus",
       "correctnessSource": false,
       "tests": {
         "unit": true,
@@ -1485,6 +1531,36 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/tower-ir.js": {
+      "id": "tower-ir",
+      "path": "shared-solver/lib/tower-ir.js",
+      "layer": "search/correctness",
+      "status": "canonical",
+      "role": "ir-compiler",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/tower-ir-shadow.js": {
+      "id": "tower-ir-shadow",
+      "path": "shared-solver/lib/tower-ir-shadow.js",
+      "layer": "search/correctness",
+      "status": "canonical",
+      "role": "shadow-audit",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/updown-candidate-policy.js": {
       "id": "updown-candidate-policy",
       "path": "shared-solver/lib/updown-candidate-policy.js",
@@ -2314,6 +2390,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4d Repair: dpKeyProfile alone selects guarded experimental builder (pinned approved-baseline fingerprints, semantic drift fail-closed), registered=acceptedStates, paired-round correctness pinned"
+    },
+    "shared-solver/check-mt1-workload-matrix-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.4e: MT1 workload matrix (6 real workloads, maxRuntimeMs=0 to disable time-bounded nondeterminism), dual-corpus partition audit, A/B correctness + reachability attribution"
     }
   }
 }

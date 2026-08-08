@@ -1,7 +1,0 @@
-*
-!.gitignore
-!fixtures/
-!fixtures/.gitkeep
-!fixtures/*.route.json
-!latest/
-!latest/.gitkeep

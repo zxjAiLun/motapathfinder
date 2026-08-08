@@ -4,7 +4,7 @@
 
 `shared-solver/` is the canonical Node.js solver implementation. Put reusable solver logic in `shared-solver/lib/`, runnable CLIs and regression checks in top-level `shared-solver/*.js`, milestones in `shared-solver/milestones/`, profiles in `shared-solver/profiles/`, GUI code in `shared-solver/gui/`, and generated or fixture routes under `shared-solver/routes/`.
 
-Tower snapshots live in `Only upV2.1/Only upV2.1/` and `whiteisland（9）/`. Their `libs/`, `project/`, `extensions/`, `_server/`, `main.js`, assets, saves, and runtime folders are h5mota project/runtime content, not canonical solver code. Tower-local `solver/` directories are legacy copies and are frozen; do not add new solver behavior there unless the task explicitly targets legacy migration or archive work.
+Tower snapshots live in `Only upV2.1/Only upV2.1/` and `whiteisland（9）/`. Their `libs/`, `project/`, `extensions/`, `_server/`, `main.js`, assets, saves, and runtime folders are h5mota project/runtime content, not canonical solver code. Tower-local `solver/` directories were removed and are forbidden; `npm run check:no-tower-solver-js --prefix shared-solver` fails if solver JS appears under them. All solver work belongs in `shared-solver/`.
 
 Shared region and trial specs live in `towers/`, public and template agents in `agents/`, benchmark harnesses and suites in `benchmarks/`, cross-repo tools in `tools/`, and design/architecture notes in `docs/`.
 
@@ -87,6 +87,8 @@ Generated outputs should go to ignored/generated locations such as `shared-solve
 
 Before treating a failed search as evidence of no route, check whether the run hit `time-limit`, `memory-limit`, `actionTrimmed > 0`, `expansionBudgetExhausted`, a live `frontierSize`, or a narrow action policy. Beam drops and action quotas are exploration diagnostics, not correctness proofs.
 
+Validation is layered to keep iteration latency low. During development run only targeted checks for the changed area (e.g. `node -c <file>` plus the matching `check:*` script; target under 2 minutes). Every push/PR runs the fast CI layer (manifest, no-tower-solver-js, solver-job, launcher, route-free-state, tower-ir-shadow, candidate-key-smoke). The full evidence suite (key-dependency, dual-key-shadow, perf-baseline, candidate-key-promotion, paired benchmark, MT1 workload matrix) runs only for marker commits (`docs: record/close/baseline/promotion/qualification ...`), PRs requesting qualification, or `workflow_dispatch` — the cloud qualification is the authoritative clean-environment certification, so do not duplicate the full suite locally.
+
 ## Commit & Pull Request Guidelines
 
 Recent commits use short imperative subjects, for example `Add --only and --skip CLI filters and memory limit support` or `Refactor route reconstruction and simplify route patch building`. Keep subjects specific, mention the affected subsystem, and avoid vague messages like `fix stuff`.
@@ -101,4 +103,4 @@ For public agent work, import only `shared-solver/public.js`; do not import `sha
 npm run check:agent-boundaries --prefix shared-solver
 ```
 
-For solver implementation work, modify `shared-solver/` first. Keep tower-local runtime files untouched unless the task explicitly asks for tower project/runtime behavior. Run `npm run check:no-tower-solver-js --prefix shared-solver` when there is any risk of accidentally editing frozen tower solver copies.
+For solver implementation work, modify `shared-solver/` first. Keep tower-local runtime files untouched unless the task explicitly asks for tower project/runtime behavior. Run `npm run check:no-tower-solver-js --prefix shared-solver` after any tower-area change to confirm no tower-local solver JS was introduced.

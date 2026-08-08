@@ -6,25 +6,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  solver:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: Only upV2.1/Only upV2.1/solver
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm ci
-      - run: node -c check-core-regressions.js
-      - run: node -c audit-state-dependencies.js
-      - run: npm run check:core
-      - run: npm run check:pocket
-      - run: npm run check:key-audit
-      - run: npm run check:stage:short
-
-  shared-solver:
+  # =====================================================================
+  # Tier 1/2 — Fast feedback: every push and PR. Target wall time < 3 min.
+  # Static/manifest, unit-contract gates, and a single A/B candidate-key
+  # smoke round. Heavy evidence suites run only in the qualification layer.
+  # =====================================================================
+  fast:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,13 +22,126 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
+      - run: npm run check:manifest
+      - run: npm run check:no-tower-solver-js
       - run: npm run check:solver-job
       - run: npm run check:launcher
-      - run: npm run check:perf-baseline
       - run: npm run check:route-free-state
       - run: npm run check:tower-ir-shadow
+      - run: npm run check:candidate-key-smoke
+
+  # =====================================================================
+  # Tier 3 — Qualification gate. Runs only for marker commits
+  # (docs: record/close/baseline/promotion/qualification ...), PRs that
+  # request qualification, or manual workflow_dispatch. The gate job
+  # carries the single marker expression; all evidence jobs depend on it.
+  # =====================================================================
+  qualification-gate:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       contains(github.event.head_commit.message, 'docs:') &&
+       (contains(github.event.head_commit.message, 'record') ||
+        contains(github.event.head_commit.message, 'close') ||
+        contains(github.event.head_commit.message, 'baseline') ||
+        contains(github.event.head_commit.message, 'promotion') ||
+        contains(github.event.head_commit.message, 'qualification'))) ||
+      (github.event_name == 'pull_request' &&
+       (contains(github.event.pull_request.title, 'qualification') ||
+        contains(github.event.pull_request.title, 'promotion') ||
+        contains(github.event.pull_request.body, 'qualification') ||
+        contains(github.event.pull_request.body, 'promotion')))
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Qualification requested; running full evidence suite"
+
+  qualification-key-analysis:
+    needs: qualification-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
       - run: npm run check:key-dependency
       - run: npm run check:dual-key-shadow
+      - run: npm run check:perf-baseline
+
+  qualification-promotion:
+    needs: qualification-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
       - run: npm run check:candidate-key-promotion
+
+  qualification-benchmark:
+    needs: qualification-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
       - run: npm run check:candidate-key-paired-benchmark
 
+  qualification-workload-matrix:
+    needs: qualification-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared-solver
+    strategy:
+      fail-fast: false
+      matrix:
+        workload:
+          - exp9-maxfinalhp
+          - exp6-maxfinalhp
+          - exp8-maxfinalhp
+          - exp9-maxatk
+          - tile4_1-maxfinalhp
+          - tile2_1-maxfinalhp
+    env:
+      MT1_WORKLOAD_SUBSET: ${{ matrix.workload }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run check:mt1-workload-matrix
+
+  # =====================================================================
+  # Qualification summary — single overall status for the full evidence
+  # suite. Runs in parallel with nothing (it only aggregates), so wall time
+  # is max(fast, key-analysis, promotion, benchmark, workload matrix).
+  # Skipped alongside the gate on non-marker commits; any failing evidence
+  # job fails the summary's dependencies and shows up as skipped here while
+  # the failure is reported by the concrete job itself.
+  # =====================================================================
+  qualification-summary:
+    needs:
+      - fast
+      - qualification-gate
+      - qualification-key-analysis
+      - qualification-promotion
+      - qualification-benchmark
+      - qualification-workload-matrix
+    if: needs.qualification-gate.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Full qualification passed (fast + key-analysis + promotion + benchmark + workload matrix)"

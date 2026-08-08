@@ -25,7 +25,15 @@ const { buildCandidateDpKey } = require("./key-dependency-corpus");
 
 const EXPERIMENTAL_PROFILE = "experimental-mt1-tower-ir-v1";
 const PRODUCTION_PROFILE = "production-region";
-const CANDIDATE_PROFILE_VERSION = "without-start-component-v1";
+const CANDIDATE_PROFILE = "without-start-component";
+const CANDIDATE_PROFILE_VERSION = `${CANDIDATE_PROFILE}-v1`;
+
+// Independent profile-version derivation: changing the candidate identity
+// profile (or the version scheme) produces a different version string, which
+// the pinned baseline assertion rejects until re-certified.
+function deriveCandidateProfileVersion(profileName) {
+  return `${profileName}-v1`;
+}
 
 // Pinned approved-baseline manifest for experimental-mt1-tower-ir-v1.
 // Values captured from the closed PR-5.4c/5.4d baseline (region-output-contract
@@ -39,6 +47,10 @@ const APPROVED_MT1_BASELINE = {
   expectedRegionSpecFingerprint: "510312b10d5ccec1",
   expectedTowerIrSourceFingerprint: "96a0bb0f421e6138263fa0e4cbd35ed8a54b6c6c25faa56f13926a3eba5c1de4",
   expectedTowerIrFingerprint: "3c4b7c9bdc70720d",
+  // Literal pinned version: an independent profile-version pin.  If the
+  // candidate identity profile ever changes, the derived actual version stops
+  // matching this literal and the profile is rejected until re-certified.
+  expectedCandidateProfileVersion: "without-start-component-v1",
   candidateProfileVersion: CANDIDATE_PROFILE_VERSION,
 };
 
@@ -48,6 +60,7 @@ const EXPECTED_FIELD_OF = {
   expectedRegionSpecFingerprint: "regionSpecFingerprint",
   expectedTowerIrSourceFingerprint: "towerIrSourceFingerprint",
   expectedTowerIrFingerprint: "towerIrFingerprint",
+  expectedCandidateProfileVersion: "candidateProfileVersion",
 };
 
 // Region spec STRUCTURAL fingerprint: the normalized RegionSpec minus the goal
@@ -68,7 +81,7 @@ function computeBaselineGuard(project, regionSpec, ir) {
     regionSpecFingerprint: computeRegionSpecFingerprint(regionSpec),
     towerIrSourceFingerprint: ir.sourceFingerprint,
     towerIrFingerprint: ir.irFingerprint,
-    candidateProfileVersion: CANDIDATE_PROFILE_VERSION,
+    candidateProfileVersion: deriveCandidateProfileVersion(CANDIDATE_PROFILE),
   };
 }
 
@@ -109,7 +122,7 @@ function createGuardedResolver(input) {
       }
       return buildCandidateDpKey(simulator, project, ir, state, {
         goalPredicate: options.goalPredicate || null,
-        profile: "without-start-component",
+        profile: CANDIDATE_PROFILE,
       });
     }
     throw new Error(`guarded candidate key: unknown dpKeyProfile ${profile}`);
@@ -140,6 +153,7 @@ function resolveDpKeyProfile(input) {
     regionSpecFingerprint: computeRegionSpecFingerprint(regionSpec),
     towerIrSourceFingerprint: ir.sourceFingerprint,
     towerIrFingerprint: ir.irFingerprint,
+    candidateProfileVersion: deriveCandidateProfileVersion(CANDIDATE_PROFILE),
   };
   assertMatchesApprovedBaseline(actual, APPROVED_MT1_BASELINE);
   const { resolver, guard } = createGuardedResolver({

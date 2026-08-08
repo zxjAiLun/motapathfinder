@@ -512,6 +512,11 @@ class StaticSimulator {
     return cloneJson(this.resourceClusterStats || {});
   }
 
+  getReachabilityCacheStats() {
+    const stats = this.actionExpansionCacheStats && this.actionExpansionCacheStats.reachability;
+    return stats ? { ...stats } : { hits: 0, misses: 0, stores: 0, evictions: 0 };
+  }
+
   getWalkReachability(state) {
     const key = buildStateKey(state);
     const cached = this.cacheGet("reachability", key);

@@ -22,7 +22,8 @@ whiteisland（9）/
 **/replay-downloads/
 **/.tmp-*.js
 
-**/solver/checkpoints/*.checkpoint-skyline.json
+# Project-level runtime data (checkpoints, caches, etc.)
+.runtime/
 Only upV2.1/Only upV2.1/.venv-standard-server/
 Only upV2.1/Only upV2.1/__pycache__/
 docs/dsv4
