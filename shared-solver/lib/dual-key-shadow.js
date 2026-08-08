@@ -66,6 +66,12 @@ function createDualKeyShadow(options) {
   const maxWitnesses = Number(config.maxWitnesses || 20);
   // Dev-only cache mode; the representative gate MUST use "off".
   const candidateCacheMode = String(config.candidateCacheMode || "off");
+  // partitionOnly: collect ONLY the exact/candidate partition maps (cheap).
+  // Behavior classification (actions/successors) is skipped.  The caller must
+  // re-run a full shadow over the merge-group records to certify safety, which
+  // is vacuous when mergedCandidateKeyCount === 0.  partitionOnly shadows are
+  // for the fast equality-first phase of the workload matrix gate.
+  const partitionOnly = config.partitionOnly === true;
 
   const diagnostics = {
     enabled: true,
@@ -208,6 +214,15 @@ function createDualKeyShadow(options) {
     }
     candidateKeyToExactKeys.get(candidateKey).add(exactDpKey);
     recordsByCandidateKey.get(candidateKey).push(record);
+
+    // Cheap partition-only mode stops here: no behavior classification, no
+    // collision buckets.  The caller inspects partitionAudit.mergedCandidateKeyCount
+    // and only pays for behavior CEGAR when actual merges exist.
+    if (partitionOnly) {
+      diagnostics.candidateAcceptedEvents += 1;
+      recordDecision(productionAccepted, true, record);
+      return;
+    }
 
     const bucket = buckets.get(candidateKey);
     if (!bucket || bucket.length === 0) {

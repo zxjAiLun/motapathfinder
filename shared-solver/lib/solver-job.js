@@ -358,7 +358,7 @@ async function executeSolveJob(task, {
   if (stopRequested() || result.stoppedReason === "cancel-requested" || result.cancelled === true) {
     progress.setPhase("cancelled");
     progress.flush();
-    return { result, proofClaim: null, routeRecord: null, strictReplayVerified: false, cancelled: true };
+    return { result, proofClaim: null, routeRecord: null, strictReplayVerified: false, cancelled: true, simulator };
   }
 
   const proofClaim = buildRegionProofClaim(result, regionSpec, objective);
@@ -511,6 +511,7 @@ async function executeSolveJob(task, {
     verificationStatus,
     objectiveValue,
     cancelled: false,
+    simulator,
   };
 }
 
@@ -803,6 +804,7 @@ async function executeSolveJobV2(task, {
         strictReplayVerified: false,
         cancelled: true,
         regions: regionSummaries,
+        simulator: finalSimulator,
       };
     }
     let outgoing = Array.isArray(result.finalCandidates) ? result.finalCandidates : [];
@@ -1147,6 +1149,7 @@ async function executeSolveJobV2(task, {
     objectiveValue,
     cancelled: false,
     regions: regionSummaries,
+    simulator: finalSimulator,
   };
 }
 function executeInProcessExecutor({ job, task, onProgress, context }) {

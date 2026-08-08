@@ -122,7 +122,12 @@ async function runSearch(options) {
       applyCalls: perf.phaseCounts && perf.phaseCounts.applyAction != null ? perf.phaseCounts.applyAction : null,
       reachabilityTotalMs: perf.phaseMs && perf.phaseMs.reachability != null ? perf.phaseMs.reachability : null,
       reachabilityComputations: perf.phaseCounts && perf.phaseCounts.reachability != null ? perf.phaseCounts.reachability : null,
-      reachabilityCache: simulator.getReachabilityCacheStats(),
+      // Read the cache stats from the simulator the solve ACTUALLY used
+      // (executeSolveJob owns its simulator internally), not the module-level
+      // `simulator`, which never participated in the search.
+      reachabilityCache: execution.simulator
+        ? execution.simulator.getReachabilityCacheStats()
+        : null,
       wallMs: perf.wallMs,
     },
   };
