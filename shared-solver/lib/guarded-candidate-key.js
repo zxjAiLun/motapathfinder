@@ -50,7 +50,7 @@ const APPROVED_MT1_BASELINE = {
   floors: ["MT1"],
   expectedProjectFingerprint: "d50cdaaff91c21f61611d323814de88fc1117b70a8247a4e64b23eb10b3d12c6",
   expectedProjectStructuralFingerprint: "954efc84bf7cf9f19d19ed2e70e9e05b1459d1c0d69a9db9c532dd67d9e6dfc6",
-  expectedRegionSpecFingerprint: "510312b10d5ccec1",
+  expectedRegionSpecFingerprint: "36b7477cad2d6a96",
   expectedTowerIrSourceFingerprint: "96a0bb0f421e6138263fa0e4cbd35ed8a54b6c6c25faa56f13926a3eba5c1de4",
   expectedTowerIrFingerprint: "3c4b7c9bdc70720d",
   // Literal pinned version: an independent profile-version pin.  If the
@@ -70,10 +70,14 @@ const EXPECTED_FIELD_OF = {
 };
 
 // Region spec STRUCTURAL fingerprint: the normalized RegionSpec minus the goal
-// (the goal is task/search config, not region structure).  Binds floors, scope,
-// events, changeFloor, auto events, etc.  Any structural tamper changes it.
+// and the execution-only projectRoot hint (the task/launcher owns the project).
+// Excluding projectRoot makes the approved-scope fingerprint normalization-
+// independent: v1 region normalization keeps projectRoot in the spec while v2
+// deletes it, so stripping it here means the SAME approved region resolves
+// identically across both execution paths.  Binds floors, scope, events,
+// changeFloor, auto events, etc.  Any structural tamper changes it.
 function computeRegionSpecFingerprint(regionSpec) {
-  const { goal, ...structural } = regionSpec || {};
+  const { goal, projectRoot, ...structural } = regionSpec || {};
   return fingerprintJson(stableValue(structural));
 }
 

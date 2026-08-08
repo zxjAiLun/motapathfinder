@@ -792,8 +792,37 @@ async function executeSolveJobV2(task, {
       outgoingCandidates: 0,
     });
     progress.setPhase("segment-search");
+    // Per-region profile resolution: each region independently resolves its
+    // effective key profile (approved MT1 scope -> candidate default, every
+    // other scope -> production fallback, explicit profiles -> explicit).
+    // The per-region executeConfig is a FRESH spread of the task config so a
+    // candidate builder installed for an approved region never leaks into a
+    // subsequent unapproved region.
+    const executeConfig = { ...(task && task.executeConfig || {}) };
+    let profileSelection = null;
+    try {
+      const profileResolution = require("./guarded-candidate-key").resolveDpKeyProfile({
+        project,
+        regionSpec,
+        simulator,
+        dpKeyProfile: executeConfig.dpKeyProfile || null,
+        options: { towerId: normalizedTask.tower && normalizedTask.tower.id },
+      });
+      profileSelection = {
+        requestedProfile: profileResolution.requestedProfile,
+        effectiveProfile: profileResolution.effectiveProfile,
+        selectionReason: profileResolution.selectionReason,
+      };
+      if (profileResolution.builder) {
+        executeConfig.dpStateKeyBuilder = profileResolution.builder;
+      }
+    } catch (error) {
+      progress.setPhase("failed");
+      progress.flush();
+      throw error;
+    }
     const result = runMilestoneGraph(simulator, inputFrontier[0].state, milestoneSpec, {
-      ...(task && task.executeConfig || {}),
+      ...executeConfig,
       objectiveSpec: isFinal ? objective : null,
       observer: createProgressObserver(progress),
       shouldStop: stopRequested,
@@ -841,6 +870,7 @@ async function executeSolveJobV2(task, {
       outgoingCandidates: outgoing.length,
       regionCandidateLimit,
       boundaryTrimmed,
+      profileSelection,
       failure: result.found ? null : ({
         failureClass: (result.failedSegment && result.failedSegment.failureClass) || "REGION_NOT_REACHED",
         segmentId: result.failedSegment && result.failedSegment.segmentId || null,
