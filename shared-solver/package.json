@@ -180,7 +180,8 @@
     "check:candidate-key-paired-benchmark": "node check-candidate-key-paired-benchmark.js",
     "check:candidate-key-smoke": "node check-candidate-key-paired-benchmark.js --smoke",
     "check:mt1-workload-matrix": "node check-mt1-workload-matrix-contract.js",
-    "check:mt1-default-promotion": "node check-mt1-default-promotion-contract.js"
+    "check:mt1-default-promotion": "node check-mt1-default-promotion-contract.js",
+    "check:mt1-post-promotion-regression": "node check-mt1-post-promotion-regression-contract.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

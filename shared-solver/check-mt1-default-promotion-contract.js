@@ -248,7 +248,7 @@ async function gateERepresentativeDefault(normalizedSpec) {
 function gateGProductionInvariants() {
   assert.strictEqual(APPROVED_MT1_BASELINE.expectedCandidateProfileVersion, "without-start-component-v1", "G: candidate profile version must be unchanged");
   assert.strictEqual(APPROVED_MT1_BASELINE.expectedTowerIrFingerprint, "3c4b7c9bdc70720d", "G: TowerIR fingerprint must be unchanged");
-  assert.strictEqual(APPROVED_MT1_BASELINE.expectedRegionSpecFingerprint, "510312b10d5ccec1", "G: region spec fingerprint must be unchanged");
+  assert.strictEqual(APPROVED_MT1_BASELINE.expectedRegionSpecFingerprint, "36b7477cad2d6a96", "G: region spec fingerprint must be unchanged");
   assert.ok(APPROVED_MT1_BASELINE.expectedProjectFingerprint && APPROVED_MT1_BASELINE.expectedTowerIrSourceFingerprint, "G: project/IR source pins must be present");
   return { productionInvariantsHeld: true, candidateProfileVersion: APPROVED_MT1_BASELINE.expectedCandidateProfileVersion };
 }

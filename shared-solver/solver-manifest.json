@@ -205,7 +205,8 @@
         "shared-solver/check-candidate-key-promotion-contract.js",
         "shared-solver/check-candidate-key-paired-benchmark.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
-        "shared-solver/check-mt1-default-promotion-contract.js"
+        "shared-solver/check-mt1-default-promotion-contract.js",
+        "shared-solver/check-mt1-post-promotion-regression-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -2405,6 +2406,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.4f: MT1 default promotion + explicit rollback contract (Gates A-H): scope-aware implicit default, rollback restores production path, unapproved scope fallback vs explicit fail-closed, representative strict replay, production invariants"
+    },
+    "shared-solver/check-mt1-post-promotion-regression-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.4g: post-promotion full-tower regression (S1-S4): single-Region default->candidate + pinned, explicit rollback->production scale, unapproved-scope implicit fallback, campaign/multi-Region v2 per-region isolation (approved MT1->candidate, unapproved->production, no leak)"
     }
   }
 }
