@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * PR-5.5a — Multi-Region Dual-Key Shadow Corpus (research only).
+ * PR-5.5a Repair — Multi-Region Dual-Key Shadow Corpus (research only).
  *
  * Observation-only machinery.  It NEVER participates in frontier pruning,
  * dominance, candidate ranking, checkpoint selection, or route composition.
@@ -12,22 +12,29 @@
  *                       states Region B receives (entry mutation applied).
  *   post-boundary     : Region B reachable enqueue states.
  *
+ * PER-REGION CONTEXT: each layer uses its own region's simulator, TowerIR, and
+ * goal predicate (regionA for pre-boundary, regionB for boundary-transfer and
+ * post-boundary, and for all behavior CEGAR).  A single shared IR would ask
+ * "R1 state inside R0 topology" instead of "R1 state inside R1 topology".
+ *
  * Every record carries the exact (production) identity, the candidate identity,
- * the exact state fingerprint, the legal action signature, the terminal/goal
- * projection, and boundary provenance (inputCarried / post-boundary exact
- * fingerprints, region input index, checkpoint fingerprint).
+ * the exact state fingerprint (diagnostics only), the legal action signature,
+ * the terminal/goal projection, and boundary provenance.
  *
  * Two audits:
  *   A. state partition    : exact DP key -> candidate DP key
- *                           (splitExactKeyCount / mergedCandidateKeyCount /
- *                           partitionRelation), per layer and overall.
- *   B. boundary partition : pre-boundary candidate key -> post-boundary exact
- *                           fingerprint.  A candidate merge whose members
- *                           materialize to DIFFERENT post-boundary identities is
- *                           boundary-inequivalent.
+ *                           (split / merge / partitionRelation), per layer.
+ *   B. boundary partition : pre-boundary candidate key -> post-boundary
+ *                           SEMANTIC identity (production DP key).  A candidate
+ *                           merge is boundary-inequivalent ONLY when the
+ *                           materialized states have DIFFERENT production keys.
+ *                           Full-exact-fingerprint divergence (HP / dominance-
+ *                           level differences within one production key) is
+ *                           reported as diagnostics and handed to the
+ *                           dominance-aware classifyPair, NOT treated as unsafe.
  *
- * Ordered CEGAR for real merge groups (stage 1 first, decisive):
- *   1. boundary-transfer equivalence   (pre-boundary groups)
+ * Ordered CEGAR for real merge groups:
+ *   1. boundary-transfer equivalence on semantic identity (decisive)
  *   2. legal-action / successor / terminal / dominance (classifyPair, reused
  *      from key-dependency-corpus) on the post-boundary materialized states.
  */
@@ -41,7 +48,6 @@ const {
   classifyPair,
   buildTerminalProjection,
 } = require("./key-dependency-corpus");
-const { fingerprintJson } = require("./solve-task");
 const { heroHp } = require("./dual-key-shadow");
 
 function legalActionSignature(simulator, state) {
@@ -55,12 +61,11 @@ function legalActionSignature(simulator, state) {
   }
 }
 
+// regionContext = { simulator, ir, goalPredicate }
 function buildCorpusRecord(input) {
   const {
-    simulator,
+    regionContext,
     project,
-    ir,
-    goalPredicate,
     candidateProfile,
     candidateKeyBuilder,
     exactKeyConfig,
@@ -69,23 +74,23 @@ function buildCorpusRecord(input) {
     regionIndex,
     regionId,
   } = input;
-  const candidateOptions = { goalPredicate, profile: candidateProfile };
+  const candidateOptions = { goalPredicate: regionContext.goalPredicate, profile: candidateProfile };
   const candidateDpKey = typeof candidateKeyBuilder === "function"
     ? candidateKeyBuilder(state)
-    : buildCandidateDpKey(simulator, project, ir, state, candidateOptions);
+    : buildCandidateDpKey(regionContext.simulator, project, regionContext.ir, state, candidateOptions);
   const candidateProjection = typeof candidateKeyBuilder === "function"
     ? null
-    : buildCandidateProjection(simulator, project, ir, state, candidateOptions);
+    : buildCandidateProjection(regionContext.simulator, project, regionContext.ir, state, candidateOptions);
   return {
     layer,
     regionIndex,
     regionId,
     exactStateFingerprint: exactStateFingerprint(state),
-    productionDpKey: buildDpStateKey(simulator, state, exactKeyConfig || { dpKeyMode: "region" }),
+    productionDpKey: buildDpStateKey(regionContext.simulator, state, exactKeyConfig || { dpKeyMode: "region" }),
     candidateDpKey,
     candidateProjection,
-    legalActionSignature: legalActionSignature(simulator, state),
-    terminalProjection: buildTerminalProjection(state, goalPredicate),
+    legalActionSignature: legalActionSignature(regionContext.simulator, state),
+    terminalProjection: buildTerminalProjection(state, regionContext.goalPredicate),
     hp: heroHp(state),
     ...(input.extra || {}),
     state,
@@ -93,28 +98,14 @@ function buildCorpusRecord(input) {
 }
 
 // Builds the 3-layer corpus from the two region runs.
-//   regionA: { terminalCandidates }       (Region A finalCandidates)
-//   regionB: { records, inputFrontier }   (Region B search records + materialized input frontier)
-//   simulatorA / simulatorB, project, ir, goalPredicate, candidateProfile,
-//   exactKeyConfig, candidateKeyBuilder (optional negative control)
+//   regionA: { simulator, ir, goalPredicate, terminalCandidates }
+//   regionB: { simulator, ir, goalPredicate, records, inputFrontier }
+//   project, candidateProfile, exactKeyConfig,
+//   candidateKeyBuilder (optional negative control)
 function buildMultiRegionCorpus(input) {
-  const {
-    regionA,
-    regionB,
-    simulatorA,
-    simulatorB,
-    project,
-    ir,
-    goalPredicate,
-    candidateProfile,
-    candidateKeyBuilder,
-    exactKeyConfig,
-  } = input;
+  const { regionA, regionB, project, candidateProfile, candidateKeyBuilder, exactKeyConfig } = input;
   const recordBase = {
-    simulator: simulatorB,
     project,
-    ir,
-    goalPredicate,
     candidateProfile,
     candidateKeyBuilder,
     exactKeyConfig,
@@ -122,7 +113,7 @@ function buildMultiRegionCorpus(input) {
   const preBoundaryRecords = (regionA.terminalCandidates || []).map((candidate, index) =>
     buildCorpusRecord({
       ...recordBase,
-      simulator: simulatorA,
+      regionContext: regionA,
       state: candidate && candidate.state,
       layer: "pre-boundary",
       regionIndex: 0,
@@ -136,6 +127,7 @@ function buildMultiRegionCorpus(input) {
   const boundaryRecords = (regionB.inputFrontier || []).map((entry, index) =>
     buildCorpusRecord({
       ...recordBase,
+      regionContext: regionB,
       state: entry && entry.state,
       layer: "boundary-transfer",
       regionIndex: 1,
@@ -145,13 +137,13 @@ function buildMultiRegionCorpus(input) {
         preBoundaryStateFingerprint: entry && entry.inputCarriedExactFingerprint,
         postBoundaryExactFingerprint: entry && entry.exactBoundaryStateFingerprint,
         inputCarriedExactFingerprint: entry && entry.inputCarriedExactFingerprint,
-        checkpointFingerprint: fingerprintJson((entry && entry.ancestry) || {}),
       },
     }),
   );
   const postBoundaryRecords = (regionB.records || []).map((record) =>
     buildCorpusRecord({
       ...recordBase,
+      regionContext: regionB,
       state: record && record.state,
       layer: "post-boundary",
       regionIndex: 1,
@@ -188,8 +180,7 @@ function auditStatePartition(records) {
     exactToCandidate.get(exact).add(candidate);
     if (!candidateToExact.has(candidate)) candidateToExact.set(candidate, new Set());
     candidateToExact.get(candidate).add(exact);
-    const layerStats = byLayer[record.layer] || (byLayer[record.layer] = { splitExactKeyCount: 0, mergedCandidateKeyCount: 0, partitionRelation: "equal", sampleCount: 0 });
-    layerStats.sampleCount += 1;
+    byLayer[record.layer] = (byLayer[record.layer] || 0) + 1;
   }
   const summarize = (exactMap, candidateMap) => {
     let splitExactKeyCount = 0;
@@ -202,29 +193,32 @@ function auditStatePartition(records) {
     else if (mergedCandidateKeyCount > 0) partitionRelation = "strict-coarsening";
     return { splitExactKeyCount, mergedCandidateKeyCount, partitionRelation };
   };
+  const perLayer = {};
+  Object.keys(byLayer).forEach((layer) => {
+    const layerRecords = records.filter((r) => r.layer === layer);
+    const exactMap = new Map();
+    const candidateMap = new Map();
+    layerRecords.forEach((record) => {
+      if (!exactMap.has(record.productionDpKey)) exactMap.set(record.productionDpKey, new Set());
+      exactMap.get(record.productionDpKey).add(record.candidateDpKey);
+      if (!candidateMap.has(record.candidateDpKey)) candidateMap.set(record.candidateDpKey, new Set());
+      candidateMap.get(record.candidateDpKey).add(record.productionDpKey);
+    });
+    perLayer[layer] = { ...summarize(exactMap, candidateMap), sampleCount: byLayer[layer] };
+  });
   return {
     ...summarize(exactToCandidate, candidateToExact),
     uniqueExactKeys: exactToCandidate.size,
     uniqueCandidateKeys: candidateToExact.size,
-    byLayer: Object.keys(byLayer).reduce((acc, layer) => {
-      const stats = byLayer[layer];
-      const exactMap = new Map();
-      const candidateMap = new Map();
-      records.filter((r) => r.layer === layer).forEach((record) => {
-        if (!exactMap.has(record.productionDpKey)) exactMap.set(record.productionDpKey, new Set());
-        exactMap.get(record.productionDpKey).add(record.candidateDpKey);
-        if (!candidateMap.has(record.candidateDpKey)) candidateMap.set(record.candidateDpKey, new Set());
-        candidateMap.get(record.candidateDpKey).add(record.productionDpKey);
-      });
-      acc[layer] = { ...summarize(exactMap, candidateMap), sampleCount: stats.sampleCount };
-      return acc;
-    }, {}),
+    byLayer: perLayer,
   };
 }
 
-// B. Boundary partition: pre-boundary candidate key -> post-boundary exact
-// fingerprint.  materializeNextRegionFrontier preserves order, so record i of
-// the pre-boundary layer pairs with record i of the boundary-transfer layer.
+// B. Boundary partition: pre-boundary candidate key -> post-boundary SEMANTIC
+// identity (production DP key in Region B's own context).  materializeNextRegionFrontier
+// preserves order, so record i of the pre-boundary layer pairs with record i of
+// the boundary-transfer layer.  Full-exact-fingerprint divergence within one
+// semantic identity is diagnostic only (HP/dominance-level), NOT inequivalence.
 function auditBoundaryPartition(preBoundaryRecords, boundaryRecords) {
   const byCandidate = new Map();
   const n = Math.min(preBoundaryRecords.length, boundaryRecords.length);
@@ -235,7 +229,8 @@ function auditBoundaryPartition(preBoundaryRecords, boundaryRecords) {
     byCandidate.get(pre.candidateDpKey).push({
       exactDpKey: pre.productionDpKey,
       hp: pre.hp,
-      postBoundaryExactFingerprint: post.postBoundaryExactFingerprint || post.exactStateFingerprint,
+      postProductionDpKey: post.productionDpKey,
+      postExactFingerprint: post.postBoundaryExactFingerprint || post.exactStateFingerprint,
     });
   }
   const groups = [];
@@ -244,13 +239,18 @@ function auditBoundaryPartition(preBoundaryRecords, boundaryRecords) {
   byCandidate.forEach((members, candidateKey) => {
     const distinctExact = new Set(members.map((m) => m.exactDpKey));
     if (distinctExact.size <= 1) return;
-    const distinctPost = new Set(members.map((m) => m.postBoundaryExactFingerprint));
-    const boundaryEquivalent = distinctPost.size === 1;
+    const distinctPostSemantic = new Set(members.map((m) => m.postProductionDpKey));
+    const distinctPostExact = new Set(members.map((m) => m.postExactFingerprint));
+    const boundaryEquivalent = distinctPostSemantic.size === 1;
     groups.push({
       candidateKey,
       memberCount: members.length,
       distinctExactKeys: distinctExact.size,
       boundaryEquivalent,
+      // diagnostic only: exact-fingerprint divergence within one semantic
+      // identity is the HP/dominance-level difference classifyPair handles.
+      postSemanticKeys: distinctPostSemantic.size,
+      postExactFingerprints: distinctPostExact.size,
     });
     if (!boundaryEquivalent) {
       inequivalentGroupCount += 1;
@@ -279,12 +279,14 @@ function distinctExactKeyCount(records) {
   return new Set(records.map((record) => record.productionDpKey)).size;
 }
 
-function representativesByExactKey(records) {
-  const byExact = new Map();
+// One representative per distinct exact fingerprint (keeps HP/dominance-level
+// diversity for the dominance-aware classifier).
+function representativesByExactFingerprint(records) {
+  const byFp = new Map();
   for (const record of records) {
-    if (!byExact.has(record.productionDpKey)) byExact.set(record.productionDpKey, record);
+    if (!byFp.has(record.exactStateFingerprint)) byFp.set(record.exactStateFingerprint, record);
   }
-  return Array.from(byExact.values());
+  return Array.from(byFp.values());
 }
 
 function classifyPairUnsafe(classification) {
@@ -294,22 +296,20 @@ function classifyPairUnsafe(classification) {
 }
 
 // Ordered CEGAR over real merge groups.
-//   pre-boundary groups: boundary-transfer equivalence FIRST (decisive); when
-//     equivalent, confirm via classifyPair on the materialized post-boundary
-//     states (identical post-boundary fingerprints imply identical B inputs).
+//   pre-boundary groups: boundary-transfer equivalence on SEMANTIC identity
+//     FIRST (decisive); when equivalent (production keys equal), confirm via
+//     classifyPair over the materialized post-boundary states — exact-fingerprint
+//     divergence here is the HP/dominance-level difference classifyPair decides.
 //   post-boundary groups: behavior CEGAR via classifyPair.
 function runMergeGroupCegar(input) {
   const {
     preBoundaryRecords,
     boundaryRecords,
     postBoundaryRecords,
-    simulator,
-    project,
-    ir,
-    goalPredicate,
+    regionB, // { simulator, project, ir, goalPredicate }
     candidateProfile,
   } = input;
-  const behaviorOptions = { goalPredicate, profile: candidateProfile };
+  const behaviorOptions = { goalPredicate: regionB.goalPredicate, profile: candidateProfile };
   const unsafeWitnesses = [];
   let unsafeCount = 0;
   let boundaryInequivalentGroups = 0;
@@ -321,7 +321,8 @@ function runMergeGroupCegar(input) {
   const postByIndex = new Map();
   boundaryRecords.forEach((record, index) => postByIndex.set(index, record));
 
-  // Stage 1: pre-boundary merge groups — boundary-transfer equivalence first.
+  // Stage 1: pre-boundary merge groups — boundary-transfer equivalence on the
+  // post-boundary SEMANTIC identity (production DP key), not full exact state.
   const preByCandidate = groupByCandidate(preBoundaryRecords);
   preByCandidate.forEach((members, candidateKey) => {
     if (distinctExactKeyCount(members) <= 1) return;
@@ -329,59 +330,59 @@ function runMergeGroupCegar(input) {
       member,
       post: postByIndex.get(member.boundaryIndex),
     }));
-    const postFps = new Set(paired.map((p) => p.post && (p.post.postBoundaryExactFingerprint || p.post.exactStateFingerprint)));
-    if (postFps.size > 1) {
+    const postSemanticKeys = new Set(paired.map((p) => p.post && p.post.productionDpKey).filter(Boolean));
+    if (postSemanticKeys.size > 1) {
       unsafeCount += 1;
       boundaryInequivalentGroups += 1;
       unsafeWitnesses.push({
         stage: "boundary-transfer",
         candidateKey,
-        reason: "candidate-merged pre-boundary states materialize to different post-boundary exact identities",
+        reason: "candidate-merged pre-boundary states materialize to different post-boundary semantic (production) identities",
         members: paired.map((p) => ({
           exactDpKey: p.member.productionDpKey,
           hp: p.member.hp,
+          postBoundaryProductionDpKey: p.post && p.post.productionDpKey,
           postBoundaryExactFingerprint: p.post && (p.post.postBoundaryExactFingerprint || p.post.exactStateFingerprint),
         })),
       });
       return;
     }
-    // Boundary-equivalent: confirm via classifyPair on the materialized states.
-    const postStates = paired.map((p) => p.post && p.post.state).filter(Boolean);
-    const reps = representativesByExactKey(postStates.map((state, i) => ({
-      productionDpKey: paired[i].member.productionDpKey,
-      state,
-    })));
-    const classifications = [];
+    // Boundary-equivalent on semantic identity: confirm via classifyPair over
+    // the materialized post-boundary states (exact-fingerprint divergence here
+    // is the HP/dominance-level difference classifyPair decides).
+    const postRecords = paired.map((p) => p.post).filter(Boolean);
+    const reps = representativesByExactFingerprint(postRecords);
     const first = reps[0];
+    let classificationUnsafe = false;
     for (const other of reps.slice(1)) {
       behaviorAudited += 1;
-      const left = buildStateBehavior(simulator, project, ir, first.state, behaviorOptions);
-      const right = buildStateBehavior(simulator, project, ir, other.state, behaviorOptions);
+      const left = buildStateBehavior(regionB.simulator, regionB.project, regionB.ir, first.state, behaviorOptions);
+      const right = buildStateBehavior(regionB.simulator, regionB.project, regionB.ir, other.state, behaviorOptions);
       const classification = classifyPair(left, right);
-      classifications.push(classification.classification);
       if (classifyPairUnsafe(classification)) {
+        classificationUnsafe = true;
         unsafeCount += 1;
         unsafeWitnesses.push({
           stage: "post-boundary-behavior",
           candidateKey,
           reason: classification.reason || classification.classification,
         });
-        return;
+        break;
       }
     }
-    safePreBoundaryGroups += 1;
+    if (!classificationUnsafe) safePreBoundaryGroups += 1;
   });
 
   // Stage 2: post-boundary merge groups — behavior CEGAR via classifyPair.
   const postByCandidate = groupByCandidate(postBoundaryRecords);
   postByCandidate.forEach((members, candidateKey) => {
     if (distinctExactKeyCount(members) <= 1) return;
-    const reps = representativesByExactKey(members);
+    const reps = representativesByExactFingerprint(members);
     const first = reps[0];
     for (const other of reps.slice(1)) {
       behaviorAudited += 1;
-      const left = buildStateBehavior(simulator, project, ir, first.state, behaviorOptions);
-      const right = buildStateBehavior(simulator, project, ir, other.state, behaviorOptions);
+      const left = buildStateBehavior(regionB.simulator, regionB.project, regionB.ir, first.state, behaviorOptions);
+      const right = buildStateBehavior(regionB.simulator, regionB.project, regionB.ir, other.state, behaviorOptions);
       const classification = classifyPair(left, right);
       if (classifyPairUnsafe(classification)) {
         unsafeCount += 1;
