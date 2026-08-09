@@ -70,6 +70,19 @@ function legalActionSignature(regionContext, state) {
   }
 }
 
+// Production-legal action kinds (from the actions' OWN kind field — summary
+// prefixes like "getNext"/"event@MT1" are format artifacts, not action kinds).
+function legalActionKinds(regionContext, state) {
+  try {
+    const actions = typeof regionContext.legalActionProvider === "function"
+      ? (regionContext.legalActionProvider(null, state) || [])
+      : (((regionContext.simulator.enumeratePrimitiveActions(state)) || {}).actions || []);
+    return Array.from(new Set(actions.map((action) => action.kind).filter(Boolean))).sort();
+  } catch (error) {
+    return ["__enumerateError__"];
+  }
+}
+
 // regionContext = { id, simulator, project, ir, goalPredicate, legalActionProvider? }
 function buildCorpusRecord(input) {
   const {
@@ -83,13 +96,17 @@ function buildCorpusRecord(input) {
     regionIndex,
     regionId,
   } = input;
+  // Cross-tower support: the candidate key is always computed in the RECORD's
+  // OWN region project (regionContext.project), never a shared project —
+  // otherwise whiteisland states would be analyzed with the OnlyUp tower.
+  const regionProject = (regionContext && regionContext.project) || project;
   const candidateOptions = { goalPredicate: regionContext.goalPredicate, profile: candidateProfile };
   const candidateDpKey = typeof candidateKeyBuilder === "function"
     ? candidateKeyBuilder(state)
-    : buildCandidateDpKey(regionContext.simulator, project, regionContext.ir, state, candidateOptions);
+    : buildCandidateDpKey(regionContext.simulator, regionProject, regionContext.ir, state, candidateOptions);
   const candidateProjection = typeof candidateKeyBuilder === "function"
     ? null
-    : buildCandidateProjection(regionContext.simulator, project, regionContext.ir, state, candidateOptions);
+    : buildCandidateProjection(regionContext.simulator, regionProject, regionContext.ir, state, candidateOptions);
   return {
     layer,
     regionIndex,
@@ -99,6 +116,7 @@ function buildCorpusRecord(input) {
     candidateDpKey,
     candidateProjection,
     legalActionSignature: legalActionSignature(regionContext, state),
+    legalActionKinds: legalActionKinds(regionContext, state),
     terminalProjection: buildTerminalProjection(state, regionContext.goalPredicate),
     hp: heroHp(state),
     regionContext,
