@@ -182,7 +182,8 @@
     "check:mt1-workload-matrix": "node check-mt1-workload-matrix-contract.js",
     "check:mt1-default-promotion": "node check-mt1-default-promotion-contract.js",
     "check:mt1-post-promotion-regression": "node check-mt1-post-promotion-regression-contract.js",
-    "check:multi-region-key-shadow": "node check-multi-region-key-shadow-contract.js"
+    "check:multi-region-key-shadow": "node check-multi-region-key-shadow-contract.js",
+    "check:multi-region-boundary-matrix": "node check-multi-region-boundary-matrix-contract.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

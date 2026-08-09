@@ -207,7 +207,8 @@
         "shared-solver/check-mt1-workload-matrix-contract.js",
         "shared-solver/check-mt1-default-promotion-contract.js",
         "shared-solver/check-mt1-post-promotion-regression-contract.js",
-        "shared-solver/check-multi-region-key-shadow-contract.js"
+        "shared-solver/check-multi-region-key-shadow-contract.js",
+        "shared-solver/check-multi-region-boundary-matrix-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -2436,6 +2437,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.5a: multi-Region dual-key shadow + boundary corpus (research only, no production change): 3-layer corpus (pre-boundary/boundary-transfer/post-boundary), state + boundary partition audits, ordered CEGAR (boundary-transfer first), negative-control fail-visible"
+    },
+    "shared-solver/check-multi-region-boundary-matrix-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.5b: multi-Region boundary corpus expansion workload matrix (11 workloads: 5 R0 goals x entryA, 5 R1 boundary variants x exp6, 3-region chain), coverage-gated no-merge claim, 4 detector controls (all-colliding / HP-only dominance-safe / boundary-semantic-drift / post-boundary-action-drift), first real merge -> witness artifact + needs-review (verdict pinned NO_COLLISION_OBSERVED)"
     }
   }
 }
