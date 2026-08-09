@@ -83,6 +83,7 @@ const { compileTowerIR } = require("./lib/tower-ir");
 const { makeSimulator, createStartState, materializeNextRegionFrontier, exactStateFingerprint } = require("./lib/solver-job");
 const { runMilestoneGraph, buildSegmentActionProvider } = require("./lib/segment-dp");
 const { buildRegionMilestoneSpec } = require("./lib/region-spec");
+const { listFloorMutationSummary } = require("./lib/state");
 const { buildStateBehavior, buildStateProjection, classifyPair } = require("./lib/key-dependency-corpus");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
 const { resolveDpKeyProfile, EXPERIMENTAL_PROFILE, PRODUCTION_PROFILE } = require("./lib/guarded-candidate-key");
@@ -643,6 +644,15 @@ function semanticAggregationControl() {
   return { globalInventoryUnion: globalTwo.inventory, globalMutationUnion: globalTwo.mutationSummary };
 }
 
+// Canonical mutation summary fingerprint.  BOTH sides of a transition must use
+// this SAME helper (the recorder stores parentMutations with the identical
+// expression in dp-search), so a no-mutation edge is [] == [] — a raw
+// floorStates object like {"removed":{},"replaced":{}} would otherwise compare
+// unequal and create a false "mutation changed" signal.
+function mutationSummaryFingerprintOf(floorStates) {
+  return JSON.stringify(listFloorMutationSummary(floorStates || {}));
+}
+
 // P1-3 hole-closure evidence (fail-closed): inventory and visitedFloors need
 // dedicated TRANSITION-LEVEL evidence, not just distinct counts.  The inventory
 // detector walks REAL parent -> action -> child edges from the recorder's
@@ -651,9 +661,10 @@ function semanticAggregationControl() {
 //              action kind is an acquisition kind (pickup / interactPickup).
 //   consume  = child.inventory[key] < parent.inventory[key] on an edge whose
 //              action kind is a consumption kind (openDoor / useTool) AND the
-//              child floor mutations differ from the parent's (the door really
-//              changed on the SAME transition).
-// A state-pair Cartesian product is NOT transition evidence.
+//              CANONICAL child mutation summary differs from the CANONICAL
+//              parent mutation summary (the door really changed on the SAME
+//              transition).  A state-pair Cartesian product is NOT transition
+//              evidence, and a key decrease alone is NOT consume evidence.
 function inventoryHoleClosureOf(analysis) {
   const edges = analysis.corpus.postRawRecords || [];
   const distinct = new Set(edges.map((r) => JSON.stringify(r.state.inventory || {})));
@@ -680,10 +691,10 @@ function inventoryHoleClosureOf(analysis) {
         acquireAction = kind;
       }
       if (pv > cv && consumeKinds.has(kind) && !consumeExecuted) {
-        // door really changed on THIS transition (child mutations differ from
-        // the parent's snapshot), not merely somewhere else in the corpus.
-        const childMutations = JSON.stringify((record.state.floorStates || {})[record.state.floorId] || {});
-        if (childMutations !== (record.parentMutations || "")) {
+        // door really changed on THIS transition: canonical child mutations
+        // differ from the CANONICAL parent snapshot (same representation as
+        // the recorder's parentMutations).
+        if (mutationSummaryFingerprintOf(record.state.floorStates) !== record.parentMutations) {
           consumeExecuted = true;
           consumeKey = key;
           consumeAction = kind;
@@ -704,28 +715,54 @@ function inventoryHoleClosureOf(analysis) {
 }
 
 // Synthetic controls for the inventory transition detector:
-//   negative — two states with different inventories and DIFFERENT mutations
+//   negative-1 — two states with different inventories and DIFFERENT mutations
 //     but NO parent->child edge must NOT be read as acquire/consume;
-//   positive — a REAL edge chain S0 --pickup--> S1 --openDoor--> S2 must be
-//     read as acquire + consume.
+//   negative-2 — a REAL openDoor edge with key 1->0 but NO canonical mutation
+//     change must NOT be read as consume (representation parity guard);
+//   positive  — a REAL edge chain S0 --pickup--> S1 --openDoor--> S2 with the
+//     door removed on the SAME transition must be read as acquire + consume.
 function inventoryTransitionControls() {
-  const M0 = JSON.stringify([{ floorId: "A1", removed: [] }]);
-  const M1 = JSON.stringify([{ floorId: "A1", removed: ["5,3"] }]);
+  const noMutationFp = mutationSummaryFingerprintOf({ A1: { removed: {}, replaced: {} } });
+  const doorRemovedFp = mutationSummaryFingerprintOf({ A1: { removed: { "5,3": true }, replaced: {} } });
+  assert.notStrictEqual(noMutationFp, doorRemovedFp, "transition control: canonical fingerprints must distinguish door removal");
   const s0 = { state: { inventory: { yellowKey: 0 }, floorStates: { A1: { removed: {} } } }, parentInventory: null, actionKind: null, parentMutations: null };
-  const s1 = { state: { inventory: { yellowKey: 1 }, floorStates: { A1: { removed: {} } } }, parentInventory: null, actionKind: null, parentMutations: null };
-  const negative = inventoryHoleClosureOf({ corpus: { postRawRecords: [s0, s1] } });
-  assert.strictEqual(negative.distinctInventories, 2, "transition control (negative): distinct inventories must be 2");
-  assert.strictEqual(negative.acquireExecuted, false, "transition control (negative): no parent edge must NOT be acquire");
-  assert.strictEqual(negative.consumeExecuted, false, "transition control (negative): no parent edge must NOT be consume");
-  assert.strictEqual(negative.filled, false, "transition control (negative): must not be filled without transitions");
+  const s1 = { state: { inventory: { yellowKey: 1 }, floorStates: { A1: { removed: { "5,3": true } } } }, parentInventory: null, actionKind: null, parentMutations: null };
+  const negative1 = inventoryHoleClosureOf({ corpus: { postRawRecords: [s0, s1] } });
+  assert.strictEqual(negative1.distinctInventories, 2, "transition control (negative-1): distinct inventories must be 2");
+  assert.strictEqual(negative1.acquireExecuted, false, "transition control (negative-1): no parent edge must NOT be acquire");
+  assert.strictEqual(negative1.consumeExecuted, false, "transition control (negative-1): no parent edge must NOT be consume");
+  assert.strictEqual(negative1.filled, false, "transition control (negative-1): must not be filled without transitions");
 
-  const ePickup = { state: { inventory: { yellowKey: 1 }, floorStates: { A1: { removed: {} } } }, parentInventory: { yellowKey: 0 }, parentMutations: M0, actionKind: "pickup" };
-  const eDoor = { state: { inventory: { yellowKey: 0 }, floorStates: { A1: { removed: { "5,3": true } } } }, parentInventory: { yellowKey: 1 }, parentMutations: M0, actionKind: "openDoor" };
+  // negative-2: real openDoor edge, key consumed, but NO mutation change.
+  const eDoorNoMutation = {
+    state: { inventory: { yellowKey: 0 }, floorStates: { A1: { removed: {} } } },
+    parentInventory: { yellowKey: 1 },
+    parentMutations: noMutationFp,
+    actionKind: "openDoor",
+  };
+  const negative2 = inventoryHoleClosureOf({ corpus: { postRawRecords: [eDoorNoMutation] } });
+  assert.strictEqual(negative2.consumeExecuted, false, "transition control (negative-2): key decrease WITHOUT canonical mutation change must NOT be consume");
+  assert.strictEqual(negative2.filled, false, "transition control (negative-2): must not be filled");
+
+  // positive: pickup (key 0->1, no mutation change) then openDoor (key 1->0,
+  // door removed on the SAME transition).
+  const ePickup = {
+    state: { inventory: { yellowKey: 1 }, floorStates: { A1: { removed: {} } } },
+    parentInventory: { yellowKey: 0 },
+    parentMutations: noMutationFp,
+    actionKind: "pickup",
+  };
+  const eDoor = {
+    state: { inventory: { yellowKey: 0 }, floorStates: { A1: { removed: { "5,3": true } } } },
+    parentInventory: { yellowKey: 1 },
+    parentMutations: noMutationFp,
+    actionKind: "openDoor",
+  };
   const positive = inventoryHoleClosureOf({ corpus: { postRawRecords: [ePickup, eDoor] } });
   assert.strictEqual(positive.acquireExecuted, true, "transition control (positive): pickup edge must be acquire");
-  assert.strictEqual(positive.consumeExecuted, true, "transition control (positive): openDoor edge with mutation change must be consume");
+  assert.strictEqual(positive.consumeExecuted, true, "transition control (positive): openDoor edge with canonical mutation change must be consume");
   assert.strictEqual(positive.filled, true, "transition control (positive): acquire+consume must fill");
-  return { negativeFilled: negative.filled, positiveFilled: positive.filled };
+  return { negative1Filled: negative1.filled, negative2Filled: negative2.filled, positiveFilled: positive.filled };
 }
 
 function visitedFloorsHoleClosureOf(analysis) {
@@ -1364,7 +1401,8 @@ async function main() {
     assert.ok(visitedFloorsHoleClosure.maxVisitedFloorCount >= 2, "visitedFloors hole filled claim requires a state on >=2 floors");
     assert.ok(visitedFloorsHoleClosure.changeFloorExecuted, "visitedFloors hole filled claim requires a real changeFloor transition");
   }
-  assert.strictEqual(inventoryTransitionControlsResult.negativeFilled, false, "transition control (negative): state-pair diversity must not be read as acquire/consume");
+  assert.strictEqual(inventoryTransitionControlsResult.negative1Filled, false, "transition control (negative-1): state-pair diversity must not be read as acquire/consume");
+  assert.strictEqual(inventoryTransitionControlsResult.negative2Filled, false, "transition control (negative-2): key decrease without canonical mutation change must not be consume");
   assert.strictEqual(inventoryTransitionControlsResult.positiveFilled, true, "transition control (positive): real pickup->openDoor edges must fill");
   const semanticNarrownessFindings = {
     inventory: inventoryHoleClosure.filled
