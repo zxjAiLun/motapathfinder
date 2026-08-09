@@ -16,7 +16,7 @@
  * (field-level candidate-projection diff + boundary/CEGAR evidence) is saved to
  * runs/generated/ and the contract stops with needs-review (non-zero exit).
  *
- * Workload matrix (10 workloads):
+ * Workload matrix (11 workloads):
  *   R0 frontier variants (explicit goals, P2-3 closed):
  *     exp2, exp6, exp8, exp9, tileRemoved(MT1 4,1)
  *   R1 boundary variants (x R0 exp6, calibrated goals so R1 really searches):
@@ -29,15 +29,27 @@
  * + CEGAR + coverage metadata (id, r0Goal, r0TerminalCandidateCount, r1Start,
  * r1Scope, r1ActionKinds, boundaryTransformKind, chainLength).
  *
+ * Collision scoping (P1-1): every group key is the REAL production competition
+ * scope — state partition by region-execution-context + candidate key, boundary
+ * partition and CEGAR by boundaryIndex + candidate key, witness grouped with
+ * the same scopes.  Candidate key reuse across boundaries is NOT a merge.
+ *
+ * Legal semantics (P1-2): coverage, signatures and behavior CEGAR use the
+ * region's production legal-action provider (buildSegmentActionProvider), so
+ * raw primitive actions forbidden by the policy never enter the classification;
+ * parity (legal subset of raw) is asserted on every record.
+ *
  * Coverage gates (no merge-free claim without coverage):
  *   pre-boundary terminals >= 2, boundary-transfer >= 2,
- *   post-boundary samples >= 2, >= 2 distinct legal action kinds observed.
+ *   post-boundary samples >= 2, >= 1 distinct LEGAL action kind,
+ *   zero parity violations; observed legal kinds within the region policy.
  *
- * Controls (4): all-colliding (unsafe negative), HP-only dominance-safe,
- * boundary-semantic-drift (Stage 1 unsafe), post-boundary-action-drift
- * (classifyPair unsafe).
+ * Controls (6): all-colliding (scoped), HP-only dominance-safe,
+ * boundary-semantic-drift, post-boundary-action-drift, raw-vs-legal,
+ * cross-boundary key reuse (neutral).
  *
- * Verdict: NO_COLLISION_OBSERVED (pinned; any real merge -> needs-review).
+ * Verdict: NO_COLLISION_OBSERVED (pinned; any real merge -> witness artifact in
+ * runs/generated/ + needs-review).
  */
 
 const assert = require("node:assert");
@@ -47,8 +59,9 @@ const path = require("node:path");
 const { loadProject } = require("./lib/project-loader");
 const { compileTowerIR } = require("./lib/tower-ir");
 const { makeSimulator, createStartState, materializeNextRegionFrontier, exactStateFingerprint } = require("./lib/solver-job");
-const { runMilestoneGraph } = require("./lib/segment-dp");
+const { runMilestoneGraph, buildSegmentActionProvider } = require("./lib/segment-dp");
 const { buildRegionMilestoneSpec } = require("./lib/region-spec");
+const { buildStateBehavior, buildStateProjection, classifyPair } = require("./lib/key-dependency-corpus");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
 const { resolveDpKeyProfile, EXPERIMENTAL_PROFILE, PRODUCTION_PROFILE } = require("./lib/guarded-candidate-key");
 const {
@@ -245,13 +258,19 @@ function buildExecuteConfig(regionSpec) {
 }
 
 function regionContextFor(spec, index) {
+  const simulator = makeSimulator(project, spec, {});
   return {
     id: `R${index}`,
-    simulator: makeSimulator(project, spec, {}),
+    simulator,
     project,
     ir: compileTowerIR(project, spec, { towerId: TOWER_ID }),
     goalPredicate: goalPredicateFor(spec.goal),
     spec,
+    // Production-legal action semantics: the shadow's coverage, signatures and
+    // behavior CEGAR use the SAME provider the segment search uses (built from
+    // the region's action policy), so raw primitive actions forbidden by the
+    // policy never enter the research classification.
+    legalActionProvider: buildSegmentActionProvider(simulator, { actionPolicy: spec.actionPolicy || {} }),
   };
 }
 
@@ -337,22 +356,58 @@ function analyzeChain(boundaries, candidateProfile, candidateKeyBuilder) {
   return { corpus, statePartition, boundaryPartition, cegar };
 }
 
+// Coverage uses PRODUCTION-LEGAL action semantics (records carry the legal
+// action signature from the region's action policy provider).  Parity contract:
+//   - raw-only actions (in raw, not legal) must be policy-FORBIDDEN kinds;
+//   - legal-only actions (in legal, not raw) must be provider-ADDED kinds
+//     (floorFly / interactPickup are enumerated by the provider, not the raw
+//     primitive enumerator).
 function coverageOf(analysis) {
   const pre = analysis.corpus.preBoundaryRecords.length;
+  const boundary = analysis.corpus.boundaryRecords.length;
   const post = analysis.corpus.postBoundaryRecords.length;
   const actionKinds = new Set();
+  let parityViolations = 0;
   analysis.corpus.postBoundaryRecords.forEach((record) => {
-    (record.legalActionSignature || []).forEach((summary) => {
+    const legal = record.legalActionSignature || [];
+    legal.forEach((summary) => {
       const kind = String(summary).split(":")[0];
       if (kind) actionKinds.add(kind);
+    });
+    const ctx = record.regionContext;
+    const policy = (ctx.spec && ctx.spec.actionPolicy) || {};
+    const allowedKinds = new Set(policy.actionKinds || ["battle", "pickup", "equip", "openDoor", "useTool", "changeFloor", "event"]);
+    const raw = rawActionSignatureOf(ctx, record.state);
+    raw.forEach((summary) => {
+      if (legal.includes(summary)) return;
+      const kind = String(summary).split(":")[0];
+      if (allowedKinds.has(kind)) parityViolations += 1; // raw-only action of an ALLOWED kind
+    });
+    legal.forEach((summary) => {
+      if (raw.includes(summary)) return;
+      const kind = String(summary).split(":")[0];
+      if (kind !== "floorFly" && kind !== "interactPickup") parityViolations += 1; // legal-only action not provider-added
     });
   });
   return {
     preTerminalCount: pre,
+    boundaryTransferCount: boundary,
     postSampleCount: post,
-    distinctActionKinds: actionKinds.size,
-    ok: pre >= 2 && post >= 2 && actionKinds.size >= 2,
+    distinctLegalActionKinds: actionKinds.size,
+    legalKinds: Array.from(actionKinds).sort(),
+    parityViolations,
+    ok: pre >= 2 && boundary >= 2 && post >= 2 && actionKinds.size >= 1 && parityViolations === 0,
   };
+}
+
+function rawActionSignatureOf(regionContext, state) {
+  try {
+    return ((regionContext.simulator.enumeratePrimitiveActions(state) || {}).actions || [])
+      .map((action) => action.summary)
+      .sort();
+  } catch (error) {
+    return [];
+  }
 }
 
 function diffCandidateProjections(left, right) {
@@ -371,8 +426,51 @@ function diffCandidateProjections(left, right) {
   return differing;
 }
 
+// Field-level diff of the PRODUCTION identity decomposition (P1-3): why does
+// the production identity think the two states differ, beyond the candidate
+// projection?  Compares regionKey / reachableEndpointsKey / mutationSummary /
+// exactDpKey / hero / equipment / inventory / flags / visitedFloors /
+// eventHazardLabel / loc / floorId (nested objects compared structurally).
+function diffProductionIdentity(projA, projB) {
+  const diffKeys = (a, b, out) => {
+    const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+    keys.forEach((key) => {
+      const av = a ? a[key] : undefined;
+      const bv = b ? b[key] : undefined;
+      if (JSON.stringify(av) !== JSON.stringify(bv)) out.push({ field: key, a: av, b: bv });
+    });
+  };
+  const differing = [];
+  diffKeys(projA, projB, differing);
+  return differing;
+}
+
+function productionProjectionOf(ctx, state) {
+  const proj = buildStateProjection(ctx.simulator, ctx.project, ctx.ir, state, {
+    goalPredicate: ctx.goalPredicate,
+    dpKeyMode: "region",
+  });
+  return {
+    regionKey: proj.legacyReference.regionKey,
+    reachableEndpointsKey: proj.legacyReference.reachableEndpointsKey,
+    mutationSummary: proj.legacyReference.mutationSummary,
+    exactDpKey: proj.legacyReference.exactDpKey,
+    hero: proj.resourceIdentity.hero,
+    equipment: proj.resourceIdentity.equipment,
+    inventory: proj.resourceIdentity.inventory,
+    flags: proj.resourceIdentity.flags,
+    visitedFloors: proj.resourceIdentity.visitedFloors,
+    eventHazardLabel: proj.eventHazardLabel,
+    loc: state.hero && state.hero.loc,
+    floorId: state.floorId,
+  };
+}
+
 // Minimal witness artifact for the FIRST real merge: field-level candidate
-// projection diff + production identities + boundary/CEGAR evidence.
+// projection diff (empty means "candidate says equal") + PRODUCTION identity
+// decomposition diff (why production says different) + boundary/CEGAR evidence.
+// Merge groups are scoped exactly like the audits (region scope for the state
+// partition, boundary scope for the boundary partition) — never cross-scope.
 function captureMergeWitness(wl, analysis) {
   const witness = {
     workloadId: wl.id,
@@ -381,6 +479,7 @@ function captureMergeWitness(wl, analysis) {
       splitExactKeyCount: analysis.statePartition.splitExactKeyCount,
       mergedCandidateKeyCount: analysis.statePartition.mergedCandidateKeyCount,
       partitionRelation: analysis.statePartition.partitionRelation,
+      perScope: analysis.statePartition.perScope,
     },
     boundaryPartition: analysis.boundaryPartition,
     cegar: {
@@ -390,37 +489,48 @@ function captureMergeWitness(wl, analysis) {
     },
     mergeGroups: [],
   };
-  const byCandidate = new Map();
+  // State-partition merge groups are scoped by region execution context.
+  const byScope = new Map();
   analysis.corpus.records.forEach((record) => {
-    if (!byCandidate.has(record.candidateDpKey)) byCandidate.set(record.candidateDpKey, []);
-    byCandidate.get(record.candidateDpKey).push(record);
+    const scope = `${record.regionContext.id}|${record.candidateDpKey}`;
+    if (!byScope.has(scope)) byScope.set(scope, []);
+    byScope.get(scope).push(record);
   });
-  byCandidate.forEach((members, candidateKey) => {
+  byScope.forEach((members, scope) => {
     const distinctExact = new Set(members.map((m) => m.productionDpKey));
     if (distinctExact.size <= 1) return;
     const byExact = new Map();
     members.forEach((record) => { if (!byExact.has(record.productionDpKey)) byExact.set(record.productionDpKey, record); });
     const reps = Array.from(byExact.values());
     const first = reps[0];
-    const groups = reps.slice(1).map((other) => ({
-      layer: other.layer,
-      boundaryIndex: other.boundaryIndex,
-      regionId: other.regionId,
-      productionKeyA: first.productionDpKey,
-      productionKeyB: other.productionDpKey,
-      exactFingerprintA: first.exactStateFingerprint,
-      exactFingerprintB: other.exactStateFingerprint,
-      hpA: first.hp,
-      hpB: other.hp,
-      candidateProjectionDiff: first.candidateProjection && other.candidateProjection
-        ? diffCandidateProjections(first.candidateProjection, other.candidateProjection)
-        : null,
-      legalActionsA: first.legalActionSignature,
-      legalActionsB: other.legalActionSignature,
-      terminalA: first.terminalProjection,
-      terminalB: other.terminalProjection,
-    }));
-    witness.mergeGroups.push({ candidateKey, memberCount: members.length, groups });
+    const ctx = first.regionContext;
+    const groups = reps.slice(1).map((other) => {
+      const projA = productionProjectionOf(ctx, first.state);
+      const projB = productionProjectionOf(ctx, other.state);
+      return {
+        scope,
+        layer: other.layer,
+        boundaryIndex: other.boundaryIndex,
+        regionId: other.regionId,
+        productionKeyA: first.productionDpKey,
+        productionKeyB: other.productionDpKey,
+        exactFingerprintA: first.exactStateFingerprint,
+        exactFingerprintB: other.exactStateFingerprint,
+        hpA: first.hp,
+        hpB: other.hp,
+        candidateProjectionDiff: first.candidateProjection && other.candidateProjection
+          ? diffCandidateProjections(first.candidateProjection, other.candidateProjection)
+          : null,
+        productionIdentityDiff: diffProductionIdentity(projA, projB),
+        productionProjectionA: projA,
+        productionProjectionB: projB,
+        legalActionsA: first.legalActionSignature,
+        legalActionsB: other.legalActionSignature,
+        terminalA: first.terminalProjection,
+        terminalB: other.terminalProjection,
+      };
+    });
+    witness.mergeGroups.push({ scope, candidateKey: members[0].candidateDpKey, memberCount: members.length, groups });
   });
   fs.mkdirSync(WITNESS_DIR, { recursive: true });
   const file = path.join(WITNESS_DIR, `witness-${wl.id}.json`);
@@ -433,11 +543,135 @@ function captureMergeWitness(wl, analysis) {
 function allCollidingControl(boundaries) {
   const broken = analyzeChain(boundaries, CANDIDATE_PROFILE, () => "ALL-COLLIDING");
   assert.ok(
+    broken.statePartition.mergedCandidateKeyCount > 0,
+    "negative control: all-colliding key must produce scoped state merges",
+  );
+  assert.ok(
     broken.boundaryPartition.inequivalentGroupCount > 0,
     "negative control: all-colliding key must be boundary-inequivalent",
   );
   assert.ok(broken.cegar.unsafeCount > 0, "negative control: all-colliding key must be unsafe under CEGAR");
-  return { detected: true };
+  // Scoped isolation: the scoped audit reports merges per region scope; a merge
+  // group never spans region contexts (records with the same candidate key in
+  // different scopes never share a group).
+  const scopedGroups = new Map();
+  broken.corpus.records.forEach((record) => {
+    const scope = `${record.regionContext.id}|${record.candidateDpKey}`;
+    if (!scopedGroups.has(scope)) scopedGroups.set(scope, new Set());
+    scopedGroups.get(scope).add(record.productionDpKey);
+  });
+  let crossScopeMerge = 0;
+  const recordsByScope = new Map();
+  broken.corpus.records.forEach((record) => {
+    const scope = `${record.regionContext.id}|${record.candidateDpKey}`;
+    if (!recordsByScope.has(scope)) recordsByScope.set(scope, []);
+    recordsByScope.get(scope).push(record);
+  });
+  scopedGroups.forEach((exactSet, scope) => {
+    if (exactSet.size <= 1) return;
+    const scopesInGroup = new Set((recordsByScope.get(scope) || []).map((r) => r.regionContext.id));
+    if (scopesInGroup.size > 1) crossScopeMerge += 1;
+  });
+  assert.strictEqual(crossScopeMerge, 0, "negative control: merge groups must never span region scopes");
+  return { detected: true, scopedMerges: broken.statePartition.mergedCandidateKeyCount };
+}
+
+// Neutral control (P1-1): a candidate key REUSED across two different
+// boundaries must NOT be reported as a merge — it never competes in one DP.
+// Positive (constructed): two records in the SAME boundary with the same
+// candidate key and different production identities MUST be detected as a real
+// merge by the scoped audit.
+function crossBoundaryReuseControl(boundaries) {
+  const corpus = buildMultiRegionCorpus({
+    boundaries,
+    project,
+    candidateProfile: CANDIDATE_PROFILE,
+    exactKeyConfig: { dpKeyMode: "region" },
+  });
+  const keysByBoundary = new Map();
+  corpus.records.forEach((record) => {
+    if (!keysByBoundary.has(record.boundaryIndex)) keysByBoundary.set(record.boundaryIndex, new Set());
+    keysByBoundary.get(record.boundaryIndex).add(record.candidateDpKey);
+  });
+  const b0Keys = keysByBoundary.get(0) || new Set();
+  const b1Keys = keysByBoundary.get(1) || new Set();
+  const shared = Array.from(b0Keys).filter((key) => b1Keys.has(key));
+  assert.ok(shared.length > 0, "cross-boundary control: the chain must reuse candidate keys across boundaries");
+
+  // Neutral: scoped audit must report ZERO merges (per boundary AND overall).
+  const partition = auditStatePartition(corpus.records);
+  assert.strictEqual(partition.mergedCandidateKeyCount, 0, "cross-boundary key reuse must NOT be a merge (scoped audit)");
+  Object.keys(partition.byBoundary || {}).forEach((b) => {
+    assert.strictEqual(partition.byBoundary[b].mergedCandidateKeyCount, 0, `cross-boundary control: boundary ${b} must have no internal merge`);
+  });
+
+  // Positive (constructed): same boundary, two production identities -> one
+  // candidate key -> the scoped audit MUST detect a real merge.
+  const ctx = boundaries[0].regionA;
+  const m1 = boundaries[0].preCandidates[0].state;
+  const m2 = boundaries[0].preCandidates[1].state;
+  const keyBuilder = () => "SAME-BOUNDARY-POSITIVE";
+  const recordOptions = {
+    regionContext: ctx,
+    project,
+    candidateProfile: CANDIDATE_PROFILE,
+    candidateKeyBuilder: keyBuilder,
+    exactKeyConfig: { dpKeyMode: "region" },
+  };
+  const p1 = { ...buildCorpusRecord({
+    ...recordOptions, state: m1, layer: "pre-boundary", regionIndex: 0, regionId: ctx.id,
+    extra: { boundaryIndex: 0, localIndex: 0 },
+  }), productionDpKey: "POS-EXACT-1" };
+  const p2 = { ...buildCorpusRecord({
+    ...recordOptions, state: m2, layer: "pre-boundary", regionIndex: 0, regionId: ctx.id,
+    extra: { boundaryIndex: 0, localIndex: 1 },
+  }), productionDpKey: "POS-EXACT-2" };
+  const positive = auditStatePartition([p1, p2]);
+  assert.ok(positive.mergedCandidateKeyCount >= 1, "cross-boundary control (positive): same-boundary merge must be detected");
+  return {
+    sharedKeyCount: shared.length,
+    scopedMerges: partition.mergedCandidateKeyCount,
+    sameBoundaryMergeDetected: positive.mergedCandidateKeyCount,
+  };
+}
+
+// Raw-vs-legal control (P1-2): two states whose RAW action sets differ ONLY
+// through policy-forbidden actions have EQUAL production-legal action sets and
+// must NOT classify unsafe.  MT1's events are policy-filtered (unsupported), so
+// an event-only policy makes the raw battle differences forbidden and the legal
+// sets equal.
+function rawVsLegalControl(campaign) {
+  const ctx = campaign.boundaries[0].regionB;
+  const m1 = campaign.boundaries[0].inputFrontier[0].state;
+  const m2 = campaign.boundaries[0].inputFrontier[1].state;
+  const raw1 = rawActionSignatureOf(ctx, m1);
+  const raw2 = rawActionSignatureOf(ctx, m2);
+  assert.notDeepStrictEqual(raw1, raw2, "raw-vs-legal control: raw action sets must differ");
+  const eventOnlyProvider = buildSegmentActionProvider(ctx.simulator, {
+    actionPolicy: { allowedFloors: ["MT1"], actionKinds: ["event"] },
+  });
+  const legal1 = eventOnlyProvider(null, m1).map((action) => action.summary).sort();
+  const legal2 = eventOnlyProvider(null, m2).map((action) => action.summary).sort();
+  assert.deepStrictEqual(legal1, legal2, "raw-vs-legal control: production-legal action sets must be equal");
+  // The raw differences must all be policy-forbidden kinds (battles under the
+  // event-only policy).
+  const forbiddenKinds = new Set(["event"]);
+  raw1.forEach((summary) => {
+    const kind = String(summary).split(":")[0];
+    if (!legal1.includes(summary)) {
+      assert.ok(!forbiddenKinds.has(kind), `raw-vs-legal control: raw-only action kind must be policy-forbidden (got ${kind})`);
+    }
+  });
+  const options = {
+    goalPredicate: ctx.goalPredicate,
+    actionProvider: (state) => eventOnlyProvider(null, state),
+  };
+  const b1 = buildStateBehavior(ctx.simulator, ctx.project, ctx.ir, m1, options);
+  const b2 = buildStateBehavior(ctx.simulator, ctx.project, ctx.ir, m2, options);
+  const classification = classifyPair(b1, b2);
+  assert.notStrictEqual(classification.classification, "unsafe",
+    `raw-vs-legal control: policy-forbidden raw differences must not classify unsafe (got ${classification.classification})`);
+  return { rawSetsDiffer: true, legalSetsEqual: true, classification: classification.classification };
 }
 
 // HP-only divergence within one post-boundary semantic identity must NOT be
@@ -584,8 +818,10 @@ function postBoundaryActionDriftControl(boundaries) {
 
 function legalActionSignatureOf(ctx, state) {
   try {
-    const enumerated = ctx.simulator.enumeratePrimitiveActions(state);
-    return ((enumerated && enumerated.actions) || []).map((action) => action.summary).sort();
+    const actions = typeof ctx.legalActionProvider === "function"
+      ? (ctx.legalActionProvider(null, state) || [])
+      : (((ctx.simulator.enumeratePrimitiveActions(state) || {}).actions) || []);
+    return actions.map((action) => action.summary).sort();
   } catch (error) {
     return ["__enumerateError__"];
   }
@@ -602,7 +838,11 @@ async function main() {
     dominanceSafe: dominanceSafeControl(controlChain.boundaries),
     boundarySemanticDrift: boundarySemanticDriftControl(controlChain.boundaries),
     postBoundaryActionDrift: postBoundaryActionDriftControl(controlChain.boundaries),
+    rawVsLegal: rawVsLegalControl(controlChain),
   };
+  // Cross-boundary neutral control needs the 3-region chain (two boundaries).
+  const chainCampaign = runChain([r0SpecFor({ type: "heroAtLeast", floorId: "MT1", minHero: { exp: 6 } }), r1EntryA(R1_GOAL_EXP8), r1EntryB(R1_GOAL_EXP8)]);
+  const crossBoundary = crossBoundaryReuseControl(chainCampaign.boundaries);
 
   const workloadResults = [];
   let needsReview = false;
@@ -615,22 +855,36 @@ async function main() {
     const coverage = coverageOf(analysis);
 
     const r1Spec = regionSpecs[1];
+    const r1ActionKinds = ((r1Spec.actionPolicy || {}).actionKinds || []).slice();
+    // Workload-specific policy assertion: observed legal kinds must be within
+    // the region's allowed action kinds (P1-2: coverage uses legal semantics).
+    const legalKindsWithinPolicy = (coverage.legalKinds || []).every((kind) => r1ActionKinds.includes(kind));
+    // flagCarry-specific evidence: R0's terminal flags must actually be carried
+    // into the boundary state (flag path exercised).
+    const flagCarryEvidence = wl.r1Id === "flagCarry"
+      ? (campaign.boundaries[0].inputFrontier || []).some((entry) =>
+        entry.state.flags && (entry.state.flags.hatred != null || entry.state.flags.autoBattle != null))
+      : true;
     const result = {
       id: wl.id,
       r0Goal: JSON.parse(JSON.stringify(wl.r0Goal)),
       r0TerminalCandidateCount: campaign.boundaries[0].preCandidates.length,
       r1Start: JSON.parse(JSON.stringify(r1Spec.start || {})),
       r1Scope: JSON.parse(JSON.stringify(r1Spec.scope || {})),
-      r1ActionKinds: ((r1Spec.actionPolicy || {}).actionKinds || []).slice(),
+      r1ActionKinds: r1ActionKinds.slice(),
       boundaryTransformKind: wl.boundaryTransformKind || "floor-entry",
       chainLength: wl.chainLength,
       coverage,
+      legalKindsWithinPolicy,
+      flagCarryEvidence,
       layers: analysis.corpus.layers,
       statePartition: analysis.statePartition,
       boundaryPartition: analysis.boundaryPartition,
       cegar: analysis.cegar,
     };
     workloadResults.push(result);
+    assert.ok(legalKindsWithinPolicy, `${wl.id}: observed legal action kinds must be within the region's action policy`);
+    assert.ok(flagCarryEvidence, `${wl.id}: flag-carry evidence must be observed`);
 
     const hasMerge = analysis.statePartition.mergedCandidateKeyCount > 0
       || analysis.boundaryPartition.inequivalentGroupCount > 0
@@ -662,10 +916,20 @@ async function main() {
       verdictPinnedNoCollision: true,
       coverageThresholdsMet: coverageMet,
       allCollidingDetected: controls.allColliding.detected,
+      allCollidingScopedIsolation: controls.allColliding.scopedMerges > 0,
       dominanceSafeControl: controls.dominanceSafe.safe,
       boundarySemanticDriftDetected: controls.boundarySemanticDrift.detected,
       postBoundaryActionDriftDetected: controls.postBoundaryActionDrift.detected,
+      rawVsLegalControl: controls.rawVsLegal.legalSetsEqual && controls.rawVsLegal.classification !== "unsafe",
+      crossBoundaryKeyReuseNotAMerge: crossBoundary.scopedMerges === 0,
+      crossBoundaryReusedKeys: crossBoundary.sharedKeyCount,
+      sameBoundaryMergeDetected: crossBoundary.sameBoundaryMergeDetected,
       needsReview: false,
+    },
+    controlsDetail: {
+      allColliding: controls.allColliding,
+      rawVsLegal: controls.rawVsLegal,
+      crossBoundaryReuse: crossBoundary,
     },
     coverageSummary: {
       workloads: workloadResults.length,
@@ -677,7 +941,6 @@ async function main() {
       totalUnsafe: workloadResults.reduce((s, r) => s + r.cegar.unsafeCount, 0),
     },
     workloads: workloadResults,
-    controlsDetail: controls,
     verdict,
   }, null, 2) + "\n");
 }

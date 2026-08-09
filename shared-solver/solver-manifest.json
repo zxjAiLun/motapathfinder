@@ -2443,7 +2443,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.5b: multi-Region boundary corpus expansion workload matrix (11 workloads: 5 R0 goals x entryA, 5 R1 boundary variants x exp6, 3-region chain), coverage-gated no-merge claim, 4 detector controls (all-colliding / HP-only dominance-safe / boundary-semantic-drift / post-boundary-action-drift), first real merge -> witness artifact + needs-review (verdict pinned NO_COLLISION_OBSERVED)"
+      "notes": "PR-5.5b Repair: multi-Region boundary corpus expansion (11 workloads), collision scoping by region-execution-context/boundaryIndex, production-legal action semantics (buildSegmentActionProvider + parity), 6 detector controls (all-colliding scoped / dominance-safe / semantic-drift / action-drift / raw-vs-legal / cross-boundary-reuse), witness with production identity decomposition diff, verdict pinned NO_COLLISION_OBSERVED"
     }
   }
 }
