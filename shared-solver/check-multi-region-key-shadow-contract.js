@@ -209,17 +209,26 @@ async function runCampaign() {
 
   return {
     regionA: {
+      id: "R0",
       simulator: simA,
+      project,
       ir: irA,
       goalPredicate: goalPredicateA,
-      terminalCandidates: resultA.finalCandidates,
     },
     regionB: {
+      id: "R1",
       simulator: simB,
+      project,
       ir: irB,
       goalPredicate: goalPredicateB,
-      records: recordsB,
+    },
+    boundary: {
+      index: 0,
+      regionA: null, // filled below
+      regionB: null,
+      preCandidates: resultA.finalCandidates,
       inputFrontier,
+      postRecords: recordsB,
     },
     profileA: cfgA.resolution,
     profileB: cfgB.resolution,
@@ -228,9 +237,13 @@ async function runCampaign() {
 }
 
 function analyzeCorpus(campaign, candidateProfile, candidateKeyBuilder) {
-  const corpus = buildMultiRegionCorpus({
+  const boundary = {
+    ...campaign.boundary,
     regionA: campaign.regionA,
     regionB: campaign.regionB,
+  };
+  const corpus = buildMultiRegionCorpus({
+    boundaries: [boundary],
     project,
     candidateProfile,
     candidateKeyBuilder,
@@ -242,12 +255,6 @@ function analyzeCorpus(campaign, candidateProfile, candidateKeyBuilder) {
     preBoundaryRecords: corpus.preBoundaryRecords,
     boundaryRecords: corpus.boundaryRecords,
     postBoundaryRecords: corpus.postBoundaryRecords,
-    regionB: {
-      simulator: campaign.regionB.simulator,
-      project,
-      ir: campaign.regionB.ir,
-      goalPredicate: campaign.regionB.goalPredicate,
-    },
     candidateProfile,
   });
   return { corpus, statePartition, boundaryPartition, cegar };
@@ -262,7 +269,7 @@ function analyzeCorpus(campaign, candidateProfile, candidateKeyBuilder) {
 // only in HP (same production key — HP is a dominance label, not identity).
 function dominanceSafeBoundaryControl(campaign) {
   const ctx = campaign.regionB;
-  const base = ctx.inputFrontier[0].state;
+  const base = campaign.boundary.inputFrontier[0].state;
   const m1 = JSON.parse(JSON.stringify(base));
   const m2 = JSON.parse(JSON.stringify(base));
   m1.hero.hp = 1000;
@@ -282,7 +289,7 @@ function dominanceSafeBoundaryControl(campaign) {
     layer: "boundary-transfer",
     regionIndex: 1,
     regionId: "R1",
-    extra: { postBoundaryExactFingerprint: exactStateFingerprint(m1) },
+    extra: { boundaryIndex: 0, localIndex: 0, postBoundaryExactFingerprint: exactStateFingerprint(m1) },
   });
   const b2 = buildCorpusRecord({
     ...recordOptions,
@@ -290,18 +297,18 @@ function dominanceSafeBoundaryControl(campaign) {
     layer: "boundary-transfer",
     regionIndex: 1,
     regionId: "R1",
-    extra: { postBoundaryExactFingerprint: exactStateFingerprint(m2) },
+    extra: { boundaryIndex: 0, localIndex: 1, postBoundaryExactFingerprint: exactStateFingerprint(m2) },
   });
   assert.strictEqual(b1.productionDpKey, b2.productionDpKey, "control: post-boundary semantic identities must be equal");
   assert.notStrictEqual(b1.exactStateFingerprint, b2.exactStateFingerprint, "control: exact fingerprints must diverge (HP only)");
 
   const pre1 = { ...buildCorpusRecord({
     ...recordOptions, state: m1, layer: "pre-boundary", regionIndex: 0, regionId: "R0",
-    extra: { boundaryIndex: 0, preBoundaryStateFingerprint: exactStateFingerprint(m1) },
+    extra: { boundaryIndex: 0, localIndex: 0, preBoundaryStateFingerprint: exactStateFingerprint(m1) },
   }), productionDpKey: "PRE-EXACT-1" };
   const pre2 = { ...buildCorpusRecord({
     ...recordOptions, state: m2, layer: "pre-boundary", regionIndex: 0, regionId: "R0",
-    extra: { boundaryIndex: 1, preBoundaryStateFingerprint: exactStateFingerprint(m2) },
+    extra: { boundaryIndex: 0, localIndex: 1, preBoundaryStateFingerprint: exactStateFingerprint(m2) },
   }), productionDpKey: "PRE-EXACT-2" };
   assert.notStrictEqual(pre1.productionDpKey, pre2.productionDpKey, "control: pre-boundary production identities must differ");
 
@@ -316,7 +323,6 @@ function dominanceSafeBoundaryControl(campaign) {
     preBoundaryRecords: [pre1, pre2],
     boundaryRecords: [b1, b2],
     postBoundaryRecords: [],
-    regionB: { simulator: ctx.simulator, project, ir: ctx.ir, goalPredicate: ctx.goalPredicate },
     candidateProfile: CANDIDATE_PROFILE,
   });
   assert.strictEqual(cegar.unsafeCount, 0, "control: dominance-safe merge must pass CEGAR");
@@ -366,7 +372,7 @@ async function main() {
         exactIdentityChanged: true,
         leaveLocRecorded: true,
       },
-      r0TerminalCandidates: campaign.regionA.terminalCandidates.length,
+      r0TerminalCandidates: campaign.boundary.preCandidates.length,
       r1PostBoundarySamples: campaign.scaleB,
       layers: analysis.corpus.layers,
       statePartition: {
