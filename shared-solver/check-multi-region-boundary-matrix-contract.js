@@ -16,14 +16,17 @@
  * (field-level candidate-projection diff + boundary/CEGAR evidence) is saved to
  * runs/generated/ and the contract stops with needs-review (non-zero exit).
  *
- * Workload matrix (11 workloads):
+ * Workload matrix (18 workloads):
  *   R0 frontier variants (explicit goals, P2-3 closed):
- *     exp2, exp6, exp8, exp9, tileRemoved(MT1 4,1)
+ *     exp2, exp6, exp8, exp9, tileRemoved(MT1 4,1)  (x entryA)
  *   R1 boundary variants (x R0 exp6, calibrated goals so R1 really searches):
  *     floor-entry A (MT1 5,7), floor-entry B (MT1 9,7),
  *     floor-entry C (MT1 3,7), inventory-use policy,
  *     battle-only flag-carry policy
- *   chain variant: R0(exp6) -> R1(entryA) -> R2(entryB)  (2 boundaries)
+ *   PR-5.5c expansion:
+ *     cross-products (r0-exp2/exp9/tile4_1 x entryB/entryC/inventoryUse/flagCarry),
+ *     deep R1 search (exp6-entryA-deep: candidateLimit 4 / goalSkylineLimit 16),
+ *     3-region chain, 4-region chain (R0->R1->R2->R3)
  *
  * Per-workload evidence: 3-layer corpus + statePartition + boundaryPartition
  * + CEGAR + coverage metadata (id, r0Goal, r0TerminalCandidateCount, r1Start,
@@ -207,7 +210,97 @@ function chainWorkload() {
   };
 }
 
-const WORKLOADS_ALL = [...r0VariantWorkloads(), ...r1VariantWorkloads(), chainWorkload()];
+// PR-5.5c expansion: cross-products (R0 goal x non-entryA R1 variants) to vary
+// the pre-boundary terminal diversity across different R1 structures.
+function xprodWorkloads() {
+  return [
+    {
+      id: "r0-exp2-entryB",
+      chainLength: 2,
+      r0Goal: { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 2 } },
+      r1Goal: R1_GOAL_EXP4,
+      r1Id: "entryB",
+      boundaryTransformKind: "floor-entry-B",
+    },
+    {
+      id: "r0-exp9-entryB",
+      chainLength: 2,
+      r0Goal: { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 9 } },
+      r1Goal: R1_GOAL_TILE411,
+      r1Id: "entryB",
+      boundaryTransformKind: "floor-entry-B",
+    },
+    {
+      id: "r0-tile4_1-entryC",
+      chainLength: 2,
+      r0Goal: { type: "tileRemoved", floorId: "MT1", x: 4, y: 1 },
+      r1Goal: R1_GOAL_TILE411,
+      r1Id: "entryC",
+      boundaryTransformKind: "floor-entry-C",
+    },
+    {
+      id: "r0-exp8-inventoryUse",
+      chainLength: 2,
+      r0Goal: { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 8 } },
+      r1Goal: R1_GOAL_TILE411,
+      r1Id: "inventoryUse",
+      boundaryTransformKind: "floor-entry-carry-inventory-use",
+    },
+    {
+      id: "r0-exp2-flagCarry",
+      chainLength: 2,
+      r0Goal: { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 2 } },
+      r1Goal: R1_GOAL_EXP4,
+      r1Id: "flagCarry",
+      boundaryTransformKind: "floor-entry-carry-flags-battle-only",
+    },
+  ];
+}
+
+// PR-5.5c expansion: DEEP R1 search (bigger candidate/frontier budget) to grow
+// the post-boundary corpus and the collision surface.
+function deepWorkload() {
+  return {
+    id: "exp6-entryA-deep",
+    chainLength: 2,
+    r0Goal: { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 6 } },
+    r1Goal: R1_GOAL_EXP8,
+    r1Id: "entryA",
+    boundaryTransformKind: "floor-entry-A",
+    r1Search: {
+      algorithm: "segment-dp",
+      maxExpansions: 8000,
+      maxRuntimeMs: 0,
+      candidateLimit: 4,
+      goalSkylineLimit: 16,
+    },
+  };
+}
+
+// PR-5.5c expansion: 4-region chain (R0 -> R1 -> R2 -> R3), three boundaries.
+function chain4Workload() {
+  return {
+    id: "chain4-exp6-entryA-entryB-entryC",
+    chainLength: 4,
+    r0Goal: { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 6 } },
+    r1Goal: R1_GOAL_EXP8,
+    r2Goal: R1_GOAL_EXP8,
+    r3Goal: R1_GOAL_EXP8,
+    r1Id: "entryA",
+    r2Id: "entryB",
+    r3Id: "entryC",
+    boundaryTransformKind: "chain-floor-entry-A-B-C",
+  };
+}
+
+const WORKLOADS_ALL = [
+  ...r0VariantWorkloads(),
+  ...r1VariantWorkloads(),
+  chainWorkload(),
+  ...xprodWorkloads(),
+  deepWorkload(),
+  chain4Workload(),
+];
 const WORKLOAD_SUBSET = (process.env.MR_WORKLOAD_SUBSET || "all").trim();
 const WORKLOADS = WORKLOAD_SUBSET === "all"
   ? WORKLOADS_ALL
@@ -227,6 +320,10 @@ function r2SpecFor(wl) {
   return r1EntryB(wl.r2Goal);
 }
 
+function r3SpecFor(wl) {
+  return r1EntryC(wl.r3Goal);
+}
+
 function searchConfig() {
   return {
     algorithm: "segment-dp",
@@ -237,12 +334,12 @@ function searchConfig() {
   };
 }
 
-function buildExecuteConfig(regionSpec) {
+function buildExecuteConfig(regionSpec, searchOverride) {
   const task = compileExecutableSolveTask({
     schema: "motapathfinder.solve-task.v1",
     tower: { id: TOWER_ID, projectRoot: ONLY_UP_ROOT, region: { spec: regionSpec } },
     objective: { mode: "max-final-hp" },
-    search: searchConfig(),
+    search: searchOverride || searchConfig(),
     verification: { strictReplay: false },
   });
   const executeConfig = { ...(task.executeConfig || {}) };
@@ -285,9 +382,11 @@ function regionContextFor(spec, index) {
 
 // Executes a chain mirroring executeSolveJobV2's loop.  Returns per-boundary
 // evidence (pre candidates, materialized inputs, post records, region result).
-function runChain(regionSpecs) {
+// searchOverrides (optional): per-region search config override, e.g. the deep
+// R1 budget { 1: deepSearch }.
+function runChain(regionSpecs, searchOverrides) {
   const contexts = regionSpecs.map(regionContextFor);
-  const profiles = regionSpecs.map((spec) => buildExecuteConfig(spec));
+  const profiles = regionSpecs.map((spec, index) => buildExecuteConfig(spec, searchOverrides && searchOverrides[index]));
   const boundaries = [];
   let previousTerminals = null;
   for (let i = 0; i < regionSpecs.length; i += 1) {
@@ -911,8 +1010,11 @@ async function main() {
   const witnessFiles = [];
 
   for (const wl of WORKLOADS) {
-    const regionSpecs = [r0SpecFor(wl.r0Goal), r1SpecFor(wl), ...(wl.chainLength === 3 ? [r2SpecFor(wl)] : [])];
-    const campaign = runChain(regionSpecs);
+    const regionSpecs = [r0SpecFor(wl.r0Goal), r1SpecFor(wl)];
+    if (wl.chainLength >= 3) regionSpecs.push(r2SpecFor(wl));
+    if (wl.chainLength >= 4) regionSpecs.push(r3SpecFor(wl));
+    const searchOverrides = wl.r1Search ? { 1: wl.r1Search } : null;
+    const campaign = runChain(regionSpecs, searchOverrides);
     const analysis = analyzeChain(campaign.boundaries, CANDIDATE_PROFILE, null);
     const coverage = coverageOf(analysis);
 
