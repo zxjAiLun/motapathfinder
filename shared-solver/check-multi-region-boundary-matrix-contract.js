@@ -291,6 +291,39 @@ function mutationDivergenceWorkload() {
   };
 }
 
+// PR-5.5d: Start door-key workload — the OnlyUp Start floor (TRACKED, same
+// project) has a real sealed key room: entry at (6,4) is INSIDE the room with
+// the green keys (24); the goal opens the green door at (5,5).  Real inventory
+// acquire (pickup green key) -> consume (openDoor) with the door removed on the
+// same transition.  The cross-floor boundary carries MT1 history and executes
+// Start's arrival, so states span 2 visited floors.  Start's own stairs are
+// steel/special-door-blocked (no keys on the floor), so a changeFloor edge is
+// NOT produced — visitedFloors hole stays honestly partial.
+function r1StartDoorKeySpec() {
+  return {
+    ...JSON.parse(JSON.stringify(smokeSpec)),
+    id: "onlyup-5.5d-start",
+    scope: { floors: ["Start"] },
+    actionPolicy: {
+      allowedFloors: ["Start"],
+      actionKinds: ["battle", "event", "pickup", "interactPickup", "equip", "openDoor", "useTool", "changeFloor"],
+    },
+    start: { type: "floor", floorId: "Start", x: 6, y: 4, direction: "down" },
+    goal: { type: "tileRemoved", floorId: "Start", x: 5, y: 5 },
+  };
+}
+
+function startDoorKeyWorkload() {
+  return {
+    id: "start-door-key-entryA",
+    chainLength: 2,
+    r0Goal: { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 2 } },
+    r1Id: "start-door-key",
+    boundaryTransformKind: "floor-entry-door-key-real-tower",
+    note: "OnlyUp Start sealed key room: real green-key acquire + openDoor consume (tracked, same project)",
+  };
+}
+
 const WORKLOADS_ALL = [
   ...r0VariantWorkloads(),
   ...r1VariantWorkloads(),
@@ -298,6 +331,7 @@ const WORKLOADS_ALL = [
   ...xprodWorkloads(),
   mutationDivergenceWorkload(),
   chain4Workload(),
+  startDoorKeyWorkload(),
 ];
 
 // PR-5.5c expansion: 4-region chain (R0 -> R1 -> R2 -> R3), three boundaries.
@@ -328,6 +362,7 @@ function r1SpecFor(wl) {
   if (wl.r1Id === "entryC") return r1EntryC(wl.r1Goal);
   if (wl.r1Id === "inventoryUse") return r1InventoryUse(wl.r1Goal);
   if (wl.r1Id === "flagCarry") return r1FlagCarry(wl.r1Goal);
+  if (wl.r1Id === "start-door-key") return r1StartDoorKeySpec();
   throw new Error(`unknown r1 variant ${wl.r1Id}`);
 }
 
