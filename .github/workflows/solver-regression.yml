@@ -127,6 +127,20 @@ jobs:
       - run: npm ci
       - run: npm run check:mt1-post-promotion-regression
 
+  qualification-multi-region-key-shadow:
+    needs: qualification-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run check:multi-region-key-shadow
+
   qualification-workload-matrix:
     needs: qualification-gate
     runs-on: ubuntu-latest
@@ -170,8 +184,9 @@ jobs:
       - qualification-benchmark
       - qualification-promotion-contract
       - qualification-post-promotion-regression
+      - qualification-multi-region-key-shadow
       - qualification-workload-matrix
     if: needs.qualification-gate.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Full qualification passed (fast + key-analysis + promotion + benchmark + promotion-contract + post-promotion-regression + workload matrix)"
+      - run: echo "Full qualification passed (fast + key-analysis + promotion + benchmark + promotion-contract + post-promotion-regression + multi-region-key-shadow + workload matrix)"

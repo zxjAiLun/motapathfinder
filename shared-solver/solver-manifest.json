@@ -206,7 +206,8 @@
         "shared-solver/check-candidate-key-paired-benchmark.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
         "shared-solver/check-mt1-default-promotion-contract.js",
-        "shared-solver/check-mt1-post-promotion-regression-contract.js"
+        "shared-solver/check-mt1-post-promotion-regression-contract.js",
+        "shared-solver/check-multi-region-key-shadow-contract.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -1760,6 +1761,21 @@
     },
     "shared-solver/lib/solve-task-v2.js": {
       "note": "solve-task.v2 ordered-region contract (PR-5.4a)"
+    },
+    "shared-solver/lib/multi-region-key-shadow.js": {
+      "id": "multi-region-key-shadow",
+      "path": "shared-solver/lib/multi-region-key-shadow.js",
+      "layer": "search/correctness",
+      "status": "canonical",
+      "role": "shadow-audit",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
     }
   },
   "tests": {
@@ -2413,6 +2429,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4g: post-promotion full-tower regression (S1-S4): single-Region default->candidate + pinned, explicit rollback->production scale, unapproved-scope implicit fallback, campaign/multi-Region v2 per-region isolation (approved MT1->candidate, unapproved->production, no leak)"
+    },
+    "shared-solver/check-multi-region-key-shadow-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.5a: multi-Region dual-key shadow + boundary corpus (research only, no production change): 3-layer corpus (pre-boundary/boundary-transfer/post-boundary), state + boundary partition audits, ordered CEGAR (boundary-transfer first), negative-control fail-visible"
     }
   }
 }
