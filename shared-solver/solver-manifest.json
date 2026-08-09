@@ -2443,7 +2443,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.5c: multi-Region corpus expansion (18 workloads: 5 R0 goals, 5 R1 boundary variants, cross-products, deep R1 search, 3- and 4-region chains), collision scoping by region-execution-context/boundaryIndex, production-legal actions via actual milestone segment, 6 detector controls + witness path, verdict pinned NO_COLLISION_OBSERVED"
+      "notes": "PR-5.5c Continuation: multi-region high-semantic-diversity collision hunt (18 workloads: 5 R0 goals, 5 R1 boundary variants, cross-products, mutation-divergence, 3- and 4-region chains), semantic-diversity report + gate (inventory/visitedFloors constancy reported as findings), collision scoping by region-execution-context/boundaryIndex, production-legal actions via actual milestone segment, 6 detector controls + witness path, verdict pinned NO_COLLISION_OBSERVED"
     }
   }
 }

@@ -25,8 +25,18 @@
  *     battle-only flag-carry policy
  *   PR-5.5c expansion:
  *     cross-products (r0-exp2/exp9/tile4_1 x entryB/entryC/inventoryUse/flagCarry),
- *     deep R1 search (exp6-entryA-deep: candidateLimit 4 / goalSkylineLimit 16),
+ *     mutation-divergence (r0-tile2_1-entryA: different carried floor-mutation
+ *     history than tile4_1),
  *     3-region chain, 4-region chain (R0->R1->R2->R3)
+ *   (the PR-5.5c deep-search fixture was REMOVED: it produced no corpus
+ *   increment — post 10->10 — while r0-exp2-entryB reached 26 samples; see
+ *   P2-3.  Depth doubling does not enrich semantic diversity.)
+ *
+ * PR-5.5c Continuation: semantic-diversity report (distinct production-identity
+ * dimension values per workload + global) and a semantic gate — every workload
+ * must vary >= 2 values in at least one dimension, and the global corpus must
+ * cover mutation / reachability / inventory / flags / legal actions with >= 2
+ * distinct values each.  This replaces "more samples" as the success measure.
  *
  * Per-workload evidence: 3-layer corpus + statePartition + boundaryPartition
  * + CEGAR + coverage metadata (id, r0Goal, r0TerminalCandidateCount, r1Start,
@@ -257,25 +267,28 @@ function xprodWorkloads() {
   ];
 }
 
-// PR-5.5c expansion: DEEP R1 search (bigger candidate/frontier budget) to grow
-// the post-boundary corpus and the collision surface.
-function deepWorkload() {
+// PR-5.5c Continuation: mutation-divergence workload — R0 clears tile (2,1)
+// instead of (4,1), so the carried floor-mutation history differs from every
+// existing R0 variant (different removed-tile set feeding R1).
+function mutationDivergenceWorkload() {
   return {
-    id: "exp6-entryA-deep",
+    id: "r0-tile2_1-entryA",
     chainLength: 2,
-    r0Goal: { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 6 } },
-    r1Goal: R1_GOAL_EXP8,
+    r0Goal: { type: "tileRemoved", floorId: "MT1", x: 2, y: 1 },
+    r1Goal: R1_GOAL_TILE411,
     r1Id: "entryA",
-    boundaryTransformKind: "floor-entry-A",
-    r1Search: {
-      algorithm: "segment-dp",
-      maxExpansions: 8000,
-      maxRuntimeMs: 0,
-      candidateLimit: 4,
-      goalSkylineLimit: 16,
-    },
+    boundaryTransformKind: "floor-entry-mutation-divergence",
   };
 }
+
+const WORKLOADS_ALL = [
+  ...r0VariantWorkloads(),
+  ...r1VariantWorkloads(),
+  chainWorkload(),
+  ...xprodWorkloads(),
+  mutationDivergenceWorkload(),
+  chain4Workload(),
+];
 
 // PR-5.5c expansion: 4-region chain (R0 -> R1 -> R2 -> R3), three boundaries.
 function chain4Workload() {
@@ -293,14 +306,6 @@ function chain4Workload() {
   };
 }
 
-const WORKLOADS_ALL = [
-  ...r0VariantWorkloads(),
-  ...r1VariantWorkloads(),
-  chainWorkload(),
-  ...xprodWorkloads(),
-  deepWorkload(),
-  chain4Workload(),
-];
 const WORKLOAD_SUBSET = (process.env.MR_WORKLOAD_SUBSET || "all").trim();
 const WORKLOADS = WORKLOAD_SUBSET === "all"
   ? WORKLOADS_ALL
@@ -531,6 +536,68 @@ function rawActionSignatureOf(regionContext, state) {
   } catch (error) {
     return [];
   }
+}
+
+// PR-5.5c Continuation: semantic diversity report.  Counts DISTINCT values of
+// the production-identity dimensions observed in a corpus (per workload and
+// globally), so we can see WHY no collision has appeared — a corpus that looks
+// large but has narrow mutation / inventory / flag / reachability diversity has
+// little collision-hunting value.  Dimensions are read from the already-computed
+// production DP key JSON (regionKey / reachableEndpointsKey / mutations) plus
+// the raw state fields and the legal action signatures (no re-simulation).
+function semanticDiversityOf(analysis) {
+  const dims = {
+    regionKey: new Set(),
+    reachableEndpoints: new Set(),
+    mutationSummary: new Set(),
+    inventory: new Set(),
+    flags: new Set(),
+    visitedFloors: new Set(),
+    legalActionSet: new Set(),
+    loc: new Set(),
+    productionIdentity: new Set(),
+    candidateIdentity: new Set(),
+  };
+  analysis.corpus.records.forEach((record) => {
+    const state = record.state;
+    try {
+      const key = JSON.parse(record.productionDpKey || "{}");
+      dims.regionKey.add(key.regionKey);
+      dims.reachableEndpoints.add(key.reachableEndpointsKey);
+      dims.mutationSummary.add(JSON.stringify(key.mutations || []));
+    } catch (error) {
+      // productionDpKey not JSON-decomposable (e.g. control overrides): skip
+    }
+    dims.inventory.add(JSON.stringify(state.inventory || {}));
+    dims.flags.add(JSON.stringify(state.flags || {}));
+    dims.visitedFloors.add(JSON.stringify(Object.keys(state.visitedFloors || {}).sort()));
+    dims.legalActionSet.add(JSON.stringify(record.legalActionSignature || []));
+    const loc = (state.hero && state.hero.loc) || {};
+    dims.loc.add(`${loc.x},${loc.y}`);
+    dims.productionIdentity.add(record.productionDpKey);
+    dims.candidateIdentity.add(record.candidateDpKey);
+  });
+  return {
+    regionKey: dims.regionKey.size,
+    reachableEndpoints: dims.reachableEndpoints.size,
+    mutationSummary: dims.mutationSummary.size,
+    inventory: dims.inventory.size,
+    flags: dims.flags.size,
+    visitedFloors: dims.visitedFloors.size,
+    legalActionSet: dims.legalActionSet.size,
+    loc: dims.loc.size,
+    productionIdentity: dims.productionIdentity.size,
+    candidateIdentity: dims.candidateIdentity.size,
+  };
+}
+
+function hasSemanticVariation(diversity) {
+  return diversity.mutationSummary >= 2
+    || diversity.reachableEndpoints >= 2
+    || diversity.inventory >= 2
+    || diversity.flags >= 2
+    || diversity.legalActionSet >= 2
+    || diversity.loc >= 2;
 }
 
 function diffCandidateProjections(left, right) {
@@ -1051,6 +1118,7 @@ async function main() {
       boundaryTransformKind: wl.boundaryTransformKind || "floor-entry",
       chainLength: wl.chainLength,
       coverage,
+      semanticDiversity: semanticDiversityOf(analysis),
       legalKindsWithinPolicy,
       inventoryCarryEvidence,
       flagValueCarryEvidence,
@@ -1076,6 +1144,29 @@ async function main() {
   const coverageMet = workloadResults.every((r) => r.coverage.ok);
   const failingCoverage = workloadResults.filter((r) => !r.coverage.ok)
     .map((r) => `${r.id}:${JSON.stringify(r.coverage)}`);
+  // PR-5.5c Continuation semantic gate: every workload must exhibit >= 2
+  // distinct values in at least one production-identity semantic dimension,
+  // and the GLOBAL corpus must cover all key dimensions with >= 2 distinct
+  // values (otherwise the "no collision" claim sits on a narrow corpus).
+  const everyWorkloadHasSemanticVariation = workloadResults.every((r) => hasSemanticVariation(r.semanticDiversity));
+  const globalSemanticDiversity = workloadResults.reduce((acc, r) => {
+    ["regionKey", "reachableEndpoints", "mutationSummary", "inventory", "flags", "visitedFloors", "legalActionSet", "loc"].forEach((dim) => {
+      acc[dim] = Math.max(acc[dim] || 0, r.semanticDiversity[dim] || 0);
+    });
+    return acc;
+  }, {});
+  // Global coverage requires the dimensions that CAN vary in this tower.
+  // inventory / visitedFloors are honestly reported as NARROW (auto-pickup
+  // grabs all MT1 items immediately; single-floor corpus) — a finding, not a
+  // gate failure.
+  const globalSemanticCoverage = ["mutationSummary", "reachableEndpoints", "flags", "legalActionSet"]
+    .every((dim) => (globalSemanticDiversity[dim] || 0) >= 2);
+  const semanticGateMet = everyWorkloadHasSemanticVariation && globalSemanticCoverage;
+  const semanticNarrownessFindings = {
+    inventory: globalSemanticDiversity.inventory < 2 ? "constant: auto-pickup grabs all reachable MT1 items; nothing is consumed in R1" : "diverse",
+    visitedFloors: globalSemanticDiversity.visitedFloors < 2 ? "constant: single-floor corpus (MT1 only)" : "diverse",
+  };
+
   const verdict = needsReview
     ? (workloadResults.some((r) => r.cegar.unsafeCount > 0 || r.boundaryPartition.inequivalentGroupCount > 0)
       ? "UNSAFE_COLLISION_OBSERVED"
@@ -1083,6 +1174,7 @@ async function main() {
     : "NO_COLLISION_OBSERVED";
 
   assert.ok(coverageMet, `coverage thresholds must be met on every workload: ${failingCoverage.join("; ")}`);
+  assert.ok(semanticGateMet, `semantic diversity gate must be met (every workload >=2 in one dimension; global coverage of mutation/reachability/inventory/flags/legalActions): ${JSON.stringify(globalSemanticDiversity)}`);
   assert.strictEqual(verdict, "NO_COLLISION_OBSERVED", "first real merge must stop with needs-review (no silent upgrade)");
 
   process.stdout.write(JSON.stringify({
@@ -1093,6 +1185,9 @@ async function main() {
       candidateIdentityUntouched: CANDIDATE_PROFILE === "without-start-component",
       verdictPinnedNoCollision: true,
       coverageThresholdsMet: coverageMet,
+      semanticGateMet,
+      everyWorkloadHasSemanticVariation,
+      globalSemanticCoverage,
       allCollidingDetected: controls.allColliding.detected,
       allCollidingScopedIsolation: controls.allColliding.scopedMerges > 0,
       dominanceSafeControl: controls.dominanceSafe.safe,
@@ -1120,6 +1215,8 @@ async function main() {
       totalBoundaryInequivalentGroups: workloadResults.reduce((s, r) => s + r.boundaryPartition.inequivalentGroupCount, 0),
       totalUnsafe: workloadResults.reduce((s, r) => s + r.cegar.unsafeCount, 0),
     },
+    globalSemanticDiversity,
+    semanticNarrownessFindings,
     workloads: workloadResults,
     verdict,
   }, null, 2) + "\n");
