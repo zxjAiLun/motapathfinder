@@ -96,16 +96,10 @@ const {
 
 const ROOT = path.resolve(__dirname, "..");
 const ONLY_UP_ROOT = path.join(ROOT, "Only upV2.1", "Only upV2.1");
-const WHITE_ISLAND_ROOT = path.join(ROOT, "whiteisland（9）");
 const SMOKE_SPEC_FILE = path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json");
 const WITNESS_DIR = path.join(ROOT, "runs", "generated", "mr-boundary-corpus");
 
 const project = loadProject(ONLY_UP_ROOT);
-const projectWhiteIsland = loadProject(WHITE_ISLAND_ROOT);
-const projectByRoot = {
-  [ONLY_UP_ROOT]: project,
-  [WHITE_ISLAND_ROOT]: projectWhiteIsland,
-};
 const smokeSpec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
 
 const CANDIDATE_PROFILE = "without-start-component";
@@ -296,38 +290,6 @@ function mutationDivergenceWorkload() {
   };
 }
 
-// PR-5.5c Cross-Topology / Inventory Collision Hunt: whiteisland A1 — a REAL
-// second tower whose floor has yellow doors + keys.  R1 must pick up keys and
-// OPEN a door to reach the goal: real inventory acquire -> consume and real
-// floor mutations.  The cross-tower boundary (MT1 -> A1) carries the R0 floor
-// history and executes A1's arrival semantics, so states span 2 floors
-// (visitedFloors > 1) and inventory diverges (keys consumed).
-function whiteIslandA1Spec() {
-  return {
-    ...JSON.parse(JSON.stringify(smokeSpec)),
-    id: "whiteisland-5.5c-a1",
-    projectRoot: WHITE_ISLAND_ROOT,
-    scope: { floors: ["A1"] },
-    actionPolicy: {
-      allowedFloors: ["A1"],
-      actionKinds: ["battle", "event", "pickup", "interactPickup", "equip", "openDoor", "useTool", "changeFloor", "floorFly"],
-    },
-    start: { type: "floor", floorId: "A1", x: 5, y: 1, direction: "down" },
-    goal: { type: "tileRemoved", floorId: "A1", x: 5, y: 3 },
-  };
-}
-
-function crossTowerWorkload() {
-  return {
-    id: "wi-a1-door-key-entryA",
-    chainLength: 2,
-    r0Goal: { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 2 } },
-    r1Id: "wi-a1",
-    boundaryTransformKind: "cross-tower-floor-entry-door-key",
-    note: "real second tower (whiteisland A1): yellow door + key acquire/consume, cross-tower boundary, 2 visited floors",
-  };
-}
-
 const WORKLOADS_ALL = [
   ...r0VariantWorkloads(),
   ...r1VariantWorkloads(),
@@ -335,7 +297,6 @@ const WORKLOADS_ALL = [
   ...xprodWorkloads(),
   mutationDivergenceWorkload(),
   chain4Workload(),
-  crossTowerWorkload(),
 ];
 
 // PR-5.5c expansion: 4-region chain (R0 -> R1 -> R2 -> R3), three boundaries.
@@ -366,7 +327,6 @@ function r1SpecFor(wl) {
   if (wl.r1Id === "entryC") return r1EntryC(wl.r1Goal);
   if (wl.r1Id === "inventoryUse") return r1InventoryUse(wl.r1Goal);
   if (wl.r1Id === "flagCarry") return r1FlagCarry(wl.r1Goal);
-  if (wl.r1Id === "wi-a1") return whiteIslandA1Spec();
   throw new Error(`unknown r1 variant ${wl.r1Id}`);
 }
 
@@ -389,8 +349,8 @@ function searchConfig() {
 }
 
 function buildExecuteConfig(regionSpec, searchOverride) {
-  const root = (regionSpec && regionSpec.projectRoot) || ONLY_UP_ROOT;
-  const proj = projectByRoot[root] || project;
+  const root = ONLY_UP_ROOT;
+  const proj = project;
   const task = compileExecutableSolveTask({
     schema: "motapathfinder.solve-task.v1",
     tower: { id: TOWER_ID, projectRoot: root, region: { spec: regionSpec } },
@@ -411,11 +371,11 @@ function buildExecuteConfig(regionSpec, searchOverride) {
 }
 
 function regionContextFor(spec, index) {
-  // Per-region project: whiteisland regions load the whiteisland tower, so the
-  // simulator / TowerIR / milestone segment / candidate keys all use the
-  // region's OWN real topology.
-  const root = (spec && spec.projectRoot) || ONLY_UP_ROOT;
-  const proj = projectByRoot[root] || project;
+  // Production-faithful project semantics: a chain is a SINGLE project (the
+  // same as executeSolveJobV2, which loads one project per task).  The shared
+  // project is enforced by a fail-fast gate in main()/runChain; regionContext
+  // still carries the project so the corpus machinery is project-consistent.
+  const proj = project;
   const simulator = makeSimulator(proj, spec, {});
   // The legal provider is built from the ACTUAL production milestone segment
   // (the same segment buildRegionMilestoneSpec hands to the region search), so
@@ -672,6 +632,64 @@ function semanticAggregationControl() {
   // {M1,M2} ∪ {M2,M3} = {M1,M2,M3} = 3 distinct (not max(2,2)=2)
   assert.strictEqual(globalTwo.mutationSummary, 3, "aggregation control: GLOBAL mutation union must be 3 (not max(2,2)=2)");
   return { globalInventoryUnion: globalTwo.inventory, globalMutationUnion: globalTwo.mutationSummary };
+}
+
+// P1-3 hole-closure evidence (fail-closed): inventory and visitedFloors need
+// dedicated TRANSITION-LEVEL evidence, not just distinct counts.  These reports
+// are computed over the real corpus; the round claims a hole is filled ONLY
+// when the transition evidence exists (acquire -> consume, or real multi-floor
+// reachability).  With the current production-faithful (tracked, single-project)
+// corpus these are expected to report filled:false — that is the honest answer.
+function inventoryHoleClosureOf(analysis) {
+  const records = analysis.corpus.postBoundaryRecords;
+  const distinct = new Set(records.map((r) => JSON.stringify(r.state.inventory || {})));
+  let acquireExecuted = false;
+  let acquireKey = null;
+  let consumeExecuted = false;
+  let consumeKey = null;
+  const states = records.map((r) => ({
+    inv: r.state.inventory || {},
+    mutations: JSON.stringify((r.state.floorStates || {})[r.state.floorId] || {}),
+  }));
+  for (let i = 0; i < states.length && (!acquireExecuted || !consumeExecuted); i += 1) {
+    for (let j = 0; j < states.length; j += 1) {
+      if (i === j) continue;
+      const a = states[i].inv;
+      const b = states[j].inv;
+      const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+      keys.forEach((key) => {
+        const av = Number(a[key] || 0);
+        const bv = Number(b[key] || 0);
+        if (bv > av && !acquireExecuted) { acquireExecuted = true; acquireKey = key; }
+        if (av > bv && states[j].mutations !== states[i].mutations && !consumeExecuted) { consumeExecuted = true; consumeKey = key; }
+      });
+    }
+  }
+  return {
+    distinctInventories: distinct.size,
+    acquireExecuted,
+    acquireKey,
+    consumeExecuted,
+    consumeKey,
+    filled: distinct.size >= 2 && acquireExecuted && consumeExecuted,
+  };
+}
+
+function visitedFloorsHoleClosureOf(analysis) {
+  const records = analysis.corpus.records;
+  let maxVisitedFloorCount = 0;
+  const sets = new Set();
+  records.forEach((r) => {
+    const floors = Object.keys(r.state.visitedFloors || {}).sort();
+    sets.add(JSON.stringify(floors));
+    maxVisitedFloorCount = Math.max(maxVisitedFloorCount, floors.length);
+  });
+  return {
+    maxVisitedFloorCount,
+    visitedFloorSets: Array.from(sets).slice(0, 5),
+    distinctSets: sets.size,
+    filled: maxVisitedFloorCount >= 2,
+  };
 }
 
 function hasSemanticVariation(diversity) {
@@ -1142,6 +1160,29 @@ async function main() {
   assert.strictEqual(CANDIDATE_PROFILE, "without-start-component", "candidate identity must be untouched");
   fs.mkdirSync(WITNESS_DIR, { recursive: true });
 
+  // P1-2 fail-fast: production executeSolveJobV2 loads ONE project per chain;
+  // the research corpus must be production-faithful, so no region spec may
+  // declare a different project root.  (The earlier cross-tower whiteisland
+  // exploration was harness-only and is NOT part of the production-faithful
+  // corpus; whiteisland data is untracked in git, so CI cannot reproduce it.)
+  WORKLOADS.forEach((wl) => {
+    const regionSpecs = [r0SpecFor(wl.r0Goal), r1SpecFor(wl)];
+    if (wl.chainLength >= 3) regionSpecs.push(r2SpecFor(wl));
+    if (wl.chainLength >= 4) regionSpecs.push(r3SpecFor(wl));
+    // The invariant is that every region in the chain shares ONE project root
+    // (production executeSolveJobV2 loads a single project per task).  Roots
+    // may be expressed as absolute paths or relative to the repo root; resolve
+    // both to absolute before comparing.
+    const resolvedRoots = regionSpecs.map((spec) => {
+      const root = (spec && spec.projectRoot) || ONLY_UP_ROOT;
+      return path.isAbsolute(root) ? root : path.resolve(ROOT, root);
+    });
+    const firstRoot = resolvedRoots[0];
+    resolvedRoots.forEach((root) => {
+      assert.strictEqual(root, firstRoot, `${wl.id}: all regions in a chain must use the SAME (tracked) project — cross-project chains are not production-faithful`);
+    });
+  });
+
   // Controls run once on a fixed exp6-entryA chain (reused campaign).
   const controlChain = runChain([r0SpecFor({ type: "heroAtLeast", floorId: "MT1", minHero: { exp: 6 } }), r1EntryA(R1_GOAL_EXP8)]);
   const controls = {
@@ -1240,9 +1281,29 @@ async function main() {
   const globalSemanticCoverage = ["mutationSummary", "reachableEndpoints", "flags", "legalActionSet"]
     .every((dim) => (globalSemanticDiversity[dim] || 0) >= 2);
   const semanticGateMet = everyWorkloadHasSemanticVariation && globalSemanticCoverage;
+  // P1-3: hole-closure evidence over the FULL production-faithful corpus.
+  const mergedAnalysis = { corpus: { records: [], preBoundaryRecords: [], boundaryRecords: [], postBoundaryRecords: [] } };
+  workloadAnalyses.forEach((analysis) => {
+    mergedAnalysis.corpus.records = mergedAnalysis.corpus.records.concat(analysis.corpus.records);
+    mergedAnalysis.corpus.postBoundaryRecords = mergedAnalysis.corpus.postBoundaryRecords.concat(analysis.corpus.postBoundaryRecords);
+  });
+  const inventoryHoleClosure = inventoryHoleClosureOf(mergedAnalysis);
+  const visitedFloorsHoleClosure = visitedFloorsHoleClosureOf(mergedAnalysis);
+  // Fail-closed consistency: a filled claim MUST be backed by its evidence.
+  if (inventoryHoleClosure.filled) {
+    assert.ok(inventoryHoleClosure.distinctInventories >= 2, "inventory hole filled claim requires >=2 distinct inventories");
+    assert.ok(inventoryHoleClosure.acquireExecuted && inventoryHoleClosure.consumeExecuted, "inventory hole filled claim requires acquire AND consume transition evidence");
+  }
+  if (visitedFloorsHoleClosure.filled) {
+    assert.ok(visitedFloorsHoleClosure.maxVisitedFloorCount >= 2, "visitedFloors hole filled claim requires a state on >=2 floors");
+  }
   const semanticNarrownessFindings = {
-    inventory: globalSemanticDiversity.inventory < 2 ? "constant: auto-pickup grabs all reachable MT1 items; nothing is consumed in R1" : "diverse",
-    visitedFloors: globalSemanticDiversity.visitedFloors < 2 ? "constant: single-floor corpus (MT1 only)" : "diverse",
+    inventory: inventoryHoleClosure.filled
+      ? `filled: ${inventoryHoleClosure.distinctInventories} distinct, acquire=${inventoryHoleClosure.acquireKey}, consume=${inventoryHoleClosure.consumeKey}`
+      : `OPEN: no tracked single-project fixture provides real inventory acquire->consume (MT1 has none; sample floors are wall-blocked / wrong-key / search-explosive; Start seals its keys inside the door ring)`,
+    visitedFloors: visitedFloorsHoleClosure.filled
+      ? `filled: maxVisitedFloorCount=${visitedFloorsHoleClosure.maxVisitedFloorCount}`
+      : `OPEN: no tracked single-project fixture reaches a second floor via a real transition (MT1 stairs unreachable; whiteisland data is untracked in git)`,
   };
   // Synthetic aggregation regression control: per-workload counts of 1 must
   // union to global counts > 1 (locks the global-union semantics).
@@ -1302,6 +1363,12 @@ async function main() {
     },
     globalSemanticDiversity,
     semanticNarrownessFindings,
+    inventoryHoleClosure,
+    visitedFloorsHoleClosure,
+    holeClosureSummary: {
+      inventoryFilled: inventoryHoleClosure.filled,
+      visitedFloorsFilled: visitedFloorsHoleClosure.filled,
+    },
     workloads: workloadResults,
     verdict,
   }, null, 2) + "\n");
