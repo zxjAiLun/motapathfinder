@@ -460,6 +460,11 @@ function runChain(regionSpecs, searchOverrides) {
       preCandidates: previousTerminals,
       inputFrontier,
       postRecords: records,
+      // Raw recorder payloads WITH transition provenance (parent key /
+      // parent inventory / parent mutations / action kind+summary) — the
+      // hole-closure detectors need REAL parent -> action -> child edges.
+      postRawRecords: records,
+      entryTransformApplied: true,
       result,
     });
     previousTerminals = result.finalCandidates;
@@ -475,6 +480,10 @@ function analyzeChain(boundaries, candidateProfile, candidateKeyBuilder) {
     candidateKeyBuilder,
     exactKeyConfig: { dpKeyMode: "region" },
   });
+  // Raw transition-provenance recorder payloads for the hole-closure detectors
+  // (parent state key / parent inventory / parent mutations / action kind).
+  corpus.postRawRecords = (boundaries || []).reduce((acc, b) => acc.concat(b.postRawRecords || []), []);
+  corpus.entryTransformsApplied = (boundaries || []).filter((b) => b.entryTransformApplied === true).length;
   const statePartition = auditStatePartition(corpus.records);
   const boundaryPartition = auditBoundaryPartition(corpus.preBoundaryRecords, corpus.boundaryRecords);
   const cegar = runMergeGroupCegar({
@@ -635,48 +644,93 @@ function semanticAggregationControl() {
 }
 
 // P1-3 hole-closure evidence (fail-closed): inventory and visitedFloors need
-// dedicated TRANSITION-LEVEL evidence, not just distinct counts.  These reports
-// are computed over the real corpus; the round claims a hole is filled ONLY
-// when the transition evidence exists (acquire -> consume, or real multi-floor
-// reachability).  With the current production-faithful (tracked, single-project)
-// corpus these are expected to report filled:false — that is the honest answer.
+// dedicated TRANSITION-LEVEL evidence, not just distinct counts.  The inventory
+// detector walks REAL parent -> action -> child edges from the recorder's
+// transition provenance (parentInventory / parentMutations / actionKind):
+//   acquire  = child.inventory[key] > parent.inventory[key] on an edge whose
+//              action kind is an acquisition kind (pickup / interactPickup).
+//   consume  = child.inventory[key] < parent.inventory[key] on an edge whose
+//              action kind is a consumption kind (openDoor / useTool) AND the
+//              child floor mutations differ from the parent's (the door really
+//              changed on the SAME transition).
+// A state-pair Cartesian product is NOT transition evidence.
 function inventoryHoleClosureOf(analysis) {
-  const records = analysis.corpus.postBoundaryRecords;
-  const distinct = new Set(records.map((r) => JSON.stringify(r.state.inventory || {})));
+  const edges = analysis.corpus.postRawRecords || [];
+  const distinct = new Set(edges.map((r) => JSON.stringify(r.state.inventory || {})));
+  const acquireKinds = new Set(["pickup", "interactPickup"]);
+  const consumeKinds = new Set(["openDoor", "useTool"]);
   let acquireExecuted = false;
   let acquireKey = null;
+  let acquireAction = null;
   let consumeExecuted = false;
   let consumeKey = null;
-  const states = records.map((r) => ({
-    inv: r.state.inventory || {},
-    mutations: JSON.stringify((r.state.floorStates || {})[r.state.floorId] || {}),
-  }));
-  for (let i = 0; i < states.length && (!acquireExecuted || !consumeExecuted); i += 1) {
-    for (let j = 0; j < states.length; j += 1) {
-      if (i === j) continue;
-      const a = states[i].inv;
-      const b = states[j].inv;
-      const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-      keys.forEach((key) => {
-        const av = Number(a[key] || 0);
-        const bv = Number(b[key] || 0);
-        if (bv > av && !acquireExecuted) { acquireExecuted = true; acquireKey = key; }
-        if (av > bv && states[j].mutations !== states[i].mutations && !consumeExecuted) { consumeExecuted = true; consumeKey = key; }
-      });
-    }
-  }
+  let consumeAction = null;
+  edges.forEach((record) => {
+    const child = record.state.inventory || {};
+    if (record.parentInventory == null) return; // no parent edge -> no transition evidence
+    const parent = record.parentInventory;
+    const kind = record.actionKind;
+    const keys = new Set([...Object.keys(child), ...Object.keys(parent)]);
+    keys.forEach((key) => {
+      const cv = Number(child[key] || 0);
+      const pv = Number(parent[key] || 0);
+      if (cv > pv && acquireKinds.has(kind) && !acquireExecuted) {
+        acquireExecuted = true;
+        acquireKey = key;
+        acquireAction = kind;
+      }
+      if (pv > cv && consumeKinds.has(kind) && !consumeExecuted) {
+        // door really changed on THIS transition (child mutations differ from
+        // the parent's snapshot), not merely somewhere else in the corpus.
+        const childMutations = JSON.stringify((record.state.floorStates || {})[record.state.floorId] || {});
+        if (childMutations !== (record.parentMutations || "")) {
+          consumeExecuted = true;
+          consumeKey = key;
+          consumeAction = kind;
+        }
+      }
+    });
+  });
   return {
     distinctInventories: distinct.size,
     acquireExecuted,
     acquireKey,
+    acquireAction,
     consumeExecuted,
     consumeKey,
+    consumeAction,
     filled: distinct.size >= 2 && acquireExecuted && consumeExecuted,
   };
 }
 
+// Synthetic controls for the inventory transition detector:
+//   negative — two states with different inventories and DIFFERENT mutations
+//     but NO parent->child edge must NOT be read as acquire/consume;
+//   positive — a REAL edge chain S0 --pickup--> S1 --openDoor--> S2 must be
+//     read as acquire + consume.
+function inventoryTransitionControls() {
+  const M0 = JSON.stringify([{ floorId: "A1", removed: [] }]);
+  const M1 = JSON.stringify([{ floorId: "A1", removed: ["5,3"] }]);
+  const s0 = { state: { inventory: { yellowKey: 0 }, floorStates: { A1: { removed: {} } } }, parentInventory: null, actionKind: null, parentMutations: null };
+  const s1 = { state: { inventory: { yellowKey: 1 }, floorStates: { A1: { removed: {} } } }, parentInventory: null, actionKind: null, parentMutations: null };
+  const negative = inventoryHoleClosureOf({ corpus: { postRawRecords: [s0, s1] } });
+  assert.strictEqual(negative.distinctInventories, 2, "transition control (negative): distinct inventories must be 2");
+  assert.strictEqual(negative.acquireExecuted, false, "transition control (negative): no parent edge must NOT be acquire");
+  assert.strictEqual(negative.consumeExecuted, false, "transition control (negative): no parent edge must NOT be consume");
+  assert.strictEqual(negative.filled, false, "transition control (negative): must not be filled without transitions");
+
+  const ePickup = { state: { inventory: { yellowKey: 1 }, floorStates: { A1: { removed: {} } } }, parentInventory: { yellowKey: 0 }, parentMutations: M0, actionKind: "pickup" };
+  const eDoor = { state: { inventory: { yellowKey: 0 }, floorStates: { A1: { removed: { "5,3": true } } } }, parentInventory: { yellowKey: 1 }, parentMutations: M0, actionKind: "openDoor" };
+  const positive = inventoryHoleClosureOf({ corpus: { postRawRecords: [ePickup, eDoor] } });
+  assert.strictEqual(positive.acquireExecuted, true, "transition control (positive): pickup edge must be acquire");
+  assert.strictEqual(positive.consumeExecuted, true, "transition control (positive): openDoor edge with mutation change must be consume");
+  assert.strictEqual(positive.filled, true, "transition control (positive): acquire+consume must fill");
+  return { negativeFilled: negative.filled, positiveFilled: positive.filled };
+}
+
 function visitedFloorsHoleClosureOf(analysis) {
   const records = analysis.corpus.records;
+  const edges = analysis.corpus.postRawRecords || [];
   let maxVisitedFloorCount = 0;
   const sets = new Set();
   records.forEach((r) => {
@@ -684,11 +738,20 @@ function visitedFloorsHoleClosureOf(analysis) {
     sets.add(JSON.stringify(floors));
     maxVisitedFloorCount = Math.max(maxVisitedFloorCount, floors.length);
   });
+  // Supplementary transition-level flags (honest current values): a real
+  // changeFloor action edge, an arrival entry transform, and post-arrival
+  // search records.
+  const changeFloorExecuted = edges.some((r) => r.actionKind === "changeFloor");
+  const arrivalExecuted = (analysis.corpus.entryTransformsApplied || 0) > 0;
+  const postArrivalSearchObserved = edges.length > 0;
   return {
     maxVisitedFloorCount,
     visitedFloorSets: Array.from(sets).slice(0, 5),
     distinctSets: sets.size,
-    filled: maxVisitedFloorCount >= 2,
+    changeFloorExecuted,
+    arrivalExecuted,
+    postArrivalSearchObserved,
+    filled: maxVisitedFloorCount >= 2 && changeFloorExecuted,
   };
 }
 
@@ -1282,13 +1345,16 @@ async function main() {
     .every((dim) => (globalSemanticDiversity[dim] || 0) >= 2);
   const semanticGateMet = everyWorkloadHasSemanticVariation && globalSemanticCoverage;
   // P1-3: hole-closure evidence over the FULL production-faithful corpus.
-  const mergedAnalysis = { corpus: { records: [], preBoundaryRecords: [], boundaryRecords: [], postBoundaryRecords: [] } };
+  const mergedAnalysis = { corpus: { records: [], preBoundaryRecords: [], boundaryRecords: [], postBoundaryRecords: [], postRawRecords: [], entryTransformsApplied: 0 } };
   workloadAnalyses.forEach((analysis) => {
     mergedAnalysis.corpus.records = mergedAnalysis.corpus.records.concat(analysis.corpus.records);
     mergedAnalysis.corpus.postBoundaryRecords = mergedAnalysis.corpus.postBoundaryRecords.concat(analysis.corpus.postBoundaryRecords);
+    mergedAnalysis.corpus.postRawRecords = mergedAnalysis.corpus.postRawRecords.concat(analysis.corpus.postRawRecords || []);
+    mergedAnalysis.corpus.entryTransformsApplied += analysis.corpus.entryTransformsApplied || 0;
   });
   const inventoryHoleClosure = inventoryHoleClosureOf(mergedAnalysis);
   const visitedFloorsHoleClosure = visitedFloorsHoleClosureOf(mergedAnalysis);
+  const inventoryTransitionControlsResult = inventoryTransitionControls();
   // Fail-closed consistency: a filled claim MUST be backed by its evidence.
   if (inventoryHoleClosure.filled) {
     assert.ok(inventoryHoleClosure.distinctInventories >= 2, "inventory hole filled claim requires >=2 distinct inventories");
@@ -1296,7 +1362,10 @@ async function main() {
   }
   if (visitedFloorsHoleClosure.filled) {
     assert.ok(visitedFloorsHoleClosure.maxVisitedFloorCount >= 2, "visitedFloors hole filled claim requires a state on >=2 floors");
+    assert.ok(visitedFloorsHoleClosure.changeFloorExecuted, "visitedFloors hole filled claim requires a real changeFloor transition");
   }
+  assert.strictEqual(inventoryTransitionControlsResult.negativeFilled, false, "transition control (negative): state-pair diversity must not be read as acquire/consume");
+  assert.strictEqual(inventoryTransitionControlsResult.positiveFilled, true, "transition control (positive): real pickup->openDoor edges must fill");
   const semanticNarrownessFindings = {
     inventory: inventoryHoleClosure.filled
       ? `filled: ${inventoryHoleClosure.distinctInventories} distinct, acquire=${inventoryHoleClosure.acquireKey}, consume=${inventoryHoleClosure.consumeKey}`
@@ -1365,6 +1434,7 @@ async function main() {
     semanticNarrownessFindings,
     inventoryHoleClosure,
     visitedFloorsHoleClosure,
+    inventoryTransitionControls: inventoryTransitionControlsResult,
     holeClosureSummary: {
       inventoryFilled: inventoryHoleClosure.filled,
       visitedFloorsFilled: visitedFloorsHoleClosure.filled,

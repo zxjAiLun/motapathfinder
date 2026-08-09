@@ -1456,6 +1456,23 @@ function searchDP(simulator, initialState, options) {
           state: cloneState(state),
           exactDpKey: key,
           productionDecision,
+          // Observation-only transition provenance (never enters keys, pruning
+          // or solver behavior): the parent state key, the parent inventory /
+          // mutation snapshots and the action that PRODUCED this state.  Used by
+          // research hole-closure detectors to prove acquire/consume happened
+          // on a REAL parent -> action -> child edge, not on arbitrary state
+          // pairs.  Wrapped in try/catch like the rest of the recorder.
+          parentStateKey: parentNode && parentNode.state
+            ? (() => { try { return buildStateKey(parentNode.state); } catch (error) { return null; } })()
+            : null,
+          parentInventory: parentNode && parentNode.state && parentNode.state.inventory
+            ? JSON.parse(JSON.stringify(parentNode.state.inventory))
+            : null,
+          parentMutations: parentNode && parentNode.state
+            ? (() => { try { return JSON.stringify(listFloorMutationSummary(parentNode.state.floorStates || {})); } catch (error) { return null; } })()
+            : null,
+          actionKind: sourceAction ? sourceAction.kind : null,
+          actionSummary: sourceAction ? (sourceAction.summary || null) : null,
         });
       } catch (error) {
         // Observation must never affect the search.
