@@ -272,8 +272,14 @@ function buildStateBehavior(simulator, project, ir, state, options) {
   const actions = [];
   let enumerationError = null;
   try {
-    const enumerated = simulator.enumeratePrimitiveActions(state);
-    const rawActions = (enumerated && enumerated.actions) || [];
+    // actionProvider (optional): production-legal action semantics for
+    // research classifiers.  When provided, the classifier and the production
+    // segment search share the SAME legal action set (built from the region's
+    // action policy).  Default (no provider) keeps raw primitive enumeration,
+    // byte-for-byte identical to the pre-PR-5.5b behavior.
+    const rawActions = typeof config.actionProvider === "function"
+      ? (config.actionProvider(state) || [])
+      : ((simulator.enumeratePrimitiveActions(state) || {}).actions || []);
     for (const action of rawActions) {
       const choice = buildActionChoiceIdentity(action);
       if (!choice) continue;

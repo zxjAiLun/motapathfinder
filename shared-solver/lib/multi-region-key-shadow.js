@@ -53,10 +53,16 @@ const {
 } = require("./key-dependency-corpus");
 const { heroHp } = require("./dual-key-shadow");
 
-function legalActionSignature(simulator, state) {
+// Production-legal action signature: uses the region's legal action provider
+// (built from the region's action policy via buildSegmentActionProvider) when
+// present, so the shadow sees the SAME legal action semantics as the segment
+// search.  Without a provider it falls back to raw primitive enumeration.
+function legalActionSignature(regionContext, state) {
   try {
-    const enumerated = simulator.enumeratePrimitiveActions(state);
-    return ((enumerated && enumerated.actions) || [])
+    const actions = typeof regionContext.legalActionProvider === "function"
+      ? (regionContext.legalActionProvider(null, state) || [])
+      : (((regionContext.simulator.enumeratePrimitiveActions(state)) || {}).actions || []);
+    return actions
       .map((action) => action.summary)
       .sort();
   } catch (error) {
@@ -64,7 +70,7 @@ function legalActionSignature(simulator, state) {
   }
 }
 
-// regionContext = { id, simulator, ir, goalPredicate }
+// regionContext = { id, simulator, project, ir, goalPredicate, legalActionProvider? }
 function buildCorpusRecord(input) {
   const {
     regionContext,
@@ -92,7 +98,7 @@ function buildCorpusRecord(input) {
     productionDpKey: buildDpStateKey(regionContext.simulator, state, exactKeyConfig || { dpKeyMode: "region" }),
     candidateDpKey,
     candidateProjection,
-    legalActionSignature: legalActionSignature(regionContext.simulator, state),
+    legalActionSignature: legalActionSignature(regionContext, state),
     terminalProjection: buildTerminalProjection(state, regionContext.goalPredicate),
     hp: heroHp(state),
     regionContext,
@@ -185,22 +191,13 @@ function buildMultiRegionCorpus(input) {
   };
 }
 
-// A. State partition: exact DP key -> candidate DP key.
+// A. State partition: exact DP key -> candidate DP key, SCOPED by the region
+// execution context (regionContext.id).  Records only compete with records in
+// the SAME region's DP; a candidate key appearing in two different regions or
+// boundaries is key reuse, NOT a merge.  Top-level counts aggregate per-scope
+// results (a merge is counted only within one scope).
 function auditStatePartition(records) {
-  const exactToCandidate = new Map();
-  const candidateToExact = new Map();
-  const byLayer = {};
-  const byBoundary = {};
-  for (const record of records) {
-    const exact = record.productionDpKey;
-    const candidate = record.candidateDpKey;
-    if (!exactToCandidate.has(exact)) exactToCandidate.set(exact, new Set());
-    exactToCandidate.get(exact).add(candidate);
-    if (!candidateToExact.has(candidate)) candidateToExact.set(candidate, new Set());
-    candidateToExact.get(candidate).add(exact);
-    byLayer[record.layer] = (byLayer[record.layer] || 0) + 1;
-    byBoundary[`b${record.boundaryIndex}`] = (byBoundary[`b${record.boundaryIndex}`] || 0) + 1;
-  }
+  const scopeKey = (record) => `${(record.regionContext && record.regionContext.id) || "?"}`;
   const summarize = (exactMap, candidateMap) => {
     let splitExactKeyCount = 0;
     let mergedCandidateKeyCount = 0;
@@ -212,37 +209,106 @@ function auditStatePartition(records) {
     else if (mergedCandidateKeyCount > 0) partitionRelation = "strict-coarsening";
     return { splitExactKeyCount, mergedCandidateKeyCount, partitionRelation };
   };
-  const summarizeRecords = (layerRecords) => {
-    const exactMap = new Map();
-    const candidateMap = new Map();
+  const buildMaps = (layerRecords) => {
+    const exactToCandidate = new Map();
+    const candidateToExact = new Map();
     layerRecords.forEach((record) => {
-      if (!exactMap.has(record.productionDpKey)) exactMap.set(record.productionDpKey, new Set());
-      exactMap.get(record.productionDpKey).add(record.candidateDpKey);
-      if (!candidateMap.has(record.candidateDpKey)) candidateMap.set(record.candidateDpKey, new Set());
-      candidateMap.get(record.candidateDpKey).add(record.productionDpKey);
+      if (!exactToCandidate.has(record.productionDpKey)) exactToCandidate.set(record.productionDpKey, new Set());
+      exactToCandidate.get(record.productionDpKey).add(record.candidateDpKey);
+      if (!candidateToExact.has(record.candidateDpKey)) candidateToExact.set(record.candidateDpKey, new Set());
+      candidateToExact.get(record.candidateDpKey).add(record.productionDpKey);
     });
-    return summarize(exactMap, candidateMap);
+    return { exactToCandidate, candidateToExact };
   };
-  const perLayer = {};
-  Object.keys(byLayer).forEach((layer) => {
-    perLayer[layer] = {
-      ...summarizeRecords(records.filter((r) => r.layer === layer)),
-      sampleCount: byLayer[layer],
-    };
+  // Per-scope maps (scopes never mix).
+  const scopeRecords = new Map();
+  records.forEach((record) => {
+    const scope = scopeKey(record);
+    if (!scopeRecords.has(scope)) scopeRecords.set(scope, []);
+    scopeRecords.get(scope).push(record);
   });
-  const perBoundary = {};
-  Object.keys(byBoundary).forEach((key) => {
-    perBoundary[key] = {
-      ...summarizeRecords(records.filter((r) => r.boundaryIndex === Number(key.slice(1)))),
-      sampleCount: byBoundary[key],
+  const perScope = {};
+  let splitExactKeyCount = 0;
+  let mergedCandidateKeyCount = 0;
+  let uniqueExactKeys = 0;
+  let uniqueCandidateKeys = 0;
+  scopeRecords.forEach((scopeRecs, scope) => {
+    const maps = buildMaps(scopeRecs);
+    const stats = summarize(maps.exactToCandidate, maps.candidateToExact);
+    perScope[scope] = {
+      ...stats,
+      uniqueExactKeys: maps.exactToCandidate.size,
+      uniqueCandidateKeys: maps.candidateToExact.size,
+      sampleCount: scopeRecs.length,
     };
+    splitExactKeyCount += stats.splitExactKeyCount;
+    mergedCandidateKeyCount += stats.mergedCandidateKeyCount;
+    uniqueExactKeys += maps.exactToCandidate.size;
+    uniqueCandidateKeys += maps.candidateToExact.size;
   });
+  let partitionRelation = "equal";
+  if (splitExactKeyCount > 0 && mergedCandidateKeyCount > 0) partitionRelation = "non-comparable";
+  else if (splitExactKeyCount > 0) partitionRelation = "strict-refinement";
+  else if (mergedCandidateKeyCount > 0) partitionRelation = "strict-coarsening";
+
+  // Per-layer and per-boundary breakdowns, each aggregated per scope.
+  const layers = new Set(records.map((r) => r.layer));
+  const byLayer = {};
+  layers.forEach((layer) => {
+    const layerRecords = records.filter((r) => r.layer === layer);
+    const perLayerScope = new Map();
+    layerRecords.forEach((record) => {
+      const scope = scopeKey(record);
+      if (!perLayerScope.has(scope)) perLayerScope.set(scope, []);
+      perLayerScope.get(scope).push(record);
+    });
+    let split = 0;
+    let merged = 0;
+    perLayerScope.forEach((scopeRecs) => {
+      const stats = summarize(buildMaps(scopeRecs).exactToCandidate, buildMaps(scopeRecs).candidateToExact);
+      split += stats.splitExactKeyCount;
+      merged += stats.mergedCandidateKeyCount;
+    });
+    let relation = "equal";
+    if (split > 0 && merged > 0) relation = "non-comparable";
+    else if (split > 0) relation = "strict-refinement";
+    else if (merged > 0) relation = "strict-coarsening";
+    byLayer[layer] = { splitExactKeyCount: split, mergedCandidateKeyCount: merged, partitionRelation: relation, sampleCount: layerRecords.length };
+  });
+
+  const boundaries = new Set(records.map((r) => r.boundaryIndex));
+  const byBoundary = {};
+  boundaries.forEach((boundaryIndex) => {
+    const bRecords = records.filter((r) => r.boundaryIndex === boundaryIndex);
+    const perBScope = new Map();
+    bRecords.forEach((record) => {
+      const scope = scopeKey(record);
+      if (!perBScope.has(scope)) perBScope.set(scope, []);
+      perBScope.get(scope).push(record);
+    });
+    let split = 0;
+    let merged = 0;
+    perBScope.forEach((scopeRecs) => {
+      const stats = summarize(buildMaps(scopeRecs).exactToCandidate, buildMaps(scopeRecs).candidateToExact);
+      split += stats.splitExactKeyCount;
+      merged += stats.mergedCandidateKeyCount;
+    });
+    let relation = "equal";
+    if (split > 0 && merged > 0) relation = "non-comparable";
+    else if (split > 0) relation = "strict-refinement";
+    else if (merged > 0) relation = "strict-coarsening";
+    byBoundary[`b${boundaryIndex}`] = { splitExactKeyCount: split, mergedCandidateKeyCount: merged, partitionRelation: relation, sampleCount: bRecords.length };
+  });
+
   return {
-    ...summarize(exactToCandidate, candidateToExact),
-    uniqueExactKeys: exactToCandidate.size,
-    uniqueCandidateKeys: candidateToExact.size,
-    byLayer: perLayer,
-    byBoundary: perBoundary,
+    splitExactKeyCount,
+    mergedCandidateKeyCount,
+    partitionRelation,
+    uniqueExactKeys,
+    uniqueCandidateKeys,
+    byLayer,
+    byBoundary,
+    perScope,
   };
 }
 
@@ -253,13 +319,16 @@ function pairKey(boundaryIndex, localIndex) {
 // B. Boundary partition: pre-boundary candidate key -> post-boundary SEMANTIC
 // identity (production DP key in the destination region's own context).
 // boundaryIndex + localIndex pair pre-boundary and boundary-transfer records.
+// Groups are scoped by (boundaryIndex, candidateDpKey): a candidate key reused
+// across two different boundaries is NOT a merge.
 function auditBoundaryPartition(preBoundaryRecords, boundaryRecords) {
   const postByPair = new Map();
   boundaryRecords.forEach((post) => postByPair.set(pairKey(post.boundaryIndex, post.localIndex), post));
   const byCandidate = new Map();
   preBoundaryRecords.forEach((pre) => {
-    if (!byCandidate.has(pre.candidateDpKey)) byCandidate.set(pre.candidateDpKey, []);
-    byCandidate.get(pre.candidateDpKey).push({
+    const scopeKeyValue = `${pre.boundaryIndex}|${pre.candidateDpKey}`;
+    if (!byCandidate.has(scopeKeyValue)) byCandidate.set(scopeKeyValue, []);
+    byCandidate.get(scopeKeyValue).push({
       pre,
       post: postByPair.get(pairKey(pre.boundaryIndex, pre.localIndex)),
     });
@@ -267,7 +336,8 @@ function auditBoundaryPartition(preBoundaryRecords, boundaryRecords) {
   const groups = [];
   const witnesses = [];
   let inequivalentGroupCount = 0;
-  byCandidate.forEach((members, candidateKey) => {
+  byCandidate.forEach((members, scopeKeyValue) => {
+    const candidateKey = members[0].pre.candidateDpKey;
     const distinctExact = new Set(members.map((m) => m.pre.productionDpKey));
     if (distinctExact.size <= 1) return;
     const postSemanticKeys = new Set(members.map((m) => m.post && m.post.productionDpKey).filter(Boolean));
@@ -335,6 +405,13 @@ function classifyPairUnsafe(classification) {
 
 function classifyBehaviorUnsafe(ctx, candidateProfile, first, other) {
   const options = { goalPredicate: ctx.goalPredicate, profile: candidateProfile };
+  // Production-legal action semantics: when the region context carries a legal
+  // action provider (built from its action policy), the classifier uses it so
+  // raw primitive actions that the production policy forbids never enter
+  // successor / choice comparison.
+  if (typeof ctx.legalActionProvider === "function") {
+    options.actionProvider = (state) => ctx.legalActionProvider(null, state);
+  }
   const left = buildStateBehavior(ctx.simulator, ctx.project, ctx.ir, first.state, options);
   const right = buildStateBehavior(ctx.simulator, ctx.project, ctx.ir, other.state, options);
   return classifyPair(left, right);
