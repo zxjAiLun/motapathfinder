@@ -259,6 +259,13 @@ function buildExecuteConfig(regionSpec) {
 
 function regionContextFor(spec, index) {
   const simulator = makeSimulator(project, spec, {});
+  // The legal provider is built from the ACTUAL production milestone segment
+  // (the same segment buildRegionMilestoneSpec hands to the region search), so
+  // segment.goal / presentTiles / resource-timing / annotation semantics all
+  // participate — not just actionPolicy.  policyOnlyProvider is kept for the
+  // parity diagnostic (actionPolicy-only approximation vs full segment).
+  const milestoneSpec = buildRegionMilestoneSpec(project, spec);
+  const segment = ((milestoneSpec && milestoneSpec.milestones) || [])[0] || {};
   return {
     id: `R${index}`,
     simulator,
@@ -266,11 +273,13 @@ function regionContextFor(spec, index) {
     ir: compileTowerIR(project, spec, { towerId: TOWER_ID }),
     goalPredicate: goalPredicateFor(spec.goal),
     spec,
+    segment,
     // Production-legal action semantics: the shadow's coverage, signatures and
     // behavior CEGAR use the SAME provider the segment search uses (built from
-    // the region's action policy), so raw primitive actions forbidden by the
-    // policy never enter the research classification.
-    legalActionProvider: buildSegmentActionProvider(simulator, { actionPolicy: spec.actionPolicy || {} }),
+    // the region's ACTUAL milestone segment), so raw primitive actions
+    // forbidden by the policy never enter the research classification.
+    legalActionProvider: buildSegmentActionProvider(simulator, segment),
+    policyOnlyProvider: buildSegmentActionProvider(simulator, { actionPolicy: spec.actionPolicy || {} }),
   };
 }
 
@@ -357,17 +366,24 @@ function analyzeChain(boundaries, candidateProfile, candidateKeyBuilder) {
 }
 
 // Coverage uses PRODUCTION-LEGAL action semantics (records carry the legal
-// action signature from the region's action policy provider).  Parity contract:
+// action signature from the region's ACTUAL milestone-segment provider).
+// Parity contract:
 //   - raw-only actions (in raw, not legal) must be policy-FORBIDDEN kinds;
 //   - legal-only actions (in legal, not raw) must be provider-ADDED kinds
 //     (floorFly / interactPickup are enumerated by the provider, not the raw
 //     primitive enumerator).
+//   - segment parity: the actionPolicy-only provider approximation must match
+//     the ACTUAL segment provider on every corpus state (0 divergence means the
+//     full production semantics — goal/presentTiles/resource-timing — add no
+//     extra filtering on this fixture set; the shadow still uses the actual
+//     segment provider regardless).
 function coverageOf(analysis) {
   const pre = analysis.corpus.preBoundaryRecords.length;
   const boundary = analysis.corpus.boundaryRecords.length;
   const post = analysis.corpus.postBoundaryRecords.length;
   const actionKinds = new Set();
   let parityViolations = 0;
+  let segmentParityViolations = 0;
   analysis.corpus.postBoundaryRecords.forEach((record) => {
     const legal = record.legalActionSignature || [];
     legal.forEach((summary) => {
@@ -388,6 +404,13 @@ function coverageOf(analysis) {
       const kind = String(summary).split(":")[0];
       if (kind !== "floorFly" && kind !== "interactPickup") parityViolations += 1; // legal-only action not provider-added
     });
+    // Segment parity: actual milestone-segment provider vs actionPolicy-only
+    // approximation must agree on every corpus state.
+    if (typeof ctx.legalActionProvider === "function" && typeof ctx.policyOnlyProvider === "function") {
+      const actual = ctx.legalActionProvider(null, record.state).map((a) => a.summary).sort();
+      const approx = ctx.policyOnlyProvider(null, record.state).map((a) => a.summary).sort();
+      if (JSON.stringify(actual) !== JSON.stringify(approx)) segmentParityViolations += 1;
+    }
   });
   return {
     preTerminalCount: pre,
@@ -396,7 +419,8 @@ function coverageOf(analysis) {
     distinctLegalActionKinds: actionKinds.size,
     legalKinds: Array.from(actionKinds).sort(),
     parityViolations,
-    ok: pre >= 2 && boundary >= 2 && post >= 2 && actionKinds.size >= 1 && parityViolations === 0,
+    segmentParityViolations,
+    ok: pre >= 2 && boundary >= 2 && post >= 2 && actionKinds.size >= 1 && parityViolations === 0 && segmentParityViolations === 0,
   };
 }
 
@@ -628,10 +652,48 @@ function crossBoundaryReuseControl(boundaries) {
   }), productionDpKey: "POS-EXACT-2" };
   const positive = auditStatePartition([p1, p2]);
   assert.ok(positive.mergedCandidateKeyCount >= 1, "cross-boundary control (positive): same-boundary merge must be detected");
+  // P1-3: the witness path must ACTUALLY execute on a constructed collision and
+  // produce an explainable artifact (not just exist in static code).
+  const witness = witnessPathControl([p1, p2]);
   return {
     sharedKeyCount: shared.length,
     scopedMerges: partition.mergedCandidateKeyCount,
     sameBoundaryMergeDetected: positive.mergedCandidateKeyCount,
+    ...witness,
+  };
+}
+
+// P1-3: run captureMergeWitness on a CONSTRUCTED same-scope collision, re-read
+// the JSON artifact, and verify it explains WHY production differs (beyond the
+// exactDpKey hash).  Artifact is removed afterwards.
+function witnessPathControl(positiveRecords) {
+  const fakeAnalysis = {
+    corpus: { records: positiveRecords },
+    statePartition: auditStatePartition(positiveRecords),
+    boundaryPartition: { boundaryTransferEquivalent: true, groupsAudited: 0, inequivalentGroupCount: 0, groups: [], witnesses: [] },
+    cegar: { unsafeCount: 0, boundaryInequivalentGroups: 0, unsafeWitnesses: [] },
+  };
+  const file = captureMergeWitness({ id: "witness-path-control" }, fakeAnalysis);
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  } finally {
+    fs.unlinkSync(file);
+  }
+  assert.ok(parsed.mergeGroups.length > 0, "witness control: merge groups must be emitted");
+  const group = parsed.mergeGroups[0];
+  assert.ok(String(group.scope).includes("SAME-BOUNDARY-POSITIVE"), "witness control: scope must be the constructed same-boundary scope");
+  assert.ok(group.groups.length > 0, "witness control: merge pair must be emitted");
+  const pair = group.groups[0];
+  assert.ok(pair.productionProjectionA && pair.productionProjectionB, "witness control: production projections must be present");
+  assert.ok(pair.productionKeyA !== pair.productionKeyB, "witness control: production keys must differ");
+  assert.ok(Array.isArray(pair.productionIdentityDiff), "witness control: production identity diff must be an array");
+  const explanatory = (pair.productionIdentityDiff || []).filter((d) => d.field !== "exactDpKey");
+  assert.ok(explanatory.length > 0,
+    `witness control: production identity diff must explain WHY production differs (fields: ${(pair.productionIdentityDiff || []).map((d) => d.field).join(",")})`);
+  return {
+    witnessArtifactExecuted: true,
+    explanatoryFields: explanatory.map((d) => d.field),
   };
 }
 
@@ -859,12 +921,24 @@ async function main() {
     // Workload-specific policy assertion: observed legal kinds must be within
     // the region's allowed action kinds (P1-2: coverage uses legal semantics).
     const legalKindsWithinPolicy = (coverage.legalKinds || []).every((kind) => r1ActionKinds.includes(kind));
-    // flagCarry-specific evidence: R0's terminal flags must actually be carried
-    // into the boundary state (flag path exercised).
-    const flagCarryEvidence = wl.r1Id === "flagCarry"
-      ? (campaign.boundaries[0].inputFrontier || []).some((entry) =>
-        entry.state.flags && (entry.state.flags.hatred != null || entry.state.flags.autoBattle != null))
-      : true;
+    // Workload-specific carry evidence (P2): the boundary must actually carry
+    // the R0 terminal's inventory / flag VALUES into the R1 input states.
+    const r0Terminal = campaign.boundaries[0].preCandidates[0].state;
+    const inputs = campaign.boundaries[0].inputFrontier || [];
+    let inventoryCarryEvidence = true;
+    let flagValueCarryEvidence = true;
+    if (wl.r1Id === "inventoryUse") {
+      inventoryCarryEvidence = inputs.some((entry) =>
+        JSON.stringify(entry.state.inventory || {}) === JSON.stringify(r0Terminal.inventory || {}));
+    }
+    if (wl.r1Id === "flagCarry") {
+      const flagKeys = ["hatred", "autoBattle", "shiqu"];
+      const r0Flags = flagKeys
+        .filter((k) => r0Terminal.flags && r0Terminal.flags[k] != null)
+        .map((k) => [k, r0Terminal.flags[k]]);
+      flagValueCarryEvidence = r0Flags.length > 0 && inputs.some((entry) =>
+        r0Flags.every(([k, v]) => entry.state.flags && entry.state.flags[k] === v));
+    }
     const result = {
       id: wl.id,
       r0Goal: JSON.parse(JSON.stringify(wl.r0Goal)),
@@ -876,7 +950,8 @@ async function main() {
       chainLength: wl.chainLength,
       coverage,
       legalKindsWithinPolicy,
-      flagCarryEvidence,
+      inventoryCarryEvidence,
+      flagValueCarryEvidence,
       layers: analysis.corpus.layers,
       statePartition: analysis.statePartition,
       boundaryPartition: analysis.boundaryPartition,
@@ -884,7 +959,8 @@ async function main() {
     };
     workloadResults.push(result);
     assert.ok(legalKindsWithinPolicy, `${wl.id}: observed legal action kinds must be within the region's action policy`);
-    assert.ok(flagCarryEvidence, `${wl.id}: flag-carry evidence must be observed`);
+    assert.ok(inventoryCarryEvidence, `${wl.id}: inventory-carry workload must observe the R0 inventory value in a boundary input`);
+    assert.ok(flagValueCarryEvidence, `${wl.id}: flag-carry workload must observe the R0 flag VALUE preserved in a boundary input`);
 
     const hasMerge = analysis.statePartition.mergedCandidateKeyCount > 0
       || analysis.boundaryPartition.inequivalentGroupCount > 0
@@ -924,6 +1000,8 @@ async function main() {
       crossBoundaryKeyReuseNotAMerge: crossBoundary.scopedMerges === 0,
       crossBoundaryReusedKeys: crossBoundary.sharedKeyCount,
       sameBoundaryMergeDetected: crossBoundary.sameBoundaryMergeDetected,
+      witnessArtifactExecuted: crossBoundary.witnessArtifactExecuted === true,
+      witnessExplanatoryFields: crossBoundary.explanatoryFields || [],
       needsReview: false,
     },
     controlsDetail: {
