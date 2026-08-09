@@ -33,10 +33,12 @@
  *   P2-3.  Depth doubling does not enrich semantic diversity.)
  *
  * PR-5.5c Continuation: semantic-diversity report (distinct production-identity
- * dimension values per workload + global) and a semantic gate — every workload
- * must vary >= 2 values in at least one dimension, and the global corpus must
- * cover mutation / reachability / inventory / flags / legal actions with >= 2
- * distinct values each.  This replaces "more samples" as the success measure.
+ * dimension values per workload + TRUE global union across all records) and a
+ * semantic gate — every workload must vary >= 2 values in at least one
+ * dimension, and the global corpus must cover mutation / reachability / flags /
+ * legal actions with >= 2 distinct values each.  inventory / visitedFloors are
+ * reported (constancy is a finding, not a gate requirement).  This replaces
+ * "more samples" as the success measure.
  *
  * Per-workload evidence: 3-layer corpus + statePartition + boundaryPartition
  * + CEGAR + coverage metadata (id, r0Goal, r0TerminalCandidateCount, r1Start,
@@ -538,15 +540,13 @@ function rawActionSignatureOf(regionContext, state) {
   }
 }
 
-// PR-5.5c Continuation: semantic diversity report.  Counts DISTINCT values of
-// the production-identity dimensions observed in a corpus (per workload and
-// globally), so we can see WHY no collision has appeared — a corpus that looks
-// large but has narrow mutation / inventory / flag / reachability diversity has
-// little collision-hunting value.  Dimensions are read from the already-computed
-// production DP key JSON (regionKey / reachableEndpointsKey / mutations) plus
-// the raw state fields and the legal action signatures (no re-simulation).
-function semanticDiversityOf(analysis) {
-  const dims = {
+// PR-5.5c Continuation: semantic diversity report.  Collects DISTINCT values of
+// the production-identity dimensions observed in a corpus.  Dimensions are read
+// from the already-computed production DP key JSON (regionKey /
+// reachableEndpointsKey / mutations) plus the raw state fields and the legal
+// action signatures (no re-simulation).
+function collectSemanticValues(records) {
+  const sets = {
     regionKey: new Set(),
     reachableEndpoints: new Set(),
     mutationSummary: new Set(),
@@ -558,37 +558,82 @@ function semanticDiversityOf(analysis) {
     productionIdentity: new Set(),
     candidateIdentity: new Set(),
   };
-  analysis.corpus.records.forEach((record) => {
+  records.forEach((record) => {
     const state = record.state;
     try {
       const key = JSON.parse(record.productionDpKey || "{}");
-      dims.regionKey.add(key.regionKey);
-      dims.reachableEndpoints.add(key.reachableEndpointsKey);
-      dims.mutationSummary.add(JSON.stringify(key.mutations || []));
+      sets.regionKey.add(key.regionKey);
+      sets.reachableEndpoints.add(key.reachableEndpointsKey);
+      sets.mutationSummary.add(JSON.stringify(key.mutations || []));
     } catch (error) {
       // productionDpKey not JSON-decomposable (e.g. control overrides): skip
     }
-    dims.inventory.add(JSON.stringify(state.inventory || {}));
-    dims.flags.add(JSON.stringify(state.flags || {}));
-    dims.visitedFloors.add(JSON.stringify(Object.keys(state.visitedFloors || {}).sort()));
-    dims.legalActionSet.add(JSON.stringify(record.legalActionSignature || []));
+    sets.inventory.add(JSON.stringify(state.inventory || {}));
+    sets.flags.add(JSON.stringify(state.flags || {}));
+    sets.visitedFloors.add(JSON.stringify(Object.keys(state.visitedFloors || {}).sort()));
+    sets.legalActionSet.add(JSON.stringify(record.legalActionSignature || []));
     const loc = (state.hero && state.hero.loc) || {};
-    dims.loc.add(`${loc.x},${loc.y}`);
-    dims.productionIdentity.add(record.productionDpKey);
-    dims.candidateIdentity.add(record.candidateDpKey);
+    sets.loc.add(`${loc.x},${loc.y}`);
+    sets.productionIdentity.add(record.productionDpKey);
+    sets.candidateIdentity.add(record.candidateDpKey);
   });
+  return sets;
+}
+
+function sizesOf(sets) {
   return {
-    regionKey: dims.regionKey.size,
-    reachableEndpoints: dims.reachableEndpoints.size,
-    mutationSummary: dims.mutationSummary.size,
-    inventory: dims.inventory.size,
-    flags: dims.flags.size,
-    visitedFloors: dims.visitedFloors.size,
-    legalActionSet: dims.legalActionSet.size,
-    loc: dims.loc.size,
-    productionIdentity: dims.productionIdentity.size,
-    candidateIdentity: dims.candidateIdentity.size,
+    regionKey: sets.regionKey.size,
+    reachableEndpoints: sets.reachableEndpoints.size,
+    mutationSummary: sets.mutationSummary.size,
+    inventory: sets.inventory.size,
+    flags: sets.flags.size,
+    visitedFloors: sets.visitedFloors.size,
+    legalActionSet: sets.legalActionSet.size,
+    loc: sets.loc.size,
+    productionIdentity: sets.productionIdentity.size,
+    candidateIdentity: sets.candidateIdentity.size,
   };
+}
+
+function semanticDiversityOf(analysis) {
+  return sizesOf(collectSemanticValues(analysis.corpus.records));
+}
+
+// TRUE global diversity: union the actual value sets across ALL workloads'
+// records (never max() of per-workload counts — that would only prove
+// per-workload variation, not cross-workload identity).
+function globalSemanticDiversityOf(workloadAnalyses) {
+  const allRecords = workloadAnalyses.reduce((acc, analysis) => acc.concat(analysis.corpus.records), []);
+  return sizesOf(collectSemanticValues(allRecords));
+}
+
+// Synthetic aggregation regression control: per-workload counts of 1 must union
+// to a global count of 2 (and shared sets must union, not max).
+function semanticAggregationControl() {
+  const mkRecord = (inventory, regionKey, mutations, loc) => ({
+    productionDpKey: JSON.stringify({ regionKey, reachableEndpointsKey: "RE", mutations }),
+    state: { inventory, flags: {}, visitedFloors: { MT1: true }, hero: { loc } },
+    legalActionSignature: [],
+  });
+  const w1 = { corpus: { records: [
+    mkRecord({ a: 1 }, "RK1", [{ floorId: "MT1", removed: ["1,1"] }], { x: 0, y: 0 }),
+    mkRecord({ a: 1 }, "RK1", [{ floorId: "MT1", removed: ["1,2"] }], { x: 0, y: 1 }),
+  ] } };
+  const w2 = { corpus: { records: [
+    mkRecord({ b: 1 }, "RK2", [{ floorId: "MT1", removed: ["1,2"] }], { x: 1, y: 0 }),
+    mkRecord({ b: 1 }, "RK2", [{ floorId: "MT1", removed: ["1,3"] }], { x: 1, y: 1 }),
+  ] } };
+  const d1 = semanticDiversityOf(w1);
+  const d2 = semanticDiversityOf(w2);
+  assert.strictEqual(d1.inventory, 1, "aggregation control: W1 inventory per-workload distinct must be 1");
+  assert.strictEqual(d2.inventory, 1, "aggregation control: W2 inventory per-workload distinct must be 1");
+  assert.strictEqual(d1.mutationSummary, 2, "aggregation control: W1 mutation distinct must be 2");
+  assert.strictEqual(d2.mutationSummary, 2, "aggregation control: W2 mutation distinct must be 2");
+  const globalTwo = globalSemanticDiversityOf([w1, w2]);
+  assert.strictEqual(globalTwo.inventory, 2, "aggregation control: GLOBAL inventory union must be 2 (not max(1,1)=1)");
+  // {M1,M2} ∪ {M2,M3} = {M1,M2,M3} = 3 distinct (not max(2,2)=2)
+  assert.strictEqual(globalTwo.mutationSummary, 3, "aggregation control: GLOBAL mutation union must be 3 (not max(2,2)=2)");
+  return { globalInventoryUnion: globalTwo.inventory, globalMutationUnion: globalTwo.mutationSummary };
 }
 
 function hasSemanticVariation(diversity) {
@@ -1073,6 +1118,7 @@ async function main() {
   const crossBoundary = crossBoundaryReuseControl(chainCampaign.boundaries);
 
   const workloadResults = [];
+  const workloadAnalyses = [];
   let needsReview = false;
   const witnessFiles = [];
 
@@ -1128,6 +1174,7 @@ async function main() {
       cegar: analysis.cegar,
     };
     workloadResults.push(result);
+    workloadAnalyses.push(analysis);
     assert.ok(legalKindsWithinPolicy, `${wl.id}: observed legal action kinds must be within the region's action policy`);
     assert.ok(inventoryCarryEvidence, `${wl.id}: inventory-carry workload must observe the R0 inventory value in a boundary input`);
     assert.ok(flagValueCarryEvidence, `${wl.id}: flag-carry workload must observe the R0 flag VALUE preserved in a boundary input`);
@@ -1146,19 +1193,12 @@ async function main() {
     .map((r) => `${r.id}:${JSON.stringify(r.coverage)}`);
   // PR-5.5c Continuation semantic gate: every workload must exhibit >= 2
   // distinct values in at least one production-identity semantic dimension,
-  // and the GLOBAL corpus must cover all key dimensions with >= 2 distinct
-  // values (otherwise the "no collision" claim sits on a narrow corpus).
+  // and the GLOBAL corpus (true union across all records) must cover the
+  // mutation / reachability / flags / legal-action dimensions with >= 2
+  // distinct values each.  inventory / visitedFloors are NOT part of the gate
+  // (auto-pickup constancy is a finding, not a gate requirement).
   const everyWorkloadHasSemanticVariation = workloadResults.every((r) => hasSemanticVariation(r.semanticDiversity));
-  const globalSemanticDiversity = workloadResults.reduce((acc, r) => {
-    ["regionKey", "reachableEndpoints", "mutationSummary", "inventory", "flags", "visitedFloors", "legalActionSet", "loc"].forEach((dim) => {
-      acc[dim] = Math.max(acc[dim] || 0, r.semanticDiversity[dim] || 0);
-    });
-    return acc;
-  }, {});
-  // Global coverage requires the dimensions that CAN vary in this tower.
-  // inventory / visitedFloors are honestly reported as NARROW (auto-pickup
-  // grabs all MT1 items immediately; single-floor corpus) — a finding, not a
-  // gate failure.
+  const globalSemanticDiversity = globalSemanticDiversityOf(workloadAnalyses);
   const globalSemanticCoverage = ["mutationSummary", "reachableEndpoints", "flags", "legalActionSet"]
     .every((dim) => (globalSemanticDiversity[dim] || 0) >= 2);
   const semanticGateMet = everyWorkloadHasSemanticVariation && globalSemanticCoverage;
@@ -1166,6 +1206,9 @@ async function main() {
     inventory: globalSemanticDiversity.inventory < 2 ? "constant: auto-pickup grabs all reachable MT1 items; nothing is consumed in R1" : "diverse",
     visitedFloors: globalSemanticDiversity.visitedFloors < 2 ? "constant: single-floor corpus (MT1 only)" : "diverse",
   };
+  // Synthetic aggregation regression control: per-workload counts of 1 must
+  // union to global counts > 1 (locks the global-union semantics).
+  const aggregationControl = semanticAggregationControl();
 
   const verdict = needsReview
     ? (workloadResults.some((r) => r.cegar.unsafeCount > 0 || r.boundaryPartition.inequivalentGroupCount > 0)
@@ -1174,7 +1217,7 @@ async function main() {
     : "NO_COLLISION_OBSERVED";
 
   assert.ok(coverageMet, `coverage thresholds must be met on every workload: ${failingCoverage.join("; ")}`);
-  assert.ok(semanticGateMet, `semantic diversity gate must be met (every workload >=2 in one dimension; global coverage of mutation/reachability/inventory/flags/legalActions): ${JSON.stringify(globalSemanticDiversity)}`);
+  assert.ok(semanticGateMet, `semantic diversity gate must be met (every workload >=2 in one dimension; global union of mutation/reachability/flags/legalActions >=2): ${JSON.stringify(globalSemanticDiversity)}`);
   assert.strictEqual(verdict, "NO_COLLISION_OBSERVED", "first real merge must stop with needs-review (no silent upgrade)");
 
   process.stdout.write(JSON.stringify({
@@ -1188,6 +1231,10 @@ async function main() {
       semanticGateMet,
       everyWorkloadHasSemanticVariation,
       globalSemanticCoverage,
+      semanticAggregationControl: {
+        globalInventoryUnion: aggregationControl.globalInventoryUnion,
+        globalMutationUnion: aggregationControl.globalMutationUnion,
+      },
       allCollidingDetected: controls.allColliding.detected,
       allCollidingScopedIsolation: controls.allColliding.scopedMerges > 0,
       dominanceSafeControl: controls.dominanceSafe.safe,
