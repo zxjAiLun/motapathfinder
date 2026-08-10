@@ -16,6 +16,7 @@ const { spawnSync } = require("node:child_process");
 const { searchDP } = require("./lib/dp-search");
 const { cloneState, removeTileAt } = require("./lib/state");
 const { resolveSearchIntentOptions, __testHooks } = require("./lib/segment-dp");
+const { compileGoalDependencyGraph } = require("./lib/goal-dependency-graph");
 
 const HARNESS = path.join(__dirname, "check-real-route-performance-qualification.js");
 
@@ -163,6 +164,65 @@ function checkProtectedPresentTileGate() {
   };
 }
 
+function checkGoalDependencyGraph() {
+  const project = {
+    floorOrder: ["F1", "F2"],
+    floorsById: {
+      F1: { width: 2, height: 1, map: [[0, 0]], changeFloor: { "1,0": { floorId: "F2" } } },
+      F2: { width: 2, height: 1, map: [[1, 0]], changeFloor: {} },
+    },
+    mapTilesByNumber: { "1": { id: "guard", cls: "enemy", canPass: false } },
+  };
+  const segments = [
+    {
+      id: "entry",
+      goal: { type: "heroAtLeast", floorId: "F2", minHero: { atk: 10 } },
+      actionPolicy: { allowChangeFloors: ["F1:1,0"] },
+    },
+    {
+      id: "guard",
+      goal: {
+        type: "heroAtLeast",
+        floorId: "F2",
+        minHero: { atk: 20, def: 8 },
+        equipmentIncludes: ["sword"],
+        removedTiles: [{ floorId: "F2", x: 0, y: 0 }],
+      },
+      actionPolicy: { allowChangeFloors: [] },
+    },
+  ];
+  const graph = compileGoalDependencyGraph(project, segments);
+  const base = {
+    floorId: "F2",
+    hero: { atk: 10, def: 4, equipment: [], loc: { x: 1, y: 0 } },
+    flags: {},
+    floorStates: {},
+  };
+  const prepared = cloneState(base);
+  prepared.hero.atk = 18;
+  prepared.hero.def = 8;
+  prepared.hero.equipment = ["sword"];
+  removeTileAt(prepared, "F2", 0, 0);
+  const baseProjection = graph.project(base, "entry");
+  const preparedProjection = graph.project(prepared, "entry");
+  assert.strictEqual(baseProjection.completion, 1, "both states satisfy the current entry milestone");
+  assert.strictEqual(preparedProjection.completion, 1);
+  assert.ok(
+    preparedProjection.downstreamCompletion > baseProjection.downstreamCompletion,
+    "downstream dependency readiness must distinguish equally feasible current goals",
+  );
+  assert.ok(
+    preparedProjection.irreversibleLandmarksMet > baseProjection.irreversibleLandmarksMet,
+    "equipment and removed-tile landmarks must be represented",
+  );
+  assert.strictEqual(graph.stages[0].gateways[0].targetFloorId, "F2", "gateway dependency target");
+  return {
+    stages: graph.stages.length,
+    entryRequirements: graph.stages[0].requirements.length,
+    downstreamRequirements: graph.stages[1].requirements.length,
+  };
+}
+
 function main() {
   const mt2Default = runTracked("mt2-to-mt3-i893", "default");
   const mt2Goal = runTracked("mt2-to-mt3-i893", null, { searchIntent: "first-feasible" });
@@ -210,6 +270,7 @@ function main() {
       ),
     },
     feasibilityGate: checkProtectedPresentTileGate(),
+    goalDependencyGraph: checkGoalDependencyGraph(),
   }, null, 2)}\n`);
 }
 

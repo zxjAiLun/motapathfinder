@@ -379,6 +379,12 @@ function projectGoalProgress(goalProgressProjector, state) {
       requirementsMet: Math.max(0, finiteNumber(projected.requirementsMet, 0)),
       requirementsTotal: Math.max(0, finiteNumber(projected.requirementsTotal, 0)),
       floorMatch: projected.floorMatch === true ? 1 : 0,
+      downstreamCompletion: Math.max(0, Math.min(1, finiteNumber(projected.downstreamCompletion, 0))),
+      downstreamRequirementsMet: Math.max(0, finiteNumber(projected.downstreamRequirementsMet, 0)),
+      irreversibleLandmarksMet: Math.max(0, finiteNumber(projected.irreversibleLandmarksMet, 0)),
+      nextLandmarkReachable: projected.nextLandmarkReachable !== false ? 1 : 0,
+      nextLandmarkDistance: finiteNumber(projected.nextLandmarkDistance, 9999),
+      statDeficit: Math.max(0, finiteNumber(projected.statDeficit, 0)),
     };
   } catch (error) {
     return null;
@@ -419,6 +425,12 @@ function buildGoalDirectedDpAgendaRank(simulator, state, sourceAction, sequence,
     rank.goalRequirementsMet = goalProgress.requirementsMet;
     rank.goalRequirementsTotal = goalProgress.requirementsTotal;
     rank.goalFloorMatch = goalProgress.floorMatch;
+    rank.goalDownstreamCompletion = goalProgress.downstreamCompletion;
+    rank.goalDownstreamRequirementsMet = goalProgress.downstreamRequirementsMet;
+    rank.goalIrreversibleLandmarksMet = goalProgress.irreversibleLandmarksMet;
+    rank.goalNextLandmarkReachable = goalProgress.nextLandmarkReachable;
+    rank.goalNextLandmarkDistance = goalProgress.nextLandmarkDistance;
+    rank.goalStatDeficit = goalProgress.statDeficit;
   }
   return rank;
 }
@@ -428,6 +440,10 @@ function compareGoalDirectedDpAgendaRank(left, right) {
     "goalFeasible",
     "goalCompletion",
     "goalRequirementsMet",
+    "goalIrreversibleLandmarksMet",
+    "goalDownstreamCompletion",
+    "goalDownstreamRequirementsMet",
+    "goalNextLandmarkReachable",
     "sourceActionRank",
     "bestFloorRank",
     "currentFloorRank",
@@ -442,6 +458,12 @@ function compareGoalDirectedDpAgendaRank(left, right) {
   for (const field of goalHighWins) {
     const diff = Number(left[field] || 0) - Number(right[field] || 0);
     if (diff !== 0) return diff;
+  }
+  if (left.goalNextLandmarkDistance !== right.goalNextLandmarkDistance) {
+    return right.goalNextLandmarkDistance - left.goalNextLandmarkDistance;
+  }
+  if (left.goalStatDeficit !== right.goalStatDeficit) {
+    return right.goalStatDeficit - left.goalStatDeficit;
   }
   if (left.nextDistance !== right.nextDistance) return right.nextDistance - left.nextDistance;
   if (left.decisionDepth !== right.decisionDepth) return right.decisionDepth - left.decisionDepth;

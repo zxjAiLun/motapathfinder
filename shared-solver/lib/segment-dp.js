@@ -20,6 +20,7 @@ const {
   getTileDefinitionAt,
 } = require("./state");
 const { getFloorOrder } = require("./floor-id");
+const { compileGoalDependencyGraph } = require("./goal-dependency-graph");
 const reachAndBattleOracle = require("./reach-and-battle-oracle");
 
 function number(value, fallback) {
@@ -377,79 +378,9 @@ function missingGoalFields(project, simulator, state, segment, options) {
   return missing;
 }
 
-function boundedGoalRatio(actual, required) {
-  const target = Number(required);
-  if (!Number.isFinite(target) || target <= 0) return 1;
-  return Math.max(0, Math.min(1, number(actual, 0) / target));
-}
-
 function projectSegmentGoalProgress(project, state, segment) {
-  const goal = (segment || {}).goal || {};
-  const hero = summarizeHero(state);
-  const effectiveHero = summarizeEffectiveHero(state);
-  const requirements = [];
-  const addBoolean = (name, satisfied) => requirements.push({
-    name,
-    progress: satisfied ? 1 : 0,
-  });
-  const addMinimums = (prefix, actual, expected) => {
-    Object.entries(expected || {}).forEach(([field, required]) => {
-      requirements.push({
-        name: `${prefix}.${field}`,
-        progress: boundedGoalRatio(actual[field], required),
-      });
-    });
-  };
-
-  const floorMatch = !goal.floorId || state.floorId === goal.floorId;
-  if (goal.floorId) addBoolean("floorId", floorMatch);
-  addMinimums("hero", hero, goal.minHero);
-  addMinimums("effectiveHero", effectiveHero, goal.minEffectiveHero);
-  (goal.equipmentIncludes || []).forEach((itemId) => {
-    addBoolean(`equipment:${itemId}`, hasEquipment(state, itemId));
-  });
-  if (goal.type === "bossDefeated" || goal.type === "tileRemoved") {
-    addBoolean(
-      `removed:${goal.floorId}:${goal.x},${goal.y}`,
-      getTileDefinitionAt(project, state, goal.floorId, goal.x, goal.y) == null,
-    );
-  }
-  (goal.removedTiles || []).forEach((required) => {
-    addBoolean(
-      `removed:${required.floorId}:${required.x},${required.y}`,
-      getTileDefinitionAt(project, state, required.floorId, required.x, required.y) == null,
-    );
-  });
-  if (Array.isArray(goal.anyRemovedTiles) && goal.anyRemovedTiles.length > 0) {
-    addBoolean(
-      "anyRemovedTiles",
-      goal.anyRemovedTiles.some((required) =>
-        getTileDefinitionAt(project, state, required.floorId, required.x, required.y) == null,
-      ),
-    );
-  }
-  const missingProtectedTiles = (goal.presentTiles || []).filter((required) =>
-    getTileDefinitionAt(project, state, required.floorId, required.x, required.y) == null,
-  );
-  (goal.presentTiles || []).forEach((required) => {
-    addBoolean(
-      `present:${required.floorId}:${required.x},${required.y}`,
-      getTileDefinitionAt(project, state, required.floorId, required.x, required.y) != null,
-    );
-  });
-
-  const progressTotal = requirements.reduce((sum, entry) => sum + entry.progress, 0);
-  const requirementsMet = requirements.filter((entry) => entry.progress >= 1).length;
-  return {
-    feasible: missingProtectedTiles.length === 0,
-    floorMatch,
-    completion: requirements.length > 0 ? progressTotal / requirements.length : 0,
-    requirementsMet,
-    requirementsTotal: requirements.length,
-    missingProtectedTiles: missingProtectedTiles.map((tile) =>
-      `${tile.floorId}:${tile.x},${tile.y}`,
-    ),
-  };
+  const graph = compileGoalDependencyGraph(project, [segment]);
+  return graph.project(state, segment && segment.id);
 }
 
 function buildSegmentStateFeasibilityPredicate(project, segment, mode) {
@@ -2662,8 +2593,15 @@ function searchSegmentDP(simulator, startState, segment, options) {
     !dpConfig.dpPriorityMode
     ? "resource-first"
     : dpConfig.priorityMode || dpConfig.dpPriorityMode || "default";
+  const dependencyGraph = config.goalDependencyGraph || (
+    dpPriorityMode === "goal-directed" && Array.isArray(config.goalDependencySegments)
+      ? compileGoalDependencyGraph(simulator.project, config.goalDependencySegments)
+      : null
+  );
   const goalProgressProjector = dpPriorityMode === "goal-directed"
-    ? (state) => projectSegmentGoalProgress(simulator.project, state, segment)
+    ? dependencyGraph
+      ? (state) => dependencyGraph.project(state, segment.id)
+      : (state) => projectSegmentGoalProgress(simulator.project, state, segment)
     : null;
   const stateFeasibilityPredicate = buildSegmentStateFeasibilityPredicate(
     simulator.project,
@@ -3305,6 +3243,10 @@ function runSegmentAgainstFrontier(
   let memoryLimited = false;
   let memoryStopReason = null;
   const lifecycle = config && config.observer ? config.observer : null;
+  const goalDependencyGraph = config && config.dpPriorityMode === "goal-directed" &&
+    Array.isArray(config.goalDependencySegments)
+    ? compileGoalDependencyGraph(simulator.project, config.goalDependencySegments)
+    : null;
   if (lifecycle && typeof lifecycle.emit === "function") {
     lifecycle.emit("segmentStarted", () => ({
       segmentId: segment.id,
@@ -3401,6 +3343,8 @@ function runSegmentAgainstFrontier(
       observerCaptureDominanceWitnesses: config && config.observerCaptureDominanceWitnesses === true,
       observerCaptureWitnessStates: config && config.observerCaptureWitnessStates === true,
       objectiveSpec,
+      goalDependencyGraph,
+      goalDependencySegments: config && config.goalDependencySegments,
       dpOverrides,
     });
     attempts.push(result);
@@ -4128,7 +4072,12 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       simulator,
       segment,
       frontier,
-      { ...graphConfig, segmentIndex, segmentTotal: segments.length },
+      {
+        ...graphConfig,
+        segmentIndex,
+        segmentTotal: segments.length,
+        goalDependencySegments: segments.slice(segmentIndex),
+      },
       withManualBudgetAuthority(graphConfig, {
         candidateLimit: graphConfig.candidateLimit != null ? graphConfig.candidateLimit : undefined,
       }),
