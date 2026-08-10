@@ -205,6 +205,8 @@
         "shared-solver/check-candidate-key-promotion-contract.js",
         "shared-solver/check-candidate-key-paired-benchmark.js",
         "shared-solver/check-real-route-performance-qualification.js",
+        "shared-solver/check-walk-reachability-fast-path.js",
+        "shared-solver/check-walk-reachability-performance.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
         "shared-solver/check-mt1-default-promotion-contract.js",
         "shared-solver/check-mt1-post-promotion-regression-contract.js",
@@ -2417,6 +2419,20 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "Research-only MT2-MT5 performance harness: tracked route fixtures create trusted checkpoints, then A production key vs B injected without-start-component candidate run fresh branching milestone search; no production promotion or guard expansion"
+    },
+    "shared-solver/check-walk-reachability-fast-path.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "Tracked MT4 regression proves safe-fast walk reachability and primitive-action parity against legacy exact simulation; poison, hazards, live auto events, and directional tools fail back to exact"
+    },
+    "shared-solver/check-walk-reachability-performance.js": {
+      "grade": "diagnostic",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "Independent-process legacy-exact vs safe-fast comparison on the tracked MT4 to MT5 branching workload; exact final state, route, search scale, and strict replay parity are mandatory while timing remains directional"
     },
     "shared-solver/check-mt1-workload-matrix-contract.js": {
       "grade": "unit-plus-micro",

@@ -19,7 +19,12 @@ const { GenericDoorResolver } = require("./door-resolver");
 const { compareScore, compareSearchRank, defaultScore, defaultSearchRank, getFloorOrder } = require("./score");
 const { buildStateKey } = require("./state-key");
 const { getFrontierFeatures, getScore, getSearchRank } = require("./search-cache");
-const { buildWalkReachability, isTransitTile, stepOntoTile } = require("./step-simulator");
+const {
+  buildWalkReachability,
+  isTransitTile,
+  normalizeWalkReachabilityMode,
+  stepOntoTile,
+} = require("./step-simulator");
 const { ToolRegistry } = require("./tool-registry");
 const { syncProgress } = require("./progress");
 const { normalizeSolverModel, projectSolverState } = require("./solver-model");
@@ -369,6 +374,7 @@ class StaticSimulator {
     this.enableResourceChain = Boolean(config.enableResourceChain);
     this.enableResourceCluster = Boolean(config.enableResourceCluster);
     this.regionSignatureMode = String(config.regionSignatureMode || "walk");
+    this.walkReachabilityMode = normalizeWalkReachabilityMode(config.walkReachabilityMode);
     this.searchGraphMode = normalizeSearchGraphMode(config.searchGraphMode || config.searchGraph, "hybrid");
     this.primitiveFallbackMode = config.primitiveFallbackMode || "auto";
     this.resourcePocketSearchOptions = config.resourcePocketSearchOptions || {};
@@ -426,6 +432,16 @@ class StaticSimulator {
       stats[name] = { hits: 0, misses: 0, stores: 0, evictions: 0, computeMs: 0, estimatedMsSaved: 0 };
       return stats;
     }, {});
+    Object.assign(this.actionExpansionCacheStats.reachability, {
+      safeFastBuilds: 0,
+      legacyExactBuilds: 0,
+      nodesExpanded: 0,
+      transitionAttempts: 0,
+      stateClones: 0,
+      dominanceKeyBuilds: 0,
+      hazardScanMs: 0,
+      safetyProbeMs: 0,
+    });
   }
 
   cacheLimitFor(name) {
@@ -521,6 +537,7 @@ class StaticSimulator {
     const key = buildStateKey(state);
     const cached = this.cacheGet("reachability", key);
     if (cached) return cached;
+    const stats = this.actionExpansionCacheStats && this.actionExpansionCacheStats.reachability;
     // Perf-tracker hook (no-op unless a tracker is active): reachability BFS is
     // one of the search hot phases the PR-5.4b baseline measures separately.
     return timeActivePhase("reachability", () => {
@@ -530,7 +547,23 @@ class StaticSimulator {
         executeActionList,
         choiceResolver: this.choiceResolver,
         stabilizeState: (nextState) => this.stabilizeState(nextState),
+        walkReachabilityMode: this.walkReachabilityMode,
       });
+      const diagnostics = reachability && reachability.diagnostics || {};
+      if (stats) {
+        if (diagnostics.mode === "safe-fast") stats.safeFastBuilds += 1;
+        else stats.legacyExactBuilds += 1;
+        [
+          "nodesExpanded",
+          "transitionAttempts",
+          "stateClones",
+          "dominanceKeyBuilds",
+          "hazardScanMs",
+          "safetyProbeMs",
+        ].forEach((field) => {
+          stats[field] = Number(stats[field] || 0) + Number(diagnostics[field] || 0);
+        });
+      }
       return this.cacheSet("reachability", key, reachability, null, Date.now() - startedAt);
     });
   }

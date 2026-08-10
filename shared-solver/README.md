@@ -176,6 +176,15 @@ Action expansion caches are enabled by default and are reported in diagnostics a
 
 The cached layers cover walk reachability, primitive action enumeration, battle estimates, resource-cluster ordering, resource preview applies, resource-chain lookahead, and search confluence signatures. Cache stats include `hitRate`, `avgComputeMs`, `estimatedMsSaved`, and `avgMsSaved`. In parallel top-k mode, worker cache hit/miss deltas are aggregated under `actionExpansionCache.workers`.
 
+Walk reachability defaults to the conservative `safe-fast` topology path. It
+automatically falls back to exact step simulation for poison, movement hazards,
+live auto events, direction-sensitive tools, custom step hooks, or an unstable
+state probe. Simulator integrations can force the rollback with
+`walkReachabilityMode: "legacy-exact"`; real-route benchmark CLIs expose the
+same control as `--walk-mode=legacy-exact`. Use
+`npm run check:walk-reachability-fast-path` for focused parity/fallback coverage
+and `npm run bench:walk:mt4:compare` for an independent-process route comparison.
+
 Top-k performance baselines:
 
 ```bash

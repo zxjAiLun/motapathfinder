@@ -82,3 +82,44 @@ The MT4 data strengthens the conclusion that the candidate removes redundant
 reachability work outside the original exp9 micro case. It still does not prove
 general candidate-key safety or an overall solver speedup. The dominant absolute
 cost remains walk reachability: even 100 expansions can take tens of seconds.
+
+## Safe walk reachability fast path
+
+Walk reachability now defaults to `safe-fast`, with `legacy-exact` as an explicit
+rollback. The fast path is eligible only when the current state has no poison,
+direction-sensitive tool, live auto event, movement hazard, custom step hook, or
+stability-probe mutation. Every rejected or failed probe uses the original exact
+step simulator. The DP key, dominance, agenda, action policy, and route selection
+are unchanged.
+
+Focused parity and fallback controls:
+
+```bash
+npm run check:walk-reachability-fast-path
+```
+
+Independent-process route comparison:
+
+```bash
+npm run bench:walk:mt4:compare
+```
+
+The comparison fixes candidate side B and 100 expansions on the tracked manual
+MT4 checkpoint to MT5 entry workload. It requires exact final state, route
+fingerprint, strict replay, and search-scale parity; timings are directional and
+not pinned as a cross-machine correctness gate. The pre-change baseline at
+`f55fc7c` was run three times at 8.97s / 10.25s / 10.22s (median 10.22s), with
+108 reachability computations consuming 7.34s / 8.40s / 8.35s. Use the command
+above for the current same-machine safe-fast versus explicit rollback result.
+
+On the same machine, three independent safe-fast processes completed in 4.86s /
+3.05s / 2.82s (median 3.05s), while reachability consumed 1.16s / 0.72s /
+0.64s (median 0.72s). Against the three-run pre-change medians, that is a 3.35x
+wall-clock speedup and an 11.66x reachability speedup. A separate paired run of
+the explicit modes measured 12.78s versus 2.53s wall time (5.05x) and 10.60s
+versus 0.57s reachability time (18.72x). All runs preserved 100 expanded / 302
+generated / 212 accepted states, final exact-state fingerprint
+`451f12da1f9e7ca8`, route fingerprint
+`a2f663af8623113f8e99502f0d4925a8c141fedf281bf179b69871b9aecaa15b`, and
+strict replay. The safe-fast runs used 91 static builds and conservatively fell
+back to 17 exact builds after entering live-auto-event territory.

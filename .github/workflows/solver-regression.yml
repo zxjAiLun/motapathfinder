@@ -30,6 +30,7 @@ jobs:
       - run: npm run check:tower-ir-shadow
       - run: npm run check:candidate-key-smoke
       - run: npm run check:real-route-performance-contract
+      - run: npm run check:walk-reachability-fast-path
 
   # =====================================================================
   # Tier 3 — Qualification gate. Runs only for marker commits

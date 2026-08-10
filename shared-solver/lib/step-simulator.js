@@ -3,7 +3,7 @@
 const { runAutoEvents } = require("./events");
 const { buildMovementHazards } = require("./movement-hazards");
 const { DIRECTIONS, DIRECTION_DELTAS, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
-const { buildDominanceKey, buildStateKey } = require("./state-key");
+const { buildDominanceKey, buildStateKey, hasDirectionalStateSensitivity } = require("./state-key");
 const { cloneState, floorHasCoordinate, getTileDefinitionAt, removeTileAt, replaceTileAt } = require("./state");
 
 function isEndpointTile(project, state, floorId, x, y) {
@@ -190,7 +190,87 @@ function simulateTransitStep(project, state, direction, options, hazardCache) {
   );
 }
 
-function buildWalkReachability(project, state, options) {
+const WALK_REACHABILITY_MODES = new Set(["safe-fast", "legacy-exact"]);
+
+function normalizeWalkReachabilityMode(value) {
+  const mode = String(value || "safe-fast").trim();
+  if (WALK_REACHABILITY_MODES.has(mode)) return mode;
+  throw new Error(
+    `Invalid walk reachability mode: ${mode}. Expected safe-fast or legacy-exact.`,
+  );
+}
+
+function hasLiveAutoEvents(floor) {
+  return Object.values((floor && floor.autoEvent) || {}).some((entries) =>
+    Object.values(entries || {}).some(Boolean),
+  );
+}
+
+function hasMovementHazards(hazards) {
+  const value = hazards || {};
+  return ["damage", "repulse", "ambush", "betweenAttackLocs"].some(
+    (field) => Object.keys(value[field] || {}).length > 0,
+  );
+}
+
+function classifySafeStaticWalk(project, state, options) {
+  const config = options || {};
+  const startedAt = process.hrtime.bigint();
+  const reject = (reason, extra) => ({
+    eligible: false,
+    reason,
+    safetyProbeMs: Number(process.hrtime.bigint() - startedAt) / 1e6,
+    ...(extra || {}),
+  });
+
+  if (normalizeWalkReachabilityMode(config.walkReachabilityMode) === "legacy-exact") {
+    return reject("legacy-exact-requested");
+  }
+  if (typeof config.beforeHazards === "function" || typeof config.afterHazards === "function") {
+    return reject("custom-step-hooks");
+  }
+  if (state && state.flags && state.flags.poison) return reject("poison-active");
+  if (hasDirectionalStateSensitivity(state)) return reject("direction-sensitive-inventory");
+
+  const floor = project.floorsById[state.floorId];
+  if (!floor) return reject("unknown-floor");
+  if (hasLiveAutoEvents(floor)) return reject("live-auto-events");
+
+  const hazardStartedAt = process.hrtime.bigint();
+  const hazards = buildMovementHazards(project, state, {
+    floorId: state.floorId,
+    battleResolver: config.battleResolver,
+  });
+  const hazardScanMs = Number(process.hrtime.bigint() - hazardStartedAt) / 1e6;
+  if (hasMovementHazards(hazards)) {
+    return reject("movement-hazards", { hazardScanMs });
+  }
+
+  let stabilityProbeClones = 0;
+  if (typeof config.stabilizeState === "function") {
+    try {
+      const probe = cloneState(state);
+      stabilityProbeClones += 1;
+      const stabilized = config.stabilizeState(probe);
+      if (!stabilized || buildStateKey(stabilized) !== buildStateKey(state)) {
+        return reject("state-not-stable", { hazardScanMs, stabilityProbeClones });
+      }
+    } catch (error) {
+      return reject("stability-probe-error", { hazardScanMs, stabilityProbeClones });
+    }
+  }
+
+  return {
+    eligible: true,
+    reason: "safe-static-walk",
+    hazards,
+    hazardScanMs,
+    safetyProbeMs: Number(process.hrtime.bigint() - startedAt) / 1e6,
+    stabilityProbeClones,
+  };
+}
+
+function buildExactWalkReachability(project, state, options, eligibility) {
   const config = options || {};
   const initialState = cloneState(state);
   const initialKey = buildDominanceKey(initialState);
@@ -211,17 +291,31 @@ function buildWalkReachability(project, state, options) {
   const bestHpByKey = {
     [initialKey]: Number(initialState.hero.hp || 0),
   };
+  const diagnostics = {
+    mode: "legacy-exact",
+    eligibilityReason: eligibility && eligibility.reason || "legacy-exact-requested",
+    nodesExpanded: 0,
+    transitionAttempts: 0,
+    stateClones: 1 + Number(eligibility && eligibility.stabilityProbeClones || 0),
+    dominanceKeyBuilds: 1,
+    hazardScanMs: Number(eligibility && eligibility.hazardScanMs || 0),
+    safetyProbeMs: Number(eligibility && eligibility.safetyProbeMs || 0),
+  };
 
   while (queue.length > 0) {
     const node = queue.shift();
     if (visited[node.key] !== node) continue;
+    diagnostics.nodesExpanded += 1;
 
     DIRECTIONS.forEach((direction) => {
+      diagnostics.transitionAttempts += 1;
       const nextState = simulateTransitStep(project, node.state, direction, config, hazardCache);
       if (!nextState) return;
+      diagnostics.stateClones += 1;
       if (nextState.floorId !== state.floorId) return;
 
       const key = buildDominanceKey(nextState);
+      diagnostics.dominanceKeyBuilds += 1;
       const nextHp = Number(nextState.hero.hp || 0);
       if (bestHpByKey[key] != null && bestHpByKey[key] >= nextHp) return;
       bestHpByKey[key] = nextHp;
@@ -241,13 +335,101 @@ function buildWalkReachability(project, state, options) {
   return {
     start: { x: state.hero.loc.x, y: state.hero.loc.y },
     visited,
+    diagnostics,
   };
+}
+
+function buildStaticWalkReachability(project, state, eligibility) {
+  const initialState = cloneState(state);
+  const initialKey = buildDominanceKey(initialState);
+  const root = {
+    key: initialKey,
+    x: initialState.hero.loc.x,
+    y: initialState.hero.loc.y,
+    distance: 0,
+    path: [],
+    state: initialState,
+  };
+  const queue = [root];
+  let cursor = 0;
+  const visited = { [initialKey]: root };
+  const seenCoordinates = new Set([coordinateKey(root.x, root.y)]);
+  const diagnostics = {
+    mode: "safe-fast",
+    eligibilityReason: eligibility.reason,
+    nodesExpanded: 0,
+    transitionAttempts: 0,
+    stateClones: 1 + Number(eligibility.stabilityProbeClones || 0),
+    dominanceKeyBuilds: 1,
+    hazardScanMs: Number(eligibility.hazardScanMs || 0),
+    safetyProbeMs: Number(eligibility.safetyProbeMs || 0),
+  };
+
+  while (cursor < queue.length) {
+    const node = queue[cursor];
+    cursor += 1;
+    diagnostics.nodesExpanded += 1;
+
+    DIRECTIONS.forEach((direction) => {
+      diagnostics.transitionAttempts += 1;
+      const delta = DIRECTION_DELTAS[direction];
+      const nextX = node.x + delta.x;
+      const nextY = node.y + delta.y;
+      const coordinate = coordinateKey(nextX, nextY);
+      if (seenCoordinates.has(coordinate)) return;
+      if (!isTransitTile(project, state, state.floorId, nextX, nextY)) return;
+      seenCoordinates.add(coordinate);
+
+      const distance = node.distance + 1;
+      const nextState = cloneState(initialState);
+      diagnostics.stateClones += 1;
+      nextState.hero.loc.x = nextX;
+      nextState.hero.loc.y = nextY;
+      nextState.hero.loc.direction = direction;
+      nextState.hero.steps = Number(initialState.hero.steps || 0) + distance;
+      const key = buildDominanceKey(nextState);
+      diagnostics.dominanceKeyBuilds += 1;
+      const nextNode = {
+        key,
+        x: nextX,
+        y: nextY,
+        distance,
+        path: node.path.concat(direction),
+        state: nextState,
+      };
+      visited[key] = nextNode;
+      queue.push(nextNode);
+    });
+  }
+
+  return {
+    start: { x: state.hero.loc.x, y: state.hero.loc.y },
+    visited,
+    diagnostics,
+  };
+}
+
+function buildWalkReachability(project, state, options) {
+  const config = options || {};
+  const eligibility = classifySafeStaticWalk(project, state, config);
+  if (eligibility.eligible) {
+    return buildStaticWalkReachability(project, state, eligibility);
+  }
+  return buildExactWalkReachability(project, state, config, eligibility);
 }
 
 module.exports = {
   buildWalkReachability,
+  normalizeWalkReachabilityMode,
   isEndpointTile,
   isStepPassableTile,
   isTransitTile,
   stepOntoTile,
+  __testing: {
+    buildExactWalkReachability,
+    buildStaticWalkReachability,
+    classifySafeStaticWalk,
+    hasLiveAutoEvents,
+    hasMovementHazards,
+  },
 };

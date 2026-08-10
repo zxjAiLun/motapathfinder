@@ -119,7 +119,8 @@ function optionalNumber(value) {
   return parsed;
 }
 
-function makeSimulator(project) {
+function makeSimulator(project, options) {
+  const config = options || {};
   return new StaticSimulator(project, {
     stopFloorId: "MT11",
     battleResolver: new FunctionBackedBattleResolver(project),
@@ -130,6 +131,7 @@ function makeSimulator(project) {
     enableResourceCluster: false,
     enableResourceChain: false,
     searchGraphMode: "primitive",
+    walkReachabilityMode: config.walkReachabilityMode,
   });
 }
 
@@ -271,7 +273,9 @@ function buildStrictReplayEvidence(project, simulator, initialState, result, ben
 }
 
 function runBenchmarkSide(project, milestoneSpec, caseId, benchmarkCase, side, args) {
-  const simulator = makeSimulator(project);
+  const simulator = makeSimulator(project, {
+    walkReachabilityMode: args["walk-mode"],
+  });
   const fixture = FIXTURES[benchmarkCase.fixture];
   const initialState = replayFixture(simulator, fixture.file);
   const initialCheckpoint = {
@@ -331,6 +335,7 @@ function runBenchmarkSide(project, milestoneSpec, caseId, benchmarkCase, side, a
     scale: summarizeScale(result),
     performance: {
       wallMs: perf.wallMs,
+      walkReachabilityMode: simulator.walkReachabilityMode,
       peakRssMb: perf.peakRssMb,
       peakHeapUsedMb: perf.peakHeapUsedMb,
       reachabilityComputations: Number(perf.phaseCounts && perf.phaseCounts.reachability || 0),
