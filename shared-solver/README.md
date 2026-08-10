@@ -185,6 +185,11 @@ npm run perf:topk:parallel
 
 Compare `perf.expansionsPerSec`, `perf.timeInGenerateActionsMs`, `actionExpansionCache.*.hitRate`, `confluenceDominance.rejectedByHigherHp`, and `resourceCluster.skylineRejected` between runs.
 
+Canonical candidate-key performance qualification is documented in
+[`REAL_ROUTE_PERFORMANCE.md`](REAL_ROUTE_PERFORMANCE.md). Keep the MT1 exp9 case
+as a micro correctness test; use tracked route checkpoints for MT2-MT5 research
+benchmarks without expanding the production promotion scope.
+
 ## Next fill-in points
 
 1. TODO: Add dedicated shop / add-point / upgrade-choice resolvers if a future tower segment requires them.

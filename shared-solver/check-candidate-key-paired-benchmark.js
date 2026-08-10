@@ -9,7 +9,7 @@
  * dpKeyProfile ALONE selects the guarded experimental builder through the full
  * execution path (no dpStateKeyBuilder injection).  Unknown profiles and
  * approved-baseline fingerprint drift fail closed.  Correctness is exact with
- * real strict replay on both sides; 4 paired A/B rounds report structural
+ * real strict replay on both sides; 4 A/B/B/A qualification rounds report structural
  * counters, phase attribution, and per-round winner/route/objective pinned to
  * the baseline.  Reachability cost-shift is attributed (timing shift + call
  * counts + cache mode), not just inferred from phase timing.
@@ -129,7 +129,11 @@ async function runSearch(options) {
       reachabilityCache: execution.simulator
         ? execution.simulator.getReachabilityCacheStats()
         : null,
-      wallMs: perf.wallMs,
+      // Search-only wall time.  The strict-replay smoke reuses its A/B
+      // correctness solves as the only performance samples, so tracker.wallMs
+      // would incorrectly include browser replay and route verification.
+      wallMs: dp && dp.wallMs != null ? Number(dp.wallMs) : perf.wallMs,
+      endToEndWallMs: perf.wallMs,
     },
   };
 }
@@ -292,12 +296,35 @@ async function main() {
   assert.strictEqual(runA.scale.registered, 156, "A canonical registered must be 156");
   assert.strictEqual(runB.scale.registered, 156, "B canonical registered must be 156");
 
-  // Paired benchmark rounds (search-only).  A = explicit rollback, B = explicit
-  // experimental.  `--smoke` runs a single A/B pair for fast CI feedback; the
-  // full 8-round order runs in qualification CI only.
-  const pairedOrder = smoke ? ["A", "B"] : ["A", "B", "B", "A", "A", "B", "B", "A"];
-  const rounds = [];
-  for (const side of pairedOrder) {
+  const pairedRoundOf = (side, run) => ({
+    side,
+    keyBuildTotalMs: run.phases.keyBuildTotalMs,
+    keyBuildCalls: run.phases.keyBuildCalls,
+    enumerateTotalMs: run.phases.enumerateTotalMs,
+    enumerateCalls: run.phases.enumerateCalls,
+    applyTotalMs: run.phases.applyTotalMs,
+    applyCalls: run.phases.applyCalls,
+    reachabilityTotalMs: run.phases.reachabilityTotalMs,
+    reachabilityComputations: run.phases.reachabilityComputations,
+    reachabilityCache: run.phases.reachabilityCache,
+    wallMs: run.phases.wallMs,
+    endToEndWallMs: run.phases.endToEndWallMs,
+    expanded: run.scale.expanded,
+    generated: run.scale.generated,
+    registered: run.scale.registered,
+    dominanceRejected: run.scale.dominanceRejected,
+    finalActiveStates: run.scale.finalActiveStates,
+    finalUniqueKeys: run.scale.finalUniqueKeys,
+  });
+
+  // The smoke is exactly one A + one B solve: reuse the real strict-replay
+  // correctness runs above instead of paying for a second duplicate pair.
+  // Qualification keeps four search-only samples in noise-balanced A/B/B/A
+  // order; the old eight-round micro benchmark was too expensive for the tiny
+  // 116-expansion workload.
+  const pairedOrder = smoke ? ["A", "B"] : ["A", "B", "B", "A"];
+  const rounds = smoke ? [pairedRoundOf("A", runA), pairedRoundOf("B", runB)] : [];
+  for (const side of smoke ? [] : pairedOrder) {
     const run = await runSearch(side === "B"
       ? { dpKeyProfile: EXPERIMENTAL_PROFILE }
       : { dpKeyProfile: PRODUCTION_PROFILE });
@@ -305,25 +332,7 @@ async function main() {
     assert.strictEqual(run.correctness.winnerExactFingerprint, COMMIT2_REPRESENTATIVE_WINNER_FINGERPRINT, `${side} round winner must match baseline`);
     assert.strictEqual(run.correctness.routeFingerprint, COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT, `${side} round route must match baseline`);
     assert.strictEqual(run.correctness.objectiveValue, COMMIT2_OBJECTIVE_VALUE, `${side} round objective must match baseline`);
-    rounds.push({
-      side,
-      keyBuildTotalMs: run.phases.keyBuildTotalMs,
-      keyBuildCalls: run.phases.keyBuildCalls,
-      enumerateTotalMs: run.phases.enumerateTotalMs,
-      enumerateCalls: run.phases.enumerateCalls,
-      applyTotalMs: run.phases.applyTotalMs,
-      applyCalls: run.phases.applyCalls,
-      reachabilityTotalMs: run.phases.reachabilityTotalMs,
-      reachabilityComputations: run.phases.reachabilityComputations,
-      reachabilityCache: run.phases.reachabilityCache,
-      wallMs: run.phases.wallMs,
-      expanded: run.scale.expanded,
-      generated: run.scale.generated,
-      registered: run.scale.registered,
-      dominanceRejected: run.scale.dominanceRejected,
-      finalActiveStates: run.scale.finalActiveStates,
-      finalUniqueKeys: run.scale.finalUniqueKeys,
-    });
+    rounds.push(pairedRoundOf(side, run));
   }
   const aRounds = rounds.filter((round) => round.side === "A");
   const bRounds = rounds.filter((round) => round.side === "B");
@@ -401,7 +410,8 @@ async function main() {
     schema: "motapathfinder.pr-5.4d-guarded-candidate-key.v1",
     status: "passed",
     controls: {
-      candidateProductionProfileDefaultOff: true,
+      approvedMt1CandidateDefaultOn: true,
+      explicitProductionRollbackAvailable: true,
       productionRegionKeyByteExact: true,
       profileAloneSelectsExperimentalBuilder: true,
       unknownProfileFailClosedFullPath: true,

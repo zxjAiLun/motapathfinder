@@ -204,6 +204,7 @@
         "shared-solver/check-dual-key-shadow-contract.js",
         "shared-solver/check-candidate-key-promotion-contract.js",
         "shared-solver/check-candidate-key-paired-benchmark.js",
+        "shared-solver/check-real-route-performance-qualification.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
         "shared-solver/check-mt1-default-promotion-contract.js",
         "shared-solver/check-mt1-post-promotion-regression-contract.js",
@@ -2408,7 +2409,14 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.4d Repair: dpKeyProfile alone selects guarded experimental builder (pinned approved-baseline fingerprints, semantic drift fail-closed), registered=acceptedStates, paired-round correctness pinned"
+      "notes": "PR-5.4d Repair + real-route benchmark cleanup: dpKeyProfile alone selects guarded experimental builder; smoke reuses one strict A/B pair and qualification uses four A/B/B/A search rounds"
+    },
+    "shared-solver/check-real-route-performance-qualification.js": {
+      "grade": "diagnostic",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "Research-only MT2-MT5 performance harness: tracked route fixtures create trusted checkpoints, then A production key vs B injected without-start-component candidate run fresh branching milestone search; no production promotion or guard expansion"
     },
     "shared-solver/check-mt1-workload-matrix-contract.js": {
       "grade": "unit-plus-micro",

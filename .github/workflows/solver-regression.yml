@@ -29,6 +29,7 @@ jobs:
       - run: npm run check:route-free-state
       - run: npm run check:tower-ir-shadow
       - run: npm run check:candidate-key-smoke
+      - run: npm run check:real-route-performance-contract
 
   # =====================================================================
   # Tier 3 — Qualification gate. Runs only for marker commits
@@ -98,6 +99,20 @@ jobs:
           node-version: 20
       - run: npm ci
       - run: npm run check:candidate-key-paired-benchmark
+
+  qualification-real-route-performance:
+    needs: qualification-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run bench:real-route:mt4-manual
 
   qualification-promotion-contract:
     needs: qualification-gate
@@ -196,6 +211,7 @@ jobs:
       - qualification-key-analysis
       - qualification-promotion
       - qualification-benchmark
+      - qualification-real-route-performance
       - qualification-promotion-contract
       - qualification-post-promotion-regression
       - qualification-multi-region-key-shadow
@@ -204,4 +220,4 @@ jobs:
     if: needs.qualification-gate.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Full qualification passed (fast + key-analysis + promotion + benchmark + promotion-contract + post-promotion-regression + multi-region-key-shadow + multi-region-boundary-matrix + workload matrix)"
+      - run: echo "Full qualification passed (fast + key-analysis + promotion + micro benchmark + real-route performance + promotion-contract + post-promotion-regression + multi-region-key-shadow + multi-region-boundary-matrix + workload matrix)"
