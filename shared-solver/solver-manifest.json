@@ -644,6 +644,22 @@
       },
       "notes": "Compiles ordered milestone floor, stat, equipment, tile, and gateway dependencies for goal-directed agenda ranking without changing dominance or default skyline semantics"
     },
+    "shared-solver/lib/goal-feasibility-bounds.js": {
+      "id": "goal-feasibility-bounds",
+      "path": "shared-solver/lib/goal-feasibility-bounds.js",
+      "layer": "search/correctness",
+      "status": "canonical",
+      "role": "necessary-condition-pruning",
+      "correctnessSource": true,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": true,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "Explicit admissible-v1 bounds prune only complete declared floor, unique-equipment, protected-tile, and optimistic stat impossibilities; incomplete evidence remains feasible/unknown"
+    },
     "shared-solver/lib/guarded-candidate-key.js": {
       "id": "guarded-candidate-key",
       "path": "shared-solver/lib/guarded-candidate-key.js",
@@ -2457,6 +2473,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "Tracked MT2 to MT3 exact parity plus MT4 to MT5 first-feasible comparison for goal-directed agenda ordering; ordered downstream goal dependencies and protected present-tile feasibility pruning remain explicit and default-off"
+    },
+    "shared-solver/check-goal-feasibility-bounds.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.6c admissible necessary-condition bounds, unknown-evidence keep semantics, and structured prune witness diagnostics"
     },
     "shared-solver/check-mt1-workload-matrix-contract.js": {
       "grade": "unit-plus-micro",

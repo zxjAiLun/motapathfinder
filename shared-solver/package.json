@@ -182,6 +182,7 @@
     "check:real-route-performance-contract": "node check-real-route-performance-qualification.js --contract-only",
     "check:walk-reachability-fast-path": "node check-walk-reachability-fast-path.js",
     "check:goal-directed-search": "node check-goal-directed-search.js",
+    "check:goal-feasibility-bounds": "node check-goal-feasibility-bounds.js",
     "bench:walk:mt4:legacy": "node check-real-route-performance-qualification.js --case=mt4-manual-to-mt5-entry --order=B --max-expansions=100 --walk-mode=legacy-exact",
     "bench:walk:mt4:safe-fast": "node check-real-route-performance-qualification.js --case=mt4-manual-to-mt5-entry --order=B --max-expansions=100 --walk-mode=safe-fast",
     "bench:walk:mt4:compare": "node check-walk-reachability-performance.js",

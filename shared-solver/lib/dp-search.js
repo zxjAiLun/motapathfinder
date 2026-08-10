@@ -1208,6 +1208,7 @@ function searchDP(simulator, initialState, options) {
   let invalid = 0;
   let goalFeasibilityPruned = 0;
   const goalFeasibilityPrunedByReason = {};
+  const goalFeasibilitySamples = [];
   let firstGoalNode = null;
   let firstGoalExpansion = null;
   let firstGoalElapsedMs = null;
@@ -1874,6 +1875,15 @@ function searchDP(simulator, initialState, options) {
         const reason = verdict && verdict.reason || "goal-necessary-condition-failed";
         goalFeasibilityPruned += 1;
         goalFeasibilityPrunedByReason[reason] = Number(goalFeasibilityPrunedByReason[reason] || 0) + 1;
+        if (goalFeasibilitySamples.length < 8) {
+          goalFeasibilitySamples.push(jsonDiagnosticValue({
+            reason,
+            current: verdict && verdict.current,
+            target: verdict && verdict.target,
+            bound: verdict && verdict.bound,
+            witness: verdict && verdict.witness,
+          }));
+        }
         trackPerfCount("goalFeasibilityPruned");
         if (observer) observer.emit("candidateRejected", () => observerStatePayload(
           simulator,
@@ -2579,6 +2589,7 @@ function searchDP(simulator, initialState, options) {
           enabled: typeof config.stateFeasibilityPredicate === "function",
           pruned: goalFeasibilityPruned,
           byReason: { ...goalFeasibilityPrunedByReason },
+          samples: goalFeasibilitySamples.slice(),
         },
         agendaMode,
         fairnessEvery,

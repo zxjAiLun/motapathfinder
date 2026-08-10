@@ -21,6 +21,7 @@ const {
 } = require("./state");
 const { getFloorOrder } = require("./floor-id");
 const { compileGoalDependencyGraph } = require("./goal-dependency-graph");
+const { compileAdmissibleFeasibilityBounds } = require("./goal-feasibility-bounds");
 const reachAndBattleOracle = require("./reach-and-battle-oracle");
 
 function number(value, fallback) {
@@ -386,10 +387,14 @@ function projectSegmentGoalProgress(project, state, segment) {
 function buildSegmentStateFeasibilityPredicate(project, segment, mode) {
   const normalizedMode = String(mode || "off");
   if (normalizedMode === "off") return null;
-  if (normalizedMode !== "protected-present-tiles") {
+  if (!["protected-present-tiles", "admissible-v1"].includes(normalizedMode)) {
     throw new Error(
-      `Unknown goal feasibility mode: ${normalizedMode}. Expected off or protected-present-tiles.`,
+      `Unknown goal feasibility mode: ${normalizedMode}. Expected off, protected-present-tiles, or admissible-v1.`,
     );
+  }
+  if (normalizedMode === "admissible-v1") {
+    const compiled = compileAdmissibleFeasibilityBounds(project, segment);
+    return (state) => compiled.evaluate(state);
   }
   return (state) => {
     const progress = projectSegmentGoalProgress(project, state, segment);
