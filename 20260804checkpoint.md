@@ -539,7 +539,7 @@ PR-5.1 和 PR-5.2 基本都刻意没有修改 solver/search、DP key、dominance
 
 这其实不是坏事。现在已经把“找到一条假的路线、错误路线或不可恢复路线”这种地基风险大幅压下去了。接下来重新优化算法时，实验结果会可信得多。
 
-## PR-5.4 / PR-5.5 主线现状（2026-08-08）
+## PR-5.4 / PR-5.5 / PR-5.6 主线现状（2026-08-10）
 
 PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 guarded experimental profile；PR-5.5 系列（研究/证据轮，零 production 行为改动）把同一 identity 放到 multi-Region boundary 上做 collision hunting：
 
@@ -556,6 +556,20 @@ PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 gua
 - **PR-5.5c Cross-Topology Repair 2（完成，研究/证据轮，零 production 行为改动）**：修复 P1-3 假阳性漏洞——`inventoryHoleClosure` 原实现是任意 state pair 的 Cartesian product（`i<j 差值`），会把"两条分支恰好 key 不同 + mutation 不同"误判为 acquire+consume。Repair：**recorder 补 observation-only transition provenance**（dp-search `enqueue(state, sourceAction, parentNode)` 的 recorder payload 增加 `parentStateKey`（buildStateKey）、`parentInventory`、`parentMutations`（listFloorMutationSummary）、`actionKind`、`actionSummary`——只进 research 观察，不进 key/pruning/solver behavior，try/catch 保护不变）；hole detector 改为只走**真实 parent→action→child edge**：acquire = child key 增加 + actionKind ∈ {pickup, interactPickup}；consume = child key 减少 + actionKind ∈ {openDoor, useTool} **且同一 transition 上 child floor mutations ≠ parent mutations**。新增**正负 synthetic controls**：负（两 state key 不同/mutation 不同但无 parent edge → filled=false）与正（S0 --pickup--> S1 --openDoor--> S2 → acquire+consume+filled=true）——假阳性被锁死。visitedFloors closure 补 `changeFloorExecuted / arrivalExecuted / postArrivalSearchObserved` 字段，`filled` 额外要求真实 changeFloor transition。结果：**NO_COLLISION_OBSERVED**（18 workload，42/42/181，0 merge），`holeClosureSummary: {inventoryFilled:false, visitedFloorsFilled:false}` 如实 OPEN。
 - **PR-5.5c Cross-Topology Repair 3（完成，研究/证据轮，零 production 行为改动）**：修复 P1-4 mutation representation mismatch——consume 检测的 parent/child mutation 用了不同表示（recorder 存 `JSON.stringify(listFloorMutationSummary(...))` 的 canonical array，detector 之前用 raw single-floor object `{"removed":{},"replaced":{}}`，无 mutation 时 `[]` vs `{"removed":{}...}` 恒不等 → 假阳性）。Repair：新增 `mutationSummaryFingerprintOf(floorStates)` 共享 helper（`JSON.stringify(listFloorMutationSummary(floorStates))`），child 侧与 recorder 侧**同一 canonicalization**（两边同 helper，parity by construction）。新增 **negative-2 control**：真实 openDoor edge + key 1→0 但 canonical mutation 无变化 → `consumeExecuted=false, filled=false`（锁住"key 减少 ≠ mutation 变化"）；正控改用 canonical 格式验证 door removal 可区分。结果：**NO_COLLISION_OBSERVED**（18 workload，42/42/181，0 merge），两空洞如实 OPEN。
 - **PR-5.5d Production-Faithful Classic Tower Fixture Qualification（完成，研究/证据轮，零 production 行为改动）**：获得 production-faithful 的缺失语义面——**只用 tracked OnlyUp 数据**（不引入 whiteisland/不膨胀仓库）。发现 **OnlyUp Start floor 是真实 sealed key room**：floor-entry (6,4) 把英雄放进带 4 个 green key 的密室，goal 开门 tileRemoved(5,5)。新增 `start-door-key-entryA` workload（R0 MT1 exp2 → R1 Start）：354 post 样本、大量真实 openDoor edge（probe 观测 344 条，非 matrix 冻结字段）、inventory distinct **10**。**inventory hole CLOSED**（fail-closed transition evidence）：`distinctInventories=10`、`acquireExecuted=true`（I600 via interactPickup）、`consumeExecuted=true`（**greenKey via openDoor**，canonical parent→child 同 edge mutation 证据）、`filled=true`——全部是 tracked 单 project 生产语义。**visitedFloors hole PARTIAL**：cross-floor boundary 真实携带 MT1 + Start arrival → `maxVisitedFloorCount=2`、`arrivalExecuted=true`、`postArrivalSearchObserved=true`；但 **`changeFloorExecuted=false`**——tracked OnlyUp 可达区域均无真实 changeFloor edge（MT1 stairs 不可达；Start stairs 被 steel/special door 挡住且 floor 无对应 key；MT2 怪物对 carried hero 过强），如实 PARTIAL。结果：**NO_COLLISION_OBSERVED**（19 workload，44/44/**535** post，0 merge / 0 unsafe），`holeClosureSummary: {inventoryFilled:true, visitedFloorsFilled:false}`。
+- **PR-5.6a Route Lineage Integrity（完成，`62fa0ff`）**：修复 compound parent→action→child route patch 重建，canonical state 继续 route-free；segment/route-free regression 锁定跨层 lineage。
+- **PR-5.6b Goal Dependency Graph（完成，`7dfc3fd`）**：编译 floor/stat/effective-stat/equipment/removed/present/gateway 依赖，goal-directed agenda 按当前可行性、不可逆 landmark、下游完成度、下一 landmark 距离、stat deficit 排序；不进入 key/dominance/default skyline。
+- **PR-5.6c Admissible Feasibility Bounds（完成，`2b93a8b`）**：显式 `admissible-v1` 支持 complete floor graph、unique equipment sources、protected tile、hero/effective-hero optimistic upper bound；证据不完整一律 `feasible:true, unknown:true`。每次 prune 输出 reason/current/target/bound/witness。
+- **PR-5.6d Adaptive Segment Executor（完成，`7a33064`）**：新增显式 `adaptive-feasible`，按 failure preferred tags 做 bounded multi-level checkpoint expansion/replay；synthetic 三段链证明 one-level fail、depth=2 success。真实 long probe 能扩出 2/8 个上游候选，但仍停在 `mt5-third-gate`，结论仅 `INCOMPLETE_WITHIN_BUDGET`。
+- **PR-5.6e Incremental / Parallel Execution（完成，`2b38b0f`）**：goal dependency projection 用 per-state/unique-requirement cache；真实 MT2→MT3 观测 requirement cache 383 hits / 849 misses。新增 independent-process route portfolio，serial/parallel exact state + strict route fingerprint parity 必须一致。
+
+PR-5.6 before/after（本机方向性数据，严格结果由 fingerprint/replay 守门）：
+
+```text
+MT2→MT3: default 20 expansions / 507ms → goal-directed 16 / 368ms，exact state+route parity，strict replay true
+MT4→MT5 entry: default first goal 49 expansions / 687ms → first-feasible 17 / 464ms，strict replay true
+2-route portfolio: serial 20.28s → 2-process 8.59s（2.36x），exact state+route parity
+MT3→MT5 blueKing: first-feasible/adaptive probes 均未找到；adaptive 500-expansion/depth3 约 19.91s，扩出 2/8 upstream candidates，仍停 third-gate
+```
 
 **PR-5.4e 已发现的重要事实**：smoke RegionSpec 自带 `dpBudget.maxRuntimeMs: 10000`（10s 时间预算）。在时间预算下 production 搜索是**时间受限非确定**的——tile4_1 workload 的 A 搜索两次跑出不同 winner（54/31 expansions，val 1199/1019）。合同必须 `maxRuntimeMs=0`（跑到底）才能做确定性 A/B 对比。这是 production 求解器的真实属性，需后续单独处理。
 
@@ -563,8 +577,8 @@ reachability 真实归因（perf tracker `reachability` phase + simulator cache 
 
 ## 下一主线最值得做的事
 
-1. **PR-5.5d 已收口**：inventory hole 已用 tracked OnlyUp Start floor（sealed key room）真实关闭（19 workload / 44/44/535 / 0 merge / `NO_COLLISION_OBSERVED`）；visitedFloors hole 仍 PARTIAL（maxVisitedFloorCount=2 via 真实 cross-floor boundary + arrival，但无真实 changeFloor edge——MT1 stairs 不可达、Start stairs 被 steel/special door 挡、MT2 怪物过强）。下一轮：**5.5d 续 / 5.5e**——补 visitedFloors 空洞（需要 tracked 数据中可达的真实 changeFloor→arrival→post-arrival search，或独立 production 跨塔 feature），或直接更深的 collision hunt（两洞补齐后仍 0 merge → 更强的 `NO_COLLISION_OBSERVED`）。第一次真实 same-scope merge → 立即停 + witness + CEGAR 分类（安全 → Safety CEGAR；unsafe → Minimal Identity Refinement）。
-2. **multi-Region candidate-key generalization 路线**：5.5a shadow+boundary corpus → 5.5b corpus expansion → 5.5c collision hunt（semantic-diversity + hole-closure gates）→ 5.5d production-faithful fixture（inventory 已补）→ 5.5e visitedFloors/changeFloor surface → 5.5f collision CEGAR/minimal refinement（只有证据允许时）。
+1. **PR-5.6 已收口；下一主线 5.7**：围绕 `mt5-third-gate` 做候选质量 CEGAR——审计 `mt5-early-gem-entry → mt5-first-sweep` 为什么 8 个 entry candidates 合并后只剩 1 个 sweep candidate，补必要的 skyline role/quality witness；不要先加 timeout。
+2. **multi-Region candidate-key 研究线保持独立**：5.5e visitedFloors/changeFloor surface → 5.5f collision CEGAR/minimal refinement（只有证据允许时），不得借 5.7 搜索改动扩大 MT1 production key scope。
 3. **reachability 缓存/复用**（性能下一热点）：enumerateActions 内的 walk 是 B 侧新热点，候选 key 已把总 BFS 从 266 降到 123，进一步做 cache/reuse。
 4. **fast CI <3min**（P2-1 carry）：当前 fast ≈3m26s（solver-job / route-free / candidate-smoke 串行主导）。要达标需在 fast 内部按分支并行，wall = max(各分支)。建议独立 CI-INFRA PR。
 5. **DIAG-HYGIENE carry**：paired benchmark 旧 control `candidateProductionProfileDefaultOff:true` 与 PR-5.4f 后默认语义不符，改为 `approvedMt1CandidateDefaultOn` + `explicitProductionRollbackAvailable` 或删除；与 CI-INFRA 一起修。
