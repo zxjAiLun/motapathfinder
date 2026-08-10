@@ -217,6 +217,12 @@ function summarizeScale(result) {
     goalFeasibilityPruned: dpRecords.reduce((sum, dp) => (
       sum + Number(dp.goalFeasibility && dp.goalFeasibility.pruned || 0)
     ), 0),
+    goalProjectionCache: {
+      hits: dpRecords.reduce((sum, dp) => sum + Number(dp.goalProjectionCache && dp.goalProjectionCache.hits || 0), 0),
+      misses: dpRecords.reduce((sum, dp) => sum + Number(dp.goalProjectionCache && dp.goalProjectionCache.misses || 0), 0),
+      requirementHits: dpRecords.reduce((sum, dp) => sum + Number(dp.goalProjectionCache && dp.goalProjectionCache.requirementHits || 0), 0),
+      requirementMisses: dpRecords.reduce((sum, dp) => sum + Number(dp.goalProjectionCache && dp.goalProjectionCache.requirementMisses || 0), 0),
+    },
     priorityModes: Array.from(new Set(dpRecords.map((dp) => dp.priorityMode || "default"))).sort(),
     stoppedReasons: Array.from(new Set(dpRecords.map((dp) => dp.stoppedReason || null))).sort(),
   };

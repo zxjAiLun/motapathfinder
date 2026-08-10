@@ -2474,6 +2474,13 @@
       "cleanCheckout": true,
       "notes": "Tracked MT2 to MT3 exact parity plus MT4 to MT5 first-feasible comparison for goal-directed agenda ordering; ordered downstream goal dependencies and explicit adaptive-feasible intent remain opt-in"
     },
+    "shared-solver/check-route-search-portfolio.js": {
+      "grade": "integration-local",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.6e controlled independent-process route portfolio; serial/parallel exact state and strict route replay parity are mandatory while timing is directional"
+    },
     "shared-solver/check-goal-feasibility-bounds.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": false,

@@ -158,10 +158,34 @@ function requirementProgress(project, state, requirement) {
   }
 }
 
-function projectStage(project, stage, state) {
+function requirementCacheKey(requirement) {
+  switch (requirement.kind) {
+    case "floor": return `floor:${requirement.floorId}`;
+    case "hero-min": return `hero:${requirement.field}:${requirement.required}`;
+    case "effective-hero-min": return `effective:${requirement.field}:${requirement.required}`;
+    case "equipment": return `equipment:${requirement.itemId}`;
+    case "removed-tile": return `removed:${requirement.floorId}:${requirement.x},${requirement.y}`;
+    case "present-tile": return `present:${requirement.floorId}:${requirement.x},${requirement.y}`;
+    case "any-removed-tiles": return `any-removed:${requirement.tiles.map((tile) => `${tile.floorId}:${tile.x},${tile.y}`).join("|")}`;
+    default: return requirement.id;
+  }
+}
+
+function projectStage(project, stage, state, progressCache) {
   const projected = stage.requirements.map((requirement) => ({
     requirement,
-    progress: requirementProgress(project, state, requirement),
+    progress: (() => {
+      if (!progressCache) return requirementProgress(project, state, requirement);
+      const key = requirementCacheKey(requirement);
+      if (progressCache.values.has(key)) {
+        progressCache.stats.hits += 1;
+        return progressCache.values.get(key);
+      }
+      progressCache.stats.misses += 1;
+      const progress = requirementProgress(project, state, requirement);
+      progressCache.values.set(key, progress);
+      return progress;
+    })(),
   }));
   const progressTotal = projected.reduce((sum, entry) => sum + entry.progress, 0);
   const requirementsMet = projected.filter((entry) => entry.progress >= 1).length;
@@ -194,14 +218,29 @@ function projectStage(project, stage, state) {
 function compileGoalDependencyGraph(project, segments) {
   const stages = (segments || []).map((segment, index) => compileGoalStage(project, segment, index));
   const stageIndexById = new Map(stages.map((stage, index) => [stage.id, index]));
+  const projectionCache = new WeakMap();
+  const cacheStats = { hits: 0, misses: 0, requirementHits: 0, requirementMisses: 0 };
   return {
     schema: "motapathfinder.goal-dependency-graph.v1",
     stages,
     project(state, currentSegmentId) {
+      const cacheKey = currentSegmentId == null ? "__first__" : String(currentSegmentId);
+      let stateCache = state && typeof state === "object" ? projectionCache.get(state) : null;
+      if (stateCache && stateCache.has(cacheKey)) {
+        cacheStats.hits += 1;
+        return stateCache.get(cacheKey);
+      }
+      cacheStats.misses += 1;
       const currentIndex = stageIndexById.has(currentSegmentId)
         ? stageIndexById.get(currentSegmentId)
         : 0;
-      const projections = stages.map((stage) => projectStage(project, stage, state));
+      const progressCache = {
+        values: new Map(),
+        stats: { hits: 0, misses: 0 },
+      };
+      const projections = stages.map((stage) => projectStage(project, stage, state, progressCache));
+      cacheStats.requirementHits += progressCache.stats.hits;
+      cacheStats.requirementMisses += progressCache.stats.misses;
       const current = projections[currentIndex] || {
         feasible: true,
         floorMatch: true,
@@ -231,7 +270,7 @@ function compileGoalDependencyGraph(project, segments) {
         statDeficit += projection.statDeficit * weight;
       }
       const nextStage = projections.slice(currentIndex).find((projection) => projection.completion < 1) || current;
-      return {
+      const result = {
         ...current,
         dependencyStageCount: Math.max(0, projections.length - currentIndex),
         downstreamCompletion: downstreamWeight > 0 ? downstreamCompletion / downstreamWeight : 0,
@@ -241,6 +280,24 @@ function compileGoalDependencyGraph(project, segments) {
         statDeficit,
         nextLandmarkReachable: nextStage.nextLandmarkReachable,
         nextLandmarkDistance: nextStage.nextLandmarkDistance,
+      };
+      if (state && typeof state === "object") {
+        if (!stateCache) {
+          stateCache = new Map();
+          projectionCache.set(state, stateCache);
+        }
+        stateCache.set(cacheKey, result);
+      }
+      return result;
+    },
+    getProjectionCacheStats() {
+      const total = cacheStats.hits + cacheStats.misses;
+      return {
+        hits: cacheStats.hits,
+        misses: cacheStats.misses,
+        hitRate: total > 0 ? cacheStats.hits / total : 0,
+        requirementHits: cacheStats.requirementHits,
+        requirementMisses: cacheStats.requirementMisses,
       };
     },
   };

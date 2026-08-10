@@ -215,6 +215,8 @@ function checkGoalDependencyGraph() {
   removeTileAt(prepared, "F2", 0, 0);
   const baseProjection = graph.project(base, "entry");
   const preparedProjection = graph.project(prepared, "entry");
+  assert.strictEqual(graph.project(prepared, "entry"), preparedProjection, "same immutable state projection should hit cache");
+  assert.ok(graph.getProjectionCacheStats().requirementHits > 0, "duplicate dependency checks should be shared within a projection");
   assert.strictEqual(baseProjection.completion, 1, "both states satisfy the current entry milestone");
   assert.strictEqual(preparedProjection.completion, 1);
   assert.ok(
@@ -230,6 +232,7 @@ function checkGoalDependencyGraph() {
     stages: graph.stages.length,
     entryRequirements: graph.stages[0].requirements.length,
     downstreamRequirements: graph.stages[1].requirements.length,
+    projectionCache: graph.getProjectionCacheStats(),
   };
 }
 

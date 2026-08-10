@@ -2738,6 +2738,10 @@ function searchSegmentDP(simulator, startState, segment, options) {
         routeFree: (result.diagnostics && result.diagnostics.routeFree) || null,
         capturedExpandedStates: (result.diagnostics && result.diagnostics.capturedExpandedStates) || [],
         registry: (result.diagnostics && result.diagnostics.registry) || null,
+        goalProjectionCache: dependencyGraph &&
+          typeof dependencyGraph.getProjectionCacheStats === "function"
+          ? dependencyGraph.getProjectionCacheStats()
+          : { hits: 0, misses: 0, hitRate: 0 },
         resourceTiming: resourceTimingEnabled
           ? {
               model: resourceTimingOptions.model,
