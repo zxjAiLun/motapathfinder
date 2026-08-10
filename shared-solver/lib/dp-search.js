@@ -9,7 +9,12 @@ const {
   getSolverModel,
 } = require("./solver-model");
 const { createCheckpointPool } = require("./floor-checkpoints");
-const { createChildNode, createRootNode, reconstructActionEntries, reconstructActionTrace } = require("./search-nodes");
+const {
+  createChildNode,
+  createRootNode,
+  reconstructActionTrace,
+  reconstructMaterializedActionEntries,
+} = require("./search-nodes");
 const { getActivePerfTracker, timeActivePhase } = require("./perf");
 
 function number(value, fallback) {
@@ -1295,7 +1300,7 @@ function searchDP(simulator, initialState, options) {
     : (state) => simulator.isTerminal(state);
 
   const routeTailOfNode = (node) => initialRoutePrefix
-    .concat(reconstructActionEntries(nodes, node))
+    .concat(reconstructMaterializedActionEntries(nodes, node))
     .slice(-12)
     .map((entry) => (typeof entry === "string" ? entry : entry && entry.summary))
     .filter(Boolean);
@@ -2285,15 +2290,16 @@ function searchDP(simulator, initialState, options) {
   });
   // Route materialization returns a DETACHED clone: the canonical node.state in
   // the nodes Map must never gain a materialized route array.  The parent
-  // pointer chain + actionEntry._routePatch remain the only reconstruction
-  // source.  state.route.length is the materialized decision/replay-entry
+  // pointer chain + each node's actionEntry/state _routePatch remain the only
+  // reconstruction source.  state.route.length is the materialized
+  // decision/replay-entry
   // count; meta.rawRouteLength is the decision+auto cumulative step count and
   // must NOT be overwritten by the shorter materialized route length.
   const attachRouteToNodeState = (node) => {
     if (!node || !node.state) return null;
     const canonicalRawRouteLength = getRawRouteLength(node.state);
     const materialized = cloneState(node.state);
-    materialized.route = initialRoutePrefix.concat(reconstructActionEntries(nodes, node));
+    materialized.route = initialRoutePrefix.concat(reconstructMaterializedActionEntries(nodes, node));
     if (captureTrace) {
       materialized.routeTrace = initialRouteTracePrefix.concat(reconstructActionTrace(nodes, node));
     } else if (Object.prototype.hasOwnProperty.call(materialized, "routeTrace")) {

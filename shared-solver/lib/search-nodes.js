@@ -99,6 +99,25 @@ function reconstructActionEntries(nodes, goalNodeOrId) {
     .filter(Boolean);
 }
 
+function materializedActionEntriesForNode(node) {
+  if (!node) return [];
+  const routePatch = Array.isArray(node.actionEntry && node.actionEntry._routePatch)
+    ? node.actionEntry._routePatch
+    : (node.state && Array.isArray(node.state._routePatch) ? node.state._routePatch : null);
+  if (routePatch && routePatch.length > 0) {
+    return routePatch
+      .map((entry) => (typeof entry === "string" ? entry : normalizeActionEntry(entry)))
+      .filter(Boolean);
+  }
+  return node.actionEntry ? [node.actionEntry] : [];
+}
+
+function reconstructMaterializedActionEntries(nodes, goalNodeOrId) {
+  return reconstructNodeChain(nodes, goalNodeOrId)
+    .slice(1)
+    .flatMap(materializedActionEntriesForNode);
+}
+
 function reconstructActionTrace(nodes, goalNodeOrId) {
   const chain = reconstructNodeChain(nodes, goalNodeOrId);
   const trace = [];
@@ -131,6 +150,7 @@ module.exports = {
   normalizeActionEntry,
   reconstructActionEntries,
   reconstructActionTrace,
+  reconstructMaterializedActionEntries,
   reconstructNodeChain,
   reconstructRoute,
 };

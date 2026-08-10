@@ -260,6 +260,63 @@ function checkSegmentReentryPreservesRawLength() {
   );
 }
 
+function checkCompoundRoutePatchMaterialization() {
+  const simulator = {
+    project: { floorOrder: ["MT7"] },
+    isTerminal(state) { return state.flags && state.flags.goal === true; },
+  };
+  const initial = {
+    floorId: "MT7",
+    hero: { hp: 100, atk: 3, def: 1, mdef: 0, lv: 1, exp: 0, loc: { x: 1, y: 1, direction: "down" } },
+    inventory: {},
+    flags: {},
+    floorStates: {},
+    visitedFloors: {},
+    triggeredAutoEvents: {},
+    notes: [],
+    route: ["prefix@MT6"],
+    meta: { rank: null, decisionDepth: 1, rawRouteLength: 1, autoStepCount: 0 },
+  };
+  const routePatch = [
+    "changeFloor@MT7:6,12",
+    "battle:yellowFairy@MT7:10,12",
+    "battle:yellowPriest@MT7:11,11",
+  ];
+  const result = searchDP(simulator, initial, {
+    maxExpansions: 4,
+    maxActionsPerState: 1,
+    dpSkylineMax: 2,
+    goalPredicate: (state) => state.flags && state.flags.goal === true,
+    actionProvider(state) {
+      return state.flags && state.flags.goal
+        ? []
+        : [{ kind: "battle", summary: "battle:finalTarget@MT7:12,10" }];
+    },
+    actionApplier(state) {
+      const next = cloneState(state);
+      routePatch.forEach((summary) => appendRouteStep(next, summary, { storeRoute: false }));
+      next.flags.goal = true;
+      next._routePatch = routePatch.slice();
+      return next;
+    },
+  });
+  assert.strictEqual(result.foundGoal, true, "compound route-patch search must reach its goal");
+  assert.deepStrictEqual(
+    result.bestGoalState.route,
+    ["prefix@MT6"].concat(routePatch),
+    "materialized route must expand the complete route patch instead of keeping only the high-level target",
+  );
+  assert.ok(
+    !result.bestGoalState.route.some((entry) => entry && entry.summary === "battle:finalTarget@MT7:12,10"),
+    "the high-level target must not duplicate or replace its concrete route patch",
+  );
+  assert.strictEqual(
+    result.diagnostics.routeFree.nonEmptyRouteStateCount,
+    0,
+    "compound patch reconstruction must leave canonical DP states route-free",
+  );
+}
+
 async function checkMultiRegionBoundaryCompletes() {
   // A real two-region composite (Region A auto-rich, Region B a no-op carryover)
   // must complete with Region A route-free and its cumulative raw length intact.
@@ -307,6 +364,7 @@ async function main() {
   checkTieBreakSemantics();
   checkTerminalObjectiveOrdering();
   checkSegmentReentryPreservesRawLength();
+  checkCompoundRoutePatchMaterialization();
   await checkCanonicalRouteFreeGate();
   await checkMultiRegionBoundaryCompletes();
 
@@ -322,6 +380,7 @@ async function main() {
       rawRouteLengthMonotone: true,
       terminalObjectiveOrderingUsesMaterialized: true,
       multiRegionCumulativeRawLengthPreserved: true,
+      compoundRoutePatchMaterialized: true,
       commit1ParityOwnedByPerfBaseline: true,
     },
   }, null, 2) + "\n");

@@ -240,7 +240,19 @@ function checkMt5ThirdGateToBlueKing(simulator) {
   assert.ok(mt6PriestIndex > mt6SilverIndex, "MT7 route should clear MT6 11,11 after MT6 9,10 sustain pickup");
   assert.ok(mt7LeftFairyIndex > mt6PriestIndex, "MT7 route should delay MT7 left fairy until after MT6 right crystal sweep");
   assert.ok(mt7RightFairyIndex > mt6PriestIndex, "MT7 route should delay MT7 right fairy until after MT6 right crystal sweep");
-  assert.ok(mt7PriestIndex > mt7LeftFairyIndex && mt7PriestIndex > mt7RightFairyIndex, "MT7 route should clear both bottom fairies before MT7 11,11 crystal guard");
+  if (mt7PriestIndex >= 0) {
+    assert.ok(
+      mt7PriestIndex > mt7LeftFairyIndex && mt7PriestIndex > mt7RightFairyIndex,
+      "explicit MT7 11,11 crystal guard battle should follow both bottom fairies",
+    );
+  } else {
+    const mt7FloorState = mt7RightExpFinal.floorStates && mt7RightExpFinal.floorStates.MT7;
+    assert.equal(
+      Boolean(mt7FloorState && mt7FloorState.removed && mt7FloorState.removed["11,11"]),
+      true,
+      "implicit auto stabilization should clear MT7 11,11 when no explicit guard battle is materialized",
+    );
+  }
   assertNoMacroRoute(mt7RightExpFinal, "MT6->MT7 right exp crystal graph");
   return {
     reachedMilestone: result.reachedMilestone,
