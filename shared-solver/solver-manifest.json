@@ -208,6 +208,7 @@
         "shared-solver/check-walk-reachability-fast-path.js",
         "shared-solver/check-walk-reachability-performance.js",
         "shared-solver/check-goal-directed-search.js",
+        "shared-solver/check-candidate-quality-shadow.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
         "shared-solver/check-mt1-default-promotion-contract.js",
         "shared-solver/check-mt1-post-promotion-regression-contract.js",
@@ -297,6 +298,22 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
+    },
+    "shared-solver/lib/candidate-quality-shadow.js": {
+      "id": "candidate-quality-shadow",
+      "path": "shared-solver/lib/candidate-quality-shadow.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "shadow-audit",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.7a observation-only first-sweep candidate corpus, unchanged 1/2/4/8 retention simulation, and fixed-budget downstream probe classification; never changes DP key, dominance, or production selection"
     },
     "shared-solver/lib/checkpoint-repair.js": {
       "id": "checkpoint-repair",
@@ -2473,6 +2490,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "Tracked MT2 to MT3 exact parity plus MT4 to MT5 first-feasible comparison for goal-directed agenda ordering; ordered downstream goal dependencies and explicit adaptive-feasible intent remain opt-in"
+    },
+    "shared-solver/check-candidate-quality-shadow.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.7a capture-all materialized goal candidates, exact 1/2/4/8 retention decisions including DP-key dedup vs capacity, and distinct stop-condition A/B/C controls"
     },
     "shared-solver/check-route-search-portfolio.js": {
       "grade": "integration-local",

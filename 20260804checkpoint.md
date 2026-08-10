@@ -561,6 +561,7 @@ PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 gua
 - **PR-5.6c Admissible Feasibility Bounds（完成，`2b93a8b`）**：显式 `admissible-v1` 支持 complete floor graph、unique equipment sources、protected tile、hero/effective-hero optimistic upper bound；证据不完整一律 `feasible:true, unknown:true`。每次 prune 输出 reason/current/target/bound/witness。
 - **PR-5.6d Adaptive Segment Executor（完成，`7a33064`）**：新增显式 `adaptive-feasible`，按 failure preferred tags 做 bounded multi-level checkpoint expansion/replay；synthetic 三段链证明 one-level fail、depth=2 success。真实 long probe 能扩出 2/8 个上游候选，但仍停在 `mt5-third-gate`，结论仅 `INCOMPLETE_WITHIN_BUDGET`。
 - **PR-5.6e Incremental / Parallel Execution（完成，`2b38b0f`）**：goal dependency projection 用 per-state/unique-requirement cache；真实 MT2→MT3 观测 requirement cache 383 hits / 849 misses。新增 independent-process route portfolio，serial/parallel exact state + strict route fingerprint parity 必须一致。
+- **PR-5.7a MT5 First-Sweep Candidate Quality Shadow（完成，提交见本文件 HEAD）**：零 production selection/key/dominance 改动；capture-all goal archive 保存物化路线，原 milestone selector 输出同-key dedup 与 capacity drop，capacity matrix 固定 1/2/4/8；tracked MT3 fixture 捕获 8 attempts / 140 unique raw goals / 18 milestone candidates / 3 unique DP keys。140 个候选统一 100-expansion third-gate probe：140 fail / 0 budget exhaustion / 0 reached，最多 29 expansions 后 frontier empty。结论 `EVICTED_CANDIDATES_ALSO_FAIL`（Stop B），未发现 evicted-success witness，禁止进入 minimal skyline role refinement。
 
 PR-5.6 before/after（本机方向性数据，严格结果由 fingerprint/replay 守门）：
 
@@ -577,7 +578,7 @@ reachability 真实归因（perf tracker `reachability` phase + simulator cache 
 
 ## 下一主线最值得做的事
 
-1. **PR-5.6 已收口；下一主线 5.7**：围绕 `mt5-third-gate` 做候选质量 CEGAR——审计 `mt5-early-gem-entry → mt5-first-sweep` 为什么 8 个 entry candidates 合并后只剩 1 个 sweep candidate，补必要的 skyline role/quality witness；不要先加 timeout。
+1. **PR-5.7a 已完成并触发 Stop B；下一轮 5.7b**：不是 skyline capacity 问题（18 candidates → 3 unique DP keys；capacity 4/8 无 cap drop），也没有 evicted-success。按顺序做 Third-Gate Failure Attribution：action scope → milestone target consistency → resource timing → segment abstraction；只有因果 witness 才允许修改对应维度，禁止先加 timeout/candidateLimit/skyline role。
 2. **multi-Region candidate-key 研究线保持独立**：5.5e visitedFloors/changeFloor surface → 5.5f collision CEGAR/minimal refinement（只有证据允许时），不得借 5.7 搜索改动扩大 MT1 production key scope。
 3. **reachability 缓存/复用**（性能下一热点）：enumerateActions 内的 walk 是 B 侧新热点，候选 key 已把总 BFS 从 266 降到 123，进一步做 cache/reuse。
 4. **fast CI <3min**（P2-1 carry）：当前 fast ≈3m26s（solver-job / route-free / candidate-smoke 串行主导）。要达标需在 fast 内部按分支并行，wall = max(各分支)。建议独立 CI-INFRA PR。

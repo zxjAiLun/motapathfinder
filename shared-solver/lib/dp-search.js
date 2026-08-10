@@ -12,6 +12,7 @@ const { createCheckpointPool } = require("./floor-checkpoints");
 const {
   createChildNode,
   createRootNode,
+  normalizeActionEntry,
   reconstructActionTrace,
   reconstructMaterializedActionEntries,
 } = require("./search-nodes");
@@ -571,9 +572,9 @@ function selectGoalSkylineNodes(goalNodes, options) {
   return selected;
 }
 
-function compactGoalArchiveNode(simulator, node, config) {
-  if (!node || !node.state) return null;
-  const state = node.state;
+function compactGoalArchiveNode(simulator, node, config, stateOverride) {
+  if (!node || (!node.state && !stateOverride)) return null;
+  const state = stateOverride || node.state;
   return {
     nodeId: node.nodeId,
     parentId: node.parentId == null ? null : node.parentId,
@@ -652,11 +653,20 @@ function buildGoalArchiveAudit({
   selectedGoalNodes,
   accepted,
   events,
+  captureTruncated,
 }) {
   if (!config || !config.goalArchiveAudit) return null;
-  const targetKeys = Array.isArray(config.goalArchiveAudit.targetExactStateKeys)
+  const captureAllGoalCandidates = config.goalArchiveAudit.captureAllGoalCandidates === true;
+  const configuredTargetKeys = Array.isArray(config.goalArchiveAudit.targetExactStateKeys)
     ? config.goalArchiveAudit.targetExactStateKeys.filter(Boolean)
     : [];
+  const capturedKeys = captureAllGoalCandidates
+    ? accepted.map((entry) => entry && entry.exactStateKey).concat(
+      events.flatMap((event) => [event.candidate, event.evicted, event.replacement])
+        .map((entry) => entry && entry.exactStateKey),
+    ).filter(Boolean)
+    : [];
+  const targetKeys = Array.from(new Set(configuredTargetKeys.concat(capturedKeys)));
   const activeNodeIds = new Set(activeGoalNodes.map((node) => node.nodeId));
   const selectedNodeIds = new Set(selectedGoalNodes.map((node) => node.nodeId));
   const goalArchiveCapacity = Math.max(1, Number(config.goalSkylineLimit || 8));
@@ -737,7 +747,11 @@ function buildGoalArchiveAudit({
   });
   return {
     enabled: true,
+    captureAllGoalCandidates,
     targetExactStateKeys: targetKeys,
+    acceptedCandidates: accepted.slice(),
+    acceptedCandidateCount: accepted.length,
+    captureTruncated: captureTruncated === true,
     goalNodesSeen: goalNodes.length,
     activeGoalNodes: activeGoalNodes.length,
     selectedGoalNodes: selectedGoalNodes.length,
@@ -1222,20 +1236,68 @@ function searchDP(simulator, initialState, options) {
       ? goalArchiveAuditConfig.targetExactStateKeys.filter(Boolean)
       : [],
   );
+  const goalArchiveCaptureAll = Boolean(
+    goalArchiveAuditConfig && goalArchiveAuditConfig.captureAllGoalCandidates === true,
+  );
+  const goalArchiveAuditMaxCandidates = Math.max(
+    1,
+    Number(
+      goalArchiveAuditConfig && goalArchiveAuditConfig.maxCandidates ||
+      (goalArchiveCaptureAll ? 256 : Number.MAX_SAFE_INTEGER),
+    ),
+  );
+  const goalArchiveAuditMaxEvents = Math.max(
+    1,
+    Number(
+      goalArchiveAuditConfig && goalArchiveAuditConfig.maxEvents ||
+      (goalArchiveCaptureAll ? 512 : 200),
+    ),
+  );
   const goalArchiveAuditAccepted = [];
   const goalArchiveAuditEvents = [];
   const goalArchiveAuditRelevantNodeIds = new Set();
+  let goalArchiveAuditCaptureTruncated = false;
+  const goalArchiveAuditMatches = (exactStateKey) =>
+    goalArchiveCaptureAll || goalArchiveTargetExactStateKeys.has(exactStateKey);
+  const materializeAuditState = (state, parentNode, sourceAction) => {
+    if (!state) return null;
+    const materialized = cloneState(state);
+    const ephemeralNode = {
+      parentId: parentNode ? parentNode.nodeId : null,
+      state,
+      actionEntry: normalizeActionEntry(sourceAction),
+    };
+    materialized.route = initialRoutePrefix.concat(
+      reconstructMaterializedActionEntries(nodes, ephemeralNode),
+    );
+    if (!materialized.meta) materialized.meta = {};
+    materialized.meta.rawRouteLength = getRawRouteLength(state);
+    return materialized;
+  };
   const goalArchiveAuditEvent = (event) => {
-    if (!goalArchiveAuditConfig || goalArchiveAuditEvents.length >= 200) return;
+    if (!goalArchiveAuditConfig) return;
+    if (goalArchiveAuditEvents.length >= goalArchiveAuditMaxEvents) {
+      goalArchiveAuditCaptureTruncated = true;
+      return;
+    }
     goalArchiveAuditEvents.push(event);
   };
   const goalArchiveRecordAccepted = (node) => {
     if (!goalArchiveAuditConfig || !node || !node.state) return;
     const exactStateKey = buildStateKey(node.state);
-    if (!goalArchiveTargetExactStateKeys.has(exactStateKey)) return;
+    if (!goalArchiveAuditMatches(exactStateKey)) return;
+    if (goalArchiveAuditAccepted.length >= goalArchiveAuditMaxCandidates) {
+      goalArchiveAuditCaptureTruncated = true;
+      return;
+    }
     goalArchiveAuditRelevantNodeIds.add(node.nodeId);
+    const materializedState = materializeAuditState(
+      node.state,
+      node.parentId == null ? null : nodes.get(node.parentId),
+      node.actionEntry || node.action,
+    );
     goalArchiveAuditAccepted.push({
-      ...compactGoalArchiveNode(simulator, node, config),
+      ...compactGoalArchiveNode(simulator, node, config, materializedState),
       expansion: expansions,
       elapsedMs: Date.now() - startedAt,
     });
@@ -1633,7 +1695,8 @@ function searchDP(simulator, initialState, options) {
       }
       if (goalArchiveAuditConfig && isGoalState(state)) {
         const exactStateKey = buildStateKey(state);
-        if (goalArchiveTargetExactStateKeys.has(exactStateKey)) {
+        if (goalArchiveAuditMatches(exactStateKey)) {
+          const materializedState = materializeAuditState(state, parentNode, sourceAction);
           goalArchiveAuditEvent({
             eventType: "goal-candidate-rejected",
             reasonCode: "dominance-rejected",
@@ -1643,7 +1706,7 @@ function searchDP(simulator, initialState, options) {
               key,
               state,
               action: sourceAction,
-            }, config),
+            }, config, materializedState),
             witness: existingState ? compactGoalArchiveNode(simulator, existing, config) : null,
             comparison: existingState ? describeGoalArchiveComparison(state, existingState) : null,
             archiveSizeAtEvent: goalNodes.length,
@@ -1705,7 +1768,8 @@ function searchDP(simulator, initialState, options) {
       }
       if (goalArchiveAuditConfig && isGoalState(state)) {
         const exactStateKey = buildStateKey(state);
-        if (goalArchiveTargetExactStateKeys.has(exactStateKey)) {
+        if (goalArchiveAuditMatches(exactStateKey)) {
+          const materializedState = materializeAuditState(state, parentNode, sourceAction);
           goalArchiveAuditEvent({
             eventType: "goal-candidate-rejected",
             reasonCode: "skyline-capacity-rejected",
@@ -1715,7 +1779,7 @@ function searchDP(simulator, initialState, options) {
               key,
               state,
               action: sourceAction,
-            }, config),
+            }, config, materializedState),
             witness: null,
             comparison: null,
             archiveSizeAtEvent: goalNodes.length,
@@ -1754,27 +1818,44 @@ function searchDP(simulator, initialState, options) {
       fairPopsAtEnqueue = agendaFairness.fairPops;
       fairQueueOrdinals.set(node.nodeId, fairQueueOrdinal);
     }
+    const evictedSkylineIds = beforeSkylineIds
+      .filter((nodeId) => !afterSkylineIds.includes(nodeId));
+    evictedSkylineIds.forEach((nodeId) => {
+      const evictedNode = nodes.get(nodeId);
+      if (goalArchiveAuditConfig && evictedNode && evictedNode.state && isGoalState(evictedNode.state)) {
+        const evictedExactStateKey = buildStateKey(evictedNode.state);
+        if (goalArchiveAuditMatches(evictedExactStateKey)) {
+          goalArchiveAuditRelevantNodeIds.add(node.nodeId);
+          goalArchiveAuditEvent({
+            eventType: "goal-archive-evicted",
+            reasonCode: "skyline-replaced",
+            evicted: compactGoalArchiveNode(
+              simulator,
+              evictedNode,
+              config,
+              materializeAuditState(
+                evictedNode.state,
+                evictedNode.parentId == null ? null : nodes.get(evictedNode.parentId),
+                evictedNode.actionEntry,
+              ),
+            ),
+            replacement: compactGoalArchiveNode(
+              simulator,
+              node,
+              config,
+              materializeAuditState(state, parentNode, actionForEntry),
+            ),
+            comparison: describeGoalArchiveComparison(evictedNode.state, node.state),
+            archiveSizeAtEvent: goalNodes.length,
+            goalArchiveCapacity: Number(config.goalSkylineLimit || 0),
+            dpSkylineCapacity: skylineMax,
+          });
+        }
+      }
+    });
     if (observer) {
-      beforeSkylineIds
-        .filter((nodeId) => !afterSkylineIds.includes(nodeId))
-        .forEach((nodeId) => {
+      evictedSkylineIds.forEach((nodeId) => {
           const evictedNode = nodes.get(nodeId);
-          if (goalArchiveAuditConfig && evictedNode && evictedNode.state && isGoalState(evictedNode.state)) {
-            const evictedExactStateKey = buildStateKey(evictedNode.state);
-            if (goalArchiveTargetExactStateKeys.has(evictedExactStateKey)) {
-              goalArchiveAuditRelevantNodeIds.add(node.nodeId);
-              goalArchiveAuditEvent({
-                eventType: "goal-archive-evicted",
-                reasonCode: "skyline-replaced",
-                evicted: compactGoalArchiveNode(simulator, evictedNode, config),
-                replacement: compactGoalArchiveNode(simulator, node, config),
-                comparison: describeGoalArchiveComparison(evictedNode.state, node.state),
-                archiveSizeAtEvent: goalNodes.length,
-                goalArchiveCapacity: Number(config.goalSkylineLimit || 0),
-                dpSkylineCapacity: skylineMax,
-              });
-            }
-          }
           observer.emit("skylineEvicted", () => observerStatePayload(
             simulator,
             evictedNode ? evictedNode.state : state,
@@ -1795,7 +1876,7 @@ function searchDP(simulator, initialState, options) {
             },
           ));
           if (observerAgendaMeta) observerAgendaMeta.delete(nodeId);
-        });
+      });
       emitStateEvent("skylineInserted", state, node, () => ({
         reasonCode: "skyline-inserted",
         key,
@@ -2371,6 +2452,7 @@ function searchDP(simulator, initialState, options) {
     selectedGoalNodes: goalSkylineNodes,
     accepted: goalArchiveAuditAccepted,
     events: goalArchiveAuditEvents,
+    captureTruncated: goalArchiveAuditCaptureTruncated,
   });
 
   const firstGoalState = attachRouteToNodeState(firstGoalNode);

@@ -1915,19 +1915,21 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
   );
   const keyMode = (segment.dp || {}).keyMode || "region";
   const byKey = new Map();
-  (candidates || [])
-    .filter((candidate) => candidate && candidate.state)
-    .forEach((candidate) => {
-      const key = buildDpStateKey(simulator, candidate.state, {
-        dpKeyMode: keyMode,
-      });
-      const existing = byKey.get(key);
-      if (
-        !existing ||
-        compareCandidateStates(candidate.state, existing.state) < 0
-      )
-        byKey.set(key, candidate);
+  const inputCandidates = (candidates || [])
+    .filter((candidate) => candidate && candidate.state);
+  const candidateKeys = new Map();
+  inputCandidates.forEach((candidate) => {
+    const key = buildDpStateKey(simulator, candidate.state, {
+      dpKeyMode: keyMode,
     });
+    candidateKeys.set(candidate.id, key);
+    const existing = byKey.get(key);
+    if (
+      !existing ||
+      compareCandidateStates(candidate.state, existing.state) < 0
+    )
+      byKey.set(key, candidate);
+  });
   const goal = (segment || {}).goal || {};
   const actionSurvivableTarget =
     goal.actionSurvivable && goal.actionSurvivable.summary
@@ -2039,6 +2041,45 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
   const frontier = selected.slice(0, limit).sort(compareGoalRecords);
   frontier.milestoneFrontierTrimmed = records.length > limit;
   frontier.milestoneFrontierCandidateCount = records.length;
+  if ((options || {}).captureSelectionAudit === true) {
+    const winnerByKey = new Map(
+      Array.from(byKey.entries()).map(([key, candidate]) => [key, candidate.id]),
+    );
+    const selectedById = new Map(frontier.map((record, index) => [record.id, {
+      rank: index,
+      tags: Array.isArray(record.tags) ? record.tags.slice() : [],
+    }]));
+    frontier.selectionAudit = {
+      inputCandidateCount: inputCandidates.length,
+      uniqueDpKeyCount: records.length,
+      selectedCount: frontier.length,
+      decisions: inputCandidates.map((candidate) => {
+        const key = candidateKeys.get(candidate.id);
+        const winnerId = winnerByKey.get(key);
+        const selectedRecord = selectedById.get(candidate.id);
+        if (winnerId !== candidate.id) {
+          return {
+            candidateId: candidate.id,
+            selected: false,
+            selectedRank: null,
+            candidateRoles: [],
+            reason: "milestone-frontier-dp-key-deduplication",
+            deduplicatedByCandidateId: winnerId || null,
+          };
+        }
+        return {
+          candidateId: candidate.id,
+          selected: Boolean(selectedRecord),
+          selectedRank: selectedRecord ? selectedRecord.rank : null,
+          candidateRoles: selectedRecord ? selectedRecord.tags : [],
+          reason: selectedRecord
+            ? "selected"
+            : "milestone-frontier-capacity",
+          deduplicatedByCandidateId: null,
+        };
+      }),
+    };
+  }
   return frontier;
 }
 
@@ -4507,5 +4548,6 @@ module.exports = {
     buildSegmentStateFeasibilityPredicate,
     isAllowedAction,
     projectSegmentGoalProgress,
+    selectCandidateSkyline,
   },
 };
