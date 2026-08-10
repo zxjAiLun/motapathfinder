@@ -495,6 +495,22 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/eval-vector.js": {
+      "id": "eval-vector",
+      "path": "shared-solver/lib/eval-vector.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "diagnostics",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "Observation-only Mota Eval vector: projects goal dependency completion, admissible-v1 feasibility, and per-field near-term resource margins for audits and UI; plan health is a UI projection only and never reaches the DP key, dominance, agenda, candidate capacity, or pruning"
+    },
     "shared-solver/lib/event-resolver.js": {
       "id": "event-resolver",
       "path": "shared-solver/lib/event-resolver.js",
@@ -1902,6 +1918,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "synthetic searchDP observer contract; no tower/project load"
+    },
+    "shared-solver/check-eval-vector.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "observation-only eval vector contract: signed per-field margins, near-term bottleneck vs full-horizon reporting, unknown-evidence is never viable, tracked MT5 first-sweep/third-gate HP-drop chain"
     },
     "shared-solver/check-floor-scout.js": {
       "grade": "local-regression",

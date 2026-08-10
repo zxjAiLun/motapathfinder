@@ -183,6 +183,7 @@
     "check:walk-reachability-fast-path": "node check-walk-reachability-fast-path.js",
     "check:goal-directed-search": "node check-goal-directed-search.js",
     "check:goal-feasibility-bounds": "node check-goal-feasibility-bounds.js",
+    "check:eval-vector": "node check-eval-vector.js",
     "check:candidate-quality-shadow": "node check-candidate-quality-shadow.js",
     "audit:candidate-quality:mt5": "node audit-mt5-candidate-quality-shadow.js --output=routes/generated/mt5-candidate-quality-shadow.json",
     "bench:walk:mt4:legacy": "node check-real-route-performance-qualification.js --case=mt4-manual-to-mt5-entry --order=B --max-expansions=100 --walk-mode=legacy-exact",
