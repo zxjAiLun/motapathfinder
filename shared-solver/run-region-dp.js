@@ -205,12 +205,15 @@ function runPrefixMilestone(project, simulator, regionSpec, args, rank) {
   if (!prefix) return null;
   const prefixSpec = getMilestoneSpec(project, prefix.routeName || regionSpec.milestoneRoute);
   const result = runMilestoneGraph(simulator, simulator.createInitialState({ rank }), prefixSpec, {
+    searchIntent: args["prefix-search-intent"] || null,
     fromMilestoneId: prefix.fromMilestoneId || null,
     toMilestoneId: prefix.toMilestoneId,
     candidateLimit: parseOptionalNumber(args["prefix-candidate-limit"]) || Number(prefix.candidateLimit || (regionSpec.search || {}).candidateLimit || 4),
     maxExpansions: parseOptionalNumber(args["prefix-max-expansions"]) || null,
     maxRuntimeMs: parseOptionalNumber(args["prefix-max-runtime-ms"]) || null,
     stopOnFirstGoal: args["prefix-stop-on-first-goal"] == null ? null : parseBoolean(args["prefix-stop-on-first-goal"], false),
+    dpPriorityMode: args["prefix-priority-mode"] || null,
+    goalFeasibilityMode: args["prefix-goal-feasibility-mode"] || null,
   });
   if (!result.found || !result.finalCandidate || !result.finalCandidate.state) {
     const failedSegment = result.failedSegment || {};
@@ -395,6 +398,7 @@ function main() {
   const dpBudget = search.dpBudget || {};
   runnerStage = "run-region-dp";
   const result = runMilestoneGraph(simulator, initialState, milestoneSpec, {
+    searchIntent: args["search-intent"] || search.searchIntent || null,
     fromMilestoneId: args["from-milestone"] || regionSpec.fromMilestoneId || null,
     toMilestoneId: args["to-milestone"] || regionSpec.toMilestoneId || null,
     candidateLimit: parseOptionalNumber(args["candidate-limit"]) || Number(search.candidateLimit || 8),
@@ -404,6 +408,8 @@ function main() {
     stopOnFirstGoal: args["stop-on-first-goal"] == null
       ? (search.stopOnFirstGoal == null ? null : parseBoolean(search.stopOnFirstGoal, false))
       : parseBoolean(args["stop-on-first-goal"], false),
+    dpPriorityMode: args["priority-mode"] || search.priorityMode || null,
+    goalFeasibilityMode: args["goal-feasibility-mode"] || search.goalFeasibilityMode || null,
     objectiveSpec: objective,
     enableFailureBacktracking: parseBoolean(args["failure-backtracking"], parseBoolean(regionSpec.enableFailureBacktracking, true)),
   });

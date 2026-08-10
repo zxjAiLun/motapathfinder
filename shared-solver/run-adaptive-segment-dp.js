@@ -410,6 +410,7 @@ function main() {
       autoDecomposeOptions(args, routeName),
     )
     : runAdaptiveSegmentPlanner(simulator, initialState, spec, {
+    searchIntent: args["search-intent"] || null,
     fromMilestoneId: args["from-milestone"] || null,
     toMilestoneId: args["to-milestone"] || null,
     candidateLimit: optionalNumber(args["candidate-limit"]) || 8,
@@ -417,6 +418,8 @@ function main() {
     maxExpansions: optionalNumber(args["max-expansions"]),
     maxRuntimeMs: optionalNumber(args["max-runtime-ms"]),
     stopOnFirstGoal: args["stop-on-first-goal"] == null ? null : parseBoolean(args["stop-on-first-goal"], false),
+    dpPriorityMode: args["priority-mode"] || null,
+    goalFeasibilityMode: args["goal-feasibility-mode"] || null,
     maxAdaptiveRepairs: optionalNumber(args["max-adaptive-repairs"]) ?? 2,
     repairActionCandidates: optionalNumber(args["repair-action-candidates"]) || 8,
     repairTileCandidates: optionalNumber(args["repair-tile-candidates"]) || 6,

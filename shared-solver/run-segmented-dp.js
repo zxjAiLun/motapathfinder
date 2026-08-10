@@ -394,6 +394,7 @@ function main() {
     console.log(`Start state file: ${loadedStart.file}`);
   }
   const result = runMilestoneGraph(simulator, initialState, spec, {
+    searchIntent: args["search-intent"] || null,
     fromMilestoneId: args["from-milestone"] || null,
     toMilestoneId: args["to-milestone"] || null,
     candidateLimit: optionalNumber(args["candidate-limit"]) || 8,
@@ -412,6 +413,8 @@ function main() {
     preserveSkylineRoles: parseBoolean(args["preserve-skyline-roles"], false),
     goalSkylineLimit: optionalNumber(args["goal-skyline-limit"]),
     agendaMode: args["agenda-mode"] || null,
+    dpPriorityMode: args["priority-mode"] || null,
+    goalFeasibilityMode: args["goal-feasibility-mode"] || null,
     fairnessEvery: optionalNumber(args["fairness-every"]),
     maxActionsPerState: optionalNumber(args["max-actions-per-state"]),
     budgetScope: args["budget-scope"] || "per-attempt",

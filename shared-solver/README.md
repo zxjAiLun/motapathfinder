@@ -185,6 +185,18 @@ same control as `--walk-mode=legacy-exact`. Use
 `npm run check:walk-reachability-fast-path` for focused parity/fallback coverage
 and `npm run bench:walk:mt4:compare` for an independent-process route comparison.
 
+For tasks whose requirement is "return the first route that satisfies the
+configured milestone", pass `--search-intent=first-feasible` to segmented,
+adaptive, or region runners. This intent combines the goal-directed agenda
+with `stopOnFirstGoal=true`; the agenda ranks states by normalized progress
+toward the segment's floor, hero thresholds, equipment, and tile constraints.
+The default remains `skyline`, because first-feasible does not preserve the
+same candidate diversity or best-of-budget route selection. The optional
+`--goal-feasibility-mode=protected-present-tiles` gate only rejects states that
+already violate the segment's protected `presentTiles` contract; all
+feasibility pruning is default-off and reported in DP diagnostics. Run
+`npm run check:goal-directed-search` for tracked-route and negative controls.
+
 Top-k performance baselines:
 
 ```bash

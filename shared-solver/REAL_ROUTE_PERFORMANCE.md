@@ -123,3 +123,33 @@ generated / 212 accepted states, final exact-state fingerprint
 `a2f663af8623113f8e99502f0d4925a8c141fedf281bf179b69871b9aecaa15b`, and
 strict replay. The safe-fast runs used 91 static builds and conservatively fell
 back to 17 exact builds after entering live-auto-event territory.
+
+## Goal-directed first-feasible intent
+
+`first-feasible` is an explicit speed-oriented search intent for callers that
+need the first route satisfying the configured milestone. It combines
+goal-directed agenda ordering with `stopOnFirstGoal=true`. The default remains
+`skyline`; changing the intent is a caller-visible tradeoff and is not an
+optimization-proof mode.
+
+```bash
+npm run bench:goal-directed:mt4:default
+npm run bench:goal-directed:mt4:first-feasible
+npm run check:goal-directed-search
+```
+
+On the tracked MT4 checkpoint to MT5 entry workload, three alternating
+independent rounds measured the same-first-goal baseline at 1.11s / 0.75s /
+0.76s (median 0.76s) and `first-feasible` at 0.76s / 0.68s / 0.59s (median
+0.68s). Goal-directed ordering reached the milestone at expansion 17 instead
+of 49, generated 69 instead of 108 actions, and accepted 65 instead of 93
+states. The wall-time median improved by 1.11x under identical first-goal stop
+semantics. Compared with the normal 100-expansion skyline median of 3.05s, the
+explicit first-feasible intent returns a qualifying route about 4.49x sooner,
+but it intentionally returns a different qualifying route rather than the
+best route retained after the full budget. Both routes pass strict replay.
+
+The MT2 checkpoint to MT3 control is stronger: both intents retain exact final
+state and route fingerprints while goal-directed ordering reduces aggregate
+work from 20 to 16 expansions and from 37 to 34 generated actions. Timing is
+directional and is never a correctness gate.

@@ -209,8 +209,30 @@ function summarizeScale(result) {
       Number(dp.registry && dp.registry.finalActiveStates || 0),
     ), 0),
     maxFrontierRemaining: dpRecords.reduce((max, dp) => Math.max(max, Number(dp.frontierSize || 0)), 0),
+    firstGoalExpansion: dpRecords.reduce((best, dp) => {
+      if (dp.firstGoalExpansion == null) return best;
+      const value = Number(dp.firstGoalExpansion);
+      return Number.isFinite(value) && value >= 0 && (best == null || value < best) ? value : best;
+    }, null),
+    goalFeasibilityPruned: dpRecords.reduce((sum, dp) => (
+      sum + Number(dp.goalFeasibility && dp.goalFeasibility.pruned || 0)
+    ), 0),
+    priorityModes: Array.from(new Set(dpRecords.map((dp) => dp.priorityMode || "default"))).sort(),
     stoppedReasons: Array.from(new Set(dpRecords.map((dp) => dp.stoppedReason || null))).sort(),
   };
+}
+
+function summarizeFirstGoalElapsedMs(result) {
+  return (result.evaluationAttemptLedger || [])
+    .map((entry) => entry && entry.diagnostics && entry.diagnostics.dp)
+    .filter(Boolean)
+    .reduce((best, dp) => {
+      if (dp.firstGoalElapsedMs == null) return best;
+      const value = Number(dp.firstGoalElapsedMs);
+      return Number.isFinite(value) && value >= 0 && (best == null || value < best)
+        ? value
+        : best;
+    }, null);
 }
 
 function compactHero(state) {
@@ -299,11 +321,17 @@ function runBenchmarkSide(project, milestoneSpec, caseId, benchmarkCase, side, a
       ? 0
       : optionalNumber(args["max-runtime-ms"]),
     dpStateKeyBuilder: candidate && candidate.builder,
+    searchIntent: args["search-intent"],
+    dpPriorityMode: args["priority-mode"],
+    goalFeasibilityMode: args["goal-feasibility-mode"],
   };
   const requestedMaxExpansions = optionalNumber(args["max-expansions"]);
   searchOptions.maxExpansions = requestedMaxExpansions == null
     ? benchmarkCase.defaultMaxExpansions
     : requestedMaxExpansions;
+  if (args["stop-on-first-goal"] != null) {
+    searchOptions.stopOnFirstGoal = args["stop-on-first-goal"] === "1";
+  }
 
   setActivePerfTracker(tracker);
   let result;
@@ -335,6 +363,7 @@ function runBenchmarkSide(project, milestoneSpec, caseId, benchmarkCase, side, a
     scale: summarizeScale(result),
     performance: {
       wallMs: perf.wallMs,
+      firstGoalElapsedMs: summarizeFirstGoalElapsedMs(result),
       walkReachabilityMode: simulator.walkReachabilityMode,
       peakRssMb: perf.peakRssMb,
       peakHeapUsedMb: perf.peakHeapUsedMb,

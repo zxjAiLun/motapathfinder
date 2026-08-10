@@ -365,6 +365,21 @@ function sourceActionRank(action) {
   return 1;
 }
 
+function projectGoalProgress(goalProgressProjector, state) {
+  try {
+    const projected = goalProgressProjector(state) || {};
+    return {
+      feasible: projected.feasible !== false ? 1 : 0,
+      completion: Math.max(0, Math.min(1, finiteNumber(projected.completion, 0))),
+      requirementsMet: Math.max(0, finiteNumber(projected.requirementsMet, 0)),
+      requirementsTotal: Math.max(0, finiteNumber(projected.requirementsTotal, 0)),
+      floorMatch: projected.floorMatch === true ? 1 : 0,
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
 function buildDpAgendaRank(simulator, state, sourceAction, sequence, options) {
   const config = options || {};
   const progress = getProgress(state);
@@ -388,6 +403,45 @@ function buildDpAgendaRank(simulator, state, sourceAction, sequence, options) {
     routeLength,
     sequence,
   };
+}
+
+function buildGoalDirectedDpAgendaRank(simulator, state, sourceAction, sequence, options) {
+  const rank = buildDpAgendaRank(simulator, state, sourceAction, sequence, options);
+  const goalProgress = projectGoalProgress(options.goalProgressProjector, state);
+  if (goalProgress) {
+    rank.goalFeasible = goalProgress.feasible;
+    rank.goalCompletion = goalProgress.completion;
+    rank.goalRequirementsMet = goalProgress.requirementsMet;
+    rank.goalRequirementsTotal = goalProgress.requirementsTotal;
+    rank.goalFloorMatch = goalProgress.floorMatch;
+  }
+  return rank;
+}
+
+function compareGoalDirectedDpAgendaRank(left, right) {
+  const goalHighWins = [
+    "goalFeasible",
+    "goalCompletion",
+    "goalRequirementsMet",
+    "sourceActionRank",
+    "bestFloorRank",
+    "currentFloorRank",
+    "hp",
+    "atk",
+    "def",
+    "mdef",
+    "lv",
+    "exp",
+    "finiteNextDistance",
+  ];
+  for (const field of goalHighWins) {
+    const diff = Number(left[field] || 0) - Number(right[field] || 0);
+    if (diff !== 0) return diff;
+  }
+  if (left.nextDistance !== right.nextDistance) return right.nextDistance - left.nextDistance;
+  if (left.decisionDepth !== right.decisionDepth) return right.decisionDepth - left.decisionDepth;
+  if (left.routeLength !== right.routeLength) return right.routeLength - left.routeLength;
+  return right.sequence - left.sequence;
 }
 
 function compareDpAgendaRank(left, right) {
@@ -914,6 +968,11 @@ function observerStatePayload(simulator, state, node, config, extra) {
 
 const OBSERVER_AGENDA_RANK_FIELDS = [
   "priorityMode",
+  "goalFeasible",
+  "goalCompletion",
+  "goalRequirementsMet",
+  "goalRequirementsTotal",
+  "goalFloorMatch",
   "bestFloorRank",
   "finiteNextDistance",
   "nextDistance",
@@ -1074,7 +1133,9 @@ function searchDP(simulator, initialState, options) {
   };
   const heap = agendaMode === "fifo"
     ? null
-    : new BinaryHeap((left, right) => compareDpAgendaRank(left.rank, right.rank));
+    : config.dpPriorityMode === "goal-directed"
+      ? new BinaryHeap((left, right) => compareGoalDirectedDpAgendaRank(left.rank, right.rank))
+      : new BinaryHeap((left, right) => compareDpAgendaRank(left.rank, right.rank));
   const initialRoutePrefix = Array.isArray(initialState.route) ? initialState.route.slice() : [];
   const captureTrace = config.captureTrace === true;
   const initialRouteTracePrefix = captureTrace && Array.isArray(config.initialRouteTracePrefix)
@@ -1118,6 +1179,8 @@ function searchDP(simulator, initialState, options) {
   let statesWithActionTrim = 0;
   let maxActionsGeneratedForState = 0;
   let invalid = 0;
+  let goalFeasibilityPruned = 0;
+  const goalFeasibilityPrunedByReason = {};
   let firstGoalNode = null;
   let firstGoalExpansion = null;
   let firstGoalElapsedMs = null;
@@ -1576,7 +1639,9 @@ function searchDP(simulator, initialState, options) {
       ? createChildNode(parentNode, state, key, actionForEntry, nextNodeId++, sequence)
       : createRootNode(state, key);
     node.key = key;
-    node.rank = buildDpAgendaRank(simulator, state, sourceAction, sequence, config);
+    node.rank = config.dpPriorityMode === "goal-directed"
+      ? buildGoalDirectedDpAgendaRank(simulator, state, sourceAction, sequence, config)
+      : buildDpAgendaRank(simulator, state, sourceAction, sequence, config);
     sequence += 1;
     let skylineInserted = true;
     const beforeSkylineIds = bestByKey instanceof SkylineSet
@@ -1763,7 +1828,41 @@ function searchDP(simulator, initialState, options) {
     return node;
   };
 
-  enqueue(rootState);
+  const enqueueCandidate = typeof config.stateFeasibilityPredicate !== "function"
+    ? enqueue
+    : (state, sourceAction, parentNode) => {
+        let verdict = null;
+        try {
+          verdict = config.stateFeasibilityPredicate(
+            state,
+            sourceAction,
+            parentNode && parentNode.state,
+          );
+        } catch (error) {
+          verdict = { feasible: true, diagnosticError: error && error.message || String(error) };
+        }
+        if (verdict !== false && (!verdict || verdict.feasible !== false)) {
+          return enqueue(state, sourceAction, parentNode);
+        }
+        const reason = verdict && verdict.reason || "goal-necessary-condition-failed";
+        goalFeasibilityPruned += 1;
+        goalFeasibilityPrunedByReason[reason] = Number(goalFeasibilityPrunedByReason[reason] || 0) + 1;
+        trackPerfCount("goalFeasibilityPruned");
+        if (observer) observer.emit("candidateRejected", () => observerStatePayload(
+          simulator,
+          state,
+          { nodeId: null, key: null },
+          config,
+          {
+            reasonCode: "goal-necessary-condition-failed",
+            feasibilityReason: reason,
+            action: compactObserverAction(simulator, sourceAction),
+          },
+        ));
+        return false;
+      };
+
+  enqueueCandidate(rootState);
 
   const popNext = () => {
     const popBest = () => {
@@ -2089,7 +2188,7 @@ function searchDP(simulator, initialState, options) {
           const observedAction = observer
             ? { ...action, __observerCandidateId: candidateId, __observerSuccessorId: `${candidateId}:${successorIndex}` }
             : action;
-          const childNode = enqueue(nextState, observedAction, entry);
+          const childNode = enqueueCandidate(nextState, observedAction, entry);
           if (childNode) recordAction(actionStats, action, "kept");
           else recordAction(actionStats, action, "dominated");
         });
@@ -2296,6 +2395,7 @@ function searchDP(simulator, initialState, options) {
       skipped: {
         "dp-lower-hp-same-state": rejectedByHigherHp,
         "dp-same-hp-not-shorter": sameHpRejected,
+        "goal-necessary-condition-failed": goalFeasibilityPruned,
         invalid,
       },
       byActionType: actionStats.byActionType,
@@ -2344,6 +2444,7 @@ function searchDP(simulator, initialState, options) {
       pruneReasons: {
         "dp-lower-hp-same-state": rejectedByHigherHp,
         "dp-same-hp-not-shorter": sameHpRejected,
+        "goal-necessary-condition-failed": goalFeasibilityPruned,
       },
       suspicious: {},
       safeDominance: {},
@@ -2446,6 +2547,11 @@ function searchDP(simulator, initialState, options) {
         sameHpShorterRoute,
         rejectedByHigherHp,
         sameHpRejected,
+        goalFeasibility: {
+          enabled: typeof config.stateFeasibilityPredicate === "function",
+          pruned: goalFeasibilityPruned,
+          byReason: { ...goalFeasibilityPrunedByReason },
+        },
         agendaMode,
         fairnessEvery,
         stopOnFirstGoal,

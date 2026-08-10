@@ -207,6 +207,7 @@
         "shared-solver/check-real-route-performance-qualification.js",
         "shared-solver/check-walk-reachability-fast-path.js",
         "shared-solver/check-walk-reachability-performance.js",
+        "shared-solver/check-goal-directed-search.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
         "shared-solver/check-mt1-default-promotion-contract.js",
         "shared-solver/check-mt1-post-promotion-regression-contract.js",
@@ -2433,6 +2434,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "Independent-process legacy-exact vs safe-fast comparison on the tracked MT4 to MT5 branching workload; exact final state, route, search scale, and strict replay parity are mandatory while timing remains directional"
+    },
+    "shared-solver/check-goal-directed-search.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "Tracked MT2 to MT3 exact parity plus MT4 to MT5 first-feasible comparison for goal-directed agenda ordering; protected present-tile feasibility pruning remains explicit and default-off"
     },
     "shared-solver/check-mt1-workload-matrix-contract.js": {
       "grade": "unit-plus-micro",

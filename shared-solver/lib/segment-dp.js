@@ -27,6 +27,27 @@ function number(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+const SEARCH_INTENTS = new Set(["skyline", "first-feasible"]);
+
+function resolveSearchIntentOptions(options) {
+  const config = options || {};
+  const searchIntent = String(config.searchIntent || "skyline");
+  if (!SEARCH_INTENTS.has(searchIntent)) {
+    throw new Error(
+      `Unknown search intent: ${searchIntent}. Expected skyline or first-feasible.`,
+    );
+  }
+  if (searchIntent !== "first-feasible") return config;
+  return {
+    ...config,
+    searchIntent,
+    stopOnFirstGoal: config.stopOnFirstGoal == null ? true : config.stopOnFirstGoal,
+    dpPriorityMode: config.dpPriorityMode == null && config.priorityMode == null
+      ? "goal-directed"
+      : config.dpPriorityMode,
+  };
+}
+
 function heroHp(state) {
   return number(((state || {}).hero || {}).hp, 0);
 }
@@ -354,6 +375,100 @@ function missingGoalFields(project, simulator, state, segment, options) {
     }
   }
   return missing;
+}
+
+function boundedGoalRatio(actual, required) {
+  const target = Number(required);
+  if (!Number.isFinite(target) || target <= 0) return 1;
+  return Math.max(0, Math.min(1, number(actual, 0) / target));
+}
+
+function projectSegmentGoalProgress(project, state, segment) {
+  const goal = (segment || {}).goal || {};
+  const hero = summarizeHero(state);
+  const effectiveHero = summarizeEffectiveHero(state);
+  const requirements = [];
+  const addBoolean = (name, satisfied) => requirements.push({
+    name,
+    progress: satisfied ? 1 : 0,
+  });
+  const addMinimums = (prefix, actual, expected) => {
+    Object.entries(expected || {}).forEach(([field, required]) => {
+      requirements.push({
+        name: `${prefix}.${field}`,
+        progress: boundedGoalRatio(actual[field], required),
+      });
+    });
+  };
+
+  const floorMatch = !goal.floorId || state.floorId === goal.floorId;
+  if (goal.floorId) addBoolean("floorId", floorMatch);
+  addMinimums("hero", hero, goal.minHero);
+  addMinimums("effectiveHero", effectiveHero, goal.minEffectiveHero);
+  (goal.equipmentIncludes || []).forEach((itemId) => {
+    addBoolean(`equipment:${itemId}`, hasEquipment(state, itemId));
+  });
+  if (goal.type === "bossDefeated" || goal.type === "tileRemoved") {
+    addBoolean(
+      `removed:${goal.floorId}:${goal.x},${goal.y}`,
+      getTileDefinitionAt(project, state, goal.floorId, goal.x, goal.y) == null,
+    );
+  }
+  (goal.removedTiles || []).forEach((required) => {
+    addBoolean(
+      `removed:${required.floorId}:${required.x},${required.y}`,
+      getTileDefinitionAt(project, state, required.floorId, required.x, required.y) == null,
+    );
+  });
+  if (Array.isArray(goal.anyRemovedTiles) && goal.anyRemovedTiles.length > 0) {
+    addBoolean(
+      "anyRemovedTiles",
+      goal.anyRemovedTiles.some((required) =>
+        getTileDefinitionAt(project, state, required.floorId, required.x, required.y) == null,
+      ),
+    );
+  }
+  const missingProtectedTiles = (goal.presentTiles || []).filter((required) =>
+    getTileDefinitionAt(project, state, required.floorId, required.x, required.y) == null,
+  );
+  (goal.presentTiles || []).forEach((required) => {
+    addBoolean(
+      `present:${required.floorId}:${required.x},${required.y}`,
+      getTileDefinitionAt(project, state, required.floorId, required.x, required.y) != null,
+    );
+  });
+
+  const progressTotal = requirements.reduce((sum, entry) => sum + entry.progress, 0);
+  const requirementsMet = requirements.filter((entry) => entry.progress >= 1).length;
+  return {
+    feasible: missingProtectedTiles.length === 0,
+    floorMatch,
+    completion: requirements.length > 0 ? progressTotal / requirements.length : 0,
+    requirementsMet,
+    requirementsTotal: requirements.length,
+    missingProtectedTiles: missingProtectedTiles.map((tile) =>
+      `${tile.floorId}:${tile.x},${tile.y}`,
+    ),
+  };
+}
+
+function buildSegmentStateFeasibilityPredicate(project, segment, mode) {
+  const normalizedMode = String(mode || "off");
+  if (normalizedMode === "off") return null;
+  if (normalizedMode !== "protected-present-tiles") {
+    throw new Error(
+      `Unknown goal feasibility mode: ${normalizedMode}. Expected off or protected-present-tiles.`,
+    );
+  }
+  return (state) => {
+    const progress = projectSegmentGoalProgress(project, state, segment);
+    if (progress.feasible) return { feasible: true };
+    return {
+      feasible: false,
+      reason: "protected-present-tile-missing",
+      missingProtectedTiles: progress.missingProtectedTiles,
+    };
+  };
 }
 
 function buildSegmentGoalPredicate(project, segment, simulator) {
@@ -2542,6 +2657,19 @@ function searchSegmentDP(simulator, startState, segment, options) {
   } else {
     actionProvider = buildSegmentActionProvider(simulator, segment);
   }
+  const dpPriorityMode = usesResourceTimingMode(segment) &&
+    (!dpConfig.priorityMode || dpConfig.priorityMode === "default") &&
+    !dpConfig.dpPriorityMode
+    ? "resource-first"
+    : dpConfig.priorityMode || dpConfig.dpPriorityMode || "default";
+  const goalProgressProjector = dpPriorityMode === "goal-directed"
+    ? (state) => projectSegmentGoalProgress(simulator.project, state, segment)
+    : null;
+  const stateFeasibilityPredicate = buildSegmentStateFeasibilityPredicate(
+    simulator.project,
+    segment,
+    dpConfig.goalFeasibilityMode,
+  );
   const result = searchDP(simulator, seed, {
     targetFloorId: segment.goal && segment.goal.floorId,
     maxExpansions,
@@ -2555,12 +2683,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     dpKeyMode: dpConfig.keyMode || dpConfig.dpKeyMode || "region",
     dpAgendaMode: dpConfig.agendaMode || "best-first",
     fairnessEvery: number(dpConfig.fairnessEvery, 32),
-    dpPriorityMode:
-      usesResourceTimingMode(segment) &&
-      (!dpConfig.priorityMode || dpConfig.priorityMode === "default") &&
-      !dpConfig.dpPriorityMode
-        ? "resource-first"
-        : dpConfig.priorityMode || dpConfig.dpPriorityMode || "default",
+    dpPriorityMode,
     actionProviderMode: actionProviderMode || "segment-provider",
     // The objective comparator is a pure terminal hook: it only orders the
     // reached goal archive / bestGoalNode / final goal result.  It must not
@@ -2613,6 +2736,8 @@ function searchSegmentDP(simulator, startState, segment, options) {
         { cache: resourceTimingCache },
       )
       : null,
+    ...(goalProgressProjector ? { goalProgressProjector } : {}),
+    ...(stateFeasibilityPredicate ? { stateFeasibilityPredicate } : {}),
     actionProvider,
     actionApplier,
     observer: config.observer,
@@ -3017,6 +3142,15 @@ function segmentDpOverrides(segment, config, overrides) {
     ...(config && config.agendaMode != null && !generatedSegment
       ? { agendaMode: config.agendaMode }
       : {}),
+    ...(config && config.priorityMode != null
+      ? { priorityMode: config.priorityMode }
+      : {}),
+    ...(config && config.dpPriorityMode != null
+      ? { dpPriorityMode: config.dpPriorityMode }
+      : {}),
+    ...(config && config.goalFeasibilityMode != null
+      ? { goalFeasibilityMode: config.goalFeasibilityMode }
+      : {}),
     ...(config && config.maxActionsPerState != null && !generatedSegment
       ? { maxActionsPerState: config.maxActionsPerState }
       : {}),
@@ -3057,6 +3191,9 @@ function segmentDpOverrides(segment, config, overrides) {
       : {}),
     ...(repair.dpPriorityMode != null
       ? { dpPriorityMode: repair.dpPriorityMode }
+      : {}),
+    ...(repair.goalFeasibilityMode != null
+      ? { goalFeasibilityMode: repair.goalFeasibilityMode }
       : {}),
     ...(repair.goalSkylineLimit != null
       ? { goalSkylineLimit: repair.goalSkylineLimit }
@@ -3794,7 +3931,7 @@ function summarizeMemoryAttempts(attempts, config) {
 }
 
 function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
-  const config = options || {};
+  const config = resolveSearchIntentOptions(options);
   const objective = config.objectiveSpec && config.objectiveSpec.compiled
     ? config.objectiveSpec
     : null;
@@ -3812,6 +3949,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     : objectiveConfig;
   const finishResult = (result) => ({
     ...result,
+    searchIntent: config.searchIntent || "skyline",
     budget: summarizeGlobalBudget(globalBudget),
     memory: summarizeMemoryAttempts(result.evaluationAttemptLedger, objectiveConfig),
     objectiveStopPolicy,
@@ -4192,6 +4330,7 @@ module.exports = {
   effectiveSegmentBudgets,
   manualSearchOverrides,
   resolveStartCandidateLimit,
+  resolveSearchIntentOptions,
   runMilestoneGraph,
   searchSegmentDP,
   segmentCandidateLimit,
@@ -4214,6 +4353,8 @@ module.exports = {
     buildMonsterOnlyActionProvider:
       reachAndBattleOracle.buildMonsterOnlyActionProvider,
     actionTargetsProtectedTile,
+    buildSegmentStateFeasibilityPredicate,
     isAllowedAction,
+    projectSegmentGoalProgress,
   },
 };
