@@ -29,17 +29,17 @@ function number(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-const SEARCH_INTENTS = new Set(["skyline", "first-feasible"]);
+const SEARCH_INTENTS = new Set(["skyline", "first-feasible", "adaptive-feasible"]);
 
 function resolveSearchIntentOptions(options) {
   const config = options || {};
   const searchIntent = String(config.searchIntent || "skyline");
   if (!SEARCH_INTENTS.has(searchIntent)) {
     throw new Error(
-      `Unknown search intent: ${searchIntent}. Expected skyline or first-feasible.`,
+      `Unknown search intent: ${searchIntent}. Expected skyline, first-feasible, or adaptive-feasible.`,
     );
   }
-  if (searchIntent !== "first-feasible") return config;
+  if (!["first-feasible", "adaptive-feasible"].includes(searchIntent)) return config;
   return {
     ...config,
     searchIntent,
@@ -47,6 +47,12 @@ function resolveSearchIntentOptions(options) {
     dpPriorityMode: config.dpPriorityMode == null && config.priorityMode == null
       ? "goal-directed"
       : config.dpPriorityMode,
+    ...(searchIntent === "adaptive-feasible"
+      ? {
+          enableFailureBacktracking: config.enableFailureBacktracking !== false,
+          adaptiveBacktrackDepth: Math.max(1, number(config.adaptiveBacktrackDepth, 3)),
+        }
+      : {}),
   };
 }
 
@@ -3707,6 +3713,141 @@ function tryRepairFromPreviousMilestone(
   };
 }
 
+function tryAdaptiveCheckpointRepair(
+  simulator,
+  segments,
+  segmentIndex,
+  history,
+  failedExecution,
+  config,
+) {
+  if ((config || {}).searchIntent !== "adaptive-feasible") return null;
+  if ((config || {}).enableFailureBacktracking === false) return null;
+  if (!Array.isArray(history) || history.length === 0 || segmentIndex <= 0) return null;
+  const failedSummary = failedExecution && failedExecution.summary;
+  const preferredTags =
+    ((failedSummary || {}).failurePropagation || {}).preferredCandidateTags || [];
+  const maxDepth = Math.min(
+    history.length,
+    Math.max(1, numericOption(config && config.adaptiveBacktrackDepth, 3)),
+  );
+  const attempts = [];
+  const ledgerExecutions = [];
+
+  for (let depth = 1; depth <= maxDepth; depth += 1) {
+    const anchorHistoryIndex = history.length - depth;
+    const anchor = history[anchorHistoryIndex];
+    if (!anchor || !anchor.segment || !Array.isArray(anchor.inputFrontier)) continue;
+    const executions = [];
+    const anchorConfig = { ...(config || {}), stopOnFirstGoal: undefined };
+    const expandedAnchor = runSegmentAgainstFrontier(
+      simulator,
+      anchor.segment,
+      anchor.inputFrontier,
+      {
+        ...anchorConfig,
+        segmentIndex: anchorHistoryIndex,
+        segmentTotal: segments.length,
+        goalDependencySegments: segments.slice(anchorHistoryIndex),
+      },
+      withManualBudgetAuthority(anchorConfig, {
+        candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
+        dpOverrides: backtrackDpOverrides(anchor.segment, config || {}),
+        preserveSkylineRoles: true,
+      }),
+    );
+    expandedAnchor.summary.backtrack = {
+      mode: "adaptive-checkpoint-expand",
+      depth,
+      triggeredBySegment: segments[segmentIndex].id,
+      preferredCandidateTags: preferredTags,
+      previousCandidateCount: anchor.merged.length,
+      expandedCandidateCount: expandedAnchor.merged.length,
+    };
+    executions.push(expandedAnchor);
+    let repairFrontier = expandedAnchor.merged;
+    let failedAtIndex = repairFrontier.length > 0 ? null : anchorHistoryIndex;
+    let memoryExecution = expandedAnchor.memoryLimited ? expandedAnchor : null;
+    let memorySegmentIndex = expandedAnchor.memoryLimited ? anchorHistoryIndex : null;
+
+    for (
+      let replayIndex = anchorHistoryIndex + 1;
+      repairFrontier.length > 0 && replayIndex <= segmentIndex && !memoryExecution;
+      replayIndex += 1
+    ) {
+      const replaySegment = segments[replayIndex];
+      const rankedFrontier = rankCandidatesByPreferredTags(
+        repairFrontier,
+        preferredTags,
+      ).slice(0, backtrackCandidateLimit(replaySegment, config || {}));
+      const replayed = runSegmentAgainstFrontier(
+        simulator,
+        replaySegment,
+        rankedFrontier,
+        {
+          ...(config || {}),
+          segmentIndex: replayIndex,
+          segmentTotal: segments.length,
+          goalDependencySegments: segments.slice(replayIndex),
+        },
+        withManualBudgetAuthority(config || {}, {
+          candidateLimit: backtrackCandidateLimit(replaySegment, config || {}),
+          preserveSkylineRoles: true,
+        }),
+      );
+      replayed.summary.backtrack = {
+        mode: "adaptive-checkpoint-replay",
+        depth,
+        repairedFromSegment: anchor.segment.id,
+        triggeredBySegment: segments[segmentIndex].id,
+        preferredCandidateTags: preferredTags,
+        startCandidatesTried: rankedFrontier.length,
+      };
+      executions.push(replayed);
+      repairFrontier = replayed.merged;
+      if (replayed.memoryLimited) {
+        memoryExecution = replayed;
+        memorySegmentIndex = replayIndex;
+      } else if (repairFrontier.length === 0) {
+        failedAtIndex = replayIndex;
+      }
+    }
+
+    attempts.push({
+      depth,
+      anchorSegmentId: anchor.segment.id,
+      failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,
+      segmentCandidateCounts: executions.map((entry) => ({
+        segmentId: entry.segment.id,
+        candidates: entry.merged.length,
+      })),
+    });
+    ledgerExecutions.push(...executions);
+    if (memoryExecution) {
+      return {
+        found: false,
+        attempts,
+        executions,
+        ledgerExecutions,
+        anchorHistoryIndex,
+        memoryExecution,
+        memorySegmentIndex,
+      };
+    }
+    if (repairFrontier.length > 0 && executions.length === segmentIndex - anchorHistoryIndex + 1) {
+      return {
+        found: true,
+        attempts,
+        executions,
+        ledgerExecutions,
+        anchorHistoryIndex,
+        finalFrontier: repairFrontier,
+      };
+    }
+  }
+  return { found: false, attempts, executions: [], ledgerExecutions };
+}
+
 function configuredRepairStartFrom(segment) {
   const dp = (segment || {}).dp || {};
   return (segment && segment.repairStartFrom) || dp.repairStartFrom || null;
@@ -4121,7 +4262,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         frontier = configuredRepair.repairedCurrent.merged;
         continue;
       }
-      const repair = tryRepairFromPreviousMilestone(
+      const adaptiveRepair = tryAdaptiveCheckpointRepair(
         simulator,
         segments,
         segmentIndex,
@@ -4129,6 +4270,49 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         execution,
         graphConfig,
       );
+      if (adaptiveRepair) {
+        (adaptiveRepair.ledgerExecutions || adaptiveRepair.executions).forEach((entry, index) => {
+          appendLedger(entry, index === 0 ? "adaptive-expand" : "adaptive-replay");
+        });
+      }
+      if (adaptiveRepair && adaptiveRepair.memoryExecution) {
+        return finishMemoryLimited(
+          adaptiveRepair.memoryExecution,
+          adaptiveRepair.memorySegmentIndex,
+          frontier,
+        );
+      }
+      if (adaptiveRepair && adaptiveRepair.found) {
+        const anchorIndex = adaptiveRepair.anchorHistoryIndex;
+        history.splice(anchorIndex);
+        segmentResults.splice(anchorIndex);
+        checkpointResults.splice(anchorIndex);
+        adaptiveRepair.executions.forEach((repairedExecution) => {
+          segmentResults.push(repairedExecution.summary);
+          checkpointResults.push(
+            buildMilestoneCheckpoint(repairedExecution.segment, repairedExecution),
+          );
+          history.push({
+            segment: repairedExecution.segment,
+            inputFrontier: repairedExecution.inputFrontier,
+            merged: repairedExecution.merged,
+            summary: repairedExecution.summary,
+            repairExpanded: true,
+          });
+        });
+        frontier = adaptiveRepair.finalFrontier;
+        continue;
+      }
+      const repair = adaptiveRepair
+        ? null
+        : tryRepairFromPreviousMilestone(
+          simulator,
+          segments,
+          segmentIndex,
+          history,
+          execution,
+          graphConfig,
+        );
       if (repair && repair.expandedPrevious) {
         appendLedger(repair.expandedPrevious, "expanded-previous");
       }
@@ -4202,6 +4386,15 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
             segmentId: repair.repairedCurrent.segment.id,
             found: repair.repairedCurrent.merged.length > 0,
           },
+        };
+      }
+      if (adaptiveRepair) {
+        failedSummary.backtrack = {
+          attempted: true,
+          repaired: false,
+          mode: "adaptive-checkpoint-window",
+          maxDepth: numericOption(graphConfig.adaptiveBacktrackDepth, 3),
+          attempts: adaptiveRepair.attempts,
         };
       }
       segmentResults.push(failedSummary);

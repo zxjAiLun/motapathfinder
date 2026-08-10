@@ -324,6 +324,7 @@ function runBenchmarkSide(project, milestoneSpec, caseId, benchmarkCase, side, a
     searchIntent: args["search-intent"],
     dpPriorityMode: args["priority-mode"],
     goalFeasibilityMode: args["goal-feasibility-mode"],
+    adaptiveBacktrackDepth: optionalNumber(args["adaptive-backtrack-depth"]),
   };
   const requestedMaxExpansions = optionalNumber(args["max-expansions"]);
   searchOptions.maxExpansions = requestedMaxExpansions == null
@@ -356,6 +357,8 @@ function runBenchmarkSide(project, milestoneSpec, caseId, benchmarkCase, side, a
     found: Boolean(result.found),
     reachedMilestone: result.reachedMilestone || null,
     failedSegmentId: result.failedSegment && result.failedSegment.segmentId || null,
+    searchIntent: result.searchIntent || "skyline",
+    backtrack: result.failedSegment && result.failedSegment.backtrack || null,
     initialCheckpoint,
     finalExactStateFingerprint: finalState ? exactStateFingerprint(finalState) : null,
     finalHero: finalState ? compactHero(finalState) : null,

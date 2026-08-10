@@ -153,6 +153,16 @@ function checkProtectedPresentTileGate() {
       dpPriorityMode: "goal-directed",
     },
   );
+  assert.deepStrictEqual(
+    resolveSearchIntentOptions({ searchIntent: "adaptive-feasible", adaptiveBacktrackDepth: 2 }),
+    {
+      searchIntent: "adaptive-feasible",
+      adaptiveBacktrackDepth: 2,
+      stopOnFirstGoal: true,
+      dpPriorityMode: "goal-directed",
+      enableFailureBacktracking: true,
+    },
+  );
   assert.throws(
     () => resolveSearchIntentOptions({ searchIntent: "fast-ish" }),
     /Unknown search intent/,

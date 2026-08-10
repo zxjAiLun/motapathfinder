@@ -2066,7 +2066,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": false,
-      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+      "notes": "OnlyUp segmented DP regression plus synthetic one-level and two-level failure-class-driven checkpoint repair coverage for PR-5.6d"
     },
     "shared-solver/check-progressive-monster-planner.js": {
       "grade": "local-regression",
@@ -2472,7 +2472,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "Tracked MT2 to MT3 exact parity plus MT4 to MT5 first-feasible comparison for goal-directed agenda ordering; ordered downstream goal dependencies and protected present-tile feasibility pruning remain explicit and default-off"
+      "notes": "Tracked MT2 to MT3 exact parity plus MT4 to MT5 first-feasible comparison for goal-directed agenda ordering; ordered downstream goal dependencies and explicit adaptive-feasible intent remain opt-in"
     },
     "shared-solver/check-goal-feasibility-bounds.js": {
       "grade": "unit-plus-micro",

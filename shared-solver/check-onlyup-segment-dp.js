@@ -481,6 +481,115 @@ function checkFailureBacktracking() {
   };
 }
 
+function makeSyntheticAdaptiveBacktrackSimulator() {
+  const simulator = makeSyntheticBacktrackSimulator();
+  simulator.enumeratePrimitiveActions = function enumeratePrimitiveActions(state) {
+    const flags = state.flags || {};
+    if (!flags.prep) {
+      return {
+        actions: [
+          { kind: "pickup", summary: "pickup:aHp@SYN:0,0", floorId: "SYN", itemId: "aHp" },
+          { kind: "pickup", summary: "pickup:zAtk@SYN:1,0", floorId: "SYN", itemId: "zAtk" },
+        ],
+      };
+    }
+    if (!flags.mid) {
+      return {
+        actions: [{ kind: "pickup", summary: "pickup:mid@SYN:2,0", floorId: "SYN", itemId: "mid" }],
+      };
+    }
+    return { actions: [] };
+  };
+  simulator.applyAction = function applyAction(state, action) {
+    const next = JSON.parse(JSON.stringify(state));
+    next.route = Array.isArray(next.route) ? next.route.slice() : [];
+    next.route.push(action.summary);
+    next.flags = next.flags || {};
+    next.meta = next.meta || {};
+    next.meta.decisionDepth = Number(next.meta.decisionDepth || 0) + 1;
+    if (action.summary === "pickup:aHp@SYN:0,0") {
+      next.flags.prep = "hp";
+      next.hero.hp = 200;
+      next.hero.exp = 1;
+    } else if (action.summary === "pickup:zAtk@SYN:1,0") {
+      next.flags.prep = "atk";
+      next.hero.hp = 80;
+      next.hero.atk = 10;
+      next.hero.exp = 1;
+    } else if (action.summary === "pickup:mid@SYN:2,0") {
+      next.flags.mid = true;
+      next.hero.hp += 20;
+      next.hero.exp = 2;
+    } else {
+      throw new Error(`unexpected synthetic adaptive action ${action.summary}`);
+    }
+    return next;
+  };
+  return simulator;
+}
+
+function checkAdaptiveCheckpointBacktracking() {
+  const simulator = makeSyntheticAdaptiveBacktrackSimulator();
+  const initialState = {
+    floorId: "SYN",
+    hero: { hp: 100, atk: 1, def: 1, mdef: 1, lv: 1, exp: 0, money: 0, equipment: [] },
+    inventory: {},
+    flags: {},
+    visitedFloors: {},
+    floorStates: {},
+    route: [],
+    meta: { decisionDepth: 0 },
+  };
+  const segment = (id, startFrom, minHero, maxExpansions) => ({
+    id,
+    startFrom,
+    goal: { type: "heroAtLeast", floorId: "SYN", minHero },
+    actionPolicy: { allowedFloors: ["SYN"], actionKinds: ["pickup"] },
+    dp: {
+      keyMode: "location",
+      maxExpansions,
+      maxRuntimeMs: 1000,
+      goalSkylineLimit: 1,
+    },
+  });
+  const spec = {
+    routeName: "synthetic-adaptive-backtrack",
+    milestones: [
+      segment("prep", null, { exp: 1 }, 4),
+      segment("mid", "prep", { exp: 2 }, 3),
+      segment("gate", "mid", { atk: 10 }, 2),
+    ],
+  };
+  const oneLevel = runMilestoneGraph(simulator, initialState, spec, {
+    searchIntent: "first-feasible",
+    candidateLimit: 1,
+    enableFailureBacktracking: true,
+  });
+  assert.equal(oneLevel.found, false, "one-level repair cannot replace the original prep checkpoint");
+
+  const adaptive = runMilestoneGraph(simulator, initialState, spec, {
+    searchIntent: "adaptive-feasible",
+    candidateLimit: 1,
+    adaptiveBacktrackDepth: 2,
+  });
+  assert.equal(adaptive.found, true, JSON.stringify(adaptive.failedSegment || null));
+  assert.equal(adaptive.reachedMilestone, "gate");
+  assert.ok(adaptive.finalCandidate.state.hero.atk >= 10);
+  const route = adaptive.finalCandidate.route.map((entry) => String(entry && (entry.summary || entry)));
+  assert.ok(route.includes("pickup:zAtk@SYN:1,0"));
+  assert.deepStrictEqual(
+    adaptive.segmentResults.map((entry) => entry.backtrack && entry.backtrack.depth),
+    [2, 2, 2],
+  );
+  return {
+    oneLevelFound: oneLevel.found,
+    adaptiveFound: adaptive.found,
+    reachedMilestone: adaptive.reachedMilestone,
+    route,
+    repairedDepths: adaptive.segmentResults.map((entry) => entry.backtrack.depth),
+  };
+}
+
 function main() {
   const simulator = makeSimulator();
   const safety = checkMilestoneSafetyAnnotations(simulator);
@@ -488,7 +597,8 @@ function main() {
   const mt5 = checkMt5ThirdGateToBlueKing(simulator);
   const failure = checkFailureDiagnostics(simulator);
   const backtracking = checkFailureBacktracking();
-  console.log(JSON.stringify({ safety, mt2, mt5, failure, backtracking }, null, 2));
+  const adaptiveBacktracking = checkAdaptiveCheckpointBacktracking();
+  console.log(JSON.stringify({ safety, mt2, mt5, failure, backtracking, adaptiveBacktracking }, null, 2));
 }
 
 main();
