@@ -539,9 +539,9 @@ PR-5.1 和 PR-5.2 基本都刻意没有修改 solver/search、DP key、dominance
 
 这其实不是坏事。现在已经把“找到一条假的路线、错误路线或不可恢复路线”这种地基风险大幅压下去了。接下来重新优化算法时，实验结果会可信得多。
 
-## PR-5.4 主线现状（2026-08-08）
+## PR-5.4 / PR-5.5 主线现状（2026-08-08）
 
-PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 guarded experimental profile：
+PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 guarded experimental profile；PR-5.5 系列（研究/证据轮，零 production 行为改动）把同一 identity 放到 multi-Region boundary 上做 collision hunting：
 
 - **PR-5.4b**：perf baseline + canonical route-free state + TowerIR shadow 已关闭。热点明确：`buildDpStateKey ≈ reachability ≈ 18.7s`（代表基线主导项）。
 - **PR-5.4c**：StructuralKey 研究已关闭，**决策翻转 PROMOTION_CANDIDATE**。TowerIR structural candidate 把 62 exact keys 拆成 99（strict-refinement），split field distribution 证明 **32/32 split 唯一来自 `structuralCandidate.startComponentId`**；删除它后 `62→62 / equal partition / 0 unsafe`。即 TowerIR reachable closure 本身够用，startComponentId 是冗余 anchor，**无需 battle-closure-aware 新算法**。
@@ -563,8 +563,8 @@ reachability 真实归因（perf tracker `reachability` phase + simulator cache 
 
 ## 下一主线最值得做的事
 
-1. **PR-5.5c Continuation 已收口**：corpus 18 workload（42/42/181），semantic diversity 已量化（mutation 10 / reachability 11 / flags 13 / legalActions 14 distinct；inventory 与 visitedFloors 恒定为如实 finding），仍 0 真实 collision。下一轮：**继续扩语义差异**——优先攻击真实不同 topology（scan MT6-40 / sample / World 的 door/key/arrival 结构）、真实 inventory 消耗（battle drop / key-door 消费）、arrival-dependent 语义；直到第一次真实同 scope candidate collision，立即停 + witness + CEGAR 分类（安全 → safety proof；unsafe → minimal refinement）。
-2. **multi-Region candidate-key generalization 路线**：5.5a shadow+boundary corpus → 5.5b corpus expansion → 5.5c collision hunt → 5.5d collision CEGAR/minimal refinement → 5.5e multi-Region workload qualification → 5.5f guarded promotion（只有证据允许时）。
+1. **PR-5.5d 已收口**：inventory hole 已用 tracked OnlyUp Start floor（sealed key room）真实关闭（19 workload / 44/44/535 / 0 merge / `NO_COLLISION_OBSERVED`）；visitedFloors hole 仍 PARTIAL（maxVisitedFloorCount=2 via 真实 cross-floor boundary + arrival，但无真实 changeFloor edge——MT1 stairs 不可达、Start stairs 被 steel/special door 挡、MT2 怪物过强）。下一轮：**5.5d 续 / 5.5e**——补 visitedFloors 空洞（需要 tracked 数据中可达的真实 changeFloor→arrival→post-arrival search，或独立 production 跨塔 feature），或直接更深的 collision hunt（两洞补齐后仍 0 merge → 更强的 `NO_COLLISION_OBSERVED`）。第一次真实 same-scope merge → 立即停 + witness + CEGAR 分类（安全 → Safety CEGAR；unsafe → Minimal Identity Refinement）。
+2. **multi-Region candidate-key generalization 路线**：5.5a shadow+boundary corpus → 5.5b corpus expansion → 5.5c collision hunt（semantic-diversity + hole-closure gates）→ 5.5d production-faithful fixture（inventory 已补）→ 5.5e visitedFloors/changeFloor surface → 5.5f collision CEGAR/minimal refinement（只有证据允许时）。
 3. **reachability 缓存/复用**（性能下一热点）：enumerateActions 内的 walk 是 B 侧新热点，候选 key 已把总 BFS 从 266 降到 123，进一步做 cache/reuse。
 4. **fast CI <3min**（P2-1 carry）：当前 fast ≈3m26s（solver-job / route-free / candidate-smoke 串行主导）。要达标需在 fast 内部按分支并行，wall = max(各分支)。建议独立 CI-INFRA PR。
 5. **DIAG-HYGIENE carry**：paired benchmark 旧 control `candidateProductionProfileDefaultOff:true` 与 PR-5.4f 后默认语义不符，改为 `approvedMt1CandidateDefaultOn` + `explicitProductionRollbackAvailable` 或删除；与 CI-INFRA 一起修。
