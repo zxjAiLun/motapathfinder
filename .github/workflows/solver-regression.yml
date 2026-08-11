@@ -120,6 +120,20 @@ jobs:
       - run: npm ci
       - run: npm run bench:real-route:mt4-manual
 
+  qualification-post-mt5-baseline:
+    needs: qualification-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run check:post-mt5-long-chain-baseline
+
   qualification-promotion-contract:
     needs: qualification-gate
     runs-on: ubuntu-latest
@@ -218,6 +232,7 @@ jobs:
       - qualification-promotion
       - qualification-benchmark
       - qualification-real-route-performance
+      - qualification-post-mt5-baseline
       - qualification-promotion-contract
       - qualification-post-promotion-regression
       - qualification-multi-region-key-shadow
@@ -226,4 +241,4 @@ jobs:
     if: needs.qualification-gate.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Full qualification passed (fast + key-analysis + promotion + micro benchmark + real-route performance + promotion-contract + post-promotion-regression + multi-region-key-shadow + multi-region-boundary-matrix + workload matrix)"
+      - run: echo "Full qualification passed (fast + key-analysis + promotion + micro benchmark + real-route performance + post-MT5 baseline + promotion-contract + post-promotion-regression + multi-region-key-shadow + multi-region-boundary-matrix + workload matrix)"

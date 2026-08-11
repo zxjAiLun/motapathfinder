@@ -2082,6 +2082,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.7c tracked MT4 long-chain requalification: every resource-timing milestone through MT5 blueKing closes within 500 expansions per segment, with no action trimming or budget exhaustion and a strict recorded-decision replay"
     },
+    "shared-solver/check-post-mt5-long-chain-baseline.js": {
+      "grade": "local-regression",
+      "allowsNotFound": true,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.8a fixed-expansion and no-wall-timeout observation of the existing post-MT5 graph; pins mt7-special80-ready as the first failure, excludes trimming/budget exhaustion, strictly replays the reached prefix, and records the reversed MT6 defense-resource order for the next refinement"
+    },
     "shared-solver/check-mt5-route-repair-closure.js": {
       "grade": "closure",
       "allowsNotFound": false,
