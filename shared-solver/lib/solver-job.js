@@ -14,6 +14,7 @@ const { buildStateKey } = require("./state-key");
 const { verifyRouteObjective, replayRouteFile } = require("./live-replay");
 const { SolverProgressAccumulator } = require("./solver-progress");
 const { classifyJobFailure, buildSolverJobResult } = require("./solver-job-result");
+const { buildResultSearchOutcome } = require("./search-outcome");
 const { SOLVE_TASK_SCHEMA } = require("./solve-task");
 const { fingerprintJson } = require("./solve-task");
 
@@ -259,8 +260,14 @@ function makeStrictReplayFailure(error) {
 }
 
 function buildDiagnosticsSummary(result, proofClaim) {
+  const searchOutcome = buildResultSearchOutcome(result);
   return {
     found: Boolean(result && result.found),
+    searchOutcome,
+    goalFound: searchOutcome.goalFound,
+    frontierExhausted: searchOutcome.frontierExhausted,
+    budgetExhausted: searchOutcome.budgetExhausted,
+    searchComplete: searchOutcome.searchComplete,
     reachedMilestone: result && result.reachedMilestone || null,
     failedSegmentId: result && result.failedSegment && result.failedSegment.segmentId || null,
     failureClass: result && result.failedSegment && result.failedSegment.failureClass || null,

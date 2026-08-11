@@ -193,6 +193,9 @@ function buildSolverJobResult({
     finishedAt: finishedAt || null,
     durationMs: started && finished ? Math.max(0, finished - started) : null,
     found: Boolean(found),
+    searchOutcome: diagnostics && diagnostics.searchOutcome
+      ? cloneJson(diagnostics.searchOutcome)
+      : null,
     failure: failure ? cloneJson(failure) : null,
     proof: proofClaim ? cloneJson(proofClaim) : null,
     objective: objective

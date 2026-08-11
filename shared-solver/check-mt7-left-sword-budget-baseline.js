@@ -5,9 +5,9 @@
  *
  * PR-5.8c starts from the strict-replay-qualified special80 state produced by
  * PR-5.8b and observes mt7-left-sword under the same deterministic 500
- * expansion budget. A not-found result is expected. This check records the
- * live frontier and goal-progress diagnostics before any checkpoint, budget,
- * key, dominance, or selection change is considered.
+ * expansion budget. The goal is found while the skyline remains incomplete.
+ * This check records the live frontier and goal-progress diagnostics without
+ * changing checkpoint, budget, key, dominance, or selection behavior.
  */
 
 const assert = require("node:assert");
@@ -82,6 +82,7 @@ function summarizeAttempt(attempt) {
     stoppedReason: dp.stoppedReason || null,
     actionTrimmed: Number(diagnostics.actionTrimmed || dp.actionTrimmed || 0),
     expansionBudgetExhausted: dp.expansionBudgetExhausted === true,
+    searchOutcome: dp.searchOutcome || null,
     uniqueBattleTargets: Number(diagnostics.uniqueBattleTargets || 0),
     uniquePortalEntries: Number(diagnostics.uniquePortalEntries || 0),
     actionsGeneratedByKind: diagnostics.actionsGeneratedByKind || {},
@@ -232,6 +233,13 @@ function main() {
   assert.strictEqual(isolatedAttempts[0].actionTrimmed, 0);
   assert.notStrictEqual(isolatedAttempts[0].stoppedReason, "time-limit");
   assert.strictEqual(isolatedAttempts[0].expansionBudgetExhausted, true);
+  assert.deepStrictEqual(isolatedAttempts[0].searchOutcome, {
+    goalFound: true,
+    frontierExhausted: false,
+    budgetExhausted: true,
+    searchComplete: false,
+    outcomeClass: "goal-found-search-incomplete",
+  });
   assert.strictEqual(isolatedAttempts[0].expansions, MAX_EXPANSIONS_PER_SEGMENT);
   assert.ok(isolatedAttempts[0].frontierSize > 0);
   const isolatedReplay = buildStrictReplayEvidence(
@@ -363,6 +371,7 @@ function main() {
       liveFrontierAtBudgetStop: true,
       noWallTimeout: true,
       notANotFoundFailure: true,
+      outcomeTaxonomyQualified: true,
       leftSwordStrictReplayQualified: true,
       longHorizonStrictReplayDeferred: true,
       repairDeferred: true,

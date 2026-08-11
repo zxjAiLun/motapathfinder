@@ -23,6 +23,7 @@ const { getFloorOrder } = require("./floor-id");
 const { compileGoalDependencyGraph } = require("./goal-dependency-graph");
 const { compileAdmissibleFeasibilityBounds } = require("./goal-feasibility-bounds");
 const reachAndBattleOracle = require("./reach-and-battle-oracle");
+const { buildSearchOutcome } = require("./search-outcome");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -2741,9 +2742,12 @@ function searchSegmentDP(simulator, startState, segment, options) {
   });
   const baseDpDiagnostics = (result.diagnostics && result.diagnostics.dp) || {};
   const expansionBudgetExhausted =
-    Number(result.expansions || 0) >= maxExpansions &&
-    Number(result.frontierSize || 0) > 0 &&
-    !baseDpDiagnostics.stoppedReason;
+    typeof baseDpDiagnostics.expansionBudgetExhausted === "boolean"
+      ? baseDpDiagnostics.expansionBudgetExhausted
+      : Number(result.expansions || 0) >= maxExpansions &&
+        Number(result.frontierSize || 0) > 0 &&
+        !baseDpDiagnostics.stoppedReason &&
+        !(baseDpDiagnostics.stopOnFirstGoal && result.foundGoal);
   const goalStates =
     Array.isArray(result.goalSkylineStates) &&
     result.goalSkylineStates.length > 0
@@ -2757,9 +2761,19 @@ function searchSegmentDP(simulator, startState, segment, options) {
       dpConfig.preserveSkylineRoles === true,
     preserveGoalArchive: dpConfig.preserveGoalArchive === true,
   });
+  const searchOutcome = buildSearchOutcome({
+    goalFound: goalSkyline.length > 0,
+    frontierSize: result.frontierSize,
+    expansionBudgetExhausted,
+    stoppedReason: baseDpDiagnostics.stoppedReason,
+    cancelled: baseDpDiagnostics.cancelled,
+    actionTrimmed: baseDpDiagnostics.actionTrimmed,
+    stopOnFirstGoal: baseDpDiagnostics.stopOnFirstGoal,
+  });
   return {
     segmentId: segment.id,
     found: goalSkyline.length > 0,
+    searchOutcome,
     startCandidateId: config.candidateId || null,
     goalSkyline,
     bestSeen: result.bestSeenState,
@@ -2774,6 +2788,11 @@ function searchSegmentDP(simulator, startState, segment, options) {
         maxRuntimeMs,
         maxActionsPerState,
         expansionBudgetExhausted,
+        searchOutcome,
+        goalFound: searchOutcome.goalFound,
+        frontierExhausted: searchOutcome.frontierExhausted,
+        budgetExhausted: searchOutcome.budgetExhausted,
+        searchComplete: searchOutcome.searchComplete,
         oracle: oracleDiagnostics || null,
         depth: (result.diagnostics && result.diagnostics.depth) || null,
         routeFree: (result.diagnostics && result.diagnostics.routeFree) || null,

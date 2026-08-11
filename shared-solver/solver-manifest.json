@@ -1362,6 +1362,22 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/search-outcome.js": {
+      "id": "search-outcome",
+      "path": "shared-solver/lib/search-outcome.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "outcome-taxonomy",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.8f canonical diagnostic taxonomy keeps goal discovery, frontier exhaustion, budget exhaustion, and search completeness orthogonal without changing search behavior"
+    },
     "shared-solver/lib/search-profiles.js": {
       "id": "search-profiles",
       "path": "shared-solver/lib/search-profiles.js",
@@ -2116,6 +2132,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.8e synthetic resolver controls: retain same-choice travel variants, choose a unique exact-post match, fail closed and order-independently when no exact match can disambiguate, and use recorded path or stable variant identity when multiple variants share the exact post-state"
+    },
+    "shared-solver/check-search-outcome-taxonomy.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.8f truth-table, doctor, and solver-job projection controls; found plus incomplete must remain a successful feasible route, with the real MT7 witness qualified separately"
     },
     "shared-solver/check-mt5-route-repair-closure.js": {
       "grade": "closure",

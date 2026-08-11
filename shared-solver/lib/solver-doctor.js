@@ -1,5 +1,7 @@
 "use strict";
 
+const { buildResultSearchOutcome } = require("./search-outcome");
+
 function number(value) {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -179,6 +181,12 @@ function stoppedReasons(attempts) {
   return unique(attempts.map((attempt) => attemptDp(attempt).stoppedReason));
 }
 
+function allResultAttempts(result) {
+  return ((result && result.segmentResults) || []).flatMap((segment) =>
+    segmentAttempts(segment),
+  );
+}
+
 function doctorRecommendation(failureClass, evidence) {
   const reasons = new Set(evidence.stoppedReasons || []);
   if (reasons.has("time-limit"))
@@ -259,6 +267,10 @@ function likelyCause(failureClass, evidence) {
 
 function buildDoctorLine(report) {
   if (!report || report.status === "solved") return "Doctor: solved.";
+  if (report.status === "feasible-incomplete") {
+    const outcome = report.searchOutcome || {};
+    return `Doctor: goal found; search incomplete (frontierExhausted=${Boolean(outcome.frontierExhausted)}, budgetExhausted=${Boolean(outcome.budgetExhausted)}). The recorded route is feasible; the remaining frontier was not exhaustively classified.`;
+  }
   const evidenceParts = [];
   const evidence = report.evidence || {};
   if ((evidence.stoppedReasons || []).length > 0)
@@ -298,10 +310,35 @@ function buildDoctorLine(report) {
 }
 
 function buildSolverDoctorReport(result) {
+  const searchOutcome = buildResultSearchOutcome(result);
+  if (searchOutcome.goalFound) {
+    if (searchOutcome.searchComplete) {
+      return {
+        status: "solved",
+        searchOutcome,
+        line: "Doctor: solved.",
+      };
+    }
+    const attempts = allResultAttempts(result);
+    const report = {
+      status: "feasible-incomplete",
+      searchOutcome,
+      evidence: compactObject({
+        attempts: attempts.length,
+        stoppedReasons: stoppedReasons(attempts),
+        expansionBudgetExhaustedAttempts:
+          expansionBudgetExhaustedCount(attempts),
+        frontierSizeMax: maxAttemptMetric(attempts, "frontierSize"),
+      }),
+    };
+    report.line = buildDoctorLine(report);
+    return report;
+  }
   const failedSegment = (result && result.failedSegment) || null;
   if (!failedSegment) {
     return {
-      status: result && result.found === false ? "failed" : "solved",
+      status: "failed",
+      searchOutcome,
       line:
         result && result.found === false
           ? "Doctor: failed before a segment failure was available."
@@ -350,6 +387,7 @@ function buildSolverDoctorReport(result) {
   });
   const report = {
     status: "failed",
+    searchOutcome,
     failedSegmentId:
       failedSegment.segmentId || failedSegment.failedSegmentId || null,
     failureClass,

@@ -17,6 +17,7 @@ const {
   reconstructMaterializedActionEntries,
 } = require("./search-nodes");
 const { getActivePerfTracker, timeActivePhase } = require("./perf");
+const { buildSearchOutcome } = require("./search-outcome");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -2487,6 +2488,15 @@ function searchDP(simulator, initialState, options) {
     frontierSize > 0 &&
     !stoppedReason &&
     !(stopOnFirstGoal && firstGoalState);
+  const searchOutcome = buildSearchOutcome({
+    goalFound: Boolean(bestGoalState),
+    frontierSize,
+    expansionBudgetExhausted,
+    stoppedReason,
+    cancelled: stoppedReason === "cancel-requested",
+    actionTrimmed,
+    stopOnFirstGoal,
+  });
 
   return {
     foundGoal: Boolean(bestGoalState),
@@ -2505,6 +2515,7 @@ function searchDP(simulator, initialState, options) {
     frontierSize,
     stoppedReason,
     cancelled: stoppedReason === "cancel-requested",
+    searchOutcome,
     checkpointPool: createCheckpointPool(config.checkpointOptions),
     results: [bestGoalState, firstGoalState, ...goalSkylineStates].filter((state, index, list) => state && list.indexOf(state) === index),
     diagnostics: {
@@ -2639,6 +2650,11 @@ function searchDP(simulator, initialState, options) {
         expansions,
         frontierSize,
         expansionBudgetExhausted,
+        searchOutcome,
+        goalFound: searchOutcome.goalFound,
+        frontierExhausted: searchOutcome.frontierExhausted,
+        budgetExhausted: searchOutcome.budgetExhausted,
+        searchComplete: searchOutcome.searchComplete,
         completeWithinActionSet: actionTrimmed === 0,
         maxActionsPerState,
         actionTrimmed,
