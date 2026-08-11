@@ -1198,6 +1198,19 @@ function buildRouteRecord(input) {
       `route-store: reconstructed exact state differs from source final state; source=${expectedExactStateKey}; reconstructed=${actualExactStateKey}`,
     );
   }
+  if (typeof options.routeRecordObserver === "function") {
+    try {
+      options.routeRecordObserver({
+        decisions: cloneJson(decisions),
+        initialState: cloneJson(initialState),
+        reconstructedState: cloneJson(context.currentState),
+        expectedExactStateKey,
+        reconstructedExactStateKey: actualExactStateKey,
+      });
+    } catch (error) {
+      // Route-record observation is diagnostic-only and must not affect writes.
+    }
+  }
   const strictFinalState = strictReplayRecordedDecisions(project, simulator, initialState, decisions);
   const strictFinalExactStateKey = buildStateKey(strictFinalState);
   if (strictFinalExactStateKey !== expectedExactStateKey) {

@@ -2103,6 +2103,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.8c fixed-500 attribution from the exact strict-replay-qualified special80 state: left-sword is feasible and strictly replayable even though its skyline remains live at the expansion ceiling; distinguishes found=true/incomplete-skyline from a route-search failure without changing production search semantics"
     },
+    "shared-solver/check-mt7-mt8-strict-replay-attribution.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.8d attribution-only contract: the special80-to-MT8 winner and 13-decision lineage are continuous, while decision 13 proves three distinct changeFloor travel variants share one recorded fingerprint and strict replay drops the exact-post matching variant during early fingerprint deduplication"
+    },
     "shared-solver/check-mt5-route-repair-closure.js": {
       "grade": "closure",
       "allowsNotFound": false,
