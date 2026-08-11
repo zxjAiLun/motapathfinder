@@ -433,7 +433,8 @@
         "segmentClosure": true,
         "fullClosure": false,
         "cleanCheckout": true
-      }
+      },
+      "notes": "PR-5.5e adds observation-only parentFloorId/parentVisitedFloors transition provenance when candidateKeyShadowRecorder is enabled; these fields never enter keys, pruning, dominance, ranking, or production behavior"
     },
     "shared-solver/lib/dual-key-shadow.js": {
       "id": "dual-key-shadow",
@@ -2664,7 +2665,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.5c Cross-Topology/Inventory hunt: 19 workloads incl. cross-tower whiteisland A1 door-key (inventory acquire/consume distinct 11, visitedFloors 2), per-region project support, semantic-diversity report (true union) + gate, collision scoping by region-execution-context/boundaryIndex, production-legal actions via actual milestone segment, 6 detector controls + witness path, verdict pinned NO_COLLISION_OBSERVED"
+      "notes": "PR-5.5d/5.5e tracked same-project hole closure: 19-workload matrix stays 44/44/535 with Start green-key acquire/openDoor consume; maintained mt1-mt2 fixture live-replays an exact recorded travel variant to a real MT1->MT2 changeFloor edge, with fail-closed parent/floor/visited provenance controls. Both holes filled, candidate collision remains absent, verdict pinned NO_COLLISION_OBSERVED"
     }
   }
 }

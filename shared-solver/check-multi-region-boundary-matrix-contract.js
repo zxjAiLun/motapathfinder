@@ -16,7 +16,7 @@
  * (field-level candidate-projection diff + boundary/CEGAR evidence) is saved to
  * runs/generated/ and the contract stops with needs-review (non-zero exit).
  *
- * Workload matrix (18 workloads):
+ * Workload matrix (19 workloads):
  *   R0 frontier variants (explicit goals, P2-3 closed):
  *     exp2, exp6, exp8, exp9, tileRemoved(MT1 4,1)  (x entryA)
  *   R1 boundary variants (x R0 exp6, calibrated goals so R1 really searches):
@@ -31,13 +31,13 @@
  *   (the PR-5.5c deep-search fixture was REMOVED: it produced no corpus
  *   increment — post 10->10 — while r0-exp2-entryB reached 26 samples; see
  *   P2-3.  Depth doubling does not enrich semantic diversity.)
- *   PR-5.5c Cross-Topology / Inventory Collision Hunt:
- *     cross-tower workload (wi-a1-door-key-entryA): R0 approved OnlyUp MT1 ->
- *     R1 REAL second tower (whiteisland A1) where the search must pick up
- *     yellow keys and OPEN a door — genuine inventory acquire/consume
- *     (inventory distinct > 1) and floor mutations; the cross-tower boundary
- *     carries the MT1 history into A1's arrival semantics (visitedFloors > 1).
- *     Per-region projects: each region context loads ITS OWN tower project.
+ *   PR-5.5d tracked classic-tower fixture:
+ *     Start sealed key room (same OnlyUp project) supplies real green-key
+ *     acquire -> openDoor consume evidence; no untracked/cross-project tower.
+ *   PR-5.5e tracked changeFloor surface:
+ *     the maintained mt1-mt2 route fixture is live-replayed through the current
+ *     simulator to a real parent -> changeFloor -> child edge.  This closes the
+ *     visitedFloors surface without changing the 19-workload search matrix.
  *
  * PR-5.5c Continuation: semantic-diversity report (distinct production-identity
  * dimension values per workload + TRUE global union across all records) and a
@@ -83,7 +83,14 @@ const { compileTowerIR } = require("./lib/tower-ir");
 const { makeSimulator, createStartState, materializeNextRegionFrontier, exactStateFingerprint } = require("./lib/solver-job");
 const { runMilestoneGraph, buildSegmentActionProvider } = require("./lib/segment-dp");
 const { buildRegionMilestoneSpec } = require("./lib/region-spec");
+const { buildProjectFingerprint } = require("./lib/region-entry-validator");
+const {
+  enumerateRecordedActionCandidates,
+  normalizeAction,
+  readRouteFile,
+} = require("./lib/route-store");
 const { listFloorMutationSummary } = require("./lib/state");
+const { buildStateKey } = require("./lib/state-key");
 const { buildStateBehavior, buildStateProjection, classifyPair } = require("./lib/key-dependency-corpus");
 const { compileExecutableSolveTask } = require("./lib/solve-task");
 const { resolveDpKeyProfile, EXPERIMENTAL_PROFILE, PRODUCTION_PROFILE } = require("./lib/guarded-candidate-key");
@@ -99,6 +106,12 @@ const ROOT = path.resolve(__dirname, "..");
 const ONLY_UP_ROOT = path.join(ROOT, "Only upV2.1", "Only upV2.1");
 const SMOKE_SPEC_FILE = path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json");
 const WITNESS_DIR = path.join(ROOT, "runs", "generated", "mr-boundary-corpus");
+const VISITED_FLOORS_FIXTURE_FILE = path.join(
+  __dirname,
+  "routes",
+  "fixtures",
+  "mt1-mt2-hp3834.route.json",
+);
 
 const project = loadProject(ONLY_UP_ROOT);
 const smokeSpec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
@@ -434,6 +447,161 @@ function regionContextFor(spec, index) {
     // forbidden by the policy never enter the research classification.
     legalActionProvider: buildSegmentActionProvider(simulator, segment),
     policyOnlyProvider: buildSegmentActionProvider(simulator, { actionPolicy: spec.actionPolicy || {} }),
+  };
+}
+
+function visitedFloorsTransitionSpec() {
+  return {
+    ...JSON.parse(JSON.stringify(smokeSpec)),
+    id: "onlyup-5.5e-visited-floors-transition",
+    scope: { floors: ["MT1", "MT2"] },
+    start: { type: "floor", floorId: "MT1", x: 6, y: 7, direction: "down" },
+    goal: { type: "heroAtLeast", floorId: "MT2", minHero: { exp: 999999 } },
+    actionPolicy: {
+      allowedFloors: ["MT1", "MT2"],
+      actionKinds: [
+        "battle",
+        "event",
+        "pickup",
+        "interactPickup",
+        "equip",
+        "openDoor",
+        "useTool",
+        "changeFloor",
+        "floorFly",
+      ],
+    },
+  };
+}
+
+function samePoint(left, right) {
+  if (!left && !right) return true;
+  if (!left || !right) return false;
+  return Number(left.x) === Number(right.x) && Number(left.y) === Number(right.y) &&
+    String(left.floorId || "") === String(right.floorId || "");
+}
+
+function findRecordedVariant(simulator, state, decision) {
+  const candidates = enumerateRecordedActionCandidates(simulator, state).actions;
+  return candidates.find((candidate) => {
+    const normalized = normalizeAction(candidate);
+    return normalized.fingerprint === decision.fingerprint &&
+      JSON.stringify(normalized.path || []) === JSON.stringify(decision.path || []) &&
+      samePoint(normalized.stance, decision.stance) &&
+      normalized.direction === (decision.direction || null);
+  }) || null;
+}
+
+// PR-5.5e production-faithful visitedFloors surface.  This is NOT a synthetic
+// state injection and not a second-project campaign: replay the maintained,
+// tracked OnlyUp route through the current simulator until its first recorded
+// changeFloor choice, enumerate that exact travel variant, and apply it.  The
+// returned edge is current-state evidence; legacy fixture stateKey strings are
+// diagnostics only because their serialized empty-floor representation predates
+// the current state-key contract.
+function trackedChangeFloorTransitionEvidence() {
+  assert.ok(fs.existsSync(VISITED_FLOORS_FIXTURE_FILE), "tracked changeFloor fixture must exist");
+  const record = readRouteFile(VISITED_FLOORS_FIXTURE_FILE);
+  assert.strictEqual(record.schema, "motapathfinder.route.v1");
+  assert.strictEqual(record.source && record.source.projectTitle, "Only Up");
+  const decisionIndex = (record.decisions || []).findIndex((decision) =>
+    decision.kind === "changeFloor" && decision.floorId === "MT1");
+  assert.ok(decisionIndex >= 0, "tracked route must contain an MT1 changeFloor decision");
+
+  const spec = visitedFloorsTransitionSpec();
+  const context = regionContextFor(spec, "5.5e-change-floor");
+  const simulator = context.simulator;
+  let state = simulator.createInitialState({ rank: record.source && record.source.rank || "chaos" });
+  for (let index = 0; index < decisionIndex; index += 1) {
+    const decision = record.decisions[index];
+    const action = findRecordedVariant(simulator, state, decision);
+    assert.ok(action, `tracked route decision ${index + 1} must enumerate its recorded travel variant: ${decision.summary}`);
+    state = simulator.applyAction(state, action);
+  }
+
+  const decision = record.decisions[decisionIndex];
+  const parentState = state;
+  const action = findRecordedVariant(simulator, parentState, decision);
+  assert.ok(action, "tracked changeFloor decision must enumerate its exact recorded travel variant");
+  assert.strictEqual(action.kind, "changeFloor");
+  const normalizedAction = normalizeAction(action);
+  assert.strictEqual(normalizedAction.fingerprint, decision.fingerprint);
+  const childState = simulator.applyAction(parentState, action);
+  const parentVisitedFloors = Object.keys(parentState.visitedFloors || {}).sort();
+  const childVisitedFloors = Object.keys(childState.visitedFloors || {}).sort();
+  assert.strictEqual(parentState.floorId, "MT1");
+  assert.strictEqual(childState.floorId, "MT2");
+  assert.deepStrictEqual(parentVisitedFloors, ["MT1"]);
+  assert.deepStrictEqual(childVisitedFloors, ["MT1", "MT2"]);
+
+  const recordBase = {
+    regionContext: context,
+    project,
+    candidateProfile: CANDIDATE_PROFILE,
+    exactKeyConfig: { dpKeyMode: "region" },
+    regionIndex: 0,
+    regionId: context.id,
+  };
+  const parentRecord = buildCorpusRecord({
+    ...recordBase,
+    state: parentState,
+    layer: "change-floor-parent",
+  });
+  const childRecord = buildCorpusRecord({
+    ...recordBase,
+    state: childState,
+    layer: "change-floor-child",
+  });
+  const partition = auditStatePartition([parentRecord, childRecord]);
+  const parentFingerprint = exactStateFingerprint(parentState);
+  const childFingerprint = exactStateFingerprint(childState);
+  assert.notStrictEqual(parentFingerprint, childFingerprint);
+  assert.notStrictEqual(parentRecord.productionDpKey, childRecord.productionDpKey);
+  assert.notStrictEqual(parentRecord.candidateDpKey, childRecord.candidateDpKey);
+  assert.strictEqual(partition.mergedCandidateKeyCount, 0);
+
+  return {
+    edge: {
+      state: childState,
+      parentStateKey: buildStateKey(parentState),
+      parentExactStateFingerprint: parentFingerprint,
+      parentFloorId: parentState.floorId,
+      parentVisitedFloors,
+      parentInventory: JSON.parse(JSON.stringify(parentState.inventory || {})),
+      parentMutations: mutationSummaryFingerprintOf(parentState.floorStates),
+      actionKind: action.kind,
+      actionSummary: action.summary,
+    },
+    records: [parentRecord, childRecord],
+    report: {
+      fixture: path.relative(__dirname, VISITED_FLOORS_FIXTURE_FILE).replace(/\\/g, "/"),
+      projectFingerprint: buildProjectFingerprint(project).fingerprintSha256,
+      routeSourceCommit: record.source && record.source.commit || null,
+      decisionIndex: decisionIndex + 1,
+      prefixDecisionsReplayed: decisionIndex,
+      actionSummary: action.summary,
+      actionFingerprint: normalizedAction.fingerprint,
+      recordedTravelVariantMatched: true,
+      liveActionApplied: true,
+      parentFloorId: parentState.floorId,
+      childFloorId: childState.floorId,
+      parentVisitedFloors,
+      childVisitedFloors,
+      visitedFloorAdded: childVisitedFloors.filter((floorId) => !parentVisitedFloors.includes(floorId)),
+      parentExactStateFingerprint: parentFingerprint,
+      childExactStateFingerprint: childFingerprint,
+      legacyPreStateKeyMatchesCurrent: decision.preStateKey === buildStateKey(parentState),
+      legacyPostStateKeyMatchesCurrent: decision.postStateKey === buildStateKey(childState),
+      legacyStateKeysAuthoritative: false,
+      productionIdentityChanged: parentRecord.productionDpKey !== childRecord.productionDpKey,
+      candidateIdentityChanged: parentRecord.candidateDpKey !== childRecord.candidateDpKey,
+      candidateCollisionObserved: parentRecord.candidateDpKey === childRecord.candidateDpKey,
+      transitionPartition: {
+        splitExactKeyCount: partition.splitExactKeyCount,
+        mergedCandidateKeyCount: partition.mergedCandidateKeyCount,
+        partitionRelation: partition.partitionRelation,
+      },
+    },
   };
 }
 
@@ -810,20 +978,93 @@ function visitedFloorsHoleClosureOf(analysis) {
     sets.add(JSON.stringify(floors));
     maxVisitedFloorCount = Math.max(maxVisitedFloorCount, floors.length);
   });
-  // Supplementary transition-level flags (honest current values): a real
-  // changeFloor action edge, an arrival entry transform, and post-arrival
-  // search records.
-  const changeFloorExecuted = edges.some((r) => r.actionKind === "changeFloor");
+  // A real changeFloor edge must carry parent provenance and prove that the
+  // live action changed floors while preserving prior visits and adding the
+  // destination.  A bare actionKind string, an arrival transform, or two
+  // unrelated states is not enough.
+  const changeFloorEdges = edges.filter((record) => {
+    if (record.actionKind !== "changeFloor" || !record.parentStateKey) return false;
+    if (!record.parentFloorId || !Array.isArray(record.parentVisitedFloors)) return false;
+    const childFloorId = record.state && record.state.floorId;
+    const childVisited = Object.keys(record.state && record.state.visitedFloors || {}).sort();
+    if (!childFloorId || childFloorId === record.parentFloorId) return false;
+    if (record.parentVisitedFloors.includes(childFloorId)) return false;
+    if (!childVisited.includes(record.parentFloorId) || !childVisited.includes(childFloorId)) return false;
+    return record.parentVisitedFloors.every((floorId) => childVisited.includes(floorId));
+  });
+  const changeFloorExecuted = changeFloorEdges.length > 0;
   const arrivalExecuted = (analysis.corpus.entryTransformsApplied || 0) > 0;
   const postArrivalSearchObserved = edges.length > 0;
+  const firstChangeFloor = changeFloorEdges[0] || null;
   return {
     maxVisitedFloorCount,
     visitedFloorSets: Array.from(sets).slice(0, 5),
     distinctSets: sets.size,
     changeFloorExecuted,
+    changeFloorTransitionCount: changeFloorEdges.length,
+    changeFloorWitness: firstChangeFloor ? {
+      actionSummary: firstChangeFloor.actionSummary || null,
+      parentFloorId: firstChangeFloor.parentFloorId,
+      childFloorId: firstChangeFloor.state.floorId,
+      parentVisitedFloors: firstChangeFloor.parentVisitedFloors.slice(),
+      childVisitedFloors: Object.keys(firstChangeFloor.state.visitedFloors || {}).sort(),
+      parentExactStateFingerprint: firstChangeFloor.parentExactStateFingerprint || null,
+      childExactStateFingerprint: exactStateFingerprint(firstChangeFloor.state),
+    } : null,
     arrivalExecuted,
     postArrivalSearchObserved,
     filled: maxVisitedFloorCount >= 2 && changeFloorExecuted,
+  };
+}
+
+function visitedFloorsTransitionControls() {
+  const state = (floorId, visitedFloors) => ({
+    floorId,
+    visitedFloors: visitedFloors.reduce((result, id) => {
+      result[id] = true;
+      return result;
+    }, {}),
+  });
+  const edge = (overrides) => ({
+    state: state("MT2", ["MT1", "MT2"]),
+    parentStateKey: "parent-key",
+    parentFloorId: "MT1",
+    parentVisitedFloors: ["MT1"],
+    actionKind: "changeFloor",
+    actionSummary: "changeFloor@MT1:6,0",
+    ...overrides,
+  });
+  const analyze = (records, edges) => visitedFloorsHoleClosureOf({
+    corpus: { records, postRawRecords: edges, entryTransformsApplied: 0 },
+  });
+  const noParentEdge = analyze(
+    [{ state: state("MT2", ["MT1", "MT2"]) }],
+    [edge({ parentStateKey: null })],
+  );
+  const noFloorChange = analyze(
+    [{ state: state("MT1", ["MT1", "MT2"]) }],
+    [edge({ state: state("MT1", ["MT1", "MT2"]) })],
+  );
+  const noVisitIncrement = analyze(
+    [{ state: state("MT2", ["MT1"]) }],
+    [edge({ state: state("MT2", ["MT1"]) })],
+  );
+  const positive = analyze(
+    [
+      { state: state("MT1", ["MT1"]) },
+      { state: state("MT2", ["MT1", "MT2"]) },
+    ],
+    [edge({})],
+  );
+  assert.strictEqual(noParentEdge.filled, false, "visitedFloors negative control: no parent edge must fail closed");
+  assert.strictEqual(noFloorChange.filled, false, "visitedFloors negative control: same-floor action must fail closed");
+  assert.strictEqual(noVisitIncrement.filled, false, "visitedFloors negative control: missing destination visit must fail closed");
+  assert.strictEqual(positive.filled, true, "visitedFloors positive control: real floor change with visit increment must fill");
+  return {
+    noParentEdgeFilled: noParentEdge.filled,
+    noFloorChangeFilled: noFloorChange.filled,
+    noVisitIncrementFilled: noVisitIncrement.filled,
+    positiveFilled: positive.filled,
   };
 }
 
@@ -1424,9 +1665,19 @@ async function main() {
     mergedAnalysis.corpus.postRawRecords = mergedAnalysis.corpus.postRawRecords.concat(analysis.corpus.postRawRecords || []);
     mergedAnalysis.corpus.entryTransformsApplied += analysis.corpus.entryTransformsApplied || 0;
   });
+  const matrixParentEdges = mergedAnalysis.corpus.postRawRecords.filter((record) => record.parentStateKey);
+  const transitionProvenanceVisitedFloorsComplete = matrixParentEdges.length > 0 &&
+    matrixParentEdges.every((record) =>
+      Boolean(record.parentFloorId) && Array.isArray(record.parentVisitedFloors));
+  assert.ok(transitionProvenanceVisitedFloorsComplete,
+    "all observed DP parent edges must expose parent floor/visitedFloors provenance");
   const inventoryHoleClosure = inventoryHoleClosureOf(mergedAnalysis);
+  const trackedChangeFloorTransition = trackedChangeFloorTransitionEvidence();
+  mergedAnalysis.corpus.records = mergedAnalysis.corpus.records.concat(trackedChangeFloorTransition.records);
+  mergedAnalysis.corpus.postRawRecords.push(trackedChangeFloorTransition.edge);
   const visitedFloorsHoleClosure = visitedFloorsHoleClosureOf(mergedAnalysis);
   const inventoryTransitionControlsResult = inventoryTransitionControls();
+  const visitedFloorsTransitionControlsResult = visitedFloorsTransitionControls();
   // Fail-closed consistency: a filled claim MUST be backed by its evidence.
   if (inventoryHoleClosure.filled) {
     assert.ok(inventoryHoleClosure.distinctInventories >= 2, "inventory hole filled claim requires >=2 distinct inventories");
@@ -1439,12 +1690,18 @@ async function main() {
   assert.strictEqual(inventoryTransitionControlsResult.negative1Filled, false, "transition control (negative-1): state-pair diversity must not be read as acquire/consume");
   assert.strictEqual(inventoryTransitionControlsResult.negative2Filled, false, "transition control (negative-2): key decrease without canonical mutation change must not be consume");
   assert.strictEqual(inventoryTransitionControlsResult.positiveFilled, true, "transition control (positive): real pickup->openDoor edges must fill");
+  assert.strictEqual(visitedFloorsTransitionControlsResult.noParentEdgeFilled, false, "visitedFloors transition control: no-parent edge must fail closed");
+  assert.strictEqual(visitedFloorsTransitionControlsResult.noFloorChangeFilled, false, "visitedFloors transition control: same-floor action must fail closed");
+  assert.strictEqual(visitedFloorsTransitionControlsResult.noVisitIncrementFilled, false, "visitedFloors transition control: missing visit increment must fail closed");
+  assert.strictEqual(visitedFloorsTransitionControlsResult.positiveFilled, true, "visitedFloors transition control: real changeFloor edge must fill");
+  assert.strictEqual(trackedChangeFloorTransition.report.candidateCollisionObserved, false,
+    "5.5e tracked changeFloor edge does not authorize candidate-key refinement without a real merge");
   const semanticNarrownessFindings = {
     inventory: inventoryHoleClosure.filled
       ? `filled: ${inventoryHoleClosure.distinctInventories} distinct, acquire=${inventoryHoleClosure.acquireKey}, consume=${inventoryHoleClosure.consumeKey}`
       : `OPEN: no tracked single-project fixture provides real inventory acquire->consume (MT1 has none; sample floors are wall-blocked / wrong-key / search-explosive; Start seals its keys inside the door ring)`,
     visitedFloors: visitedFloorsHoleClosure.filled
-      ? `filled: maxVisitedFloorCount=${visitedFloorsHoleClosure.maxVisitedFloorCount}`
+      ? `filled: maxVisitedFloorCount=${visitedFloorsHoleClosure.maxVisitedFloorCount}, tracked ${trackedChangeFloorTransition.report.actionSummary} parent->child edge`
       : `OPEN: no tracked single-project fixture reaches a second floor via a real transition (MT1 stairs unreachable; whiteisland data is untracked in git)`,
   };
   // Synthetic aggregation regression control: per-workload counts of 1 must
@@ -1472,6 +1729,7 @@ async function main() {
       semanticGateMet,
       everyWorkloadHasSemanticVariation,
       globalSemanticCoverage,
+      transitionProvenanceVisitedFloorsComplete,
       semanticAggregationControl: {
         globalInventoryUnion: aggregationControl.globalInventoryUnion,
         globalMutationUnion: aggregationControl.globalMutationUnion,
@@ -1507,7 +1765,9 @@ async function main() {
     semanticNarrownessFindings,
     inventoryHoleClosure,
     visitedFloorsHoleClosure,
+    trackedChangeFloorTransition: trackedChangeFloorTransition.report,
     inventoryTransitionControls: inventoryTransitionControlsResult,
+    visitedFloorsTransitionControls: visitedFloorsTransitionControlsResult,
     holeClosureSummary: {
       inventoryFilled: inventoryHoleClosure.filled,
       visitedFloorsFilled: visitedFloorsHoleClosure.filled,

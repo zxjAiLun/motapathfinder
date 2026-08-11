@@ -1625,6 +1625,12 @@ function searchDP(simulator, initialState, options) {
           parentMutations: parentNode && parentNode.state
             ? (() => { try { return JSON.stringify(listFloorMutationSummary(parentNode.state.floorStates || {})); } catch (error) { return null; } })()
             : null,
+          parentFloorId: parentNode && parentNode.state
+            ? parentNode.state.floorId || null
+            : null,
+          parentVisitedFloors: parentNode && parentNode.state
+            ? Object.keys(parentNode.state.visitedFloors || {}).sort()
+            : null,
           actionKind: sourceAction ? sourceAction.kind : null,
           actionSummary: sourceAction ? (sourceAction.summary || null) : null,
         });
