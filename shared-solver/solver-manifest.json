@@ -800,6 +800,22 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/mt5-feasibility-surface.js": {
+      "id": "mt5-feasibility-surface",
+      "path": "shared-solver/lib/mt5-feasibility-surface.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "diagnostics",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "Observation-only MT5 near-term admissible evidence builder: measures item gains by executing real tower effects, resolves the declared floor graph, and reports level-up atk/def and I608 exp-multiplier unsoundness instead of folding them into a constant bound; writes no milestone JSON and never reaches pruning"
+    },
     "shared-solver/lib/movement-hazards.js": {
       "id": "movement-hazards",
       "path": "shared-solver/lib/movement-hazards.js",
@@ -2044,6 +2060,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "thin compatibility wrapper around check-mt5-51533-next-smoke.js"
+    },
+    "shared-solver/check-mt5-feasibility-surface.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "MT5 near-term feasibility surface contract: clause expressibility, measured gain provenance, level-up/I608 unsoundness guards, the constant-bound-cannot-prune-third-gate result, and zero-false-prune controls with a live floor-graph refutation"
     },
     "shared-solver/check-mt5-route-repair-closure.js": {
       "grade": "closure",

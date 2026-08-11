@@ -33,6 +33,7 @@ jobs:
       - run: npm run check:walk-reachability-fast-path
       - run: npm run check:goal-directed-search
       - run: npm run check:eval-vector
+      - run: npm run check:mt5-feasibility-surface
 
   # =====================================================================
   # Tier 3 — Qualification gate. Runs only for marker commits

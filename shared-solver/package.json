@@ -183,6 +183,7 @@
     "check:walk-reachability-fast-path": "node check-walk-reachability-fast-path.js",
     "check:goal-directed-search": "node check-goal-directed-search.js",
     "check:goal-feasibility-bounds": "node check-goal-feasibility-bounds.js",
+    "check:mt5-feasibility-surface": "node check-mt5-feasibility-surface.js",
     "check:eval-vector": "node check-eval-vector.js",
     "check:candidate-quality-shadow": "node check-candidate-quality-shadow.js",
     "audit:candidate-quality:mt5": "node audit-mt5-candidate-quality-shadow.js --output=routes/generated/mt5-candidate-quality-shadow.json",
