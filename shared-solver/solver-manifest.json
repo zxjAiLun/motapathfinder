@@ -2096,6 +2096,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.8b one-variable causal repair: move MT6:2,1 +500 DEF before MT6:6,8 while preserving budgets, DP options, action scope, key, dominance, and selection; special80 changes from the pinned 5.8a failure to a strict-replay-qualified success"
     },
+    "shared-solver/check-mt7-left-sword-budget-baseline.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.8c fixed-500 attribution from the exact strict-replay-qualified special80 state: left-sword is feasible and strictly replayable even though its skyline remains live at the expansion ceiling; distinguishes found=true/incomplete-skyline from a route-search failure without changing production search semantics"
+    },
     "shared-solver/check-mt5-route-repair-closure.js": {
       "grade": "closure",
       "allowsNotFound": false,

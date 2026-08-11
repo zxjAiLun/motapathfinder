@@ -148,6 +148,20 @@ jobs:
       - run: npm ci
       - run: npm run check:mt6-defense-timing-causal-repair
 
+  qualification-mt7-left-sword-budget-baseline:
+    needs: qualification-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run check:mt7-left-sword-budget-baseline
+
   qualification-promotion-contract:
     needs: qualification-gate
     runs-on: ubuntu-latest
@@ -248,6 +262,7 @@ jobs:
       - qualification-real-route-performance
       - qualification-post-mt5-baseline
       - qualification-mt6-defense-causal-repair
+      - qualification-mt7-left-sword-budget-baseline
       - qualification-promotion-contract
       - qualification-post-promotion-regression
       - qualification-multi-region-key-shadow
@@ -256,4 +271,4 @@ jobs:
     if: needs.qualification-gate.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Full qualification passed (fast + key-analysis + promotion + micro benchmark + real-route performance + post-MT5 baseline + MT6 defense causal repair + promotion-contract + post-promotion-regression + multi-region-key-shadow + multi-region-boundary-matrix + workload matrix)"
+      - run: echo "Full qualification passed (fast + key-analysis + promotion + micro benchmark + real-route performance + post-MT5 baseline + MT6 defense causal repair + MT7 left-sword budget baseline + promotion-contract + post-promotion-regression + multi-region-key-shadow + multi-region-boundary-matrix + workload matrix)"
