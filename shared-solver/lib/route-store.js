@@ -460,6 +460,32 @@ function listAllActionsBySummary(simulator, state, summary) {
   return actions;
 }
 
+// A recorded choice fingerprint intentionally answers "what did the player
+// choose?" and therefore does not include the walk/travel state used to reach
+// that choice. Replay enumeration must retain those travel variants until the
+// recorded post-state can disambiguate them. This key only removes the same
+// variant returned by multiple simulator enumeration APIs.
+function recordedActionVariantIdentity(action) {
+  const normalized = normalizeAction(action);
+  let travelStateKey = null;
+  if (action && action.travelState) {
+    try {
+      travelStateKey = buildStateKey(action.travelState);
+    } catch (error) {
+      try {
+        travelStateKey = JSON.stringify(action.travelState);
+      } catch (nestedError) {
+        travelStateKey = "unserializable-travel-state";
+      }
+    }
+  }
+  return JSON.stringify({
+    choiceFingerprint: normalized.fingerprint,
+    action: normalized,
+    travelStateKey,
+  });
+}
+
 function enumerateRecordedActionCandidates(simulator, state, actionProvider) {
   const errors = [];
   if (typeof actionProvider === "function") {
@@ -488,9 +514,15 @@ function enumerateRecordedActionCandidates(simulator, state, actionProvider) {
       if (!action) return;
       let key;
       try {
-        key = action.fingerprint || `${fingerprintAction(normalizeAction(action))}|${action.summary || ""}`;
+        key = recordedActionVariantIdentity(action);
       } catch (error) {
-        key = action.summary || action.kind || "unknown";
+        key = JSON.stringify({
+          summary: action.summary || null,
+          kind: action.kind || null,
+          path: Array.isArray(action.path) ? action.path : [],
+          stance: action.stance || null,
+          direction: action.direction || null,
+        });
       }
       if (seen.has(key)) return;
       seen.add(key);
@@ -616,6 +648,8 @@ function resolveRecordedAction(simulator, state, decision, options) {
   );
   let best = null;
   const tied = [];
+  let choiceAliasCount = 0;
+  let exactPostAliasCount = 0;
 
   for (const action of candidates) {
     let normalized;
@@ -654,6 +688,7 @@ function resolveRecordedAction(simulator, state, decision, options) {
       simulator,
     );
     const fingerprintMatches = Boolean(expectedFingerprint) && normalized.fingerprint === expectedFingerprint;
+    if (fingerprintMatches) choiceAliasCount += 1;
     const pathMatches = Array.isArray(expected.path) && expected.path.length > 0 && samePath(normalized.path, expected.path);
     const structuralFields = [];
     if (expected.target) structuralFields.push(samePoint(normalized.target, expected.target));
@@ -703,7 +738,9 @@ function resolveRecordedAction(simulator, state, decision, options) {
         name: applyError.name || "Error",
         message: applyError.message || String(applyError),
       } : null,
+      variantIdentity: recordedActionVariantIdentity(action),
     };
+    if (postExactStateKeyMatches) exactPostAliasCount += 1;
     if (!best) {
       best = candidate;
       tied.length = 0;
@@ -724,20 +761,34 @@ function resolveRecordedAction(simulator, state, decision, options) {
       action: null,
       reason: candidates.length > 0 ? "recorded-action-not-matched" : "no-visible-actions",
       candidates: candidates.length,
+      choiceAliasCount,
+      exactPostAliasCount,
     };
   }
+  let exactPostTieBroken = false;
   if (tied.length > 1) {
-    return {
-      action: null,
-      reason: "ambiguous-recorded-action",
-      ambiguous: true,
-      candidates: candidates.length,
-      matches: tied.map((candidate) => ({
-        fingerprint: candidate.normalizedAction.fingerprint,
-        summary: candidate.normalizedAction.summary,
-        tuple: candidate.tuple,
-      })),
-    };
+    const allTiedMatchExactPost = Boolean(expectedPostExactStateKey) &&
+      tied.every((candidate) => candidate.postExactStateKeyMatches);
+    if (allTiedMatchExactPost) {
+      tied.sort((left, right) => left.variantIdentity.localeCompare(right.variantIdentity));
+      best = tied[0];
+      exactPostTieBroken = true;
+    } else {
+      return {
+        action: null,
+        reason: "ambiguous-recorded-action",
+        ambiguous: true,
+        candidates: candidates.length,
+        choiceAliasCount,
+        exactPostAliasCount,
+        matches: tied.map((candidate) => ({
+          fingerprint: candidate.normalizedAction.fingerprint,
+          summary: candidate.normalizedAction.summary,
+          tuple: candidate.tuple,
+          variantIdentity: candidate.variantIdentity,
+        })).sort((left, right) => left.variantIdentity.localeCompare(right.variantIdentity)),
+      };
+    }
   }
   return {
     ...best,
@@ -746,6 +797,12 @@ function resolveRecordedAction(simulator, state, decision, options) {
     postStateKey: best.postDominanceKeyMatches ? expectedPostDominanceKey : null,
     postExactStateKey: best.postExactStateKeyMatches ? expectedPostExactStateKey : null,
     candidates: candidates.length,
+    choiceAliasCount,
+    exactPostAliasCount,
+    exactPostTieBroken,
+    selectedByRecordedTravelEvidence:
+      exactPostAliasCount > 1 && best.pathMatches === true && !exactPostTieBroken,
+    selectedVariantIdentity: best.variantIdentity,
   };
 }
 
@@ -1282,6 +1339,7 @@ module.exports = {
   enumerateRecordedActionCandidates,
   listRecordedActionCandidates,
   normalizeAction,
+  recordedActionVariantIdentity,
   composeRouteRecords,
   readRouteFile,
   resolveRecordedAction,

@@ -191,6 +191,8 @@
     "check:mt7-left-sword-budget-baseline": "node check-mt7-left-sword-budget-baseline.js",
     "diagnose:mt7-left-sword-long-horizon": "node check-mt7-left-sword-budget-baseline.js --long-horizon",
     "check:mt7-mt8-strict-replay-attribution": "node check-mt7-mt8-strict-replay-attribution.js",
+    "check:recorded-travel-variant-replay": "node check-recorded-travel-variant-replay.js",
+    "check:mt7-mt8-travel-variant-replay-repair": "npm run check:recorded-travel-variant-replay && node check-mt7-mt8-strict-replay-attribution.js",
     "check:eval-vector": "node check-eval-vector.js",
     "check:candidate-quality-shadow": "node check-candidate-quality-shadow.js",
     "audit:candidate-quality:mt5": "node audit-mt5-candidate-quality-shadow.js --output=routes/generated/mt5-candidate-quality-shadow.json",

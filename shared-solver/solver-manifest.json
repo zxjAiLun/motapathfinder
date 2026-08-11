@@ -2104,11 +2104,18 @@
       "notes": "PR-5.8c fixed-500 attribution from the exact strict-replay-qualified special80 state: left-sword is feasible and strictly replayable even though its skyline remains live at the expansion ceiling; distinguishes found=true/incomplete-skyline from a route-search failure without changing production search semantics"
     },
     "shared-solver/check-mt7-mt8-strict-replay-attribution.js": {
-      "grade": "local-regression",
+      "grade": "closure",
       "allowsNotFound": false,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.8d attribution-only contract: the special80-to-MT8 winner and 13-decision lineage are continuous, while decision 13 proves three distinct changeFloor travel variants share one recorded fingerprint and strict replay drops the exact-post matching variant during early fingerprint deduplication"
+      "notes": "PR-5.8e real-fixture A/B closure: preserve the PR-5.8d legacy choice-fingerprint-dedup witness at decision 13, then require the variant-aware resolver to select the unique exact-post path-17 action, strictly replay all 13 suffix decisions and all 37 full-lineage decisions, and reproduce the winner final exact state"
+    },
+    "shared-solver/check-recorded-travel-variant-replay.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.8e synthetic resolver controls: retain same-choice travel variants, choose a unique exact-post match, fail closed and order-independently when no exact match can disambiguate, and use recorded path or stable variant identity when multiple variants share the exact post-state"
     },
     "shared-solver/check-mt5-route-repair-closure.js": {
       "grade": "closure",

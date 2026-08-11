@@ -12,8 +12,10 @@
 const assert = require("node:assert");
 const crypto = require("node:crypto");
 
+const { strictReplayRoute } = require("./lib/agenda-policy-evaluation");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
+const { buildReplayRouteFingerprint } = require("./lib/replay-resume-artifact");
 const {
   buildRouteRecord,
   enumerateRecordedActionCandidates,
@@ -271,7 +273,22 @@ function freshCandidateEvidence(simulator, preState, decision) {
     });
 }
 
-function replayAttribution(project, initialState, decisions) {
+function legacyChoiceFingerprintCandidates(simulator, state) {
+  const candidates = enumerateRecordedActionCandidates(
+    simulator,
+    cloneState(state),
+  ).actions;
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    const fingerprint = normalizeAction(candidate).fingerprint;
+    if (seen.has(fingerprint)) return false;
+    seen.add(fingerprint);
+    return true;
+  });
+}
+
+function replayAttribution(project, initialState, decisions, options) {
+  const config = options || {};
   const simulator = makeSimulator(project);
   let state = cloneState(initialState);
   const steps = [];
@@ -280,7 +297,12 @@ function replayAttribution(project, initialState, decisions) {
     const decision = decisions[index];
     const pristinePreState = cloneState(state);
     const preExactStateKey = buildStateKey(state);
-    const resolved = resolveRecordedAction(simulator, state, decision, { project });
+    const resolved = resolveRecordedAction(simulator, state, decision, {
+      project,
+      candidates: config.legacyChoiceFingerprintDedup
+        ? legacyChoiceFingerprintCandidates(simulator, state)
+        : undefined,
+    });
     const postResolveExactStateKey = buildStateKey(state);
     const resolverMutatedState = postResolveExactStateKey !== preExactStateKey;
     const actionBeforeApply = compactAction(resolved.action);
@@ -316,6 +338,11 @@ function replayAttribution(project, initialState, decisions) {
         reason: resolved.reason || null,
         matchType: resolved.matchType || null,
         candidates: Number(resolved.candidates || 0),
+        choiceAliasCount: Number(resolved.choiceAliasCount || 0),
+        exactPostAliasCount: Number(resolved.exactPostAliasCount || 0),
+        exactPostTieBroken: resolved.exactPostTieBroken === true,
+        selectedByRecordedTravelEvidence:
+          resolved.selectedByRecordedTravelEvidence === true,
         postExactStateKeyMatches: resolved.postExactStateKeyMatches === true,
         postDominanceKeyMatches: resolved.postDominanceKeyMatches === true,
         fingerprintMatches: resolved.fingerprintMatches === true,
@@ -407,19 +434,21 @@ function main() {
     [TARGET, "mt7-right-exp-crystal", MT8_TARGET],
   );
 
-  const finalState = result.finalCandidate.state;
+  const winnerState = result.finalCandidate.state;
   const prefixLength = specialState.route.length;
   const fullRoute = result.finalCandidate.route.slice();
   const routeSuffix = fullRoute.slice(prefixLength);
-  finalState.route = routeSuffix.slice();
+  const suffixState = cloneState(winnerState);
+  suffixState.route = routeSuffix.slice();
   let observed = null;
   let routeRecordError = null;
+  let suffixRouteRecord = null;
   try {
-    buildRouteRecord({
+    suffixRouteRecord = buildRouteRecord({
       project,
       simulator: makeSimulator(project),
       initialState: specialState,
-      finalState,
+      finalState: suffixState,
       options: {
         projectRoot: PROJECT_ROOT,
         solver: "mt7-mt8-strict-replay-attribution",
@@ -442,32 +471,82 @@ function main() {
     observed.decisions,
     routeSuffix.map((entry) => typeof entry === "string" ? entry : entry.summary),
   );
-  const replay = replayAttribution(
+  const historicalReplay = replayAttribution(
+    project,
+    observed.initialState,
+    observed.decisions,
+    { legacyChoiceFingerprintDedup: true },
+  );
+  const repairedReplay = replayAttribution(
     project,
     observed.initialState,
     observed.decisions,
   );
-  assert.strictEqual(
-    routeRecordError,
-    "route-store: strict replay post-state mismatch at decision 13",
+  const suffixStrictReplay = strictReplayRoute(
+    project,
+    makeSimulator(project),
+    suffixRouteRecord,
   );
+
+  const fullState = cloneState(winnerState);
+  fullState.route = fullRoute.slice();
+  const fullRouteRecord = buildRouteRecord({
+    project,
+    simulator: makeSimulator(project),
+    initialState: postMt5State,
+    finalState: fullState,
+    options: {
+      projectRoot: PROJECT_ROOT,
+      solver: "mt7-mt8-travel-variant-replay-repair",
+      profile: "post-mt5-to-mt8-full-lineage",
+      rank: "chaos",
+      toFloor: "MT8",
+      goalType: "milestoneReached",
+      snapshotFloors: ["MT5", "MT6", "MT7", "MT8"],
+    },
+  });
+  const fullStrictReplay = strictReplayRoute(
+    project,
+    makeSimulator(project),
+    fullRouteRecord,
+  );
+
+  assert.strictEqual(routeRecordError, null);
+  assert.ok(suffixRouteRecord, "repaired suffix route record");
   assert.strictEqual(continuity.continuous, true);
   assert.strictEqual(continuity.summaryParity, true);
-  assert.strictEqual(replay.matchedDecisionCount, 12);
-  assert.strictEqual(replay.firstMismatch.decision, 13);
-  assert.strictEqual(replay.firstMismatch.summary, "changeFloor@MT7:6,0");
-  assert.strictEqual(replay.firstMismatch.preExactMatches, true);
-  assert.strictEqual(replay.firstMismatch.resolver.stateMutated, false);
+  assert.strictEqual(historicalReplay.matchedDecisionCount, 12);
+  assert.strictEqual(historicalReplay.firstMismatch.decision, 13);
+  assert.strictEqual(historicalReplay.firstMismatch.summary, "changeFloor@MT7:6,0");
+  assert.strictEqual(historicalReplay.firstMismatch.preExactMatches, true);
+  assert.strictEqual(historicalReplay.firstMismatch.resolver.stateMutated, false);
   assert.ok(
-    replay.firstMismatch.aliasCollision.uniqueVariantCount > 1,
+    historicalReplay.firstMismatch.aliasCollision.uniqueVariantCount > 1,
     "decision 13 fingerprint must alias multiple replay variants",
   );
   assert.ok(
-    replay.firstMismatch.aliasCollision.exactPostMatchCount > 0,
+    historicalReplay.firstMismatch.aliasCollision.exactPostMatchCount > 0,
     "a non-deduplicated decision 13 candidate must reproduce the winner post-state",
   );
+  assert.strictEqual(repairedReplay.firstMismatch, null);
+  assert.strictEqual(repairedReplay.matchedDecisionCount, 13);
+  const repairedDecision13 = repairedReplay.steps[12];
+  assert.strictEqual(repairedDecision13.postExactMatches, true);
+  assert.strictEqual(repairedDecision13.resolver.choiceAliasCount, 3);
+  assert.strictEqual(repairedDecision13.resolver.exactPostAliasCount, 1);
+  assert.strictEqual(repairedDecision13.resolver.action.pathLength, 17);
+  assert.strictEqual(suffixRouteRecord.decisions.length, 13);
+  assert.strictEqual(suffixStrictReplay.valid, true);
+  assert.strictEqual(suffixStrictReplay.stepsCompleted, 13);
+  assert.strictEqual(fullRouteRecord.decisions.length, 37);
+  assert.strictEqual(fullStrictReplay.valid, true);
+  assert.strictEqual(fullStrictReplay.stepsCompleted, 37);
+  assert.strictEqual(
+    fullRouteRecord.final.exactStateKey,
+    buildStateKey(winnerState),
+  );
 
-  const verdict = {
+  const historicalVerdict = {
     cause: "recorded-action-fingerprint-alias-dedup",
     prefixOrLineageMismatch: false,
     resolverInputMutation: false,
@@ -477,9 +556,18 @@ function main() {
       "decision 13 has multiple changeFloor candidates with the same recorded fingerprint; strict replay keeps only the first fingerprint alias, while a discarded alias reproduces the recorded winner post-state",
   };
 
+  const repairVerdict = {
+    status: "MT8_STRICT_REPLAY_CLOSED",
+    choiceFingerprintChanged: false,
+    travelVariantsRetainedUntilPostStateResolution: true,
+    suffixStrictReplayVerified: true,
+    fullLineageStrictReplayVerified: true,
+    finalExactStateVerified: true,
+  };
+
   process.stdout.write(`${JSON.stringify({
-    schema: "motapathfinder.mt7-mt8-strict-replay-attribution.v1",
-    status: "observed",
+    schema: "motapathfinder.mt7-mt8-travel-variant-replay-repair.v1",
+    status: "passed",
     controls: {
       frozenStartExactStateFingerprint: EXPECTED_SPECIAL80_FINGERPRINT,
       candidateLimit: 8,
@@ -512,7 +600,7 @@ function main() {
       fullRouteCount: fullRoute.length,
       prefixCount: prefixLength,
       routeSuffixCount: routeSuffix.length,
-      finalExactStateFingerprint: exactStateFingerprint(finalState),
+      finalExactStateFingerprint: exactStateFingerprint(winnerState),
     },
     routeRecord: {
       error: routeRecordError,
@@ -520,11 +608,32 @@ function main() {
         observed.expectedExactStateKey === observed.reconstructedExactStateKey,
       continuity,
     },
-    replay: {
-      matchedDecisionCount: replay.matchedDecisionCount,
-      firstMismatch: replay.firstMismatch,
+    historicalAttribution: {
+      matchedDecisionCount: historicalReplay.matchedDecisionCount,
+      firstMismatch: historicalReplay.firstMismatch,
+      verdict: historicalVerdict,
     },
-    verdict,
+    repairClosure: {
+      suffix: {
+        decisionCount: suffixRouteRecord.decisions.length,
+        strictReplay: suffixStrictReplay.valid,
+        routeFingerprint: buildReplayRouteFingerprint(suffixRouteRecord).sha256,
+        repairedDecision13: {
+          summary: repairedDecision13.summary,
+          pathLength: repairedDecision13.resolver.action.pathLength,
+          choiceAliasCount: repairedDecision13.resolver.choiceAliasCount,
+          exactPostAliasCount: repairedDecision13.resolver.exactPostAliasCount,
+          postExactMatches: repairedDecision13.postExactMatches,
+        },
+      },
+      fullLineage: {
+        decisionCount: fullRouteRecord.decisions.length,
+        strictReplay: fullStrictReplay.valid,
+        routeFingerprint: buildReplayRouteFingerprint(fullRouteRecord).sha256,
+      },
+      finalExactStateFingerprint: exactStateFingerprint(winnerState),
+      verdict: repairVerdict,
+    },
   }, null, 2)}\n`);
 }
 
