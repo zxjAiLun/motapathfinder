@@ -2087,7 +2087,14 @@
       "allowsNotFound": true,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.8a fixed-expansion and no-wall-timeout observation of the existing post-MT5 graph; pins mt7-special80-ready as the first failure, excludes trimming/budget exhaustion, strictly replays the reached prefix, and records the reversed MT6 defense-resource order for the next refinement"
+      "notes": "PR-5.8a historical coarse-graph baseline reconstructed after 5.8b: fixed expansions and no wall timeout pin mt7-special80-ready as the first failure, exclude trimming/budget exhaustion, strictly replay the reached prefix, and retain the pre-repair MT6 resource order"
+    },
+    "shared-solver/check-mt6-defense-timing-causal-repair.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.8b one-variable causal repair: move MT6:2,1 +500 DEF before MT6:6,8 while preserving budgets, DP options, action scope, key, dominance, and selection; special80 changes from the pinned 5.8a failure to a strict-replay-qualified success"
     },
     "shared-solver/check-mt5-route-repair-closure.js": {
       "grade": "closure",

@@ -1876,19 +1876,99 @@
       }
     },
     {
-      "id": "mt6-second-center-guard",
-      "label": "MT6 第二中路制动警卫",
+      "id": "mt7-mt6-defense-sweep",
+      "label": "MT6 第二中路前左上防御资源",
       "startFrom": "mt6-first-center-guard",
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT6",
         "minHero": {
-          "hp": 557322,
-          "atk": 5767,
-          "def": 4535,
-          "mdef": 25010,
+          "hp": 143394,
+          "atk": 5567,
+          "def": 4835,
+          "mdef": 23010,
           "lv": 9,
           "exp": 519
+        },
+        "equipmentIncludes": [
+          "I894"
+        ],
+        "removedTiles": [
+          {
+            "floorId": "MT6",
+            "x": 2,
+            "y": 1
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT6",
+            "x": 6,
+            "y": 8,
+            "reason": "PR-5.8b causal repair keeps the second center guard until after the +500 defense pickup."
+          },
+          {
+            "floorId": "MT6",
+            "x": 9,
+            "y": 10,
+            "reason": "Delay the lower-right sustain chain until after the MT6 defense pickup."
+          },
+          {
+            "floorId": "MT6",
+            "x": 11,
+            "y": 11,
+            "reason": "Keep the right-side crystal guard for the next sustain segment."
+          },
+          {
+            "floorId": "MT7",
+            "x": 4,
+            "y": 11,
+            "reason": "MT7 bottom fairies are the later segment, not part of this MT6 defense sweep."
+          },
+          {
+            "floorId": "MT7",
+            "x": 8,
+            "y": 11,
+            "reason": "MT7 bottom fairies are the later segment, not part of this MT6 defense sweep."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT6",
+          "MT7"
+        ],
+        "allowChangeFloors": [
+          "MT7:6,12",
+          "MT6:6,12",
+          "MT6:6,0"
+        ]
+      },
+      "dp": {
+        "keyMode": "location",
+        "priorityMode": "combat-first",
+        "enablePreviewScore": "required",
+        "stopOnFirstGoal": true,
+        "firstGoalSafeReason": "This segment only removes MT6:2,1 to unlock the +500 defense pickup before the right-side sustain chain.",
+        "maxExpansions": 800,
+        "maxRuntimeMs": 8000,
+        "goalSkylineLimit": 4
+      }
+    },
+    {
+      "id": "mt6-second-center-guard",
+      "label": "MT6 第二中路制动警卫",
+      "startFrom": "mt7-mt6-defense-sweep",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT6",
+        "minHero": {
+          "hp": 155962,
+          "atk": 5767,
+          "def": 5035,
+          "mdef": 25010,
+          "lv": 9,
+          "exp": 561
         },
         "equipmentIncludes": [
           "I894"
@@ -1901,12 +1981,6 @@
           }
         ],
         "presentTiles": [
-          {
-            "floorId": "MT6",
-            "x": 2,
-            "y": 1,
-            "reason": "Preserve optional high-defense skyline candidate for MT7."
-          },
           {
             "floorId": "MT6",
             "x": 9,
@@ -1991,83 +2065,9 @@
       }
     },
     {
-      "id": "mt7-mt6-defense-sweep",
-      "label": "MT7 入口后回 MT6 拿左上防御资源",
-      "startFrom": "mt7-entry-after-mt6-sweep",
-      "goal": {
-        "type": "heroAtLeast",
-        "floorId": "MT6",
-        "minHero": {
-          "hp": 112394,
-          "atk": 5767,
-          "def": 5035,
-          "mdef": 30010,
-          "lv": 9,
-          "exp": 603
-        },
-        "equipmentIncludes": [
-          "I894"
-        ],
-        "removedTiles": [
-          {
-            "floorId": "MT6",
-            "x": 2,
-            "y": 1
-          }
-        ],
-        "presentTiles": [
-          {
-            "floorId": "MT6",
-            "x": 9,
-            "y": 10,
-            "reason": "Delay the lower-right sustain chain until after the MT6 defense pickup."
-          },
-          {
-            "floorId": "MT6",
-            "x": 11,
-            "y": 11,
-            "reason": "Keep the right-side crystal guard for the next sustain segment."
-          },
-          {
-            "floorId": "MT7",
-            "x": 4,
-            "y": 11,
-            "reason": "MT7 bottom fairies are the next segment, not part of this MT6 defense sweep."
-          },
-          {
-            "floorId": "MT7",
-            "x": 8,
-            "y": 11,
-            "reason": "MT7 bottom fairies are the next segment, not part of this MT6 defense sweep."
-          }
-        ]
-      },
-      "actionPolicy": {
-        "allowedFloors": [
-          "MT6",
-          "MT7"
-        ],
-        "allowChangeFloors": [
-          "MT7:6,12",
-          "MT6:6,12",
-          "MT6:6,0"
-        ]
-      },
-      "dp": {
-        "keyMode": "location",
-        "priorityMode": "combat-first",
-        "enablePreviewScore": "required",
-        "stopOnFirstGoal": true,
-        "firstGoalSafeReason": "This segment only removes MT6:2,1 to unlock the +500 defense pickup before the right-side sustain chain.",
-        "maxExpansions": 800,
-        "maxRuntimeMs": 8000,
-        "goalSkylineLimit": 4
-      }
-    },
-    {
       "id": "mt7-mt6-right-crystal-sweep",
       "label": "MT6 右下制动警卫与傀儡资源",
-      "startFrom": "mt7-mt6-defense-sweep",
+      "startFrom": "mt7-entry-after-mt6-sweep",
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT6",
