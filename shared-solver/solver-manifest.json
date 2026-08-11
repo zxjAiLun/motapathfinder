@@ -2075,6 +2075,13 @@
       "cleanCheckout": true,
       "notes": "Tracked MT4 fixture proves the 13846 HP causal benefit of delaying MT4:8,3/I621, then requires the refined milestone graph to reach mt5-third-gate within 500 expansions per segment without action trimming"
     },
+    "shared-solver/check-mt5-blueking-long-chain.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.7c tracked MT4 long-chain requalification: every resource-timing milestone through MT5 blueKing closes within 500 expansions per segment, with no action trimming or budget exhaustion and a strict recorded-decision replay"
+    },
     "shared-solver/check-mt5-route-repair-closure.js": {
       "grade": "closure",
       "allowsNotFound": false,

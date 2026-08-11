@@ -35,6 +35,7 @@ jobs:
       - run: npm run check:eval-vector
       - run: npm run check:mt5-feasibility-surface
       - run: npm run check:mt5-third-gate-resource-timing
+      - run: npm run check:mt5-blueking-long-chain
 
   # =====================================================================
   # Tier 3 — Qualification gate. Runs only for marker commits
