@@ -2,6 +2,7 @@
 
 const { buildSolverSnapshot } = require("./route-snapshot");
 const {
+  applyResolvedAction,
   createStateFromSnapshot,
   resolveRecordedAction,
 } = require("./route-store");
@@ -192,7 +193,8 @@ function strictReplayFailure(result, step, reason, expectedStateKey, actualState
   };
 }
 
-function strictReplayRoute(project, simulator, routeRecord) {
+function strictReplayRoute(project, simulator, routeRecord, options) {
+  const config = options || {};
   const record = routeRecord || {};
   const startSnapshot = record.start && record.start.snapshot;
   if (!startSnapshot) {
@@ -235,6 +237,11 @@ function strictReplayRoute(project, simulator, routeRecord) {
     state,
     stepsAttempted: Array.isArray(record.decisions) ? record.decisions.length : 0,
     stepsCompleted: 0,
+    resolvedPostStatesReused: 0,
+    resolvedPostStatesApplied: 0,
+    resolverCandidateApplyCount: 0,
+    resolverHardFilteredBeforeApply: 0,
+    resolverHardFilteredAfterApply: 0,
   };
   const decisions = Array.isArray(record.decisions) ? record.decisions : [];
   const startExpected = record.start && (
@@ -282,7 +289,11 @@ function strictReplayRoute(project, simulator, routeRecord) {
     }
     let resolved;
     try {
-      resolved = resolveRecordedAction(simulator, state, effectiveDecision, { project });
+      resolved = resolveRecordedAction(simulator, state, effectiveDecision, {
+        project,
+        deferStructuralFilterUntilAfterApply:
+          config.applyStructuralFilterBeforeCandidateApply === false,
+      });
     } catch (error) {
       return strictReplayFailure(
         result,
@@ -302,8 +313,16 @@ function strictReplayRoute(project, simulator, routeRecord) {
         actualPreStateKey,
       );
     }
+    result.resolverCandidateApplyCount += Number(resolved.candidateApplyCount || 0);
+    result.resolverHardFilteredBeforeApply += Number(resolved.hardFilteredBeforeApply || 0);
+    result.resolverHardFilteredAfterApply += Number(resolved.hardFilteredAfterApply || 0);
     try {
-      state = simulator.applyAction(state, resolved.action);
+      const applied = applyResolvedAction(simulator, state, resolved, {
+        reuseResolvedPostState: config.reuseResolvedPostState !== false,
+      });
+      state = applied.state;
+      if (applied.reusedResolvedPostState) result.resolvedPostStatesReused += 1;
+      else result.resolvedPostStatesApplied += 1;
     } catch (error) {
       result.state = state;
       return strictReplayFailure(
@@ -402,6 +421,11 @@ function strictReplayRoute(project, simulator, routeRecord) {
     expectedStateKey: expectedFinalStateKey,
     actualStateKey: actualFinalStateKey,
     finalState: compactReplayState(state),
+    resolvedPostStatesReused: result.resolvedPostStatesReused,
+    resolvedPostStatesApplied: result.resolvedPostStatesApplied,
+    resolverCandidateApplyCount: result.resolverCandidateApplyCount,
+    resolverHardFilteredBeforeApply: result.resolverHardFilteredBeforeApply,
+    resolverHardFilteredAfterApply: result.resolverHardFilteredAfterApply,
     error: null,
   };
 }

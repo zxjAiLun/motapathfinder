@@ -1300,7 +1300,8 @@
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
-      }
+      },
+      "notes": "PR-5.8e keeps choice identity separate from travel variant identity; PR-5.8g moves existing hard structural rejection before apply and reuses the selected post-state within the same resolution call without changing candidate identity, scoring, or ambiguity semantics"
     },
     "shared-solver/lib/route-window-repair.js": {
       "id": "route-window-repair",
@@ -2124,14 +2125,14 @@
       "allowsNotFound": false,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.8e real-fixture A/B closure: preserve the PR-5.8d legacy choice-fingerprint-dedup witness at decision 13, then require the variant-aware resolver to select the unique exact-post path-17 action, strictly replay all 13 suffix decisions and all 37 full-lineage decisions, and reproduce the winner final exact state"
+      "notes": "PR-5.8e/5.8g real-fixture closure: preserve the decision-13 legacy witness and exact-post path-17 selection, strictly replay 13/13 suffix and 37/37 full lineage, reproduce the winner final state, reuse all 37 selected post-states, and hard-filter structurally impossible candidates before apply"
     },
     "shared-solver/check-recorded-travel-variant-replay.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.8e synthetic resolver controls: retain same-choice travel variants, choose a unique exact-post match, fail closed and order-independently when no exact match can disambiguate, and use recorded path or stable variant identity when multiple variants share the exact post-state"
+      "notes": "PR-5.8e/5.8g synthetic resolver controls: retain same-choice travel variants, preserve unique/no/multiple exact-post semantics, reject hard structural mismatches before apply, and reuse the selected post-state without a second winner apply"
     },
     "shared-solver/check-search-outcome-taxonomy.js": {
       "grade": "unit-plus-micro",

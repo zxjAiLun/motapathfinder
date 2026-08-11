@@ -12,6 +12,7 @@
 const assert = require("node:assert");
 
 const {
+  applyResolvedAction,
   enumerateRecordedActionCandidates,
   normalizeAction,
   recordedActionVariantIdentity,
@@ -67,12 +68,17 @@ function cloneJson(value) {
 }
 
 function makeSimulator(variants) {
+  const stats = { applyActionCalls: 0 };
   return {
+    stats,
     enumerateActions: () => variants.map(cloneJson),
     enumeratePrimitiveActions: () => ({ actions: variants.map(cloneJson) }),
     enumerateInteractPickupActions: () => [],
     enumerateFloorFlyActions: () => [],
-    applyAction: (state, action) => cloneJson(action.__postState),
+    applyAction: (state, action) => {
+      stats.applyActionCalls += 1;
+      return cloneJson(action.__postState);
+    },
   };
 }
 
@@ -91,7 +97,7 @@ function decisionFrom(variant, postExactStateKey, includePath) {
   };
 }
 
-function resolve(simulator, decision, candidates) {
+function resolve(simulator, decision, candidates, options) {
   return resolveRecordedAction(
     simulator,
     makeTravelState(100, "root"),
@@ -100,6 +106,7 @@ function resolve(simulator, decision, candidates) {
       candidates,
       postExactStateKeyBuilder: (state) => state.exact,
       postStateKeyBuilder: (state) => state.exact,
+      ...(options || {}),
     },
   );
 }
@@ -130,6 +137,67 @@ function main() {
   assert.strictEqual(uniqueExact.choiceAliasCount, 3);
   assert.strictEqual(uniqueExact.exactPostAliasCount, 1);
   assert.strictEqual(uniqueExact.exactPostTieBroken, false);
+  assert.strictEqual(uniqueExact.candidateApplyCount, 3);
+  const callsBeforeReuse = uniqueSimulator.stats.applyActionCalls;
+  const reused = applyResolvedAction(
+    uniqueSimulator,
+    makeTravelState(100, "root"),
+    uniqueExact,
+  );
+  assert.strictEqual(reused.state.variantId, "C");
+  assert.strictEqual(reused.reusedResolvedPostState, true);
+  assert.strictEqual(
+    uniqueSimulator.stats.applyActionCalls,
+    callsBeforeReuse,
+    "selected post-state reuse must not apply the winner twice",
+  );
+  const reapplied = applyResolvedAction(
+    uniqueSimulator,
+    makeTravelState(100, "root"),
+    uniqueExact,
+    { reuseResolvedPostState: false },
+  );
+  assert.strictEqual(reapplied.state.variantId, "C");
+  assert.strictEqual(reapplied.reusedResolvedPostState, false);
+  assert.strictEqual(uniqueSimulator.stats.applyActionCalls, callsBeforeReuse + 1);
+
+  const structurallyUnrelated = makeVariant("UNRELATED", 5, "post-C");
+  structurallyUnrelated.target.x = 5;
+  const hardFilterSimulator = makeSimulator([
+    structurallyUnrelated,
+    uniqueA,
+    uniqueB,
+    uniqueC,
+  ]);
+  const hardFiltered = resolve(
+    hardFilterSimulator,
+    decisionFrom(uniqueC, "post-C", true),
+    [structurallyUnrelated, uniqueA, uniqueB, uniqueC],
+  );
+  assert.strictEqual(hardFiltered.action.__variantId, "C");
+  assert.strictEqual(hardFiltered.hardFilteredBeforeApply, 1);
+  assert.strictEqual(hardFiltered.candidateApplyCount, 3);
+  assert.strictEqual(
+    hardFilterSimulator.stats.applyActionCalls,
+    3,
+    "a structural hard reject must not be applied before rejection",
+  );
+  const legacyHardFilterSimulator = makeSimulator([
+    structurallyUnrelated,
+    uniqueA,
+    uniqueB,
+    uniqueC,
+  ]);
+  const legacyHardFiltered = resolve(
+    legacyHardFilterSimulator,
+    decisionFrom(uniqueC, "post-C", true),
+    [structurallyUnrelated, uniqueA, uniqueB, uniqueC],
+    { deferStructuralFilterUntilAfterApply: true },
+  );
+  assert.strictEqual(legacyHardFiltered.action.__variantId, "C");
+  assert.strictEqual(legacyHardFiltered.hardFilteredBeforeApply, 0);
+  assert.strictEqual(legacyHardFiltered.hardFilteredAfterApply, 1);
+  assert.strictEqual(legacyHardFilterSimulator.stats.applyActionCalls, 4);
 
   const noExactDecision = decisionFrom(uniqueA, "post-missing", false);
   const noExactForward = resolve(
@@ -196,6 +264,8 @@ function main() {
         normalizeAction(uniqueB).fingerprint,
       retainedUniqueTravelVariants: enumerated.actions.length,
       uniqueExactPostSelected: uniqueExact.action.__variantId,
+      selectedPostStateReuseAvoidsSecondApply: true,
+      structuralHardRejectApplied: false,
       noExactPostFailsClosed: noExactForward.reason,
       noExactOrderIndependent: true,
       multipleExactUsesRecordedPath: recordedPath.action.__variantId,

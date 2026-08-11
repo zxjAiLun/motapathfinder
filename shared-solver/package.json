@@ -193,6 +193,7 @@
     "check:mt7-mt8-strict-replay-attribution": "node check-mt7-mt8-strict-replay-attribution.js",
     "check:recorded-travel-variant-replay": "node check-recorded-travel-variant-replay.js",
     "check:mt7-mt8-travel-variant-replay-repair": "npm run check:recorded-travel-variant-replay && node check-mt7-mt8-strict-replay-attribution.js",
+    "diagnose:mt7-mt8-replay-fast-path": "node check-mt7-mt8-strict-replay-attribution.js --compare-replay-fast-path",
     "check:search-outcome-taxonomy": "node check-search-outcome-taxonomy.js",
     "check:eval-vector": "node check-eval-vector.js",
     "check:candidate-quality-shadow": "node check-candidate-quality-shadow.js",

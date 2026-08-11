@@ -650,6 +650,9 @@ function resolveRecordedAction(simulator, state, decision, options) {
   const tied = [];
   let choiceAliasCount = 0;
   let exactPostAliasCount = 0;
+  let candidateApplyCount = 0;
+  let hardFilteredBeforeApply = 0;
+  let hardFilteredAfterApply = 0;
 
   for (const action of candidates) {
     let normalized;
@@ -658,12 +661,28 @@ function resolveRecordedAction(simulator, state, decision, options) {
     } catch (error) {
       continue;
     }
+    const fingerprintMatches = Boolean(expectedFingerprint) && normalized.fingerprint === expectedFingerprint;
+    if (fingerprintMatches) choiceAliasCount += 1;
+    const pathMatches = Array.isArray(expected.path) && expected.path.length > 0 && samePath(normalized.path, expected.path);
+    const structuralFields = [];
+    if (expected.target) structuralFields.push(samePoint(normalized.target, expected.target));
+    if (expected.stance) structuralFields.push(samePoint(normalized.stance, expected.stance));
+    if (expected.direction) structuralFields.push(normalized.direction === expected.direction);
+    const structuralMatches = structuralFields.length > 0 && structuralFields.every(Boolean);
+    const structuralMatchCount = structuralMatches ? structuralFields.length : 0;
+    const hardStructuralReject = structuralFields.length > 0 && !structuralMatches;
+    if (hardStructuralReject && config.deferStructuralFilterUntilAfterApply !== true) {
+      hardFilteredBeforeApply += 1;
+      continue;
+    }
     let postState = null;
     let applyError = null;
     if (hasPostEvidence) {
       try {
         postState = simulator.applyAction(state, action);
+        candidateApplyCount += 1;
       } catch (error) {
+        candidateApplyCount += 1;
         applyError = error;
       }
     }
@@ -687,16 +706,10 @@ function resolveRecordedAction(simulator, state, decision, options) {
       expectedPostSnapshot,
       simulator,
     );
-    const fingerprintMatches = Boolean(expectedFingerprint) && normalized.fingerprint === expectedFingerprint;
-    if (fingerprintMatches) choiceAliasCount += 1;
-    const pathMatches = Array.isArray(expected.path) && expected.path.length > 0 && samePath(normalized.path, expected.path);
-    const structuralFields = [];
-    if (expected.target) structuralFields.push(samePoint(normalized.target, expected.target));
-    if (expected.stance) structuralFields.push(samePoint(normalized.stance, expected.stance));
-    if (expected.direction) structuralFields.push(normalized.direction === expected.direction);
-    const structuralMatches = structuralFields.length > 0 && structuralFields.every(Boolean);
-    const structuralMatchCount = structuralMatches ? structuralFields.length : 0;
-    if (structuralFields.length > 0 && !structuralMatches) continue;
+    if (hardStructuralReject) {
+      hardFilteredAfterApply += 1;
+      continue;
+    }
     const summaryMatches = Boolean(expected.summary) && normalized.summary === expected.summary;
     const kindMatches = Boolean(expected.kind) && normalized.kind === expected.kind;
     const tuple = [
@@ -738,6 +751,7 @@ function resolveRecordedAction(simulator, state, decision, options) {
         name: applyError.name || "Error",
         message: applyError.message || String(applyError),
       } : null,
+      postState,
       variantIdentity: recordedActionVariantIdentity(action),
     };
     if (postExactStateKeyMatches) exactPostAliasCount += 1;
@@ -763,6 +777,9 @@ function resolveRecordedAction(simulator, state, decision, options) {
       candidates: candidates.length,
       choiceAliasCount,
       exactPostAliasCount,
+      candidateApplyCount,
+      hardFilteredBeforeApply,
+      hardFilteredAfterApply,
     };
   }
   let exactPostTieBroken = false;
@@ -781,6 +798,9 @@ function resolveRecordedAction(simulator, state, decision, options) {
         candidates: candidates.length,
         choiceAliasCount,
         exactPostAliasCount,
+        candidateApplyCount,
+        hardFilteredBeforeApply,
+        hardFilteredAfterApply,
         matches: tied.map((candidate) => ({
           fingerprint: candidate.normalizedAction.fingerprint,
           summary: candidate.normalizedAction.summary,
@@ -790,8 +810,9 @@ function resolveRecordedAction(simulator, state, decision, options) {
       };
     }
   }
-  return {
-    ...best,
+  const { postState: resolvedPostState, ...publicBest } = best;
+  const resolved = {
+    ...publicBest,
     score: best.tuple,
     postDominanceKey: best.postDominanceKeyMatches ? expectedPostDominanceKey : null,
     postStateKey: best.postDominanceKeyMatches ? expectedPostDominanceKey : null,
@@ -799,10 +820,40 @@ function resolveRecordedAction(simulator, state, decision, options) {
     candidates: candidates.length,
     choiceAliasCount,
     exactPostAliasCount,
+    candidateApplyCount,
+    hardFilteredBeforeApply,
+    hardFilteredAfterApply,
     exactPostTieBroken,
     selectedByRecordedTravelEvidence:
       exactPostAliasCount > 1 && best.pathMatches === true && !exactPostTieBroken,
     selectedVariantIdentity: best.variantIdentity,
+  };
+  Object.defineProperty(resolved, "resolvedPostState", {
+    value: resolvedPostState,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+  return resolved;
+}
+
+// Resolver scoring already applies candidates when recorded post-state
+// evidence is present. Reusing the selected post-state avoids applying the
+// winner twice while keeping the cache scoped to this exact resolution call.
+function applyResolvedAction(simulator, state, resolved, options) {
+  const config = options || {};
+  if (!resolved || !resolved.action) {
+    throw new Error("Cannot apply an unresolved recorded action.");
+  }
+  if (config.reuseResolvedPostState !== false && resolved.resolvedPostState) {
+    return {
+      state: resolved.resolvedPostState,
+      reusedResolvedPostState: true,
+    };
+  }
+  return {
+    state: simulator.applyAction(state, resolved.action),
+    reusedResolvedPostState: false,
   };
 }
 
@@ -1158,7 +1209,7 @@ function strictReplayRecordedDecisions(project, simulator, initialState, decisio
       throw new Error(`route-store: strict replay action mismatch at decision ${index + 1}: ${resolved.reason}`);
     }
     try {
-      state = simulator.applyAction(state, resolved.action);
+      state = applyResolvedAction(simulator, state, resolved).state;
     } catch (error) {
       throw new Error(`route-store: strict replay apply failed at decision ${index + 1}: ${error && error.message ? error.message : String(error)}`);
     }
@@ -1334,6 +1385,7 @@ function buildRouteRecord(input) {
 module.exports = {
   ROUTE_SCHEMA,
   buildRouteRecord,
+  applyResolvedAction,
   createStateFromSnapshot,
   fingerprintAction,
   enumerateRecordedActionCandidates,

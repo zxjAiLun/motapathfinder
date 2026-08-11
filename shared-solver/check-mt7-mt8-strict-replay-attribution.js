@@ -17,6 +17,7 @@ const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { loadProject } = require("./lib/project-loader");
 const { buildReplayRouteFingerprint } = require("./lib/replay-resume-artifact");
 const {
+  applyResolvedAction,
   buildRouteRecord,
   enumerateRecordedActionCandidates,
   normalizeAction,
@@ -310,7 +311,7 @@ function replayAttribution(project, initialState, decisions, options) {
     let applyError = null;
     if (resolved.action) {
       try {
-        actualPostState = simulator.applyAction(state, resolved.action);
+        actualPostState = applyResolvedAction(simulator, state, resolved).state;
       } catch (error) {
         applyError = String(error && error.message || error);
       }
@@ -505,11 +506,31 @@ function main() {
       snapshotFloors: ["MT5", "MT6", "MT7", "MT8"],
     },
   });
-  const fullStrictReplay = strictReplayRoute(
+  const compareReplayFastPath = process.argv.includes("--compare-replay-fast-path");
+  const legacyReplayStartedAt = Date.now();
+  const legacyFullStrictReplay = compareReplayFastPath
+    ? strictReplayRoute(
+        project,
+        makeSimulator(project),
+        fullRouteRecord,
+        {
+          reuseResolvedPostState: false,
+          applyStructuralFilterBeforeCandidateApply: false,
+        },
+      )
+    : null;
+  const legacyReplayWallMs = compareReplayFastPath
+    ? Date.now() - legacyReplayStartedAt
+    : null;
+  const optimizedReplayStartedAt = Date.now();
+  const optimizedFullStrictReplay = strictReplayRoute(
     project,
     makeSimulator(project),
     fullRouteRecord,
+    { reuseResolvedPostState: true },
   );
+  const optimizedReplayWallMs = Date.now() - optimizedReplayStartedAt;
+  const fullStrictReplay = optimizedFullStrictReplay;
 
   assert.strictEqual(routeRecordError, null);
   assert.ok(suffixRouteRecord, "repaired suffix route record");
@@ -541,6 +562,33 @@ function main() {
   assert.strictEqual(fullRouteRecord.decisions.length, 37);
   assert.strictEqual(fullStrictReplay.valid, true);
   assert.strictEqual(fullStrictReplay.stepsCompleted, 37);
+  assert.strictEqual(optimizedFullStrictReplay.valid, true);
+  assert.strictEqual(optimizedFullStrictReplay.resolvedPostStatesReused, 37);
+  assert.strictEqual(optimizedFullStrictReplay.resolvedPostStatesApplied, 0);
+  assert.ok(
+    optimizedFullStrictReplay.resolverHardFilteredBeforeApply > 0,
+    "real full replay must reject structurally impossible candidates before apply",
+  );
+  if (compareReplayFastPath) {
+    assert.strictEqual(legacyFullStrictReplay.valid, true);
+    assert.strictEqual(
+      legacyFullStrictReplay.actualStateKey,
+      optimizedFullStrictReplay.actualStateKey,
+    );
+    assert.strictEqual(
+      legacyFullStrictReplay.resolvedPostStatesReused,
+      0,
+    );
+    assert.strictEqual(
+      legacyFullStrictReplay.resolvedPostStatesApplied,
+      37,
+    );
+    assert.strictEqual(
+      legacyFullStrictReplay.resolverCandidateApplyCount,
+      optimizedFullStrictReplay.resolverCandidateApplyCount +
+        legacyFullStrictReplay.resolverHardFilteredAfterApply,
+    );
+  }
   assert.strictEqual(
     fullRouteRecord.final.exactStateKey,
     buildStateKey(winnerState),
@@ -630,6 +678,41 @@ function main() {
         decisionCount: fullRouteRecord.decisions.length,
         strictReplay: fullStrictReplay.valid,
         routeFingerprint: buildReplayRouteFingerprint(fullRouteRecord).sha256,
+        replayCandidateApplyFastPath: {
+          legacy: {
+            wallMs: legacyReplayWallMs,
+            selectedActionsReapplied:
+              legacyFullStrictReplay
+                ? legacyFullStrictReplay.resolvedPostStatesApplied
+                : null,
+            resolverCandidateApplyCount:
+              legacyFullStrictReplay
+                ? legacyFullStrictReplay.resolverCandidateApplyCount
+                : null,
+            hardFilteredBeforeApply:
+              legacyFullStrictReplay
+                ? legacyFullStrictReplay.resolverHardFilteredBeforeApply
+                : null,
+            hardFilteredAfterApply:
+              legacyFullStrictReplay
+                ? legacyFullStrictReplay.resolverHardFilteredAfterApply
+                : null,
+          },
+          optimized: {
+            wallMs: optimizedReplayWallMs,
+            selectedPostStatesReused:
+              optimizedFullStrictReplay.resolvedPostStatesReused,
+            resolverCandidateApplyCount:
+              optimizedFullStrictReplay.resolverCandidateApplyCount,
+            hardFilteredBeforeApply:
+              optimizedFullStrictReplay.resolverHardFilteredBeforeApply,
+            hardFilteredAfterApply:
+              optimizedFullStrictReplay.resolverHardFilteredAfterApply,
+          },
+          exactStateParity: compareReplayFastPath ? true : null,
+          comparisonRequested: compareReplayFastPath,
+          timingDirectionalNotPinned: true,
+        },
       },
       finalExactStateFingerprint: exactStateFingerprint(winnerState),
       verdict: repairVerdict,
