@@ -3,7 +3,7 @@
 /**
  * PR-5.7a research-only MT5 first-sweep candidate quality shadow.
  *
- * The audit replays the tracked MT3 fixture, captures every observable raw
+ * The audit replays the tracked best MT4 fixture, captures every observable raw
  * goal/archive and milestone-frontier candidate at mt5-first-sweep, simulates
  * retention capacities 1/2/4/8 with the unchanged selector, and gives every
  * candidate the same bounded mt5-third-gate probe.  A miss remains
@@ -43,8 +43,9 @@ const FIXTURE_FILE = path.join(
   __dirname,
   "routes",
   "fixtures",
-  "mt1-mt3-i893-hp8425.route.json",
+  "mt1-mt4-hp6428-best.route.json",
 );
+const FROM_MILESTONE_ID = "mt4-hp4459";
 const SOURCE_SEGMENT_ID = "mt5-first-sweep";
 const DOWNSTREAM_SEGMENT_ID = "mt5-third-gate";
 const RESEARCH_PROFILE = "without-start-component";
@@ -194,6 +195,8 @@ function runDownstreamProbe(project, milestoneSegments, candidate, options) {
       stopOnFirstGoal: true,
       priorityMode: "goal-directed",
       goalSkylineLimit: 8,
+      captureExpandedStates: config.captureExpandedStates === true,
+      captureExpandedStateLimit: config.captureExpandedStateLimit || 0,
     },
   });
   const dp = result.diagnostics && result.diagnostics.dp || {};
@@ -222,6 +225,19 @@ function runDownstreamProbe(project, milestoneSegments, candidate, options) {
     expansions: Number(dp.expansions || 0),
     frontierSize: Number(dp.frontierSize || 0),
     actionTrimmed: Number(result.diagnostics && result.diagnostics.actionTrimmed || 0),
+    actionsGeneratedByKind: result.diagnostics && result.diagnostics.actionsGeneratedByKind || {},
+    actionsExpandedByKind: result.diagnostics && result.diagnostics.actionsExpandedByKind || {},
+    actionsKeptByKind: result.diagnostics && result.diagnostics.actionsKeptByKind || {},
+    actionsDominatedByKind: result.diagnostics && result.diagnostics.actionsDominatedByKind || {},
+    uniqueBattleTargets: Number(result.diagnostics && result.diagnostics.uniqueBattleTargets || 0),
+    uniquePortalEntries: Number(result.diagnostics && result.diagnostics.uniquePortalEntries || 0),
+    ...(config.includeCapturedStates === true
+      ? {
+          capturedExpandedStates:
+            result.diagnostics && result.diagnostics.dp &&
+            result.diagnostics.dp.capturedExpandedStates || [],
+        }
+      : {}),
     strictReplayRequiredIfPromotedToWitness: result.found === true,
   };
 }
@@ -238,7 +254,7 @@ function mergeCandidateCorpora(frontierCandidates, rawCandidates) {
   return result;
 }
 
-function runAudit(args) {
+function collectCandidateCorpus(args) {
   const project = loadProject(PROJECT_ROOT);
   const milestoneSpec = getMilestoneSpec(project, ROUTE_NAME);
   const sourceSegment = milestoneSpec.milestones.find((segment) => segment.id === SOURCE_SEGMENT_ID);
@@ -260,7 +276,7 @@ function runAudit(args) {
     sourceSegmentId: SOURCE_SEGMENT_ID,
   });
   const sourceResult = runMilestoneGraph(simulator, initialState, milestoneSpec, {
-    fromMilestoneId: "mt3-i893-hp8425",
+    fromMilestoneId: FROM_MILESTONE_ID,
     toMilestoneId: SOURCE_SEGMENT_ID,
     candidateLimit,
     goalSkylineLimit: candidateLimit,
@@ -290,6 +306,49 @@ function runAudit(args) {
     preserveSkylineRoles: true,
     selectCandidateSkyline: __testHooks.selectCandidateSkyline,
   });
+  return {
+    project,
+    milestoneSpec,
+    sourceSegment,
+    downstreamSegment,
+    dependencySegments,
+    goalDependencyGraph,
+    keySide,
+    sourceMaxExpansions,
+    probeMaxExpansions,
+    candidateLimit,
+    walkReachabilityMode,
+    simulator,
+    initialState,
+    sourceResult,
+    captured,
+    frontierCandidates,
+    rawCandidates,
+    allCandidates,
+    retentionMatrix,
+  };
+}
+
+function runAudit(args) {
+  const context = collectCandidateCorpus(args);
+  const {
+    project,
+    sourceSegment,
+    downstreamSegment,
+    dependencySegments,
+    goalDependencyGraph,
+    keySide,
+    sourceMaxExpansions,
+    probeMaxExpansions,
+    candidateLimit,
+    walkReachabilityMode,
+    sourceResult,
+    captured,
+    frontierCandidates,
+    rawCandidates,
+    allCandidates,
+    retentionMatrix,
+  } = context;
   const probes = allCandidates.map((candidate) => runDownstreamProbe(
     project,
     dependencySegments,
@@ -329,7 +388,7 @@ function runAudit(args) {
     },
     source: {
       fixture: path.relative(__dirname, FIXTURE_FILE).replace(/\\/g, "/"),
-      fromMilestoneId: "mt3-i893-hp8425",
+      fromMilestoneId: FROM_MILESTONE_ID,
       sourceSegmentId: SOURCE_SEGMENT_ID,
       downstreamSegmentId: DOWNSTREAM_SEGMENT_ID,
       foundSource: sourceResult.reachedMilestone === SOURCE_SEGMENT_ID,
@@ -407,5 +466,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  collectCandidateCorpus,
+  runDownstreamProbe,
   runAudit,
 };

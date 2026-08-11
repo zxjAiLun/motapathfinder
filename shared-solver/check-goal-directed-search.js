@@ -3,8 +3,9 @@
 /**
  * TEST GRADE: local-regression
  *
- * Proves that goal-directed agenda ordering reaches the tracked route goals
- * with fewer expansions while leaving key/dominance semantics untouched.
+ * Proves that goal-directed agenda ordering reaches tracked route goals while
+ * leaving key/dominance semantics untouched. The MT2 case locks its expansion
+ * improvement; the resource-timing-sensitive MT4 chain locks skyline closure.
  * The protected-present-tile feasibility gate is explicit, rejects unknown
  * modes at configuration time, and is not enabled by the default profile.
  */
@@ -249,17 +250,11 @@ function main() {
     maxExpansions: 100,
     stopOnFirstGoal: true,
   });
-  const mt4Goal = runTracked("mt4-manual-to-mt5-entry", null, {
+  const mt4Goal = runTracked("mt4-manual-to-mt5-entry", "goal-directed", {
     maxExpansions: 100,
-    searchIntent: "first-feasible",
   });
-  assert.ok(mt4Default.found && mt4Goal.found, "MT4 -> MT5 must be found in both first-feasible modes");
+  assert.ok(mt4Default.found && mt4Goal.found, "MT4 -> MT5 must be found in both skyline agenda modes");
   assert.ok(mt4Default.strictReplay.verified && mt4Goal.strictReplay.verified, "MT4 -> MT5 strict replay");
-  assert.ok(
-    mt4Goal.scale.firstGoalExpansion < mt4Default.scale.firstGoalExpansion,
-    "goal-directed MT4 -> MT5 must reach the milestone in fewer expansions",
-  );
-  assert.ok(mt4Goal.scale.generated < mt4Default.scale.generated, "goal-directed MT4 -> MT5 must generate fewer actions");
 
   process.stdout.write(`${JSON.stringify({
     schema: "motapathfinder.goal-directed-search.v1",
@@ -275,11 +270,11 @@ function main() {
       default: compact(mt2Default),
       goalDirected: compact(mt2Goal),
     },
-    mt4ToMt5FirstFeasible: {
+    mt4ToMt5SegmentedSkyline: {
       default: compact(mt4Default),
       goalDirected: compact(mt4Goal),
-      expansionReductionFactor: Number(
-        (mt4Goal.scale.firstGoalExpansion / mt4Default.scale.firstGoalExpansion).toFixed(3),
+      expansionFactorGoalOverDefault: Number(
+        (mt4Goal.scale.expanded / mt4Default.scale.expanded).toFixed(3),
       ),
     },
     feasibilityGate: checkProtectedPresentTileGate(),

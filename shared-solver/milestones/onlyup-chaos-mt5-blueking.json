@@ -511,9 +511,136 @@
       }
     },
     {
+      "id": "mt4-pre-entry-openers",
+      "label": "MT4 上楼前入口双战",
+      "startFrom": "mt4-hp4459",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": { "hp": 1 },
+        "removedTiles": [
+          { "floorId": "MT4", "x": 4, "y": 1 },
+          { "floorId": "MT4", "x": 2, "y": 1 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT4", "x": 4, "y": 7, "reason": "Next detour target." },
+          { "floorId": "MT4", "x": 6, "y": 6, "reason": "Next detour target." },
+          { "floorId": "MT4", "x": 10, "y": 8, "reason": "Reserve the right poison skeleton." },
+          { "floorId": "MT4", "x": 2, "y": 8, "reason": "Reserve the left poison skeleton." },
+          { "floorId": "MT4", "x": 3, "y": 10, "reason": "Reserve the bottom stat battle." },
+          { "floorId": "MT4", "x": 4, "y": 11, "reason": "Reserve the early-entry poisonBat." },
+          { "floorId": "MT4", "x": 11, "y": 11, "reason": "Reserve the return-prep HP priest." },
+          { "floorId": "MT4", "x": 2, "y": 5, "reason": "Keep the paired priest for the HP-positive guard chain." },
+          { "floorId": "MT4", "x": 6, "y": 8, "reason": "Reserve the return-prep poisonBat." },
+          { "floorId": "MT4", "x": 4, "y": 3, "reason": "Reserve the first-entry stat battle." },
+          { "floorId": "MT4", "x": 8, "y": 3, "reason": "Reserve the delayed I621 heal." },
+          { "floorId": "MT4", "x": 10, "y": 5, "reason": "Reserve the late stat battle." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT4"],
+        "allowChangeFloors": []
+      },
+      "dp": { "maxExpansions": 7000 }
+    },
+    {
+      "id": "mt4-pre-entry-left-detour",
+      "label": "MT4 上楼前左侧绕行",
+      "startFrom": "mt4-pre-entry-openers",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": { "hp": 1 },
+        "removedTiles": [
+          { "floorId": "MT4", "x": 4, "y": 7 },
+          { "floorId": "MT4", "x": 6, "y": 6 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT4", "x": 10, "y": 8, "reason": "Next right-side target." },
+          { "floorId": "MT4", "x": 2, "y": 8, "reason": "Reserve the left poison skeleton." },
+          { "floorId": "MT4", "x": 3, "y": 10, "reason": "Reserve the bottom stat battle." },
+          { "floorId": "MT4", "x": 4, "y": 11, "reason": "Reserve the early-entry poisonBat." },
+          { "floorId": "MT4", "x": 11, "y": 11, "reason": "Reserve the return-prep HP priest." },
+          { "floorId": "MT4", "x": 2, "y": 5, "reason": "Keep the paired priest for the HP-positive guard chain." },
+          { "floorId": "MT4", "x": 6, "y": 8, "reason": "Reserve the return-prep poisonBat." },
+          { "floorId": "MT4", "x": 4, "y": 3, "reason": "Reserve the first-entry stat battle." },
+          { "floorId": "MT4", "x": 8, "y": 3, "reason": "Reserve the delayed I621 heal." },
+          { "floorId": "MT4", "x": 10, "y": 5, "reason": "Reserve the late stat battle." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT3", "MT4"],
+        "allowChangeFloors": ["MT3:6,0", "MT4:6,0"]
+      },
+      "dp": { "maxExpansions": 7000 }
+    },
+    {
+      "id": "mt4-pre-entry-right-detour",
+      "label": "MT4 上楼前左右毒骷髅",
+      "startFrom": "mt4-pre-entry-left-detour",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": { "hp": 1 },
+        "removedTiles": [
+          { "floorId": "MT4", "x": 10, "y": 8 },
+          { "floorId": "MT4", "x": 2, "y": 8 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT4", "x": 3, "y": 10, "reason": "Next bottom stat target." },
+          { "floorId": "MT4", "x": 4, "y": 11, "reason": "Reserve the early-entry poisonBat." },
+          { "floorId": "MT4", "x": 11, "y": 11, "reason": "Reserve the return-prep HP priest." },
+          { "floorId": "MT4", "x": 2, "y": 5, "reason": "Keep the paired priest for the HP-positive guard chain." },
+          { "floorId": "MT4", "x": 6, "y": 8, "reason": "Reserve the return-prep poisonBat." },
+          { "floorId": "MT4", "x": 4, "y": 3, "reason": "Reserve the first-entry stat battle." },
+          { "floorId": "MT4", "x": 8, "y": 3, "reason": "Reserve the delayed I621 heal." },
+          { "floorId": "MT4", "x": 10, "y": 5, "reason": "Reserve the late stat battle." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": ["MT4"],
+        "allowChangeFloors": []
+      },
+      "dp": { "maxExpansions": 7000 }
+    },
+    {
+      "id": "mt4-pre-entry-detour",
+      "label": "MT4 上楼前属性绕行",
+      "startFrom": "mt4-pre-entry-right-detour",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 1
+        },
+        "removedTiles": [
+          { "floorId": "MT4", "x": 3, "y": 10 }
+        ],
+        "presentTiles": [
+          { "floorId": "MT4", "x": 4, "y": 11, "reason": "This poisonBat is the early-entry action." },
+          { "floorId": "MT4", "x": 11, "y": 11, "reason": "Reserve the return-prep HP priest." },
+          { "floorId": "MT4", "x": 2, "y": 5, "reason": "Keep the paired priest until MT4:11,11 triggers its HP-positive guard chain." },
+          { "floorId": "MT4", "x": 6, "y": 8, "reason": "Reserve the return-prep poisonBat." },
+          { "floorId": "MT4", "x": 4, "y": 3, "reason": "Reserve the first-entry stat battle." },
+          { "floorId": "MT4", "x": 8, "y": 3, "reason": "Reserve the delayed I621 heal." },
+          { "floorId": "MT4", "x": 7, "y": 3, "reason": "I621 belongs to the delayed-heal checkpoint." },
+          { "floorId": "MT4", "x": 10, "y": 5, "reason": "Reserve the late stat battle for the third gate." }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT4"
+        ],
+        "allowChangeFloors": []
+      },
+      "dp": {
+        "maxExpansions": 7000
+      }
+    },
+    {
       "id": "mt5-early-gem-entry",
       "label": "MT4/MT5 早上楼资源分支",
-      "startFrom": "mt4-hp4459",
+      "startFrom": "mt4-pre-entry-detour",
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT5",
@@ -523,7 +650,81 @@
           "def": 745,
           "mdef": 4910,
           "exp": 77
-        }
+        },
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve the return-prep HP priest."
+          },
+          {
+            "floorId": "MT4",
+            "x": 2,
+            "y": 5,
+            "reason": "Keep the paired priest until MT4:11,11 triggers its HP-positive guard chain."
+          },
+          {
+            "floorId": "MT4",
+            "x": 6,
+            "y": 8,
+            "reason": "Reserve the return-prep poisonBat."
+          },
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 3,
+            "reason": "Reserve the first-entry stat battle."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve the delayed I621 heal until after the MT5 bottom pair."
+          },
+          {
+            "floorId": "MT4",
+            "x": 7,
+            "y": 3,
+            "reason": "I621 belongs to the delayed-heal checkpoint."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "Reserve the late stat battle for the third gate."
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 11,
+            "reason": "Reserve the first-sweep left king."
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10,
+            "reason": "Reserve the first-sweep presbyter."
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11,
+            "reason": "Reserve the first-sweep right king."
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve the bottom DEF battle."
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "Reserve the bottom ATK battle."
+          }
+        ]
       },
       "actionPolicy": {
         "allowedFloors": [
@@ -543,9 +744,302 @@
       }
     },
     {
+      "id": "mt5-return-prep-before-first-sweep",
+      "label": "MT4 回程准备并保留延迟回复",
+      "startFrom": "mt5-early-gem-entry",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 90000,
+          "atk": 927,
+          "def": 745,
+          "mdef": 5910,
+          "exp": 141
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT4",
+            "x": 6,
+            "y": 8
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 3,
+            "reason": "This stat battle is the next first-entry action."
+          },
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve the delayed I621 heal until after the MT5 bottom pair."
+          },
+          {
+            "floorId": "MT4",
+            "x": 7,
+            "y": 3,
+            "reason": "I621 belongs to the delayed-heal checkpoint."
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 11,
+            "reason": "Reserve the first-sweep left king."
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10,
+            "reason": "Reserve the first-sweep presbyter."
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11,
+            "reason": "Reserve the first-sweep right king."
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve the bottom DEF battle."
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "Reserve the bottom ATK battle."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT3",
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT3:6,0",
+          "MT3:6,12",
+          "MT4:6,0",
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "maxExpansions": 7000
+      }
+    },
+    {
+      "id": "mt5-first-entry-with-delayed-heal",
+      "label": "MT5 首次进入并保留延迟回复",
+      "startFrom": "mt5-return-prep-before-first-sweep",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 70000,
+          "atk": 927,
+          "def": 795,
+          "mdef": 5910,
+          "exp": 173
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 4,
+            "y": 3
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve the delayed I621 heal until after the MT5 bottom pair."
+          },
+          {
+            "floorId": "MT4",
+            "x": 7,
+            "y": 3,
+            "reason": "I621 belongs to the delayed-heal checkpoint."
+          },
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 11,
+            "reason": "Reserve the first-sweep left king."
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10,
+            "reason": "Reserve the first-sweep presbyter."
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11,
+            "reason": "Reserve the first-sweep right king."
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11,
+            "reason": "Reserve the bottom DEF battle."
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "Reserve the bottom ATK battle."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "maxExpansions": 7000
+      }
+    },
+    {
+      "id": "mt5-first-sweep-left-king",
+      "label": "MT5 首轮左侧骷髅王",
+      "startFrom": "mt5-first-entry-with-delayed-heal",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 60000,
+          "atk": 927,
+          "def": 795,
+          "mdef": 6110,
+          "exp": 189
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve the delayed I621 heal until after the MT5 bottom pair."
+          },
+          {
+            "floorId": "MT4",
+            "x": 7,
+            "y": 3,
+            "reason": "I621 belongs to the delayed-heal checkpoint."
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10,
+            "reason": "This is the next first-sweep action."
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11,
+            "reason": "Reserve the right king until after MT5:3,10."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "maxExpansions": 7000
+      }
+    },
+    {
+      "id": "mt5-first-sweep-presbyter",
+      "label": "MT5 首轮骷髅教主",
+      "startFrom": "mt5-first-sweep-left-king",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 30000,
+          "atk": 977,
+          "def": 795,
+          "mdef": 6110,
+          "exp": 205
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Reserve the delayed I621 heal until after the MT5 bottom pair."
+          },
+          {
+            "floorId": "MT4",
+            "x": 7,
+            "y": 3,
+            "reason": "I621 belongs to the delayed-heal checkpoint."
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11,
+            "reason": "This is the next first-sweep action."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "maxExpansions": 7000
+      }
+    },
+    {
       "id": "mt5-first-sweep",
       "label": "MT5 第一轮资源扫荡",
-      "startFrom": "mt5-early-gem-entry",
+      "startFrom": "mt5-first-sweep-presbyter",
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT5",
@@ -555,7 +1049,160 @@
           "def": 795,
           "mdef": 6110,
           "exp": 221
-        }
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 4,
+            "y": 11
+          },
+          {
+            "floorId": "MT5",
+            "x": 3,
+            "y": 10
+          },
+          {
+            "floorId": "MT5",
+            "x": 8,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Preserve skeletonKing until after the MT5 bottom pair so its adjacent I621 heal retains downstream value."
+          },
+          {
+            "floorId": "MT4",
+            "x": 7,
+            "y": 3,
+            "reason": "I621 is the delayed heal paired with MT4:8,3 and belongs to the third-gate segment."
+          },
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11,
+            "reason": "The bottom DEF battle belongs to the next checkpoint."
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11,
+            "reason": "The bottom ATK battle belongs to the next checkpoint."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "maxExpansions": 7000
+      }
+    },
+    {
+      "id": "mt5-bottom-pair-before-delayed-heal",
+      "label": "MT5 底部双战后再取延迟回复",
+      "startFrom": "mt5-first-sweep",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT5",
+        "minHero": {
+          "hp": 1,
+          "atk": 1077,
+          "def": 895,
+          "mdef": 6110,
+          "exp": 273
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT5",
+            "x": 11,
+            "y": 11
+          },
+          {
+            "floorId": "MT5",
+            "x": 1,
+            "y": 11
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3,
+            "reason": "Consume this only after both MT5 bottom battles."
+          },
+          {
+            "floorId": "MT4",
+            "x": 7,
+            "y": 3,
+            "reason": "I621 remains paired with the reserved MT4 battle."
+          },
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "The late stat battle belongs after the delayed heal."
+          }
+        ]
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT4",
+          "MT5"
+        ],
+        "allowChangeFloors": [
+          "MT4:6,12",
+          "MT5:6,12"
+        ]
+      },
+      "dp": {
+        "maxExpansions": 7000
+      }
+    },
+    {
+      "id": "mt4-delayed-heal-before-third-gate",
+      "label": "MT4 延迟回复后进入第三门槛",
+      "startFrom": "mt5-bottom-pair-before-delayed-heal",
+      "goal": {
+        "type": "heroAtLeast",
+        "floorId": "MT4",
+        "minHero": {
+          "hp": 90000,
+          "atk": 1077,
+          "def": 895,
+          "mdef": 6110,
+          "exp": 289
+        },
+        "removedTiles": [
+          {
+            "floorId": "MT4",
+            "x": 8,
+            "y": 3
+          },
+          {
+            "floorId": "MT4",
+            "x": 7,
+            "y": 3
+          }
+        ],
+        "presentTiles": [
+          {
+            "floorId": "MT4",
+            "x": 10,
+            "y": 5,
+            "reason": "The late stat battle is the next third-gate action."
+          }
+        ]
       },
       "actionPolicy": {
         "allowedFloors": [
@@ -574,7 +1221,7 @@
     {
       "id": "mt5-third-gate",
       "label": "MT5 第三门槛",
-      "startFrom": "mt5-first-sweep",
+      "startFrom": "mt4-delayed-heal-before-third-gate",
       "goal": {
         "type": "heroAtLeast",
         "floorId": "MT5",

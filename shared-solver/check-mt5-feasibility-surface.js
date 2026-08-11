@@ -291,7 +291,7 @@ function main() {
     controls: {
       observationOnly: true,
       productionPruningDefaultsUnchanged: true,
-      milestoneJsonUnchanged: true,
+      auditDoesNotWriteMilestoneJson: true,
       boundsAreEvidenceNotConfiguration: true,
     },
     scope: {

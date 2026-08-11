@@ -34,6 +34,7 @@ jobs:
       - run: npm run check:goal-directed-search
       - run: npm run check:eval-vector
       - run: npm run check:mt5-feasibility-surface
+      - run: npm run check:mt5-third-gate-resource-timing
 
   # =====================================================================
   # Tier 3 — Qualification gate. Runs only for marker commits

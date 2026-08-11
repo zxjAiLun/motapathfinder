@@ -12,7 +12,7 @@ All fixed controls are invoked through `shared-solver/run-region-dp.js` with exp
 
 | Control | Spec | Milestones | Preflight | Entry validation | Probe status | Termination | Failure class | Route primitives |
 | --- | --- | ---: | --- | --- | --- | --- | --- | ---: |
-| onlyup-region-1 | towers/onlyup/region-specs/region-1.json | 18 | exit=0, parsed=true | passed | not-found | expansion-budget-exhausted | target-action-unreachable | 0 |
+| onlyup-region-1 | towers/onlyup/region-specs/region-1.json | 28 | exit=0, parsed=true | passed | not-found | expansion-budget-exhausted | target-action-unreachable | 0 |
 | onlyup-region-2 | towers/onlyup/region-specs/region-2.json | 12 | exit=0, parsed=true | passed | not-found | prefix-budget-exhausted | prefix-budget-exhausted | 0 |
 | whiteisland-trial-smoke | towers/whiteisland/trial-specs/trial-smoke.json | 1 | exit=0, parsed=true | passed | not-found | expansion-budget-exhausted | hp-deficit | 0 |
 

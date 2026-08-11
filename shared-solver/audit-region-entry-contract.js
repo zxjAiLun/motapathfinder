@@ -56,7 +56,7 @@ const CONTROLS = [
 
 const CONTROL_EXPECTATIONS = {
   "onlyup-region-1": {
-    effectiveMilestoneCount: 18,
+    effectiveMilestoneCount: 28,
     preflight: { exitCode: 0, summaryParsed: true, valid: true },
     probe: {
       exitCode: 0,

@@ -2068,6 +2068,13 @@
       "cleanCheckout": true,
       "notes": "MT5 near-term feasibility surface contract: clause expressibility, measured gain provenance, level-up/I608 unsoundness guards, the constant-bound-cannot-prune-third-gate result, and zero-false-prune controls with a live floor-graph refutation"
     },
+    "shared-solver/check-mt5-third-gate-resource-timing.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "Tracked MT4 fixture proves the 13846 HP causal benefit of delaying MT4:8,3/I621, then requires the refined milestone graph to reach mt5-third-gate within 500 expansions per segment without action trimming"
+    },
     "shared-solver/check-mt5-route-repair-closure.js": {
       "grade": "closure",
       "allowsNotFound": false,
