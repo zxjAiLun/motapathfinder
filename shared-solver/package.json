@@ -78,6 +78,8 @@
     "diagnose:d2-blind-failure": "node attribute-d2-blind-failure.js",
     "check:d2-blind-failure-attribution": "node check-d2-blind-failure-attribution.js",
     "check:automatic-feasibility-subgoals": "node check-automatic-feasibility-subgoals.js",
+    "observe:d2-search": "node observe-d2-search.js",
+    "check:search-observatory": "node check-search-observatory.js",
     "check:region-specs": "node check-region-specs.js",
     "check:resource-timing": "node check-resource-timing.js",
     "check:resource-timing-model": "node check-resource-timing-model.js",

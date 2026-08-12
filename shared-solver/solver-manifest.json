@@ -1592,6 +1592,22 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/search-observatory.js": {
+      "id": "search-observatory",
+      "path": "shared-solver/lib/search-observatory.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "human-review-diagnostics",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.16a search intent, budget ledger, review candidates, falsifiable next experiment, and same-control comparison"
+    },
     "shared-solver/lib/segment-dp.js": {
       "id": "segment-dp",
       "path": "shared-solver/lib/segment-dp.js",
@@ -2052,6 +2068,13 @@
     }
   },
   "tests": {
+    "shared-solver/check-search-observatory.js": {
+      "grade": "diagnostic",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.16a D2 human-readable search intent and cost observatory baseline"
+    },
     "shared-solver/check-automatic-feasibility-subgoals.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": false,

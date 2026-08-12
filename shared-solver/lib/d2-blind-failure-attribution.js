@@ -54,12 +54,18 @@ function goalRankKey(rank) {
   });
 }
 
-function createAttributionObserver() {
+function createAttributionObserver(options) {
+  const config = options || {};
+  const terminalGoal = config.terminalGoal || {};
+  const terminalActionSummary = terminalGoal.enemyId && terminalGoal.floorId && terminalGoal.x != null && terminalGoal.y != null
+    ? `battle:${terminalGoal.enemyId}@${terminalGoal.floorId}:${terminalGoal.x},${terminalGoal.y}`
+    : null;
   const counters = {
     expandedByFloor: {},
     expandedByIncomingKind: {},
     expandedByIncomingSummary: {},
     generatedByKind: {},
+    generatedBySummary: {},
     generatedBattleTargets: {},
     rejectionReasons: {},
     goalRankTuples: {},
@@ -100,10 +106,11 @@ function createAttributionObserver() {
         if (event.eventType === "candidateGenerated") {
           const action = event.action || {};
           increment(counters.generatedByKind, action.kind);
+          if (action.summary) increment(counters.generatedBySummary, action.summary);
           if (action.kind === "battle" && action.summary) {
             increment(counters.generatedBattleTargets, action.summary);
           }
-          if (action.summary === "battle:blueKing@MT5:6,7") counters.bossCandidatesGenerated += 1;
+          if (terminalActionSummary && action.summary === terminalActionSummary) counters.bossCandidatesGenerated += 1;
           if (action.kind === "equip" && String(action.summary || "").includes("I894")) {
             counters.equipmentCandidatesGenerated += 1;
           }
@@ -149,7 +156,7 @@ function graphCoverage(graph) {
 }
 
 function runFloorLocalControl(project, initialState, terminalGoal, maxExpansions) {
-  const observed = createAttributionObserver();
+  const observed = createAttributionObserver({ terminalGoal });
   const startedAt = Date.now();
   const result = searchSegmentDP(makeBlindSimulator(project), initialState, {
     id: "d2-mt5-only-diagnostic-control",
@@ -199,7 +206,7 @@ function runD2BlindFailureAttribution(options) {
     towerId: config.towerId || "blind-tower",
   });
   const coverage = graphCoverage(graph);
-  const observed = createAttributionObserver();
+  const observed = createAttributionObserver({ terminalGoal });
   const startedAt = Date.now();
   const result = searchSegmentDP(simulator, initialState, {
     id: "d2-blind-first-failure-attribution",
@@ -269,6 +276,7 @@ function runD2BlindFailureAttribution(options) {
       knownRouteUsedBySearch: false,
       actionPolicy: {},
       dpHints: {},
+      terminalGoal: { ...terminalGoal },
     },
     controls: {
       maxExpansions,
@@ -299,6 +307,12 @@ function runD2BlindFailureAttribution(options) {
         stoppedReason: dp.stoppedReason || null,
         wallMs: Date.now() - startedAt,
         actionTrimmed: number(dp.actionTrimmed, 0),
+        generated: Object.values(observed.counters.generatedByKind)
+          .reduce((sum, count) => sum + number(count, 0), 0),
+        accepted: Math.max(0, number(dp.acceptedStates, 0) - 1),
+        registeredStatesIncludingRoot: number(dp.acceptedStates, 0),
+        rejected: Object.values(observed.counters.rejectionReasons)
+          .reduce((sum, count) => sum + number(count, 0), 0),
       },
       trace: observed.counters,
       distinctGoalRankTupleCount,
