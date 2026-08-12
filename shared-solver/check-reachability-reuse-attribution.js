@@ -68,7 +68,10 @@ async function main() {
         jobId: "reachability-reuse-attribution",
         onProgress: () => {},
         shouldStop: () => false,
-        context: { reachabilityReuseAttribution: true },
+        context: {
+          reachabilityReuseAttribution: true,
+          enableReachabilitySkeletonCache: false,
+        },
       });
     } finally {
       console.log = originalLog;

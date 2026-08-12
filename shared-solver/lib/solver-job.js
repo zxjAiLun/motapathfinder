@@ -146,6 +146,7 @@ function makeSimulator(project, regionSpec, task, runtimeOptions) {
     enableResourceChain: false,
     searchGraphMode: simulatorConfig.searchGraphMode || "primitive",
     reachabilityReuseAttribution: runtimeConfig.reachabilityReuseAttribution === true,
+    enableReachabilitySkeletonCache: runtimeConfig.enableReachabilitySkeletonCache !== false,
   });
 }
 
@@ -320,6 +321,7 @@ async function executeSolveJob(task, {
   const rank = normalizedTask.tower.rank || regionSpec.rank || "chaos";
   const simulator = makeSimulator(project, regionSpec, task, {
     reachabilityReuseAttribution: context && context.reachabilityReuseAttribution === true,
+    enableReachabilitySkeletonCache: !context || context.enableReachabilitySkeletonCache !== false,
   });
   const initialState = createStartState(project, simulator, regionSpec, rank);
 
@@ -771,6 +773,7 @@ async function executeSolveJobV2(task, {
     progress.setPhase("region-transition");
     const simulator = makeSimulator(project, regionSpec, task, {
       reachabilityReuseAttribution: context && context.reachabilityReuseAttribution === true,
+      enableReachabilitySkeletonCache: !context || context.enableReachabilitySkeletonCache !== false,
     });
     const milestoneSpec = buildRegionMilestoneSpec(project, regionSpec);
     const inputFrontier = index === 0

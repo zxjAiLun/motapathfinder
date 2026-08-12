@@ -208,6 +208,7 @@
         "shared-solver/check-walk-reachability-fast-path.js",
         "shared-solver/check-walk-reachability-performance.js",
         "shared-solver/check-reachability-reuse-attribution.js",
+        "shared-solver/check-reachability-skeleton-cache.js",
         "shared-solver/check-goal-directed-search.js",
         "shared-solver/check-candidate-quality-shadow.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
@@ -1012,7 +1013,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.9a observation-only exact-cache miss grouping for already-eligible safe-fast walk closures; safety classification stays per exact state and no cache/reuse semantics change"
+      "notes": "PR-5.9a observation-only exact-cache miss grouping for already-eligible safe-fast walk closures; shared topology projection is reused by PR-5.9b while attribution remains optional and read-only"
     },
     "shared-solver/lib/region-entry-validator.js": {
       "id": "region-entry-validator",
@@ -1470,7 +1471,8 @@
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
-      }
+      },
+      "notes": "PR-5.9b keeps the exact-state reachability LRU and adds a bounded safe-fast topology skeleton LRU; each exact miss still executes safety classification and rebases current-state travel nodes"
     },
     "shared-solver/lib/solver-config.js": {
       "id": "solver-config",
@@ -1590,7 +1592,8 @@
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
-      }
+      },
+      "notes": "Safe-fast walk splits state-free topology/path skeleton discovery from current-state travel-node rebase; unsafe states remain on legacy exact simulation"
     },
     "shared-solver/lib/teacher-divergence-audit.js": {
       "id": "teacher-divergence-audit",
@@ -2627,6 +2630,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.9a candidate-default MT1 exp9 attribution: exact cache unchanged, safe-fast misses grouped by current-floor topology, normalized closure parity and pinned winner/route/objective required"
+    },
+    "shared-solver/check-reachability-skeleton-cache.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.9b independent-process A/B/B/A: exact-state LRU parity, state-free safe-fast skeleton cache, per-exact-state safety classification, 116-state action/successor exact corpus, pinned winner/route/objective/scale and strict replay"
     },
     "shared-solver/check-goal-directed-search.js": {
       "grade": "local-regression",

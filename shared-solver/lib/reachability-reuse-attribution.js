@@ -2,6 +2,7 @@
 
 const { fingerprintJson } = require("./solve-task");
 const { listFloorMutationSummary } = require("./state");
+const { safeTopologyProjection } = require("./step-simulator");
 
 function stableValue(value) {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -14,13 +15,6 @@ function stableValue(value) {
 
 function stableJson(value) {
   return JSON.stringify(stableValue(value));
-}
-
-function currentFloorMutations(state) {
-  const floorId = state && state.floorId;
-  const floorState = floorId && state.floorStates && state.floorStates[floorId];
-  if (!floorId || !floorState) return [];
-  return listFloorMutationSummary({ [floorId]: floorState });
 }
 
 function offFloorMutations(state) {
@@ -38,15 +32,6 @@ function offFloorMutations(state) {
 // reuse candidate therefore groups only already-eligible builds by the current
 // floor, start coordinate, and current-floor mutations.  It does NOT skip or
 // cache the safety classification itself.
-function safeTopologyProjection(state) {
-  const loc = state && state.hero && state.hero.loc || {};
-  return {
-    floorId: state && state.floorId || null,
-    start: { x: Number(loc.x), y: Number(loc.y) },
-    currentFloorMutations: currentFloorMutations(state),
-  };
-}
-
 function closureProjection(reachability) {
   return Object.values(reachability && reachability.visited || {})
     .map((node) => ({

@@ -376,6 +376,7 @@ class StaticSimulator {
     this.enableResourceCluster = Boolean(config.enableResourceCluster);
     this.regionSignatureMode = String(config.regionSignatureMode || "walk");
     this.walkReachabilityMode = normalizeWalkReachabilityMode(config.walkReachabilityMode);
+    this.enableReachabilitySkeletonCache = config.enableReachabilitySkeletonCache !== false;
     this.searchGraphMode = normalizeSearchGraphMode(config.searchGraphMode || config.searchGraph, "hybrid");
     this.primitiveFallbackMode = config.primitiveFallbackMode || "auto";
     this.resourcePocketSearchOptions = config.resourcePocketSearchOptions || {};
@@ -422,6 +423,7 @@ class StaticSimulator {
     this.actionExpansionCacheLimit = Number(config.actionExpansionCacheLimit || 1024);
     this.actionExpansionCaches = {
       reachability: new Map(),
+      reachabilitySkeleton: new Map(),
       regionSignature: new Map(),
       primitiveActions: new Map(),
       resourceCluster: new Map(),
@@ -442,6 +444,13 @@ class StaticSimulator {
       dominanceKeyBuilds: 0,
       hazardScanMs: 0,
       safetyProbeMs: 0,
+    });
+    Object.assign(this.actionExpansionCacheStats.reachabilitySkeleton, {
+      builds: 0,
+      rebases: 0,
+      nodesRebased: 0,
+      unsafeBypasses: 0,
+      safetyClassifications: 0,
     });
     this.reachabilityReuseAttribution = config.reachabilityReuseAttribution === true
       ? new ReachabilityReuseAttribution()
@@ -563,8 +572,22 @@ class StaticSimulator {
         choiceResolver: this.choiceResolver,
         stabilizeState: (nextState) => this.stabilizeState(nextState),
         walkReachabilityMode: this.walkReachabilityMode,
+        safeWalkSkeletonCache: this.enableActionExpansionCache && this.enableReachabilitySkeletonCache
+          ? {
+            get: (cacheKey) => this.cacheGet("reachabilitySkeleton", cacheKey),
+            set: (cacheKey, skeleton, computeMs) => this.cacheSet(
+              "reachabilitySkeleton",
+              cacheKey,
+              skeleton,
+              null,
+              computeMs,
+            ),
+          }
+          : null,
       });
       const diagnostics = reachability && reachability.diagnostics || {};
+      const skeletonStats = this.actionExpansionCacheStats &&
+        this.actionExpansionCacheStats.reachabilitySkeleton;
       if (stats) {
         if (diagnostics.mode === "safe-fast") stats.safeFastBuilds += 1;
         else stats.legacyExactBuilds += 1;
@@ -578,6 +601,16 @@ class StaticSimulator {
         ].forEach((field) => {
           stats[field] = Number(stats[field] || 0) + Number(diagnostics[field] || 0);
         });
+      }
+      if (skeletonStats) {
+        skeletonStats.safetyClassifications += 1;
+        if (diagnostics.mode === "safe-fast") {
+          skeletonStats.builds += diagnostics.skeletonBuilt ? 1 : 0;
+          skeletonStats.rebases += 1;
+          skeletonStats.nodesRebased += Number(diagnostics.skeletonNodeCount || 0);
+        } else {
+          skeletonStats.unsafeBypasses += 1;
+        }
       }
       if (this.reachabilityReuseAttribution) {
         this.reachabilityReuseAttribution.recordMiss(state, key, reachability);

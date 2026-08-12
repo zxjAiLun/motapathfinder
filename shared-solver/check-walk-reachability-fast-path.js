@@ -35,7 +35,7 @@ const FIXTURE = path.join(
   "mt1-mt4-hp4459-atk421-def318-mdef5012.route.json",
 );
 
-function makeSimulator(project, walkReachabilityMode) {
+function makeSimulator(project, walkReachabilityMode, enableReachabilitySkeletonCache) {
   return new StaticSimulator(project, {
     stopFloorId: "MT11",
     battleResolver: new FunctionBackedBattleResolver(project),
@@ -47,6 +47,7 @@ function makeSimulator(project, walkReachabilityMode) {
     enableResourceChain: false,
     searchGraphMode: "primitive",
     walkReachabilityMode,
+    enableReachabilitySkeletonCache,
   });
 }
 
@@ -118,6 +119,14 @@ function findDamagingZoneTile(project) {
   return Number(entry[0]);
 }
 
+function containsForbiddenStatePayload(value) {
+  if (Array.isArray(value)) return value.some(containsForbiddenStatePayload);
+  if (!value || typeof value !== "object") return false;
+  const forbidden = new Set(["state", "hero", "inventory", "flags", "floorStates", "route", "meta"]);
+  return Object.entries(value).some(([key, child]) =>
+    forbidden.has(key) || containsForbiddenStatePayload(child));
+}
+
 function main() {
   const project = loadProject(PROJECT_ROOT);
   const replaySimulator = makeSimulator(project, "legacy-exact");
@@ -158,11 +167,52 @@ function main() {
   assert.ok(exactStats.legacyExactBuilds > 0 && exactStats.safeFastBuilds === 0);
   assert.ok(fastStats.safeFastBuilds > 0 && fastStats.legacyExactBuilds === 0);
 
+  const cachedSimulator = makeSimulator(project, "safe-fast", true);
+  const uncachedSimulator = makeSimulator(project, "safe-fast", false);
+  const hpVariant = cloneState(checkpoint);
+  hpVariant.hero.hp = Number(hpVariant.hero.hp) - 1;
+  const cachedFirst = cachedSimulator.getWalkReachability(cloneState(checkpoint));
+  const cachedSecond = cachedSimulator.getWalkReachability(cloneState(hpVariant));
+  assert.deepStrictEqual(
+    reachabilitySnapshot(cachedFirst),
+    reachabilitySnapshot(uncachedSimulator.getWalkReachability(cloneState(checkpoint))),
+    "first skeleton build must preserve the exact-state reachability result",
+  );
+  assert.deepStrictEqual(
+    reachabilitySnapshot(cachedSecond),
+    reachabilitySnapshot(uncachedSimulator.getWalkReachability(cloneState(hpVariant))),
+    "skeleton hit must rebase every node onto the current exact state",
+  );
+  const skeletonStats = cachedSimulator.getActionExpansionCacheStats().reachabilitySkeleton;
+  assert.strictEqual(skeletonStats.hits, 1);
+  assert.strictEqual(skeletonStats.misses, 1);
+  assert.strictEqual(skeletonStats.stores, 1);
+  assert.strictEqual(skeletonStats.builds, 1);
+  assert.strictEqual(skeletonStats.rebases, 2);
+  assert.strictEqual(skeletonStats.safetyClassifications, 2);
+  assert.strictEqual(
+    Array.from(cachedSimulator.actionExpansionCaches.reachabilitySkeleton.values())
+      .filter(containsForbiddenStatePayload).length,
+    0,
+    "cached skeleton must contain no state/hero/inventory/flags payload",
+  );
+
   const poison = cloneState(checkpoint);
   poison.flags.poison = true;
   assert.strictEqual(
     __testing.classifySafeStaticWalk(project, poison, walkOptions(fastSimulator, "safe-fast")).reason,
     "poison-active",
+  );
+  const skeletonBeforePoison = cachedSimulator.getActionExpansionCacheStats().reachabilitySkeleton;
+  cachedSimulator.getWalkReachability(cloneState(poison));
+  const skeletonAfterPoison = cachedSimulator.getActionExpansionCacheStats().reachabilitySkeleton;
+  assert.strictEqual(skeletonAfterPoison.hits, skeletonBeforePoison.hits);
+  assert.strictEqual(skeletonAfterPoison.misses, skeletonBeforePoison.misses);
+  assert.strictEqual(skeletonAfterPoison.stores, skeletonBeforePoison.stores);
+  assert.strictEqual(skeletonAfterPoison.unsafeBypasses, skeletonBeforePoison.unsafeBypasses + 1);
+  assert.strictEqual(
+    skeletonAfterPoison.safetyClassifications,
+    skeletonBeforePoison.safetyClassifications + 1,
   );
 
   const directional = cloneState(checkpoint);
@@ -220,6 +270,13 @@ function main() {
       liveAutoEvents: "legacy-exact",
       movementHazards: "legacy-exact",
       explicitRollback: "legacy-exact",
+    },
+    skeletonCache: {
+      hpVariantHit: true,
+      currentStateRebaseExact: true,
+      cachedValueContainsStatePayload: false,
+      unsafePoisonBypassed: true,
+      stats: skeletonAfterPoison,
     },
   }, null, 2)}\n`);
 }

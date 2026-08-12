@@ -4,7 +4,14 @@ const { runAutoEvents } = require("./events");
 const { buildMovementHazards } = require("./movement-hazards");
 const { DIRECTIONS, DIRECTION_DELTAS, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
 const { buildDominanceKey, buildStateKey, hasDirectionalStateSensitivity } = require("./state-key");
-const { cloneState, floorHasCoordinate, getTileDefinitionAt, removeTileAt, replaceTileAt } = require("./state");
+const {
+  cloneState,
+  floorHasCoordinate,
+  getTileDefinitionAt,
+  listFloorMutationSummary,
+  removeTileAt,
+  replaceTileAt,
+} = require("./state");
 
 function isEndpointTile(project, state, floorId, x, y) {
   const floor = project.floorsById[floorId];
@@ -270,6 +277,23 @@ function classifySafeStaticWalk(project, state, options) {
   };
 }
 
+function safeTopologyProjection(state) {
+  const loc = state && state.hero && state.hero.loc || {};
+  const floorId = state && state.floorId || null;
+  const floorState = floorId && state.floorStates && state.floorStates[floorId];
+  return {
+    floorId,
+    start: { x: Number(loc.x), y: Number(loc.y) },
+    currentFloorMutations: floorId && floorState
+      ? listFloorMutationSummary({ [floorId]: floorState })
+      : [],
+  };
+}
+
+function safeTopologyCacheKey(state) {
+  return JSON.stringify(safeTopologyProjection(state));
+}
+
 function buildExactWalkReachability(project, state, options, eligibility) {
   const config = options || {};
   const initialState = cloneState(state);
@@ -339,39 +363,27 @@ function buildExactWalkReachability(project, state, options, eligibility) {
   };
 }
 
-function buildStaticWalkReachability(project, state, eligibility) {
-  const initialState = cloneState(state);
-  const initialKey = buildDominanceKey(initialState);
+function buildSafeWalkSkeleton(project, state) {
   const root = {
-    key: initialKey,
-    x: initialState.hero.loc.x,
-    y: initialState.hero.loc.y,
+    x: state.hero.loc.x,
+    y: state.hero.loc.y,
     distance: 0,
     path: [],
-    state: initialState,
+    direction: null,
   };
   const queue = [root];
   let cursor = 0;
-  const visited = { [initialKey]: root };
   const seenCoordinates = new Set([coordinateKey(root.x, root.y)]);
-  const diagnostics = {
-    mode: "safe-fast",
-    eligibilityReason: eligibility.reason,
-    nodesExpanded: 0,
-    transitionAttempts: 0,
-    stateClones: 1 + Number(eligibility.stabilityProbeClones || 0),
-    dominanceKeyBuilds: 1,
-    hazardScanMs: Number(eligibility.hazardScanMs || 0),
-    safetyProbeMs: Number(eligibility.safetyProbeMs || 0),
-  };
+  let nodesExpanded = 0;
+  let transitionAttempts = 0;
 
   while (cursor < queue.length) {
     const node = queue[cursor];
     cursor += 1;
-    diagnostics.nodesExpanded += 1;
+    nodesExpanded += 1;
 
     DIRECTIONS.forEach((direction) => {
-      diagnostics.transitionAttempts += 1;
+      transitionAttempts += 1;
       const delta = DIRECTION_DELTAS[direction];
       const nextX = node.x + delta.x;
       const nextY = node.y + delta.y;
@@ -381,39 +393,99 @@ function buildStaticWalkReachability(project, state, eligibility) {
       seenCoordinates.add(coordinate);
 
       const distance = node.distance + 1;
-      const nextState = cloneState(initialState);
-      diagnostics.stateClones += 1;
-      nextState.hero.loc.x = nextX;
-      nextState.hero.loc.y = nextY;
-      nextState.hero.loc.direction = direction;
-      nextState.hero.steps = Number(initialState.hero.steps || 0) + distance;
-      const key = buildDominanceKey(nextState);
-      diagnostics.dominanceKeyBuilds += 1;
       const nextNode = {
-        key,
         x: nextX,
         y: nextY,
         distance,
         path: node.path.concat(direction),
-        state: nextState,
+        direction,
       };
-      visited[key] = nextNode;
       queue.push(nextNode);
     });
   }
 
   return {
     start: { x: state.hero.loc.x, y: state.hero.loc.y },
-    visited,
-    diagnostics,
+    nodes: queue,
+    diagnostics: { nodesExpanded, transitionAttempts },
   };
+}
+
+function rebaseSafeWalkSkeleton(state, skeleton, eligibility, cacheDiagnostics) {
+  const initialState = cloneState(state);
+  const visited = {};
+  const nodes = Array.isArray(skeleton && skeleton.nodes) ? skeleton.nodes : [];
+  nodes.forEach((skeletonNode, index) => {
+    const nextState = index === 0 ? initialState : cloneState(initialState);
+    if (index > 0) {
+      nextState.hero.loc.x = skeletonNode.x;
+      nextState.hero.loc.y = skeletonNode.y;
+      nextState.hero.loc.direction = skeletonNode.direction;
+      nextState.hero.steps = Number(initialState.hero.steps || 0) + skeletonNode.distance;
+    }
+    const key = buildDominanceKey(nextState);
+    visited[key] = {
+      key,
+      x: skeletonNode.x,
+      y: skeletonNode.y,
+      distance: skeletonNode.distance,
+      path: skeletonNode.path.slice(),
+      state: nextState,
+    };
+  });
+  const cache = cacheDiagnostics || {};
+  const built = cache.hit !== true;
+  return {
+    start: { ...skeleton.start },
+    visited,
+    diagnostics: {
+      mode: "safe-fast",
+      eligibilityReason: eligibility.reason,
+      nodesExpanded: built ? Number(skeleton.diagnostics.nodesExpanded || 0) : 0,
+      transitionAttempts: built ? Number(skeleton.diagnostics.transitionAttempts || 0) : 0,
+      stateClones: nodes.length + Number(eligibility.stabilityProbeClones || 0),
+      dominanceKeyBuilds: nodes.length,
+      hazardScanMs: Number(eligibility.hazardScanMs || 0),
+      safetyProbeMs: Number(eligibility.safetyProbeMs || 0),
+      skeletonCacheEnabled: cache.enabled === true,
+      skeletonCacheHit: cache.hit === true,
+      skeletonBuilt: built,
+      skeletonNodeCount: nodes.length,
+      skeletonBuildMs: Number(cache.buildMs || 0),
+    },
+  };
+}
+
+function buildStaticWalkReachability(project, state, eligibility) {
+  const startedAt = process.hrtime.bigint();
+  const skeleton = buildSafeWalkSkeleton(project, state);
+  return rebaseSafeWalkSkeleton(state, skeleton, eligibility, {
+    enabled: false,
+    hit: false,
+    buildMs: Number(process.hrtime.bigint() - startedAt) / 1e6,
+  });
 }
 
 function buildWalkReachability(project, state, options) {
   const config = options || {};
   const eligibility = classifySafeStaticWalk(project, state, config);
   if (eligibility.eligible) {
-    return buildStaticWalkReachability(project, state, eligibility);
+    const cache = config.safeWalkSkeletonCache || null;
+    const cacheKey = safeTopologyCacheKey(state);
+    let skeleton = cache && typeof cache.get === "function" ? cache.get(cacheKey) : null;
+    const cacheHit = Boolean(skeleton);
+    let buildMs = 0;
+    if (!skeleton) {
+      const startedAt = process.hrtime.bigint();
+      skeleton = buildSafeWalkSkeleton(project, state);
+      buildMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      if (cache && typeof cache.set === "function") cache.set(cacheKey, skeleton, buildMs);
+    }
+    return rebaseSafeWalkSkeleton(state, skeleton, eligibility, {
+      enabled: Boolean(cache),
+      hit: cacheHit,
+      buildMs,
+    });
   }
   return buildExactWalkReachability(project, state, config, eligibility);
 }
@@ -424,12 +496,17 @@ module.exports = {
   isEndpointTile,
   isStepPassableTile,
   isTransitTile,
+  safeTopologyProjection,
   stepOntoTile,
   __testing: {
     buildExactWalkReachability,
+    buildSafeWalkSkeleton,
     buildStaticWalkReachability,
     classifySafeStaticWalk,
     hasLiveAutoEvents,
     hasMovementHazards,
+    rebaseSafeWalkSkeleton,
+    safeTopologyCacheKey,
+    safeTopologyProjection,
   },
 };

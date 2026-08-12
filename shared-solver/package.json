@@ -215,7 +215,8 @@
     "check:mt1-post-promotion-regression": "node check-mt1-post-promotion-regression-contract.js",
     "check:multi-region-key-shadow": "node check-multi-region-key-shadow-contract.js",
     "check:multi-region-boundary-matrix": "node check-multi-region-boundary-matrix-contract.js",
-    "check:reachability-reuse-attribution": "node check-reachability-reuse-attribution.js"
+    "check:reachability-reuse-attribution": "node check-reachability-reuse-attribution.js",
+    "check:reachability-skeleton-cache": "node check-reachability-skeleton-cache.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"
