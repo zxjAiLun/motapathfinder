@@ -214,6 +214,7 @@
         "shared-solver/check-remaining-materialization-attribution.js",
         "shared-solver/check-battle-evaluation-projection.js",
         "shared-solver/check-reachability-optimization-requalification.js",
+        "shared-solver/check-full-solve-hotspot-reprofiling.js",
         "shared-solver/check-goal-directed-search.js",
         "shared-solver/check-candidate-quality-shadow.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
@@ -2693,6 +2694,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.9g independent-process A/B/B/A cumulative reachability optimization closure across six MT1 workloads and tracked MT2-MT3 plus MT4-MT5-entry routes; exact winner/route/scale/strict replay parity and per-workload non-increasing structural cost are mandatory"
+    },
+    "shared-solver/check-full-solve-hotspot-reprofiling.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.10a independent-process exclusive/self-time hotspot reprofiling across representative MT1, tracked MT4-MT5 entry, full MT5 closure, and special80-MT8 closure; inclusive phase compatibility, residual wall, exact outcome, deterministic scale, and strict replay remain explicit"
     },
     "shared-solver/check-goal-directed-search.js": {
       "grade": "local-regression",

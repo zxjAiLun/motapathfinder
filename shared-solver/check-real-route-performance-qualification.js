@@ -395,6 +395,9 @@ function runBenchmarkSide(project, milestoneSpec, caseId, benchmarkCase, side, a
       enumerateMs: Number(perf.phaseMs && perf.phaseMs.enumerateActions || 0),
       applyMs: Number(perf.phaseMs && perf.phaseMs.applyAction || 0),
       keyBuildMs: Number(perf.phaseMs && perf.phaseMs.buildDpStateKey || 0),
+      phaseMs: { ...(perf.phaseMs || {}) },
+      phaseSelfMs: { ...(perf.phaseSelfMs || {}) },
+      phaseCounts: { ...(perf.phaseCounts || {}) },
       reachabilityCache: cacheDelta(simulator.getReachabilityCacheStats(), cacheBefore),
       reachabilitySkeletonCache: cacheDelta(
         simulator.getActionExpansionCacheStats().reachabilitySkeleton,

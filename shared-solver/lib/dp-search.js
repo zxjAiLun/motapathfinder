@@ -2258,7 +2258,7 @@ function searchDP(simulator, initialState, options) {
       actionTrimmed += actions.length - maxActionsPerState;
       statesWithActionTrim += 1;
     }
-    const sortedActions = sortDpActions(actions);
+    const sortedActions = trackPerfPhase("sortActions", () => sortDpActions(actions));
     if (observer && sortedActions.length > maxActionsPerState) {
       sortedActions.slice(maxActionsPerState).forEach((action, index) => observer.emit(
         "candidateRejected",

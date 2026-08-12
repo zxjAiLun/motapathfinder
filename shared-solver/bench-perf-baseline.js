@@ -220,6 +220,7 @@ async function runPerfBaseline(options) {
         expandedPerSec: Number(perf.expandedPerSec.toFixed(2)),
         generatedPerSec: Number(perf.generatedPerSec.toFixed(2)),
         phaseMs: perf.phaseMs,
+        phaseSelfMs: perf.phaseSelfMs,
         phaseCounts: perf.phaseCounts,
         depth,
       },

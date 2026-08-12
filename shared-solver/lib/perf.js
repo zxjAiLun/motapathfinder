@@ -21,6 +21,8 @@ function createPerfTracker(options) {
   const startedCpu = process.cpuUsage();
   const startedElu = performance.eventLoopUtilization ? performance.eventLoopUtilization() : null;
   const phaseMs = {};
+  const phaseSelfMs = {};
+  const phaseStack = [];
   const counters = {
     expanded: 0,
     generated: 0,
@@ -38,20 +40,41 @@ function createPerfTracker(options) {
     return phaseMs[name];
   }
 
+  function ensureSelfPhase(name) {
+    if (!phaseSelfMs[name]) phaseSelfMs[name] = createPhaseBucket();
+    return phaseSelfMs[name];
+  }
+
   function addPhase(name, ms) {
     if (!enabled) return;
     const bucket = ensurePhase(name);
     bucket.ms += ms;
     bucket.count += 1;
+    const selfBucket = ensureSelfPhase(name);
+    selfBucket.ms += ms;
+    selfBucket.count += 1;
+    const parent = phaseStack[phaseStack.length - 1];
+    if (parent) parent.childMs += ms;
   }
 
   function timePhase(name, fn) {
     if (!enabled || typeof fn !== "function") return fn();
     const started = nowMs();
+    const frame = { name, childMs: 0 };
+    phaseStack.push(frame);
     try {
       return fn();
     } finally {
-      addPhase(name, nowMs() - started);
+      const elapsed = nowMs() - started;
+      phaseStack.pop();
+      const bucket = ensurePhase(name);
+      bucket.ms += elapsed;
+      bucket.count += 1;
+      const selfBucket = ensureSelfPhase(name);
+      selfBucket.ms += Math.max(0, elapsed - frame.childMs);
+      selfBucket.count += 1;
+      const parent = phaseStack[phaseStack.length - 1];
+      if (parent) parent.childMs += elapsed;
     }
   }
 
@@ -61,7 +84,17 @@ function createPerfTracker(options) {
     try {
       return await fn();
     } finally {
-      addPhase(name, nowMs() - started);
+      const elapsed = nowMs() - started;
+      const bucket = ensurePhase(name);
+      bucket.ms += elapsed;
+      bucket.count += 1;
+      // There are currently no async phase call sites. Keep async tracking
+      // isolated from the synchronous stack so an await cannot accidentally
+      // absorb unrelated work; its self time is therefore inclusive until an
+      // AsyncLocalStorage-backed use case is introduced.
+      const selfBucket = ensureSelfPhase(name);
+      selfBucket.ms += elapsed;
+      selfBucket.count += 1;
     }
   }
 
@@ -114,6 +147,7 @@ function createPerfTracker(options) {
       memorySampleCount,
       phaseMs: Object.fromEntries(Object.entries(phaseMs).map(([key, value]) => [key, value.ms])),
       phaseCounts: Object.fromEntries(Object.entries(phaseMs).map(([key, value]) => [key, value.count])),
+      phaseSelfMs: Object.fromEntries(Object.entries(phaseSelfMs).map(([key, value]) => [key, value.ms])),
       ...(extra || {}),
     };
   }

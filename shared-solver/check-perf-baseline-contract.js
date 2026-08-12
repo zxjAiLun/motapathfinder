@@ -17,6 +17,7 @@ const assert = require("node:assert");
 const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 
+const { createPerfTracker } = require("./lib/perf");
 const { executeSolveJob } = require("./lib/solver-job");
 const { BASELINE_SCHEMA, buildBaselineTask, collectResultParity, requireKnownProfile, runPerfBaseline } = require("./bench-perf-baseline");
 
@@ -41,6 +42,11 @@ function assertReportShape(report, label) {
   assert.strictEqual(typeof report.perf.skylineCapacityRejected, "number", `${label}: skylineCapacityRejected required`);
   REQUIRED_PHASES.forEach((phase) => {
     assert.strictEqual(typeof report.perf.phaseMs[phase], "number", `${label}: phaseMs[${phase}] required`);
+    assert.strictEqual(typeof report.perf.phaseSelfMs[phase], "number", `${label}: phaseSelfMs[${phase}] required`);
+    assert.ok(
+      report.perf.phaseMs[phase] + 1e-6 >= report.perf.phaseSelfMs[phase],
+      `${label}: inclusive ${phase} must cover self time`,
+    );
   });
   assert.ok(report.perf.depth, `${label}: depth required`);
   assert.strictEqual(typeof report.perf.depth.avgDecisionDepth, "number", `${label}: avgDecisionDepth required`);
@@ -68,6 +74,21 @@ function extractDpRejectionTotals(task) {
 }
 
 async function main() {
+  const nestedTracker = createPerfTracker({ enabled: true });
+  nestedTracker.timePhase("outer", () => {
+    nestedTracker.timePhase("inner", () => {
+      for (let index = 0; index < 100000; index += 1) Math.sqrt(index);
+    });
+  });
+  const nestedPerf = nestedTracker.snapshot();
+  assert.strictEqual(nestedPerf.phaseCounts.outer, 1);
+  assert.strictEqual(nestedPerf.phaseCounts.inner, 1);
+  assert.ok(nestedPerf.phaseMs.outer >= nestedPerf.phaseMs.inner);
+  assert.ok(nestedPerf.phaseSelfMs.outer <= nestedPerf.phaseMs.outer - nestedPerf.phaseMs.inner + 1);
+  assert.ok(
+    nestedPerf.phaseSelfMs.outer + nestedPerf.phaseSelfMs.inner <= nestedPerf.phaseMs.outer + 1,
+    "exclusive self phases must not double-count nested time",
+  );
   // ---- unknown/misspelled profiles must fail closed ----
   assert.throws(
     () => requireKnownProfile("representatve-baseline"),
@@ -238,6 +259,7 @@ async function main() {
       peakMemoryGtEqEnd: true,
       representativeParityExact: true,
       consecutiveRunsStructurallyConsistent: true,
+      nestedExclusiveSelfTimeNoDoubleCount: true,
     },
     perf: {
       smoke: {

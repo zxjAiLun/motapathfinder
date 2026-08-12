@@ -580,6 +580,7 @@ PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 gua
 - **PR-5.9e Remaining Materialization Attribution（完成，提交见本文件 HEAD）**：纯观察 recorder 默认关闭，observation on/off correctness 与 clone/key cost parity。722 materialized / 566 escaped 后的 **156/156** 全为 battle pre-action rejection；node-set union 分类为 119 lethal-only、31 no-damage-info-only、6 overlap。289 viable events 全部 emitted；unsupported、dedup reject/replace 均为 0。verdict `REMAINING_MATERIALIZATION_ATTRIBUTED`，机制 `BATTLE_PRE_ACTION_REJECTION_MATERIALIZATION`。
 - **PR-5.9f Battle Evaluation Projection Repair（完成，提交见本文件 HEAD）**：safe-fast battle 先用冻结的 base exact state + `loc/direction/steps` stance projection 做只读 viability evaluation，只有 viable action 才物化完整 travelState；现有 evaluator clone/cache 边界、guard/location damage、action/dedup/apply 与 legacy-exact 均不变。独立 A/B/B/A：materialized **722→566**、clones **845→689**、residual **156→0**；battle materialized 568→289，emitted 289 不变。116-state/434-action exact corpus、winner/route/objective/116 expansions/156 accepted/strict replay 全 parity，verdict `BATTLE_EVALUATION_PROJECTION_PROMOTED`。
 - **PR-5.9g Reachability Optimization Requalification（完成，提交见本文件 HEAD）**：独立进程 A/B/B/A 覆盖 6 个 MT1 workload + tracked MT2→MT3/MT4→MT5-entry。8/8 found + strict replay，winner/route/search scale exact parity；累计结构总量 skeleton builds **897→458**、nodes **47296→21338**、transitions **189184→85352**、clones **48299→7403**、dominance keys **47402→318**，逐 workload 均非增。wall 仅方向性，真实 MT4→MT5-entry 4475→3230ms；verdict `PR_5_9_REACHABILITY_OPTIMIZATION_CLOSED`，5.9 主线 CLOSED。
+- **PR-5.10a Full Solve Hotspot Reprofiling（完成，提交见本文件 HEAD）**：perf tracker 新增向后兼容 exclusive/self-time（保留 inclusive），并报告 `sortActions`、unattributed residual。独立进程覆盖 MT1、tracked MT4→MT5 entry、完整 MT5、special80→MT8，全部 exact/scale/strict replay。前三者 top self phase=applyAction；MT8 5634 expansions 则 reachability > applyAction > clone（最终本机方向性 42.7%/23.9%/19.4%，不作硬阈值），5374 misses 中 1722 legacy-exact，reachability clones 302,510。verdict `HOTSPOT_SPLIT_BY_WORKLOAD_SCALE`；下一步 5.10b 归因 MT8 fallback/clone，5.10c 归因短中链 applyAction。
 
 PR-5.6 before/after（本机方向性数据，严格结果由 fingerprint/replay 守门）：
 
@@ -596,7 +597,7 @@ reachability 真实归因（perf tracker `reachability` phase + simulator cache 
 
 ## 下一主线最值得做的事
 
-1. **PR-5.9 已关闭；下一轮进入 PR-5.10a full solve hotspot reprofiling**：在 representative MT1、tracked MT4→MT5 entry 与完整 MT5/MT8 closure 路线上重新排名 phase/call/allocation hotspot；只做归因，先确认下一瓶颈再授权实现。
+1. **PR-5.10a 已关闭；下一轮进入 PR-5.10b MT8 legacy-exact fallback + clone amplification attribution**：按 safety reason/floor/segment/action/closure 归类 1722 fallback，并定位 302,510 clone 来源；纯观察，不先修。之后 5.10c 再拆 applyAction self-time。
 2. **5.5f collision CEGAR/minimal refinement 保持未授权**：真实 changeFloor edge的 production/candidate identity 都变化，未产生 same-scope merge；`NO_COLLISION_OBSERVED` 仍不等于 safe/promotion candidate。
 3. **reachability closure gate**：5.9g 已跨 8 个 workload 再认证累计结构收益，且所有剩余 materialized nodes 均进入 action.travelState。继续保持 unsafe 0 reuse、逐 exact safety classification、exact corpus与 strict replay；wall 只作方向性证据。除非新 profile 再次证明 reachability 是主瓶颈且先建立新的 action representation contract，否则不得继续删除必要 travel states。
 4. **fast CI <3min**（P2-1 carry）：当前 fast ≈3m26s（solver-job / route-free / candidate-smoke 串行主导）。要达标需在 fast 内部按分支并行，wall = max(各分支)。建议独立 CI-INFRA PR。
