@@ -3,7 +3,10 @@
 const { compileAutomaticDependencyPlan } = require("./automatic-dependency-planner");
 const { compileAutomaticFeasibilitySubgoals } = require("./automatic-feasibility-subgoals");
 const { buildAutomaticMacroGraph } = require("./automatic-macro-graph");
-const { executeLocalDependency } = require("./local-dependency-executor");
+const {
+  executeLocalDependency,
+  materializeDirectTargetPlan,
+} = require("./local-dependency-executor");
 
 const SCHEMA = "motapathfinder.dependency-feedback.v1";
 
@@ -59,8 +62,19 @@ function compareAlternative(left, right) {
 
 function evaluateCheckpoint(project, terminalGoal, checkpoint, options) {
   const context = buildDependencyContext(project, checkpoint.state, terminalGoal, options);
-  const alternatives = (context.plan.alternatives || []).map(summarizeAlternative).sort(compareAlternative);
-  const selectedAlternative = alternatives.find((entry) => entry.complete || entry.executable) || null;
+  const excluded = (options || {}).excludedExperimentKeys || new Set();
+  const alternatives = (context.plan.alternatives || []).map((alternative) => {
+    const summary = summarizeAlternative(alternative);
+    summary.experimentKey = [
+      checkpoint.exactStateFingerprint,
+      summary.alternativeId,
+      summary.leadingPrerequisiteId || "complete",
+    ].join("|");
+    summary.previouslyAttempted = excluded.has(summary.experimentKey);
+    return summary;
+  }).sort(compareAlternative);
+  const selectedAlternative = alternatives.find((entry) =>
+    (entry.complete || entry.executable) && !entry.previouslyAttempted) || null;
   return {
     checkpointId: checkpoint.id,
     roles: (checkpoint.roles || []).slice(),
@@ -94,25 +108,40 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
   const config = options || {};
   const evaluations = (localExecution.checkpoints || [])
     .map((checkpoint) => evaluateCheckpoint(project, terminalGoal, checkpoint, config))
-    .sort(compareCheckpoint);
+    .sort((left, right) => {
+      if (config.preferFirstGoalCheckpoint === true) {
+        const leftFirst = left.roles.includes("first-goal") ? 1 : 0;
+        const rightFirst = right.roles.includes("first-goal") ? 1 : 0;
+        if (leftFirst !== rightFirst) return rightFirst - leftFirst;
+      }
+      return compareCheckpoint(left, right);
+    });
   const selected = evaluations.find((entry) => entry.canAdvance) || null;
   const baselineCheckpointId = ((localExecution.checkpoints || [])[0] || {}).id || null;
   const baseline = evaluations.find((entry) => entry.checkpointId === baselineCheckpointId) || null;
   const selectedCheckpoint = selected
     ? (localExecution.checkpoints || []).find((entry) => entry.id === selected.checkpointId) || null
     : null;
-  const nextExecution = selected && selected.selectedAlternative && !selected.selectedAlternative.complete
-    ? executeLocalDependency(
-      project,
-      projectRoot,
-      selectedCheckpoint.state,
-      {
+  const selectedPlan = selected && selected.selectedAlternative
+    ? selected.selectedAlternative.complete
+      ? materializeDirectTargetPlan(
+        selected.context.plan,
+        selected.context.plan.objective.selectedFeasibilitySubgoal,
+      )
+      : {
         ...selected.context.plan,
         alternatives: selected.context.plan.alternatives
           .filter((alternative) => alternative.id === selected.selectedAlternative.alternativeId)
           .concat(selected.context.plan.alternatives.filter((alternative) =>
             alternative.id !== selected.selectedAlternative.alternativeId)),
-      },
+      }
+    : null;
+  const nextExecution = selectedPlan
+    ? executeLocalDependency(
+      project,
+      projectRoot,
+      selectedCheckpoint.state,
+      selectedPlan,
       {
         maxExpansions: number(config.maxExpansions, 32),
         candidateLimit: number(config.candidateLimit, 8),
@@ -146,8 +175,12 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
       roles: selected.roles,
       alternative: selected.selectedAlternative,
       changedCheckpoint: selected.checkpointId !== baselineCheckpointId,
-      changedAlternative: selected.selectedAlternative.alternativeId !== localExecution.selected.alternativeId,
-      reason: "fewest-remaining-runnable-alternative-then-largest-leading-survival-margin",
+      changedAlternative: selected.selectedAlternative.alternativeId !==
+        ((localExecution.selected || {}).alternativeId || null),
+      reason: config.preferFirstGoalCheckpoint === true
+        ? "historical-backtrack-prefers-first-goal-then-normal-feedback-order"
+        : "fewest-remaining-runnable-alternative-then-largest-leading-survival-margin",
+      experimentKey: selected.selectedAlternative.experimentKey,
     } : null,
     nextExecution,
     verdict: !selected

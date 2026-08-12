@@ -53,12 +53,13 @@ function main() {
   const report = compileAutomaticBlockerRepairs(project, terminalGoal, portfolio.checkpoints, {
     towerId: "onlyup",
     excludeTargetNodeId: "MT5:item:11,5:I894",
-    candidateLimit: 16,
+    candidateLimit: 512,
   });
   assert.strictEqual(report.inputContract.knownRouteUsed, false);
   assert.ok(report.candidateCount > 100);
   assert.ok(report.candidatesEvaluatedForAccess > 1);
-  assert.strictEqual(report.selected.checkpointId, "checkpoint-6");
+  assert.strictEqual(report.selected.checkpointId, "checkpoint-1");
+  assert.strictEqual(report.selected.checkpointRoles.includes("first-goal"), true);
   assert.strictEqual(report.selected.sourceNodeId, "MT5:item:12,11:I1014");
   assert.deepStrictEqual(report.selected.goal, {
     type: "tileRemoved",
@@ -67,13 +68,35 @@ function main() {
     y: 11,
   });
   assert.strictEqual(report.selected.repairs.beforeStatus, "lethal-at-current-hp");
-  assert.strictEqual(report.selected.repairs.afterStatus, "viable-at-current-state");
+  assert.strictEqual(report.selected.repairs.afterStatus, "lethal-at-current-hp");
   assert.ok(report.selected.repairs.damageReduction > 0);
-  assert.ok(report.selected.repairs.survivalMargin > 0);
+  assert.ok(report.selected.repairs.survivalMargin < 0);
   assert.strictEqual(report.selected.access.startable, true);
   assert.strictEqual(report.selected.access.alternatives[0].leadingPrerequisiteId, "MT5:enemy:11,11:devilWarrior");
   assert.strictEqual(report.selected.access.alternatives[0].leadingStatus, "viable-at-current-state");
-  const circular = report.candidates.find((candidate) =>
+  const immediateMarginControl = compileAutomaticBlockerRepairs(
+    project,
+    terminalGoal,
+    portfolio.checkpoints,
+    {
+      towerId: "onlyup",
+      excludeTargetNodeId: "MT5:item:11,5:I894",
+      candidateLimit: 16,
+      preferFirstGoalCheckpoint: false,
+    },
+  );
+  assert.strictEqual(immediateMarginControl.selected.checkpointId, "checkpoint-7");
+  assert.strictEqual(
+    immediateMarginControl.selected.checkpointRoles.includes("first-goal"),
+    false,
+  );
+  assert.strictEqual(immediateMarginControl.selected.sourceNodeId, "MT5:item:12,11:I1014");
+  assert.strictEqual(
+    immediateMarginControl.selected.repairs.afterStatus,
+    "viable-at-current-state",
+  );
+  assert.ok(immediateMarginControl.selected.repairs.survivalMargin > 0);
+  const circular = immediateMarginControl.candidates.find((candidate) =>
     candidate.sourceNodeId === "MT5:item:7,3:I1009" && candidate.checkpointId === "checkpoint-2");
   assert.ok(circular);
   assert.strictEqual(circular.repairs.survivalMargin > report.selected.repairs.survivalMargin, true);
@@ -108,6 +131,10 @@ function main() {
       startable: circular.access.startable,
     },
     selected: report.selected,
+    immediateMarginControl: {
+      checkpointId: immediateMarginControl.selected.checkpointId,
+      sourceNodeId: immediateMarginControl.selected.sourceNodeId,
+    },
     firstExecution: {
       prerequisiteId: execution.selected.prerequisite.sourceNodeId,
       outcome: execution.outcome,

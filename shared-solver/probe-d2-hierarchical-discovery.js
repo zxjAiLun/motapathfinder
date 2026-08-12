@@ -31,6 +31,7 @@ function summarizeFinalState(simulator, checkpoint) {
     hero: checkpoint.hero,
     exactStateFingerprint: checkpoint.exactStateFingerprint,
     routeLength: (state.route || []).length,
+    route: (state.route || []).map((entry) => entry.summary),
     nextLevel: simulator.getNextLevelInfo(state),
     actionCounts,
     visibleBattleExp: battles.reduce((sum, battle) => sum + battle.exp, 0),
@@ -62,6 +63,57 @@ function main() {
     repairCandidateLimit: 16,
     excludeTargetNodeId: "MT5:item:11,5:I894",
   });
+  if (process.env.MOTAPATHFIND_D2_COMPACT === "1") {
+    process.stdout.write(`${JSON.stringify({
+      controls: result.controls,
+      rounds: result.rounds.map((round) => ({
+        round: round.round,
+        kind: round.kind,
+        completedPrerequisiteId: round.completedPrerequisiteId || null,
+        selectedCheckpointId: round.feedbackSelection
+          ? round.feedbackSelection.checkpointId
+          : null,
+        selectedRoles: round.feedbackSelection
+          ? round.feedbackSelection.roles
+          : null,
+        selectedAlternative: round.feedbackSelection
+          ? round.feedbackSelection.alternative
+          : null,
+        repair: round.repair ? {
+          checkpointId: round.repair.checkpointId,
+          checkpointRoles: round.repair.checkpointRoles,
+          sourceNodeId: round.repair.sourceNodeId,
+          target: round.repair.target,
+          repairs: round.repair.repairs,
+        } : null,
+        repairClosure: round.repairClosure || null,
+        outcome: round.outcome || null,
+        stoppedReason: round.stoppedReason || null,
+      })),
+      totals: result.totals,
+      stoppedReason: result.stoppedReason,
+      historyPortfolioCount: result.historyPortfolioCount,
+      attemptedExperimentCount: result.attemptedExperimentCount,
+      rejectedRepairExperimentCount: result.rejectedRepairExperimentCount,
+      finalCheckpoints: result.finalPortfolio.checkpoints.map((checkpoint) => {
+        const summary = summarizeFinalState(simulator, checkpoint);
+        return {
+          id: summary.id,
+          roles: summary.roles,
+          hero: summary.hero,
+          exactStateFingerprint: summary.exactStateFingerprint,
+          routeLength: summary.routeLength,
+          route: summary.route,
+          nextLevel: summary.nextLevel,
+          actionCounts: summary.actionCounts,
+          visibleBattleExp: summary.visibleBattleExp,
+          lowestDamageBattles: summary.lowestDamageBattles,
+        };
+      }),
+      verdict: result.verdict,
+    }, null, 2)}\n`);
+    return;
+  }
   process.stdout.write(`${JSON.stringify({
     schema: result.schema,
     controls: result.controls,

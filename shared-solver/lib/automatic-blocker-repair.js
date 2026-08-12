@@ -101,6 +101,7 @@ function candidateFor(project, simulator, checkpoint, alternative, leading, node
   if (afterRank === beforeRank && damageReduction <= 0 && survivalMarginGain <= 0) return null;
   return {
     id: `repair-${checkpoint.id}-${alternative.id}-${node.id}`,
+    experimentKey: `${checkpoint.exactStateFingerprint}|${node.id}`,
     kind: "blocker-feasibility-repair",
     provenance: "automatic-current-map-item-counterfactual+simulator-battle-probe",
     checkpointId: checkpoint.id,
@@ -128,8 +129,13 @@ function candidateFor(project, simulator, checkpoint, alternative, leading, node
   };
 }
 
-function compareCandidate(left, right) {
-  return statusRank(right.repairs.afterStatus) - statusRank(left.repairs.afterStatus) ||
+function compareCandidate(left, right, preferFirstGoal) {
+  const firstGoalOrder = preferFirstGoal
+    ? Number(right.checkpointRoles.includes("first-goal")) -
+      Number(left.checkpointRoles.includes("first-goal"))
+    : 0;
+  return firstGoalOrder ||
+    statusRank(right.repairs.afterStatus) - statusRank(left.repairs.afterStatus) ||
     number(right.repairs.survivalMargin, -Infinity) - number(left.repairs.survivalMargin, -Infinity) ||
     right.repairs.survivalMarginGain - left.repairs.survivalMarginGain ||
     right.repairs.statusImprovement - left.repairs.statusImprovement ||
@@ -174,6 +180,7 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
     throw new Error("Automatic blocker repair requires project, terminalGoal, and checkpoints");
   }
   const config = options || {};
+  const excluded = config.excludedRepairExperimentKeys || new Set();
   const simulator = makeBlindSimulator(project);
   const candidates = [];
   for (const checkpoint of checkpoints) {
@@ -204,11 +211,12 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
       if ((leading.evidence || {}).status === "viable-at-current-state") continue;
       for (const node of itemNodes) {
         const candidate = candidateFor(project, simulator, checkpoint, alternative, leading, node);
-        if (candidate) candidates.push(candidate);
+        if (candidate && !excluded.has(candidate.experimentKey)) candidates.push(candidate);
       }
     }
   }
-  candidates.sort(compareCandidate);
+  candidates.sort((left, right) =>
+    compareCandidate(left, right, config.preferFirstGoalCheckpoint !== false));
   let selected = null;
   let candidatesEvaluatedForAccess = 0;
   const accessByKey = new Map();
@@ -236,7 +244,9 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
       forbidden: ["route-fixture", "route-prefix", "authored-milestone", "authored-event-order", "authored-resource-threshold"],
       knownRouteUsed: false,
     },
+    selectionPolicy: "first-goal-least-commitment-before-counterfactual-margin",
     candidateCount: candidates.length,
+    excludedExperimentCount: excluded.size,
     candidatesEvaluatedForAccess,
     candidates: visibleCandidates,
     selected,
@@ -248,8 +258,10 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
 
 module.exports = {
   SCHEMA,
+  battleStatus,
   compileAutomaticBlockerRepairs,
   compileRepairDependencyPlan,
   counterfactualPickup,
   repairGoal,
+  statusRank,
 };

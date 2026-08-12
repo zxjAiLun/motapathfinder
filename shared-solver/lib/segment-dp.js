@@ -1727,12 +1727,15 @@ function selectGoalSkyline(simulator, states, segment, options) {
   const byKey = new Map();
   (states || []).filter(Boolean).forEach((state) => {
     const stateKey = buildDpStateKey(simulator, state, { dpKeyMode: keyMode });
+    const firstGoalSuffix = state === config.firstGoalState ? "\nrole:first-goal" : "";
     const traceKey = config.preserveGoalArchive === true && Array.isArray(state.routeTrace)
       ? state.routeTrace.map((entry) =>
           (entry && (entry.fingerprint || entry.summary || entry.kind)) || "unknown"
         ).join("\n")
       : null;
-    const key = traceKey == null ? stateKey : `${stateKey}\ntrace:${traceKey}`;
+    const key = traceKey == null
+      ? `${stateKey}${firstGoalSuffix}`
+      : `${stateKey}\ntrace:${traceKey}${firstGoalSuffix}`;
     const existing = byKey.get(key);
     if (!existing || compareCandidateStates(state, existing) < 0)
       byKey.set(key, state);
@@ -1781,7 +1784,7 @@ function selectGoalSkyline(simulator, states, segment, options) {
       hero: summarizeHero(state),
       effectiveHero: summarizeEffectiveHero(state),
       score: goalCandidateScore(state),
-      tags: [],
+      tags: state === config.firstGoalState ? ["first-goal"] : [],
       targetMargin,
     };
   });
@@ -1858,6 +1861,9 @@ function selectGoalSkyline(simulator, states, segment, options) {
     const winner = records.slice().sort(compare)[0];
     if (winner) addTag(winner, tag);
   });
+  if (config.firstGoalState) {
+    keepCandidate(records.find((record) => record.state === config.firstGoalState));
+  }
   if (config.preserveSkylineRoles === true) {
     rolePickers.forEach(([, compare]) =>
       keepCandidate(records.slice().sort(compare)[0]),
@@ -2749,11 +2755,15 @@ function searchSegmentDP(simulator, startState, segment, options) {
         Number(result.frontierSize || 0) > 0 &&
         !baseDpDiagnostics.stoppedReason &&
         !(baseDpDiagnostics.stopOnFirstGoal && result.foundGoal);
-  const goalStates =
-    Array.isArray(result.goalSkylineStates) &&
+  const skylineGoalStates = Array.isArray(result.goalSkylineStates) &&
     result.goalSkylineStates.length > 0
       ? result.goalSkylineStates
       : [result.bestGoalState || result.goalState || result.firstGoalState].filter(Boolean);
+  const firstGoalState = config.preserveFirstGoalCheckpoint === true
+    ? result.firstGoalState
+    : null;
+  const goalStates = [firstGoalState, ...skylineGoalStates]
+    .filter((state, index, list) => state && list.indexOf(state) === index);
   const goalSkyline = selectGoalSkyline(simulator, goalStates, segment, {
     candidateLimit: config.candidateLimit || dpConfig.goalSkylineLimit,
     objectiveSpec: config.objectiveSpec || null,
@@ -2761,6 +2771,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
       config.preserveSkylineRoles === true ||
       dpConfig.preserveSkylineRoles === true,
     preserveGoalArchive: dpConfig.preserveGoalArchive === true,
+    firstGoalState,
   });
   const searchOutcome = buildSearchOutcome({
     goalFound: goalSkyline.length > 0,

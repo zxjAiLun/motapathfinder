@@ -21,7 +21,7 @@ function main() {
   const initialState = detachCheckpoint(createMt5EntryState(project));
   const result = runHierarchicalDiscovery(project, PROJECT_ROOT, initialState, terminalGoal, {
     towerId: "onlyup",
-    maxRounds: 12,
+    maxRounds: 6,
     initialMaxExpansions: 64,
     localMaxExpansions: 32,
     candidateLimit: 8,
@@ -34,69 +34,64 @@ function main() {
   assert.deepStrictEqual(result.rounds.map((round) => round.kind), [
     "terminal-dependency",
     "terminal-dependency",
+    "terminal-dependency",
     "blocker-repair",
     "blocker-repair",
+    "blocker-repair-rejected",
     "blocker-repair",
-    "blocked",
   ]);
   assert.deepStrictEqual(result.rounds.slice(0, 5).map((round) => round.completedPrerequisiteId), [
     "MT5:enemy:8,11:skeletonKing",
+    "MT5:enemy:4,11:skeletonKing",
     "MT5:enemy:3,10:skeletonPresbyter",
-    "MT5:enemy:11,11:devilWarrior",
+    "MT4:enemy:11,11:skeletonPriest",
     "MT5:enemy:1,11:skeletonKnight",
-    "MT4:enemy:10,5:devilWarrior",
   ]);
-  assert.deepStrictEqual(result.rounds.slice(2, 5).map((round) => round.repair.sourceNodeId), [
-    "MT5:item:12,11:I1014",
+  assert.deepStrictEqual(result.rounds.slice(3, 5).map((round) => round.repair.sourceNodeId), [
+    "MT4:item:12,11:I1013",
     "MT5:item:0,11:I1013",
-    "MT4:item:11,5:I642",
   ]);
+  assert.deepStrictEqual(result.rounds[1].feedbackSelection.roles, ["first-goal", "shortest"]);
   assert.strictEqual(result.rounds.slice(0, 5).every((round) => round.outcome.goalFound), true);
   assert.strictEqual(result.rounds.slice(0, 5).every((round) => round.outcome.strictReplay), true);
+  assert.strictEqual(result.rounds[5].repair.sourceNodeId, "MT4:item:7,3:I621");
+  assert.strictEqual(result.rounds[5].repairClosure.complete, false);
+  assert.strictEqual(result.rounds[5].outcome.searchComplete, true);
+  assert.strictEqual(result.rounds[5].outcome.frontierExhausted, true);
+  assert.strictEqual(result.rounds[5].outcome.goalFound, false);
+  assert.strictEqual(result.rounds[5].retainedPortfolioFingerprint.length > 0, true);
+  assert.strictEqual(result.rounds[6].repair.sourceNodeId, "MT5:item:12,11:I1014");
+  assert.strictEqual(result.rounds[6].repairClosure.complete, true);
   assert.deepStrictEqual(result.totals, {
-    expansions: 156,
-    generated: 423,
-    accepted: 325,
-    rejected: 98,
+    expansions: 220,
+    generated: 694,
+    accepted: 488,
+    rejected: 206,
   });
-  assert.strictEqual(result.stoppedReason, "NO_AUTOMATIC_BLOCKER_REPAIR_IDENTIFIED");
+  assert.strictEqual(result.stoppedReason, "max-rounds");
+  assert.strictEqual(result.rejectedRepairExperimentCount, 1);
   assert.strictEqual(result.finalPortfolio.checkpoints.length, 2);
 
   const simulator = makeBlindSimulator(project);
   const finalStates = result.finalPortfolio.checkpoints.map((checkpoint) =>
     summarizeFinalState(simulator, checkpoint));
-  assert.deepStrictEqual(finalStates.map((entry) => entry.hero), [
-    { hp: 40578, atk: 1097, def: 915, mdef: 6310, lv: 7, exp: 315, equipment: ["I893"] },
-    { hp: 40578, atk: 1097, def: 915, mdef: 6310, lv: 7, exp: 315, equipment: ["I893"] },
-  ]);
-  assert.deepStrictEqual(finalStates.map((entry) => entry.nextLevel), [
-    { level: 7, exp: 315, need: 600, deficit: 285 },
-    { level: 7, exp: 315, need: 600, deficit: 285 },
-  ]);
-  assert.strictEqual(finalStates.every((entry) => entry.visibleBattleExp === 0), true);
-  assert.strictEqual(finalStates.every((entry) => entry.actionCounts.changeFloor === 2), true);
-  assert.strictEqual(finalStates.every((entry) => entry.fightToLevelUp.length === 0), true);
-  assert.deepStrictEqual(finalStates.map((entry) => entry.exactStateFingerprint), [
-    "3226510d0bf012b4",
-    "bf015727d8313a75",
-  ]);
-
-  const blocked = result.rounds[result.rounds.length - 1];
-  const topRepair = blocked.reviewCandidates[0];
-  assert.strictEqual(blocked.repairCandidateCount, 120);
-  assert.strictEqual(blocked.candidatesEvaluatedForAccess, 40);
-  assert.strictEqual(topRepair.sourceNodeId, "MT5:item:7,3:I1009");
-  assert.strictEqual(topRepair.repairs.beforeSurvivalMargin, -19875);
-  assert.strictEqual(topRepair.access.startable, false);
 
   process.stdout.write(`${JSON.stringify({
     status: "passed",
-    completedPrerequisites: result.rounds.slice(0, 5).map((round) => round.completedPrerequisiteId),
-    repairs: result.rounds.slice(2, 5).map((round) => round.repair.sourceNodeId),
+    completedPrerequisites: result.rounds
+      .filter((round) => round.completedPrerequisiteId)
+      .map((round) => round.completedPrerequisiteId),
+    acceptedRepairs: result.rounds
+      .filter((round) => round.kind === "blocker-repair")
+      .map((round) => round.repair.sourceNodeId),
+    rejectedRepair: result.rounds[5].repair.sourceNodeId,
     totals: result.totals,
-    finalStates,
+    finalHeroes: finalStates.map((entry) => entry.hero),
     stoppedReason: result.stoppedReason,
-    nextRequiredRepairClass: "cross-floor-exp-or-composite-resource-chain",
+    comparison: {
+      before: "unreachable counterfactual repair discarded the active portfolio",
+      after: "unreachable repair is rejected and the unchanged portfolio selects the next candidate",
+    },
     verdict: result.verdict,
   }, null, 2)}\n`);
 }

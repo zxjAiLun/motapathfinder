@@ -20,6 +20,10 @@ function hash(value) {
   return crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 16);
 }
 
+function stateFingerprint(state) {
+  return hash(buildStateKey(state));
+}
+
 function selectExecutablePrerequisite(dependencyPlan) {
   for (const alternative of dependencyPlan.alternatives || []) {
     const prerequisite = (alternative.prerequisites || [])[0];
@@ -122,7 +126,7 @@ function checkpointRecord(project, projectRoot, initialState, candidate, target,
   return {
     id: `checkpoint-${index + 1}`,
     roles: (candidate.tags || []).slice().sort(),
-    exactStateFingerprint: hash(buildStateKey(finalState)),
+    exactStateFingerprint: stateFingerprint(finalState),
     routeFingerprint: hash(JSON.stringify(routeRecord.decisions.map((decision) => decision.summary))),
     decisionCount: routeRecord.decisions.length,
     hero: compactHero(finalState),
@@ -173,6 +177,7 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
   const result = searchSegmentDP(simulator, initialState, segment, {
     candidateLimit,
     preserveSkylineRoles: true,
+    preserveFirstGoalCheckpoint: true,
     dpPriorityMode: "goal-directed",
     dpOverrides: {
       maxExpansions,
@@ -254,4 +259,5 @@ module.exports = {
   executeLocalDependency,
   materializeDirectTargetPlan,
   selectExecutablePrerequisite,
+  stateFingerprint,
 };

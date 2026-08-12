@@ -2,7 +2,13 @@
 
 const { compileAutomaticBlockerRepairs, compileRepairDependencyPlan } = require("./automatic-blocker-repair");
 const { buildDependencyContext, runDependencyFeedback } = require("./dependency-feedback-controller");
-const { executeLocalDependency, materializeDirectTargetPlan } = require("./local-dependency-executor");
+const {
+  executeLocalDependency,
+  materializeDirectTargetPlan,
+  selectExecutablePrerequisite,
+  stateFingerprint,
+} = require("./local-dependency-executor");
+const { getTileDefinitionAt } = require("./state");
 
 const SCHEMA = "motapathfinder.hierarchical-discovery-run.v1";
 
@@ -45,15 +51,116 @@ function selectedPrerequisite(execution) {
     : null;
 }
 
+function historicalFeedback(project, projectRoot, terminalGoal, history, plannerOptions, attempted) {
+  for (let index = 0; index < history.length - 1; index += 1) {
+    const feedback = runDependencyFeedback(
+      project,
+      projectRoot,
+      terminalGoal,
+      history[index],
+      {
+        ...plannerOptions,
+        excludedExperimentKeys: attempted,
+        preferFirstGoalCheckpoint: true,
+      },
+    );
+    if (feedback.nextExecution) return { historyIndex: index, feedback };
+  }
+  return null;
+}
+
+function repairGoalReached(project, state, repair) {
+  const goal = (repair || {}).goal || {};
+  if (Array.isArray(goal.equipmentIncludes)) {
+    const equipped = (((state || {}).hero || {}).equipment) || [];
+    return goal.equipmentIncludes.every((itemId) => equipped.includes(itemId));
+  }
+  if (goal.type === "tileRemoved") {
+    return getTileDefinitionAt(project, state, goal.floorId, goal.x, goal.y) == null;
+  }
+  return false;
+}
+
+function addOutcome(total, execution) {
+  const outcome = (execution || {}).outcome || {};
+  total.expansions += number(outcome.expansions, 0);
+  total.generated += number(outcome.generated, 0);
+  total.accepted += number(outcome.accepted, 0);
+  total.rejected += number(outcome.rejected, 0);
+}
+
+function nextRepairStep(project, terminalGoal, execution, repair, options) {
+  for (const checkpoint of execution.checkpoints || []) {
+    if (repairGoalReached(project, checkpoint.state, repair)) {
+      return { complete: true, checkpoint, dependency: null };
+    }
+  }
+  const ordered = (execution.checkpoints || []).slice().sort((left, right) =>
+    Number(right.roles.includes("first-goal")) - Number(left.roles.includes("first-goal")) ||
+    left.id.localeCompare(right.id));
+  for (const checkpoint of ordered) {
+    const dependency = compileRepairDependencyPlan(
+      project,
+      terminalGoal,
+      checkpoint,
+      repair,
+      options,
+    );
+    const plan = materializeDirectTargetPlan(dependency.plan, repair);
+    if (selectExecutablePrerequisite(plan)) {
+      return { complete: false, checkpoint, dependency: { ...dependency, plan } };
+    }
+  }
+  return null;
+}
+
 function executeRepair(project, projectRoot, terminalGoal, portfolio, repair, options) {
   const checkpoint = (portfolio.checkpoints || []).find((entry) => entry.id === repair.checkpointId);
   if (!checkpoint) throw new Error(`Repair checkpoint not found: ${repair.checkpointId}`);
-  const dependency = compileRepairDependencyPlan(project, terminalGoal, checkpoint, repair, options);
-  const plan = materializeDirectTargetPlan(dependency.plan, repair);
-  return executeLocalDependency(project, projectRoot, checkpoint.state, plan, {
-    maxExpansions: number((options || {}).localMaxExpansions, 32),
-    candidateLimit: number((options || {}).candidateLimit, 8),
-  });
+  const trace = [];
+  const totals = { expansions: 0, generated: 0, accepted: 0, rejected: 0 };
+  let current = { checkpoints: [checkpoint] };
+  const maxSteps = Math.max(1, number((options || {}).maxRepairSteps, 12));
+  for (let step = 0; step < maxSteps; step += 1) {
+    const next = nextRepairStep(project, terminalGoal, current, repair, options);
+    if (!next || next.complete) {
+      if (next && next.complete) {
+        current.repairClosure = {
+          complete: true,
+          targetId: repair.sourceNodeId,
+          steps: trace,
+        };
+      }
+      break;
+    }
+    const execution = executeLocalDependency(
+      project,
+      projectRoot,
+      next.checkpoint.state,
+      next.dependency.plan,
+      {
+        maxExpansions: number((options || {}).localMaxExpansions, 32),
+        candidateLimit: number((options || {}).candidateLimit, 8),
+      },
+    );
+    addOutcome(totals, execution);
+    trace.push({
+      step,
+      fromCheckpointId: next.checkpoint.id,
+      completedPrerequisiteId: selectedPrerequisite(execution),
+      outcome: compactOutcome(execution),
+    });
+    current = execution;
+    if (!execution.outcome.goalFound || execution.checkpoints.length === 0) break;
+  }
+  current.outcome = { ...(current.outcome || {}), ...totals };
+  current.repairClosure = current.repairClosure || {
+    complete: (current.checkpoints || []).some((entry) =>
+      repairGoalReached(project, entry.state, repair)),
+    targetId: repair.sourceNodeId,
+    steps: trace,
+  };
+  return current;
 }
 
 function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGoal, options) {
@@ -66,8 +173,19 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
     maxExpansions: number(config.localMaxExpansions, 32),
     localMaxExpansions: number(config.localMaxExpansions, 32),
     candidateLimit: number(config.candidateLimit, 8),
+    preferFirstGoalCheckpoint: config.preferFirstGoalCheckpoint !== false,
+    maxRepairSteps: number(config.maxRepairSteps, 12),
   };
   const initialContext = buildDependencyContext(project, initialState, terminalGoal, plannerOptions);
+  const rootPortfolio = {
+    selected: null,
+    checkpoints: [{
+      id: "root-checkpoint",
+      roles: ["root"],
+      exactStateFingerprint: stateFingerprint(initialState),
+      state: initialState,
+    }],
+  };
   let portfolio = executeLocalDependency(project, projectRoot, initialState, initialContext.plan, {
     maxExpansions: number(config.initialMaxExpansions, 64),
     candidateLimit: plannerOptions.candidateLimit,
@@ -78,6 +196,16 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
     completedPrerequisiteId: selectedPrerequisite(portfolio),
     outcome: compactOutcome(portfolio),
   }];
+  const history = [rootPortfolio, portfolio];
+  const attemptedExperiments = new Set();
+  const rejectedRepairExperiments = new Set();
+  if (portfolio.selected && portfolio.selected.prerequisite) {
+    attemptedExperiments.add([
+      rootPortfolio.checkpoints[0].exactStateFingerprint,
+      portfolio.selected.alternativeId,
+      portfolio.selected.prerequisite.sourceNodeId,
+    ].join("|"));
+  }
   const seen = new Set();
   const maxRounds = Math.max(1, number(config.maxRounds, 16));
   let stoppedReason = null;
@@ -94,7 +222,11 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       plannerOptions,
     );
     if (feedback.nextExecution) {
+      if (feedback.selection && feedback.selection.experimentKey) {
+        attemptedExperiments.add(feedback.selection.experimentKey);
+      }
       portfolio = feedback.nextExecution;
+      history.push(portfolio);
       rounds.push({
         round,
         kind: "terminal-dependency",
@@ -111,10 +243,35 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       {
         ...plannerOptions,
         excludeTargetNodeId: config.excludeTargetNodeId || null,
+        excludedRepairExperimentKeys: rejectedRepairExperiments,
         candidateLimit: number(config.repairCandidateLimit, 16),
       },
     );
     if (!repairs.selected) {
+      const backtrack = historicalFeedback(
+        project,
+        projectRoot,
+        terminalGoal,
+        history,
+        plannerOptions,
+        attemptedExperiments,
+      );
+      if (backtrack) {
+        if (backtrack.feedback.selection && backtrack.feedback.selection.experimentKey) {
+          attemptedExperiments.add(backtrack.feedback.selection.experimentKey);
+        }
+        portfolio = backtrack.feedback.nextExecution;
+        history.push(portfolio);
+        rounds.push({
+          round,
+          kind: "historical-backtrack",
+          historyIndex: backtrack.historyIndex,
+          feedbackSelection: backtrack.feedback.selection,
+          completedPrerequisiteId: selectedPrerequisite(portfolio),
+          outcome: compactOutcome(portfolio),
+        });
+        continue;
+      }
       stoppedReason = repairs.verdict;
       rounds.push({
         round,
@@ -143,7 +300,8 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       break;
     }
     seen.add(cycleKey);
-    portfolio = executeRepair(
+    const repairInputPortfolio = portfolio;
+    const repairExecution = executeRepair(
       project,
       projectRoot,
       terminalGoal,
@@ -151,12 +309,30 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       repairs.selected,
       plannerOptions,
     );
+    if (!repairExecution.outcome.goalFound || repairExecution.checkpoints.length === 0) {
+      rejectedRepairExperiments.add(repairs.selected.experimentKey);
+      rounds.push({
+        round,
+        kind: "blocker-repair-rejected",
+        repairCandidateCount: repairs.candidateCount,
+        candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
+        repair: repairs.selected,
+        repairClosure: repairExecution.repairClosure || null,
+        outcome: compactOutcome(repairExecution),
+        retainedPortfolioFingerprint: checkpointFingerprint(repairInputPortfolio),
+      });
+      portfolio = repairInputPortfolio;
+      continue;
+    }
+    portfolio = repairExecution;
+    history.push(portfolio);
     rounds.push({
       round,
       kind: "blocker-repair",
       repairCandidateCount: repairs.candidateCount,
       candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
       repair: repairs.selected,
+      repairClosure: portfolio.repairClosure || null,
       completedPrerequisiteId: selectedPrerequisite(portfolio),
       outcome: compactOutcome(portfolio),
     });
@@ -188,6 +364,9 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
     totals,
     stoppedReason: stoppedReason || "max-rounds",
     finalPortfolio: portfolio,
+    historyPortfolioCount: history.length,
+    attemptedExperimentCount: attemptedExperiments.size,
+    rejectedRepairExperimentCount: rejectedRepairExperiments.size,
     verdict: "HIERARCHICAL_DISCOVERY_RUN_RECORDED",
   };
 }
