@@ -6,6 +6,7 @@ const { strictReplayRoute } = require("./agenda-policy-evaluation");
 const { makeBlindSimulator } = require("./blind-discovery-baseline");
 const { buildRouteRecord } = require("./route-store");
 const { searchSegmentDP } = require("./segment-dp");
+const { cloneState } = require("./state");
 const { buildStateKey } = require("./state-key");
 
 const SCHEMA = "motapathfinder.local-dependency-execution.v1";
@@ -21,10 +22,9 @@ function hash(value) {
 
 function selectExecutablePrerequisite(dependencyPlan) {
   for (const alternative of dependencyPlan.alternatives || []) {
-    for (const prerequisite of alternative.prerequisites || []) {
-      if (((prerequisite.evidence || {}).status) === "viable-at-current-state") {
-        return { alternative, prerequisite };
-      }
+    const prerequisite = (alternative.prerequisites || [])[0];
+    if (prerequisite && ((prerequisite.evidence || {}).status) === "viable-at-current-state") {
+      return { alternative, prerequisite };
     }
   }
   return null;
@@ -52,15 +52,26 @@ function semanticSignature(record) {
   });
 }
 
+function incrementalRoute(initialState, candidate) {
+  const before = Array.isArray(initialState.route) ? initialState.route : [];
+  const after = Array.isArray(candidate.route) ? candidate.route : [];
+  if (before.length === 0) return after.slice();
+  const retainsPrefix = before.every((entry, index) =>
+    JSON.stringify(entry) === JSON.stringify(after[index]));
+  return retainsPrefix ? after.slice(before.length) : after.slice();
+}
+
 function checkpointRecord(project, projectRoot, initialState, candidate, target, index) {
   const finalState = candidate.state;
   finalState.route = Array.isArray(candidate.route) ? candidate.route.slice() : [];
+  const recordFinalState = cloneState(finalState);
+  recordFinalState.route = incrementalRoute(initialState, candidate);
   const simulator = makeBlindSimulator(project);
   const routeRecord = buildRouteRecord({
     project,
     simulator,
     initialState,
-    finalState,
+    finalState: recordFinalState,
     options: {
       projectRoot,
       solver: "local-dependency-executor",
@@ -163,7 +174,7 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
     selected: {
       alternativeId: selected.alternative.id,
       prerequisite: selected.prerequisite,
-      selection: "first-ranked-alternative-first-currently-viable-prerequisite",
+      selection: "first-ranked-alternative-with-viable-leading-prerequisite",
     },
     controls: {
       maxExpansions,

@@ -1640,6 +1640,22 @@
       },
       "notes": "PR-5.16c execute an automatic prerequisite with canonical DP and strict-replay multiple strategic goal checkpoints"
     },
+    "shared-solver/lib/dependency-feedback-controller.js": {
+      "id": "dependency-feedback-controller",
+      "path": "shared-solver/lib/dependency-feedback-controller.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "downstream-feedback-checkpoint-and-alternative-selector",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": true,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.16d rebuild automatic dependencies per checkpoint, preserve AND order, switch OR alternatives on downstream failure, and execute the next local prerequisite"
+    },
     "shared-solver/lib/segment-dp.js": {
       "id": "segment-dp",
       "path": "shared-solver/lib/segment-dp.js",
@@ -2100,6 +2116,13 @@
     }
   },
   "tests": {
+    "shared-solver/check-dependency-feedback-controller.js": {
+      "grade": "integration-local",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.16d real D2 top-1 checkpoint failure versus multi-role checkpoint and OR-alternative switch with incremental strict replay"
+    },
     "shared-solver/check-local-dependency-executor.js": {
       "grade": "integration-local",
       "allowsNotFound": false,

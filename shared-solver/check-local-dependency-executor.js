@@ -9,7 +9,7 @@ const { compileAutomaticDependencyPlan } = require("./lib/automatic-dependency-p
 const { compileAutomaticFeasibilitySubgoals } = require("./lib/automatic-feasibility-subgoals");
 const { buildAutomaticMacroGraph } = require("./lib/automatic-macro-graph");
 const { readBlindGoal } = require("./lib/blind-discovery-baseline");
-const { executeLocalDependency } = require("./lib/local-dependency-executor");
+const { executeLocalDependency, selectExecutablePrerequisite } = require("./lib/local-dependency-executor");
 const { loadProject } = require("./lib/project-loader");
 const { createMt5EntryState, detachCheckpoint } = require("./qualify-blind-discovery");
 
@@ -78,6 +78,26 @@ function main() {
     result.checkpoints.find((checkpoint) => checkpoint.roles.includes("shortest")).exactStateFingerprint,
   );
   assert.strictEqual(result.verdict, "LOCAL_DEPENDENCY_MULTI_ROLE_CHECKPOINTS_VERIFIED");
+
+  const ordered = selectExecutablePrerequisite({
+    alternatives: [
+      {
+        id: "blocked-first",
+        prerequisites: [
+          { sourceNodeId: "blocked-leading", evidence: { status: "unbeatable-at-current-stats" } },
+          { sourceNodeId: "viable-but-not-leading", evidence: { status: "viable-at-current-state" } },
+        ],
+      },
+      {
+        id: "runnable-second",
+        prerequisites: [
+          { sourceNodeId: "viable-leading", evidence: { status: "viable-at-current-state" } },
+        ],
+      },
+    ],
+  });
+  assert.strictEqual(ordered.alternative.id, "runnable-second");
+  assert.strictEqual(ordered.prerequisite.sourceNodeId, "viable-leading");
 
   const blockedPlan = JSON.parse(JSON.stringify(dependencyPlan));
   blockedPlan.alternatives.forEach((alternative) => {
