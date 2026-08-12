@@ -176,6 +176,7 @@
         "shared-solver/check-blind-discovery-baseline.js",
         "shared-solver/check-search-trace-explainability.js",
         "shared-solver/check-automatic-macro-graph.js",
+        "shared-solver/check-hierarchical-blind-planner.js",
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
@@ -405,6 +406,21 @@
     "shared-solver/lib/automatic-macro-graph.js": {
       "id": "automatic-macro-graph",
       "path": "shared-solver/lib/automatic-macro-graph.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/hierarchical-blind-planner.js": {
+      "id": "hierarchical-blind-planner",
+      "path": "shared-solver/lib/hierarchical-blind-planner.js",
       "layer": "planning/decomposition",
       "status": "experimental",
       "role": "candidate-generator",
@@ -2058,6 +2074,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.12 route-free automatic floor corridor, TowerIR POI, resource-gate, mutation dependency, and terminal boss graph contract"
+    },
+    "shared-solver/check-hierarchical-blind-planner.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.13 route-free automatic floor-stage planner contract; bounded not-found is expected and does not prove no route"
     },
     "shared-solver/check-blind-discovery-baseline.js": {
       "grade": "unit-plus-micro",

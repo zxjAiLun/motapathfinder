@@ -48,6 +48,7 @@ const RESOURCE_TIMING = new Set([
 ]);
 const DECOMPOSITION = new Set([
   "automatic-macro-graph.js",
+  "hierarchical-blind-planner.js",
   "blind-discovery-baseline.js",
   "discovery-capability-audit.js",
   "milestone-decomposer.js",
@@ -273,6 +274,13 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
 }
 
 const TEST_OVERRIDES = {
+  "shared-solver/check-hierarchical-blind-planner.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: true,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "PR-5.13 route-free automatic floor-stage planner contract; bounded not-found is expected and does not prove no route",
+  },
   "shared-solver/check-automatic-macro-graph.js": {
     grade: "unit-plus-micro",
     allowsNotFound: false,
@@ -733,6 +741,7 @@ const manifest = {
         "shared-solver/check-blind-discovery-baseline.js",
         "shared-solver/check-search-trace-explainability.js",
         "shared-solver/check-automatic-macro-graph.js",
+        "shared-solver/check-hierarchical-blind-planner.js",
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
