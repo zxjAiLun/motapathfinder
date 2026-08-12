@@ -95,12 +95,22 @@ function incrementalRoute(initialState, candidate) {
   return retainsPrefix ? after.slice(before.length) : after.slice();
 }
 
-function checkpointRecord(project, projectRoot, initialState, candidate, target, index) {
+function checkpointRecord(
+  project,
+  projectRoot,
+  initialState,
+  candidate,
+  target,
+  index,
+  sharedSimulator,
+  makeSimulator,
+  reuseSimulator,
+) {
   const finalState = candidate.state;
   finalState.route = Array.isArray(candidate.route) ? candidate.route.slice() : [];
   const recordFinalState = cloneState(finalState);
   recordFinalState.route = incrementalRoute(initialState, candidate);
-  const simulator = makeBlindSimulator(project);
+  const simulator = reuseSimulator ? sharedSimulator : makeSimulator();
   const routeRecord = buildRouteRecord({
     project,
     simulator,
@@ -122,7 +132,8 @@ function checkpointRecord(project, projectRoot, initialState, candidate, target,
       },
     },
   });
-  const replay = strictReplayRoute(project, makeBlindSimulator(project), routeRecord);
+  const replaySimulator = reuseSimulator ? sharedSimulator : makeSimulator();
+  const replay = strictReplayRoute(project, replaySimulator, routeRecord);
   return {
     id: `checkpoint-${index + 1}`,
     roles: (candidate.tags || []).slice().sort(),
@@ -165,7 +176,16 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
   const config = options || {};
   const maxExpansions = Math.max(1, number(config.maxExpansions, 64));
   const candidateLimit = Math.max(2, number(config.candidateLimit, 8));
-  const simulator = makeBlindSimulator(project);
+  let simulatorInstanceCount = 0;
+  const simulatorFactory = typeof config.simulatorFactory === "function"
+    ? config.simulatorFactory
+    : () => makeBlindSimulator(project);
+  const makeSimulator = () => {
+    simulatorInstanceCount += 1;
+    return simulatorFactory();
+  };
+  const simulator = makeSimulator();
+  const reuseCheckpointSimulator = config.reuseCheckpointSimulator !== false;
   const segment = {
     id: `auto-local-${selected.alternative.id}-${selected.prerequisite.sourceNodeId}`,
     label: "Automatically compiled local dependency prerequisite",
@@ -193,7 +213,17 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
   const searchedAt = Date.now();
   const dp = (result.diagnostics || {}).dp || {};
   const checkpoints = (result.goalSkyline || []).map((candidate, index) =>
-    checkpointRecord(project, projectRoot, initialState, candidate, selected.prerequisite.target, index));
+    checkpointRecord(
+      project,
+      projectRoot,
+      initialState,
+      candidate,
+      selected.prerequisite.target,
+      index,
+      simulator,
+      makeSimulator,
+      reuseCheckpointSimulator,
+    ));
   const completedAt = Date.now();
   const exactStateCount = new Set(checkpoints.map((checkpoint) => checkpoint.exactStateFingerprint)).size;
   const semanticStateCount = new Set(checkpoints.map((checkpoint) => checkpoint.semanticSignature)).size;
@@ -221,6 +251,8 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
       productionKeyChanged: false,
       productionDominanceChanged: false,
       productionSelectionChanged: false,
+      reuseCheckpointSimulator,
+      simulatorInstanceCount,
     },
     outcome: {
       found: Boolean(result.found),

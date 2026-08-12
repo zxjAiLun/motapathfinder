@@ -62,6 +62,8 @@ function main() {
   assert.ok(result.outcome.timing.searchMs >= 0);
   assert.ok(result.outcome.timing.checkpointReplayMs >= 0);
   assert.strictEqual(result.outcome.timing.totalWallMs, result.outcome.wallMs);
+  assert.strictEqual(result.controls.reuseCheckpointSimulator, true);
+  assert.strictEqual(result.controls.simulatorInstanceCount, 1);
   assert.strictEqual(result.outcome.generated, result.outcome.accepted + result.outcome.rejected);
   assert.ok(result.outcome.rawGoalCandidateCount > result.outcome.retainedCheckpointCount);
   assert.strictEqual(result.checkpoints.length, 8);
@@ -116,8 +118,10 @@ function main() {
   const repeat = executeLocalDependency(project, PROJECT_ROOT, state, dependencyPlan, {
     maxExpansions: 64,
     candidateLimit: 8,
+    reuseCheckpointSimulator: false,
   });
   assert.deepStrictEqual(fingerprintSummary(result), fingerprintSummary(repeat));
+  assert.strictEqual(repeat.controls.simulatorInstanceCount, 17);
 
   process.stdout.write(`${JSON.stringify({
     status: "passed",
@@ -127,6 +131,17 @@ function main() {
     checkpointDiversity: result.checkpointDiversity,
     checkpoints: fingerprintSummary(result),
     blockedControl: blocked.verdict,
+    simulatorReuseComparison: {
+      before: {
+        simulatorInstanceCount: repeat.controls.simulatorInstanceCount,
+        wallMs: repeat.outcome.wallMs,
+      },
+      after: {
+        simulatorInstanceCount: result.controls.simulatorInstanceCount,
+        wallMs: result.outcome.wallMs,
+      },
+      fingerprintsAndReplayUnchanged: true,
+    },
     verdict: result.verdict,
   }, null, 2)}\n`);
 }
