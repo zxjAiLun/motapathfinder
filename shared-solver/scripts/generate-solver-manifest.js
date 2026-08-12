@@ -47,6 +47,7 @@ const RESOURCE_TIMING = new Set([
   "resource-deferral-planner.js",
 ]);
 const DECOMPOSITION = new Set([
+  "automatic-macro-graph.js",
   "blind-discovery-baseline.js",
   "discovery-capability-audit.js",
   "milestone-decomposer.js",
@@ -272,6 +273,13 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
 }
 
 const TEST_OVERRIDES = {
+  "shared-solver/check-automatic-macro-graph.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "PR-5.12 route-free automatic floor corridor, TowerIR POI, resource-gate, mutation dependency, and terminal boss graph contract",
+  },
   "shared-solver/check-search-trace-explainability.js": {
     grade: "unit-plus-micro",
     allowsNotFound: true,
@@ -724,6 +732,7 @@ const manifest = {
         "shared-solver/check-discovery-capability-audit.js",
         "shared-solver/check-blind-discovery-baseline.js",
         "shared-solver/check-search-trace-explainability.js",
+        "shared-solver/check-automatic-macro-graph.js",
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",

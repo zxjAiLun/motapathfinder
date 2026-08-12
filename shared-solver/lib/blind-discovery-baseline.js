@@ -340,6 +340,7 @@ module.exports = {
   FORBIDDEN_SERIALIZED_KEYS,
   GOAL_SCHEMA,
   SCHEMA,
+  makeBlindSimulator,
   readBlindGoal,
   runBlindDiscoveryBaseline,
   validateBlindGoal,

@@ -67,6 +67,8 @@
     "check:blind-discovery-baseline": "node check-blind-discovery-baseline.js",
     "explain:blind-discovery:mt5": "node explain-search-trace.js --before=routes/generated/blind-discovery-mt5.report.json --out=routes/generated/blind-discovery-mt5.explanation.json --markdown=routes/generated/blind-discovery-mt5.explanation.md",
     "check:search-trace-explainability": "node check-search-trace-explainability.js",
+    "build:automatic-macro-graph:mt5": "node build-automatic-macro-graph.js --out=routes/generated/automatic-macro-graph-mt5.json",
+    "check:automatic-macro-graph": "node check-automatic-macro-graph.js",
     "check:region-specs": "node check-region-specs.js",
     "check:resource-timing": "node check-resource-timing.js",
     "check:resource-timing-model": "node check-resource-timing-model.js",

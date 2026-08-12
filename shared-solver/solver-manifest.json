@@ -175,6 +175,7 @@
         "shared-solver/check-discovery-capability-audit.js",
         "shared-solver/check-blind-discovery-baseline.js",
         "shared-solver/check-search-trace-explainability.js",
+        "shared-solver/check-automatic-macro-graph.js",
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
@@ -396,6 +397,21 @@
       "tests": {
         "unit": false,
         "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/automatic-macro-graph.js": {
+      "id": "automatic-macro-graph",
+      "path": "shared-solver/lib/automatic-macro-graph.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
@@ -2035,6 +2051,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "canonical core regression suite; no ignored route dependency"
+    },
+    "shared-solver/check-automatic-macro-graph.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.12 route-free automatic floor corridor, TowerIR POI, resource-gate, mutation dependency, and terminal boss graph contract"
     },
     "shared-solver/check-blind-discovery-baseline.js": {
       "grade": "unit-plus-micro",
