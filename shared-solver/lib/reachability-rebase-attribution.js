@@ -24,6 +24,7 @@ class ReachabilityRebaseAttribution {
         keyNodes: new Set(),
         emittedActions: 0,
         travelStateNodes: new Set(),
+        candidateOutcomes: new Map(),
       });
     }
     return this.consumerStats.get(key);
@@ -151,6 +152,19 @@ class ReachabilityRebaseAttribution {
     });
   }
 
+  recordCandidateOutcome(name, outcome, subject) {
+    const owner = subject && (this.nodeOwners.get(subject) || this.stateOwners.get(subject));
+    if (!owner) return;
+    const consumer = this.consumer(name);
+    const key = String(outcome || "unknown");
+    if (!consumer.candidateOutcomes.has(key)) {
+      consumer.candidateOutcomes.set(key, { events: 0, nodes: new Set() });
+    }
+    const stats = consumer.candidateOutcomes.get(key);
+    stats.events += 1;
+    stats.nodes.add(owner.nodeId);
+  }
+
   report() {
     const rebases = Array.from(this.rebases.values());
     const topologyNodes = rebases.reduce((sum, rebase) => sum + rebase.nodeCount, 0);
@@ -165,9 +179,28 @@ class ReachabilityRebaseAttribution {
       rebase.travelStateNodes.forEach((id) => travelStateNodes.add(id));
     });
     const consumers = {};
+    const materializedWithoutTravelState = new Set();
+    rebases.forEach((rebase) => {
+      rebase.materializedNodes.forEach((id) => {
+        if (!travelStateNodes.has(id)) materializedWithoutTravelState.add(id);
+      });
+    });
     Array.from(this.consumerStats.entries())
       .sort(([left], [right]) => left.localeCompare(right))
       .forEach(([name, stats]) => {
+        const unescapedStateNodes = Array.from(stats.stateNodes)
+          .filter((id) => materializedWithoutTravelState.has(id));
+        const candidateOutcomes = {};
+        Array.from(stats.candidateOutcomes.entries())
+          .sort(([left], [right]) => left.localeCompare(right))
+          .forEach(([outcome, outcomeStats]) => {
+            candidateOutcomes[outcome] = {
+              events: outcomeStats.events,
+              uniqueNodes: outcomeStats.nodes.size,
+              materializedWithoutTravelStateEscape: Array.from(outcomeStats.nodes)
+                .filter((id) => materializedWithoutTravelState.has(id)).length,
+            };
+          });
         consumers[name] = {
           stateAccesses: stats.stateAccesses,
           uniqueStateNodes: stats.stateNodes.size,
@@ -175,8 +208,38 @@ class ReachabilityRebaseAttribution {
           uniqueKeyNodes: stats.keyNodes.size,
           emittedActions: stats.emittedActions,
           uniqueTravelStateNodes: stats.travelStateNodes.size,
+          materializedWithoutTravelStateEscape: unescapedStateNodes.length,
+          candidateOutcomes,
         };
       });
+    const consumerSignatures = new Map();
+    materializedWithoutTravelState.forEach((nodeId) => {
+      const names = Array.from(this.consumerStats.entries())
+        .filter(([, stats]) => stats.stateNodes.has(nodeId))
+        .map(([name]) => name)
+        .sort();
+      const signature = names.length > 0 ? names.join("+") : "unattributed";
+      consumerSignatures.set(signature, Number(consumerSignatures.get(signature) || 0) + 1);
+    });
+    const unescapedCandidateOutcomeSignatures = {};
+    Array.from(this.consumerStats.entries()).forEach(([name, stats]) => {
+      const signatures = new Map();
+      const outcomeEntries = Array.from(stats.candidateOutcomes.entries());
+      materializedWithoutTravelState.forEach((nodeId) => {
+        if (!stats.stateNodes.has(nodeId)) return;
+        const outcomes = outcomeEntries
+          .filter(([, outcomeStats]) => outcomeStats.nodes.has(nodeId))
+          .map(([outcome]) => outcome)
+          .sort();
+        const signature = outcomes.length > 0 ? outcomes.join("+") : "none";
+        signatures.set(signature, Number(signatures.get(signature) || 0) + 1);
+      });
+      if (signatures.size > 0) {
+        unescapedCandidateOutcomeSignatures[name] = Object.fromEntries(
+          Array.from(signatures.entries()).sort(([left], [right]) => left.localeCompare(right))
+        );
+      }
+    });
     return {
       schema: "motapathfinder.reachability-rebase-attribution.v1",
       rebases: rebases.length,
@@ -193,7 +256,11 @@ class ReachabilityRebaseAttribution {
       uniqueNodeKeyAccessedNodes: keyNodes.size,
       emittedActionsWithTravelState: this.totalEmittedActions,
       uniqueTravelStateNodes: travelStateNodes.size,
-      materializedNodesWithoutTravelStateEscape: materializedNodes - travelStateNodes.size,
+      materializedNodesWithoutTravelStateEscape: materializedWithoutTravelState.size,
+      materializedWithoutTravelStateConsumerSignatures: Object.fromEntries(
+        Array.from(consumerSignatures.entries()).sort(([left], [right]) => left.localeCompare(right))
+      ),
+      unescapedCandidateOutcomeSignatures,
       topologyNodesWithoutMaterialization: topologyNodes - materializedNodes,
       travelStateEscapeRatio: topologyNodes > 0 ? travelStateNodes.size / topologyNodes : 0,
       consumers,

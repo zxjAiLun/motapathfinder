@@ -582,6 +582,12 @@ class StaticSimulator {
     return actions;
   }
 
+  recordReachabilityCandidateOutcome(name, outcome, subject) {
+    if (this.reachabilityRebaseAttribution) {
+      this.reachabilityRebaseAttribution.recordCandidateOutcome(name, outcome, subject);
+    }
+  }
+
   getWalkReachability(state) {
     const key = buildStateKey(state);
     const cached = this.cacheGet("reachability", key);
@@ -862,6 +868,9 @@ class StaticSimulator {
         project: this.project,
         state,
         reachability,
+        recordCandidateOutcome: this.reachabilityRebaseAttribution
+          ? (outcome, subject) => this.recordReachabilityCandidateOutcome("battle", outcome, subject)
+          : null,
       }));
       actions.push(...this.recordReachabilityActions("battle", battleActions));
 

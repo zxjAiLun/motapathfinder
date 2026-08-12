@@ -436,6 +436,9 @@ class FunctionBackedBattleResolver {
 
   enumerateActions(context) {
     const { reachability } = context;
+    const recordCandidateOutcome = typeof context.recordCandidateOutcome === "function"
+      ? context.recordCandidateOutcome
+      : null;
     const actionsByKey = new Map();
 
     Object.values(reachability.visited).forEach((node) => {
@@ -448,14 +451,25 @@ class FunctionBackedBattleResolver {
         const targetY = node.y + delta.y;
         const tile = getTileDefinitionAt(this.project, lookupState, lookupState.floorId, targetX, targetY);
         if (!isEnemyTile(tile)) return;
+        if (recordCandidateOutcome) recordCandidateOutcome("enemy-adjacency", node);
 
         const nodeState = typeof reachability.materializeNodeState === "function"
           ? reachability.materializeNodeState(node)
           : node.state;
         const battle = this.evaluateBattle(nodeState, nodeState.floorId, targetX, targetY, tile.id);
-        if (!battle.supported) return;
-        if (!battle.damageInfo || battle.damageInfo.damage == null) return;
-        if (battle.damageInfo.damage >= Number(nodeState.hero.hp || 0)) return;
+        if (!battle.supported) {
+          if (recordCandidateOutcome) recordCandidateOutcome("unsupported", node);
+          return;
+        }
+        if (!battle.damageInfo || battle.damageInfo.damage == null) {
+          if (recordCandidateOutcome) recordCandidateOutcome("no-damage-info", node);
+          return;
+        }
+        if (battle.damageInfo.damage >= Number(nodeState.hero.hp || 0)) {
+          if (recordCandidateOutcome) recordCandidateOutcome("lethal", node);
+          return;
+        }
+        if (recordCandidateOutcome) recordCandidateOutcome("viable", node);
         const action = {
           kind: "battle",
           floorId: nodeState.floorId,
@@ -478,7 +492,12 @@ class FunctionBackedBattleResolver {
         const key = `${targetX},${targetY}:battle:${node.path.join(",")}:${nodeState.hero.hp}`;
         const existing = actionsByKey.get(key);
         if (!existing || existing.path.length > action.path.length) {
+          if (recordCandidateOutcome) {
+            recordCandidateOutcome(existing ? "dedup-replaced" : "dedup-inserted", node);
+          }
           actionsByKey.set(key, action);
+        } else {
+          if (recordCandidateOutcome) recordCandidateOutcome("dedup-rejected", node);
         }
       });
     });
