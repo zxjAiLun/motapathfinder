@@ -587,6 +587,7 @@ PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 gua
 - **PR-5.12 Automatic Macro Graph（完成，提交见本文件 HEAD）**：route-free 输入只含塔/canonical initial/terminal Boss；自动从 `changeFloor` 求 MT1→MT5 corridor，并复用 TowerIR 生成 409 nodes/722 edges（140 walk components、116 enemies、132 items、9 changeFloor、2 doors、6 mutation hooks）。目标唯一绑定 blueKing；正确发现 specialDoor 的静态 key 要求无 supplier，同时构造 blueKing afterBattle 写 flag → autoEvent 条件 → scripted openDoor 的 mutation dependency。115 普通敌人仍标 inspection candidate；`dependencyCompleteness=candidate-graph-not-proof`，不参与当前 correctness pruning。
 - **PR-5.13 Hierarchical Planner v1（完成，提交见本文件 HEAD）**：自动 macro graph 生成 MT2/MT3/MT4/MT5 entry + terminal Boss stages，零手写资源阈值/事件顺序；canonical local DP 真实执行。1000-expansions：MT2=62、MT3=206、MT4 miss=732，约 14.4s，deepest 仍 MT3/route decisions 34。相比单段 before 33.046s/MT3，没有提升 correctness outcome；冻结 `HIERARCHICAL_STAGE_EXECUTION_WORKS_BUT_TOP1_ENTRY_LIMITS_DISCOVERY`。均分预算、预收集 Pareto、default agenda、current-stage 0/4/8 alternatives 均被实验否证且未提交。下一步 failure-triggered 回溯，模拟按需 save/load。
 - **PR-5.13b Failure-Triggered Macro Backtracking（完成，提交见本文件 HEAD）**：下游失败才保存/复用本段 mobility/equipment/resource/survival checkpoints，再按需重开上一入口 alternatives；诊断用 state fingerprint + hero/equipment/inventory 摘要，不再输出整条 state key。真实 1000-expansion run 在 MT4 probe 内捕获 I893 checkpoint（MT3 hp4837/atk112/def100），最深 decision **39→48**，但仍停 MT3，因此只冻结机制与成本证据，不宣称自主发现改善：`FAILURE_TRIGGERED_BACKTRACKING_EXPOSES_USEFUL_CHECKPOINTS_BUT_D3_REMAINS_OPEN`。
+- **PR-5.14 D0-D3 Blind Qualification（完成，提交见本文件 HEAD）**：统一 runner 锁住分级输入并要求 found + strict replay。D0 已知路线 55/55 replay；D1 detached MT2 checkpoint→MT3 仅 12 expansions、6/6 replay；D2 detached 真实 MT5 entry→blueKing 1000 expansions/frontier202 未找到；D3 canonical initial→blueKing 1000 expansions/deepest MT3 未找到。D2/D3 四元组均 false/false/true/false，不是无路线证明。最终留档对比 5.10c before 33.046s/1000/deepest MT3，5.14 D3 17.212s/1000/deepest MT3：wall 方向性 -47.9%，correctness outcome 不变。冻结 `EXECUTION_AND_LOCAL_DISCOVERY_VERIFIED_AUTONOMOUS_DISCOVERY_OPEN`，项目目前只获得 D0/D1 资格。
 
 PR-5.6 before/after（本机方向性数据，严格结果由 fingerprint/replay 守门）：
 
@@ -606,8 +607,8 @@ reachability 真实归因（perf tracker `reachability` phase + simulator cache 
 1. **主线已在 2026-08-12 重置为自主路线发现，PR-5.10b 审计已完成**：已量化 milestone、顺序、资源阈值、tile、楼层/换层限制、fixture 和搜索参数，并建立 A0→A5 消融梯度。原定 MT8 legacy-exact/clone 与短中链 applyAction 归因暂停。
 2. **PR-5.10c terminal-only blind baseline 已完成**：1000 expansions 到 MT3、frontier 496 的失败是权威 before；后续修改必须用相同输入/预算报告 goal/deepest floor/frontier/active keys/wall，不能通过加 timeout/candidateLimit 消掉失败。
 3. **PR-5.11 可解释搜索轨迹已完成**：固定 before/after 卡与 decision-depth trace 已能显示候选生成、拒绝、frontier 和待审查类别；当前没有 after，因此不宣称优化。已知路线仍只能作事后 oracle。
-4. **PR-5.12/5.13 v1 已完成，下一步 5.13b failure-triggered 回溯**：不预先穷举入口 skyline；下游失败才回开上一入口 candidates，把失败反馈映射到 HP/攻防/魔防/key/equipment/flags/resource roles，再用同 1000-expansion budget 比较是否突破 MT3。
-5. **PR-5.14 D0–D3 验收**：D0 strict replay；D1 局部起终点；D2 楼层入口→Boss；D3 初始状态→最终 Boss。只有 D2/D3 的 no-hint found + strict replay 才算自主发现。
+4. **PR-5.12/5.13/5.13b 已完成**：自动图、分层 planner 与 failure-triggered checkpoints 已接通；真实捕获 I893 checkpoint 并把可解释深度 39→48，但同预算仍未突破 MT3，不能以深度替代 found。
+5. **PR-5.14 D0–D3 验收（已完成）**：D0/D1 PASS；D2/D3 OPEN。下一主线不是继续加总预算，而是针对 D2 的 MT5 entry→Boss 首失败面，让自动 macro graph 生成可验证的资源/事件依赖子目标，再用 D2 闭合作为首个自主发现 promotion gate。
 6. **5.5f collision CEGAR/minimal refinement 保持未授权**：真实 changeFloor edge的 production/candidate identity 都变化，未产生 same-scope merge；`NO_COLLISION_OBSERVED` 仍不等于 safe/promotion candidate。
 7. **历史性能与工程 carry 保持隔离**：reachability closure gate、fast CI <3min、DIAG-HYGIENE、wall-time 非确定性、CompactState/Rust 均不抢占 blind discovery 主线；只有 blind trace 证明它们是当前 blocker 时再恢复。
 

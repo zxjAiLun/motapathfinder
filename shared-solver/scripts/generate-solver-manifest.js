@@ -49,6 +49,7 @@ const RESOURCE_TIMING = new Set([
 const DECOMPOSITION = new Set([
   "automatic-macro-graph.js",
   "hierarchical-blind-planner.js",
+  "blind-qualification.js",
   "blind-discovery-baseline.js",
   "discovery-capability-audit.js",
   "milestone-decomposer.js",
@@ -274,6 +275,13 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
 }
 
 const TEST_OVERRIDES = {
+  "shared-solver/check-blind-qualification.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: true,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "PR-5.14 D0-D3 input-boundary and verdict contract; D0 strict replay passes while bounded D2/D3 misses remain explicit open evidence",
+  },
   "shared-solver/check-failure-triggered-macro-backtracking.js": {
     grade: "unit-plus-micro",
     allowsNotFound: true,

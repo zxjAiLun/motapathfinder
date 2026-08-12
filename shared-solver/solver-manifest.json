@@ -448,6 +448,21 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/blind-qualification.js": {
+      "id": "blind-qualification",
+      "path": "shared-solver/lib/blind-qualification.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/discovery-capability-audit.js": {
       "id": "discovery-capability-audit",
       "path": "shared-solver/lib/discovery-capability-audit.js",
@@ -2005,6 +2020,13 @@
     }
   },
   "tests": {
+    "shared-solver/check-blind-qualification.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.14 D0-D3 input-boundary and verdict contract; D0 strict replay passes while bounded D2/D3 misses remain explicit open evidence"
+    },
     "shared-solver/check-failure-triggered-macro-backtracking.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": true,

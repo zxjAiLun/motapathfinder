@@ -73,6 +73,8 @@
     "check:hierarchical-blind-planner": "node check-hierarchical-blind-planner.js",
     "probe:failure-triggered-macro-backtracking": "node probe-failure-triggered-macro-backtracking.js",
     "check:failure-triggered-macro-backtracking": "node check-failure-triggered-macro-backtracking.js",
+    "qualify:blind-discovery": "node qualify-blind-discovery.js",
+    "check:blind-qualification": "node check-blind-qualification.js",
     "check:region-specs": "node check-region-specs.js",
     "check:resource-timing": "node check-resource-timing.js",
     "check:resource-timing-model": "node check-resource-timing-model.js",
