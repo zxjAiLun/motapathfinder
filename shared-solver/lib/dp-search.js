@@ -1153,6 +1153,9 @@ function searchDP(simulator, initialState, options) {
   const fairnessEvery = Math.max(1, Math.floor(number(config.fairnessEvery, 32)));
   const fairnessEnabled = agendaMode === "hybrid-fair";
   const stopOnFirstGoal = config.stopOnFirstGoal !== false;
+  const maxExpansionsAfterFirstGoal = config.maxExpansionsAfterFirstGoal == null
+    ? null
+    : Math.max(0, Math.floor(number(config.maxExpansionsAfterFirstGoal, 0)));
   const continueAfterGoal = config.continueAfterGoal === true;
   const maxRuntimeMs = Number(config.maxRuntimeMs || config.timeLimitMs || 0);
   const fifoEntries = [];
@@ -1228,6 +1231,7 @@ function searchDP(simulator, initialState, options) {
   let firstGoalExpansion = null;
   let firstGoalElapsedMs = null;
   let bestGoalNode = null;
+  let deepestExpandedNode = null;
   const goalNodes = [];
   const goalArchiveAuditConfig = config.goalArchiveAudit && typeof config.goalArchiveAudit === "object"
     ? config.goalArchiveAudit
@@ -2139,6 +2143,15 @@ function searchDP(simulator, initialState, options) {
     }
     if (stopForMemoryIfNeeded("before-expansion", expansions, expansions + 1, expansions === 0)) break;
     if (stopOnFirstGoal && firstGoalNode) break;
+    if (
+      !stopOnFirstGoal &&
+      firstGoalNode &&
+      maxExpansionsAfterFirstGoal != null &&
+      expansions >= number(firstGoalExpansion, expansions) + maxExpansionsAfterFirstGoal
+    ) {
+      stoppedReason = "goal-collection-limit";
+      break;
+    }
     const selected = popNext();
     if (!selected) break;
     const entry = selected.entry;
@@ -2193,6 +2206,10 @@ function searchDP(simulator, initialState, options) {
     const state = entry.state;
     if (!continueAfterGoal && isGoalState(state)) continue;
     expansions += 1;
+    const expandedNode = nodes.get(entry.nodeId);
+    if (!deepestExpandedNode || number(expandedNode && expandedNode.depth, 0) > number(deepestExpandedNode.depth, 0)) {
+      deepestExpandedNode = expandedNode || entry;
+    }
     trackPerfCount("expanded");
     if (shadowCheckState) {
       try {
@@ -2211,7 +2228,7 @@ function searchDP(simulator, initialState, options) {
     if (perfActive) {
       // Node depth (from search-nodes) is authoritative here: the segment-DP
       // states do not carry meta.decisionDepth (the DP tracks depth on nodes).
-      const entryNode = nodes.get(entry.nodeId);
+      const entryNode = expandedNode;
       const nodeDepth = entryNode && typeof entryNode.depth === "number"
         ? entryNode.depth
         : getDecisionDepth(state);
@@ -2469,6 +2486,7 @@ function searchDP(simulator, initialState, options) {
     .filter(Boolean);
   const bestSeenState = attachRouteToNodeState(bestSeenNode);
   const bestProgressState = attachRouteToNodeState(bestProgressNode);
+  const deepestExpandedState = attachRouteToNodeState(deepestExpandedNode);
   const rankedLandmarks = Array.from(landmarkArchiveByKey.values())
     .sort((left, right) => right.score - left.score || String(left.actionSummary || "").localeCompare(String(right.actionSummary || "")));
   const roleLandmarks = new Map();
@@ -2513,6 +2531,7 @@ function searchDP(simulator, initialState, options) {
     goalArchiveAudit,
     bestSeenState,
     bestProgressState,
+    deepestExpandedState,
     landmarkArchive,
     fallbackState: null,
     route: bestGoalState ? bestGoalState.route : null,

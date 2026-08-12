@@ -2690,6 +2690,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     observerCaptureWitnessStates: dpConfig.observerCaptureWitnessStates === true || config.observerCaptureWitnessStates === true,
     goalArchiveAudit: dpConfig.goalArchiveAudit || config.goalArchiveAudit || null,
     stopOnFirstGoal: dpConfig.stopOnFirstGoal === true,
+    maxExpansionsAfterFirstGoal: dpConfig.maxExpansionsAfterFirstGoal,
     continueAfterGoal: dpConfig.continueAfterGoal === true,
     captureTrace,
     captureExpandedStates: dpConfig.captureExpandedStates === true || config.captureExpandedStates === true,
@@ -2778,6 +2779,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     goalSkyline,
     bestSeen: result.bestSeenState,
     bestProgress: result.bestProgressState,
+    deepestExpanded: result.deepestExpandedState,
     landmarkArchive: result.landmarkArchive || [],
     diagnostics: {
       dp: {

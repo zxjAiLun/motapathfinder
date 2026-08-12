@@ -274,6 +274,13 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
 }
 
 const TEST_OVERRIDES = {
+  "shared-solver/check-failure-triggered-macro-backtracking.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: true,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "PR-5.13b bounded post-goal collection, deepest-expanded state, and route-free failure-triggered checkpoint/backtracking contract",
+  },
   "shared-solver/check-hierarchical-blind-planner.js": {
     grade: "unit-plus-micro",
     allowsNotFound: true,
