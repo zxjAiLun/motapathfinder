@@ -47,6 +47,7 @@ const RESOURCE_TIMING = new Set([
   "resource-deferral-planner.js",
 ]);
 const DECOMPOSITION = new Set([
+  "discovery-capability-audit.js",
   "milestone-decomposer.js",
   "landmarks.js",
   "teacher-divergence-audit.js",
@@ -269,6 +270,13 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
 }
 
 const TEST_OVERRIDES = {
+  "shared-solver/check-discovery-capability-audit.js": {
+    grade: "unit",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "PR-5.10b human-hint inventory, ablation ladder, architectural ceiling, and terminal-only blind-spec contract",
+  },
   "shared-solver/check-objective-spec-contract.js": {
     grade: "unit-plus-micro",
     allowsNotFound: false,
@@ -697,6 +705,7 @@ const manifest = {
         "shared-solver/check-core-regressions.js",
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
+        "shared-solver/check-discovery-capability-audit.js",
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",

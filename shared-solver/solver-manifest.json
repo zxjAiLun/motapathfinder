@@ -172,6 +172,7 @@
         "shared-solver/check-core-regressions.js",
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
+        "shared-solver/check-discovery-capability-audit.js",
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
@@ -393,6 +394,21 @@
       "tests": {
         "unit": false,
         "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/discovery-capability-audit.js": {
+      "id": "discovery-capability-audit",
+      "path": "shared-solver/lib/discovery-capability-audit.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
@@ -1987,6 +2003,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "canonical core regression suite; no ignored route dependency"
+    },
+    "shared-solver/check-discovery-capability-audit.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.10b human-hint inventory, ablation ladder, architectural ceiling, and terminal-only blind-spec contract"
     },
     "shared-solver/check-dp-observer.js": {
       "grade": "unit",
