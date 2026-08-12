@@ -1,0 +1,13 @@
+{
+  "schema": "motapathfinder.blind-goal.v1",
+  "id": "onlyup-mt5-blueking",
+  "project": "onlyup",
+  "rank": "chaos",
+  "goal": {
+    "type": "bossDefeated",
+    "floorId": "MT5",
+    "x": 6,
+    "y": 7,
+    "enemyId": "blueKing"
+  }
+}

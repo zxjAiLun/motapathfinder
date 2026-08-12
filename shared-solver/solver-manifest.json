@@ -173,6 +173,7 @@
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-discovery-capability-audit.js",
+        "shared-solver/check-blind-discovery-baseline.js",
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
@@ -394,6 +395,21 @@
       "tests": {
         "unit": false,
         "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/blind-discovery-baseline.js": {
+      "id": "blind-discovery-baseline",
+      "path": "shared-solver/lib/blind-discovery-baseline.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
@@ -2003,6 +2019,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "canonical core regression suite; no ignored route dependency"
+    },
+    "shared-solver/check-blind-discovery-baseline.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.10c terminal-only D3 input contract plus bounded real OnlyUp not-found baseline; found=false is expected evidence, not a no-route proof"
     },
     "shared-solver/check-discovery-capability-audit.js": {
       "grade": "unit",

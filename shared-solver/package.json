@@ -63,6 +63,8 @@
     "check:milestone:audit": "node check-milestone-audit.js",
     "audit:discovery-capability": "node audit-discovery-capability.js --to-milestone=mt5-blueking-kill",
     "check:discovery-capability-audit": "node check-discovery-capability-audit.js",
+    "run:blind-discovery:mt5": "node run-blind-discovery-baseline.js --max-expansions=1000 --max-heap-mb=2048 --out=routes/generated/blind-discovery-mt5.report.json",
+    "check:blind-discovery-baseline": "node check-blind-discovery-baseline.js",
     "check:region-specs": "node check-region-specs.js",
     "check:resource-timing": "node check-resource-timing.js",
     "check:resource-timing-model": "node check-resource-timing-model.js",

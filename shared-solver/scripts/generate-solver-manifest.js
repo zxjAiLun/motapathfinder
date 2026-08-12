@@ -47,6 +47,7 @@ const RESOURCE_TIMING = new Set([
   "resource-deferral-planner.js",
 ]);
 const DECOMPOSITION = new Set([
+  "blind-discovery-baseline.js",
   "discovery-capability-audit.js",
   "milestone-decomposer.js",
   "landmarks.js",
@@ -270,6 +271,13 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
 }
 
 const TEST_OVERRIDES = {
+  "shared-solver/check-blind-discovery-baseline.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: true,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "PR-5.10c terminal-only D3 input contract plus bounded real OnlyUp not-found baseline; found=false is expected evidence, not a no-route proof",
+  },
   "shared-solver/check-discovery-capability-audit.js": {
     grade: "unit",
     allowsNotFound: false,
@@ -706,6 +714,7 @@ const manifest = {
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-discovery-capability-audit.js",
+        "shared-solver/check-blind-discovery-baseline.js",
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
