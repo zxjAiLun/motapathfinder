@@ -589,6 +589,7 @@ PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 gua
 - **PR-5.13b Failure-Triggered Macro Backtracking（完成，提交见本文件 HEAD）**：下游失败才保存/复用本段 mobility/equipment/resource/survival checkpoints，再按需重开上一入口 alternatives；诊断用 state fingerprint + hero/equipment/inventory 摘要，不再输出整条 state key。真实 1000-expansion run 在 MT4 probe 内捕获 I893 checkpoint（MT3 hp4837/atk112/def100），最深 decision **39→48**，但仍停 MT3，因此只冻结机制与成本证据，不宣称自主发现改善：`FAILURE_TRIGGERED_BACKTRACKING_EXPOSES_USEFUL_CHECKPOINTS_BUT_D3_REMAINS_OPEN`。
 - **PR-5.14 D0-D3 Blind Qualification（完成，提交见本文件 HEAD）**：统一 runner 锁住分级输入并要求 found + strict replay。D0 已知路线 55/55 replay；D1 detached MT2 checkpoint→MT3 仅 12 expansions、6/6 replay；D2 detached 真实 MT5 entry→blueKing 1000 expansions/frontier202 未找到；D3 canonical initial→blueKing 1000 expansions/deepest MT3 未找到。D2/D3 四元组均 false/false/true/false，不是无路线证明。最终留档对比 5.10c before 33.046s/1000/deepest MT3，5.14 D3 17.212s/1000/deepest MT3：wall 方向性 -47.9%，correctness outcome 不变。冻结 `EXECUTION_AND_LOCAL_DISCOVERY_VERIFIED_AUTONOMOUS_DISCOVERY_OPEN`，项目目前只获得 D0/D1 资格。
 - **PR-5.15a D2 First-Failure Attribution（完成，提交见本文件 HEAD）**：输入仍为 detached MT5 entry state + terminal Boss，known route 不进入搜索。A 组 1000 expansions 中 MT5=641、MT4=359，frontier202、0 trim，I894/Boss candidate 都为 0；自动 macro graph corridor 仅含 MT5，虽枚举 28 resources/20 combats，却没有 resource→Boss prerequisite。B 组只允许图内 MT5 时 5 expansions 即完整穷尽且 Boss 未找到，证明 D2 必须离开当前图包络，而 unrestricted search 确实有 35.9% expansions 在 MT4。冻结 `D2_FIRST_FAILURE_ATTRIBUTED_TO_INCOMPLETE_AUTOMATIC_PLANNING_ENVELOPE`；下一轮从 state-visible revisitable floors 自动扩图，禁止手写 I894/坐标/顺序。
+- **PR-5.15b Automatic Feasibility Subgoals（完成，提交见本文件 HEAD）**：automatic graph 新增 default-off `state-visible-revisitable` envelope，detached MT5 entry 从 shortest-only MT5 自动扩为当前存档可回访且能返回终点的 MT1..MT5。resource compiler 只读当前仍存在的装备并用 EquipmentResolver counterfactual + Boss stat deficit 排序，自动选 I894；effective atk/def/mdef 971/931/6137→1243/1192/7856，attack/defense deficit 1030/3932→758/1952。removed-tile 得 0 candidates、missing enemy fail-closed、重复确定。直接执行生成的 I894 goal 仍为 1000/frontier220 未找到，因此只冻结 `AUTOMATIC_FEASIBILITY_SUBGOALS_COMPILED`，执行 predecessor stages 留给 5.15c。
 
 PR-5.6 before/after（本机方向性数据，严格结果由 fingerprint/replay 守门）：
 
@@ -611,8 +612,9 @@ reachability 真实归因（perf tracker `reachability` phase + simulator cache 
 4. **PR-5.12/5.13/5.13b 已完成**：自动图、分层 planner 与 failure-triggered checkpoints 已接通；真实捕获 I893 checkpoint 并把可解释深度 39→48，但同预算仍未突破 MT3，不能以深度替代 found。
 5. **PR-5.14 D0–D3 验收（已完成）**：D0/D1 PASS；D2/D3 OPEN。下一主线不是继续加总预算，而是针对 D2 的 MT5 entry→Boss 首失败面，让自动 macro graph 生成可验证的资源/事件依赖子目标，再用 D2 闭合作为首个自主发现 promotion gate。
 6. **PR-5.15a 首失败面（已完成）**：当前 automatic graph 从 MT5 entry 编出的 envelope 只有 MT5，但 floor-local control 5 expansions 即完整穷尽无 Boss；unrestricted D2 会回到 MT4，却没有自动依赖信号评价这些回访。5.15b 先扩 revisit-capable envelope，再做候选 feasibility probe；不能把人类路线倒灌成 milestone。
-7. **5.5f collision CEGAR/minimal refinement 保持未授权**：真实 changeFloor edge的 production/candidate identity 都变化，未产生 same-scope merge；`NO_COLLISION_OBSERVED` 仍不等于 safe/promotion candidate。
-8. **历史性能与工程 carry 保持隔离**：reachability closure gate、fast CI <3min、DIAG-HYGIENE、wall-time 非确定性、CompactState/Rust 均不抢占 blind discovery 主线；只有 blind trace 证明它们是当前 blocker 时再恢复。
+7. **PR-5.15b 自动子目标（已完成）**：机器已从扩展 envelope + 当前地图资源 + Boss stats 自动选出 deficit-reducing equipment goal；但原 DP 无 predecessor guidance，1000 expansions 仍未到达。5.15c 要把 topology predecessors 编译为执行阶段，而不是增加预算。
+8. **5.5f collision CEGAR/minimal refinement 保持未授权**：真实 changeFloor edge的 production/candidate identity 都变化，未产生 same-scope merge；`NO_COLLISION_OBSERVED` 仍不等于 safe/promotion candidate。
+9. **历史性能与工程 carry 保持隔离**：reachability closure gate、fast CI <3min、DIAG-HYGIENE、wall-time 非确定性、CompactState/Rust 均不抢占 blind discovery 主线；只有 blind trace 证明它们是当前 blocker 时再恢复。
 
 直到出现第一条：
 

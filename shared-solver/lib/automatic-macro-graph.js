@@ -75,6 +75,61 @@ function shortestFloorPath(project, startFloorId, targetFloorId) {
   return { floorIds, graph };
 }
 
+function reachableFloors(adjacency, startFloorId) {
+  const queue = [startFloorId];
+  const seen = new Set([startFloorId]);
+  while (queue.length > 0) {
+    const floorId = queue.shift();
+    for (const next of adjacency[floorId] || []) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  return seen;
+}
+
+function buildPlanningFloorEnvelope(project, initialState, targetFloorId, options) {
+  const config = options || {};
+  const shortest = shortestFloorPath(project, initialState.floorId, targetFloorId);
+  if (config.envelopeMode !== "state-visible-revisitable") {
+    return {
+      selection: "shortest-static-changeFloor-path",
+      floorIds: shortest.floorIds,
+      graph: shortest.graph,
+    };
+  }
+  const visible = new Set([
+    ...Object.keys(initialState.visitedFloors || {}).filter((floorId) => initialState.visitedFloors[floorId]),
+    ...shortest.floorIds,
+  ]);
+  const restricted = {};
+  const reverse = {};
+  for (const floorId of visible) {
+    restricted[floorId] = (shortest.graph.adjacency[floorId] || []).filter((next) => visible.has(next));
+    reverse[floorId] = reverse[floorId] || [];
+  }
+  for (const [from, targets] of Object.entries(restricted)) {
+    for (const to of targets) {
+      reverse[to] = reverse[to] || [];
+      reverse[to].push(from);
+    }
+  }
+  const reachableFromStart = reachableFloors(restricted, initialState.floorId);
+  const canReturnToTarget = reachableFloors(reverse, targetFloorId);
+  const floorIds = Array.from(project.floorOrder || [])
+    .filter((floorId) => visible.has(floorId) && reachableFromStart.has(floorId) && canReturnToTarget.has(floorId));
+  shortest.floorIds.forEach((floorId) => {
+    if (!floorIds.includes(floorId)) floorIds.push(floorId);
+  });
+  return {
+    selection: "state-visible-static-revisit-closure",
+    floorIds,
+    graph: shortest.graph,
+    visibleFloorIds: Array.from(visible).sort(),
+  };
+}
+
 function walkActions(value, visitor, context) {
   if (Array.isArray(value)) {
     value.forEach((entry, index) => walkActions(entry, visitor, { ...context, path: `${context.path}[${index}]` }));
@@ -201,7 +256,7 @@ function buildAutomaticMacroGraph(project, initialState, terminalGoal, options) 
   if (terminalGoal.type !== "bossDefeated") {
     throw new Error(`Unsupported automatic macro goal: ${terminalGoal.type}`);
   }
-  const corridor = shortestFloorPath(project, initialState.floorId, terminalGoal.floorId);
+  const corridor = buildPlanningFloorEnvelope(project, initialState, terminalGoal.floorId, config);
   const floorIds = corridor.floorIds;
   const floorSet = new Set(floorIds);
   const ir = compileTowerIR(project, {
@@ -438,8 +493,9 @@ function buildAutomaticMacroGraph(project, initialState, terminalGoal, options) 
       towerIrFingerprint: ir.irFingerprint,
     },
     floorCorridor: {
-      selection: "shortest-static-changeFloor-path",
+      selection: corridor.selection,
       floorIds,
+      ...(corridor.visibleFloorIds ? { visibleFloorIds: corridor.visibleFloorIds } : {}),
     },
     nodes,
     edges,
@@ -463,6 +519,7 @@ module.exports = {
   SCHEMA,
   buildAutomaticMacroGraph,
   buildFloorTransitionGraph,
+  buildPlanningFloorEnvelope,
   floorHookRecords,
   mutationEffects,
   conditionExpressions,

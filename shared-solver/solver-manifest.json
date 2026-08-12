@@ -418,6 +418,22 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/automatic-feasibility-subgoals.js": {
+      "id": "automatic-feasibility-subgoals",
+      "path": "shared-solver/lib/automatic-feasibility-subgoals.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.15b route-free state-visible revisit envelope and counterfactual boss-deficit feasibility subgoal compiler"
+    },
     "shared-solver/lib/hierarchical-blind-planner.js": {
       "id": "hierarchical-blind-planner",
       "path": "shared-solver/lib/hierarchical-blind-planner.js",
@@ -2036,6 +2052,13 @@
     }
   },
   "tests": {
+    "shared-solver/check-automatic-feasibility-subgoals.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.15b real detached MT5 state envelope and automatic equipment feasibility candidate with removed-item and missing-enemy negative controls"
+    },
     "shared-solver/check-d2-blind-failure-attribution.js": {
       "grade": "diagnostic",
       "allowsNotFound": true,
