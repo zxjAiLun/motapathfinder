@@ -119,6 +119,10 @@ function optionalNumber(value) {
   return parsed;
 }
 
+function optionEnabled(value) {
+  return value == null || value !== "0";
+}
+
 function makeSimulator(project, options) {
   const config = options || {};
   return new StaticSimulator(project, {
@@ -132,6 +136,9 @@ function makeSimulator(project, options) {
     enableResourceChain: false,
     searchGraphMode: "primitive",
     walkReachabilityMode: config.walkReachabilityMode,
+    enableReachabilitySkeletonCache: config.enableReachabilitySkeletonCache,
+    enableTopologyFirstMaterialization: config.enableTopologyFirstMaterialization,
+    enableBattleEvaluationProjection: config.enableBattleEvaluationProjection,
   });
 }
 
@@ -303,6 +310,9 @@ function buildStrictReplayEvidence(project, simulator, initialState, result, ben
 function runBenchmarkSide(project, milestoneSpec, caseId, benchmarkCase, side, args) {
   const simulator = makeSimulator(project, {
     walkReachabilityMode: args["walk-mode"],
+    enableReachabilitySkeletonCache: optionEnabled(args["reachability-skeleton-cache"]),
+    enableTopologyFirstMaterialization: optionEnabled(args["topology-first-materialization"]),
+    enableBattleEvaluationProjection: optionEnabled(args["battle-evaluation-projection"]),
   });
   const fixture = FIXTURES[benchmarkCase.fixture];
   const initialState = replayFixture(simulator, fixture.file);
@@ -313,6 +323,7 @@ function runBenchmarkSide(project, milestoneSpec, caseId, benchmarkCase, side, a
     fixtureRouteLength: Number((readRouteFile(fixture.file).stats || {}).routeLength || 0),
   };
   const cacheBefore = simulator.getReachabilityCacheStats();
+  const skeletonCacheBefore = simulator.getActionExpansionCacheStats().reachabilitySkeleton;
   const candidate = side === "B"
     ? createResearchCandidateBuilder(project, simulator, caseId, benchmarkCase)
     : null;
@@ -374,6 +385,9 @@ function runBenchmarkSide(project, milestoneSpec, caseId, benchmarkCase, side, a
       wallMs: perf.wallMs,
       firstGoalElapsedMs: summarizeFirstGoalElapsedMs(result),
       walkReachabilityMode: simulator.walkReachabilityMode,
+      reachabilitySkeletonCacheEnabled: simulator.enableReachabilitySkeletonCache,
+      topologyFirstMaterializationEnabled: simulator.enableTopologyFirstMaterialization,
+      battleEvaluationProjectionEnabled: simulator.enableBattleEvaluationProjection,
       peakRssMb: perf.peakRssMb,
       peakHeapUsedMb: perf.peakHeapUsedMb,
       reachabilityComputations: Number(perf.phaseCounts && perf.phaseCounts.reachability || 0),
@@ -382,6 +396,10 @@ function runBenchmarkSide(project, milestoneSpec, caseId, benchmarkCase, side, a
       applyMs: Number(perf.phaseMs && perf.phaseMs.applyAction || 0),
       keyBuildMs: Number(perf.phaseMs && perf.phaseMs.buildDpStateKey || 0),
       reachabilityCache: cacheDelta(simulator.getReachabilityCacheStats(), cacheBefore),
+      reachabilitySkeletonCache: cacheDelta(
+        simulator.getActionExpansionCacheStats().reachabilitySkeleton,
+        skeletonCacheBefore,
+      ),
     },
   };
 }

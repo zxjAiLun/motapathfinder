@@ -220,7 +220,8 @@
     "check:reachability-rebase-attribution": "node check-reachability-rebase-attribution.js",
     "check:topology-first-materialization": "node check-topology-first-materialization.js",
     "check:remaining-materialization-attribution": "node check-remaining-materialization-attribution.js",
-    "check:battle-evaluation-projection": "node check-battle-evaluation-projection.js"
+    "check:battle-evaluation-projection": "node check-battle-evaluation-projection.js",
+    "check:reachability-optimization-requalification": "node check-reachability-optimization-requalification.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

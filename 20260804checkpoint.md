@@ -579,6 +579,7 @@ PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 gua
 - **验证边界**：本地 static manifest suite 49/49；live-progress 显式 OnlyUp root 后 topology-first on/off 均复现同一首步 runtime mismatch（`MT1:2,7` 自动拾取未在 h5 runtime 发生），属于既有独立 drift，不归因到 5.9d。
 - **PR-5.9e Remaining Materialization Attribution（完成，提交见本文件 HEAD）**：纯观察 recorder 默认关闭，observation on/off correctness 与 clone/key cost parity。722 materialized / 566 escaped 后的 **156/156** 全为 battle pre-action rejection；node-set union 分类为 119 lethal-only、31 no-damage-info-only、6 overlap。289 viable events 全部 emitted；unsupported、dedup reject/replace 均为 0。verdict `REMAINING_MATERIALIZATION_ATTRIBUTED`，机制 `BATTLE_PRE_ACTION_REJECTION_MATERIALIZATION`。
 - **PR-5.9f Battle Evaluation Projection Repair（完成，提交见本文件 HEAD）**：safe-fast battle 先用冻结的 base exact state + `loc/direction/steps` stance projection 做只读 viability evaluation，只有 viable action 才物化完整 travelState；现有 evaluator clone/cache 边界、guard/location damage、action/dedup/apply 与 legacy-exact 均不变。独立 A/B/B/A：materialized **722→566**、clones **845→689**、residual **156→0**；battle materialized 568→289，emitted 289 不变。116-state/434-action exact corpus、winner/route/objective/116 expansions/156 accepted/strict replay 全 parity，verdict `BATTLE_EVALUATION_PROJECTION_PROMOTED`。
+- **PR-5.9g Reachability Optimization Requalification（完成，提交见本文件 HEAD）**：独立进程 A/B/B/A 覆盖 6 个 MT1 workload + tracked MT2→MT3/MT4→MT5-entry。8/8 found + strict replay，winner/route/search scale exact parity；累计结构总量 skeleton builds **897→458**、nodes **47296→21338**、transitions **189184→85352**、clones **48299→7403**、dominance keys **47402→318**，逐 workload 均非增。wall 仅方向性，真实 MT4→MT5-entry 4475→3230ms；verdict `PR_5_9_REACHABILITY_OPTIMIZATION_CLOSED`，5.9 主线 CLOSED。
 
 PR-5.6 before/after（本机方向性数据，严格结果由 fingerprint/replay 守门）：
 
@@ -595,9 +596,9 @@ reachability 真实归因（perf tracker `reachability` phase + simulator cache 
 
 ## 下一主线最值得做的事
 
-1. **PR-5.9f 已关闭；下一轮进入 PR-5.9g reachability optimization requalification**：在 MT1 workload matrix 与 tracked real-route workloads 上冻结 5.9b/d/f 累计结构收益、结果与 strict replay parity；如果没有新 blocker，则关闭 5.9 主线并重新 profile 下一真实 hotspot。
+1. **PR-5.9 已关闭；下一轮进入 PR-5.10a full solve hotspot reprofiling**：在 representative MT1、tracked MT4→MT5 entry 与完整 MT5/MT8 closure 路线上重新排名 phase/call/allocation hotspot；只做归因，先确认下一瓶颈再授权实现。
 2. **5.5f collision CEGAR/minimal refinement 保持未授权**：真实 changeFloor edge的 production/candidate identity 都变化，未产生 same-scope merge；`NO_COLLISION_OBSERVED` 仍不等于 safe/promotion candidate。
-3. **reachability repair gate**：5.9d/f 累计兑现 materialized 6526→566、clones 6649→689、keys 6526→0，且所有剩余 materialized nodes 均进入 action.travelState。后续必须继续保持 unsafe 0 reuse、逐 exact safety classification、116-state/434 action+successor exact corpus与 strict replay；wall 只作方向性证据。除非先建立新的 action representation contract，否则不得继续删除这 566 个必要 travel states。
+3. **reachability closure gate**：5.9g 已跨 8 个 workload 再认证累计结构收益，且所有剩余 materialized nodes 均进入 action.travelState。继续保持 unsafe 0 reuse、逐 exact safety classification、exact corpus与 strict replay；wall 只作方向性证据。除非新 profile 再次证明 reachability 是主瓶颈且先建立新的 action representation contract，否则不得继续删除必要 travel states。
 4. **fast CI <3min**（P2-1 carry）：当前 fast ≈3m26s（solver-job / route-free / candidate-smoke 串行主导）。要达标需在 fast 内部按分支并行，wall = max(各分支)。建议独立 CI-INFRA PR。
 5. **DIAG-HYGIENE carry**：paired benchmark 旧 control `candidateProductionProfileDefaultOff:true` 与 PR-5.4f 后默认语义不符，改为 `approvedMt1CandidateDefaultOn` + `explicitProductionRollbackAvailable` 或删除；与 CI-INFRA 一起修。
 6. **production 时间预算非确定性**：`dpBudget.maxRuntimeMs` 下的搜索结果依赖机器速度，需要确定性 budget 语义（按 expansion 而非 wall time）或文档化非确定。

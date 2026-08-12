@@ -213,6 +213,7 @@
         "shared-solver/check-topology-first-materialization.js",
         "shared-solver/check-remaining-materialization-attribution.js",
         "shared-solver/check-battle-evaluation-projection.js",
+        "shared-solver/check-reachability-optimization-requalification.js",
         "shared-solver/check-goal-directed-search.js",
         "shared-solver/check-candidate-quality-shadow.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
@@ -2685,6 +2686,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.9f independent-process A/B/B/A battle evaluation projection repair: immutable stance metadata, base-state isolation, exact action/successor corpus and winner/route/objective/scale/strict replay parity, with rejected-battle clone elimination"
+    },
+    "shared-solver/check-reachability-optimization-requalification.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.9g independent-process A/B/B/A cumulative reachability optimization closure across six MT1 workloads and tracked MT2-MT3 plus MT4-MT5-entry routes; exact winner/route/scale/strict replay parity and per-workload non-increasing structural cost are mandatory"
     },
     "shared-solver/check-goal-directed-search.js": {
       "grade": "local-regression",
