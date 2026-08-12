@@ -30,6 +30,7 @@ const { syncProgress } = require("./progress");
 const { normalizeSolverModel, projectSolverState } = require("./solver-model");
 const { timeActivePhase } = require("./perf");
 const { ReachabilityReuseAttribution } = require("./reachability-reuse-attribution");
+const { ReachabilityRebaseAttribution } = require("./reachability-rebase-attribution");
 const {
   appendRouteStep,
   cloneState,
@@ -455,6 +456,9 @@ class StaticSimulator {
     this.reachabilityReuseAttribution = config.reachabilityReuseAttribution === true
       ? new ReachabilityReuseAttribution()
       : null;
+    this.reachabilityRebaseAttribution = config.reachabilityRebaseAttribution === true
+      ? new ReachabilityRebaseAttribution()
+      : null;
   }
 
   cacheLimitFor(name) {
@@ -552,6 +556,24 @@ class StaticSimulator {
       : null;
   }
 
+  getReachabilityRebaseAttribution() {
+    return this.reachabilityRebaseAttribution
+      ? this.reachabilityRebaseAttribution.report()
+      : null;
+  }
+
+  withReachabilityConsumer(name, callback) {
+    if (!this.reachabilityRebaseAttribution) return callback();
+    return this.reachabilityRebaseAttribution.withConsumer(name, callback);
+  }
+
+  recordReachabilityActions(name, actions) {
+    if (this.reachabilityRebaseAttribution) {
+      this.reachabilityRebaseAttribution.recordEmittedActions(name, actions);
+    }
+    return actions;
+  }
+
   getWalkReachability(state) {
     const key = buildStateKey(state);
     const cached = this.cacheGet("reachability", key);
@@ -586,6 +608,9 @@ class StaticSimulator {
           : null,
       });
       const diagnostics = reachability && reachability.diagnostics || {};
+      if (this.reachabilityRebaseAttribution) {
+        this.reachabilityRebaseAttribution.instrumentReachability(reachability);
+      }
       const skeletonStats = this.actionExpansionCacheStats &&
         this.actionExpansionCacheStats.reachabilitySkeleton;
       if (stats) {
@@ -627,7 +652,7 @@ class StaticSimulator {
     if (getProjectFlag(this.project, state, "enableGentleClick", true) === false) return [];
     const scan = reachability || this.getWalkReachability(state);
     const actionsByKey = new Map();
-    Object.values(scan.visited || {}).forEach((node) => {
+    this.withReachabilityConsumer("interactPickup", () => Object.values(scan.visited || {}).forEach((node) => {
       DIRECTIONS.forEach((direction) => {
         const delta = DIRECTION_DELTAS[direction];
         const targetX = node.x + delta.x;
@@ -649,8 +674,8 @@ class StaticSimulator {
         };
         keepShortestAction(actionsByKey, `${targetX},${targetY}:interactPickup:${action.summary}:${buildStateKey(node.state)}`, action);
       });
-    });
-    return Array.from(actionsByKey.values());
+    }));
+    return this.recordReachabilityActions("interactPickup", Array.from(actionsByKey.values()));
   }
 
   createInitialState(options) {
@@ -725,7 +750,7 @@ class StaticSimulator {
     const actions = [];
     const flyTargets = new Set();
     const hasFlyBlocker = hasEnemyLeft(this.project, state, "E1649");
-    Object.values(scan.visited || {}).forEach((node) => {
+    this.withReachabilityConsumer("floorFly", () => Object.values(scan.visited || {}).forEach((node) => {
       Object.keys(node.state.visitedFloors || {}).forEach((targetFloorId) => {
         if (!canUseFloorFly(this.project, node.state, targetFloorId, { hasFlyBlocker })) return;
         const target = resolveFloorFlyTarget(this.project, node.state, targetFloorId);
@@ -744,8 +769,8 @@ class StaticSimulator {
           summary: `floorFly:${targetFloorId}@${node.state.floorId}:${node.x},${node.y}`,
         });
       });
-    });
-    return actions;
+    }));
+    return this.recordReachabilityActions("floorFly", actions);
   }
 
   enumeratePrimitiveActions(state) {
@@ -763,8 +788,7 @@ class StaticSimulator {
           findAdjacencyActions(this.project, reachability, predicate, buildAction),
       };
 
-    actions.push(
-      ...helper.findAdjacencyActions(
+      const pickupActions = this.withReachabilityConsumer("pickup", () => helper.findAdjacencyActions(
         (node, tile) => tile && tile.cls === "items",
         (node, direction, targetX, targetY, tile, path, nodeState) => ({
           kind: "pickup",
@@ -777,11 +801,10 @@ class StaticSimulator {
           travelState: nodeState,
           summary: `pickup:${tile.id}@${nodeState.floorId}:${targetX},${targetY}`,
         })
-      )
-    );
+      ));
+      actions.push(...this.recordReachabilityActions("pickup", pickupActions));
 
-    actions.push(
-      ...helper.findAdjacencyActions(
+      const changeFloorActions = this.withReachabilityConsumer("changeFloor", () => helper.findAdjacencyActions(
         (node, tile, targetX, targetY) => Boolean((floor.changeFloor || {})[coordinateKey(targetX, targetY)]),
         (node, direction, targetX, targetY, tile, path, nodeState) => ({
           kind: "changeFloor",
@@ -795,22 +818,27 @@ class StaticSimulator {
           changeFloor: (floor.changeFloor || {})[coordinateKey(targetX, targetY)],
           summary: `changeFloor@${nodeState.floorId}:${targetX},${targetY}`,
         })
-      )
-    );
+      ));
+      actions.push(...this.recordReachabilityActions("changeFloor", changeFloorActions));
 
-    actions.push(...this.doorResolver.enumerateActions({ project: this.project, state, reachability, helper }));
-    actions.push(...this.equipmentResolver.enumerateActions({ project: this.project, state, floor, reachability, helper }));
-    actions.push(...this.eventResolver.enumerateActions({ project: this.project, state, floor, reachability, helper }));
-    actions.push(...this.toolRegistry.enumerateActions({ project: this.project, state, floor, reachability, helper }));
+      for (const [name, resolver] of [
+        ["door", () => this.doorResolver.enumerateActions({ project: this.project, state, reachability, helper })],
+        ["equipment", () => this.equipmentResolver.enumerateActions({ project: this.project, state, floor, reachability, helper })],
+        ["event", () => this.eventResolver.enumerateActions({ project: this.project, state, floor, reachability, helper })],
+        ["tool", () => this.toolRegistry.enumerateActions({ project: this.project, state, floor, reachability, helper })],
+      ]) {
+        const resolved = this.withReachabilityConsumer(name, resolver);
+        actions.push(...this.recordReachabilityActions(name, resolved));
+      }
 
-    const battleActions = this.battleResolver.enumerateActions({
-      project: this.project,
-      state,
-      reachability,
-    });
-    actions.push(...battleActions);
+      const battleActions = this.withReachabilityConsumer("battle", () => this.battleResolver.enumerateActions({
+        project: this.project,
+        state,
+        reachability,
+      }));
+      actions.push(...this.recordReachabilityActions("battle", battleActions));
 
-    const result = { actions, battleActions };
+      const result = { actions, battleActions };
       return this.cacheSet("primitiveActions", cacheKey, result, (value) => this.clonePrimitiveActions(value), Date.now() - startedAt);
     });
   }
@@ -1619,39 +1647,41 @@ class StaticSimulator {
     try {
       const floor = this.project.floorsById[state.floorId];
       const reachability = this.getWalkReachability(state);
-      const coordinates = Object.values(reachability.visited || {})
-        .map((node) => `${node.x},${node.y}`)
-        .sort();
-      const endpoints = [];
-      Object.values(reachability.visited || {}).forEach((node) => {
-        DIRECTIONS.forEach((direction) => {
-          const delta = DIRECTION_DELTAS[direction];
-          const x = node.x + delta.x;
-          const y = node.y + delta.y;
-          const key = coordinateKey(x, y);
-          const tile = getTileDefinitionAt(this.project, node.state, node.state.floorId, x, y);
-          const changeFloor = (floor.changeFloor || {})[key];
-          if (changeFloor) endpoints.push(`changeFloor:${x},${y}->${changeFloor.floorId || changeFloor.stair || ""}`);
-          if (!tile) return;
-          if (tile.cls === "items") endpoints.push(`pickup:${tile.id}@${x},${y}`);
-          else if (isEnemyTile(tile)) endpoints.push(`battle:${tile.id}@${x},${y}`);
-          else if (isDoorTile(tile)) endpoints.push(`door:${tile.id}@${x},${y}`);
-          else if ((floor.events || {})[key]) endpoints.push(`event:${x},${y}`);
+      return this.withReachabilityConsumer("regionSignature", () => {
+        const coordinates = Object.values(reachability.visited || {})
+          .map((node) => `${node.x},${node.y}`)
+          .sort();
+        const endpoints = [];
+        Object.values(reachability.visited || {}).forEach((node) => {
+          DIRECTIONS.forEach((direction) => {
+            const delta = DIRECTION_DELTAS[direction];
+            const x = node.x + delta.x;
+            const y = node.y + delta.y;
+            const key = coordinateKey(x, y);
+            const tile = getTileDefinitionAt(this.project, node.state, node.state.floorId, x, y);
+            const changeFloor = (floor.changeFloor || {})[key];
+            if (changeFloor) endpoints.push(`changeFloor:${x},${y}->${changeFloor.floorId || changeFloor.stair || ""}`);
+            if (!tile) return;
+            if (tile.cls === "items") endpoints.push(`pickup:${tile.id}@${x},${y}`);
+            else if (isEnemyTile(tile)) endpoints.push(`battle:${tile.id}@${x},${y}`);
+            else if (isDoorTile(tile)) endpoints.push(`door:${tile.id}@${x},${y}`);
+            else if ((floor.events || {})[key]) endpoints.push(`event:${x},${y}`);
+          });
         });
+        const uniqueEndpoints = Array.from(new Set(endpoints)).sort();
+        return {
+          regionKey: coordinates.join("|"),
+          reachableEndpointsKey: uniqueEndpoints.join("|"),
+          counts: {
+            tiles: coordinates.length,
+            battles: uniqueEndpoints.filter((entry) => entry.startsWith("battle:")).length,
+            pickups: uniqueEndpoints.filter((entry) => entry.startsWith("pickup:")).length,
+            events: uniqueEndpoints.filter((entry) => entry.startsWith("event:")).length,
+            doors: uniqueEndpoints.filter((entry) => entry.startsWith("door:")).length,
+            changeFloors: uniqueEndpoints.filter((entry) => entry.startsWith("changeFloor:")).length,
+          },
+        };
       });
-      const uniqueEndpoints = Array.from(new Set(endpoints)).sort();
-      return {
-        regionKey: coordinates.join("|"),
-        reachableEndpointsKey: uniqueEndpoints.join("|"),
-        counts: {
-          tiles: coordinates.length,
-          battles: uniqueEndpoints.filter((entry) => entry.startsWith("battle:")).length,
-          pickups: uniqueEndpoints.filter((entry) => entry.startsWith("pickup:")).length,
-          events: uniqueEndpoints.filter((entry) => entry.startsWith("event:")).length,
-          doors: uniqueEndpoints.filter((entry) => entry.startsWith("door:")).length,
-          changeFloors: uniqueEndpoints.filter((entry) => entry.startsWith("changeFloor:")).length,
-        },
-      };
     } catch (error) {
       const hero = state.hero || {};
       return {

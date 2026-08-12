@@ -216,7 +216,8 @@
     "check:multi-region-key-shadow": "node check-multi-region-key-shadow-contract.js",
     "check:multi-region-boundary-matrix": "node check-multi-region-boundary-matrix-contract.js",
     "check:reachability-reuse-attribution": "node check-reachability-reuse-attribution.js",
-    "check:reachability-skeleton-cache": "node check-reachability-skeleton-cache.js"
+    "check:reachability-skeleton-cache": "node check-reachability-skeleton-cache.js",
+    "check:reachability-rebase-attribution": "node check-reachability-rebase-attribution.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

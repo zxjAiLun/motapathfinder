@@ -209,6 +209,7 @@
         "shared-solver/check-walk-reachability-performance.js",
         "shared-solver/check-reachability-reuse-attribution.js",
         "shared-solver/check-reachability-skeleton-cache.js",
+        "shared-solver/check-reachability-rebase-attribution.js",
         "shared-solver/check-goal-directed-search.js",
         "shared-solver/check-candidate-quality-shadow.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
@@ -1014,6 +1015,22 @@
         "cleanCheckout": true
       },
       "notes": "PR-5.9a observation-only exact-cache miss grouping for already-eligible safe-fast walk closures; shared topology projection is reused by PR-5.9b while attribution remains optional and read-only"
+    },
+    "shared-solver/lib/reachability-rebase-attribution.js": {
+      "id": "reachability-rebase-attribution",
+      "path": "shared-solver/lib/reachability-rebase-attribution.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "diagnostics",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": true,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.9c default-off observation of eager safe-fast node state/key reads and action.travelState escapes; no lazy materialization or visited representation change"
     },
     "shared-solver/lib/region-entry-validator.js": {
       "id": "region-entry-validator",
@@ -2637,6 +2654,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.9b independent-process A/B/B/A: exact-state LRU parity, state-free safe-fast skeleton cache, per-exact-state safety classification, 116-state action/successor exact corpus, pinned winner/route/objective/scale and strict replay"
+    },
+    "shared-solver/check-reachability-rebase-attribution.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.9c candidate-default MT1 exp9 rebase allocation/consumer attribution: eager nodes, state/key reads, travel-state escapes, complete named consumer matrix and pinned winner/route/objective/scale/strict replay"
     },
     "shared-solver/check-goal-directed-search.js": {
       "grade": "local-regression",
