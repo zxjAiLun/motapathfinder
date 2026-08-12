@@ -1,0 +1,246 @@
+"use strict";
+
+const { buildAutomaticMacroGraph } = require("./automatic-macro-graph");
+const { compileAutomaticDependencyPlan } = require("./automatic-dependency-planner");
+const { compileAutomaticFeasibilitySubgoals } = require("./automatic-feasibility-subgoals");
+const { makeBlindSimulator } = require("./blind-discovery-baseline");
+const { EquipmentResolver, getEquipType } = require("./equipment-resolver");
+const { cloneState, getTileDefinitionAt } = require("./state");
+
+const SCHEMA = "motapathfinder.automatic-blocker-repair.v1";
+
+function number(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function battleStatus(evaluation, hp) {
+  const damage = evaluation && evaluation.damageInfo && evaluation.damageInfo.damage;
+  if (!evaluation || !evaluation.supported) return "unsupported";
+  if (damage == null) return "unbeatable-at-current-stats";
+  return number(damage, Infinity) < number(hp, 0)
+    ? "viable-at-current-state"
+    : "lethal-at-current-hp";
+}
+
+function statusRank(status) {
+  if (status === "viable-at-current-state") return 3;
+  if (status === "lethal-at-current-hp") return 2;
+  if (status === "unbeatable-at-current-stats") return 1;
+  return 0;
+}
+
+function counterfactualPickup(project, simulator, state, node) {
+  const next = cloneState(state);
+  next.floorId = node.floorId;
+  next.hero.loc = { ...(next.hero.loc || {}), x: node.x, y: node.y };
+  try {
+    simulator.resolvePickupAt(next, node.x, node.y);
+  } catch (_error) {
+    return null;
+  }
+  if (node.role === "equipment") {
+    const equipType = getEquipType(project, next, node.tileId);
+    if (equipType >= 0) {
+      try {
+        new EquipmentResolver().applyAction({
+          project,
+          state: next,
+          action: { equipId: node.tileId, equipType },
+        });
+      } catch (_error) {
+        return null;
+      }
+    }
+  }
+  return next;
+}
+
+function repairGoal(node) {
+  return node.role === "equipment"
+    ? { equipmentIncludes: [node.tileId] }
+    : { type: "tileRemoved", floorId: node.floorId, x: node.x, y: node.y };
+}
+
+function candidateFor(project, simulator, checkpoint, alternative, leading, node) {
+  const counterfactual = counterfactualPickup(project, simulator, checkpoint.state, node);
+  if (!counterfactual) return null;
+  const before = leading.evidence || {};
+  const evaluationState = cloneState(counterfactual);
+  evaluationState.floorId = leading.target.floorId;
+  evaluationState.hero.loc = {
+    ...(evaluationState.hero.loc || {}),
+    x: leading.target.x,
+    y: leading.target.y,
+  };
+  const afterEvaluation = simulator.battleResolver.evaluateBattle(
+    evaluationState,
+    leading.target.floorId,
+    leading.target.x,
+    leading.target.y,
+    leading.target.tileId,
+  );
+  const afterDamage = afterEvaluation.damageInfo && afterEvaluation.damageInfo.damage;
+  const afterStatus = battleStatus(afterEvaluation, counterfactual.hero.hp);
+  const beforeRank = statusRank(before.status);
+  const afterRank = statusRank(afterStatus);
+  const beforeDamage = before.damage == null ? null : number(before.damage, 0);
+  const damageReduction = beforeDamage == null || afterDamage == null
+    ? 0
+    : beforeDamage - number(afterDamage, 0);
+  const survivalMargin = afterDamage == null
+    ? null
+    : number(counterfactual.hero.hp, 0) - number(afterDamage, 0);
+  if (afterRank < beforeRank) return null;
+  if (afterRank === beforeRank && damageReduction <= 0 && survivalMargin <= 0) return null;
+  return {
+    id: `repair-${checkpoint.id}-${alternative.id}-${node.id}`,
+    kind: "blocker-feasibility-repair",
+    provenance: "automatic-current-map-item-counterfactual+simulator-battle-probe",
+    checkpointId: checkpoint.id,
+    checkpointRoles: (checkpoint.roles || []).slice(),
+    sourceNodeId: node.id,
+    target: { floorId: node.floorId, x: node.x, y: node.y, itemId: node.tileId },
+    goal: repairGoal(node),
+    repairs: {
+      alternativeId: alternative.id,
+      prerequisiteId: leading.sourceNodeId,
+      beforeStatus: before.status,
+      beforeDamage,
+      afterStatus,
+      afterDamage: afterDamage == null ? null : number(afterDamage, 0),
+      survivalMargin,
+      statusImprovement: afterRank - beforeRank,
+      damageReduction,
+      hpGain: number(counterfactual.hero.hp, 0) - number(checkpoint.state.hero.hp, 0),
+      atkGain: number(counterfactual.hero.atk, 0) - number(checkpoint.state.hero.atk, 0),
+      defGain: number(counterfactual.hero.def, 0) - number(checkpoint.state.hero.def, 0),
+      mdefGain: number(counterfactual.hero.mdef, 0) - number(checkpoint.state.hero.mdef, 0),
+    },
+  };
+}
+
+function compareCandidate(left, right) {
+  return statusRank(right.repairs.afterStatus) - statusRank(left.repairs.afterStatus) ||
+    number(right.repairs.survivalMargin, -Infinity) - number(left.repairs.survivalMargin, -Infinity) ||
+    right.repairs.statusImprovement - left.repairs.statusImprovement ||
+    right.repairs.damageReduction - left.repairs.damageReduction ||
+    left.id.localeCompare(right.id);
+}
+
+function accessSummary(plan) {
+  const alternatives = (plan.alternatives || []).map((alternative) => {
+    const leading = (alternative.prerequisites || [])[0] || null;
+    return {
+      alternativeId: alternative.id,
+      remainingPrerequisiteCount: (alternative.prerequisites || []).length,
+      leadingPrerequisiteId: leading ? leading.sourceNodeId : null,
+      leadingStatus: leading ? ((leading.evidence || {}).status || null) : "target-directly-reachable",
+      startable: !leading || ((leading.evidence || {}).status) === "viable-at-current-state",
+    };
+  });
+  return {
+    startable: alternatives.some((alternative) => alternative.startable),
+    alternatives,
+  };
+}
+
+function compileRepairDependencyPlan(project, terminalGoal, checkpoint, repair, options) {
+  const graph = buildAutomaticMacroGraph(project, checkpoint.state, terminalGoal, {
+    towerId: (options || {}).towerId || "automatic",
+    envelopeMode: "state-visible-revisitable",
+  });
+  const plan = compileAutomaticDependencyPlan(
+    project,
+    checkpoint.state,
+    terminalGoal,
+    graph,
+    { selectedSubgoals: [repair] },
+  );
+  return { graph, plan, access: accessSummary(plan) };
+}
+
+function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, options) {
+  if (!project || !terminalGoal || !Array.isArray(checkpoints)) {
+    throw new Error("Automatic blocker repair requires project, terminalGoal, and checkpoints");
+  }
+  const config = options || {};
+  const simulator = makeBlindSimulator(project);
+  const candidates = [];
+  for (const checkpoint of checkpoints) {
+    const graph = buildAutomaticMacroGraph(project, checkpoint.state, terminalGoal, {
+      towerId: config.towerId || "automatic",
+      envelopeMode: "state-visible-revisitable",
+    });
+    const feasibility = compileAutomaticFeasibilitySubgoals(
+      project,
+      checkpoint.state,
+      terminalGoal,
+      graph,
+    );
+    const plan = compileAutomaticDependencyPlan(
+      project,
+      checkpoint.state,
+      terminalGoal,
+      graph,
+      feasibility,
+    );
+    const itemNodes = (graph.nodes || []).filter((node) =>
+      node.kind === "item" &&
+      node.id !== config.excludeTargetNodeId &&
+      getTileDefinitionAt(project, checkpoint.state, node.floorId, node.x, node.y));
+    for (const alternative of plan.alternatives || []) {
+      const leading = (alternative.prerequisites || [])[0];
+      if (!leading || leading.target.role !== "combat-gate-candidate") continue;
+      if ((leading.evidence || {}).status === "viable-at-current-state") continue;
+      for (const node of itemNodes) {
+        const candidate = candidateFor(project, simulator, checkpoint, alternative, leading, node);
+        if (candidate) candidates.push(candidate);
+      }
+    }
+  }
+  candidates.sort(compareCandidate);
+  let selected = null;
+  let candidatesEvaluatedForAccess = 0;
+  const accessByKey = new Map();
+  for (const candidate of candidates) {
+    const key = `${candidate.checkpointId}|${candidate.sourceNodeId}`;
+    let access = accessByKey.get(key);
+    if (!access) {
+      const checkpoint = checkpoints.find((entry) => entry.id === candidate.checkpointId);
+      access = compileRepairDependencyPlan(project, terminalGoal, checkpoint, candidate, config).access;
+      accessByKey.set(key, access);
+      candidatesEvaluatedForAccess += 1;
+    }
+    candidate.access = access;
+    if (access.startable) {
+      selected = candidate;
+      break;
+    }
+  }
+  const visibleCandidates = candidates.slice(0, number(config.candidateLimit, 16));
+  if (selected && !visibleCandidates.includes(selected)) visibleCandidates.push(selected);
+  return {
+    schema: SCHEMA,
+    inputContract: {
+      inputs: ["tower-project", "terminal-goal", "automatic-local-checkpoints", "current-map-items"],
+      forbidden: ["route-fixture", "route-prefix", "authored-milestone", "authored-event-order", "authored-resource-threshold"],
+      knownRouteUsed: false,
+    },
+    candidateCount: candidates.length,
+    candidatesEvaluatedForAccess,
+    candidates: visibleCandidates,
+    selected,
+    verdict: selected
+      ? "AUTOMATIC_BLOCKER_REPAIR_IDENTIFIED"
+      : "NO_AUTOMATIC_BLOCKER_REPAIR_IDENTIFIED",
+  };
+}
+
+module.exports = {
+  SCHEMA,
+  compileAutomaticBlockerRepairs,
+  compileRepairDependencyPlan,
+  counterfactualPickup,
+  repairGoal,
+};

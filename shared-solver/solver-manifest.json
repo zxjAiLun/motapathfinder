@@ -1656,6 +1656,22 @@
       },
       "notes": "PR-5.16d rebuild automatic dependencies per checkpoint, preserve AND order, switch OR alternatives on downstream failure, and execute the next local prerequisite"
     },
+    "shared-solver/lib/automatic-blocker-repair.js": {
+      "id": "automatic-blocker-repair",
+      "path": "shared-solver/lib/automatic-blocker-repair.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "counterfactual-resource-repair-with-startable-dependency-filter",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": true,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.17a1 rank current-map item counterfactuals for a blocked combat prerequisite and reject high-benefit circular resources whose dependency alternatives cannot start"
+    },
     "shared-solver/lib/segment-dp.js": {
       "id": "segment-dp",
       "path": "shared-solver/lib/segment-dp.js",
@@ -2116,6 +2132,13 @@
     }
   },
   "tests": {
+    "shared-solver/check-automatic-blocker-repair.js": {
+      "grade": "integration-local",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.17a1 real D2 blocked evilHero repair, circular I1009 rejection, startable I1014 selection, first prerequisite strict replay, and empty-portfolio negative control"
+    },
     "shared-solver/check-dependency-feedback-controller.js": {
       "grade": "integration-local",
       "allowsNotFound": false,

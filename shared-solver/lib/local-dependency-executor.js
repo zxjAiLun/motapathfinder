@@ -30,6 +30,36 @@ function selectExecutablePrerequisite(dependencyPlan) {
   return null;
 }
 
+function materializeDirectTargetPlan(dependencyPlan, subgoal) {
+  const direct = (dependencyPlan.alternatives || []).find((alternative) =>
+    (alternative.prerequisites || []).length === 0);
+  if (!direct || !subgoal || !subgoal.goal) return dependencyPlan;
+  return {
+    ...dependencyPlan,
+    alternatives: [
+      {
+        ...direct,
+        prerequisites: [{
+          id: `execute-${subgoal.sourceNodeId || subgoal.id}`,
+          kind: "target",
+          relation: "AND",
+          order: 0,
+          sourceNodeId: subgoal.sourceNodeId || subgoal.id,
+          actionGoal: { ...subgoal.goal },
+          target: { ...(subgoal.target || {}) },
+          evidence: {
+            kind: "topology-target-reachability",
+            status: "viable-at-current-state",
+            reason: "dependency-alternative-has-no-unresolved-prerequisite",
+          },
+          provenance: "automatic-dependency-plan-direct-target",
+        }],
+      },
+      ...(dependencyPlan.alternatives || []).filter((alternative) => alternative !== direct),
+    ],
+  };
+}
+
 function compactHero(state) {
   const hero = (state || {}).hero || {};
   return {
@@ -222,5 +252,6 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
 module.exports = {
   SCHEMA,
   executeLocalDependency,
+  materializeDirectTargetPlan,
   selectExecutablePrerequisite,
 };
