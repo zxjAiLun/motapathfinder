@@ -6,6 +6,12 @@ const { resolveRelativeFloor } = require("./floor-transitions");
 const { compileTowerIR, stableStringify } = require("./tower-ir");
 
 const SCHEMA = "motapathfinder.automatic-macro-graph.v1";
+const CARDINAL_DELTAS = [
+  { x: 0, y: -1 },
+  { x: 1, y: 0 },
+  { x: 0, y: 1 },
+  { x: -1, y: 0 },
+];
 const MUTATION_ACTION_TYPES = new Set([
   "setValue",
   "setHero",
@@ -354,6 +360,29 @@ function buildAutomaticMacroGraph(project, initialState, terminalGoal, options) 
         evidence: "hard-static-topology",
         traversability: "after-poi-resolution",
       });
+    }
+  }
+  const poiCoordinates = new Map();
+  for (const poi of ir.pois) {
+    const key = `${poi.floorId}:${coordinateKey(poi.x, poi.y)}`;
+    if (!poiCoordinates.has(key)) poiCoordinates.set(key, []);
+    poiCoordinates.get(key).push(poi.poiId);
+  }
+  for (const poi of ir.pois) {
+    for (const direction of CARDINAL_DELTAS) {
+      const adjacentIds = poiCoordinates.get(
+        `${poi.floorId}:${coordinateKey(poi.x + direction.x, poi.y + direction.y)}`,
+      ) || [];
+      for (const adjacentId of adjacentIds) {
+        if (adjacentId === poi.poiId) continue;
+        addEdge({
+          kind: "poi-contact",
+          from: poi.poiId,
+          to: adjacentId,
+          evidence: "hard-static-topology",
+          traversability: "conditional-on-target-resolution-after-source-resolution",
+        });
+      }
     }
   }
   if (targetPoiIds.length !== 1) {

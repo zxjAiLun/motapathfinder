@@ -3,6 +3,7 @@
 const path = require("node:path");
 
 const { buildAutomaticMacroGraph } = require("./lib/automatic-macro-graph");
+const { compileAutomaticDependencyPlan } = require("./lib/automatic-dependency-planner");
 const { compileAutomaticFeasibilitySubgoals } = require("./lib/automatic-feasibility-subgoals");
 const { readBlindGoal } = require("./lib/blind-discovery-baseline");
 const { runD2BlindFailureAttribution } = require("./lib/d2-blind-failure-attribution");
@@ -32,7 +33,14 @@ function buildD2Observatory(options) {
     envelopeMode: "state-visible-revisitable",
   });
   const feasibility = compileAutomaticFeasibilitySubgoals(project, initialState, blindGoal.goal, graph);
-  const report = buildSearchObservatory(searchReport, feasibility);
+  const dependencyPlan = compileAutomaticDependencyPlan(
+    project,
+    initialState,
+    blindGoal.goal,
+    graph,
+    feasibility,
+  );
+  const report = buildSearchObservatory(searchReport, feasibility, dependencyPlan);
   return report;
 }
 

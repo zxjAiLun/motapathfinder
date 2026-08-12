@@ -28,7 +28,10 @@ function main() {
   assert.strictEqual(selected.status, "not-generated");
   assert.ok(report.reviewCandidates.some((entry) => entry.id === "selected-feasibility-subgoal-never-generated"));
   assert.ok(report.reviewCandidates.every((entry) => entry.wasteProven === false));
-  assert.strictEqual(report.nextExperiment.id, "compile-selected-subgoal-predecessors");
+  assert.strictEqual(report.dependencyBoard.rootRelation, "OR");
+  assert.strictEqual(report.dependencyBoard.alternativeRelation, "AND");
+  assert.ok(report.dependencyBoard.alternativeCount >= 2);
+  assert.strictEqual(report.nextExperiment.id, "execute-local-dependency-checkpoint");
   assert.strictEqual(report.verdict, "SEARCH_INTENT_AND_COST_BASELINE_VISIBLE");
 
   const after = JSON.parse(JSON.stringify(report));

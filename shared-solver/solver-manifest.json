@@ -434,6 +434,22 @@
       },
       "notes": "PR-5.15b route-free state-visible revisit envelope and counterfactual boss-deficit feasibility subgoal compiler"
     },
+    "shared-solver/lib/automatic-dependency-planner.js": {
+      "id": "automatic-dependency-planner",
+      "path": "shared-solver/lib/automatic-dependency-planner.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "and-or-dependency-planner",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.16b route-free bounded AND/OR topology alternatives with current-state simulator blocker evidence"
+    },
     "shared-solver/lib/hierarchical-blind-planner.js": {
       "id": "hierarchical-blind-planner",
       "path": "shared-solver/lib/hierarchical-blind-planner.js",
@@ -2068,6 +2084,13 @@
     }
   },
   "tests": {
+    "shared-solver/check-automatic-dependency-planner.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.16b real D2 I894 AND/OR dependency alternatives, POI-contact, simulator evidence, and disconnected negative controls"
+    },
     "shared-solver/check-search-observatory.js": {
       "grade": "diagnostic",
       "allowsNotFound": true,

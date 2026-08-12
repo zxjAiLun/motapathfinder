@@ -80,6 +80,7 @@
     "check:automatic-feasibility-subgoals": "node check-automatic-feasibility-subgoals.js",
     "observe:d2-search": "node observe-d2-search.js",
     "check:search-observatory": "node check-search-observatory.js",
+    "check:automatic-dependency-planner": "node check-automatic-dependency-planner.js",
     "check:region-specs": "node check-region-specs.js",
     "check:resource-timing": "node check-resource-timing.js",
     "check:resource-timing-model": "node check-resource-timing-model.js",

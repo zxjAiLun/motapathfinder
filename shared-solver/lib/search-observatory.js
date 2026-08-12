@@ -182,8 +182,52 @@ function buildReviewCandidates(searchReport, budget, plateau, hypotheses) {
   return rows;
 }
 
-function nextExperiment(reviewCandidates, hypotheses) {
+function summarizeDependencyPlan(dependencyPlan) {
+  if (!dependencyPlan) return null;
+  return {
+    verdict: dependencyPlan.verdict,
+    targetNodeId: ((dependencyPlan.objective || {}).targetNodeId) || null,
+    rootRelation: ((dependencyPlan.logic || {}).rootRelation) || null,
+    alternativeRelation: ((dependencyPlan.logic || {}).alternativeRelation) || null,
+    alternativeCount: number(((dependencyPlan.logic || {}).alternativeCount), 0),
+    commonPrerequisiteIds: (((dependencyPlan.logic || {}).commonPrerequisiteIds) || []).slice(),
+    alternatives: (dependencyPlan.alternatives || []).map((alternative) => ({
+      id: alternative.id,
+      blockerCount: number(alternative.blockerCount, 0),
+      topologyHops: number(alternative.topologyHops, 0),
+      prerequisites: (alternative.prerequisites || []).map((entry) => ({
+        sourceNodeId: entry.sourceNodeId,
+        target: entry.target,
+        status: ((entry.evidence || {}).status) || "unknown",
+        damage: (entry.evidence || {}).damage == null ? null : number(entry.evidence.damage, 0),
+      })),
+    })),
+  };
+}
+
+function nextExperiment(reviewCandidates, hypotheses, dependencyBoard) {
   const selected = hypotheses.find((hypothesis) => hypothesis.selected);
+  if (dependencyBoard && dependencyBoard.alternativeCount > 0) {
+    const first = dependencyBoard.alternatives[0];
+    const firstViable = first.prerequisites.find((entry) => entry.status === "viable-at-current-state");
+    return {
+      id: "execute-local-dependency-checkpoint",
+      hypothesis: firstViable
+        ? `Local DP can resolve ${firstViable.sourceNodeId} and return strategically distinct checkpoints for downstream dependency evaluation.`
+        : `The first dependency alternative has no currently viable blocker; planner must compile a feasibility repair before execution.`,
+      change: "Execute one topology-derived prerequisite with local canonical DP; preserve multiple checkpoint roles and keep global budget accounting explicit.",
+      successEvidence: [
+        "local prerequisite reached",
+        "strict replay verified",
+        "at least two semantically distinct checkpoint roles or an explicit single-role proof",
+      ],
+      failureEvidence: [
+        "local prerequisite not generated",
+        "all returned checkpoints collapse to the same strategic state",
+        "execution requires authored route or milestone input",
+      ],
+    };
+  }
   if (selected && selected.status === "not-generated") {
     return {
       id: "compile-selected-subgoal-predecessors",
@@ -212,7 +256,7 @@ function nextExperiment(reviewCandidates, hypotheses) {
   };
 }
 
-function buildSearchObservatory(searchReport, feasibilityReport) {
+function buildSearchObservatory(searchReport, feasibilityReport, dependencyPlan) {
   if (!searchReport || !feasibilityReport) {
     throw new Error("Search observatory requires one search report and one feasibility report");
   }
@@ -223,6 +267,7 @@ function buildSearchObservatory(searchReport, feasibilityReport) {
   const budget = buildBudgetLedger(searchReport);
   const plateau = buildPlateauEvidence(searchReport);
   const reviewCandidates = buildReviewCandidates(searchReport, budget, plateau, hypotheses);
+  const dependencyBoard = summarizeDependencyPlan(dependencyPlan);
   return {
     schema: SCHEMA,
     grade: "diagnostic-baseline",
@@ -230,8 +275,9 @@ function buildSearchObservatory(searchReport, feasibilityReport) {
     hypothesisBoard: hypotheses,
     budgetLedger: budget,
     progressSignal: plateau,
+    dependencyBoard,
     reviewCandidates,
-    nextExperiment: nextExperiment(reviewCandidates, hypotheses),
+    nextExperiment: nextExperiment(reviewCandidates, hypotheses, dependencyBoard),
     outcome: { ...((searchReport.runtime || {}).outcome || {}) },
     controls: { ...(searchReport.controls || {}) },
     interpretationBoundary: {
@@ -346,6 +392,20 @@ function renderSearchObservatoryMarkdown(report) {
         String(entry.wasteProven),
       ]),
     ),
+    ...(report.dependencyBoard ? [
+      "",
+      "## Automatic dependency alternatives",
+      "",
+      markdownTable(
+        ["alternative", "AND blockers", "hops", "current statuses"],
+        report.dependencyBoard.alternatives.map((alternative) => [
+          alternative.id,
+          String(alternative.blockerCount),
+          String(alternative.topologyHops),
+          alternative.prerequisites.map((entry) => entry.status).join(", "),
+        ]),
+      ),
+    ] : []),
     "",
     "## Next falsifiable experiment",
     "",
