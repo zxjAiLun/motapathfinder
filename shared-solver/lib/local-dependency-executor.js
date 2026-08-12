@@ -190,9 +190,11 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
       priorityMode: "goal-directed",
     },
   });
+  const searchedAt = Date.now();
   const dp = (result.diagnostics || {}).dp || {};
   const checkpoints = (result.goalSkyline || []).map((candidate, index) =>
     checkpointRecord(project, projectRoot, initialState, candidate, selected.prerequisite.target, index));
+  const completedAt = Date.now();
   const exactStateCount = new Set(checkpoints.map((checkpoint) => checkpoint.exactStateFingerprint)).size;
   const semanticStateCount = new Set(checkpoints.map((checkpoint) => checkpoint.semanticSignature)).size;
   const routeCount = new Set(checkpoints.map((checkpoint) => checkpoint.routeFingerprint)).size;
@@ -232,7 +234,12 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
       accepted: Math.max(0, number(dp.acceptedStates, 0) - 1),
       rejected: Object.values(dp.actionsDominatedByKind || {}).reduce((sum, count) => sum + number(count, 0), 0),
       frontierSize: number(dp.frontierSize, 0),
-      wallMs: Date.now() - startedAt,
+      wallMs: completedAt - startedAt,
+      timing: {
+        searchMs: searchedAt - startedAt,
+        checkpointReplayMs: completedAt - searchedAt,
+        totalWallMs: completedAt - startedAt,
+      },
       rawGoalCandidateCount: number(dp.goalNodeCount, number(((result.goalSkyline || {}).goalArchiveCandidateCount), 0)),
       retainedCheckpointCount: checkpoints.length,
     },

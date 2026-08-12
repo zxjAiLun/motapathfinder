@@ -106,6 +106,7 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
     throw new Error("Dependency feedback requires project, terminalGoal, and localExecution");
   }
   const config = options || {};
+  const startedAt = Date.now();
   const evaluations = (localExecution.checkpoints || [])
     .map((checkpoint) => evaluateCheckpoint(project, terminalGoal, checkpoint, config))
     .sort((left, right) => {
@@ -136,6 +137,7 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
             alternative.id !== selected.selectedAlternative.alternativeId)),
       }
     : null;
+  const plannedAt = Date.now();
   const nextExecution = selectedPlan
     ? executeLocalDependency(
       project,
@@ -148,6 +150,7 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
       },
     )
     : null;
+  const completedAt = Date.now();
   return {
     schema: SCHEMA,
     inputContract: {
@@ -183,6 +186,11 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
       experimentKey: selected.selectedAlternative.experimentKey,
     } : null,
     nextExecution,
+    timing: {
+      evaluationAndPlanningMs: plannedAt - startedAt,
+      nextExecutionMs: completedAt - plannedAt,
+      totalWallMs: completedAt - startedAt,
+    },
     verdict: !selected
       ? "DEPENDENCY_FEEDBACK_REQUIRES_NEW_SUBGOAL"
       : nextExecution && nextExecution.outcome.goalFound && nextExecution.checkpointDiversity.allStrictReplay

@@ -54,6 +54,9 @@ function main() {
   const simulator = makeBlindSimulator(project);
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
   const initialState = detachCheckpoint(createMt5EntryState(project));
+  const stream = process.env.MOTAPATHFIND_D2_STREAM === "1";
+  const streamStartedAt = Date.now();
+  let previousEventAt = streamStartedAt;
   const result = runHierarchicalDiscovery(project, PROJECT_ROOT, initialState, terminalGoal, {
     towerId: "onlyup",
     maxRounds: Number(process.env.MOTAPATHFIND_D2_ROUNDS || 12),
@@ -62,7 +65,73 @@ function main() {
     candidateLimit: 8,
     repairCandidateLimit: 16,
     excludeTargetNodeId: "MT5:item:11,5:I894",
+    onRound: stream ? (round) => {
+      const now = Date.now();
+      process.stdout.write(`${JSON.stringify({
+        event: "hierarchical-round",
+        round: round.round,
+        kind: round.kind,
+        elapsedMs: now - streamStartedAt,
+        roundWallMs: now - previousEventAt,
+        completed: round.completedPrerequisiteId || null,
+        repair: round.repair ? round.repair.sourceNodeId : null,
+        rejectionReason: round.rejectionReason || null,
+        predictedMargin: round.repairVerification
+          ? round.repairVerification.predicted.survivalMargin
+          : null,
+        actualMargin: round.repairVerification && round.repairVerification.actual
+          ? round.repairVerification.actual.survivalMargin
+          : null,
+        closureClass: round.repairVerification
+          ? round.repairVerification.closureClass
+          : null,
+        expansions: round.outcome ? round.outcome.expansions : 0,
+        phaseTiming: round.outcome ? round.outcome.timing : null,
+        feedbackTiming: round.feedbackTiming || null,
+        repairCompilationCost: round.repairCompilationCost || null,
+        goalFound: round.outcome ? round.outcome.goalFound : null,
+      })}\n`);
+      previousEventAt = now;
+    } : null,
   });
+  if (process.env.MOTAPATHFIND_D2_SUMMARY === "1") {
+    process.stdout.write(`${JSON.stringify({
+      rounds: result.rounds.map((round) => ({
+        round: round.round,
+        kind: round.kind,
+        completed: round.completedPrerequisiteId || null,
+        repair: round.repair ? round.repair.sourceNodeId : null,
+        predictedMargin: round.repairVerification
+          ? round.repairVerification.predicted.survivalMargin
+          : null,
+        actualMargin: round.repairVerification && round.repairVerification.actual
+          ? round.repairVerification.actual.survivalMargin
+          : null,
+        closureClass: round.repairVerification
+          ? round.repairVerification.closureClass
+          : null,
+        expansions: round.outcome ? round.outcome.expansions : 0,
+        goalFound: round.outcome ? round.outcome.goalFound : null,
+        selectedAlternative: round.feedbackSelection
+          ? round.feedbackSelection.alternative.alternativeId
+          : null,
+        selectedRoles: round.feedbackSelection ? round.feedbackSelection.roles : null,
+      })),
+      totals: result.totals,
+      stoppedReason: result.stoppedReason,
+      historyPortfolioCount: result.historyPortfolioCount,
+      attemptedExperimentCount: result.attemptedExperimentCount,
+      rejectedRepairExperimentCount: result.rejectedRepairExperimentCount,
+      final: result.finalPortfolio.checkpoints.map((checkpoint) => ({
+        id: checkpoint.id,
+        roles: checkpoint.roles,
+        hero: checkpoint.hero,
+        routeLength: (checkpoint.state.route || []).length,
+        lastDecisions: (checkpoint.state.route || []).slice(-6).map((entry) => entry.summary),
+      })),
+    }, null, 2)}\n`);
+    return;
+  }
   if (process.env.MOTAPATHFIND_D2_COMPACT === "1") {
     process.stdout.write(`${JSON.stringify({
       controls: result.controls,

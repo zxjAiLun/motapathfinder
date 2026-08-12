@@ -59,6 +59,9 @@ function main() {
   assert.strictEqual(result.outcome.goalFound, true);
   assert.strictEqual(result.outcome.expansions, 64);
   assert.strictEqual(result.outcome.firstGoalExpansion, 1);
+  assert.ok(result.outcome.timing.searchMs >= 0);
+  assert.ok(result.outcome.timing.checkpointReplayMs >= 0);
+  assert.strictEqual(result.outcome.timing.totalWallMs, result.outcome.wallMs);
   assert.strictEqual(result.outcome.generated, result.outcome.accepted + result.outcome.rejected);
   assert.ok(result.outcome.rawGoalCandidateCount > result.outcome.retainedCheckpointCount);
   assert.strictEqual(result.checkpoints.length, 8);

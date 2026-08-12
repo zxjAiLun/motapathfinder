@@ -187,6 +187,7 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
     throw new Error("Automatic blocker repair requires project, terminalGoal, and checkpoints");
   }
   const config = options || {};
+  const startedAt = Date.now();
   const excluded = config.excludedRepairExperimentKeys || new Set();
   const simulator = makeBlindSimulator(project);
   const candidates = [];
@@ -273,6 +274,7 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
       graphReuseCount,
       checkpointCount: checkpoints.length,
       uniqueAccessProbeCount: candidatesEvaluatedForAccess,
+      wallMs: Date.now() - startedAt,
     },
     candidateCount: candidates.length,
     excludedExperimentCount: excluded.size,
