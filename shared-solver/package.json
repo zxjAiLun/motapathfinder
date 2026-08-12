@@ -84,6 +84,8 @@
     "check:local-dependency-executor": "node check-local-dependency-executor.js",
     "check:dependency-feedback": "node check-dependency-feedback-controller.js",
     "check:automatic-blocker-repair": "node check-automatic-blocker-repair.js",
+    "probe:d2-hierarchical": "node probe-d2-hierarchical-discovery.js",
+    "check:hierarchical-discovery": "node check-hierarchical-discovery-engine.js",
     "check:region-specs": "node check-region-specs.js",
     "check:resource-timing": "node check-resource-timing.js",
     "check:resource-timing-model": "node check-resource-timing-model.js",

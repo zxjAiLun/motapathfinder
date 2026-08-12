@@ -57,6 +57,7 @@ const DECOMPOSITION = new Set([
   "teacher-divergence-audit.js",
   "teacher-search-observer.js",
   "teacher-dominance-audit.js",
+  "hierarchical-discovery-engine.js",
 ]);
 const EXPLORATION = new Set([
   "search.js",
@@ -201,8 +202,8 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
       correctnessSource: false,
       tests: {
         unit: true,
-        realFixture: file === "teacher-divergence-audit.js",
-        segmentClosure: false,
+        realFixture: file === "teacher-divergence-audit.js" || file === "hierarchical-discovery-engine.js",
+        segmentClosure: file === "hierarchical-discovery-engine.js",
         fullClosure: false,
         cleanCheckout: true,
       },
@@ -212,6 +213,8 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
           ? "real search event diagnostics; synthetic contract plus manual teacher fixture runs; never feeds teacher actions into production search"
         : file === "teacher-dominance-audit.js"
           ? "dominance witness continuation diagnostics; never feeds teacher actions into production search"
+        : file === "hierarchical-discovery-engine.js"
+          ? "PR-5.17a2 route-free terminal dependency, checkpoint feedback, blocker repair, and local canonical DP loop; D2 remains open"
         : "auto milestone decomposition; proof not yet closed into checkpoint schedule",
     });
   } else if (EXPLORATION.has(file)) {
@@ -275,6 +278,13 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
 }
 
 const TEST_OVERRIDES = {
+  "shared-solver/check-hierarchical-discovery-engine.js": {
+    grade: "integration-local",
+    allowsNotFound: true,
+    requiresStrictReplay: true,
+    cleanCheckout: true,
+    notes: "PR-5.17a2 route-free D2 hierarchical loop executes five local prerequisites with strict replay, then freezes the cross-floor EXP/composite repair boundary",
+  },
   "shared-solver/check-blind-qualification.js": {
     grade: "unit-plus-micro",
     allowsNotFound: true,

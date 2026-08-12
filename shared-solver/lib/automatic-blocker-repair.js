@@ -85,14 +85,20 @@ function candidateFor(project, simulator, checkpoint, alternative, leading, node
   const beforeRank = statusRank(before.status);
   const afterRank = statusRank(afterStatus);
   const beforeDamage = before.damage == null ? null : number(before.damage, 0);
+  const beforeSurvivalMargin = beforeDamage == null || before.currentHp == null
+    ? null
+    : number(before.currentHp, 0) - beforeDamage;
   const damageReduction = beforeDamage == null || afterDamage == null
     ? 0
     : beforeDamage - number(afterDamage, 0);
   const survivalMargin = afterDamage == null
     ? null
     : number(counterfactual.hero.hp, 0) - number(afterDamage, 0);
+  const survivalMarginGain = beforeSurvivalMargin == null || survivalMargin == null
+    ? 0
+    : survivalMargin - beforeSurvivalMargin;
   if (afterRank < beforeRank) return null;
-  if (afterRank === beforeRank && damageReduction <= 0 && survivalMargin <= 0) return null;
+  if (afterRank === beforeRank && damageReduction <= 0 && survivalMarginGain <= 0) return null;
   return {
     id: `repair-${checkpoint.id}-${alternative.id}-${node.id}`,
     kind: "blocker-feasibility-repair",
@@ -107,9 +113,11 @@ function candidateFor(project, simulator, checkpoint, alternative, leading, node
       prerequisiteId: leading.sourceNodeId,
       beforeStatus: before.status,
       beforeDamage,
+      beforeSurvivalMargin,
       afterStatus,
       afterDamage: afterDamage == null ? null : number(afterDamage, 0),
       survivalMargin,
+      survivalMarginGain,
       statusImprovement: afterRank - beforeRank,
       damageReduction,
       hpGain: number(counterfactual.hero.hp, 0) - number(checkpoint.state.hero.hp, 0),
@@ -123,6 +131,7 @@ function candidateFor(project, simulator, checkpoint, alternative, leading, node
 function compareCandidate(left, right) {
   return statusRank(right.repairs.afterStatus) - statusRank(left.repairs.afterStatus) ||
     number(right.repairs.survivalMargin, -Infinity) - number(left.repairs.survivalMargin, -Infinity) ||
+    right.repairs.survivalMarginGain - left.repairs.survivalMarginGain ||
     right.repairs.statusImprovement - left.repairs.statusImprovement ||
     right.repairs.damageReduction - left.repairs.damageReduction ||
     left.id.localeCompare(right.id);

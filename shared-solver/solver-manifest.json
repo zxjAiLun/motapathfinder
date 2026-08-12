@@ -1672,6 +1672,22 @@
       },
       "notes": "PR-5.17a1 rank current-map item counterfactuals for a blocked combat prerequisite and reject high-benefit circular resources whose dependency alternatives cannot start"
     },
+    "shared-solver/lib/hierarchical-discovery-engine.js": {
+      "id": "hierarchical-discovery-engine",
+      "path": "shared-solver/lib/hierarchical-discovery-engine.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "route-free-terminal-dependency-and-blocker-repair-loop",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": true,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.17a2 repeatedly rebuild terminal dependencies, execute local canonical DP, retain strict-replay checkpoints, and expose the first unsupported repair class"
+    },
     "shared-solver/lib/segment-dp.js": {
       "id": "segment-dp",
       "path": "shared-solver/lib/segment-dp.js",
@@ -2132,6 +2148,13 @@
     }
   },
   "tests": {
+    "shared-solver/check-hierarchical-discovery-engine.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.17a2 route-free D2 hierarchical loop executes five local prerequisites with strict replay, then freezes the cross-floor EXP/composite repair boundary"
+    },
     "shared-solver/check-automatic-blocker-repair.js": {
       "grade": "integration-local",
       "allowsNotFound": false,

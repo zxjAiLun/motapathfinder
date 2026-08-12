@@ -595,6 +595,7 @@ PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 gua
 - **PR-5.16c Local Multi-Role Dependency Executor（完成，提交见本文件 HEAD）**：由 5.16b plan 自动选 alternative-1 首个 viable blocker `MT5:8,11 skeletonKing`，直接生成合法 tileRemoved goal；first goal expansion=1。为下游多样性继续到 64 expansions：210 generated=181 accepted+29 rejected、45 raw goals→8 retained checkpoints、7 roles、8 exact/semantic/route identities，8/8 strict replay；重复运行 fingerprints 完全一致。无 viable prerequisite 时 fail-closed。冻结 `LOCAL_DEPENDENCY_MULTI_ROLE_CHECKPOINTS_VERIFIED`，未宣称 D2 成功。
 - **PR-5.16d Failure Feedback + On-demand Backtracking（完成，提交见本文件 HEAD）**：AND branch 只能执行首个未完成 prerequisite；每个 checkpoint 重建自动图/feasibility/dependencies。真实 A/B 中仅保留 top-1 best-combat/highest-atk 时两条 OR 首项均 lethal、无法推进；8-checkpoint portfolio 自动改选 highest-mdef checkpoint-5 并切到 alternative-2 的 `MT5:3,10 skeletonPresbyter`，damage26644 / margin227479。下一局部目标 expansion1 找到，32 expansions：88 generated=73 accepted+15 rejected、21 raw→8 retained、8/8 增量 strict replay。冻结 `DEPENDENCY_FEEDBACK_ADVANCED_WITH_STRICT_REPLAY`；D2 仍 OPEN。
 - **PR-5.17a1 Startable Blocker Repair（完成，提交见本文件 HEAD）**：D2 第二前置后 8 checkpoints 的两条 OR 首项均 blocked；自动对当前地图 item 做 simulator counterfactual，生成 348 个 blocker-repair candidates。收益最高的 `I1009@MT5:7,3` 可给最高防御出口 +819200 HP、evilHero 余量771048，但 4 条到达方案首项仍是同一 lethal evilHero，判为不可启动循环。逐候选编译依赖至第59个，自动选择 `I1014@MT5:12,11`：+100 DEF、evilHero damage 407701→168451、预期余量46775，且只需先过当前可打的 `MT5:11,11 devilWarrior`。该前置 expansion1 找到，32 expansions / 70 generated / 41 accepted / 29 rejected / frontier4，4 checkpoints 全 strict replay。冻结 `AUTOMATIC_BLOCKER_REPAIR_IDENTIFIED`，尚未声明 D2 closure。
+- **PR-5.17a2 Hierarchical Discovery Loop + First Unsupported Repair（完成，提交见本文件 HEAD）**：把 terminal dependency、checkpoint/OR feedback、blocker resource repair 与局部 canonical DP 串成 route-free 循环。机器依次完成 `skeletonKing → skeletonPresbyter → devilWarrior → skeletonKnight → MT4 devilWarrior`，其中自动选出 I1014/I1013/I642 三次修复；5 个局部段全部 found + strict replay，总计 **156 expansions / 423 generated / 325 accepted / 98 rejected**。随后 evilHero 仍为 damage60453、当前 HP40578（margin -19875）；120 个有益单物品候选中 40 个唯一 checkpoint/resource access 均不可启动。两个终态均为 `lv7/exp315`，距下级 285，直接动作只有两个 changeFloor、0 visible battle EXP、0 fightToLevelUp。冻结 `NO_AUTOMATIC_BLOCKER_REPAIR_IDENTIFIED` 为“下一修复类别缺失”证据，明确下一轮需要跨层 EXP 或复合资源链，不能加预算冒充进展；D2 仍 OPEN。
 
 PR-5.6 before/after（本机方向性数据，严格结果由 fingerprint/replay 守门）：
 
@@ -623,10 +624,11 @@ reachability 真实归因（perf tracker `reachability` phase + simulator cache 
 10. **PR-5.16c multi-role local DP checkpoints（已完成）**：局部目标先在 expansion 1 完成，再显式付 63 expansions 收集 8 个战略出口；角色与真实 state/route 多样性分别计数。
 11. **PR-5.16d failure feedback/on-demand backtracking（已完成）**：单 top-1 的下游死路与 8-checkpoint 的自动换出口/换 OR branch 已形成同输入因果 A/B；后续顺序冻结为 **5.17a D2 → 5.17b D3**。
 12. **PR-5.17a1 startable blocker repair（已完成）**：counterfactual benefit 必须与 topology startability 联合排序；高收益但前置回到原 blocked gate 的资源是循环候选，不能执行。下一子轮继续执行 I1014 前置/目标并返回 I894 主目标。
-13. **架构职责冻结**：全局 planner 决定“值得尝试什么”，局部 DP 决定“怎么可靠做到”；known route 仅作 correctness oracle/事后对照，不得作为 planner 输入。
-14. **验收与对比冻结**：每轮必须报告四元组、wall/expansions/generated/accepted/rejected/frontier、候选是否进入 funnel、预算最大流向、Top hypotheses、review candidates、同控制 before/after。faster not-found 或仅 depth 增加都不等于发现成功。
-15. **5.5f collision CEGAR/minimal refinement 保持未授权**：真实 changeFloor edge的 production/candidate identity 都变化，未产生 same-scope merge；`NO_COLLISION_OBSERVED` 仍不等于 safe/promotion candidate。
-16. **历史性能与工程 carry 保持隔离**：reachability closure gate、fast CI <3min、DIAG-HYGIENE、wall-time 非确定性、CompactState/Rust 均不抢占 blind discovery 主线；只有 observatory 证明它们是当前 blocker 时再恢复。
+13. **PR-5.17a2 hierarchical discovery loop（已完成）**：不是一次 repair demo，而是已连续自动完成五个 prerequisite；首个真实未支持类别是跨层 EXP/复合资源链。5.17a3 先让 planner 自动生成可启动的跨层 EXP repair，再回到同一个 evilHero gate 做 actual-state 复验。
+14. **架构职责冻结**：全局 planner 决定“值得尝试什么”，局部 DP 决定“怎么可靠做到”；known route 仅作 correctness oracle/事后对照，不得作为 planner 输入。
+15. **验收与对比冻结**：每轮必须报告四元组、wall/expansions/generated/accepted/rejected/frontier、候选是否进入 funnel、预算最大流向、Top hypotheses、review candidates、同控制 before/after。faster not-found 或仅 depth 增加都不等于发现成功。
+16. **5.5f collision CEGAR/minimal refinement 保持未授权**：真实 changeFloor edge的 production/candidate identity 都变化，未产生 same-scope merge；`NO_COLLISION_OBSERVED` 仍不等于 safe/promotion candidate。
+17. **历史性能与工程 carry 保持隔离**：reachability closure gate、fast CI <3min、DIAG-HYGIENE、wall-time 非确定性、CompactState/Rust 均不抢占 blind discovery 主线；只有 observatory 证明它们是当前 blocker 时再恢复。
 
 直到出现第一条：
 
