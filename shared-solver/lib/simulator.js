@@ -288,14 +288,20 @@ function findAdjacencyActions(project, reachability, predicate, buildAction) {
   const actionsByKey = new Map();
 
   Object.values(reachability.visited).forEach((node) => {
+    const lookupState = typeof reachability.getLookupState === "function"
+      ? reachability.getLookupState(node)
+      : node.state;
     DIRECTIONS.forEach((direction) => {
       const delta = DIRECTION_DELTAS[direction];
       const targetX = node.x + delta.x;
       const targetY = node.y + delta.y;
-      const tile = getTileDefinitionAt(project, node.state, node.state.floorId, targetX, targetY);
-      if (!predicate(node, tile, targetX, targetY)) return;
+      const tile = getTileDefinitionAt(project, lookupState, lookupState.floorId, targetX, targetY);
+      if (!predicate(node, tile, targetX, targetY, lookupState)) return;
 
-      const built = buildAction(node, direction, targetX, targetY, tile, node.path, node.state);
+      const nodeState = typeof reachability.materializeNodeState === "function"
+        ? reachability.materializeNodeState(node)
+        : node.state;
+      const built = buildAction(node, direction, targetX, targetY, tile, node.path, nodeState);
       const builtActions = Array.isArray(built) ? built : [built];
       builtActions.filter(Boolean).forEach((action) => {
         const stateKey = buildStateKey(action.travelState || node.state);
@@ -378,6 +384,7 @@ class StaticSimulator {
     this.regionSignatureMode = String(config.regionSignatureMode || "walk");
     this.walkReachabilityMode = normalizeWalkReachabilityMode(config.walkReachabilityMode);
     this.enableReachabilitySkeletonCache = config.enableReachabilitySkeletonCache !== false;
+    this.enableTopologyFirstMaterialization = config.enableTopologyFirstMaterialization !== false;
     this.searchGraphMode = normalizeSearchGraphMode(config.searchGraphMode || config.searchGraph, "hybrid");
     this.primitiveFallbackMode = config.primitiveFallbackMode || "auto";
     this.resourcePocketSearchOptions = config.resourcePocketSearchOptions || {};
@@ -450,6 +457,7 @@ class StaticSimulator {
       builds: 0,
       rebases: 0,
       nodesRebased: 0,
+      nodesMaterialized: 0,
       unsafeBypasses: 0,
       safetyClassifications: 0,
     });
@@ -584,6 +592,8 @@ class StaticSimulator {
       return cached;
     }
     const stats = this.actionExpansionCacheStats && this.actionExpansionCacheStats.reachability;
+    const skeletonStats = this.actionExpansionCacheStats &&
+      this.actionExpansionCacheStats.reachabilitySkeleton;
     // Perf-tracker hook (no-op unless a tracker is active): reachability BFS is
     // one of the search hot phases the PR-5.4b baseline measures separately.
     return timeActivePhase("reachability", () => {
@@ -606,13 +616,19 @@ class StaticSimulator {
             ),
           }
           : null,
+        topologyFirstMaterialization: this.enableTopologyFirstMaterialization,
+        onTopologyNodeCost: (event) => {
+          if (stats && event.type === "state-clone") stats.stateClones += 1;
+          if (stats && event.type === "dominance-key") stats.dominanceKeyBuilds += 1;
+          if (skeletonStats && event.type === "state-clone") skeletonStats.nodesMaterialized += 1;
+          if (!this.reachabilityRebaseAttribution) return;
+          this.reachabilityRebaseAttribution.recordTopologyNodeCost(event);
+        },
       });
       const diagnostics = reachability && reachability.diagnostics || {};
       if (this.reachabilityRebaseAttribution) {
         this.reachabilityRebaseAttribution.instrumentReachability(reachability);
       }
-      const skeletonStats = this.actionExpansionCacheStats &&
-        this.actionExpansionCacheStats.reachabilitySkeleton;
       if (stats) {
         if (diagnostics.mode === "safe-fast") stats.safeFastBuilds += 1;
         else stats.legacyExactBuilds += 1;
@@ -633,6 +649,9 @@ class StaticSimulator {
           skeletonStats.builds += diagnostics.skeletonBuilt ? 1 : 0;
           skeletonStats.rebases += 1;
           skeletonStats.nodesRebased += Number(diagnostics.skeletonNodeCount || 0);
+          if (diagnostics.topologyFirstMaterialization !== true) {
+            skeletonStats.nodesMaterialized += Number(diagnostics.skeletonNodeCount || 0);
+          }
         } else {
           skeletonStats.unsafeBypasses += 1;
         }
@@ -653,15 +672,19 @@ class StaticSimulator {
     const scan = reachability || this.getWalkReachability(state);
     const actionsByKey = new Map();
     this.withReachabilityConsumer("interactPickup", () => Object.values(scan.visited || {}).forEach((node) => {
+      const lookupState = typeof scan.getLookupState === "function" ? scan.getLookupState(node) : node.state;
       DIRECTIONS.forEach((direction) => {
         const delta = DIRECTION_DELTAS[direction];
         const targetX = node.x + delta.x;
         const targetY = node.y + delta.y;
-        const tile = getTileDefinitionAt(this.project, node.state, node.state.floorId, targetX, targetY);
+        const tile = getTileDefinitionAt(this.project, lookupState, lookupState.floorId, targetX, targetY);
         if (!tile || tile.cls !== "items") return;
+        const nodeState = typeof scan.materializeNodeState === "function"
+          ? scan.materializeNodeState(node)
+          : node.state;
         const action = {
           kind: "interactPickup",
-          floorId: node.state.floorId,
+          floorId: nodeState.floorId,
           stance: { x: node.x, y: node.y },
           direction,
           x: targetX,
@@ -669,10 +692,10 @@ class StaticSimulator {
           itemId: tile.id,
           target: { x: targetX, y: targetY },
           path: Array.isArray(node.path) ? node.path.slice() : [],
-          travelState: node.state,
-          summary: `getNext:${tile.id}@${node.state.floorId}:${targetX},${targetY}`,
+          travelState: nodeState,
+          summary: `getNext:${tile.id}@${nodeState.floorId}:${targetX},${targetY}`,
         };
-        keepShortestAction(actionsByKey, `${targetX},${targetY}:interactPickup:${action.summary}:${buildStateKey(node.state)}`, action);
+        keepShortestAction(actionsByKey, `${targetX},${targetY}:interactPickup:${action.summary}:${buildStateKey(nodeState)}`, action);
       });
     }));
     return this.recordReachabilityActions("interactPickup", Array.from(actionsByKey.values()));
@@ -751,22 +774,26 @@ class StaticSimulator {
     const flyTargets = new Set();
     const hasFlyBlocker = hasEnemyLeft(this.project, state, "E1649");
     this.withReachabilityConsumer("floorFly", () => Object.values(scan.visited || {}).forEach((node) => {
-      Object.keys(node.state.visitedFloors || {}).forEach((targetFloorId) => {
-        if (!canUseFloorFly(this.project, node.state, targetFloorId, { hasFlyBlocker })) return;
-        const target = resolveFloorFlyTarget(this.project, node.state, targetFloorId);
-        const key = `${node.state.floorId}:${node.x},${node.y}->${targetFloorId}:${target.x},${target.y}`;
+      const lookupState = typeof scan.getLookupState === "function" ? scan.getLookupState(node) : node.state;
+      Object.keys(lookupState.visitedFloors || {}).forEach((targetFloorId) => {
+        if (!canUseFloorFly(this.project, lookupState, targetFloorId, { hasFlyBlocker })) return;
+        const target = resolveFloorFlyTarget(this.project, lookupState, targetFloorId);
+        const key = `${lookupState.floorId}:${node.x},${node.y}->${targetFloorId}:${target.x},${target.y}`;
         if (flyTargets.has(key)) return;
         flyTargets.add(key);
+        const nodeState = typeof scan.materializeNodeState === "function"
+          ? scan.materializeNodeState(node)
+          : node.state;
         actions.push({
           kind: "floorFly",
           tool: "fly",
-          floorId: node.state.floorId,
+          floorId: nodeState.floorId,
           targetFloorId,
           target,
           stance: { x: node.x, y: node.y },
           path: Array.isArray(node.path) ? node.path.slice() : [],
-          travelState: node.state,
-          summary: `floorFly:${targetFloorId}@${node.state.floorId}:${node.x},${node.y}`,
+          travelState: nodeState,
+          summary: `floorFly:${targetFloorId}@${nodeState.floorId}:${node.x},${node.y}`,
         });
       });
     }));
@@ -1648,6 +1675,9 @@ class StaticSimulator {
       const floor = this.project.floorsById[state.floorId];
       const reachability = this.getWalkReachability(state);
       return this.withReachabilityConsumer("regionSignature", () => {
+        const lookupState = typeof reachability.getLookupState === "function"
+          ? reachability.getLookupState()
+          : null;
         const coordinates = Object.values(reachability.visited || {})
           .map((node) => `${node.x},${node.y}`)
           .sort();
@@ -1658,7 +1688,8 @@ class StaticSimulator {
             const x = node.x + delta.x;
             const y = node.y + delta.y;
             const key = coordinateKey(x, y);
-            const tile = getTileDefinitionAt(this.project, node.state, node.state.floorId, x, y);
+            const nodeState = lookupState || node.state;
+            const tile = getTileDefinitionAt(this.project, nodeState, nodeState.floorId, x, y);
             const changeFloor = (floor.changeFloor || {})[key];
             if (changeFloor) endpoints.push(`changeFloor:${x},${y}->${changeFloor.floorId || changeFloor.stair || ""}`);
             if (!tile) return;

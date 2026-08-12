@@ -6,6 +6,7 @@ class ReachabilityRebaseAttribution {
     this.nextRebaseId = 1;
     this.instrumented = new WeakSet();
     this.stateOwners = new WeakMap();
+    this.nodeOwners = new WeakMap();
     this.rebases = new Map();
     this.consumerStats = new Map();
     this.totalStateAccesses = 0;
@@ -50,6 +51,9 @@ class ReachabilityRebaseAttribution {
       skeletonCacheHit: diagnostics.skeletonCacheHit === true,
       skeletonBuilt: diagnostics.skeletonBuilt === true,
       nodeCount: 0,
+      topologyFirst: diagnostics.topologyFirstMaterialization === true,
+      materializedNodes: new Set(),
+      dominanceKeyNodes: new Set(),
       stateNodes: new Set(),
       keyNodes: new Set(),
       travelStateNodes: new Set(),
@@ -59,8 +63,22 @@ class ReachabilityRebaseAttribution {
     Object.values(reachability.visited || {}).forEach((node, index) => {
       record.nodeCount += 1;
       const nodeId = `${rebaseId}:${index}`;
+      this.nodeOwners.set(node, { rebaseId, nodeId });
+      const topology = node && node.__topologyFirstMaterialization;
+      if (topology && typeof topology.setAccessObserver === "function") {
+        topology.setAccessObserver((property, value) => {
+          if (property === "state") {
+            this.recordStateAccess(record, nodeId, value);
+          } else if (property === "key") {
+            this.recordKeyAccess(record, nodeId);
+          }
+        });
+        return;
+      }
       let stateValue = node.state;
       let keyValue = node.key;
+      record.materializedNodes.add(nodeId);
+      record.dominanceKeyNodes.add(nodeId);
       if (stateValue && typeof stateValue === "object") {
         this.stateOwners.set(stateValue, { rebaseId, nodeId });
       }
@@ -68,11 +86,7 @@ class ReachabilityRebaseAttribution {
         configurable: true,
         enumerable: true,
         get: () => {
-          this.totalStateAccesses += 1;
-          record.stateNodes.add(nodeId);
-          const consumer = this.consumer(this.currentConsumer);
-          consumer.stateAccesses += 1;
-          consumer.stateNodes.add(nodeId);
+          this.recordStateAccess(record, nodeId, stateValue);
           return stateValue;
         },
         set: (value) => {
@@ -86,17 +100,41 @@ class ReachabilityRebaseAttribution {
         configurable: true,
         enumerable: true,
         get: () => {
-          this.totalKeyAccesses += 1;
-          record.keyNodes.add(nodeId);
-          const consumer = this.consumer(this.currentConsumer);
-          consumer.keyAccesses += 1;
-          consumer.keyNodes.add(nodeId);
+          this.recordKeyAccess(record, nodeId);
           return keyValue;
         },
         set: (value) => { keyValue = value; },
       });
     });
     return reachability;
+  }
+
+  recordStateAccess(record, nodeId, stateValue) {
+    this.totalStateAccesses += 1;
+    record.stateNodes.add(nodeId);
+    if (stateValue && typeof stateValue === "object") {
+      this.stateOwners.set(stateValue, { rebaseId: record.id, nodeId });
+    }
+    const consumer = this.consumer(this.currentConsumer);
+    consumer.stateAccesses += 1;
+    consumer.stateNodes.add(nodeId);
+  }
+
+  recordKeyAccess(record, nodeId) {
+    this.totalKeyAccesses += 1;
+    record.keyNodes.add(nodeId);
+    const consumer = this.consumer(this.currentConsumer);
+    consumer.keyAccesses += 1;
+    consumer.keyNodes.add(nodeId);
+  }
+
+  recordTopologyNodeCost(event) {
+    const owner = event && this.nodeOwners.get(event.node);
+    if (!owner) return;
+    const record = this.rebases.get(owner.rebaseId);
+    if (!record) return;
+    if (event.type === "state-clone") record.materializedNodes.add(owner.nodeId);
+    if (event.type === "dominance-key") record.dominanceKeyNodes.add(owner.nodeId);
   }
 
   recordEmittedActions(name, actions) {
@@ -115,7 +153,9 @@ class ReachabilityRebaseAttribution {
 
   report() {
     const rebases = Array.from(this.rebases.values());
-    const materializedNodes = rebases.reduce((sum, rebase) => sum + rebase.nodeCount, 0);
+    const topologyNodes = rebases.reduce((sum, rebase) => sum + rebase.nodeCount, 0);
+    const materializedNodes = rebases.reduce((sum, rebase) => sum + rebase.materializedNodes.size, 0);
+    const dominanceKeyBuilds = rebases.reduce((sum, rebase) => sum + rebase.dominanceKeyNodes.size, 0);
     const stateNodes = new Set();
     const keyNodes = new Set();
     const travelStateNodes = new Set();
@@ -142,9 +182,11 @@ class ReachabilityRebaseAttribution {
       rebases: rebases.length,
       skeletonBuildRebases: rebases.filter((rebase) => rebase.skeletonBuilt).length,
       skeletonHitRebases: rebases.filter((rebase) => rebase.skeletonCacheHit).length,
+      topologyFirstRebases: rebases.filter((rebase) => rebase.topologyFirst).length,
+      topologyNodes,
       materializedNodes,
       stateCloneLowerBound: materializedNodes,
-      dominanceKeyBuilds: materializedNodes,
+      dominanceKeyBuilds,
       stateAccesses: this.totalStateAccesses,
       uniqueStateAccessedNodes: stateNodes.size,
       nodeKeyPropertyAccesses: this.totalKeyAccesses,
@@ -152,7 +194,8 @@ class ReachabilityRebaseAttribution {
       emittedActionsWithTravelState: this.totalEmittedActions,
       uniqueTravelStateNodes: travelStateNodes.size,
       materializedNodesWithoutTravelStateEscape: materializedNodes - travelStateNodes.size,
-      travelStateEscapeRatio: materializedNodes > 0 ? travelStateNodes.size / materializedNodes : 0,
+      topologyNodesWithoutMaterialization: topologyNodes - materializedNodes,
+      travelStateEscapeRatio: topologyNodes > 0 ? travelStateNodes.size / topologyNodes : 0,
       consumers,
     };
   }

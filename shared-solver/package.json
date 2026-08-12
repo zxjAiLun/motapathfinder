@@ -217,7 +217,8 @@
     "check:multi-region-boundary-matrix": "node check-multi-region-boundary-matrix-contract.js",
     "check:reachability-reuse-attribution": "node check-reachability-reuse-attribution.js",
     "check:reachability-skeleton-cache": "node check-reachability-skeleton-cache.js",
-    "check:reachability-rebase-attribution": "node check-reachability-rebase-attribution.js"
+    "check:reachability-rebase-attribution": "node check-reachability-rebase-attribution.js",
+    "check:topology-first-materialization": "node check-topology-first-materialization.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

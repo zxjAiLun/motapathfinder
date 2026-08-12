@@ -439,26 +439,32 @@ class FunctionBackedBattleResolver {
     const actionsByKey = new Map();
 
     Object.values(reachability.visited).forEach((node) => {
+      const lookupState = typeof reachability.getLookupState === "function"
+        ? reachability.getLookupState(node)
+        : node.state;
       DIRECTIONS.forEach((direction) => {
         const delta = DIRECTION_DELTAS[direction];
         const targetX = node.x + delta.x;
         const targetY = node.y + delta.y;
-        const tile = getTileDefinitionAt(this.project, node.state, node.state.floorId, targetX, targetY);
+        const tile = getTileDefinitionAt(this.project, lookupState, lookupState.floorId, targetX, targetY);
         if (!isEnemyTile(tile)) return;
 
-        const battle = this.evaluateBattle(node.state, node.state.floorId, targetX, targetY, tile.id);
+        const nodeState = typeof reachability.materializeNodeState === "function"
+          ? reachability.materializeNodeState(node)
+          : node.state;
+        const battle = this.evaluateBattle(nodeState, nodeState.floorId, targetX, targetY, tile.id);
         if (!battle.supported) return;
         if (!battle.damageInfo || battle.damageInfo.damage == null) return;
-        if (battle.damageInfo.damage >= Number(node.state.hero.hp || 0)) return;
+        if (battle.damageInfo.damage >= Number(nodeState.hero.hp || 0)) return;
         const action = {
           kind: "battle",
-          floorId: node.state.floorId,
+          floorId: nodeState.floorId,
           stance: { x: node.x, y: node.y },
           direction,
           target: { x: targetX, y: targetY },
           enemyId: tile.id,
           path: node.path,
-          travelState: node.state,
+          travelState: nodeState,
           estimate: {
             damage: battle.damageInfo.damage,
             turn: battle.damageInfo.turn,
@@ -466,10 +472,10 @@ class FunctionBackedBattleResolver {
             exp: Number(battle.enemyInfo.exp || 0) + sumGuardEnemyValue(this.project, battle.guards, "exp"),
             guards: (battle.guards || []).length,
           },
-          summary: `battle:${tile.id}@${node.state.floorId}:${targetX},${targetY}`,
+          summary: `battle:${tile.id}@${nodeState.floorId}:${targetX},${targetY}`,
         };
 
-        const key = `${targetX},${targetY}:battle:${node.path.join(",")}:${node.state.hero.hp}`;
+        const key = `${targetX},${targetY}:battle:${node.path.join(",")}:${nodeState.hero.hp}`;
         const existing = actionsByKey.get(key);
         if (!existing || existing.path.length > action.path.length) {
           actionsByKey.set(key, action);

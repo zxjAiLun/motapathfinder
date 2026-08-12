@@ -210,6 +210,7 @@
         "shared-solver/check-reachability-reuse-attribution.js",
         "shared-solver/check-reachability-skeleton-cache.js",
         "shared-solver/check-reachability-rebase-attribution.js",
+        "shared-solver/check-topology-first-materialization.js",
         "shared-solver/check-goal-directed-search.js",
         "shared-solver/check-candidate-quality-shadow.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
@@ -2661,6 +2662,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.9c candidate-default MT1 exp9 rebase allocation/consumer attribution: eager nodes, state/key reads, travel-state escapes, complete named consumer matrix and pinned winner/route/objective/scale/strict replay"
+    },
+    "shared-solver/check-topology-first-materialization.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.9d independent-process A/B topology-first safe-fast materialization: pinned 116-state/434-action successor corpus, winner/route/objective/scale/strict replay and real clone/key-build reduction"
     },
     "shared-solver/check-goal-directed-search.js": {
       "grade": "local-regression",

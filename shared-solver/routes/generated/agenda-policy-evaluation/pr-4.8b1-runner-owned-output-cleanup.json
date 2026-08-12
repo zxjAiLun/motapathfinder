@@ -1,14 +1,14 @@
 {
   "schema": "motapathfinder.pr-4.8b1-runner-owned-output-cleanup.v1",
   "status": "completed",
-  "generatedAt": "2026-08-04T06:15:09.969Z",
+  "generatedAt": "2026-08-12T09:09:06.347Z",
   "provenance": {
     "mode": "shadow-only",
     "entrypoint": "shared-solver/run-region-dp.js",
     "runner": "shared-solver/run-region-dp.js",
     "runnerProbeMode": "runner-owned-output-cleanup-with-real-short-routes-and-structured-failure",
     "deterministicFullReportRebuild": true,
-    "generationCommit": "3c5b3d8",
+    "generationCommit": "c1aa641",
     "productionDpKeyChanged": false,
     "productionDominanceChanged": false,
     "productionAgendaChanged": false,
@@ -788,7 +788,7 @@
             "kind": "battle",
             "summary": "battle:greenSlime@A1:6,9",
             "matchType": "postExactState",
-            "candidates": 24
+            "candidates": 25
           }
         ],
         "finalExactStateMatches": true,
@@ -1171,9 +1171,9 @@
             "mt6-upper-right-blueking",
             "mt6-lower-attack-pair",
             "mt6-first-center-guard",
+            "mt7-mt6-defense-sweep",
             "mt6-second-center-guard",
             "mt7-entry-after-mt6-sweep",
-            "mt7-mt6-defense-sweep",
             "mt7-mt6-right-crystal-sweep",
             "mt7-bottom-double-fairy",
             "mt7-special80-ready",

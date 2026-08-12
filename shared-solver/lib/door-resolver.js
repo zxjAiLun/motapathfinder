@@ -34,9 +34,10 @@ class GenericDoorResolver {
   enumerateActions(context) {
     const { project, helper } = context;
     return helper.findAdjacencyActions(
-      (node, tile, targetX, targetY) => this.canOpenDoor({ project, state: node.state, tile, targetX, targetY }),
-      (node, direction, targetX, targetY, tile, path) =>
-        this.buildAction({ project, state: node.state, node, direction, targetX, targetY, tile, path })
+      (node, tile, targetX, targetY, lookupState) =>
+        this.canOpenDoor({ project, state: lookupState, tile, targetX, targetY }),
+      (node, direction, targetX, targetY, tile, path, nodeState) =>
+        this.buildAction({ project, state: nodeState, node, direction, targetX, targetY, tile, path })
     );
   }
 

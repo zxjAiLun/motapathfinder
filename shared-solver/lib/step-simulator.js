@@ -411,7 +411,11 @@ function buildSafeWalkSkeleton(project, state) {
   };
 }
 
-function rebaseSafeWalkSkeleton(state, skeleton, eligibility, cacheDiagnostics) {
+function rebaseSafeWalkSkeleton(state, skeleton, eligibility, cacheDiagnostics, options) {
+  const config = options || {};
+  if (config.topologyFirstMaterialization === true) {
+    return buildTopologyFirstWalkReachability(state, skeleton, eligibility, cacheDiagnostics, config);
+  }
   const initialState = cloneState(state);
   const visited = {};
   const nodes = Array.isArray(skeleton && skeleton.nodes) ? skeleton.nodes : [];
@@ -456,6 +460,116 @@ function rebaseSafeWalkSkeleton(state, skeleton, eligibility, cacheDiagnostics) 
   };
 }
 
+function buildTopologyFirstWalkReachability(state, skeleton, eligibility, cacheDiagnostics, options) {
+  const config = options || {};
+  const cache = cacheDiagnostics || {};
+  const built = cache.hit !== true;
+  const nodes = Array.isArray(skeleton && skeleton.nodes) ? skeleton.nodes : [];
+  const visited = {};
+  const diagnostics = {
+    mode: "safe-fast",
+    eligibilityReason: eligibility.reason,
+    nodesExpanded: built ? Number(skeleton.diagnostics.nodesExpanded || 0) : 0,
+    transitionAttempts: built ? Number(skeleton.diagnostics.transitionAttempts || 0) : 0,
+    stateClones: Number(eligibility.stabilityProbeClones || 0),
+    dominanceKeyBuilds: 0,
+    hazardScanMs: Number(eligibility.hazardScanMs || 0),
+    safetyProbeMs: Number(eligibility.safetyProbeMs || 0),
+    skeletonCacheEnabled: cache.enabled === true,
+    skeletonCacheHit: cache.hit === true,
+    skeletonBuilt: built,
+    skeletonNodeCount: nodes.length,
+    skeletonBuildMs: Number(cache.buildMs || 0),
+    topologyFirstMaterialization: true,
+    materializedNodeCount: 0,
+  };
+
+  const notify = (event) => {
+    if (typeof config.onTopologyNodeCost === "function") config.onTopologyNodeCost(event);
+  };
+
+  nodes.forEach((skeletonNode, index) => {
+    let materializedState = null;
+    let dominanceKey = null;
+    let accessObserver = null;
+    const node = {
+      x: skeletonNode.x,
+      y: skeletonNode.y,
+      distance: skeletonNode.distance,
+      path: skeletonNode.path.slice(),
+    };
+    const materializeState = () => {
+      if (!materializedState) {
+        materializedState = cloneState(state);
+        materializedState.hero.loc.x = skeletonNode.x;
+        materializedState.hero.loc.y = skeletonNode.y;
+        if (index > 0) materializedState.hero.loc.direction = skeletonNode.direction;
+        materializedState.hero.steps = Number(state.hero.steps || 0) + skeletonNode.distance;
+        diagnostics.stateClones += 1;
+        diagnostics.materializedNodeCount += 1;
+        notify({ type: "state-clone", node });
+      }
+      return materializedState;
+    };
+    const materializeKey = () => {
+      if (dominanceKey == null) {
+        dominanceKey = buildDominanceKey(materializeState());
+        diagnostics.dominanceKeyBuilds += 1;
+        notify({ type: "dominance-key", node });
+      }
+      return dominanceKey;
+    };
+    Object.defineProperties(node, {
+      state: {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          const value = materializeState();
+          if (accessObserver) accessObserver("state", value);
+          return value;
+        },
+      },
+      key: {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          const value = materializeKey();
+          if (accessObserver) accessObserver("key", value);
+          return value;
+        },
+      },
+      __topologyFirstMaterialization: {
+        enumerable: false,
+        value: {
+          materializeState,
+          materializeKey,
+          peekState: () => materializedState,
+          peekKey: () => dominanceKey,
+          setAccessObserver: (observer) => { accessObserver = observer; },
+        },
+      },
+    });
+    visited[coordinateKey(skeletonNode.x, skeletonNode.y)] = node;
+  });
+
+  const reachability = {
+    start: { ...skeleton.start },
+    visited,
+    diagnostics,
+  };
+  Object.defineProperties(reachability, {
+    getLookupState: {
+      enumerable: false,
+      value: () => state,
+    },
+    materializeNodeState: {
+      enumerable: false,
+      value: (node) => node && node.state,
+    },
+  });
+  return reachability;
+}
+
 function buildStaticWalkReachability(project, state, eligibility) {
   const startedAt = process.hrtime.bigint();
   const skeleton = buildSafeWalkSkeleton(project, state);
@@ -485,7 +599,7 @@ function buildWalkReachability(project, state, options) {
       enabled: Boolean(cache),
       hit: cacheHit,
       buildMs,
-    });
+    }, config);
   }
   return buildExactWalkReachability(project, state, config, eligibility);
 }
@@ -501,6 +615,7 @@ module.exports = {
   __testing: {
     buildExactWalkReachability,
     buildSafeWalkSkeleton,
+    buildTopologyFirstWalkReachability,
     buildStaticWalkReachability,
     classifySafeStaticWalk,
     hasLiveAutoEvents,

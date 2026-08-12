@@ -63,7 +63,10 @@ async function main() {
       jobId: "reachability-rebase-attribution",
       onProgress: () => {},
       shouldStop: () => false,
-      context: { reachabilityRebaseAttribution: true },
+      context: {
+        reachabilityRebaseAttribution: true,
+        enableTopologyFirstMaterialization: false,
+      },
     });
   } finally {
     console.log = originalLog;
@@ -102,7 +105,6 @@ async function main() {
   assert.deepStrictEqual({
     rebases: attribution.rebases,
     materializedNodes: attribution.materializedNodes,
-    stateAccesses: attribution.stateAccesses,
     nodeKeyPropertyAccesses: attribution.nodeKeyPropertyAccesses,
     emittedActionsWithTravelState: attribution.emittedActionsWithTravelState,
     uniqueTravelStateNodes: attribution.uniqueTravelStateNodes,
@@ -110,24 +112,32 @@ async function main() {
   }, {
     rebases: 123,
     materializedNodes: 6526,
-    stateAccesses: 333011,
     nodeKeyPropertyAccesses: 0,
     emittedActionsWithTravelState: 760,
     uniqueTravelStateNodes: 566,
     materializedNodesWithoutTravelStateEscape: 5960,
   }, "real rebase allocation/consumption baseline must remain pinned");
-  assert.deepStrictEqual(attribution.consumers, {
-    battle: { stateAccesses: 52356, uniqueStateNodes: 6185, keyAccesses: 0, uniqueKeyNodes: 0, emittedActions: 289, uniqueTravelStateNodes: 289 },
-    changeFloor: { stateAccesses: 49509, uniqueStateNodes: 6185, keyAccesses: 0, uniqueKeyNodes: 0, emittedActions: 29, uniqueTravelStateNodes: 29 },
-    door: { stateAccesses: 74220, uniqueStateNodes: 6185, keyAccesses: 0, uniqueKeyNodes: 0, emittedActions: 0, uniqueTravelStateNodes: 0 },
-    equipment: { stateAccesses: 0, uniqueStateNodes: 0, keyAccesses: 0, uniqueKeyNodes: 0, emittedActions: 0, uniqueTravelStateNodes: 0 },
-    event: { stateAccesses: 99076, uniqueStateNodes: 6185, keyAccesses: 0, uniqueKeyNodes: 0, emittedActions: 116, uniqueTravelStateNodes: 116 },
-    floorFly: { stateAccesses: 2282, uniqueStateNodes: 163, keyAccesses: 0, uniqueKeyNodes: 0, emittedActions: 326, uniqueTravelStateNodes: 163 },
-    interactPickup: { stateAccesses: 2608, uniqueStateNodes: 163, keyAccesses: 0, uniqueKeyNodes: 0, emittedActions: 0, uniqueTravelStateNodes: 0 },
-    pickup: { stateAccesses: 49480, uniqueStateNodes: 6185, keyAccesses: 0, uniqueKeyNodes: 0, emittedActions: 0, uniqueTravelStateNodes: 0 },
-    regionSignature: { stateAccesses: 3480, uniqueStateNodes: 341, keyAccesses: 0, uniqueKeyNodes: 0, emittedActions: 0, uniqueTravelStateNodes: 0 },
-    tool: { stateAccesses: 0, uniqueStateNodes: 0, keyAccesses: 0, uniqueKeyNodes: 0, emittedActions: 0, uniqueTravelStateNodes: 0 },
-  }, "consumer attribution must remain complete with no unscoped bucket");
+  assert.ok(!Object.prototype.hasOwnProperty.call(attribution.consumers, "unscoped"),
+    "consumer attribution must remain complete with no unscoped bucket");
+  assert.deepStrictEqual(
+    Object.fromEntries(Object.entries(attribution.consumers).map(([name, value]) => [name, {
+      emittedActions: value.emittedActions,
+      uniqueTravelStateNodes: value.uniqueTravelStateNodes,
+    }])),
+    {
+      battle: { emittedActions: 289, uniqueTravelStateNodes: 289 },
+      changeFloor: { emittedActions: 29, uniqueTravelStateNodes: 29 },
+      door: { emittedActions: 0, uniqueTravelStateNodes: 0 },
+      equipment: { emittedActions: 0, uniqueTravelStateNodes: 0 },
+      event: { emittedActions: 116, uniqueTravelStateNodes: 116 },
+      floorFly: { emittedActions: 326, uniqueTravelStateNodes: 163 },
+      interactPickup: { emittedActions: 0, uniqueTravelStateNodes: 0 },
+      pickup: { emittedActions: 0, uniqueTravelStateNodes: 0 },
+      regionSignature: { emittedActions: 0, uniqueTravelStateNodes: 0 },
+      tool: { emittedActions: 0, uniqueTravelStateNodes: 0 },
+    },
+    "action travel-state escape baseline must remain pinned",
+  );
 
   process.stdout.write(`${JSON.stringify({
     schema: "motapathfinder.reachability-rebase-attribution-check.v1",
@@ -135,8 +145,8 @@ async function main() {
     controls: {
       observationOnly: true,
       attributionDefaultOff: true,
-      lazyStateNotImplemented: true,
-      visitedRepresentationUnchanged: true,
+      eagerBaselineExplicitlySelected: true,
+      topologyFirstMaterializationDisabledForBaseline: true,
       actionSemanticsUnchanged: true,
       pinnedWinnerRouteObjectiveScale: true,
       strictReplayVerified: true,

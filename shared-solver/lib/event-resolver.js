@@ -158,7 +158,8 @@ class EventResolver {
   enumerateActions(context) {
     const { project, helper } = context;
     return helper.findAdjacencyActions(
-      (node, tile, targetX, targetY) => Boolean(this.getEventAt(project, node.state, node.state.floorId, targetX, targetY)),
+      (node, tile, targetX, targetY, lookupState) =>
+        Boolean(this.getEventAt(project, lookupState, lookupState.floorId, targetX, targetY)),
       (node, direction, targetX, targetY, tile, path, nodeState) => {
         const event = this.getEventAt(project, nodeState, nodeState.floorId, targetX, targetY);
         const eventHasStateChange = actionListHasStateChange(event.data || []);
