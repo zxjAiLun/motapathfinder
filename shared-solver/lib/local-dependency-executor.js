@@ -1,0 +1,215 @@
+"use strict";
+
+const crypto = require("node:crypto");
+
+const { strictReplayRoute } = require("./agenda-policy-evaluation");
+const { makeBlindSimulator } = require("./blind-discovery-baseline");
+const { buildRouteRecord } = require("./route-store");
+const { searchSegmentDP } = require("./segment-dp");
+const { buildStateKey } = require("./state-key");
+
+const SCHEMA = "motapathfinder.local-dependency-execution.v1";
+
+function number(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function hash(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 16);
+}
+
+function selectExecutablePrerequisite(dependencyPlan) {
+  for (const alternative of dependencyPlan.alternatives || []) {
+    for (const prerequisite of alternative.prerequisites || []) {
+      if (((prerequisite.evidence || {}).status) === "viable-at-current-state") {
+        return { alternative, prerequisite };
+      }
+    }
+  }
+  return null;
+}
+
+function compactHero(state) {
+  const hero = (state || {}).hero || {};
+  return {
+    hp: number(hero.hp, 0),
+    atk: number(hero.atk, 0),
+    def: number(hero.def, 0),
+    mdef: number(hero.mdef, 0),
+    lv: number(hero.lv, 0),
+    exp: number(hero.exp, 0),
+    equipment: Array.isArray(hero.equipment) ? hero.equipment.slice() : [],
+  };
+}
+
+function semanticSignature(record) {
+  const state = record.state || {};
+  return JSON.stringify({
+    floorId: state.floorId || null,
+    hero: compactHero(state),
+    inventory: state.inventory || {},
+  });
+}
+
+function checkpointRecord(project, projectRoot, initialState, candidate, target, index) {
+  const finalState = candidate.state;
+  finalState.route = Array.isArray(candidate.route) ? candidate.route.slice() : [];
+  const simulator = makeBlindSimulator(project);
+  const routeRecord = buildRouteRecord({
+    project,
+    simulator,
+    initialState,
+    finalState,
+    options: {
+      projectRoot,
+      solver: "local-dependency-executor",
+      profile: "automatic-prerequisite-multi-role",
+      rank: ((initialState.meta || {}).rank) || "chaos",
+      toFloor: target.floorId,
+      goalType: "tileRemoved",
+      snapshotFloors: Object.keys(initialState.visitedFloors || {}),
+      metadata: {
+        target,
+        candidateIndex: index,
+        roles: (candidate.tags || []).slice(),
+        allowedInputs: ["tower", "route-free-current-state", "automatic-dependency-prerequisite"],
+      },
+    },
+  });
+  const replay = strictReplayRoute(project, makeBlindSimulator(project), routeRecord);
+  return {
+    id: `checkpoint-${index + 1}`,
+    roles: (candidate.tags || []).slice().sort(),
+    exactStateFingerprint: hash(buildStateKey(finalState)),
+    routeFingerprint: hash(JSON.stringify(routeRecord.decisions.map((decision) => decision.summary))),
+    decisionCount: routeRecord.decisions.length,
+    hero: compactHero(finalState),
+    floorId: finalState.floorId || null,
+    semanticSignature: semanticSignature(candidate),
+    replay: {
+      valid: Boolean(replay.valid),
+      stepsAttempted: number(replay.stepsAttempted, 0),
+      stepsCompleted: number(replay.stepsCompleted, 0),
+      failureReason: replay.failureReason || null,
+    },
+    state: finalState,
+    routeRecord,
+  };
+}
+
+function executeLocalDependency(project, projectRoot, initialState, dependencyPlan, options) {
+  if (!project || !initialState || !dependencyPlan) {
+    throw new Error("Local dependency executor requires project, initialState, and dependencyPlan");
+  }
+  const selected = selectExecutablePrerequisite(dependencyPlan);
+  if (!selected) {
+    return {
+      schema: SCHEMA,
+      inputContract: {
+        inputs: ["tower-project", "route-free-current-state", "automatic-dependency-plan"],
+        forbidden: ["route-fixture", "route-prefix", "authored-milestone", "authored-event-order", "authored-resource-threshold"],
+        knownRouteUsed: false,
+      },
+      selected: null,
+      outcome: { goalFound: false, searchComplete: true, reason: "no-currently-viable-prerequisite" },
+      checkpoints: [],
+      verdict: "NO_CURRENTLY_VIABLE_DEPENDENCY_PREREQUISITE",
+    };
+  }
+  const config = options || {};
+  const maxExpansions = Math.max(1, number(config.maxExpansions, 64));
+  const candidateLimit = Math.max(2, number(config.candidateLimit, 8));
+  const simulator = makeBlindSimulator(project);
+  const segment = {
+    id: `auto-local-${selected.alternative.id}-${selected.prerequisite.sourceNodeId}`,
+    label: "Automatically compiled local dependency prerequisite",
+    goal: { ...selected.prerequisite.actionGoal },
+    actionPolicy: {},
+    dp: {},
+  };
+  const startedAt = Date.now();
+  const result = searchSegmentDP(simulator, initialState, segment, {
+    candidateLimit,
+    preserveSkylineRoles: true,
+    dpPriorityMode: "goal-directed",
+    dpOverrides: {
+      maxExpansions,
+      maxRuntimeMs: 0,
+      maxHeapMb: number(config.maxHeapMb, 2048),
+      goalSkylineLimit: candidateLimit,
+      landmarkArchiveLimit: 0,
+      stopOnFirstGoal: false,
+      preserveGoalArchive: true,
+      priorityMode: "goal-directed",
+    },
+  });
+  const dp = (result.diagnostics || {}).dp || {};
+  const checkpoints = (result.goalSkyline || []).map((candidate, index) =>
+    checkpointRecord(project, projectRoot, initialState, candidate, selected.prerequisite.target, index));
+  const exactStateCount = new Set(checkpoints.map((checkpoint) => checkpoint.exactStateFingerprint)).size;
+  const semanticStateCount = new Set(checkpoints.map((checkpoint) => checkpoint.semanticSignature)).size;
+  const routeCount = new Set(checkpoints.map((checkpoint) => checkpoint.routeFingerprint)).size;
+  const roles = Array.from(new Set(checkpoints.flatMap((checkpoint) => checkpoint.roles))).sort();
+  const allStrictReplay = checkpoints.length > 0 && checkpoints.every((checkpoint) => checkpoint.replay.valid);
+  return {
+    schema: SCHEMA,
+    inputContract: {
+      inputs: ["tower-project", "route-free-current-state", "automatic-dependency-plan"],
+      forbidden: ["route-fixture", "route-prefix", "authored-milestone", "authored-event-order", "authored-resource-threshold"],
+      knownRouteUsed: false,
+      authoredGoalUsed: false,
+    },
+    selected: {
+      alternativeId: selected.alternative.id,
+      prerequisite: selected.prerequisite,
+      selection: "first-ranked-alternative-first-currently-viable-prerequisite",
+    },
+    controls: {
+      maxExpansions,
+      maxRuntimeMs: 0,
+      candidateLimit,
+      stopOnFirstGoal: false,
+      productionKeyChanged: false,
+      productionDominanceChanged: false,
+      productionSelectionChanged: false,
+    },
+    outcome: {
+      found: Boolean(result.found),
+      goalFound: Boolean((result.searchOutcome || {}).goalFound),
+      frontierExhausted: Boolean((result.searchOutcome || {}).frontierExhausted),
+      budgetExhausted: Boolean((result.searchOutcome || {}).budgetExhausted),
+      searchComplete: Boolean((result.searchOutcome || {}).searchComplete),
+      expansions: number(dp.expansions, 0),
+      firstGoalExpansion: dp.firstGoalExpansion == null ? null : number(dp.firstGoalExpansion, 0),
+      generated: Object.values(dp.actionsExpandedByKind || {}).reduce((sum, count) => sum + number(count, 0), 0),
+      accepted: Math.max(0, number(dp.acceptedStates, 0) - 1),
+      rejected: Object.values(dp.actionsDominatedByKind || {}).reduce((sum, count) => sum + number(count, 0), 0),
+      frontierSize: number(dp.frontierSize, 0),
+      wallMs: Date.now() - startedAt,
+      rawGoalCandidateCount: number(dp.goalNodeCount, number(((result.goalSkyline || {}).goalArchiveCandidateCount), 0)),
+      retainedCheckpointCount: checkpoints.length,
+    },
+    checkpointDiversity: {
+      roles,
+      roleCount: roles.length,
+      exactStateCount,
+      semanticStateCount,
+      routeCount,
+      allStrictReplay,
+      distinctStrategicOutcomes: semanticStateCount >= 2 && roles.length >= 2,
+    },
+    checkpoints,
+    verdict: result.found && allStrictReplay && semanticStateCount >= 2 && roles.length >= 2
+      ? "LOCAL_DEPENDENCY_MULTI_ROLE_CHECKPOINTS_VERIFIED"
+      : result.found && allStrictReplay
+        ? "LOCAL_DEPENDENCY_SINGLE_ROLE_CHECKPOINT_VERIFIED"
+        : "LOCAL_DEPENDENCY_EXECUTION_OPEN",
+  };
+}
+
+module.exports = {
+  SCHEMA,
+  executeLocalDependency,
+  selectExecutablePrerequisite,
+};

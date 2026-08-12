@@ -592,6 +592,7 @@ PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 gua
 - **PR-5.15b Automatic Feasibility Subgoals（完成，提交见本文件 HEAD）**：automatic graph 新增 default-off `state-visible-revisitable` envelope，detached MT5 entry 从 shortest-only MT5 自动扩为当前存档可回访且能返回终点的 MT1..MT5。resource compiler 只读当前仍存在的装备并用 EquipmentResolver counterfactual + Boss stat deficit 排序，自动选 I894；effective atk/def/mdef 971/931/6137→1243/1192/7856，attack/defense deficit 1030/3932→758/1952。removed-tile 得 0 candidates、missing enemy fail-closed、重复确定。直接执行生成的 I894 goal 仍为 1000/frontier220 未找到，因此只冻结 `AUTOMATIC_FEASIBILITY_SUBGOALS_COMPILED`，执行 predecessor stages 留给 5.15c。
 - **PR-5.16a Search Observatory Baseline（完成，提交见本文件 HEAD）**：把 blind search 的 objective、自动 feasibility hypotheses、candidate funnel、budget ledger、goal-rank plateau、human-review candidates、next falsifiable experiment 与 same-control comparison 合为一个报告。D2/1000：Boss/I894 candidate 均 0；641 MT5 + 359 MT4 expansions；599 battle + 400 changeFloor incoming；3032 generated、1490 accepted successors（1491 registered states 含 root）、1542 rejected、frontier202；最大 rank tuple 343。报告明确 `wasteProven=false`，不把高频/被拒/换层自动叫浪费；只有同控制 A/B 才能形成因果优化结论。冻结 `SEARCH_INTENT_AND_COST_BASELINE_VISIBLE`，production search semantics 不变。
 - **PR-5.16b Automatic AND/OR Dependency Planner（完成，提交见本文件 HEAD）**：修复 automatic graph 对相邻 POI 没有 contact edge 的静态断图，409 nodes / 722→906 edges；D2/I894 自动生成 2 个 OR alternatives，内部 5/7 个 AND blockers，共同前置为 MT5:10,5 goldHornSlime。真实 current-state battle probes 区分 viable/unbeatable/lethal（最大显式 lethal damage 211957）；移除 contact edge 后 disconnected、无 selected subgoal 均 fail-visible。Observatory 已展示 dependency board，下一轮转 local DP multi-role checkpoint executor。冻结 `AUTOMATIC_AND_OR_DEPENDENCY_PLAN_COMPILED`，未改 production 搜索语义。
+- **PR-5.16c Local Multi-Role Dependency Executor（完成，提交见本文件 HEAD）**：由 5.16b plan 自动选 alternative-1 首个 viable blocker `MT5:8,11 skeletonKing`，直接生成合法 tileRemoved goal；first goal expansion=1。为下游多样性继续到 64 expansions：210 generated=181 accepted+29 rejected、45 raw goals→8 retained checkpoints、7 roles、8 exact/semantic/route identities，8/8 strict replay；重复运行 fingerprints 完全一致。无 viable prerequisite 时 fail-closed。冻结 `LOCAL_DEPENDENCY_MULTI_ROLE_CHECKPOINTS_VERIFIED`，未宣称 D2 成功。
 
 PR-5.6 before/after（本机方向性数据，严格结果由 fingerprint/replay 守门）：
 
@@ -616,11 +617,12 @@ reachability 真实归因（perf tracker `reachability` phase + simulator cache 
 6. **PR-5.15a 首失败面（已完成）**：当前 automatic graph 从 MT5 entry 编出的 envelope 只有 MT5，但 floor-local control 5 expansions 即完整穷尽无 Boss；unrestricted D2 会回到 MT4，却没有自动依赖信号评价这些回访。5.15b 先扩 revisit-capable envelope，再做候选 feasibility probe；不能把人类路线倒灌成 milestone。
 7. **PR-5.15b 自动子目标（已完成）**：机器已从扩展 envelope + 当前地图资源 + Boss stats 自动选出 deficit-reducing equipment goal；但原 DP 无 predecessor guidance，1000 expansions 仍未到达。
 8. **PR-5.16a 可观察性（已完成）**：每轮搜索先公开机器的假设、候选漏斗、预算账本和未证明的低收益嫌疑。
-9. **PR-5.16b AND/OR dependency planner（已完成）**：静态拓扑候选、当前 simulator feasibility 与 AND/OR 替代关系已可见；不得把 alternative-1 写回人工 milestone。后续顺序冻结为 **5.16c multi-role local DP checkpoints → 5.16d failure feedback/on-demand backtracking → 5.17a D2 → 5.17b D3**。
-10. **架构职责冻结**：全局 planner 决定“值得尝试什么”，局部 DP 决定“怎么可靠做到”；known route 仅作 correctness oracle/事后对照，不得作为 planner 输入。
-11. **验收与对比冻结**：每轮必须报告四元组、wall/expansions/generated/accepted/rejected/frontier、候选是否进入 funnel、预算最大流向、Top hypotheses、review candidates、同控制 before/after。faster not-found 或仅 depth 增加都不等于发现成功。
-12. **5.5f collision CEGAR/minimal refinement 保持未授权**：真实 changeFloor edge的 production/candidate identity 都变化，未产生 same-scope merge；`NO_COLLISION_OBSERVED` 仍不等于 safe/promotion candidate。
-13. **历史性能与工程 carry 保持隔离**：reachability closure gate、fast CI <3min、DIAG-HYGIENE、wall-time 非确定性、CompactState/Rust 均不抢占 blind discovery 主线；只有 observatory 证明它们是当前 blocker 时再恢复。
+9. **PR-5.16b AND/OR dependency planner（已完成）**：静态拓扑候选、当前 simulator feasibility 与 AND/OR 替代关系已可见；不得把 alternative-1 写回人工 milestone。
+10. **PR-5.16c multi-role local DP checkpoints（已完成）**：局部目标先在 expansion 1 完成，再显式付 63 expansions 收集 8 个战略出口；角色与真实 state/route 多样性分别计数。后续顺序冻结为 **5.16d failure feedback/on-demand backtracking → 5.17a D2 → 5.17b D3**。
+11. **架构职责冻结**：全局 planner 决定“值得尝试什么”，局部 DP 决定“怎么可靠做到”；known route 仅作 correctness oracle/事后对照，不得作为 planner 输入。
+12. **验收与对比冻结**：每轮必须报告四元组、wall/expansions/generated/accepted/rejected/frontier、候选是否进入 funnel、预算最大流向、Top hypotheses、review candidates、同控制 before/after。faster not-found 或仅 depth 增加都不等于发现成功。
+13. **5.5f collision CEGAR/minimal refinement 保持未授权**：真实 changeFloor edge的 production/candidate identity 都变化，未产生 same-scope merge；`NO_COLLISION_OBSERVED` 仍不等于 safe/promotion candidate。
+14. **历史性能与工程 carry 保持隔离**：reachability closure gate、fast CI <3min、DIAG-HYGIENE、wall-time 非确定性、CompactState/Rust 均不抢占 blind discovery 主线；只有 observatory 证明它们是当前 blocker 时再恢复。
 
 直到出现第一条：
 

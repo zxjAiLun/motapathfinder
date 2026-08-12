@@ -1624,6 +1624,22 @@
       },
       "notes": "PR-5.16a search intent, budget ledger, review candidates, falsifiable next experiment, and same-control comparison"
     },
+    "shared-solver/lib/local-dependency-executor.js": {
+      "id": "local-dependency-executor",
+      "path": "shared-solver/lib/local-dependency-executor.js",
+      "layer": "planning/execution",
+      "status": "experimental",
+      "role": "local-canonical-dp-checkpoint-executor",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": true,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.16c execute an automatic prerequisite with canonical DP and strict-replay multiple strategic goal checkpoints"
+    },
     "shared-solver/lib/segment-dp.js": {
       "id": "segment-dp",
       "path": "shared-solver/lib/segment-dp.js",
@@ -2084,6 +2100,13 @@
     }
   },
   "tests": {
+    "shared-solver/check-local-dependency-executor.js": {
+      "grade": "integration-local",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.16c real D2 automatic skeletonKing prerequisite, eight multi-role checkpoints, strict replay, deterministic fingerprints, and no-viable negative control"
+    },
     "shared-solver/check-automatic-dependency-planner.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": false,

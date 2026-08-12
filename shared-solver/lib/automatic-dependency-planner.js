@@ -161,11 +161,9 @@ function planFromPath(project, state, graph, targetId, path, battleResolver, ord
       relation: "AND",
       order: index,
       sourceNodeId: node.id,
-      actionGoal: node.kind === "enemy"
-        ? { tileRemoved: { floorId: node.floorId, x: node.x, y: node.y } }
-        : node.kind === "door"
-          ? { tileRemoved: { floorId: node.floorId, x: node.x, y: node.y } }
-          : { eventReached: { floorId: node.floorId, x: node.x, y: node.y } },
+      actionGoal: node.kind === "enemy" || node.kind === "door"
+        ? { type: "tileRemoved", floorId: node.floorId, x: node.x, y: node.y }
+        : { type: "eventReached", floorId: node.floorId, x: node.x, y: node.y },
       target: {
         floorId: node.floorId,
         x: node.x,
