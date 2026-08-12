@@ -126,8 +126,9 @@ class SolverJob {
   }
 }
 
-function makeSimulator(project, regionSpec, task) {
+function makeSimulator(project, regionSpec, task, runtimeOptions) {
   const simulatorConfig = regionSpec.simulator || {};
+  const runtimeConfig = runtimeOptions || {};
   const solverModel = (task && task.normalizedTask && task.normalizedTask.model) ||
     regionSpec.model ||
     null;
@@ -144,6 +145,7 @@ function makeSimulator(project, regionSpec, task) {
     enableResourceCluster: false,
     enableResourceChain: false,
     searchGraphMode: simulatorConfig.searchGraphMode || "primitive",
+    reachabilityReuseAttribution: runtimeConfig.reachabilityReuseAttribution === true,
   });
 }
 
@@ -316,7 +318,9 @@ async function executeSolveJob(task, {
   }
   const regionSpec = normalizedTask.tower.region.spec;
   const rank = normalizedTask.tower.rank || regionSpec.rank || "chaos";
-  const simulator = makeSimulator(project, regionSpec, task);
+  const simulator = makeSimulator(project, regionSpec, task, {
+    reachabilityReuseAttribution: context && context.reachabilityReuseAttribution === true,
+  });
   const initialState = createStartState(project, simulator, regionSpec, rank);
 
   progress.setPhase("planning");
@@ -765,7 +769,9 @@ async function executeSolveJobV2(task, {
     const regionSpec = regionEntry.spec || regionEntry;
     const isFinal = index === regions.length - 1;
     progress.setPhase("region-transition");
-    const simulator = makeSimulator(project, regionSpec, task);
+    const simulator = makeSimulator(project, regionSpec, task, {
+      reachabilityReuseAttribution: context && context.reachabilityReuseAttribution === true,
+    });
     const milestoneSpec = buildRegionMilestoneSpec(project, regionSpec);
     const inputFrontier = index === 0
       ? (() => {

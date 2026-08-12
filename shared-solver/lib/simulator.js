@@ -29,6 +29,7 @@ const { ToolRegistry } = require("./tool-registry");
 const { syncProgress } = require("./progress");
 const { normalizeSolverModel, projectSolverState } = require("./solver-model");
 const { timeActivePhase } = require("./perf");
+const { ReachabilityReuseAttribution } = require("./reachability-reuse-attribution");
 const {
   appendRouteStep,
   cloneState,
@@ -442,6 +443,9 @@ class StaticSimulator {
       hazardScanMs: 0,
       safetyProbeMs: 0,
     });
+    this.reachabilityReuseAttribution = config.reachabilityReuseAttribution === true
+      ? new ReachabilityReuseAttribution()
+      : null;
   }
 
   cacheLimitFor(name) {
@@ -533,10 +537,21 @@ class StaticSimulator {
     return stats ? { ...stats } : { hits: 0, misses: 0, stores: 0, evictions: 0 };
   }
 
+  getReachabilityReuseAttribution() {
+    return this.reachabilityReuseAttribution
+      ? this.reachabilityReuseAttribution.report()
+      : null;
+  }
+
   getWalkReachability(state) {
     const key = buildStateKey(state);
     const cached = this.cacheGet("reachability", key);
-    if (cached) return cached;
+    if (cached) {
+      if (this.reachabilityReuseAttribution) {
+        this.reachabilityReuseAttribution.recordHit(state, key, cached);
+      }
+      return cached;
+    }
     const stats = this.actionExpansionCacheStats && this.actionExpansionCacheStats.reachability;
     // Perf-tracker hook (no-op unless a tracker is active): reachability BFS is
     // one of the search hot phases the PR-5.4b baseline measures separately.
@@ -563,6 +578,9 @@ class StaticSimulator {
         ].forEach((field) => {
           stats[field] = Number(stats[field] || 0) + Number(diagnostics[field] || 0);
         });
+      }
+      if (this.reachabilityReuseAttribution) {
+        this.reachabilityReuseAttribution.recordMiss(state, key, reachability);
       }
       return this.cacheSet("reachability", key, reachability, null, Date.now() - startedAt);
     });

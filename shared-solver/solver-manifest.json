@@ -207,6 +207,7 @@
         "shared-solver/check-real-route-performance-qualification.js",
         "shared-solver/check-walk-reachability-fast-path.js",
         "shared-solver/check-walk-reachability-performance.js",
+        "shared-solver/check-reachability-reuse-attribution.js",
         "shared-solver/check-goal-directed-search.js",
         "shared-solver/check-candidate-quality-shadow.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
@@ -996,6 +997,22 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
+    },
+    "shared-solver/lib/reachability-reuse-attribution.js": {
+      "id": "reachability-reuse-attribution",
+      "path": "shared-solver/lib/reachability-reuse-attribution.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "diagnostics",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": true,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.9a observation-only exact-cache miss grouping for already-eligible safe-fast walk closures; safety classification stays per exact state and no cache/reuse semantics change"
     },
     "shared-solver/lib/region-entry-validator.js": {
       "id": "region-entry-validator",
@@ -2603,6 +2620,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "Independent-process legacy-exact vs safe-fast comparison on the tracked MT4 to MT5 branching workload; exact final state, route, search scale, and strict replay parity are mandatory while timing remains directional"
+    },
+    "shared-solver/check-reachability-reuse-attribution.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.9a candidate-default MT1 exp9 attribution: exact cache unchanged, safe-fast misses grouped by current-floor topology, normalized closure parity and pinned winner/route/objective required"
     },
     "shared-solver/check-goal-directed-search.js": {
       "grade": "local-regression",
