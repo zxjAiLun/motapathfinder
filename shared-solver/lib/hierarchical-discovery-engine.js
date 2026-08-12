@@ -1,6 +1,12 @@
 "use strict";
 
-const { compileAutomaticBlockerRepairs, compileRepairDependencyPlan } = require("./automatic-blocker-repair");
+const {
+  battleStatus,
+  compileAutomaticBlockerRepairs,
+  compileRepairDependencyPlan,
+  statusRank,
+} = require("./automatic-blocker-repair");
+const { makeBlindSimulator } = require("./blind-discovery-baseline");
 const { buildDependencyContext, runDependencyFeedback } = require("./dependency-feedback-controller");
 const {
   executeLocalDependency,
@@ -8,7 +14,7 @@ const {
   selectExecutablePrerequisite,
   stateFingerprint,
 } = require("./local-dependency-executor");
-const { getTileDefinitionAt } = require("./state");
+const { cloneState, getTileDefinitionAt } = require("./state");
 
 const SCHEMA = "motapathfinder.hierarchical-discovery-run.v1";
 
@@ -114,6 +120,94 @@ function nextRepairStep(project, terminalGoal, execution, repair, options) {
   return null;
 }
 
+function heroDelta(before, after) {
+  const left = (before || {}).hero || {};
+  const right = (after || {}).hero || {};
+  return {
+    hp: number(right.hp, 0) - number(left.hp, 0),
+    atk: number(right.atk, 0) - number(left.atk, 0),
+    def: number(right.def, 0) - number(left.def, 0),
+    mdef: number(right.mdef, 0) - number(left.mdef, 0),
+    exp: number(right.exp, 0) - number(left.exp, 0),
+  };
+}
+
+function verifyActualRepair(project, inputCheckpoint, repair, execution) {
+  const target = ((repair || {}).repairs || {}).prerequisiteTarget;
+  if (!target || !target.floorId || target.x == null || target.y == null) return null;
+  const simulator = makeBlindSimulator(project);
+  const candidates = (execution.checkpoints || [])
+    .filter((checkpoint) => repairGoalReached(project, checkpoint.state, repair))
+    .map((checkpoint) => {
+      const evaluationState = cloneState(checkpoint.state);
+      evaluationState.floorId = target.floorId;
+      evaluationState.hero.loc = {
+        ...(evaluationState.hero.loc || {}),
+        x: target.x,
+        y: target.y,
+      };
+      const evaluation = simulator.battleResolver.evaluateBattle(
+        evaluationState,
+        target.floorId,
+        target.x,
+        target.y,
+        target.tileId,
+      );
+      const damage = evaluation.damageInfo && evaluation.damageInfo.damage;
+      const status = battleStatus(evaluation, checkpoint.state.hero.hp);
+      const margin = damage == null
+        ? null
+        : number(checkpoint.state.hero.hp, 0) - number(damage, 0);
+      const beforeMargin = repair.repairs.beforeSurvivalMargin;
+      return {
+        checkpointId: checkpoint.id,
+        checkpointRoles: checkpoint.roles.slice(),
+        status,
+        damage: damage == null ? null : number(damage, 0),
+        survivalMargin: margin,
+        actualMarginGain: beforeMargin == null || margin == null
+          ? null
+          : margin - number(beforeMargin, 0),
+        predictedSurvivalMargin: repair.repairs.survivalMargin,
+        predictionError: margin == null || repair.repairs.survivalMargin == null
+          ? null
+          : margin - number(repair.repairs.survivalMargin, 0),
+        acquisitionDelta: heroDelta(inputCheckpoint.state, checkpoint.state),
+        incrementalDecisionCount: Math.max(
+          0,
+          (checkpoint.state.route || []).length - (inputCheckpoint.state.route || []).length,
+        ),
+      };
+    })
+    .sort((left, right) =>
+      statusRank(right.status) - statusRank(left.status) ||
+      number(right.survivalMargin, -Infinity) - number(left.survivalMargin, -Infinity) ||
+      left.checkpointId.localeCompare(right.checkpointId));
+  const selected = candidates[0] || null;
+  return {
+    predicted: {
+      status: repair.repairs.afterStatus,
+      damage: repair.repairs.afterDamage,
+      survivalMargin: repair.repairs.survivalMargin,
+      marginGain: repair.repairs.survivalMarginGain,
+    },
+    actual: selected,
+    candidateCount: candidates.length,
+    netImprovement: Boolean(selected && (
+      statusRank(selected.status) > statusRank(repair.repairs.beforeStatus) ||
+      number(selected.actualMarginGain, 0) > 0
+    )),
+    closureClass: !selected
+      ? "repair-target-not-realized"
+      : selected.status === "viable-at-current-state"
+        ? "blocker-unblocked"
+        : statusRank(selected.status) > statusRank(repair.repairs.beforeStatus) ||
+          number(selected.actualMarginGain, 0) > 0
+          ? "improved-but-still-blocked"
+          : "no-net-improvement",
+  };
+}
+
 function executeRepair(project, projectRoot, terminalGoal, portfolio, repair, options) {
   const checkpoint = (portfolio.checkpoints || []).find((entry) => entry.id === repair.checkpointId);
   if (!checkpoint) throw new Error(`Repair checkpoint not found: ${repair.checkpointId}`);
@@ -160,6 +254,7 @@ function executeRepair(project, projectRoot, terminalGoal, portfolio, repair, op
     targetId: repair.sourceNodeId,
     steps: trace,
   };
+  current.repairVerification = verifyActualRepair(project, checkpoint, repair, current);
   return current;
 }
 
@@ -278,6 +373,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
         kind: "blocked",
         repairCandidateCount: repairs.candidateCount,
         candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
+        repairCompilationCost: repairs.compilationCost,
         reviewCandidates: repairs.candidates.slice(0, 8).map((candidate) => ({
           checkpointId: candidate.checkpointId,
           sourceNodeId: candidate.sourceNodeId,
@@ -318,6 +414,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
         candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
         repair: repairs.selected,
         repairClosure: repairExecution.repairClosure || null,
+        repairVerification: repairExecution.repairVerification || null,
         outcome: compactOutcome(repairExecution),
         retainedPortfolioFingerprint: checkpointFingerprint(repairInputPortfolio),
       });
@@ -331,8 +428,10 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       kind: "blocker-repair",
       repairCandidateCount: repairs.candidateCount,
       candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
+      repairCompilationCost: repairs.compilationCost,
       repair: repairs.selected,
       repairClosure: portfolio.repairClosure || null,
+      repairVerification: portfolio.repairVerification || null,
       completedPrerequisiteId: selectedPrerequisite(portfolio),
       outcome: compactOutcome(portfolio),
     });

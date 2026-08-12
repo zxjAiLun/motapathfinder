@@ -58,6 +58,12 @@ function main() {
   assert.strictEqual(report.inputContract.knownRouteUsed, false);
   assert.ok(report.candidateCount > 100);
   assert.ok(report.candidatesEvaluatedForAccess > 1);
+  assert.deepStrictEqual(report.compilationCost, {
+    graphBuildCount: 8,
+    graphReuseCount: 9,
+    checkpointCount: 8,
+    uniqueAccessProbeCount: 9,
+  });
   assert.strictEqual(report.selected.checkpointId, "checkpoint-1");
   assert.strictEqual(report.selected.checkpointRoles.includes("first-goal"), true);
   assert.strictEqual(report.selected.sourceNodeId, "MT5:item:12,11:I1014");
@@ -96,6 +102,25 @@ function main() {
     "viable-at-current-state",
   );
   assert.ok(immediateMarginControl.selected.repairs.survivalMargin > 0);
+  const uncachedControl = compileAutomaticBlockerRepairs(
+    project,
+    terminalGoal,
+    portfolio.checkpoints,
+    {
+      towerId: "onlyup",
+      excludeTargetNodeId: "MT5:item:11,5:I894",
+      candidateLimit: 512,
+      reuseCheckpointGraph: false,
+    },
+  );
+  assert.strictEqual(uncachedControl.selected.experimentKey, report.selected.experimentKey);
+  assert.strictEqual(uncachedControl.candidateCount, report.candidateCount);
+  assert.deepStrictEqual(uncachedControl.compilationCost, {
+    graphBuildCount: 17,
+    graphReuseCount: 0,
+    checkpointCount: 8,
+    uniqueAccessProbeCount: 9,
+  });
   const circular = immediateMarginControl.candidates.find((candidate) =>
     candidate.sourceNodeId === "MT5:item:7,3:I1009" && candidate.checkpointId === "checkpoint-2");
   assert.ok(circular);
@@ -134,6 +159,11 @@ function main() {
     immediateMarginControl: {
       checkpointId: immediateMarginControl.selected.checkpointId,
       sourceNodeId: immediateMarginControl.selected.sourceNodeId,
+    },
+    graphCompilationComparison: {
+      before: uncachedControl.compilationCost,
+      after: report.compilationCost,
+      selectedExperimentUnchanged: true,
     },
     firstExecution: {
       prerequisiteId: execution.selected.prerequisite.sourceNodeId,

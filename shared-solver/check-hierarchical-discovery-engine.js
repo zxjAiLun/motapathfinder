@@ -56,12 +56,33 @@ function main() {
   assert.strictEqual(result.rounds.slice(0, 5).every((round) => round.outcome.strictReplay), true);
   assert.strictEqual(result.rounds[5].repair.sourceNodeId, "MT4:item:7,3:I621");
   assert.strictEqual(result.rounds[5].repairClosure.complete, false);
+  assert.strictEqual(result.rounds[5].repairVerification.actual, null);
   assert.strictEqual(result.rounds[5].outcome.searchComplete, true);
   assert.strictEqual(result.rounds[5].outcome.frontierExhausted, true);
   assert.strictEqual(result.rounds[5].outcome.goalFound, false);
   assert.strictEqual(result.rounds[5].retainedPortfolioFingerprint.length > 0, true);
   assert.strictEqual(result.rounds[6].repair.sourceNodeId, "MT5:item:12,11:I1014");
   assert.strictEqual(result.rounds[6].repairClosure.complete, true);
+  assert.ok(result.rounds[6].repairVerification.actual);
+  assert.strictEqual(result.rounds[6].repairVerification.netImprovement, true);
+  assert.strictEqual(
+    result.rounds[6].repairVerification.closureClass,
+    "improved-but-still-blocked",
+  );
+  assert.strictEqual(
+    result.rounds[6].repairVerification.actual.status,
+    "lethal-at-current-hp",
+  );
+  assert.strictEqual(result.rounds[6].repairCompilationCost.graphBuildCount, 5);
+  assert.strictEqual(
+    result.rounds[6].repairCompilationCost.graphReuseCount,
+    result.rounds[6].repairCompilationCost.uniqueAccessProbeCount,
+  );
+  assert.strictEqual(
+    result.rounds[6].repairVerification.actual.predictedSurvivalMargin,
+    result.rounds[6].repair.repairs.survivalMargin,
+  );
+  assert.ok(result.rounds[6].repairVerification.actual.predictionError < 0);
   assert.deepStrictEqual(result.totals, {
     expansions: 220,
     generated: 694,
@@ -85,6 +106,7 @@ function main() {
       .filter((round) => round.kind === "blocker-repair")
       .map((round) => round.repair.sourceNodeId),
     rejectedRepair: result.rounds[5].repair.sourceNodeId,
+    acceptedRepairVerification: result.rounds[6].repairVerification,
     totals: result.totals,
     finalHeroes: finalStates.map((entry) => entry.hero),
     stoppedReason: result.stoppedReason,

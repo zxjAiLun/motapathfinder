@@ -87,6 +87,8 @@ function main() {
           repairs: round.repair.repairs,
         } : null,
         repairClosure: round.repairClosure || null,
+        repairVerification: round.repairVerification || null,
+        repairCompilationCost: round.repairCompilationCost || null,
         outcome: round.outcome || null,
         stoppedReason: round.stoppedReason || null,
       })),

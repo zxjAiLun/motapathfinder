@@ -112,6 +112,7 @@ function candidateFor(project, simulator, checkpoint, alternative, leading, node
     repairs: {
       alternativeId: alternative.id,
       prerequisiteId: leading.sourceNodeId,
+      prerequisiteTarget: { ...leading.target },
       beforeStatus: before.status,
       beforeDamage,
       beforeSurvivalMargin,
@@ -161,8 +162,9 @@ function accessSummary(plan) {
 }
 
 function compileRepairDependencyPlan(project, terminalGoal, checkpoint, repair, options) {
-  const graph = buildAutomaticMacroGraph(project, checkpoint.state, terminalGoal, {
-    towerId: (options || {}).towerId || "automatic",
+  const config = options || {};
+  const graph = config.prebuiltGraph || buildAutomaticMacroGraph(project, checkpoint.state, terminalGoal, {
+    towerId: config.towerId || "automatic",
     envelopeMode: "state-visible-revisitable",
   });
   const plan = compileAutomaticDependencyPlan(
@@ -172,7 +174,12 @@ function compileRepairDependencyPlan(project, terminalGoal, checkpoint, repair, 
     graph,
     { selectedSubgoals: [repair] },
   );
-  return { graph, plan, access: accessSummary(plan) };
+  return {
+    graph,
+    graphBuilt: !config.prebuiltGraph,
+    plan,
+    access: accessSummary(plan),
+  };
 }
 
 function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, options) {
@@ -183,11 +190,16 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
   const excluded = config.excludedRepairExperimentKeys || new Set();
   const simulator = makeBlindSimulator(project);
   const candidates = [];
+  const checkpointGraphs = new Map();
+  let graphBuildCount = 0;
+  let graphReuseCount = 0;
   for (const checkpoint of checkpoints) {
     const graph = buildAutomaticMacroGraph(project, checkpoint.state, terminalGoal, {
       towerId: config.towerId || "automatic",
       envelopeMode: "state-visible-revisitable",
     });
+    graphBuildCount += 1;
+    checkpointGraphs.set(checkpoint.id, graph);
     const feasibility = compileAutomaticFeasibilitySubgoals(
       project,
       checkpoint.state,
@@ -225,7 +237,18 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
     let access = accessByKey.get(key);
     if (!access) {
       const checkpoint = checkpoints.find((entry) => entry.id === candidate.checkpointId);
-      access = compileRepairDependencyPlan(project, terminalGoal, checkpoint, candidate, config).access;
+      const dependency = compileRepairDependencyPlan(
+        project,
+        terminalGoal,
+        checkpoint,
+        candidate,
+        config.reuseCheckpointGraph === false
+          ? config
+          : { ...config, prebuiltGraph: checkpointGraphs.get(candidate.checkpointId) },
+      );
+      access = dependency.access;
+      if (dependency.graphBuilt) graphBuildCount += 1;
+      else graphReuseCount += 1;
       accessByKey.set(key, access);
       candidatesEvaluatedForAccess += 1;
     }
@@ -245,6 +268,12 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
       knownRouteUsed: false,
     },
     selectionPolicy: "first-goal-least-commitment-before-counterfactual-margin",
+    compilationCost: {
+      graphBuildCount,
+      graphReuseCount,
+      checkpointCount: checkpoints.length,
+      uniqueAccessProbeCount: candidatesEvaluatedForAccess,
+    },
     candidateCount: candidates.length,
     excludedExperimentCount: excluded.size,
     candidatesEvaluatedForAccess,
