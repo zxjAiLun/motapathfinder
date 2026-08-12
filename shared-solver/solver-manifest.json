@@ -174,6 +174,7 @@
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-discovery-capability-audit.js",
         "shared-solver/check-blind-discovery-baseline.js",
+        "shared-solver/check-search-trace-explainability.js",
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
@@ -1497,6 +1498,21 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/search-trace-explainability.js": {
+      "id": "search-trace-explainability",
+      "path": "shared-solver/lib/search-trace-explainability.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "diagnostics",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/segment-dp.js": {
       "id": "segment-dp",
       "path": "shared-solver/lib/segment-dp.js",
@@ -2565,6 +2581,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-search-trace-explainability.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.11 decision-depth/floor/action/rejection trace, human-review buckets, and same-control before-after comparison contract"
     },
     "shared-solver/check-solve-task-contract.js": {
       "grade": "unit-plus-micro",

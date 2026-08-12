@@ -96,6 +96,7 @@ const ROUTE = new Set([
   "route-inspector.js",
 ]);
 const DIAG = new Set([
+  "search-trace-explainability.js",
   "solver-doctor.js",
   "pruning-diagnostics.js",
   "perf.js",
@@ -271,6 +272,13 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
 }
 
 const TEST_OVERRIDES = {
+  "shared-solver/check-search-trace-explainability.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: true,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "PR-5.11 decision-depth/floor/action/rejection trace, human-review buckets, and same-control before-after comparison contract",
+  },
   "shared-solver/check-blind-discovery-baseline.js": {
     grade: "unit-plus-micro",
     allowsNotFound: true,
@@ -715,6 +723,7 @@ const manifest = {
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-discovery-capability-audit.js",
         "shared-solver/check-blind-discovery-baseline.js",
+        "shared-solver/check-search-trace-explainability.js",
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",

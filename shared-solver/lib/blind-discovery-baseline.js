@@ -100,6 +100,7 @@ function createBlindObserver(project) {
     rejectionReasons: {},
     expandedByFloor: {},
     generatedByKind: {},
+    byDecisionDepth: {},
     deepestFloorId: null,
     deepestFloorRank: -1,
     maxDecisionDepth: 0,
@@ -128,17 +129,41 @@ function createBlindObserver(project) {
         }
         counters.maxDecisionDepth = Math.max(counters.maxDecisionDepth, number(event.decisionDepth, 0));
         counters.maxFrontierSize = Math.max(counters.maxFrontierSize, number(event.frontierSize, 0));
+        const depthKey = String(number(event.decisionDepth, 0));
+        if (!counters.byDecisionDepth[depthKey]) {
+          counters.byDecisionDepth[depthKey] = {
+            expanded: 0,
+            actionSets: 0,
+            generated: 0,
+            rejected: 0,
+            maxFrontierSize: 0,
+            byFloor: {},
+            generatedByKind: {},
+            rejectionReasons: {},
+          };
+        }
+        const depth = counters.byDecisionDepth[depthKey];
+        depth.maxFrontierSize = Math.max(depth.maxFrontierSize, number(event.frontierSize, 0));
         if (event.eventType === "agendaPopped") {
           const floor = event.floorId || "unknown";
           counters.expandedByFloor[floor] = number(counters.expandedByFloor[floor], 0) + 1;
+          depth.expanded += 1;
+          depth.byFloor[floor] = number(depth.byFloor[floor], 0) + 1;
+        }
+        if (event.eventType === "actionSetGenerated") {
+          depth.actionSets += 1;
         }
         if (event.eventType === "candidateGenerated") {
           const kind = (event.action && event.action.kind) || "unknown";
           counters.generatedByKind[kind] = number(counters.generatedByKind[kind], 0) + 1;
+          depth.generated += 1;
+          depth.generatedByKind[kind] = number(depth.generatedByKind[kind], 0) + 1;
         }
         if (event.eventType === "candidateRejected") {
           const reason = event.reasonCode || "unknown";
           counters.rejectionReasons[reason] = number(counters.rejectionReasons[reason], 0) + 1;
+          depth.rejected += 1;
+          depth.rejectionReasons[reason] = number(depth.rejectionReasons[reason], 0) + 1;
         }
         if (sampleTypes.has(event.eventType) && counters.samples.length < 20) {
           counters.samples.push({

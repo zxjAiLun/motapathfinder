@@ -583,6 +583,7 @@ PR-5.4 系列把“状态抽象与 DP identity”推进到了可产品化的 gua
 - **PR-5.10a Full Solve Hotspot Reprofiling（完成，提交见本文件 HEAD）**：perf tracker 新增向后兼容 exclusive/self-time（保留 inclusive），并报告 `sortActions`、unattributed residual。独立进程覆盖 MT1、tracked MT4→MT5 entry、完整 MT5、special80→MT8，全部 exact/scale/strict replay。前三者 top self phase=applyAction；MT8 5634 expansions 则 reachability > applyAction > clone（最终本机方向性 42.7%/23.9%/19.4%，不作硬阈值），5374 misses 中 1722 legacy-exact，reachability clones 302,510。verdict `HOTSPOT_SPLIT_BY_WORKLOAD_SCALE`；当时计划的 fallback/clone 与 applyAction 归因已被 2026-08-12 discovery 主线取代，现作为按需 carry。
 - **PR-5.10b Discovery Capability Audit（完成，提交见本文件 HEAD）**：主线从 known-route 局部性能修复转为 autonomous discovery。初始状态→MT5 blueKing 的 authored input 盘点为 28 milestones（27 intermediate）、109 `minHero` fields、46 removed/105 hard-present tiles、45 allowed-floor/38 allowed-transition entries、68 per-segment DP fields；A0→A5 消融明确删除 `startFrom` 仍保留数组顺序，因此现 runner 从 A0 起就缺 unordered-event planning。A5 blind spec 只保留 terminal boss identity，零 route fixture/中间目标/阈值/楼层范围/事件顺序。verdict `ASSISTED_EXECUTION_NOT_AUTONOMOUS_DISCOVERY`；static 22/22。
 - **PR-5.10c Blind Discovery Baseline（完成，提交见本文件 HEAD）**：独立 fail-closed blind-goal schema，只允许 tower/rank/terminal Boss；canonical initial state、单 segment、零 route/milestone/order/threshold/floor hints。1000-expansion 权威 before：33.046s、3123 generated/1960 accepted/1164 dominance rejected、frontier 496、1321 active keys、deepest MT3、max depth 39、0 trimming；四元组 `false/false/true/false`，verdict `BLIND_GOAL_NOT_FOUND_WITHIN_BUDGET`，不是无解。
+- **PR-5.11 Search Trace Explainability（完成，提交见本文件 HEAD）**：新增 decision-depth/floor/action/rejection 聚合、human-review buckets 与 same-control before/after 卡；无 after 明示 awaiting，不同 budget/heap/candidate/priority controls 拒绝因果归因。深度表保留 parent/generated 与 successor rejection 的真实口径，不输出误导性的 per-depth rejection rate。1000-expansion trace 把 1164 dominance rejects（37.3%）、1059 changeFloor candidates（33.9%）、496 live frontier（15.9%）暴露为审查入口，但全部 `optimizationClaim=false`；0 action trimming。trace wall 含 observer 成本，不能与轻量 baseline wall 混比；focused + manifest static 56/56 通过。
 
 PR-5.6 before/after（本机方向性数据，严格结果由 fingerprint/replay 守门）：
 
@@ -601,7 +602,7 @@ reachability 真实归因（perf tracker `reachability` phase + simulator cache 
 
 1. **主线已在 2026-08-12 重置为自主路线发现，PR-5.10b 审计已完成**：已量化 milestone、顺序、资源阈值、tile、楼层/换层限制、fixture 和搜索参数，并建立 A0→A5 消融梯度。原定 MT8 legacy-exact/clone 与短中链 applyAction 归因暂停。
 2. **PR-5.10c terminal-only blind baseline 已完成**：1000 expansions 到 MT3、frontier 496 的失败是权威 before；后续修改必须用相同输入/预算报告 goal/deepest floor/frontier/active keys/wall，不能通过加 timeout/candidateLimit 消掉失败。
-3. **PR-5.11 可解释搜索轨迹**：固定产出 before/after 卡与 decision-depth trace，使人能直接看到候选生成、合并、剪枝、frontier 和主要浪费类别；已知路线只能事后判断 earliest divergence/错误剪枝。
+3. **PR-5.11 可解释搜索轨迹已完成**：固定 before/after 卡与 decision-depth trace 已能显示候选生成、拒绝、frontier 和待审查类别；当前没有 after，因此不宣称优化。已知路线仍只能作事后 oracle。
 4. **PR-5.12/5.13 自动宏观图 + 分层规划**：从塔自动提取不可逆关键事件和资源依赖；高层搜索事件顺序，现有 DP/reachability 负责局部可达 transition 与 Pareto 结果。
 5. **PR-5.14 D0–D3 验收**：D0 strict replay；D1 局部起终点；D2 楼层入口→Boss；D3 初始状态→最终 Boss。只有 D2/D3 的 no-hint found + strict replay 才算自主发现。
 6. **5.5f collision CEGAR/minimal refinement 保持未授权**：真实 changeFloor edge的 production/candidate identity 都变化，未产生 same-scope merge；`NO_COLLISION_OBSERVED` 仍不等于 safe/promotion candidate。
