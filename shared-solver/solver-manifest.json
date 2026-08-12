@@ -463,6 +463,22 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/d2-blind-failure-attribution.js": {
+      "id": "d2-blind-failure-attribution",
+      "path": "shared-solver/lib/d2-blind-failure-attribution.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "failure-attribution",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.15a observation-only D2 automatic planning-envelope attribution; does not change key, dominance, selection, or search inputs"
+    },
     "shared-solver/lib/discovery-capability-audit.js": {
       "id": "discovery-capability-audit",
       "path": "shared-solver/lib/discovery-capability-audit.js",
@@ -2020,6 +2036,13 @@
     }
   },
   "tests": {
+    "shared-solver/check-d2-blind-failure-attribution.js": {
+      "grade": "diagnostic",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.15a tracked checkpoint construction plus detached-state 1000-expansion D2 attribution and MT5-only negative control"
+    },
     "shared-solver/check-blind-qualification.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": true,

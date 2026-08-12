@@ -100,4 +100,8 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { main };
+module.exports = {
+  createMt5EntryState,
+  detachCheckpoint,
+  main,
+};

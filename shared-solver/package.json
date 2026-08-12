@@ -75,6 +75,8 @@
     "check:failure-triggered-macro-backtracking": "node check-failure-triggered-macro-backtracking.js",
     "qualify:blind-discovery": "node qualify-blind-discovery.js",
     "check:blind-qualification": "node check-blind-qualification.js",
+    "diagnose:d2-blind-failure": "node attribute-d2-blind-failure.js",
+    "check:d2-blind-failure-attribution": "node check-d2-blind-failure-attribution.js",
     "check:region-specs": "node check-region-specs.js",
     "check:resource-timing": "node check-resource-timing.js",
     "check:resource-timing-model": "node check-resource-timing-model.js",
