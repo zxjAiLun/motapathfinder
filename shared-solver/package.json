@@ -219,7 +219,8 @@
     "check:reachability-skeleton-cache": "node check-reachability-skeleton-cache.js",
     "check:reachability-rebase-attribution": "node check-reachability-rebase-attribution.js",
     "check:topology-first-materialization": "node check-topology-first-materialization.js",
-    "check:remaining-materialization-attribution": "node check-remaining-materialization-attribution.js"
+    "check:remaining-materialization-attribution": "node check-remaining-materialization-attribution.js",
+    "check:battle-evaluation-projection": "node check-battle-evaluation-projection.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

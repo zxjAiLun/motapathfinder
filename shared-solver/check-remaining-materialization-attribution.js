@@ -59,6 +59,7 @@ async function runSample(observe) {
         reachabilityRebaseAttribution: observe,
         enableReachabilitySkeletonCache: true,
         enableTopologyFirstMaterialization: true,
+        enableBattleEvaluationProjection: false,
       },
     });
   } finally {

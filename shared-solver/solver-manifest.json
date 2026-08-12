@@ -212,6 +212,7 @@
         "shared-solver/check-reachability-rebase-attribution.js",
         "shared-solver/check-topology-first-materialization.js",
         "shared-solver/check-remaining-materialization-attribution.js",
+        "shared-solver/check-battle-evaluation-projection.js",
         "shared-solver/check-goal-directed-search.js",
         "shared-solver/check-candidate-quality-shadow.js",
         "shared-solver/check-mt1-workload-matrix-contract.js",
@@ -2677,6 +2678,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.9e observation-only attribution of all topology materializations without final travel-state escape to battle pre-action lethal/no-damage-info rejection, with overlap union control and pinned winner/route/objective/scale/strict replay"
+    },
+    "shared-solver/check-battle-evaluation-projection.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.9f independent-process A/B/B/A battle evaluation projection repair: immutable stance metadata, base-state isolation, exact action/successor corpus and winner/route/objective/scale/strict replay parity, with rejected-battle clone elimination"
     },
     "shared-solver/check-goal-directed-search.js": {
       "grade": "local-regression",

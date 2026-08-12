@@ -385,6 +385,7 @@ class StaticSimulator {
     this.walkReachabilityMode = normalizeWalkReachabilityMode(config.walkReachabilityMode);
     this.enableReachabilitySkeletonCache = config.enableReachabilitySkeletonCache !== false;
     this.enableTopologyFirstMaterialization = config.enableTopologyFirstMaterialization !== false;
+    this.enableBattleEvaluationProjection = config.enableBattleEvaluationProjection !== false;
     this.searchGraphMode = normalizeSearchGraphMode(config.searchGraphMode || config.searchGraph, "hybrid");
     this.primitiveFallbackMode = config.primitiveFallbackMode || "auto";
     this.resourcePocketSearchOptions = config.resourcePocketSearchOptions || {};
@@ -868,6 +869,7 @@ class StaticSimulator {
         project: this.project,
         state,
         reachability,
+        enableBattleEvaluationProjection: this.enableBattleEvaluationProjection,
         recordCandidateOutcome: this.reachabilityRebaseAttribution
           ? (outcome, subject) => this.recordReachabilityCandidateOutcome("battle", outcome, subject)
           : null,
@@ -2151,6 +2153,7 @@ class StaticSimulator {
       project: this.project,
       state,
       reachability,
+      enableBattleEvaluationProjection: this.enableBattleEvaluationProjection,
     });
   }
 

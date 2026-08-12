@@ -149,6 +149,7 @@ function makeSimulator(project, regionSpec, task, runtimeOptions) {
     reachabilityRebaseAttribution: runtimeConfig.reachabilityRebaseAttribution === true,
     enableReachabilitySkeletonCache: runtimeConfig.enableReachabilitySkeletonCache !== false,
     enableTopologyFirstMaterialization: runtimeConfig.enableTopologyFirstMaterialization !== false,
+    enableBattleEvaluationProjection: runtimeConfig.enableBattleEvaluationProjection !== false,
   });
 }
 
@@ -326,6 +327,7 @@ async function executeSolveJob(task, {
     reachabilityRebaseAttribution: context && context.reachabilityRebaseAttribution === true,
     enableReachabilitySkeletonCache: !context || context.enableReachabilitySkeletonCache !== false,
     enableTopologyFirstMaterialization: !context || context.enableTopologyFirstMaterialization !== false,
+    enableBattleEvaluationProjection: !context || context.enableBattleEvaluationProjection !== false,
   });
   const initialState = createStartState(project, simulator, regionSpec, rank);
 
@@ -780,6 +782,7 @@ async function executeSolveJobV2(task, {
       reachabilityRebaseAttribution: context && context.reachabilityRebaseAttribution === true,
       enableReachabilitySkeletonCache: !context || context.enableReachabilitySkeletonCache !== false,
       enableTopologyFirstMaterialization: !context || context.enableTopologyFirstMaterialization !== false,
+      enableBattleEvaluationProjection: !context || context.enableBattleEvaluationProjection !== false,
     });
     const milestoneSpec = buildRegionMilestoneSpec(project, regionSpec);
     const inputFrontier = index === 0

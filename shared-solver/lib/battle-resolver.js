@@ -97,6 +97,35 @@ function createEvaluationState(state) {
   };
 }
 
+function buildBattleEvaluationProjection(state, node) {
+  const baseHero = state.hero || {};
+  const baseLoc = baseHero.loc || {};
+  const path = Array.isArray(node && node.path) ? node.path : [];
+  const direction = path.length > 0 ? path[path.length - 1] : baseLoc.direction;
+  const loc = Object.freeze({
+    ...baseLoc,
+    x: Number(node.x),
+    y: Number(node.y),
+    direction,
+  });
+  const hero = Object.freeze({
+    ...baseHero,
+    loc,
+    steps: Number(baseHero.steps || 0) + Number(node.distance || 0),
+  });
+  return Object.freeze({
+    ...state,
+    hero,
+  });
+}
+
+function canProjectBattleEvaluation(context) {
+  const reachability = (context || {}).reachability || {};
+  return (context || {}).enableBattleEvaluationProjection === true &&
+    typeof reachability.getLookupState === "function" &&
+    typeof reachability.materializeNodeState === "function";
+}
+
 function buildFloorBlocks(project, state, floorId) {
   const floor = project.floorsById[floorId];
   const blocks = [];
@@ -436,6 +465,7 @@ class FunctionBackedBattleResolver {
 
   enumerateActions(context) {
     const { reachability } = context;
+    const projectBattleEvaluation = canProjectBattleEvaluation(context);
     const recordCandidateOutcome = typeof context.recordCandidateOutcome === "function"
       ? context.recordCandidateOutcome
       : null;
@@ -453,10 +483,18 @@ class FunctionBackedBattleResolver {
         if (!isEnemyTile(tile)) return;
         if (recordCandidateOutcome) recordCandidateOutcome("enemy-adjacency", node);
 
-        const nodeState = typeof reachability.materializeNodeState === "function"
-          ? reachability.materializeNodeState(node)
-          : node.state;
-        const battle = this.evaluateBattle(nodeState, nodeState.floorId, targetX, targetY, tile.id);
+        const evaluationState = projectBattleEvaluation
+          ? buildBattleEvaluationProjection(lookupState, node)
+          : typeof reachability.materializeNodeState === "function"
+            ? reachability.materializeNodeState(node)
+            : node.state;
+        const battle = this.evaluateBattle(
+          evaluationState,
+          evaluationState.floorId,
+          targetX,
+          targetY,
+          tile.id
+        );
         if (!battle.supported) {
           if (recordCandidateOutcome) recordCandidateOutcome("unsupported", node);
           return;
@@ -465,11 +503,14 @@ class FunctionBackedBattleResolver {
           if (recordCandidateOutcome) recordCandidateOutcome("no-damage-info", node);
           return;
         }
-        if (battle.damageInfo.damage >= Number(nodeState.hero.hp || 0)) {
+        if (battle.damageInfo.damage >= Number(evaluationState.hero.hp || 0)) {
           if (recordCandidateOutcome) recordCandidateOutcome("lethal", node);
           return;
         }
         if (recordCandidateOutcome) recordCandidateOutcome("viable", node);
+        const nodeState = projectBattleEvaluation
+          ? reachability.materializeNodeState(node)
+          : evaluationState;
         const action = {
           kind: "battle",
           floorId: nodeState.floorId,
@@ -583,6 +624,8 @@ class FunctionBackedBattleResolver {
 }
 
 module.exports = {
+  buildBattleEvaluationProjection,
+  canProjectBattleEvaluation,
   FunctionBackedBattleResolver,
   UnsupportedBattleResolver,
 };

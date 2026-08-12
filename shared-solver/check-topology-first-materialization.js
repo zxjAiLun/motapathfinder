@@ -86,6 +86,7 @@ async function runSample(mode) {
           reachabilityRebaseAttribution: true,
           enableReachabilitySkeletonCache: true,
           enableTopologyFirstMaterialization: repair,
+          enableBattleEvaluationProjection: false,
         },
       });
     } finally {
