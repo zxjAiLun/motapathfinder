@@ -174,6 +174,25 @@ function main() {
     candidate.resourceKind === "combat-reward" && candidate.repairs.levelProgress);
   assert.ok(combatProgressCandidate);
   assert.ok(combatProgressCandidate.repairs.expGain > 0);
+  assert.strictEqual(combatRewardAudit.selected.resourceKind, "item");
+  const levelProgressControl = compileAutomaticBlockerRepairs(
+    project,
+    terminalGoal,
+    portfolio.checkpoints,
+    {
+      towerId: "onlyup",
+      excludeTargetNodeId: "MT5:item:11,5:I894",
+      candidateLimit: 5000,
+      includeCombatRewardRepairs: true,
+      repairPriorityMode: "level-progress-first",
+    },
+  );
+  assert.strictEqual(
+    levelProgressControl.selectionPolicy,
+    "level-progress-before-first-goal-and-counterfactual-margin",
+  );
+  assert.strictEqual(levelProgressControl.selected.resourceKind, "combat-reward");
+  assert.strictEqual(levelProgressControl.selected.repairs.levelProgress, true);
   const immediateMarginControl = compileAutomaticBlockerRepairs(
     project,
     terminalGoal,
@@ -251,6 +270,12 @@ function main() {
     immediateMarginControl: {
       checkpointId: immediateMarginControl.selected.checkpointId,
       sourceNodeId: immediateMarginControl.selected.sourceNodeId,
+    },
+    levelProgressControl: {
+      sourceNodeId: levelProgressControl.selected.sourceNodeId,
+      resourceKind: levelProgressControl.selected.resourceKind,
+      expGain: levelProgressControl.selected.repairs.expGain,
+      selectionPolicy: levelProgressControl.selectionPolicy,
     },
     graphCompilationComparison: {
       before: uncachedControl.compilationCost,

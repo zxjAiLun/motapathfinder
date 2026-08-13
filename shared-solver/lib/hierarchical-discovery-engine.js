@@ -338,6 +338,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
   const repairCompilationCache = config.reuseRepairCompilationCache === false
     ? null
     : makeRepairCompilationCache();
+  let repairPriorityMode = "blocker-first";
   if (portfolio.selected && portfolio.selected.prerequisite) {
     attemptedExperiments.add([
       rootPortfolio.checkpoints[0].exactStateFingerprint,
@@ -386,10 +387,14 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
         excludedRepairAcquisitionKeys: rejectedRepairAcquisitions,
         compilationCache: repairCompilationCache,
         includeCombatRewardRepairs: config.includeCombatRewardRepairs !== false,
+        repairPriorityMode,
         candidateLimit: number(config.repairCandidateLimit, 16),
       },
     );
     if (!repairs.selected) {
+      const progressDeadEnd = portfolio.repairVerification &&
+        portfolio.repairVerification.progressImprovement === true;
+      if (progressDeadEnd) repairPriorityMode = "level-progress-first";
       const backtrack = historicalFeedback(
         project,
         projectRoot,
@@ -412,6 +417,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
           repairCandidateKinds: repairs.candidateKinds,
           candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
           repairCompilationCost: repairs.compilationCost,
+          repairPriorityMode,
           reviewCandidates: repairs.candidates.slice(0, 8).map((candidate) => ({
             checkpointId: candidate.checkpointId,
             sourceNodeId: candidate.sourceNodeId,
@@ -435,6 +441,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
         repairCandidateKinds: repairs.candidateKinds,
         candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
         repairCompilationCost: repairs.compilationCost,
+        repairPriorityMode,
         reviewCandidates: repairs.candidates.slice(0, 8).map((candidate) => ({
           checkpointId: candidate.checkpointId,
           sourceNodeId: candidate.sourceNodeId,
@@ -447,6 +454,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       break;
     }
     attemptedRepairExperiments.add(repairs.selected.experimentKey);
+    const repairSelectionMode = repairPriorityMode;
     const repairInputPortfolio = portfolio;
     const repairExecution = executeRepair(
       project,
@@ -469,6 +477,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
         repairCandidateCount: repairs.candidateCount,
         repairCandidateKinds: repairs.candidateKinds,
         candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
+        repairPriorityMode: repairSelectionMode,
         repair: repairs.selected,
         repairClosure: repairExecution.repairClosure || null,
         repairVerification: repairExecution.repairVerification || null,
@@ -480,6 +489,14 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       continue;
     }
     portfolio = repairExecution;
+    const actualDelta = portfolio.repairVerification && portfolio.repairVerification.actual
+      ? portfolio.repairVerification.actual.acquisitionDelta
+      : null;
+    if (
+      portfolio.repairVerification &&
+      (portfolio.repairVerification.closureClass === "blocker-unblocked" ||
+        number((actualDelta || {}).lv, 0) > 0)
+    ) repairPriorityMode = "blocker-first";
     history.push(portfolio);
     recordRound(rounds, {
       round,
@@ -488,6 +505,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       repairCandidateKinds: repairs.candidateKinds,
       candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
       repairCompilationCost: repairs.compilationCost,
+      repairPriorityMode: repairSelectionMode,
       repair: repairs.selected,
       repairClosure: portfolio.repairClosure || null,
       repairVerification: portfolio.repairVerification || null,
@@ -532,6 +550,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       checkpointAnalysisCount: repairCompilationCache.checkpointAnalyses.size,
       accessCount: repairCompilationCache.accessByStateAndResource.size,
     } : null,
+    repairPriorityMode,
     verdict: "HIERARCHICAL_DISCOVERY_RUN_RECORDED",
   };
 }

@@ -216,12 +216,15 @@ function candidateFor(project, simulator, checkpoint, alternative, leading, node
   };
 }
 
-function compareCandidate(left, right, preferFirstGoal) {
+function compareCandidate(left, right, preferFirstGoal, preferLevelProgress) {
+  const progressOrder = preferLevelProgress
+    ? Number(right.repairs.levelProgress) - Number(left.repairs.levelProgress)
+    : 0;
   const firstGoalOrder = preferFirstGoal
     ? Number(right.checkpointRoles.includes("first-goal")) -
       Number(left.checkpointRoles.includes("first-goal"))
     : 0;
-  return firstGoalOrder ||
+  return progressOrder || firstGoalOrder ||
     Number(right.repairs.blockerImprovement) - Number(left.repairs.blockerImprovement) ||
     statusRank(right.repairs.afterStatus) - statusRank(left.repairs.afterStatus) ||
     number(right.repairs.survivalMargin, -Infinity) - number(left.repairs.survivalMargin, -Infinity) ||
@@ -345,7 +348,12 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
     }
   }
   candidates.sort((left, right) =>
-    compareCandidate(left, right, config.preferFirstGoalCheckpoint !== false));
+    compareCandidate(
+      left,
+      right,
+      config.preferFirstGoalCheckpoint !== false,
+      config.repairPriorityMode === "level-progress-first",
+    ));
   let selected = null;
   let candidatesEvaluatedForAccess = 0;
   const accessByKey = new Map();
@@ -411,7 +419,9 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
       forbidden: ["route-fixture", "route-prefix", "authored-milestone", "authored-event-order", "authored-resource-threshold"],
       knownRouteUsed: false,
     },
-    selectionPolicy: "first-goal-least-commitment-before-counterfactual-margin",
+    selectionPolicy: config.repairPriorityMode === "level-progress-first"
+      ? "level-progress-before-first-goal-and-counterfactual-margin"
+      : "first-goal-least-commitment-before-counterfactual-margin",
     compilationCost: {
       graphBuildCount,
       graphReuseCount,

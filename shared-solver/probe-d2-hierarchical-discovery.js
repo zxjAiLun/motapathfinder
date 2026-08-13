@@ -79,6 +79,7 @@ function main() {
         repair: round.repair ? round.repair.sourceNodeId : null,
         repairKind: round.repair ? round.repair.resourceKind : null,
         repairCandidateKinds: round.repairCandidateKinds || null,
+        repairPriorityMode: round.repairPriorityMode || null,
         topRepairReview: round.reviewCandidates && round.reviewCandidates[0]
           ? {
             sourceNodeId: round.reviewCandidates[0].sourceNodeId,
@@ -116,6 +117,7 @@ function main() {
         kind: round.kind,
         repair: round.repair.sourceNodeId,
         resourceKind: round.repair.resourceKind,
+        repairPriorityMode: round.repairPriorityMode || null,
         acquisitionExperimentKey: round.repair.acquisitionExperimentKey,
         experimentKey: round.repair.experimentKey,
         rejectionReason: round.rejectionReason || null,
@@ -127,6 +129,12 @@ function main() {
           : null,
         closureClass: round.repairVerification
           ? round.repairVerification.closureClass
+          : null,
+        progressImprovement: round.repairVerification
+          ? round.repairVerification.progressImprovement
+          : false,
+        actualDelta: round.repairVerification && round.repairVerification.actual
+          ? round.repairVerification.actual.acquisitionDelta
           : null,
       }));
     const experimentCounts = repairRounds.reduce((counts, round) => {
@@ -167,6 +175,14 @@ function main() {
       rejectedRepairExperimentCount: result.rejectedRepairExperimentCount,
       repairCompilationTotals,
       repairCompilationCache: result.repairCompilationCache,
+      repairPriorityMode: result.repairPriorityMode,
+      finalFrontier: result.finalPortfolio.checkpoints.map((checkpoint) => ({
+        id: checkpoint.id,
+        roles: checkpoint.roles,
+        hero: checkpoint.hero,
+        routeLength: (checkpoint.state.route || []).length,
+        lastDecisions: (checkpoint.state.route || []).slice(-6).map((entry) => entry.summary),
+      })),
     }, null, 2)}\n`);
     return;
   }
