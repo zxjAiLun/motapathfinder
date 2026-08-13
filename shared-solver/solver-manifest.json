@@ -1704,6 +1704,22 @@
       },
       "notes": "PR-5.18a materializes item/enemy existence from immutable floor grids plus sparse state mutations and shares snapshots by mutation identity"
     },
+    "shared-solver/lib/strategic-transition.js": {
+      "id": "strategic-transition",
+      "path": "shared-solver/lib/strategic-transition.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "choice-level-transition-contract-with-reachable-poi-diff",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.18b aggregates path variants into one StrategicTransition per choice with exact-state-cached reachability, lineage-level newly discovered POIs, real after-state presence checks, active-vs-implicit opportunity costs, irreversible cost, terminal blocker stage/progress, and explicit deferred-post incompleteness"
+    },
     "shared-solver/lib/strategic-d2-search.js": {
       "id": "strategic-d2-search",
       "path": "shared-solver/lib/strategic-d2-search.js",
@@ -1718,7 +1734,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18a D2 vertical slice uses raw primitive POI actions, exact-state merge only, shared option maps, and six fair agenda queues; bounded not-found remains open"
+      "notes": "PR-5.18b frontier schedules one slot per StrategicTransition choice; agenda queues are terminal-blocker-progress, survival, combat-power, future-reachable-options, low-irreversible-cost, and novel-semantic-state scored from transition contract data"
     },
     "shared-solver/lib/segment-dp.js": {
       "id": "segment-dp",
@@ -2185,7 +2201,7 @@
       "allowsNotFound": true,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.18a local first-expansion strict-replay closure control plus real D2 64-expansion strategic frontier, shared MT4/MT5 option grid, I621 automatic-consumption evidence, six-queue fairness, and explicit floorFly deferral"
+      "notes": "PR-5.18b verifies exact-state reachability caching, real tile/portal presence classification, lineage semantic novelty, attack-blocked terminal progress, choice-level aggregation, revised six agenda queues, deferred-post completeness accounting, local first-expansion strict replay, real D2 64-expansion frontier, and I621 implicit-consumption evidence"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",

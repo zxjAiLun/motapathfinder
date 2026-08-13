@@ -1461,3 +1461,23 @@ Review 已批准 PR-5.3a/a1 并正式关闭；本轮进入 ObjectiveSpec，但�
 - `check-objective-spec-contract.js` 已覆盖 legacy 行为、max HP、tie-breaker、lexicographic、custom score、disabled/weight 负控、DP key 不变、early-stop proof 降级、strict objective 重算和 artifact binding。
 
 本轮不修改 DP key、HP dominance、action enumeration、state projection、milestone planning、adaptive repair、GUI 或 Launcher。
+
+### 2026-08-13 更新：PR-5.18b StrategicTransition Contract
+
+在 5.18a 最小纵切底座之上，把原始 primitive action 聚合成带终局语义的正式战略 transition，并让六个 frontier 队列按 transition 数据调度；不修改 primitive DP、segment DP、5.17 hierarchical repair，旧 hierarchical 回归不受影响。
+
+- 新增 `shared-solver/lib/strategic-transition.js`：`buildReachablePoiIndex`（复用 simulator 自己的 walk reachability 扫描 + 邻接分类 item/enemy/door/portal/event/upgrade，保证与动作枚举同一套可达性证据）、前后可达 POI 差分（`newlyReachablePOIs` / `noLongerReachablePOIs`，后者按 after-state 的真实 tile/portal 再分 `consumed` 与 `stillPresentButUnreachable`）、机会成本（active/implicit 消费 + `wasReachableBefore`）、`resourceDelta`、`irreversibleCost`、`terminalBlockerDelta`。终局投影在不可计算伤害时不再伪装 margin：先报告 `attack-blocked` 与 `hero.atk-enemy.def`，进入可计算阶段后才比较 survival margin。
+- `aggregateVariantsIntoTransitions` 按 path-independent choice fingerprint 分组：同一个 `changeFloor@MT7:6,0` 的 path 7/9/17 变体保留在 `travelVariants` 内，frontier 每个 choice 只占一个槽位；所有 distinct exact post state 都物化并参与 canonical 选择。
+- canonical 保留规则：goal state 优先 > 当前可达正资源最多（item/upgrade/enemy/portal 加权）> terminal blocker stage/progress > HP > 更少 mutation > 确定性 state key；未选中的 post state 记为 `deferredPostStates`。这不是完备剪枝：5.18b 的 `searchComplete` 在仍有 deferred post 时必须为 false，惰性解析明确留给 5.18c。
+- 六个队列调整为 `terminal-blocker-progress / survival / combat-power / future-reachable-options / low-irreversible-cost / novel-semantic-state`。边级 `newlyReachablePOIs` 仍保留作诊断，但 novelty 调度改看 lineage-level `newlyDiscoveredPOIs`，因此换层返回已访问楼层不会反复获得“新 POI”奖励。reachable index 只按 exact state 缓存；更底层 topology skeleton 是否安全共享仍由 simulator 自己的 hazard/auto-event/directional-state 检查决定。
+- schema 升到 `strategic-d2-search.v2`；`solver-manifest.json` 增加 `strategic-transition` 模块条目并更新 5.18a 条目说明。
+
+1000 expansions 真实 D2（与 5.18a 同预算同起点，完成上述 correctness 收紧后）：`goalFound=false / frontierExhausted=false / budgetExhausted=true / deferredWorkRemaining=true / searchComplete=false`，wall **48.562s**，frontier **1119**，choice 级 generated **3342**（原始 variant 3749，alias/deferred 407），accepted 2118，exactMerged 1224，implicitOptionConsumptions 5608。终局 blocker 的初始 ATK 缺口 `-1223`，最好 witness 改善到 `-923`；1025 个 transition 有可测 blocker progress 改善，但 `terminalActionGenerated=0`，说明局部增益仍未连成可达终局动作。D2 仍未自主闭合——下一轮进入 5.18c 局部 DP connector + lazy travel/deferred-post/floorFly resolution，不通过加深评分调参掩盖未展开工作。
+
+专项检查：
+
+```bash
+node shared-solver/check-strategic-d2-search.js
+node shared-solver/check-manifest-runner.js
+node shared-solver/probe-d2-strategic-search.js
+```

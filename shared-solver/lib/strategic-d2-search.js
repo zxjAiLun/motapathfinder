@@ -6,19 +6,22 @@ const { strictReplayRoute } = require("./agenda-policy-evaluation");
 const { buildSegmentGoalPredicate } = require("./segment-dp");
 const { buildRouteRecord, recordedActionVariantIdentity } = require("./route-store");
 const { buildStateKey } = require("./state-key");
-const { cloneState, listFloorMutationSummary } = require("./state");
+const { cloneState } = require("./state");
 const {
-  createStrategicOptionMapCache,
-  diffStrategicOptionMaps,
-} = require("./strategic-option-map");
+  aggregateVariantsIntoTransitions,
+  createStrategicStateIndexCache,
+  futureOptionScore,
+  mutationCount,
+  selectCanonicalPostState,
+  terminalBattleProjection,
+} = require("./strategic-transition");
 const {
   createChildNode,
   createRootNode,
-  normalizeActionEntry,
   reconstructActionEntries,
 } = require("./search-nodes");
 
-const SCHEMA = "motapathfinder.strategic-d2-search.v1";
+const SCHEMA = "motapathfinder.strategic-d2-search.v2";
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -72,11 +75,6 @@ class BinaryHeap {
   }
 }
 
-function mutationCount(state) {
-  return listFloorMutationSummary((state || {}).floorStates || {})
-    .reduce((sum, floor) => sum + (floor.removed || []).length + (floor.replaced || []).length, 0);
-}
-
 function heroScore(state) {
   const hero = (state || {}).hero || {};
   return number(hero.atk, 0) * 1000000 +
@@ -86,45 +84,38 @@ function heroScore(state) {
     number(hero.exp, 0);
 }
 
-function terminalBattleProjection(simulator, state, terminalGoal) {
-  if (!terminalGoal || terminalGoal.type !== "bossDefeated") return null;
-  try {
-    const evaluation = simulator.battleResolver.evaluateBattle(
-      state,
-      terminalGoal.floorId,
-      terminalGoal.x,
-      terminalGoal.y,
-      terminalGoal.enemyId,
-    );
-    const damage = evaluation && evaluation.damageInfo && evaluation.damageInfo.damage;
-    return {
-      supported: Boolean(evaluation && evaluation.supported),
-      damage: damage == null ? null : number(damage, null),
-      margin: damage == null ? null : number((state.hero || {}).hp, 0) - number(damage, 0),
-    };
-  } catch (_error) {
-    return null;
-  }
-}
-
 function goalPriority(simulator, state, terminalGoal) {
   const projection = terminalBattleProjection(simulator, state, terminalGoal);
   const onGoalFloor = state.floorId === terminalGoal.floorId ? 1 : 0;
-  const margin = projection && projection.margin != null
-    ? Math.max(-1000000000, projection.margin)
+  const progress = projection && projection.progressScore != null
+    ? projection.progressScore
     : -1000000000;
-  return onGoalFloor * 1000000000000 + margin + heroScore(state);
+  return onGoalFloor * 10000000000000 + progress + heroScore(state);
+}
+
+function incomingBlockerBonus(node) {
+  const transition = node.strategicTransition;
+  if (!transition || !transition.terminalBlockerDelta || transition.terminalBlockerDelta.delta == null) {
+    return 0;
+  }
+  return transition.terminalBlockerDelta.delta > 0 ? 1000000 : 0;
+}
+
+function terminalProgressTerm(simulator, state, terminalGoal) {
+  const projection = terminalBattleProjection(simulator, state, terminalGoal);
+  return projection && projection.progressScore != null ? projection.progressScore : -1000000000;
 }
 
 function compareBy(score) {
   return (left, right) => score(left) - score(right) || right.order - left.order;
 }
 
-function makeAgenda(simulator, terminalGoal, initialOptionCount) {
+function makeAgenda(simulator, terminalGoal) {
   const definitions = [
     {
-      id: "goal-progress",
-      compare: compareBy((node) => goalPriority(simulator, node.state, terminalGoal)),
+      id: "terminal-blocker-progress",
+      compare: compareBy((node) =>
+        goalPriority(simulator, node.state, terminalGoal) + incomingBlockerBonus(node)),
     },
     {
       id: "survival",
@@ -135,22 +126,28 @@ function makeAgenda(simulator, terminalGoal, initialOptionCount) {
       compare: compareBy((node) => heroScore(node.state)),
     },
     {
-      id: "resource-options",
+      id: "future-reachable-options",
       compare: compareBy((node) =>
-        node.optionMap.counts.item * 100000000 +
-        (initialOptionCount - node.optionMap.counts.total) * 10000 +
-        mutationCount(node.state)),
+        futureOptionScore(node.reachablePoi) * 1000000 +
+        terminalProgressTerm(simulator, node.state, terminalGoal)),
     },
     {
-      id: "novel-progress",
-      compare: compareBy((node) =>
-        Object.keys(node.state.visitedFloors || {}).length * 100000000 +
-        mutationCount(node.state) * 1000 +
-        node.depth),
+      id: "low-irreversible-cost",
+      compare: compareBy((node) => {
+        const cost = (node.strategicTransition && node.strategicTransition.irreversibleCost) ||
+          { total: 0 };
+        return -number(cost.total, 0) * 1000000 - node.depth;
+      }),
     },
     {
-      id: "low-commitment",
-      compare: compareBy((node) => -node.depth),
+      id: "novel-semantic-state",
+      compare: compareBy((node) => {
+        const transition = node.strategicTransition;
+        if (!transition) return 0;
+        return (transition.newlyDiscoveredPOIs || []).length * 1000000000 -
+          (transition.noLongerReachablePOIs || []).length * 1000 +
+          node.depth;
+      }),
     },
   ];
   return {
@@ -183,6 +180,7 @@ function makeAgenda(simulator, terminalGoal, initialOptionCount) {
 
 function compactWitness(simulator, terminalGoal, nodes, node, role) {
   const hero = (node.state || {}).hero || {};
+  const transition = node.strategicTransition;
   return {
     role,
     nodeId: node.nodeId,
@@ -199,8 +197,23 @@ function compactWitness(simulator, terminalGoal, nodes, node, role) {
     },
     optionCounts: { ...node.optionMap.counts },
     optionMapFingerprint: node.optionMap.fingerprint,
+    reachablePoiCounts: node.reachablePoi ? { ...node.reachablePoi.counts } : null,
+    reachablePoiFingerprint: node.reachablePoi ? node.reachablePoi.fingerprint : null,
     mutationCount: mutationCount(node.state),
     terminalBattle: terminalBattleProjection(simulator, node.state, terminalGoal),
+    incomingTransition: transition ? {
+      choice: transition.choiceLabel,
+      targetPOI: transition.targetPOI,
+      travelVariantCount: transition.travelVariantCount,
+      exactPostStateCount: transition.exactPostStateCount,
+      selectedVariant: transition.selectedVariant,
+      newlyReachablePOIs: transition.newlyReachablePOIs,
+      newlyDiscoveredPOIs: transition.newlyDiscoveredPOIs,
+      noLongerReachablePOIs: transition.noLongerReachablePOIs,
+      consumedOpportunities: transition.consumedOpportunities,
+      irreversibleCost: transition.irreversibleCost,
+      terminalBlockerDelta: transition.terminalBlockerDelta,
+    } : null,
     lastActions: reconstructActionEntries(nodes, node)
       .slice(-6)
       .map((entry) => entry.summary),
@@ -228,25 +241,36 @@ function enumerateStrategicActions(simulator, state, options) {
     ? simulator.sortActions(state, Array.from(byVariant.values()))
     : Array.from(byVariant.values());
   const filteredVariants = new Set(filtered.map(recordedActionVariantIdentity));
-  const rawChoices = new Set(Array.from(byVariant.values()).map((action) =>
-    simulator.getActionFingerprint(action) || action.summary));
   return {
     actions: Array.from(byVariant.values()),
     rawVariantCount: byVariant.size,
-    rawChoiceCount: rawChoices.size,
+    rawChoiceCount: new Set(Array.from(byVariant.values()).map((action) =>
+      simulator.getActionFingerprint(action) || action.summary)).size,
     legacyVisibleVariantCount: filteredVariants.size,
     recoveredFromLegacyHeuristicFilter: Array.from(byVariant.keys())
       .filter((key) => !filteredVariants.has(key)).length,
   };
 }
 
-function explicitActionTargetKey(action) {
-  if (!action) return null;
-  const floorId = action.floorId || (action.travelState && action.travelState.floorId);
-  const target = action.target || {};
-  const x = action.x != null ? action.x : target.x;
-  const y = action.y != null ? action.y : target.y;
-  return floorId && x != null && y != null ? `${floorId}:${x},${y}` : null;
+function compactTransition(transition, post, newlyDiscoveredPOIs) {
+  return {
+    schema: transition.schema,
+    choice: transition.choice,
+    choiceLabel: transition.choiceLabel,
+    kind: transition.kind,
+    targetPOI: transition.targetPOI,
+    travelVariantCount: transition.travelVariantCount,
+    exactPostStateCount: transition.exactPostStateCount,
+    selectedVariant: post.appliedBy.summary,
+    resourceDelta: post.resourceDelta,
+    terminalBlockerDelta: post.terminalBlockerDelta,
+    irreversibleCost: post.irreversibleCost,
+    consumedOpportunities: post.consumedOpportunities,
+    newlyReachablePOIs: post.newlyReachablePOIs,
+    newlyDiscoveredPOIs,
+    noLongerReachablePOIs: post.noLongerReachablePOIs,
+    stillPresentButUnreachable: post.stillPresentButUnreachable,
+  };
 }
 
 function buildStrictReplayEvidence(project, simulatorFactory, projectRoot, initialState, goalNode, nodes, stats) {
@@ -262,7 +286,7 @@ function buildStrictReplayEvidence(project, simulatorFactory, projectRoot, initi
     options: {
       projectRoot,
       solver: "strategic-d2-search",
-      profile: "terminal-only-strategic-frontier-v1",
+      profile: "terminal-only-strategic-frontier-v2",
       rank: ((initialState.meta || {}).rank) || "chaos",
       toFloor: goalNode.state.floorId,
       goalType: "bossDefeated",
@@ -299,14 +323,17 @@ function runStrategicD2Search(options) {
     initialState.floorId,
     terminalGoal.floorId,
   ].filter(Boolean)));
-  const optionMaps = createStrategicOptionMapCache(project, { floorIds });
+  const stateIndex = createStrategicStateIndexCache(project, simulator, { floorIds });
   const rootState = cloneState(initialState);
   rootState.route = [];
   const rootKey = buildStateKey(rootState);
   const root = createRootNode(rootState, rootKey);
-  root.optionMap = optionMaps.get(rootState);
+  const rootIndex = stateIndex.get(rootState);
+  root.optionMap = rootIndex.optionMap;
+  root.reachablePoi = rootIndex.reachablePoi;
+  root.seenReachablePoiKeys = new Set(root.reachablePoi.entries.map((entry) => entry.key));
   root.order = 0;
-  const agenda = makeAgenda(simulator, terminalGoal, root.optionMap.counts.total);
+  const agenda = makeAgenda(simulator, terminalGoal);
   agenda.push(root);
   const nodes = new Map([[root.nodeId, root]]);
   const seenExact = new Map([[rootKey, root.nodeId]]);
@@ -333,6 +360,13 @@ function runStrategicD2Search(options) {
     terminalActionGenerated: 0,
     maxStrategicDepth: 0,
     maxFrontierSize: 1,
+    deferredPostStates: 0,
+    canonicalSelectionReasons: {},
+    transitionsWithNewlyReachable: 0,
+    transitionsWithLostReachability: 0,
+    transitionsConsumingOpportunities: 0,
+    transitionsWithTerminalBlockerImprovement: 0,
+    transitionsWithLineageNovelty: 0,
   };
   const observedChoices = new Set();
   const bestByRole = new Map(agenda.definitions.map((definition) => [definition.id, root]));
@@ -356,67 +390,96 @@ function runStrategicD2Search(options) {
       continue;
     }
     stats.rawVariants += enumerated.rawVariantCount;
-    stats.travelVariantAliasCount += Math.max(
-      0,
-      enumerated.rawVariantCount - enumerated.rawChoiceCount,
-    );
     stats.legacyVisibleVariants += enumerated.legacyVisibleVariantCount;
     stats.recoveredFromLegacyHeuristicFilter += enumerated.recoveredFromLegacyHeuristicFilter;
-    for (const action of enumerated.actions) {
+    const aggregation = aggregateVariantsIntoTransitions({
+      simulator,
+      state: node.state,
+      actions: enumerated.actions,
+      terminalGoal,
+      stateIndex,
+      beforeOptionMap: node.optionMap,
+      beforeReachable: node.reachablePoi,
+    });
+    stats.applyRejected += aggregation.rejectedVariantCount;
+    stats.travelVariantAliasCount += Math.max(0, aggregation.variantCount - aggregation.choiceCount);
+    for (const transition of aggregation.transitions) {
       stats.generated += 1;
-      const choiceFingerprint = simulator.getActionFingerprint(action) || action.summary;
-      observedChoices.add(choiceFingerprint);
-      if (
-        action.kind === "battle" &&
-        (action.floorId || (action.travelState && action.travelState.floorId)) === terminalGoal.floorId &&
-        Number(action.x != null ? action.x : (action.target || {}).x) === Number(terminalGoal.x) &&
-        Number(action.y != null ? action.y : (action.target || {}).y) === Number(terminalGoal.y)
-      ) stats.terminalActionGenerated += 1;
-      const kind = action.kind || "unknown";
-      stats.generatedByKind[kind] = number(stats.generatedByKind[kind], 0) + 1;
-      let nextState;
-      try {
-        nextState = simulator.applyAction(node.state, action, { storeRoute: false });
-      } catch (_error) {
-        stats.applyRejected += 1;
-        continue;
+      observedChoices.add(transition.choice);
+      for (const variant of transition.travelVariants) {
+        const kind = variant.kind || "unknown";
+        stats.generatedByKind[kind] = number(stats.generatedByKind[kind], 0) + 1;
+        if (
+          variant.kind === "battle" &&
+          variant.floorId === terminalGoal.floorId &&
+          Number(variant.x) === Number(terminalGoal.x) &&
+          Number(variant.y) === Number(terminalGoal.y)
+        ) stats.terminalActionGenerated += 1;
       }
-      nextState.route = [];
-      const exactKey = buildStateKey(nextState);
+      const unionNewlyReachable = new Set();
+      const unionNoLongerReachable = new Set();
+      let transitionConsumesOpportunities = false;
+      let transitionTerminalBlockerImproved = false;
+      for (const post of transition.postStates) {
+        post.newlyReachablePOIs.forEach((entry) => unionNewlyReachable.add(entry.key));
+        post.noLongerReachablePOIs.forEach((entry) => unionNoLongerReachable.add(entry.key));
+        if (post.consumedOpportunities.length > 0) transitionConsumesOpportunities = true;
+        if (post.terminalBlockerDelta && post.terminalBlockerDelta.improved) {
+          transitionTerminalBlockerImproved = true;
+        }
+        const implicit = post.consumedOpportunities.filter((entry) => entry.role === "implicit");
+        if (implicit.length > 0) {
+          stats.implicitOptionConsumptions += implicit.length;
+          if (stats.implicitOptionConsumptionSamples.length < 12) {
+            stats.implicitOptionConsumptionSamples.push({
+              action: transition.choiceLabel,
+              explicitTarget: transition.targetPOI,
+              consumed: implicit.map((entry) => ({ key: entry.key, kind: entry.kind, tileId: entry.tileId })),
+            });
+          }
+        }
+      }
+      if (unionNewlyReachable.size > 0) stats.transitionsWithNewlyReachable += 1;
+      if (unionNoLongerReachable.size > 0) stats.transitionsWithLostReachability += 1;
+      if (transitionConsumesOpportunities) stats.transitionsConsumingOpportunities += 1;
+      if (transitionTerminalBlockerImproved) stats.transitionsWithTerminalBlockerImprovement += 1;
+      if (transition.postStates.some((post) =>
+        post.optionDelta.consumed.length > 0 || post.optionDelta.created.length > 0)) {
+        stats.optionChangingTransitions += 1;
+      }
+      const selection = selectCanonicalPostState(transition, { goalPredicate });
+      if (!selection) continue;
+      const post = selection.postState;
+      stats.canonicalSelectionReasons[selection.reason] =
+        number(stats.canonicalSelectionReasons[selection.reason], 0) + 1;
+      const exactKey = post.stateKey;
+      stats.deferredPostStates += transition.postStates
+        .filter((candidate) => candidate.stateKey !== exactKey && !seenExact.has(candidate.stateKey))
+        .length;
       if (seenExact.has(exactKey)) {
         stats.exactMerged += 1;
         continue;
       }
       const child = createChildNode(
         node,
-        nextState,
+        post.state,
         exactKey,
         {
-          ...action,
-          fingerprint: simulator.getActionFingerprint(action),
+          ...post.appliedBy,
+          fingerprint: simulator.getActionFingerprint(post.appliedBy),
         },
         nextNodeId,
         nextNodeId,
       );
       nextNodeId += 1;
-      child.optionMap = optionMaps.get(nextState);
-      const optionDelta = diffStrategicOptionMaps(node.optionMap, child.optionMap);
-      child.optionDelta = optionDelta;
-      if (optionDelta.consumed.length > 0 || optionDelta.created.length > 0) {
-        stats.optionChangingTransitions += 1;
-      }
-      const explicitTarget = explicitActionTargetKey(action);
-      const implicit = optionDelta.consumed.filter((entry) => entry.key !== explicitTarget);
-      if (implicit.length > 0) {
-        stats.implicitOptionConsumptions += implicit.length;
-        if (stats.implicitOptionConsumptionSamples.length < 12) {
-          stats.implicitOptionConsumptionSamples.push({
-            action: action.summary,
-            explicitTarget,
-            consumed: implicit.map((entry) => ({ key: entry.key, kind: entry.kind, tileId: entry.tileId })),
-          });
-        }
-      }
+      child.optionMap = post.optionMap;
+      child.reachablePoi = post.reachablePoi;
+      const newlyDiscoveredPOIs = post.reachablePoi.entries
+        .filter((entry) => !node.seenReachablePoiKeys.has(entry.key));
+      child.seenReachablePoiKeys = new Set(node.seenReachablePoiKeys);
+      newlyDiscoveredPOIs.forEach((entry) => child.seenReachablePoiKeys.add(entry.key));
+      if (newlyDiscoveredPOIs.length > 0) stats.transitionsWithLineageNovelty += 1;
+      child.strategicTransition = compactTransition(transition, post, newlyDiscoveredPOIs);
       nodes.set(child.nodeId, child);
       seenExact.set(exactKey, child.nodeId);
       agenda.push(child);
@@ -428,7 +491,7 @@ function runStrategicD2Search(options) {
           bestByRole.set(definition.id, child);
         }
       });
-      if (goalPredicate(nextState)) {
+      if (selection.reason === "goal-reached") {
         goalNode = child;
         firstGoalExpansion = stats.expansions;
         break;
@@ -436,11 +499,12 @@ function runStrategicD2Search(options) {
     }
     stats.maxFrontierSize = Math.max(stats.maxFrontierSize, agenda.activeSize(expanded));
   }
-  stats.optionMapsObserved = optionMaps.size;
+  stats.optionMapsObserved = stateIndex.optionMaps.size;
   stats.uniqueChoiceCount = observedChoices.size;
   const frontierSize = agenda.activeSize(expanded);
   const budgetExhausted = !goalNode && stats.expansions >= maxExpansions && frontierSize > 0;
   const frontierExhausted = !goalNode && frontierSize === 0;
+  const deferredWorkRemaining = !goalNode && stats.deferredPostStates > 0;
   const replay = goalNode
     ? buildStrictReplayEvidence(
         project,
@@ -478,12 +542,32 @@ function runStrategicD2Search(options) {
       pruning: ["exact-state-merge-only"],
       agendaQueues: agenda.definitions.map((definition) => definition.id),
       optionMap: "base-2d-grid-plus-sparse-state-mutations",
+      reachablePoi: "walk-reachability-adjacency-index-with-before-after-diff",
+      transitionContract: {
+        choiceAggregation: "path-independent-action-fingerprint",
+        travelVariants: "kept-inside-transition-one-frontier-slot-per-choice",
+        reachablePoiDiff: "newly-reachable-vs-no-longer-reachable-poi-diff",
+        opportunityCost: "active-vs-implicit-consumption-plus-still-present-but-unreachable",
+        terminalBlockerDelta: "terminal-battle-stage-and-progress-before-after",
+        retentionRule: "goal-state > future-reachable-positive-options > terminal-blocker-progress > hp > fewer-mutations > deterministic-state-key",
+      },
+      lazyResolution: {
+        travelVariants: "aggregated-into-single-frontier-choice",
+        deferredPostStates: "recorded-not-expanded",
+        localDpConnector: "deferred-to-5.18c",
+      },
+      completenessLimitations: [
+        "noncanonical-exact-post-states-recorded-but-not-expanded-until-5.18c",
+        "local-dp-connector-not-yet-enabled",
+        "floor-fly-not-yet-lazily-resolved",
+      ],
     },
     outcome: {
       goalFound: Boolean(goalNode),
       frontierExhausted,
       budgetExhausted,
-      searchComplete: Boolean(goalNode || frontierExhausted),
+      deferredWorkRemaining,
+      searchComplete: Boolean(goalNode || (frontierExhausted && !deferredWorkRemaining)),
       firstGoalExpansion,
       frontierSize,
       wallMs: Date.now() - startedAt,
@@ -503,6 +587,13 @@ function runStrategicD2Search(options) {
       strategicDecisionCount: reconstructActionEntries(nodes, goalNode).length,
       hero: { ...(goalNode.state.hero || {}) },
       optionCounts: goalNode.optionMap.counts,
+      incomingTransition: goalNode.strategicTransition ? compactWitness(
+        simulator,
+        terminalGoal,
+        nodes,
+        goalNode,
+        "best",
+      ).incomingTransition : null,
     } : null,
     replay: replay ? {
       valid: replay.valid,
@@ -523,7 +614,6 @@ function runStrategicD2Search(options) {
 }
 
 module.exports = {
-  SCHEMA,
   enumerateStrategicActions,
   runStrategicD2Search,
 };
