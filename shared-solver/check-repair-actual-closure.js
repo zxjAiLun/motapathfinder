@@ -19,6 +19,7 @@ function main() {
   const cases = [
     ["blocker-unblocked", null],
     ["improved-but-still-blocked", null],
+    ["progressed-toward-level-threshold", null],
     ["no-net-improvement", "no-net-improvement"],
     ["repair-target-not-realized", "repair-target-not-realized"],
   ];
@@ -35,7 +36,11 @@ function main() {
   );
   process.stdout.write(`${JSON.stringify({
     status: "passed",
-    accepted: ["blocker-unblocked", "improved-but-still-blocked"],
+    accepted: [
+      "blocker-unblocked",
+      "improved-but-still-blocked",
+      "progressed-toward-level-threshold",
+    ],
     rejected: [
       "no-net-improvement",
       "repair-target-not-realized",

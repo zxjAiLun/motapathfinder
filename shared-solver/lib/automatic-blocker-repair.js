@@ -100,6 +100,31 @@ function counterfactualPickup(project, simulator, state, node) {
   return next;
 }
 
+function counterfactualCombatReward(project, simulator, state, node) {
+  const next = cloneState(state);
+  next.floorId = node.floorId;
+  next.hero.loc = { ...(next.hero.loc || {}), x: node.x, y: node.y };
+  try {
+    simulator.battleResolver.applyBattleAt({
+      project,
+      state: next,
+      floorId: node.floorId,
+      x: node.x,
+      y: node.y,
+      enemyId: node.tileId,
+    });
+  } catch (_error) {
+    return null;
+  }
+  return next;
+}
+
+function counterfactualResource(project, simulator, state, node) {
+  return node.kind === "enemy"
+    ? counterfactualCombatReward(project, simulator, state, node)
+    : counterfactualPickup(project, simulator, state, node);
+}
+
 function repairGoal(node) {
   return node.role === "equipment"
     ? { equipmentIncludes: [node.tileId] }
@@ -107,7 +132,7 @@ function repairGoal(node) {
 }
 
 function candidateFor(project, simulator, checkpoint, alternative, leading, node, projectionFingerprint) {
-  const counterfactual = counterfactualPickup(project, simulator, checkpoint.state, node);
+  const counterfactual = counterfactualResource(project, simulator, checkpoint.state, node);
   if (!counterfactual) return null;
   const before = leading.evidence || {};
   const evaluationState = cloneState(counterfactual);
@@ -141,18 +166,30 @@ function candidateFor(project, simulator, checkpoint, alternative, leading, node
   const survivalMarginGain = beforeSurvivalMargin == null || survivalMargin == null
     ? 0
     : survivalMargin - beforeSurvivalMargin;
+  const expGain = number(counterfactual.hero.exp, 0) - number(checkpoint.state.hero.exp, 0);
+  const levelGain = number(counterfactual.hero.lv, 0) - number(checkpoint.state.hero.lv, 0);
+  const blockerImprovement = afterRank > beforeRank || damageReduction > 0 || survivalMarginGain > 0;
+  const levelProgress = node.kind === "enemy" && (levelGain > 0 || expGain > 0);
   if (afterRank < beforeRank) return null;
-  if (afterRank === beforeRank && damageReduction <= 0 && survivalMarginGain <= 0) return null;
+  if (!blockerImprovement && !levelProgress) return null;
   return {
     id: `repair-${checkpoint.id}-${alternative.id}-${node.id}`,
     repairProjectionFingerprint: projectionFingerprint,
     blockerProjectionFingerprint: blockerProjectionFingerprint(leading),
     kind: "blocker-feasibility-repair",
-    provenance: "automatic-current-map-item-counterfactual+simulator-battle-probe",
+    provenance: "automatic-current-map-resource-counterfactual+simulator-battle-probe",
     checkpointId: checkpoint.id,
     checkpointRoles: (checkpoint.roles || []).slice(),
     sourceNodeId: node.id,
-    target: { floorId: node.floorId, x: node.x, y: node.y, itemId: node.tileId },
+    resourceKind: node.kind === "enemy" ? "combat-reward" : "item",
+    target: {
+      floorId: node.floorId,
+      x: node.x,
+      y: node.y,
+      tileId: node.tileId,
+      itemId: node.kind === "item" ? node.tileId : null,
+      enemyId: node.kind === "enemy" ? node.tileId : null,
+    },
     goal: repairGoal(node),
     repairs: {
       alternativeId: alternative.id,
@@ -165,12 +202,16 @@ function candidateFor(project, simulator, checkpoint, alternative, leading, node
       afterDamage: afterDamage == null ? null : number(afterDamage, 0),
       survivalMargin,
       survivalMarginGain,
+      blockerImprovement,
+      levelProgress,
       statusImprovement: afterRank - beforeRank,
       damageReduction,
       hpGain: number(counterfactual.hero.hp, 0) - number(checkpoint.state.hero.hp, 0),
       atkGain: number(counterfactual.hero.atk, 0) - number(checkpoint.state.hero.atk, 0),
       defGain: number(counterfactual.hero.def, 0) - number(checkpoint.state.hero.def, 0),
       mdefGain: number(counterfactual.hero.mdef, 0) - number(checkpoint.state.hero.mdef, 0),
+      expGain,
+      levelGain,
     },
   };
 }
@@ -181,6 +222,7 @@ function compareCandidate(left, right, preferFirstGoal) {
       Number(left.checkpointRoles.includes("first-goal"))
     : 0;
   return firstGoalOrder ||
+    Number(right.repairs.blockerImprovement) - Number(left.repairs.blockerImprovement) ||
     statusRank(right.repairs.afterStatus) - statusRank(left.repairs.afterStatus) ||
     number(right.repairs.survivalMargin, -Infinity) - number(left.repairs.survivalMargin, -Infinity) ||
     right.repairs.survivalMarginGain - left.repairs.survivalMarginGain ||
@@ -245,7 +287,8 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
   let accessCacheHits = 0;
   for (const checkpoint of checkpoints) {
     const projectionFingerprint = repairProjectionFingerprint(checkpoint.state);
-    const analysisKey = checkpoint.exactStateFingerprint || hash(buildStateKey(checkpoint.state));
+    const stateAnalysisKey = checkpoint.exactStateFingerprint || hash(buildStateKey(checkpoint.state));
+    const analysisKey = `${config.includeCombatRewardRepairs === true ? "item+combat" : "item"}|${stateAnalysisKey}`;
     let analysis = compilationCache
       ? compilationCache.checkpointAnalyses.get(analysisKey)
       : null;
@@ -270,20 +313,24 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
         graph,
         feasibility,
       );
-      const itemNodes = (graph.nodes || []).filter((node) =>
-        node.kind === "item" &&
+      const resourceNodes = (graph.nodes || []).filter((node) =>
+        (node.kind === "item" || (
+          config.includeCombatRewardRepairs === true &&
+          node.kind === "enemy" &&
+          node.role !== "terminal-boss"
+        )) &&
         node.id !== config.excludeTargetNodeId &&
         getTileDefinitionAt(project, checkpoint.state, node.floorId, node.x, node.y));
-      analysis = { graph, plan, itemNodes };
+      analysis = { graph, plan, resourceNodes };
       if (compilationCache) compilationCache.checkpointAnalyses.set(analysisKey, analysis);
     }
-    const { graph, plan, itemNodes } = analysis;
+    const { graph, plan, resourceNodes } = analysis;
     checkpointGraphs.set(checkpoint.id, graph);
     for (const alternative of plan.alternatives || []) {
       const leading = (alternative.prerequisites || [])[0];
       if (!leading || leading.target.role !== "combat-gate-candidate") continue;
       if ((leading.evidence || {}).status === "viable-at-current-state") continue;
-      for (const node of itemNodes) {
+      for (const node of resourceNodes) {
         const candidate = candidateFor(
           project,
           simulator,
@@ -307,7 +354,8 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
     let access = accessByKey.get(key);
     if (!access) {
       const checkpoint = checkpoints.find((entry) => entry.id === candidate.checkpointId);
-      const analysisKey = checkpoint.exactStateFingerprint || hash(buildStateKey(checkpoint.state));
+      const stateAnalysisKey = checkpoint.exactStateFingerprint || hash(buildStateKey(checkpoint.state));
+      const analysisKey = `${config.includeCombatRewardRepairs === true ? "item+combat" : "item"}|${stateAnalysisKey}`;
       const sharedAccessKey = `${analysisKey}|${candidate.sourceNodeId}`;
       access = compilationCache
         ? compilationCache.accessByStateAndResource.get(sharedAccessKey)
@@ -359,7 +407,7 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
   return {
     schema: SCHEMA,
     inputContract: {
-      inputs: ["tower-project", "terminal-goal", "automatic-local-checkpoints", "current-map-items"],
+      inputs: ["tower-project", "terminal-goal", "automatic-local-checkpoints", "current-map-resources"],
       forbidden: ["route-fixture", "route-prefix", "authored-milestone", "authored-event-order", "authored-resource-threshold"],
       knownRouteUsed: false,
     },
@@ -374,6 +422,10 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
       wallMs: Date.now() - startedAt,
     },
     candidateCount: candidates.length,
+    candidateKinds: candidates.reduce((counts, candidate) => {
+      counts[candidate.resourceKind] = Number(counts[candidate.resourceKind] || 0) + 1;
+      return counts;
+    }, {}),
     excludedExperimentCount: excluded.size,
     excludedAcquisitionCount: excludedAcquisitions.size,
     candidatesEvaluatedForAccess,
@@ -392,7 +444,9 @@ module.exports = {
   blockerProjectionFingerprint,
   compileAutomaticBlockerRepairs,
   compileRepairDependencyPlan,
+  counterfactualCombatReward,
   counterfactualPickup,
+  counterfactualResource,
   makeRepairCompilationCache,
   repairGoal,
   repairProjectionFingerprint,

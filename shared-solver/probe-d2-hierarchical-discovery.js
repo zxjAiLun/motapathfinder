@@ -66,6 +66,7 @@ function main() {
     repairCandidateLimit: 16,
     excludeTargetNodeId: "MT5:item:11,5:I894",
     reuseRepairCompilationCache: process.env.MOTAPATHFIND_D2_REPAIR_CACHE !== "0",
+    includeCombatRewardRepairs: process.env.MOTAPATHFIND_D2_COMBAT_REPAIRS !== "0",
     onRound: stream ? (round) => {
       const now = Date.now();
       process.stdout.write(`${JSON.stringify({
@@ -76,6 +77,15 @@ function main() {
         roundWallMs: now - previousEventAt,
         completed: round.completedPrerequisiteId || null,
         repair: round.repair ? round.repair.sourceNodeId : null,
+        repairKind: round.repair ? round.repair.resourceKind : null,
+        repairCandidateKinds: round.repairCandidateKinds || null,
+        topRepairReview: round.reviewCandidates && round.reviewCandidates[0]
+          ? {
+            sourceNodeId: round.reviewCandidates[0].sourceNodeId,
+            resourceKind: round.reviewCandidates[0].resourceKind,
+            access: round.reviewCandidates[0].access,
+          }
+          : null,
         rejectionReason: round.rejectionReason || null,
         predictedMargin: round.repairVerification
           ? round.repairVerification.predicted.survivalMargin
@@ -85,6 +95,9 @@ function main() {
           : null,
         closureClass: round.repairVerification
           ? round.repairVerification.closureClass
+          : null,
+        actualDelta: round.repairVerification && round.repairVerification.actual
+          ? round.repairVerification.actual.acquisitionDelta
           : null,
         expansions: round.outcome ? round.outcome.expansions : 0,
         phaseTiming: round.outcome ? round.outcome.timing : null,
@@ -102,6 +115,7 @@ function main() {
         round: round.round,
         kind: round.kind,
         repair: round.repair.sourceNodeId,
+        resourceKind: round.repair.resourceKind,
         acquisitionExperimentKey: round.repair.acquisitionExperimentKey,
         experimentKey: round.repair.experimentKey,
         rejectionReason: round.rejectionReason || null,

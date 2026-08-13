@@ -156,6 +156,8 @@ function heroDelta(before, after) {
     def: number(right.def, 0) - number(left.def, 0),
     mdef: number(right.mdef, 0) - number(left.mdef, 0),
     exp: number(right.exp, 0) - number(left.exp, 0),
+    lv: number(right.lv, 0) - number(left.lv, 0),
+    money: number(right.money, 0) - number(left.money, 0),
   };
 }
 
@@ -211,6 +213,12 @@ function verifyActualRepair(project, inputCheckpoint, repair, execution) {
       number(right.survivalMargin, -Infinity) - number(left.survivalMargin, -Infinity) ||
       left.checkpointId.localeCompare(right.checkpointId));
   const selected = candidates[0] || null;
+  const acquisitionDelta = selected ? selected.acquisitionDelta : null;
+  const progressImprovement = Boolean(
+    selected &&
+    repair.resourceKind === "combat-reward" &&
+    (number(acquisitionDelta.lv, 0) > 0 || number(acquisitionDelta.exp, 0) > 0),
+  );
   return {
     predicted: {
       status: repair.repairs.afterStatus,
@@ -224,6 +232,7 @@ function verifyActualRepair(project, inputCheckpoint, repair, execution) {
       statusRank(selected.status) > statusRank(repair.repairs.beforeStatus) ||
       number(selected.actualMarginGain, 0) > 0
     )),
+    progressImprovement,
     closureClass: !selected
       ? "repair-target-not-realized"
       : selected.status === "viable-at-current-state"
@@ -231,7 +240,9 @@ function verifyActualRepair(project, inputCheckpoint, repair, execution) {
         : statusRank(selected.status) > statusRank(repair.repairs.beforeStatus) ||
           number(selected.actualMarginGain, 0) > 0
           ? "improved-but-still-blocked"
-          : "no-net-improvement",
+          : progressImprovement
+            ? "progressed-toward-level-threshold"
+            : "no-net-improvement",
   };
 }
 
@@ -374,6 +385,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
         excludedRepairExperimentKeys: attemptedRepairExperiments,
         excludedRepairAcquisitionKeys: rejectedRepairAcquisitions,
         compilationCache: repairCompilationCache,
+        includeCombatRewardRepairs: config.includeCombatRewardRepairs !== false,
         candidateLimit: number(config.repairCandidateLimit, 16),
       },
     );
@@ -396,6 +408,18 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
           round,
           kind: "historical-backtrack",
           historyIndex: backtrack.historyIndex,
+          repairCandidateCount: repairs.candidateCount,
+          repairCandidateKinds: repairs.candidateKinds,
+          candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
+          repairCompilationCost: repairs.compilationCost,
+          reviewCandidates: repairs.candidates.slice(0, 8).map((candidate) => ({
+            checkpointId: candidate.checkpointId,
+            sourceNodeId: candidate.sourceNodeId,
+            resourceKind: candidate.resourceKind,
+            target: candidate.target,
+            repairs: candidate.repairs,
+            access: candidate.access || null,
+          })),
           feedbackSelection: backtrack.feedback.selection,
           feedbackTiming: backtrack.feedback.timing,
           completedPrerequisiteId: selectedPrerequisite(portfolio),
@@ -408,6 +432,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
         round,
         kind: "blocked",
         repairCandidateCount: repairs.candidateCount,
+        repairCandidateKinds: repairs.candidateKinds,
         candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
         repairCompilationCost: repairs.compilationCost,
         reviewCandidates: repairs.candidates.slice(0, 8).map((candidate) => ({
@@ -442,6 +467,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
         kind: "blocker-repair-rejected",
         rejectionReason,
         repairCandidateCount: repairs.candidateCount,
+        repairCandidateKinds: repairs.candidateKinds,
         candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
         repair: repairs.selected,
         repairClosure: repairExecution.repairClosure || null,
@@ -459,6 +485,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       round,
       kind: "blocker-repair",
       repairCandidateCount: repairs.candidateCount,
+      repairCandidateKinds: repairs.candidateKinds,
       candidatesEvaluatedForAccess: repairs.candidatesEvaluatedForAccess,
       repairCompilationCost: repairs.compilationCost,
       repair: repairs.selected,
@@ -489,6 +516,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       initialMaxExpansions: number(config.initialMaxExpansions, 64),
       localMaxExpansions: plannerOptions.localMaxExpansions,
       candidateLimit: plannerOptions.candidateLimit,
+      includeCombatRewardRepairs: config.includeCombatRewardRepairs !== false,
       maxRuntimeMs: 0,
     },
     rounds,

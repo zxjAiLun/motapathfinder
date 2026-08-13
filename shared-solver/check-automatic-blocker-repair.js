@@ -9,6 +9,7 @@ const {
   blockerProjectionFingerprint,
   compileAutomaticBlockerRepairs,
   compileRepairDependencyPlan,
+  counterfactualCombatReward,
   makeRepairCompilationCache,
   repairProjectionFingerprint,
 } = require("./lib/automatic-blocker-repair");
@@ -149,6 +150,30 @@ function main() {
     cachedRepeat.compilationCost.accessCacheHits,
     cachedRepeat.compilationCost.uniqueAccessProbeCount,
   );
+  const combatRewardState = counterfactualCombatReward(
+    project,
+    projectionSimulator,
+    initialState,
+    { floorId: "MT5", x: 8, y: 11, tileId: "skeletonKing", kind: "enemy" },
+  );
+  assert.ok(combatRewardState);
+  assert.ok(combatRewardState.hero.exp > initialState.hero.exp);
+  const combatRewardAudit = compileAutomaticBlockerRepairs(
+    project,
+    terminalGoal,
+    portfolio.checkpoints,
+    {
+      towerId: "onlyup",
+      excludeTargetNodeId: "MT5:item:11,5:I894",
+      candidateLimit: 5000,
+      includeCombatRewardRepairs: true,
+    },
+  );
+  assert.ok(combatRewardAudit.candidateKinds["combat-reward"] > 0);
+  const combatProgressCandidate = combatRewardAudit.candidates.find((candidate) =>
+    candidate.resourceKind === "combat-reward" && candidate.repairs.levelProgress);
+  assert.ok(combatProgressCandidate);
+  assert.ok(combatProgressCandidate.repairs.expGain > 0);
   const immediateMarginControl = compileAutomaticBlockerRepairs(
     project,
     terminalGoal,
