@@ -1688,6 +1688,38 @@
       },
       "notes": "PR-5.17a2 repeatedly rebuild terminal dependencies, execute local canonical DP, retain strict-replay checkpoints, and expose the first unsupported repair class"
     },
+    "shared-solver/lib/strategic-option-map.js": {
+      "id": "strategic-option-map",
+      "path": "shared-solver/lib/strategic-option-map.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "shared-two-dimensional-item-and-enemy-option-state",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.18a materializes item/enemy existence from immutable floor grids plus sparse state mutations and shares snapshots by mutation identity"
+    },
+    "shared-solver/lib/strategic-d2-search.js": {
+      "id": "strategic-d2-search",
+      "path": "shared-solver/lib/strategic-d2-search.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "terminal-only-multi-agenda-strategic-frontier",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.18a D2 vertical slice uses raw primitive POI actions, exact-state merge only, shared option maps, and six fair agenda queues; bounded not-found remains open"
+    },
     "shared-solver/lib/segment-dp.js": {
       "id": "segment-dp",
       "path": "shared-solver/lib/segment-dp.js",
@@ -2148,6 +2180,13 @@
     }
   },
   "tests": {
+    "shared-solver/check-strategic-d2-search.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.18a local first-expansion strict-replay closure control plus real D2 64-expansion strategic frontier, shared MT4/MT5 option grid, I621 automatic-consumption evidence, six-queue fairness, and explicit floorFly deferral"
+    },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",
       "allowsNotFound": true,
