@@ -9,6 +9,7 @@ const {
   blockerProjectionFingerprint,
   compileAutomaticBlockerRepairs,
   compileRepairDependencyPlan,
+  makeRepairCompilationCache,
   repairProjectionFingerprint,
 } = require("./lib/automatic-blocker-repair");
 const { buildDependencyContext, runDependencyFeedback } = require("./lib/dependency-feedback-controller");
@@ -99,15 +100,21 @@ function main() {
     repairProjectionFingerprint(projectionState),
     repairProjectionFingerprint(visitedFloorChange),
   );
+  const compilationCache = makeRepairCompilationCache();
   const report = compileAutomaticBlockerRepairs(project, terminalGoal, portfolio.checkpoints, {
     towerId: "onlyup",
     excludeTargetNodeId: "MT5:item:11,5:I894",
     candidateLimit: 512,
+    compilationCache,
   });
   assert.strictEqual(report.inputContract.knownRouteUsed, false);
   assert.ok(report.candidateCount > 100);
   assert.ok(report.candidatesEvaluatedForAccess > 1);
-  assert.strictEqual(report.compilationCost.graphBuildCount, 8);
+  assert.strictEqual(
+    report.compilationCost.graphBuildCount + report.compilationCost.checkpointAnalysisCacheHits,
+    8,
+  );
+  assert.ok(report.compilationCost.checkpointAnalysisCacheHits > 0);
   assert.strictEqual(report.compilationCost.graphReuseCount, 9);
   assert.strictEqual(report.compilationCost.checkpointCount, 8);
   assert.strictEqual(report.compilationCost.uniqueAccessProbeCount, 9);
@@ -128,6 +135,20 @@ function main() {
   assert.strictEqual(report.selected.access.startable, true);
   assert.strictEqual(report.selected.access.alternatives[0].leadingPrerequisiteId, "MT5:enemy:11,11:devilWarrior");
   assert.strictEqual(report.selected.access.alternatives[0].leadingStatus, "viable-at-current-state");
+  const cachedRepeat = compileAutomaticBlockerRepairs(project, terminalGoal, portfolio.checkpoints, {
+    towerId: "onlyup",
+    excludeTargetNodeId: "MT5:item:11,5:I894",
+    candidateLimit: 512,
+    compilationCache,
+  });
+  assert.strictEqual(cachedRepeat.selected.experimentKey, report.selected.experimentKey);
+  assert.strictEqual(cachedRepeat.candidateCount, report.candidateCount);
+  assert.strictEqual(cachedRepeat.compilationCost.graphBuildCount, 0);
+  assert.strictEqual(cachedRepeat.compilationCost.checkpointAnalysisCacheHits, 8);
+  assert.strictEqual(
+    cachedRepeat.compilationCost.accessCacheHits,
+    cachedRepeat.compilationCost.uniqueAccessProbeCount,
+  );
   const immediateMarginControl = compileAutomaticBlockerRepairs(
     project,
     terminalGoal,

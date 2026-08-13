@@ -4,6 +4,7 @@ const {
   battleStatus,
   compileAutomaticBlockerRepairs,
   compileRepairDependencyPlan,
+  makeRepairCompilationCache,
   statusRank,
 } = require("./automatic-blocker-repair");
 const { makeBlindSimulator } = require("./blind-discovery-baseline");
@@ -323,6 +324,9 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
   const attemptedRepairExperiments = new Set();
   const rejectedRepairAcquisitions = new Set();
   const rejectedRepairExperiments = new Set();
+  const repairCompilationCache = config.reuseRepairCompilationCache === false
+    ? null
+    : makeRepairCompilationCache();
   if (portfolio.selected && portfolio.selected.prerequisite) {
     attemptedExperiments.add([
       rootPortfolio.checkpoints[0].exactStateFingerprint,
@@ -369,6 +373,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
         excludeTargetNodeId: config.excludeTargetNodeId || null,
         excludedRepairExperimentKeys: attemptedRepairExperiments,
         excludedRepairAcquisitionKeys: rejectedRepairAcquisitions,
+        compilationCache: repairCompilationCache,
         candidateLimit: number(config.repairCandidateLimit, 16),
       },
     );
@@ -441,6 +446,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
         repair: repairs.selected,
         repairClosure: repairExecution.repairClosure || null,
         repairVerification: repairExecution.repairVerification || null,
+        repairCompilationCost: repairs.compilationCost,
         outcome: compactOutcome(repairExecution),
         retainedPortfolioFingerprint: checkpointFingerprint(repairInputPortfolio),
       }, config);
@@ -494,6 +500,10 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
     attemptedRepairExperimentCount: attemptedRepairExperiments.size,
     rejectedRepairAcquisitionCount: rejectedRepairAcquisitions.size,
     rejectedRepairExperimentCount: rejectedRepairExperiments.size,
+    repairCompilationCache: repairCompilationCache ? {
+      checkpointAnalysisCount: repairCompilationCache.checkpointAnalyses.size,
+      accessCount: repairCompilationCache.accessByStateAndResource.size,
+    } : null,
     verdict: "HIERARCHICAL_DISCOVERY_RUN_RECORDED",
   };
 }

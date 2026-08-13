@@ -73,9 +73,11 @@ function main() {
     result.rounds[6].repairVerification.actual.status,
     "lethal-at-current-hp",
   );
-  assert.strictEqual(result.rounds[6].repairCompilationCost.graphBuildCount, 5);
+  assert.strictEqual(result.rounds[6].repairCompilationCost.graphBuildCount, 0);
+  assert.strictEqual(result.rounds[6].repairCompilationCost.checkpointAnalysisCacheHits, 5);
   assert.strictEqual(
-    result.rounds[6].repairCompilationCost.graphReuseCount,
+    result.rounds[6].repairCompilationCost.graphReuseCount +
+      result.rounds[6].repairCompilationCost.accessCacheHits,
     result.rounds[6].repairCompilationCost.uniqueAccessProbeCount,
   );
   assert.strictEqual(
@@ -91,6 +93,8 @@ function main() {
   });
   assert.strictEqual(result.stoppedReason, "max-rounds");
   assert.strictEqual(result.rejectedRepairExperimentCount, 1);
+  assert.ok(result.repairCompilationCache.checkpointAnalysisCount > 0);
+  assert.ok(result.repairCompilationCache.accessCount > 0);
   assert.strictEqual(result.finalPortfolio.checkpoints.length, 2);
 
   const simulator = makeBlindSimulator(project);

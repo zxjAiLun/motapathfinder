@@ -65,6 +65,7 @@ function main() {
     candidateLimit: 8,
     repairCandidateLimit: 16,
     excludeTargetNodeId: "MT5:item:11,5:I894",
+    reuseRepairCompilationCache: process.env.MOTAPATHFIND_D2_REPAIR_CACHE !== "0",
     onRound: stream ? (round) => {
       const now = Date.now();
       process.stdout.write(`${JSON.stringify({
@@ -118,6 +119,25 @@ function main() {
       counts[round.experimentKey] = Number(counts[round.experimentKey] || 0) + 1;
       return counts;
     }, {});
+    const repairCompilationTotals = result.rounds.reduce((totals, round) => {
+      const cost = round.repairCompilationCost || {};
+      for (const field of [
+        "graphBuildCount",
+        "graphReuseCount",
+        "checkpointAnalysisCacheHits",
+        "accessCacheHits",
+        "uniqueAccessProbeCount",
+        "wallMs",
+      ]) totals[field] += Number(cost[field] || 0);
+      return totals;
+    }, {
+      graphBuildCount: 0,
+      graphReuseCount: 0,
+      checkpointAnalysisCacheHits: 0,
+      accessCacheHits: 0,
+      uniqueAccessProbeCount: 0,
+      wallMs: 0,
+    });
     process.stdout.write(`${JSON.stringify({
       rounds: result.rounds.length,
       repairRounds,
@@ -131,6 +151,8 @@ function main() {
       attemptedRepairExperimentCount: result.attemptedRepairExperimentCount,
       rejectedRepairAcquisitionCount: result.rejectedRepairAcquisitionCount,
       rejectedRepairExperimentCount: result.rejectedRepairExperimentCount,
+      repairCompilationTotals,
+      repairCompilationCache: result.repairCompilationCache,
     }, null, 2)}\n`);
     return;
   }

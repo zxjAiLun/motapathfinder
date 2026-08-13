@@ -39,6 +39,13 @@ function accessProjectionFingerprint(access) {
   return hash(JSON.stringify(access || null));
 }
 
+function makeRepairCompilationCache() {
+  return {
+    checkpointAnalyses: new Map(),
+    accessByStateAndResource: new Map(),
+  };
+}
+
 function blockerProjectionFingerprint(leading) {
   const evidence = (leading || {}).evidence || {};
   const target = (leading || {}).target || {};
@@ -228,36 +235,50 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
   const startedAt = Date.now();
   const excluded = config.excludedRepairExperimentKeys || new Set();
   const excludedAcquisitions = config.excludedRepairAcquisitionKeys || new Set();
+  const compilationCache = config.compilationCache || null;
   const simulator = makeBlindSimulator(project);
   const candidates = [];
   const checkpointGraphs = new Map();
   let graphBuildCount = 0;
   let graphReuseCount = 0;
+  let checkpointAnalysisCacheHits = 0;
+  let accessCacheHits = 0;
   for (const checkpoint of checkpoints) {
     const projectionFingerprint = repairProjectionFingerprint(checkpoint.state);
-    const graph = buildAutomaticMacroGraph(project, checkpoint.state, terminalGoal, {
-      towerId: config.towerId || "automatic",
-      envelopeMode: "state-visible-revisitable",
-    });
-    graphBuildCount += 1;
+    const analysisKey = checkpoint.exactStateFingerprint || hash(buildStateKey(checkpoint.state));
+    let analysis = compilationCache
+      ? compilationCache.checkpointAnalyses.get(analysisKey)
+      : null;
+    if (analysis) {
+      checkpointAnalysisCacheHits += 1;
+    } else {
+      const graph = buildAutomaticMacroGraph(project, checkpoint.state, terminalGoal, {
+        towerId: config.towerId || "automatic",
+        envelopeMode: "state-visible-revisitable",
+      });
+      graphBuildCount += 1;
+      const feasibility = compileAutomaticFeasibilitySubgoals(
+        project,
+        checkpoint.state,
+        terminalGoal,
+        graph,
+      );
+      const plan = compileAutomaticDependencyPlan(
+        project,
+        checkpoint.state,
+        terminalGoal,
+        graph,
+        feasibility,
+      );
+      const itemNodes = (graph.nodes || []).filter((node) =>
+        node.kind === "item" &&
+        node.id !== config.excludeTargetNodeId &&
+        getTileDefinitionAt(project, checkpoint.state, node.floorId, node.x, node.y));
+      analysis = { graph, plan, itemNodes };
+      if (compilationCache) compilationCache.checkpointAnalyses.set(analysisKey, analysis);
+    }
+    const { graph, plan, itemNodes } = analysis;
     checkpointGraphs.set(checkpoint.id, graph);
-    const feasibility = compileAutomaticFeasibilitySubgoals(
-      project,
-      checkpoint.state,
-      terminalGoal,
-      graph,
-    );
-    const plan = compileAutomaticDependencyPlan(
-      project,
-      checkpoint.state,
-      terminalGoal,
-      graph,
-      feasibility,
-    );
-    const itemNodes = (graph.nodes || []).filter((node) =>
-      node.kind === "item" &&
-      node.id !== config.excludeTargetNodeId &&
-      getTileDefinitionAt(project, checkpoint.state, node.floorId, node.x, node.y));
     for (const alternative of plan.alternatives || []) {
       const leading = (alternative.prerequisites || [])[0];
       if (!leading || leading.target.role !== "combat-gate-candidate") continue;
@@ -286,18 +307,30 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
     let access = accessByKey.get(key);
     if (!access) {
       const checkpoint = checkpoints.find((entry) => entry.id === candidate.checkpointId);
-      const dependency = compileRepairDependencyPlan(
-        project,
-        terminalGoal,
-        checkpoint,
-        candidate,
-        config.reuseCheckpointGraph === false
-          ? config
-          : { ...config, prebuiltGraph: checkpointGraphs.get(candidate.checkpointId) },
-      );
-      access = dependency.access;
-      if (dependency.graphBuilt) graphBuildCount += 1;
-      else graphReuseCount += 1;
+      const analysisKey = checkpoint.exactStateFingerprint || hash(buildStateKey(checkpoint.state));
+      const sharedAccessKey = `${analysisKey}|${candidate.sourceNodeId}`;
+      access = compilationCache
+        ? compilationCache.accessByStateAndResource.get(sharedAccessKey)
+        : null;
+      if (access) {
+        accessCacheHits += 1;
+      } else {
+        const dependency = compileRepairDependencyPlan(
+          project,
+          terminalGoal,
+          checkpoint,
+          candidate,
+          config.reuseCheckpointGraph === false
+            ? config
+            : { ...config, prebuiltGraph: checkpointGraphs.get(candidate.checkpointId) },
+        );
+        access = dependency.access;
+        if (dependency.graphBuilt) graphBuildCount += 1;
+        else graphReuseCount += 1;
+        if (compilationCache) {
+          compilationCache.accessByStateAndResource.set(sharedAccessKey, access);
+        }
+      }
       accessByKey.set(key, access);
       candidatesEvaluatedForAccess += 1;
     }
@@ -336,6 +369,8 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
       graphReuseCount,
       checkpointCount: checkpoints.length,
       uniqueAccessProbeCount: candidatesEvaluatedForAccess,
+      checkpointAnalysisCacheHits,
+      accessCacheHits,
       wallMs: Date.now() - startedAt,
     },
     candidateCount: candidates.length,
@@ -358,6 +393,7 @@ module.exports = {
   compileAutomaticBlockerRepairs,
   compileRepairDependencyPlan,
   counterfactualPickup,
+  makeRepairCompilationCache,
   repairGoal,
   repairProjectionFingerprint,
   statusRank,
