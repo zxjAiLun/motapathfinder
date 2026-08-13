@@ -2148,6 +2148,20 @@
     }
   },
   "tests": {
+    "shared-solver/check-d2-deferred-heal-attribution.js": {
+      "grade": "diagnostic",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.17a13 post-hoc early-versus-delayed I621 causal A/B plus route-free hierarchical consume-now vocabulary audit; tracked route is never a planner input"
+    },
+    "shared-solver/check-repair-actual-closure.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.17a5 synthetic actual repair closure class commit and rollback contract"
+    },
     "shared-solver/check-hierarchical-discovery-engine.js": {
       "grade": "integration-local",
       "allowsNotFound": true,
