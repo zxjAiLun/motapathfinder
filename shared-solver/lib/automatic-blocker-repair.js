@@ -1,17 +1,54 @@
 "use strict";
 
+const crypto = require("node:crypto");
+
 const { buildAutomaticMacroGraph } = require("./automatic-macro-graph");
 const { compileAutomaticDependencyPlan } = require("./automatic-dependency-planner");
 const { compileAutomaticFeasibilitySubgoals } = require("./automatic-feasibility-subgoals");
 const { makeBlindSimulator } = require("./blind-discovery-baseline");
 const { EquipmentResolver, getEquipType } = require("./equipment-resolver");
 const { cloneState, getTileDefinitionAt } = require("./state");
+const { buildStateKey } = require("./state-key");
 
 const SCHEMA = "motapathfinder.automatic-blocker-repair.v1";
 
 function number(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function hash(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 16);
+}
+
+function repairProjection(state) {
+  const projection = JSON.parse(buildStateKey(state));
+  delete projection.hero.x;
+  delete projection.hero.y;
+  delete projection.hero.direction;
+  delete projection.flags.__leaveLoc__;
+  return projection;
+}
+
+function repairProjectionFingerprint(state) {
+  const projection = repairProjection(state);
+  return hash(JSON.stringify(projection));
+}
+
+function accessProjectionFingerprint(access) {
+  return hash(JSON.stringify(access || null));
+}
+
+function blockerProjectionFingerprint(leading) {
+  const evidence = (leading || {}).evidence || {};
+  const target = (leading || {}).target || {};
+  return hash(JSON.stringify({
+    tileId: target.tileId || null,
+    role: target.role || null,
+    status: evidence.status || null,
+    damage: evidence.damage == null ? null : number(evidence.damage, 0),
+    currentHp: evidence.currentHp == null ? null : number(evidence.currentHp, 0),
+  }));
 }
 
 function battleStatus(evaluation, hp) {
@@ -62,7 +99,7 @@ function repairGoal(node) {
     : { type: "tileRemoved", floorId: node.floorId, x: node.x, y: node.y };
 }
 
-function candidateFor(project, simulator, checkpoint, alternative, leading, node) {
+function candidateFor(project, simulator, checkpoint, alternative, leading, node, projectionFingerprint) {
   const counterfactual = counterfactualPickup(project, simulator, checkpoint.state, node);
   if (!counterfactual) return null;
   const before = leading.evidence || {};
@@ -101,7 +138,8 @@ function candidateFor(project, simulator, checkpoint, alternative, leading, node
   if (afterRank === beforeRank && damageReduction <= 0 && survivalMarginGain <= 0) return null;
   return {
     id: `repair-${checkpoint.id}-${alternative.id}-${node.id}`,
-    experimentKey: `${checkpoint.exactStateFingerprint}|${node.id}`,
+    repairProjectionFingerprint: projectionFingerprint,
+    blockerProjectionFingerprint: blockerProjectionFingerprint(leading),
     kind: "blocker-feasibility-repair",
     provenance: "automatic-current-map-item-counterfactual+simulator-battle-probe",
     checkpointId: checkpoint.id,
@@ -189,12 +227,14 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
   const config = options || {};
   const startedAt = Date.now();
   const excluded = config.excludedRepairExperimentKeys || new Set();
+  const excludedAcquisitions = config.excludedRepairAcquisitionKeys || new Set();
   const simulator = makeBlindSimulator(project);
   const candidates = [];
   const checkpointGraphs = new Map();
   let graphBuildCount = 0;
   let graphReuseCount = 0;
   for (const checkpoint of checkpoints) {
+    const projectionFingerprint = repairProjectionFingerprint(checkpoint.state);
     const graph = buildAutomaticMacroGraph(project, checkpoint.state, terminalGoal, {
       towerId: config.towerId || "automatic",
       envelopeMode: "state-visible-revisitable",
@@ -223,8 +263,16 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
       if (!leading || leading.target.role !== "combat-gate-candidate") continue;
       if ((leading.evidence || {}).status === "viable-at-current-state") continue;
       for (const node of itemNodes) {
-        const candidate = candidateFor(project, simulator, checkpoint, alternative, leading, node);
-        if (candidate && !excluded.has(candidate.experimentKey)) candidates.push(candidate);
+        const candidate = candidateFor(
+          project,
+          simulator,
+          checkpoint,
+          alternative,
+          leading,
+          node,
+          projectionFingerprint,
+        );
+        if (candidate) candidates.push(candidate);
       }
     }
   }
@@ -254,6 +302,20 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
       candidatesEvaluatedForAccess += 1;
     }
     candidate.access = access;
+    const accessFingerprint = accessProjectionFingerprint(access);
+    candidate.acquisitionExperimentKey = [
+      candidate.repairProjectionFingerprint,
+      candidate.sourceNodeId,
+      accessFingerprint,
+    ].join("|");
+    candidate.experimentKey = [
+      candidate.acquisitionExperimentKey,
+      candidate.blockerProjectionFingerprint,
+    ].join("|");
+    if (
+      excluded.has(candidate.experimentKey) ||
+      excludedAcquisitions.has(candidate.acquisitionExperimentKey)
+    ) continue;
     if (access.startable) {
       selected = candidate;
       break;
@@ -278,6 +340,7 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
     },
     candidateCount: candidates.length,
     excludedExperimentCount: excluded.size,
+    excludedAcquisitionCount: excludedAcquisitions.size,
     candidatesEvaluatedForAccess,
     candidates: visibleCandidates,
     selected,
@@ -289,10 +352,13 @@ function compileAutomaticBlockerRepairs(project, terminalGoal, checkpoints, opti
 
 module.exports = {
   SCHEMA,
+  accessProjectionFingerprint,
   battleStatus,
+  blockerProjectionFingerprint,
   compileAutomaticBlockerRepairs,
   compileRepairDependencyPlan,
   counterfactualPickup,
   repairGoal,
+  repairProjectionFingerprint,
   statusRank,
 };

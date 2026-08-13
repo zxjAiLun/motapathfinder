@@ -94,6 +94,46 @@ function main() {
       previousEventAt = now;
     } : null,
   });
+  if (process.env.MOTAPATHFIND_D2_REPAIR_AUDIT === "1") {
+    const repairRounds = result.rounds
+      .filter((round) => round.repair)
+      .map((round) => ({
+        round: round.round,
+        kind: round.kind,
+        repair: round.repair.sourceNodeId,
+        acquisitionExperimentKey: round.repair.acquisitionExperimentKey,
+        experimentKey: round.repair.experimentKey,
+        rejectionReason: round.rejectionReason || null,
+        predictedMargin: round.repairVerification
+          ? round.repairVerification.predicted.survivalMargin
+          : null,
+        actualMargin: round.repairVerification && round.repairVerification.actual
+          ? round.repairVerification.actual.survivalMargin
+          : null,
+        closureClass: round.repairVerification
+          ? round.repairVerification.closureClass
+          : null,
+      }));
+    const experimentCounts = repairRounds.reduce((counts, round) => {
+      counts[round.experimentKey] = Number(counts[round.experimentKey] || 0) + 1;
+      return counts;
+    }, {});
+    process.stdout.write(`${JSON.stringify({
+      rounds: result.rounds.length,
+      repairRounds,
+      repeatedSemanticExperiments: Object.entries(experimentCounts)
+        .filter((entry) => entry[1] > 1)
+        .map(([experimentKey, count]) => ({ experimentKey, count })),
+      blockerUnblockedCount: repairRounds
+        .filter((round) => round.closureClass === "blocker-unblocked").length,
+      totals: result.totals,
+      stoppedReason: result.stoppedReason,
+      attemptedRepairExperimentCount: result.attemptedRepairExperimentCount,
+      rejectedRepairAcquisitionCount: result.rejectedRepairAcquisitionCount,
+      rejectedRepairExperimentCount: result.rejectedRepairExperimentCount,
+    }, null, 2)}\n`);
+    return;
+  }
   if (process.env.MOTAPATHFIND_D2_SUMMARY === "1") {
     process.stdout.write(`${JSON.stringify({
       rounds: result.rounds.map((round) => ({
@@ -121,6 +161,8 @@ function main() {
       stoppedReason: result.stoppedReason,
       historyPortfolioCount: result.historyPortfolioCount,
       attemptedExperimentCount: result.attemptedExperimentCount,
+      attemptedRepairExperimentCount: result.attemptedRepairExperimentCount,
+      rejectedRepairAcquisitionCount: result.rejectedRepairAcquisitionCount,
       rejectedRepairExperimentCount: result.rejectedRepairExperimentCount,
       final: result.finalPortfolio.checkpoints.map((checkpoint) => ({
         id: checkpoint.id,
@@ -165,6 +207,8 @@ function main() {
       stoppedReason: result.stoppedReason,
       historyPortfolioCount: result.historyPortfolioCount,
       attemptedExperimentCount: result.attemptedExperimentCount,
+      attemptedRepairExperimentCount: result.attemptedRepairExperimentCount,
+      rejectedRepairAcquisitionCount: result.rejectedRepairAcquisitionCount,
       rejectedRepairExperimentCount: result.rejectedRepairExperimentCount,
       finalCheckpoints: result.finalPortfolio.checkpoints.map((checkpoint) => {
         const summary = summarizeFinalState(simulator, checkpoint);

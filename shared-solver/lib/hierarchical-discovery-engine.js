@@ -68,16 +68,17 @@ function recordRound(rounds, record, options) {
 }
 
 function repairRejectionReason(execution) {
+  const closureClass = execution && execution.repairVerification
+    ? execution.repairVerification.closureClass
+    : null;
+  if (closureClass === "repair-target-not-realized") return closureClass;
   if (!execution || !execution.outcome || !execution.outcome.goalFound) {
     return "local-execution-did-not-produce-checkpoint";
   }
   if ((execution.checkpoints || []).length === 0) {
     return "local-execution-did-not-produce-checkpoint";
   }
-  const closureClass = execution.repairVerification
-    ? execution.repairVerification.closureClass
-    : null;
-  return closureClass === "no-net-improvement" || closureClass === "repair-target-not-realized"
+  return closureClass === "no-net-improvement"
     ? closureClass
     : null;
 }
@@ -319,6 +320,8 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
   }, config);
   const history = [rootPortfolio, portfolio];
   const attemptedExperiments = new Set();
+  const attemptedRepairExperiments = new Set();
+  const rejectedRepairAcquisitions = new Set();
   const rejectedRepairExperiments = new Set();
   if (portfolio.selected && portfolio.selected.prerequisite) {
     attemptedExperiments.add([
@@ -327,7 +330,6 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       portfolio.selected.prerequisite.sourceNodeId,
     ].join("|"));
   }
-  const seen = new Set();
   const maxRounds = Math.max(1, number(config.maxRounds, 16));
   let stoppedReason = null;
   for (let round = 1; round <= maxRounds; round += 1) {
@@ -365,7 +367,8 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       {
         ...plannerOptions,
         excludeTargetNodeId: config.excludeTargetNodeId || null,
-        excludedRepairExperimentKeys: rejectedRepairExperiments,
+        excludedRepairExperimentKeys: attemptedRepairExperiments,
+        excludedRepairAcquisitionKeys: rejectedRepairAcquisitions,
         candidateLimit: number(config.repairCandidateLimit, 16),
       },
     );
@@ -413,17 +416,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       }, config);
       break;
     }
-    const cycleKey = [
-      repairs.selected.checkpointId,
-      repairs.selected.sourceNodeId,
-      checkpointFingerprint(portfolio),
-    ].join("|");
-    if (seen.has(cycleKey)) {
-      stoppedReason = "repair-state-cycle-detected";
-      recordRound(rounds, { round, kind: "blocked", stoppedReason, repair: repairs.selected }, config);
-      break;
-    }
-    seen.add(cycleKey);
+    attemptedRepairExperiments.add(repairs.selected.experimentKey);
     const repairInputPortfolio = portfolio;
     const repairExecution = executeRepair(
       project,
@@ -436,6 +429,9 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
     const rejectionReason = repairRejectionReason(repairExecution);
     if (rejectionReason) {
       rejectedRepairExperiments.add(repairs.selected.experimentKey);
+      if (rejectionReason === "repair-target-not-realized") {
+        rejectedRepairAcquisitions.add(repairs.selected.acquisitionExperimentKey);
+      }
       recordRound(rounds, {
         round,
         kind: "blocker-repair-rejected",
@@ -495,6 +491,8 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
     finalPortfolio: portfolio,
     historyPortfolioCount: history.length,
     attemptedExperimentCount: attemptedExperiments.size,
+    attemptedRepairExperimentCount: attemptedRepairExperiments.size,
+    rejectedRepairAcquisitionCount: rejectedRepairAcquisitions.size,
     rejectedRepairExperimentCount: rejectedRepairExperiments.size,
     verdict: "HIERARCHICAL_DISCOVERY_RUN_RECORDED",
   };

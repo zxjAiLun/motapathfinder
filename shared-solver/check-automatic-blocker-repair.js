@@ -6,11 +6,13 @@ const assert = require("node:assert");
 const path = require("node:path");
 
 const {
+  blockerProjectionFingerprint,
   compileAutomaticBlockerRepairs,
   compileRepairDependencyPlan,
+  repairProjectionFingerprint,
 } = require("./lib/automatic-blocker-repair");
 const { buildDependencyContext, runDependencyFeedback } = require("./lib/dependency-feedback-controller");
-const { readBlindGoal } = require("./lib/blind-discovery-baseline");
+const { makeBlindSimulator, readBlindGoal } = require("./lib/blind-discovery-baseline");
 const {
   executeLocalDependency,
   materializeDirectTargetPlan,
@@ -50,6 +52,53 @@ function main() {
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
   const initialState = detachCheckpoint(createMt5EntryState(project));
   const portfolio = buildBlockedPortfolio(project, terminalGoal, initialState);
+  const blockerBase = {
+    target: { floorId: "MT5", x: 9, y: 10, tileId: "evilHero", role: "combat-gate-candidate" },
+    evidence: { status: "lethal-at-current-hp", damage: 1000, currentHp: 500 },
+  };
+  assert.strictEqual(
+    blockerProjectionFingerprint(blockerBase),
+    blockerProjectionFingerprint({
+      target: { ...blockerBase.target, x: 2, y: 8 },
+      evidence: { ...blockerBase.evidence },
+    }),
+  );
+  assert.notStrictEqual(
+    blockerProjectionFingerprint(blockerBase),
+    blockerProjectionFingerprint({
+      target: { ...blockerBase.target, x: 2, y: 8 },
+      evidence: { ...blockerBase.evidence, damage: 999 },
+    }),
+  );
+  const projectionSimulator = makeBlindSimulator(project);
+  const projectionState = portfolio.checkpoints[0].state;
+  const reachable = Object.values(projectionSimulator.getWalkReachability(projectionState).visited)
+    .find((entry) => entry.x !== projectionState.hero.loc.x || entry.y !== projectionState.hero.loc.y);
+  assert.ok(reachable);
+  const relocated = JSON.parse(JSON.stringify(projectionState));
+  relocated.hero.loc.x = reachable.x;
+  relocated.hero.loc.y = reachable.y;
+  relocated.flags.__leaveLoc__ = {
+    ...(relocated.flags.__leaveLoc__ || {}),
+    [relocated.floorId]: { x: reachable.x, y: reachable.y, direction: "left" },
+  };
+  assert.notStrictEqual(portfolio.checkpoints[0].exactStateFingerprint, "");
+  assert.strictEqual(
+    repairProjectionFingerprint(projectionState),
+    repairProjectionFingerprint(relocated),
+  );
+  const relevantFlagChange = JSON.parse(JSON.stringify(relocated));
+  relevantFlagChange.flags.hatred = Number(relevantFlagChange.flags.hatred || 0) + 1;
+  assert.notStrictEqual(
+    repairProjectionFingerprint(projectionState),
+    repairProjectionFingerprint(relevantFlagChange),
+  );
+  const visitedFloorChange = JSON.parse(JSON.stringify(relocated));
+  visitedFloorChange.visitedFloors.__semantic_control__ = true;
+  assert.notStrictEqual(
+    repairProjectionFingerprint(projectionState),
+    repairProjectionFingerprint(visitedFloorChange),
+  );
   const report = compileAutomaticBlockerRepairs(project, terminalGoal, portfolio.checkpoints, {
     towerId: "onlyup",
     excludeTargetNodeId: "MT5:item:11,5:I894",
@@ -58,12 +107,11 @@ function main() {
   assert.strictEqual(report.inputContract.knownRouteUsed, false);
   assert.ok(report.candidateCount > 100);
   assert.ok(report.candidatesEvaluatedForAccess > 1);
-  assert.deepStrictEqual(report.compilationCost, {
-    graphBuildCount: 8,
-    graphReuseCount: 9,
-    checkpointCount: 8,
-    uniqueAccessProbeCount: 9,
-  });
+  assert.strictEqual(report.compilationCost.graphBuildCount, 8);
+  assert.strictEqual(report.compilationCost.graphReuseCount, 9);
+  assert.strictEqual(report.compilationCost.checkpointCount, 8);
+  assert.strictEqual(report.compilationCost.uniqueAccessProbeCount, 9);
+  assert.ok(report.compilationCost.wallMs >= 0);
   assert.strictEqual(report.selected.checkpointId, "checkpoint-1");
   assert.strictEqual(report.selected.checkpointRoles.includes("first-goal"), true);
   assert.strictEqual(report.selected.sourceNodeId, "MT5:item:12,11:I1014");
@@ -115,12 +163,10 @@ function main() {
   );
   assert.strictEqual(uncachedControl.selected.experimentKey, report.selected.experimentKey);
   assert.strictEqual(uncachedControl.candidateCount, report.candidateCount);
-  assert.deepStrictEqual(uncachedControl.compilationCost, {
-    graphBuildCount: 17,
-    graphReuseCount: 0,
-    checkpointCount: 8,
-    uniqueAccessProbeCount: 9,
-  });
+  assert.strictEqual(uncachedControl.compilationCost.graphBuildCount, 17);
+  assert.strictEqual(uncachedControl.compilationCost.graphReuseCount, 0);
+  assert.strictEqual(uncachedControl.compilationCost.checkpointCount, 8);
+  assert.strictEqual(uncachedControl.compilationCost.uniqueAccessProbeCount, 9);
   const circular = immediateMarginControl.candidates.find((candidate) =>
     candidate.sourceNodeId === "MT5:item:7,3:I1009" && candidate.checkpointId === "checkpoint-2");
   assert.ok(circular);
