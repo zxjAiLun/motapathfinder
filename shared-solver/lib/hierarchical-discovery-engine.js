@@ -46,6 +46,12 @@ function compactOutcome(execution) {
     strictReplay: Boolean(
       execution && execution.checkpointDiversity && execution.checkpointDiversity.allStrictReplay,
     ),
+    bestProgress: execution && execution.outcome && execution.outcome.bestProgress
+      ? execution.outcome.bestProgress
+      : null,
+    retainedBestProgress: Boolean(
+      execution && execution.outcome && execution.outcome.retainedBestProgress,
+    ),
   };
 }
 
@@ -116,22 +122,52 @@ function rankHistoricalPortfolios(history, priorityMode) {
     right.index - left.index);
 }
 
+function checkpointLevelPotential(simulator, checkpoint) {
+  const actions = simulator.enumerateActions(checkpoint.state);
+  const battleActions = actions.filter((action) => action.kind === "battle");
+  const levelActions = actions.filter((action) => action.kind === "fightToLevelUp");
+  return {
+    fightToLevelUpCount: levelActions.length,
+    visibleBattleCount: battleActions.length,
+    visibleBattleExp: battleActions.reduce((sum, action) =>
+      sum + number((action.estimate || {}).exp, 0), 0),
+  };
+}
+
 function executeLevelProgressSearch(
   project,
   projectRoot,
   portfolio,
   plannerOptions,
   attemptedStates,
+  options,
 ) {
-  const checkpoints = (portfolio.checkpoints || []).slice().sort((left, right) => {
-    const leftProgress = portfolioProgress({ checkpoints: [left] });
-    const rightProgress = portfolioProgress({ checkpoints: [right] });
+  const config = options || {};
+  const simulator = config.prioritizeVisibleExp === true
+    ? (config.simulator || makeBlindSimulator(project))
+    : null;
+  const checkpoints = (portfolio.checkpoints || []).map((checkpoint) => ({
+    checkpoint,
+    potential: simulator
+      ? checkpointLevelPotential(simulator, checkpoint)
+      : { fightToLevelUpCount: 0, visibleBattleCount: 0, visibleBattleExp: 0 },
+  })).sort((left, right) => {
+    if (simulator) {
+      const potentialOrder = right.potential.fightToLevelUpCount -
+          left.potential.fightToLevelUpCount ||
+        right.potential.visibleBattleExp - left.potential.visibleBattleExp ||
+        right.potential.visibleBattleCount - left.potential.visibleBattleCount;
+      if (potentialOrder) return potentialOrder;
+    }
+    const leftProgress = portfolioProgress({ checkpoints: [left.checkpoint] });
+    const rightProgress = portfolioProgress({ checkpoints: [right.checkpoint] });
     return rightProgress.level - leftProgress.level ||
       rightProgress.exp - leftProgress.exp ||
       rightProgress.routeLength - leftProgress.routeLength ||
-      left.id.localeCompare(right.id);
+      left.checkpoint.id.localeCompare(right.checkpoint.id);
   });
-  for (const checkpoint of checkpoints) {
+  for (const entry of checkpoints) {
+    const checkpoint = entry.checkpoint;
     const progress = portfolioProgress({ checkpoints: [checkpoint] });
     const targetLevel = progress.level + 1;
     const experimentKey = `${checkpoint.exactStateFingerprint}|level:${targetLevel}`;
@@ -169,9 +205,65 @@ function executeLevelProgressSearch(
       {
         maxExpansions: number(plannerOptions.localMaxExpansions, 32),
         candidateLimit: number(plannerOptions.candidateLimit, 8),
+        retainBestProgressOnFailure: true,
       },
     );
-    return { checkpoint, progress, targetLevel, experimentKey, execution };
+    return {
+      checkpoint,
+      progress,
+      potential: entry.potential,
+      targetLevel,
+      experimentKey,
+      execution,
+    };
+  }
+  return null;
+}
+
+function executeHistoricalLevelProgressSearch(
+  project,
+  projectRoot,
+  history,
+  plannerOptions,
+  attemptedStates,
+) {
+  const simulator = makeBlindSimulator(project);
+  const ranked = rankHistoricalPortfolios(history, "level-progress-first")
+    .map((historical) => {
+      const potentials = (historical.portfolio.checkpoints || [])
+        .map((checkpoint) => checkpointLevelPotential(simulator, checkpoint));
+      const potential = potentials.sort((left, right) =>
+        right.fightToLevelUpCount - left.fightToLevelUpCount ||
+        right.visibleBattleExp - left.visibleBattleExp ||
+        right.visibleBattleCount - left.visibleBattleCount)[0] || {
+        fightToLevelUpCount: 0,
+        visibleBattleCount: 0,
+        visibleBattleExp: 0,
+      };
+      return { ...historical, potential };
+    })
+    .sort((left, right) =>
+      right.potential.fightToLevelUpCount - left.potential.fightToLevelUpCount ||
+      right.potential.visibleBattleExp - left.potential.visibleBattleExp ||
+      right.potential.visibleBattleCount - left.potential.visibleBattleCount ||
+      right.progress.level - left.progress.level ||
+      right.progress.exp - left.progress.exp ||
+      right.progress.routeLength - left.progress.routeLength ||
+      right.index - left.index);
+  for (const historical of ranked) {
+    const levelProgress = executeLevelProgressSearch(
+      project,
+      projectRoot,
+      historical.portfolio,
+      plannerOptions,
+      attemptedStates,
+      { prioritizeVisibleExp: true, simulator },
+    );
+    if (levelProgress) return {
+      ...levelProgress,
+      historyIndex: historical.index,
+      historyProgress: historical.progress,
+    };
   }
   return null;
 }
@@ -440,6 +532,11 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
   const rejectedRepairAcquisitions = new Set();
   const rejectedRepairExperiments = new Set();
   const attemptedLevelProgressStates = new Set();
+  let historicalLevelProgressProbeCount = 0;
+  const maxHistoricalLevelProgressProbes = Math.max(
+    0,
+    number(config.maxHistoricalLevelProgressProbes, 4),
+  );
   const repairCompilationCache = config.reuseRepairCompilationCache === false
     ? null
     : makeRepairCompilationCache();
@@ -454,17 +551,22 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
   const maxRounds = Math.max(1, number(config.maxRounds, 16));
   let stoppedReason = null;
   for (let round = 1; round <= maxRounds; round += 1) {
-    if (!portfolio.outcome.goalFound || portfolio.checkpoints.length === 0) {
+    if (
+      (!portfolio.outcome.goalFound && portfolio.levelProgressPartial !== true) ||
+      portfolio.checkpoints.length === 0
+    ) {
       stoppedReason = "local-execution-did-not-produce-checkpoint";
       break;
     }
-    const feedback = runDependencyFeedback(
-      project,
-      projectRoot,
-      terminalGoal,
-      portfolio,
-      plannerOptions,
-    );
+    const feedback = portfolio.levelProgressPartial === true
+      ? { nextExecution: null, selection: null, timing: null }
+      : runDependencyFeedback(
+          project,
+          projectRoot,
+          terminalGoal,
+          portfolio,
+          plannerOptions,
+        );
     if (feedback.nextExecution) {
       if (feedback.selection && feedback.selection.experimentKey) {
         attemptedExperiments.add(feedback.selection.experimentKey);
@@ -501,30 +603,63 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
         portfolio.repairVerification.progressImprovement === true;
       if (progressDeadEnd) repairPriorityMode = "level-progress-first";
       if (repairPriorityMode === "level-progress-first") {
-        const levelProgress = executeLevelProgressSearch(
+        let levelProgress = executeLevelProgressSearch(
           project,
           projectRoot,
           portfolio,
           plannerOptions,
           attemptedLevelProgressStates,
         );
+        let historicalLevelProgress = false;
+        if (!levelProgress && historicalLevelProgressProbeCount < maxHistoricalLevelProgressProbes) {
+          levelProgress = executeHistoricalLevelProgressSearch(
+            project,
+            projectRoot,
+            history,
+            plannerOptions,
+            attemptedLevelProgressStates,
+          );
+          historicalLevelProgress = Boolean(levelProgress);
+          if (historicalLevelProgress) historicalLevelProgressProbeCount += 1;
+        }
         if (levelProgress) {
           const levelReached = levelProgress.execution.outcome.goalFound &&
             (levelProgress.execution.checkpoints || []).some((checkpoint) =>
               number((checkpoint.state.hero || {}).lv, 0) >= levelProgress.targetLevel);
+          const outputProgress = portfolioProgress(levelProgress.execution);
+          const progressAdvanced = outputProgress.level > levelProgress.progress.level ||
+            (outputProgress.level === levelProgress.progress.level &&
+              outputProgress.exp > levelProgress.progress.exp);
+          const progressCommitted = levelReached || progressAdvanced;
           recordRound(rounds, {
             round,
-            kind: levelReached ? "level-progress-search" : "level-progress-search-rejected",
+            kind: levelReached
+              ? historicalLevelProgress
+                ? "historical-level-progress-search"
+                : "level-progress-search"
+              : progressAdvanced
+                ? historicalLevelProgress
+                  ? "historical-level-progress-search-partial"
+                  : "level-progress-search-partial"
+              : historicalLevelProgress
+                ? "historical-level-progress-search-rejected"
+                : "level-progress-search-rejected",
+            historyIndex: historicalLevelProgress ? levelProgress.historyIndex : null,
+            historyProgress: historicalLevelProgress ? levelProgress.historyProgress : null,
             levelProgressExperimentKey: levelProgress.experimentKey,
             levelProgressInput: levelProgress.progress,
+            levelProgressPotential: levelProgress.potential,
+            levelProgressOutput: outputProgress,
+            progressAdvanced,
             targetLevel: levelProgress.targetLevel,
             completedPrerequisiteId: selectedPrerequisite(levelProgress.execution),
             outcome: compactOutcome(levelProgress.execution),
           }, config);
-          if (levelReached) {
+          if (progressCommitted) {
             portfolio = levelProgress.execution;
+            portfolio.levelProgressPartial = !levelReached;
             history.push(portfolio);
-            repairPriorityMode = "blocker-first";
+            if (levelReached) repairPriorityMode = "blocker-first";
           }
           continue;
         }
@@ -628,11 +763,20 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
     const actualDelta = portfolio.repairVerification && portfolio.repairVerification.actual
       ? portfolio.repairVerification.actual.acquisitionDelta
       : null;
-    if (
+    const repairReachedTerminal = Boolean(
       portfolio.repairVerification &&
       (portfolio.repairVerification.closureClass === "blocker-unblocked" ||
         number((actualDelta || {}).lv, 0) > 0)
-    ) repairPriorityMode = "blocker-first";
+    );
+    if (repairReachedTerminal) {
+      repairPriorityMode = "blocker-first";
+    } else if (
+      repairSelectionMode === "level-progress-first" &&
+      portfolio.repairVerification &&
+      portfolio.repairVerification.progressImprovement === true
+    ) {
+      portfolio.levelProgressPartial = true;
+    }
     history.push(portfolio);
     recordRound(rounds, {
       round,
@@ -671,6 +815,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
       localMaxExpansions: plannerOptions.localMaxExpansions,
       candidateLimit: plannerOptions.candidateLimit,
       includeCombatRewardRepairs: config.includeCombatRewardRepairs !== false,
+      maxHistoricalLevelProgressProbes,
       maxRuntimeMs: 0,
     },
     rounds,
@@ -683,6 +828,7 @@ function runHierarchicalDiscovery(project, projectRoot, initialState, terminalGo
     rejectedRepairAcquisitionCount: rejectedRepairAcquisitions.size,
     rejectedRepairExperimentCount: rejectedRepairExperiments.size,
     attemptedLevelProgressStateCount: attemptedLevelProgressStates.size,
+    historicalLevelProgressProbeCount,
     repairCompilationCache: repairCompilationCache ? {
       checkpointAnalysisCount: repairCompilationCache.checkpointAnalyses.size,
       accessCount: repairCompilationCache.accessByStateAndResource.size,
@@ -697,6 +843,7 @@ module.exports = {
   compactOutcome,
   executeRepair,
   executeLevelProgressSearch,
+  executeHistoricalLevelProgressSearch,
   portfolioProgress,
   rankHistoricalPortfolios,
   repairRejectionReason,

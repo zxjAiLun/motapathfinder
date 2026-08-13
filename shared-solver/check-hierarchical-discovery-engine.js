@@ -38,6 +38,27 @@ function main() {
   const project = loadProject(PROJECT_ROOT);
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
   const initialState = detachCheckpoint(createMt5EntryState(project));
+  const rootLevelProgressProbe = executeLevelProgressSearch(
+    project,
+    PROJECT_ROOT,
+    {
+      checkpoints: [{
+        id: "root-level-progress",
+        exactStateFingerprint: "root-level-progress",
+        state: initialState,
+      }],
+    },
+    { localMaxExpansions: 32, candidateLimit: 8 },
+    new Set(),
+  );
+  assert.ok(rootLevelProgressProbe);
+  assert.strictEqual(rootLevelProgressProbe.execution.outcome.goalFound, false);
+  assert.strictEqual(rootLevelProgressProbe.execution.outcome.retainedBestProgress, true);
+  assert.strictEqual(rootLevelProgressProbe.execution.checkpoints.length, 1);
+  assert.strictEqual(rootLevelProgressProbe.execution.checkpoints[0].replay.valid, true);
+  assert.ok(
+    rootLevelProgressProbe.execution.checkpoints[0].state.hero.exp > initialState.hero.exp,
+  );
   const result = runHierarchicalDiscovery(project, PROJECT_ROOT, initialState, terminalGoal, {
     towerId: "onlyup",
     maxRounds: 6,
@@ -151,6 +172,12 @@ function main() {
       input: levelProgressProbe.progress,
       targetLevel: levelProgressProbe.targetLevel,
       outcome: levelProgressProbe.execution.outcome,
+    },
+    rootLevelProgressProbe: {
+      input: rootLevelProgressProbe.progress,
+      output: rootLevelProgressProbe.execution.checkpoints[0].hero,
+      outcome: rootLevelProgressProbe.execution.outcome,
+      strictReplay: rootLevelProgressProbe.execution.checkpoints[0].replay.valid,
     },
     stoppedReason: result.stoppedReason,
     comparison: {

@@ -82,6 +82,9 @@ function main() {
         repairPriorityMode: round.repairPriorityMode || null,
         targetLevel: round.targetLevel || null,
         levelProgressInput: round.levelProgressInput || null,
+        levelProgressPotential: round.levelProgressPotential || null,
+        levelProgressOutput: round.levelProgressOutput || null,
+        progressAdvanced: round.progressAdvanced === true,
         topRepairReview: round.reviewCandidates && round.reviewCandidates[0]
           ? {
             sourceNodeId: round.reviewCandidates[0].sourceNodeId,
@@ -163,12 +166,17 @@ function main() {
       wallMs: 0,
     });
     const levelProgressRounds = result.rounds
-      .filter((round) => round.kind.startsWith("level-progress-search"))
+      .filter((round) => round.kind.includes("level-progress-search"))
       .map((round) => ({
         round: round.round,
         kind: round.kind,
         experimentKey: round.levelProgressExperimentKey,
         input: round.levelProgressInput,
+        potential: round.levelProgressPotential || null,
+        output: round.levelProgressOutput || null,
+        progressAdvanced: round.progressAdvanced === true,
+        historyIndex: round.historyIndex,
+        historyProgress: round.historyProgress || null,
         targetLevel: round.targetLevel,
         outcome: round.outcome,
       }));
@@ -187,6 +195,7 @@ function main() {
       rejectedRepairAcquisitionCount: result.rejectedRepairAcquisitionCount,
       rejectedRepairExperimentCount: result.rejectedRepairExperimentCount,
       attemptedLevelProgressStateCount: result.attemptedLevelProgressStateCount,
+      historicalLevelProgressProbeCount: result.historicalLevelProgressProbeCount,
       repairCompilationTotals,
       repairCompilationCache: result.repairCompilationCache,
       repairPriorityMode: result.repairPriorityMode,

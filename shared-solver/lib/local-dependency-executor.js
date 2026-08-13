@@ -77,6 +77,17 @@ function compactHero(state) {
   };
 }
 
+function compactProgressState(state) {
+  if (!state) return null;
+  const route = Array.isArray(state.route) ? state.route : [];
+  return {
+    floorId: state.floorId || null,
+    hero: compactHero(state),
+    routeLength: route.length,
+    lastDecisions: route.slice(-6).map((entry) => entry.summary),
+  };
+}
+
 function semanticSignature(record) {
   const state = record.state || {};
   return JSON.stringify({
@@ -213,7 +224,23 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
   });
   const searchedAt = Date.now();
   const dp = (result.diagnostics || {}).dp || {};
-  const checkpoints = (result.goalSkyline || []).map((candidate, index) =>
+  const goalCandidates = result.goalSkyline || [];
+  const bestProgressImproved = result.bestProgress && (
+    number((result.bestProgress.hero || {}).lv, 0) > number((initialState.hero || {}).lv, 0) ||
+    (number((result.bestProgress.hero || {}).lv, 0) === number((initialState.hero || {}).lv, 0) &&
+      number((result.bestProgress.hero || {}).exp, 0) > number((initialState.hero || {}).exp, 0))
+  );
+  const retainedCandidates = goalCandidates.length === 0 &&
+      config.retainBestProgressOnFailure === true &&
+      bestProgressImproved
+    ? [{
+        state: result.bestProgress,
+        route: Array.isArray(result.bestProgress.route) ? result.bestProgress.route : [],
+        tags: ["best-progress"],
+      }]
+    : goalCandidates;
+  const retainedBestProgress = goalCandidates.length === 0 && retainedCandidates.length > 0;
+  const checkpoints = retainedCandidates.map((candidate, index) =>
     checkpointRecord(
       project,
       projectRoot,
@@ -254,6 +281,7 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
       productionDominanceChanged: false,
       productionSelectionChanged: false,
       reuseCheckpointSimulator,
+      retainBestProgressOnFailure: config.retainBestProgressOnFailure === true,
       simulatorInstanceCount,
     },
     outcome: {
@@ -276,6 +304,8 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
       },
       rawGoalCandidateCount: number(dp.goalNodeCount, number(((result.goalSkyline || {}).goalArchiveCandidateCount), 0)),
       retainedCheckpointCount: checkpoints.length,
+      retainedBestProgress,
+      bestProgress: compactProgressState(result.bestProgress || result.bestSeen),
     },
     checkpointDiversity: {
       roles,
