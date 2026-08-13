@@ -80,6 +80,8 @@ function main() {
         repairKind: round.repair ? round.repair.resourceKind : null,
         repairCandidateKinds: round.repairCandidateKinds || null,
         repairPriorityMode: round.repairPriorityMode || null,
+        targetLevel: round.targetLevel || null,
+        levelProgressInput: round.levelProgressInput || null,
         topRepairReview: round.reviewCandidates && round.reviewCandidates[0]
           ? {
             sourceNodeId: round.reviewCandidates[0].sourceNodeId,
@@ -160,9 +162,20 @@ function main() {
       uniqueAccessProbeCount: 0,
       wallMs: 0,
     });
+    const levelProgressRounds = result.rounds
+      .filter((round) => round.kind.startsWith("level-progress-search"))
+      .map((round) => ({
+        round: round.round,
+        kind: round.kind,
+        experimentKey: round.levelProgressExperimentKey,
+        input: round.levelProgressInput,
+        targetLevel: round.targetLevel,
+        outcome: round.outcome,
+      }));
     process.stdout.write(`${JSON.stringify({
       rounds: result.rounds.length,
       repairRounds,
+      levelProgressRounds,
       repeatedSemanticExperiments: Object.entries(experimentCounts)
         .filter((entry) => entry[1] > 1)
         .map(([experimentKey, count]) => ({ experimentKey, count })),
@@ -173,6 +186,7 @@ function main() {
       attemptedRepairExperimentCount: result.attemptedRepairExperimentCount,
       rejectedRepairAcquisitionCount: result.rejectedRepairAcquisitionCount,
       rejectedRepairExperimentCount: result.rejectedRepairExperimentCount,
+      attemptedLevelProgressStateCount: result.attemptedLevelProgressStateCount,
       repairCompilationTotals,
       repairCompilationCache: result.repairCompilationCache,
       repairPriorityMode: result.repairPriorityMode,

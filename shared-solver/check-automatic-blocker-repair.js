@@ -193,6 +193,7 @@ function main() {
   );
   assert.strictEqual(levelProgressControl.selected.resourceKind, "combat-reward");
   assert.strictEqual(levelProgressControl.selected.repairs.levelProgress, true);
+  assert.ok(levelProgressControl.selected.repairs.expAfter > 0);
   const immediateMarginControl = compileAutomaticBlockerRepairs(
     project,
     terminalGoal,
@@ -275,6 +276,8 @@ function main() {
       sourceNodeId: levelProgressControl.selected.sourceNodeId,
       resourceKind: levelProgressControl.selected.resourceKind,
       expGain: levelProgressControl.selected.repairs.expGain,
+      expAfter: levelProgressControl.selected.repairs.expAfter,
+      levelAfter: levelProgressControl.selected.repairs.levelAfter,
       selectionPolicy: levelProgressControl.selectionPolicy,
     },
     graphCompilationComparison: {

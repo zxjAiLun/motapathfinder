@@ -6,7 +6,11 @@ const assert = require("node:assert");
 const path = require("node:path");
 
 const { makeBlindSimulator, readBlindGoal } = require("./lib/blind-discovery-baseline");
-const { runHierarchicalDiscovery } = require("./lib/hierarchical-discovery-engine");
+const {
+  executeLevelProgressSearch,
+  rankHistoricalPortfolios,
+  runHierarchicalDiscovery,
+} = require("./lib/hierarchical-discovery-engine");
 const { loadProject } = require("./lib/project-loader");
 const { summarizeFinalState } = require("./probe-d2-hierarchical-discovery");
 const { createMt5EntryState, detachCheckpoint } = require("./qualify-blind-discovery");
@@ -16,6 +20,21 @@ const PROJECT_ROOT = path.join(ROOT, "Only upV2.1", "Only upV2.1");
 const GOAL_FILE = path.join(__dirname, "blind-goals", "onlyup-mt5-blueking.json");
 
 function main() {
+  const syntheticHistory = [
+    { checkpoints: [{ state: { hero: { lv: 7, exp: 400 }, route: [1] } }] },
+    { checkpoints: [{ state: { hero: { lv: 8, exp: 10 }, route: [1, 2] } }] },
+    { checkpoints: [{ state: { hero: { lv: 7, exp: 500 }, route: [1, 2, 3] } }] },
+    { checkpoints: [{ state: { hero: { lv: 0, exp: 0 }, route: [] } }] },
+  ];
+  assert.deepStrictEqual(
+    rankHistoricalPortfolios(syntheticHistory, "blocker-first").map((entry) => entry.index),
+    [0, 1, 2],
+  );
+  assert.deepStrictEqual(
+    rankHistoricalPortfolios(syntheticHistory, "level-progress-first")
+      .map((entry) => entry.index),
+    [1, 2, 0],
+  );
   const project = loadProject(PROJECT_ROOT);
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
   const initialState = detachCheckpoint(createMt5EntryState(project));
@@ -96,6 +115,21 @@ function main() {
   assert.ok(result.repairCompilationCache.checkpointAnalysisCount > 0);
   assert.ok(result.repairCompilationCache.accessCount > 0);
   assert.strictEqual(result.finalPortfolio.checkpoints.length, 2);
+  const levelProgressProbe = executeLevelProgressSearch(
+    project,
+    PROJECT_ROOT,
+    result.finalPortfolio,
+    { localMaxExpansions: 32, candidateLimit: 8 },
+    new Set(),
+  );
+  assert.ok(levelProgressProbe);
+  assert.strictEqual(levelProgressProbe.targetLevel, 8);
+  assert.strictEqual(
+    levelProgressProbe.execution.selected.prerequisite.actionGoal.minHero.lv,
+    8,
+  );
+  assert.strictEqual(levelProgressProbe.execution.outcome.goalFound, false);
+  assert.strictEqual(levelProgressProbe.execution.outcome.searchComplete, true);
 
   const simulator = makeBlindSimulator(project);
   const finalStates = result.finalPortfolio.checkpoints.map((checkpoint) =>
@@ -113,6 +147,11 @@ function main() {
     acceptedRepairVerification: result.rounds[6].repairVerification,
     totals: result.totals,
     finalHeroes: finalStates.map((entry) => entry.hero),
+    levelProgressProbe: {
+      input: levelProgressProbe.progress,
+      targetLevel: levelProgressProbe.targetLevel,
+      outcome: levelProgressProbe.execution.outcome,
+    },
     stoppedReason: result.stoppedReason,
     comparison: {
       before: "unreachable counterfactual repair discarded the active portfolio",

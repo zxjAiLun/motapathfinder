@@ -212,6 +212,8 @@ function candidateFor(project, simulator, checkpoint, alternative, leading, node
       mdefGain: number(counterfactual.hero.mdef, 0) - number(checkpoint.state.hero.mdef, 0),
       expGain,
       levelGain,
+      expAfter: number(counterfactual.hero.exp, 0),
+      levelAfter: number(counterfactual.hero.lv, 0),
     },
   };
 }
@@ -220,11 +222,15 @@ function compareCandidate(left, right, preferFirstGoal, preferLevelProgress) {
   const progressOrder = preferLevelProgress
     ? Number(right.repairs.levelProgress) - Number(left.repairs.levelProgress)
     : 0;
+  const cumulativeProgressOrder = preferLevelProgress
+    ? right.repairs.levelAfter - left.repairs.levelAfter ||
+      right.repairs.expAfter - left.repairs.expAfter
+    : 0;
   const firstGoalOrder = preferFirstGoal
     ? Number(right.checkpointRoles.includes("first-goal")) -
       Number(left.checkpointRoles.includes("first-goal"))
     : 0;
-  return progressOrder || firstGoalOrder ||
+  return progressOrder || cumulativeProgressOrder || firstGoalOrder ||
     Number(right.repairs.blockerImprovement) - Number(left.repairs.blockerImprovement) ||
     statusRank(right.repairs.afterStatus) - statusRank(left.repairs.afterStatus) ||
     number(right.repairs.survivalMargin, -Infinity) - number(left.repairs.survivalMargin, -Infinity) ||
