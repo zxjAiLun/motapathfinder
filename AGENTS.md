@@ -8,6 +8,33 @@ Tower snapshots live in `Only upV2.1/Only upV2.1/` and `whiteisland（9）/`. Th
 
 Shared region and trial specs live in `towers/`, public and template agents in `agents/`, benchmark harnesses and suites in `benchmarks/`, cross-repo tools in `tools/`, and design/architecture notes in `docs/`.
 
+## Documentation System
+
+Follow `docs/project-documentation-system.md` for every material solver or product round. Project-specific settings are:
+
+```text
+HANDOFF_PATH = 20260804handoff.md
+HANDOFF_PUBLICATION = tracked
+MILESTONE_PATTERN = docs/YYMMDD/<milestone-id-with-hyphens>.md
+DATE_TIMEZONE = Asia/Shanghai
+GENERATED_ARTIFACT_POLICY = ignored generated directories unless explicitly promoted as a tracked fixture
+STATUS_VOCABULARY = project default from docs/project-documentation-system.md
+```
+
+Before planning or changing a material round:
+
+1. Read this file, `20260804handoff.md`, and the active dated milestone document.
+2. Read the architecture/contract files linked by that milestone.
+3. Verify branch, `HEAD`, remote relation, worktree carry, and relevant artifacts rather than trusting old prose.
+
+Use the date on which the coherent round begins, not one document per day. For example, PR-5.18c started on 2026-08-14 lives at `docs/260814/5-18c.md` even if later iterations happen on another date. Create or update the milestone document before or alongside material implementation. Keep initial design and gates intact; append iteration findings and corrections instead of rewriting history.
+
+The handoff is the current project truth and milestone index. `20260804checkpoint.md` and `shared-solver/RESEARCH_PROGRESS.md` are cumulative history, not competing current-status documents. Update the handoff whenever a milestone status, accepted baseline, formal artifact, known limitation, or next authorized step changes.
+
+Use the controlled status vocabulary literally: design, authorization, implementation, verification, review, and acceptance are separate states. A bounded not-found result is evidence, not infrastructure failure; faster not-found is not route closure. Do not record future commit hashes. Keep generated probes and benchmark outputs in ignored generated paths unless a milestone explicitly promotes a small stable fixture.
+
+At round completion, reconcile the milestone against actual code and commands, update the handoff snapshot/next step, check links and status consistency, run `git diff --check`, and stage only files within the round's publication boundary. Preserve valid negative results and append corrections instead of silently rewriting the initial design or gate.
+
 ## Solver Architecture
 
 Treat region/segment canonical DP as the correctness path. The current main line is primitive canonical DP plus segment DP, milestone/region specs, skyline candidate preservation, route replay, and failure diagnostics. `linear-main`, beam, macro search, top-k, resource pocket/cluster/chain, and brute force entrypoints are useful exploration or regression tools, but they are not proof that a card-HP, unique, or near-unique route is impossible.

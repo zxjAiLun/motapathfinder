@@ -1,5 +1,20 @@
 # 文档入口
 
+## 项目状态与轮次文档
+
+- [`../20260804handoff.md`](../20260804handoff.md)：tracked 的当前项目真相、里程碑索引和下一授权步骤。
+- [`project-documentation-system.md`](project-documentation-system.md)：两层文档制度、状态词、证据层级、日期命名和 artifact policy。
+- [`260814/5-18c.md`](260814/5-18c.md)：当前活动轮次 PR-5.18c；状态、设计、验收门、迭代和最终证据持续写在同一文件。
+
+轮次文档使用上海日期和稳定 milestone ID：
+
+```text
+docs/YYMMDD/<milestone-id-with-hyphens>.md
+docs/260814/5-18c.md
+```
+
+同一轮跨日时继续更新原文件，不按天复制。`20260804checkpoint.md` 与 `shared-solver/RESEARCH_PROGRESS.md` 保留历史累计证据，但不作为第二份当前状态。
+
 ## 主文档
 
 - `docs/project-structure.md`：仓库目录职责、JS 分类、塔内旧 solver 冻结与归档策略。
