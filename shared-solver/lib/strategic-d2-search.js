@@ -24,6 +24,10 @@ const {
   runLocalConnector,
   verifyConnectorChain,
 } = require("./strategic-connector");
+const {
+  analyzeTerminalBlocker,
+  runBlockerDerivedConnector,
+} = require("./strategic-blocker");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
   createChildNode,
@@ -399,6 +403,10 @@ function runStrategicD2Search(options) {
   const connectorMaxCalls = Math.max(0, number(config.connectorMaxCalls, 16));
   const lazyDrainEvery = Math.max(1, number(config.lazyDrainEvery, 8));
   const floorFlyMode = config.floorFlyMode === "lazy" ? "lazy" : "off";
+  const connectorMode = config.connectorMode === "blocker-derived" ? "blocker-derived" : "terminal";
+  const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
+    ? null
+    : Math.max(1, number(config.maxTotalSearchExpansions, 0));
   const lazyWork = new LazyWorkQueue();
   const stats = {
     expansions: 0,
@@ -440,9 +448,33 @@ function runStrategicD2Search(options) {
     lazyFloorFlyExactPostsObserved: 0,
     lazyFloorFlyExactPostsDeferred: 0,
     lazyConnectorChoicesMaterialized: 0,
+    blockerConnectorCalls: 0,
+    blockerConnectorImproved: 0,
+    blockerConnectorNoImprovement: 0,
+    blockerConnectorExpansions: 0,
+    blockerConnectorFrontierExhausted: 0,
+    blockerConnectorFrontierTrimmed: 0,
+    blockerConnectorChainActions: 0,
   };
   const observedChoices = new Set();
   const bestByRole = new Map(agenda.definitions.map((definition) => [definition.id, root]));
+  const bestTerminalBlocker = { progressScore: null, attackMargin: null, stage: null, nodeId: null };
+  function observeTerminalBlocker(node, projection) {
+    if (!projection) return;
+    const score = projection.progressScore;
+    if (score != null && (bestTerminalBlocker.progressScore == null || score > bestTerminalBlocker.progressScore)) {
+      bestTerminalBlocker.progressScore = score;
+      bestTerminalBlocker.attackMargin = projection.attackMargin;
+      bestTerminalBlocker.stage = projection.stage;
+      bestTerminalBlocker.nodeId = node.nodeId;
+    }
+  }
+  const totalSearchWork = () =>
+    stats.expansions + stats.connectorExpansions + stats.blockerConnectorExpansions;
+  const remainingTotalSearchWork = () => maxTotalSearchExpansions == null
+    ? Infinity
+    : maxTotalSearchExpansions - totalSearchWork();
+  observeTerminalBlocker(root, terminalBattleProjection(simulator, root.state, terminalGoal));
   let nextNodeId = 1;
   let goalNode = goalPredicate(root.state) ? root : null;
   let firstGoalExpansion = goalNode ? 0 : null;
@@ -473,6 +505,9 @@ function runStrategicD2Search(options) {
     newlyDiscoveredPOIs.forEach((entry) => child.seenReachablePoiKeys.add(entry.key));
     if (strategicTransition) strategicTransition.newlyDiscoveredPOIs = newlyDiscoveredPOIs;
     child.strategicTransition = strategicTransition;
+    if (strategicTransition && strategicTransition.terminalBlockerDelta) {
+      observeTerminalBlocker(child, strategicTransition.terminalBlockerDelta.after);
+    }
     nodes.set(child.nodeId, child);
     seenExact.set(exactKey, child.nodeId);
     agenda.push(child);
@@ -683,7 +718,7 @@ function runStrategicD2Search(options) {
         simulator,
         sourceState: sourceNode.state,
         target: work.target,
-        maxExpansions: connectorMaxExpansions,
+        maxExpansions: Math.max(1, Math.min(connectorMaxExpansions, Math.floor(remainingTotalSearchWork()))),
         maxDepth: connectorMaxDepth,
       });
       stats.connectorExpansions += result.expansions;
@@ -710,11 +745,54 @@ function runStrategicD2Search(options) {
       return true;
     }
 
+    if (work.kind === "blocker-connector-choice") {
+      const sourceNode = nodes.get(work.sourceNodeId);
+      if (!sourceNode) {
+        lazyWork.reject(work, "missing-source");
+        return true;
+      }
+      if (stats.blockerConnectorCalls >= connectorMaxCalls) {
+        lazyWork.reject(work, "blocker-connector-call-cap");
+        return true;
+      }
+      const budget = Math.max(1, Math.min(connectorMaxExpansions, Math.floor(remainingTotalSearchWork())));
+      stats.blockerConnectorCalls += 1;
+      const result = runBlockerDerivedConnector({
+        simulator,
+        sourceState: sourceNode.state,
+        terminalGoal,
+        maxExpansions: budget,
+        maxDepth: connectorMaxDepth,
+      });
+      stats.blockerConnectorExpansions += result.expansions;
+      if (result.status === "improved") stats.blockerConnectorImproved += 1;
+      else stats.blockerConnectorNoImprovement += 1;
+      if (result.chain.length === 0) {
+        lazyWork.reject(work, `blocker-connector-${result.status}`);
+        return true;
+      }
+      const materialized = materializeConnectorChain(sourceNode, result);
+      if (!materialized.ok) {
+        lazyWork.reject(work, `blocker-connector-chain-apply-error:${materialized.reason}`);
+        return true;
+      }
+      stats.blockerConnectorChainActions += result.chain.length;
+      if (goalPredicate(materialized.finalState)) {
+        goalNode = materialized.finalNode;
+        firstGoalExpansion = stats.expansions;
+      }
+      lazyWork.resolve(work, materialized.finalCreated
+        ? "blocker-connector-chain-materialized"
+        : "blocker-connector-chain-merged");
+      return true;
+    }
+
     lazyWork.reject(work, "unknown-kind");
     return true;
   }
 
-  while (!goalNode && stats.expansions < maxExpansions) {
+  while (!goalNode && stats.expansions < maxExpansions &&
+         (maxTotalSearchExpansions == null || totalSearchWork() < maxTotalSearchExpansions)) {
     if (enableLazyWork && lazyWork.activeSize() > 0 && stats.expansions > 0 &&
         stats.expansions % lazyDrainEvery === 0) {
       drainOneLazyItem();
@@ -847,6 +925,9 @@ function runStrategicD2Search(options) {
       newlyDiscoveredPOIs.forEach((entry) => child.seenReachablePoiKeys.add(entry.key));
       if (newlyDiscoveredPOIs.length > 0) stats.transitionsWithLineageNovelty += 1;
       child.strategicTransition = compactTransition(transition, post, newlyDiscoveredPOIs);
+      if (child.strategicTransition && child.strategicTransition.terminalBlockerDelta) {
+        observeTerminalBlocker(child, child.strategicTransition.terminalBlockerDelta.after);
+      }
       nodes.set(child.nodeId, child);
       seenExact.set(exactKey, child.nodeId);
       agenda.push(child);
@@ -865,16 +946,26 @@ function runStrategicD2Search(options) {
       }
     }
 
-    // 5.18c: enqueue a direct-unavailable terminal-boss connector choice and
-    // lazy floorFly choices when configured.
-    if (enableConnector && enableLazyWork &&
-        stats.connectorCalls < connectorMaxCalls &&
-        !hasTerminalBattleAction(enumerated.actions, terminalGoal)) {
-      lazyWork.enqueue({
-        kind: "connector-choice",
-        sourceNodeId: node.nodeId,
-        target: buildTerminalChoiceTarget(terminalGoal),
-      });
+    // 5.18c/5.18d: enqueue a connector choice for the terminal dependency.
+    if (enableConnector && enableLazyWork) {
+      if (connectorMode === "blocker-derived") {
+        if (stats.blockerConnectorCalls < connectorMaxCalls) {
+          const blocker = analyzeTerminalBlocker(simulator, node.state, terminalGoal);
+          if (blocker.stage === "attack-blocked" || blocker.stage === "lethal") {
+            lazyWork.enqueue({
+              kind: "blocker-connector-choice",
+              sourceNodeId: node.nodeId,
+            });
+          }
+        }
+      } else if (stats.connectorCalls < connectorMaxCalls &&
+          !hasTerminalBattleAction(enumerated.actions, terminalGoal)) {
+        lazyWork.enqueue({
+          kind: "connector-choice",
+          sourceNodeId: node.nodeId,
+          target: buildTerminalChoiceTarget(terminalGoal),
+        });
+      }
     }
     if (enableLazyWork && floorFlyMode === "lazy" &&
         typeof simulator.enumerateFloorFlyActions === "function") {
@@ -899,7 +990,7 @@ function runStrategicD2Search(options) {
   }
   stats.optionMapsObserved = stateIndex.optionMaps.size;
   stats.uniqueChoiceCount = observedChoices.size;
-  stats.totalSearchExpansions = stats.expansions + stats.connectorExpansions;
+  stats.totalSearchExpansions = stats.expansions + stats.connectorExpansions + stats.blockerConnectorExpansions;
   const frontierSize = agenda.activeSize(expanded);
   const activeLazyWork = lazyWork.activeSize();
   const budgetExhausted = !goalNode && stats.expansions >= maxExpansions &&
@@ -962,11 +1053,17 @@ function runStrategicD2Search(options) {
       },
       connector: {
         enabled: enableConnector,
+        mode: connectorMode,
         maxExpansions: connectorMaxExpansions,
         maxDepth: connectorMaxDepth,
         maxCalls: connectorMaxCalls,
-        target: "terminal-boss-choice-when-not-directly-enumerable",
-        budgetScope: "connector-expansions-are-additional-to-strategic-frontier-expansions",
+        target: connectorMode === "blocker-derived"
+          ? "blocker-derived-intermediate-optimizer"
+          : "terminal-boss-choice-when-not-directly-enumerable",
+        budgetScope: maxTotalSearchExpansions == null
+          ? "connector-expansions-are-additional-to-strategic-frontier-expansions"
+          : "shared-total-search-work-budget",
+        maxTotalSearchExpansions,
       },
       completenessLimitations: [
         "exact-state-merge-only-no-dominance",
@@ -985,6 +1082,12 @@ function runStrategicD2Search(options) {
       wallMs: Date.now() - startedAt,
     },
     stats,
+    bestTerminalBlocker: {
+      progressScore: bestTerminalBlocker.progressScore,
+      attackMargin: bestTerminalBlocker.attackMargin,
+      stage: bestTerminalBlocker.stage,
+      nodeId: bestTerminalBlocker.nodeId,
+    },
     lazyWork: lazyWork.snapshot(),
     frontierWitnesses: agenda.definitions.map((definition) =>
       compactWitness(

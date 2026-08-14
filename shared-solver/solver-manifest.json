@@ -1736,6 +1736,22 @@
       },
       "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting"
     },
+    "shared-solver/lib/strategic-blocker.js": {
+      "id": "strategic-blocker",
+      "path": "shared-solver/lib/strategic-blocker.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "blocker-derived-intermediate-connector",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.18d reads the terminal battle blocker (attack-blocked/lethal/viable), derives an intermediate metric (combat-power or survival), and runs a bounded local optimizer that maximizes that metric and re-evaluates the terminal blocker on the best intermediate state"
+    },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
       "path": "shared-solver/lib/strategic-connector.js",
@@ -2234,6 +2250,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.18c verifies re-enumerated connector edge replay (including corruption and frontier-trim negatives), real integrated two-step connector strict replay, protected lazy-work lifecycle, recoverable deferred exact posts, target-floor floorFly variant retention, six agenda queues, real D2 64-expansion frontier, and I621 implicit-consumption evidence"
+    },
+    "shared-solver/check-strategic-blocker-connector.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.18d verifies terminal blocker analysis (attack-blocked -> combat-power), synthetic and real blocker-derived intermediate connector strict replay, intermediate combat-power metric improvement, and a same-total-search-work A/B against the strategic-only baseline"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",

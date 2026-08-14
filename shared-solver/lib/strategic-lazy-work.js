@@ -6,6 +6,7 @@ const ALLOWED_KINDS = new Set([
   "deferred-exact-post",
   "floorfly-choice",
   "connector-choice",
+  "blocker-connector-choice",
 ]);
 
 const ALLOWED_STATUS = new Set(["queued", "resolved", "rejected"]);
