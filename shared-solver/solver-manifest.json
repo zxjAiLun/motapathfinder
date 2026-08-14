@@ -1734,7 +1734,39 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18b frontier schedules one slot per StrategicTransition choice; agenda queues are terminal-blocker-progress, survival, combat-power, future-reachable-options, low-irreversible-cost, and novel-semantic-state scored from transition contract data"
+      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting"
+    },
+    "shared-solver/lib/strategic-connector.js": {
+      "id": "strategic-connector",
+      "path": "shared-solver/lib/strategic-connector.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "bounded-local-primitive-connector-with-exact-replay-legality",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.18c resolves a connector target from an exact source state via bounded primitive search, records exact pre/post edges, re-enumerates every replay edge through the recorded-action resolver, and separates budget, true exhaustion, and frontier trimming"
+    },
+    "shared-solver/lib/strategic-lazy-work.js": {
+      "id": "strategic-lazy-work",
+      "path": "shared-solver/lib/strategic-lazy-work.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "lazy-strategic-work-queued-resolved-rejected-lifecycle",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.18c lazy work queue for deferred exact posts, floorFly choices, and connector choices; items must resolve or reject with a reason and never silently disappear"
     },
     "shared-solver/lib/segment-dp.js": {
       "id": "segment-dp",
@@ -2201,7 +2233,7 @@
       "allowsNotFound": true,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.18b verifies exact-state reachability caching, real tile/portal presence classification, lineage semantic novelty, attack-blocked terminal progress, choice-level aggregation, revised six agenda queues, deferred-post completeness accounting, local first-expansion strict replay, real D2 64-expansion frontier, and I621 implicit-consumption evidence"
+      "notes": "PR-5.18c verifies re-enumerated connector edge replay (including corruption and frontier-trim negatives), real integrated two-step connector strict replay, protected lazy-work lifecycle, recoverable deferred exact posts, target-floor floorFly variant retention, six agenda queues, real D2 64-expansion frontier, and I621 implicit-consumption evidence"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",

@@ -394,11 +394,16 @@ function aggregateVariantsIntoTransitions(options) {
     stateIndex,
     beforeOptionMap,
     beforeReachable,
+    choiceKeyBuilder,
+    choiceLabelBuilder,
+    targetPOIBuilder,
   } = options;
   const groups = new Map();
   (actions || []).forEach((action) => {
     if (!action) return;
-    const key = choiceKeyOf(simulator, action);
+    const key = typeof choiceKeyBuilder === "function"
+      ? choiceKeyBuilder(action)
+      : choiceKeyOf(simulator, action);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(action);
   });
@@ -444,9 +449,13 @@ function aggregateVariantsIntoTransitions(options) {
     transitions.push({
       schema: TRANSITION_SCHEMA,
       choice: choiceKey,
-      choiceLabel: first.summary || choiceKey,
+      choiceLabel: typeof choiceLabelBuilder === "function"
+        ? choiceLabelBuilder(first, choiceKey)
+        : (first.summary || choiceKey),
       kind: first.kind || "unknown",
-      targetPOI: explicitActionTargetKey(first),
+      targetPOI: typeof targetPOIBuilder === "function"
+        ? targetPOIBuilder(first, choiceKey)
+        : explicitActionTargetKey(first),
       travelVariants: variants.map((action) => ({
         summary: action.summary,
         kind: action.kind || "unknown",
@@ -506,5 +515,6 @@ module.exports = {
   mutationCount,
   poiStillPresent,
   selectCanonicalPostState,
+  summarizeResourceDelta,
   terminalBattleProjection,
 };

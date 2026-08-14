@@ -7,21 +7,31 @@ const { buildSegmentGoalPredicate } = require("./segment-dp");
 const { buildRouteRecord, recordedActionVariantIdentity } = require("./route-store");
 const { buildStateKey } = require("./state-key");
 const { cloneState } = require("./state");
+const { diffStrategicOptionMaps } = require("./strategic-option-map");
 const {
   aggregateVariantsIntoTransitions,
   createStrategicStateIndexCache,
+  diffReachablePoiSets,
+  explicitActionTargetKey,
   futureOptionScore,
   mutationCount,
   selectCanonicalPostState,
+  summarizeResourceDelta,
   terminalBattleProjection,
 } = require("./strategic-transition");
+const {
+  buildTerminalChoiceTarget,
+  runLocalConnector,
+  verifyConnectorChain,
+} = require("./strategic-connector");
+const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
   createChildNode,
   createRootNode,
   reconstructActionEntries,
 } = require("./search-nodes");
 
-const SCHEMA = "motapathfinder.strategic-d2-search.v2";
+const SCHEMA = "motapathfinder.strategic-d2-search.v3";
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -273,6 +283,48 @@ function compactTransition(transition, post, newlyDiscoveredPOIs) {
   };
 }
 
+function compactPostTransition(post, choiceLabel, targetPOI) {
+  return {
+    schema: "motapathfinder.strategic-transition.v1",
+    choice: choiceLabel,
+    choiceLabel,
+    kind: post.appliedBy ? post.appliedBy.kind : "unknown",
+    targetPOI,
+    travelVariantCount: 1,
+    exactPostStateCount: 1,
+    selectedVariant: post.appliedBy ? post.appliedBy.summary : null,
+    resourceDelta: post.resourceDelta,
+    terminalBlockerDelta: post.terminalBlockerDelta,
+    irreversibleCost: post.irreversibleCost,
+    consumedOpportunities: post.consumedOpportunities,
+    newlyReachablePOIs: post.newlyReachablePOIs,
+    noLongerReachablePOIs: post.noLongerReachablePOIs,
+    stillPresentButUnreachable: post.stillPresentButUnreachable,
+  };
+}
+
+function chainIrreversibleCost(chain) {
+  const result = { battles: 0, doors: 0, events: 0, consumedItems: 0, consumedTools: 0, total: 0 };
+  (chain || []).forEach((action) => {
+    const kind = action && action.kind;
+    if (kind === "battle") result.battles += 1;
+    else if (kind === "openDoor") result.doors += 1;
+    else if (kind === "event") result.events += 1;
+    else if (kind === "pickup" || kind === "interactPickup") result.consumedItems += 1;
+    else if (kind === "useTool") result.consumedTools += 1;
+  });
+  result.total = result.battles + result.doors + result.events + result.consumedItems + result.consumedTools;
+  return result;
+}
+
+function hasTerminalBattleAction(actions, terminalGoal) {
+  return (actions || []).some((action) =>
+    action.kind === "battle" &&
+    (action.floorId || (action.travelState && action.travelState.floorId)) === terminalGoal.floorId &&
+    Number(action.x != null ? action.x : (action.target || {}).x) === Number(terminalGoal.x) &&
+    Number(action.y != null ? action.y : (action.target || {}).y) === Number(terminalGoal.y));
+}
+
 function buildStrictReplayEvidence(project, simulatorFactory, projectRoot, initialState, goalNode, nodes, stats) {
   if (!goalNode) return null;
   const entries = reconstructActionEntries(nodes, goalNode);
@@ -286,7 +338,7 @@ function buildStrictReplayEvidence(project, simulatorFactory, projectRoot, initi
     options: {
       projectRoot,
       solver: "strategic-d2-search",
-      profile: "terminal-only-strategic-frontier-v2",
+      profile: "terminal-only-strategic-frontier-v3",
       rank: ((initialState.meta || {}).rank) || "chaos",
       toFloor: goalNode.state.floorId,
       goalType: "bossDefeated",
@@ -340,6 +392,14 @@ function runStrategicD2Search(options) {
   const expanded = new Set();
   const maxExpansions = Math.max(1, number(config.maxExpansions, 1000));
   const startedAt = Date.now();
+  const enableLazyWork = config.enableLazyWork !== false;
+  const enableConnector = config.enableConnector !== false;
+  const connectorMaxExpansions = Math.max(1, number(config.connectorMaxExpansions, 128));
+  const connectorMaxDepth = Math.max(1, number(config.connectorMaxDepth, 8));
+  const connectorMaxCalls = Math.max(0, number(config.connectorMaxCalls, 16));
+  const lazyDrainEvery = Math.max(1, number(config.lazyDrainEvery, 8));
+  const floorFlyMode = config.floorFlyMode === "lazy" ? "lazy" : "off";
+  const lazyWork = new LazyWorkQueue();
   const stats = {
     expansions: 0,
     generated: 0,
@@ -367,14 +427,304 @@ function runStrategicD2Search(options) {
     transitionsConsumingOpportunities: 0,
     transitionsWithTerminalBlockerImprovement: 0,
     transitionsWithLineageNovelty: 0,
+    connectorCalls: 0,
+    connectorResolved: 0,
+    connectorBudgetExhausted: 0,
+    connectorFrontierExhausted: 0,
+    connectorFrontierTrimmed: 0,
+    connectorExpansions: 0,
+    connectorChainActions: 0,
+    lazyDeferredPostsMaterialized: 0,
+    lazyFloorFlyChoicesMaterialized: 0,
+    lazyFloorFlyVariantsEnumerated: 0,
+    lazyFloorFlyExactPostsObserved: 0,
+    lazyFloorFlyExactPostsDeferred: 0,
+    lazyConnectorChoicesMaterialized: 0,
   };
   const observedChoices = new Set();
   const bestByRole = new Map(agenda.definitions.map((definition) => [definition.id, root]));
   let nextNodeId = 1;
   let goalNode = goalPredicate(root.state) ? root : null;
   let firstGoalExpansion = goalNode ? 0 : null;
+
+  function acceptLazyChild(parentNode, afterState, action, strategicTransition) {
+    const exactKey = buildStateKey(afterState);
+    if (seenExact.has(exactKey)) {
+      return { node: nodes.get(seenExact.get(exactKey)), created: false, exactKey };
+    }
+    const child = createChildNode(
+      parentNode,
+      afterState,
+      exactKey,
+      {
+        ...action,
+        fingerprint: simulator.getActionFingerprint(action),
+      },
+      nextNodeId,
+      nextNodeId,
+    );
+    nextNodeId += 1;
+    const indexed = stateIndex.get(afterState);
+    child.optionMap = indexed.optionMap;
+    child.reachablePoi = indexed.reachablePoi;
+    const newlyDiscoveredPOIs = indexed.reachablePoi.entries
+      .filter((entry) => !parentNode.seenReachablePoiKeys.has(entry.key));
+    child.seenReachablePoiKeys = new Set(parentNode.seenReachablePoiKeys);
+    newlyDiscoveredPOIs.forEach((entry) => child.seenReachablePoiKeys.add(entry.key));
+    if (strategicTransition) strategicTransition.newlyDiscoveredPOIs = newlyDiscoveredPOIs;
+    child.strategicTransition = strategicTransition;
+    nodes.set(child.nodeId, child);
+    seenExact.set(exactKey, child.nodeId);
+    agenda.push(child);
+    stats.accepted += 1;
+    stats.maxStrategicDepth = Math.max(stats.maxStrategicDepth, child.depth);
+    if (newlyDiscoveredPOIs.length > 0) stats.transitionsWithLineageNovelty += 1;
+    agenda.definitions.forEach((definition) => {
+      const existing = bestByRole.get(definition.id);
+      if (!existing || definition.compare(child, existing) > 0) {
+        bestByRole.set(definition.id, child);
+      }
+    });
+    return { node: child, created: true, exactKey };
+  }
+
+  function buildMacroTransition(beforeNode, afterState, chain, terminalGoalArg) {
+    const indexed = stateIndex.get(afterState);
+    const beforeOptionMap = beforeNode.optionMap;
+    const beforeReachable = beforeNode.reachablePoi;
+    const optionDelta = diffStrategicOptionMaps(beforeOptionMap, indexed.optionMap);
+    const reachableDelta = diffReachablePoiSets(beforeReachable, indexed.reachablePoi, {
+      project: simulator.project,
+      state: afterState,
+    });
+    const beforeProjection = terminalBattleProjection(simulator, beforeNode.state, terminalGoalArg);
+    const afterProjection = terminalBattleProjection(simulator, afterState, terminalGoalArg);
+    const beforeScore = beforeProjection && beforeProjection.progressScore != null
+      ? beforeProjection.progressScore
+      : null;
+    const afterScore = afterProjection && afterProjection.progressScore != null
+      ? afterProjection.progressScore
+      : null;
+    const lastAction = chain && chain.length > 0 ? chain[chain.length - 1] : null;
+    const beforeReachableKeys = new Set((beforeReachable.entries || []).map((entry) => entry.key));
+    return {
+      schema: "motapathfinder.strategic-transition.v1",
+      choice: lastAction ? lastAction.summary : `connector-chain(${chain.length})`,
+      choiceLabel: lastAction ? lastAction.summary : `connector-chain(${chain.length})`,
+      kind: lastAction ? lastAction.kind : "connector-chain",
+      targetPOI: lastAction ? explicitActionTargetKey(lastAction) : null,
+      travelVariantCount: 1,
+      exactPostStateCount: 1,
+      selectedVariant: lastAction ? lastAction.summary : null,
+      resourceDelta: summarizeResourceDelta(beforeNode.state, afterState),
+      terminalBlockerDelta: {
+        before: beforeProjection,
+        after: afterProjection,
+        delta: beforeScore != null && afterScore != null ? afterScore - beforeScore : null,
+        improved: beforeScore != null && afterScore != null && afterScore > beforeScore,
+        supported: Boolean(beforeProjection && afterProjection && beforeProjection.supported && afterProjection.supported),
+      },
+      irreversibleCost: chainIrreversibleCost(chain),
+      consumedOpportunities: optionDelta.consumed.map((entry) => ({
+        key: entry.key,
+        kind: entry.kind,
+        tileId: entry.tileId,
+        role: "implicit",
+        wasReachableBefore: beforeReachableKeys.has(entry.key),
+      })),
+      newlyReachablePOIs: reachableDelta.newlyReachable,
+      noLongerReachablePOIs: reachableDelta.noLongerReachable,
+      stillPresentButUnreachable: reachableDelta.stillPresentButUnreachable,
+    };
+  }
+
+  function materializeConnectorChain(sourceNode, connectorResult) {
+    const replay = verifyConnectorChain(simulator, sourceNode.state, connectorResult);
+    if (!replay.valid) {
+      return { ok: false, reason: replay.failureReason || "strict-replay-failed" };
+    }
+    let current = sourceNode;
+    const steps = replay.replaySteps || [];
+    const macroTransition = buildMacroTransition(
+      sourceNode,
+      replay.finalState,
+      connectorResult.chain,
+      terminalGoal,
+    );
+    let finalCreated = false;
+    for (let index = 0; index < steps.length; index += 1) {
+      const step = steps[index];
+      const accepted = acceptLazyChild(
+        current,
+        step.state,
+        step.action,
+        index === steps.length - 1 ? macroTransition : null,
+      );
+      current = accepted.node;
+      if (index === steps.length - 1) finalCreated = accepted.created;
+    }
+    return steps.length > 0
+      ? { ok: true, finalNode: current, finalState: current.state, finalCreated }
+      : { ok: false, reason: "empty-chain" };
+  }
+
+  function drainOneLazyItem() {
+    const work = lazyWork.dequeue((item) =>
+      item.sourceNodeId != null && !nodes.has(item.sourceNodeId));
+    if (!work) return false;
+
+    if (work.kind === "deferred-exact-post") {
+      const parentNode = nodes.get(work.sourceNodeId);
+      const post = work.post;
+      if (!parentNode || !post) {
+        lazyWork.reject(work, "missing-source-or-post");
+        return true;
+      }
+      if (seenExact.has(post.stateKey)) {
+        lazyWork.reject(work, "exact-state-already-seen");
+        return true;
+      }
+      const strategicTransition = compactPostTransition(post, work.choiceLabel, work.targetPOI);
+      const accepted = acceptLazyChild(parentNode, post.state, post.appliedBy, strategicTransition);
+      if (!accepted.created) {
+        lazyWork.reject(work, "exact-state-merged");
+        return true;
+      }
+      if (goalPredicate(post.state)) {
+        goalNode = accepted.node;
+        firstGoalExpansion = stats.expansions;
+      }
+      stats.lazyDeferredPostsMaterialized += 1;
+      lazyWork.resolve(work, "materialized-deferred-post");
+      return true;
+    }
+
+    if (work.kind === "floorfly-choice") {
+      const sourceNode = nodes.get(work.sourceNodeId);
+      if (!sourceNode) {
+        lazyWork.reject(work, "missing-source");
+        return true;
+      }
+      let actions = [];
+      try {
+        actions = (simulator.enumerateFloorFlyActions(sourceNode.state) || [])
+          .filter((action) => action.targetFloorId === work.targetFloorId);
+      } catch (_error) {
+        actions = [];
+      }
+      if (actions.length === 0) {
+        lazyWork.reject(work, "no-floorfly-variants");
+        return true;
+      }
+      stats.lazyFloorFlyVariantsEnumerated += actions.length;
+      const aggregation = aggregateVariantsIntoTransitions({
+        simulator,
+        state: sourceNode.state,
+        actions,
+        terminalGoal,
+        stateIndex,
+        beforeOptionMap: sourceNode.optionMap,
+        beforeReachable: sourceNode.reachablePoi,
+        choiceKeyBuilder: () => `floorFly|targetFloor:${work.targetFloorId}`,
+        choiceLabelBuilder: () => `floorFly:${work.targetFloorId}`,
+        targetPOIBuilder: () => `floor:${work.targetFloorId}`,
+      });
+      stats.lazyFloorFlyExactPostsObserved += aggregation.transitions.reduce(
+        (sum, transition) => sum + transition.postStates.length,
+        0,
+      );
+      let materialized = 0;
+      for (const transition of aggregation.transitions) {
+        const selection = selectCanonicalPostState(transition, { goalPredicate });
+        if (!selection) continue;
+        for (const post of transition.postStates) {
+          if (post.stateKey === selection.postState.stateKey || seenExact.has(post.stateKey)) continue;
+          lazyWork.enqueue({
+            kind: "deferred-exact-post",
+            sourceNodeId: sourceNode.nodeId,
+            choiceLabel: transition.choiceLabel,
+            targetPOI: transition.targetPOI,
+            post,
+          });
+          stats.deferredPostStates += 1;
+          stats.lazyFloorFlyExactPostsDeferred += 1;
+        }
+        const post = selection.postState;
+        const strategicTransition = compactTransition(transition, post, []);
+        const accepted = acceptLazyChild(sourceNode, post.state, post.appliedBy, strategicTransition);
+        materialized += 1;
+        if (goalPredicate(post.state)) {
+          goalNode = accepted.node;
+          firstGoalExpansion = stats.expansions;
+          break;
+        }
+      }
+      if (materialized === 0) {
+        lazyWork.reject(work, "no-applicable-floorfly-posts");
+        return true;
+      }
+      stats.lazyFloorFlyChoicesMaterialized += 1;
+      lazyWork.resolve(work, "resolved-floorfly-choice");
+      return true;
+    }
+
+    if (work.kind === "connector-choice") {
+      const sourceNode = nodes.get(work.sourceNodeId);
+      if (!sourceNode) {
+        lazyWork.reject(work, "missing-source");
+        return true;
+      }
+      if (stats.connectorCalls >= connectorMaxCalls) {
+        lazyWork.reject(work, "connector-call-cap");
+        return true;
+      }
+      stats.connectorCalls += 1;
+      const result = runLocalConnector({
+        simulator,
+        sourceState: sourceNode.state,
+        target: work.target,
+        maxExpansions: connectorMaxExpansions,
+        maxDepth: connectorMaxDepth,
+      });
+      stats.connectorExpansions += result.expansions;
+      if (result.status !== "resolved") {
+        if (result.status === "budget-exhausted") stats.connectorBudgetExhausted += 1;
+        else if (result.status === "frontier-exhausted") stats.connectorFrontierExhausted += 1;
+        else if (result.status === "frontier-trimmed") stats.connectorFrontierTrimmed += 1;
+        lazyWork.reject(work, `connector-${result.status}`);
+        return true;
+      }
+      const materialized = materializeConnectorChain(sourceNode, result);
+      if (!materialized.ok) {
+        lazyWork.reject(work, `connector-chain-apply-error:${materialized.reason}`);
+        return true;
+      }
+      stats.connectorResolved += 1;
+      stats.connectorChainActions += result.chain.length;
+      if (goalPredicate(materialized.finalState)) {
+        goalNode = materialized.finalNode;
+        firstGoalExpansion = stats.expansions;
+      }
+      stats.lazyConnectorChoicesMaterialized += 1;
+      lazyWork.resolve(work, materialized.finalCreated ? "connector-chain-materialized" : "connector-chain-merged");
+      return true;
+    }
+
+    lazyWork.reject(work, "unknown-kind");
+    return true;
+  }
+
   while (!goalNode && stats.expansions < maxExpansions) {
-    const selected = agenda.pop(expanded);
+    if (enableLazyWork && lazyWork.activeSize() > 0 && stats.expansions > 0 &&
+        stats.expansions % lazyDrainEvery === 0) {
+      drainOneLazyItem();
+      if (goalNode) break;
+    }
+    let selected = agenda.pop(expanded);
+    if (!selected && enableLazyWork && lazyWork.activeSize() > 0) {
+      drainOneLazyItem();
+      selected = agenda.pop(expanded);
+    }
     if (!selected) break;
     const node = selected.node;
     expanded.add(node.nodeId);
@@ -384,7 +734,7 @@ function runStrategicD2Search(options) {
     try {
       enumerated = enumerateStrategicActions(simulator, node.state, {
         compareLegacyFilter: stats.expansions === 1,
-        includeFloorFly: config.includeFloorFly === true,
+        includeFloorFly: false,
       });
     } catch (_error) {
       continue;
@@ -453,9 +803,26 @@ function runStrategicD2Search(options) {
       stats.canonicalSelectionReasons[selection.reason] =
         number(stats.canonicalSelectionReasons[selection.reason], 0) + 1;
       const exactKey = post.stateKey;
-      stats.deferredPostStates += transition.postStates
-        .filter((candidate) => candidate.stateKey !== exactKey && !seenExact.has(candidate.stateKey))
-        .length;
+      // 5.18c: non-canonical exact posts become recoverable lazy work instead of
+      // a silently discarded count.
+      if (enableLazyWork) {
+        for (const candidate of transition.postStates) {
+          if (candidate.stateKey === exactKey) continue;
+          if (seenExact.has(candidate.stateKey)) continue;
+          lazyWork.enqueue({
+            kind: "deferred-exact-post",
+            sourceNodeId: node.nodeId,
+            choiceLabel: transition.choiceLabel,
+            targetPOI: transition.targetPOI,
+            post: candidate,
+          });
+          stats.deferredPostStates += 1;
+        }
+      } else {
+        stats.deferredPostStates += transition.postStates
+          .filter((candidate) => candidate.stateKey !== exactKey && !seenExact.has(candidate.stateKey))
+          .length;
+      }
       if (seenExact.has(exactKey)) {
         stats.exactMerged += 1;
         continue;
@@ -497,14 +864,48 @@ function runStrategicD2Search(options) {
         break;
       }
     }
+
+    // 5.18c: enqueue a direct-unavailable terminal-boss connector choice and
+    // lazy floorFly choices when configured.
+    if (enableConnector && enableLazyWork &&
+        stats.connectorCalls < connectorMaxCalls &&
+        !hasTerminalBattleAction(enumerated.actions, terminalGoal)) {
+      lazyWork.enqueue({
+        kind: "connector-choice",
+        sourceNodeId: node.nodeId,
+        target: buildTerminalChoiceTarget(terminalGoal),
+      });
+    }
+    if (enableLazyWork && floorFlyMode === "lazy" &&
+        typeof simulator.enumerateFloorFlyActions === "function") {
+      const flyTargets = new Set();
+      try {
+        simulator.enumerateFloorFlyActions(node.state).forEach((action) => {
+          if (action.targetFloorId) flyTargets.add(action.targetFloorId);
+        });
+      } catch (_error) {
+        // leave empty
+      }
+      for (const targetFloorId of flyTargets) {
+        lazyWork.enqueue({
+          kind: "floorfly-choice",
+          sourceNodeId: node.nodeId,
+          targetFloorId,
+        });
+      }
+    }
+
     stats.maxFrontierSize = Math.max(stats.maxFrontierSize, agenda.activeSize(expanded));
   }
   stats.optionMapsObserved = stateIndex.optionMaps.size;
   stats.uniqueChoiceCount = observedChoices.size;
+  stats.totalSearchExpansions = stats.expansions + stats.connectorExpansions;
   const frontierSize = agenda.activeSize(expanded);
-  const budgetExhausted = !goalNode && stats.expansions >= maxExpansions && frontierSize > 0;
+  const activeLazyWork = lazyWork.activeSize();
+  const budgetExhausted = !goalNode && stats.expansions >= maxExpansions &&
+    (frontierSize > 0 || activeLazyWork > 0);
   const frontierExhausted = !goalNode && frontierSize === 0;
-  const deferredWorkRemaining = !goalNode && stats.deferredPostStates > 0;
+  const deferredWorkRemaining = !goalNode && activeLazyWork > 0;
   const replay = goalNode
     ? buildStrictReplayEvidence(
         project,
@@ -535,8 +936,8 @@ function runStrategicD2Search(options) {
       actionSource: "complete-primitive-actions-before-legacy-heuristic-filter",
       supplementalActionKinds: {
         interactPickup: "enabled",
-        floorFly: config.includeFloorFly === true
-          ? "enabled"
+        floorFly: floorFlyMode === "lazy"
+          ? "lazy-choice-level-resolution"
           : "deferred-from-minimal-D2-vertical-slice",
       },
       pruning: ["exact-state-merge-only"],
@@ -552,14 +953,25 @@ function runStrategicD2Search(options) {
         retentionRule: "goal-state > future-reachable-positive-options > terminal-blocker-progress > hp > fewer-mutations > deterministic-state-key",
       },
       lazyResolution: {
-        travelVariants: "aggregated-into-single-frontier-choice",
-        deferredPostStates: "recorded-not-expanded",
-        localDpConnector: "deferred-to-5.18c",
+        enabled: enableLazyWork,
+        deferredExactPosts: enableLazyWork ? "recoverable-via-lazy-queue" : "recorded-not-expanded",
+        floorFly: floorFlyMode === "lazy" ? "lazy-choice-level-resolution" : "off",
+        localDpConnector: enableConnector
+          ? "enabled-bounded-local-primitive-connector"
+          : "disabled",
+      },
+      connector: {
+        enabled: enableConnector,
+        maxExpansions: connectorMaxExpansions,
+        maxDepth: connectorMaxDepth,
+        maxCalls: connectorMaxCalls,
+        target: "terminal-boss-choice-when-not-directly-enumerable",
+        budgetScope: "connector-expansions-are-additional-to-strategic-frontier-expansions",
       },
       completenessLimitations: [
-        "noncanonical-exact-post-states-recorded-but-not-expanded-until-5.18c",
-        "local-dp-connector-not-yet-enabled",
-        "floor-fly-not-yet-lazily-resolved",
+        "exact-state-merge-only-no-dominance",
+        "connector-is-bounded-local-search-not-canonical-correctness-proof",
+        "lazy-resolution-is-demand-driven-not-exhaustive",
       ],
     },
     outcome: {
@@ -573,6 +985,7 @@ function runStrategicD2Search(options) {
       wallMs: Date.now() - startedAt,
     },
     stats,
+    lazyWork: lazyWork.snapshot(),
     frontierWitnesses: agenda.definitions.map((definition) =>
       compactWitness(
         simulator,
@@ -609,6 +1022,8 @@ function runStrategicD2Search(options) {
         ? "D2_STRATEGIC_SEARCH_REPLAY_FAILED"
         : budgetExhausted
           ? "D2_STRATEGIC_SEARCH_INCOMPLETE_WITHIN_BUDGET"
+          : deferredWorkRemaining
+            ? "D2_STRATEGIC_SEARCH_INCOMPLETE_WITH_DEFERRED_WORK"
           : "D2_STRATEGIC_SEARCH_FRONTIER_EXHAUSTED",
   };
 }

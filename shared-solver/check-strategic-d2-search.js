@@ -26,6 +26,13 @@ const {
   selectCanonicalPostState,
   terminalBattleProjection,
 } = require("./lib/strategic-transition");
+const {
+  buildGoalPredicateTarget,
+  buildTerminalChoiceTarget,
+  runLocalConnector,
+  verifyConnectorChain,
+} = require("./lib/strategic-connector");
+const { LazyWorkQueue } = require("./lib/strategic-lazy-work");
 const { createMt5EntryState, detachCheckpoint } = require("./qualify-blind-discovery");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -101,9 +108,9 @@ function main() {
     tileId: "I621",
   }), false);
 
-  // Strategic reachability may only cache by exact state. Lower-level
-  // topology reuse remains the simulator's responsibility after its own
-  // hazard/auto-event/directional-state safety classification.
+  // Strategic reachability may only cache by exact state. Lower-level topology
+  // reuse remains the simulator's responsibility after its own safety
+  // classification.
   const cacheSimulator = makeBlindSimulator(project);
   const originalGetWalkReachability = cacheSimulator.getWalkReachability.bind(cacheSimulator);
   let reachabilityCalls = 0;
@@ -150,8 +157,6 @@ function main() {
       post.consumedOpportunities.every((entry) => entry.role === "active" || entry.role === "implicit") &&
       Number.isFinite(post.resourceDelta.hp) &&
       typeof post.irreversibleCost.total === "number")));
-  // Retention contract: the canonical post state preserves the maximum
-  // future-reachable positive option score among all post states.
   for (const transition of aggregated.transitions) {
     const selection = selectCanonicalPostState(transition, {});
     assert.ok(selection && selection.postState);
@@ -162,7 +167,117 @@ function main() {
     assert.strictEqual(futureOptionScore(selection.postState.reachablePoi), bestScore);
   }
 
-  // --- 5.18b contract: search runs --------------------------------------------
+  // --- 5.18c contract: lazy-work lifecycle ------------------------------------
+  const lazyQueue = new LazyWorkQueue();
+  const lazyA = lazyQueue.enqueue({ kind: "deferred-exact-post", sourceNodeId: 0, post: { stateKey: "s1" } });
+  const lazyB = lazyQueue.enqueue({ kind: "floorfly-choice", sourceNodeId: 0, targetFloorId: "MT1" });
+  const protectedWork = lazyQueue.enqueue({
+    kind: "connector-choice",
+    id: "caller-controlled-id",
+    status: "resolved",
+    schema: "caller-controlled-schema",
+  });
+  assert.notStrictEqual(protectedWork.id, "caller-controlled-id");
+  assert.strictEqual(protectedWork.status, "queued");
+  assert.strictEqual(protectedWork.schema, "motapathfinder.strategic-lazy-work.v1");
+  lazyQueue.reject(protectedWork, "control-complete");
+  assert.strictEqual(lazyQueue.activeSize(), 2);
+  assert.strictEqual(lazyQueue.dequeue(() => false).id, lazyA.id);
+  lazyQueue.resolve(lazyA, "materialized");
+  assert.strictEqual(lazyQueue.snapshot().counts.queued, 1);
+  assert.strictEqual(lazyQueue.snapshot().counts.resolved, 1);
+  lazyQueue.reject(lazyB, "no-variants");
+  assert.strictEqual(lazyQueue.snapshot().counts.rejected, 2);
+  assert.strictEqual(lazyQueue.activeSize(), 0);
+  assert.throws(() => lazyQueue.enqueue({ kind: "not-a-real-kind" }));
+
+  // --- 5.18c contract: connector legality (synthetic control) -----------------
+  const syntheticSimulator = {
+    enumeratePrimitiveActions(state) {
+      const edges = {
+        0: [{ kind: "a", to: 1 }],
+        1: [{ kind: "b", to: 2 }],
+        2: [{ kind: "c", to: 3 }],
+        3: [],
+      };
+      return {
+        actions: (edges[state.value] || []).map((action) => ({
+          ...action,
+          summary: `${action.kind}:${state.value}->${action.to}`,
+        })),
+      };
+    },
+    applyAction(_state, action) {
+      return { value: action.to };
+    },
+  };
+  const syntheticKeyState = (state) => String(state.value);
+  const syntheticCopyState = (state) => ({ value: state.value });
+  const syntheticResult = runLocalConnector({
+    simulator: syntheticSimulator,
+    sourceState: { value: 0 },
+    target: buildGoalPredicateTarget("synthetic-goal", (state) => state.value === 3),
+    maxExpansions: 20,
+    maxDepth: 5,
+    keyState: syntheticKeyState,
+    copyState: syntheticCopyState,
+  });
+  assert.strictEqual(syntheticResult.status, "resolved");
+  assert.strictEqual(syntheticResult.chain.length, 3);
+  const syntheticReplay = verifyConnectorChain(syntheticSimulator, { value: 0 }, syntheticResult, {
+    keyState: syntheticKeyState,
+    copyState: syntheticCopyState,
+  });
+  assert.strictEqual(syntheticReplay.valid, true);
+  assert.strictEqual(syntheticReplay.postExactStateKey, "3");
+  const corruptedEdges = syntheticResult.edges.map((edge, index) => ({
+    ...edge,
+    postExactStateKey: index === 0 ? "corrupted" : edge.postExactStateKey,
+  }));
+  const corruptedReplay = verifyConnectorChain(syntheticSimulator, { value: 0 }, corruptedEdges, {
+    keyState: syntheticKeyState,
+    copyState: syntheticCopyState,
+  });
+  assert.strictEqual(corruptedReplay.valid, false);
+  const branchingSimulator = {
+    enumeratePrimitiveActions(state) {
+      return { actions: state.value === 0
+        ? [1, 2, 3].map((to) => ({ kind: "branch", summary: `branch:${to}`, to }))
+        : [] };
+    },
+    applyAction(_state, action) {
+      return { value: action.to };
+    },
+  };
+  const trimmedConnector = runLocalConnector({
+    simulator: branchingSimulator,
+    sourceState: { value: 0 },
+    target: buildGoalPredicateTarget("unreachable", (state) => state.value === 99),
+    maxExpansions: 20,
+    maxDepth: 2,
+    maxFrontier: 1,
+    keyState: syntheticKeyState,
+    copyState: syntheticCopyState,
+  });
+  assert.strictEqual(trimmedConnector.status, "frontier-trimmed");
+  assert.ok(trimmedConnector.frontierTrimmed > 0);
+
+  // --- 5.18c contract: connector legality (real direct-unavailable control) ---
+  const realTarget = buildTerminalChoiceTarget({ floorId: "MT4", x: 8, y: 3 });
+  const realConnector = runLocalConnector({
+    simulator,
+    sourceState: initialState,
+    target: realTarget,
+    maxExpansions: 400,
+    maxDepth: 12,
+  });
+  assert.strictEqual(realConnector.status, "resolved");
+  assert.ok(realConnector.chain.length >= 2);
+  const realReplay = verifyConnectorChain(simulator, initialState, realConnector);
+  assert.strictEqual(realReplay.valid, true);
+  assert.strictEqual(realReplay.postExactStateKey, realConnector.postExactStateKey);
+
+  // --- 5.18c contract: search runs --------------------------------------------
   const localClosure = runStrategicD2Search({
     project,
     projectRoot: PROJECT_ROOT,
@@ -181,6 +296,26 @@ function main() {
   assert.strictEqual(localClosure.outcome.firstGoalExpansion, 1);
   assert.ok(localClosure.replay && localClosure.replay.valid);
   assert.strictEqual(localClosure.verdict, "D2_STRATEGIC_SEARCH_STRICT_REPLAY_VERIFIED");
+  const integratedConnectorClosure = runStrategicD2Search({
+    project,
+    projectRoot: PROJECT_ROOT,
+    initialState,
+    terminalGoal: {
+      type: "bossDefeated",
+      floorId: "MT4",
+      x: 8,
+      y: 3,
+      enemyId: "skeletonKing",
+    },
+    simulatorFactory: () => makeBlindSimulator(project),
+    maxExpansions: 8,
+    connectorMaxExpansions: 400,
+    connectorMaxDepth: 12,
+    lazyDrainEvery: 1,
+  });
+  assert.ok(integratedConnectorClosure.stats.connectorResolved > 0);
+  assert.strictEqual(integratedConnectorClosure.outcome.goalFound, true);
+  assert.ok(integratedConnectorClosure.replay && integratedConnectorClosure.replay.valid);
   const result = runStrategicD2Search({
     project,
     projectRoot: PROJECT_ROOT,
@@ -189,15 +324,17 @@ function main() {
     simulatorFactory: () => makeBlindSimulator(project),
     maxExpansions: 64,
   });
-  assert.strictEqual(result.schema, "motapathfinder.strategic-d2-search.v2");
+  assert.strictEqual(result.schema, "motapathfinder.strategic-d2-search.v3");
   assert.strictEqual(result.inputContract.knownRouteUsed, false);
   assert.deepStrictEqual(result.controls.pruning, ["exact-state-merge-only"]);
   assert.strictEqual(result.controls.supplementalActionKinds.floorFly, "deferred-from-minimal-D2-vertical-slice");
   assert.deepStrictEqual(result.controls.agendaQueues, AGENDA_QUEUES);
   assert.ok(result.controls.transitionContract && result.controls.transitionContract.retentionRule);
-  assert.strictEqual(result.controls.lazyResolution.localDpConnector, "deferred-to-5.18c");
+  assert.strictEqual(result.controls.lazyResolution.deferredExactPosts, "recoverable-via-lazy-queue");
+  assert.strictEqual(result.controls.lazyResolution.localDpConnector, "enabled-bounded-local-primitive-connector");
+  assert.strictEqual(result.controls.connector.enabled, true);
   assert.ok(result.controls.completenessLimitations.includes(
-    "noncanonical-exact-post-states-recorded-but-not-expanded-until-5.18c"));
+    "connector-is-bounded-local-search-not-canonical-correctness-proof"));
   assert.strictEqual(result.outcome.goalFound, false);
   assert.strictEqual(result.outcome.budgetExhausted, true);
   assert.strictEqual(result.outcome.searchComplete, false);
@@ -215,7 +352,15 @@ function main() {
   assert.ok(result.stats.transitionsWithLostReachability >= 0);
   assert.ok(result.stats.transitionsWithTerminalBlockerImprovement > 0);
   assert.ok(Object.keys(result.stats.canonicalSelectionReasons).length > 0);
-  assert.ok(Number.isInteger(result.stats.deferredPostStates));
+  assert.ok(Number.isInteger(result.stats.deferredPostStates) && result.stats.deferredPostStates > 0);
+  assert.ok(result.stats.connectorCalls > 0);
+  assert.ok(result.stats.connectorBudgetExhausted > 0);
+  assert.strictEqual(
+    result.stats.totalSearchExpansions,
+    result.stats.expansions + result.stats.connectorExpansions,
+  );
+  assert.ok(result.stats.lazyDeferredPostsMaterialized > 0);
+  assert.ok(result.lazyWork && result.lazyWork.resolvedByKind["deferred-exact-post"] > 0);
   assert.deepStrictEqual(
     Object.keys(result.stats.expandedByQueue).sort(),
     result.controls.agendaQueues.slice().sort(),
@@ -228,6 +373,28 @@ function main() {
     .incomingTransition.newlyDiscoveredPOIs.length > 0);
   assert.ok(result.stats.implicitOptionConsumptionSamples.some((sample) =>
     sample.consumed.some((entry) => entry.key === "MT4:7,3" && entry.tileId === "I621")));
+
+  // --- 5.18c contract: lazy floorFly choice-level resolution ------------------
+  const lazyFloorFlyResult = runStrategicD2Search({
+    project,
+    projectRoot: PROJECT_ROOT,
+    initialState,
+    terminalGoal,
+    simulatorFactory: () => makeBlindSimulator(project),
+    maxExpansions: 24,
+    floorFlyMode: "lazy",
+    lazyDrainEvery: 1,
+  });
+  assert.strictEqual(lazyFloorFlyResult.controls.supplementalActionKinds.floorFly, "lazy-choice-level-resolution");
+  assert.strictEqual(lazyFloorFlyResult.stats.generatedByKind.floorFly, undefined);
+  assert.ok(lazyFloorFlyResult.stats.lazyFloorFlyChoicesMaterialized > 0);
+  assert.ok(lazyFloorFlyResult.stats.lazyFloorFlyVariantsEnumerated > 0);
+  assert.ok(lazyFloorFlyResult.stats.lazyFloorFlyExactPostsObserved > 0);
+  assert.ok(
+    lazyFloorFlyResult.stats.lazyFloorFlyVariantsEnumerated >=
+    lazyFloorFlyResult.stats.lazyFloorFlyExactPostsObserved,
+  );
+  assert.ok(lazyFloorFlyResult.lazyWork.resolvedByKind["floorfly-choice"] > 0);
 
   process.stdout.write(`${JSON.stringify({
     status: "passed",
@@ -245,6 +412,17 @@ function main() {
     },
     transitionContract: result.controls.transitionContract,
     lazyResolution: result.controls.lazyResolution,
+    connector: {
+      controls: result.controls.connector,
+      synthetic: {
+        status: syntheticResult.status,
+        chainLength: syntheticResult.chain.length,
+        replayValid: syntheticReplay.valid,
+        corruptedReplayValid: corruptedReplay.valid,
+        frontierTrimmedStatus: trimmedConnector.status,
+      },
+      realDirectUnavailable: { status: realConnector.status, chainLength: realConnector.chain.length, replayValid: realReplay.valid },
+    },
     actionBoundary: {
       primitiveVariants: rootActions.rawVariantCount,
       optionalFloorFlyVariants: withFloorFly.rawVariantCount - rootActions.rawVariantCount,
@@ -267,14 +445,31 @@ function main() {
       transitionsWithLostReachability: result.stats.transitionsWithLostReachability,
       transitionsConsumingOpportunities: result.stats.transitionsConsumingOpportunities,
       transitionsWithTerminalBlockerImprovement: result.stats.transitionsWithTerminalBlockerImprovement,
+      connectorCalls: result.stats.connectorCalls,
+      connectorBudgetExhausted: result.stats.connectorBudgetExhausted,
+      lazyDeferredPostsMaterialized: result.stats.lazyDeferredPostsMaterialized,
+      lazyWork: result.lazyWork,
       maxStrategicDepth: result.stats.maxStrategicDepth,
       expandedByQueue: result.stats.expandedByQueue,
+    },
+    lazyFloorFlyControl: {
+      floorFlyMode: "lazy",
+      lazyFloorFlyChoicesMaterialized: lazyFloorFlyResult.stats.lazyFloorFlyChoicesMaterialized,
+      lazyFloorFlyVariantsEnumerated: lazyFloorFlyResult.stats.lazyFloorFlyVariantsEnumerated,
+      lazyFloorFlyExactPostsObserved: lazyFloorFlyResult.stats.lazyFloorFlyExactPostsObserved,
+      lazyFloorFlyExactPostsDeferred: lazyFloorFlyResult.stats.lazyFloorFlyExactPostsDeferred,
+      resolvedByKind: lazyFloorFlyResult.lazyWork.resolvedByKind,
     },
     i621AutoConsumptionObserved: true,
     localStrictReplayControl: {
       goalFound: localClosure.outcome.goalFound,
       firstGoalExpansion: localClosure.outcome.firstGoalExpansion,
       replay: localClosure.replay,
+    },
+    integratedConnectorClosure: {
+      goalFound: integratedConnectorClosure.outcome.goalFound,
+      connectorResolved: integratedConnectorClosure.stats.connectorResolved,
+      replay: integratedConnectorClosure.replay,
     },
     frontierWitnesses: result.frontierWitnesses,
     verdict: result.verdict,
