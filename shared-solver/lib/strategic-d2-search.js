@@ -406,7 +406,7 @@ function runStrategicD2Search(options) {
   const connectorMode = config.connectorMode === "blocker-derived" ? "blocker-derived" : "terminal";
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
-    : Math.max(1, number(config.maxTotalSearchExpansions, 0));
+    : Math.max(0, number(config.maxTotalSearchExpansions, 0));
   const lazyWork = new LazyWorkQueue();
   const stats = {
     expansions: 0,
@@ -452,6 +452,7 @@ function runStrategicD2Search(options) {
     blockerConnectorImproved: 0,
     blockerConnectorNoImprovement: 0,
     blockerConnectorExpansions: 0,
+    blockerConnectorBudgetExhausted: 0,
     blockerConnectorFrontierExhausted: 0,
     blockerConnectorFrontierTrimmed: 0,
     blockerConnectorChainActions: 0,
@@ -473,7 +474,16 @@ function runStrategicD2Search(options) {
     stats.expansions + stats.connectorExpansions + stats.blockerConnectorExpansions;
   const remainingTotalSearchWork = () => maxTotalSearchExpansions == null
     ? Infinity
-    : maxTotalSearchExpansions - totalSearchWork();
+    : Math.max(0, maxTotalSearchExpansions - totalSearchWork());
+  const hasRemainingTotalSearchBudget = () =>
+    maxTotalSearchExpansions == null || totalSearchWork() < maxTotalSearchExpansions;
+  const connectorExpansionBudget = () => {
+    if (maxTotalSearchExpansions == null) return connectorMaxExpansions;
+    return Math.max(0, Math.min(
+      connectorMaxExpansions,
+      Math.floor(remainingTotalSearchWork()),
+    ));
+  };
   observeTerminalBlocker(root, terminalBattleProjection(simulator, root.state, terminalGoal));
   let nextNodeId = 1;
   let goalNode = goalPredicate(root.state) ? root : null;
@@ -713,12 +723,17 @@ function runStrategicD2Search(options) {
         lazyWork.reject(work, "connector-call-cap");
         return true;
       }
+      const budget = connectorExpansionBudget();
+      if (budget <= 0) {
+        lazyWork.reject(work, "connector-total-search-budget-exhausted");
+        return true;
+      }
       stats.connectorCalls += 1;
       const result = runLocalConnector({
         simulator,
         sourceState: sourceNode.state,
         target: work.target,
-        maxExpansions: Math.max(1, Math.min(connectorMaxExpansions, Math.floor(remainingTotalSearchWork()))),
+        maxExpansions: budget,
         maxDepth: connectorMaxDepth,
       });
       stats.connectorExpansions += result.expansions;
@@ -755,7 +770,11 @@ function runStrategicD2Search(options) {
         lazyWork.reject(work, "blocker-connector-call-cap");
         return true;
       }
-      const budget = Math.max(1, Math.min(connectorMaxExpansions, Math.floor(remainingTotalSearchWork())));
+      const budget = connectorExpansionBudget();
+      if (budget <= 0) {
+        lazyWork.reject(work, "blocker-connector-total-search-budget-exhausted");
+        return true;
+      }
       stats.blockerConnectorCalls += 1;
       const result = runBlockerDerivedConnector({
         simulator,
@@ -765,6 +784,9 @@ function runStrategicD2Search(options) {
         maxDepth: connectorMaxDepth,
       });
       stats.blockerConnectorExpansions += result.expansions;
+      if (result.stoppedReason === "budget-exhausted") stats.blockerConnectorBudgetExhausted += 1;
+      else if (result.stoppedReason === "frontier-exhausted") stats.blockerConnectorFrontierExhausted += 1;
+      else if (result.stoppedReason === "frontier-trimmed") stats.blockerConnectorFrontierTrimmed += 1;
       if (result.status === "improved") stats.blockerConnectorImproved += 1;
       else stats.blockerConnectorNoImprovement += 1;
       if (result.chain.length === 0) {
@@ -791,20 +813,21 @@ function runStrategicD2Search(options) {
     return true;
   }
 
-  while (!goalNode && stats.expansions < maxExpansions &&
-         (maxTotalSearchExpansions == null || totalSearchWork() < maxTotalSearchExpansions)) {
+  while (!goalNode && stats.expansions < maxExpansions && hasRemainingTotalSearchBudget()) {
     if (enableLazyWork && lazyWork.activeSize() > 0 && stats.expansions > 0 &&
         stats.expansions % lazyDrainEvery === 0) {
       drainOneLazyItem();
-      if (goalNode) break;
+      if (goalNode || !hasRemainingTotalSearchBudget()) break;
     }
     let selected = agenda.pop(expanded);
-    if (!selected && enableLazyWork && lazyWork.activeSize() > 0) {
+    if (!selected && enableLazyWork && lazyWork.activeSize() > 0 && hasRemainingTotalSearchBudget()) {
       drainOneLazyItem();
+      if (goalNode || !hasRemainingTotalSearchBudget()) break;
       selected = agenda.pop(expanded);
     }
-    if (!selected) break;
+    if (!selected || !hasRemainingTotalSearchBudget()) break;
     const node = selected.node;
+    if (!hasRemainingTotalSearchBudget()) break;
     expanded.add(node.nodeId);
     stats.expansions += 1;
     stats.expandedByQueue[selected.queueId] = number(stats.expandedByQueue[selected.queueId], 0) + 1;
@@ -990,13 +1013,23 @@ function runStrategicD2Search(options) {
   }
   stats.optionMapsObserved = stateIndex.optionMaps.size;
   stats.uniqueChoiceCount = observedChoices.size;
-  stats.totalSearchExpansions = stats.expansions + stats.connectorExpansions + stats.blockerConnectorExpansions;
+  stats.totalSearchExpansions = totalSearchWork();
   const frontierSize = agenda.activeSize(expanded);
   const activeLazyWork = lazyWork.activeSize();
-  const budgetExhausted = !goalNode && stats.expansions >= maxExpansions &&
+  const strategicBudgetExhausted = !goalNode && stats.expansions >= maxExpansions &&
     (frontierSize > 0 || activeLazyWork > 0);
+  const totalSearchBudgetExhausted = !goalNode && maxTotalSearchExpansions != null &&
+    stats.totalSearchExpansions >= maxTotalSearchExpansions &&
+    (frontierSize > 0 || activeLazyWork > 0);
+  const budgetExhausted = strategicBudgetExhausted || totalSearchBudgetExhausted;
   const frontierExhausted = !goalNode && frontierSize === 0;
   const deferredWorkRemaining = !goalNode && activeLazyWork > 0;
+  let stoppedReason = "frontier-exhausted";
+  if (goalNode) stoppedReason = "goal-found";
+  else if (strategicBudgetExhausted && totalSearchBudgetExhausted) stoppedReason = "strategic-and-total-search-budget";
+  else if (strategicBudgetExhausted) stoppedReason = "strategic-budget";
+  else if (totalSearchBudgetExhausted) stoppedReason = "total-search-budget";
+  else if (deferredWorkRemaining) stoppedReason = "deferred-work-remaining";
   const replay = goalNode
     ? buildStrictReplayEvidence(
         project,
@@ -1074,7 +1107,10 @@ function runStrategicD2Search(options) {
     outcome: {
       goalFound: Boolean(goalNode),
       frontierExhausted,
+      strategicBudgetExhausted,
+      totalSearchBudgetExhausted,
       budgetExhausted,
+      stoppedReason,
       deferredWorkRemaining,
       searchComplete: Boolean(goalNode || (frontierExhausted && !deferredWorkRemaining)),
       firstGoalExpansion,

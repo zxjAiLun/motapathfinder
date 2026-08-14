@@ -88,6 +88,8 @@
     "check:hierarchical-discovery": "node check-hierarchical-discovery-engine.js",
     "check:d2-deferred-heal-attribution": "node check-d2-deferred-heal-attribution.js",
     "check:strategic-d2-search": "node check-strategic-d2-search.js",
+    "check:strategic-blocker-connector": "node check-strategic-blocker-connector.js",
+    "qualification:strategic-blocker-connector": "node check-strategic-blocker-connector.js --qualification-1000",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",

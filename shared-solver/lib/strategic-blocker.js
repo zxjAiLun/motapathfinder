@@ -161,9 +161,16 @@ function runBlockerDerivedConnector(options) {
 
   const afterBlocker = analyzeTerminalBlocker(simulator, best.state, terminalGoal);
   const improved = best.score > rootScore;
+  const stoppedReason = queue.length > 0
+    ? "budget-exhausted"
+    : frontierTrimmed > 0
+      ? "frontier-trimmed"
+      : "frontier-exhausted";
   return {
     schema: BLOCKER_CONNECTOR_SCHEMA,
     status: improved ? "improved" : "no-improvement",
+    stoppedReason,
+    frontierExhausted: stoppedReason === "frontier-exhausted",
     targetKind,
     beforeBlocker,
     afterBlocker,

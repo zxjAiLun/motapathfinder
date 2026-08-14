@@ -1734,7 +1734,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting"
+      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason"
     },
     "shared-solver/lib/strategic-blocker.js": {
       "id": "strategic-blocker",
@@ -1750,7 +1750,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18d reads the terminal battle blocker (attack-blocked/lethal/viable), derives an intermediate metric (combat-power or survival), and runs a bounded local optimizer that maximizes that metric and re-evaluates the terminal blocker on the best intermediate state"
+      "notes": "PR-5.18d reads the terminal battle blocker (attack-blocked/lethal/viable), derives an intermediate metric (combat-power or survival), and runs a bounded local optimizer that maximizes that metric and re-evaluates the terminal blocker on the best intermediate state; Repair 1 adds explicit budget-exhausted/frontier-exhausted/frontier-trimmed stoppedReason diagnostics"
     },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
@@ -2256,7 +2256,7 @@
       "allowsNotFound": true,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.18d verifies terminal blocker analysis (attack-blocked -> combat-power), synthetic and real blocker-derived intermediate connector strict replay, intermediate combat-power metric improvement, and a same-total-search-work A/B against the strategic-only baseline"
+      "notes": "PR-5.18d verifies terminal blocker analysis (attack-blocked -> combat-power), synthetic and real blocker-derived intermediate connector strict replay, intermediate combat-power metric improvement, shared-total-work edge controls (remaining 1/0/3), and a same-total-search-work A/B against the strategic-only baseline; --qualification-1000 adds the frozen 1000-work A/B for marker-only CI"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",

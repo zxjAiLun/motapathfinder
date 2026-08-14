@@ -21,6 +21,7 @@ const PROJECT_ROOT = path.join(ROOT, "Only upV2.1", "Only upV2.1");
 const GOAL_FILE = path.join(__dirname, "blind-goals", "onlyup-mt5-blueking.json");
 
 function main() {
+  const includeQualification1000 = process.argv.includes("--qualification-1000");
   const project = loadProject(PROJECT_ROOT);
   const initialState = detachCheckpoint(createMt5EntryState(project));
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
@@ -73,6 +74,8 @@ function main() {
   assert.strictEqual(syntheticResult.status, "improved");
   assert.strictEqual(syntheticResult.bestScore, 3);
   assert.strictEqual(syntheticResult.chain.length, 3);
+  assert.strictEqual(syntheticResult.stoppedReason, "frontier-exhausted");
+  assert.strictEqual(syntheticResult.frontierExhausted, true);
   const syntheticReplay = verifyConnectorChain(syntheticSimulator, { value: 0 }, syntheticResult, {
     keyState: syntheticKeyState,
     copyState: syntheticCopyState,
@@ -94,9 +97,125 @@ function main() {
   assert.ok(realResult.afterBlocker.attackMargin > realResult.beforeBlocker.attackMargin);
   assert.ok(realResult.blockerProgressDelta > 0);
   assert.ok(realResult.chain.length > 0);
+  assert.ok(["budget-exhausted", "frontier-exhausted", "frontier-trimmed"].includes(realResult.stoppedReason));
+  assert.strictEqual(typeof realResult.frontierExhausted, "boolean");
   const realReplay = verifyConnectorChain(simulator, initialState, realResult);
   assert.strictEqual(realReplay.valid, true);
   assert.strictEqual(realReplay.postExactStateKey, realResult.postExactStateKey);
+
+  // --- Shared total-work budget edge controls ---------------------------------
+  // These run through the full strategic D2 search so the shared budget is
+  // exercised exactly where PR-5.18d integrated it, not just inside the local
+  // connector.
+  const runSharedBudgetCase = (options) => runStrategicD2Search({
+    project,
+    projectRoot: PROJECT_ROOT,
+    initialState,
+    terminalGoal,
+    simulatorFactory: () => makeBlindSimulator(project),
+    connectorMode: "blocker-derived",
+    enableConnector: true,
+    lazyDrainEvery: 1,
+    ...options,
+  });
+
+  // Case 0: maxTotalSearchExpansions=0 means zero shared budget; not even the
+  // first strategic expansion may start.
+  const zeroCapStopsBeforeFirstExpansion = runSharedBudgetCase({
+    maxExpansions: 8,
+    connectorMaxExpansions: 20,
+    connectorMaxCalls: 4,
+    maxTotalSearchExpansions: 0,
+  });
+  assert.strictEqual(zeroCapStopsBeforeFirstExpansion.stats.totalSearchExpansions, 0);
+  assert.strictEqual(zeroCapStopsBeforeFirstExpansion.stats.expansions, 0);
+  assert.strictEqual(zeroCapStopsBeforeFirstExpansion.stats.blockerConnectorCalls, 0);
+  assert.strictEqual(zeroCapStopsBeforeFirstExpansion.outcome.totalSearchBudgetExhausted, true);
+  assert.strictEqual(zeroCapStopsBeforeFirstExpansion.outcome.budgetExhausted, true);
+  assert.strictEqual(zeroCapStopsBeforeFirstExpansion.outcome.frontierExhausted, false);
+  assert.strictEqual(zeroCapStopsBeforeFirstExpansion.outcome.searchComplete, false);
+  assert.strictEqual(zeroCapStopsBeforeFirstExpansion.outcome.stoppedReason, "total-search-budget");
+
+  // Case 1: one strategic expansion has already consumed 1 of 2 total units;
+  // the connector may consume exactly the remaining 1, then no strategic
+  // expansion may occur before the loop re-checks the shared cap.
+  const remainingOneConnectorOnly = runSharedBudgetCase({
+    maxExpansions: 8,
+    connectorMaxExpansions: 20,
+    connectorMaxCalls: 4,
+    maxTotalSearchExpansions: 2,
+  });
+  assert.strictEqual(remainingOneConnectorOnly.stats.totalSearchExpansions, 2);
+  assert.strictEqual(remainingOneConnectorOnly.stats.expansions, 1);
+  assert.strictEqual(remainingOneConnectorOnly.stats.blockerConnectorCalls, 1);
+  assert.strictEqual(remainingOneConnectorOnly.stats.blockerConnectorExpansions, 1);
+  assert.strictEqual(remainingOneConnectorOnly.stats.blockerConnectorBudgetExhausted, 1);
+  assert.strictEqual(remainingOneConnectorOnly.outcome.totalSearchBudgetExhausted, true);
+  assert.strictEqual(remainingOneConnectorOnly.outcome.strategicBudgetExhausted, false);
+  assert.strictEqual(remainingOneConnectorOnly.outcome.budgetExhausted, true);
+  assert.strictEqual(remainingOneConnectorOnly.outcome.frontierExhausted, false);
+  assert.strictEqual(remainingOneConnectorOnly.outcome.searchComplete, false);
+  assert.strictEqual(remainingOneConnectorOnly.outcome.stoppedReason, "total-search-budget");
+
+  // Case 2: total cap is already exhausted after one strategic expansion;
+  // the queued connector must not start with a zero (or Math.max-forced 1)
+  // budget.
+  const remainingZeroConnectorNotStarted = runSharedBudgetCase({
+    maxExpansions: 8,
+    connectorMaxExpansions: 20,
+    connectorMaxCalls: 4,
+    maxTotalSearchExpansions: 1,
+  });
+  assert.strictEqual(remainingZeroConnectorNotStarted.stats.totalSearchExpansions, 1);
+  assert.strictEqual(remainingZeroConnectorNotStarted.stats.expansions, 1);
+  assert.strictEqual(remainingZeroConnectorNotStarted.stats.blockerConnectorCalls, 0);
+  assert.strictEqual(remainingZeroConnectorNotStarted.stats.blockerConnectorExpansions, 0);
+  assert.strictEqual(remainingZeroConnectorNotStarted.outcome.totalSearchBudgetExhausted, true);
+  assert.strictEqual(remainingZeroConnectorNotStarted.outcome.budgetExhausted, true);
+  assert.strictEqual(remainingZeroConnectorNotStarted.outcome.stoppedReason, "total-search-budget");
+
+  // Case 3: connector asks for 20 expansions but only 3 shared units remain;
+  // the effective connector budget must be clamped to 3 and total work must
+  // stop exactly at the cap.
+  const remainingThreeClamped = runSharedBudgetCase({
+    maxExpansions: 8,
+    connectorMaxExpansions: 20,
+    connectorMaxCalls: 4,
+    maxTotalSearchExpansions: 4,
+  });
+  assert.strictEqual(remainingThreeClamped.stats.totalSearchExpansions, 4);
+  assert.strictEqual(remainingThreeClamped.stats.expansions, 1);
+  assert.strictEqual(remainingThreeClamped.stats.blockerConnectorCalls, 1);
+  assert.strictEqual(remainingThreeClamped.stats.blockerConnectorExpansions, 3);
+  assert.strictEqual(remainingThreeClamped.outcome.totalSearchBudgetExhausted, true);
+  assert.strictEqual(remainingThreeClamped.outcome.frontierExhausted, false);
+  assert.strictEqual(remainingThreeClamped.outcome.searchComplete, false);
+  assert.strictEqual(remainingThreeClamped.outcome.stoppedReason, "total-search-budget");
+
+  const sharedBudgetEdgeControls = [
+    zeroCapStopsBeforeFirstExpansion,
+    remainingOneConnectorOnly,
+    remainingZeroConnectorNotStarted,
+    remainingThreeClamped,
+  ].map((result) => ({
+    totalSearchExpansions: result.stats.totalSearchExpansions,
+    strategicExpansions: result.stats.expansions,
+    blockerConnectorCalls: result.stats.blockerConnectorCalls,
+    blockerConnectorExpansions: result.stats.blockerConnectorExpansions,
+    blockerConnectorStoppedReasonCounts: {
+      budgetExhausted: result.stats.blockerConnectorBudgetExhausted,
+      frontierExhausted: result.stats.blockerConnectorFrontierExhausted,
+      frontierTrimmed: result.stats.blockerConnectorFrontierTrimmed,
+    },
+    outcome: {
+      totalSearchBudgetExhausted: result.outcome.totalSearchBudgetExhausted,
+      strategicBudgetExhausted: result.outcome.strategicBudgetExhausted,
+      budgetExhausted: result.outcome.budgetExhausted,
+      frontierExhausted: result.outcome.frontierExhausted,
+      searchComplete: result.outcome.searchComplete,
+      stoppedReason: result.outcome.stoppedReason,
+    },
+  }));
 
   // --- Same-total-work A/B: blocker connector vs strategic-only --------------
   const run = (label, options) => {
@@ -111,6 +230,10 @@ function main() {
     return {
       label,
       totalSearchExpansions: result.stats.totalSearchExpansions,
+      strategicExpansions: result.stats.expansions,
+      connectorExpansions: result.stats.connectorExpansions,
+      blockerConnectorExpansions: result.stats.blockerConnectorExpansions,
+      blockerConnectorCalls: result.stats.blockerConnectorCalls,
       bestAttackMargin: result.bestTerminalBlocker.attackMargin,
       bestProgressScore: result.bestTerminalBlocker.progressScore,
       goalFound: result.outcome.goalFound,
@@ -118,6 +241,10 @@ function main() {
       connectorResolved: result.stats.connectorResolved,
       blockerConnectorImproved: result.stats.blockerConnectorImproved,
       blockerConnectorNoImprovement: result.stats.blockerConnectorNoImprovement,
+      budgetExhausted: result.outcome.budgetExhausted,
+      strategicBudgetExhausted: result.outcome.strategicBudgetExhausted,
+      totalSearchBudgetExhausted: result.outcome.totalSearchBudgetExhausted,
+      stoppedReason: result.outcome.stoppedReason,
       wallMs: result.outcome.wallMs,
     };
   };
@@ -135,6 +262,33 @@ function main() {
   // baseline at the same total work. Whether it advances is recorded in the
   // round result, not asserted here (a valid NOT_PROMOTED round may match).
   assert.ok(candidate.bestAttackMargin >= baseline.bestAttackMargin);
+
+  let qualification1000WorkAb = null;
+  if (includeQualification1000) {
+    const baseline1000 = run("baseline-strategic-1000", {
+      maxExpansions: 1000,
+      enableConnector: false,
+    });
+    const candidate1000 = run("candidate-blocker-1000", {
+      maxExpansions: 600,
+      connectorMode: "blocker-derived",
+      connectorMaxExpansions: 50,
+      connectorMaxCalls: 8,
+      maxTotalSearchExpansions: 1000,
+    });
+    assert.strictEqual(baseline1000.totalSearchExpansions, 1000);
+    assert.strictEqual(candidate1000.totalSearchExpansions, 1000);
+    assert.strictEqual(candidate1000.strategicExpansions, 600);
+    assert.strictEqual(candidate1000.blockerConnectorExpansions, 400);
+    assert.strictEqual(candidate1000.blockerConnectorCalls, 8);
+    assert.strictEqual(candidate1000.blockerConnectorImproved, 8);
+    assert.strictEqual(candidate1000.blockerConnectorNoImprovement, 0);
+    assert.strictEqual(candidate1000.bestAttackMargin, baseline1000.bestAttackMargin);
+    assert.strictEqual(candidate1000.terminalActionGenerated, 0);
+    assert.strictEqual(candidate1000.budgetExhausted, true);
+    assert.strictEqual(candidate1000.stoppedReason, "strategic-and-total-search-budget");
+    qualification1000WorkAb = { baseline: baseline1000, candidate: candidate1000 };
+  }
 
   process.stdout.write(`${JSON.stringify({
     status: "passed",
@@ -157,8 +311,11 @@ function main() {
       blockerProgressDelta: realResult.blockerProgressDelta,
       chainLength: realResult.chain.length,
       replayValid: realReplay.valid,
+      stoppedReason: realResult.stoppedReason,
     },
+    sharedBudgetEdgeControls,
     sameTotalWorkAb: { baseline, candidate },
+    qualification1000WorkAb,
   }, null, 2)}\n`);
 }
 
