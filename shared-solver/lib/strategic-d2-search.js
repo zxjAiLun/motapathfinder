@@ -42,6 +42,7 @@ const {
   createDependencyAccessObserver,
 } = require("./strategic-dependency-attribution");
 const { compileBattleAccessPrerequisite, evaluateBattleViability } = require("./strategic-access-prerequisite");
+const { analyzeBattleViabilityBlocker } = require("./strategic-battle-viability");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
   createChildNode,
@@ -435,6 +436,7 @@ function runStrategicD2Search(options) {
     1,
   ));
   const enableDependencyAccessAttribution = config.enableDependencyAccessAttribution !== false;
+  const enableBattleViabilityAttribution = config.enableBattleViabilityAttribution !== false;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -1038,6 +1040,9 @@ function runStrategicD2Search(options) {
       stats.battleAccessPrerequisiteCalls += 1;
       const attemptId = dependencyAttemptId(prerequisite, sourceNode.state);
       const beforeViability = evaluateBattleViability(simulator, sourceNode.state, prerequisite.boundary);
+      const beforeBattle = enableBattleViabilityAttribution
+        ? analyzeBattleViabilityBlocker(simulator, sourceNode.state, prerequisite.boundary)
+        : null;
       const attemptBase = {
         attemptId,
         prerequisiteId: prerequisite.id,
@@ -1047,6 +1052,12 @@ function runStrategicD2Search(options) {
         sourceExactStateFingerprint: prerequisite.provenance &&
           prerequisite.provenance.sourceExactStateFingerprint,
         beforeViability,
+        beforeStage: beforeBattle ? beforeBattle.stage : null,
+        battleBefore: beforeBattle ? {
+          stage: beforeBattle.stage,
+          attackMargin: beforeBattle.attackMargin,
+          survivalMargin: beforeBattle.survivalMargin,
+        } : null,
       };
       const result = runDependencyConnector({
         simulator,
@@ -1111,6 +1122,9 @@ function runStrategicD2Search(options) {
         structuralAfter = null;
       }
       const finalProjection = terminalBattleProjection(simulator, materialized.finalState, terminalGoal);
+      const afterBattle = enableBattleViabilityAttribution
+        ? analyzeBattleViabilityBlocker(simulator, materialized.finalState, prerequisite.boundary)
+        : null;
       const reachedNewBest = materialized.finalCreated &&
         bestBeforeMaterialize != null &&
         finalProjection && finalProjection.progressScore != null &&
@@ -1123,14 +1137,51 @@ function runStrategicD2Search(options) {
           stoppedReason: result.stoppedReason,
           expansions: result.expansions,
           chainActions: result.chain.length,
+          chainSummary: result.chain.map((action) => action.summary || action.kind || "step"),
+          resourceDelta: summarizeResourceDelta(sourceNode.state, materialized.finalState),
+          final: {
+            floorId: materialized.finalState.floorId,
+            hp: number((materialized.finalState.hero || {}).hp, 0),
+            atk: number((materialized.finalState.hero || {}).atk, 0),
+            def: number((materialized.finalState.hero || {}).def, 0),
+            mdef: number((materialized.finalState.hero || {}).mdef, 0),
+          },
           finalCreated: materialized.finalCreated,
           reachedNewBest,
+          afterStage: afterBattle ? afterBattle.stage : null,
+          battleAfter: afterBattle ? {
+            stage: afterBattle.stage,
+            attackMargin: afterBattle.attackMargin,
+            survivalMargin: afterBattle.survivalMargin,
+          } : null,
           structuralCrossingsBefore: structuralBefore
             ? structuralBefore.minStructuralBoundaryCrossings
             : null,
           structuralCrossingsAfter: structuralAfter
             ? structuralAfter.minStructuralBoundaryCrossings
             : null,
+          structuralAfter: structuralAfter ? {
+            floorScoped: structuralAfter.floorScoped,
+            minStructuralBoundaryCrossings: structuralAfter.minStructuralBoundaryCrossings,
+            firstObservedUnresolvedBoundary: structuralAfter.firstObservedUnresolvedBoundary
+              ? {
+                  floorId: structuralAfter.firstObservedUnresolvedBoundary.floorId,
+                  x: structuralAfter.firstObservedUnresolvedBoundary.x,
+                  y: structuralAfter.firstObservedUnresolvedBoundary.y,
+                  kind: structuralAfter.firstObservedUnresolvedBoundary.exactStateClassification.kind,
+                }
+              : null,
+            unavailableReason: structuralAfter.evidence && structuralAfter.evidence.reason
+              ? structuralAfter.evidence.reason
+              : structuralAfter.floorScoped
+                ? null
+                : "full structural access attribution is only computed on the current floor",
+          } : {
+            floorScoped: false,
+            minStructuralBoundaryCrossings: null,
+            firstObservedUnresolvedBoundary: null,
+            unavailableReason: "structural attribution failed",
+          },
           firstUnresolvedBefore: structuralBefore && structuralBefore.firstObservedUnresolvedBoundary
             ? {
                 floorId: structuralBefore.firstObservedUnresolvedBoundary.floorId,
@@ -1581,6 +1632,11 @@ function runStrategicD2Search(options) {
           ? "connector-expansions-are-additional-to-strategic-frontier-expansions"
           : "shared-total-search-work-budget",
         maxTotalSearchExpansions,
+        battleViabilityAttribution: connectorMode === "battle-access-prerequisite"
+          ? enableBattleViabilityAttribution
+            ? "observation-only-attack-blocked-lethal-viable"
+            : "disabled"
+          : null,
         dependencyConnector: connectorMode === "dependency-derived" ? {
           maxCalls: dependencyConnectorMaxCalls,
           maxCandidatesPerNode: dependencyConnectorMaxCandidatesPerNode,

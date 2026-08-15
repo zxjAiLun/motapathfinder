@@ -96,6 +96,8 @@
     "qualification:strategic-dependency-attribution": "node check-strategic-dependency-attribution.js --qualification-1000",
     "check:strategic-battle-access-prerequisite": "node check-strategic-battle-access-prerequisite.js",
     "qualification:strategic-battle-access-prerequisite": "node check-strategic-battle-access-prerequisite.js --qualification-1000",
+    "check:strategic-battle-viability": "node check-strategic-battle-viability.js",
+    "qualification:strategic-battle-viability": "node check-strategic-battle-viability.js --qualification-1000",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",

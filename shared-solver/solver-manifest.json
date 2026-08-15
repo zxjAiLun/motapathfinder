@@ -1800,6 +1800,22 @@
       },
       "notes": "PR-5.19b compiles only the first battle-unsurvivable structural access boundary into a discrete completionPredicate: exact battle viable at current state; never compiles subsequent boundaries in the same layer"
     },
+    "shared-solver/lib/strategic-battle-viability.js": {
+      "id": "strategic-battle-viability",
+      "path": "shared-solver/lib/strategic-battle-viability.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "observation-only-battle-viability-deficit-classifier",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.19c splits battle-unsurvivable into unsupported/attack-blocked/lethal/viable using simulator.battleResolver.evaluateBattle; read-only attribution only, no new search capability"
+    },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
       "path": "shared-solver/lib/strategic-connector.js",
@@ -2326,6 +2342,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.19b verifies synthetic battle-access prerequisite compile and strict-replay connector, one-layer discipline, shared-budget edge controls, and --qualification-1000 frozen mechanism/promotion A/B"
+    },
+    "shared-solver/check-strategic-battle-viability.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.19c verifies synthetic attack-blocked/lethal/viable/unsupported classification, on/off observation search stats are identical, and --qualification-1000 real 8-attempt attribution contract with success causal fields and structuralAfter.unavailableReason"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",
