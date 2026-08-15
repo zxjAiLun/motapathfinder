@@ -32,8 +32,9 @@ const {
   compileDependenciesFromTransitions,
   compileUnreachableTerminalDependencies,
   createDependencyAttemptDedupe,
+  dependencyAttemptId,
   runDependencyConnector,
-  selectNewDependencyAttempts,
+  selectFeedbackAwareDependencyAttempts,
 } = require("./strategic-dependency");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
@@ -421,6 +422,10 @@ function runStrategicD2Search(options) {
     config.dependencyConnectorMaxCandidatesPerNode,
     4,
   ));
+  const dependencyAttemptMaxOutstanding = Math.max(1, number(
+    config.dependencyAttemptMaxOutstanding,
+    1,
+  ));
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -488,6 +493,7 @@ function runStrategicD2Search(options) {
     dependencyGlobalBlockerAdvanced: 0,
     newTerminalRelevantDependencyReached: 0,
     dependencyWitnesses: [],
+    dependencyAttemptWitnesses: [],
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
@@ -648,7 +654,13 @@ function runStrategicD2Search(options) {
   }
 
   function drainOneLazyItem() {
-    const work = lazyWork.dequeue((item) =>
+    const queuedDependency = connectorMode === "dependency-derived"
+      ? lazyWork.queued().find((item) =>
+        item.kind === "dependency-connector-choice" &&
+        item.sourceNodeId != null &&
+        nodes.has(item.sourceNodeId))
+      : null;
+    const work = queuedDependency || lazyWork.dequeue((item) =>
       item.sourceNodeId != null && !nodes.has(item.sourceNodeId));
     if (!work) return false;
 
@@ -867,6 +879,21 @@ function runStrategicD2Search(options) {
         maxExpansions: budget,
         maxDepth: connectorMaxDepth,
       });
+      if (stats.dependencyAttemptWitnesses.length < dependencyConnectorMaxCalls) {
+        stats.dependencyAttemptWitnesses.push({
+          semanticDependencyId: dependency.id,
+          attemptId: dependencyAttemptId(dependency, sourceNode.state),
+          sourceNodeId: sourceNode.nodeId,
+          sourceExactStateFingerprint: dependency.provenance &&
+            dependency.provenance.sourceExactStateFingerprint,
+          kind: dependency.kind,
+          capability: dependency.capability,
+          target: dependency.target,
+          status: result.status,
+          stoppedReason: result.stoppedReason,
+          expansions: result.expansions,
+        });
+      }
       stats.dependencyConnectorExpansions += result.expansions;
       if (result.stoppedReason === "budget-exhausted") stats.dependencyConnectorBudgetExhausted += 1;
       else if (result.stoppedReason === "frontier-exhausted") stats.dependencyConnectorFrontierExhausted += 1;
@@ -1138,13 +1165,14 @@ function runStrategicD2Search(options) {
           stats.dependencyCompiledCandidates += candidates.length;
           const queuedCount = lazyWork.queued()
             .filter((work) => work.kind === "dependency-connector-choice").length;
-          const slotsLeft = Math.max(0, dependencyConnectorMaxCalls -
-            stats.dependencyConnectorCalls - queuedCount);
-          const selectedAttempts = selectNewDependencyAttempts({
+          const selectedAttempts = selectFeedbackAwareDependencyAttempts({
             candidates,
             sourceState: node.state,
             dedupe: dependencyAttemptDedupe,
-            slotsLeft,
+            maxCalls: dependencyConnectorMaxCalls,
+            callsExecuted: stats.dependencyConnectorCalls,
+            queuedCount,
+            maxOutstanding: dependencyAttemptMaxOutstanding,
           });
           for (const dependency of selectedAttempts) {
             lazyWork.enqueue({
@@ -1285,6 +1313,8 @@ function runStrategicD2Search(options) {
         dependencyConnector: connectorMode === "dependency-derived" ? {
           maxCalls: dependencyConnectorMaxCalls,
           maxCandidatesPerNode: dependencyConnectorMaxCandidatesPerNode,
+          maxOutstandingAttempts: dependencyAttemptMaxOutstanding,
+          scheduling: "feedback-aware-one-outstanding-attempt",
           vocabulary: ["equipment-acquisition", "resource/power-opportunity-acquisition"],
           successCondition: "dependency-completionPredicate-only-not-scalar-optimization",
         } : null,

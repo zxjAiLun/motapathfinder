@@ -12,7 +12,7 @@ const {
   compileUnreachableTerminalDependencies,
   createDependencyAttemptDedupe,
   runDependencyConnector,
-  selectNewDependencyAttempts,
+  selectFeedbackAwareDependencyAttempts,
 } = require("./lib/strategic-dependency");
 const { verifyConnectorChain } = require("./lib/strategic-connector");
 const { createStrategicStateIndexCache } = require("./lib/strategic-transition");
@@ -287,42 +287,73 @@ function main() {
   );
   assert.strictEqual(equipmentReplay.valid, true);
 
-  // --- Scheduler contract: semantic dependency id != attempt identity --------
+  // --- Feedback-aware scheduler contract: S0 FAIL -> advance -> S1 retry ----
   const schedulerDedupe = createDependencyAttemptDedupe();
-  const semanticTarget = {
+  const retryDependency = {
     id: "semantic-T",
     kind: "resource/power-opportunity-acquisition",
     capability: "combat-power",
-    target: { type: "acquire-option", mechanism: "pickup", floorId: "F", x: 1, y: 1, itemId: "T" },
+    target: { type: "acquire-option", mechanism: "synthetic-graph-goal", floorId: "F", x: 3, y: 0, itemId: "T" },
+    completionPredicate: (state) => state.value === 3,
   };
-  const farSource = { value: "far", hero: { atk: 1 }, floorId: "F" };
-  const nearSource = { value: "near", hero: { atk: 1 }, floorId: "F" };
-  const farAttempt = selectNewDependencyAttempts({
-    candidates: [semanticTarget],
+  const farSource = { value: 0 };
+  const nearSource = { value: 2 };
+  let schedulerCallsExecuted = 0;
+  let schedulerQueuedCount = 0;
+  const farAttempt = selectFeedbackAwareDependencyAttempts({
+    candidates: [retryDependency],
     sourceState: farSource,
     dedupe: schedulerDedupe,
-    slotsLeft: 8,
+    maxCalls: 8,
+    callsExecuted: schedulerCallsExecuted,
+    queuedCount: schedulerQueuedCount,
+    maxOutstanding: 1,
   });
   assert.strictEqual(farAttempt.length, 1);
-  assert.strictEqual(selectNewDependencyAttempts({
-    candidates: [semanticTarget],
+  schedulerQueuedCount = 1;
+  assert.strictEqual(selectFeedbackAwareDependencyAttempts({
+    candidates: [retryDependency],
+    sourceState: nearSource,
+    dedupe: schedulerDedupe,
+    maxCalls: 8,
+    callsExecuted: schedulerCallsExecuted,
+    queuedCount: schedulerQueuedCount,
+    maxOutstanding: 1,
+  }).length, 0);
+  const farConnector = runDependencyConnector({
+    simulator: graphSimulator,
     sourceState: farSource,
-    dedupe: schedulerDedupe,
-    slotsLeft: 8,
-  }).length, 0);
-  const nearAttempt = selectNewDependencyAttempts({
-    candidates: [semanticTarget],
-    sourceState: nearSource,
-    dedupe: schedulerDedupe,
-    slotsLeft: 7,
+    dependency: retryDependency,
+    maxExpansions: 2,
+    maxDepth: 4,
+    keyState: (state) => String(state.value),
+    copyState: (state) => ({ value: state.value }),
   });
-  assert.strictEqual(nearAttempt.length, 1);
-  assert.strictEqual(selectNewDependencyAttempts({
-    candidates: [semanticTarget],
+  assert.strictEqual(farConnector.status, "not-satisfied");
+  assert.strictEqual(farConnector.stoppedReason, "budget-exhausted");
+  schedulerCallsExecuted = 1;
+  schedulerQueuedCount = 0;
+  const nearRetry = selectFeedbackAwareDependencyAttempts({
+    candidates: [retryDependency],
     sourceState: nearSource,
     dedupe: schedulerDedupe,
-    slotsLeft: 7,
-  }).length, 0);
+    maxCalls: 8,
+    callsExecuted: schedulerCallsExecuted,
+    queuedCount: schedulerQueuedCount,
+    maxOutstanding: 1,
+  });
+  assert.strictEqual(nearRetry.length, 1);
+  const nearConnector = runDependencyConnector({
+    simulator: graphSimulator,
+    sourceState: nearSource,
+    dependency: retryDependency,
+    maxExpansions: 4,
+    maxDepth: 4,
+    keyState: (state) => String(state.value),
+    copyState: (state) => ({ value: state.value }),
+  });
+  assert.strictEqual(nearConnector.status, "satisfied");
+  assert.strictEqual(nearConnector.chain.length, 1);
 
   // A pickup that does not move the terminal blocker must not become a
   // dependency, even though the action itself is legal.
@@ -473,6 +504,7 @@ function main() {
       dependencyGlobalBlockerAdvanced: result.stats.dependencyGlobalBlockerAdvanced,
       newTerminalRelevantDependencyReached: result.stats.newTerminalRelevantDependencyReached,
       dependencyWitnesses: result.stats.dependencyWitnesses,
+      dependencyAttemptWitnesses: result.stats.dependencyAttemptWitnesses,
       bestAttackMargin: result.bestTerminalBlocker.attackMargin,
       bestStage: result.bestTerminalBlocker.stage,
       goalFound: result.outcome.goalFound,
@@ -543,9 +575,12 @@ function main() {
     },
     schedulerContract: {
       farAttemptSelected: farAttempt.length,
-      farRepeatSelected: 0,
-      nearAttemptSelected: nearAttempt.length,
-      nearRepeatSelected: 0,
+      feedbackBarrierWhileQueued: 0,
+      farConnectorStatus: farConnector.status,
+      farConnectorStoppedReason: farConnector.stoppedReason,
+      nearRetrySelected: nearRetry.length,
+      nearConnectorStatus: nearConnector.status,
+      nearConnectorChainLength: nearConnector.chain.length,
     },
     realUnreachableCompiler: {
       candidateCount: unreachableCandidates.length,

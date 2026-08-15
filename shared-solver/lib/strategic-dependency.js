@@ -163,6 +163,33 @@ function createDependencyAttemptDedupe() {
   };
 }
 
+/**
+ * Feedback-aware selection used by dependency-derived D2 scheduling.
+ * At most `maxOutstanding` dependency attempts may be queued before a
+ * connector result is observed; the default contract is one. This prevents
+ * early strategic source states from reserving every global call slot before
+ * any FAIL/SATISFIED feedback can influence the next attempt.
+ */
+function selectFeedbackAwareDependencyAttempts(options) {
+  const config = options || {};
+  const dedupe = config.dedupe || createDependencyAttemptDedupe();
+  const sourceState = config.sourceState || null;
+  const maxCalls = Math.max(0, number(config.maxCalls, 8));
+  const callsExecuted = Math.max(0, number(config.callsExecuted, 0));
+  const queuedCount = Math.max(0, number(config.queuedCount, 0));
+  const maxOutstanding = Math.max(1, number(config.maxOutstanding, 1));
+  if (queuedCount >= maxOutstanding) return [];
+  const capacity = maxCalls - callsExecuted - queuedCount;
+  if (capacity <= 0) return [];
+  const slotsLeft = Math.min(capacity, maxOutstanding - queuedCount);
+  return selectNewDependencyAttempts({
+    candidates: config.candidates || [],
+    sourceState,
+    dedupe,
+    slotsLeft,
+  });
+}
+
 function selectNewDependencyAttempts(options) {
   const config = options || {};
   const candidates = config.candidates || [];
@@ -754,6 +781,7 @@ module.exports = {
   projectionDelta,
   projectionImproves,
   runDependencyConnector,
+  selectFeedbackAwareDependencyAttempts,
   selectNewDependencyAttempts,
   targetSignature,
 };

@@ -1734,7 +1734,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting"
+      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode"
     },
     "shared-solver/lib/strategic-blocker.js": {
       "id": "strategic-blocker",
@@ -1766,7 +1766,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18e compiles named discrete prerequisites (equipment-acquisition or resource/power-opportunity-acquisition) from simulator-enumerated action counterfactuals and unreachable option-map counterfactuals; completionPredicate is the only connector success condition and chains remain strict-replay verifiable; PR-5.18e Repair 1 separates semantic dependency id from source-exact-state attempt id, and implements pickup/interactPickup -> equip two-stage equipment-acquisition evidence"
+      "notes": "PR-5.18e compiles named discrete prerequisites (equipment-acquisition or resource/power-opportunity-acquisition) from simulator-enumerated action counterfactuals and unreachable option-map counterfactuals; completionPredicate is the only connector success condition and chains remain strict-replay verifiable; PR-5.18e Repair 1 separates semantic dependency id from source-exact-state attempt id, and implements pickup/interactPickup -> equip two-stage equipment-acquisition evidence; PR-5.18e Repair 2 makes dependency-derived scheduling feedback-aware with at most one outstanding attempt"
     },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
@@ -2279,7 +2279,7 @@
       "allowsNotFound": true,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.18e verifies synthetic completionPredicate-only dependency connector strict replay, positive/negative dependency compile controls, real unreachable-option counterfactual compile, shared-budget edge controls (remaining 0/1/3), and same-total-work A/B; --qualification-1000 adds the frozen 1000-work A/B; Repair 1 adds source-aware scheduler synthetic contract, pickup->equip two-stage synthetic control, and dependencySatisfied/dependencyStateCreated/dependencyGlobalBlockerAdvanced split diagnostics"
+      "notes": "PR-5.18e verifies synthetic completionPredicate-only dependency connector strict replay, positive/negative dependency compile controls, real unreachable-option counterfactual compile, shared-budget edge controls (remaining 0/1/3), and same-total-work A/B; --qualification-1000 adds the frozen 1000-work A/B; Repair 1 adds source-aware scheduler synthetic contract, pickup->equip two-stage synthetic control, and dependencySatisfied/dependencyStateCreated/dependencyGlobalBlockerAdvanced split diagnostics; Repair 2 adds feedback-aware S0-fail/S1-retry synthetic control and dependencyAttemptWitnesses contract"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",
