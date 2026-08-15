@@ -8,6 +8,7 @@ const ALLOWED_KINDS = new Set([
   "connector-choice",
   "blocker-connector-choice",
   "dependency-connector-choice",
+  "battle-access-prerequisite-choice",
 ]);
 
 const ALLOWED_STATUS = new Set(["queued", "resolved", "rejected"]);

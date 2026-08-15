@@ -874,6 +874,7 @@ module.exports = {
   ATTRIBUTION_SCHEMA,
   analyzeBoundaryTargetRelevance,
   buildDependencyAccessAttribution,
+  buildFullStructuralAccessAttribution,
   buildTargetMetrics,
   classifyFrontierBoundary,
   createDependencyAccessObserver,

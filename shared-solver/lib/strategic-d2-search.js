@@ -38,8 +38,10 @@ const {
 } = require("./strategic-dependency");
 const {
   buildDependencyAccessAttribution,
+  buildFullStructuralAccessAttribution,
   createDependencyAccessObserver,
 } = require("./strategic-dependency-attribution");
+const { compileBattleAccessPrerequisite } = require("./strategic-access-prerequisite");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
   createChildNode,
@@ -415,9 +417,11 @@ function runStrategicD2Search(options) {
   const connectorMaxCalls = Math.max(0, number(config.connectorMaxCalls, 16));
   const lazyDrainEvery = Math.max(1, number(config.lazyDrainEvery, 8));
   const floorFlyMode = config.floorFlyMode === "lazy" ? "lazy" : "off";
-  const connectorMode = config.connectorMode === "dependency-derived"
-    ? "dependency-derived"
-    : config.connectorMode === "blocker-derived" ? "blocker-derived" : "terminal";
+  const connectorMode = config.connectorMode === "battle-access-prerequisite"
+    ? "battle-access-prerequisite"
+    : config.connectorMode === "dependency-derived"
+      ? "dependency-derived"
+      : config.connectorMode === "blocker-derived" ? "blocker-derived" : "terminal";
   const dependencyConnectorMaxCalls = Math.max(0, number(
     config.dependencyConnectorMaxCalls,
     connectorMaxCalls,
@@ -500,6 +504,14 @@ function runStrategicD2Search(options) {
     dependencyWitnesses: [],
     dependencyAttemptWitnesses: [],
     dependencyAccessAttributions: [],
+    battleAccessPrerequisiteCompiled: 0,
+    battleAccessPrerequisiteCalls: 0,
+    battleAccessPrerequisiteSatisfied: 0,
+    battleAccessPrerequisiteNoSatisfied: 0,
+    battleAccessPrerequisiteExpansions: 0,
+    battleAccessPrerequisiteStateCreated: 0,
+    battleAccessPrerequisiteGlobalBlockerAdvanced: 0,
+    battleAccessPrerequisiteWitnesses: [],
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
@@ -517,7 +529,7 @@ function runStrategicD2Search(options) {
   }
   const totalSearchWork = () =>
     stats.expansions + stats.connectorExpansions + stats.blockerConnectorExpansions +
-    stats.dependencyConnectorExpansions;
+    stats.dependencyConnectorExpansions + stats.battleAccessPrerequisiteExpansions;
   const remainingTotalSearchWork = () => maxTotalSearchExpansions == null
     ? Infinity
     : Math.max(0, maxTotalSearchExpansions - totalSearchWork());
@@ -1002,6 +1014,126 @@ function runStrategicD2Search(options) {
       return true;
     }
 
+    if (work.kind === "battle-access-prerequisite-choice") {
+      const sourceNode = nodes.get(work.sourceNodeId);
+      const prerequisite = work.prerequisite;
+      if (!sourceNode || !prerequisite || typeof prerequisite.completionPredicate !== "function") {
+        lazyWork.reject(work, "missing-source-or-prerequisite");
+        return true;
+      }
+      if (stats.battleAccessPrerequisiteCalls >= dependencyConnectorMaxCalls) {
+        lazyWork.reject(work, "battle-access-prerequisite-call-cap");
+        return true;
+      }
+      const budget = connectorExpansionBudget();
+      if (budget <= 0) {
+        lazyWork.reject(work, "battle-access-prerequisite-total-search-budget-exhausted");
+        return true;
+      }
+      stats.battleAccessPrerequisiteCalls += 1;
+      const result = runDependencyConnector({
+        simulator,
+        sourceState: sourceNode.state,
+        dependency: prerequisite,
+        maxExpansions: budget,
+        maxDepth: connectorMaxDepth,
+      });
+      stats.battleAccessPrerequisiteExpansions += result.expansions;
+      if (result.status !== "satisfied") {
+        stats.battleAccessPrerequisiteNoSatisfied += 1;
+        lazyWork.reject(work, `battle-access-prerequisite-${result.stoppedReason}`);
+        return true;
+      }
+      if (result.chain.length === 0) {
+        lazyWork.reject(work, "battle-access-prerequisite-empty-chain");
+        return true;
+      }
+      const bestBeforeMaterialize = bestTerminalBlocker.progressScore;
+      const materialized = materializeConnectorChain(sourceNode, result);
+      if (!materialized.ok) {
+        lazyWork.reject(work, `battle-access-prerequisite-chain-apply-error:${materialized.reason}`);
+        return true;
+      }
+      let completionStillTrue = false;
+      try {
+        completionStillTrue = prerequisite.completionPredicate(materialized.finalState);
+      } catch (_error) {
+        completionStillTrue = false;
+      }
+      if (!completionStillTrue) {
+        lazyWork.reject(work, "battle-access-prerequisite-not-preserved-after-replay");
+        return true;
+      }
+      stats.battleAccessPrerequisiteSatisfied += 1;
+      if (materialized.finalCreated) stats.battleAccessPrerequisiteStateCreated += 1;
+      let structuralBefore = null;
+      let structuralAfter = null;
+      try {
+        structuralBefore = buildFullStructuralAccessAttribution({
+          project,
+          simulator,
+          state: sourceNode.state,
+          target: prerequisite.parentDependency.target,
+        });
+        structuralAfter = buildFullStructuralAccessAttribution({
+          project,
+          simulator,
+          state: materialized.finalState,
+          target: prerequisite.parentDependency.target,
+        });
+      } catch (_error) {
+        structuralBefore = null;
+        structuralAfter = null;
+      }
+      const finalProjection = terminalBattleProjection(simulator, materialized.finalState, terminalGoal);
+      const reachedNewBest = materialized.finalCreated &&
+        bestBeforeMaterialize != null &&
+        finalProjection && finalProjection.progressScore != null &&
+        finalProjection.progressScore > bestBeforeMaterialize;
+      if (reachedNewBest) stats.battleAccessPrerequisiteGlobalBlockerAdvanced += 1;
+      if (stats.battleAccessPrerequisiteWitnesses.length < 8) {
+        stats.battleAccessPrerequisiteWitnesses.push({
+          prerequisiteId: prerequisite.id,
+          parentDependencyId: prerequisite.parentDependency.id,
+          boundary: prerequisite.boundary,
+          sourceNodeId: sourceNode.nodeId,
+          chainActions: result.chain.length,
+          finalCreated: materialized.finalCreated,
+          reachedNewBest,
+          structuralCrossingsBefore: structuralBefore
+            ? structuralBefore.minStructuralBoundaryCrossings
+            : null,
+          structuralCrossingsAfter: structuralAfter
+            ? structuralAfter.minStructuralBoundaryCrossings
+            : null,
+          firstUnresolvedBefore: structuralBefore && structuralBefore.firstObservedUnresolvedBoundary
+            ? {
+                floorId: structuralBefore.firstObservedUnresolvedBoundary.floorId,
+                x: structuralBefore.firstObservedUnresolvedBoundary.x,
+                y: structuralBefore.firstObservedUnresolvedBoundary.y,
+                kind: structuralBefore.firstObservedUnresolvedBoundary.exactStateClassification.kind,
+              }
+            : null,
+          firstUnresolvedAfter: structuralAfter && structuralAfter.firstObservedUnresolvedBoundary
+            ? {
+                floorId: structuralAfter.firstObservedUnresolvedBoundary.floorId,
+                x: structuralAfter.firstObservedUnresolvedBoundary.x,
+                y: structuralAfter.firstObservedUnresolvedBoundary.y,
+                kind: structuralAfter.firstObservedUnresolvedBoundary.exactStateClassification.kind,
+              }
+            : null,
+        });
+      }
+      if (goalPredicate(materialized.finalState)) {
+        goalNode = materialized.finalNode;
+        firstGoalExpansion = stats.expansions;
+      }
+      lazyWork.resolve(work, materialized.finalCreated
+        ? "battle-access-prerequisite-materialized"
+        : "battle-access-prerequisite-merged");
+      return true;
+    }
+
     lazyWork.reject(work, "unknown-kind");
     return true;
   }
@@ -1162,9 +1294,83 @@ function runStrategicD2Search(options) {
       }
     }
 
-    // 5.18c/5.18d/5.18e: enqueue the selected connector work.
+    // 5.18c/5.18d/5.18e/5.19b: enqueue the selected connector work.
     if (enableConnector && enableLazyWork) {
-      if (connectorMode === "dependency-derived") {
+      if (connectorMode === "battle-access-prerequisite") {
+        const queuedCount = lazyWork.queued()
+          .filter((work) => work.kind === "battle-access-prerequisite-choice").length;
+        const slotsLeft = Math.max(0, dependencyConnectorMaxCalls -
+          stats.battleAccessPrerequisiteCalls - queuedCount);
+        if (slotsLeft > 0) {
+          const reachableCandidates = compileDependenciesFromTransitions({
+            project,
+            simulator,
+            terminalGoal,
+            state: node.state,
+            transitions: aggregation.transitions,
+            maxCandidates: dependencyConnectorMaxCandidatesPerNode,
+          });
+          const unreachableCandidates = compileUnreachableTerminalDependencies({
+            project,
+            simulator,
+            terminalGoal,
+            state: node.state,
+            reachablePoi: node.reachablePoi,
+            optionMap: node.optionMap,
+            maxCandidates: dependencyConnectorMaxCandidatesPerNode,
+          });
+          const candidates = unreachableCandidates
+            .concat(reachableCandidates)
+            .sort((left, right) => {
+              const leftReachable = left.provenance.reachableAtCompileTime ? 1 : 0;
+              const rightReachable = right.provenance.reachableAtCompileTime ? 1 : 0;
+              return leftReachable - rightReachable ||
+                ((right.provenance.expectedCapabilityDelta.progressScore || 0) -
+                  (left.provenance.expectedCapabilityDelta.progressScore || 0)) ||
+                left.id.localeCompare(right.id);
+            });
+          for (const dependency of candidates) {
+            const queuedNow = lazyWork.queued()
+              .filter((work) => work.kind === "battle-access-prerequisite-choice").length;
+            if (stats.battleAccessPrerequisiteCalls + queuedNow >= dependencyConnectorMaxCalls) break;
+            let structuralAccess;
+            try {
+              structuralAccess = buildFullStructuralAccessAttribution({
+                project,
+                simulator,
+                state: node.state,
+                target: dependency.target,
+              });
+            } catch (_error) {
+              structuralAccess = null;
+            }
+            if (!structuralAccess || !structuralAccess.firstObservedUnresolvedBoundary) continue;
+            const prerequisite = compileBattleAccessPrerequisite({
+              project,
+              simulator,
+              state: node.state,
+              parentDependency: dependency,
+              structuralAccess,
+              sourceAttemptId: null,
+              sourceExactStateFingerprint: dependency.provenance &&
+                dependency.provenance.sourceExactStateFingerprint,
+            });
+            if (!prerequisite) continue;
+            stats.battleAccessPrerequisiteCompiled += 1;
+            if (dependencyAttemptDedupe.has(prerequisite, node.state)) continue;
+            if (stats.battleAccessPrerequisiteCalls + lazyWork.queued()
+              .filter((work) => work.kind === "battle-access-prerequisite-choice").length >=
+              dependencyConnectorMaxCalls) break;
+            dependencyAttemptDedupe.add(prerequisite, node.state);
+            lazyWork.enqueue({
+              kind: "battle-access-prerequisite-choice",
+              sourceNodeId: node.nodeId,
+              prerequisite,
+            });
+            break;
+          }
+        }
+      } else if (connectorMode === "dependency-derived") {
         const queuedCount = lazyWork.queued()
           .filter((work) => work.kind === "dependency-connector-choice").length;
         const remainingSlots = dependencyConnectorMaxCalls -
@@ -1336,11 +1542,13 @@ function runStrategicD2Search(options) {
         maxExpansions: connectorMaxExpansions,
         maxDepth: connectorMaxDepth,
         maxCalls: connectorMaxCalls,
-        target: connectorMode === "dependency-derived"
-          ? "dependency-compiled-discrete-prerequisite"
-          : connectorMode === "blocker-derived"
-            ? "blocker-derived-intermediate-optimizer"
-            : "terminal-boss-choice-when-not-directly-enumerable",
+        target: connectorMode === "battle-access-prerequisite"
+          ? "battle-access-prerequisite-one-layer"
+          : connectorMode === "dependency-derived"
+            ? "dependency-compiled-discrete-prerequisite"
+            : connectorMode === "blocker-derived"
+              ? "blocker-derived-intermediate-optimizer"
+              : "terminal-boss-choice-when-not-directly-enumerable",
         budgetScope: maxTotalSearchExpansions == null
           ? "connector-expansions-are-additional-to-strategic-frontier-expansions"
           : "shared-total-search-work-budget",

@@ -1784,6 +1784,22 @@
       },
       "notes": "PR-5.19a samples bestApproachStates without affecting search, classifies first unresolved access boundary as battle-unsurvivable/missing-key/closed-door/event-condition/topology-changeFloor/no-path/budget-incomplete, and reports honest proofStrength observed vs hypothesis; Repair 1 adds read-only target-relevance/access-cut 0-1 blocker-distance analysis and targetRelevantBoundary selection; Repair 2 fixes 0-1 BFS deque, computes full target-directed minimum structural path before exact-state boundary classification, and renames minAccessBlockers to minStructuralBoundaryCrossings"
     },
+    "shared-solver/lib/strategic-access-prerequisite.js": {
+      "id": "strategic-access-prerequisite",
+      "path": "shared-solver/lib/strategic-access-prerequisite.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "battle-access-prerequisite-one-layer-compiler",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.19b compiles only the first battle-unsurvivable structural access boundary into a discrete completionPredicate: exact battle viable at current state; never compiles subsequent boundaries in the same layer"
+    },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
       "path": "shared-solver/lib/strategic-connector.js",
@@ -2303,6 +2319,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.19a verifies observation-only attribution does not change D2 search stats, synthetic distance metrics and boundary classifiers, real no-semantic-change A/B, and --qualification-1000 frozen 8-attempt attribution contract (8 attempts / 8 distinct sources / 1 semantic dependency); Repair 1 adds relevant/irrelevant access-cut synthetic controls and qualification targetRelevanceSummary; Repair 2 adds adversarial 0-1 BFS path controls and structural access summary contract"
+    },
+    "shared-solver/check-strategic-battle-access-prerequisite.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.19b verifies synthetic battle-access prerequisite compile and strict-replay connector, one-layer discipline, shared-budget edge controls, and --qualification-1000 frozen mechanism/promotion A/B"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",
