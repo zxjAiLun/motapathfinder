@@ -10,7 +10,9 @@ const { loadProject } = require("./lib/project-loader");
 const {
   compileTerminalDependencies,
   compileUnreachableTerminalDependencies,
+  createDependencyAttemptDedupe,
   runDependencyConnector,
+  selectNewDependencyAttempts,
 } = require("./lib/strategic-dependency");
 const { verifyConnectorChain } = require("./lib/strategic-connector");
 const { createStrategicStateIndexCache } = require("./lib/strategic-transition");
@@ -105,12 +107,20 @@ function makeEquipmentSimulator() {
     value: 0,
     floorId: "F",
     hero: { hp: 20, atk: 2, def: 0, mdef: 0, lv: 1, exp: 0, equipment: [] },
+    inventory: {},
+    flags: {},
+    visitedFloors: { F: true },
+  };
+  const afterPickup = {
+    value: 1,
+    floorId: "F",
+    hero: { hp: 20, atk: 2, def: 0, mdef: 0, lv: 1, exp: 0, equipment: [] },
     inventory: { powerSword: 1 },
     flags: {},
     visitedFloors: { F: true },
   };
-  const after = {
-    value: 1,
+  const afterEquip = {
+    value: 2,
     floorId: "F",
     hero: { hp: 20, atk: 12, def: 0, mdef: 0, lv: 1, exp: 0, equipment: ["powerSword"] },
     inventory: {},
@@ -119,24 +129,43 @@ function makeEquipmentSimulator() {
   };
   return {
     source,
-    after,
+    afterPickup,
+    afterEquip,
     enumeratePrimitiveActions(state) {
-      if (state.value !== 0) return { actions: [] };
-      return {
-        actions: [{
-          kind: "equip",
-          equipId: "powerSword",
-          equipType: 0,
-          summary: "equip:powerSword",
-          to: 1,
-        }],
-      };
+      if (state.value === 0) {
+        return {
+          actions: [{
+            kind: "pickup",
+            floorId: "F",
+            x: 0,
+            y: 0,
+            itemId: "powerSwordPickup",
+            target: { x: 0, y: 0, itemId: "powerSwordPickup" },
+            summary: "pickup:powerSwordPickup@F:0,0",
+            to: 1,
+          }],
+        };
+      }
+      if (state.value === 1) {
+        return {
+          actions: [{
+            kind: "equip",
+            equipId: "powerSword",
+            equipType: 0,
+            summary: "equip:powerSword",
+            to: 2,
+          }],
+        };
+      }
+      return { actions: [] };
     },
     applyAction(_state, action) {
-      return { ...this.after };
+      if (action.kind === "pickup") return { ...this.afterPickup };
+      if (action.kind === "equip") return { ...this.afterEquip };
+      return { ...this.source };
     },
     getActionFingerprint(action) {
-      return `equip|${action.equipId || action.summary}`;
+      return `${action.kind}|${action.equipId || action.itemId || action.summary}`;
     },
     battleResolver: {
       evaluateBattle(state) {
@@ -229,8 +258,13 @@ function main() {
   assert.strictEqual(equipmentCandidates.length, 1);
   assert.strictEqual(equipmentCandidates[0].kind, "equipment-acquisition");
   assert.strictEqual(equipmentCandidates[0].target.equipId, "powerSword");
+  assert.strictEqual(equipmentCandidates[0].target.mechanism, "pickup-then-equip");
+  assert.strictEqual(equipmentCandidates[0].target.acquisition.itemId, "powerSwordPickup");
+  assert.strictEqual(equipmentCandidates[0].provenance.sourceAction.acquisition.kind, "pickup");
+  assert.strictEqual(equipmentCandidates[0].provenance.sourceAction.completion.kind, "equip");
   assert.ok(equipmentCandidates[0].provenance.expectedCapabilityDelta.progressScore > 0);
-  assert.strictEqual(equipmentCandidates[0].completionPredicate(equipmentSimulator.after), true);
+  assert.strictEqual(equipmentCandidates[0].completionPredicate(equipmentSimulator.afterEquip), true);
+  assert.strictEqual(equipmentCandidates[0].completionPredicate(equipmentSimulator.afterPickup), false);
   const equipmentConnector = runDependencyConnector({
     simulator: equipmentSimulator,
     sourceState: equipmentSimulator.source,
@@ -241,7 +275,7 @@ function main() {
     copyState: (state) => ({ ...state, hero: { ...state.hero } }),
   });
   assert.strictEqual(equipmentConnector.status, "satisfied");
-  assert.strictEqual(equipmentConnector.chain.length, 1);
+  assert.strictEqual(equipmentConnector.chain.length, 2);
   const equipmentReplay = verifyConnectorChain(
     equipmentSimulator,
     equipmentSimulator.source,
@@ -252,6 +286,43 @@ function main() {
     },
   );
   assert.strictEqual(equipmentReplay.valid, true);
+
+  // --- Scheduler contract: semantic dependency id != attempt identity --------
+  const schedulerDedupe = createDependencyAttemptDedupe();
+  const semanticTarget = {
+    id: "semantic-T",
+    kind: "resource/power-opportunity-acquisition",
+    capability: "combat-power",
+    target: { type: "acquire-option", mechanism: "pickup", floorId: "F", x: 1, y: 1, itemId: "T" },
+  };
+  const farSource = { value: "far", hero: { atk: 1 }, floorId: "F" };
+  const nearSource = { value: "near", hero: { atk: 1 }, floorId: "F" };
+  const farAttempt = selectNewDependencyAttempts({
+    candidates: [semanticTarget],
+    sourceState: farSource,
+    dedupe: schedulerDedupe,
+    slotsLeft: 8,
+  });
+  assert.strictEqual(farAttempt.length, 1);
+  assert.strictEqual(selectNewDependencyAttempts({
+    candidates: [semanticTarget],
+    sourceState: farSource,
+    dedupe: schedulerDedupe,
+    slotsLeft: 8,
+  }).length, 0);
+  const nearAttempt = selectNewDependencyAttempts({
+    candidates: [semanticTarget],
+    sourceState: nearSource,
+    dedupe: schedulerDedupe,
+    slotsLeft: 7,
+  });
+  assert.strictEqual(nearAttempt.length, 1);
+  assert.strictEqual(selectNewDependencyAttempts({
+    candidates: [semanticTarget],
+    sourceState: nearSource,
+    dedupe: schedulerDedupe,
+    slotsLeft: 7,
+  }).length, 0);
 
   // A pickup that does not move the terminal blocker must not become a
   // dependency, even though the action itself is legal.
@@ -397,6 +468,9 @@ function main() {
       dependencyConnectorSatisfied: result.stats.dependencyConnectorSatisfied,
       dependencyConnectorNoSatisfied: result.stats.dependencyConnectorNoSatisfied,
       terminalPrerequisiteSatisfied: result.stats.terminalPrerequisiteSatisfied,
+      dependencySatisfied: result.stats.dependencySatisfied,
+      dependencyStateCreated: result.stats.dependencyStateCreated,
+      dependencyGlobalBlockerAdvanced: result.stats.dependencyGlobalBlockerAdvanced,
       newTerminalRelevantDependencyReached: result.stats.newTerminalRelevantDependencyReached,
       dependencyWitnesses: result.stats.dependencyWitnesses,
       bestAttackMargin: result.bestTerminalBlocker.attackMargin,
@@ -460,10 +534,18 @@ function main() {
       positiveExpectedDelta: positiveCandidates[0].provenance.expectedCapabilityDelta.progressScore,
       equipmentCandidates: equipmentCandidates.length,
       equipmentKind: equipmentCandidates[0].kind,
+      equipmentMechanism: equipmentCandidates[0].target.mechanism,
       equipmentTargetEquipId: equipmentCandidates[0].target.equipId,
+      equipmentChainLength: equipmentConnector.chain.length,
       equipmentConnectorStatus: equipmentConnector.status,
       equipmentReplayValid: equipmentReplay.valid,
       flatCandidates: flatCandidates.length,
+    },
+    schedulerContract: {
+      farAttemptSelected: farAttempt.length,
+      farRepeatSelected: 0,
+      nearAttemptSelected: nearAttempt.length,
+      nearRepeatSelected: 0,
     },
     realUnreachableCompiler: {
       candidateCount: unreachableCandidates.length,

@@ -121,6 +121,110 @@ function dependencyId(kind, capability, target) {
   return hash(`${kind}|${capability}|${targetSignature(target)}`);
 }
 
+function safeStateFingerprint(state) {
+  if (!state) return "no-source";
+  try {
+    return hash(buildStateKey(state));
+  } catch (_error) {
+    try {
+      return hash(JSON.stringify(state));
+    } catch (_jsonError) {
+      return "unserializable-source";
+    }
+  }
+}
+
+/**
+ * A semantic dependency is (kind, capability, target). An attempt is that
+ * semantic dependency from one exact source state. The strategic frontier may
+ * legitimately see the same prerequisite again from a later, closer state;
+ * those are distinct attempts and must not be deduplicated by semantic id.
+ */
+function dependencyAttemptId(dependency, sourceState) {
+  const semantic = dependency && dependency.id ? dependency.id : "unknown-dependency";
+  const source = sourceState
+    ? safeStateFingerprint(sourceState)
+    : (dependency && dependency.provenance && dependency.provenance.sourceExactStateFingerprint) || "unknown-source";
+  return `${semantic}@${source}`;
+}
+
+function createDependencyAttemptDedupe() {
+  const seen = new Set();
+  return {
+    has(dependency, sourceState) {
+      return seen.has(dependencyAttemptId(dependency, sourceState));
+    },
+    add(dependency, sourceState) {
+      seen.add(dependencyAttemptId(dependency, sourceState));
+    },
+    get size() {
+      return seen.size;
+    },
+  };
+}
+
+function selectNewDependencyAttempts(options) {
+  const config = options || {};
+  const candidates = config.candidates || [];
+  const dedupe = config.dedupe || createDependencyAttemptDedupe();
+  const sourceState = config.sourceState || null;
+  const slotsLeft = Math.max(0, number(config.slotsLeft, 0));
+  const selected = [];
+  for (const dependency of candidates) {
+    if (selected.length >= slotsLeft) break;
+    if (dedupe.has(dependency, sourceState)) continue;
+    dedupe.add(dependency, sourceState);
+    selected.push(dependency);
+  }
+  return selected;
+}
+
+function buildAcquiredEquipmentCandidates(options) {
+  const {
+    project,
+    simulator,
+    terminalGoal,
+    beforeBlocker,
+    afterAcquireState,
+    acquisitionAction,
+    sourceState,
+    reachableAtCompileTime,
+  } = options;
+  if (!simulator || !afterAcquireState || !acquisitionAction) return [];
+  let equipActions;
+  try {
+    equipActions = (simulator.enumeratePrimitiveActions(afterAcquireState).actions || [])
+      .filter((action) => action && action.kind === "equip");
+  } catch (_error) {
+    return [];
+  }
+  const candidates = [];
+  for (const equipAction of equipActions) {
+    let afterEquipState;
+    try {
+      afterEquipState = simulator.applyAction(afterAcquireState, equipAction, { storeRoute: false });
+    } catch (_error) {
+      continue;
+    }
+    afterEquipState.route = [];
+    const afterBlocker = analyzeTerminalBlocker(simulator, afterEquipState, terminalGoal);
+    if (!projectionImproves(beforeBlocker, afterBlocker)) continue;
+    const candidate = buildDependencyCandidate({
+      project,
+      simulator,
+      terminalGoal,
+      beforeBlocker,
+      afterBlocker,
+      action: equipAction,
+      acquisitionAction,
+      sourceState,
+      reachableAtCompileTime,
+    });
+    if (candidate) candidates.push(candidate);
+  }
+  return candidates;
+}
+
 function buildDependencyCandidate(options) {
   const {
     project,
@@ -129,6 +233,7 @@ function buildDependencyCandidate(options) {
     beforeBlocker,
     afterBlocker,
     action,
+    acquisitionAction,
     sourceState,
   } = options;
   const kind = action.kind;
@@ -140,11 +245,19 @@ function buildDependencyCandidate(options) {
   let target;
   if (kind === "equip") {
     dependencyKind = "equipment-acquisition";
+    const acquisitionLocation = acquisitionAction ? actionLocation(acquisitionAction) : null;
     target = {
       type: "equip-item",
-      mechanism: "inventory-equip-action",
+      mechanism: acquisitionAction ? "pickup-then-equip" : "inventory-equip-action",
       equipId: action.equipId || action.itemId || null,
       equipType: action.equipType != null ? action.equipType : null,
+      acquisition: acquisitionAction ? {
+        mechanism: acquisitionAction.kind || null,
+        floorId: acquisitionLocation.floorId,
+        x: acquisitionLocation.x,
+        y: acquisitionLocation.y,
+        itemId: acquisitionAction.itemId || null,
+      } : null,
     };
   } else if (kind === "pickup" || kind === "interactPickup") {
     dependencyKind = "resource/power-opportunity-acquisition";
@@ -185,16 +298,13 @@ function buildDependencyCandidate(options) {
         ? "option-map-unreachable-counterfactual"
         : "simulator-enumerated-action-counterfactual",
       expectedCapabilityDelta: projectionDelta(beforeBlocker, afterBlocker),
-      sourceAction: compactAction(action),
-      sourceExactStateFingerprint: sourceState
-        ? (() => {
-            try {
-              return hash(buildStateKey(sourceState));
-            } catch (_error) {
-              return hash(JSON.stringify(sourceState));
-            }
-          })()
-        : null,
+      sourceAction: acquisitionAction
+        ? {
+            acquisition: compactAction(acquisitionAction),
+            completion: compactAction(action),
+          }
+        : compactAction(action),
+      sourceExactStateFingerprint: sourceState ? safeStateFingerprint(sourceState) : null,
       reachableAtCompileTime: options.reachableAtCompileTime !== false,
       knownRouteUsed: false,
       authoredIdUsed: false,
@@ -246,6 +356,18 @@ function compileTerminalDependencies(options) {
   const actions = enumerateEvidenceActions(simulator, state);
   const candidatesByTarget = new Map();
   let applyErrors = 0;
+  const addCandidate = (candidate) => {
+    if (!candidate) return;
+    const signature = targetSignature(candidate.target);
+    const existing = candidatesByTarget.get(signature);
+    const score = candidate.provenance.expectedCapabilityDelta &&
+      candidate.provenance.expectedCapabilityDelta.progressScore != null
+      ? candidate.provenance.expectedCapabilityDelta.progressScore
+      : 0;
+    if (!existing || score > (existing.provenance.expectedCapabilityDelta.progressScore || 0)) {
+      candidatesByTarget.set(signature, candidate);
+    }
+  };
   for (const action of actions) {
     let afterState;
     try {
@@ -256,25 +378,27 @@ function compileTerminalDependencies(options) {
     }
     afterState.route = [];
     const afterBlocker = analyzeTerminalBlocker(simulator, afterState, terminalGoal);
-    if (!projectionImproves(beforeBlocker, afterBlocker)) continue;
-    const candidate = buildDependencyCandidate({
-      project,
-      simulator,
-      terminalGoal,
-      beforeBlocker,
-      afterBlocker,
-      action,
-      sourceState: state,
-    });
-    if (!candidate) continue;
-    const signature = targetSignature(candidate.target);
-    const existing = candidatesByTarget.get(signature);
-    const score = candidate.provenance.expectedCapabilityDelta &&
-      candidate.provenance.expectedCapabilityDelta.progressScore != null
-      ? candidate.provenance.expectedCapabilityDelta.progressScore
-      : 0;
-    if (!existing || score > existing.provenance.expectedCapabilityDelta.progressScore) {
-      candidatesByTarget.set(signature, candidate);
+    if (projectionImproves(beforeBlocker, afterBlocker)) {
+      addCandidate(buildDependencyCandidate({
+        project,
+        simulator,
+        terminalGoal,
+        beforeBlocker,
+        afterBlocker,
+        action,
+        sourceState: state,
+      }));
+    }
+    if (action.kind === "pickup" || action.kind === "interactPickup") {
+      buildAcquiredEquipmentCandidates({
+        project,
+        simulator,
+        terminalGoal,
+        beforeBlocker,
+        afterAcquireState: afterState,
+        acquisitionAction: action,
+        sourceState: state,
+      }).forEach(addCandidate);
     }
   }
   return Array.from(candidatesByTarget.values())
@@ -344,9 +468,22 @@ function compileUnreachableTerminalDependencies(options) {
     .map((entry) => entry.key));
   const candidatesByTarget = new Map();
   let applyErrors = 0;
+  const addCandidate = (candidate) => {
+    if (!candidate) return;
+    const signature = targetSignature(candidate.target);
+    const existing = candidatesByTarget.get(signature);
+    const score = candidate.provenance.expectedCapabilityDelta &&
+      candidate.provenance.expectedCapabilityDelta.progressScore != null
+        ? candidate.provenance.expectedCapabilityDelta.progressScore
+        : 0;
+    if (!existing || score > (existing.provenance.expectedCapabilityDelta.progressScore || 0)) {
+      candidatesByTarget.set(signature, candidate);
+    }
+  };
   for (const entry of optionMap.entries || []) {
     if (!["item", "enemy"].includes(entry.kind)) continue;
     if (reachableKeys.has(entry.key)) continue;
+    const counterfactualAction = counterfactualActionForOption(entry);
     let afterState;
     try {
       afterState = cloneState(state);
@@ -359,34 +496,36 @@ function compileUnreachableTerminalDependencies(options) {
       };
       if (!afterState.visitedFloors) afterState.visitedFloors = {};
       afterState.visitedFloors[entry.floorId] = true;
-      const action = counterfactualActionForOption(entry);
-      afterState = simulator.applyAction(afterState, action, { storeRoute: false });
+      afterState = simulator.applyAction(afterState, counterfactualAction, { storeRoute: false });
     } catch (_error) {
       applyErrors += 1;
       continue;
     }
     afterState.route = [];
     const afterBlocker = analyzeTerminalBlocker(simulator, afterState, terminalGoal);
-    if (!projectionImproves(beforeBlocker, afterBlocker)) continue;
-    const candidate = buildDependencyCandidate({
-      project,
-      simulator,
-      terminalGoal,
-      beforeBlocker,
-      afterBlocker,
-      action: counterfactualActionForOption(entry),
-      sourceState: state,
-      reachableAtCompileTime: false,
-    });
-    if (!candidate) continue;
-    const signature = targetSignature(candidate.target);
-    const existing = candidatesByTarget.get(signature);
-    const score = candidate.provenance.expectedCapabilityDelta &&
-      candidate.provenance.expectedCapabilityDelta.progressScore != null
-      ? candidate.provenance.expectedCapabilityDelta.progressScore
-      : 0;
-    if (!existing || score > (existing.provenance.expectedCapabilityDelta.progressScore || 0)) {
-      candidatesByTarget.set(signature, candidate);
+    if (projectionImproves(beforeBlocker, afterBlocker)) {
+      addCandidate(buildDependencyCandidate({
+        project,
+        simulator,
+        terminalGoal,
+        beforeBlocker,
+        afterBlocker,
+        action: counterfactualAction,
+        sourceState: state,
+        reachableAtCompileTime: false,
+      }));
+    }
+    if (entry.kind === "item") {
+      buildAcquiredEquipmentCandidates({
+        project,
+        simulator,
+        terminalGoal,
+        beforeBlocker,
+        afterAcquireState: afterState,
+        acquisitionAction: counterfactualAction,
+        sourceState: state,
+        reachableAtCompileTime: false,
+      }).forEach(addCandidate);
     }
   }
   return Array.from(candidatesByTarget.values())
@@ -419,28 +558,43 @@ function compileDependenciesFromTransitions(options) {
   if (!["attack-blocked", "lethal"].includes(beforeBlocker.stage)) return [];
 
   const candidatesByTarget = new Map();
+  const addCandidate = (candidate) => {
+    if (!candidate) return;
+    const signature = targetSignature(candidate.target);
+    const existing = candidatesByTarget.get(signature);
+    const score = candidate.provenance.expectedCapabilityDelta &&
+      candidate.provenance.expectedCapabilityDelta.progressScore != null
+        ? candidate.provenance.expectedCapabilityDelta.progressScore
+        : 0;
+    if (!existing || score > (existing.provenance.expectedCapabilityDelta.progressScore || 0)) {
+      candidatesByTarget.set(signature, candidate);
+    }
+  };
   for (const transition of transitions) {
     for (const post of transition.postStates || []) {
       const delta = post.terminalBlockerDelta;
-      if (!delta || !delta.improved || !delta.after || !post.appliedBy) continue;
-      const candidate = buildDependencyCandidate({
-        project,
-        simulator,
-        terminalGoal,
-        beforeBlocker: delta.before || beforeBlocker,
-        afterBlocker: delta.after,
-        action: post.appliedBy,
-        sourceState: state,
-      });
-      if (!candidate) continue;
-      const signature = targetSignature(candidate.target);
-      const existing = candidatesByTarget.get(signature);
-      const score = candidate.provenance.expectedCapabilityDelta &&
-        candidate.provenance.expectedCapabilityDelta.progressScore != null
-        ? candidate.provenance.expectedCapabilityDelta.progressScore
-        : 0;
-      if (!existing || score > (existing.provenance.expectedCapabilityDelta.progressScore || 0)) {
-        candidatesByTarget.set(signature, candidate);
+      if (!delta || !delta.after || !post.appliedBy) continue;
+      if (delta.improved) {
+        addCandidate(buildDependencyCandidate({
+          project,
+          simulator,
+          terminalGoal,
+          beforeBlocker: delta.before || beforeBlocker,
+          afterBlocker: delta.after,
+          action: post.appliedBy,
+          sourceState: state,
+        }));
+      }
+      if (post.appliedBy.kind === "pickup" || post.appliedBy.kind === "interactPickup") {
+        buildAcquiredEquipmentCandidates({
+          project,
+          simulator,
+          terminalGoal,
+          beforeBlocker: delta.before || beforeBlocker,
+          afterAcquireState: post.state,
+          acquisitionAction: post.appliedBy,
+          sourceState: state,
+        }).forEach(addCandidate);
       }
     }
   }
@@ -595,8 +749,11 @@ module.exports = {
   compileDependenciesFromTransitions,
   compileTerminalDependencies,
   compileUnreachableTerminalDependencies,
+  createDependencyAttemptDedupe,
+  dependencyAttemptId,
   projectionDelta,
   projectionImproves,
   runDependencyConnector,
+  selectNewDependencyAttempts,
   targetSignature,
 };

@@ -31,7 +31,9 @@ const {
 const {
   compileDependenciesFromTransitions,
   compileUnreachableTerminalDependencies,
+  createDependencyAttemptDedupe,
   runDependencyConnector,
+  selectNewDependencyAttempts,
 } = require("./strategic-dependency");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
@@ -481,11 +483,14 @@ function runStrategicD2Search(options) {
     dependencyConnectorFrontierTrimmed: 0,
     dependencyConnectorChainActions: 0,
     terminalPrerequisiteSatisfied: 0,
+    dependencySatisfied: 0,
+    dependencyStateCreated: 0,
+    dependencyGlobalBlockerAdvanced: 0,
     newTerminalRelevantDependencyReached: 0,
     dependencyWitnesses: [],
   };
   const observedChoices = new Set();
-  const queuedDependencyIds = new Set();
+  const dependencyAttemptDedupe = createDependencyAttemptDedupe();
   const bestByRole = new Map(agenda.definitions.map((definition) => [definition.id, root]));
   const bestTerminalBlocker = { progressScore: null, attackMargin: null, stage: null, nodeId: null };
   function observeTerminalBlocker(node, projection) {
@@ -893,13 +898,18 @@ function runStrategicD2Search(options) {
       }
       stats.dependencyConnectorSatisfied += 1;
       stats.terminalPrerequisiteSatisfied += 1;
+      stats.dependencySatisfied += 1;
       stats.dependencyConnectorChainActions += result.chain.length;
+      if (materialized.finalCreated) stats.dependencyStateCreated += 1;
       const finalProjection = terminalBattleProjection(simulator, materialized.finalState, terminalGoal);
       const reachedNewBest = materialized.finalCreated &&
         bestBeforeMaterialize != null &&
         finalProjection && finalProjection.progressScore != null &&
         finalProjection.progressScore > bestBeforeMaterialize;
-      if (reachedNewBest) stats.newTerminalRelevantDependencyReached += 1;
+      if (reachedNewBest) {
+        stats.dependencyGlobalBlockerAdvanced += 1;
+        stats.newTerminalRelevantDependencyReached += 1;
+      }
       if (stats.dependencyWitnesses.length < 8) {
         stats.dependencyWitnesses.push({
           dependencyId: dependency.id,
@@ -913,6 +923,11 @@ function runStrategicD2Search(options) {
           expectedProgressScore: dependency.afterBlocker && dependency.afterBlocker.progressScore,
           finalCreated: materialized.finalCreated,
           reachedNewBest,
+          sourceStateFingerprint: dependency.provenance &&
+            dependency.provenance.sourceExactStateFingerprint,
+          acquisitionMechanism: dependency.target && dependency.target.acquisition
+            ? dependency.target.acquisition.mechanism
+            : null,
         });
       }
       if (goalPredicate(materialized.finalState)) {
@@ -1121,12 +1136,17 @@ function runStrategicD2Search(options) {
                 left.id.localeCompare(right.id);
             });
           stats.dependencyCompiledCandidates += candidates.length;
-          for (const dependency of candidates) {
-            if (queuedDependencyIds.has(dependency.id)) continue;
-            if (stats.dependencyConnectorCalls + lazyWork.queued()
-              .filter((work) => work.kind === "dependency-connector-choice").length >=
-              dependencyConnectorMaxCalls) break;
-            queuedDependencyIds.add(dependency.id);
+          const queuedCount = lazyWork.queued()
+            .filter((work) => work.kind === "dependency-connector-choice").length;
+          const slotsLeft = Math.max(0, dependencyConnectorMaxCalls -
+            stats.dependencyConnectorCalls - queuedCount);
+          const selectedAttempts = selectNewDependencyAttempts({
+            candidates,
+            sourceState: node.state,
+            dedupe: dependencyAttemptDedupe,
+            slotsLeft,
+          });
+          for (const dependency of selectedAttempts) {
             lazyWork.enqueue({
               kind: "dependency-connector-choice",
               sourceNodeId: node.nodeId,
