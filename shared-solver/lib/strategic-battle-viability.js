@@ -7,10 +7,16 @@
  * read-only classifier for an arbitrary access battle described by a boundary.
  * It splits the former battle-unsurvivable umbrella into:
  *
- *   unsupported     -> battle resolver does not support/probe the enemy
- *   attack-blocked  -> supported, but no damage can be dealt (damage == null)
+ *   unsupported     -> resolver cannot support/probe the enemy, or damage is
+ *                      unresolved without evidence that ATK < DEF
+ *   attack-blocked  -> supported and damage is null with a negative attack
+ *                      margin (hero ATK < enemy DEF)
  *   lethal          -> supported and damage is known, but damage >= hero HP
  *   viable          -> supported and damage < hero HP
+ *
+ * The damage==null case is intentionally not treated as proven attack-blocked
+ * when enemy DEF is unavailable or attackMargin >= 0; it is reported as
+ * unsupported/unresolved so future compilers do not blindly add ATK.
  */
 
 function number(value, fallback) {
@@ -19,22 +25,24 @@ function number(value, fallback) {
 }
 
 function analyzeBattleViabilityBlocker(simulator, state, boundary) {
+  const hero = (state && state.hero) || {};
+  const heroHp = number(hero.hp, 0);
+  const heroAtk = number(hero.atk, 0);
+
   if (!simulator || !simulator.battleResolver || typeof simulator.battleResolver.evaluateBattle !== "function") {
     return {
       stage: "unsupported",
       supported: false,
+      heroHp,
+      heroAtk,
+      enemyDef: null,
       attackMargin: null,
       damage: null,
-      heroHp: null,
       survivalMargin: null,
-      enemyDef: null,
       reason: "battle-resolver-unavailable",
     };
   }
 
-  const hero = (state && state.hero) || {};
-  const heroHp = number(hero.hp, 0);
-  const heroAtk = number(hero.atk, 0);
   let evaluation;
   try {
     evaluation = simulator.battleResolver.evaluateBattle(
@@ -48,11 +56,12 @@ function analyzeBattleViabilityBlocker(simulator, state, boundary) {
     return {
       stage: "unsupported",
       supported: false,
+      heroHp,
+      heroAtk,
+      enemyDef: null,
       attackMargin: null,
       damage: null,
-      heroHp,
       survivalMargin: null,
-      enemyDef: null,
       reason: error && error.message ? error.message : "battle-evaluation-error",
     };
   }
@@ -61,11 +70,12 @@ function analyzeBattleViabilityBlocker(simulator, state, boundary) {
     return {
       stage: "unsupported",
       supported: false,
+      heroHp,
+      heroAtk,
+      enemyDef: null,
       attackMargin: null,
       damage: null,
-      heroHp,
       survivalMargin: null,
-      enemyDef: null,
       reason: evaluation && evaluation.reason ? evaluation.reason : "unsupported-battle",
     };
   }
@@ -78,23 +88,30 @@ function analyzeBattleViabilityBlocker(simulator, state, boundary) {
   const survivalMargin = damage == null ? null : heroHp - damage;
 
   let stage;
-  if (damage == null) {
+  let reason = evaluation.reason ? evaluation.reason : null;
+  if (damage != null) {
+    if (damage >= heroHp) {
+      stage = "lethal";
+    } else {
+      stage = "viable";
+    }
+  } else if (attackMargin != null && attackMargin < 0) {
     stage = "attack-blocked";
-  } else if (damage >= heroHp) {
-    stage = "lethal";
   } else {
-    stage = "viable";
+    stage = "unsupported";
+    reason = reason || "unresolved-no-damage";
   }
 
   return {
     stage,
     supported: true,
+    heroHp,
+    heroAtk,
+    enemyDef,
     attackMargin,
     damage,
-    heroHp,
     survivalMargin,
-    enemyDef,
-    reason: evaluation.reason ? evaluation.reason : null,
+    reason,
   };
 }
 

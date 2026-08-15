@@ -1055,8 +1055,14 @@ function runStrategicD2Search(options) {
         beforeStage: beforeBattle ? beforeBattle.stage : null,
         battleBefore: beforeBattle ? {
           stage: beforeBattle.stage,
+          supported: beforeBattle.supported,
+          heroHp: beforeBattle.heroHp,
+          heroAtk: beforeBattle.heroAtk,
+          enemyDef: beforeBattle.enemyDef,
           attackMargin: beforeBattle.attackMargin,
+          damage: beforeBattle.damage,
           survivalMargin: beforeBattle.survivalMargin,
+          reason: beforeBattle.reason,
         } : null,
       };
       const result = runDependencyConnector({
@@ -1151,8 +1157,14 @@ function runStrategicD2Search(options) {
           afterStage: afterBattle ? afterBattle.stage : null,
           battleAfter: afterBattle ? {
             stage: afterBattle.stage,
+            supported: afterBattle.supported,
+            heroHp: afterBattle.heroHp,
+            heroAtk: afterBattle.heroAtk,
+            enemyDef: afterBattle.enemyDef,
             attackMargin: afterBattle.attackMargin,
+            damage: afterBattle.damage,
             survivalMargin: afterBattle.survivalMargin,
+            reason: afterBattle.reason,
           } : null,
           structuralCrossingsBefore: structuralBefore
             ? structuralBefore.minStructuralBoundaryCrossings
@@ -1161,6 +1173,16 @@ function runStrategicD2Search(options) {
             ? structuralAfter.minStructuralBoundaryCrossings
             : null,
           structuralAfter: structuralAfter ? {
+            available: structuralAfter.floorScoped === true &&
+              structuralAfter.minStructuralBoundaryCrossings != null,
+            reason: structuralAfter.floorScoped === true &&
+              structuralAfter.minStructuralBoundaryCrossings != null
+                ? "ok"
+                : !structuralAfter.floorScoped
+                  ? "target-not-on-current-floor"
+                  : structuralAfter.evidence && structuralAfter.evidence.reason
+                    ? "no-structural-path"
+                    : "attribution-unavailable",
             floorScoped: structuralAfter.floorScoped,
             minStructuralBoundaryCrossings: structuralAfter.minStructuralBoundaryCrossings,
             firstObservedUnresolvedBoundary: structuralAfter.firstObservedUnresolvedBoundary
@@ -1177,6 +1199,8 @@ function runStrategicD2Search(options) {
                 ? null
                 : "full structural access attribution is only computed on the current floor",
           } : {
+            available: false,
+            reason: "attribution-error",
             floorScoped: false,
             minStructuralBoundaryCrossings: null,
             firstObservedUnresolvedBoundary: null,

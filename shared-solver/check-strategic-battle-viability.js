@@ -65,6 +65,7 @@ function main() {
   // --- Synthetic classification controls --------------------------------------
   const boundary = { floorId: "F", x: 1, y: 0, enemyId: "syntheticEnemy" };
   const state = makeState();
+
   const attackBlocked = analyzeBattleViabilityBlocker(
     makeClassificationSimulator({ supported: true, damage: null, enemyDef: 10 }),
     state,
@@ -72,9 +73,22 @@ function main() {
   );
   assert.strictEqual(attackBlocked.stage, "attack-blocked");
   assert.strictEqual(attackBlocked.supported, true);
+  assert.strictEqual(attackBlocked.heroHp, 20);
+  assert.strictEqual(attackBlocked.heroAtk, 5);
+  assert.strictEqual(attackBlocked.enemyDef, 10);
   assert.strictEqual(attackBlocked.damage, null);
   assert.strictEqual(attackBlocked.attackMargin, -5);
   assert.strictEqual(attackBlocked.survivalMargin, null);
+
+  const unresolvedNoDamage = analyzeBattleViabilityBlocker(
+    makeClassificationSimulator({ supported: true, damage: null, enemyDef: 2 }),
+    state,
+    boundary,
+  );
+  assert.strictEqual(unresolvedNoDamage.stage, "unsupported");
+  assert.strictEqual(unresolvedNoDamage.supported, true);
+  assert.strictEqual(unresolvedNoDamage.attackMargin, 3);
+  assert.strictEqual(unresolvedNoDamage.reason, "unresolved-no-damage");
 
   const lethal = analyzeBattleViabilityBlocker(
     makeClassificationSimulator({ supported: true, damage: 25, enemyDef: 3 }),
@@ -85,6 +99,8 @@ function main() {
   assert.strictEqual(lethal.damage, 25);
   assert.strictEqual(lethal.survivalMargin, -5);
   assert.strictEqual(lethal.attackMargin, 2);
+  assert.strictEqual(lethal.heroAtk, 5);
+  assert.strictEqual(lethal.enemyDef, 3);
 
   const viable = analyzeBattleViabilityBlocker(
     makeClassificationSimulator({ supported: true, damage: 5, enemyDef: 2 }),
@@ -94,6 +110,7 @@ function main() {
   assert.strictEqual(viable.stage, "viable");
   assert.strictEqual(viable.survivalMargin, 15);
   assert.strictEqual(viable.attackMargin, 3);
+  assert.strictEqual(viable.heroAtk, 5);
 
   const unsupported = analyzeBattleViabilityBlocker(
     makeClassificationSimulator({ supported: false, reason: "no-enemy" }),
@@ -139,18 +156,28 @@ function main() {
     "battleAccessPrerequisiteExpansions",
     "battleAccessPrerequisiteStateCreated",
     "battleAccessPrerequisiteGlobalBlockerAdvanced",
+    "terminalActionGenerated",
     "totalSearchExpansions",
   ];
   deterministicStats.forEach((key) => {
     assert.strictEqual(observed.stats[key], unobserved.stats[key], `battle viability attribution changed stats.${key}`);
   });
   assert.strictEqual(observed.outcome.stoppedReason, unobserved.outcome.stoppedReason);
+  assert.strictEqual(observed.outcome.goalFound, unobserved.outcome.goalFound);
   assert.strictEqual(observed.bestTerminalBlocker.attackMargin, unobserved.bestTerminalBlocker.attackMargin);
+  assert.strictEqual(observed.bestTerminalBlocker.stage, unobserved.bestTerminalBlocker.stage);
+  assert.strictEqual(observed.bestTerminalBlocker.progressScore, unobserved.bestTerminalBlocker.progressScore);
   assert.ok(observed.stats.battleAccessPrerequisiteWitnesses.length > 0);
   observed.stats.battleAccessPrerequisiteWitnesses.forEach((witness) => {
     assert.ok(["unsupported", "attack-blocked", "lethal", "viable"].includes(witness.beforeStage));
     assert.ok(witness.battleBefore);
     assert.strictEqual(typeof witness.battleBefore.stage, "string");
+    assert.ok("heroHp" in witness.battleBefore);
+    assert.ok("heroAtk" in witness.battleBefore);
+    assert.ok("enemyDef" in witness.battleBefore);
+    assert.ok("damage" in witness.battleBefore);
+    assert.ok("survivalMargin" in witness.battleBefore);
+    assert.ok("attackMargin" in witness.battleBefore);
   });
 
   let qualificationAttribution = null;
@@ -197,6 +224,8 @@ function main() {
       assert.ok(["unsupported", "attack-blocked", "lethal", "viable"].includes(witness.beforeStage));
       assert.ok(witness.battleBefore);
       assert.strictEqual(typeof witness.battleBefore.stage, "string");
+      assert.ok("heroAtk" in witness.battleBefore);
+      assert.ok("enemyDef" in witness.battleBefore);
     });
 
     const successful = candidate.stats.battleAccessPrerequisiteWitnesses
@@ -211,7 +240,15 @@ function main() {
       assert.ok(witness.final.floorId);
       assert.ok(witness.battleAfter);
       assert.strictEqual(witness.battleAfter.stage, "viable");
+      assert.ok("heroHp" in witness.battleAfter);
+      assert.ok("heroAtk" in witness.battleAfter);
+      assert.ok("enemyDef" in witness.battleAfter);
+      assert.ok("damage" in witness.battleAfter);
+      assert.ok("survivalMargin" in witness.battleAfter);
+      assert.ok("attackMargin" in witness.battleAfter);
       assert.ok(witness.structuralAfter);
+      assert.strictEqual(typeof witness.structuralAfter.available, "boolean");
+      assert.strictEqual(typeof witness.structuralAfter.reason, "string");
       assert.strictEqual(typeof witness.structuralAfter.unavailableReason, "string");
       assert.ok(witness.structuralAfter.unavailableReason.length > 0);
     });
@@ -247,6 +284,7 @@ function main() {
     status: "passed",
     syntheticClassification: {
       attackBlocked,
+      unresolvedNoDamage,
       lethal,
       viable,
       unsupported,

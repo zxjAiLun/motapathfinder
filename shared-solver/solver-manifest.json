@@ -1814,7 +1814,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.19c splits battle-unsurvivable into unsupported/attack-blocked/lethal/viable using simulator.battleResolver.evaluateBattle; read-only attribution only, no new search capability"
+      "notes": "PR-5.19c splits battle-unsurvivable into unsupported/attack-blocked/lethal/viable using simulator.battleResolver.evaluateBattle; damage==null is attack-blocked only when enemyDef is readable and attackMargin<0, otherwise unsupported/unresolved-no-damage; read-only attribution only, no new search capability"
     },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
@@ -2348,7 +2348,7 @@
       "allowsNotFound": true,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.19c verifies synthetic attack-blocked/lethal/viable/unsupported classification, on/off observation search stats are identical, and --qualification-1000 real 8-attempt attribution contract with success causal fields and structuralAfter.unavailableReason"
+      "notes": "PR-5.19c verifies synthetic attack-blocked/lethal/viable/unsupported/unresolved-no-damage classification, full battleBefore/After fields, on/off observation search stats are identical, and --qualification-1000 real 8-attempt attribution contract with success causal fields and structuralAfter.available/reason/unavailableReason"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",
