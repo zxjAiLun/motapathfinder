@@ -100,6 +100,55 @@ function makeTerminalSimulator(improves) {
   };
 }
 
+function makeEquipmentSimulator() {
+  const source = {
+    value: 0,
+    floorId: "F",
+    hero: { hp: 20, atk: 2, def: 0, mdef: 0, lv: 1, exp: 0, equipment: [] },
+    inventory: { powerSword: 1 },
+    flags: {},
+    visitedFloors: { F: true },
+  };
+  const after = {
+    value: 1,
+    floorId: "F",
+    hero: { hp: 20, atk: 12, def: 0, mdef: 0, lv: 1, exp: 0, equipment: ["powerSword"] },
+    inventory: {},
+    flags: {},
+    visitedFloors: { F: true },
+  };
+  return {
+    source,
+    after,
+    enumeratePrimitiveActions(state) {
+      if (state.value !== 0) return { actions: [] };
+      return {
+        actions: [{
+          kind: "equip",
+          equipId: "powerSword",
+          equipType: 0,
+          summary: "equip:powerSword",
+          to: 1,
+        }],
+      };
+    },
+    applyAction(_state, action) {
+      return { ...this.after };
+    },
+    getActionFingerprint(action) {
+      return `equip|${action.equipId || action.summary}`;
+    },
+    battleResolver: {
+      evaluateBattle(state) {
+        if (Number(state.hero.atk) < 10) {
+          return { supported: true, damageInfo: null, enemyInfo: { def: 10 } };
+        }
+        return { supported: true, damageInfo: { damage: 5 }, enemyInfo: { def: 10 } };
+      },
+    },
+  };
+}
+
 function makeSyntheticProject() {
   return {
     floorsById: {
@@ -167,6 +216,42 @@ function main() {
   assert.ok(positiveCandidates[0].provenance.expectedCapabilityDelta.progressScore > 0);
   assert.strictEqual(positiveCandidates[0].provenance.knownRouteUsed, false);
   assert.strictEqual(positiveCandidates[0].provenance.authoredIdUsed, false);
+
+  // --- Synthetic compiler: equipment-acquisition vocabulary -----------------
+  const equipmentSimulator = makeEquipmentSimulator();
+  const equipmentCandidates = compileTerminalDependencies({
+    project: syntheticProject,
+    simulator: equipmentSimulator,
+    state: equipmentSimulator.source,
+    terminalGoal: positiveGoal,
+    maxCandidates: 4,
+  });
+  assert.strictEqual(equipmentCandidates.length, 1);
+  assert.strictEqual(equipmentCandidates[0].kind, "equipment-acquisition");
+  assert.strictEqual(equipmentCandidates[0].target.equipId, "powerSword");
+  assert.ok(equipmentCandidates[0].provenance.expectedCapabilityDelta.progressScore > 0);
+  assert.strictEqual(equipmentCandidates[0].completionPredicate(equipmentSimulator.after), true);
+  const equipmentConnector = runDependencyConnector({
+    simulator: equipmentSimulator,
+    sourceState: equipmentSimulator.source,
+    dependency: equipmentCandidates[0],
+    maxExpansions: 8,
+    maxDepth: 4,
+    keyState: (state) => String(state.value),
+    copyState: (state) => ({ ...state, hero: { ...state.hero } }),
+  });
+  assert.strictEqual(equipmentConnector.status, "satisfied");
+  assert.strictEqual(equipmentConnector.chain.length, 1);
+  const equipmentReplay = verifyConnectorChain(
+    equipmentSimulator,
+    equipmentSimulator.source,
+    equipmentConnector,
+    {
+      keyState: (state) => String(state.value),
+      copyState: (state) => ({ ...state, hero: { ...state.hero } }),
+    },
+  );
+  assert.strictEqual(equipmentReplay.valid, true);
 
   // A pickup that does not move the terminal blocker must not become a
   // dependency, even though the action itself is legal.
@@ -373,6 +458,11 @@ function main() {
       positiveKind: positiveCandidates[0].kind,
       positiveTargetItemId: positiveCandidates[0].target.itemId,
       positiveExpectedDelta: positiveCandidates[0].provenance.expectedCapabilityDelta.progressScore,
+      equipmentCandidates: equipmentCandidates.length,
+      equipmentKind: equipmentCandidates[0].kind,
+      equipmentTargetEquipId: equipmentCandidates[0].target.equipId,
+      equipmentConnectorStatus: equipmentConnector.status,
+      equipmentReplayValid: equipmentReplay.valid,
       flatCandidates: flatCandidates.length,
     },
     realUnreachableCompiler: {
