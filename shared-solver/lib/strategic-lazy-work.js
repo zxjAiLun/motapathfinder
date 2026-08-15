@@ -7,6 +7,7 @@ const ALLOWED_KINDS = new Set([
   "floorfly-choice",
   "connector-choice",
   "blocker-connector-choice",
+  "dependency-connector-choice",
 ]);
 
 const ALLOWED_STATUS = new Set(["queued", "resolved", "rejected"]);

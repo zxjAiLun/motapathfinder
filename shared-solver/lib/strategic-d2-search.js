@@ -28,6 +28,11 @@ const {
   analyzeTerminalBlocker,
   runBlockerDerivedConnector,
 } = require("./strategic-blocker");
+const {
+  compileDependenciesFromTransitions,
+  compileUnreachableTerminalDependencies,
+  runDependencyConnector,
+} = require("./strategic-dependency");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
   createChildNode,
@@ -403,7 +408,17 @@ function runStrategicD2Search(options) {
   const connectorMaxCalls = Math.max(0, number(config.connectorMaxCalls, 16));
   const lazyDrainEvery = Math.max(1, number(config.lazyDrainEvery, 8));
   const floorFlyMode = config.floorFlyMode === "lazy" ? "lazy" : "off";
-  const connectorMode = config.connectorMode === "blocker-derived" ? "blocker-derived" : "terminal";
+  const connectorMode = config.connectorMode === "dependency-derived"
+    ? "dependency-derived"
+    : config.connectorMode === "blocker-derived" ? "blocker-derived" : "terminal";
+  const dependencyConnectorMaxCalls = Math.max(0, number(
+    config.dependencyConnectorMaxCalls,
+    connectorMaxCalls,
+  ));
+  const dependencyConnectorMaxCandidatesPerNode = Math.max(1, number(
+    config.dependencyConnectorMaxCandidatesPerNode,
+    4,
+  ));
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -456,8 +471,21 @@ function runStrategicD2Search(options) {
     blockerConnectorFrontierExhausted: 0,
     blockerConnectorFrontierTrimmed: 0,
     blockerConnectorChainActions: 0,
+    dependencyCompiledCandidates: 0,
+    dependencyConnectorCalls: 0,
+    dependencyConnectorSatisfied: 0,
+    dependencyConnectorNoSatisfied: 0,
+    dependencyConnectorExpansions: 0,
+    dependencyConnectorBudgetExhausted: 0,
+    dependencyConnectorFrontierExhausted: 0,
+    dependencyConnectorFrontierTrimmed: 0,
+    dependencyConnectorChainActions: 0,
+    terminalPrerequisiteSatisfied: 0,
+    newTerminalRelevantDependencyReached: 0,
+    dependencyWitnesses: [],
   };
   const observedChoices = new Set();
+  const queuedDependencyIds = new Set();
   const bestByRole = new Map(agenda.definitions.map((definition) => [definition.id, root]));
   const bestTerminalBlocker = { progressScore: null, attackMargin: null, stage: null, nodeId: null };
   function observeTerminalBlocker(node, projection) {
@@ -471,7 +499,8 @@ function runStrategicD2Search(options) {
     }
   }
   const totalSearchWork = () =>
-    stats.expansions + stats.connectorExpansions + stats.blockerConnectorExpansions;
+    stats.expansions + stats.connectorExpansions + stats.blockerConnectorExpansions +
+    stats.dependencyConnectorExpansions;
   const remainingTotalSearchWork = () => maxTotalSearchExpansions == null
     ? Infinity
     : Math.max(0, maxTotalSearchExpansions - totalSearchWork());
@@ -809,6 +838,93 @@ function runStrategicD2Search(options) {
       return true;
     }
 
+    if (work.kind === "dependency-connector-choice") {
+      const sourceNode = nodes.get(work.sourceNodeId);
+      const dependency = work.dependency;
+      if (!sourceNode || !dependency || typeof dependency.completionPredicate !== "function") {
+        lazyWork.reject(work, "missing-source-or-dependency");
+        return true;
+      }
+      if (stats.dependencyConnectorCalls >= dependencyConnectorMaxCalls) {
+        lazyWork.reject(work, "dependency-connector-call-cap");
+        return true;
+      }
+      const budget = connectorExpansionBudget();
+      if (budget <= 0) {
+        lazyWork.reject(work, "dependency-connector-total-search-budget-exhausted");
+        return true;
+      }
+      stats.dependencyConnectorCalls += 1;
+      const result = runDependencyConnector({
+        simulator,
+        sourceState: sourceNode.state,
+        dependency,
+        maxExpansions: budget,
+        maxDepth: connectorMaxDepth,
+      });
+      stats.dependencyConnectorExpansions += result.expansions;
+      if (result.stoppedReason === "budget-exhausted") stats.dependencyConnectorBudgetExhausted += 1;
+      else if (result.stoppedReason === "frontier-exhausted") stats.dependencyConnectorFrontierExhausted += 1;
+      else if (result.stoppedReason === "frontier-trimmed") stats.dependencyConnectorFrontierTrimmed += 1;
+      if (result.status !== "satisfied") {
+        stats.dependencyConnectorNoSatisfied += 1;
+        lazyWork.reject(work, `dependency-connector-${result.stoppedReason}`);
+        return true;
+      }
+      if (result.chain.length === 0) {
+        lazyWork.reject(work, "dependency-connector-empty-chain");
+        return true;
+      }
+      const bestBeforeMaterialize = bestTerminalBlocker.progressScore;
+      const materialized = materializeConnectorChain(sourceNode, result);
+      if (!materialized.ok) {
+        lazyWork.reject(work, `dependency-connector-chain-apply-error:${materialized.reason}`);
+        return true;
+      }
+      let completionStillTrue = false;
+      try {
+        completionStillTrue = dependency.completionPredicate(materialized.finalState);
+      } catch (_error) {
+        completionStillTrue = false;
+      }
+      if (!completionStillTrue) {
+        lazyWork.reject(work, "dependency-completion-not-preserved-after-replay");
+        return true;
+      }
+      stats.dependencyConnectorSatisfied += 1;
+      stats.terminalPrerequisiteSatisfied += 1;
+      stats.dependencyConnectorChainActions += result.chain.length;
+      const finalProjection = terminalBattleProjection(simulator, materialized.finalState, terminalGoal);
+      const reachedNewBest = materialized.finalCreated &&
+        bestBeforeMaterialize != null &&
+        finalProjection && finalProjection.progressScore != null &&
+        finalProjection.progressScore > bestBeforeMaterialize;
+      if (reachedNewBest) stats.newTerminalRelevantDependencyReached += 1;
+      if (stats.dependencyWitnesses.length < 8) {
+        stats.dependencyWitnesses.push({
+          dependencyId: dependency.id,
+          kind: dependency.kind,
+          capability: dependency.capability,
+          target: dependency.target,
+          sourceNodeId: sourceNode.nodeId,
+          chainActions: result.chain.length,
+          beforeProgressScore: dependency.beforeBlocker && dependency.beforeBlocker.progressScore,
+          afterProgressScore: finalProjection && finalProjection.progressScore,
+          expectedProgressScore: dependency.afterBlocker && dependency.afterBlocker.progressScore,
+          finalCreated: materialized.finalCreated,
+          reachedNewBest,
+        });
+      }
+      if (goalPredicate(materialized.finalState)) {
+        goalNode = materialized.finalNode;
+        firstGoalExpansion = stats.expansions;
+      }
+      lazyWork.resolve(work, materialized.finalCreated
+        ? "dependency-prerequisite-materialized"
+        : "dependency-prerequisite-merged");
+      return true;
+    }
+
     lazyWork.reject(work, "unknown-kind");
     return true;
   }
@@ -969,9 +1085,56 @@ function runStrategicD2Search(options) {
       }
     }
 
-    // 5.18c/5.18d: enqueue a connector choice for the terminal dependency.
+    // 5.18c/5.18d/5.18e: enqueue the selected connector work.
     if (enableConnector && enableLazyWork) {
-      if (connectorMode === "blocker-derived") {
+      if (connectorMode === "dependency-derived") {
+        const queuedCount = lazyWork.queued()
+          .filter((work) => work.kind === "dependency-connector-choice").length;
+        const remainingSlots = dependencyConnectorMaxCalls -
+          stats.dependencyConnectorCalls - queuedCount;
+        if (remainingSlots > 0) {
+          const reachableCandidates = compileDependenciesFromTransitions({
+            project,
+            simulator,
+            terminalGoal,
+            state: node.state,
+            transitions: aggregation.transitions,
+            maxCandidates: dependencyConnectorMaxCandidatesPerNode,
+          });
+          const unreachableCandidates = compileUnreachableTerminalDependencies({
+            project,
+            simulator,
+            terminalGoal,
+            state: node.state,
+            reachablePoi: node.reachablePoi,
+            optionMap: node.optionMap,
+            maxCandidates: dependencyConnectorMaxCandidatesPerNode,
+          });
+          const candidates = unreachableCandidates
+            .concat(reachableCandidates)
+            .sort((left, right) => {
+              const leftReachable = left.provenance.reachableAtCompileTime ? 1 : 0;
+              const rightReachable = right.provenance.reachableAtCompileTime ? 1 : 0;
+              return leftReachable - rightReachable ||
+                ((right.provenance.expectedCapabilityDelta.progressScore || 0) -
+                  (left.provenance.expectedCapabilityDelta.progressScore || 0)) ||
+                left.id.localeCompare(right.id);
+            });
+          stats.dependencyCompiledCandidates += candidates.length;
+          for (const dependency of candidates) {
+            if (queuedDependencyIds.has(dependency.id)) continue;
+            if (stats.dependencyConnectorCalls + lazyWork.queued()
+              .filter((work) => work.kind === "dependency-connector-choice").length >=
+              dependencyConnectorMaxCalls) break;
+            queuedDependencyIds.add(dependency.id);
+            lazyWork.enqueue({
+              kind: "dependency-connector-choice",
+              sourceNodeId: node.nodeId,
+              dependency,
+            });
+          }
+        }
+      } else if (connectorMode === "blocker-derived") {
         if (stats.blockerConnectorCalls < connectorMaxCalls) {
           const blocker = analyzeTerminalBlocker(simulator, node.state, terminalGoal);
           if (blocker.stage === "attack-blocked" || blocker.stage === "lethal") {
@@ -1090,13 +1253,21 @@ function runStrategicD2Search(options) {
         maxExpansions: connectorMaxExpansions,
         maxDepth: connectorMaxDepth,
         maxCalls: connectorMaxCalls,
-        target: connectorMode === "blocker-derived"
-          ? "blocker-derived-intermediate-optimizer"
-          : "terminal-boss-choice-when-not-directly-enumerable",
+        target: connectorMode === "dependency-derived"
+          ? "dependency-compiled-discrete-prerequisite"
+          : connectorMode === "blocker-derived"
+            ? "blocker-derived-intermediate-optimizer"
+            : "terminal-boss-choice-when-not-directly-enumerable",
         budgetScope: maxTotalSearchExpansions == null
           ? "connector-expansions-are-additional-to-strategic-frontier-expansions"
           : "shared-total-search-work-budget",
         maxTotalSearchExpansions,
+        dependencyConnector: connectorMode === "dependency-derived" ? {
+          maxCalls: dependencyConnectorMaxCalls,
+          maxCandidatesPerNode: dependencyConnectorMaxCandidatesPerNode,
+          vocabulary: ["equipment-acquisition", "resource/power-opportunity-acquisition"],
+          successCondition: "dependency-completionPredicate-only-not-scalar-optimization",
+        } : null,
       },
       completenessLimitations: [
         "exact-state-merge-only-no-dominance",
