@@ -41,7 +41,7 @@ const {
   buildFullStructuralAccessAttribution,
   createDependencyAccessObserver,
 } = require("./strategic-dependency-attribution");
-const { compileBattleAccessPrerequisite } = require("./strategic-access-prerequisite");
+const { compileBattleAccessPrerequisite, evaluateBattleViability } = require("./strategic-access-prerequisite");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
   createChildNode,
@@ -677,7 +677,12 @@ function runStrategicD2Search(options) {
         item.kind === "dependency-connector-choice" &&
         item.sourceNodeId != null &&
         nodes.has(item.sourceNodeId))
-      : null;
+      : connectorMode === "battle-access-prerequisite"
+        ? lazyWork.queued().find((item) =>
+          item.kind === "battle-access-prerequisite-choice" &&
+          item.sourceNodeId != null &&
+          nodes.has(item.sourceNodeId))
+        : null;
     const work = queuedDependency || lazyWork.dequeue((item) =>
       item.sourceNodeId != null && !nodes.has(item.sourceNodeId));
     if (!work) return false;
@@ -1031,6 +1036,18 @@ function runStrategicD2Search(options) {
         return true;
       }
       stats.battleAccessPrerequisiteCalls += 1;
+      const attemptId = dependencyAttemptId(prerequisite, sourceNode.state);
+      const beforeViability = evaluateBattleViability(simulator, sourceNode.state, prerequisite.boundary);
+      const attemptBase = {
+        attemptId,
+        prerequisiteId: prerequisite.id,
+        parentDependencyId: prerequisite.parentDependency.id,
+        boundary: prerequisite.boundary,
+        sourceNodeId: sourceNode.nodeId,
+        sourceExactStateFingerprint: prerequisite.provenance &&
+          prerequisite.provenance.sourceExactStateFingerprint,
+        beforeViability,
+      };
       const result = runDependencyConnector({
         simulator,
         sourceState: sourceNode.state,
@@ -1041,6 +1058,14 @@ function runStrategicD2Search(options) {
       stats.battleAccessPrerequisiteExpansions += result.expansions;
       if (result.status !== "satisfied") {
         stats.battleAccessPrerequisiteNoSatisfied += 1;
+        if (stats.battleAccessPrerequisiteWitnesses.length < dependencyConnectorMaxCalls) {
+          stats.battleAccessPrerequisiteWitnesses.push({
+            ...attemptBase,
+            status: result.status,
+            stoppedReason: result.stoppedReason,
+            expansions: result.expansions,
+          });
+        }
         lazyWork.reject(work, `battle-access-prerequisite-${result.stoppedReason}`);
         return true;
       }
@@ -1091,12 +1116,12 @@ function runStrategicD2Search(options) {
         finalProjection && finalProjection.progressScore != null &&
         finalProjection.progressScore > bestBeforeMaterialize;
       if (reachedNewBest) stats.battleAccessPrerequisiteGlobalBlockerAdvanced += 1;
-      if (stats.battleAccessPrerequisiteWitnesses.length < 8) {
+      if (stats.battleAccessPrerequisiteWitnesses.length < dependencyConnectorMaxCalls) {
         stats.battleAccessPrerequisiteWitnesses.push({
-          prerequisiteId: prerequisite.id,
-          parentDependencyId: prerequisite.parentDependency.id,
-          boundary: prerequisite.boundary,
-          sourceNodeId: sourceNode.nodeId,
+          ...attemptBase,
+          status: result.status,
+          stoppedReason: result.stoppedReason,
+          expansions: result.expansions,
           chainActions: result.chain.length,
           finalCreated: materialized.finalCreated,
           reachedNewBest,
@@ -1299,9 +1324,7 @@ function runStrategicD2Search(options) {
       if (connectorMode === "battle-access-prerequisite") {
         const queuedCount = lazyWork.queued()
           .filter((work) => work.kind === "battle-access-prerequisite-choice").length;
-        const slotsLeft = Math.max(0, dependencyConnectorMaxCalls -
-          stats.battleAccessPrerequisiteCalls - queuedCount);
-        if (slotsLeft > 0) {
+        if (queuedCount < dependencyAttemptMaxOutstanding) {
           const reachableCandidates = compileDependenciesFromTransitions({
             project,
             simulator,
@@ -1329,10 +1352,9 @@ function runStrategicD2Search(options) {
                   (left.provenance.expectedCapabilityDelta.progressScore || 0)) ||
                 left.id.localeCompare(right.id);
             });
+          const compiledPrerequisites = [];
           for (const dependency of candidates) {
-            const queuedNow = lazyWork.queued()
-              .filter((work) => work.kind === "battle-access-prerequisite-choice").length;
-            if (stats.battleAccessPrerequisiteCalls + queuedNow >= dependencyConnectorMaxCalls) break;
+            if (compiledPrerequisites.length >= dependencyConnectorMaxCandidatesPerNode) break;
             let structuralAccess;
             try {
               structuralAccess = buildFullStructuralAccessAttribution({
@@ -1357,17 +1379,23 @@ function runStrategicD2Search(options) {
             });
             if (!prerequisite) continue;
             stats.battleAccessPrerequisiteCompiled += 1;
-            if (dependencyAttemptDedupe.has(prerequisite, node.state)) continue;
-            if (stats.battleAccessPrerequisiteCalls + lazyWork.queued()
-              .filter((work) => work.kind === "battle-access-prerequisite-choice").length >=
-              dependencyConnectorMaxCalls) break;
-            dependencyAttemptDedupe.add(prerequisite, node.state);
+            compiledPrerequisites.push(prerequisite);
+          }
+          const selectedAttempts = selectFeedbackAwareDependencyAttempts({
+            candidates: compiledPrerequisites,
+            sourceState: node.state,
+            dedupe: dependencyAttemptDedupe,
+            maxCalls: dependencyConnectorMaxCalls,
+            callsExecuted: stats.battleAccessPrerequisiteCalls,
+            queuedCount,
+            maxOutstanding: dependencyAttemptMaxOutstanding,
+          });
+          for (const prerequisite of selectedAttempts) {
             lazyWork.enqueue({
               kind: "battle-access-prerequisite-choice",
               sourceNodeId: node.nodeId,
               prerequisite,
             });
-            break;
           }
         }
       } else if (connectorMode === "dependency-derived") {

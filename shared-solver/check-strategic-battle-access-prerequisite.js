@@ -11,6 +11,10 @@ const {
   compileBattleAccessPrerequisite,
   evaluateBattleViability,
 } = require("./lib/strategic-access-prerequisite");
+const {
+  createDependencyAttemptDedupe,
+  selectFeedbackAwareDependencyAttempts,
+} = require("./lib/strategic-dependency");
 const { verifyConnectorChain } = require("./lib/strategic-connector");
 const { runDependencyConnector } = require("./lib/strategic-dependency");
 const { runStrategicD2Search } = require("./lib/strategic-d2-search");
@@ -69,6 +73,45 @@ function makeSyntheticHealSimulator() {
           damageInfo: { damage: 30 },
           enemyInfo: { def: 0 },
         };
+      },
+    },
+  };
+}
+
+function makeFeedbackBattleSimulator(allowHeal) {
+  const source = {
+    value: 0,
+    floorId: "F",
+    hero: { hp: allowHeal ? 21 : 20, atk: 2, def: 0, mdef: 0, lv: 1, exp: 0, equipment: [], loc: { x: 0, y: 0, direction: "right" } },
+    inventory: {},
+    flags: {},
+    visitedFloors: { F: true },
+  };
+  const healed = {
+    value: 1,
+    floorId: "F",
+    hero: { hp: 100, atk: 2, def: 0, mdef: 0, lv: 1, exp: 0, equipment: [], loc: { x: 1, y: 0, direction: "right" } },
+    inventory: {},
+    flags: {},
+    visitedFloors: { F: true },
+  };
+  return {
+    source,
+    healed,
+    enumeratePrimitiveActions(state) {
+      if (!allowHeal || state.value !== 0) return { actions: [] };
+      return { actions: [{ kind: "event", floorId: "F", x: 1, y: 0, summary: "event:heal", to: 1 }] };
+    },
+    applyAction(_state, action) {
+      return { ...this.healed };
+    },
+    getActionFingerprint(action) {
+      return `event|${action.summary}`;
+    },
+    battleResolver: {
+      evaluateBattle(_state, floorId, x, y, enemyId) {
+        if (enemyId !== "evilHero") return { supported: false, reason: "unknown-enemy" };
+        return { supported: true, damageInfo: { damage: 30 }, enemyInfo: { def: 0 } };
       },
     },
   };
@@ -152,6 +195,75 @@ function main() {
     },
   );
   assert.strictEqual(syntheticReplay.valid, true);
+
+  // --- Feedback-aware synthetic: S0 FAIL -> release -> S1 retry SUCCESS ------
+  const feedbackBoundary = { floorId: "F", x: 1, y: 0, enemyId: "evilHero" };
+  const feedbackNearSimulator = makeFeedbackBattleSimulator(true);
+  const feedbackFarSimulator = makeFeedbackBattleSimulator(false);
+  const feedbackPrerequisite = {
+    id: "semantic-battle-T",
+    kind: "battle-access-prerequisite",
+    parentDependency: { id: "parent-T", target: { floorId: "F", x: 2, y: 0, itemId: "T" } },
+    boundary: feedbackBoundary,
+    completionPredicate: (state) =>
+      evaluateBattleViability(feedbackNearSimulator, state, feedbackBoundary).viable,
+  };
+  const feedbackDedupe = createDependencyAttemptDedupe();
+  let feedbackCalls = 0;
+  let feedbackQueued = 0;
+  const farSelected = selectFeedbackAwareDependencyAttempts({
+    candidates: [feedbackPrerequisite],
+    sourceState: feedbackFarSimulator.source,
+    dedupe: feedbackDedupe,
+    maxCalls: 8,
+    callsExecuted: feedbackCalls,
+    queuedCount: feedbackQueued,
+    maxOutstanding: 1,
+  });
+  assert.strictEqual(farSelected.length, 1);
+  feedbackQueued = 1;
+  assert.strictEqual(selectFeedbackAwareDependencyAttempts({
+    candidates: [feedbackPrerequisite],
+    sourceState: feedbackNearSimulator.source,
+    dedupe: feedbackDedupe,
+    maxCalls: 8,
+    callsExecuted: feedbackCalls,
+    queuedCount: feedbackQueued,
+    maxOutstanding: 1,
+  }).length, 0);
+  const feedbackFar = runDependencyConnector({
+    simulator: feedbackFarSimulator,
+    sourceState: feedbackFarSimulator.source,
+    dependency: feedbackPrerequisite,
+    maxExpansions: 4,
+    maxDepth: 4,
+    keyState: (state) => String(state.value),
+    copyState: (state) => ({ ...state, hero: { ...state.hero } }),
+  });
+  assert.strictEqual(feedbackFar.status, "not-satisfied");
+  assert.strictEqual(feedbackFar.stoppedReason, "frontier-exhausted");
+  feedbackCalls = 1;
+  feedbackQueued = 0;
+  const nearSelected = selectFeedbackAwareDependencyAttempts({
+    candidates: [feedbackPrerequisite],
+    sourceState: feedbackNearSimulator.source,
+    dedupe: feedbackDedupe,
+    maxCalls: 8,
+    callsExecuted: feedbackCalls,
+    queuedCount: feedbackQueued,
+    maxOutstanding: 1,
+  });
+  assert.strictEqual(nearSelected.length, 1);
+  const feedbackNear = runDependencyConnector({
+    simulator: feedbackNearSimulator,
+    sourceState: feedbackNearSimulator.source,
+    dependency: feedbackPrerequisite,
+    maxExpansions: 4,
+    maxDepth: 4,
+    keyState: (state) => String(state.value),
+    copyState: (state) => ({ ...state, hero: { ...state.hero } }),
+  });
+  assert.strictEqual(feedbackNear.status, "satisfied");
 
   // --- Shared-budget edge controls -------------------------------------------
   const runSharedBudgetCase = (options) => runStrategicD2Search({
@@ -292,6 +404,14 @@ function main() {
       connectorStatus: syntheticConnector.status,
       chainLength: syntheticConnector.chain.length,
       replayValid: syntheticReplay.valid,
+    },
+    feedbackAwareSynthetic: {
+      farSelected: farSelected.length,
+      barrierWhileOutstanding: 0,
+      farConnectorStatus: feedbackFar.status,
+      farStoppedReason: feedbackFar.stoppedReason,
+      nearRetrySelected: nearSelected.length,
+      nearConnectorStatus: feedbackNear.status,
     },
     sharedBudgetEdgeControls: {
       zeroCap: {
