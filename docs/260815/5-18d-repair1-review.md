@@ -3,13 +3,13 @@
 ```ini
 MILESTONE = PR-5.18d
 REVIEW_SUBJECT = Repair 1（shared-budget hard cap / outcome taxonomy / checker / CI / diagnostics / handoff）
-STATUS = REVIEWED
+STATUS = ACCEPTED
 DATE_STARTED = 2026-08-15
 BASE_COMMIT = e02d78adf356981c3780b6e5ca2dfb5715ee6cb5
 REVIEWED_COMMITS = 5db3ff39e8c00b7dee11be2a4446d42501e0e630, 7acba36b517a51eee8f33ec8c5bb5f93bbc4a3d5
 REMOTE_CI_RUN = 31821010021
 REMOTE_CI_JOB = 94833914405（qualification-strategic-blocker-connector）
-SCOPE = 逐项复核 2026-08-15 云端 REQUEST_CHANGES（P1×5 + P2×1）；不改变 PR-5.18d 的 VERIFIED / NOT_PROMOTED 研究结论。
+SCOPE = 逐项复核 2026-08-15 云端 REQUEST_CHANGES（P1×5 + P2×1）；不改变 PR-5.18d 的 VERIFIED / NOT_PROMOTED 研究结论。2026-08-15 用户正式 APPROVED / CLOSED。
 ```
 
 ## 背景
@@ -89,6 +89,22 @@ result: PASS (exit 0; 132 modules, 139 graded tests)
 - 该 run 的 job 列表包含 **`qualification-strategic-blocker-connector`**（job ID 94833914405），conclusion：**success**，耗时约 1m27s。
 - 对照 run **31802204913**（push `e02d78a`）没有 `qualification-strategic-blocker-connector` job，确认远端 CI gap 已随 Repair 1 关闭。
 - 当前 `git ls-remote --heads origin` 仅显示 `dev` 与 `main` 持久分支；本次没有为 `functional`/`marker` 保留长期分支。
+
+## 用户验收（2026-08-15）
+
+用户已按远端与本地闭合证据正式接受：
+
+```text
+PR-5.18d
+verdict: VERIFIED / NOT_PROMOTED
+review:  APPROVED / CLOSED
+P0 = 0
+P1 = 0
+D2 = OPEN
+D3 = NOT AUTHORIZED
+```
+
+下一步正式授权 `PR-5.18e Dependency-Derived Intermediate Target`，设计冻结在 [`5-18e.md`](5-18e.md)。
 
 ## 结论
 

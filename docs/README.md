@@ -4,8 +4,9 @@
 
 - [`../20260804handoff.md`](../20260804handoff.md)：tracked 的当前项目真相、里程碑索引和下一授权步骤。
 - [`project-documentation-system.md`](project-documentation-system.md)：两层文档制度、状态词、证据层级、日期命名和 artifact policy。
-- [`260814/5-18d.md`](260814/5-18d.md)：最近完成轮 PR-5.18d（`VERIFIED / NOT_PROMOTED`，D2 仍 OPEN）；状态、设计、验收门、迭代和最终证据持续写在同一文件。
-- [`260815/5-18d-repair1-review.md`](260815/5-18d-repair1-review.md)：2026-08-15 PR-5.18d Repair 1 独立复核记录（本机检查 + 远端 CI run `31821010021` 绑定）。当前无活动轮，下一授权工作见 handoff。
+- [`260815/5-18e.md`](260815/5-18e.md)：当前活动轮 PR-5.18e Dependency-Derived Intermediate Target（`AUTHORIZED`）。
+- [`260814/5-18d.md`](260814/5-18d.md)：最近完成轮 PR-5.18d（`VERIFIED / NOT_PROMOTED` + `APPROVED / CLOSED`，D2 仍 OPEN）。
+- [`260815/5-18d-repair1-review.md`](260815/5-18d-repair1-review.md)：2026-08-15 PR-5.18d Repair 1 独立复核与用户验收记录（本机检查 + 远端 CI run `31821010021` 绑定）。
 
 轮次文档使用上海日期和稳定 milestone ID：
 
@@ -13,6 +14,7 @@
 docs/YYMMDD/<milestone-id-with-hyphens>.md
 docs/260814/5-18d.md
 docs/260815/5-18d-repair1-review.md
+docs/260815/5-18e.md
 ```
 
 同一轮跨日时继续更新原文件，不按天复制。`20260804checkpoint.md` 与 `shared-solver/RESEARCH_PROGRESS.md` 保留历史累计证据，但不作为第二份当前状态。
