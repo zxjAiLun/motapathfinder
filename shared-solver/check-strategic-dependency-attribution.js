@@ -148,6 +148,51 @@ function main() {
   assert.strictEqual(corridorRelevance.reducesTopologicalBlockerDistance, true);
   assert.strictEqual(corridorRelevance.separatesCurrentComponentFromTarget, true);
 
+  const longZeroPathProject = {
+    floorsById: {
+      F: { width: 5, height: 2, map: [[0, 0, 2, 0, 1], [0, 0, 0, 0, 0]], changeFloor: {}, afterGetItem: {}, afterBattle: {} },
+    },
+    floorOrder: ["F"],
+    mapTilesByNumber: {
+      "1": { id: "targetItem", cls: "items" },
+      "2": { id: "directBlocker", cls: "enemy01" },
+    },
+  };
+  const longZeroPathState = makeState({ floorId: "F", hero: { hp: 20, atk: 2, def: 0, mdef: 0, lv: 1, exp: 0, equipment: [], loc: { x: 0, y: 0, direction: "right" } } });
+  const longZeroPathRelevance = analyzeBoundaryTargetRelevance({
+    project: longZeroPathProject,
+    simulator: makeBoundarySimulator(),
+    state: longZeroPathState,
+    target: corridorTarget,
+    boundary: { target: { floorId: "F", x: 2, y: 0, enemyId: "directBlocker" } },
+  });
+  assert.strictEqual(longZeroPathRelevance.minAccessBlockers, 0);
+  assert.strictEqual(longZeroPathRelevance.onMinimumBlockerPath, false);
+  assert.strictEqual(longZeroPathRelevance.reducesTopologicalBlockerDistance, false);
+
+  const shortHighCostProject = {
+    floorsById: {
+      F: { width: 4, height: 2, map: [[0, 2, 2, 1], [0, 0, 3, 0]], changeFloor: {}, afterGetItem: {}, afterBattle: {} },
+    },
+    floorOrder: ["F"],
+    mapTilesByNumber: {
+      "1": { id: "targetItem2", cls: "items" },
+      "2": { id: "highCostBlockerA", cls: "enemy01" },
+      "3": { id: "lowCostBlockerB", cls: "enemy01" },
+    },
+  };
+  const shortHighCostTarget = { type: "acquire-option", mechanism: "pickup", floorId: "F", x: 3, y: 0, itemId: "targetItem2" };
+  const shortHighCostRelevance = analyzeBoundaryTargetRelevance({
+    project: shortHighCostProject,
+    simulator: makeBoundarySimulator(),
+    state: longZeroPathState,
+    target: shortHighCostTarget,
+    boundary: { target: { floorId: "F", x: 2, y: 1, enemyId: "lowCostBlockerB" } },
+  });
+  assert.strictEqual(shortHighCostRelevance.minAccessBlockers, 1);
+  assert.strictEqual(shortHighCostRelevance.onMinimumBlockerPath, true);
+  assert.strictEqual(shortHighCostRelevance.minimumPathBlockers[0].tileId, "lowCostBlockerB");
+
   const irrelevantProject = {
     floorsById: {
       F: { width: 5, height: 2, map: [[0, 0, 0, 0, 1], [0, 0, 2, 0, 0]], changeFloor: {}, afterGetItem: {}, afterBattle: {} },
@@ -318,11 +363,15 @@ function main() {
     assert.strictEqual(qualified.stats.dependencyGlobalBlockerAdvanced, 0);
     qualified.stats.dependencyAccessAttributions.forEach((entry) => {
       const relevance = entry.targetRelevantBoundary.targetRelevance;
+      const structuralAccess = entry.bestApproaches[0].structuralAccess;
       assert.ok(relevance);
       assert.strictEqual(relevance.floorScoped, true);
       assert.strictEqual(typeof relevance.onMinimumBlockerPath, "boolean");
       assert.strictEqual(typeof relevance.reducesTopologicalBlockerDistance, "boolean");
       assert.strictEqual(typeof relevance.separatesCurrentComponentFromTarget, "boolean");
+      assert.ok(structuralAccess);
+      assert.strictEqual(structuralAccess.floorScoped, true);
+      assert.ok(Array.isArray(structuralAccess.structuralMinimumPathBoundaries));
     });
     const targetRelevanceSummary = {
       onMinimumBlockerPath: qualified.stats.dependencyAccessAttributions
@@ -331,8 +380,12 @@ function main() {
         .filter((entry) => entry.targetRelevantBoundary.targetRelevance.reducesTopologicalBlockerDistance).length,
       separatesCurrentComponentFromTarget: qualified.stats.dependencyAccessAttributions
         .filter((entry) => entry.targetRelevantBoundary.targetRelevance.separatesCurrentComponentFromTarget).length,
-      minAccessBlockers: qualified.stats.dependencyAccessAttributions
-        .map((entry) => entry.targetRelevantBoundary.targetRelevance.minAccessBlockers),
+      minStructuralBoundaryCrossings: qualified.stats.dependencyAccessAttributions
+        .map((entry) => entry.bestApproaches[0].structuralAccess.minStructuralBoundaryCrossings),
+      firstObservedUnresolvedKinds: qualified.stats.dependencyAccessAttributions
+        .map((entry) => entry.bestApproaches[0].structuralAccess.firstObservedUnresolvedBoundary
+          ? entry.bestApproaches[0].structuralAccess.firstObservedUnresolvedBoundary.exactStateClassification.kind
+          : null),
     };
     qualificationAttribution = {
       totalSearchExpansions: qualified.stats.totalSearchExpansions,
@@ -362,6 +415,8 @@ function main() {
     },
     targetRelevance: {
       relevant: corridorRelevance,
+      longZeroPath: longZeroPathRelevance,
+      shortHighCostPath: shortHighCostRelevance,
       irrelevant: irrelevantRelevance,
     },
     boundaries: {
