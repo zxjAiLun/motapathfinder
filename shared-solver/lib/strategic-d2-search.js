@@ -36,6 +36,10 @@ const {
   runDependencyConnector,
   selectFeedbackAwareDependencyAttempts,
 } = require("./strategic-dependency");
+const {
+  buildDependencyAccessAttribution,
+  createDependencyAccessObserver,
+} = require("./strategic-dependency-attribution");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
   createChildNode,
@@ -426,6 +430,7 @@ function runStrategicD2Search(options) {
     config.dependencyAttemptMaxOutstanding,
     1,
   ));
+  const enableDependencyAccessAttribution = config.enableDependencyAccessAttribution !== false;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -494,6 +499,7 @@ function runStrategicD2Search(options) {
     newTerminalRelevantDependencyReached: 0,
     dependencyWitnesses: [],
     dependencyAttemptWitnesses: [],
+    dependencyAccessAttributions: [],
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
@@ -872,17 +878,26 @@ function runStrategicD2Search(options) {
         return true;
       }
       stats.dependencyConnectorCalls += 1;
+      const accessObserver = connectorMode === "dependency-derived" && enableDependencyAccessAttribution
+        ? createDependencyAccessObserver({
+            project,
+            target: dependency.target,
+            maxApproaches: 3,
+          })
+        : null;
       const result = runDependencyConnector({
         simulator,
         sourceState: sourceNode.state,
         dependency,
         maxExpansions: budget,
         maxDepth: connectorMaxDepth,
+        observer: accessObserver && accessObserver.observe,
       });
+      const attemptId = dependencyAttemptId(dependency, sourceNode.state);
       if (stats.dependencyAttemptWitnesses.length < dependencyConnectorMaxCalls) {
         stats.dependencyAttemptWitnesses.push({
           semanticDependencyId: dependency.id,
-          attemptId: dependencyAttemptId(dependency, sourceNode.state),
+          attemptId,
           sourceNodeId: sourceNode.nodeId,
           sourceExactStateFingerprint: dependency.provenance &&
             dependency.provenance.sourceExactStateFingerprint,
@@ -893,6 +908,26 @@ function runStrategicD2Search(options) {
           stoppedReason: result.stoppedReason,
           expansions: result.expansions,
         });
+      }
+      if (accessObserver) {
+        try {
+          const attribution = buildDependencyAccessAttribution({
+            project,
+            simulator,
+            dependency,
+            connectorResult: result,
+            observer: accessObserver,
+            attemptId,
+            sourceNodeId: sourceNode.nodeId,
+            sourceExactStateFingerprint: dependency.provenance &&
+              dependency.provenance.sourceExactStateFingerprint,
+          });
+          if (stats.dependencyAccessAttributions.length < dependencyConnectorMaxCalls) {
+            stats.dependencyAccessAttributions.push(attribution);
+          }
+        } catch (_error) {
+          // attribution is observation-only and must not affect search
+        }
       }
       stats.dependencyConnectorExpansions += result.expansions;
       if (result.stoppedReason === "budget-exhausted") stats.dependencyConnectorBudgetExhausted += 1;
@@ -1317,6 +1352,9 @@ function runStrategicD2Search(options) {
           scheduling: "feedback-aware-one-outstanding-attempt",
           vocabulary: ["equipment-acquisition", "resource/power-opportunity-acquisition"],
           successCondition: "dependency-completionPredicate-only-not-scalar-optimization",
+          accessAttribution: enableDependencyAccessAttribution
+            ? "observation-only-best-approach-and-boundary"
+            : "disabled",
         } : null,
       },
       completenessLimitations: [

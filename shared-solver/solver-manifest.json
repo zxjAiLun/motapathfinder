@@ -1768,6 +1768,22 @@
       },
       "notes": "PR-5.18e compiles named discrete prerequisites (equipment-acquisition or resource/power-opportunity-acquisition) from simulator-enumerated action counterfactuals and unreachable option-map counterfactuals; completionPredicate is the only connector success condition and chains remain strict-replay verifiable; PR-5.18e Repair 1 separates semantic dependency id from source-exact-state attempt id, and implements pickup/interactPickup -> equip two-stage equipment-acquisition evidence; PR-5.18e Repair 2 makes dependency-derived scheduling feedback-aware with at most one outstanding attempt"
     },
+    "shared-solver/lib/strategic-dependency-attribution.js": {
+      "id": "strategic-dependency-attribution",
+      "path": "shared-solver/lib/strategic-dependency-attribution.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "observation-only-dependency-access-attribution",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.19a samples bestApproachStates without affecting search, classifies first unresolved access boundary as battle-unsurvivable/missing-key/closed-door/event-condition/topology-changeFloor/no-path/budget-incomplete, and reports honest proofStrength observed vs hypothesis"
+    },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
       "path": "shared-solver/lib/strategic-connector.js",
@@ -2280,6 +2296,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.18e verifies synthetic completionPredicate-only dependency connector strict replay, positive/negative dependency compile controls, real unreachable-option counterfactual compile, shared-budget edge controls (remaining 0/1/3), and same-total-work A/B; --qualification-1000 adds the frozen 1000-work A/B; Repair 1 adds source-aware scheduler synthetic contract, pickup->equip two-stage synthetic control, and dependencySatisfied/dependencyStateCreated/dependencyGlobalBlockerAdvanced split diagnostics; Repair 2 adds feedback-aware S0-fail/S1-retry synthetic control and dependencyAttemptWitnesses contract"
+    },
+    "shared-solver/check-strategic-dependency-attribution.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.19a verifies observation-only attribution does not change D2 search stats, synthetic distance metrics and boundary classifiers, real no-semantic-change A/B, and --qualification-1000 frozen 8-attempt attribution contract (8 attempts / 8 distinct sources / 1 semantic dependency)"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",

@@ -674,6 +674,7 @@ function runDependencyConnector(options) {
     ? dependency.completionPredicate
     : null;
   if (!predicate) throw new Error("dependency.completionPredicate must be a function");
+  const observer = typeof config.observer === "function" ? config.observer : null;
 
   const startedAt = Date.now();
   const rootState = copyState(sourceState);
@@ -730,7 +731,33 @@ function runDependencyConnector(options) {
       actions = simulator.enumeratePrimitiveActions(item.state).actions || [];
     } catch (_error) {
       applyErrors += 1;
+      if (observer) {
+        try {
+          observer({
+            state: item.state,
+            key: item.key,
+            chain: item.chain,
+            actions: [],
+            expansions,
+          });
+        } catch (_observerError) {
+          // observation must never affect search
+        }
+      }
       continue;
+    }
+    if (observer) {
+      try {
+        observer({
+          state: item.state,
+          key: item.key,
+          chain: item.chain,
+          actions,
+          expansions,
+        });
+      } catch (_observerError) {
+        // observation must never affect search
+      }
     }
     for (const action of actions) {
       if (action && action.kind === "floorFly") continue;

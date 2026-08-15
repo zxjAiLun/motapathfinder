@@ -92,6 +92,8 @@
     "qualification:strategic-blocker-connector": "node check-strategic-blocker-connector.js --qualification-1000",
     "check:strategic-dependency-connector": "node check-strategic-dependency-connector.js",
     "qualification:strategic-dependency-connector": "node check-strategic-dependency-connector.js --qualification-1000",
+    "check:strategic-dependency-attribution": "node check-strategic-dependency-attribution.js",
+    "qualification:strategic-dependency-attribution": "node check-strategic-dependency-attribution.js --qualification-1000",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",
