@@ -8,6 +8,7 @@ const path = require("node:path");
 const { makeBlindSimulator, readBlindGoal } = require("./lib/blind-discovery-baseline");
 const { loadProject } = require("./lib/project-loader");
 const {
+  analyzeBoundaryTargetRelevance,
   buildTargetMetrics,
   classifyFrontierBoundary,
   createDependencyAccessObserver,
@@ -118,6 +119,57 @@ function main() {
     expansions: 2,
   });
   assert.strictEqual(observer.report()[0].state.floorId, "F");
+
+  // --- Target-relevance / access-cut analysis --------------------------------
+  const corridorProject = {
+    floorsById: {
+      F: { width: 5, height: 1, map: [[0, 0, 2, 0, 1]], changeFloor: {}, afterGetItem: {}, afterBattle: {} },
+    },
+    floorOrder: ["F"],
+    mapTilesByNumber: {
+      "1": { id: "targetItem", cls: "items" },
+      "2": { id: "enemyOnPath", cls: "enemy01" },
+    },
+  };
+  const corridorState = makeState();
+  const corridorTarget = { type: "acquire-option", mechanism: "pickup", floorId: "F", x: 4, y: 0, itemId: "targetItem" };
+  const corridorBoundary = { target: { floorId: "F", x: 2, y: 0, enemyId: "enemyOnPath" } };
+  const corridorRelevance = analyzeBoundaryTargetRelevance({
+    project: corridorProject,
+    simulator: makeBoundarySimulator(),
+    state: corridorState,
+    target: corridorTarget,
+    boundary: corridorBoundary,
+  });
+  assert.strictEqual(corridorRelevance.floorScoped, true);
+  assert.strictEqual(corridorRelevance.minAccessBlockers, 1);
+  assert.strictEqual(corridorRelevance.onMinimumBlockerPath, true);
+  assert.strictEqual(corridorRelevance.targetSideReachableIfRemoved, true);
+  assert.strictEqual(corridorRelevance.reducesTopologicalBlockerDistance, true);
+  assert.strictEqual(corridorRelevance.separatesCurrentComponentFromTarget, true);
+
+  const irrelevantProject = {
+    floorsById: {
+      F: { width: 5, height: 2, map: [[0, 0, 0, 0, 1], [0, 0, 2, 0, 0]], changeFloor: {}, afterGetItem: {}, afterBattle: {} },
+    },
+    floorOrder: ["F"],
+    mapTilesByNumber: {
+      "1": { id: "targetItem", cls: "items" },
+      "2": { id: "irrelevantEnemy", cls: "enemy01" },
+    },
+  };
+  const irrelevantRelevance = analyzeBoundaryTargetRelevance({
+    project: irrelevantProject,
+    simulator: makeBoundarySimulator(),
+    state: makeState(),
+    target: corridorTarget,
+    boundary: { target: { floorId: "F", x: 2, y: 1, enemyId: "irrelevantEnemy" } },
+  });
+  assert.strictEqual(irrelevantRelevance.minAccessBlockers, 0);
+  assert.strictEqual(irrelevantRelevance.onMinimumBlockerPath, false);
+  assert.strictEqual(irrelevantRelevance.targetSideReachableIfRemoved, false);
+  assert.strictEqual(irrelevantRelevance.reducesTopologicalBlockerDistance, false);
+  assert.strictEqual(irrelevantRelevance.separatesCurrentComponentFromTarget, false);
 
   // --- Boundary classification -------------------------------------------------
   const budgetBoundary = classifyFrontierBoundary({
@@ -241,6 +293,8 @@ function main() {
     assert.ok(["proven", "observed", "hypothesis", "unknown"].includes(
       attribution.firstUnresolvedAccessBoundary.proofStrength,
     ));
+    assert.ok(attribution.targetRelevantBoundary);
+    assert.ok(attribution.targetRelevantBoundary.targetRelevance);
   });
 
   let qualificationAttribution = null;
@@ -262,6 +316,24 @@ function main() {
     assert.strictEqual(qualified.stats.dependencySatisfied, 0);
     assert.strictEqual(qualified.stats.dependencyStateCreated, 0);
     assert.strictEqual(qualified.stats.dependencyGlobalBlockerAdvanced, 0);
+    qualified.stats.dependencyAccessAttributions.forEach((entry) => {
+      const relevance = entry.targetRelevantBoundary.targetRelevance;
+      assert.ok(relevance);
+      assert.strictEqual(relevance.floorScoped, true);
+      assert.strictEqual(typeof relevance.onMinimumBlockerPath, "boolean");
+      assert.strictEqual(typeof relevance.reducesTopologicalBlockerDistance, "boolean");
+      assert.strictEqual(typeof relevance.separatesCurrentComponentFromTarget, "boolean");
+    });
+    const targetRelevanceSummary = {
+      onMinimumBlockerPath: qualified.stats.dependencyAccessAttributions
+        .filter((entry) => entry.targetRelevantBoundary.targetRelevance.onMinimumBlockerPath).length,
+      reducesTopologicalBlockerDistance: qualified.stats.dependencyAccessAttributions
+        .filter((entry) => entry.targetRelevantBoundary.targetRelevance.reducesTopologicalBlockerDistance).length,
+      separatesCurrentComponentFromTarget: qualified.stats.dependencyAccessAttributions
+        .filter((entry) => entry.targetRelevantBoundary.targetRelevance.separatesCurrentComponentFromTarget).length,
+      minAccessBlockers: qualified.stats.dependencyAccessAttributions
+        .map((entry) => entry.targetRelevantBoundary.targetRelevance.minAccessBlockers),
+    };
     qualificationAttribution = {
       totalSearchExpansions: qualified.stats.totalSearchExpansions,
       strategicExpansions: qualified.stats.expansions,
@@ -275,6 +347,7 @@ function main() {
         entry.firstUnresolvedAccessBoundary.kind),
       proofStrengths: qualified.stats.dependencyAccessAttributions.map((entry) =>
         entry.firstUnresolvedAccessBoundary.proofStrength),
+      targetRelevanceSummary,
     };
   }
 
@@ -286,6 +359,10 @@ function main() {
       targetAdjacent: metrics.targetAdjacent,
       targetActionAvailable: metrics.targetActionAvailable,
       bestApproachFloor: observer.report()[0].state.floorId,
+    },
+    targetRelevance: {
+      relevant: corridorRelevance,
+      irrelevant: irrelevantRelevance,
     },
     boundaries: {
       budget: budgetBoundary,

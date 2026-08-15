@@ -3,7 +3,7 @@
 const crypto = require("node:crypto");
 
 const { cloneState } = require("./state");
-const { isDoorTile, isEnemyTile } = require("./reachability");
+const { isDoorTile, isEnemyTile, isPassableTile } = require("./reachability");
 const { tileDefinitionAt } = require("./strategic-option-map");
 
 const ATTRIBUTION_SCHEMA = "motapathfinder.strategic-dependency-attribution.v1";
@@ -249,18 +249,6 @@ function classifyFrontierBoundary(options) {
     actions,
     stoppedReason,
   } = options;
-  if (stoppedReason === "budget-exhausted") {
-    return {
-      kind: "budget-incomplete",
-      target: target || null,
-      evidence: {
-        reason: "connector stopped before exhausting the legal frontier; no root-cause claim",
-        observedActions: (actions || []).length,
-      },
-      proofStrength: "hypothesis",
-    };
-  }
-
   let scan;
   try {
     scan = simulator.getWalkReachability(state);
@@ -350,15 +338,18 @@ function classifyFrontierBoundary(options) {
 
   if (candidates.length === 0) {
     return {
-      kind: "no-path-under-current-action-scope",
+      kind: stoppedReason === "budget-exhausted" ? "budget-incomplete" : "no-path-under-current-action-scope",
       target: target || null,
       evidence: {
+        reason: stoppedReason === "budget-exhausted"
+          ? "connector stopped before exhausting the legal frontier; no root-cause claim"
+          : "no unresolved boundary observed in the current reachable component",
         scannedReachableAdjacency: scanned.size,
         visitedNodes: visited.length,
         currentFloor: state.floorId,
         targetFloor: target ? targetFloorId(target) : null,
       },
-      proofStrength: "hypothesis",
+      proofStrength: stoppedReason === "budget-exhausted" ? "hypothesis" : "hypothesis",
     };
   }
   const hero = (state.hero || {}).loc || {};
@@ -371,7 +362,208 @@ function classifyFrontierBoundary(options) {
     const rightDistance = Math.abs(rightX - number(hero.x, 0)) + Math.abs(rightY - number(hero.y, 0));
     return leftDistance - rightDistance || left.kind.localeCompare(right.kind);
   });
-  return candidates[0];
+  if (stoppedReason === "budget-exhausted") {
+    return {
+      kind: "budget-incomplete",
+      target: target || null,
+      evidence: {
+        reason: "connector stopped before exhausting the legal frontier; no root-cause claim",
+        observedActions: (actions || []).length,
+        nearestBoundaryCount: candidates.length,
+      },
+      nearbyBoundaries: candidates.slice(0, 3),
+      proofStrength: "hypothesis",
+    };
+  }
+  return {
+    ...candidates[0],
+    nearbyBoundaries: candidates.slice(0, 3),
+  };
+}
+
+function topologicalCellKind(project, state, floorId, x, y, tile) {
+  const key = `${x},${y}`;
+  const floor = project.floorsById && project.floorsById[floorId];
+  if (floor && floor.changeFloor && floor.changeFloor[key]) return "changeFloor";
+  if (isEnemyTile(tile)) return "enemy";
+  if (isDoorTile(tile)) return "door";
+  if (tile && tile.trigger != null && tile.trigger !== "null" && tile.trigger !== "passNet") return "event";
+  return null;
+}
+
+function buildTopologicalCells(project, state, floorId, target) {
+  const floor = project.floorsById && project.floorsById[floorId];
+  if (!floor) return { cells: new Map() };
+  const cells = new Map();
+  for (let y = 0; y < floor.height; y += 1) {
+    for (let x = 0; x < floor.width; x += 1) {
+      const key = `${x},${y}`;
+      const tile = tileDefinitionAt(project, state, floorId, x, y);
+      const kind = topologicalCellKind(project, state, floorId, x, y, tile);
+      let passable = true;
+      if (!kind && tile) passable = isPassableTile(project, state, floorId, x, y);
+      if (!tile && !kind) passable = true;
+      if (!passable) continue;
+      const isTarget = target && target.floorId === floorId &&
+        Number(target.x) === x && Number(target.y) === y;
+      cells.set(key, {
+        x,
+        y,
+        key,
+        kind,
+        tileId: tile ? tile.id : null,
+        passable,
+        isTarget: Boolean(isTarget),
+        cost: kind && !isTarget ? 1 : 0,
+      });
+    }
+  }
+  return { floor, cells };
+}
+
+function runTopologicalAccessBfs(options) {
+  const { cells, seeds, targetKey, blockedKey, costOverrideKey } = options;
+  const target = cells.get(targetKey);
+  if (!target) return { reached: false, distance: Infinity, path: [], blockers: [] };
+  const dist = new Map();
+  const prev = new Map();
+  const queue = [];
+  seeds.forEach((seedKey) => {
+    if (!cells.has(seedKey)) return;
+    dist.set(seedKey, 0);
+    queue.push(seedKey);
+  });
+  let reached = false;
+  while (queue.length > 0) {
+    const currentKey = queue.shift();
+    const current = cells.get(currentKey);
+    if (currentKey === targetKey) {
+      reached = true;
+      break;
+    }
+    const currentDist = dist.get(currentKey);
+    [[0, -1], [1, 0], [0, 1], [-1, 0]].forEach(([deltaX, deltaY]) => {
+      const nextKey = `${current.x + deltaX},${current.y + deltaY}`;
+      if (blockedKey && nextKey === blockedKey) return;
+      const next = cells.get(nextKey);
+      if (!next) return;
+      const nextCost = costOverrideKey && nextKey === costOverrideKey ? 0 : next.cost;
+      const nextDist = currentDist + nextCost;
+      const known = dist.has(nextKey) ? dist.get(nextKey) : Infinity;
+      if (nextDist >= known) return;
+      dist.set(nextKey, nextDist);
+      prev.set(nextKey, currentKey);
+      if (nextCost === 0) queue.push(nextKey);
+      else queue.unshift(nextKey);
+    });
+  }
+  if (!reached || !dist.has(targetKey)) {
+    return { reached: false, distance: Infinity, path: [], blockers: [] };
+  }
+  const path = [];
+  let cursorKey = targetKey;
+  while (cursorKey != null) {
+    const cell = cells.get(cursorKey);
+    if (!cell) break;
+    path.push(cell);
+    cursorKey = prev.get(cursorKey) || null;
+  }
+  path.reverse();
+  return {
+    reached: true,
+    distance: dist.get(targetKey),
+    path,
+    blockers: path.filter((cell) => cell.kind && !cell.isTarget),
+  };
+}
+
+/**
+ * Read-only topological access-cut analysis. It does not mutate state, kill
+ * monsters, open doors, or enter the solver frontier; it only asks whether a
+ * specific boundary is structurally related to the dependency target in a
+ * counterfactual grid observation.
+ */
+function analyzeBoundaryTargetRelevance(options) {
+  const config = options || {};
+  const { project, simulator, state, target, boundary } = config;
+  const targetFloor = target ? targetFloorId(target) : null;
+  const boundaryTarget = boundary && boundary.target;
+  if (!target || targetFloor == null || boundaryTarget == null || targetFloor !== state.floorId) {
+    return {
+      floorScoped: false,
+      minAccessBlockers: null,
+      targetSideReachableIfRemoved: false,
+      reducesTopologicalBlockerDistance: false,
+      onMinimumBlockerPath: false,
+      separatesCurrentComponentFromTarget: false,
+      evidence: { reason: "target relevance is only computed on the current floor" },
+    };
+  }
+  let scan;
+  try {
+    scan = simulator.getWalkReachability(state);
+  } catch (_error) {
+    scan = null;
+  }
+  const { cells } = buildTopologicalCells(project, state, state.floorId, target);
+  const seedSet = new Set();
+  Object.values((scan && scan.visited) || {}).forEach((node) => {
+    if (node && node.x != null && node.y != null) seedSet.add(`${node.x},${node.y}`);
+  });
+  const seeds = Array.from(seedSet);
+  const targetKey = `${target.x},${target.y}`;
+  const boundaryKey = `${boundaryTarget.x},${boundaryTarget.y}`;
+  const original = runTopologicalAccessBfs({ cells, seeds, targetKey });
+  if (!original.reached) {
+    return {
+      floorScoped: true,
+      minAccessBlockers: null,
+      targetSideReachableIfRemoved: false,
+      reducesTopologicalBlockerDistance: false,
+      onMinimumBlockerPath: false,
+      separatesCurrentComponentFromTarget: false,
+      evidence: { reason: "no topological path from current reachable component to target" },
+    };
+  }
+  const withoutBoundary = runTopologicalAccessBfs({
+    cells,
+    seeds,
+    targetKey,
+    costOverrideKey: boundaryKey,
+  });
+  const separated = runTopologicalAccessBfs({
+    cells,
+    seeds,
+    targetKey,
+    blockedKey: boundaryKey,
+  });
+  const minAccessBlockers = original.distance;
+  const minWithoutBoundary = withoutBoundary.reached ? withoutBoundary.distance : Infinity;
+  const onMinimumBlockerPath = original.blockers.some((cell) => cell.key === boundaryKey);
+  return {
+    floorScoped: true,
+    minAccessBlockers,
+    minAccessBlockersWithoutBoundary: minWithoutBoundary === Infinity ? null : minWithoutBoundary,
+    blockerDistanceReduction: minWithoutBoundary === Infinity ? null : minAccessBlockers - minWithoutBoundary,
+    targetSideReachableIfRemoved: original.distance > 0 && minWithoutBoundary === 0,
+    reducesTopologicalBlockerDistance: minWithoutBoundary < minAccessBlockers,
+    onMinimumBlockerPath,
+    separatesCurrentComponentFromTarget: !separated.reached,
+    minimumPathBlockers: original.blockers.slice(0, 6).map((cell) => ({
+      kind: cell.kind,
+      tileId: cell.tileId,
+      floorId: state.floorId,
+      x: cell.x,
+      y: cell.y,
+    })),
+    evidence: {
+      topologicalModel: "static-grid-walk-adjacency-counterfactual",
+      counterfactualOnly: true,
+      seeds: seeds.length,
+      targetKey,
+      boundaryKey,
+    },
+  };
 }
 
 function buildDependencyAccessAttribution(options) {
@@ -405,6 +597,46 @@ function buildDependencyAccessAttribution(options) {
       actions,
       stoppedReason: connectorResult.stoppedReason,
     });
+    const candidateBoundaries = [];
+    if (boundary.kind !== "budget-incomplete" && boundary.target && boundary.target.x != null) {
+      candidateBoundaries.push(boundary);
+    }
+    ((boundary && boundary.nearbyBoundaries) || []).forEach((candidate) => {
+      if (candidate.kind !== "budget-incomplete" &&
+          candidate.target && candidate.target.x != null && candidate.target.y != null) {
+        candidateBoundaries.push(candidate);
+      }
+    });
+    const analyzedCandidates = candidateBoundaries.map((candidate) => {
+      let targetRelevance = null;
+      try {
+        targetRelevance = analyzeBoundaryTargetRelevance({
+          project,
+          simulator,
+          state: approach.state,
+          target: dependency.target,
+          boundary: candidate,
+        });
+      } catch (_error) {
+        targetRelevance = null;
+      }
+      return { candidate, targetRelevance };
+    }).filter((entry) => entry.targetRelevance && entry.targetRelevance.floorScoped);
+    const candidateRank = (entry) => {
+      const tr = entry.targetRelevance;
+      return (tr.separatesCurrentComponentFromTarget ? 4000 : 0) +
+        (tr.targetSideReachableIfRemoved ? 3000 : 0) +
+        (tr.onMinimumBlockerPath ? 2000 : 0) +
+        (tr.reducesTopologicalBlockerDistance ? 1000 : 0) -
+        (tr.minAccessBlockers == null ? 0 : tr.minAccessBlockers);
+    };
+    analyzedCandidates.sort((left, right) => candidateRank(right) - candidateRank(left));
+    const targetRelevantBoundary = analyzedCandidates.length > 0
+      ? {
+          ...analyzedCandidates[0].candidate,
+          targetRelevance: analyzedCandidates[0].targetRelevance,
+        }
+      : null;
     return {
       state: compactState(approach.state),
       stateFingerprint: approach.stateKey ? hash(approach.stateKey) : null,
@@ -417,8 +649,23 @@ function buildDependencyAccessAttribution(options) {
         y: actionY(action),
       })),
       boundary,
+      targetRelevantBoundary,
     };
   });
+  const bestRelevantBoundary = bestApproaches
+    .map((approach) => approach.targetRelevantBoundary)
+    .filter(Boolean)
+    .sort((left, right) => {
+      const score = (entry) => {
+        const tr = entry.targetRelevance;
+        return (tr.separatesCurrentComponentFromTarget ? 4000 : 0) +
+          (tr.targetSideReachableIfRemoved ? 3000 : 0) +
+          (tr.onMinimumBlockerPath ? 2000 : 0) +
+          (tr.reducesTopologicalBlockerDistance ? 1000 : 0) -
+          (tr.minAccessBlockers == null ? 0 : tr.minAccessBlockers);
+      };
+      return score(right) - score(left);
+    })[0] || null;
   return {
     schema: ATTRIBUTION_SCHEMA,
     attemptId: attemptId || null,
@@ -430,6 +677,7 @@ function buildDependencyAccessAttribution(options) {
     connectorStoppedReason: connectorResult.stoppedReason,
     connectorExpansions: connectorResult.expansions,
     bestApproaches,
+    targetRelevantBoundary: bestRelevantBoundary,
     firstUnresolvedAccessBoundary: bestApproaches.length > 0
       ? bestApproaches[0].boundary
       : {
@@ -443,6 +691,7 @@ function buildDependencyAccessAttribution(options) {
 
 module.exports = {
   ATTRIBUTION_SCHEMA,
+  analyzeBoundaryTargetRelevance,
   buildDependencyAccessAttribution,
   buildTargetMetrics,
   classifyFrontierBoundary,
