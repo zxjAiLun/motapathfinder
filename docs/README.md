@@ -4,7 +4,7 @@
 
 - [`../20260804handoff.md`](../20260804handoff.md)：tracked 的当前项目真相、里程碑索引和下一授权步骤。
 - [`project-documentation-system.md`](project-documentation-system.md)：两层文档制度、状态词、证据层级、日期命名和 artifact policy。
-- [`260815/5-19a.md`](260815/5-19a.md)：当前活动轮 PR-5.19a Dependency Access Attribution（`VERIFIED`，Repair 1 target relevance 本地+远端 qualification 双 PASS，observation-only）。
+- [`260815/5-19a.md`](260815/5-19a.md)：当前活动轮 PR-5.19a Dependency Access Attribution（`VERIFIED`，Repair 1/2 本地+远端 qualification 双 PASS，observation-only）。
 - [`260815/5-18e.md`](260815/5-18e.md)：最近完成轮 PR-5.18e Dependency-Derived Intermediate Target（`VERIFIED / NOT_PROMOTED` + `APPROVED / CLOSED`，本地+远端 qualification 双 PASS）。
 - [`260814/5-18d.md`](260814/5-18d.md)：最近完成轮 PR-5.18d（`VERIFIED / NOT_PROMOTED` + `APPROVED / CLOSED`，D2 仍 OPEN）。
 - [`260815/5-18d-repair1-review.md`](260815/5-18d-repair1-review.md)：2026-08-15 PR-5.18d Repair 1 独立复核与用户验收记录（本机检查 + 远端 CI run `31821010021` 绑定）。
