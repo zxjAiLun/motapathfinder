@@ -675,6 +675,7 @@ function runDependencyConnector(options) {
     : null;
   if (!predicate) throw new Error("dependency.completionPredicate must be a function");
   const observer = typeof config.observer === "function" ? config.observer : null;
+  const edgeObserver = typeof config.edgeObserver === "function" ? config.edgeObserver : null;
 
   const startedAt = Date.now();
   const rootState = copyState(sourceState);
@@ -770,7 +771,25 @@ function runDependencyConnector(options) {
       }
       nextState.route = [];
       const key = keyState(nextState);
-      if (seenExact.has(key)) continue;
+      const postAlreadySeen = seenExact.has(key);
+      if (edgeObserver) {
+        try {
+          edgeObserver({
+            expansion: expansions,
+            depth: item.chain.length,
+            preState: item.state,
+            action,
+            postState: nextState,
+            preExactStateKey: item.key,
+            postExactStateKey: key,
+            postAlreadySeen,
+            chainBefore: item.chain,
+          });
+        } catch (_edgeObserverError) {
+          // edge observation must never affect search
+        }
+      }
+      if (postAlreadySeen) continue;
       generated += 1;
       if (queue.length >= maxFrontier) {
         frontierTrimmed += 1;

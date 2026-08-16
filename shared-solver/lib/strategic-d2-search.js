@@ -44,6 +44,7 @@ const {
 const { compileBattleAccessPrerequisite, evaluateBattleViability } = require("./strategic-access-prerequisite");
 const { compileBattleStagePrerequisite } = require("./strategic-battle-stage-prerequisite");
 const { createLethalSurvivalObserver } = require("./strategic-lethal-survival-observer");
+const { createSurvivalEdgeObserver } = require("./strategic-survival-edge-observer");
 const { analyzeBattleViabilityBlocker } = require("./strategic-battle-viability");
 const {
   dependencyTargetFloorId,
@@ -454,6 +455,7 @@ function runStrategicD2Search(options) {
   const enableContinuationAnchorExpansionScheduling =
     config.enableContinuationAnchorExpansionScheduling === true;
   const enableLethalSurvivalAttribution = config.enableLethalSurvivalAttribution === true;
+  const enableSurvivalEdgeAttribution = config.enableSurvivalEdgeAttribution === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -566,6 +568,7 @@ function runStrategicD2Search(options) {
     continuationAnchorExpansionInactiveSkips: 0,
     anchorExpansionWitnesses: [],
     lethalSurvivalAttributions: [],
+    lethalSurvivalEdgeAttributions: [],
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
@@ -1581,15 +1584,23 @@ function runStrategicD2Search(options) {
           reason: beforeBattle.reason,
         } : null,
       };
-      const lethalSurvivalObserver = enableLethalSurvivalAttribution &&
-        prerequisite.kind === "battle-access-prerequisite" &&
+      const isLethalHierarchyChild = prerequisite.kind === "battle-access-prerequisite" &&
         number(work.hierarchyLevel, 0) > 0 &&
-        beforeBattle && beforeBattle.stage === "lethal"
+        beforeBattle && beforeBattle.stage === "lethal";
+      const lethalSurvivalObserver = enableLethalSurvivalAttribution && isLethalHierarchyChild
         ? createLethalSurvivalObserver({
             simulator,
             sourceState: sourceNode.state,
             boundary: prerequisite.boundary,
             maxSamples: 50,
+          })
+        : null;
+      const lethalSurvivalEdgeObserver = enableSurvivalEdgeAttribution && isLethalHierarchyChild
+        ? createSurvivalEdgeObserver({
+            simulator,
+            sourceState: sourceNode.state,
+            boundary: prerequisite.boundary,
+            maxEdges: 400,
           })
         : null;
       const result = runDependencyConnector({
@@ -1598,7 +1609,11 @@ function runStrategicD2Search(options) {
         dependency: prerequisite,
         maxExpansions: budget,
         maxDepth: connectorMaxDepth,
-        observer: lethalSurvivalObserver && lethalSurvivalObserver.observe,
+        observer: (entry) => {
+          if (lethalSurvivalObserver) lethalSurvivalObserver.observe(entry);
+          if (lethalSurvivalEdgeObserver) lethalSurvivalEdgeObserver.observeState(entry);
+        },
+        edgeObserver: lethalSurvivalEdgeObserver && lethalSurvivalEdgeObserver.observeEdge,
       });
       if (lethalSurvivalObserver) {
         if (stats.lethalSurvivalAttributions.length < 16) {
@@ -1617,6 +1632,26 @@ function runStrategicD2Search(options) {
               frontierTrimmed: result.frontierTrimmed,
             },
             ...lethalSurvivalObserver.report(),
+          });
+        }
+      }
+      if (lethalSurvivalEdgeObserver) {
+        if (stats.lethalSurvivalEdgeAttributions.length < 16) {
+          stats.lethalSurvivalEdgeAttributions.push({
+            attemptId,
+            prerequisiteId: prerequisite.id,
+            hierarchyLevel: number(work.hierarchyLevel, 0),
+            boundary: prerequisite.boundary,
+            connectorResult: {
+              status: result.status,
+              stoppedReason: result.stoppedReason,
+              expansions: result.expansions,
+              generated: result.generated,
+              applyErrors: result.applyErrors,
+              frontierSize: result.frontierSize,
+              frontierTrimmed: result.frontierTrimmed,
+            },
+            ...lethalSurvivalEdgeObserver.report(),
           });
         }
       }
@@ -2430,6 +2465,11 @@ function runStrategicD2Search(options) {
         lethalSurvivalAttribution: connectorMode === "battle-access-prerequisite"
           ? enableLethalSurvivalAttribution
             ? "observation-only-depth-two-lethal-child"
+            : "disabled"
+          : null,
+        survivalEdgeAttribution: connectorMode === "battle-access-prerequisite"
+          ? enableSurvivalEdgeAttribution
+            ? "observation-only-generated-primitive-edge-causal-attribution"
             : "disabled"
           : null,
         dependencyConnector: connectorMode === "dependency-derived" ? {
