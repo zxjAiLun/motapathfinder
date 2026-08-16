@@ -551,6 +551,10 @@ function runStrategicD2Search(options) {
     battleStagePrerequisitesScheduled: 0,
     battleStagePrerequisitesExecuted: 0,
     battleStagePrerequisitesSatisfied: 0,
+    canonicalSuccessorEdgeCount: 0,
+    canonicalExpansionSummaryCount: 0,
+    canonicalFloorTransitionActionCount: 0,
+    canonicalSuccessorEdgeAttributions: [],
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
@@ -558,6 +562,10 @@ function runStrategicD2Search(options) {
   const seenParentContinuationResumes = new Set();
   const parkedParentContinuations = new Map();
   const hierarchyPriority = new HierarchyPriorityController();
+  const nodeCreatedAtExpansion = new Map([[0, 0]]);
+  const nodeExpansionOrdinal = new Map();
+  const nodeExpansionSummaries = new Map();
+  const canonicalSuccessorEdges = [];
   const bestByRole = new Map(agenda.definitions.map((definition) => [definition.id, root]));
   const bestTerminalBlocker = { progressScore: null, attackMargin: null, stage: null, nodeId: null };
   function observeTerminalBlocker(node, projection) {
@@ -986,6 +994,7 @@ function runStrategicD2Search(options) {
     }
     nodes.set(child.nodeId, child);
     seenExact.set(exactKey, child.nodeId);
+    nodeCreatedAtExpansion.set(child.nodeId, stats.expansions);
     agenda.push(child);
     stats.accepted += 1;
     stats.maxStrategicDepth = Math.max(stats.maxStrategicDepth, child.depth);
@@ -1730,7 +1739,21 @@ function runStrategicD2Search(options) {
     });
     stats.applyRejected += aggregation.rejectedVariantCount;
     stats.travelVariantAliasCount += Math.max(0, aggregation.variantCount - aggregation.choiceCount);
+    const expansionSummary = {
+      nodeId: node.nodeId,
+      expansionOrdinal: stats.expansions,
+      rawActionCount: enumerated.rawVariantCount,
+      strategicTransitionCount: aggregation.transitions.length,
+      applyRejectedCount: aggregation.rejectedVariantCount,
+      canonicalPosts: {
+        newChildCount: 0,
+        exactMergeCount: 0,
+        deferredPostCount: 0,
+      },
+      floorTransitionActions: [],
+    };
     for (const transition of aggregation.transitions) {
+      let transitionDeferredCount = 0;
       stats.generated += 1;
       observedChoices.add(transition.choice);
       for (const variant of transition.travelVariants) {
@@ -1794,15 +1817,41 @@ function runStrategicD2Search(options) {
             post: candidate,
           });
           stats.deferredPostStates += 1;
+          transitionDeferredCount += 1;
         }
       } else {
-        stats.deferredPostStates += transition.postStates
+        const deferredCandidateCount = transition.postStates
           .filter((candidate) => candidate.stateKey !== exactKey && !seenExact.has(candidate.stateKey))
           .length;
+        stats.deferredPostStates += deferredCandidateCount;
+        transitionDeferredCount += deferredCandidateCount;
       }
       if (seenExact.has(exactKey)) {
-        enqueueParentContinuationForState(nodes.get(seenExact.get(exactKey)));
+        const targetNode = nodes.get(seenExact.get(exactKey));
+        enqueueParentContinuationForState(targetNode);
         stats.exactMerged += 1;
+        expansionSummary.canonicalPosts.exactMergeCount += 1;
+        expansionSummary.canonicalPosts.deferredPostCount += transitionDeferredCount;
+        canonicalSuccessorEdges.push({
+          fromNodeId: node.nodeId,
+          targetNodeId: targetNode.nodeId,
+          actionKind: post.appliedBy.kind || null,
+          actionSummary: post.appliedBy.summary || transition.choiceLabel,
+          sourceFloor: node.state.floorId,
+          targetFloor: post.state.floorId,
+          disposition: "exact-merge",
+        });
+        stats.canonicalSuccessorEdgeCount += 1;
+        if (post.state.floorId !== node.state.floorId) {
+          expansionSummary.floorTransitionActions.push({
+            actionSummary: post.appliedBy.summary || transition.choiceLabel,
+            kind: post.appliedBy.kind || null,
+            sourceFloor: node.state.floorId,
+            resultingFloor: post.state.floorId,
+            disposition: "exact-merge",
+          });
+          stats.canonicalFloorTransitionActionCount += 1;
+        }
         continue;
       }
       const child = createChildNode(
@@ -1830,9 +1879,32 @@ function runStrategicD2Search(options) {
       }
       nodes.set(child.nodeId, child);
       seenExact.set(exactKey, child.nodeId);
+      nodeCreatedAtExpansion.set(child.nodeId, stats.expansions);
       agenda.push(child);
       stats.accepted += 1;
       stats.maxStrategicDepth = Math.max(stats.maxStrategicDepth, child.depth);
+      expansionSummary.canonicalPosts.newChildCount += 1;
+      expansionSummary.canonicalPosts.deferredPostCount += transitionDeferredCount;
+      canonicalSuccessorEdges.push({
+        fromNodeId: node.nodeId,
+        targetNodeId: child.nodeId,
+        actionKind: post.appliedBy.kind || null,
+        actionSummary: post.appliedBy.summary || transition.choiceLabel,
+        sourceFloor: node.state.floorId,
+        targetFloor: child.state.floorId,
+        disposition: "new-child",
+      });
+      stats.canonicalSuccessorEdgeCount += 1;
+      if (child.state.floorId !== node.state.floorId) {
+        expansionSummary.floorTransitionActions.push({
+          actionSummary: post.appliedBy.summary || transition.choiceLabel,
+          kind: post.appliedBy.kind || null,
+          sourceFloor: node.state.floorId,
+          resultingFloor: child.state.floorId,
+          disposition: "new-child",
+        });
+        stats.canonicalFloorTransitionActionCount += 1;
+      }
       agenda.definitions.forEach((definition) => {
         const existing = bestByRole.get(definition.id);
         if (!existing || definition.compare(child, existing) > 0) {
@@ -1846,6 +1918,10 @@ function runStrategicD2Search(options) {
         break;
       }
     }
+
+    nodeExpansionOrdinal.set(node.nodeId, stats.expansions);
+    nodeExpansionSummaries.set(node.nodeId, expansionSummary);
+    stats.canonicalExpansionSummaryCount += 1;
 
     // 5.18c/5.18d/5.18e/5.19b: enqueue the selected connector work.
     if (enableConnector && enableLazyWork) {
@@ -2036,6 +2112,73 @@ function runStrategicD2Search(options) {
     stats.totalSearchExpansions >= maxTotalSearchExpansions &&
     (frontierSize > 0 || activeLazyWork > 0);
   const budgetExhausted = strategicBudgetExhausted || totalSearchBudgetExhausted;
+  function canonicalGraphReachability(anchorNodeId, targetFloor) {
+    const adjacency = new Map();
+    for (const edge of canonicalSuccessorEdges) {
+      if (!adjacency.has(edge.fromNodeId)) adjacency.set(edge.fromNodeId, []);
+      adjacency.get(edge.fromNodeId).push(edge);
+    }
+    const visited = new Set();
+    const queue = [{ nodeId: anchorNodeId, depth: 0, path: [] }];
+    const targetCandidateNodeIds = [];
+    let shortestEdgeDepth = null;
+    let shortestPathDispositionSummary = null;
+    while (queue.length > 0) {
+      const entry = queue.shift();
+      if (visited.has(entry.nodeId)) continue;
+      visited.add(entry.nodeId);
+      const node = nodes.get(entry.nodeId);
+      if (node && node.state && node.state.floorId === targetFloor) {
+        targetCandidateNodeIds.push(entry.nodeId);
+        if (shortestEdgeDepth == null) {
+          shortestEdgeDepth = entry.depth;
+          const counts = {};
+          for (const edge of entry.path) {
+            counts[edge.disposition] = (counts[edge.disposition] || 0) + 1;
+          }
+          shortestPathDispositionSummary = counts;
+        }
+      }
+      for (const edge of adjacency.get(entry.nodeId) || []) {
+        queue.push({
+          nodeId: edge.targetNodeId,
+          depth: entry.depth + 1,
+          path: entry.path.concat([edge]),
+        });
+      }
+    }
+    return {
+      canonicalGraphReachableTargetFloor: shortestEdgeDepth != null,
+      canonicalGraphShortestEdgeDepth: shortestEdgeDepth,
+      canonicalGraphTargetFloorCandidateNodeIds: targetCandidateNodeIds.slice(0, 32),
+      canonicalGraphPathDispositionSummary: shortestPathDispositionSummary || {},
+    };
+  }
+
+  function finalizeCanonicalSuccessorEdgeAttribution() {
+    for (const continuation of parentContinuationRecords.values()) {
+      const anchorNodeId = continuation.anchorNodeId;
+      const targetFloor = dependencyTargetFloorId(continuation.parentDependency.target);
+      const expansionOrdinal = nodeExpansionOrdinal.get(anchorNodeId) || null;
+      const summary = nodeExpansionSummaries.get(anchorNodeId) || null;
+      stats.canonicalSuccessorEdgeAttributions.push({
+        continuationId: continuation.id,
+        anchorNodeId,
+        anchorCreatedAtExpansion: nodeCreatedAtExpansion.get(anchorNodeId) || null,
+        anchorExpansionOrdinal: expansionOrdinal,
+        anchorWasExpandedAtContinuationCreation: expansionOrdinal != null &&
+          expansionOrdinal <= continuation.createdAtExpansion,
+        anchorEverExpanded: expansionOrdinal != null,
+        anchorExpandedBeforeContinuation: expansionOrdinal != null &&
+          expansionOrdinal <= continuation.createdAtExpansion,
+        anchorExpandedAfterContinuation: expansionOrdinal != null &&
+          expansionOrdinal > continuation.createdAtExpansion,
+        outgoing: summary,
+        ...canonicalGraphReachability(anchorNodeId, targetFloor),
+      });
+    }
+  }
+
   function finalizeParentContinuationTelemetry() {
     for (const continuation of parentContinuationRecords.values()) {
       const anchorNode = nodes.get(continuation.anchorNodeId);
@@ -2060,6 +2203,7 @@ function runStrategicD2Search(options) {
     }
   }
   finalizeParentContinuationTelemetry();
+  finalizeCanonicalSuccessorEdgeAttribution();
   const frontierExhausted = !goalNode && frontierSize === 0;
   const deferredWorkRemaining = !goalNode && activeLazyWork > 0;
   let stoppedReason = "frontier-exhausted";
