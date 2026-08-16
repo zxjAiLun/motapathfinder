@@ -42,6 +42,7 @@ const {
   createDependencyAccessObserver,
 } = require("./strategic-dependency-attribution");
 const { compileBattleAccessPrerequisite, evaluateBattleViability } = require("./strategic-access-prerequisite");
+const { compileBattleStagePrerequisite } = require("./strategic-battle-stage-prerequisite");
 const { analyzeBattleViabilityBlocker } = require("./strategic-battle-viability");
 const {
   dependencyTargetFloorId,
@@ -447,6 +448,7 @@ function runStrategicD2Search(options) {
   const enableBattleViabilityAttribution = config.enableBattleViabilityAttribution !== false;
   const enableParentDependencyContinuation = config.enableParentDependencyContinuation === true;
   const enableHierarchicalCallAllocation = config.enableHierarchicalCallAllocation === true;
+  const enableBattleStagePrerequisiteDecomposition = config.enableBattleStagePrerequisiteDecomposition === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -545,6 +547,10 @@ function runStrategicD2Search(options) {
     childPrerequisitesExecuted: 0,
     childPrerequisitesSatisfied: 0,
     maxHierarchyDepthAttempted: 0,
+    battleStagePrerequisitesCompiled: 0,
+    battleStagePrerequisitesScheduled: 0,
+    battleStagePrerequisitesExecuted: 0,
+    battleStagePrerequisitesSatisfied: 0,
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
@@ -711,6 +717,8 @@ function runStrategicD2Search(options) {
       statusReason: null,
       finalCreated: continuation.postStateFinalCreated,
       nextPrerequisiteId: null,
+      prerequisiteKind: null,
+      stageGoal: null,
       nextBoundary: null,
     };
 
@@ -752,26 +760,61 @@ function runStrategicD2Search(options) {
         kind: first.exactStateClassification.kind,
       };
       if (first.exactStateClassification.kind === "battle-unsurvivable") {
+        const nextBoundary = {
+          floorId: first.floorId,
+          x: first.x,
+          y: first.y,
+          enemyId: first.tileId || (first.exactStateClassification.target || {}).enemyId || null,
+        };
         let nextPrerequisite = null;
+        let nextStageGoal = null;
         try {
-          nextPrerequisite = compileBattleAccessPrerequisite({
-            project,
+          const stageAnalysis = analyzeBattleViabilityBlocker(
             simulator,
-            state: sourceNode.state,
-            parentDependency,
-            structuralAccess,
-            sourceAttemptId: continuation.id,
-            sourceExactStateFingerprint: hash(currentExactStateKey),
-          });
+            sourceNode.state,
+            nextBoundary,
+          );
+          if (enableBattleStagePrerequisiteDecomposition && stageAnalysis.stage === "attack-blocked") {
+            nextPrerequisite = compileBattleStagePrerequisite({
+              project,
+              simulator,
+              state: sourceNode.state,
+              parentDependency,
+              structuralAccess,
+              sourceAttemptId: continuation.id,
+              sourceExactStateFingerprint: hash(currentExactStateKey),
+              stageGoal: "damageable",
+            });
+            nextStageGoal = nextPrerequisite ? nextPrerequisite.stageGoal : null;
+          }
+          if (!nextPrerequisite) {
+            nextPrerequisite = compileBattleAccessPrerequisite({
+              project,
+              simulator,
+              state: sourceNode.state,
+              parentDependency,
+              structuralAccess,
+              sourceAttemptId: continuation.id,
+              sourceExactStateFingerprint: hash(currentExactStateKey),
+            });
+            nextStageGoal = null;
+          }
         } catch (_error) {
           nextPrerequisite = null;
+          nextStageGoal = null;
         }
         if (nextPrerequisite) {
           stats.parentDependencyContinuationNextPrerequisiteCompiled += 1;
+          if (nextPrerequisite.kind === "battle-stage-prerequisite") {
+            stats.battleStagePrerequisitesCompiled += 1;
+            nextStageGoal = nextPrerequisite.stageGoal;
+          }
           if (continuation.hierarchyLevel > 0) {
             stats.childPrerequisitesCompiled += 1;
           }
           witness.nextPrerequisiteId = nextPrerequisite.id;
+          witness.prerequisiteKind = nextPrerequisite.kind;
+          witness.stageGoal = nextStageGoal;
           const queuedBattleAccess = lazyWork.queued()
             .filter((item) => item.kind === "battle-access-prerequisite-choice").length;
           const selected = selectFeedbackAwareDependencyAttempts({
@@ -793,8 +836,13 @@ function runStrategicD2Search(options) {
               originContinuationId: continuation.id,
             });
             stats.childPrerequisitesScheduled += 1;
+            if (nextPrerequisite.kind === "battle-stage-prerequisite") {
+              stats.battleStagePrerequisitesScheduled += 1;
+            }
             witness.status = "next-prerequisite-compiled";
-            witness.statusReason = "first-unresolved-boundary-is-battle-unsurvivable";
+            witness.statusReason = nextPrerequisite.kind === "battle-stage-prerequisite"
+              ? "first-unresolved-boundary-is-attack-blocked-and-decomposed-to-damageable"
+              : "first-unresolved-boundary-is-battle-unsurvivable";
           } else {
             witness.status = "next-prerequisite-not-schedulable";
             if (stats.battleAccessPrerequisiteCalls >= dependencyConnectorMaxCalls) {
@@ -1373,6 +1421,8 @@ function runStrategicD2Search(options) {
       const attemptBase = {
         attemptId,
         prerequisiteId: prerequisite.id,
+        prerequisiteKind: prerequisite.kind,
+        stageGoal: prerequisite.stageGoal || null,
         parentDependencyId: prerequisite.parentDependency.id,
         boundary: prerequisite.boundary,
         sourceNodeId: sourceNode.nodeId,
@@ -1412,6 +1462,9 @@ function runStrategicD2Search(options) {
         stats.continuationDerivedCalls += 1;
         stats.childPrerequisitesExecuted += 1;
       }
+      if (prerequisite.kind === "battle-stage-prerequisite") {
+        stats.battleStagePrerequisitesExecuted += 1;
+      }
       releaseHierarchyPriorityForCall(work);
       stats.battleAccessPrerequisiteExpansions += result.expansions;
       if (result.status !== "satisfied") {
@@ -1449,6 +1502,9 @@ function runStrategicD2Search(options) {
       }
       stats.battleAccessPrerequisiteSatisfied += 1;
       if (battleCallHierarchyLevel > 0) stats.childPrerequisitesSatisfied += 1;
+      if (prerequisite.kind === "battle-stage-prerequisite") {
+        stats.battleStagePrerequisitesSatisfied += 1;
+      }
       if (materialized.finalCreated) stats.battleAccessPrerequisiteStateCreated += 1;
       let structuralBefore = null;
       let structuralAfter = null;
@@ -2030,6 +2086,11 @@ function runStrategicD2Search(options) {
         hierarchicalCallAllocation: connectorMode === "battle-access-prerequisite"
           ? enableHierarchicalCallAllocation
             ? "active-hierarchy-priority-with-feedback-release"
+            : "disabled"
+          : null,
+        battleStagePrerequisiteDecomposition: connectorMode === "battle-access-prerequisite"
+          ? enableBattleStagePrerequisiteDecomposition
+            ? "continuation-derived-attack-blocked-to-damageable-only"
             : "disabled"
           : null,
         dependencyConnector: connectorMode === "dependency-derived" ? {

@@ -1734,7 +1734,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation; PR-5.19e adds opt-in active hierarchy call priority so successful hierarchy children can compete for existing connector calls"
+      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation; PR-5.19e adds opt-in active hierarchy call priority so successful hierarchy children can compete for existing connector calls; PR-5.19f adds opt-in continuation-derived attack-blocked -> damageable battle-stage decomposition while preserving generic root behavior"
     },
     "shared-solver/lib/strategic-blocker.js": {
       "id": "strategic-blocker",
@@ -1815,6 +1815,22 @@
         "cleanCheckout": true
       },
       "notes": "PR-5.19c splits battle-unsurvivable into unsupported/attack-blocked/lethal/viable using simulator.battleResolver.evaluateBattle; damage==null is attack-blocked only when enemyDef is readable and attackMargin<0, otherwise unsupported/unresolved-no-damage; read-only attribution only, no new search capability"
+    },
+    "shared-solver/lib/strategic-battle-stage-prerequisite.js": {
+      "id": "strategic-battle-stage-prerequisite",
+      "path": "shared-solver/lib/strategic-battle-stage-prerequisite.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "battle-stage-decomposition-damageable-only",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.19f first version compiles only attack-blocked -> make-damageable; completion is battle stage lethal or viable (damage known), never ATK threshold; identity is distinct from generic battle-access-prerequisite"
     },
     "shared-solver/lib/strategic-parent-continuation.js": {
       "id": "strategic-parent-continuation",
@@ -2395,6 +2411,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.19e verifies active hierarchy priority synthetic sequence (root S1 success activates C1, sibling S2 defers, child P2 gets next call, feedback releases, sibling resumes), focused on/off no-semantic-change, and --qualification-1000 real frozen mechanism gate that a continuation-derived child prerequisite actually receives one connector call; Repair 1 adds lifecycle-safe merge controls (completed no-reactivation, active preserved, parked preserved)"
+    },
+    "shared-solver/check-strategic-battle-stage-prerequisite.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.19f verifies attack-blocked -> damageable compile identity (distinct from generic battle-access), synthetic completion/strict replay, lethal out-of-scope, and --qualification-1000 A/B control (5.19e generic child) vs candidate (stage-decomposed child)"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",
