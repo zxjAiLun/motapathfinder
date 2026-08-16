@@ -1734,7 +1734,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode"
+      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation"
     },
     "shared-solver/lib/strategic-blocker.js": {
       "id": "strategic-blocker",
@@ -1816,6 +1816,22 @@
       },
       "notes": "PR-5.19c splits battle-unsurvivable into unsupported/attack-blocked/lethal/viable using simulator.battleResolver.evaluateBattle; damage==null is attack-blocked only when enemyDef is readable and attackMargin<0, otherwise unsupported/unresolved-no-damage; read-only attribution only, no new search capability"
     },
+    "shared-solver/lib/strategic-parent-continuation.js": {
+      "id": "strategic-parent-continuation",
+      "path": "shared-solver/lib/strategic-parent-continuation.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "parent-dependency-intent-identity-and-continuation-helpers",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.19d keeps parent dependency intent after P(B) success; continuation identity is parentDependencyId + exactStateKey and is bookkeeping only, never game state or DP key"
+    },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
       "path": "shared-solver/lib/strategic-connector.js",
@@ -1846,7 +1862,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18c lazy work queue for deferred exact posts, floorFly choices, and connector choices; items must resolve or reject with a reason and never silently disappear; PR-5.18e adds dependency-connector-choice lazy kind"
+      "notes": "PR-5.18c lazy work queue for deferred exact posts, floorFly choices, and connector choices; items must resolve or reject with a reason and never silently disappear; PR-5.18e adds dependency-connector-choice lazy kind; PR-5.19b adds battle-access-prerequisite-choice; PR-5.19d adds parent-dependency-continuation"
     },
     "shared-solver/lib/segment-dp.js": {
       "id": "segment-dp",
@@ -2349,6 +2365,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.19c verifies synthetic attack-blocked/lethal/viable/unsupported/unresolved-no-damage classification, full battleBefore/After fields, on/off observation search stats are identical, and --qualification-1000 real 8-attempt attribution contract with success causal fields and structuralAfter.available/reason/unavailableReason"
+    },
+    "shared-solver/check-strategic-parent-dependency-continuation.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.19d verifies parentDependencyId+exactStateKey continuation identity, lazy-work kind, exact-merge intent preservation, cross-floor waiting without oracle-return, legal resume on target floor, next-boundary re-attribution, and --qualification-1000 frozen same-total-work A/B mechanism/promotion split"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",

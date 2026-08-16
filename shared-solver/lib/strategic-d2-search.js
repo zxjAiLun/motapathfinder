@@ -43,6 +43,11 @@ const {
 } = require("./strategic-dependency-attribution");
 const { compileBattleAccessPrerequisite, evaluateBattleViability } = require("./strategic-access-prerequisite");
 const { analyzeBattleViabilityBlocker } = require("./strategic-battle-viability");
+const {
+  dependencyTargetFloorId,
+  parentContinuationId,
+  parentContinuationKey,
+} = require("./strategic-parent-continuation");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
   createChildNode,
@@ -437,6 +442,7 @@ function runStrategicD2Search(options) {
   ));
   const enableDependencyAccessAttribution = config.enableDependencyAccessAttribution !== false;
   const enableBattleViabilityAttribution = config.enableBattleViabilityAttribution !== false;
+  const enableParentDependencyContinuation = config.enableParentDependencyContinuation === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -514,9 +520,22 @@ function runStrategicD2Search(options) {
     battleAccessPrerequisiteStateCreated: 0,
     battleAccessPrerequisiteGlobalBlockerAdvanced: 0,
     battleAccessPrerequisiteWitnesses: [],
+    parentDependencyContinuationsCreated: 0,
+    parentDependencyContinuationsMerged: 0,
+    parentDependencyContinuationResumes: 0,
+    parentDependencyContinuationCalls: 0,
+    parentDependencyContinuationWaitingForParentFloor: 0,
+    parentDependencyContinuationParentFloorReached: 0,
+    parentDependencyContinuationParentReachable: 0,
+    parentDependencyContinuationParentBlocked: 0,
+    parentDependencyContinuationNextPrerequisiteCompiled: 0,
+    parentDependencyContinuationWitnesses: [],
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
+  const parentContinuationRecords = new Map();
+  const seenParentContinuationResumes = new Set();
+  const parkedParentContinuations = new Map();
   const bestByRole = new Map(agenda.definitions.map((definition) => [definition.id, root]));
   const bestTerminalBlocker = { progressScore: null, attackMargin: null, stage: null, nodeId: null };
   function observeTerminalBlocker(node, projection) {
@@ -549,10 +568,216 @@ function runStrategicD2Search(options) {
   let goalNode = goalPredicate(root.state) ? root : null;
   let firstGoalExpansion = goalNode ? 0 : null;
 
+  function enqueueParentContinuationForState(node) {
+    if (!enableParentDependencyContinuation || !node || !node.state) return;
+    const exactStateKey = buildStateKey(node.state);
+    for (const [parkedKey, continuation] of parkedParentContinuations.entries()) {
+      const parentDependency = continuation.parentDependency;
+      const targetFloor = dependencyTargetFloorId(parentDependency && parentDependency.target);
+      if (targetFloor == null || node.state.floorId !== targetFloor) continue;
+      const resumeKey = parentContinuationKey(parentDependency.id, exactStateKey);
+      if (seenParentContinuationResumes.has(resumeKey)) continue;
+      seenParentContinuationResumes.add(resumeKey);
+      parkedParentContinuations.delete(parkedKey);
+      stats.parentDependencyContinuationResumes += 1;
+      lazyWork.enqueue({
+        kind: "parent-dependency-continuation",
+        sourceNodeId: node.nodeId,
+        continuation,
+      });
+    }
+  }
+
+  function createParentDependencyContinuation(prerequisite, sourceNode, finalNode, postStateFinalCreated) {
+    if (!enableParentDependencyContinuation) return null;
+    const parentDependency = prerequisite && prerequisite.parentDependency;
+    if (!parentDependency || !parentDependency.id || !parentDependency.target) return null;
+    const postExactStateKey = buildStateKey(finalNode.state);
+    const key = parentContinuationKey(parentDependency.id, postExactStateKey);
+    const existing = parentContinuationRecords.get(key);
+    if (existing) {
+      stats.parentDependencyContinuationsMerged += 1;
+      return existing;
+    }
+    const continuation = {
+      id: parentContinuationId(parentDependency.id, postExactStateKey),
+      kind: "parent-dependency-continuation",
+      parentDependency,
+      satisfiedPrerequisiteId: prerequisite.id,
+      sourceExactStateKey: buildStateKey(sourceNode.state),
+      postExactStateKey,
+      postStateFinalCreated: Boolean(postStateFinalCreated),
+      provenance: {
+        topologicalModel: "hierarchical-prerequisite-intent-preservation",
+        dynamicCausalProof: "not-proven",
+        knownRouteUsed: false,
+        authoredIdUsed: false,
+      },
+    };
+    parentContinuationRecords.set(key, continuation);
+    stats.parentDependencyContinuationsCreated += 1;
+    lazyWork.enqueue({
+      kind: "parent-dependency-continuation",
+      sourceNodeId: finalNode.nodeId,
+      continuation,
+    });
+    return continuation;
+  }
+
+  function processParentDependencyContinuation(work) {
+    const sourceNode = nodes.get(work.sourceNodeId);
+    const continuation = work.continuation;
+    if (!sourceNode || !continuation || !continuation.parentDependency) {
+      lazyWork.reject(work, "missing-parent-continuation-source");
+      return true;
+    }
+    stats.parentDependencyContinuationCalls += 1;
+    const parentDependency = continuation.parentDependency;
+    const targetFloor = dependencyTargetFloorId(parentDependency.target);
+    const currentExactStateKey = buildStateKey(sourceNode.state);
+    seenParentContinuationResumes.add(parentContinuationKey(parentDependency.id, currentExactStateKey));
+    const witness = {
+      continuationId: continuation.id,
+      parentDependencyId: parentDependency.id,
+      satisfiedPrerequisiteId: continuation.satisfiedPrerequisiteId,
+      sourceExactStateFingerprint: hash(continuation.sourceExactStateKey),
+      postExactStateFingerprint: hash(continuation.postExactStateKey),
+      currentExactStateFingerprint: hash(currentExactStateKey),
+      currentFloorId: sourceNode.state.floorId,
+      targetFloorId: targetFloor,
+      status: null,
+      statusReason: null,
+      finalCreated: continuation.postStateFinalCreated,
+      nextPrerequisiteId: null,
+      nextBoundary: null,
+    };
+
+    if (targetFloor == null || sourceNode.state.floorId !== targetFloor) {
+      witness.status = "waiting-for-parent-floor";
+      witness.statusReason = targetFloor == null
+        ? "parent-target-floor-unknown"
+        : "post-state-not-on-parent-target-floor";
+      parkedParentContinuations.set(
+        parentContinuationKey(parentDependency.id, continuation.postExactStateKey),
+        continuation,
+      );
+      stats.parentDependencyContinuationWaitingForParentFloor += 1;
+      if (stats.parentDependencyContinuationWitnesses.length < 64) {
+        stats.parentDependencyContinuationWitnesses.push(witness);
+      }
+      lazyWork.resolve(work, "parent-dependency-continuation-waiting-for-parent-floor");
+      return true;
+    }
+
+    let structuralAccess = null;
+    try {
+      structuralAccess = buildFullStructuralAccessAttribution({
+        project,
+        simulator,
+        state: sourceNode.state,
+        target: parentDependency.target,
+      });
+    } catch (_error) {
+      structuralAccess = null;
+    }
+
+    if (structuralAccess && structuralAccess.firstObservedUnresolvedBoundary) {
+      const first = structuralAccess.firstObservedUnresolvedBoundary;
+      witness.nextBoundary = {
+        floorId: first.floorId,
+        x: first.x,
+        y: first.y,
+        kind: first.exactStateClassification.kind,
+      };
+      if (first.exactStateClassification.kind === "battle-unsurvivable") {
+        let nextPrerequisite = null;
+        try {
+          nextPrerequisite = compileBattleAccessPrerequisite({
+            project,
+            simulator,
+            state: sourceNode.state,
+            parentDependency,
+            structuralAccess,
+            sourceAttemptId: continuation.id,
+            sourceExactStateFingerprint: currentExactStateKey,
+          });
+        } catch (_error) {
+          nextPrerequisite = null;
+        }
+        if (nextPrerequisite) {
+          stats.parentDependencyContinuationNextPrerequisiteCompiled += 1;
+          witness.nextPrerequisiteId = nextPrerequisite.id;
+          const queuedBattleAccess = lazyWork.queued()
+            .filter((item) => item.kind === "battle-access-prerequisite-choice").length;
+          const selected = selectFeedbackAwareDependencyAttempts({
+            candidates: [nextPrerequisite],
+            sourceState: sourceNode.state,
+            dedupe: dependencyAttemptDedupe,
+            maxCalls: dependencyConnectorMaxCalls,
+            callsExecuted: stats.battleAccessPrerequisiteCalls,
+            queuedCount: queuedBattleAccess,
+            maxOutstanding: dependencyAttemptMaxOutstanding,
+          });
+          if (selected.length > 0) {
+            lazyWork.enqueue({
+              kind: "battle-access-prerequisite-choice",
+              sourceNodeId: sourceNode.nodeId,
+              prerequisite: nextPrerequisite,
+            });
+            witness.status = "next-prerequisite-compiled";
+            witness.statusReason = "first-unresolved-boundary-is-battle-unsurvivable";
+          } else {
+            witness.status = "next-prerequisite-not-schedulable";
+            witness.statusReason = "battle-access-call-slot-unavailable-or-attempt-deduplicated";
+          }
+        } else {
+          witness.status = "parent-blocked-by-unsupported-boundary";
+          witness.statusReason = "battle-boundary-no-longer-unresolved-or-compile-failed";
+        }
+      } else {
+        stats.parentDependencyContinuationParentBlocked += 1;
+        witness.status = "parent-blocked-by-unsupported-boundary";
+        witness.statusReason = `unresolved-boundary-kind:${first.exactStateClassification.kind}`;
+      }
+    } else if (structuralAccess && structuralAccess.floorScoped &&
+        structuralAccess.minStructuralBoundaryCrossings != null) {
+      let parentCompletable = false;
+      if (typeof parentDependency.completionPredicate === "function") {
+        try {
+          parentCompletable = parentDependency.completionPredicate(sourceNode.state);
+        } catch (_error) {
+          parentCompletable = false;
+        }
+      }
+      stats.parentDependencyContinuationParentFloorReached += 1;
+      stats.parentDependencyContinuationParentReachable += 1;
+      witness.status = parentCompletable
+        ? "parent-completable-at-current-state"
+        : "parent-target-reachable";
+      witness.statusReason = parentCompletable
+        ? "parent-completion-predicate-satisfied"
+        : "structural-path-clear-but-parent-completion-predicate-not-satisfied";
+    } else {
+      stats.parentDependencyContinuationParentBlocked += 1;
+      witness.status = "parent-blocked-no-structural-path";
+      witness.statusReason = structuralAccess && structuralAccess.evidence && structuralAccess.evidence.reason
+        ? structuralAccess.evidence.reason
+        : "structural-attribution-unavailable";
+    }
+
+    if (stats.parentDependencyContinuationWitnesses.length < 64) {
+      stats.parentDependencyContinuationWitnesses.push(witness);
+    }
+    lazyWork.resolve(work, `parent-dependency-continuation-${witness.status}`);
+    return true;
+  }
+
   function acceptLazyChild(parentNode, afterState, action, strategicTransition) {
     const exactKey = buildStateKey(afterState);
     if (seenExact.has(exactKey)) {
-      return { node: nodes.get(seenExact.get(exactKey)), created: false, exactKey };
+      const existing = nodes.get(seenExact.get(exactKey));
+      enqueueParentContinuationForState(existing);
+      return { node: existing, created: false, exactKey };
     }
     const child = createChildNode(
       parentNode,
@@ -590,6 +815,7 @@ function runStrategicD2Search(options) {
         bestByRole.set(definition.id, child);
       }
     });
+    enqueueParentContinuationForState(child);
     return { node: child, created: true, exactKey };
   }
 
@@ -674,7 +900,13 @@ function runStrategicD2Search(options) {
   }
 
   function drainOneLazyItem() {
-    const queuedDependency = connectorMode === "dependency-derived"
+    const queuedParentContinuation = connectorMode === "battle-access-prerequisite"
+      ? lazyWork.queued().find((item) =>
+        item.kind === "parent-dependency-continuation" &&
+        item.sourceNodeId != null &&
+        nodes.has(item.sourceNodeId))
+      : null;
+    const queuedDependency = queuedParentContinuation || (connectorMode === "dependency-derived"
       ? lazyWork.queued().find((item) =>
         item.kind === "dependency-connector-choice" &&
         item.sourceNodeId != null &&
@@ -684,10 +916,14 @@ function runStrategicD2Search(options) {
           item.kind === "battle-access-prerequisite-choice" &&
           item.sourceNodeId != null &&
           nodes.has(item.sourceNodeId))
-        : null;
+        : null);
     const work = queuedDependency || lazyWork.dequeue((item) =>
       item.sourceNodeId != null && !nodes.has(item.sourceNodeId));
     if (!work) return false;
+
+    if (work.kind === "parent-dependency-continuation") {
+      return processParentDependencyContinuation(work);
+    }
 
     if (work.kind === "deferred-exact-post") {
       const parentNode = nodes.get(work.sourceNodeId);
@@ -1136,6 +1372,12 @@ function runStrategicD2Search(options) {
         finalProjection && finalProjection.progressScore != null &&
         finalProjection.progressScore > bestBeforeMaterialize;
       if (reachedNewBest) stats.battleAccessPrerequisiteGlobalBlockerAdvanced += 1;
+      const parentContinuation = createParentDependencyContinuation(
+        prerequisite,
+        sourceNode,
+        materialized.finalNode,
+        materialized.finalCreated,
+      );
       if (stats.battleAccessPrerequisiteWitnesses.length < dependencyConnectorMaxCalls) {
         stats.battleAccessPrerequisiteWitnesses.push({
           ...attemptBase,
@@ -1153,6 +1395,7 @@ function runStrategicD2Search(options) {
             mdef: number((materialized.finalState.hero || {}).mdef, 0),
           },
           finalCreated: materialized.finalCreated,
+          parentDependencyContinuationId: parentContinuation ? parentContinuation.id : null,
           reachedNewBest,
           afterStage: afterBattle ? afterBattle.stage : null,
           battleAfter: afterBattle ? {
@@ -1350,6 +1593,7 @@ function runStrategicD2Search(options) {
           .length;
       }
       if (seenExact.has(exactKey)) {
+        enqueueParentContinuationForState(nodes.get(seenExact.get(exactKey)));
         stats.exactMerged += 1;
         continue;
       }
@@ -1387,6 +1631,7 @@ function runStrategicD2Search(options) {
           bestByRole.set(definition.id, child);
         }
       });
+      enqueueParentContinuationForState(child);
       if (selection.reason === "goal-reached") {
         goalNode = child;
         firstGoalExpansion = stats.expansions;
@@ -1659,6 +1904,11 @@ function runStrategicD2Search(options) {
         battleViabilityAttribution: connectorMode === "battle-access-prerequisite"
           ? enableBattleViabilityAttribution
             ? "observation-only-attack-blocked-lethal-viable"
+            : "disabled"
+          : null,
+        parentDependencyContinuation: connectorMode === "battle-access-prerequisite"
+          ? enableParentDependencyContinuation
+            ? "intent-preservation-by-parent-dependency-id-plus-exact-state-key"
             : "disabled"
           : null,
         dependencyConnector: connectorMode === "dependency-derived" ? {

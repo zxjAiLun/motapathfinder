@@ -246,6 +246,20 @@ jobs:
       - run: npm ci
       - run: npm run qualification:strategic-battle-viability
 
+  qualification-strategic-parent-dependency-continuation:
+    needs: qualification-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run qualification:strategic-parent-dependency-continuation
+
   qualification-mt7-mt8-travel-variant-replay-repair:
     needs: qualification-gate
     runs-on: ubuntu-latest
@@ -479,6 +493,7 @@ jobs:
       - qualification-strategic-dependency-attribution
       - qualification-strategic-battle-access-prerequisite
       - qualification-strategic-battle-viability
+      - qualification-strategic-parent-dependency-continuation
       - qualification-mt7-mt8-travel-variant-replay-repair
       - qualification-promotion-contract
       - qualification-post-promotion-regression
@@ -496,4 +511,4 @@ jobs:
     if: needs.qualification-gate.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Full qualification passed (fast + key-analysis + promotion + micro benchmark + real-route performance + post-MT5 baseline + MT6 defense causal repair + MT7 left-sword budget baseline + search outcome taxonomy + strategic blocker connector + strategic dependency connector + strategic dependency attribution + strategic battle access prerequisite + strategic battle viability + MT7-to-MT8 travel-variant replay repair + promotion-contract + post-promotion-regression + multi-region-key-shadow + multi-region-boundary-matrix + reachability reuse attribution + reachability skeleton cache + reachability rebase attribution + topology-first materialization + remaining materialization attribution + battle evaluation projection + reachability optimization requalification + full solve hotspot reprofiling + workload matrix)"
+      - run: echo "Full qualification passed (fast + key-analysis + promotion + micro benchmark + real-route performance + post-MT5 baseline + MT6 defense causal repair + MT7 left-sword budget baseline + search outcome taxonomy + strategic blocker connector + strategic dependency connector + strategic dependency attribution + strategic battle access prerequisite + strategic battle viability + strategic parent dependency continuation + MT7-to-MT8 travel-variant replay repair + promotion-contract + post-promotion-regression + multi-region-key-shadow + multi-region-boundary-matrix + reachability reuse attribution + reachability skeleton cache + reachability rebase attribution + topology-first materialization + remaining materialization attribution + battle evaluation projection + reachability optimization requalification + full solve hotspot reprofiling + workload matrix)"

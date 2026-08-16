@@ -86,12 +86,7 @@ function compileBattleAccessPrerequisite(options) {
     id: hash(`battle-access-prerequisite|${parentDependency.id}|${boundary.floorId}|${boundary.x},${boundary.y}|${boundary.enemyId}`),
     kind: "battle-access-prerequisite",
     capability: "survival",
-    parentDependency: {
-      id: parentDependency.id,
-      kind: parentDependency.kind,
-      capability: parentDependency.capability,
-      target: parentDependency.target,
-    },
+    parentDependency,
     boundary,
     beforeViability: viability,
     completionPredicate: buildBattleAccessCompletionPredicate({
