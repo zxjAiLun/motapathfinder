@@ -52,6 +52,7 @@ const {
   shouldReactivateMergedParentContinuation,
 } = require("./strategic-parent-continuation");
 const { HierarchyPriorityController } = require("./strategic-hierarchy-priority");
+const { AnchorExpansionRequestQueue } = require("./strategic-anchor-expansion-request");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
   createChildNode,
@@ -449,6 +450,8 @@ function runStrategicD2Search(options) {
   const enableParentDependencyContinuation = config.enableParentDependencyContinuation === true;
   const enableHierarchicalCallAllocation = config.enableHierarchicalCallAllocation === true;
   const enableBattleStagePrerequisiteDecomposition = config.enableBattleStagePrerequisiteDecomposition === true;
+  const enableContinuationAnchorExpansionScheduling =
+    config.enableContinuationAnchorExpansionScheduling === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -555,6 +558,11 @@ function runStrategicD2Search(options) {
     canonicalExpansionSummaryCount: 0,
     canonicalFloorTransitionActionCount: 0,
     canonicalSuccessorEdgeAttributions: [],
+    continuationAnchorExpansionRequests: 0,
+    continuationAnchorExpansionSelections: 0,
+    continuationAnchorExpansionAlreadyExpandedSkips: 0,
+    continuationAnchorExpansionInactiveSkips: 0,
+    anchorExpansionWitnesses: [],
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
@@ -566,6 +574,7 @@ function runStrategicD2Search(options) {
   const nodeExpansionOrdinal = new Map();
   const nodeExpansionSummaries = new Map();
   const canonicalSuccessorEdges = [];
+  const anchorExpansionRequests = new AnchorExpansionRequestQueue(hash);
   const bestByRole = new Map(agenda.definitions.map((definition) => [definition.id, root]));
   const bestTerminalBlocker = { progressScore: null, attackMargin: null, stage: null, nodeId: null };
   function observeTerminalBlocker(node, projection) {
@@ -730,6 +739,75 @@ function runStrategicD2Search(options) {
     return { continuation, created: true, lifecycle: "created-active" };
   }
 
+  function requestContinuationAnchorExpansion(continuation, anchorNodeId, targetFloor) {
+    if (!enableContinuationAnchorExpansionScheduling || !continuation || anchorNodeId == null) return;
+    const anchorNode = nodes.get(anchorNodeId);
+    const result = anchorExpansionRequests.request({
+      continuationId: continuation.id,
+      anchorNodeId,
+      requestedAtExpansion: stats.expansions,
+      targetFloor,
+      anchorExists: Boolean(anchorNode),
+      anchorExpanded: Boolean(anchorNode) && expanded.has(anchorNodeId),
+    });
+    if (result.accepted) stats.continuationAnchorExpansionRequests += 1;
+  }
+
+  function selectPendingAnchorExpansion() {
+    if (!enableContinuationAnchorExpansionScheduling) return null;
+    const result = anchorExpansionRequests.select({
+      evaluate(request) {
+        const anchorNode = nodes.get(request.anchorNodeId);
+        let continuation = null;
+        for (const candidate of parentContinuationRecords.values()) {
+          if (candidate.id === request.continuationId) {
+            continuation = candidate;
+            break;
+          }
+        }
+        return {
+          anchorExists: Boolean(anchorNode),
+          anchorExpanded: Boolean(anchorNode) && expanded.has(request.anchorNodeId),
+          continuationActive: Boolean(continuation) && hierarchyPriority
+            .activeContinuationIds()
+            .includes(request.continuationId),
+          continuationParked: Boolean(continuation) && parkedParentContinuations.has(
+            parentContinuationKey(
+              continuation.parentDependency.id,
+              continuation.postExactStateKey,
+            ),
+          ),
+        };
+      },
+    });
+    if (result.type === "skipped") {
+      if (result.reason === "already-expanded-or-anchor-missing") {
+        stats.continuationAnchorExpansionAlreadyExpandedSkips += 1;
+      } else if (result.reason === "inactive-continuation") {
+        stats.continuationAnchorExpansionInactiveSkips += 1;
+      }
+      return null;
+    }
+    if (result.type !== "selected") return null;
+    const anchorNode = nodes.get(result.request.anchorNodeId);
+    stats.continuationAnchorExpansionSelections += 1;
+    if (stats.anchorExpansionWitnesses.length < 64) {
+      stats.anchorExpansionWitnesses.push({
+        continuationId: result.request.continuationId,
+        anchorNodeId: result.request.anchorNodeId,
+        requestedAtExpansion: result.request.requestedAtExpansion,
+        selectedAtExpansion: stats.expansions,
+        selectionDelay: stats.expansions - result.request.requestedAtExpansion,
+        targetFloor: result.request.targetFloor,
+      });
+    }
+    return {
+      node: anchorNode,
+      queueId: "parent-continuation-anchor",
+      anchorExpansionRequestId: result.request.fingerprint,
+    };
+  }
+
   function processParentDependencyContinuation(work) {
     const sourceNode = nodes.get(work.sourceNodeId);
     const continuation = work.continuation;
@@ -780,6 +858,11 @@ function runStrategicD2Search(options) {
       parkedParentContinuations.set(
         parentContinuationKey(parentDependency.id, continuation.postExactStateKey),
         continuation,
+      );
+      requestContinuationAnchorExpansion(
+        continuation,
+        continuation.anchorNodeId,
+        targetFloor,
       );
       stats.parentDependencyContinuationWaitingForParentFloor += 1;
       if (stats.parentDependencyContinuationWitnesses.length < 64) {
@@ -1704,11 +1787,12 @@ function runStrategicD2Search(options) {
       drainOneLazyItem();
       if (goalNode || !hasRemainingTotalSearchBudget()) break;
     }
-    let selected = agenda.pop(expanded);
+    let selected = selectPendingAnchorExpansion();
+    if (!selected) selected = agenda.pop(expanded);
     if (!selected && enableLazyWork && lazyWork.activeSize() > 0 && hasRemainingTotalSearchBudget()) {
       drainOneLazyItem();
       if (goalNode || !hasRemainingTotalSearchBudget()) break;
-      selected = agenda.pop(expanded);
+      selected = selectPendingAnchorExpansion() || agenda.pop(expanded);
     }
     if (!selected || !hasRemainingTotalSearchBudget()) break;
     const node = selected.node;
@@ -2301,6 +2385,11 @@ function runStrategicD2Search(options) {
         battleStagePrerequisiteDecomposition: connectorMode === "battle-access-prerequisite"
           ? enableBattleStagePrerequisiteDecomposition
             ? "continuation-derived-attack-blocked-to-damageable-only"
+            : "disabled"
+          : null,
+        continuationAnchorExpansionScheduling: connectorMode === "battle-access-prerequisite"
+          ? enableContinuationAnchorExpansionScheduling
+            ? "one-shot-active-continuation-anchor-expansion-request"
             : "disabled"
           : null,
         dependencyConnector: connectorMode === "dependency-derived" ? {

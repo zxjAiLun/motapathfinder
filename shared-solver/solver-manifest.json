@@ -1734,7 +1734,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation; PR-5.19e adds opt-in active hierarchy call priority so successful hierarchy children can compete for existing connector calls; PR-5.19f adds opt-in continuation-derived attack-blocked -> damageable battle-stage decomposition while preserving generic root behavior; PR-5.19g adds observation-only exact-merge continuation descendant telemetry (historical/future eligible descendants, calls remaining, priority-at-end); PR-5.19h adds observation-only canonical successor edge attribution (expansion lifecycle, outgoing disposition, legal edge graph reachability)"
+      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation; PR-5.19e adds opt-in active hierarchy call priority so successful hierarchy children can compete for existing connector calls; PR-5.19f adds opt-in continuation-derived attack-blocked -> damageable battle-stage decomposition while preserving generic root behavior; PR-5.19g adds observation-only exact-merge continuation descendant telemetry (historical/future eligible descendants, calls remaining, priority-at-end); PR-5.19h adds observation-only canonical successor edge attribution (expansion lifecycle, outgoing disposition, legal edge graph reachability); PR-5.19i adds opt-in one-shot active-continuation anchor expansion scheduling"
     },
     "shared-solver/lib/strategic-blocker.js": {
       "id": "strategic-blocker",
@@ -1863,6 +1863,22 @@
         "cleanCheckout": true
       },
       "notes": "PR-5.19e dynamically activates hierarchy call priority only after a real P(B) success; new sibling connector attempts defer while active, child attempt feedback releases priority; no budget increase and no permanent reserved call slot"
+    },
+    "shared-solver/lib/strategic-anchor-expansion-request.js": {
+      "id": "strategic-anchor-expansion-request",
+      "path": "shared-solver/lib/strategic-anchor-expansion-request.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "one-shot-continuation-anchor-expansion-request-queue",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.19i one-shot active-continuation anchor expansion request; selection uses ordinary strategic expansion pipeline; stale already-expanded and inactive-continuation requests are removed without granting a slot"
     },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
@@ -2432,6 +2448,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.19h observation-only frozen 1000-work contract for anchor expansion lifecycle, outgoing transition disposition, and canonical legal successor edge graph; currently classifies stage anchor 840 as case-1-anchor-never-expanded while control anchor 109 is expanded and canonical-edge-reachable to MT5"
+    },
+    "shared-solver/check-strategic-continuation-anchor-expansion-scheduling.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.19i verifies one-shot anchor expansion request lifecycle (duplicate rejected, selected once, already-expanded skip, inactive skip), frozen control OFF vs candidate ON, anchor expanded after continuation, lineage-safe resume, and generic lethal child receiving a real connector call"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",
