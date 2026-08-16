@@ -114,6 +114,8 @@
     "qualification:strategic-lethal-survival-attribution": "node check-strategic-lethal-survival-attribution.js --qualification-1000",
     "check:strategic-survival-edge-attribution": "node check-strategic-survival-edge-attribution.js",
     "qualification:strategic-survival-edge-attribution": "node check-strategic-survival-edge-attribution.js --qualification-1000",
+    "check:strategic-survival-opportunity-prerequisite": "node check-strategic-survival-opportunity-prerequisite.js",
+    "qualification:strategic-survival-opportunity-prerequisite": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",

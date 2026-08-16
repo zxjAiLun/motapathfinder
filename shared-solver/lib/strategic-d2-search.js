@@ -45,6 +45,7 @@ const { compileBattleAccessPrerequisite, evaluateBattleViability } = require("./
 const { compileBattleStagePrerequisite } = require("./strategic-battle-stage-prerequisite");
 const { createLethalSurvivalObserver } = require("./strategic-lethal-survival-observer");
 const { createSurvivalEdgeObserver } = require("./strategic-survival-edge-observer");
+const { compileSurvivalOpportunityPrerequisite } = require("./strategic-survival-opportunity-prerequisite");
 const { analyzeBattleViabilityBlocker } = require("./strategic-battle-viability");
 const {
   dependencyTargetFloorId,
@@ -456,6 +457,7 @@ function runStrategicD2Search(options) {
     config.enableContinuationAnchorExpansionScheduling === true;
   const enableLethalSurvivalAttribution = config.enableLethalSurvivalAttribution === true;
   const enableSurvivalEdgeAttribution = config.enableSurvivalEdgeAttribution === true;
+  const enableSurvivalOpportunityPrerequisite = config.enableSurvivalOpportunityPrerequisite === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -569,6 +571,11 @@ function runStrategicD2Search(options) {
     anchorExpansionWitnesses: [],
     lethalSurvivalAttributions: [],
     lethalSurvivalEdgeAttributions: [],
+    survivalOpportunityPrerequisitesCompiled: 0,
+    survivalOpportunityPrerequisitesWitnessBacked: 0,
+    survivalOpportunityPrerequisitesSatisfied: 0,
+    survivalOpportunityPrerequisiteStateCreated: 0,
+    survivalOpportunityWitnesses: [],
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
@@ -1595,7 +1602,9 @@ function runStrategicD2Search(options) {
             maxSamples: 50,
           })
         : null;
-      const lethalSurvivalEdgeObserver = enableSurvivalEdgeAttribution && isLethalHierarchyChild
+      const enableEffectiveSurvivalEdgeObservation =
+        enableSurvivalEdgeAttribution || enableSurvivalOpportunityPrerequisite;
+      const lethalSurvivalEdgeObserver = enableEffectiveSurvivalEdgeObservation && isLethalHierarchyChild
         ? createSurvivalEdgeObserver({
             simulator,
             sourceState: sourceNode.state,
@@ -1635,7 +1644,7 @@ function runStrategicD2Search(options) {
           });
         }
       }
-      if (lethalSurvivalEdgeObserver) {
+      if (lethalSurvivalEdgeObserver && enableSurvivalEdgeAttribution) {
         if (stats.lethalSurvivalEdgeAttributions.length < 16) {
           stats.lethalSurvivalEdgeAttributions.push({
             attemptId,
@@ -1653,6 +1662,96 @@ function runStrategicD2Search(options) {
             },
             ...lethalSurvivalEdgeObserver.report(),
           });
+        }
+      }
+      if (enableSurvivalOpportunityPrerequisite && isLethalHierarchyChild &&
+          result.status === "not-satisfied" && lethalSurvivalEdgeObserver) {
+        const witness = lethalSurvivalEdgeObserver.firstPositiveOpportunityWitness();
+        if (witness) {
+          const opportunityPrerequisite = compileSurvivalOpportunityPrerequisite({
+            project,
+            parentDependency: prerequisite.parentDependency,
+            boundary: prerequisite.boundary,
+            witness,
+            originFailedAttemptId: attemptId,
+            originContinuationId: work.originContinuationId || null,
+          });
+          if (opportunityPrerequisite) {
+            stats.survivalOpportunityPrerequisitesCompiled += 1;
+            stats.survivalOpportunityPrerequisitesWitnessBacked += 1;
+            const witnessEdges = [{
+              action: witness.action,
+              preExactStateKey: witness.preExactStateKey,
+              postExactStateKey: witness.postExactStateKey,
+            }];
+            const replay = verifyConnectorChain(simulator, sourceNode.state, witnessEdges);
+            const completionAfterReplay = replay.valid &&
+              opportunityPrerequisite.completionPredicate(replay.finalState);
+            let replayValid = replay.valid;
+            let materialized = null;
+            let parentContinuationId = null;
+            let parentContinuationCreated = false;
+            if (replayValid && completionAfterReplay) {
+              const opportunityResult = {
+                status: "satisfied",
+                stoppedReason: "satisfied",
+                dependencyId: opportunityPrerequisite.id,
+                sourceExactStateKey: witness.preExactStateKey,
+                postExactStateKey: witness.postExactStateKey,
+                edges: witnessEdges,
+                chain: witness.witnessChain,
+                chainSummary: witness.witnessChainSummary,
+                expansions: 0,
+                generated: 0,
+                applyErrors: 0,
+                frontierSize: 0,
+                frontierTrimmed: 0,
+              };
+              materialized = materializeConnectorChain(sourceNode, opportunityResult);
+            }
+            if (materialized && materialized.ok) {
+              stats.survivalOpportunityPrerequisitesSatisfied += 1;
+              if (materialized.finalCreated) {
+                stats.survivalOpportunityPrerequisiteStateCreated += 1;
+              }
+              const continuationResult = createParentDependencyContinuation(
+                opportunityPrerequisite,
+                sourceNode,
+                materialized.finalNode,
+                materialized.finalCreated,
+                number(work.hierarchyLevel, 0),
+              );
+              if (continuationResult.continuation) {
+                parentContinuationId = continuationResult.continuation.id;
+                parentContinuationCreated = continuationResult.created;
+              }
+            }
+            if (stats.survivalOpportunityWitnesses.length < 16) {
+              stats.survivalOpportunityWitnesses.push({
+                opportunityId: opportunityPrerequisite.id,
+                parentDependencyId: prerequisite.parentDependency.id,
+                originFailedAttemptId: attemptId,
+                originContinuationId: work.originContinuationId || null,
+                target: opportunityPrerequisite.target,
+                targetSignature: opportunityPrerequisite.targetSignature,
+                selectionPolicy: opportunityPrerequisite.selectionPolicy,
+                discoveryExpansion: witness.discoveryExpansion,
+                discoveryDepth: witness.discoveryDepth,
+                deltaSurvivalMargin: witness.deltaSurvivalMargin,
+                deltaHP: witness.deltaHP,
+                deltaDamage: witness.deltaDamage,
+                resourceDelta: witness.resourceDelta,
+                witnessChainLength: witness.witnessChain.length,
+                witnessChainSummary: witness.witnessChainSummary,
+                replayValid,
+                completionAfterReplay,
+                materialized: Boolean(materialized && materialized.ok),
+                finalCreated: materialized ? materialized.finalCreated : false,
+                parentContinuationId,
+                parentContinuationCreated,
+              });
+            }
+          }
         }
       }
       const battleCallHierarchyLevel = Math.max(0, number(work.hierarchyLevel, 0));
@@ -2470,6 +2569,11 @@ function runStrategicD2Search(options) {
         survivalEdgeAttribution: connectorMode === "battle-access-prerequisite"
           ? enableSurvivalEdgeAttribution
             ? "observation-only-generated-primitive-edge-causal-attribution"
+            : "disabled"
+          : null,
+        survivalOpportunityPrerequisite: connectorMode === "battle-access-prerequisite"
+          ? enableSurvivalOpportunityPrerequisite
+            ? "witness-backed-first-positive-named-opportunity"
             : "disabled"
           : null,
         dependencyConnector: connectorMode === "dependency-derived" ? {

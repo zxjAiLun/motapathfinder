@@ -117,6 +117,9 @@ function createSurvivalEdgeObserver(options) {
       depth: entry.depth,
       preExactStateKey: entry.preExactStateKey,
       postExactStateKey: entry.postExactStateKey,
+      witnessChain: (entry.chainBefore || []).concat([entry.action]),
+      witnessChainSummary: (entry.chainBefore || []).concat([entry.action])
+        .map((action) => action.summary || action.kind || "step"),
       preStateFingerprint: hash(entry.preExactStateKey),
       postStateFingerprint: hash(entry.postExactStateKey),
       postAlreadySeen: Boolean(entry.postAlreadySeen),
@@ -138,6 +141,31 @@ function createSurvivalEdgeObserver(options) {
       if (!targetSources.has(signature)) targetSources.set(signature, new Set());
       targetSources.get(signature).add(edge.preStateFingerprint);
     }
+  }
+
+  function firstPositiveOpportunityWitness() {
+    for (const edge of edges) {
+      if (!(edge.deltaSurvivalMargin != null && edge.deltaSurvivalMargin > 0)) continue;
+      return {
+        action: edge.action,
+        actionTargetSignature: edge.actionTargetSignature,
+        preExactStateKey: edge.preExactStateKey,
+        postExactStateKey: edge.postExactStateKey,
+        witnessChain: edge.witnessChain,
+        witnessChainSummary: edge.witnessChainSummary,
+        discoveryExpansion: edge.expansion,
+        discoveryDepth: edge.depth,
+        beforeStage: edge.beforeStage,
+        afterStage: edge.afterStage,
+        beforeSurvivalMargin: edge.beforeSurvivalMargin,
+        afterSurvivalMargin: edge.afterSurvivalMargin,
+        deltaHP: edge.deltaHP,
+        deltaDamage: edge.deltaDamage,
+        deltaSurvivalMargin: edge.deltaSurvivalMargin,
+        resourceDelta: edge.resourceDelta,
+      };
+    }
+    return null;
   }
 
   function edgeDelta(edge) {
@@ -224,7 +252,7 @@ function createSurvivalEdgeObserver(options) {
     };
   }
 
-  return { observeState, observeEdge, report };
+  return { observeState, observeEdge, report, firstPositiveOpportunityWitness };
 }
 
 module.exports = {
