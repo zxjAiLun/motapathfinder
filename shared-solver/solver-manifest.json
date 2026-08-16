@@ -1830,7 +1830,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.19d keeps parent dependency intent after P(B) success; continuation identity is parentDependencyId + exactStateKey and is bookkeeping only, never game state or DP key; Repair 1 adds anchorNodeId lineage provenance and isNodeDescendantOf so only legal descendants of the canonical post-state anchor may resume"
+      "notes": "PR-5.19d keeps parent dependency intent after P(B) success; continuation identity is parentDependencyId + exactStateKey and is bookkeeping only, never game state or DP key; Repair 1 adds anchorNodeId lineage provenance and isNodeDescendantOf so only legal descendants of the canonical post-state anchor may resume; PR-5.19e Repair 1 adds shouldReactivateMergedParentContinuation so completed merges cannot recreate orphan priority"
     },
     "shared-solver/lib/strategic-hierarchy-priority.js": {
       "id": "strategic-hierarchy-priority",
@@ -2394,7 +2394,7 @@
       "allowsNotFound": true,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.19e verifies active hierarchy priority synthetic sequence (root S1 success activates C1, sibling S2 defers, child P2 gets next call, feedback releases, sibling resumes), focused on/off no-semantic-change, and --qualification-1000 real frozen mechanism gate that a continuation-derived child prerequisite actually receives one connector call"
+      "notes": "PR-5.19e verifies active hierarchy priority synthetic sequence (root S1 success activates C1, sibling S2 defers, child P2 gets next call, feedback releases, sibling resumes), focused on/off no-semantic-change, and --qualification-1000 real frozen mechanism gate that a continuation-derived child prerequisite actually receives one connector call; Repair 1 adds lifecycle-safe merge controls (completed no-reactivation, active preserved, parked preserved)"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",

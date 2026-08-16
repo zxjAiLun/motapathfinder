@@ -48,6 +48,7 @@ const {
   isNodeDescendantOf,
   parentContinuationId,
   parentContinuationKey,
+  shouldReactivateMergedParentContinuation,
 } = require("./strategic-parent-continuation");
 const { HierarchyPriorityController } = require("./strategic-hierarchy-priority");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
@@ -525,6 +526,7 @@ function runStrategicD2Search(options) {
     battleAccessPrerequisiteWitnesses: [],
     parentDependencyContinuationsCreated: 0,
     parentDependencyContinuationsMerged: 0,
+    parentDependencyContinuationMergeReactivationBlocked: 0,
     parentDependencyContinuationResumes: 0,
     parentDependencyContinuationLineageRejected: 0,
     parentDependencyContinuationCalls: 0,
@@ -624,15 +626,32 @@ function runStrategicD2Search(options) {
   }
 
   function createParentDependencyContinuation(prerequisite, sourceNode, finalNode, postStateFinalCreated, hierarchyLevel) {
-    if (!enableParentDependencyContinuation) return null;
+    if (!enableParentDependencyContinuation) {
+      return { continuation: null, created: false, lifecycle: "disabled" };
+    }
     const parentDependency = prerequisite && prerequisite.parentDependency;
-    if (!parentDependency || !parentDependency.id || !parentDependency.target) return null;
+    if (!parentDependency || !parentDependency.id || !parentDependency.target) {
+      return { continuation: null, created: false, lifecycle: "missing-parent-dependency" };
+    }
     const postExactStateKey = buildStateKey(finalNode.state);
     const key = parentContinuationKey(parentDependency.id, postExactStateKey);
     const existing = parentContinuationRecords.get(key);
     if (existing) {
       stats.parentDependencyContinuationsMerged += 1;
-      return existing;
+      const parkedContinuationIds = new Set(
+        Array.from(parkedParentContinuations.values()).map((continuation) => continuation.id),
+      );
+      const shouldReactivate = shouldReactivateMergedParentContinuation(
+        existing,
+        hierarchyPriority.activeContinuationIds(),
+        parkedContinuationIds,
+      );
+      if (shouldReactivate) {
+        activateHierarchyPriority(existing);
+        return { continuation: existing, created: false, lifecycle: "merged-active-or-parked" };
+      }
+      stats.parentDependencyContinuationMergeReactivationBlocked += 1;
+      return { continuation: existing, created: false, lifecycle: "merged-completed-no-reactivation" };
     }
     const continuation = {
       id: parentContinuationId(parentDependency.id, postExactStateKey),
@@ -658,7 +677,8 @@ function runStrategicD2Search(options) {
       sourceNodeId: finalNode.nodeId,
       continuation,
     });
-    return continuation;
+    activateHierarchyPriority(continuation);
+    return { continuation, created: true, lifecycle: "created-active" };
   }
 
   function processParentDependencyContinuation(work) {
@@ -1458,14 +1478,14 @@ function runStrategicD2Search(options) {
         finalProjection && finalProjection.progressScore != null &&
         finalProjection.progressScore > bestBeforeMaterialize;
       if (reachedNewBest) stats.battleAccessPrerequisiteGlobalBlockerAdvanced += 1;
-      const parentContinuation = createParentDependencyContinuation(
+      const parentContinuationResult = createParentDependencyContinuation(
         prerequisite,
         sourceNode,
         materialized.finalNode,
         materialized.finalCreated,
         work.hierarchyLevel || 0,
       );
-      activateHierarchyPriority(parentContinuation);
+      const parentContinuation = parentContinuationResult.continuation;
       if (stats.battleAccessPrerequisiteWitnesses.length < dependencyConnectorMaxCalls) {
         stats.battleAccessPrerequisiteWitnesses.push({
           ...attemptBase,
@@ -1484,6 +1504,8 @@ function runStrategicD2Search(options) {
           },
           finalCreated: materialized.finalCreated,
           parentDependencyContinuationId: parentContinuation ? parentContinuation.id : null,
+          parentDependencyContinuationCreated: parentContinuationResult.created,
+          parentDependencyContinuationMergeLifecycle: parentContinuationResult.lifecycle,
           reachedNewBest,
           afterStage: afterBattle ? afterBattle.stage : null,
           battleAfter: afterBattle ? {

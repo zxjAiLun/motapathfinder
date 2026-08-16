@@ -8,6 +8,7 @@ const path = require("node:path");
 const { makeBlindSimulator, readBlindGoal } = require("./lib/blind-discovery-baseline");
 const { loadProject } = require("./lib/project-loader");
 const { HierarchyPriorityController } = require("./lib/strategic-hierarchy-priority");
+const { shouldReactivateMergedParentContinuation } = require("./lib/strategic-parent-continuation");
 const { LazyWorkQueue } = require("./lib/strategic-lazy-work");
 const { runStrategicD2Search } = require("./lib/strategic-d2-search");
 const { createMt5EntryState, detachCheckpoint } = require("./qualify-blind-discovery");
@@ -61,6 +62,39 @@ function main() {
   assert.strictEqual(lazyWork.queued().filter((work) => work.prerequisite.id === "S2").length, 1);
   lazyWork.resolve(childCall, "synthetic-child-feedback");
   lazyWork.resolve(lazyWork.queued().find((work) => work.prerequisite.id === "S2"), "synthetic-sibling");
+
+  // --- Lifecycle-safe merge policy --------------------------------------------
+  // C1 completed and released: duplicate semantic merge must NOT reactivate.
+  const completedContinuation = { id: "C1" };
+  assert.strictEqual(
+    shouldReactivateMergedParentContinuation(
+      completedContinuation,
+      controller.activeContinuationIds(),
+      new Set(),
+    ),
+    false,
+  );
+  // C2 still active: merged duplicate must preserve the original lifecycle.
+  assert.strictEqual(controller.activate("C2"), true);
+  assert.strictEqual(
+    shouldReactivateMergedParentContinuation(
+      { id: "C2" },
+      controller.activeContinuationIds(),
+      new Set(),
+    ),
+    true,
+  );
+  // C3 still parked/waiting: same.
+  assert.strictEqual(
+    shouldReactivateMergedParentContinuation(
+      { id: "C3" },
+      controller.activeContinuationIds(),
+      new Set(["C3"]),
+    ),
+    true,
+  );
+  assert.strictEqual(controller.releaseContinuation("C2"), true);
+  assert.strictEqual(controller.isActive(), false);
 
   // --- Focused on/off control -------------------------------------------------
   const focusedOptions = {
@@ -172,6 +206,7 @@ function main() {
         childPrerequisitesSatisfied: candidate.stats.childPrerequisitesSatisfied,
         maxHierarchyDepthAttempted: candidate.stats.maxHierarchyDepthAttempted,
         parentContinuationsCreated: candidate.stats.parentDependencyContinuationsCreated,
+        parentContinuationMergeReactivationBlocked: candidate.stats.parentDependencyContinuationMergeReactivationBlocked,
         parentContinuationResumes: candidate.stats.parentDependencyContinuationResumes,
         childWitnesses,
         bestAttackMargin: candidate.bestTerminalBlocker.attackMargin,
@@ -191,6 +226,11 @@ function main() {
       siblingDeferredWhileActive: true,
       releasedAfterChildFeedback: true,
       siblingResumedAfterRelease: true,
+    },
+    lifecycleSafeMerge: {
+      completedNoReactivation: true,
+      activePreserved: true,
+      parkedPreserved: true,
     },
     focusedNoSemanticChange: {
       offTotal: focusedOff.stats.totalSearchExpansions,

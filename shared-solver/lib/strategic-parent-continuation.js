@@ -13,10 +13,13 @@ const crypto = require("node:crypto");
  * so a state already created by ordinary strategic search does not drop a
  * parent intent merely because finalCreated === false.
  *
- * Repair 1 additionally anchors the continuation at the canonical post-state
- * search node and requires that any later resume candidate legally descends
- * from that anchor. anchorNodeId is provenance only and never enters game
- * state, exact state key, DP key, or continuation semantic identity.
+ * Repair 1 anchors the continuation at the canonical post-state search node
+ * and requires that any later resume candidate legally descends from that
+ * anchor. anchorNodeId is provenance only.
+ *
+ * PR-5.19e Repair 1 adds lifecycle-safe merge policy: an already completed
+ * continuation must not be re-activated just because another success merges
+ * into the same (parentDependencyId, postExactStateKey).
  */
 
 function hash(value) {
@@ -52,9 +55,21 @@ function isNodeDescendantOf(nodes, candidateNode, anchorNodeId) {
   return false;
 }
 
+function shouldReactivateMergedParentContinuation(continuation, activeContinuationIds, parkedContinuationIds) {
+  if (!continuation || !continuation.id) return false;
+  if (Array.isArray(activeContinuationIds) && activeContinuationIds.includes(continuation.id)) {
+    return true;
+  }
+  if (parkedContinuationIds && parkedContinuationIds.has(continuation.id)) {
+    return true;
+  }
+  return false;
+}
+
 module.exports = {
   dependencyTargetFloorId,
   isNodeDescendantOf,
   parentContinuationId,
   parentContinuationKey,
+  shouldReactivateMergedParentContinuation,
 };
