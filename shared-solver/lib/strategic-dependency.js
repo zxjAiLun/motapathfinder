@@ -772,6 +772,7 @@ function runDependencyConnector(options) {
       nextState.route = [];
       const key = keyState(nextState);
       const postAlreadySeen = seenExact.has(key);
+      const currentEdge = buildEdge(simulator, action, item.key, key);
       if (edgeObserver) {
         try {
           edgeObserver({
@@ -784,6 +785,10 @@ function runDependencyConnector(options) {
             postExactStateKey: key,
             postAlreadySeen,
             chainBefore: item.chain,
+            witnessEdges: item.edges.concat([currentEdge]),
+            sourceExactStateKey: item.edges.length > 0
+              ? item.edges[0].preExactStateKey
+              : item.key,
           });
         } catch (_edgeObserverError) {
           // edge observation must never affect search
@@ -800,7 +805,7 @@ function runDependencyConnector(options) {
         state: nextState,
         key,
         chain: item.chain.concat([action]),
-        edges: item.edges.concat([buildEdge(simulator, action, item.key, key)]),
+        edges: item.edges.concat([currentEdge]),
       });
     }
   }

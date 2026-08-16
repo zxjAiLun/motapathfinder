@@ -1679,12 +1679,22 @@ function runStrategicD2Search(options) {
           if (opportunityPrerequisite) {
             stats.survivalOpportunityPrerequisitesCompiled += 1;
             stats.survivalOpportunityPrerequisitesWitnessBacked += 1;
-            const witnessEdges = [{
-              action: witness.action,
-              preExactStateKey: witness.preExactStateKey,
-              postExactStateKey: witness.postExactStateKey,
-            }];
-            const replay = verifyConnectorChain(simulator, sourceNode.state, witnessEdges);
+            const witnessEdges = witness.witnessEdges && witness.witnessEdges.length > 0
+              ? witness.witnessEdges
+              : [{
+                  action: witness.action,
+                  fingerprint: typeof simulator.getActionFingerprint === "function"
+                    ? simulator.getActionFingerprint(witness.action)
+                    : null,
+                  preExactStateKey: witness.preExactStateKey,
+                  postExactStateKey: witness.postExactStateKey,
+                }];
+            const replay = verifyConnectorChain(
+              simulator,
+              sourceNode.state,
+              witnessEdges,
+              { expectedPostExactStateKey: witness.postExactStateKey },
+            );
             const completionAfterReplay = replay.valid &&
               opportunityPrerequisite.completionPredicate(replay.finalState);
             let replayValid = replay.valid;
@@ -1696,7 +1706,7 @@ function runStrategicD2Search(options) {
                 status: "satisfied",
                 stoppedReason: "satisfied",
                 dependencyId: opportunityPrerequisite.id,
-                sourceExactStateKey: witness.preExactStateKey,
+                sourceExactStateKey: buildStateKey(sourceNode.state),
                 postExactStateKey: witness.postExactStateKey,
                 edges: witnessEdges,
                 chain: witness.witnessChain,

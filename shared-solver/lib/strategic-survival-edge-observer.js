@@ -112,11 +112,24 @@ function createSurvivalEdgeObserver(options) {
       : after.damage - before.damage;
     const identity = actionIdentity(simulator, entry.action);
     const signature = targetSignature(identity);
+    const witnessEdges = (entry.witnessEdges && entry.witnessEdges.length > 0)
+      ? entry.witnessEdges
+      : [{
+          action: entry.action,
+          fingerprint: typeof simulator.getActionFingerprint === "function"
+            ? simulator.getActionFingerprint(entry.action)
+            : null,
+          preExactStateKey: entry.preExactStateKey,
+          postExactStateKey: entry.postExactStateKey,
+        }];
     const edge = {
       expansion: entry.expansion,
       depth: entry.depth,
       preExactStateKey: entry.preExactStateKey,
       postExactStateKey: entry.postExactStateKey,
+      sourceExactStateKey: entry.sourceExactStateKey ||
+        (witnessEdges.length > 0 ? witnessEdges[0].preExactStateKey : entry.preExactStateKey),
+      witnessEdges,
       witnessChain: (entry.chainBefore || []).concat([entry.action]),
       witnessChainSummary: (entry.chainBefore || []).concat([entry.action])
         .map((action) => action.summary || action.kind || "step"),
@@ -151,6 +164,8 @@ function createSurvivalEdgeObserver(options) {
         actionTargetSignature: edge.actionTargetSignature,
         preExactStateKey: edge.preExactStateKey,
         postExactStateKey: edge.postExactStateKey,
+        sourceExactStateKey: edge.sourceExactStateKey,
+        witnessEdges: edge.witnessEdges,
         witnessChain: edge.witnessChain,
         witnessChainSummary: edge.witnessChainSummary,
         discoveryExpansion: edge.expansion,
