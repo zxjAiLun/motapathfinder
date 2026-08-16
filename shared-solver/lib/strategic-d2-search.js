@@ -49,6 +49,7 @@ const {
   parentContinuationId,
   parentContinuationKey,
 } = require("./strategic-parent-continuation");
+const { HierarchyPriorityController } = require("./strategic-hierarchy-priority");
 const { LazyWorkQueue } = require("./strategic-lazy-work");
 const {
   createChildNode,
@@ -444,6 +445,7 @@ function runStrategicD2Search(options) {
   const enableDependencyAccessAttribution = config.enableDependencyAccessAttribution !== false;
   const enableBattleViabilityAttribution = config.enableBattleViabilityAttribution !== false;
   const enableParentDependencyContinuation = config.enableParentDependencyContinuation === true;
+  const enableHierarchicalCallAllocation = config.enableHierarchicalCallAllocation === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -532,12 +534,22 @@ function runStrategicD2Search(options) {
     parentDependencyContinuationParentBlocked: 0,
     parentDependencyContinuationNextPrerequisiteCompiled: 0,
     parentDependencyContinuationWitnesses: [],
+    hierarchyPriorityActivations: 0,
+    rootLevelCalls: 0,
+    continuationDerivedCalls: 0,
+    rootAttemptsDeferredForHierarchy: 0,
+    childPrerequisitesCompiled: 0,
+    childPrerequisitesScheduled: 0,
+    childPrerequisitesExecuted: 0,
+    childPrerequisitesSatisfied: 0,
+    maxHierarchyDepthAttempted: 0,
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
   const parentContinuationRecords = new Map();
   const seenParentContinuationResumes = new Set();
   const parkedParentContinuations = new Map();
+  const hierarchyPriority = new HierarchyPriorityController();
   const bestByRole = new Map(agenda.definitions.map((definition) => [definition.id, root]));
   const bestTerminalBlocker = { progressScore: null, attackMargin: null, stage: null, nodeId: null };
   function observeTerminalBlocker(node, projection) {
@@ -594,7 +606,24 @@ function runStrategicD2Search(options) {
     }
   }
 
-  function createParentDependencyContinuation(prerequisite, sourceNode, finalNode, postStateFinalCreated) {
+  function activateHierarchyPriority(continuation) {
+    if (!enableHierarchicalCallAllocation || !continuation) return;
+    if (hierarchyPriority.activate(continuation.id)) {
+      stats.hierarchyPriorityActivations += 1;
+    }
+  }
+
+  function releaseHierarchyPriorityForCall(work) {
+    if (!enableHierarchicalCallAllocation || !work) return;
+    hierarchyPriority.releaseForCall(work.originContinuationId || null);
+  }
+
+  function releaseHierarchyPriorityForContinuation(continuation) {
+    if (!enableHierarchicalCallAllocation || !continuation) return;
+    hierarchyPriority.releaseContinuation(continuation.id);
+  }
+
+  function createParentDependencyContinuation(prerequisite, sourceNode, finalNode, postStateFinalCreated, hierarchyLevel) {
     if (!enableParentDependencyContinuation) return null;
     const parentDependency = prerequisite && prerequisite.parentDependency;
     if (!parentDependency || !parentDependency.id || !parentDependency.target) return null;
@@ -614,6 +643,7 @@ function runStrategicD2Search(options) {
       postExactStateKey,
       postStateFinalCreated: Boolean(postStateFinalCreated),
       anchorNodeId: finalNode.nodeId,
+      hierarchyLevel: Math.max(0, number(hierarchyLevel, 0)) + 1,
       provenance: {
         topologicalModel: "hierarchical-prerequisite-intent-preservation",
         dynamicCausalProof: "not-proven",
@@ -711,13 +741,16 @@ function runStrategicD2Search(options) {
             parentDependency,
             structuralAccess,
             sourceAttemptId: continuation.id,
-            sourceExactStateFingerprint: currentExactStateKey,
+            sourceExactStateFingerprint: hash(currentExactStateKey),
           });
         } catch (_error) {
           nextPrerequisite = null;
         }
         if (nextPrerequisite) {
           stats.parentDependencyContinuationNextPrerequisiteCompiled += 1;
+          if (continuation.hierarchyLevel > 0) {
+            stats.childPrerequisitesCompiled += 1;
+          }
           witness.nextPrerequisiteId = nextPrerequisite.id;
           const queuedBattleAccess = lazyWork.queued()
             .filter((item) => item.kind === "battle-access-prerequisite-choice").length;
@@ -731,11 +764,15 @@ function runStrategicD2Search(options) {
             maxOutstanding: dependencyAttemptMaxOutstanding,
           });
           if (selected.length > 0) {
+            const childHierarchyLevel = Math.max(1, number(continuation.hierarchyLevel, 1));
             lazyWork.enqueue({
               kind: "battle-access-prerequisite-choice",
               sourceNodeId: sourceNode.nodeId,
               prerequisite: nextPrerequisite,
+              hierarchyLevel: childHierarchyLevel,
+              originContinuationId: continuation.id,
             });
+            stats.childPrerequisitesScheduled += 1;
             witness.status = "next-prerequisite-compiled";
             witness.statusReason = "first-unresolved-boundary-is-battle-unsurvivable";
           } else {
@@ -748,6 +785,16 @@ function runStrategicD2Search(options) {
               witness.statusReason = "attempt-deduplicated";
             } else {
               witness.statusReason = "no-selection";
+            }
+            if (enableHierarchicalCallAllocation &&
+                witness.statusReason === "outstanding-barrier") {
+              lazyWork.enqueue({
+                kind: "parent-dependency-continuation",
+                sourceNodeId: sourceNode.nodeId,
+                continuation,
+              });
+            } else {
+              releaseHierarchyPriorityForContinuation(continuation);
             }
           }
         } else {
@@ -785,6 +832,10 @@ function runStrategicD2Search(options) {
         : "structural-attribution-unavailable";
     }
 
+    if (!["waiting-for-parent-floor", "next-prerequisite-compiled"].includes(witness.status) &&
+        witness.statusReason !== "outstanding-barrier") {
+      releaseHierarchyPriorityForContinuation(continuation);
+    }
     if (stats.parentDependencyContinuationWitnesses.length < 64) {
       stats.parentDependencyContinuationWitnesses.push(witness);
     }
@@ -1307,6 +1358,8 @@ function runStrategicD2Search(options) {
         sourceNodeId: sourceNode.nodeId,
         sourceExactStateFingerprint: prerequisite.provenance &&
           prerequisite.provenance.sourceExactStateFingerprint,
+        hierarchyLevel: number(work.hierarchyLevel, 0),
+        originContinuationId: work.originContinuationId || null,
         beforeViability,
         beforeStage: beforeBattle ? beforeBattle.stage : null,
         battleBefore: beforeBattle ? {
@@ -1328,6 +1381,18 @@ function runStrategicD2Search(options) {
         maxExpansions: budget,
         maxDepth: connectorMaxDepth,
       });
+      const battleCallHierarchyLevel = Math.max(0, number(work.hierarchyLevel, 0));
+      stats.maxHierarchyDepthAttempted = Math.max(
+        stats.maxHierarchyDepthAttempted,
+        battleCallHierarchyLevel,
+      );
+      if (battleCallHierarchyLevel === 0) {
+        stats.rootLevelCalls += 1;
+      } else {
+        stats.continuationDerivedCalls += 1;
+        stats.childPrerequisitesExecuted += 1;
+      }
+      releaseHierarchyPriorityForCall(work);
       stats.battleAccessPrerequisiteExpansions += result.expansions;
       if (result.status !== "satisfied") {
         stats.battleAccessPrerequisiteNoSatisfied += 1;
@@ -1363,6 +1428,7 @@ function runStrategicD2Search(options) {
         return true;
       }
       stats.battleAccessPrerequisiteSatisfied += 1;
+      if (battleCallHierarchyLevel > 0) stats.childPrerequisitesSatisfied += 1;
       if (materialized.finalCreated) stats.battleAccessPrerequisiteStateCreated += 1;
       let structuralBefore = null;
       let structuralAfter = null;
@@ -1397,7 +1463,9 @@ function runStrategicD2Search(options) {
         sourceNode,
         materialized.finalNode,
         materialized.finalCreated,
+        work.hierarchyLevel || 0,
       );
+      activateHierarchyPriority(parentContinuation);
       if (stats.battleAccessPrerequisiteWitnesses.length < dependencyConnectorMaxCalls) {
         stats.battleAccessPrerequisiteWitnesses.push({
           ...attemptBase,
@@ -1664,7 +1732,11 @@ function runStrategicD2Search(options) {
       if (connectorMode === "battle-access-prerequisite") {
         const queuedCount = lazyWork.queued()
           .filter((work) => work.kind === "battle-access-prerequisite-choice").length;
-        if (queuedCount < dependencyAttemptMaxOutstanding) {
+        if (enableHierarchicalCallAllocation && hierarchyPriority.isActive()) {
+          if (queuedCount < dependencyAttemptMaxOutstanding) {
+            stats.rootAttemptsDeferredForHierarchy += 1;
+          }
+        } else if (queuedCount < dependencyAttemptMaxOutstanding) {
           const reachableCandidates = compileDependenciesFromTransitions({
             project,
             simulator,
@@ -1735,6 +1807,8 @@ function runStrategicD2Search(options) {
               kind: "battle-access-prerequisite-choice",
               sourceNodeId: node.nodeId,
               prerequisite,
+              hierarchyLevel: 0,
+              originContinuationId: null,
             });
           }
         }
@@ -1929,6 +2003,11 @@ function runStrategicD2Search(options) {
         parentDependencyContinuation: connectorMode === "battle-access-prerequisite"
           ? enableParentDependencyContinuation
             ? "intent-preservation-by-parent-dependency-id-plus-exact-state-key"
+            : "disabled"
+          : null,
+        hierarchicalCallAllocation: connectorMode === "battle-access-prerequisite"
+          ? enableHierarchicalCallAllocation
+            ? "active-hierarchy-priority-with-feedback-release"
             : "disabled"
           : null,
         dependencyConnector: connectorMode === "dependency-derived" ? {

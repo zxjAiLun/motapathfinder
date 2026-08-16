@@ -100,6 +100,8 @@
     "qualification:strategic-battle-viability": "node check-strategic-battle-viability.js --qualification-1000",
     "check:strategic-parent-dependency-continuation": "node check-strategic-parent-dependency-continuation.js",
     "qualification:strategic-parent-dependency-continuation": "node check-strategic-parent-dependency-continuation.js --qualification-1000",
+    "check:strategic-hierarchical-call-allocation": "node check-strategic-hierarchical-call-allocation.js",
+    "qualification:strategic-hierarchical-call-allocation": "node check-strategic-hierarchical-call-allocation.js --qualification-1000",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",
