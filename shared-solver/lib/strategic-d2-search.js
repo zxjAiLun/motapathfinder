@@ -45,6 +45,7 @@ const { compileBattleAccessPrerequisite, evaluateBattleViability } = require("./
 const { analyzeBattleViabilityBlocker } = require("./strategic-battle-viability");
 const {
   dependencyTargetFloorId,
+  isNodeDescendantOf,
   parentContinuationId,
   parentContinuationKey,
 } = require("./strategic-parent-continuation");
@@ -523,6 +524,7 @@ function runStrategicD2Search(options) {
     parentDependencyContinuationsCreated: 0,
     parentDependencyContinuationsMerged: 0,
     parentDependencyContinuationResumes: 0,
+    parentDependencyContinuationLineageRejected: 0,
     parentDependencyContinuationCalls: 0,
     parentDependencyContinuationWaitingForParentFloor: 0,
     parentDependencyContinuationParentFloorReached: 0,
@@ -575,6 +577,10 @@ function runStrategicD2Search(options) {
       const parentDependency = continuation.parentDependency;
       const targetFloor = dependencyTargetFloorId(parentDependency && parentDependency.target);
       if (targetFloor == null || node.state.floorId !== targetFloor) continue;
+      if (!isNodeDescendantOf(nodes, node, continuation.anchorNodeId)) {
+        stats.parentDependencyContinuationLineageRejected += 1;
+        continue;
+      }
       const resumeKey = parentContinuationKey(parentDependency.id, exactStateKey);
       if (seenParentContinuationResumes.has(resumeKey)) continue;
       seenParentContinuationResumes.add(resumeKey);
@@ -607,6 +613,7 @@ function runStrategicD2Search(options) {
       sourceExactStateKey: buildStateKey(sourceNode.state),
       postExactStateKey,
       postStateFinalCreated: Boolean(postStateFinalCreated),
+      anchorNodeId: finalNode.nodeId,
       provenance: {
         topologicalModel: "hierarchical-prerequisite-intent-preservation",
         dynamicCausalProof: "not-proven",
@@ -631,6 +638,10 @@ function runStrategicD2Search(options) {
       lazyWork.reject(work, "missing-parent-continuation-source");
       return true;
     }
+    if (!isNodeDescendantOf(nodes, sourceNode, continuation.anchorNodeId)) {
+      lazyWork.reject(work, "parent-continuation-source-not-descendant-of-anchor");
+      return true;
+    }
     stats.parentDependencyContinuationCalls += 1;
     const parentDependency = continuation.parentDependency;
     const targetFloor = dependencyTargetFloorId(parentDependency.target);
@@ -643,6 +654,7 @@ function runStrategicD2Search(options) {
       sourceExactStateFingerprint: hash(continuation.sourceExactStateKey),
       postExactStateFingerprint: hash(continuation.postExactStateKey),
       currentExactStateFingerprint: hash(currentExactStateKey),
+      anchorNodeId: continuation.anchorNodeId,
       currentFloorId: sourceNode.state.floorId,
       targetFloorId: targetFloor,
       status: null,
@@ -728,7 +740,15 @@ function runStrategicD2Search(options) {
             witness.statusReason = "first-unresolved-boundary-is-battle-unsurvivable";
           } else {
             witness.status = "next-prerequisite-not-schedulable";
-            witness.statusReason = "battle-access-call-slot-unavailable-or-attempt-deduplicated";
+            if (stats.battleAccessPrerequisiteCalls >= dependencyConnectorMaxCalls) {
+              witness.statusReason = "call-cap-exhausted";
+            } else if (queuedBattleAccess >= dependencyAttemptMaxOutstanding) {
+              witness.statusReason = "outstanding-barrier";
+            } else if (dependencyAttemptDedupe.has(nextPrerequisite, sourceNode.state)) {
+              witness.statusReason = "attempt-deduplicated";
+            } else {
+              witness.statusReason = "no-selection";
+            }
           }
         } else {
           witness.status = "parent-blocked-by-unsupported-boundary";

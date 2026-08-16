@@ -10,6 +10,7 @@ const { loadProject } = require("./lib/project-loader");
 const { runStrategicD2Search } = require("./lib/strategic-d2-search");
 const {
   dependencyTargetFloorId,
+  isNodeDescendantOf,
   parentContinuationId,
   parentContinuationKey,
 } = require("./lib/strategic-parent-continuation");
@@ -42,6 +43,29 @@ function main() {
     acquisition: { floorId: "MT4", x: 2, y: 5 },
   }), "MT4");
   assert.strictEqual(dependencyTargetFloorId(null), null);
+
+  // --- Lineage-safe resume synthetic tree ------------------------------------
+  // root(0)
+  //  ├─ A(1)
+  //  │   └─ S(2)  <- canonical post-state anchor (P(B) final, may be merged)
+  //  │       └─ MT4(4)
+  //  │           └─ MT5-descendant(5)  <- MUST resume
+  //  └─ X(3)
+  //      └─ MT5-unrelated(6)           <- MUST NOT resume
+  const lineageNodes = new Map([
+    [0, { nodeId: 0, parentId: null }],
+    [1, { nodeId: 1, parentId: 0 }],
+    [2, { nodeId: 2, parentId: 1 }],
+    [3, { nodeId: 3, parentId: 0 }],
+    [4, { nodeId: 4, parentId: 2 }],
+    [5, { nodeId: 5, parentId: 4 }],
+    [6, { nodeId: 6, parentId: 3 }],
+  ]);
+  assert.strictEqual(isNodeDescendantOf(lineageNodes, lineageNodes.get(2), 2), true);
+  assert.strictEqual(isNodeDescendantOf(lineageNodes, lineageNodes.get(5), 2), true);
+  assert.strictEqual(isNodeDescendantOf(lineageNodes, lineageNodes.get(6), 2), false);
+  assert.strictEqual(isNodeDescendantOf(lineageNodes, lineageNodes.get(1), 2), false);
+  assert.strictEqual(isNodeDescendantOf(lineageNodes, lineageNodes.get(5), 99), false);
 
   // --- Lazy work kind registration ------------------------------------------
   const lazyWork = new LazyWorkQueue();
@@ -117,40 +141,56 @@ function main() {
     assert.strictEqual(baseline.stats.totalSearchExpansions, 1000);
     assert.strictEqual(candidate.stats.totalSearchExpansions, 1000);
     assert.strictEqual(candidate.stats.battleAccessPrerequisiteCalls, 8);
-    assert.strictEqual(candidate.stats.battleAccessPrerequisiteSatisfied, 1);
-    assert.strictEqual(candidate.stats.parentDependencyContinuationsCreated, 1);
+    assert.strictEqual(candidate.stats.battleAccessPrerequisiteSatisfied, 2);
+    assert.strictEqual(candidate.stats.battleAccessPrerequisiteStateCreated, 1);
+    assert.strictEqual(candidate.stats.parentDependencyContinuationsCreated, 2);
     assert.strictEqual(candidate.stats.parentDependencyContinuationsMerged, 0);
-    assert.strictEqual(candidate.stats.parentDependencyContinuationResumes, 1);
-    assert.strictEqual(candidate.stats.parentDependencyContinuationCalls, 2);
-    assert.strictEqual(candidate.stats.parentDependencyContinuationWaitingForParentFloor, 1);
-    assert.strictEqual(candidate.stats.parentDependencyContinuationNextPrerequisiteCompiled, 1);
-    assert.strictEqual(candidate.stats.parentDependencyContinuationWitnesses.length, 2);
+    assert.strictEqual(candidate.stats.parentDependencyContinuationResumes, 2);
+    assert.strictEqual(candidate.stats.parentDependencyContinuationCalls, 4);
+    assert.strictEqual(candidate.stats.parentDependencyContinuationWaitingForParentFloor, 2);
+    assert.strictEqual(candidate.stats.parentDependencyContinuationNextPrerequisiteCompiled, 2);
+    assert.ok(candidate.stats.parentDependencyContinuationLineageRejected > 0);
+    assert.strictEqual(candidate.stats.parentDependencyContinuationWitnesses.length, 4);
     assert.strictEqual(candidate.bestTerminalBlocker.attackMargin, -903);
     assert.strictEqual(candidate.stats.terminalActionGenerated, 0);
     assert.strictEqual(candidate.outcome.goalFound, false);
 
     const successful = candidate.stats.battleAccessPrerequisiteWitnesses
       .filter((witness) => witness.status === "satisfied");
-    assert.strictEqual(successful.length, 1);
+    assert.strictEqual(successful.length, 2);
     successful.forEach((witness) => {
-      assert.strictEqual(witness.finalCreated, false);
+      assert.strictEqual(typeof witness.finalCreated, "boolean");
       assert.ok(witness.parentDependencyContinuationId);
     });
+    assert.strictEqual(successful.filter((witness) => witness.finalCreated === false).length, 1);
+    assert.strictEqual(successful.filter((witness) => witness.finalCreated === true).length, 1);
 
     const witnesses = candidate.stats.parentDependencyContinuationWitnesses;
-    const waiting = witnesses.find((witness) => witness.status === "waiting-for-parent-floor");
-    const resumed = witnesses.find((witness) => witness.currentFloorId === "MT5");
-    assert.ok(waiting);
-    assert.ok(resumed);
-    assert.strictEqual(waiting.currentFloorId, "MT4");
-    assert.strictEqual(waiting.targetFloorId, "MT5");
-    assert.strictEqual(waiting.finalCreated, false);
-    assert.strictEqual(waiting.statusReason, "post-state-not-on-parent-target-floor");
-    assert.strictEqual(resumed.currentFloorId, "MT5");
-    assert.strictEqual(resumed.targetFloorId, "MT5");
-    assert.strictEqual(resumed.nextBoundary.kind, "battle-unsurvivable");
-    assert.ok(["next-prerequisite-compiled", "next-prerequisite-not-schedulable"].includes(resumed.status));
-    assert.ok(resumed.nextPrerequisiteId);
+    const waitingWitnesses = witnesses
+      .filter((witness) => witness.status === "waiting-for-parent-floor");
+    const resumedWitnesses = witnesses
+      .filter((witness) => witness.currentFloorId === "MT5");
+    assert.strictEqual(waitingWitnesses.length, 2);
+    assert.strictEqual(resumedWitnesses.length, 2);
+    waitingWitnesses.forEach((waiting) => {
+      const resumed = resumedWitnesses.find((witness) =>
+        witness.continuationId === waiting.continuationId);
+      assert.ok(resumed);
+      assert.strictEqual(waiting.currentFloorId, "MT4");
+      assert.strictEqual(waiting.targetFloorId, "MT5");
+      assert.ok(Number.isInteger(waiting.anchorNodeId));
+      assert.strictEqual(waiting.statusReason, "post-state-not-on-parent-target-floor");
+      assert.strictEqual(resumed.currentFloorId, "MT5");
+      assert.strictEqual(resumed.targetFloorId, "MT5");
+      assert.strictEqual(resumed.anchorNodeId, waiting.anchorNodeId);
+      assert.strictEqual(resumed.nextBoundary.kind, "battle-unsurvivable");
+      assert.ok(["next-prerequisite-compiled", "next-prerequisite-not-schedulable"].includes(resumed.status));
+      assert.ok(resumed.nextPrerequisiteId);
+      if (resumed.status === "next-prerequisite-not-schedulable") {
+        assert.ok(["call-cap-exhausted", "outstanding-barrier", "attempt-deduplicated", "no-selection"]
+          .includes(resumed.statusReason));
+      }
+    });
 
     qualificationContinuation = {
       baseline: {
@@ -171,6 +211,7 @@ function main() {
         parentContinuationsCreated: candidate.stats.parentDependencyContinuationsCreated,
         parentContinuationsMerged: candidate.stats.parentDependencyContinuationsMerged,
         parentContinuationResumes: candidate.stats.parentDependencyContinuationResumes,
+        parentContinuationLineageRejected: candidate.stats.parentDependencyContinuationLineageRejected,
         parentContinuationCalls: candidate.stats.parentDependencyContinuationCalls,
         waitingForParentFloor: candidate.stats.parentDependencyContinuationWaitingForParentFloor,
         nextPrerequisiteCompiled: candidate.stats.parentDependencyContinuationNextPrerequisiteCompiled,
@@ -196,6 +237,13 @@ function main() {
         type: "equip-item",
         acquisition: { floorId: "MT4", x: 2, y: 5 },
       }),
+    },
+    lineageSafeResume: {
+      anchorSelf: isNodeDescendantOf(lineageNodes, lineageNodes.get(2), 2),
+      legalDescendant: isNodeDescendantOf(lineageNodes, lineageNodes.get(5), 2),
+      unrelatedBranch: isNodeDescendantOf(lineageNodes, lineageNodes.get(6), 2),
+      ancestor: isNodeDescendantOf(lineageNodes, lineageNodes.get(1), 2),
+      missingAnchor: isNodeDescendantOf(lineageNodes, lineageNodes.get(5), 99),
     },
     lazyWorkKind: continuationWork.kind,
     focusedNoSemanticChange: {

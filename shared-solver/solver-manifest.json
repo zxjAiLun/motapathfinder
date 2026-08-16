@@ -1830,7 +1830,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.19d keeps parent dependency intent after P(B) success; continuation identity is parentDependencyId + exactStateKey and is bookkeeping only, never game state or DP key"
+      "notes": "PR-5.19d keeps parent dependency intent after P(B) success; continuation identity is parentDependencyId + exactStateKey and is bookkeeping only, never game state or DP key; Repair 1 adds anchorNodeId lineage provenance and isNodeDescendantOf so only legal descendants of the canonical post-state anchor may resume"
     },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
@@ -2371,7 +2371,7 @@
       "allowsNotFound": true,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.19d verifies parentDependencyId+exactStateKey continuation identity, lazy-work kind, exact-merge intent preservation, cross-floor waiting without oracle-return, legal resume on target floor, next-boundary re-attribution, and --qualification-1000 frozen same-total-work A/B mechanism/promotion split"
+      "notes": "PR-5.19d verifies parentDependencyId+exactStateKey continuation identity, lazy-work kind, exact-merge intent preservation, cross-floor waiting without oracle-return, legal resume on target floor, next-boundary re-attribution, and --qualification-1000 frozen same-total-work A/B mechanism/promotion split; Repair 1 adds adversarial lineage tree (unrelated target-floor node must not resume, descendant must resume) and split next-prerequisite scheduling failure reasons"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",
