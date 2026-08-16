@@ -110,6 +110,8 @@
     "qualification:strategic-canonical-successor-edge-attribution": "node check-strategic-canonical-successor-edge-attribution.js --qualification-1000",
     "check:strategic-continuation-anchor-expansion-scheduling": "node check-strategic-continuation-anchor-expansion-scheduling.js",
     "qualification:strategic-continuation-anchor-expansion-scheduling": "node check-strategic-continuation-anchor-expansion-scheduling.js --qualification-1000",
+    "check:strategic-lethal-survival-attribution": "node check-strategic-lethal-survival-attribution.js",
+    "qualification:strategic-lethal-survival-attribution": "node check-strategic-lethal-survival-attribution.js --qualification-1000",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",

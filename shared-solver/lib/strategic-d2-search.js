@@ -43,6 +43,7 @@ const {
 } = require("./strategic-dependency-attribution");
 const { compileBattleAccessPrerequisite, evaluateBattleViability } = require("./strategic-access-prerequisite");
 const { compileBattleStagePrerequisite } = require("./strategic-battle-stage-prerequisite");
+const { createLethalSurvivalObserver } = require("./strategic-lethal-survival-observer");
 const { analyzeBattleViabilityBlocker } = require("./strategic-battle-viability");
 const {
   dependencyTargetFloorId,
@@ -452,6 +453,7 @@ function runStrategicD2Search(options) {
   const enableBattleStagePrerequisiteDecomposition = config.enableBattleStagePrerequisiteDecomposition === true;
   const enableContinuationAnchorExpansionScheduling =
     config.enableContinuationAnchorExpansionScheduling === true;
+  const enableLethalSurvivalAttribution = config.enableLethalSurvivalAttribution === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -563,6 +565,7 @@ function runStrategicD2Search(options) {
     continuationAnchorExpansionAlreadyExpandedSkips: 0,
     continuationAnchorExpansionInactiveSkips: 0,
     anchorExpansionWitnesses: [],
+    lethalSurvivalAttributions: [],
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
@@ -1578,13 +1581,45 @@ function runStrategicD2Search(options) {
           reason: beforeBattle.reason,
         } : null,
       };
+      const lethalSurvivalObserver = enableLethalSurvivalAttribution &&
+        prerequisite.kind === "battle-access-prerequisite" &&
+        number(work.hierarchyLevel, 0) > 0 &&
+        beforeBattle && beforeBattle.stage === "lethal"
+        ? createLethalSurvivalObserver({
+            simulator,
+            sourceState: sourceNode.state,
+            boundary: prerequisite.boundary,
+            maxSamples: 50,
+          })
+        : null;
       const result = runDependencyConnector({
         simulator,
         sourceState: sourceNode.state,
         dependency: prerequisite,
         maxExpansions: budget,
         maxDepth: connectorMaxDepth,
+        observer: lethalSurvivalObserver && lethalSurvivalObserver.observe,
       });
+      if (lethalSurvivalObserver) {
+        if (stats.lethalSurvivalAttributions.length < 16) {
+          stats.lethalSurvivalAttributions.push({
+            attemptId,
+            prerequisiteId: prerequisite.id,
+            hierarchyLevel: number(work.hierarchyLevel, 0),
+            boundary: prerequisite.boundary,
+            connectorResult: {
+              status: result.status,
+              stoppedReason: result.stoppedReason,
+              expansions: result.expansions,
+              generated: result.generated,
+              applyErrors: result.applyErrors,
+              frontierSize: result.frontierSize,
+              frontierTrimmed: result.frontierTrimmed,
+            },
+            ...lethalSurvivalObserver.report(),
+          });
+        }
+      }
       const battleCallHierarchyLevel = Math.max(0, number(work.hierarchyLevel, 0));
       stats.maxHierarchyDepthAttempted = Math.max(
         stats.maxHierarchyDepthAttempted,
@@ -2390,6 +2425,11 @@ function runStrategicD2Search(options) {
         continuationAnchorExpansionScheduling: connectorMode === "battle-access-prerequisite"
           ? enableContinuationAnchorExpansionScheduling
             ? "one-shot-active-continuation-anchor-expansion-request"
+            : "disabled"
+          : null,
+        lethalSurvivalAttribution: connectorMode === "battle-access-prerequisite"
+          ? enableLethalSurvivalAttribution
+            ? "observation-only-depth-two-lethal-child"
             : "disabled"
           : null,
         dependencyConnector: connectorMode === "dependency-derived" ? {

@@ -1734,7 +1734,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation; PR-5.19e adds opt-in active hierarchy call priority so successful hierarchy children can compete for existing connector calls; PR-5.19f adds opt-in continuation-derived attack-blocked -> damageable battle-stage decomposition while preserving generic root behavior; PR-5.19g adds observation-only exact-merge continuation descendant telemetry (historical/future eligible descendants, calls remaining, priority-at-end); PR-5.19h adds observation-only canonical successor edge attribution (expansion lifecycle, outgoing disposition, legal edge graph reachability); PR-5.19i adds opt-in one-shot active-continuation anchor expansion scheduling"
+      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation; PR-5.19e adds opt-in active hierarchy call priority so successful hierarchy children can compete for existing connector calls; PR-5.19f adds opt-in continuation-derived attack-blocked -> damageable battle-stage decomposition while preserving generic root behavior; PR-5.19g adds observation-only exact-merge continuation descendant telemetry (historical/future eligible descendants, calls remaining, priority-at-end); PR-5.19h adds observation-only canonical successor edge attribution (expansion lifecycle, outgoing disposition, legal edge graph reachability); PR-5.19i adds opt-in one-shot active-continuation anchor expansion scheduling; PR-5.19j adds opt-in observation-only depth-2 lethal survival attribution"
     },
     "shared-solver/lib/strategic-blocker.js": {
       "id": "strategic-blocker",
@@ -1879,6 +1879,22 @@
         "cleanCheckout": true
       },
       "notes": "PR-5.19i one-shot active-continuation anchor expansion request; selection uses ordinary strategic expansion pipeline; stale already-expanded and inactive-continuation requests are removed without granting a slot"
+    },
+    "shared-solver/lib/strategic-lethal-survival-observer.js": {
+      "id": "strategic-lethal-survival-observer",
+      "path": "shared-solver/lib/strategic-lethal-survival-observer.js",
+      "layer": "planning/control",
+      "status": "experimental",
+      "role": "observation-only-depth-two-lethal-child-survival-attribution",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.19j records every expanded lethal child connector state, battle stage/survival deltas, best survival margin and resource delta; bestSurvivalMargin is attribution only and never search priority or completion predicate"
     },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
@@ -2455,6 +2471,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.19i verifies one-shot anchor expansion request lifecycle (duplicate rejected, selected once, already-expanded skip, inactive skip), frozen control OFF vs candidate ON, anchor expanded after continuation, lineage-safe resume, and generic lethal child receiving a real connector call"
+    },
+    "shared-solver/check-strategic-lethal-survival-attribution.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.19j verifies synthetic survival observer and frozen depth-2 lethal child attribution; real result class B: best survival margin -617833 -> -150104, 43/50 states improved, max HP 214597, min damage 168451, viable state false"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",
