@@ -631,6 +631,22 @@ function runStrategicD2Search(options) {
     hierarchyPriority.releaseContinuation(continuation.id);
   }
 
+  function lineageEligibleDescendants(anchorNode, targetFloor, options) {
+    const config = options || {};
+    const descendants = [];
+    for (const node of nodes.values()) {
+      if (!node || !node.state) continue;
+      if (config.excludeAnchor && node.nodeId === anchorNode.nodeId) continue;
+      if (targetFloor != null && node.state.floorId !== targetFloor) continue;
+      if (!isNodeDescendantOf(nodes, node, anchorNode.nodeId)) continue;
+      if (config.nodeIdUpperBoundExclusive != null &&
+          node.nodeId >= config.nodeIdUpperBoundExclusive) continue;
+      descendants.push(node);
+    }
+    descendants.sort((left, right) => left.nodeId - right.nodeId);
+    return descendants;
+  }
+
   function createParentDependencyContinuation(prerequisite, sourceNode, finalNode, postStateFinalCreated, hierarchyLevel) {
     if (!enableParentDependencyContinuation) {
       return { continuation: null, created: false, lifecycle: "disabled" };
@@ -641,6 +657,13 @@ function runStrategicD2Search(options) {
     }
     const postExactStateKey = buildStateKey(finalNode.state);
     const key = parentContinuationKey(parentDependency.id, postExactStateKey);
+    const targetFloor = dependencyTargetFloorId(parentDependency.target);
+    const historicalDescendants = lineageEligibleDescendants(finalNode, null, {
+      nodeIdUpperBoundExclusive: nextNodeId,
+      excludeAnchor: true,
+    });
+    const historicalTargetFloorDescendants = historicalDescendants
+      .filter((node) => node.state.floorId === targetFloor);
     const existing = parentContinuationRecords.get(key);
     if (existing) {
       stats.parentDependencyContinuationsMerged += 1;
@@ -669,6 +692,18 @@ function runStrategicD2Search(options) {
       postStateFinalCreated: Boolean(postStateFinalCreated),
       anchorNodeId: finalNode.nodeId,
       hierarchyLevel: Math.max(0, number(hierarchyLevel, 0)) + 1,
+      createdAtExpansion: stats.expansions,
+      createdNextNodeId: nextNodeId,
+      callsRemainingAtCreation: Math.max(
+        0,
+        dependencyConnectorMaxCalls - stats.battleAccessPrerequisiteCalls,
+      ),
+      eligibleHistoricalDescendantsAtCreation: historicalDescendants.length,
+      eligibleHistoricalTargetFloorDescendants: historicalTargetFloorDescendants.length,
+      retroactiveResumeCandidateNodeIds: historicalTargetFloorDescendants
+        .map((node) => node.nodeId),
+      futureDescendantsObservedAfterCreation: 0,
+      priorityStillActiveAtSearchEnd: false,
       provenance: {
         topologicalModel: "hierarchical-prerequisite-intent-preservation",
         dynamicCausalProof: "not-proven",
@@ -711,6 +746,13 @@ function runStrategicD2Search(options) {
       postExactStateFingerprint: hash(continuation.postExactStateKey),
       currentExactStateFingerprint: hash(currentExactStateKey),
       anchorNodeId: continuation.anchorNodeId,
+      continuationCreatedAtExpansion: continuation.createdAtExpansion,
+      callsRemainingAtContinuationCreation: continuation.callsRemainingAtCreation,
+      eligibleHistoricalDescendantsAtCreation: continuation.eligibleHistoricalDescendantsAtCreation,
+      eligibleHistoricalTargetFloorDescendants: continuation.eligibleHistoricalTargetFloorDescendants,
+      retroactiveResumeCandidateNodeIds: continuation.retroactiveResumeCandidateNodeIds,
+      futureDescendantsObservedAfterCreation: continuation.futureDescendantsObservedAfterCreation,
+      priorityStillActiveAtSearchEnd: continuation.priorityStillActiveAtSearchEnd,
       currentFloorId: sourceNode.state.floorId,
       targetFloorId: targetFloor,
       status: null,
@@ -1994,6 +2036,30 @@ function runStrategicD2Search(options) {
     stats.totalSearchExpansions >= maxTotalSearchExpansions &&
     (frontierSize > 0 || activeLazyWork > 0);
   const budgetExhausted = strategicBudgetExhausted || totalSearchBudgetExhausted;
+  function finalizeParentContinuationTelemetry() {
+    for (const continuation of parentContinuationRecords.values()) {
+      const anchorNode = nodes.get(continuation.anchorNodeId);
+      if (!anchorNode) continue;
+      const targetFloor = dependencyTargetFloorId(continuation.parentDependency.target);
+      const futureTargetFloorDescendants = lineageEligibleDescendants(
+        anchorNode,
+        targetFloor,
+        { excludeAnchor: true },
+      ).filter((node) => node.nodeId >= continuation.createdNextNodeId);
+      continuation.futureDescendantsObservedAfterCreation = futureTargetFloorDescendants.length;
+      continuation.priorityStillActiveAtSearchEnd = hierarchyPriority
+        .activeContinuationIds()
+        .includes(continuation.id);
+      for (const witness of stats.parentDependencyContinuationWitnesses) {
+        if (witness.continuationId !== continuation.id) continue;
+        witness.futureDescendantsObservedAfterCreation =
+          continuation.futureDescendantsObservedAfterCreation;
+        witness.priorityStillActiveAtSearchEnd =
+          continuation.priorityStillActiveAtSearchEnd;
+      }
+    }
+  }
+  finalizeParentContinuationTelemetry();
   const frontierExhausted = !goalNode && frontierSize === 0;
   const deferredWorkRemaining = !goalNode && activeLazyWork > 0;
   let stoppedReason = "frontier-exhausted";

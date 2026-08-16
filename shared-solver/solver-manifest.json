@@ -1734,7 +1734,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation; PR-5.19e adds opt-in active hierarchy call priority so successful hierarchy children can compete for existing connector calls; PR-5.19f adds opt-in continuation-derived attack-blocked -> damageable battle-stage decomposition while preserving generic root behavior"
+      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation; PR-5.19e adds opt-in active hierarchy call priority so successful hierarchy children can compete for existing connector calls; PR-5.19f adds opt-in continuation-derived attack-blocked -> damageable battle-stage decomposition while preserving generic root behavior; PR-5.19g adds observation-only exact-merge continuation descendant telemetry (historical/future eligible descendants, calls remaining, priority-at-end)"
     },
     "shared-solver/lib/strategic-blocker.js": {
       "id": "strategic-blocker",
@@ -2418,6 +2418,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.19f verifies attack-blocked -> damageable compile identity (distinct from generic battle-access), synthetic completion/strict replay, lethal out-of-scope, and --qualification-1000 A/B control (5.19e generic child) vs candidate (stage-decomposed child)"
+    },
+    "shared-solver/check-strategic-retroactive-continuation-observation.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.19g observation-only frozen 1000-work contract for exact-merged stage continuation; currently observes historical eligible descendants 0 / future eligible descendants 0 / calls remaining 2 / priority active at end, so retroactive historical-descendant re-entry hypothesis is not supported"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",

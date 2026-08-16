@@ -104,6 +104,8 @@
     "qualification:strategic-hierarchical-call-allocation": "node check-strategic-hierarchical-call-allocation.js --qualification-1000",
     "check:strategic-battle-stage-prerequisite": "node check-strategic-battle-stage-prerequisite.js",
     "qualification:strategic-battle-stage-prerequisite": "node check-strategic-battle-stage-prerequisite.js --qualification-1000",
+    "check:strategic-retroactive-continuation-observation": "node check-strategic-retroactive-continuation-observation.js",
+    "qualification:strategic-retroactive-continuation-observation": "node check-strategic-retroactive-continuation-observation.js --qualification-1000",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",
