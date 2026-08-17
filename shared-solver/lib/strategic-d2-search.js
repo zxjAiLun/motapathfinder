@@ -465,6 +465,8 @@ function runStrategicD2Search(options) {
   const enableSurvivalOpportunityPrerequisite = config.enableSurvivalOpportunityPrerequisite === true;
   const enableSurvivalResidualAttribution = config.enableSurvivalResidualAttribution === true;
   const enableSurvivalResidualRecovery = config.enableSurvivalResidualRecovery === true;
+  const enableSecondSurvivalResidualRecovery =
+    config.enableSecondSurvivalResidualRecovery === true;
   const enablePostResidualAttribution = config.enablePostResidualAttribution === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
@@ -590,6 +592,12 @@ function runStrategicD2Search(options) {
     survivalOpportunityResidualPrerequisiteSatisfied: 0,
     survivalOpportunityResidualPrerequisiteStateCreated: 0,
     survivalOpportunityResidualRecoveries: [],
+    paidResidualRecoveriesUsed: 0,
+    survivalOpportunitySecondResidualRecoverySelected: 0,
+    survivalOpportunitySecondResidualReplayValid: 0,
+    survivalOpportunitySecondResidualPrerequisiteSatisfied: 0,
+    survivalOpportunitySecondResidualPrerequisiteStateCreated: 0,
+    survivalOpportunitySecondResidualMaterialized: 0,
     survivalOpportunityPostResidualAttributions: [],
   };
   const observedChoices = new Set();
@@ -597,7 +605,8 @@ function runStrategicD2Search(options) {
   const parentContinuationRecords = new Map();
   const seenParentContinuationResumes = new Set();
   const parkedParentContinuations = new Map();
-  let residualRecoveryAttempted = false;
+  const maxPaidResidualRecoveries = enableSecondSurvivalResidualRecovery ? 2 : 1;
+  let paidResidualRecoveriesUsed = 0;
   const hierarchyPriority = new HierarchyPriorityController();
   const nodeCreatedAtExpansion = new Map([[0, 0]]);
   const nodeExpansionOrdinal = new Map();
@@ -1201,6 +1210,51 @@ function runStrategicD2Search(options) {
       : { ok: false, reason: "empty-chain" };
   }
 
+  function buildResidualCandidateWitness(candidateEdge, candidateEdges, discoveryOrdinal) {
+    return {
+      action: candidateEdge.action,
+      actionTargetSignature: candidateEdge.actionTargetSignature,
+      preExactStateKey: candidateEdge.preExactStateKey,
+      postExactStateKey: candidateEdge.postExactStateKey,
+      sourceExactStateKey: candidateEdge.sourceExactStateKey,
+      witnessEdges: candidateEdges,
+      witnessChain: candidateEdges.map((edge) => edge.action),
+      witnessChainSummary: candidateEdges.map((edge) =>
+        edge.action && (edge.action.summary || edge.action.kind || "step")),
+      discoveryOrdinal,
+      discoveryExpansion: candidateEdge.expansion,
+      discoveryDepth: candidateEdge.depth,
+      beforeStage: candidateEdge.beforeStage,
+      afterStage: candidateEdge.afterStage,
+      beforeSurvivalMargin: candidateEdge.beforeSurvivalMargin,
+      afterSurvivalMargin: candidateEdge.afterSurvivalMargin,
+      deltaHP: candidateEdge.deltaHP,
+      deltaDamage: candidateEdge.deltaDamage,
+      deltaSurvivalMargin: candidateEdge.deltaSurvivalMargin,
+      resourceDelta: candidateEdge.resourceDelta,
+    };
+  }
+
+  function buildSatisfiedResidualResult(prerequisite, sourceExactStateKey, selection) {
+    const candidateEdge = selection.edge;
+    return {
+      status: "satisfied",
+      stoppedReason: "satisfied",
+      dependencyId: prerequisite.id,
+      sourceExactStateKey,
+      postExactStateKey: candidateEdge.postExactStateKey,
+      edges: selection.suffix,
+      chain: selection.suffix.map((edge) => edge.action),
+      chainSummary: selection.suffix.map((edge) =>
+        edge.action && (edge.action.summary || edge.action.kind || "step")),
+      expansions: 0,
+      generated: 0,
+      applyErrors: 0,
+      frontierSize: 0,
+      frontierTrimmed: 0,
+    };
+  }
+
   function drainOneLazyItem() {
     const queuedParentContinuation = connectorMode === "battle-access-prerequisite"
       ? lazyWork.queued().find((item) =>
@@ -1744,10 +1798,9 @@ function runStrategicD2Search(options) {
               let continuationFinalNode = materialized.finalNode;
               let continuationFinalCreated = materialized.finalCreated;
               const canAttemptResidualRecovery = enableSurvivalResidualRecovery &&
-                !residualRecoveryAttempted &&
+                paidResidualRecoveriesUsed < maxPaidResidualRecoveries &&
                 stats.survivalOpportunityPrerequisitesSatisfied > 0;
               if (canAttemptResidualRecovery) {
-                residualRecoveryAttempted = true;
                 const snapshot = lethalSurvivalEdgeObserver.snapshot();
                 const residualSelection = firstPrefixCompatibleReplayValidResidual({
                   simulator,
@@ -1788,6 +1841,7 @@ function runStrategicD2Search(options) {
                     : snapshot.captureComplete
                       ? "no-prefix-compatible-replay-valid-residual"
                       : "capture-incomplete",
+                  recoveryIndex: paidResidualRecoveriesUsed + 1,
                 };
                 if (residualSelection) {
                   const candidateEdge = residualSelection.edge;
@@ -1886,6 +1940,8 @@ function runStrategicD2Search(options) {
                       continuationFinalNode = residualMaterialized.finalNode;
                       continuationFinalCreated = residualMaterialized.finalCreated;
                       stats.survivalOpportunityResidualRecoverySelected += 1;
+                      paidResidualRecoveriesUsed += 1;
+                      stats.paidResidualRecoveriesUsed = paidResidualRecoveriesUsed;
                       residualRecord.materialized = true;
                       residualRecord.finalCreated = residualMaterialized.finalCreated;
                       residualRecord.status = "materialized";
@@ -1912,18 +1968,169 @@ function runStrategicD2Search(options) {
                           });
                         }
                       }
+                      if (stats.survivalOpportunityResidualRecoveries.length < 16) {
+                        stats.survivalOpportunityResidualRecoveries.push(residualRecord);
+                      }
+                      if (enableSecondSurvivalResidualRecovery && paidResidualRecoveriesUsed === 1) {
+                        const o3PostExactStateKey = buildStateKey(residualMaterialized.finalState);
+                        const o3PostStateMatches = o3PostExactStateKey === candidateEdge.postExactStateKey;
+                        const secondSelection = o3PostStateMatches
+                          ? firstPrefixCompatibleReplayValidResidual({
+                            simulator,
+                            selectedWitness: candidateWitness,
+                            selectedPostState: residualMaterialized.finalState,
+                            snapshot,
+                          })
+                          : null;
+                        const secondRecord = {
+                          sourceType: "paid-residual-witness-suffix",
+                          recoveryIndex: 2,
+                          originFailedAttemptId: attemptId,
+                          originSelectedOpportunityId: residualPrerequisite.id,
+                          originSnapshotCaptureComplete: snapshot.captureComplete,
+                          selectedResidualOpportunityId: null,
+                          selectedResidualTarget: null,
+                          selectionPolicy: "first-prefix-compatible-replay-valid-residual-by-bfs-discovery",
+                          residualRecoverySelected: Boolean(secondSelection),
+                          residualReplayValid: false,
+                          residualPrerequisiteSatisfied: false,
+                          residualSearchExpansions: 0,
+                          connectorCallsCharged: 0,
+                          suffixLength: 0,
+                          candidateDiscoveryOrdinal: secondSelection
+                            ? secondSelection.discoveryOrdinal
+                            : null,
+                          candidateDiscoveryExpansion: secondSelection
+                            ? secondSelection.edge.expansion
+                            : null,
+                          candidateDiscoveryDepth: secondSelection
+                            ? secondSelection.edge.depth
+                            : null,
+                          materialized: false,
+                          finalCreated: false,
+                          parentContinuationId: null,
+                          parentContinuationCreated: false,
+                          status: secondSelection ? "selected" : "not-selected",
+                          statusReason: secondSelection
+                            ? "first-prefix-compatible-replay-valid-residual-by-bfs-discovery"
+                            : !o3PostStateMatches
+                              ? "selected-o3-post-exact-state-mismatch"
+                              : snapshot.captureComplete
+                                ? "no-prefix-compatible-replay-valid-residual"
+                                : "capture-incomplete",
+                          selectedSourcePostExactStateKey: o3PostExactStateKey,
+                        };
+                        if (secondSelection) {
+                          stats.survivalOpportunitySecondResidualRecoverySelected += 1;
+                          const secondCandidateEdge = secondSelection.edge;
+                          const secondCandidateWitness = buildResidualCandidateWitness(
+                            secondCandidateEdge,
+                            secondSelection.candidateEdges,
+                            secondSelection.discoveryOrdinal,
+                          );
+                          const secondPrerequisite = compileSurvivalOpportunityPrerequisite({
+                            project,
+                            parentDependency: prerequisite.parentDependency,
+                            boundary: prerequisite.boundary,
+                            witness: secondCandidateWitness,
+                            originFailedAttemptId: attemptId,
+                            originContinuationId: work.originContinuationId || null,
+                            selectionPolicy: "first-prefix-compatible-replay-valid-residual-by-bfs-discovery",
+                            sourceType: "paid-residual-witness-suffix",
+                          });
+                          const secondReplay = secondPrerequisite
+                            ? verifyConnectorChain(
+                              simulator,
+                              residualMaterialized.finalState,
+                              secondSelection.suffix,
+                              { expectedPostExactStateKey: secondCandidateEdge.postExactStateKey },
+                            )
+                            : { valid: false, failureReason: "second-residual-prerequisite-compile-failed" };
+                          let secondCompletion = false;
+                          if (secondPrerequisite && secondReplay.valid) {
+                            try {
+                              secondCompletion = secondPrerequisite.completionPredicate(secondReplay.finalState);
+                            } catch (_error) {
+                              secondCompletion = false;
+                            }
+                          }
+                          secondRecord.selectedResidualOpportunityId = secondPrerequisite
+                            ? secondPrerequisite.id
+                            : null;
+                          secondRecord.selectedResidualTarget = secondPrerequisite
+                            ? secondPrerequisite.target
+                            : null;
+                          secondRecord.residualReplayValid = secondReplay.valid;
+                          secondRecord.residualPrerequisiteSatisfied = secondCompletion;
+                          secondRecord.suffixLength = secondSelection.suffix.length;
+                          secondRecord.replayFailureReason = secondReplay.failureReason || null;
+                          if (secondPrerequisite) {
+                            stats.survivalOpportunityPrerequisitesCompiled += 1;
+                            stats.survivalOpportunityPrerequisitesWitnessBacked += 1;
+                          }
+                          if (secondReplay.valid) {
+                            stats.survivalOpportunityResidualReplayValid += 1;
+                            stats.survivalOpportunitySecondResidualReplayValid += 1;
+                          }
+                          if (secondCompletion) {
+                            stats.survivalOpportunityResidualPrerequisiteSatisfied += 1;
+                            stats.survivalOpportunitySecondResidualPrerequisiteSatisfied += 1;
+                          }
+                          if (secondPrerequisite && secondReplay.valid && secondCompletion) {
+                            const secondMaterialized = materializeConnectorChain(
+                              residualMaterialized.finalNode,
+                              buildSatisfiedResidualResult(
+                                secondPrerequisite,
+                                o3PostExactStateKey,
+                                secondSelection,
+                              ),
+                            );
+                            if (secondMaterialized.ok) {
+                              stats.survivalOpportunityPrerequisitesSatisfied += 1;
+                              stats.survivalOpportunitySecondResidualPrerequisiteStateCreated +=
+                                secondMaterialized.finalCreated ? 1 : 0;
+                              stats.survivalOpportunityResidualPrerequisiteStateCreated +=
+                                secondMaterialized.finalCreated ? 1 : 0;
+                              stats.survivalOpportunityResidualRecoverySelected += 1;
+                              paidResidualRecoveriesUsed += 1;
+                              stats.paidResidualRecoveriesUsed = paidResidualRecoveriesUsed;
+                              continuationPrerequisite = secondPrerequisite;
+                              continuationSourceNode = residualMaterialized.finalNode;
+                              continuationFinalNode = secondMaterialized.finalNode;
+                              continuationFinalCreated = secondMaterialized.finalCreated;
+                              secondRecord.materialized = true;
+                              secondRecord.finalCreated = secondMaterialized.finalCreated;
+                              secondRecord.status = "materialized";
+                              secondRecord.statusReason = "second-residual-replay-and-discrete-completion-pass";
+                              residualRecord.supersededBySecondResidual = true;
+                              residualRecord.supersededByRecoveryIndex = 2;
+                              stats.survivalOpportunitySecondResidualMaterialized += 1;
+                            } else {
+                              secondRecord.status = "not-materialized";
+                              secondRecord.statusReason = secondMaterialized.reason || "materialization-failed";
+                            }
+                          } else {
+                            secondRecord.status = "replay-or-completion-failed";
+                            secondRecord.statusReason = secondReplay.failureReason ||
+                              "second-residual-discrete-completion-failed";
+                          }
+                        }
+                        if (stats.survivalOpportunityResidualRecoveries.length < 16) {
+                          stats.survivalOpportunityResidualRecoveries.push(secondRecord);
+                        }
+                      }
                     } else {
                       residualRecord.status = "not-materialized";
                       residualRecord.statusReason = residualMaterialized.reason || "materialization-failed";
+                      if (stats.survivalOpportunityResidualRecoveries.length < 16) {
+                        stats.survivalOpportunityResidualRecoveries.push(residualRecord);
+                      }
                     }
                   } else {
                     residualRecord.status = "replay-or-completion-failed";
                     residualRecord.statusReason = residualReplay.failureReason ||
                       "residual-discrete-completion-failed";
                   }
-                }
-                if (stats.survivalOpportunityResidualRecoveries.length < 16) {
-                  stats.survivalOpportunityResidualRecoveries.push(residualRecord);
                 }
               }
               if (enableSurvivalResidualAttribution) {
@@ -1959,9 +2166,8 @@ function runStrategicD2Search(options) {
                 parentContinuationId = continuationResult.continuation.id;
                 parentContinuationCreated = continuationResult.created;
                 const residualRecords = stats.survivalOpportunityResidualRecoveries;
-                const residualRecord = residualRecords.length > 0
-                  ? residualRecords[residualRecords.length - 1]
-                  : null;
+                const residualRecord = [...residualRecords].reverse()
+                  .find((entry) => entry.status === "materialized") || null;
                 if (residualRecord && residualRecord.status === "materialized") {
                   residualRecord.parentContinuationId = parentContinuationId;
                   residualRecord.parentContinuationCreated = parentContinuationCreated;

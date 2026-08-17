@@ -452,6 +452,73 @@ function runResidualSyntheticContracts() {
   });
   assert.strictEqual(postP4.classification, "P4");
 
+  const o4Early = makeObservedEdge(
+    simulator,
+    rawP1.action,
+    2,
+    3,
+    [rawO2, rawO3, rawP1],
+    3,
+    1,
+  );
+  const o4Late = makeObservedEdge(
+    simulator,
+    rawP3.action,
+    2,
+    4,
+    [rawO2, rawO3, rawP3],
+    4,
+    1000,
+  );
+  const o5 = makeObservedEdge(
+    simulator,
+    rawO4.action,
+    3,
+    4,
+    [rawO2, rawO3, rawP1, rawO4],
+    5,
+    2,
+  );
+  const secondResidualSnapshot = {
+    edges: [
+      makeObservedEdge(simulator, rawO3.action, 1, 2, selectedO3Prefix, 2, 10),
+      o4Early,
+      o4Late,
+      o5,
+    ],
+    edgesObserved: 5,
+    maxEdges: 10,
+    captureComplete: true,
+  };
+  const secondResidual = firstPrefixCompatibleReplayValidResidual({
+    simulator,
+    selectedWitness: selectedO3,
+    selectedPostState: simulator.states[2],
+    snapshot: secondResidualSnapshot,
+  });
+  assert.ok(secondResidual);
+  assert.strictEqual(secondResidual.edge, o4Early);
+  assert.strictEqual(secondResidual.discoveryOrdinal, 3);
+  assert.strictEqual(secondResidual.suffix.length, 1);
+  assert.strictEqual(secondResidual.replay.valid, true);
+  assert.strictEqual(secondResidual.edge.deltaSurvivalMargin, 1);
+  const selectedO4 = {
+    ...o4Early,
+    witnessEdges: [rawO2, rawO3, rawP1],
+    postExactStateKey: rawP1.postExactStateKey,
+    discoveryOrdinal: 3,
+  };
+  const paidResidualRecoveriesUsed = 2;
+  const thirdResidual = paidResidualRecoveriesUsed < 2
+    ? firstPrefixCompatibleReplayValidResidual({
+      simulator,
+      selectedWitness: selectedO4,
+      selectedPostState: simulator.states[3],
+      snapshot: secondResidualSnapshot,
+    })
+    : null;
+  assert.strictEqual(thirdResidual, null);
+
   return {
     r1: r1.classification,
     reroot: reroot.classification,
@@ -463,6 +530,8 @@ function runResidualSyntheticContracts() {
     postP2: postP2.classification,
     postP3: postP3.classification,
     postP4: postP4.classification,
+    secondResidual: "P1-by-discovery-order",
+    thirdResidual: "stopped-at-max-2",
   };
 }
 
