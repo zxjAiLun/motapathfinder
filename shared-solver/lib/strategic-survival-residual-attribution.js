@@ -66,6 +66,89 @@ function firstPrefixCompatibleReplayValidResidual(options) {
   return null;
 }
 
+function attributePostO3ResidualPrefix(options) {
+  const config = options || {};
+  const simulator = config.simulator;
+  const selectedPrefixEdges = config.selectedPrefixEdges;
+  const selectedPostState = config.selectedPostState;
+  const selectedPostExactStateKey = config.selectedPostExactStateKey;
+  const selectedSourceExactStateKey = config.selectedSourceExactStateKey;
+  const selectedOrdinal = config.selectedDiscoveryOrdinal;
+  const snapshot = config.snapshot || {};
+  const edges = Array.isArray(snapshot.edges) ? snapshot.edges : [];
+  const captureComplete = snapshot.captureComplete === true;
+  const candidates = [];
+  if (!Array.isArray(selectedPrefixEdges) || selectedPostExactStateKey == null) {
+    return {
+      schema: "motapathfinder.strategic-post-o3-residual-prefix-attribution.v1",
+      classification: "CAPTURE-INCOMPLETE",
+      captureComplete: false,
+      observedEdges: snapshot.edgesObserved == null ? edges.length : snapshot.edgesObserved,
+      capturedEdges: edges.length,
+      selectedPrefixLength: Array.isArray(selectedPrefixEdges) ? selectedPrefixEdges.length : 0,
+      selectedPostExactStateKey: selectedPostExactStateKey || null,
+      candidates,
+    };
+  }
+
+  for (let index = 0; index < edges.length; index += 1) {
+    const edge = edges[index];
+    const ordinal = edge.discoveryOrdinal == null ? index + 1 : edge.discoveryOrdinal;
+    if (selectedOrdinal != null && ordinal <= selectedOrdinal) continue;
+    if (!isNamedPositiveBattleOpportunity(edge)) continue;
+    const candidateEdges = Array.isArray(edge.witnessEdges) ? edge.witnessEdges : [];
+    const sourceCompatible = !selectedSourceExactStateKey || !candidateEdges[0] ||
+      candidateEdges[0].preExactStateKey === selectedSourceExactStateKey;
+    const prefixCompatible = sourceCompatible && findExactPrefix(selectedPrefixEdges, candidateEdges);
+    if (!prefixCompatible) {
+      candidates.push(compactCandidate(edge, ordinal, null, -1, [], null));
+      continue;
+    }
+    const suffix = candidateEdges.slice(selectedPrefixEdges.length);
+    const replay = verifyConnectorChain(simulator, selectedPostState, suffix, {
+      expectedPostExactStateKey: edge.postExactStateKey,
+    });
+    candidates.push(compactCandidate(
+      edge,
+      ordinal,
+      "exact-prefix-only",
+      selectedPrefixEdges.length,
+      suffix,
+      replay,
+    ));
+  }
+
+  const validCandidates = candidates.filter((candidate) => candidate.suffixReplayValid === true);
+  const compatibleReplayFailures = candidates.filter((candidate) =>
+    candidate.compatibilityKind === "exact-prefix-only" && candidate.suffixReplayValid === false);
+  const incompatibleCandidates = candidates.filter((candidate) => !candidate.compatibilityKind);
+  let classification;
+  if (!captureComplete) {
+    classification = "CAPTURE-INCOMPLETE";
+  } else if (validCandidates.length > 0) {
+    classification = "P1";
+  } else if (compatibleReplayFailures.length > 0) {
+    classification = "P3";
+  } else if (incompatibleCandidates.length > 0) {
+    classification = "P2";
+  } else {
+    classification = "P4";
+  }
+  return {
+    schema: "motapathfinder.strategic-post-o3-residual-prefix-attribution.v1",
+    classification,
+    captureComplete,
+    observedEdges: snapshot.edgesObserved == null ? edges.length : snapshot.edgesObserved,
+    capturedEdges: edges.length,
+    captureLimit: snapshot.maxEdges == null ? null : snapshot.maxEdges,
+    selectedPrefixLength: selectedPrefixEdges.length,
+    selectedDiscoveryOrdinal: selectedOrdinal == null ? null : selectedOrdinal,
+    selectedPostExactStateKey,
+    laterPositiveOpportunityCount: candidates.length,
+    candidates,
+  };
+}
+
 function findExactPrefix(prefix, candidate) {
   if (!Array.isArray(prefix) || !Array.isArray(candidate) || prefix.length > candidate.length) {
     return false;
@@ -204,6 +287,7 @@ function attributeResidualPaidWitnessGraph(options) {
 
 module.exports = {
   attributeResidualPaidWitnessGraph,
+  attributePostO3ResidualPrefix,
   equivalentEdge,
   firstPrefixCompatibleReplayValidResidual,
   findExactPrefix,

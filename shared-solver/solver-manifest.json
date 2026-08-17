@@ -1926,7 +1926,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.19n classifies later positive battle opportunities from one retained failed-connector graph as prefix-compatible, exact-state-reroot-compatible, branch-incompatible, or strict-replay-failed; PR-5.19o consumes only the first capture-complete prefix-compatible replay-valid candidate; reroot remains observation-only"
+      "notes": "PR-5.19n classifies later positive battle opportunities from one retained failed-connector graph as prefix-compatible, exact-state-reroot-compatible, branch-incompatible, or strict-replay-failed; PR-5.19o consumes only the first capture-complete prefix-compatible replay-valid candidate; PR-5.19p re-roots observation at the complete O2+O3 prefix and keeps reroot recovery unauthorized"
     },
     "shared-solver/lib/strategic-survival-opportunity-prerequisite.js": {
       "id": "strategic-survival-opportunity-prerequisite",
@@ -2539,7 +2539,7 @@
       "allowsNotFound": true,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.19l verifies synthetic discrete consumption predicate and frozen witness-backed recovery; PR-5.19n extends the synthetic contracts with R1/R2/R3/R4 residual paid-witness attribution and real observation asserts O2-compatible suffix replay without changing the frozen result; --residual-recovery adds PR-5.19o prefix-only strict replay/materialization/continuation gates"
+      "notes": "PR-5.19l verifies synthetic discrete consumption predicate and frozen witness-backed recovery; PR-5.19n extends the synthetic contracts with R1/R2/R3/R4 residual paid-witness attribution and real observation asserts O2-compatible suffix replay without changing the frozen result; --residual-recovery adds PR-5.19o prefix-only strict replay/materialization/continuation gates; --post-o3-observation adds PR-5.19p P1/P2/P3/P4 attribution from the O2+O3 prefix without behavior"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",

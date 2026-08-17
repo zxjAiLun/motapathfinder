@@ -61,6 +61,7 @@ function makeSyntheticState(floorId, x, y, removed) {
 function main() {
   const includeQualification1000 = process.argv.includes("--qualification-1000");
   const includeResidualRecovery = process.argv.includes("--residual-recovery");
+  const includePostO3Observation = process.argv.includes("--post-o3-observation");
   const project = loadProject(PROJECT_ROOT);
   const initialState = detachCheckpoint(createMt5EntryState(project));
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
@@ -219,6 +220,7 @@ function main() {
       enableSurvivalOpportunityPrerequisite: true,
       enableSurvivalResidualAttribution: includeResidualRecovery ? true : enable,
       enableSurvivalResidualRecovery: includeResidualRecovery && enable,
+      enablePostResidualAttribution: includePostO3Observation && enable,
     });
 
     const control = runWithResidualObservation(false);
@@ -354,6 +356,20 @@ function main() {
       );
     }
 
+    if (includePostO3Observation) {
+      assert.strictEqual(control.stats.survivalOpportunityPostResidualAttributions.length, 0);
+      assert.strictEqual(candidate.stats.survivalOpportunityPostResidualAttributions.length, 1);
+      const postO3 = candidate.stats.survivalOpportunityPostResidualAttributions[0];
+      assert.strictEqual(postO3.originSnapshotCaptureComplete, true);
+      assert.strictEqual(postO3.selectedPrefixLength, 2);
+      assert.strictEqual(typeof postO3.selectedPrefixPostExactStateKey, "string");
+      assert.ok(["P1", "P2", "P3", "P4"].includes(postO3.classification));
+      assert.ok(postO3.candidates.every((entry, index, rows) =>
+        index === 0 || rows[index - 1].candidateDiscoveryOrdinal < entry.candidateDiscoveryOrdinal));
+      assert.ok(postO3.candidates.every((entry) =>
+        entry.compatibilityKind === null || entry.compatibilityKind === "exact-prefix-only"));
+    }
+
     qualificationOpportunity = {
       controlCalls: control.stats.battleAccessPrerequisiteCalls,
       candidateCalls: candidate.stats.battleAccessPrerequisiteCalls,
@@ -392,6 +408,33 @@ function main() {
         })),
       residualRecovery: includeResidualRecovery
         ? candidate.stats.survivalOpportunityResidualRecoveries
+        : null,
+      postO3ResidualAttribution: includePostO3Observation
+        ? candidate.stats.survivalOpportunityPostResidualAttributions.map((entry) => ({
+          originFailedAttemptId: entry.originFailedAttemptId,
+          originO2OpportunityId: entry.originO2OpportunityId,
+          originO3OpportunityId: entry.originO3OpportunityId,
+          originSnapshotCaptureComplete: entry.originSnapshotCaptureComplete,
+          selectedPrefixLength: entry.selectedPrefixLength,
+          classification: entry.classification,
+          captureComplete: entry.captureComplete,
+          observedEdges: entry.observedEdges,
+          laterPositiveOpportunityCount: entry.laterPositiveOpportunityCount,
+          strictReplayPassCount: entry.candidates.filter((candidate) =>
+            candidate.suffixReplayValid === true).length,
+          strictReplayFailureCount: entry.candidates.filter((candidate) =>
+            candidate.suffixReplayValid === false).length,
+          candidates: entry.candidates.map((candidate) => ({
+            candidateTarget: candidate.candidateTarget,
+            candidateDiscoveryOrdinal: candidate.candidateDiscoveryOrdinal,
+            candidateDiscoveryExpansion: candidate.candidateDiscoveryExpansion,
+            candidateDiscoveryDepth: candidate.candidateDiscoveryDepth,
+            compatibilityKind: candidate.compatibilityKind,
+            suffixLength: candidate.suffixLength,
+            suffixReplayValid: candidate.suffixReplayValid,
+            replayFailureReason: candidate.replayFailureReason,
+          })),
+        }))
         : null,
       classification: "witness-backed-discrete-survival-opportunity-progression",
     };

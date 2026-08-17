@@ -10,6 +10,7 @@ const { loadProject } = require("./lib/project-loader");
 const { createSurvivalEdgeObserver } = require("./lib/strategic-survival-edge-observer");
 const {
   attributeResidualPaidWitnessGraph,
+  attributePostO3ResidualPrefix,
   firstPrefixCompatibleReplayValidResidual,
 } = require("./lib/strategic-survival-residual-attribution");
 const { buildStateKey } = require("./lib/state-key");
@@ -97,7 +98,10 @@ function makeResidualReplaySimulator() {
     action("battle", "battle:broken@F:1,0", 1, 5, "broken"),
   ]);
   transitions.set(3, [action("battle", "battle:O4@F:3,0", 3, 4, "O4")]);
-  transitions.set(2, []);
+  transitions.set(2, [
+    action("battle", "battle:P1@F:2,0", 2, 3, "P1"),
+    action("battle", "battle:P3-broken@F:2,0", 2, 4, "P3-broken"),
+  ]);
   transitions.set(4, []);
   transitions.set(5, []);
   return {
@@ -156,6 +160,9 @@ function runResidualSyntheticContracts() {
   const rawBroken = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[1]).actions[2], 1, 5);
   const rawBrokenRecorded = { ...rawBroken, postExactStateKey: "broken-post-key" };
   const rawO4 = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[3]).actions[0], 3, 4);
+  const rawP1 = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[2]).actions[0], 2, 3);
+  const rawP3 = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[2]).actions[1], 2, 4);
+  const rawP3Recorded = { ...rawP3, postExactStateKey: "p3-broken-post-key" };
   const selectedWitness = {
     discoveryOrdinal: 1,
     postExactStateKey: rawO2.postExactStateKey,
@@ -346,6 +353,105 @@ function runResidualSyntheticContracts() {
   });
   assert.strictEqual(incomplete.classification, "CAPTURE-INCOMPLETE");
 
+  const selectedO3Prefix = [rawO2, rawO3];
+  const selectedO3 = {
+    sourceExactStateKey: rawO2.preExactStateKey,
+    postExactStateKey: rawO3.postExactStateKey,
+    witnessEdges: selectedO3Prefix,
+    discoveryOrdinal: 2,
+  };
+  const postP1 = attributePostO3ResidualPrefix({
+    simulator,
+    selectedPrefixEdges: selectedO3Prefix,
+    selectedPostState: simulator.states[2],
+    selectedPostExactStateKey: rawO3.postExactStateKey,
+    selectedSourceExactStateKey: rawO2.preExactStateKey,
+    selectedDiscoveryOrdinal: selectedO3.discoveryOrdinal,
+    snapshot: {
+      edges: [
+        makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10),
+        makeObservedEdge(simulator, rawO3.action, 1, 2, selectedO3Prefix, 2, 10),
+        makeObservedEdge(simulator, rawP1.action, 2, 3, [rawO2, rawO3, rawP1], 3, 1),
+      ],
+      edgesObserved: 3,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  });
+  assert.strictEqual(postP1.classification, "P1");
+  assert.strictEqual(postP1.candidates[0].compatibilityKind, "exact-prefix-only");
+  assert.strictEqual(postP1.candidates[0].suffixReplayValid, true);
+
+  const postP2 = attributePostO3ResidualPrefix({
+    simulator,
+    selectedPrefixEdges: selectedO3Prefix,
+    selectedPostState: simulator.states[2],
+    selectedPostExactStateKey: rawO3.postExactStateKey,
+    selectedSourceExactStateKey: rawO2.preExactStateKey,
+    selectedDiscoveryOrdinal: selectedO3.discoveryOrdinal,
+    snapshot: {
+      edges: [
+        makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10),
+        makeObservedEdge(simulator, rawO3.action, 1, 2, selectedO3Prefix, 2, 10),
+        makeObservedEdge(simulator, rawO4Prefix.action, 1, 2, [rawO2, rawO4Prefix], 3, 1000),
+      ],
+      edgesObserved: 3,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  });
+  assert.strictEqual(postP2.classification, "P2");
+
+  const postP3 = attributePostO3ResidualPrefix({
+    simulator,
+    selectedPrefixEdges: selectedO3Prefix,
+    selectedPostState: simulator.states[2],
+    selectedPostExactStateKey: rawO3.postExactStateKey,
+    selectedSourceExactStateKey: rawO2.preExactStateKey,
+    selectedDiscoveryOrdinal: selectedO3.discoveryOrdinal,
+    snapshot: {
+      edges: [
+        makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10),
+        makeObservedEdge(simulator, rawO3.action, 1, 2, selectedO3Prefix, 2, 10),
+        (() => {
+          const edge = makeObservedEdge(
+            simulator,
+            rawP3Recorded.action,
+            2,
+            4,
+            [rawO2, rawO3, rawP3Recorded],
+            3,
+            20,
+          );
+          edge.postExactStateKey = rawP3Recorded.postExactStateKey;
+          return edge;
+        })(),
+      ],
+      edgesObserved: 3,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  });
+  assert.strictEqual(postP3.classification, "P3");
+  assert.strictEqual(postP3.candidates[0].compatibilityKind, "exact-prefix-only");
+  assert.strictEqual(postP3.candidates[0].suffixReplayValid, false);
+
+  const postP4 = attributePostO3ResidualPrefix({
+    simulator,
+    selectedPrefixEdges: selectedO3Prefix,
+    selectedPostState: simulator.states[2],
+    selectedPostExactStateKey: rawO3.postExactStateKey,
+    selectedSourceExactStateKey: rawO2.preExactStateKey,
+    selectedDiscoveryOrdinal: selectedO3.discoveryOrdinal,
+    snapshot: {
+      edges: [makeObservedEdge(simulator, rawO3.action, 1, 2, selectedO3Prefix, 2, 10)],
+      edgesObserved: 2,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  });
+  assert.strictEqual(postP4.classification, "P4");
+
   return {
     r1: r1.classification,
     reroot: reroot.classification,
@@ -353,6 +459,10 @@ function runResidualSyntheticContracts() {
     r3: r3.classification,
     r4: r4.classification,
     incomplete: incomplete.classification,
+    postP1: postP1.classification,
+    postP2: postP2.classification,
+    postP3: postP3.classification,
+    postP4: postP4.classification,
   };
 }
 
