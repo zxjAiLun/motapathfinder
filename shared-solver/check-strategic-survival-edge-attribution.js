@@ -8,6 +8,10 @@ const path = require("node:path");
 const { makeBlindSimulator, readBlindGoal } = require("./lib/blind-discovery-baseline");
 const { loadProject } = require("./lib/project-loader");
 const { createSurvivalEdgeObserver } = require("./lib/strategic-survival-edge-observer");
+const {
+  attributeResidualPaidWitnessGraph,
+} = require("./lib/strategic-survival-residual-attribution");
+const { buildStateKey } = require("./lib/state-key");
 const { runStrategicD2Search } = require("./lib/strategic-d2-search");
 const { createMt5EntryState, detachCheckpoint } = require("./qualify-blind-discovery");
 
@@ -55,6 +59,258 @@ function makeSyntheticEdgeSimulator() {
   };
 }
 
+function makeResidualReplaySimulator() {
+  function state(value) {
+    return {
+      floorId: "F",
+      floorStates: { F: { removed: {}, replaced: {} } },
+      hero: {
+        hp: 100 + value,
+        atk: 10,
+        def: 0,
+        mdef: 0,
+        lv: 1,
+        exp: value,
+        loc: { x: value, y: 0, direction: "right" },
+        equipment: [],
+        followers: [],
+      },
+      flags: { residualValue: value },
+      inventory: {},
+      visitedFloors: ["F"],
+    };
+  }
+  const states = [0, 1, 2, 3, 4, 5].map(state);
+  const transitions = new Map();
+  function action(kind, summary, from, to, enemyId) {
+    return { kind, summary, floorId: "F", x: to, y: 0, from, to, enemyId: enemyId || null };
+  }
+  transitions.set(0, [
+    action("battle", "battle:O2@F:0,0", 0, 1, "O2"),
+    action("event", "event:branch-to-O4", 0, 3),
+    action("event", "event:reroot-to-O3", 0, 1),
+  ]);
+  transitions.set(1, [
+    action("battle", "battle:O3@F:1,0", 1, 2, "O3"),
+    action("battle", "battle:broken@F:1,0", 1, 5, "broken"),
+  ]);
+  transitions.set(3, [action("battle", "battle:O4@F:3,0", 3, 4, "O4")]);
+  transitions.set(2, []);
+  transitions.set(4, []);
+  transitions.set(5, []);
+  return {
+    states,
+    enumeratePrimitiveActions(current) {
+      return { actions: transitions.get(current.flags.residualValue) || [] };
+    },
+    applyAction(_current, nextAction) {
+      const next = states[nextAction.to];
+      return {
+        ...next,
+        hero: { ...next.hero, loc: { ...next.hero.loc } },
+        flags: { ...next.flags },
+        floorStates: { F: { removed: {}, replaced: {} } },
+      };
+    },
+    getActionFingerprint(nextAction) {
+      return `${nextAction.kind}|${nextAction.summary}`;
+    },
+  };
+}
+
+function makeObservedEdge(simulator, action, from, to, witnessEdges, ordinal, delta) {
+  const keys = simulator.states.map(buildStateKey);
+  return {
+    discoveryOrdinal: ordinal,
+    expansion: ordinal,
+    depth: witnessEdges.length - 1,
+    preExactStateKey: keys[from],
+    postExactStateKey: keys[to],
+    sourceExactStateKey: keys[0],
+    witnessEdges,
+    action,
+    actionTargetSignature: `${action.kind}|${action.summary}`,
+    deltaSurvivalMargin: delta,
+  };
+}
+
+function makeRawEdge(simulator, action, from, to) {
+  const keys = simulator.states.map(buildStateKey);
+  return {
+    action,
+    fingerprint: simulator.getActionFingerprint(action),
+    preExactStateKey: keys[from],
+    postExactStateKey: keys[to],
+  };
+}
+
+function runResidualSyntheticContracts() {
+  const simulator = makeResidualReplaySimulator();
+  const rawO2 = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[0]).actions[0], 0, 1);
+  const rawBranch = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[0]).actions[1], 0, 3);
+  const rawReroot = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[0]).actions[2], 0, 1);
+  const rawO3 = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[1]).actions[0], 1, 2);
+  const rawBroken = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[1]).actions[1], 1, 5);
+  const rawBrokenRecorded = { ...rawBroken, postExactStateKey: "broken-post-key" };
+  const rawO4 = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[3]).actions[0], 3, 4);
+  const selectedWitness = {
+    discoveryOrdinal: 1,
+    postExactStateKey: rawO2.postExactStateKey,
+    witnessEdges: [rawO2],
+  };
+
+  const prefixCandidate = makeObservedEdge(
+    simulator,
+    rawO3.action,
+    1,
+    2,
+    [rawO2, rawO3],
+    2,
+    1,
+  );
+  const highMarginPrefixCandidate = makeObservedEdge(
+    simulator,
+    rawO3.action,
+    1,
+    2,
+    [rawO2, rawO3],
+    3,
+    1000,
+  );
+  const branchCandidate = makeObservedEdge(
+    simulator,
+    rawO4.action,
+    3,
+    4,
+    [rawBranch, rawO4],
+    4,
+    20,
+  );
+  const rerootCandidate = makeObservedEdge(
+    simulator,
+    rawO3.action,
+    1,
+    2,
+    [rawReroot, rawO3],
+    5,
+    30,
+  );
+  const brokenCandidate = makeObservedEdge(
+    simulator,
+    rawBrokenRecorded.action,
+    1,
+    5,
+    [rawO2, rawBrokenRecorded],
+    6,
+    40,
+  );
+  brokenCandidate.postExactStateKey = rawBrokenRecorded.postExactStateKey;
+
+  const r1 = attributeResidualPaidWitnessGraph({
+    simulator,
+    selectedWitness,
+    selectedPostState: simulator.states[1],
+    snapshot: {
+      edges: [
+        makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10),
+        prefixCandidate,
+        highMarginPrefixCandidate,
+      ],
+      edgesObserved: 3,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  });
+  assert.strictEqual(r1.classification, "R1");
+  assert.deepStrictEqual(
+    r1.candidates.map((candidate) => candidate.candidateDiscoveryOrdinal),
+    [2, 3],
+  );
+  assert.strictEqual(r1.candidates[0].compatibilityKind, "prefix-compatible");
+  assert.strictEqual(r1.candidates[0].suffixReplayValid, true);
+  assert.strictEqual(r1.candidates[1].suffixReplayValid, true);
+
+  const reroot = attributeResidualPaidWitnessGraph({
+    simulator,
+    selectedWitness,
+    selectedPostState: simulator.states[1],
+    snapshot: {
+      edges: [makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10), rerootCandidate],
+      edgesObserved: 2,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  });
+  assert.strictEqual(reroot.classification, "R1");
+  assert.strictEqual(reroot.candidates[0].compatibilityKind, "exact-state-reroot-compatible");
+  assert.strictEqual(reroot.candidates[0].suffixReplayValid, true);
+
+  const r2 = attributeResidualPaidWitnessGraph({
+    simulator,
+    selectedWitness,
+    selectedPostState: simulator.states[1],
+    snapshot: {
+      edges: [makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10), branchCandidate],
+      edgesObserved: 2,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  });
+  assert.strictEqual(r2.classification, "R2");
+  assert.strictEqual(r2.candidates[0].replayFailureReason, "branch-incompatible");
+
+  const r3 = attributeResidualPaidWitnessGraph({
+    simulator,
+    selectedWitness,
+    selectedPostState: simulator.states[1],
+    snapshot: {
+      edges: [makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10), brokenCandidate],
+      edgesObserved: 2,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  });
+  assert.strictEqual(r3.classification, "R3");
+  assert.strictEqual(r3.candidates[0].compatibilityKind, "prefix-compatible");
+  assert.strictEqual(r3.candidates[0].suffixReplayValid, false);
+
+  const r4 = attributeResidualPaidWitnessGraph({
+    simulator,
+    selectedWitness,
+    selectedPostState: simulator.states[1],
+    snapshot: {
+      edges: [makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10)],
+      edgesObserved: 1,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  });
+  assert.strictEqual(r4.classification, "R4");
+  assert.strictEqual(r4.laterPositiveOpportunityCount, 0);
+
+  const incomplete = attributeResidualPaidWitnessGraph({
+    simulator,
+    selectedWitness,
+    selectedPostState: simulator.states[1],
+    snapshot: {
+      edges: [makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10)],
+      edgesObserved: 2,
+      maxEdges: 1,
+      captureComplete: false,
+    },
+  });
+  assert.strictEqual(incomplete.classification, "CAPTURE-INCOMPLETE");
+
+  return {
+    r1: r1.classification,
+    reroot: reroot.classification,
+    r2: r2.classification,
+    r3: r3.classification,
+    r4: r4.classification,
+    incomplete: incomplete.classification,
+  };
+}
+
 function main() {
   const includeQualification1000 = process.argv.includes("--qualification-1000");
   const project = loadProject(PROJECT_ROOT);
@@ -92,6 +348,9 @@ function main() {
   assert.strictEqual(syntheticReport.aggregate.positiveByActionKind.event, 1);
   assert.strictEqual(syntheticReport.aggregate.positiveUniqueActionTargets, 1);
   assert.strictEqual(syntheticReport.aggregate.topPositiveEdges[0].deltaSurvivalMargin, 300);
+  assert.strictEqual(syntheticReport.aggregate.capturedEdges, 1);
+  assert.strictEqual(syntheticReport.aggregate.captureComplete, true);
+  const residualSynthetic = runResidualSyntheticContracts();
 
   let qualificationEdge = null;
   if (includeQualification1000) {
@@ -178,6 +437,7 @@ function main() {
       positiveEdges: syntheticReport.aggregate.positiveSurvivalEdges,
       positiveByKind: syntheticReport.aggregate.positiveByActionKind,
       topDeltaSurvivalMargin: syntheticReport.aggregate.topPositiveEdges[0].deltaSurvivalMargin,
+      residualContracts: residualSynthetic,
     },
     qualificationEdge,
   }, null, 2)}\n`);

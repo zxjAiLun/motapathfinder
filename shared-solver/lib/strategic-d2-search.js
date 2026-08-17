@@ -45,6 +45,7 @@ const { compileBattleAccessPrerequisite, evaluateBattleViability } = require("./
 const { compileBattleStagePrerequisite } = require("./strategic-battle-stage-prerequisite");
 const { createLethalSurvivalObserver } = require("./strategic-lethal-survival-observer");
 const { createSurvivalEdgeObserver } = require("./strategic-survival-edge-observer");
+const { attributeResidualPaidWitnessGraph } = require("./strategic-survival-residual-attribution");
 const { compileSurvivalOpportunityPrerequisite } = require("./strategic-survival-opportunity-prerequisite");
 const { analyzeBattleViabilityBlocker } = require("./strategic-battle-viability");
 const {
@@ -458,6 +459,7 @@ function runStrategicD2Search(options) {
   const enableLethalSurvivalAttribution = config.enableLethalSurvivalAttribution === true;
   const enableSurvivalEdgeAttribution = config.enableSurvivalEdgeAttribution === true;
   const enableSurvivalOpportunityPrerequisite = config.enableSurvivalOpportunityPrerequisite === true;
+  const enableSurvivalResidualAttribution = config.enableSurvivalResidualAttribution === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -576,6 +578,7 @@ function runStrategicD2Search(options) {
     survivalOpportunityPrerequisitesSatisfied: 0,
     survivalOpportunityPrerequisiteStateCreated: 0,
     survivalOpportunityWitnesses: [],
+    survivalOpportunityResidualAttributions: [],
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
@@ -1603,7 +1606,9 @@ function runStrategicD2Search(options) {
           })
         : null;
       const enableEffectiveSurvivalEdgeObservation =
-        enableSurvivalEdgeAttribution || enableSurvivalOpportunityPrerequisite;
+        enableSurvivalEdgeAttribution ||
+        enableSurvivalOpportunityPrerequisite ||
+        enableSurvivalResidualAttribution;
       const lethalSurvivalEdgeObserver = enableEffectiveSurvivalEdgeObservation && isLethalHierarchyChild
         ? createSurvivalEdgeObserver({
             simulator,
@@ -1720,6 +1725,24 @@ function runStrategicD2Search(options) {
               materialized = materializeConnectorChain(sourceNode, opportunityResult);
             }
             if (materialized && materialized.ok) {
+              if (enableSurvivalResidualAttribution) {
+                const residualAttribution = attributeResidualPaidWitnessGraph({
+                  simulator,
+                  selectedWitness: witness,
+                  selectedPostState: replay.finalState,
+                  snapshot: lethalSurvivalEdgeObserver.snapshot(),
+                });
+                if (stats.survivalOpportunityResidualAttributions.length < 16) {
+                  stats.survivalOpportunityResidualAttributions.push({
+                    opportunityId: opportunityPrerequisite.id,
+                    parentDependencyId: prerequisite.parentDependency.id,
+                    originFailedAttemptId: attemptId,
+                    originContinuationId: work.originContinuationId || null,
+                    target: opportunityPrerequisite.target,
+                    ...residualAttribution,
+                  });
+                }
+              }
               stats.survivalOpportunityPrerequisitesSatisfied += 1;
               if (materialized.finalCreated) {
                 stats.survivalOpportunityPrerequisiteStateCreated += 1;
@@ -1745,6 +1768,7 @@ function runStrategicD2Search(options) {
                 target: opportunityPrerequisite.target,
                 targetSignature: opportunityPrerequisite.targetSignature,
                 selectionPolicy: opportunityPrerequisite.selectionPolicy,
+                discoveryOrdinal: witness.discoveryOrdinal,
                 discoveryExpansion: witness.discoveryExpansion,
                 discoveryDepth: witness.discoveryDepth,
                 deltaSurvivalMargin: witness.deltaSurvivalMargin,

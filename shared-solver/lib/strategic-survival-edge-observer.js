@@ -76,8 +76,11 @@ function createSurvivalEdgeObserver(options) {
   const edges = [];
   const positiveByKind = {};
   const targetSources = new Map();
+  const edgeLimit = Math.max(0, number(maxEdges, 400));
   let rootKey = null;
   let bestState = null;
+  let edgesObserved = 0;
+  let captureTruncated = false;
 
   function observeState(entry) {
     if (!entry || !entry.state) return;
@@ -147,7 +150,10 @@ function createSurvivalEdgeObserver(options) {
       deltaSurvivalMargin: deltaMargin,
       resourceDelta: resourceDelta(entry.preState, entry.postState),
     };
-    if (edges.length < number(maxEdges, 400)) edges.push(edge);
+    edgesObserved += 1;
+    edge.discoveryOrdinal = edgesObserved;
+    if (edges.length < edgeLimit) edges.push(edge);
+    else captureTruncated = true;
     if (deltaMargin != null && deltaMargin > 0) {
       positiveByKind[identity.kind || "unknown"] =
         number(positiveByKind[identity.kind || "unknown"], 0) + 1;
@@ -160,6 +166,7 @@ function createSurvivalEdgeObserver(options) {
     for (const edge of edges) {
       if (!(edge.deltaSurvivalMargin != null && edge.deltaSurvivalMargin > 0)) continue;
       return {
+        discoveryOrdinal: edge.discoveryOrdinal,
         action: edge.action,
         actionTargetSignature: edge.actionTargetSignature,
         preExactStateKey: edge.preExactStateKey,
@@ -254,7 +261,11 @@ function createSurvivalEdgeObserver(options) {
         survivalMargin: sourceAnalysis.survivalMargin,
       },
       aggregate: {
-        edgesObserved: edges.length,
+        edgesObserved,
+        totalEdgesObserved: edgesObserved,
+        capturedEdges: edges.length,
+        captureLimit: edgeLimit,
+        captureComplete: !captureTruncated,
         positiveSurvivalEdges: positiveEdges.length,
         neutralEdges: neutralEdges.length,
         negativeSurvivalEdges: negativeEdges.length,
@@ -267,7 +278,18 @@ function createSurvivalEdgeObserver(options) {
     };
   }
 
-  return { observeState, observeEdge, report, firstPositiveOpportunityWitness };
+  function snapshot() {
+    return {
+      edges: edges.slice(),
+      edgesObserved,
+      capturedEdges: edges.length,
+      maxEdges: edgeLimit,
+      captureComplete: !captureTruncated,
+      rootKey,
+    };
+  }
+
+  return { observeState, observeEdge, report, snapshot, firstPositiveOpportunityWitness };
 }
 
 module.exports = {

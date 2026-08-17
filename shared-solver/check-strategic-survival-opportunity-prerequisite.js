@@ -198,7 +198,7 @@ function main() {
 
   let qualificationOpportunity = null;
   if (includeQualification1000) {
-    const runWithFeature = (enable) => runStrategicD2Search({
+    const runWithResidualObservation = (enable) => runStrategicD2Search({
       project,
       projectRoot: PROJECT_ROOT,
       initialState,
@@ -215,11 +215,33 @@ function main() {
       enableHierarchicalCallAllocation: true,
       enableBattleStagePrerequisiteDecomposition: true,
       enableContinuationAnchorExpansionScheduling: true,
-      enableSurvivalOpportunityPrerequisite: enable,
+      enableSurvivalOpportunityPrerequisite: true,
+      enableSurvivalResidualAttribution: enable,
     });
 
-    const control = runWithFeature(false);
-    const candidate = runWithFeature(true);
+    const control = runWithResidualObservation(false);
+    const candidate = runWithResidualObservation(true);
+    [
+      "totalSearchExpansions",
+      "expansions",
+      "generated",
+      "accepted",
+      "exactMerged",
+      "battleAccessPrerequisiteExpansions",
+      "battleAccessPrerequisiteCalls",
+      "rootLevelCalls",
+      "continuationDerivedCalls",
+      "terminalActionGenerated",
+    ].forEach((field) => {
+      assert.strictEqual(control.stats[field], candidate.stats[field], `${field} changed with residual observation`);
+    });
+    const controlOutcome = { ...control.outcome };
+    const candidateOutcome = { ...candidate.outcome };
+    delete controlOutcome.wallMs;
+    delete candidateOutcome.wallMs;
+    assert.deepStrictEqual(candidateOutcome, controlOutcome);
+    assert.deepStrictEqual(candidate.bestTerminalBlocker, control.bestTerminalBlocker);
+    assert.strictEqual(control.stats.survivalOpportunityResidualAttributions.length, 0);
     assert.strictEqual(candidate.stats.totalSearchExpansions, 1000);
     assert.strictEqual(candidate.stats.battleAccessPrerequisiteCalls, 8);
     assert.strictEqual(
@@ -258,6 +280,37 @@ function main() {
     assert.strictEqual(secondWitness.materialized, true);
     assert.ok(secondWitness.parentContinuationId);
 
+    assert.strictEqual(candidate.stats.survivalOpportunityResidualAttributions.length, 2);
+    const secondResidual = candidate.stats.survivalOpportunityResidualAttributions
+      .find((entry) => entry.target && entry.target.enemyId === "devilWarrior");
+    assert.ok(secondResidual);
+    assert.strictEqual(secondResidual.classification, "R1");
+    assert.strictEqual(secondResidual.captureComplete, true);
+    assert.strictEqual(secondResidual.observedEdges, 130);
+    assert.strictEqual(secondResidual.laterPositiveOpportunityCount, 46);
+    assert.strictEqual(secondResidual.candidates.filter((entry) =>
+      entry.compatibilityKind && entry.suffixReplayValid === true).length, 6);
+    assert.strictEqual(secondResidual.candidates.filter((entry) => !entry.compatibilityKind).length, 40);
+    assert.strictEqual(secondResidual.candidates.filter((entry) => entry.suffixReplayValid === false).length, 0);
+    const firstResidual = secondResidual.candidates.find((entry) => entry.suffixReplayValid === true);
+    assert.ok(firstResidual);
+    assert.strictEqual(
+      firstResidual.candidateTarget,
+      "battle|battle:skeletonPresbyter@MT5:3,10|MT5|3|10|skeletonPresbyter",
+    );
+    assert.strictEqual(firstResidual.candidateDiscoveryExpansion, 3);
+    assert.strictEqual(firstResidual.candidateDiscoveryDepth, 1);
+    assert.strictEqual(firstResidual.compatibilityKind, "prefix-compatible");
+    assert.strictEqual(firstResidual.suffixLength, 1);
+    assert.strictEqual(firstResidual.suffixReplayValid, true);
+    assert.ok(secondResidual.candidates.every((entry, index, rows) =>
+      index === 0 || rows[index - 1].candidateDiscoveryOrdinal < entry.candidateDiscoveryOrdinal));
+    const nextPrerequisiteBreakpoint = candidate.stats.parentDependencyContinuationWitnesses
+      .find((entry) => entry.continuationId === secondWitness.parentContinuationId &&
+        entry.status === "next-prerequisite-not-schedulable");
+    assert.ok(nextPrerequisiteBreakpoint);
+    assert.strictEqual(nextPrerequisiteBreakpoint.statusReason, "call-cap-exhausted");
+
     qualificationOpportunity = {
       controlCalls: control.stats.battleAccessPrerequisiteCalls,
       candidateCalls: candidate.stats.battleAccessPrerequisiteCalls,
@@ -270,6 +323,30 @@ function main() {
         stateCreated: candidate.stats.survivalOpportunityPrerequisiteStateCreated,
       },
       witnesses: candidate.stats.survivalOpportunityWitnesses,
+      residualAttributions: candidate.stats.survivalOpportunityResidualAttributions.map((entry) => ({
+        target: entry.target,
+        classification: entry.classification,
+        captureComplete: entry.captureComplete,
+        observedEdges: entry.observedEdges,
+        laterPositiveOpportunityCount: entry.laterPositiveOpportunityCount,
+        strictReplayPassCount: entry.candidates.filter((candidate) =>
+          candidate.suffixReplayValid === true).length,
+        strictReplayFailureCount: entry.candidates.filter((candidate) =>
+          candidate.suffixReplayValid === false).length,
+        compatibleCandidates: entry.candidates
+          .filter((candidate) => candidate.compatibilityKind)
+          .map((candidate) => ({
+            candidateTarget: candidate.candidateTarget,
+            candidateDiscoveryOrdinal: candidate.candidateDiscoveryOrdinal,
+            candidateDiscoveryExpansion: candidate.candidateDiscoveryExpansion,
+            candidateDiscoveryDepth: candidate.candidateDiscoveryDepth,
+            compatibilityKind: candidate.compatibilityKind,
+            compatibilityStartEdge: candidate.compatibilityStartEdge,
+            suffixLength: candidate.suffixLength,
+            suffixReplayValid: candidate.suffixReplayValid,
+            replayFailureReason: candidate.replayFailureReason,
+          })),
+      })),
       classification: "witness-backed-discrete-survival-opportunity-progression",
     };
   }
