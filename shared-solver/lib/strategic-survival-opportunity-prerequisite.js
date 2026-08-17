@@ -45,6 +45,8 @@ function compileSurvivalOpportunityPrerequisite(options) {
     witness,
     originFailedAttemptId,
     originContinuationId,
+    selectionPolicy,
+    sourceType,
   } = config;
   if (!project || !parentDependency || !witness) return null;
   if (!(witness.deltaSurvivalMargin != null && witness.deltaSurvivalMargin > 0)) return null;
@@ -75,7 +77,8 @@ function compileSurvivalOpportunityPrerequisite(options) {
     boundary,
     target,
     targetSignature,
-    selectionPolicy: "first-positive-named-opportunity-by-bfs-discovery",
+    selectionPolicy: selectionPolicy || "first-positive-named-opportunity-by-bfs-discovery",
+    sourceType: sourceType || "failed-generic-witness",
     witnessBacked: true,
     originFailedAttemptId: originFailedAttemptId || null,
     originContinuationId: originContinuationId || null,

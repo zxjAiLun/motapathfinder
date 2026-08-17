@@ -27,6 +27,45 @@ function isNamedPositiveBattleOpportunity(edge) {
     edge.deltaSurvivalMargin > 0);
 }
 
+function firstPrefixCompatibleReplayValidResidual(options) {
+  const config = options || {};
+  const simulator = config.simulator;
+  const selectedWitness = config.selectedWitness;
+  const selectedPostState = config.selectedPostState;
+  const snapshot = config.snapshot || {};
+  if (snapshot.captureComplete !== true) return null;
+  const edges = Array.isArray(snapshot.edges) ? snapshot.edges : [];
+  const selectedEdges = selectedWitness && selectedWitness.witnessEdges;
+  const selectedSourceExactStateKey = selectedWitness && selectedWitness.sourceExactStateKey;
+  const selectedPostExactStateKey = selectedWitness && selectedWitness.postExactStateKey;
+  const selectedOrdinal = selectedWitness && selectedWitness.discoveryOrdinal;
+  if (!Array.isArray(selectedEdges) || selectedPostExactStateKey == null) return null;
+
+  for (let index = 0; index < edges.length; index += 1) {
+    const edge = edges[index];
+    const ordinal = edge.discoveryOrdinal == null ? index + 1 : edge.discoveryOrdinal;
+    if (selectedOrdinal != null && ordinal <= selectedOrdinal) continue;
+    if (!isNamedPositiveBattleOpportunity(edge)) continue;
+    const candidateEdges = Array.isArray(edge.witnessEdges) ? edge.witnessEdges : [];
+    if (selectedSourceExactStateKey && candidateEdges[0] &&
+        candidateEdges[0].preExactStateKey !== selectedSourceExactStateKey) continue;
+    if (!findExactPrefix(selectedEdges, candidateEdges)) continue;
+    const suffix = candidateEdges.slice(selectedEdges.length);
+    const replay = verifyConnectorChain(simulator, selectedPostState, suffix, {
+      expectedPostExactStateKey: edge.postExactStateKey,
+    });
+    if (!replay.valid) continue;
+    return {
+      edge,
+      candidateEdges,
+      suffix,
+      replay,
+      discoveryOrdinal: ordinal,
+    };
+  }
+  return null;
+}
+
 function findExactPrefix(prefix, candidate) {
   if (!Array.isArray(prefix) || !Array.isArray(candidate) || prefix.length > candidate.length) {
     return false;
@@ -166,6 +205,7 @@ function attributeResidualPaidWitnessGraph(options) {
 module.exports = {
   attributeResidualPaidWitnessGraph,
   equivalentEdge,
+  firstPrefixCompatibleReplayValidResidual,
   findExactPrefix,
   findRerootStart,
 };

@@ -10,6 +10,7 @@ const { loadProject } = require("./lib/project-loader");
 const { createSurvivalEdgeObserver } = require("./lib/strategic-survival-edge-observer");
 const {
   attributeResidualPaidWitnessGraph,
+  firstPrefixCompatibleReplayValidResidual,
 } = require("./lib/strategic-survival-residual-attribution");
 const { buildStateKey } = require("./lib/state-key");
 const { runStrategicD2Search } = require("./lib/strategic-d2-search");
@@ -92,6 +93,7 @@ function makeResidualReplaySimulator() {
   ]);
   transitions.set(1, [
     action("battle", "battle:O3@F:1,0", 1, 2, "O3"),
+    action("battle", "battle:O4-prefix@F:1,0", 1, 2, "O4-prefix"),
     action("battle", "battle:broken@F:1,0", 1, 5, "broken"),
   ]);
   transitions.set(3, [action("battle", "battle:O4@F:3,0", 3, 4, "O4")]);
@@ -150,7 +152,8 @@ function runResidualSyntheticContracts() {
   const rawBranch = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[0]).actions[1], 0, 3);
   const rawReroot = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[0]).actions[2], 0, 1);
   const rawO3 = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[1]).actions[0], 1, 2);
-  const rawBroken = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[1]).actions[1], 1, 5);
+  const rawO4Prefix = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[1]).actions[1], 1, 2);
+  const rawBroken = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[1]).actions[2], 1, 5);
   const rawBrokenRecorded = { ...rawBroken, postExactStateKey: "broken-post-key" };
   const rawO4 = makeRawEdge(simulator, simulator.enumeratePrimitiveActions(simulator.states[3]).actions[0], 3, 4);
   const selectedWitness = {
@@ -170,10 +173,10 @@ function runResidualSyntheticContracts() {
   );
   const highMarginPrefixCandidate = makeObservedEdge(
     simulator,
-    rawO3.action,
+    rawO4Prefix.action,
     1,
     2,
-    [rawO2, rawO3],
+    [rawO2, rawO4Prefix],
     3,
     1000,
   );
@@ -229,6 +232,26 @@ function runResidualSyntheticContracts() {
   assert.strictEqual(r1.candidates[0].compatibilityKind, "prefix-compatible");
   assert.strictEqual(r1.candidates[0].suffixReplayValid, true);
   assert.strictEqual(r1.candidates[1].suffixReplayValid, true);
+  const selectedResidual = firstPrefixCompatibleReplayValidResidual({
+    simulator,
+    selectedWitness,
+    selectedPostState: simulator.states[1],
+    snapshot: {
+      edges: [
+        makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10),
+        prefixCandidate,
+        highMarginPrefixCandidate,
+      ],
+      edgesObserved: 3,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  });
+  assert.ok(selectedResidual);
+  assert.strictEqual(selectedResidual.edge.action.enemyId, "O3");
+  assert.strictEqual(selectedResidual.discoveryOrdinal, 2);
+  assert.strictEqual(selectedResidual.suffix.length, 1);
+  assert.strictEqual(selectedResidual.replay.valid, true);
 
   const reroot = attributeResidualPaidWitnessGraph({
     simulator,
@@ -244,6 +267,17 @@ function runResidualSyntheticContracts() {
   assert.strictEqual(reroot.classification, "R1");
   assert.strictEqual(reroot.candidates[0].compatibilityKind, "exact-state-reroot-compatible");
   assert.strictEqual(reroot.candidates[0].suffixReplayValid, true);
+  assert.strictEqual(firstPrefixCompatibleReplayValidResidual({
+    simulator,
+    selectedWitness,
+    selectedPostState: simulator.states[1],
+    snapshot: {
+      edges: [makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10), rerootCandidate],
+      edgesObserved: 2,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  }), null);
 
   const r2 = attributeResidualPaidWitnessGraph({
     simulator,
@@ -258,6 +292,17 @@ function runResidualSyntheticContracts() {
   });
   assert.strictEqual(r2.classification, "R2");
   assert.strictEqual(r2.candidates[0].replayFailureReason, "branch-incompatible");
+  assert.strictEqual(firstPrefixCompatibleReplayValidResidual({
+    simulator,
+    selectedWitness,
+    selectedPostState: simulator.states[1],
+    snapshot: {
+      edges: [makeObservedEdge(simulator, rawO2.action, 0, 1, [rawO2], 1, 10), branchCandidate],
+      edgesObserved: 2,
+      maxEdges: 10,
+      captureComplete: true,
+    },
+  }), null);
 
   const r3 = attributeResidualPaidWitnessGraph({
     simulator,

@@ -45,7 +45,10 @@ const { compileBattleAccessPrerequisite, evaluateBattleViability } = require("./
 const { compileBattleStagePrerequisite } = require("./strategic-battle-stage-prerequisite");
 const { createLethalSurvivalObserver } = require("./strategic-lethal-survival-observer");
 const { createSurvivalEdgeObserver } = require("./strategic-survival-edge-observer");
-const { attributeResidualPaidWitnessGraph } = require("./strategic-survival-residual-attribution");
+const {
+  attributeResidualPaidWitnessGraph,
+  firstPrefixCompatibleReplayValidResidual,
+} = require("./strategic-survival-residual-attribution");
 const { compileSurvivalOpportunityPrerequisite } = require("./strategic-survival-opportunity-prerequisite");
 const { analyzeBattleViabilityBlocker } = require("./strategic-battle-viability");
 const {
@@ -460,6 +463,7 @@ function runStrategicD2Search(options) {
   const enableSurvivalEdgeAttribution = config.enableSurvivalEdgeAttribution === true;
   const enableSurvivalOpportunityPrerequisite = config.enableSurvivalOpportunityPrerequisite === true;
   const enableSurvivalResidualAttribution = config.enableSurvivalResidualAttribution === true;
+  const enableSurvivalResidualRecovery = config.enableSurvivalResidualRecovery === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
     : Math.max(0, number(config.maxTotalSearchExpansions, 0));
@@ -579,12 +583,18 @@ function runStrategicD2Search(options) {
     survivalOpportunityPrerequisiteStateCreated: 0,
     survivalOpportunityWitnesses: [],
     survivalOpportunityResidualAttributions: [],
+    survivalOpportunityResidualRecoverySelected: 0,
+    survivalOpportunityResidualReplayValid: 0,
+    survivalOpportunityResidualPrerequisiteSatisfied: 0,
+    survivalOpportunityResidualPrerequisiteStateCreated: 0,
+    survivalOpportunityResidualRecoveries: [],
   };
   const observedChoices = new Set();
   const dependencyAttemptDedupe = createDependencyAttemptDedupe();
   const parentContinuationRecords = new Map();
   const seenParentContinuationResumes = new Set();
   const parkedParentContinuations = new Map();
+  let residualRecoveryAttempted = false;
   const hierarchyPriority = new HierarchyPriorityController();
   const nodeCreatedAtExpansion = new Map([[0, 0]]);
   const nodeExpansionOrdinal = new Map();
@@ -1608,7 +1618,8 @@ function runStrategicD2Search(options) {
       const enableEffectiveSurvivalEdgeObservation =
         enableSurvivalEdgeAttribution ||
         enableSurvivalOpportunityPrerequisite ||
-        enableSurvivalResidualAttribution;
+        enableSurvivalResidualAttribution ||
+        enableSurvivalResidualRecovery;
       const lethalSurvivalEdgeObserver = enableEffectiveSurvivalEdgeObservation && isLethalHierarchyChild
         ? createSurvivalEdgeObserver({
             simulator,
@@ -1725,6 +1736,171 @@ function runStrategicD2Search(options) {
               materialized = materializeConnectorChain(sourceNode, opportunityResult);
             }
             if (materialized && materialized.ok) {
+              let continuationPrerequisite = opportunityPrerequisite;
+              let continuationSourceNode = sourceNode;
+              let continuationFinalNode = materialized.finalNode;
+              let continuationFinalCreated = materialized.finalCreated;
+              const canAttemptResidualRecovery = enableSurvivalResidualRecovery &&
+                !residualRecoveryAttempted &&
+                stats.survivalOpportunityPrerequisitesSatisfied > 0;
+              if (canAttemptResidualRecovery) {
+                residualRecoveryAttempted = true;
+                const snapshot = lethalSurvivalEdgeObserver.snapshot();
+                const residualSelection = firstPrefixCompatibleReplayValidResidual({
+                  simulator,
+                  selectedWitness: witness,
+                  selectedPostState: replay.finalState,
+                  snapshot,
+                });
+                const residualRecord = {
+                  sourceType: "paid-residual-witness-suffix",
+                  originFailedAttemptId: attemptId,
+                  originSelectedOpportunityId: opportunityPrerequisite.id,
+                  originSnapshotCaptureComplete: snapshot.captureComplete,
+                  selectedResidualOpportunityId: null,
+                  selectedResidualTarget: null,
+                  selectionPolicy: "first-prefix-compatible-replay-valid-residual-by-bfs-discovery",
+                  residualRecoverySelected: Boolean(residualSelection),
+                  residualReplayValid: false,
+                  residualPrerequisiteSatisfied: false,
+                  residualSearchExpansions: 0,
+                  connectorCallsCharged: 0,
+                  suffixLength: 0,
+                  candidateDiscoveryOrdinal: residualSelection
+                    ? residualSelection.discoveryOrdinal
+                    : null,
+                  candidateDiscoveryExpansion: residualSelection
+                    ? residualSelection.edge.expansion
+                    : null,
+                  candidateDiscoveryDepth: residualSelection
+                    ? residualSelection.edge.depth
+                    : null,
+                  materialized: false,
+                  finalCreated: false,
+                  parentContinuationId: null,
+                  parentContinuationCreated: false,
+                  status: residualSelection ? "selected" : "not-selected",
+                  statusReason: residualSelection
+                    ? "first-prefix-compatible-replay-valid-residual-by-bfs-discovery"
+                    : snapshot.captureComplete
+                      ? "no-prefix-compatible-replay-valid-residual"
+                      : "capture-incomplete",
+                };
+                if (residualSelection) {
+                  const candidateEdge = residualSelection.edge;
+                  const candidateAction = candidateEdge.action;
+                  const candidateEdges = residualSelection.candidateEdges;
+                  const candidateWitness = {
+                    action: candidateAction,
+                    actionTargetSignature: candidateEdge.actionTargetSignature,
+                    preExactStateKey: candidateEdge.preExactStateKey,
+                    postExactStateKey: candidateEdge.postExactStateKey,
+                    sourceExactStateKey: candidateEdge.sourceExactStateKey,
+                    witnessEdges: candidateEdges,
+                    witnessChain: candidateEdges.map((edge) => edge.action),
+                    witnessChainSummary: candidateEdges.map((edge) =>
+                      edge.action && (edge.action.summary || edge.action.kind || "step")),
+                    discoveryOrdinal: residualSelection.discoveryOrdinal,
+                    discoveryExpansion: candidateEdge.expansion,
+                    discoveryDepth: candidateEdge.depth,
+                    beforeStage: candidateEdge.beforeStage,
+                    afterStage: candidateEdge.afterStage,
+                    beforeSurvivalMargin: candidateEdge.beforeSurvivalMargin,
+                    afterSurvivalMargin: candidateEdge.afterSurvivalMargin,
+                    deltaHP: candidateEdge.deltaHP,
+                    deltaDamage: candidateEdge.deltaDamage,
+                    deltaSurvivalMargin: candidateEdge.deltaSurvivalMargin,
+                    resourceDelta: candidateEdge.resourceDelta,
+                  };
+                  const residualPrerequisite = compileSurvivalOpportunityPrerequisite({
+                    project,
+                    parentDependency: prerequisite.parentDependency,
+                    boundary: prerequisite.boundary,
+                    witness: candidateWitness,
+                    originFailedAttemptId: attemptId,
+                    originContinuationId: work.originContinuationId || null,
+                    selectionPolicy: "first-prefix-compatible-replay-valid-residual-by-bfs-discovery",
+                    sourceType: "paid-residual-witness-suffix",
+                  });
+                  const selectedPostExactStateKey = buildStateKey(materialized.finalState);
+                  const selectedPostStateMatches = selectedPostExactStateKey === witness.postExactStateKey;
+                  const residualReplay = selectedPostStateMatches
+                    ? verifyConnectorChain(
+                        simulator,
+                        materialized.finalState,
+                        residualSelection.suffix,
+                        { expectedPostExactStateKey: candidateEdge.postExactStateKey },
+                      )
+                    : { valid: false, failureReason: "selected-o2-post-exact-state-mismatch" };
+                  const residualCompletion = residualPrerequisite && residualReplay.valid
+                    ? residualPrerequisite.completionPredicate(residualReplay.finalState)
+                    : false;
+                  residualRecord.selectedResidualOpportunityId = residualPrerequisite
+                    ? residualPrerequisite.id
+                    : null;
+                  residualRecord.selectedResidualTarget = residualPrerequisite
+                    ? residualPrerequisite.target
+                    : null;
+                  residualRecord.residualReplayValid = residualReplay.valid;
+                  residualRecord.residualPrerequisiteSatisfied = residualCompletion;
+                  residualRecord.suffixLength = residualSelection.suffix.length;
+                  residualRecord.replayFailureReason = residualReplay.failureReason || null;
+                  if (residualPrerequisite) {
+                    stats.survivalOpportunityPrerequisitesCompiled += 1;
+                    stats.survivalOpportunityPrerequisitesWitnessBacked += 1;
+                  }
+                  if (residualReplay.valid) stats.survivalOpportunityResidualReplayValid += 1;
+                  if (residualCompletion) stats.survivalOpportunityResidualPrerequisiteSatisfied += 1;
+                  if (residualPrerequisite && residualReplay.valid && residualCompletion) {
+                    const residualResult = {
+                      status: "satisfied",
+                      stoppedReason: "satisfied",
+                      dependencyId: residualPrerequisite.id,
+                      sourceExactStateKey: selectedPostExactStateKey,
+                      postExactStateKey: candidateEdge.postExactStateKey,
+                      edges: residualSelection.suffix,
+                      chain: residualSelection.suffix.map((edge) => edge.action),
+                      chainSummary: residualSelection.suffix.map((edge) =>
+                        edge.action && (edge.action.summary || edge.action.kind || "step")),
+                      expansions: 0,
+                      generated: 0,
+                      applyErrors: 0,
+                      frontierSize: 0,
+                      frontierTrimmed: 0,
+                    };
+                    const residualMaterialized = materializeConnectorChain(
+                      materialized.finalNode,
+                      residualResult,
+                    );
+                    if (residualMaterialized.ok) {
+                      stats.survivalOpportunityPrerequisitesSatisfied += 1;
+                      if (residualMaterialized.finalCreated) {
+                        stats.survivalOpportunityPrerequisiteStateCreated += 1;
+                        stats.survivalOpportunityResidualPrerequisiteStateCreated += 1;
+                      }
+                      continuationPrerequisite = residualPrerequisite;
+                      continuationSourceNode = materialized.finalNode;
+                      continuationFinalNode = residualMaterialized.finalNode;
+                      continuationFinalCreated = residualMaterialized.finalCreated;
+                      stats.survivalOpportunityResidualRecoverySelected += 1;
+                      residualRecord.materialized = true;
+                      residualRecord.finalCreated = residualMaterialized.finalCreated;
+                      residualRecord.status = "materialized";
+                      residualRecord.statusReason = "residual-prefix-replay-and-discrete-completion-pass";
+                    } else {
+                      residualRecord.status = "not-materialized";
+                      residualRecord.statusReason = residualMaterialized.reason || "materialization-failed";
+                    }
+                  } else {
+                    residualRecord.status = "replay-or-completion-failed";
+                    residualRecord.statusReason = residualReplay.failureReason ||
+                      "residual-discrete-completion-failed";
+                  }
+                }
+                if (stats.survivalOpportunityResidualRecoveries.length < 16) {
+                  stats.survivalOpportunityResidualRecoveries.push(residualRecord);
+                }
+              }
               if (enableSurvivalResidualAttribution) {
                 const residualAttribution = attributeResidualPaidWitnessGraph({
                   simulator,
@@ -1748,15 +1924,23 @@ function runStrategicD2Search(options) {
                 stats.survivalOpportunityPrerequisiteStateCreated += 1;
               }
               const continuationResult = createParentDependencyContinuation(
-                opportunityPrerequisite,
-                sourceNode,
-                materialized.finalNode,
-                materialized.finalCreated,
+                continuationPrerequisite,
+                continuationSourceNode,
+                continuationFinalNode,
+                continuationFinalCreated,
                 number(work.hierarchyLevel, 0),
               );
               if (continuationResult.continuation) {
                 parentContinuationId = continuationResult.continuation.id;
                 parentContinuationCreated = continuationResult.created;
+                const residualRecords = stats.survivalOpportunityResidualRecoveries;
+                const residualRecord = residualRecords.length > 0
+                  ? residualRecords[residualRecords.length - 1]
+                  : null;
+                if (residualRecord && residualRecord.status === "materialized") {
+                  residualRecord.parentContinuationId = parentContinuationId;
+                  residualRecord.parentContinuationCreated = parentContinuationCreated;
+                }
               }
             }
             if (stats.survivalOpportunityWitnesses.length < 16) {

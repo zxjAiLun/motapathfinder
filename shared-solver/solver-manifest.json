@@ -1734,7 +1734,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation; PR-5.19e adds opt-in active hierarchy call priority so successful hierarchy children can compete for existing connector calls; PR-5.19f adds opt-in continuation-derived attack-blocked -> damageable battle-stage decomposition while preserving generic root behavior; PR-5.19g adds observation-only exact-merge continuation descendant telemetry (historical/future eligible descendants, calls remaining, priority-at-end); PR-5.19h adds observation-only canonical successor edge attribution (expansion lifecycle, outgoing disposition, legal edge graph reachability); PR-5.19i adds opt-in one-shot active-continuation anchor expansion scheduling; PR-5.19j adds opt-in observation-only depth-2 lethal survival attribution; PR-5.19k adds opt-in observation-only primitive survival edge attribution; PR-5.19l adds opt-in witness-backed discrete survival opportunity prerequisite recovery without new connector search; PR-5.19n adds opt-in residual paid-witness graph compatibility and strict suffix replay attribution without reuse"
+      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation; PR-5.19e adds opt-in active hierarchy call priority so successful hierarchy children can compete for existing connector calls; PR-5.19f adds opt-in continuation-derived attack-blocked -> damageable battle-stage decomposition while preserving generic root behavior; PR-5.19g adds observation-only exact-merge continuation descendant telemetry (historical/future eligible descendants, calls remaining, priority-at-end); PR-5.19h adds observation-only canonical successor edge attribution (expansion lifecycle, outgoing disposition, legal edge graph reachability); PR-5.19i adds opt-in one-shot active-continuation anchor expansion scheduling; PR-5.19j adds opt-in observation-only depth-2 lethal survival attribution; PR-5.19k adds opt-in observation-only primitive survival edge attribution; PR-5.19l adds opt-in witness-backed discrete survival opportunity prerequisite recovery without new connector search; PR-5.19n adds opt-in residual paid-witness graph compatibility and strict suffix replay attribution without reuse; PR-5.19o adds opt-in single prefix-compatible paid-witness suffix recovery with second strict replay and discrete completion before materialization"
     },
     "shared-solver/lib/strategic-blocker.js": {
       "id": "strategic-blocker",
@@ -1926,7 +1926,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.19n classifies later positive battle opportunities from one retained failed-connector graph as prefix-compatible, exact-state-reroot-compatible, branch-incompatible, or strict-replay-failed; it never schedules, materializes, or changes search"
+      "notes": "PR-5.19n classifies later positive battle opportunities from one retained failed-connector graph as prefix-compatible, exact-state-reroot-compatible, branch-incompatible, or strict-replay-failed; PR-5.19o consumes only the first capture-complete prefix-compatible replay-valid candidate; reroot remains observation-only"
     },
     "shared-solver/lib/strategic-survival-opportunity-prerequisite.js": {
       "id": "strategic-survival-opportunity-prerequisite",
@@ -1942,7 +1942,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.19l compiles first-positive named battle opportunity by BFS discovery from a failed depth>0 lethal generic connector witness; completion predicate is discrete opportunity consumption (canonical tile no longer enemy), never survivalMargin"
+      "notes": "PR-5.19l compiles first-positive named battle opportunity by BFS discovery from a failed depth>0 lethal generic connector witness; PR-5.19o reuses the compiler with an explicit prefix-residual selection policy and paid-residual source type; completion predicate is discrete opportunity consumption (canonical tile no longer enemy), never survivalMargin"
     },
     "shared-solver/lib/strategic-connector.js": {
       "id": "strategic-connector",
@@ -2539,7 +2539,7 @@
       "allowsNotFound": true,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.19l verifies synthetic discrete consumption predicate and frozen witness-backed recovery; PR-5.19n extends the synthetic contracts with R1/R2/R3/R4 residual paid-witness attribution and real observation asserts O2-compatible suffix replay without changing the frozen result"
+      "notes": "PR-5.19l verifies synthetic discrete consumption predicate and frozen witness-backed recovery; PR-5.19n extends the synthetic contracts with R1/R2/R3/R4 residual paid-witness attribution and real observation asserts O2-compatible suffix replay without changing the frozen result; --residual-recovery adds PR-5.19o prefix-only strict replay/materialization/continuation gates"
     },
     "shared-solver/check-d2-deferred-heal-attribution.js": {
       "grade": "diagnostic",
