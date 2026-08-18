@@ -66,6 +66,7 @@ function main() {
   const includeO4ContinuationAttribution = process.argv.includes("--o4-continuation-attribution");
   const includeHierarchyCallAttribution = process.argv.includes("--hierarchy-call-attribution");
   const includeHierarchyCallChronology = process.argv.includes("--hierarchy-call-chronology");
+  const includeRootAttemptSeparability = process.argv.includes("--root-attempt-separability");
   const project = loadProject(PROJECT_ROOT);
   const initialState = detachCheckpoint(createMt5EntryState(project));
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
@@ -233,6 +234,7 @@ function main() {
       enableO4ContinuationAttribution: includeO4ContinuationAttribution && enable,
       enableHierarchyCallAttribution: includeHierarchyCallAttribution && enable,
       enableHierarchyCallChronology: includeHierarchyCallChronology && enable,
+      enableRootAttemptSeparabilityAttribution: includeRootAttemptSeparability && enable,
       enablePostResidualAttribution: includePostO3Observation && enable,
     });
 
@@ -577,6 +579,61 @@ function main() {
         level1Call.callOrdinal,
         checkpoints.firstLevelOneCallCharged.callOrdinal,
       );
+      assert.strictEqual(checkpoints.firstContinuationCreated.callOrdinal, 5);
+      assert.strictEqual(checkpoints.firstContinuationCreated.rootCallsSpent, 5);
+      assert.strictEqual(checkpoints.firstContinuationCreated.callsRemaining, 3);
+      assert.strictEqual(checkpoints.firstHierarchyActivation.callOrdinal, 5);
+      assert.strictEqual(checkpoints.firstHierarchyActivation.rootCallsSpent, 5);
+      assert.strictEqual(checkpoints.firstHierarchyActivation.callsRemaining, 3);
+      assert.strictEqual(checkpoints.firstLevelOneCallCharged.callOrdinal, 6);
+      assert.strictEqual(checkpoints.firstLevelOneCallCharged.rootCallsSpent, 5);
+      assert.strictEqual(checkpoints.firstLevelOneCallCharged.callsRemaining, 2);
+      const rootChronologyCalls = chronology.calls.filter((entry) => entry.hierarchyLevel === 0);
+      assert.strictEqual(rootChronologyCalls.length, 5);
+      assert.deepStrictEqual(
+        rootChronologyCalls.map((entry) => entry.productive),
+        [false, false, false, false, true],
+      );
+      assert.ok(rootChronologyCalls.every((entry) =>
+        entry.firstHierarchyActivationOccurred === false));
+    }
+
+    if (includeRootAttemptSeparability) {
+      assert.strictEqual(control.stats.rootAttemptSeparabilityAttribution, null);
+      const attribution = candidate.stats.rootAttemptSeparabilityAttribution;
+      assert.ok(attribution);
+      assert.strictEqual(
+        attribution.schema,
+        "motapathfinder.strategic-root-attempt-separability-attribution.v1",
+      );
+      assert.ok(Array.isArray(attribution.rootCalls));
+      assert.strictEqual(attribution.rootCalls.length, 5);
+      for (const entry of attribution.rootCalls) {
+        assert.ok(entry.attemptId);
+        assert.ok(entry.semantic);
+        assert.ok(entry.temporal);
+        assert.ok(entry.label);
+        assert.strictEqual(typeof entry.label.productive, "boolean");
+        assert.strictEqual(typeof entry.label.directSatisfied, "boolean");
+        assert.ok("prerequisiteKind" in entry.semantic);
+        assert.ok("attackMargin" in entry.semantic);
+        assert.ok("survivalMargin" in entry.semantic);
+        assert.ok("sourceTerminalProgressScore" in entry.semantic);
+        assert.ok(!("connectorExpansions" in entry.semantic));
+      }
+      assert.deepStrictEqual(
+        attribution.rootCalls.map((entry) => entry.label.productive),
+        [false, false, false, false, true],
+      );
+      assert.deepStrictEqual(
+        attribution.rootCalls.map((entry) => entry.label.directSatisfied),
+        [false, false, false, false, true],
+      );
+      const separability = attribution.separability;
+      assert.ok(separability);
+      assert.ok(["U1", "U2", "U3", "U4", "U1-COMBINATION-ONLY"].includes(separability.classification));
+      assert.strictEqual(separability.productiveRootCount, 1);
+      assert.strictEqual(separability.failedRootCount, 4);
     }
 
     if (includeO4ContinuationAttribution) {
@@ -690,6 +747,9 @@ function main() {
         : null,
       hierarchyCallChronology: includeHierarchyCallChronology
         ? candidate.stats.hierarchyCallChronology
+        : null,
+      rootAttemptSeparabilityAttribution: includeRootAttemptSeparability
+        ? candidate.stats.rootAttemptSeparabilityAttribution
         : null,
       postO3ResidualAttribution: includePostO3Observation
         ? candidate.stats.survivalOpportunityPostResidualAttributions.map((entry) => ({

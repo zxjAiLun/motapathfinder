@@ -470,6 +470,8 @@ function runStrategicD2Search(options) {
   const enableO4ContinuationAttribution = config.enableO4ContinuationAttribution === true;
   const enableHierarchyCallAttribution = config.enableHierarchyCallAttribution === true;
   const enableHierarchyCallChronology = config.enableHierarchyCallChronology === true;
+  const enableRootAttemptSeparabilityAttribution =
+    config.enableRootAttemptSeparabilityAttribution === true;
   const enablePostResidualAttribution = config.enablePostResidualAttribution === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
@@ -604,6 +606,7 @@ function runStrategicD2Search(options) {
     o4ContinuationAttributions: [],
     hierarchyCallAllocationAttribution: null,
     hierarchyCallChronology: null,
+    rootAttemptSeparabilityAttribution: null,
     rootLevelCompiledCapBlockedSelectionEvents: 0,
     rootLevelCapBlockedCompiledCandidateInstances: 0,
     rootLevelCompiledOutstandingBlockedSelectionEvents: 0,
@@ -625,6 +628,7 @@ function runStrategicD2Search(options) {
       firstLevelOneCallCharged: null,
     },
   } : null;
+  const rootAttemptSeparabilityCalls = enableRootAttemptSeparabilityAttribution ? [] : null;
   let hierarchyChronologyFirstContinuationRecorded = false;
   let hierarchyChronologyFirstActivationRecorded = false;
   let hierarchyChronologyFirstLevelOneRecorded = false;
@@ -1763,6 +1767,57 @@ function runStrategicD2Search(options) {
       const beforeBattle = enableBattleViabilityAttribution
         ? analyzeBattleViabilityBlocker(simulator, sourceNode.state, prerequisite.boundary)
         : null;
+      if (enableRootAttemptSeparabilityAttribution && number(work.hierarchyLevel, 0) === 0) {
+        const boundary = prerequisite.boundary || {};
+        const projection = terminalBattleProjection(simulator, sourceNode.state, terminalGoal);
+        const selectionContext = work.selectionContext || {};
+        rootAttemptSeparabilityCalls.push({
+          callOrdinal: stats.battleAccessPrerequisiteCalls,
+          attemptId,
+          sourceNodeId: sourceNode.nodeId,
+          enemyId: boundary.enemyId || null,
+          x: boundary.x != null ? boundary.x : null,
+          y: boundary.y != null ? boundary.y : null,
+          semantic: {
+            prerequisiteKind: prerequisite.kind || null,
+            stageGoal: prerequisite.stageGoal || null,
+            parentDependencyKind: (prerequisite.parentDependency || {}).kind || null,
+            parentDependencyCapability: (prerequisite.parentDependency || {}).capability || null,
+            reachableAtCompileTime: Boolean(
+              prerequisite.provenance && prerequisite.provenance.reachableAtCompileTime),
+            sourceDepth: number(sourceNode.depth, 0),
+            sourceFloor: sourceNode.state.floorId,
+            beforeStage: beforeBattle ? beforeBattle.stage : null,
+            attackMargin: beforeBattle && beforeBattle.attackMargin != null
+              ? beforeBattle.attackMargin
+              : null,
+            damage: beforeBattle && beforeBattle.damage != null ? beforeBattle.damage : null,
+            survivalMargin: beforeBattle && beforeBattle.survivalMargin != null
+              ? beforeBattle.survivalMargin
+              : null,
+            sourceTerminalProgressScore: projection && projection.progressScore != null
+              ? projection.progressScore
+              : null,
+            compiledCandidateRank: selectionContext.compiledCandidateRank == null
+              ? null
+              : number(selectionContext.compiledCandidateRank, 0),
+            compiledCandidateCount: selectionContext.compiledCandidateCount == null
+              ? null
+              : number(selectionContext.compiledCandidateCount, 0),
+          },
+          temporal: {
+            expansionAtCharge: stats.expansions,
+            firstHierarchyActivationOccurred: stats.hierarchyPriorityActivations > 0,
+            activeContinuationCount: enableHierarchicalCallAllocation
+              ? hierarchyPriority.activeContinuationIds().length
+              : null,
+            callsRemainingAfter: Math.max(
+              0,
+              dependencyConnectorMaxCalls - stats.battleAccessPrerequisiteCalls,
+            ),
+          },
+        });
+      }
       const attemptBase = {
         attemptId,
         prerequisiteId: prerequisite.id,
@@ -2863,6 +2918,10 @@ function runStrategicD2Search(options) {
               prerequisite,
               hierarchyLevel: 0,
               originContinuationId: null,
+              selectionContext: enableRootAttemptSeparabilityAttribution ? {
+                compiledCandidateRank: compiledPrerequisites.indexOf(prerequisite) + 1,
+                compiledCandidateCount: compiledPrerequisites.length,
+              } : null,
             });
           }
         }
@@ -3204,6 +3263,86 @@ function runStrategicD2Search(options) {
       calls: hierarchyChronology.calls,
       checkpoints: hierarchyChronology.checkpoints,
       rootCallsAnalysis,
+    };
+  }
+  if (enableRootAttemptSeparabilityAttribution && rootAttemptSeparabilityCalls) {
+    const originOpportunityMaterializations = new Map();
+    const originResidualMaterializations = new Map();
+    for (const witness of stats.survivalOpportunityWitnesses) {
+      const attemptId = witness.originFailedAttemptId;
+      if (!attemptId) continue;
+      if (witness.materialized) {
+        originOpportunityMaterializations.set(
+          attemptId,
+          number(originOpportunityMaterializations.get(attemptId), 0) + 1,
+        );
+      }
+    }
+    for (const recovery of stats.survivalOpportunityResidualRecoveries) {
+      const attemptId = recovery.originFailedAttemptId;
+      if (!attemptId) continue;
+      if (recovery.materialized) {
+        originResidualMaterializations.set(
+          attemptId,
+          number(originResidualMaterializations.get(attemptId), 0) + 1,
+        );
+      }
+    }
+    const directSatisfiedByAttempt = new Map();
+    for (const witness of stats.battleAccessPrerequisiteWitnesses) {
+      if (witness.status === "satisfied" && witness.attemptId != null) {
+        directSatisfiedByAttempt.set(witness.attemptId, true);
+      }
+    }
+    for (const entry of rootAttemptSeparabilityCalls) {
+      const directSatisfied = directSatisfiedByAttempt.has(entry.attemptId);
+      const derivedMaterializedProgress =
+        number(originOpportunityMaterializations.get(entry.attemptId), 0) +
+        number(originResidualMaterializations.get(entry.attemptId), 0);
+      entry.label = {
+        directSatisfied,
+        productive: directSatisfied || derivedMaterializedProgress > 0,
+      };
+    }
+    const productiveRoots = rootAttemptSeparabilityCalls.filter((entry) => entry.label.productive);
+    const failedRoots = rootAttemptSeparabilityCalls.filter((entry) => !entry.label.productive);
+    let classification = "U4";
+    let singleFeatureSeparators = [];
+    let collisionAttemptIds = [];
+    let distinctFromAllFailedRoots = false;
+    if (productiveRoots.length === 1 && failedRoots.length > 0) {
+      const productiveCall = productiveRoots[0];
+      const semanticKeys = Object.keys(productiveCall.semantic);
+      collisionAttemptIds = failedRoots
+        .filter((failed) => JSON.stringify(failed.semantic) === JSON.stringify(productiveCall.semantic))
+        .map((failed) => failed.attemptId);
+      distinctFromAllFailedRoots = failedRoots.every((failed) =>
+        JSON.stringify(failed.semantic) !== JSON.stringify(productiveCall.semantic));
+      singleFeatureSeparators = semanticKeys.filter((key) => {
+        const productiveValue = productiveCall.semantic[key];
+        return failedRoots.every((failed) => failed.semantic[key] !== productiveValue);
+      });
+      if (collisionAttemptIds.length > 0) {
+        classification = "U2";
+      } else if (singleFeatureSeparators.length > 0) {
+        classification = "U1";
+      } else if (distinctFromAllFailedRoots) {
+        classification = "U1-COMBINATION-ONLY";
+      } else {
+        classification = "U3";
+      }
+    }
+    stats.rootAttemptSeparabilityAttribution = {
+      schema: "motapathfinder.strategic-root-attempt-separability-attribution.v1",
+      rootCalls: rootAttemptSeparabilityCalls,
+      separability: {
+        classification,
+        singleFeatureSeparators,
+        collisionAttemptIds,
+        distinctFromAllFailedRoots,
+        productiveRootCount: productiveRoots.length,
+        failedRootCount: failedRoots.length,
+      },
     };
   }
   const frontierSize = agenda.activeSize(expanded);
