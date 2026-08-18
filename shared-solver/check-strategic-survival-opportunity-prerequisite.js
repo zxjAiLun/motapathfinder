@@ -65,6 +65,7 @@ function main() {
   const includePostO3Observation = process.argv.includes("--post-o3-observation");
   const includeO4ContinuationAttribution = process.argv.includes("--o4-continuation-attribution");
   const includeHierarchyCallAttribution = process.argv.includes("--hierarchy-call-attribution");
+  const includeHierarchyCallChronology = process.argv.includes("--hierarchy-call-chronology");
   const project = loadProject(PROJECT_ROOT);
   const initialState = detachCheckpoint(createMt5EntryState(project));
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
@@ -231,6 +232,7 @@ function main() {
           includeO4ContinuationAttribution) && enable,
       enableO4ContinuationAttribution: includeO4ContinuationAttribution && enable,
       enableHierarchyCallAttribution: includeHierarchyCallAttribution && enable,
+      enableHierarchyCallChronology: includeHierarchyCallChronology && enable,
       enablePostResidualAttribution: includePostO3Observation && enable,
     });
 
@@ -496,9 +498,85 @@ function main() {
       const rootCompiledNotSelected = attribution.unchargedAttempts.rootCompiledNotSelected;
       assert.ok(rootCompiledNotSelected);
       assert.strictEqual(typeof rootCompiledNotSelected.capBlockedSelectionEvents, "number");
-      assert.strictEqual(typeof rootCompiledNotSelected.capBlockedCompiledCandidateCount, "number");
+      assert.strictEqual(typeof rootCompiledNotSelected.capBlockedCompiledCandidateInstances, "number");
       assert.ok(attribution.unchargedAttempts.continuationBlocks);
       assert.ok(attribution.unchargedAttempts.rejectedQueuedWork);
+      const rootBucket = attribution.byLevel["0"];
+      const levelOneBucket = attribution.byLevel["1"];
+      const deepBucket = attribution.byLevel["2+"];
+      assert.strictEqual(rootBucket.calls, 5);
+      assert.strictEqual(rootBucket.directSatisfied, 1);
+      assert.strictEqual(rootBucket.failedWithoutRecoveredProgress, 4);
+      assert.strictEqual(rootBucket.failedWithRecoveredProgress, 0);
+      assert.strictEqual(attribution.metricsPerLevel["0"].productiveCallRate, 0.2);
+      assert.strictEqual(levelOneBucket.calls, 1);
+      assert.strictEqual(attribution.metricsPerLevel["1"].productiveCallRate, 1);
+      assert.strictEqual(deepBucket.calls, 2);
+      assert.strictEqual(deepBucket.directSatisfied, 0);
+      assert.strictEqual(deepBucket.failedWithRecoveredProgress, 2);
+      assert.strictEqual(deepBucket.failedWithoutRecoveredProgress, 0);
+      assert.strictEqual(attribution.metricsPerLevel["2+"].productiveCallRate, 1);
+      const o1Attempt = attribution.perCall.find((entry) =>
+        entry.attemptId === "cb70ef61ad4b231a@f35ece354048abe0");
+      const o2Attempt = attribution.perCall.find((entry) =>
+        entry.attemptId === "e9c03049d436f6f2@8bf509342ae539d2");
+      assert.ok(o1Attempt);
+      assert.ok(o2Attempt);
+      assert.strictEqual(o1Attempt.hierarchyLevel, 2);
+      assert.strictEqual(o1Attempt.connectorOutcome.satisfied, false);
+      assert.strictEqual(o1Attempt.derivedProgress.opportunityMaterializations, 1);
+      assert.strictEqual(o1Attempt.productive, true);
+      assert.strictEqual(o2Attempt.hierarchyLevel, 3);
+      assert.strictEqual(o2Attempt.connectorOutcome.satisfied, false);
+      assert.strictEqual(o2Attempt.derivedProgress.opportunityMaterializations, 1);
+      assert.strictEqual(o2Attempt.derivedProgress.residualMaterializations, 2);
+      assert.strictEqual(o2Attempt.productive, true);
+    }
+
+    if (includeHierarchyCallChronology) {
+      assert.strictEqual(control.stats.hierarchyCallChronology, null);
+      const chronology = candidate.stats.hierarchyCallChronology;
+      assert.ok(chronology);
+      assert.strictEqual(
+        chronology.schema,
+        "motapathfinder.strategic-hierarchy-call-chronology-attribution.v1",
+      );
+      assert.ok(Array.isArray(chronology.calls));
+      assert.strictEqual(chronology.calls.length, 8);
+      chronology.calls.forEach((entry, index) => {
+        assert.strictEqual(entry.callOrdinal, index + 1);
+        assert.strictEqual(typeof entry.hierarchyLevel, "number");
+        assert.ok(entry.attemptId);
+        assert.strictEqual(typeof entry.expansionAtCharge, "number");
+        assert.strictEqual(typeof entry.callsRemainingAfter, "number");
+        assert.strictEqual(typeof entry.firstHierarchyActivationOccurred, "boolean");
+        assert.strictEqual(typeof entry.productive, "boolean");
+        assert.strictEqual(typeof entry.directSatisfied, "boolean");
+      });
+      const checkpoints = chronology.checkpoints;
+      for (const key of ["firstContinuationCreated", "firstHierarchyActivation", "firstLevelOneCallCharged"]) {
+        const checkpoint = checkpoints[key];
+        assert.ok(checkpoint);
+        assert.strictEqual(typeof checkpoint.expansion, "number");
+        assert.strictEqual(typeof checkpoint.callOrdinal, "number");
+        assert.strictEqual(typeof checkpoint.callsSpent, "number");
+        assert.strictEqual(typeof checkpoint.rootCallsSpent, "number");
+        assert.strictEqual(typeof checkpoint.callsRemaining, "number");
+      }
+      const rootAnalysis = chronology.rootCallsAnalysis;
+      assert.ok(rootAnalysis);
+      assert.strictEqual(rootAnalysis.total, 5);
+      assert.strictEqual(rootAnalysis.byOrdinal.length, 5);
+      assert.strictEqual(typeof rootAnalysis.beforeFirstHierarchyActivation, "number");
+      assert.strictEqual(typeof rootAnalysis.afterFirstHierarchyActivation, "number");
+      const hierarchyCalls = chronology.calls.filter((entry) => entry.hierarchyLevel >= 1);
+      assert.strictEqual(hierarchyCalls.length, 3);
+      const level1Call = hierarchyCalls.find((entry) => entry.hierarchyLevel === 1);
+      assert.ok(level1Call);
+      assert.strictEqual(
+        level1Call.callOrdinal,
+        checkpoints.firstLevelOneCallCharged.callOrdinal,
+      );
     }
 
     if (includeO4ContinuationAttribution) {
@@ -609,6 +687,9 @@ function main() {
         : null,
       hierarchyCallAllocationAttribution: includeHierarchyCallAttribution
         ? candidate.stats.hierarchyCallAllocationAttribution
+        : null,
+      hierarchyCallChronology: includeHierarchyCallChronology
+        ? candidate.stats.hierarchyCallChronology
         : null,
       postO3ResidualAttribution: includePostO3Observation
         ? candidate.stats.survivalOpportunityPostResidualAttributions.map((entry) => ({

@@ -469,6 +469,7 @@ function runStrategicD2Search(options) {
     config.enableSecondSurvivalResidualRecovery === true;
   const enableO4ContinuationAttribution = config.enableO4ContinuationAttribution === true;
   const enableHierarchyCallAttribution = config.enableHierarchyCallAttribution === true;
+  const enableHierarchyCallChronology = config.enableHierarchyCallChronology === true;
   const enablePostResidualAttribution = config.enablePostResidualAttribution === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
@@ -602,8 +603,9 @@ function runStrategicD2Search(options) {
     survivalOpportunitySecondResidualMaterialized: 0,
     o4ContinuationAttributions: [],
     hierarchyCallAllocationAttribution: null,
+    hierarchyCallChronology: null,
     rootLevelCompiledCapBlockedSelectionEvents: 0,
-    rootLevelCapBlockedCompiledCandidateCount: 0,
+    rootLevelCapBlockedCompiledCandidateInstances: 0,
     rootLevelCompiledOutstandingBlockedSelectionEvents: 0,
     rootLevelCompiledDedupRejectedSelectionEvents: 0,
     survivalOpportunityPostResidualAttributions: [],
@@ -615,6 +617,28 @@ function runStrategicD2Search(options) {
   const parkedParentContinuations = new Map();
   const maxPaidResidualRecoveries = enableSecondSurvivalResidualRecovery ? 2 : 1;
   let paidResidualRecoveriesUsed = 0;
+  const hierarchyChronology = enableHierarchyCallChronology ? {
+    calls: [],
+    checkpoints: {
+      firstContinuationCreated: null,
+      firstHierarchyActivation: null,
+      firstLevelOneCallCharged: null,
+    },
+  } : null;
+  let hierarchyChronologyFirstContinuationRecorded = false;
+  let hierarchyChronologyFirstActivationRecorded = false;
+  let hierarchyChronologyFirstLevelOneRecorded = false;
+  function recordHierarchyChronologyCheckpoint(event, expansion) {
+    if (!hierarchyChronology) return;
+    hierarchyChronology.checkpoints[event] = {
+      expansion,
+      callOrdinal: stats.battleAccessPrerequisiteCalls,
+      callsSpent: stats.battleAccessPrerequisiteCalls,
+      rootCallsSpent: stats.rootLevelCalls,
+      childCallsSpent: stats.continuationDerivedCalls,
+      callsRemaining: Math.max(0, dependencyConnectorMaxCalls - stats.battleAccessPrerequisiteCalls),
+    };
+  }
   const hierarchyPriority = new HierarchyPriorityController();
   const nodeCreatedAtExpansion = new Map([[0, 0]]);
   const nodeExpansionOrdinal = new Map();
@@ -681,6 +705,10 @@ function runStrategicD2Search(options) {
     if (!enableHierarchicalCallAllocation || !continuation) return;
     if (hierarchyPriority.activate(continuation.id)) {
       stats.hierarchyPriorityActivations += 1;
+      if (enableHierarchyCallChronology && !hierarchyChronologyFirstActivationRecorded) {
+        hierarchyChronologyFirstActivationRecorded = true;
+        recordHierarchyChronologyCheckpoint("firstHierarchyActivation", stats.expansions);
+      }
     }
   }
 
@@ -776,6 +804,10 @@ function runStrategicD2Search(options) {
     };
     parentContinuationRecords.set(key, continuation);
     stats.parentDependencyContinuationsCreated += 1;
+    if (enableHierarchyCallChronology && !hierarchyChronologyFirstContinuationRecorded) {
+      hierarchyChronologyFirstContinuationRecorded = true;
+      recordHierarchyChronologyCheckpoint("firstContinuationCreated", stats.expansions);
+    }
     lazyWork.enqueue({
       kind: "parent-dependency-continuation",
       sourceNodeId: finalNode.nodeId,
@@ -1706,6 +1738,27 @@ function runStrategicD2Search(options) {
       }
       stats.battleAccessPrerequisiteCalls += 1;
       const attemptId = dependencyAttemptId(prerequisite, sourceNode.state);
+      if (enableHierarchyCallChronology) {
+        const callHierarchyLevel = number(work.hierarchyLevel, 0);
+        hierarchyChronology.calls.push({
+          callOrdinal: stats.battleAccessPrerequisiteCalls,
+          hierarchyLevel: callHierarchyLevel,
+          attemptId,
+          expansionAtCharge: stats.expansions,
+          callsRemainingAfter: Math.max(
+            0,
+            dependencyConnectorMaxCalls - stats.battleAccessPrerequisiteCalls,
+          ),
+          firstHierarchyActivationOccurred: stats.hierarchyPriorityActivations > 0,
+          activeContinuationCount: enableHierarchicalCallAllocation
+            ? hierarchyPriority.activeContinuationIds().length
+            : null,
+        });
+        if (!hierarchyChronologyFirstLevelOneRecorded && callHierarchyLevel >= 1) {
+          hierarchyChronologyFirstLevelOneRecorded = true;
+          recordHierarchyChronologyCheckpoint("firstLevelOneCallCharged", stats.expansions);
+        }
+      }
       const beforeViability = evaluateBattleViability(simulator, sourceNode.state, prerequisite.boundary);
       const beforeBattle = enableBattleViabilityAttribution
         ? analyzeBattleViabilityBlocker(simulator, sourceNode.state, prerequisite.boundary)
@@ -2796,7 +2849,7 @@ function runStrategicD2Search(options) {
               compiledPrerequisites.length > 0) {
             if (stats.battleAccessPrerequisiteCalls >= dependencyConnectorMaxCalls) {
               stats.rootLevelCompiledCapBlockedSelectionEvents += 1;
-              stats.rootLevelCapBlockedCompiledCandidateCount += compiledPrerequisites.length;
+              stats.rootLevelCapBlockedCompiledCandidateInstances += compiledPrerequisites.length;
             } else if (queuedCount >= dependencyAttemptMaxOutstanding) {
               stats.rootLevelCompiledOutstandingBlockedSelectionEvents += 1;
             } else {
@@ -3083,13 +3136,74 @@ function runStrategicD2Search(options) {
         rootDeferredForHierarchy: stats.rootAttemptsDeferredForHierarchy,
         rootCompiledNotSelected: {
           capBlockedSelectionEvents: stats.rootLevelCompiledCapBlockedSelectionEvents,
-          capBlockedCompiledCandidateCount: stats.rootLevelCapBlockedCompiledCandidateCount,
+          capBlockedCompiledCandidateInstances: stats.rootLevelCapBlockedCompiledCandidateInstances,
           outstandingBlockedSelectionEvents: stats.rootLevelCompiledOutstandingBlockedSelectionEvents,
           dedupRejectedSelectionEvents: stats.rootLevelCompiledDedupRejectedSelectionEvents,
         },
         continuationBlocks,
         rejectedQueuedWork,
       },
+    };
+  }
+  if (enableHierarchyCallChronology && hierarchyChronology) {
+    const originOpportunityMaterializations = new Map();
+    const originResidualMaterializations = new Map();
+    for (const witness of stats.survivalOpportunityWitnesses) {
+      const attemptId = witness.originFailedAttemptId;
+      if (!attemptId) continue;
+      if (witness.materialized) {
+        originOpportunityMaterializations.set(
+          attemptId,
+          number(originOpportunityMaterializations.get(attemptId), 0) + 1,
+        );
+      }
+    }
+    for (const recovery of stats.survivalOpportunityResidualRecoveries) {
+      const attemptId = recovery.originFailedAttemptId;
+      if (!attemptId) continue;
+      if (recovery.materialized) {
+        originResidualMaterializations.set(
+          attemptId,
+          number(originResidualMaterializations.get(attemptId), 0) + 1,
+        );
+      }
+    }
+    for (const entry of hierarchyChronology.calls) {
+      const directSatisfied = Boolean(stats.battleAccessPrerequisiteWitnesses
+        .find((witness) => witness.attemptId === entry.attemptId &&
+          witness.status === "satisfied"));
+      const derivedMaterializedProgress =
+        number(originOpportunityMaterializations.get(entry.attemptId), 0) +
+        number(originResidualMaterializations.get(entry.attemptId), 0);
+      entry.directSatisfied = directSatisfied;
+      entry.productive = directSatisfied || derivedMaterializedProgress > 0;
+    }
+    const rootCalls = hierarchyChronology.calls.filter((entry) => entry.hierarchyLevel === 0);
+    const firstActivation = hierarchyChronology.checkpoints.firstHierarchyActivation;
+    const rootCallsAnalysis = {
+      total: rootCalls.length,
+      beforeFirstHierarchyActivation: firstActivation == null
+        ? null
+        : rootCalls.filter((entry) => entry.callOrdinal <= firstActivation.callOrdinal).length,
+      afterFirstHierarchyActivation: firstActivation == null
+        ? null
+        : rootCalls.filter((entry) => entry.callOrdinal > firstActivation.callOrdinal).length,
+      productive: rootCalls.filter((entry) => entry.productive).length,
+      failedWithoutRecoveredProgress: rootCalls.filter((entry) =>
+        !entry.productive && !entry.directSatisfied).length,
+      byOrdinal: rootCalls.map((entry) => ({
+        callOrdinal: entry.callOrdinal,
+        productive: entry.productive,
+        directSatisfied: entry.directSatisfied,
+        firstHierarchyActivationOccurredAtCharge: entry.firstHierarchyActivationOccurred,
+        callsRemainingAfter: entry.callsRemainingAfter,
+      })),
+    };
+    stats.hierarchyCallChronology = {
+      schema: "motapathfinder.strategic-hierarchy-call-chronology-attribution.v1",
+      calls: hierarchyChronology.calls,
+      checkpoints: hierarchyChronology.checkpoints,
+      rootCallsAnalysis,
     };
   }
   const frontierSize = agenda.activeSize(expanded);
