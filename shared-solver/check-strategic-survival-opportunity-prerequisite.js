@@ -435,6 +435,10 @@ function main() {
       assert.strictEqual(candidate.stats.survivalOpportunityPrerequisitesSatisfied, 4);
       assert.strictEqual(candidate.stats.battleAccessPrerequisiteCalls, 8);
       assert.strictEqual(candidate.stats.rootLevelCalls + candidate.stats.continuationDerivedCalls, 8);
+      assert.strictEqual(candidate.stats.rootLevelCalls, 5);
+      assert.strictEqual(candidate.stats.continuationDerivedCalls, 3);
+      assert.strictEqual(control.stats.rootLevelCalls, 5);
+      assert.strictEqual(control.stats.continuationDerivedCalls, 3);
       assert.strictEqual(candidate.stats.totalSearchExpansions, 1000);
     }
 

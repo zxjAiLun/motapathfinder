@@ -120,6 +120,7 @@
     "qualification:strategic-survival-residual-recovery": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery",
     "check:strategic-post-o3-residual-attribution": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --post-o3-observation",
     "check:strategic-second-residual-recovery": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery",
+    "qualification:strategic-second-residual-recovery": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",
