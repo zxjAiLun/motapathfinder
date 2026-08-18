@@ -63,6 +63,7 @@ function main() {
   const includeResidualRecovery = process.argv.includes("--residual-recovery");
   const includeSecondResidualRecovery = process.argv.includes("--second-residual-recovery");
   const includePostO3Observation = process.argv.includes("--post-o3-observation");
+  const includeO4ContinuationAttribution = process.argv.includes("--o4-continuation-attribution");
   const project = loadProject(PROJECT_ROOT);
   const initialState = detachCheckpoint(createMt5EntryState(project));
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
@@ -225,7 +226,9 @@ function main() {
       enableSurvivalResidualRecovery: includeSecondResidualRecovery
         ? true
         : includeResidualRecovery && enable,
-      enableSecondSurvivalResidualRecovery: includeSecondResidualRecovery && enable,
+      enableSecondSurvivalResidualRecovery: (includeSecondResidualRecovery ||
+          includeO4ContinuationAttribution) && enable,
+      enableO4ContinuationAttribution: includeO4ContinuationAttribution && enable,
       enablePostResidualAttribution: includePostO3Observation && enable,
     });
 
@@ -442,6 +445,29 @@ function main() {
       assert.strictEqual(candidate.stats.totalSearchExpansions, 1000);
     }
 
+    if (includeO4ContinuationAttribution) {
+      assert.strictEqual(control.stats.o4ContinuationAttributions.length, 0);
+      assert.strictEqual(candidate.stats.o4ContinuationAttributions.length, 1);
+      const boundary = candidate.stats.o4ContinuationAttributions[0];
+      assert.strictEqual(boundary.schema, "motapathfinder.strategic-o4-continuation-boundary-attribution.v1");
+      assert.strictEqual(typeof boundary.continuationId, "string");
+      assert.strictEqual(boundary.o4FloorId, "MT4");
+      assert.strictEqual(boundary.parentTargetFloorId, "MT5");
+      assert.strictEqual(typeof boundary.o4ExactStateKey, "string");
+      assert.ok(boundary.successorAttribution);
+      assert.strictEqual(boundary.successorAttribution.supported, true);
+      assert.ok(boundary.successorAttribution.rawActionVariantCount >= 0);
+      assert.ok(boundary.successorAttribution.transitionsTotal >= 0);
+      assert.strictEqual(typeof boundary.o4NodeExpanded, "boolean");
+      assert.ok(Array.isArray(boundary.continuationWitnesses));
+      assert.ok(Array.isArray(boundary.anchorExpansionWitnesses));
+      assert.strictEqual(typeof boundary.searchEndExpansions, "number");
+      const materializedRecord = candidate.stats.survivalOpportunityResidualRecoveries
+        .find((entry) => entry.recoveryIndex === 2);
+      assert.ok(materializedRecord);
+      assert.strictEqual(materializedRecord.parentContinuationId, boundary.continuationId);
+    }
+
     const secondResidualRecord = includeSecondResidualRecovery
       ? candidate.stats.survivalOpportunityResidualRecoveries
         .find((entry) => entry.recoveryIndex === 2)
@@ -521,6 +547,9 @@ function main() {
           prerequisiteKind: secondResidualContinuation.prerequisiteKind,
           nextBoundary: secondResidualContinuation.nextBoundary,
         }
+        : null,
+      o4ContinuationAttribution: includeO4ContinuationAttribution
+        ? candidate.stats.o4ContinuationAttributions[0]
         : null,
       postO3ResidualAttribution: includePostO3Observation
         ? candidate.stats.survivalOpportunityPostResidualAttributions.map((entry) => ({

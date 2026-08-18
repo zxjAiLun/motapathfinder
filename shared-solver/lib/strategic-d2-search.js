@@ -467,6 +467,7 @@ function runStrategicD2Search(options) {
   const enableSurvivalResidualRecovery = config.enableSurvivalResidualRecovery === true;
   const enableSecondSurvivalResidualRecovery =
     config.enableSecondSurvivalResidualRecovery === true;
+  const enableO4ContinuationAttribution = config.enableO4ContinuationAttribution === true;
   const enablePostResidualAttribution = config.enablePostResidualAttribution === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
@@ -598,6 +599,7 @@ function runStrategicD2Search(options) {
     survivalOpportunitySecondResidualPrerequisiteSatisfied: 0,
     survivalOpportunitySecondResidualPrerequisiteStateCreated: 0,
     survivalOpportunitySecondResidualMaterialized: 0,
+    o4ContinuationAttributions: [],
     survivalOpportunityPostResidualAttributions: [],
   };
   const observedChoices = new Set();
@@ -1255,6 +1257,73 @@ function runStrategicD2Search(options) {
     };
   }
 
+  /**
+   * PR-5.19r observation-only attribution of the O4 continuation boundary.
+   * Reuses the existing enumeration/aggregation path to classify legal
+   * strategic successors from the O4 materialized exact state. Never creates
+   * nodes, enqueues work, or mutates search state; failures are swallowed.
+   */
+  function attributeO4ContinuationBoundary(o4Node, continuationId, parentTargetFloorId) {
+    const state = o4Node.state;
+    const enumerated = enumerateStrategicActions(simulator, state, {
+      includeFloorFly: false,
+    });
+    const aggregation = aggregateVariantsIntoTransitions({
+      simulator,
+      state,
+      actions: enumerated.actions,
+      terminalGoal,
+      stateIndex,
+      beforeOptionMap: o4Node.optionMap,
+      beforeReachable: o4Node.reachablePoi,
+    });
+    const postFloorCounts = {};
+    const transitionsToParentFloor = [];
+    const directChangeFloorToParent = [];
+    const transitionKindCounts = {};
+    let transitionsTotal = 0;
+    for (const transition of aggregation.transitions) {
+      transitionsTotal += 1;
+      const kind = transition.kind || "unknown";
+      transitionKindCounts[kind] = number(transitionKindCounts[kind], 0) + 1;
+      for (const post of transition.postStates) {
+        const postFloor = (post.state || {}).floorId;
+        if (postFloor != null) {
+          postFloorCounts[postFloor] = number(postFloorCounts[postFloor], 0) + 1;
+        }
+        if (parentTargetFloorId != null && postFloor === parentTargetFloorId) {
+          transitionsToParentFloor.push({
+            choice: transition.choiceLabel,
+            kind,
+            travelVariantCount: transition.travelVariants.length,
+          });
+          if (kind === "changeFloor" && directChangeFloorToParent.length < 8) {
+            directChangeFloorToParent.push(transition.choiceLabel);
+          }
+        }
+      }
+    }
+    return {
+      schema: "motapathfinder.strategic-o4-continuation-boundary-attribution.v1",
+      continuationId,
+      o4NodeId: o4Node.nodeId,
+      o4FloorId: state.floorId,
+      parentTargetFloorId: parentTargetFloorId == null ? null : parentTargetFloorId,
+      o4ExactStateKey: buildStateKey(state),
+      successorAttribution: {
+        supported: true,
+        rawActionVariantCount: enumerated.rawVariantCount,
+        transitionsTotal,
+        transitionKindCounts,
+        postFloorCounts,
+        transitionsToParentFloorCount: transitionsToParentFloor.length,
+        transitionsToParentFloor: transitionsToParentFloor.slice(0, 8),
+        directChangeFloorToParentCount: directChangeFloorToParent.length,
+        directChangeFloorToParentChoices: directChangeFloorToParent.slice(0, 8),
+      },
+    };
+  }
+
   function drainOneLazyItem() {
     const queuedParentContinuation = connectorMode === "battle-access-prerequisite"
       ? lazyWork.queued().find((item) =>
@@ -1797,6 +1866,7 @@ function runStrategicD2Search(options) {
               let continuationSourceNode = sourceNode;
               let continuationFinalNode = materialized.finalNode;
               let continuationFinalCreated = materialized.finalCreated;
+              let secondResidualMaterialized = false;
               const canAttemptResidualRecovery = enableSurvivalResidualRecovery &&
                 paidResidualRecoveriesUsed < maxPaidResidualRecoveries &&
                 stats.survivalOpportunityPrerequisitesSatisfied > 0;
@@ -2098,6 +2168,7 @@ function runStrategicD2Search(options) {
                               continuationSourceNode = residualMaterialized.finalNode;
                               continuationFinalNode = secondMaterialized.finalNode;
                               continuationFinalCreated = secondMaterialized.finalCreated;
+                              secondResidualMaterialized = true;
                               secondRecord.materialized = true;
                               secondRecord.finalCreated = secondMaterialized.finalCreated;
                               secondRecord.status = "materialized";
@@ -2171,6 +2242,21 @@ function runStrategicD2Search(options) {
                 if (residualRecord && residualRecord.status === "materialized") {
                   residualRecord.parentContinuationId = parentContinuationId;
                   residualRecord.parentContinuationCreated = parentContinuationCreated;
+                }
+              }
+              if (enableO4ContinuationAttribution && secondResidualMaterialized &&
+                  parentContinuationId && continuationFinalNode) {
+                try {
+                  const boundary = attributeO4ContinuationBoundary(
+                    continuationFinalNode,
+                    parentContinuationId,
+                    dependencyTargetFloorId(prerequisite.parentDependency.target),
+                  );
+                  if (stats.o4ContinuationAttributions.length < 4) {
+                    stats.o4ContinuationAttributions.push(boundary);
+                  }
+                } catch (_error) {
+                  // observation-only; must never affect the search
                 }
               }
             }
@@ -2806,6 +2892,25 @@ function runStrategicD2Search(options) {
   stats.optionMapsObserved = stateIndex.optionMaps.size;
   stats.uniqueChoiceCount = observedChoices.size;
   stats.totalSearchExpansions = totalSearchWork();
+  if (enableO4ContinuationAttribution && stats.o4ContinuationAttributions.length > 0) {
+    for (const boundary of stats.o4ContinuationAttributions) {
+      boundary.o4NodeExpanded = expanded.has(boundary.o4NodeId);
+      boundary.o4NodeExpansionOrdinal = nodeExpansionOrdinal.get(boundary.o4NodeId) || null;
+      boundary.continuationWitnesses = stats.parentDependencyContinuationWitnesses
+        .filter((witness) => witness.continuationId === boundary.continuationId)
+        .map((witness) => ({
+          status: witness.status,
+          statusReason: witness.statusReason,
+          currentFloorId: witness.currentFloorId,
+          targetFloorId: witness.targetFloorId,
+          nextPrerequisiteId: witness.nextPrerequisiteId,
+        }));
+      boundary.anchorExpansionWitnesses = stats.anchorExpansionWitnesses
+        .filter((witness) => witness.continuationId === boundary.continuationId)
+        .slice(0, 8);
+      boundary.searchEndExpansions = stats.expansions;
+    }
+  }
   const frontierSize = agenda.activeSize(expanded);
   const activeLazyWork = lazyWork.activeSize();
   const strategicBudgetExhausted = !goalNode && stats.expansions >= maxExpansions &&
