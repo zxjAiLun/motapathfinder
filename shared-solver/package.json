@@ -122,6 +122,7 @@
     "check:strategic-second-residual-recovery": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery",
     "qualification:strategic-second-residual-recovery": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery",
     "check:strategic-o4-continuation-attribution": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery --o4-continuation-attribution",
+    "check:strategic-hierarchy-call-attribution": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery --hierarchy-call-attribution",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",

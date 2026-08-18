@@ -64,6 +64,7 @@ function main() {
   const includeSecondResidualRecovery = process.argv.includes("--second-residual-recovery");
   const includePostO3Observation = process.argv.includes("--post-o3-observation");
   const includeO4ContinuationAttribution = process.argv.includes("--o4-continuation-attribution");
+  const includeHierarchyCallAttribution = process.argv.includes("--hierarchy-call-attribution");
   const project = loadProject(PROJECT_ROOT);
   const initialState = detachCheckpoint(createMt5EntryState(project));
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
@@ -229,6 +230,7 @@ function main() {
       enableSecondSurvivalResidualRecovery: (includeSecondResidualRecovery ||
           includeO4ContinuationAttribution) && enable,
       enableO4ContinuationAttribution: includeO4ContinuationAttribution && enable,
+      enableHierarchyCallAttribution: includeHierarchyCallAttribution && enable,
       enablePostResidualAttribution: includePostO3Observation && enable,
     });
 
@@ -450,6 +452,35 @@ function main() {
       assert.strictEqual(candidate.stats.totalSearchExpansions, 1000);
     }
 
+    if (includeHierarchyCallAttribution) {
+      assert.strictEqual(control.stats.hierarchyCallAllocationAttribution, null);
+      const attribution = candidate.stats.hierarchyCallAllocationAttribution;
+      assert.ok(attribution);
+      assert.strictEqual(
+        attribution.schema,
+        "motapathfinder.strategic-hierarchy-call-allocation-attribution.v1",
+      );
+      assert.strictEqual(attribution.charged.total, candidate.stats.battleAccessPrerequisiteCalls);
+      assert.strictEqual(attribution.charged.rootLevel, candidate.stats.rootLevelCalls);
+      assert.strictEqual(attribution.charged.childLevel, candidate.stats.continuationDerivedCalls);
+      assert.strictEqual(attribution.charged.rootLevel + attribution.charged.childLevel, 8);
+      for (const key of ["0", "1", "2+"]) {
+        const bucket = attribution.byLevel[key];
+        assert.ok(bucket);
+        assert.strictEqual(bucket.calls, bucket.satisfied + bucket.notSatisfied);
+        assert.ok(typeof bucket.expansions === "number");
+        assert.ok(typeof bucket.chainActions === "number");
+      }
+      const totalCalls = Object.values(attribution.byLevel)
+        .reduce((sum, bucket) => sum + bucket.calls, 0);
+      assert.strictEqual(totalCalls, 8);
+      assert.ok(attribution.roiPerLevel["0"]);
+      assert.ok(attribution.roiPerLevel["1"]);
+      assert.ok(attribution.unchargedAttempts.rootCompiledNotSelected);
+      assert.ok(attribution.unchargedAttempts.continuationBlocks);
+      assert.ok(attribution.unchargedAttempts.rejectedQueuedWork);
+    }
+
     if (includeO4ContinuationAttribution) {
       assert.strictEqual(control.stats.o4ContinuationAttributions.length, 0);
       assert.strictEqual(candidate.stats.o4ContinuationAttributions.length, 1);
@@ -555,6 +586,9 @@ function main() {
         : null,
       o4ContinuationAttribution: includeO4ContinuationAttribution
         ? candidate.stats.o4ContinuationAttributions[0]
+        : null,
+      hierarchyCallAllocationAttribution: includeHierarchyCallAttribution
+        ? candidate.stats.hierarchyCallAllocationAttribution
         : null,
       postO3ResidualAttribution: includePostO3Observation
         ? candidate.stats.survivalOpportunityPostResidualAttributions.map((entry) => ({
