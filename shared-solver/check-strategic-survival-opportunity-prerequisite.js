@@ -393,6 +393,11 @@ function main() {
       assert.strictEqual(candidate.stats.paidResidualRecoveriesUsed, 2);
       assert.strictEqual(control.stats.survivalOpportunityResidualRecoveries.length, 1);
       assert.strictEqual(candidate.stats.survivalOpportunityResidualRecoveries.length, 2);
+      assert.strictEqual(control.stats.survivalOpportunitySecondResidualRecoverySelected, 0);
+      assert.strictEqual(control.stats.survivalOpportunitySecondResidualReplayValid, 0);
+      assert.strictEqual(control.stats.survivalOpportunitySecondResidualMaterialized, 0);
+      assert.ok(control.stats.survivalOpportunityResidualRecoveries.every((entry) =>
+        entry.recoveryIndex !== 2));
       assert.strictEqual(candidate.stats.survivalOpportunitySecondResidualRecoverySelected, 1);
       assert.strictEqual(candidate.stats.survivalOpportunitySecondResidualReplayValid, 1);
       assert.strictEqual(candidate.stats.survivalOpportunitySecondResidualPrerequisiteSatisfied, 1);
