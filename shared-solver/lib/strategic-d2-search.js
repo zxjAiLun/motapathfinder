@@ -602,9 +602,10 @@ function runStrategicD2Search(options) {
     survivalOpportunitySecondResidualMaterialized: 0,
     o4ContinuationAttributions: [],
     hierarchyCallAllocationAttribution: null,
-    rootLevelCompiledAttemptsCapBlocked: 0,
-    rootLevelCompiledAttemptsOutstandingBlocked: 0,
-    rootLevelCompiledAttemptsDedupRejected: 0,
+    rootLevelCompiledCapBlockedSelectionEvents: 0,
+    rootLevelCapBlockedCompiledCandidateCount: 0,
+    rootLevelCompiledOutstandingBlockedSelectionEvents: 0,
+    rootLevelCompiledDedupRejectedSelectionEvents: 0,
     survivalOpportunityPostResidualAttributions: [],
   };
   const observedChoices = new Set();
@@ -2794,11 +2795,12 @@ function runStrategicD2Search(options) {
           if (enableHierarchyCallAttribution && selectedAttempts.length === 0 &&
               compiledPrerequisites.length > 0) {
             if (stats.battleAccessPrerequisiteCalls >= dependencyConnectorMaxCalls) {
-              stats.rootLevelCompiledAttemptsCapBlocked += 1;
+              stats.rootLevelCompiledCapBlockedSelectionEvents += 1;
+              stats.rootLevelCapBlockedCompiledCandidateCount += compiledPrerequisites.length;
             } else if (queuedCount >= dependencyAttemptMaxOutstanding) {
-              stats.rootLevelCompiledAttemptsOutstandingBlocked += 1;
+              stats.rootLevelCompiledOutstandingBlockedSelectionEvents += 1;
             } else {
-              stats.rootLevelCompiledAttemptsDedupRejected += 1;
+              stats.rootLevelCompiledDedupRejectedSelectionEvents += 1;
             }
           }
           for (const prerequisite of selectedAttempts) {
@@ -2927,46 +2929,117 @@ function runStrategicD2Search(options) {
     }
   }
   if (enableHierarchyCallAttribution) {
+    const originOpportunityWitnesses = new Map();
+    const originOpportunityMaterializations = new Map();
+    const originResidualMaterializations = new Map();
+    const originContinuations = new Map();
+    for (const witness of stats.survivalOpportunityWitnesses) {
+      const attemptId = witness.originFailedAttemptId;
+      if (!attemptId) continue;
+      originOpportunityWitnesses.set(attemptId, number(originOpportunityWitnesses.get(attemptId), 0) + 1);
+      if (witness.materialized) {
+        originOpportunityMaterializations.set(
+          attemptId,
+          number(originOpportunityMaterializations.get(attemptId), 0) + 1,
+        );
+      }
+      if (witness.materialized && witness.parentContinuationId) {
+        if (!originContinuations.has(attemptId)) originContinuations.set(attemptId, new Set());
+        originContinuations.get(attemptId).add(witness.parentContinuationId);
+      }
+    }
+    for (const recovery of stats.survivalOpportunityResidualRecoveries) {
+      const attemptId = recovery.originFailedAttemptId;
+      if (!attemptId) continue;
+      if (recovery.materialized) {
+        originResidualMaterializations.set(
+          attemptId,
+          number(originResidualMaterializations.get(attemptId), 0) + 1,
+        );
+      }
+      if (recovery.materialized && recovery.parentContinuationId) {
+        if (!originContinuations.has(attemptId)) originContinuations.set(attemptId, new Set());
+        originContinuations.get(attemptId).add(recovery.parentContinuationId);
+      }
+    }
+    const perCall = stats.battleAccessPrerequisiteWitnesses.map((witness) => {
+      const attemptId = witness.attemptId;
+      const directSatisfied = witness.status === "satisfied";
+      const opportunityWitnesses = attemptId == null
+        ? 0
+        : number(originOpportunityWitnesses.get(attemptId), 0);
+      const opportunityMaterializations = attemptId == null
+        ? 0
+        : number(originOpportunityMaterializations.get(attemptId), 0);
+      const residualMaterializations = attemptId == null
+        ? 0
+        : number(originResidualMaterializations.get(attemptId), 0);
+      const derivedContinuationCount = attemptId == null || !originContinuations.has(attemptId)
+        ? 0
+        : originContinuations.get(attemptId).size;
+      const directContinuationCount = witness.parentDependencyContinuationCreated ? 1 : 0;
+      const derivedMaterializedProgress = opportunityMaterializations + residualMaterializations;
+      return {
+        attemptId: attemptId == null ? null : attemptId,
+        hierarchyLevel: number(witness.hierarchyLevel, 0),
+        connectorOutcome: {
+          satisfied: directSatisfied,
+          stoppedReason: witness.stoppedReason || (directSatisfied ? "satisfied" : null),
+          expansions: number(witness.expansions, 0),
+          chainActions: number(witness.chainActions, 0),
+        },
+        derivedProgress: {
+          opportunityWitnesses,
+          opportunityMaterializations,
+          residualMaterializations,
+          finalContinuationCreated: Math.max(directContinuationCount, derivedContinuationCount),
+        },
+        productive: directSatisfied || derivedMaterializedProgress > 0,
+      };
+    });
     const levelBuckets = { "0": null, "1": null, "2+": null };
     const bucketKey = (level) => (level <= 0 ? "0" : level === 1 ? "1" : "2+");
     for (const key of Object.keys(levelBuckets)) {
       levelBuckets[key] = {
         calls: 0,
-        satisfied: 0,
-        notSatisfied: 0,
-        materialized: 0,
-        finalCreated: 0,
-        reachedNewBest: 0,
+        directSatisfied: 0,
+        connectorNotSatisfied: 0,
+        failedWithRecoveredProgress: 0,
+        failedWithoutRecoveredProgress: 0,
+        recoveredOpportunityMaterializations: 0,
+        residualMaterializations: 0,
         expansions: 0,
         chainActions: 0,
         stoppedReasons: {},
       };
     }
-    for (const witness of stats.battleAccessPrerequisiteWitnesses) {
-      const level = number(witness.hierarchyLevel, 0);
-      const bucket = levelBuckets[bucketKey(level)];
+    for (const entry of perCall) {
+      const bucket = levelBuckets[bucketKey(entry.hierarchyLevel)];
       bucket.calls += 1;
-      const satisfied = witness.status === "satisfied";
-      if (satisfied) bucket.satisfied += 1;
-      else bucket.notSatisfied += 1;
-      if (witness.finalCreated) bucket.finalCreated += 1;
-      if (witness.reachedNewBest) bucket.reachedNewBest += 1;
-      if (satisfied) bucket.materialized += 1;
-      bucket.expansions += number(witness.expansions, 0);
-      bucket.chainActions += number(witness.chainActions, 0);
-      const reason = witness.stoppedReason || witness.status || "unknown";
+      if (entry.connectorOutcome.satisfied) {
+        bucket.directSatisfied += 1;
+      } else {
+        bucket.connectorNotSatisfied += 1;
+        if (entry.productive) bucket.failedWithRecoveredProgress += 1;
+        else bucket.failedWithoutRecoveredProgress += 1;
+      }
+      bucket.recoveredOpportunityMaterializations += entry.derivedProgress.opportunityMaterializations;
+      bucket.residualMaterializations += entry.derivedProgress.residualMaterializations;
+      bucket.expansions += entry.connectorOutcome.expansions;
+      bucket.chainActions += entry.connectorOutcome.chainActions;
+      const reason = entry.connectorOutcome.stoppedReason || "unknown";
       bucket.stoppedReasons[reason] = number(bucket.stoppedReasons[reason], 0) + 1;
     }
-    const roi = {};
+    const metricsPerLevel = {};
     for (const key of Object.keys(levelBuckets)) {
       const bucket = levelBuckets[key];
-      roi[key] = {
-        satisfiedPerCall: bucket.calls > 0 ? bucket.satisfied / bucket.calls : null,
-        expansionsPerSatisfied: bucket.satisfied > 0
-          ? Math.round((bucket.expansions / bucket.satisfied) * 100) / 100
+      const productiveCount = bucket.directSatisfied + bucket.failedWithRecoveredProgress;
+      metricsPerLevel[key] = {
+        directConnectorSatisfactionRate: bucket.calls > 0
+          ? Math.round((bucket.directSatisfied / bucket.calls) * 100) / 100
           : null,
-        chainActionsPerSatisfied: bucket.satisfied > 0
-          ? Math.round((bucket.chainActions / bucket.satisfied) * 100) / 100
+        productiveCallRate: bucket.calls > 0
+          ? Math.round((productiveCount / bucket.calls) * 100) / 100
           : null,
       };
     }
@@ -2996,21 +3069,23 @@ function runStrategicD2Search(options) {
       }
     }
     stats.hierarchyCallAllocationAttribution = {
-      schema: "motapathfinder.strategic-hierarchy-call-allocation-attribution.v1",
+      schema: "motapathfinder.strategic-hierarchy-call-allocation-attribution.v2",
       charged: {
         total: stats.battleAccessPrerequisiteCalls,
         rootLevel: stats.rootLevelCalls,
         childLevel: stats.continuationDerivedCalls,
         maxDepthAttempted: stats.maxHierarchyDepthAttempted,
       },
+      perCall,
       byLevel: levelBuckets,
-      roiPerLevel: roi,
+      metricsPerLevel,
       unchargedAttempts: {
         rootDeferredForHierarchy: stats.rootAttemptsDeferredForHierarchy,
         rootCompiledNotSelected: {
-          capBlocked: stats.rootLevelCompiledAttemptsCapBlocked,
-          outstandingBlocked: stats.rootLevelCompiledAttemptsOutstandingBlocked,
-          dedupRejected: stats.rootLevelCompiledAttemptsDedupRejected,
+          capBlockedSelectionEvents: stats.rootLevelCompiledCapBlockedSelectionEvents,
+          capBlockedCompiledCandidateCount: stats.rootLevelCapBlockedCompiledCandidateCount,
+          outstandingBlockedSelectionEvents: stats.rootLevelCompiledOutstandingBlockedSelectionEvents,
+          dedupRejectedSelectionEvents: stats.rootLevelCompiledDedupRejectedSelectionEvents,
         },
         continuationBlocks,
         rejectedQueuedWork,

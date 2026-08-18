@@ -458,25 +458,45 @@ function main() {
       assert.ok(attribution);
       assert.strictEqual(
         attribution.schema,
-        "motapathfinder.strategic-hierarchy-call-allocation-attribution.v1",
+        "motapathfinder.strategic-hierarchy-call-allocation-attribution.v2",
       );
       assert.strictEqual(attribution.charged.total, candidate.stats.battleAccessPrerequisiteCalls);
       assert.strictEqual(attribution.charged.rootLevel, candidate.stats.rootLevelCalls);
       assert.strictEqual(attribution.charged.childLevel, candidate.stats.continuationDerivedCalls);
       assert.strictEqual(attribution.charged.rootLevel + attribution.charged.childLevel, 8);
+      assert.ok(Array.isArray(attribution.perCall));
+      assert.strictEqual(attribution.perCall.length, 8);
+      for (const entry of attribution.perCall) {
+        assert.ok(entry.attemptId);
+        assert.strictEqual(typeof entry.hierarchyLevel, "number");
+        assert.strictEqual(typeof entry.connectorOutcome.satisfied, "boolean");
+        assert.ok(typeof entry.connectorOutcome.expansions === "number");
+        assert.ok(typeof entry.derivedProgress.opportunityMaterializations === "number");
+        assert.ok(typeof entry.derivedProgress.residualMaterializations === "number");
+        assert.ok(typeof entry.derivedProgress.finalContinuationCreated === "number");
+        assert.strictEqual(typeof entry.productive, "boolean");
+      }
       for (const key of ["0", "1", "2+"]) {
         const bucket = attribution.byLevel[key];
         assert.ok(bucket);
-        assert.strictEqual(bucket.calls, bucket.satisfied + bucket.notSatisfied);
+        assert.strictEqual(bucket.calls, bucket.directSatisfied + bucket.connectorNotSatisfied);
+        assert.strictEqual(
+          bucket.connectorNotSatisfied,
+          bucket.failedWithRecoveredProgress + bucket.failedWithoutRecoveredProgress,
+        );
         assert.ok(typeof bucket.expansions === "number");
         assert.ok(typeof bucket.chainActions === "number");
+        assert.ok(attribution.metricsPerLevel[key]);
+        assert.ok("directConnectorSatisfactionRate" in attribution.metricsPerLevel[key]);
+        assert.ok("productiveCallRate" in attribution.metricsPerLevel[key]);
       }
       const totalCalls = Object.values(attribution.byLevel)
         .reduce((sum, bucket) => sum + bucket.calls, 0);
       assert.strictEqual(totalCalls, 8);
-      assert.ok(attribution.roiPerLevel["0"]);
-      assert.ok(attribution.roiPerLevel["1"]);
-      assert.ok(attribution.unchargedAttempts.rootCompiledNotSelected);
+      const rootCompiledNotSelected = attribution.unchargedAttempts.rootCompiledNotSelected;
+      assert.ok(rootCompiledNotSelected);
+      assert.strictEqual(typeof rootCompiledNotSelected.capBlockedSelectionEvents, "number");
+      assert.strictEqual(typeof rootCompiledNotSelected.capBlockedCompiledCandidateCount, "number");
       assert.ok(attribution.unchargedAttempts.continuationBlocks);
       assert.ok(attribution.unchargedAttempts.rejectedQueuedWork);
     }
