@@ -14,7 +14,7 @@ const {
 } = require("./lib/strategic-survival-opportunity-prerequisite");
 const { verifyConnectorChain } = require("./lib/strategic-connector");
 const { buildStateKey } = require("./lib/state-key");
-const { runStrategicD2Search } = require("./lib/strategic-d2-search");
+const { runStrategicD2Search, classifyRootAttemptSeparability } = require("./lib/strategic-d2-search");
 const { createMt5EntryState, detachCheckpoint } = require("./qualify-blind-discovery");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -236,6 +236,38 @@ function main() {
       enableHierarchyCallChronology: includeHierarchyCallChronology && enable,
       enableRootAttemptSeparabilityAttribution: includeRootAttemptSeparability && enable,
       enablePostResidualAttribution: includePostO3Observation && enable,
+    });
+
+    // 5.19u Repair 1: isolation A/B for separability is decoupled from the
+    // second-residual feature A/B. Both runs enable the identical
+    // q/second-residual/hierarchy-attribution/chronology behavior; only the
+    // separability observation flag toggles.
+    const runWithSeparabilityIsolation = (enableSeparability) => runStrategicD2Search({
+      project,
+      projectRoot: PROJECT_ROOT,
+      initialState,
+      terminalGoal,
+      simulatorFactory: () => makeBlindSimulator(project),
+      connectorMode: "battle-access-prerequisite",
+      enableConnector: true,
+      maxExpansions: 1000,
+      connectorMaxExpansions: 50,
+      connectorMaxCalls: 8,
+      lazyDrainEvery: 8,
+      maxTotalSearchExpansions: 1000,
+      enableParentDependencyContinuation: true,
+      enableHierarchicalCallAllocation: true,
+      enableBattleStagePrerequisiteDecomposition: true,
+      enableContinuationAnchorExpansionScheduling: true,
+      enableSurvivalOpportunityPrerequisite: true,
+      enableSurvivalResidualAttribution: true,
+      enableSurvivalResidualRecovery: true,
+      enableSecondSurvivalResidualRecovery: true,
+      enableO4ContinuationAttribution: false,
+      enableHierarchyCallAttribution: true,
+      enableHierarchyCallChronology: true,
+      enableRootAttemptSeparabilityAttribution: enableSeparability,
+      enablePostResidualAttribution: false,
     });
 
     const control = runWithResidualObservation(false);
@@ -599,15 +631,86 @@ function main() {
     }
 
     if (includeRootAttemptSeparability) {
-      assert.strictEqual(control.stats.rootAttemptSeparabilityAttribution, null);
-      const attribution = candidate.stats.rootAttemptSeparabilityAttribution;
+      const isolationControl = runWithSeparabilityIsolation(false);
+      const isolationCandidate = runWithSeparabilityIsolation(true);
+      const stripWall = (outcome) => {
+        const copy = { ...outcome };
+        delete copy.wallMs;
+        return copy;
+      };
+      assert.deepStrictEqual(
+        stripWall(isolationCandidate.outcome),
+        stripWall(isolationControl.outcome),
+        "separability observation changed outcome",
+      );
+      assert.deepStrictEqual(
+        isolationCandidate.bestTerminalBlocker,
+        isolationControl.bestTerminalBlocker,
+        "separability observation changed bestTerminalBlocker",
+      );
+      [
+        "totalSearchExpansions",
+        "expansions",
+        "battleAccessPrerequisiteCalls",
+        "rootLevelCalls",
+        "continuationDerivedCalls",
+      ].forEach((field) => {
+        assert.strictEqual(
+          isolationControl.stats[field],
+          isolationCandidate.stats[field],
+          `${field} changed with separability observation`,
+        );
+      });
+      assert.deepStrictEqual(
+        isolationCandidate.stats.battleAccessPrerequisiteWitnesses.map((w) => w.attemptId),
+        isolationControl.stats.battleAccessPrerequisiteWitnesses.map((w) => w.attemptId),
+        "charged witness identities changed with separability observation",
+      );
+      const compactResiduals = (stats) => stats.survivalOpportunityResidualRecoveries.map((r) => ({
+        recoveryIndex: r.recoveryIndex,
+        target: r.selectedResidualTarget ? r.selectedResidualTarget.enemyId : null,
+        materialized: r.materialized,
+        parentContinuationCreated: r.parentContinuationCreated,
+      }));
+      assert.deepStrictEqual(
+        compactResiduals(isolationCandidate.stats),
+        compactResiduals(isolationControl.stats),
+        "residual/materialization results changed with separability observation",
+      );
+      assert.deepStrictEqual(
+        [
+          isolationCandidate.stats.survivalOpportunityPrerequisitesCompiled,
+          isolationCandidate.stats.survivalOpportunityPrerequisitesWitnessBacked,
+          isolationCandidate.stats.survivalOpportunityPrerequisitesSatisfied,
+        ],
+        [
+          isolationControl.stats.survivalOpportunityPrerequisitesCompiled,
+          isolationControl.stats.survivalOpportunityPrerequisitesWitnessBacked,
+          isolationControl.stats.survivalOpportunityPrerequisitesSatisfied,
+        ],
+        "survival-opportunity counts changed with separability observation",
+      );
+
+      assert.strictEqual(isolationControl.stats.rootAttemptSeparabilityAttribution, null);
+      const attribution = isolationCandidate.stats.rootAttemptSeparabilityAttribution;
       assert.ok(attribution);
       assert.strictEqual(
         attribution.schema,
-        "motapathfinder.strategic-root-attempt-separability-attribution.v1",
+        "motapathfinder.strategic-root-attempt-separability-attribution.v2",
       );
+      assert.ok(Array.isArray(attribution.rootCompileEvents));
+      assert.ok(attribution.rootCompileEvents.length >= 5);
       assert.ok(Array.isArray(attribution.rootCalls));
       assert.strictEqual(attribution.rootCalls.length, 5);
+      assert.ok(Array.isArray(attribution.chargedToSelectedCandidate));
+      assert.strictEqual(attribution.chargedToSelectedCandidate.length, 5);
+      assert.ok(Array.isArray(attribution.chargedEventSummaries));
+      assert.strictEqual(attribution.chargedEventSummaries.length, 5);
+      assert.ok(attribution.availability);
+
+      const uniqueAttemptIds = new Set(attribution.rootCalls.map((entry) => entry.attemptId));
+      assert.strictEqual(uniqueAttemptIds.size, 5);
+
       for (const entry of attribution.rootCalls) {
         assert.ok(entry.attemptId);
         assert.ok(entry.semantic);
@@ -615,12 +718,48 @@ function main() {
         assert.ok(entry.label);
         assert.strictEqual(typeof entry.label.productive, "boolean");
         assert.strictEqual(typeof entry.label.directSatisfied, "boolean");
-        assert.ok("prerequisiteKind" in entry.semantic);
-        assert.ok("attackMargin" in entry.semantic);
-        assert.ok("survivalMargin" in entry.semantic);
-        assert.ok("sourceTerminalProgressScore" in entry.semantic);
-        assert.ok(!("connectorExpansions" in entry.semantic));
+        const semanticKeys = Object.keys(entry.semantic);
+        assert.ok(semanticKeys.includes("prerequisiteKind"));
+        assert.ok(semanticKeys.includes("attackMargin"));
+        assert.ok(semanticKeys.includes("damage"));
+        assert.ok(semanticKeys.includes("survivalMargin"));
+        assert.ok(semanticKeys.includes("sourceTerminalProgressScore"));
+        assert.ok(semanticKeys.includes("compiledCandidateRank"));
+        assert.ok(!semanticKeys.some((key) => /satisfied|expansion|productive|continuation|materializ/i.test(key)));
+        assert.ok(!semanticKeys.some((key) => /O1|O2|O3|O4/i.test(key)));
       }
+
+      for (const linkage of attribution.chargedToSelectedCandidate) {
+        assert.strictEqual(linkage.matchedSelectedCandidateCount, 1);
+        assert.strictEqual(linkage.matchedSemanticEqual, true);
+      }
+
+      for (const event of attribution.rootCompileEvents) {
+        assert.strictEqual(typeof event.compileEventOrdinal, "number");
+        assert.strictEqual(typeof event.expansionAtCompile, "number");
+        assert.strictEqual(typeof event.callsExecuted, "number");
+        assert.strictEqual(typeof event.callsRemainingBefore, "number");
+        assert.strictEqual(typeof event.queuedCount, "number");
+        assert.strictEqual(typeof event.maxOutstanding, "number");
+        assert.ok(Array.isArray(event.candidates));
+        const ranks = event.candidates.map((candidate) => candidate.localRank);
+        assert.deepStrictEqual(
+          ranks,
+          Array.from({ length: event.candidates.length }, (_, index) => index + 1),
+        );
+        assert.strictEqual(
+          event.selectedCount,
+          event.candidates.filter((candidate) => candidate.selected).length,
+        );
+        for (const candidate of event.candidates) {
+          assert.strictEqual(typeof candidate.dependencyAttemptId, "string");
+          assert.strictEqual(typeof candidate.prerequisiteId, "string");
+          assert.strictEqual(typeof candidate.dedupeSeenBeforeSelection, "boolean");
+          assert.ok(candidate.identity);
+          assert.ok(candidate.semantic);
+        }
+      }
+
       assert.deepStrictEqual(
         attribution.rootCalls.map((entry) => entry.label.productive),
         [false, false, false, false, true],
@@ -629,11 +768,98 @@ function main() {
         attribution.rootCalls.map((entry) => entry.label.directSatisfied),
         [false, false, false, false, true],
       );
+      assert.deepStrictEqual(
+        attribution.rootCalls.map((entry) => entry.temporal.expansionAtCharge),
+        [8, 16, 24, 32, 40],
+      );
+      assert.deepStrictEqual(
+        attribution.chargedEventSummaries.map((summary) => [
+          summary.selectedLocalRank,
+          summary.candidateCount,
+        ]),
+        [[1, 4], [1, 4], [1, 4], [1, 4], [1, 4]],
+      );
+
       const separability = attribution.separability;
       assert.ok(separability);
-      assert.ok(["U1", "U2", "U3", "U4", "U1-COMBINATION-ONLY"].includes(separability.classification));
+      assert.strictEqual(separability.classification, "U1");
       assert.strictEqual(separability.productiveRootCount, 1);
       assert.strictEqual(separability.failedRootCount, 4);
+      assert.ok(separability.singleFeatureSeparators.includes("attackMargin"));
+      assert.ok(separability.vectorEqualityDetails);
+      assert.strictEqual(separability.vectorEqualityDetails.anyCollision, false);
+
+      const availability = attribution.availability;
+      assert.strictEqual(availability.productiveAttemptId, "3632e7cfab66d64b@69c2c78b137e0442");
+      assert.strictEqual(availability.productiveEventOrdinal, 5);
+      assert.strictEqual(availability.productiveEventExpansion, 36);
+      assert.strictEqual(availability.earlierEventCount, 4);
+      assert.strictEqual(availability.earlierCandidateCount, 16);
+      assert.strictEqual(availability.positiveAttackMarginCandidateCount, 0);
+      assert.strictEqual(availability.sameAttemptCandidateCount, 0);
+      assert.strictEqual(availability.sameIdentityCandidateCount, 0);
+      assert.strictEqual(availability.verdict, "NO-EARLIER-SIGNAL-EVIDENCE");
+      assert.deepStrictEqual(
+        attribution.chargedEventSummaries.map((summary) =>
+          summary.positiveAttackMarginCandidateCount),
+        [0, 0, 0, 0, 4],
+      );
+
+      const syntheticClassification = (productiveSemantic, failedSemantics) => {
+        const productive = { attemptId: "P", semantic: productiveSemantic };
+        const failed = failedSemantics.map((semantic, index) => ({
+          attemptId: `F${index}`,
+          semantic,
+        }));
+        return classifyRootAttemptSeparability(productive, failed);
+      };
+      const baseSemantic = {
+        prerequisiteKind: "battle-access-prerequisite",
+        stageGoal: null,
+        parentDependencyKind: "resource/power-opportunity-acquisition",
+        parentDependencyCapability: "combat-power",
+        reachableAtCompileTime: false,
+        sourceDepth: 1,
+        sourceFloor: "MT5",
+        beforeStage: "lethal",
+        attackMargin: 377,
+        damage: 39321,
+        survivalMargin: -26036,
+        sourceTerminalProgressScore: 999999998777,
+        compiledCandidateRank: 1,
+        compiledCandidateCount: 4,
+      };
+      const u3 = syntheticClassification(baseSemantic, [
+        { ...baseSemantic },
+        { ...baseSemantic },
+      ]);
+      assert.strictEqual(u3.classification, "U3");
+      assert.strictEqual(u3.vectorEqualityDetails.allFailedEqualToProductive, true);
+      const u2 = syntheticClassification(baseSemantic, [
+        { ...baseSemantic, sourceDepth: 9 },
+        { ...baseSemantic },
+        { ...baseSemantic, attackMargin: -100 },
+      ]);
+      assert.strictEqual(u2.classification, "U2");
+      assert.strictEqual(u2.collisionAttemptIds.length, 1);
+      assert.strictEqual(u2.vectorEqualityDetails.anyCollision, true);
+      assert.strictEqual(u2.vectorEqualityDetails.allFailedEqualToProductive, false);
+      const u1 = syntheticClassification(baseSemantic, [
+        { ...baseSemantic, attackMargin: -273, sourceDepth: 0 },
+        { ...baseSemantic, attackMargin: -173, damage: 1978814, sourceDepth: 5 },
+      ]);
+      assert.strictEqual(u1.classification, "U1");
+      assert.ok(u1.singleFeatureSeparators.includes("attackMargin"));
+      const objectValueEqual = syntheticClassification(
+        { ...baseSemantic, nested: { a: 1, b: { c: 2 } } },
+        [{ ...baseSemantic, nested: { a: 1, b: { c: 2 } } }],
+      );
+      assert.strictEqual(objectValueEqual.classification, "U3");
+      const combinationOnly = syntheticClassification(baseSemantic, [
+        { ...baseSemantic, attackMargin: -273 },
+        { ...baseSemantic, sourceDepth: 9 },
+      ]);
+      assert.strictEqual(combinationOnly.classification, "U1-COMBINATION-ONLY");
     }
 
     if (includeO4ContinuationAttribution) {

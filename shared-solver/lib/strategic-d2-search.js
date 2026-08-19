@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { isDeepStrictEqual } = require("node:util");
 
 const { strictReplayRoute } = require("./agenda-policy-evaluation");
 const { buildSegmentGoalPredicate } = require("./segment-dp");
@@ -77,6 +78,106 @@ function number(value, fallback) {
 
 function hash(value) {
   return crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 16);
+}
+
+/**
+ * PR-5.19u pure pre-charge semantic vector builder. Shared by the charge site
+ * and the root compile-site candidate pool so the two never drift. Only
+ * pre-charge observable inputs are allowed; connector outcomes, expansions,
+ * productive labels, continuations, and O1-O4 results are deliberately absent.
+ * `enemyId/x/y` are identity fields handled separately, never inside the
+ * semantic vector, so they can never act as separators.
+ */
+function buildRootAttemptSemanticVector(options) {
+  const config = options || {};
+  const prerequisite = config.prerequisite;
+  const sourceNode = config.sourceNode;
+  const beforeBattle = config.beforeBattle || null;
+  const projection = config.projection || null;
+  const compiledCandidateRank = config.compiledCandidateRank;
+  const compiledCandidateCount = config.compiledCandidateCount;
+  return {
+    prerequisiteKind: (prerequisite && prerequisite.kind) || null,
+    stageGoal: (prerequisite && prerequisite.stageGoal) || null,
+    parentDependencyKind: (prerequisite && prerequisite.parentDependency &&
+      prerequisite.parentDependency.kind) || null,
+    parentDependencyCapability: (prerequisite && prerequisite.parentDependency &&
+      prerequisite.parentDependency.capability) || null,
+    reachableAtCompileTime: Boolean(prerequisite && prerequisite.provenance &&
+      prerequisite.provenance.reachableAtCompileTime),
+    sourceDepth: number(sourceNode && sourceNode.depth, 0),
+    sourceFloor: (sourceNode && sourceNode.state && sourceNode.state.floorId) || null,
+    beforeStage: beforeBattle ? beforeBattle.stage : null,
+    attackMargin: beforeBattle && beforeBattle.attackMargin != null
+      ? beforeBattle.attackMargin
+      : null,
+    damage: beforeBattle && beforeBattle.damage != null ? beforeBattle.damage : null,
+    survivalMargin: beforeBattle && beforeBattle.survivalMargin != null
+      ? beforeBattle.survivalMargin
+      : null,
+    sourceTerminalProgressScore: projection && projection.progressScore != null
+      ? projection.progressScore
+      : null,
+    compiledCandidateRank: compiledCandidateRank == null
+      ? null
+      : number(compiledCandidateRank, 0),
+    compiledCandidateCount: compiledCandidateCount == null
+      ? null
+      : number(compiledCandidateCount, 0),
+  };
+}
+
+/**
+ * PR-5.19u pure classification. U2/U3 are mutually exclusive:
+ *   U2 = partial collision (>=1 but not all failed roots equal the productive root)
+ *   U3 = all failed roots semantically equal the productive root (temporal-only separation)
+ *   U1 = no collision and at least one single semantic feature separates from all
+ *   U1-COMBINATION-ONLY = no collision, distinct from all, but only in combination
+ *   U4 = otherwise / insufficient evidence
+ * Equality uses isDeepStrictEqual, not stringify, so object-valued fields compare
+ * by structure.
+ */
+function classifyRootAttemptSeparability(productiveCall, failedRoots) {
+  const semanticKeys = failedRoots.length > 0
+    ? Object.keys(productiveCall.semantic)
+    : [];
+  const failedCollisions = failedRoots.filter((failed) =>
+    isDeepStrictEqual(failed.semantic, productiveCall.semantic));
+  const anyCollision = failedCollisions.length > 0;
+  const allFailedEqualToProductive = failedRoots.length > 0 &&
+    failedCollisions.length === failedRoots.length;
+  const distinctFromAllFailedRoots = failedRoots.length > 0 &&
+    failedRoots.every((failed) => !isDeepStrictEqual(failed.semantic, productiveCall.semantic));
+  const singleFeatureSeparators = semanticKeys.filter((key) => {
+    const productiveValue = productiveCall.semantic[key];
+    return failedRoots.every((failed) => failed.semantic[key] !== productiveValue);
+  });
+  let classification = "U4";
+  if (anyCollision && !allFailedEqualToProductive) {
+    classification = "U2";
+  } else if (allFailedEqualToProductive) {
+    classification = "U3";
+  } else if (singleFeatureSeparators.length > 0) {
+    classification = "U1";
+  } else if (distinctFromAllFailedRoots) {
+    classification = "U1-COMBINATION-ONLY";
+  }
+  return {
+    classification,
+    singleFeatureSeparators,
+    collisionAttemptIds: failedCollisions.map((failed) => failed.attemptId),
+    distinctFromAllFailedRoots,
+    vectorEqualityDetails: {
+      anyCollision,
+      allFailedEqualToProductive,
+      collisionAttemptIds: failedCollisions.map((failed) => failed.attemptId),
+      productiveSemanticFingerprint: hash(JSON.stringify(productiveCall.semantic)),
+      failedSemanticFingerprints: failedRoots.map((failed) => ({
+        attemptId: failed.attemptId,
+        fingerprint: hash(JSON.stringify(failed.semantic)),
+      })),
+    },
+  };
 }
 
 class BinaryHeap {
@@ -629,6 +730,7 @@ function runStrategicD2Search(options) {
     },
   } : null;
   const rootAttemptSeparabilityCalls = enableRootAttemptSeparabilityAttribution ? [] : null;
+  const rootCompileEvents = enableRootAttemptSeparabilityAttribution ? [] : null;
   let hierarchyChronologyFirstContinuationRecorded = false;
   let hierarchyChronologyFirstActivationRecorded = false;
   let hierarchyChronologyFirstLevelOneRecorded = false;
@@ -1771,6 +1873,14 @@ function runStrategicD2Search(options) {
         const boundary = prerequisite.boundary || {};
         const projection = terminalBattleProjection(simulator, sourceNode.state, terminalGoal);
         const selectionContext = work.selectionContext || {};
+        const semantic = buildRootAttemptSemanticVector({
+          prerequisite,
+          sourceNode,
+          beforeBattle,
+          projection,
+          compiledCandidateRank: selectionContext.compiledCandidateRank,
+          compiledCandidateCount: selectionContext.compiledCandidateCount,
+        });
         rootAttemptSeparabilityCalls.push({
           callOrdinal: stats.battleAccessPrerequisiteCalls,
           attemptId,
@@ -1778,33 +1888,13 @@ function runStrategicD2Search(options) {
           enemyId: boundary.enemyId || null,
           x: boundary.x != null ? boundary.x : null,
           y: boundary.y != null ? boundary.y : null,
-          semantic: {
-            prerequisiteKind: prerequisite.kind || null,
-            stageGoal: prerequisite.stageGoal || null,
-            parentDependencyKind: (prerequisite.parentDependency || {}).kind || null,
-            parentDependencyCapability: (prerequisite.parentDependency || {}).capability || null,
-            reachableAtCompileTime: Boolean(
-              prerequisite.provenance && prerequisite.provenance.reachableAtCompileTime),
-            sourceDepth: number(sourceNode.depth, 0),
-            sourceFloor: sourceNode.state.floorId,
-            beforeStage: beforeBattle ? beforeBattle.stage : null,
-            attackMargin: beforeBattle && beforeBattle.attackMargin != null
-              ? beforeBattle.attackMargin
-              : null,
-            damage: beforeBattle && beforeBattle.damage != null ? beforeBattle.damage : null,
-            survivalMargin: beforeBattle && beforeBattle.survivalMargin != null
-              ? beforeBattle.survivalMargin
-              : null,
-            sourceTerminalProgressScore: projection && projection.progressScore != null
-              ? projection.progressScore
-              : null,
-            compiledCandidateRank: selectionContext.compiledCandidateRank == null
-              ? null
-              : number(selectionContext.compiledCandidateRank, 0),
-            compiledCandidateCount: selectionContext.compiledCandidateCount == null
-              ? null
-              : number(selectionContext.compiledCandidateCount, 0),
-          },
+          semantic,
+          compileEventOrdinal: selectionContext.compileEventOrdinal == null
+            ? null
+            : number(selectionContext.compileEventOrdinal, 0),
+          candidateLocalRank: selectionContext.candidateLocalRank == null
+            ? null
+            : number(selectionContext.candidateLocalRank, 0),
           temporal: {
             expansionAtCharge: stats.expansions,
             firstHierarchyActivationOccurred: stats.hierarchyPriorityActivations > 0,
@@ -2891,6 +2981,64 @@ function runStrategicD2Search(options) {
             stats.battleAccessPrerequisiteCompiled += 1;
             compiledPrerequisites.push(prerequisite);
           }
+          let separabilityEvent = null;
+          if (enableRootAttemptSeparabilityAttribution && compiledPrerequisites.length > 0) {
+            let projection = null;
+            try {
+              projection = terminalBattleProjection(simulator, node.state, terminalGoal);
+            } catch (_error) {
+              projection = null;
+            }
+            const eventCandidates = compiledPrerequisites.map((prerequisite, index) => {
+              let candidateBattle = null;
+              try {
+                candidateBattle = analyzeBattleViabilityBlocker(
+                  simulator,
+                  node.state,
+                  prerequisite.boundary,
+                );
+              } catch (_error) {
+                candidateBattle = null;
+              }
+              const boundary = prerequisite.boundary || {};
+              return {
+                dependencyAttemptId: dependencyAttemptId(prerequisite, node.state),
+                prerequisiteId: prerequisite.id,
+                localRank: index + 1,
+                selected: false,
+                dedupeSeenBeforeSelection: dependencyAttemptDedupe.has(prerequisite, node.state),
+                identity: {
+                  enemyId: boundary.enemyId || null,
+                  x: boundary.x != null ? boundary.x : null,
+                  y: boundary.y != null ? boundary.y : null,
+                },
+                semantic: buildRootAttemptSemanticVector({
+                  prerequisite,
+                  sourceNode: node,
+                  beforeBattle: candidateBattle,
+                  projection,
+                  compiledCandidateRank: index + 1,
+                  compiledCandidateCount: compiledPrerequisites.length,
+                }),
+              };
+            });
+            separabilityEvent = {
+              compileEventOrdinal: rootCompileEvents.length + 1,
+              expansionAtCompile: stats.expansions,
+              sourceNodeId: node.nodeId,
+              sourceDepth: number(node.depth, 0),
+              sourceFloor: node.state.floorId,
+              callsExecuted: stats.battleAccessPrerequisiteCalls,
+              callsRemainingBefore: Math.max(
+                0,
+                dependencyConnectorMaxCalls - stats.battleAccessPrerequisiteCalls,
+              ),
+              queuedCount,
+              maxOutstanding: dependencyAttemptMaxOutstanding,
+              selectedCount: 0,
+              candidates: eventCandidates,
+            };
+          }
           const selectedAttempts = selectFeedbackAwareDependencyAttempts({
             candidates: compiledPrerequisites,
             sourceState: node.state,
@@ -2912,6 +3060,7 @@ function runStrategicD2Search(options) {
             }
           }
           for (const prerequisite of selectedAttempts) {
+            const localRank = compiledPrerequisites.indexOf(prerequisite) + 1;
             lazyWork.enqueue({
               kind: "battle-access-prerequisite-choice",
               sourceNodeId: node.nodeId,
@@ -2919,10 +3068,21 @@ function runStrategicD2Search(options) {
               hierarchyLevel: 0,
               originContinuationId: null,
               selectionContext: enableRootAttemptSeparabilityAttribution ? {
-                compiledCandidateRank: compiledPrerequisites.indexOf(prerequisite) + 1,
+                compileEventOrdinal: separabilityEvent ? separabilityEvent.compileEventOrdinal : null,
+                compiledCandidateRank: localRank,
                 compiledCandidateCount: compiledPrerequisites.length,
+                candidateLocalRank: localRank,
               } : null,
             });
+          }
+          if (separabilityEvent) {
+            const selectedIds = new Set(selectedAttempts.map((prerequisite) => prerequisite.id));
+            for (const candidate of separabilityEvent.candidates) {
+              candidate.selected = selectedIds.has(candidate.prerequisiteId);
+            }
+            separabilityEvent.selectedCount = selectedAttempts.length;
+            rootCompileEvents.push(separabilityEvent);
+            separabilityEvent = null;
           }
         }
       } else if (connectorMode === "dependency-derived") {
@@ -3265,7 +3425,7 @@ function runStrategicD2Search(options) {
       rootCallsAnalysis,
     };
   }
-  if (enableRootAttemptSeparabilityAttribution && rootAttemptSeparabilityCalls) {
+  if (enableRootAttemptSeparabilityAttribution && rootAttemptSeparabilityCalls && rootCompileEvents) {
     const originOpportunityMaterializations = new Map();
     const originResidualMaterializations = new Map();
     for (const witness of stats.survivalOpportunityWitnesses) {
@@ -3304,45 +3464,119 @@ function runStrategicD2Search(options) {
         productive: directSatisfied || derivedMaterializedProgress > 0,
       };
     }
+    const chargedToSelectedCandidate = rootAttemptSeparabilityCalls.map((call) => {
+      const event = rootCompileEvents.find((entry) =>
+        entry.compileEventOrdinal === call.compileEventOrdinal);
+      const selectedCandidates = event
+        ? event.candidates.filter((candidate) =>
+          candidate.selected && candidate.dependencyAttemptId === call.attemptId)
+        : [];
+      return {
+        callOrdinal: call.callOrdinal,
+        attemptId: call.attemptId,
+        compileEventOrdinal: call.compileEventOrdinal,
+        matchedSelectedCandidateCount: selectedCandidates.length,
+        matchedSemanticEqual: selectedCandidates.length === 1 &&
+          isDeepStrictEqual(selectedCandidates[0].semantic, call.semantic),
+      };
+    });
+    const chargedEventSummaries = rootAttemptSeparabilityCalls.map((call) => {
+      const event = rootCompileEvents.find((entry) =>
+        entry.compileEventOrdinal === call.compileEventOrdinal);
+      const candidates = event ? event.candidates : [];
+      return {
+        callOrdinal: call.callOrdinal,
+        compileEventOrdinal: call.compileEventOrdinal,
+        expansionAtCharge: call.temporal.expansionAtCharge,
+        selectedAttemptId: call.attemptId,
+        selectedLocalRank: call.candidateLocalRank,
+        candidateCount: candidates.length,
+        selectedCount: event ? event.selectedCount : null,
+        positiveAttackMarginCandidateCount: candidates.filter((candidate) =>
+          candidate.semantic.attackMargin != null && candidate.semantic.attackMargin > 0).length,
+      };
+    });
     const productiveRoots = rootAttemptSeparabilityCalls.filter((entry) => entry.label.productive);
     const failedRoots = rootAttemptSeparabilityCalls.filter((entry) => !entry.label.productive);
-    let classification = "U4";
-    let singleFeatureSeparators = [];
-    let collisionAttemptIds = [];
-    let distinctFromAllFailedRoots = false;
-    if (productiveRoots.length === 1 && failedRoots.length > 0) {
-      const productiveCall = productiveRoots[0];
-      const semanticKeys = Object.keys(productiveCall.semantic);
-      collisionAttemptIds = failedRoots
-        .filter((failed) => JSON.stringify(failed.semantic) === JSON.stringify(productiveCall.semantic))
-        .map((failed) => failed.attemptId);
-      distinctFromAllFailedRoots = failedRoots.every((failed) =>
-        JSON.stringify(failed.semantic) !== JSON.stringify(productiveCall.semantic));
-      singleFeatureSeparators = semanticKeys.filter((key) => {
-        const productiveValue = productiveCall.semantic[key];
-        return failedRoots.every((failed) => failed.semantic[key] !== productiveValue);
-      });
-      if (collisionAttemptIds.length > 0) {
-        classification = "U2";
-      } else if (singleFeatureSeparators.length > 0) {
-        classification = "U1";
-      } else if (distinctFromAllFailedRoots) {
-        classification = "U1-COMBINATION-ONLY";
-      } else {
-        classification = "U3";
+    const separability = productiveRoots.length === 1
+      ? classifyRootAttemptSeparability(productiveRoots[0], failedRoots)
+      : {
+        classification: "U4",
+        singleFeatureSeparators: [],
+        collisionAttemptIds: [],
+        distinctFromAllFailedRoots: false,
+        vectorEqualityDetails: null,
+      };
+    separability.productiveRootCount = productiveRoots.length;
+    separability.failedRootCount = failedRoots.length;
+    let availability = null;
+    if (productiveRoots.length === 1) {
+      const productiveRoot = productiveRoots[0];
+      const productiveEvent = rootCompileEvents.find((event) =>
+        event.candidates.some((candidate) =>
+          candidate.selected && candidate.dependencyAttemptId === productiveRoot.attemptId));
+      const earlierEvents = productiveEvent
+        ? rootCompileEvents.filter((event) =>
+          event.compileEventOrdinal < productiveEvent.compileEventOrdinal)
+        : [];
+      const earlierCandidates = [];
+      for (const event of earlierEvents) {
+        for (const candidate of event.candidates) {
+          earlierCandidates.push({ ...candidate, _compileEventOrdinal: event.compileEventOrdinal });
+        }
       }
+      const positiveMarginCandidates = earlierCandidates.filter((candidate) =>
+        candidate.semantic.attackMargin != null && candidate.semantic.attackMargin > 0);
+      const sameAttemptCandidates = earlierCandidates.filter((candidate) =>
+        candidate.dependencyAttemptId === productiveRoot.attemptId);
+      const productiveCandidate = productiveEvent
+        ? productiveEvent.candidates.find((candidate) =>
+          candidate.selected && candidate.dependencyAttemptId === productiveRoot.attemptId)
+        : null;
+      const productiveIdentity = productiveCandidate ? productiveCandidate.identity : null;
+      const sameIdentityCandidates = earlierCandidates.filter((candidate) => productiveIdentity &&
+        candidate.identity.enemyId === productiveIdentity.enemyId &&
+        candidate.identity.x === productiveIdentity.x &&
+        candidate.identity.y === productiveIdentity.y);
+      let verdict;
+      if (sameAttemptCandidates.length > 0) {
+        verdict = "PRODUCTIVE-ATTEMPT-APPEARED-EARLIER";
+      } else if (positiveMarginCandidates.length > 0) {
+        verdict = "POSITIVE-MARGIN-CANDIDATE-IN-EARLIER-POOL";
+      } else {
+        verdict = "NO-EARLIER-SIGNAL-EVIDENCE";
+      }
+      availability = {
+        productiveAttemptId: productiveRoot.attemptId,
+        productiveEventOrdinal: productiveEvent ? productiveEvent.compileEventOrdinal : null,
+        productiveEventExpansion: productiveEvent ? productiveEvent.expansionAtCompile : null,
+        earlierEventCount: earlierEvents.length,
+        earlierCandidateCount: earlierCandidates.length,
+        positiveAttackMarginCandidateCount: positiveMarginCandidates.length,
+        sameAttemptCandidateCount: sameAttemptCandidates.length,
+        sameIdentityCandidateCount: sameIdentityCandidates.length,
+        positiveAttackMarginCandidates: positiveMarginCandidates.slice(0, 8).map((candidate) => ({
+          compileEventOrdinal: candidate._compileEventOrdinal,
+          localRank: candidate.localRank,
+          selected: candidate.selected,
+          attemptId: candidate.dependencyAttemptId,
+          attackMargin: candidate.semantic.attackMargin,
+          damage: candidate.semantic.damage,
+          enemyId: candidate.identity.enemyId,
+          x: candidate.identity.x,
+          y: candidate.identity.y,
+        })),
+        verdict,
+      };
     }
     stats.rootAttemptSeparabilityAttribution = {
-      schema: "motapathfinder.strategic-root-attempt-separability-attribution.v1",
+      schema: "motapathfinder.strategic-root-attempt-separability-attribution.v2",
+      rootCompileEvents,
       rootCalls: rootAttemptSeparabilityCalls,
-      separability: {
-        classification,
-        singleFeatureSeparators,
-        collisionAttemptIds,
-        distinctFromAllFailedRoots,
-        productiveRootCount: productiveRoots.length,
-        failedRootCount: failedRoots.length,
-      },
+      chargedToSelectedCandidate,
+      chargedEventSummaries,
+      separability,
+      availability,
     };
   }
   const frontierSize = agenda.activeSize(expanded);
@@ -3646,6 +3880,8 @@ function runStrategicD2Search(options) {
 }
 
 module.exports = {
+  buildRootAttemptSemanticVector,
+  classifyRootAttemptSeparability,
   enumerateStrategicActions,
   runStrategicD2Search,
 };
