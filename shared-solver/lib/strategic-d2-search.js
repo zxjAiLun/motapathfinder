@@ -128,14 +128,47 @@ function buildRootAttemptSemanticVector(options) {
 }
 
 /**
+ * Canonical/stable serializer: recursive key-sort so structurally equal
+ * objects hash identically regardless of key insertion order. Used for
+ * semantic fingerprints instead of hash(JSON.stringify(object)).
+ */
+function stableSerialize(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableSerialize).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function hashStable(value) {
+  return hash(stableSerialize(value));
+}
+
+function buildTemporalVector(entry) {
+  if (!entry || entry.temporal == null) return null;
+  return {
+    callOrdinal: entry.callOrdinal == null ? null : entry.callOrdinal,
+    expansionAtCharge: entry.temporal.expansionAtCharge == null
+      ? null
+      : entry.temporal.expansionAtCharge,
+  };
+}
+
+/**
  * PR-5.19u pure classification. U2/U3 are mutually exclusive:
  *   U2 = partial collision (>=1 but not all failed roots equal the productive root)
- *   U3 = all failed roots semantically equal the productive root (temporal-only separation)
+ *   U3 = ALL failed roots semantically equal the productive root AND a real
+ *        temporal separator exists (callOrdinal / expansionAtCharge).
+ *        If semantic collides but temporal is unavailable or cannot separate,
+ *        the result is U4 with reason "semantic-collision-without-temporal-separator".
  *   U1 = no collision and at least one single semantic feature separates from all
  *   U1-COMBINATION-ONLY = no collision, distinct from all, but only in combination
  *   U4 = otherwise / insufficient evidence
- * Equality uses isDeepStrictEqual, not stringify, so object-valued fields compare
- * by structure.
+ * All equality (semantic fields, temporal fields, object values) uses
+ * isDeepStrictEqual, never !== or stringify.
  */
 function classifyRootAttemptSeparability(productiveCall, failedRoots) {
   const semanticKeys = failedRoots.length > 0
@@ -150,13 +183,30 @@ function classifyRootAttemptSeparability(productiveCall, failedRoots) {
     failedRoots.every((failed) => !isDeepStrictEqual(failed.semantic, productiveCall.semantic));
   const singleFeatureSeparators = semanticKeys.filter((key) => {
     const productiveValue = productiveCall.semantic[key];
-    return failedRoots.every((failed) => failed.semantic[key] !== productiveValue);
+    return failedRoots.every((failed) =>
+      !isDeepStrictEqual(failed.semantic[key], productiveValue));
+  });
+  const productiveTemporal = buildTemporalVector(productiveCall);
+  const failedTemporals = failedRoots.map(buildTemporalVector);
+  const temporalProvided = productiveTemporal != null &&
+    failedTemporals.every((temporal) => temporal != null);
+  const temporalKeys = productiveTemporal != null ? Object.keys(productiveTemporal) : [];
+  const singleTemporalSeparators = temporalKeys.filter((key) => {
+    const productiveValue = productiveTemporal[key];
+    return failedTemporals.every((failed) =>
+      failed != null && !isDeepStrictEqual(failed[key], productiveValue));
   });
   let classification = "U4";
+  let reason = null;
   if (anyCollision && !allFailedEqualToProductive) {
     classification = "U2";
   } else if (allFailedEqualToProductive) {
-    classification = "U3";
+    if (temporalProvided && singleTemporalSeparators.length > 0) {
+      classification = "U3";
+    } else {
+      classification = "U4";
+      reason = "semantic-collision-without-temporal-separator";
+    }
   } else if (singleFeatureSeparators.length > 0) {
     classification = "U1";
   } else if (distinctFromAllFailedRoots) {
@@ -164,18 +214,22 @@ function classifyRootAttemptSeparability(productiveCall, failedRoots) {
   }
   return {
     classification,
+    reason,
     singleFeatureSeparators,
+    singleTemporalSeparators,
     collisionAttemptIds: failedCollisions.map((failed) => failed.attemptId),
     distinctFromAllFailedRoots,
     vectorEqualityDetails: {
       anyCollision,
       allFailedEqualToProductive,
       collisionAttemptIds: failedCollisions.map((failed) => failed.attemptId),
-      productiveSemanticFingerprint: hash(JSON.stringify(productiveCall.semantic)),
+      productiveSemanticFingerprint: hashStable(productiveCall.semantic),
       failedSemanticFingerprints: failedRoots.map((failed) => ({
         attemptId: failed.attemptId,
-        fingerprint: hash(JSON.stringify(failed.semantic)),
+        fingerprint: hashStable(failed.semantic),
       })),
+      temporalProvided,
+      singleTemporalSeparators,
     },
   };
 }
@@ -1885,9 +1939,12 @@ function runStrategicD2Search(options) {
           callOrdinal: stats.battleAccessPrerequisiteCalls,
           attemptId,
           sourceNodeId: sourceNode.nodeId,
-          enemyId: boundary.enemyId || null,
-          x: boundary.x != null ? boundary.x : null,
-          y: boundary.y != null ? boundary.y : null,
+          identity: {
+            floorId: boundary.floorId || null,
+            enemyId: boundary.enemyId || null,
+            x: boundary.x != null ? boundary.x : null,
+            y: boundary.y != null ? boundary.y : null,
+          },
           semantic,
           compileEventOrdinal: selectionContext.compileEventOrdinal == null
             ? null
@@ -3008,6 +3065,7 @@ function runStrategicD2Search(options) {
                 selected: false,
                 dedupeSeenBeforeSelection: dependencyAttemptDedupe.has(prerequisite, node.state),
                 identity: {
+                  floorId: boundary.floorId || null,
                   enemyId: boundary.enemyId || null,
                   x: boundary.x != null ? boundary.x : null,
                   y: boundary.y != null ? boundary.y : null,
@@ -3534,19 +3592,28 @@ function runStrategicD2Search(options) {
           candidate.selected && candidate.dependencyAttemptId === productiveRoot.attemptId)
         : null;
       const productiveIdentity = productiveCandidate ? productiveCandidate.identity : null;
-      const sameIdentityCandidates = earlierCandidates.filter((candidate) => productiveIdentity &&
+      const boundaryIdentityMatch = (candidate) => productiveIdentity &&
+        candidate.identity.floorId === productiveIdentity.floorId &&
         candidate.identity.enemyId === productiveIdentity.enemyId &&
         candidate.identity.x === productiveIdentity.x &&
-        candidate.identity.y === productiveIdentity.y);
+        candidate.identity.y === productiveIdentity.y;
+      const sameBoundaryIdentityCandidates = earlierCandidates.filter(boundaryIdentityMatch);
+      const samePrerequisiteIdCandidates = earlierCandidates.filter((candidate) =>
+        productiveCandidate != null && candidate.prerequisiteId === productiveCandidate.prerequisiteId);
       let verdict;
       if (sameAttemptCandidates.length > 0) {
         verdict = "PRODUCTIVE-ATTEMPT-APPEARED-EARLIER";
       } else if (positiveMarginCandidates.length > 0) {
         verdict = "POSITIVE-MARGIN-CANDIDATE-IN-EARLIER-POOL";
       } else {
-        verdict = "NO-EARLIER-SIGNAL-EVIDENCE";
+        verdict = "NO-EARLIER-POSITIVE-ATTACK-MARGIN-OR-EXACT-ATTEMPT-EVIDENCE";
       }
       availability = {
+        signalDefinition: {
+          name: "positive-attack-margin",
+          definition: "attackMargin > 0",
+          note: "boundary/prerequisite identity counts are independent diagnostics and do not imply productivity",
+        },
         productiveAttemptId: productiveRoot.attemptId,
         productiveEventOrdinal: productiveEvent ? productiveEvent.compileEventOrdinal : null,
         productiveEventExpansion: productiveEvent ? productiveEvent.expansionAtCompile : null,
@@ -3554,7 +3621,8 @@ function runStrategicD2Search(options) {
         earlierCandidateCount: earlierCandidates.length,
         positiveAttackMarginCandidateCount: positiveMarginCandidates.length,
         sameAttemptCandidateCount: sameAttemptCandidates.length,
-        sameIdentityCandidateCount: sameIdentityCandidates.length,
+        sameBoundaryIdentityCandidateCount: sameBoundaryIdentityCandidates.length,
+        samePrerequisiteIdCandidateCount: samePrerequisiteIdCandidates.length,
         positiveAttackMarginCandidates: positiveMarginCandidates.slice(0, 8).map((candidate) => ({
           compileEventOrdinal: candidate._compileEventOrdinal,
           localRank: candidate.localRank,
@@ -3570,7 +3638,7 @@ function runStrategicD2Search(options) {
       };
     }
     stats.rootAttemptSeparabilityAttribution = {
-      schema: "motapathfinder.strategic-root-attempt-separability-attribution.v2",
+      schema: "motapathfinder.strategic-root-attempt-separability-attribution.v3",
       rootCompileEvents,
       rootCalls: rootAttemptSeparabilityCalls,
       chargedToSelectedCandidate,

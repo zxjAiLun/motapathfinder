@@ -632,7 +632,7 @@ function main() {
 
     if (includeRootAttemptSeparability) {
       const isolationControl = runWithSeparabilityIsolation(false);
-      const isolationCandidate = runWithSeparabilityIsolation(true);
+      const isolationCandidate = candidate;
       const stripWall = (outcome) => {
         const copy = { ...outcome };
         delete copy.wallMs;
@@ -696,7 +696,7 @@ function main() {
       assert.ok(attribution);
       assert.strictEqual(
         attribution.schema,
-        "motapathfinder.strategic-root-attempt-separability-attribution.v2",
+        "motapathfinder.strategic-root-attempt-separability-attribution.v3",
       );
       assert.ok(Array.isArray(attribution.rootCompileEvents));
       assert.ok(attribution.rootCompileEvents.length >= 5);
@@ -797,19 +797,39 @@ function main() {
       assert.strictEqual(availability.earlierCandidateCount, 16);
       assert.strictEqual(availability.positiveAttackMarginCandidateCount, 0);
       assert.strictEqual(availability.sameAttemptCandidateCount, 0);
-      assert.strictEqual(availability.sameIdentityCandidateCount, 0);
-      assert.strictEqual(availability.verdict, "NO-EARLIER-SIGNAL-EVIDENCE");
+      assert.strictEqual(availability.sameBoundaryIdentityCandidateCount, 0);
+      assert.strictEqual(availability.samePrerequisiteIdCandidateCount, 0);
+      assert.strictEqual(availability.signalDefinition.name, "positive-attack-margin");
+      assert.strictEqual(availability.signalDefinition.definition, "attackMargin > 0");
+      assert.strictEqual(
+        availability.verdict,
+        "NO-EARLIER-POSITIVE-ATTACK-MARGIN-OR-EXACT-ATTEMPT-EVIDENCE",
+      );
       assert.deepStrictEqual(
         attribution.chargedEventSummaries.map((summary) =>
           summary.positiveAttackMarginCandidateCount),
         [0, 0, 0, 0, 4],
       );
 
-      const syntheticClassification = (productiveSemantic, failedSemantics) => {
-        const productive = { attemptId: "P", semantic: productiveSemantic };
+      const syntheticClassification = (productiveSemantic, failedSemantics, options) => {
+        const config = options || {};
+        const productiveTemporal = config.productiveTemporal ||
+          { callOrdinal: 5, expansionAtCharge: 40 };
+        const failedTemporals = config.failedTemporals || failedSemantics.map((_, index) => ({
+          callOrdinal: index + 1,
+          expansionAtCharge: (index + 1) * 8,
+        }));
+        const productive = {
+          attemptId: "P",
+          callOrdinal: productiveTemporal.callOrdinal,
+          semantic: productiveSemantic,
+          temporal: { expansionAtCharge: productiveTemporal.expansionAtCharge },
+        };
         const failed = failedSemantics.map((semantic, index) => ({
           attemptId: `F${index}`,
+          callOrdinal: failedTemporals[index].callOrdinal,
           semantic,
+          temporal: { expansionAtCharge: failedTemporals[index].expansionAtCharge },
         }));
         return classifyRootAttemptSeparability(productive, failed);
       };
@@ -835,6 +855,23 @@ function main() {
       ]);
       assert.strictEqual(u3.classification, "U3");
       assert.strictEqual(u3.vectorEqualityDetails.allFailedEqualToProductive, true);
+      assert.ok(u3.singleTemporalSeparators.includes("callOrdinal"));
+      assert.ok(u3.vectorEqualityDetails.temporalProvided);
+      const u4NoTemporalSeparator = syntheticClassification(baseSemantic, [
+        { ...baseSemantic },
+        { ...baseSemantic },
+      ], {
+        productiveTemporal: { callOrdinal: 5, expansionAtCharge: 40 },
+        failedTemporals: [
+          { callOrdinal: 5, expansionAtCharge: 40 },
+          { callOrdinal: 5, expansionAtCharge: 40 },
+        ],
+      });
+      assert.strictEqual(u4NoTemporalSeparator.classification, "U4");
+      assert.strictEqual(
+        u4NoTemporalSeparator.reason,
+        "semantic-collision-without-temporal-separator",
+      );
       const u2 = syntheticClassification(baseSemantic, [
         { ...baseSemantic, sourceDepth: 9 },
         { ...baseSemantic },
@@ -860,6 +897,26 @@ function main() {
         { ...baseSemantic, sourceDepth: 9 },
       ]);
       assert.strictEqual(combinationOnly.classification, "U1-COMBINATION-ONLY");
+      const nestedVector = syntheticClassification(
+        { nested: { k: 1 }, a: 1, b: 1 },
+        [
+          { nested: { k: 1 }, a: 2, b: 1 },
+          { nested: { k: 1 }, a: 1, b: 2 },
+        ],
+      );
+      assert.strictEqual(nestedVector.classification, "U1-COMBINATION-ONLY");
+      assert.ok(!nestedVector.singleFeatureSeparators.includes("nested"));
+      assert.ok(!nestedVector.singleFeatureSeparators.includes("a"));
+      assert.ok(!nestedVector.singleFeatureSeparators.includes("b"));
+      const reorderedKeyFingerprint = syntheticClassification(
+        { z: 1, a: { m: 1, n: 2 }, b: 3 },
+        [{ a: { n: 2, m: 1 }, b: 3, z: 1 }],
+      );
+      assert.strictEqual(reorderedKeyFingerprint.vectorEqualityDetails.anyCollision, true);
+      assert.strictEqual(
+        reorderedKeyFingerprint.vectorEqualityDetails.productiveSemanticFingerprint,
+        reorderedKeyFingerprint.vectorEqualityDetails.failedSemanticFingerprints[0].fingerprint,
+      );
     }
 
     if (includeO4ContinuationAttribution) {
@@ -974,8 +1031,45 @@ function main() {
       hierarchyCallChronology: includeHierarchyCallChronology
         ? candidate.stats.hierarchyCallChronology
         : null,
-      rootAttemptSeparabilityAttribution: includeRootAttemptSeparability
-        ? candidate.stats.rootAttemptSeparabilityAttribution
+      compactRootAttemptSeparabilityAttribution: includeRootAttemptSeparability
+        ? (() => {
+          const full = candidate.stats.rootAttemptSeparabilityAttribution;
+          if (!full) return null;
+          const compact = {
+            schema: full.schema,
+            rootCompileEventCount: full.rootCompileEvents.length,
+            capturedCandidateCount: full.rootCompileEvents.reduce(
+              (sum, event) => sum + event.candidates.length,
+              0,
+            ),
+            chargedEventSummaries: full.chargedEventSummaries,
+            rootCalls: full.rootCalls.map((entry) => ({
+              callOrdinal: entry.callOrdinal,
+              attemptId: entry.attemptId,
+              identity: entry.identity,
+              label: entry.label,
+              semantic: entry.semantic,
+              temporal: {
+                expansionAtCharge: entry.temporal.expansionAtCharge,
+                callsRemainingAfter: entry.temporal.callsRemainingAfter,
+              },
+            })),
+            separability: full.separability,
+            availability: full.availability,
+          };
+          assert.ok(!("rootCompileEvents" in compact));
+          assert.ok(!("candidates" in compact));
+          assert.ok(
+            !compact.rootCalls.some((entry) => "rootCompileEvents" in entry),
+            "compact rootCalls must not carry raw compile events",
+          );
+          const compactLength = JSON.stringify(compact).length;
+          assert.ok(
+            compactLength < 20000,
+            `compactRootAttemptSeparabilityAttribution too large: ${compactLength}`,
+          );
+          return compact;
+        })()
         : null,
       postO3ResidualAttribution: includePostO3Observation
         ? candidate.stats.survivalOpportunityPostResidualAttributions.map((entry) => ({
