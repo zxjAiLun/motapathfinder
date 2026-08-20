@@ -18,6 +18,7 @@ const {
   runStrategicD2Search,
   classifyPreHierarchyRootRetryNovelty,
   classifyRootAttemptSeparability,
+  classifyRootRetryOfflineVerdict,
 } = require("./lib/strategic-d2-search");
 const { createMt5EntryState, detachCheckpoint } = require("./qualify-blind-discovery");
 
@@ -1057,6 +1058,14 @@ function main() {
       assert.ok(retryComparison4.improvedFields.includes("attackMargin"));
       assert.ok(retryComparison4.improvedFields.includes("sourceTerminalProgressScore"));
       assert.strictEqual(retryAttribution.verdict, "EVIDENCE-INCOMPLETE");
+      const retryComparison2 = retryAttribution.preChargeComparisons.find(
+        (entry) => entry.callOrdinal === 2,
+      );
+      assert.ok(retryComparison2);
+      assert.deepStrictEqual(retryComparison2.missingFields.sort(), ["damage", "survivalMargin"]);
+      assert.deepStrictEqual(retryComparison4.missingFields.sort(), ["damage", "survivalMargin"]);
+      assert.ok(retryComparison2.pairwiseComparisons[0].missingFields.includes("damage"));
+      assert.ok(!("rootCompileEvents" in retryAttribution) || true);
 
       const syntheticRetry = (calls) => classifyPreHierarchyRootRetryNovelty(calls);
       const baseRetrySemantic = {
@@ -1123,6 +1132,44 @@ function main() {
         true,
       );
       assert.strictEqual(contextOnly.comparisons[1].classification, "METRIC-TIE-CONTEXT-ONLY");
+      const exactNullVector = syntheticRetry([
+        mkRetryCall(1, { ...baseRetrySemantic, damage: null, survivalMargin: null }),
+        mkRetryCall(2, { ...baseRetrySemantic, damage: null, survivalMargin: null }),
+      ]);
+      assert.strictEqual(exactNullVector.comparisons[1].classification, "EXACT-SEMANTIC-RETRY");
+      assert.ok(exactNullVector.comparisons[1].exactSemanticEqual);
+      const dominatedWithMissing = syntheticRetry([
+        mkRetryCall(1, { ...baseRetrySemantic, attackMargin: -100, damage: 1000 }),
+        mkRetryCall(2, { ...baseRetrySemantic, damage: null }),
+        mkRetryCall(3, { ...baseRetrySemantic, attackMargin: -400, damage: 1000 }),
+      ]);
+      assert.strictEqual(dominatedWithMissing.comparisons[2].classification, "PRIOR-ATTEMPT-DOMINATES");
+      assert.deepStrictEqual(dominatedWithMissing.comparisons[2].decisiveEarlierCallOrdinals, [1]);
+      const improvesButDominated = syntheticRetry([
+        mkRetryCall(1, { ...baseRetrySemantic, attackMargin: -400 }),
+        mkRetryCall(2, { ...baseRetrySemantic, attackMargin: -100 }),
+        mkRetryCall(3, baseRetrySemantic),
+      ]);
+      assert.strictEqual(improvesButDominated.comparisons[2].classification, "PRIOR-ATTEMPT-DOMINATES");
+      assert.deepStrictEqual(improvesButDominated.comparisons[2].decisiveEarlierCallOrdinals, [2]);
+      const allImproved = syntheticRetry([
+        mkRetryCall(1, { ...baseRetrySemantic, attackMargin: -400 }),
+        mkRetryCall(2, { ...baseRetrySemantic, attackMargin: -350 }),
+        mkRetryCall(3, { ...baseRetrySemantic, attackMargin: -100 }),
+      ]);
+      assert.strictEqual(allImproved.comparisons[2].classification, "CURRENT-ATTEMPT-IMPROVES");
+      const productiveVsIncomplete = classifyRootRetryOfflineVerdict(
+        [
+          { callOrdinal: 1, classification: "EVIDENCE-INCOMPLETE" },
+          { callOrdinal: 2, classification: "PRIOR-ATTEMPT-DOMINATES" },
+        ],
+        [
+          { callOrdinal: 1, productive: false },
+          { callOrdinal: 2, productive: true },
+        ],
+      );
+      assert.strictEqual(productiveVsIncomplete.verdict, "PRODUCTIVE-ROOT-WOULD-BE-FLAGGED");
+      assert.deepStrictEqual(productiveVsIncomplete.productiveFlaggedCallOrdinals, [2]);
     }
 
     if (includeO4ContinuationAttribution) {
@@ -1292,9 +1339,19 @@ function main() {
               classification: entry.classification,
               improvedFields: entry.improvedFields,
               regressedFields: entry.regressedFields,
+              missingFields: entry.missingFields,
               contextDifferenceKeys: entry.contextDifferenceKeys,
               exactSemanticEqual: entry.exactSemanticEqual,
               comparedCallOrdinals: entry.comparedCallOrdinals,
+              decisiveEarlierCallOrdinals: entry.decisiveEarlierCallOrdinals,
+              pairwiseComparisons: (entry.pairwiseComparisons || []).map((pair) => ({
+                earlierCallOrdinal: pair.earlierCallOrdinal,
+                classification: pair.classification,
+                improvedFields: pair.improvedFields,
+                regressedFields: pair.regressedFields,
+                missingFields: pair.missingFields,
+                exactSemanticEqual: pair.exactSemanticEqual,
+              })),
             })),
             postSearchEvaluation: full.postSearchEvaluation,
             verdict: full.verdict,

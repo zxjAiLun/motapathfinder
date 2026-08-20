@@ -232,6 +232,76 @@ function retryContextDifferenceKeys(retrySemantic, earlierSemantic) {
  * count as metric improvement. No post-search fields (productive/satisfied/
  * materialized/continuation) are read here.
  */
+function classifyPairwiseRetryComparison(retryCall, earlierCall) {
+  const metric = compareRootRetryMetrics(retryCall.semantic, earlierCall.semantic);
+  const contextDifferenceKeys = retryContextDifferenceKeys(retryCall.semantic, earlierCall.semantic);
+  const exactSemanticEqual = isDeepStrictEqual(retryCall.semantic, earlierCall.semantic);
+  let classification;
+  if (exactSemanticEqual) {
+    classification = "EXACT-SEMANTIC-RETRY";
+  } else if (metric.missingFields.length > 0) {
+    classification = "EVIDENCE-INCOMPLETE";
+  } else if (metric.improvedFields.length > 0 && metric.regressedFields.length > 0) {
+    classification = "MIXED-TRADEOFF";
+  } else if (metric.improvedFields.length > 0) {
+    classification = "CURRENT-ATTEMPT-IMPROVES";
+  } else if (metric.regressedFields.length > 0) {
+    classification = "PRIOR-ATTEMPT-DOMINATES";
+  } else {
+    classification = "METRIC-TIE-CONTEXT-ONLY";
+  }
+  return {
+    earlierCallOrdinal: earlierCall.callOrdinal,
+    earlierAttemptId: earlierCall.attemptId,
+    classification,
+    improvedFields: metric.improvedFields.slice(),
+    regressedFields: metric.regressedFields.slice(),
+    equalFields: metric.equalFields.slice(),
+    missingFields: metric.missingFields.slice(),
+    contextDifferenceKeys: contextDifferenceKeys.slice(),
+    exactSemanticEqual,
+  };
+}
+
+// Pure retry-level aggregation: decisive earlier witnesses determine the level.
+// Priority per retry (ordered): EXACT > PRIOR-DOMINATES > METRIC-TIE > INCOMPLETE ...
+// The retry-level classification reports the decisive witness kind, but only
+// once strong non-improving witnesses are absent do incomplete comparisons take
+// effect.
+function aggregateRetryLevelClassification(pairwiseComparisons) {
+  const decisivePairs = (targetClassification) =>
+    pairwiseComparisons.filter((entry) => entry.classification === targetClassification);
+  const firstMatch = (target) => {
+    const matches = decisivePairs(target);
+    return matches.length > 0 ? matches.map((entry) => entry.earlierCallOrdinal) : [];
+  };
+  const exactPairs = decisivePairs("EXACT-SEMANTIC-RETRY");
+  if (exactPairs.length > 0) {
+    return { classification: "EXACT-SEMANTIC-RETRY", decisiveEarlierCallOrdinals: exactPairs.map((e) => e.earlierCallOrdinal) };
+  }
+  const dominancePairs = decisivePairs("PRIOR-ATTEMPT-DOMINATES");
+  if (dominancePairs.length > 0) {
+    return { classification: "PRIOR-ATTEMPT-DOMINATES", decisiveEarlierCallOrdinals: dominancePairs.map((e) => e.earlierCallOrdinal) };
+  }
+  const tiePairs = decisivePairs("METRIC-TIE-CONTEXT-ONLY");
+  if (tiePairs.length > 0) {
+    return { classification: "METRIC-TIE-CONTEXT-ONLY", decisiveEarlierCallOrdinals: tiePairs.map((e) => e.earlierCallOrdinal) };
+  }
+  if (pairwiseComparisons.some((entry) => entry.classification === "EVIDENCE-INCOMPLETE")) {
+    return {
+      classification: "EVIDENCE-INCOMPLETE",
+      decisiveEarlierCallOrdinals: decisivePairs("EVIDENCE-INCOMPLETE").map((e) => e.earlierCallOrdinal),
+    };
+  }
+  if (pairwiseComparisons.some((entry) => entry.classification === "MIXED-TRADEOFF")) {
+    return { classification: "MIXED-TRADEOFF", decisiveEarlierCallOrdinals: firstMatch("MIXED-TRADEOFF") };
+  }
+  if (pairwiseComparisons.some((entry) => entry.classification === "CURRENT-ATTEMPT-IMPROVES")) {
+    return { classification: "CURRENT-ATTEMPT-IMPROVES", decisiveEarlierCallOrdinals: firstMatch("CURRENT-ATTEMPT-IMPROVES") };
+  }
+  return { classification: "EVIDENCE-INCOMPLETE", decisiveEarlierCallOrdinals: [] };
+}
+
 function classifyPreHierarchyRootRetryNovelty(rootCalls) {
   const preHierarchyCalls = (rootCalls || []).filter((call) =>
     call && call.temporal && call.temporal.firstHierarchyActivationOccurred === false);
@@ -268,59 +338,36 @@ function classifyPreHierarchyRootRetryNovelty(rootCalls) {
           ...base,
           classification: "FIRST-SEEN",
           comparedCallOrdinals: [],
+          pairwiseComparisons: [],
           improvedFields: [],
           regressedFields: [],
           equalFields: [],
           missingFields: [],
           contextDifferenceKeys: [],
           exactSemanticEqual: false,
+          decisiveEarlierCallOrdinals: [],
         });
         continue;
       }
       const earlierCalls = groupCalls.slice(0, index);
-      const perComparison = earlierCalls.map((earlier) => {
-        const metric = compareRootRetryMetrics(retry.semantic, earlier.semantic);
-        return {
-          earlierCallOrdinal: earlier.callOrdinal,
-          earlierAttemptId: earlier.attemptId,
-          improvedFields: metric.improvedFields,
-          regressedFields: metric.regressedFields,
-          equalFields: metric.equalFields,
-          missingFields: metric.missingFields,
-          contextDifferenceKeys: retryContextDifferenceKeys(retry.semantic, earlier.semantic),
-          exactSemanticEqual: isDeepStrictEqual(retry.semantic, earlier.semantic),
-        };
-      });
-      const anyMissing = perComparison.some((entry) => entry.missingFields.length > 0);
-      const anyExactEqual = perComparison.some((entry) => entry.exactSemanticEqual);
-      const anyImproved = perComparison.some((entry) => entry.improvedFields.length > 0);
-      const anyRegressed = perComparison.some((entry) => entry.regressedFields.length > 0);
-      let classification;
-      if (anyMissing) {
-        classification = "EVIDENCE-INCOMPLETE";
-      } else if (anyExactEqual) {
-        classification = "EXACT-SEMANTIC-RETRY";
-      } else if (anyImproved && anyRegressed) {
-        classification = "MIXED-TRADEOFF";
-      } else if (anyImproved) {
-        classification = "CURRENT-ATTEMPT-IMPROVES";
-      } else if (anyRegressed) {
-        classification = "PRIOR-ATTEMPT-DOMINATES";
-      } else {
-        classification = "METRIC-TIE-CONTEXT-ONLY";
-      }
+      const pairwiseComparisons = earlierCalls.map((earlier) =>
+        classifyPairwiseRetryComparison(retry, earlier));
+      const aggregated = aggregateRetryLevelClassification(pairwiseComparisons);
+      const union = (key) => Array.from(new Set(
+        pairwiseComparisons.flatMap((entry) => entry[key] || []),
+      ));
       comparisons.push({
         ...base,
-        classification,
+        classification: aggregated.classification,
         comparedCallOrdinals: earlierCalls.map((call) => call.callOrdinal),
-        improvedFields: Array.from(new Set(perComparison.flatMap((entry) => entry.improvedFields))),
-        regressedFields: Array.from(new Set(perComparison.flatMap((entry) => entry.regressedFields))),
-        equalFields: Array.from(new Set(perComparison.flatMap((entry) => entry.equalFields))),
-        missingFields: Array.from(new Set(perComparison.flatMap((entry) => entry.missingFields))),
-        contextDifferenceKeys: Array.from(new Set(
-          perComparison.flatMap((entry) => entry.contextDifferenceKeys),
-        )),
-        exactSemanticEqual: anyExactEqual,
+        pairwiseComparisons,
+        improvedFields: union("improvedFields"),
+        regressedFields: union("regressedFields"),
+        equalFields: union("equalFields"),
+        missingFields: union("missingFields"),
+        contextDifferenceKeys: union("contextDifferenceKeys"),
+        exactSemanticEqual: pairwiseComparisons.some((entry) => entry.exactSemanticEqual),
+        decisiveEarlierCallOrdinals: aggregated.decisiveEarlierCallOrdinals,
       });
     }
   }
@@ -329,6 +376,61 @@ function classifyPreHierarchyRootRetryNovelty(rootCalls) {
     repeatGroupCount: repeatGroups.length,
     repeatGroups,
     comparisons,
+  };
+}
+
+function classifyRootRetryOfflineVerdict(preChargeComparisons, postSearchEvaluation) {
+  const postByCall = new Map(
+    (postSearchEvaluation || []).map((entry) => [entry.callOrdinal, Boolean(entry.productive)]),
+  );
+  const nonImprovingClassifications = new Set([
+    "PRIOR-ATTEMPT-DOMINATES",
+    "METRIC-TIE-CONTEXT-ONLY",
+    "EXACT-SEMANTIC-RETRY",
+  ]);
+  let incompleteOrdinals = [];
+  let productiveFlaggedOrdinals = [];
+  let nonProductiveFlaggedOrdinals = [];
+  for (const entry of preChargeComparisons || []) {
+    if (entry.classification === "EVIDENCE-INCOMPLETE") {
+      incompleteOrdinals.push(entry.callOrdinal);
+      continue;
+    }
+    if (!nonImprovingClassifications.has(entry.classification)) continue;
+    const productive = postByCall.get(entry.callOrdinal);
+    if (productive === true) productiveFlaggedOrdinals.push(entry.callOrdinal);
+    else if (productive === false) nonProductiveFlaggedOrdinals.push(entry.callOrdinal);
+  }
+  // Spec priority: PRODUCTIVE flagged > EVIDENCE-INCOMPLETE > nonproductive dominated > none
+  if (productiveFlaggedOrdinals.length > 0) {
+    return {
+      verdict: "PRODUCTIVE-ROOT-WOULD-BE-FLAGGED",
+      productiveFlaggedCallOrdinals: productiveFlaggedOrdinals.slice().sort((a, b) => a - b),
+      nonProductiveFlaggedCallOrdinals: nonProductiveFlaggedOrdinals.slice().sort((a, b) => a - b),
+      incompleteCallOrdinals: incompleteOrdinals.slice().sort((a, b) => a - b),
+    };
+  }
+  if (incompleteOrdinals.length > 0) {
+    return {
+      verdict: "EVIDENCE-INCOMPLETE",
+      productiveFlaggedCallOrdinals: [],
+      nonProductiveFlaggedCallOrdinals: [],
+      incompleteCallOrdinals: incompleteOrdinals.slice().sort((a, b) => a - b),
+    };
+  }
+  if (nonProductiveFlaggedOrdinals.length > 0) {
+    return {
+      verdict: "TRACE-LOCAL-NONPRODUCTIVE-DOMINATED-RETRY-OBSERVED",
+      productiveFlaggedCallOrdinals: [],
+      nonProductiveFlaggedCallOrdinals: nonProductiveFlaggedOrdinals.slice().sort((a, b) => a - b),
+      incompleteCallOrdinals: [],
+    };
+  }
+  return {
+    verdict: "NO-PRECHARGE-NONIMPROVING-RETRY",
+    productiveFlaggedCallOrdinals: [],
+    nonProductiveFlaggedCallOrdinals: [],
+    incompleteCallOrdinals: [],
   };
 }
 
@@ -3879,33 +3981,14 @@ function runStrategicD2Search(options) {
       };
     });
     const retryAttribution = classifyPreHierarchyRootRetryNovelty(labeledCalls);
-    const nonImprovingClassifications = new Set([
-      "PRIOR-ATTEMPT-DOMINATES",
-      "METRIC-TIE-CONTEXT-ONLY",
-      "EXACT-SEMANTIC-RETRY",
-    ]);
-    const anyIncomplete = retryAttribution.comparisons.some((entry) =>
-      entry.classification === "EVIDENCE-INCOMPLETE");
-    const nonImproving = retryAttribution.comparisons.filter((entry) =>
-      nonImprovingClassifications.has(entry.classification));
-    const productiveFlagged = nonImproving.filter((entry) => {
-      const labeled = labeledCalls.find((call) => call.callOrdinal === entry.callOrdinal);
-      return Boolean(labeled && labeled.label.productive);
-    });
-    const nonProductiveDominated = nonImproving.filter((entry) => {
-      const labeled = labeledCalls.find((call) => call.callOrdinal === entry.callOrdinal);
-      return Boolean(labeled && !labeled.label.productive);
-    });
-    let verdict;
-    if (anyIncomplete) {
-      verdict = "EVIDENCE-INCOMPLETE";
-    } else if (productiveFlagged.length > 0) {
-      verdict = "PRODUCTIVE-ROOT-WOULD-BE-FLAGGED";
-    } else if (nonProductiveDominated.length > 0) {
-      verdict = "TRACE-LOCAL-NONPRODUCTIVE-DOMINATED-RETRY-OBSERVED";
-    } else {
-      verdict = "NO-PRECHARGE-NONIMPROVING-RETRY";
-    }
+    const offlineVerdictResult = classifyRootRetryOfflineVerdict(
+      retryAttribution.comparisons,
+      labeledCalls.map((call) => ({
+        callOrdinal: call.callOrdinal,
+        productive: call.label.productive,
+      })),
+    );
+    const verdict = offlineVerdictResult.verdict;
     stats.rootRetryNoveltyAttribution = {
       schema: "motapathfinder.strategic-root-retry-novelty-attribution.v1",
       rootCallCount: retryAttribution.rootCallCount,
@@ -4225,6 +4308,10 @@ module.exports = {
   buildRootAttemptSemanticVector,
   classifyPreHierarchyRootRetryNovelty,
   classifyRootAttemptSeparability,
+  classifyRootRetryOfflineVerdict,
+  stableSerialize,
+  hashStable,
+  buildTemporalVector,
   enumerateStrategicActions,
   runStrategicD2Search,
 };
