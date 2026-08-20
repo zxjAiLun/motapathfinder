@@ -157,6 +157,181 @@ function buildTemporalVector(entry) {
   };
 }
 
+const RETRY_REQUIRED_METRICS = [
+  "attackMargin",
+  "survivalMargin",
+  "sourceTerminalProgressScore",
+  "damage",
+  "reachableAtCompileTime",
+];
+const RETRY_HIGHER_BETTER = new Set([
+  "attackMargin",
+  "survivalMargin",
+  "sourceTerminalProgressScore",
+]);
+const RETRY_LOWER_BETTER = new Set(["damage"]);
+const RETRY_CONTEXT_KEYS = [
+  "sourceDepth",
+  "sourceFloor",
+  "beforeStage",
+  "stageGoal",
+  "compiledCandidateRank",
+  "compiledCandidateCount",
+];
+
+function retryBoundaryIdentityKey(identity) {
+  if (!identity) return "null";
+  return [identity.floorId, identity.enemyId, identity.x, identity.y]
+    .map((value) => (value == null ? "null" : String(value)))
+    .join("|");
+}
+
+function compareRootRetryMetrics(retrySemantic, earlierSemantic) {
+  const improvedFields = [];
+  const regressedFields = [];
+  const equalFields = [];
+  const missingFields = [];
+  for (const metric of RETRY_REQUIRED_METRICS) {
+    const retryValue = retrySemantic[metric];
+    const earlierValue = earlierSemantic[metric];
+    if (retryValue == null || earlierValue == null) {
+      missingFields.push(metric);
+      continue;
+    }
+    if (isDeepStrictEqual(retryValue, earlierValue)) {
+      equalFields.push(metric);
+      continue;
+    }
+    let improved;
+    if (metric === "reachableAtCompileTime") {
+      improved = retryValue === true && earlierValue === false;
+    } else if (RETRY_HIGHER_BETTER.has(metric)) {
+      improved = retryValue > earlierValue;
+    } else if (RETRY_LOWER_BETTER.has(metric)) {
+      improved = retryValue < earlierValue;
+    } else {
+      improved = false;
+    }
+    if (improved) improvedFields.push(metric);
+    else regressedFields.push(metric);
+  }
+  return { improvedFields, regressedFields, equalFields, missingFields };
+}
+
+function retryContextDifferenceKeys(retrySemantic, earlierSemantic) {
+  return RETRY_CONTEXT_KEYS.filter((key) =>
+    !isDeepStrictEqual(retrySemantic[key], earlierSemantic[key]));
+}
+
+/**
+ * PR-5.19v pure pre-charge retry novelty classification. Compares only root
+ * calls charged before any hierarchy activation, grouped by prerequisiteId +
+ * full boundary identity. Each retry is compared against ALL earlier calls in
+ * its group. Only pre-charge metrics drive improved/regressed/equal/missing;
+ * context fields are reported separately as contextDifferenceKeys and never
+ * count as metric improvement. No post-search fields (productive/satisfied/
+ * materialized/continuation) are read here.
+ */
+function classifyPreHierarchyRootRetryNovelty(rootCalls) {
+  const preHierarchyCalls = (rootCalls || []).filter((call) =>
+    call && call.temporal && call.temporal.firstHierarchyActivationOccurred === false);
+  const groups = new Map();
+  for (const call of preHierarchyCalls) {
+    const key = `${call.prerequisiteId || "?"}|${retryBoundaryIdentityKey(call.identity)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(call);
+  }
+  const comparisons = [];
+  const repeatGroups = [];
+  for (const [groupKey, groupCalls] of groups.entries()) {
+    groupCalls.sort((left, right) => left.callOrdinal - right.callOrdinal);
+    if (groupCalls.length > 1) {
+      repeatGroups.push({
+        groupKey,
+        prerequisiteId: groupCalls[0].prerequisiteId,
+        identity: groupCalls[0].identity,
+        callOrdinals: groupCalls.map((call) => call.callOrdinal),
+      });
+    }
+    for (let index = 0; index < groupCalls.length; index += 1) {
+      const retry = groupCalls[index];
+      const base = {
+        callOrdinal: retry.callOrdinal,
+        attemptId: retry.attemptId,
+        prerequisiteId: retry.prerequisiteId,
+        parentDependencyId: retry.parentDependencyId,
+        groupKey,
+        identity: retry.identity,
+      };
+      if (index === 0) {
+        comparisons.push({
+          ...base,
+          classification: "FIRST-SEEN",
+          comparedCallOrdinals: [],
+          improvedFields: [],
+          regressedFields: [],
+          equalFields: [],
+          missingFields: [],
+          contextDifferenceKeys: [],
+          exactSemanticEqual: false,
+        });
+        continue;
+      }
+      const earlierCalls = groupCalls.slice(0, index);
+      const perComparison = earlierCalls.map((earlier) => {
+        const metric = compareRootRetryMetrics(retry.semantic, earlier.semantic);
+        return {
+          earlierCallOrdinal: earlier.callOrdinal,
+          earlierAttemptId: earlier.attemptId,
+          improvedFields: metric.improvedFields,
+          regressedFields: metric.regressedFields,
+          equalFields: metric.equalFields,
+          missingFields: metric.missingFields,
+          contextDifferenceKeys: retryContextDifferenceKeys(retry.semantic, earlier.semantic),
+          exactSemanticEqual: isDeepStrictEqual(retry.semantic, earlier.semantic),
+        };
+      });
+      const anyMissing = perComparison.some((entry) => entry.missingFields.length > 0);
+      const anyExactEqual = perComparison.some((entry) => entry.exactSemanticEqual);
+      const anyImproved = perComparison.some((entry) => entry.improvedFields.length > 0);
+      const anyRegressed = perComparison.some((entry) => entry.regressedFields.length > 0);
+      let classification;
+      if (anyMissing) {
+        classification = "EVIDENCE-INCOMPLETE";
+      } else if (anyExactEqual) {
+        classification = "EXACT-SEMANTIC-RETRY";
+      } else if (anyImproved && anyRegressed) {
+        classification = "MIXED-TRADEOFF";
+      } else if (anyImproved) {
+        classification = "CURRENT-ATTEMPT-IMPROVES";
+      } else if (anyRegressed) {
+        classification = "PRIOR-ATTEMPT-DOMINATES";
+      } else {
+        classification = "METRIC-TIE-CONTEXT-ONLY";
+      }
+      comparisons.push({
+        ...base,
+        classification,
+        comparedCallOrdinals: earlierCalls.map((call) => call.callOrdinal),
+        improvedFields: Array.from(new Set(perComparison.flatMap((entry) => entry.improvedFields))),
+        regressedFields: Array.from(new Set(perComparison.flatMap((entry) => entry.regressedFields))),
+        equalFields: Array.from(new Set(perComparison.flatMap((entry) => entry.equalFields))),
+        missingFields: Array.from(new Set(perComparison.flatMap((entry) => entry.missingFields))),
+        contextDifferenceKeys: Array.from(new Set(
+          perComparison.flatMap((entry) => entry.contextDifferenceKeys),
+        )),
+        exactSemanticEqual: anyExactEqual,
+      });
+    }
+  }
+  return {
+    rootCallCount: preHierarchyCalls.length,
+    repeatGroupCount: repeatGroups.length,
+    repeatGroups,
+    comparisons,
+  };
+}
+
 /**
  * PR-5.19u pure classification. U2/U3 are mutually exclusive:
  *   U2 = partial collision (>=1 but not all failed roots equal the productive root)
@@ -627,6 +802,7 @@ function runStrategicD2Search(options) {
   const enableHierarchyCallChronology = config.enableHierarchyCallChronology === true;
   const enableRootAttemptSeparabilityAttribution =
     config.enableRootAttemptSeparabilityAttribution === true;
+  const enableRootRetryNoveltyAttribution = config.enableRootRetryNoveltyAttribution === true;
   const enablePostResidualAttribution = config.enablePostResidualAttribution === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
@@ -762,6 +938,7 @@ function runStrategicD2Search(options) {
     hierarchyCallAllocationAttribution: null,
     hierarchyCallChronology: null,
     rootAttemptSeparabilityAttribution: null,
+    rootRetryNoveltyAttribution: null,
     rootLevelCompiledCapBlockedSelectionEvents: 0,
     rootLevelCapBlockedCompiledCandidateInstances: 0,
     rootLevelCompiledOutstandingBlockedSelectionEvents: 0,
@@ -783,7 +960,8 @@ function runStrategicD2Search(options) {
       firstLevelOneCallCharged: null,
     },
   } : null;
-  const rootAttemptSeparabilityCalls = enableRootAttemptSeparabilityAttribution ? [] : null;
+  const rootAttemptSeparabilityCalls = enableRootAttemptSeparabilityAttribution ||
+    enableRootRetryNoveltyAttribution ? [] : null;
   const rootCompileEvents = enableRootAttemptSeparabilityAttribution ? [] : null;
   let hierarchyChronologyFirstContinuationRecorded = false;
   let hierarchyChronologyFirstActivationRecorded = false;
@@ -1923,7 +2101,8 @@ function runStrategicD2Search(options) {
       const beforeBattle = enableBattleViabilityAttribution
         ? analyzeBattleViabilityBlocker(simulator, sourceNode.state, prerequisite.boundary)
         : null;
-      if (enableRootAttemptSeparabilityAttribution && number(work.hierarchyLevel, 0) === 0) {
+      if ((enableRootAttemptSeparabilityAttribution || enableRootRetryNoveltyAttribution) &&
+          number(work.hierarchyLevel, 0) === 0) {
         const boundary = prerequisite.boundary || {};
         const projection = terminalBattleProjection(simulator, sourceNode.state, terminalGoal);
         const selectionContext = work.selectionContext || {};
@@ -1938,6 +2117,8 @@ function runStrategicD2Search(options) {
         rootAttemptSeparabilityCalls.push({
           callOrdinal: stats.battleAccessPrerequisiteCalls,
           attemptId,
+          prerequisiteId: prerequisite.id,
+          parentDependencyId: (prerequisite.parentDependency || {}).id || null,
           sourceNodeId: sourceNode.nodeId,
           identity: {
             floorId: boundary.floorId || null,
@@ -3647,6 +3828,99 @@ function runStrategicD2Search(options) {
       availability,
     };
   }
+  if (enableRootRetryNoveltyAttribution && rootAttemptSeparabilityCalls) {
+    const originOpportunityMaterializations = new Map();
+    const originResidualMaterializations = new Map();
+    for (const witness of stats.survivalOpportunityWitnesses) {
+      const attemptId = witness.originFailedAttemptId;
+      if (!attemptId) continue;
+      if (witness.materialized) {
+        originOpportunityMaterializations.set(
+          attemptId,
+          number(originOpportunityMaterializations.get(attemptId), 0) + 1,
+        );
+      }
+    }
+    for (const recovery of stats.survivalOpportunityResidualRecoveries) {
+      const attemptId = recovery.originFailedAttemptId;
+      if (!attemptId) continue;
+      if (recovery.materialized) {
+        originResidualMaterializations.set(
+          attemptId,
+          number(originResidualMaterializations.get(attemptId), 0) + 1,
+        );
+      }
+    }
+    const directSatisfiedByAttempt = new Map();
+    for (const witness of stats.battleAccessPrerequisiteWitnesses) {
+      if (witness.status === "satisfied" && witness.attemptId != null) {
+        directSatisfiedByAttempt.set(witness.attemptId, true);
+      }
+    }
+    const labeledCalls = rootAttemptSeparabilityCalls.map((call) => {
+      const directSatisfied = directSatisfiedByAttempt.has(call.attemptId);
+      const derivedMaterializedProgress =
+        number(originOpportunityMaterializations.get(call.attemptId), 0) +
+        number(originResidualMaterializations.get(call.attemptId), 0);
+      return {
+        callOrdinal: call.callOrdinal,
+        attemptId: call.attemptId,
+        prerequisiteId: call.prerequisiteId,
+        parentDependencyId: call.parentDependencyId,
+        identity: call.identity,
+        semantic: call.semantic,
+        temporal: {
+          firstHierarchyActivationOccurred: call.temporal.firstHierarchyActivationOccurred,
+        },
+        label: {
+          directSatisfied,
+          productive: directSatisfied || derivedMaterializedProgress > 0,
+        },
+      };
+    });
+    const retryAttribution = classifyPreHierarchyRootRetryNovelty(labeledCalls);
+    const nonImprovingClassifications = new Set([
+      "PRIOR-ATTEMPT-DOMINATES",
+      "METRIC-TIE-CONTEXT-ONLY",
+      "EXACT-SEMANTIC-RETRY",
+    ]);
+    const anyIncomplete = retryAttribution.comparisons.some((entry) =>
+      entry.classification === "EVIDENCE-INCOMPLETE");
+    const nonImproving = retryAttribution.comparisons.filter((entry) =>
+      nonImprovingClassifications.has(entry.classification));
+    const productiveFlagged = nonImproving.filter((entry) => {
+      const labeled = labeledCalls.find((call) => call.callOrdinal === entry.callOrdinal);
+      return Boolean(labeled && labeled.label.productive);
+    });
+    const nonProductiveDominated = nonImproving.filter((entry) => {
+      const labeled = labeledCalls.find((call) => call.callOrdinal === entry.callOrdinal);
+      return Boolean(labeled && !labeled.label.productive);
+    });
+    let verdict;
+    if (anyIncomplete) {
+      verdict = "EVIDENCE-INCOMPLETE";
+    } else if (productiveFlagged.length > 0) {
+      verdict = "PRODUCTIVE-ROOT-WOULD-BE-FLAGGED";
+    } else if (nonProductiveDominated.length > 0) {
+      verdict = "TRACE-LOCAL-NONPRODUCTIVE-DOMINATED-RETRY-OBSERVED";
+    } else {
+      verdict = "NO-PRECHARGE-NONIMPROVING-RETRY";
+    }
+    stats.rootRetryNoveltyAttribution = {
+      schema: "motapathfinder.strategic-root-retry-novelty-attribution.v1",
+      rootCallCount: retryAttribution.rootCallCount,
+      repeatGroupCount: retryAttribution.repeatGroupCount,
+      repeatGroups: retryAttribution.repeatGroups,
+      preChargeComparisons: retryAttribution.comparisons,
+      postSearchEvaluation: labeledCalls.map((call) => ({
+        callOrdinal: call.callOrdinal,
+        attemptId: call.attemptId,
+        productive: call.label.productive,
+        directSatisfied: call.label.directSatisfied,
+      })),
+      verdict,
+    };
+  }
   const frontierSize = agenda.activeSize(expanded);
   const activeLazyWork = lazyWork.activeSize();
   const strategicBudgetExhausted = !goalNode && stats.expansions >= maxExpansions &&
@@ -3949,6 +4223,7 @@ function runStrategicD2Search(options) {
 
 module.exports = {
   buildRootAttemptSemanticVector,
+  classifyPreHierarchyRootRetryNovelty,
   classifyRootAttemptSeparability,
   enumerateStrategicActions,
   runStrategicD2Search,

@@ -14,7 +14,11 @@ const {
 } = require("./lib/strategic-survival-opportunity-prerequisite");
 const { verifyConnectorChain } = require("./lib/strategic-connector");
 const { buildStateKey } = require("./lib/state-key");
-const { runStrategicD2Search, classifyRootAttemptSeparability } = require("./lib/strategic-d2-search");
+const {
+  runStrategicD2Search,
+  classifyPreHierarchyRootRetryNovelty,
+  classifyRootAttemptSeparability,
+} = require("./lib/strategic-d2-search");
 const { createMt5EntryState, detachCheckpoint } = require("./qualify-blind-discovery");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -67,6 +71,7 @@ function main() {
   const includeHierarchyCallAttribution = process.argv.includes("--hierarchy-call-attribution");
   const includeHierarchyCallChronology = process.argv.includes("--hierarchy-call-chronology");
   const includeRootAttemptSeparability = process.argv.includes("--root-attempt-separability");
+  const includeRootRetryNovelty = process.argv.includes("--root-retry-novelty");
   const project = loadProject(PROJECT_ROOT);
   const initialState = detachCheckpoint(createMt5EntryState(project));
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
@@ -235,6 +240,7 @@ function main() {
       enableHierarchyCallAttribution: includeHierarchyCallAttribution && enable,
       enableHierarchyCallChronology: includeHierarchyCallChronology && enable,
       enableRootAttemptSeparabilityAttribution: includeRootAttemptSeparability && enable,
+      enableRootRetryNoveltyAttribution: includeRootRetryNovelty && enable,
       enablePostResidualAttribution: includePostO3Observation && enable,
     });
 
@@ -267,6 +273,38 @@ function main() {
       enableHierarchyCallAttribution: true,
       enableHierarchyCallChronology: true,
       enableRootAttemptSeparabilityAttribution: enableSeparability,
+      enablePostResidualAttribution: false,
+    });
+
+    // 5.19v: retry-novelty isolation keeps separability collection on in both
+    // runs (it is the shared charge-record source) and toggles only the retry
+    // attribution flag. Nothing else differs between control and candidate.
+    const runWithRetryNoveltyIsolation = (enableRetry) => runStrategicD2Search({
+      project,
+      projectRoot: PROJECT_ROOT,
+      initialState,
+      terminalGoal,
+      simulatorFactory: () => makeBlindSimulator(project),
+      connectorMode: "battle-access-prerequisite",
+      enableConnector: true,
+      maxExpansions: 1000,
+      connectorMaxExpansions: 50,
+      connectorMaxCalls: 8,
+      lazyDrainEvery: 8,
+      maxTotalSearchExpansions: 1000,
+      enableParentDependencyContinuation: true,
+      enableHierarchicalCallAllocation: true,
+      enableBattleStagePrerequisiteDecomposition: true,
+      enableContinuationAnchorExpansionScheduling: true,
+      enableSurvivalOpportunityPrerequisite: true,
+      enableSurvivalResidualAttribution: true,
+      enableSurvivalResidualRecovery: true,
+      enableSecondSurvivalResidualRecovery: true,
+      enableO4ContinuationAttribution: false,
+      enableHierarchyCallAttribution: true,
+      enableHierarchyCallChronology: true,
+      enableRootAttemptSeparabilityAttribution: true,
+      enableRootRetryNoveltyAttribution: enableRetry,
       enablePostResidualAttribution: false,
     });
 
@@ -919,6 +957,174 @@ function main() {
       );
     }
 
+    if (includeRootRetryNovelty) {
+      const retryControl = runWithRetryNoveltyIsolation(false);
+      const retryCandidate = candidate;
+      const retryStripWall = (outcome) => {
+        const copy = { ...outcome };
+        delete copy.wallMs;
+        return copy;
+      };
+      assert.deepStrictEqual(
+        retryStripWall(retryCandidate.outcome),
+        retryStripWall(retryControl.outcome),
+        "retry observation changed outcome",
+      );
+      assert.deepStrictEqual(
+        retryCandidate.bestTerminalBlocker,
+        retryControl.bestTerminalBlocker,
+        "retry observation changed bestTerminalBlocker",
+      );
+      [
+        "totalSearchExpansions",
+        "expansions",
+        "battleAccessPrerequisiteCalls",
+        "rootLevelCalls",
+        "continuationDerivedCalls",
+      ].forEach((field) => {
+        assert.strictEqual(
+          retryControl.stats[field],
+          retryCandidate.stats[field],
+          `${field} changed with retry observation`,
+        );
+      });
+      assert.deepStrictEqual(
+        retryCandidate.stats.battleAccessPrerequisiteWitnesses.map((w) => w.attemptId),
+        retryControl.stats.battleAccessPrerequisiteWitnesses.map((w) => w.attemptId),
+        "charged witness identities changed with retry observation",
+      );
+      const retryCompactResiduals = (stats) => stats.survivalOpportunityResidualRecoveries.map((r) => ({
+        recoveryIndex: r.recoveryIndex,
+        target: r.selectedResidualTarget ? r.selectedResidualTarget.enemyId : null,
+        materialized: r.materialized,
+        parentContinuationCreated: r.parentContinuationCreated,
+      }));
+      assert.deepStrictEqual(
+        retryCompactResiduals(retryCandidate.stats),
+        retryCompactResiduals(retryControl.stats),
+        "residual/materialization results changed with retry observation",
+      );
+
+      assert.strictEqual(retryControl.stats.rootRetryNoveltyAttribution, null);
+      const retryAttribution = retryCandidate.stats.rootRetryNoveltyAttribution;
+      assert.ok(retryAttribution);
+      assert.strictEqual(
+        retryAttribution.schema,
+        "motapathfinder.strategic-root-retry-novelty-attribution.v1",
+      );
+      assert.strictEqual(retryAttribution.rootCallCount, 5);
+      assert.ok(Array.isArray(retryAttribution.preChargeComparisons));
+      assert.ok(Array.isArray(retryAttribution.postSearchEvaluation));
+      assert.strictEqual(retryAttribution.postSearchEvaluation.length, 5);
+      assert.ok([
+        "TRACE-LOCAL-NONPRODUCTIVE-DOMINATED-RETRY-OBSERVED",
+        "PRODUCTIVE-ROOT-WOULD-BE-FLAGGED",
+        "NO-PRECHARGE-NONIMPROVING-RETRY",
+        "EVIDENCE-INCOMPLETE",
+      ].includes(retryAttribution.verdict));
+
+      for (const comparison of retryAttribution.preChargeComparisons) {
+        const keys = Object.keys(comparison);
+        assert.ok(!keys.some((key) => /productive|directSatisfied|satisfied|materializ|continuation/i.test(key)),
+          `post-hoc field leaked into preChargeComparisons: ${keys.join(",")}`);
+        assert.ok([
+          "FIRST-SEEN",
+          "EXACT-SEMANTIC-RETRY",
+          "METRIC-TIE-CONTEXT-ONLY",
+          "PRIOR-ATTEMPT-DOMINATES",
+          "CURRENT-ATTEMPT-IMPROVES",
+          "MIXED-TRADEOFF",
+          "EVIDENCE-INCOMPLETE",
+        ].includes(comparison.classification));
+      }
+      assert.deepStrictEqual(
+        retryAttribution.postSearchEvaluation.map((entry) => entry.productive),
+        [false, false, false, false, true],
+      );
+      assert.strictEqual(retryAttribution.repeatGroupCount, 1);
+      assert.strictEqual(
+        retryAttribution.preChargeComparisons.map((entry) => entry.classification).join(","),
+        "FIRST-SEEN,EVIDENCE-INCOMPLETE,EVIDENCE-INCOMPLETE,FIRST-SEEN,FIRST-SEEN",
+      );
+      assert.deepStrictEqual(
+        retryAttribution.preChargeComparisons.map((entry) => entry.callOrdinal),
+        [1, 2, 4, 3, 5],
+      );
+      const retryComparison4 = retryAttribution.preChargeComparisons.find(
+        (entry) => entry.callOrdinal === 4,
+      );
+      assert.ok(retryComparison4);
+      assert.ok(retryComparison4.improvedFields.includes("attackMargin"));
+      assert.ok(retryComparison4.improvedFields.includes("sourceTerminalProgressScore"));
+      assert.strictEqual(retryAttribution.verdict, "EVIDENCE-INCOMPLETE");
+
+      const syntheticRetry = (calls) => classifyPreHierarchyRootRetryNovelty(calls);
+      const baseRetrySemantic = {
+        attackMargin: -273,
+        survivalMargin: -1000,
+        sourceTerminalProgressScore: 999999998777,
+        damage: 5000,
+        reachableAtCompileTime: false,
+        sourceDepth: 0,
+        sourceFloor: "MT5",
+        beforeStage: "attack-blocked",
+        stageGoal: null,
+        compiledCandidateRank: 1,
+        compiledCandidateCount: 4,
+      };
+      const mkRetryCall = (callOrdinal, semantic, extra) => ({
+        callOrdinal,
+        attemptId: `A${callOrdinal}`,
+        prerequisiteId: "P1",
+        parentDependencyId: "D1",
+        identity: { floorId: "MT5", enemyId: "evilHero", x: 9, y: 10 },
+        semantic,
+        temporal: { firstHierarchyActivationOccurred: false },
+        ...extra,
+      });
+      const firstSeen = syntheticRetry([mkRetryCall(1, baseRetrySemantic)]);
+      assert.strictEqual(firstSeen.comparisons[0].classification, "FIRST-SEEN");
+      const exactRetry = syntheticRetry([
+        mkRetryCall(1, baseRetrySemantic),
+        mkRetryCall(2, { ...baseRetrySemantic }),
+      ]);
+      assert.strictEqual(exactRetry.comparisons[1].classification, "EXACT-SEMANTIC-RETRY");
+      const metricTie = syntheticRetry([
+        mkRetryCall(1, baseRetrySemantic),
+        mkRetryCall(2, { ...baseRetrySemantic, sourceDepth: 2, compiledCandidateRank: 2 }),
+      ]);
+      assert.strictEqual(metricTie.comparisons[1].classification, "METRIC-TIE-CONTEXT-ONLY");
+      const dominated = syntheticRetry([
+        mkRetryCall(1, baseRetrySemantic),
+        mkRetryCall(2, { ...baseRetrySemantic, attackMargin: -400 }),
+      ]);
+      assert.strictEqual(dominated.comparisons[1].classification, "PRIOR-ATTEMPT-DOMINATES");
+      const improved = syntheticRetry([
+        mkRetryCall(1, baseRetrySemantic),
+        mkRetryCall(2, { ...baseRetrySemantic, attackMargin: -100 }),
+      ]);
+      assert.strictEqual(improved.comparisons[1].classification, "CURRENT-ATTEMPT-IMPROVES");
+      const mixed = syntheticRetry([
+        mkRetryCall(1, baseRetrySemantic),
+        mkRetryCall(2, { ...baseRetrySemantic, attackMargin: -100, survivalMargin: -2000 }),
+      ]);
+      assert.strictEqual(mixed.comparisons[1].classification, "MIXED-TRADEOFF");
+      const missingMetric = syntheticRetry([
+        mkRetryCall(1, baseRetrySemantic),
+        mkRetryCall(2, { ...baseRetrySemantic, damage: null }),
+      ]);
+      assert.strictEqual(missingMetric.comparisons[1].classification, "EVIDENCE-INCOMPLETE");
+      const contextOnly = syntheticRetry([
+        mkRetryCall(1, baseRetrySemantic),
+        mkRetryCall(2, { ...baseRetrySemantic, beforeStage: "lethal" }),
+      ]);
+      assert.strictEqual(
+        contextOnly.comparisons[1].contextDifferenceKeys.includes("beforeStage"),
+        true,
+      );
+      assert.strictEqual(contextOnly.comparisons[1].classification, "METRIC-TIE-CONTEXT-ONLY");
+    }
+
     if (includeO4ContinuationAttribution) {
       assert.strictEqual(control.stats.o4ContinuationAttributions.length, 0);
       assert.strictEqual(candidate.stats.o4ContinuationAttributions.length, 1);
@@ -1067,6 +1273,38 @@ function main() {
           assert.ok(
             compactLength < 20000,
             `compactRootAttemptSeparabilityAttribution too large: ${compactLength}`,
+          );
+          return compact;
+        })()
+        : null,
+      compactRootRetryNoveltyAttribution: includeRootRetryNovelty
+        ? (() => {
+          const full = candidate.stats.rootRetryNoveltyAttribution;
+          if (!full) return null;
+          const compact = {
+            schema: full.schema,
+            rootCallCount: full.rootCallCount,
+            repeatGroupCount: full.repeatGroupCount,
+            comparisons: full.preChargeComparisons.map((entry) => ({
+              callOrdinal: entry.callOrdinal,
+              attemptId: entry.attemptId,
+              groupKey: entry.groupKey,
+              classification: entry.classification,
+              improvedFields: entry.improvedFields,
+              regressedFields: entry.regressedFields,
+              contextDifferenceKeys: entry.contextDifferenceKeys,
+              exactSemanticEqual: entry.exactSemanticEqual,
+              comparedCallOrdinals: entry.comparedCallOrdinals,
+            })),
+            postSearchEvaluation: full.postSearchEvaluation,
+            verdict: full.verdict,
+          };
+          assert.ok(!("rootCompileEvents" in compact));
+          assert.ok(!("candidates" in compact));
+          const compactLength = JSON.stringify(compact).length;
+          assert.ok(
+            compactLength < 20000,
+            `compactRootRetryNoveltyAttribution too large: ${compactLength}`,
           );
           return compact;
         })()
