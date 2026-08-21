@@ -1011,7 +1011,7 @@ function main() {
       assert.ok(retryAttribution);
       assert.strictEqual(
         retryAttribution.schema,
-        "motapathfinder.strategic-root-retry-novelty-attribution.v1",
+        "motapathfinder.strategic-root-retry-novelty-attribution.v2",
       );
       assert.strictEqual(retryAttribution.rootCallCount, 5);
       assert.ok(Array.isArray(retryAttribution.preChargeComparisons));
@@ -1042,6 +1042,10 @@ function main() {
         retryAttribution.postSearchEvaluation.map((entry) => entry.productive),
         [false, false, false, false, true],
       );
+      assert.deepStrictEqual(retryAttribution.productiveFlaggedCallOrdinals, []);
+      assert.deepStrictEqual(retryAttribution.nonProductiveFlaggedCallOrdinals, []);
+      assert.deepStrictEqual(retryAttribution.incompleteCallOrdinals, [2, 4]);
+      assert.deepStrictEqual(retryAttribution.missingEvaluationCallOrdinals, []);
       assert.strictEqual(retryAttribution.repeatGroupCount, 1);
       assert.strictEqual(
         retryAttribution.preChargeComparisons.map((entry) => entry.classification).join(","),
@@ -1062,10 +1066,10 @@ function main() {
         (entry) => entry.callOrdinal === 2,
       );
       assert.ok(retryComparison2);
-      assert.deepStrictEqual(retryComparison2.missingFields.sort(), ["damage", "survivalMargin"]);
-      assert.deepStrictEqual(retryComparison4.missingFields.sort(), ["damage", "survivalMargin"]);
+      assert.deepStrictEqual([...retryComparison2.missingFields].sort(), ["damage", "survivalMargin"]);
+      assert.deepStrictEqual([...retryComparison4.missingFields].sort(), ["damage", "survivalMargin"]);
       assert.ok(retryComparison2.pairwiseComparisons[0].missingFields.includes("damage"));
-      assert.ok(!("rootCompileEvents" in retryAttribution) || true);
+      assert.ok(!("rootCompileEvents" in retryAttribution));
 
       const syntheticRetry = (calls) => classifyPreHierarchyRootRetryNovelty(calls);
       const baseRetrySemantic = {
@@ -1170,6 +1174,78 @@ function main() {
       );
       assert.strictEqual(productiveVsIncomplete.verdict, "PRODUCTIVE-ROOT-WOULD-BE-FLAGGED");
       assert.deepStrictEqual(productiveVsIncomplete.productiveFlaggedCallOrdinals, [2]);
+
+      const nonProductiveWithIncomplete = classifyRootRetryOfflineVerdict(
+        [
+          { callOrdinal: 1, classification: "EVIDENCE-INCOMPLETE" },
+          { callOrdinal: 2, classification: "PRIOR-ATTEMPT-DOMINATES" },
+        ],
+        [
+          { callOrdinal: 1, productive: false },
+          { callOrdinal: 2, productive: false },
+        ],
+      );
+      assert.strictEqual(nonProductiveWithIncomplete.verdict, "EVIDENCE-INCOMPLETE");
+      assert.deepStrictEqual(nonProductiveWithIncomplete.productiveFlaggedCallOrdinals, []);
+      assert.deepStrictEqual(nonProductiveWithIncomplete.nonProductiveFlaggedCallOrdinals, [2]);
+      assert.deepStrictEqual(nonProductiveWithIncomplete.incompleteCallOrdinals, [1]);
+      assert.deepStrictEqual(nonProductiveWithIncomplete.missingEvaluationCallOrdinals, []);
+
+      const missingEvaluation = classifyRootRetryOfflineVerdict(
+        [{ callOrdinal: 2, classification: "PRIOR-ATTEMPT-DOMINATES" }],
+        [],
+      );
+      assert.strictEqual(missingEvaluation.verdict, "EVIDENCE-INCOMPLETE");
+      assert.deepStrictEqual(missingEvaluation.missingEvaluationCallOrdinals, [2]);
+      assert.deepStrictEqual(missingEvaluation.nonProductiveFlaggedCallOrdinals, []);
+
+      const nonBooleanEvaluation = classifyRootRetryOfflineVerdict(
+        [{ callOrdinal: 2, classification: "PRIOR-ATTEMPT-DOMINATES" }],
+        [{ callOrdinal: 2, productive: "false" }],
+      );
+      assert.strictEqual(nonBooleanEvaluation.verdict, "EVIDENCE-INCOMPLETE");
+      assert.deepStrictEqual(nonBooleanEvaluation.missingEvaluationCallOrdinals, [2]);
+      assert.deepStrictEqual(nonBooleanEvaluation.nonProductiveFlaggedCallOrdinals, []);
+
+      const duplicateEvaluation = classifyRootRetryOfflineVerdict(
+        [{ callOrdinal: 2, classification: "PRIOR-ATTEMPT-DOMINATES" }],
+        [
+          { callOrdinal: 2, productive: false },
+          { callOrdinal: 2, productive: false },
+        ],
+      );
+      assert.strictEqual(duplicateEvaluation.verdict, "EVIDENCE-INCOMPLETE");
+      assert.deepStrictEqual(duplicateEvaluation.missingEvaluationCallOrdinals, [2]);
+      assert.deepStrictEqual(duplicateEvaluation.nonProductiveFlaggedCallOrdinals, []);
+
+      const productiveWithLinkageIncomplete = classifyRootRetryOfflineVerdict(
+        [
+          { callOrdinal: 1, classification: "EVIDENCE-INCOMPLETE" },
+          { callOrdinal: 2, classification: "PRIOR-ATTEMPT-DOMINATES" },
+          { callOrdinal: 3, classification: "PRIOR-ATTEMPT-DOMINATES" },
+        ],
+        [
+          { callOrdinal: 1, productive: false },
+          { callOrdinal: 2, productive: true },
+        ],
+      );
+      assert.strictEqual(
+        productiveWithLinkageIncomplete.verdict,
+        "PRODUCTIVE-ROOT-WOULD-BE-FLAGGED",
+      );
+      assert.deepStrictEqual(productiveWithLinkageIncomplete.productiveFlaggedCallOrdinals, [2]);
+      assert.deepStrictEqual(productiveWithLinkageIncomplete.incompleteCallOrdinals, [1]);
+      assert.deepStrictEqual(productiveWithLinkageIncomplete.missingEvaluationCallOrdinals, [3]);
+
+      const completeNonProductive = classifyRootRetryOfflineVerdict(
+        [{ callOrdinal: 2, classification: "PRIOR-ATTEMPT-DOMINATES" }],
+        [{ callOrdinal: 2, productive: false }],
+      );
+      assert.strictEqual(
+        completeNonProductive.verdict,
+        "TRACE-LOCAL-NONPRODUCTIVE-DOMINATED-RETRY-OBSERVED",
+      );
+      assert.deepStrictEqual(completeNonProductive.nonProductiveFlaggedCallOrdinals, [2]);
     }
 
     if (includeO4ContinuationAttribution) {
@@ -1325,40 +1401,46 @@ function main() {
         })()
         : null,
       compactRootRetryNoveltyAttribution: includeRootRetryNovelty
-        ? (() => {
-          const full = candidate.stats.rootRetryNoveltyAttribution;
-          if (!full) return null;
-          const compact = {
-            schema: full.schema,
-            rootCallCount: full.rootCallCount,
+         ? (() => {
+           const full = candidate.stats.rootRetryNoveltyAttribution;
+           if (!full) return null;
+           const beforeStable = JSON.stringify(full);
+           const compact = {
+             schema: full.schema,
+             rootCallCount: full.rootCallCount,
             repeatGroupCount: full.repeatGroupCount,
             comparisons: full.preChargeComparisons.map((entry) => ({
               callOrdinal: entry.callOrdinal,
               attemptId: entry.attemptId,
               groupKey: entry.groupKey,
-              classification: entry.classification,
-              improvedFields: entry.improvedFields,
-              regressedFields: entry.regressedFields,
-              missingFields: entry.missingFields,
-              contextDifferenceKeys: entry.contextDifferenceKeys,
-              exactSemanticEqual: entry.exactSemanticEqual,
-              comparedCallOrdinals: entry.comparedCallOrdinals,
+               classification: entry.classification,
+               improvedFields: entry.improvedFields,
+               regressedFields: entry.regressedFields,
+               missingFields: [...entry.missingFields],
+               contextDifferenceKeys: entry.contextDifferenceKeys,
+               exactSemanticEqual: entry.exactSemanticEqual,
+               comparedCallOrdinals: entry.comparedCallOrdinals,
               decisiveEarlierCallOrdinals: entry.decisiveEarlierCallOrdinals,
               pairwiseComparisons: (entry.pairwiseComparisons || []).map((pair) => ({
                 earlierCallOrdinal: pair.earlierCallOrdinal,
-                classification: pair.classification,
-                improvedFields: pair.improvedFields,
-                regressedFields: pair.regressedFields,
-                missingFields: pair.missingFields,
-                exactSemanticEqual: pair.exactSemanticEqual,
-              })),
-            })),
-            postSearchEvaluation: full.postSearchEvaluation,
-            verdict: full.verdict,
-          };
-          assert.ok(!("rootCompileEvents" in compact));
-          assert.ok(!("candidates" in compact));
-          const compactLength = JSON.stringify(compact).length;
+                 classification: pair.classification,
+                 improvedFields: pair.improvedFields,
+                 regressedFields: pair.regressedFields,
+                 missingFields: [...pair.missingFields],
+                 exactSemanticEqual: pair.exactSemanticEqual,
+               })),
+             })),
+             postSearchEvaluation: full.postSearchEvaluation,
+             verdict: full.verdict,
+             productiveFlaggedCallOrdinals: [...full.productiveFlaggedCallOrdinals],
+             nonProductiveFlaggedCallOrdinals: [...full.nonProductiveFlaggedCallOrdinals],
+             incompleteCallOrdinals: [...full.incompleteCallOrdinals],
+             missingEvaluationCallOrdinals: [...full.missingEvaluationCallOrdinals],
+           };
+           assert.ok(!("rootCompileEvents" in compact));
+           assert.ok(!("candidates" in compact));
+           assert.strictEqual(JSON.stringify(full), beforeStable);
+           const compactLength = JSON.stringify(compact).length;
           assert.ok(
             compactLength < 20000,
             `compactRootRetryNoveltyAttribution too large: ${compactLength}`,

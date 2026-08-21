@@ -380,42 +380,57 @@ function classifyPreHierarchyRootRetryNovelty(rootCalls) {
 }
 
 function classifyRootRetryOfflineVerdict(preChargeComparisons, postSearchEvaluation) {
-  const postByCall = new Map(
-    (postSearchEvaluation || []).map((entry) => [entry.callOrdinal, Boolean(entry.productive)]),
-  );
+  const comparisons = preChargeComparisons || [];
   const nonImprovingClassifications = new Set([
     "PRIOR-ATTEMPT-DOMINATES",
     "METRIC-TIE-CONTEXT-ONLY",
     "EXACT-SEMANTIC-RETRY",
   ]);
-  let incompleteOrdinals = [];
-  let productiveFlaggedOrdinals = [];
-  let nonProductiveFlaggedOrdinals = [];
-  for (const entry of preChargeComparisons || []) {
+  const evaluationsByCall = new Map();
+  for (const entry of postSearchEvaluation || []) {
+    if (entry == null || entry.callOrdinal == null) continue;
+    const entries = evaluationsByCall.get(entry.callOrdinal) || [];
+    entries.push(entry);
+    evaluationsByCall.set(entry.callOrdinal, entries);
+  }
+  const incompleteOrdinals = [];
+  const productiveFlaggedOrdinals = [];
+  const nonProductiveFlaggedOrdinals = [];
+  const missingEvaluationCallOrdinals = [];
+  for (const entry of comparisons) {
     if (entry.classification === "EVIDENCE-INCOMPLETE") {
       incompleteOrdinals.push(entry.callOrdinal);
       continue;
     }
     if (!nonImprovingClassifications.has(entry.classification)) continue;
-    const productive = postByCall.get(entry.callOrdinal);
-    if (productive === true) productiveFlaggedOrdinals.push(entry.callOrdinal);
-    else if (productive === false) nonProductiveFlaggedOrdinals.push(entry.callOrdinal);
+    const evaluationEntries = evaluationsByCall.get(entry.callOrdinal) || [];
+    if (evaluationEntries.length !== 1 || typeof evaluationEntries[0].productive !== "boolean") {
+      if (!missingEvaluationCallOrdinals.includes(entry.callOrdinal)) {
+        missingEvaluationCallOrdinals.push(entry.callOrdinal);
+      }
+      continue;
+    }
+    if (evaluationEntries[0].productive) productiveFlaggedOrdinals.push(entry.callOrdinal);
+    else nonProductiveFlaggedOrdinals.push(entry.callOrdinal);
   }
-  // Spec priority: PRODUCTIVE flagged > EVIDENCE-INCOMPLETE > nonproductive dominated > none
+  const sortedMissing = missingEvaluationCallOrdinals.slice().sort((a, b) => a - b);
+  // Priority: PRODUCTIVE > EVIDENCE-INCOMPLETE (pre-charge or linkage) > TRACE-LOCAL > NO-PRECHARGE.
   if (productiveFlaggedOrdinals.length > 0) {
     return {
       verdict: "PRODUCTIVE-ROOT-WOULD-BE-FLAGGED",
       productiveFlaggedCallOrdinals: productiveFlaggedOrdinals.slice().sort((a, b) => a - b),
       nonProductiveFlaggedCallOrdinals: nonProductiveFlaggedOrdinals.slice().sort((a, b) => a - b),
       incompleteCallOrdinals: incompleteOrdinals.slice().sort((a, b) => a - b),
+      missingEvaluationCallOrdinals: sortedMissing,
     };
   }
-  if (incompleteOrdinals.length > 0) {
+  if (incompleteOrdinals.length > 0 || sortedMissing.length > 0) {
     return {
       verdict: "EVIDENCE-INCOMPLETE",
       productiveFlaggedCallOrdinals: [],
-      nonProductiveFlaggedCallOrdinals: [],
+      nonProductiveFlaggedCallOrdinals: nonProductiveFlaggedOrdinals.slice().sort((a, b) => a - b),
       incompleteCallOrdinals: incompleteOrdinals.slice().sort((a, b) => a - b),
+      missingEvaluationCallOrdinals: sortedMissing,
     };
   }
   if (nonProductiveFlaggedOrdinals.length > 0) {
@@ -424,6 +439,7 @@ function classifyRootRetryOfflineVerdict(preChargeComparisons, postSearchEvaluat
       productiveFlaggedCallOrdinals: [],
       nonProductiveFlaggedCallOrdinals: nonProductiveFlaggedOrdinals.slice().sort((a, b) => a - b),
       incompleteCallOrdinals: [],
+      missingEvaluationCallOrdinals: sortedMissing,
     };
   }
   return {
@@ -431,6 +447,7 @@ function classifyRootRetryOfflineVerdict(preChargeComparisons, postSearchEvaluat
     productiveFlaggedCallOrdinals: [],
     nonProductiveFlaggedCallOrdinals: [],
     incompleteCallOrdinals: [],
+    missingEvaluationCallOrdinals: sortedMissing,
   };
 }
 
@@ -3988,9 +4005,8 @@ function runStrategicD2Search(options) {
         productive: call.label.productive,
       })),
     );
-    const verdict = offlineVerdictResult.verdict;
     stats.rootRetryNoveltyAttribution = {
-      schema: "motapathfinder.strategic-root-retry-novelty-attribution.v1",
+      schema: "motapathfinder.strategic-root-retry-novelty-attribution.v2",
       rootCallCount: retryAttribution.rootCallCount,
       repeatGroupCount: retryAttribution.repeatGroupCount,
       repeatGroups: retryAttribution.repeatGroups,
@@ -4001,7 +4017,11 @@ function runStrategicD2Search(options) {
         productive: call.label.productive,
         directSatisfied: call.label.directSatisfied,
       })),
-      verdict,
+      verdict: offlineVerdictResult.verdict,
+      productiveFlaggedCallOrdinals: offlineVerdictResult.productiveFlaggedCallOrdinals,
+      nonProductiveFlaggedCallOrdinals: offlineVerdictResult.nonProductiveFlaggedCallOrdinals,
+      incompleteCallOrdinals: offlineVerdictResult.incompleteCallOrdinals,
+      missingEvaluationCallOrdinals: offlineVerdictResult.missingEvaluationCallOrdinals,
     };
   }
   const frontierSize = agenda.activeSize(expanded);
@@ -4309,9 +4329,6 @@ module.exports = {
   classifyPreHierarchyRootRetryNovelty,
   classifyRootAttemptSeparability,
   classifyRootRetryOfflineVerdict,
-  stableSerialize,
-  hashStable,
-  buildTemporalVector,
   enumerateStrategicActions,
   runStrategicD2Search,
 };
