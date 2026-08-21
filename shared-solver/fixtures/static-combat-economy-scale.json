@@ -1,0 +1,461 @@
+{
+  "schema": "motapathfinder.static-combat-economy-scale-fixture.v1",
+  "description": "PR-5.20b Static Core Scale Gate fixtures. Two mid-size static cases, 24-32 interactions each, in the same restricted schema as the micro fixture: '#' wall, '.' floor, plain monsters (hp/atk/def) and one-time hp/atk/def/mdef resources. Each case defines terrain and numbers ONLY: there is no expected route, no checkpoint, no goal decomposition and no monster ordering hint anywhere in this file. Every pocket is a forced chain (item k blocks item k+1), so the search decides which pocket to advance rather than which subset to take, and the def/mdef payouts make consumption order change what later guards cost.",
+  "budget": {
+    "maxExpandedStates": 50000,
+    "maxPeakFrontier": 10000
+  },
+  "cases": [
+    {
+      "id": "scale-six-pocket-ladder",
+      "purpose": "Scale gate A: six parallel dead-end pockets (24 pocket interactions plus a final gate) each opening with a monster and then paying hp/atk/def/mdef. Six legal actions exist from the very first state, and the armoured gate cannot be damaged at all without gem investment, so hoarding alone never finishes. Because def/mdef payouts change later guard costs, the same consumed set reached in a different order differs in hp and real Pareto dominance fires.",
+      "problem": {
+        "id": "scale-six-pocket-ladder",
+        "grid": [
+          "######################",
+          "#....................#",
+          "##.##.##.##.##.##.####",
+          "##.##.##.##.##.##.####",
+          "##.##.##.##.##.##.####",
+          "##.##.##.##.##.##.####",
+          "######################"
+        ],
+        "start": {
+          "x": 1,
+          "y": 1
+        },
+        "goal": {
+          "x": 20,
+          "y": 1
+        },
+        "hero": {
+          "hp": 260,
+          "atk": 14,
+          "def": 2,
+          "mdef": 3
+        },
+        "interactions": [
+          {
+            "kind": "monster",
+            "id": "p1-guard",
+            "hp": 24,
+            "atk": 22,
+            "def": 6,
+            "x": 2,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "p1-def",
+            "def": 4,
+            "x": 2,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "p1-hp",
+            "hp": 40,
+            "x": 2,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "p1-atk",
+            "atk": 3,
+            "x": 2,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "p2-guard",
+            "hp": 30,
+            "atk": 26,
+            "def": 8,
+            "x": 5,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "p2-mdef",
+            "mdef": 9,
+            "x": 5,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "p2-hp",
+            "hp": 45,
+            "x": 5,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "p2-atk",
+            "atk": 4,
+            "x": 5,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "p3-guard",
+            "hp": 28,
+            "atk": 24,
+            "def": 7,
+            "x": 8,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "p3-def",
+            "def": 3,
+            "x": 8,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "p3-atk",
+            "atk": 4,
+            "x": 8,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "p3-hp",
+            "hp": 35,
+            "x": 8,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "p4-guard",
+            "hp": 36,
+            "atk": 30,
+            "def": 9,
+            "x": 11,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "p4-mdef",
+            "mdef": 7,
+            "x": 11,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "p4-atk",
+            "atk": 3,
+            "x": 11,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "p4-hp",
+            "hp": 50,
+            "x": 11,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "p5-guard",
+            "hp": 26,
+            "atk": 28,
+            "def": 6,
+            "x": 14,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "p5-def",
+            "def": 5,
+            "x": 14,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "p5-hp",
+            "hp": 30,
+            "x": 14,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "p5-atk",
+            "atk": 4,
+            "x": 14,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "p6-guard",
+            "hp": 34,
+            "atk": 32,
+            "def": 10,
+            "x": 17,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "p6-mdef",
+            "mdef": 6,
+            "x": 17,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "p6-atk",
+            "atk": 5,
+            "x": 17,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "p6-hp",
+            "hp": 55,
+            "x": 17,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "armoured-gate",
+            "hp": 80,
+            "atk": 20,
+            "def": 28,
+            "x": 19,
+            "y": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "scale-two-phase-mdef-gate",
+      "purpose": "Scale gate B: a two-phase map (24 pocket interactions plus a mid gate and a final gate). Only three pockets are open at the start; the mid gate splits the corridor and opens the rest, so the six simultaneous options appear mid-run instead of immediately. The final gate needs both an atk investment and real def/mdef mitigation, so all four attributes matter.",
+      "problem": {
+        "id": "scale-two-phase-mdef-gate",
+        "grid": [
+          "######################",
+          "#....................#",
+          "##.##.##.##.##.##.####",
+          "##.##.##.##.##.##.####",
+          "##.##.##.##.##.##.####",
+          "##.##.##.##.##.##.####",
+          "######################"
+        ],
+        "start": {
+          "x": 1,
+          "y": 1
+        },
+        "goal": {
+          "x": 20,
+          "y": 1
+        },
+        "hero": {
+          "hp": 300,
+          "atk": 12,
+          "def": 3,
+          "mdef": 4
+        },
+        "interactions": [
+          {
+            "kind": "monster",
+            "id": "q1-guard",
+            "hp": 20,
+            "atk": 20,
+            "def": 5,
+            "x": 2,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "q1-atk",
+            "atk": 4,
+            "x": 2,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "q1-hp",
+            "hp": 40,
+            "x": 2,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "q1-def",
+            "def": 3,
+            "x": 2,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "q2-guard",
+            "hp": 26,
+            "atk": 24,
+            "def": 7,
+            "x": 5,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "q2-mdef",
+            "mdef": 8,
+            "x": 5,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "q2-atk",
+            "atk": 3,
+            "x": 5,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "q2-hp",
+            "hp": 35,
+            "x": 5,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "q3-guard",
+            "hp": 30,
+            "atk": 26,
+            "def": 8,
+            "x": 8,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "q3-def",
+            "def": 4,
+            "x": 8,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "q3-hp",
+            "hp": 45,
+            "x": 8,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "q3-atk",
+            "atk": 4,
+            "x": 8,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "q4-guard",
+            "hp": 24,
+            "atk": 22,
+            "def": 6,
+            "x": 11,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "q4-atk",
+            "atk": 5,
+            "x": 11,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "q4-mdef",
+            "mdef": 6,
+            "x": 11,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "q4-hp",
+            "hp": 30,
+            "x": 11,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "q5-guard",
+            "hp": 32,
+            "atk": 28,
+            "def": 9,
+            "x": 14,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "q5-hp",
+            "hp": 50,
+            "x": 14,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "q5-def",
+            "def": 3,
+            "x": 14,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "q5-atk",
+            "atk": 3,
+            "x": 14,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "q6-guard",
+            "hp": 28,
+            "atk": 30,
+            "def": 7,
+            "x": 17,
+            "y": 2
+          },
+          {
+            "kind": "resource",
+            "id": "q6-mdef",
+            "mdef": 7,
+            "x": 17,
+            "y": 3
+          },
+          {
+            "kind": "resource",
+            "id": "q6-hp",
+            "hp": 40,
+            "x": 17,
+            "y": 4
+          },
+          {
+            "kind": "resource",
+            "id": "q6-atk",
+            "atk": 4,
+            "x": 17,
+            "y": 5
+          },
+          {
+            "kind": "monster",
+            "id": "mid-gate",
+            "hp": 20,
+            "atk": 24,
+            "def": 14,
+            "x": 9,
+            "y": 1
+          },
+          {
+            "kind": "monster",
+            "id": "mdef-gate",
+            "hp": 110,
+            "atk": 26,
+            "def": 30,
+            "x": 19,
+            "y": 1
+          }
+        ]
+      }
+    }
+  ]
+}

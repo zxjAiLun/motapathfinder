@@ -1,6 +1,6 @@
 {
   "schema": "motapathfinder.static-combat-economy-core-fixture.v1",
-  "description": "PR-5.20a fixed static combat-economy cases. Rectangular maps only: '#' wall, '.' floor. Every interaction is either a plain monster (hp/atk/def) or a one-time attribute resource. No events, flags, equipment, keys, money, exp or skills exist in this schema at all.",
+  "description": "PR-5.20a/5.20b fixed static combat-economy cases. Rectangular maps only: '#' wall, '.' floor -- no decorative markers, since the grid carries terrain only and every interaction is listed explicitly with a unique id. Each interaction is either a plain monster (hp/atk/def) or a one-time attribute resource. No events, flags, equipment, keys, money, exp or skills exist in this schema at all.",
   "cases": [
     {
       "id": "optional-potion-before-gate",
@@ -11,9 +11,9 @@
         "id": "optional-potion-before-gate",
         "grid": [
           "#######",
-          "#S.M.G#",
+          "#.....#",
           "#.#####",
-          "#P#####"
+          "#.#####"
         ],
         "start": {
           "x": 1,
@@ -58,9 +58,9 @@
         "id": "atk-gem-unblocks-guard",
         "grid": [
           "#######",
-          "#S.M.G#",
+          "#.....#",
           "#.#####",
-          "#K#####"
+          "#.#####"
         ],
         "start": {
           "x": 1,
@@ -106,10 +106,10 @@
         "id": "detour-for-def-beats-direct",
         "grid": [
           "#######",
-          "#S.A.G#",
+          "#.....#",
           "#.#####",
-          "#B#####",
-          "#D#####"
+          "#.#####",
+          "#.#####"
         ],
         "start": {
           "x": 1,
@@ -155,28 +155,85 @@
       }
     },
     {
-      "id": "invest-before-conserve",
-      "purpose": "H2: ten small potions sit in a parallel decoy pocket. Their gains are small, so every potion state still has more hp than the post-toll state, but the toll must be paid to reach the atk gem that opens the armoured wall. CONSERVE_HP therefore has to work through the potion subsets before it will pay any hp, while the adaptive schedule invests immediately and reaches the goal inside a 32-expansion budget.",
-      "oracle": false,
+      "id": "goal-tradeoff-archive",
+      "purpose": "Goal Pareto archive: the goal is already reachable from the start, so a high-hp/low-atk finish is a real result. Fighting the side guard to reach the atk gem costs hp, giving a low-hp/high-atk finish that neither dominates nor is dominated by it. An hp-only comparison would silently throw one of the two away.",
+      "oracle": true,
       "expectSolvable": true,
-      "adaptiveBudget": 32,
+      "minGoalArchive": 2,
       "problem": {
-        "id": "invest-before-conserve",
+        "id": "goal-tradeoff-archive",
         "grid": [
-          "#####################",
-          "#S.A.K.B.G###########",
-          "#.###################",
-          "#...................#",
-          "#p.p.p.p.p.p.p.p.p.p#",
-          "#####################"
+          "########",
+          "#......#",
+          "#.######",
+          "#.######"
         ],
         "start": {
           "x": 1,
           "y": 1
         },
         "goal": {
-          "x": 9,
+          "x": 2,
           "y": 1
+        },
+        "hero": {
+          "hp": 100,
+          "atk": 10,
+          "def": 0,
+          "mdef": 0
+        },
+        "interactions": [
+          {
+            "kind": "monster",
+            "id": "side-guard",
+            "x": 4,
+            "y": 1,
+            "hp": 20,
+            "atk": 20,
+            "def": 5
+          },
+          {
+            "kind": "resource",
+            "id": "atk-gem",
+            "x": 6,
+            "y": 1,
+            "atk": 20
+          },
+          {
+            "kind": "resource",
+            "id": "big-potion",
+            "x": 1,
+            "y": 3,
+            "hp": 50
+          }
+        ]
+      }
+    },
+    {
+      "id": "invest-before-conserve",
+      "purpose": "H2: the armoured wall blocking the goal is visible from the very first state, so a real attack deficit is on the frontier the whole time, but the atk gem that clears it sits behind a toll guard that costs hp. Ten small potions form a parallel decoy: every potion state has more hp than any post-toll state, so CONSERVE_HP keeps hoarding and never pays the toll inside a 32-expansion budget, while BREAK_BOTTLENECK invests immediately.",
+      "oracle": false,
+      "expectSolvable": true,
+      "adaptiveBudget": 32,
+      "problem": {
+        "id": "invest-before-conserve",
+        "grid": [
+          "########################",
+          "#.....##################",
+          "#.######################",
+          "#.....##################",
+          "#.######################",
+          "#.....................##",
+          "#.....................##",
+          "########################"
+        ],
+        "start": {
+          "x": 1,
+          "y": 1
+        },
+        "goal": {
+          "x": 5,
+          "y": 3
         },
         "hero": {
           "hp": 100,
@@ -204,8 +261,8 @@
           {
             "kind": "monster",
             "id": "armoured-wall",
-            "x": 7,
-            "y": 1,
+            "x": 4,
+            "y": 3,
             "hp": 60,
             "atk": 2,
             "def": 25
@@ -213,71 +270,71 @@
           {
             "kind": "resource",
             "id": "potion-1",
-            "x": 1,
-            "y": 4,
+            "x": 3,
+            "y": 6,
             "hp": 2
           },
           {
             "kind": "resource",
             "id": "potion-2",
-            "x": 3,
-            "y": 4,
+            "x": 5,
+            "y": 6,
             "hp": 2
           },
           {
             "kind": "resource",
             "id": "potion-3",
-            "x": 5,
-            "y": 4,
+            "x": 7,
+            "y": 6,
             "hp": 2
           },
           {
             "kind": "resource",
             "id": "potion-4",
-            "x": 7,
-            "y": 4,
+            "x": 9,
+            "y": 6,
             "hp": 2
           },
           {
             "kind": "resource",
             "id": "potion-5",
-            "x": 9,
-            "y": 4,
+            "x": 11,
+            "y": 6,
             "hp": 2
           },
           {
             "kind": "resource",
             "id": "potion-6",
-            "x": 11,
-            "y": 4,
+            "x": 13,
+            "y": 6,
             "hp": 2
           },
           {
             "kind": "resource",
             "id": "potion-7",
-            "x": 13,
-            "y": 4,
+            "x": 15,
+            "y": 6,
             "hp": 2
           },
           {
             "kind": "resource",
             "id": "potion-8",
-            "x": 15,
-            "y": 4,
+            "x": 17,
+            "y": 6,
             "hp": 2
           },
           {
             "kind": "resource",
             "id": "potion-9",
-            "x": 17,
-            "y": 4,
+            "x": 19,
+            "y": 6,
             "hp": 2
           },
           {
             "kind": "resource",
             "id": "potion-10",
-            "x": 19,
-            "y": 4,
+            "x": 21,
+            "y": 6,
             "hp": 2
           }
         ]
@@ -292,9 +349,9 @@
         "id": "permanently-attack-blocked",
         "grid": [
           "#######",
-          "#S.W.G#",
+          "#.....#",
           "#.#####",
-          "#P#####"
+          "#.#####"
         ],
         "start": {
           "x": 1,

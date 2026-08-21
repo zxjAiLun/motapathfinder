@@ -1,14 +1,15 @@
 "use strict";
 
 /**
- * PR-5.20a static combat-economy core.
+ * PR-5.20a/5.20b static combat-economy core.
  *
  * A deliberately small, self-contained correctness solver for ONE restricted
  * problem class: a rectangular static map, a hero with hp/atk/def/mdef, plain
  * monsters with hp/atk/def, and one-time attribute resources. Nothing else.
  * There are no events, flags, equipment, keys, money, exp, skills or monster
  * special abilities, and `validateStaticCombatEconomyProblem` rejects any input
- * that mentions them rather than silently ignoring the field.
+ * that mentions them -- or any field it does not recognise at all -- rather than
+ * silently ignoring it.
  *
  * This module does NOT read H5Mota data and makes no claim about supporting it.
  * It shares no code with the strategic D2 search and does not touch the
@@ -22,50 +23,23 @@
 
 const STATIC_SCHEMA = "motapathfinder.static-combat-economy-core.v1";
 
+// Rejected by name so a caller cannot smuggle a non-static concept past the
+// generic unknown-field check with a plausible spelling.
 const FORBIDDEN_PROBLEM_KEYS = [
-  "events",
-  "event",
-  "flags",
-  "flag",
-  "equipment",
-  "equips",
-  "keys",
-  "key",
-  "money",
-  "gold",
-  "coins",
-  "exp",
-  "experience",
-  "level",
-  "skills",
-  "skill",
-  "items",
-  "shops",
-  "shop",
-  "npc",
-  "npcs",
+  "events", "event", "flags", "flag", "equipment", "equips", "keys", "key",
+  "money", "gold", "coins", "exp", "experience", "level", "skills", "skill",
+  "items", "shops", "shop", "npc", "npcs",
 ];
+const ALLOWED_PROBLEM_KEYS = ["id", "grid", "start", "goal", "hero", "interactions"];
+const ALLOWED_POINT_KEYS = ["x", "y"];
+const ALLOWED_HERO_KEYS = ["hp", "atk", "def", "mdef"];
+const ALLOWED_MONSTER_KEYS = ["kind", "id", "x", "y", "hp", "atk", "def"];
+const ALLOWED_RESOURCE_KEYS = ["kind", "id", "x", "y", "hp", "atk", "def", "mdef"];
 
 const FORBIDDEN_MONSTER_KEYS = [
-  "special",
-  "specials",
-  "ability",
-  "abilities",
-  "firstAttack",
-  "magic",
-  "poison",
-  "weak",
-  "hpBuff",
-  "atkBuff",
-  "defBuff",
-  "n",
-  "double",
-  "counter",
-  "vampire",
-  "money",
-  "exp",
-  "point",
-  "skill",
+  "special", "specials", "ability", "abilities", "firstAttack", "magic",
+  "poison", "weak", "hpBuff", "atkBuff", "defBuff", "n", "double", "counter",
+  "vampire", "money", "exp", "point", "skill",
 ];
 
 const RESOURCE_ATTRIBUTES = ["hp", "atk", "def", "mdef"];
@@ -91,28 +65,36 @@ function isNonEmptyString(value) {
 
 /**
  * Structural + semantic validation. Returns { valid, errors, problem } where
- * `problem` is a normalized copy (only on success). Anything outside the static
- * schema is an error, not a warning: this benchmark is only meaningful if the
- * input really is event-free.
+ * `problem` is a normalized copy (only on success).
+ *
+ * The allowlists are strict on purpose: an unrecognised field is an error, not
+ * a warning. Silently ignoring `problem.events` or `hero.level` would let a
+ * non-static tower look like a valid static one, which is exactly the claim this
+ * benchmark must not make by accident.
  */
 function validateStaticCombatEconomyProblem(input) {
   const errors = [];
-  const problem = input && typeof input === "object" ? input : null;
+  const problem = input && typeof input === "object" && !Array.isArray(input) ? input : null;
   if (!problem) {
     return { valid: false, errors: ["problem-must-be-an-object"], problem: null };
   }
-  for (const key of FORBIDDEN_PROBLEM_KEYS) {
-    if (Object.prototype.hasOwnProperty.call(problem, key)) {
+  for (const key of Object.keys(problem)) {
+    if (FORBIDDEN_PROBLEM_KEYS.includes(key)) {
       errors.push(`forbidden-problem-field:${key}`);
+    } else if (!ALLOWED_PROBLEM_KEYS.includes(key)) {
+      errors.push(`unknown-problem-field:${key}`);
     }
   }
-  const grid = problem.grid;
-  if (!Array.isArray(grid) || grid.length === 0) {
-    errors.push("grid-must-be-a-non-empty-array");
+  if (Object.prototype.hasOwnProperty.call(problem, "id") && !isNonEmptyString(problem.id)) {
+    errors.push("id-must-be-a-non-empty-string");
   }
+
+  const grid = problem.grid;
   let height = 0;
   let width = 0;
-  if (Array.isArray(grid) && grid.length > 0) {
+  if (!Array.isArray(grid) || grid.length === 0) {
+    errors.push("grid-must-be-a-non-empty-array");
+  } else {
     height = grid.length;
     if (!isNonEmptyString(grid[0])) {
       errors.push("grid-rows-must-be-non-empty-strings");
@@ -121,12 +103,24 @@ function validateStaticCombatEconomyProblem(input) {
       for (let y = 0; y < height; y += 1) {
         if (!isNonEmptyString(grid[y]) || grid[y].length !== width) {
           errors.push(`grid-row-not-rectangular:${y}`);
+          continue;
+        }
+        for (let x = 0; x < width; x += 1) {
+          const cell = grid[y][x];
+          // Only walls and floor. Decorative markers such as S/M/G would be
+          // read as floor and quietly disagree with the interaction list.
+          if (cell !== WALL && cell !== FLOOR) {
+            errors.push(`grid-illegal-character:${y},${x}:${cell}`);
+          }
         }
       }
     }
   }
-  const hero = problem.hero;
-  if (!hero || typeof hero !== "object") {
+
+  const hero = problem.hero && typeof problem.hero === "object" && !Array.isArray(problem.hero)
+    ? problem.hero
+    : null;
+  if (!hero) {
     errors.push("hero-must-be-an-object");
   } else {
     if (!isPositiveInt(hero.hp)) errors.push("hero.hp-must-be-a-positive-integer");
@@ -136,20 +130,27 @@ function validateStaticCombatEconomyProblem(input) {
       }
     }
     for (const key of Object.keys(hero)) {
-      if (!["hp", "atk", "def", "mdef"].includes(key)) {
-        errors.push(`forbidden-hero-field:${key}`);
-      }
+      if (!ALLOWED_HERO_KEYS.includes(key)) errors.push(`forbidden-hero-field:${key}`);
     }
   }
+
   const inBounds = (x, y) => isNonNegativeInt(x) && isNonNegativeInt(y) &&
     y < height && x < width;
   const cellAt = (x, y) => grid[y][x];
   const checkPoint = (point, label) => {
-    if (!point || typeof point !== "object" || !inBounds(point.x, point.y)) {
+    const value = point && typeof point === "object" && !Array.isArray(point) ? point : null;
+    if (!value) {
+      errors.push(`${label}-must-be-an-object`);
+      return false;
+    }
+    for (const key of Object.keys(value)) {
+      if (!ALLOWED_POINT_KEYS.includes(key)) errors.push(`forbidden-${label}-field:${key}`);
+    }
+    if (!inBounds(value.x, value.y)) {
       errors.push(`${label}-must-be-in-bounds`);
       return false;
     }
-    if (cellAt(point.x, point.y) === WALL) {
+    if (cellAt(value.x, value.y) === WALL) {
       errors.push(`${label}-must-not-be-a-wall`);
       return false;
     }
@@ -161,15 +162,25 @@ function validateStaticCombatEconomyProblem(input) {
   const interactions = problem.interactions;
   const normalizedInteractions = [];
   const occupied = new Map();
+  const seenIds = new Set();
   if (!Array.isArray(interactions)) {
     errors.push("interactions-must-be-an-array");
   } else {
     for (let index = 0; index < interactions.length; index += 1) {
       const raw = interactions[index];
       const label = `interactions[${index}]`;
-      if (!raw || typeof raw !== "object") {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
         errors.push(`${label}-must-be-an-object`);
         continue;
+      }
+      // Route identity must be stable and unambiguous, so ids are mandatory and
+      // globally unique rather than defaulted from coordinates.
+      if (!isNonEmptyString(raw.id)) {
+        errors.push(`${label}.id-must-be-a-non-empty-string`);
+      } else if (seenIds.has(raw.id)) {
+        errors.push(`${label}.id-duplicates:${raw.id}`);
+      } else {
+        seenIds.add(raw.id);
       }
       if (!inBounds(raw.x, raw.y) || cellAt(raw.x, raw.y) === WALL) {
         errors.push(`${label}-must-be-on-a-non-wall-cell`);
@@ -194,13 +205,13 @@ function validateStaticCombatEconomyProblem(input) {
         for (const key of Object.keys(raw)) {
           if (FORBIDDEN_MONSTER_KEYS.includes(key)) {
             errors.push(`forbidden-monster-field:${label}.${key}`);
-          } else if (!["kind", "id", "x", "y", "hp", "atk", "def"].includes(key)) {
+          } else if (!ALLOWED_MONSTER_KEYS.includes(key)) {
             errors.push(`unknown-monster-field:${label}.${key}`);
           }
         }
         normalizedInteractions.push({
           kind: "monster",
-          id: isNonEmptyString(raw.id) ? raw.id : `monster@${cellKey}`,
+          id: raw.id,
           x: raw.x,
           y: raw.y,
           hp: raw.hp,
@@ -212,7 +223,7 @@ function validateStaticCombatEconomyProblem(input) {
         let gainCount = 0;
         for (const key of Object.keys(raw)) {
           if (["kind", "id", "x", "y"].includes(key)) continue;
-          if (!RESOURCE_ATTRIBUTES.includes(key)) {
+          if (!ALLOWED_RESOURCE_KEYS.includes(key)) {
             errors.push(`forbidden-resource-field:${label}.${key}`);
             continue;
           }
@@ -226,7 +237,7 @@ function validateStaticCombatEconomyProblem(input) {
         if (gainCount === 0) errors.push(`${label}-must-grant-at-least-one-attribute`);
         normalizedInteractions.push({
           kind: "resource",
-          id: isNonEmptyString(raw.id) ? raw.id : `resource@${cellKey}`,
+          id: raw.id,
           x: raw.x,
           y: raw.y,
           gain,
@@ -251,12 +262,7 @@ function validateStaticCombatEconomyProblem(input) {
       grid: grid.slice(),
       start: { x: problem.start.x, y: problem.start.y },
       goal: { x: problem.goal.x, y: problem.goal.y },
-      hero: {
-        hp: hero.hp,
-        atk: hero.atk,
-        def: hero.def,
-        mdef: hero.mdef,
-      },
+      hero: { hp: hero.hp, atk: hero.atk, def: hero.def, mdef: hero.mdef },
       interactions: normalizedInteractions,
     },
   };
@@ -324,19 +330,13 @@ function computeStaticReachableRegion(problem, originIndex, consumed, interactio
   const queue = [originIndex];
   visited[originIndex] = 1;
   region[originIndex] = 1;
-  let goalReachable = false;
   const goalIndex = cellIndex(problem, problem.goal.x, problem.goal.y);
-  if (originIndex === goalIndex) goalReachable = true;
+  let goalReachable = originIndex === goalIndex;
   while (queue.length > 0) {
     const current = queue.pop();
     const cx = current % problem.width;
     const cy = (current - cx) / problem.width;
-    const neighbours = [
-      [cx, cy - 1],
-      [cx, cy + 1],
-      [cx - 1, cy],
-      [cx + 1, cy],
-    ];
+    const neighbours = [[cx, cy - 1], [cx, cy + 1], [cx - 1, cy], [cx + 1, cy]];
     for (const [nx, ny] of neighbours) {
       if (nx < 0 || ny < 0 || nx >= problem.width || ny >= problem.height) continue;
       const next = cellIndex(problem, nx, ny);
@@ -389,14 +389,23 @@ function enumerateStaticMacroActions(problem, state) {
   return actions;
 }
 
+/**
+ * Applies one macro action. Guards its own preconditions instead of trusting the
+ * caller: the interaction must be on the CURRENT frontier (so nothing unreachable
+ * can be consumed) and the action's kind/id must match the real interaction (so a
+ * forged or stale step cannot be replayed as if it were legal).
+ */
 function applyStaticMacroAction(problem, state, action, interactionByCell) {
+  if (!action || !isNonNegativeInt(action.interactionIndex)) return null;
   const interaction = problem.interactions[action.interactionIndex];
+  if (!interaction) return null;
+  if (!state.frontierInteractions.includes(action.interactionIndex)) return null;
+  if (action.kind !== interaction.kind) return null;
+  if (action.id !== interaction.id) return null;
   const hero = { ...state.hero };
   if (interaction.kind === "resource") {
     for (const attribute of RESOURCE_ATTRIBUTES) {
-      if (interaction.gain[attribute] != null) {
-        hero[attribute] += interaction.gain[attribute];
-      }
+      if (interaction.gain[attribute] != null) hero[attribute] += interaction.gain[attribute];
     }
   } else {
     const outcome = computeStaticBattleOutcome(state.hero, interaction);
@@ -439,29 +448,61 @@ function dominatesStatic(left, right) {
 }
 
 /**
- * Pareto insert within ONE structural bucket. A state may only be discarded by
- * a state that is no worse in all four attributes, which is safe because every
+ * Pareto insert within ONE structural bucket. A state may only be discarded by a
+ * state that is no worse in all four attributes, which is safe because every
  * attribute is monotonically good: more hp survives more, more atk needs fewer
  * hits, more def and mdef reduce damage.
+ *
+ * Returns the node ids it evicted so the caller can retire their agenda entries
+ * instead of expanding a state that is already known to be dominated.
  */
-function insertStaticParetoState(bucket, hero) {
+function insertStaticParetoState(bucket, hero, nodeId) {
   for (const existing of bucket) {
-    if (dominatesStatic(existing, hero)) return { inserted: false, dominated: 0 };
-  }
-  let dominated = 0;
-  for (let index = bucket.length - 1; index >= 0; index -= 1) {
-    if (dominatesStatic(hero, bucket[index])) {
-      bucket.splice(index, 1);
-      dominated += 1;
+    if (dominatesStatic(existing, hero)) {
+      return { inserted: false, dominated: 0, evictedNodeIds: [] };
     }
   }
-  bucket.push({ hp: hero.hp, atk: hero.atk, def: hero.def, mdef: hero.mdef });
-  return { inserted: true, dominated };
+  const evictedNodeIds = [];
+  for (let index = bucket.length - 1; index >= 0; index -= 1) {
+    if (dominatesStatic(hero, bucket[index])) {
+      if (bucket[index].nodeId != null) evictedNodeIds.push(bucket[index].nodeId);
+      bucket.splice(index, 1);
+    }
+  }
+  bucket.push({
+    hp: hero.hp,
+    atk: hero.atk,
+    def: hero.def,
+    mdef: hero.mdef,
+    nodeId: nodeId == null ? null : nodeId,
+  });
+  return { inserted: true, dominated: evictedNodeIds.length, evictedNodeIds };
 }
 
 /**
- * Lexicographic deficit of the blockers on the current frontier: how much atk
- * is still missing (first) and how much survivability is still missing (second).
+ * PR-5.20b goal archive. Every state that can reach the goal is offered here and
+ * the non-dominated set over [hp,atk,def,mdef] is kept, so a high-hp/low-atk
+ * finish and a low-hp/high-atk finish both survive instead of the second being
+ * silently discarded by an hp-only comparison.
+ */
+function insertStaticGoalParetoState(archive, entry) {
+  for (const existing of archive) {
+    if (dominatesStatic(existing.hero, entry.hero)) return { inserted: false, removed: 0 };
+  }
+  let removed = 0;
+  for (let index = archive.length - 1; index >= 0; index -= 1) {
+    if (dominatesStatic(entry.hero, archive[index].hero)) {
+      archive.splice(index, 1);
+      removed += 1;
+    }
+  }
+  archive.push({ hero: { ...entry.hero }, nodeId: entry.nodeId });
+  return { inserted: true, removed };
+}
+
+/**
+ * Lexicographic deficit of the blockers on the current frontier: how much atk is
+ * still missing (first) and how much survivability is still missing (second).
  * Zero on both means nothing reachable is blocking right now.
  */
 function describeStaticBlockerDeficit(problem, state) {
@@ -495,6 +536,10 @@ function compareDeficit(left, right) {
   return left.survivalDeficit - right.survivalDeficit;
 }
 
+function hasBlockerDeficit(deficit) {
+  return deficit.attackDeficit > 0 || deficit.survivalDeficit > 0;
+}
+
 function buildInitialState(problem, interactionByCell) {
   const originIndex = cellIndex(problem, problem.start.x, problem.start.y);
   const consumed = new Set();
@@ -514,12 +559,70 @@ const BREAK_BOTTLENECK = "BREAK_BOTTLENECK";
 const STAGNATION_LIMIT = 4;
 const BREAK_BOTTLENECK_WINDOW = 4;
 
+/** Minimal array-backed binary heap; ties break on the trailing sequence key. */
+class BinaryHeap {
+  constructor(compare) {
+    this.items = [];
+    this.compare = compare;
+  }
+
+  get size() {
+    return this.items.length;
+  }
+
+  push(item) {
+    const items = this.items;
+    items.push(item);
+    let index = items.length - 1;
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (this.compare(items[index], items[parent]) >= 0) break;
+      const swap = items[parent];
+      items[parent] = items[index];
+      items[index] = swap;
+      index = parent;
+    }
+  }
+
+  pop() {
+    const items = this.items;
+    if (items.length === 0) return null;
+    const top = items[0];
+    const last = items.pop();
+    if (items.length > 0) {
+      items[0] = last;
+      let index = 0;
+      for (;;) {
+        const left = index * 2 + 1;
+        const right = left + 1;
+        let best = index;
+        if (left < items.length && this.compare(items[left], items[best]) < 0) best = left;
+        if (right < items.length && this.compare(items[right], items[best]) < 0) best = right;
+        if (best === index) break;
+        const swap = items[best];
+        items[best] = items[index];
+        items[index] = swap;
+        index = best;
+      }
+    }
+    return top;
+  }
+}
+
+function compareRankArrays(left, right) {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index] - right[index];
+  }
+  return 0;
+}
+
+// Highest hp first: hoard resources, pay nothing you do not have to.
 function conserveHpRank(entry) {
   return [-entry.hero.hp, -entry.hero.atk, -entry.hero.def, -entry.hero.mdef, entry.id];
 }
 
-// Prefer the smallest remaining deficit, then the strongest attack, then the
-// state most willing to have spent hp. This is the "invest now" ordering.
+// Smallest remaining deficit, then strongest attack, then the state most willing
+// to have spent hp. This is the "invest now" ordering.
 function breakBottleneckRank(entry) {
   return [
     entry.deficit.attackDeficit,
@@ -528,27 +631,6 @@ function breakBottleneckRank(entry) {
     entry.hero.hp,
     entry.id,
   ];
-}
-
-function compareRank(left, right) {
-  for (let index = 0; index < left.length; index += 1) {
-    if (left[index] !== right[index]) return left[index] - right[index];
-  }
-  return 0;
-}
-
-function selectFrontierIndex(frontier, mode) {
-  const rankOf = mode === BREAK_BOTTLENECK ? breakBottleneckRank : conserveHpRank;
-  let bestIndex = 0;
-  let bestRank = rankOf(frontier[0]);
-  for (let index = 1; index < frontier.length; index += 1) {
-    const rank = rankOf(frontier[index]);
-    if (compareRank(rank, bestRank) < 0) {
-      bestIndex = index;
-      bestRank = rank;
-    }
-  }
-  return bestIndex;
 }
 
 function reconstructRoute(nodes, nodeId) {
@@ -565,15 +647,19 @@ function reconstructRoute(nodes, nodeId) {
 }
 
 /**
- * Adaptive static solver. The mode only reorders the frontier: legal actions and
- * the Pareto rule are identical in both modes, so switching can never make an
- * illegal route legal or discard a state that a different order would have kept.
+ * Adaptive static solver.
+ *
+ * Scheduling only. Both agendas hold the SAME set of pending states and both
+ * respect the same legality and Pareto rules, so switching mode can never make
+ * an illegal route legal, resurrect a dominated state, or change a structural
+ * key. It only changes which pending state is looked at next.
  *
  * status:
- *   SOLVED         frontier exhausted and a goal route was found -> hp-optimal
- *   RESOURCE_LIMIT expansion budget reached (a route may be present but is NOT
- *                  proven optimal). Never reported as UNSOLVABLE.
- *   UNSOLVABLE     frontier exhausted with no goal route
+ *   SOLVED         agendas drained and at least one goal state was found ->
+ *                  goalArchive is the complete non-dominated goal set
+ *   RESOURCE_LIMIT expansion budget reached; goalArchive may be non-empty but is
+ *                  NOT proven complete or optimal. Never reported as UNSOLVABLE.
+ *   UNSOLVABLE     agendas drained with no goal state at all
  */
 function solveStaticCombatEconomy(problem, options) {
   const config = options || {};
@@ -584,53 +670,93 @@ function solveStaticCombatEconomy(problem, options) {
   const interactionByCell = buildInteractionIndex(problem);
   const buckets = new Map();
   const nodes = new Map();
+  const pending = new Map();
+  const retired = new Set();
   let nextId = 0;
 
-  const initial = buildInitialState(problem, interactionByCell);
-  const initialDeficit = describeStaticBlockerDeficit(problem, initial);
-  const rootId = nextId += 1;
-  nodes.set(rootId, { parentId: null, action: null });
-  const frontier = [{ id: rootId, ...initial, deficit: initialDeficit }];
-  const rootKey = buildStaticStructuralKey(initial.consumed, initial.region);
-  buckets.set(rootKey, []);
-  insertStaticParetoState(buckets.get(rootKey), initial.hero);
+  const conserveHeap = new BinaryHeap((left, right) =>
+    compareRankArrays(left.conserveRank, right.conserveRank));
+  const breakHeap = new BinaryHeap((left, right) =>
+    compareRankArrays(left.breakRank, right.breakRank));
 
   let expanded = 0;
-  let generated = 1;
+  let generated = 0;
   let dominated = 0;
-  let peakFrontier = 1;
+  let peakFrontier = 0;
   let modeSwitches = 0;
   let mode = CONSERVE_HP;
   let stagnation = 0;
   let breakBottleneckRemaining = 0;
-  let bestDeficit = initialDeficit;
-  let bestGoalNodeId = null;
-  let bestGoalHero = null;
+  let bestDeficit = null;
+  const goalArchive = [];
 
-  const considerGoal = (entry) => {
-    if (!entry.goalReachable) return;
-    if (bestGoalHero == null || entry.hero.hp > bestGoalHero.hp) {
-      bestGoalHero = { ...entry.hero };
-      bestGoalNodeId = entry.id;
+  // Every admitted state goes into BOTH heaps; `pending` is the single source of
+  // truth for what is still expandable, so a state is expanded exactly once no
+  // matter which agenda reaches it first.
+  const admit = (entry) => {
+    pending.set(entry.id, entry);
+    entry.conserveRank = conserveHpRank(entry);
+    entry.breakRank = breakBottleneckRank(entry);
+    conserveHeap.push(entry);
+    breakHeap.push(entry);
+    if (pending.size > peakFrontier) peakFrontier = pending.size;
+  };
+  const retire = (nodeId) => {
+    if (!pending.has(nodeId)) return;
+    pending.delete(nodeId);
+    retired.add(nodeId);
+  };
+  const popNext = () => {
+    const heap = mode === BREAK_BOTTLENECK ? breakHeap : conserveHeap;
+    for (;;) {
+      const candidate = heap.pop();
+      if (candidate == null) return null;
+      // Stale: already expanded from the other agenda, or Pareto-evicted.
+      if (!pending.has(candidate.id)) continue;
+      if (pending.get(candidate.id) !== candidate) continue;
+      pending.delete(candidate.id);
+      return candidate;
     }
   };
-  considerGoal(frontier[0]);
+
+  const initial = buildInitialState(problem, interactionByCell);
+  const rootId = (nextId += 1);
+  nodes.set(rootId, { parentId: null, action: null });
+  const rootEntry = {
+    id: rootId,
+    ...initial,
+    deficit: describeStaticBlockerDeficit(problem, initial),
+  };
+  const rootKey = buildStaticStructuralKey(initial.consumed, initial.region);
+  buckets.set(rootKey, []);
+  insertStaticParetoState(buckets.get(rootKey), initial.hero, rootId);
+  generated += 1;
+  bestDeficit = rootEntry.deficit;
+  if (rootEntry.goalReachable) {
+    insertStaticGoalParetoState(goalArchive, { hero: rootEntry.hero, nodeId: rootId });
+  }
+  admit(rootEntry);
 
   let limitReached = false;
-  while (frontier.length > 0) {
+  for (;;) {
     if (expanded >= maxExpandedStates) {
-      limitReached = true;
+      limitReached = pending.size > 0 || conserveHeap.size > 0;
       break;
     }
-    const pickIndex = selectFrontierIndex(frontier, mode);
-    const entry = frontier.splice(pickIndex, 1)[0];
+    const entry = popNext();
+    if (entry == null) break;
     expanded += 1;
 
     if (compareDeficit(entry.deficit, bestDeficit) < 0) {
       bestDeficit = entry.deficit;
       stagnation = 0;
-    } else {
+    } else if (hasBlockerDeficit(entry.deficit)) {
+      // Only a real, currently-blocking deficit can accumulate stagnation. With
+      // nothing blocked there is no bottleneck to break, so the solver must not
+      // oscillate between agendas for no reason.
       stagnation += 1;
+    } else {
+      stagnation = 0;
     }
     if (mode === BREAK_BOTTLENECK) {
       breakBottleneckRemaining -= 1;
@@ -638,7 +764,7 @@ function solveStaticCombatEconomy(problem, options) {
         mode = CONSERVE_HP;
         stagnation = 0;
       }
-    } else if (adaptive && stagnation >= STAGNATION_LIMIT) {
+    } else if (adaptive && stagnation >= STAGNATION_LIMIT && hasBlockerDeficit(bestDeficit)) {
       mode = BREAK_BOTTLENECK;
       breakBottleneckRemaining = BREAK_BOTTLENECK_WINDOW;
       modeSwitches += 1;
@@ -651,15 +777,15 @@ function solveStaticCombatEconomy(problem, options) {
       generated += 1;
       const key = buildStaticStructuralKey(next.consumed, next.region);
       if (!buckets.has(key)) buckets.set(key, []);
-      const insertion = insertStaticParetoState(buckets.get(key), next.hero);
-      // Count both directions of pruning: states rejected because an existing
-      // bucket entry already dominates them, and states evicted by this one.
+      const nodeId = nextId + 1;
+      const insertion = insertStaticParetoState(buckets.get(key), next.hero, nodeId);
       if (!insertion.inserted) {
         dominated += 1;
         continue;
       }
+      nextId = nodeId;
       dominated += insertion.dominated;
-      const nodeId = nextId += 1;
+      for (const evictedNodeId of insertion.evictedNodeIds) retire(evictedNodeId);
       nodes.set(nodeId, {
         parentId: entry.id,
         action: { interactionIndex: action.interactionIndex, kind: action.kind, id: action.id },
@@ -669,26 +795,38 @@ function solveStaticCombatEconomy(problem, options) {
         ...next,
         deficit: describeStaticBlockerDeficit(problem, next),
       };
-      considerGoal(nextEntry);
-      frontier.push(nextEntry);
-      if (frontier.length > peakFrontier) peakFrontier = frontier.length;
+      if (nextEntry.goalReachable) {
+        insertStaticGoalParetoState(goalArchive, { hero: nextEntry.hero, nodeId });
+      }
+      admit(nextEntry);
     }
   }
 
   let status;
   if (limitReached) status = "RESOURCE_LIMIT";
-  else if (bestGoalNodeId != null) status = "SOLVED";
+  else if (goalArchive.length > 0) status = "SOLVED";
   else status = "UNSOLVABLE";
+
+  const archive = goalArchive
+    .map((item) => ({
+      hero: { ...item.hero },
+      nodeId: item.nodeId,
+      route: reconstructRoute(nodes, item.nodeId),
+    }))
+    .sort((left, right) => right.hero.hp - left.hero.hp || left.nodeId - right.nodeId);
+  const best = archive.length > 0 ? archive[0] : null;
 
   return {
     status,
-    route: bestGoalNodeId == null ? null : reconstructRoute(nodes, bestGoalNodeId),
-    finalHero: bestGoalHero,
+    route: best == null ? null : best.route,
+    finalHero: best == null ? null : { ...best.hero },
+    goalArchive: archive,
     expanded,
     generated,
     dominated,
     peakFrontier,
     modeSwitches,
+    retiredStates: retired.size,
   };
 }
 
@@ -706,6 +844,7 @@ function solveStaticCombatEconomyExhaustive(problem, options) {
   let bestHero = null;
   let bestRoute = null;
   let exhausted = true;
+  const goalArchive = [];
 
   const walk = (state, route) => {
     if (!exhausted) return;
@@ -716,6 +855,7 @@ function solveStaticCombatEconomyExhaustive(problem, options) {
     }
     if (state.goalReachable) {
       found = true;
+      insertStaticGoalParetoState(goalArchive, { hero: state.hero, nodeId: null });
       if (bestHero == null || state.hero.hp > bestHero.hp) {
         bestHero = { ...state.hero };
         bestRoute = route.slice();
@@ -740,6 +880,7 @@ function solveStaticCombatEconomyExhaustive(problem, options) {
     found,
     finalHero: bestHero,
     route: bestRoute,
+    goalArchive: goalArchive.map((item) => ({ hero: { ...item.hero } })),
     sequences,
     exhausted,
   };
@@ -747,8 +888,9 @@ function solveStaticCombatEconomyExhaustive(problem, options) {
 
 /**
  * Strict replay: every step must be a legal action from the state it is applied
- * to, and the goal must be reachable at the end. This is what stops a solver
- * bug from being reported as a success.
+ * to AND must name the same kind/id as the interaction it points at, and the goal
+ * must be reachable at the end. Checking the index alone would accept a step that
+ * silently referred to a different interaction than the route claims.
  */
 function replayStaticCombatEconomyRoute(problem, route) {
   const interactionByCell = buildInteractionIndex(problem);
@@ -756,6 +898,16 @@ function replayStaticCombatEconomyRoute(problem, route) {
   const steps = route || [];
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
+    if (!step || !isNonNegativeInt(step.interactionIndex)) {
+      return { valid: false, reason: `malformed-step:${index}`, finalHero: null, goalReachable: false };
+    }
+    const interaction = problem.interactions[step.interactionIndex];
+    if (!interaction) {
+      return { valid: false, reason: `unknown-interaction:${index}`, finalHero: null, goalReachable: false };
+    }
+    if (step.kind !== interaction.kind || step.id !== interaction.id) {
+      return { valid: false, reason: `step-identity-mismatch:${index}`, finalHero: null, goalReachable: false };
+    }
     const legal = enumerateStaticMacroActions(problem, state)
       .find((action) => action.interactionIndex === step.interactionIndex);
     if (!legal) {
@@ -779,6 +931,9 @@ function replayStaticCombatEconomyRoute(problem, route) {
 }
 
 module.exports = {
+  BREAK_BOTTLENECK,
+  BinaryHeap,
+  CONSERVE_HP,
   STATIC_SCHEMA,
   applyStaticMacroAction,
   buildStaticStructuralKey,
@@ -786,6 +941,7 @@ module.exports = {
   computeStaticReachableRegion,
   describeStaticBlockerDeficit,
   enumerateStaticMacroActions,
+  insertStaticGoalParetoState,
   insertStaticParetoState,
   replayStaticCombatEconomyRoute,
   solveStaticCombatEconomy,
