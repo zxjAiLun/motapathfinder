@@ -1,0 +1,335 @@
+{
+  "schema": "motapathfinder.static-combat-economy-core-fixture.v1",
+  "description": "PR-5.20a fixed static combat-economy cases. Rectangular maps only: '#' wall, '.' floor. Every interaction is either a plain monster (hp/atk/def) or a one-time attribute resource. No events, flags, equipment, keys, money, exp or skills exist in this schema at all.",
+  "cases": [
+    {
+      "id": "optional-potion-before-gate",
+      "purpose": "H1 baseline: the potion is optional and off-path, so the solver must prefer taking it to finish with more hp.",
+      "oracle": true,
+      "expectSolvable": true,
+      "problem": {
+        "id": "optional-potion-before-gate",
+        "grid": [
+          "#######",
+          "#S.M.G#",
+          "#.#####",
+          "#P#####"
+        ],
+        "start": {
+          "x": 1,
+          "y": 1
+        },
+        "goal": {
+          "x": 5,
+          "y": 1
+        },
+        "hero": {
+          "hp": 100,
+          "atk": 10,
+          "def": 0,
+          "mdef": 0
+        },
+        "interactions": [
+          {
+            "kind": "monster",
+            "id": "gate-guard",
+            "x": 3,
+            "y": 1,
+            "hp": 20,
+            "atk": 30,
+            "def": 5
+          },
+          {
+            "kind": "resource",
+            "id": "side-potion",
+            "x": 1,
+            "y": 3,
+            "hp": 50
+          }
+        ]
+      }
+    },
+    {
+      "id": "atk-gem-unblocks-guard",
+      "purpose": "H1 attack-blocked: the guard cannot be damaged at all until the atk gem is taken, so the gem is forced.",
+      "oracle": true,
+      "expectSolvable": true,
+      "problem": {
+        "id": "atk-gem-unblocks-guard",
+        "grid": [
+          "#######",
+          "#S.M.G#",
+          "#.#####",
+          "#K#####"
+        ],
+        "start": {
+          "x": 1,
+          "y": 1
+        },
+        "goal": {
+          "x": 5,
+          "y": 1
+        },
+        "hero": {
+          "hp": 100,
+          "atk": 10,
+          "def": 0,
+          "mdef": 0
+        },
+        "interactions": [
+          {
+            "kind": "monster",
+            "id": "armoured-guard",
+            "x": 3,
+            "y": 1,
+            "hp": 30,
+            "atk": 5,
+            "def": 12
+          },
+          {
+            "kind": "resource",
+            "id": "atk-gem",
+            "x": 1,
+            "y": 3,
+            "hp": 1,
+            "atk": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "detour-for-def-beats-direct",
+      "purpose": "H1 ordering: the direct kill works but a free side monster guards a def gem that makes the main guard much cheaper, so the optimum is the detour.",
+      "oracle": true,
+      "expectSolvable": true,
+      "problem": {
+        "id": "detour-for-def-beats-direct",
+        "grid": [
+          "#######",
+          "#S.A.G#",
+          "#.#####",
+          "#B#####",
+          "#D#####"
+        ],
+        "start": {
+          "x": 1,
+          "y": 1
+        },
+        "goal": {
+          "x": 5,
+          "y": 1
+        },
+        "hero": {
+          "hp": 100,
+          "atk": 15,
+          "def": 0,
+          "mdef": 0
+        },
+        "interactions": [
+          {
+            "kind": "monster",
+            "id": "main-guard",
+            "x": 3,
+            "y": 1,
+            "hp": 40,
+            "atk": 20,
+            "def": 5
+          },
+          {
+            "kind": "monster",
+            "id": "free-slime",
+            "x": 1,
+            "y": 3,
+            "hp": 10,
+            "atk": 12,
+            "def": 5
+          },
+          {
+            "kind": "resource",
+            "id": "def-gem",
+            "x": 1,
+            "y": 4,
+            "def": 8
+          }
+        ]
+      }
+    },
+    {
+      "id": "invest-before-conserve",
+      "purpose": "H2: ten small potions sit in a parallel decoy pocket. Their gains are small, so every potion state still has more hp than the post-toll state, but the toll must be paid to reach the atk gem that opens the armoured wall. CONSERVE_HP therefore has to work through the potion subsets before it will pay any hp, while the adaptive schedule invests immediately and reaches the goal inside a 32-expansion budget.",
+      "oracle": false,
+      "expectSolvable": true,
+      "adaptiveBudget": 32,
+      "problem": {
+        "id": "invest-before-conserve",
+        "grid": [
+          "#####################",
+          "#S.A.K.B.G###########",
+          "#.###################",
+          "#...................#",
+          "#p.p.p.p.p.p.p.p.p.p#",
+          "#####################"
+        ],
+        "start": {
+          "x": 1,
+          "y": 1
+        },
+        "goal": {
+          "x": 9,
+          "y": 1
+        },
+        "hero": {
+          "hp": 100,
+          "atk": 10,
+          "def": 0,
+          "mdef": 0
+        },
+        "interactions": [
+          {
+            "kind": "monster",
+            "id": "toll-guard",
+            "x": 3,
+            "y": 1,
+            "hp": 20,
+            "atk": 25,
+            "def": 5
+          },
+          {
+            "kind": "resource",
+            "id": "atk-gem",
+            "x": 5,
+            "y": 1,
+            "atk": 20
+          },
+          {
+            "kind": "monster",
+            "id": "armoured-wall",
+            "x": 7,
+            "y": 1,
+            "hp": 60,
+            "atk": 2,
+            "def": 25
+          },
+          {
+            "kind": "resource",
+            "id": "potion-1",
+            "x": 1,
+            "y": 4,
+            "hp": 2
+          },
+          {
+            "kind": "resource",
+            "id": "potion-2",
+            "x": 3,
+            "y": 4,
+            "hp": 2
+          },
+          {
+            "kind": "resource",
+            "id": "potion-3",
+            "x": 5,
+            "y": 4,
+            "hp": 2
+          },
+          {
+            "kind": "resource",
+            "id": "potion-4",
+            "x": 7,
+            "y": 4,
+            "hp": 2
+          },
+          {
+            "kind": "resource",
+            "id": "potion-5",
+            "x": 9,
+            "y": 4,
+            "hp": 2
+          },
+          {
+            "kind": "resource",
+            "id": "potion-6",
+            "x": 11,
+            "y": 4,
+            "hp": 2
+          },
+          {
+            "kind": "resource",
+            "id": "potion-7",
+            "x": 13,
+            "y": 4,
+            "hp": 2
+          },
+          {
+            "kind": "resource",
+            "id": "potion-8",
+            "x": 15,
+            "y": 4,
+            "hp": 2
+          },
+          {
+            "kind": "resource",
+            "id": "potion-9",
+            "x": 17,
+            "y": 4,
+            "hp": 2
+          },
+          {
+            "kind": "resource",
+            "id": "potion-10",
+            "x": 19,
+            "y": 4,
+            "hp": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "permanently-attack-blocked",
+      "purpose": "Negative control: the only route is behind a guard whose def can never be matched, and the one resource on the map gives no atk. A solver that reports success here is broken.",
+      "oracle": true,
+      "expectSolvable": false,
+      "problem": {
+        "id": "permanently-attack-blocked",
+        "grid": [
+          "#######",
+          "#S.W.G#",
+          "#.#####",
+          "#P#####"
+        ],
+        "start": {
+          "x": 1,
+          "y": 1
+        },
+        "goal": {
+          "x": 5,
+          "y": 1
+        },
+        "hero": {
+          "hp": 100,
+          "atk": 10,
+          "def": 0,
+          "mdef": 0
+        },
+        "interactions": [
+          {
+            "kind": "monster",
+            "id": "impenetrable-wall",
+            "x": 3,
+            "y": 1,
+            "hp": 50,
+            "atk": 1,
+            "def": 50
+          },
+          {
+            "kind": "resource",
+            "id": "useless-potion",
+            "x": 1,
+            "y": 3,
+            "hp": 500,
+            "mdef": 5
+          }
+        ]
+      }
+    }
+  ]
+}

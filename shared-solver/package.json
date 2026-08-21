@@ -128,6 +128,7 @@
     "check:strategic-root-retry-novelty": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery --hierarchy-call-attribution --hierarchy-call-chronology --root-attempt-separability --root-retry-novelty",
     "check:strategic-root-retry-metric-applicability": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery --hierarchy-call-attribution --hierarchy-call-chronology --root-retry-metric-applicability",
     "check:strategic-root-retry-shadow-call-budget": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery --hierarchy-call-attribution --hierarchy-call-chronology --root-retry-shadow-call-budget",
+    "check:static-combat-economy-core": "node --max-old-space-size=256 check-static-combat-economy-core.js",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",

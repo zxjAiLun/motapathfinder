@@ -2433,6 +2433,22 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
+    },
+    "shared-solver/lib/static-combat-economy-core.js": {
+      "id": "static-combat-economy-core",
+      "path": "shared-solver/lib/static-combat-economy-core.js",
+      "layer": "search/correctness",
+      "status": "experimental",
+      "role": "static-schema-combat-economy-correctness-search",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.20a static combat-economy vertical slice. Scope is ONLY its own restricted static schema: rectangular map, walls, start, goal, hero hp/atk/def/mdef, plain monsters hp/atk/def and one-time attribute resources; validateStaticCombatEconomyProblem rejects event/flag/equipment/key/money/exp/skill and monster special-ability fields instead of ignoring them. Does NOT read H5Mota data and is NOT a claim of H5Mota support, so correctnessSource=false: it does not participate in the trusted semantic or DP correctness path. Route discovery is automatic (BFS-collapsed macro actions, consumed+reachable structural buckets, 4-dimension Pareto inside a bucket, parentId/actionId route links) with no hand-written path, checkpoint, goal split or monster ordering hint."
     }
   },
   "tests": {
@@ -3499,6 +3515,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.5d/5.5e tracked same-project hole closure: 19-workload matrix stays 44/44/535 with Start green-key acquire/openDoor consume; maintained mt1-mt2 fixture live-replays an exact recorded travel variant to a real MT1->MT2 changeFloor edge, with fail-closed parent/floor/visited provenance controls. Both holes filled, candidate collision remains absent, verdict pinned NO_COLLISION_OBSERVED"
+    },
+    "shared-solver/check-static-combat-economy-core.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.20a verifies the frozen H1-H4 hypotheses in a single process with no worker pool: H1 four fixed cases match the unpruned exhaustive oracle on found and optimal final hp; H2 the invest-before-conserve case is missed by a conserve-only schedule at maxExpandedStates=32 while the adaptive schedule switches CONSERVE_HP->BREAK_BOTTLENECK and reaches the goal; H3 32 fixed seeds with at most 7 interactions agree with the oracle; H4 wall<10s, observed peak RSS<256MB, compact stdout<5KB. Every successful route is strictly replayed and one permanently attack-blocked case guards against false success."
     }
   }
 }
