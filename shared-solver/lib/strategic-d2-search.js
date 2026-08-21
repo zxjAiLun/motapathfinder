@@ -839,50 +839,100 @@ const SHADOW_FAIL_CLOSED_CLASSIFICATIONS = [
   "UNEXPECTED-MISSING-APPLICABLE-METRIC",
   "INCOMPARABLE-UNSUPPORTED",
 ];
-const SHADOW_EVENT_REQUIRED_NUMBER_FIELDS = [
-  "actualCallsExecuted",
-  "maxCalls",
-  "queuedCount",
-  "maxOutstanding",
+// Full PR-5.19w classification vocabulary. Anything outside this set is schema
+// drift, not a new case to interpret.
+const SHADOW_KNOWN_CLASSIFICATIONS = [
+  "FIRST-SEEN",
+  "EXACT-OBSERVABLE-RETRY",
+  "STAGE-PROGRESS",
+  "STAGE-REGRESSION",
+  "SAME-STAGE-PRIOR-DOMINATES",
+  "SAME-STAGE-CURRENT-IMPROVES",
+  "SAME-STAGE-METRIC-TIE-CONTEXT-ONLY",
+  "SAME-STAGE-MIXED-TRADEOFF",
+  "INCOMPARABLE-UNSUPPORTED",
+  "UNEXPECTED-MISSING-APPLICABLE-METRIC",
+];
+const SHADOW_BLOCKING_REASONS = [
+  "call-cap-exhausted",
+  "outstanding-barrier",
+  "attempt-deduplicated",
+  "no-selection",
 ];
 
-function shadowFiniteNumber(value) {
-  if (value == null) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+// PR-5.19x Repair 1: strict typing only. No Number() coercion anywhere on a
+// required field, so "8", true, NaN, Infinity, -1 and 1.5 can never reach the
+// accounting as if they were 8.
+function shadowIsSafeInteger(value) {
+  return typeof value === "number" && Number.isSafeInteger(value);
+}
+
+function shadowIsPositiveInteger(value) {
+  return shadowIsSafeInteger(value) && value > 0;
+}
+
+function shadowIsNonNegativeInteger(value) {
+  return shadowIsSafeInteger(value) && value >= 0;
+}
+
+function shadowIsNonEmptyString(value) {
+  return typeof value === "string" && value.length > 0;
+}
+
+function shadowNormalizedInteger(value, predicate) {
+  return predicate(value) ? value : null;
 }
 
 function buildRootRetryShadowCallBudgetAttribution(options) {
   const config = options || {};
-  const maxCalls = shadowFiniteNumber(config.maxCalls);
   const preChargeComparisons = config.preChargeComparisons || [];
   const postSearchEvaluation = config.postSearchEvaluation || [];
   const continuationSelectionEvents = config.continuationSelectionEvents || [];
-  // Never sort or otherwise mutate a caller array: copy first.
-  const chargedCalls = (config.chargedCalls || []).slice().sort((left, right) =>
-    shadowFiniteNumber(left && left.callOrdinal) - shadowFiniteNumber(right && right.callOrdinal));
+  const chargedCallsInput = config.chargedCalls || [];
+  const maxCallsValid = shadowIsPositiveInteger(config.maxCalls);
+  const maxCalls = maxCallsValid ? config.maxCalls : null;
   const ascending = (values) => values.slice().sort((a, b) => a - b);
+  const pushUnique = (list, value) => {
+    if (!list.includes(value)) list.push(value);
+  };
 
+  // --- pre-charge comparisons ------------------------------------------------
   const flagClassifications = new Set(SHADOW_FLAG_CLASSIFICATIONS);
   const failClosedClassifications = new Set(SHADOW_FAIL_CLOSED_CLASSIFICATIONS);
-  const flaggedOrdinals = [];
-  const incompleteOrdinals = [];
-  for (const entry of preChargeComparisons) {
-    if (entry == null || entry.callOrdinal == null) continue;
-    if (failClosedClassifications.has(entry.classification)) {
-      incompleteOrdinals.push(entry.callOrdinal);
+  const knownClassifications = new Set(SHADOW_KNOWN_CLASSIFICATIONS);
+  const invalidPreChargeComparisonIndexes = [];
+  const duplicatePreChargeCallOrdinals = [];
+  const seenPreChargeOrdinals = new Set();
+  const flaggedOrdinalSet = new Set();
+  const incompleteOrdinalSet = new Set();
+  for (let index = 0; index < preChargeComparisons.length; index += 1) {
+    const entry = preChargeComparisons[index] || {};
+    if (!shadowIsPositiveInteger(entry.callOrdinal) ||
+        !knownClassifications.has(entry.classification)) {
+      invalidPreChargeComparisonIndexes.push(index);
       continue;
     }
-    if (flagClassifications.has(entry.classification)) flaggedOrdinals.push(entry.callOrdinal);
+    if (seenPreChargeOrdinals.has(entry.callOrdinal)) {
+      pushUnique(duplicatePreChargeCallOrdinals, entry.callOrdinal);
+    } else {
+      seenPreChargeOrdinals.add(entry.callOrdinal);
+    }
+    if (failClosedClassifications.has(entry.classification)) {
+      incompleteOrdinalSet.add(entry.callOrdinal);
+      continue;
+    }
+    // Set membership, never a list: a duplicated flag must never reclaim twice.
+    if (flagClassifications.has(entry.classification)) flaggedOrdinalSet.add(entry.callOrdinal);
   }
-  const preChargeFlaggedRootCallOrdinals = ascending(flaggedOrdinals);
-  const flaggedSet = new Set(preChargeFlaggedRootCallOrdinals);
+  const preChargeComparisonsComplete = invalidPreChargeComparisonIndexes.length === 0 &&
+    duplicatePreChargeCallOrdinals.length === 0;
+  const preChargeFlaggedRootCallOrdinals = ascending(Array.from(flaggedOrdinalSet));
+  const incompleteCallOrdinals = ascending(Array.from(incompleteOrdinalSet));
 
-  // Independent audit. Same fail-closed linkage rule as the reviewed v2/v1
-  // verdicts: exactly one evaluation entry with a real boolean `productive`.
+  // --- independent post-search audit ----------------------------------------
   const evaluationsByCall = new Map();
   for (const entry of postSearchEvaluation) {
-    if (entry == null || entry.callOrdinal == null) continue;
+    if (entry == null || !shadowIsPositiveInteger(entry.callOrdinal)) continue;
     const entries = evaluationsByCall.get(entry.callOrdinal) || [];
     entries.push(entry);
     evaluationsByCall.set(entry.callOrdinal, entries);
@@ -893,124 +943,236 @@ function buildRootRetryShadowCallBudgetAttribution(options) {
   for (const callOrdinal of preChargeFlaggedRootCallOrdinals) {
     const entries = evaluationsByCall.get(callOrdinal) || [];
     if (entries.length !== 1 || typeof entries[0].productive !== "boolean") {
-      if (!missingEvaluationOrdinals.includes(callOrdinal)) {
-        missingEvaluationOrdinals.push(callOrdinal);
-      }
+      pushUnique(missingEvaluationOrdinals, callOrdinal);
       continue;
     }
     if (entries[0].productive) productiveFlaggedOrdinals.push(callOrdinal);
     else nonProductiveFlaggedOrdinals.push(callOrdinal);
   }
 
-  // Accounting timeline over the real charged calls. A removed call keeps its
-  // real callOrdinal for provenance but has no shadow ordinal; every later
-  // surviving call shifts down by the number of removals before it.
+  // --- charged ledger --------------------------------------------------------
+  const invalidChargedCallIndexes = [];
+  const duplicateChargedCallOrdinals = [];
+  const seenChargedOrdinals = new Set();
+  const normalizedCharged = [];
+  for (let index = 0; index < chargedCallsInput.length; index += 1) {
+    const call = chargedCallsInput[index] || {};
+    const valid = shadowIsPositiveInteger(call.callOrdinal) &&
+      shadowIsNonNegativeInteger(call.hierarchyLevel) &&
+      shadowIsNonNegativeInteger(call.expansionAtCharge) &&
+      shadowIsNonNegativeInteger(call.callsRemainingAfter) &&
+      shadowIsNonEmptyString(call.attemptId);
+    if (!valid) {
+      invalidChargedCallIndexes.push(index);
+      continue;
+    }
+    if (seenChargedOrdinals.has(call.callOrdinal)) {
+      pushUnique(duplicateChargedCallOrdinals, call.callOrdinal);
+    } else {
+      seenChargedOrdinals.add(call.callOrdinal);
+    }
+    normalizedCharged.push({
+      callOrdinal: call.callOrdinal,
+      hierarchyLevel: call.hierarchyLevel,
+      attemptId: call.attemptId,
+      expansionAtCharge: call.expansionAtCharge,
+      callsRemainingAfter: call.callsRemainingAfter,
+    });
+  }
+  // Copy before sorting: caller arrays are never mutated.
+  const chargedCalls = normalizedCharged.slice()
+    .sort((left, right) => left.callOrdinal - right.callOrdinal);
+  const chargedOrdinals = new Set(chargedCalls.map((call) => call.callOrdinal));
+  const chargedOrdinalsContiguous = chargedCalls.every((call, index) =>
+    call.callOrdinal === index + 1);
+  const chargedWithinCap = maxCallsValid && chargedCalls.length <= maxCalls;
+  const chargedRemainingConsistent = maxCallsValid && chargedCalls.every((call) =>
+    call.callsRemainingAfter === maxCalls - call.callOrdinal);
+  const chargedExpansionMonotone = chargedCalls.every((call, index) =>
+    index === 0 || call.expansionAtCharge >= chargedCalls[index - 1].expansionAtCharge);
+  const unchargedFlaggedCallOrdinals = preChargeFlaggedRootCallOrdinals.filter(
+    (callOrdinal) => !chargedOrdinals.has(callOrdinal));
+  const flaggedCallsChargedAtRootLevel = chargedCalls.every((call) =>
+    !flaggedOrdinalSet.has(call.callOrdinal) || call.hierarchyLevel === 0);
+  const chargedLedgerComplete = invalidChargedCallIndexes.length === 0 &&
+    duplicateChargedCallOrdinals.length === 0 &&
+    chargedOrdinalsContiguous &&
+    chargedWithinCap &&
+    chargedRemainingConsistent &&
+    chargedExpansionMonotone &&
+    unchargedFlaggedCallOrdinals.length === 0 &&
+    flaggedCallsChargedAtRootLevel;
+
   const shadowTimeline = [];
   let removedSoFar = 0;
-  const chargedOrdinals = new Set();
   for (const call of chargedCalls) {
-    const callOrdinal = shadowFiniteNumber(call && call.callOrdinal);
-    if (callOrdinal != null) chargedOrdinals.add(callOrdinal);
-    const shadowRemoved = callOrdinal != null && flaggedSet.has(callOrdinal);
+    const shadowRemoved = flaggedOrdinalSet.has(call.callOrdinal);
     if (shadowRemoved) removedSoFar += 1;
     shadowTimeline.push({
-      callOrdinal,
-      hierarchyLevel: shadowFiniteNumber(call && call.hierarchyLevel),
-      attemptId: call && call.attemptId != null ? call.attemptId : null,
-      expansionAtCharge: shadowFiniteNumber(call && call.expansionAtCharge),
-      callsRemainingAfter: shadowFiniteNumber(call && call.callsRemainingAfter),
+      ...call,
       shadowCharged: !shadowRemoved,
-      shadowOrdinal: shadowRemoved || callOrdinal == null ? null : callOrdinal - removedSoFar,
+      shadowOrdinal: shadowRemoved ? null : call.callOrdinal - removedSoFar,
     });
   }
   const actualChargedCallCount = shadowTimeline.length;
   const shadowChargedCallCount = shadowTimeline.filter((entry) => entry.shadowCharged).length;
   const reclaimedSlots = actualChargedCallCount - shadowChargedCallCount;
-  // A flag on a call that was never charged cannot reclaim anything: fail closed
-  // instead of silently counting it.
-  const unchargedFlaggedCallOrdinals = preChargeFlaggedRootCallOrdinals.filter(
-    (callOrdinal) => !chargedOrdinals.has(callOrdinal));
 
-  const evaluatedEvents = [];
+  // --- continuation selection events ----------------------------------------
+  const blockingReasons = new Set(SHADOW_BLOCKING_REASONS);
+  const invalidContinuationSelectionEventIndexes = [];
+  const duplicateContinuationSelectionEventOrdinals = [];
   const evidenceIncompleteEventOrdinals = [];
+  const seenEventOrdinals = new Set();
+  const evaluatedEvents = [];
   for (let index = 0; index < continuationSelectionEvents.length; index += 1) {
     const event = continuationSelectionEvents[index] || {};
-    const eventOrdinal = shadowFiniteNumber(event.eventOrdinal) == null
-      ? index + 1
-      : shadowFiniteNumber(event.eventOrdinal);
-    const numbersComplete = SHADOW_EVENT_REQUIRED_NUMBER_FIELDS.every((field) =>
-      shadowFiniteNumber(event[field]) != null);
-    const selectedComplete = typeof event.actualSelected === "boolean" &&
-      (event.actualSelected === true ||
-        (typeof event.actualBlockingReason === "string" && event.actualBlockingReason.length > 0));
-    const evidenceComplete = numbersComplete && selectedComplete &&
-      typeof event.dedupeSeenBeforeSelection === "boolean";
-    if (!evidenceComplete) evidenceIncompleteEventOrdinals.push(eventOrdinal);
-    const actualCallsExecuted = shadowFiniteNumber(event.actualCallsExecuted);
-    const eventMaxCalls = shadowFiniteNumber(event.maxCalls);
-    const queuedCount = shadowFiniteNumber(event.queuedCount);
-    const maxOutstanding = shadowFiniteNumber(event.maxOutstanding);
-    // Only calls already charged when this selection ran can free a slot for it.
-    const flaggedBeforeEvent = evidenceComplete
+    const ordinalValid = shadowIsPositiveInteger(event.eventOrdinal);
+    const numbersValid = shadowIsNonNegativeInteger(event.expansionAtSelection) &&
+      shadowIsNonNegativeInteger(event.hierarchyLevel) &&
+      shadowIsNonNegativeInteger(event.actualCallsExecuted) &&
+      shadowIsNonNegativeInteger(event.queuedCount) &&
+      shadowIsPositiveInteger(event.maxOutstanding);
+    const identityValid = shadowIsNonEmptyString(event.continuationId) &&
+      shadowIsNonEmptyString(event.nextPrerequisiteId) &&
+      shadowIsNonEmptyString(event.nextPrerequisiteAttemptId);
+    const booleansValid = typeof event.dedupeSeenBeforeSelection === "boolean" &&
+      typeof event.actualSelected === "boolean";
+    // The event's own cap must agree with the ledger cap, or the two snapshots
+    // are not describing the same run.
+    const capAgrees = maxCallsValid && shadowIsPositiveInteger(event.maxCalls) &&
+      event.maxCalls === maxCalls;
+    const withinLedger = numbersValid && event.actualCallsExecuted <= actualChargedCallCount;
+    let gatesConsistent = false;
+    if (numbersValid && booleansValid && capAgrees) {
+      const actualCapacity = maxCalls - event.actualCallsExecuted - event.queuedCount;
+      const capReached = event.actualCallsExecuted >= maxCalls;
+      const outstandingReached = event.queuedCount >= event.maxOutstanding;
+      if (event.actualSelected === true) {
+        gatesConsistent = event.actualBlockingReason == null &&
+          !outstandingReached &&
+          actualCapacity > 0 &&
+          event.dedupeSeenBeforeSelection === false;
+      } else if (blockingReasons.has(event.actualBlockingReason)) {
+        // Mirror the live gate chain exactly: cap, then outstanding, then dedupe.
+        if (event.actualBlockingReason === "call-cap-exhausted") {
+          gatesConsistent = capReached;
+        } else if (event.actualBlockingReason === "outstanding-barrier") {
+          gatesConsistent = !capReached && outstandingReached;
+        } else if (event.actualBlockingReason === "attempt-deduplicated") {
+          gatesConsistent = !capReached && !outstandingReached &&
+            event.dedupeSeenBeforeSelection === true;
+        } else {
+          gatesConsistent = !capReached && !outstandingReached &&
+            event.dedupeSeenBeforeSelection === false;
+        }
+      }
+    }
+    const eventEvidenceValid = ordinalValid && numbersValid && identityValid &&
+      booleansValid && capAgrees && withinLedger && gatesConsistent;
+    if (!eventEvidenceValid) invalidContinuationSelectionEventIndexes.push(index);
+    const eventOrdinal = ordinalValid ? event.eventOrdinal : null;
+    if (eventOrdinal != null) {
+      if (seenEventOrdinals.has(eventOrdinal)) {
+        pushUnique(duplicateContinuationSelectionEventOrdinals, eventOrdinal);
+      } else {
+        seenEventOrdinals.add(eventOrdinal);
+      }
+    }
+    // A shadow figure is only produced when both this event and the ledger it is
+    // measured against are fully trustworthy.
+    const accountable = eventEvidenceValid && chargedLedgerComplete;
+    if (!accountable) {
+      evidenceIncompleteEventOrdinals.push(eventOrdinal == null ? index + 1 : eventOrdinal);
+    }
+    const flaggedBeforeEvent = accountable
       ? preChargeFlaggedRootCallOrdinals.filter((callOrdinal) =>
-        chargedOrdinals.has(callOrdinal) && callOrdinal <= actualCallsExecuted)
+        chargedOrdinals.has(callOrdinal) && callOrdinal <= event.actualCallsExecuted)
       : [];
-    const shadowCallsExecuted = evidenceComplete
-      ? actualCallsExecuted - flaggedBeforeEvent.length
+    const shadowCallsExecuted = accountable
+      ? event.actualCallsExecuted - flaggedBeforeEvent.length
       : null;
-    const shadowCapacity = evidenceComplete
-      ? eventMaxCalls - shadowCallsExecuted - queuedCount
+    const shadowCapacity = accountable
+      ? maxCalls - shadowCallsExecuted - event.queuedCount
       : null;
-    const shadowWouldBeSelectable = Boolean(evidenceComplete &&
+    const shadowWouldBeSelectable = Boolean(accountable &&
       event.actualBlockingReason === "call-cap-exhausted" &&
       shadowCapacity > 0 &&
-      queuedCount < maxOutstanding &&
+      event.queuedCount < event.maxOutstanding &&
       event.dedupeSeenBeforeSelection === false);
     evaluatedEvents.push({
       eventOrdinal,
-      expansionAtSelection: shadowFiniteNumber(event.expansionAtSelection),
-      continuationId: event.continuationId != null ? event.continuationId : null,
-      hierarchyLevel: shadowFiniteNumber(event.hierarchyLevel),
-      nextPrerequisiteId: event.nextPrerequisiteId != null ? event.nextPrerequisiteId : null,
-      nextPrerequisiteAttemptId: event.nextPrerequisiteAttemptId != null
+      expansionAtSelection: shadowNormalizedInteger(
+        event.expansionAtSelection,
+        shadowIsNonNegativeInteger,
+      ),
+      continuationId: shadowIsNonEmptyString(event.continuationId) ? event.continuationId : null,
+      hierarchyLevel: shadowNormalizedInteger(event.hierarchyLevel, shadowIsNonNegativeInteger),
+      nextPrerequisiteId: shadowIsNonEmptyString(event.nextPrerequisiteId)
+        ? event.nextPrerequisiteId
+        : null,
+      nextPrerequisiteAttemptId: shadowIsNonEmptyString(event.nextPrerequisiteAttemptId)
         ? event.nextPrerequisiteAttemptId
         : null,
-      actualCallsExecuted,
-      maxCalls: eventMaxCalls,
-      queuedCount,
-      maxOutstanding,
+      actualCallsExecuted: shadowNormalizedInteger(
+        event.actualCallsExecuted,
+        shadowIsNonNegativeInteger,
+      ),
+      maxCalls: shadowNormalizedInteger(event.maxCalls, shadowIsPositiveInteger),
+      queuedCount: shadowNormalizedInteger(event.queuedCount, shadowIsNonNegativeInteger),
+      maxOutstanding: shadowNormalizedInteger(event.maxOutstanding, shadowIsPositiveInteger),
       dedupeSeenBeforeSelection: typeof event.dedupeSeenBeforeSelection === "boolean"
         ? event.dedupeSeenBeforeSelection
         : null,
       actualSelected: typeof event.actualSelected === "boolean" ? event.actualSelected : null,
-      actualBlockingReason: event.actualBlockingReason != null ? event.actualBlockingReason : null,
-      evidenceComplete,
+      actualBlockingReason: event.actualBlockingReason == null
+        ? null
+        : event.actualBlockingReason,
+      evidenceComplete: eventEvidenceValid,
+      accountable,
       flaggedBeforeEvent,
       shadowCallsExecuted,
       shadowCapacity,
       shadowWouldBeSelectable,
     });
   }
+  const continuationSelectionEventsComplete =
+    invalidContinuationSelectionEventIndexes.length === 0 &&
+    duplicateContinuationSelectionEventOrdinals.length === 0;
   const shadowSelectableEvents = evaluatedEvents.filter((entry) => entry.shadowWouldBeSelectable);
 
-  const audit = {
-    preChargeFlaggedRootCallOrdinals,
-    productiveFlaggedCallOrdinals: ascending(productiveFlaggedOrdinals),
-    nonProductiveFlaggedCallOrdinals: ascending(nonProductiveFlaggedOrdinals),
-    incompleteCallOrdinals: ascending(incompleteOrdinals),
-    missingEvaluationCallOrdinals: ascending(missingEvaluationOrdinals),
-    unchargedFlaggedCallOrdinals: ascending(unchargedFlaggedCallOrdinals),
-    evidenceIncompleteEventOrdinals: ascending(evidenceIncompleteEventOrdinals),
+  const evidenceAudit = {
+    maxCallsValid,
+    preChargeComparisonsComplete,
+    chargedLedgerComplete,
+    continuationSelectionEventsComplete,
+    chargedOrdinalsContiguous,
+    chargedWithinCap,
+    chargedRemainingConsistent,
+    chargedExpansionMonotone,
+    flaggedCallsChargedAtRootLevel,
+    invalidPreChargeComparisonIndexes: ascending(invalidPreChargeComparisonIndexes),
+    duplicatePreChargeCallOrdinals: ascending(duplicatePreChargeCallOrdinals),
+    invalidChargedCallIndexes: ascending(invalidChargedCallIndexes),
+    duplicateChargedCallOrdinals: ascending(duplicateChargedCallOrdinals),
+    invalidContinuationSelectionEventIndexes: ascending(invalidContinuationSelectionEventIndexes),
+    duplicateContinuationSelectionEventOrdinals:
+      ascending(duplicateContinuationSelectionEventOrdinals),
   };
-  // Priority: PRODUCTIVE > EVIDENCE-INCOMPLETE > TRACE-LOCAL reach > reclaimed
-  // without eligible block > no pre-charge flag at all.
+  const accountingEvidenceComplete = maxCallsValid &&
+    preChargeComparisonsComplete &&
+    chargedLedgerComplete &&
+    continuationSelectionEventsComplete &&
+    evidenceIncompleteEventOrdinals.length === 0;
+
+  // Priority: PRODUCTIVE false positive first, then any evidence failure, and
+  // only then may a positive shadow verdict be reported.
   let verdict;
-  if (audit.productiveFlaggedCallOrdinals.length > 0) {
+  if (productiveFlaggedOrdinals.length > 0) {
     verdict = "PRODUCTIVE-ROOT-WOULD-BE-SHADOW-FLAGGED";
-  } else if (audit.incompleteCallOrdinals.length > 0 ||
-      audit.missingEvaluationCallOrdinals.length > 0 ||
-      audit.unchargedFlaggedCallOrdinals.length > 0 ||
-      audit.evidenceIncompleteEventOrdinals.length > 0) {
+  } else if (!accountingEvidenceComplete ||
+      incompleteCallOrdinals.length > 0 ||
+      missingEvaluationOrdinals.length > 0) {
     verdict = "SHADOW-CALL-BUDGET-EVIDENCE-INCOMPLETE";
   } else if (shadowSelectableEvents.length > 0) {
     verdict = "TRACE-LOCAL-SHADOW-SLOT-REACHES-CAP-BLOCKED-DERIVED-WORK";
@@ -1024,7 +1186,15 @@ function buildRootRetryShadowCallBudgetAttribution(options) {
     actualChargedCallCount,
     shadowChargedCallCount,
     reclaimedSlots,
-    ...audit,
+    preChargeFlaggedRootCallOrdinals,
+    productiveFlaggedCallOrdinals: ascending(productiveFlaggedOrdinals),
+    nonProductiveFlaggedCallOrdinals: ascending(nonProductiveFlaggedOrdinals),
+    incompleteCallOrdinals,
+    missingEvaluationCallOrdinals: ascending(missingEvaluationOrdinals),
+    unchargedFlaggedCallOrdinals: ascending(unchargedFlaggedCallOrdinals),
+    evidenceIncompleteEventOrdinals: ascending(evidenceIncompleteEventOrdinals),
+    evidenceAudit,
+    accountingEvidenceComplete,
     shadowTimeline,
     continuationSelectionEvents: evaluatedEvents,
     shadowSelectableEventOrdinals: shadowSelectableEvents.map((entry) => entry.eventOrdinal),
@@ -1032,6 +1202,8 @@ function buildRootRetryShadowCallBudgetAttribution(options) {
       shadowSelectableEvents.map((entry) => entry.continuationId))),
     shadowSelectableNextPrerequisiteIds: Array.from(new Set(
       shadowSelectableEvents.map((entry) => entry.nextPrerequisiteId))),
+    shadowSelectableNextPrerequisiteAttemptIds: Array.from(new Set(
+      shadowSelectableEvents.map((entry) => entry.nextPrerequisiteAttemptId))),
     verdict,
   };
 }
@@ -4716,7 +4888,7 @@ function runStrategicD2Search(options) {
       continuationSelectionEvents: rootRetryShadowSelectionEvents,
     });
     stats.rootRetryShadowCallBudgetAttribution = {
-      schema: "motapathfinder.strategic-root-retry-shadow-call-budget-attribution.v1",
+      schema: "motapathfinder.strategic-root-retry-shadow-call-budget-attribution.v2",
       rootCallCount: stageAttribution.rootCallCount,
       repeatGroupCount: stageAttribution.repeatGroupCount,
       preChargeComparisons: stageAttribution.comparisons,
