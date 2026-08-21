@@ -200,6 +200,8 @@ function main() {
   const resourceCell = adaptation.provenance.byIndex.find((entry) => entry.kind === "resource");
   const jewelCell = adaptation.provenance.byIndex.find((entry) => entry.tileId === "redJewel");
   const exitKey = Object.keys(fixture.project.floorsById[floorId].changeFloor)[0];
+  const exitX = Number(exitKey.split(",")[0]);
+  const exitY = Number(exitKey.split(",")[1]);
 
   const mutations = [
     ["events", (p) => { p.floorsById[floorId].events = { "3,1": [{ type: "text", text: "hi" }] }; }],
@@ -288,12 +290,73 @@ function main() {
     }],
   ];
 
+  // --- fail-closed schema group (PR-5.20c review 1) --------------------------
+  // Each of these adapted successfully before hardening: the untriggered ones by
+  // silently becoming walls, the unknown-field ones by being ignored outright.
+  const schemaMutations = [
+    ["enemy-trigger-removed", (p) => { delete p.mapTilesByNumber[String(enemyCell.tileNumber)].trigger; }],
+    ["item-trigger-removed", (p) => { delete p.mapTilesByNumber[String(resourceCell.tileNumber)].trigger; }],
+    ["door-class-without-trigger", (p) => {
+      p.mapTilesByNumber["91"] = { id: "yellowDoor", cls: "animates", canPass: false };
+      p.floorsById[floorId].map[1][2] = 91;
+    }],
+    ["npc-class-without-trigger", (p) => {
+      p.mapTilesByNumber["92"] = { id: "man", cls: "npcs", canPass: false };
+      p.floorsById[floorId].map[1][2] = 92;
+    }],
+    ["item-class-without-trigger", (p) => {
+      p.mapTilesByNumber["93"] = { id: "redJewel", cls: "items", canPass: false };
+      p.floorsById[floorId].map[1][2] = 93;
+    }],
+    ["enemy-tile-passable", (p) => {
+      p.mapTilesByNumber[String(enemyCell.tileNumber)].canPass = true;
+    }],
+    ["item-tile-passable", (p) => {
+      p.mapTilesByNumber[String(resourceCell.tileNumber)].canPass = true;
+    }],
+    ["exit-tile-impassable", (p) => {
+      const stairNumber = p.floorsById[floorId].map[exitY][exitX];
+      p.mapTilesByNumber[String(stairNumber)].canPass = false;
+    }],
+    ["hero-unknown-field", (p) => { p.data.firstData.hero.mana = 50; }],
+    ["hero-loc-unknown-field", (p) => { p.data.firstData.hero.loc.floorId = "MT1"; }],
+    ["enemy-unknown-field", (p) => { p.enemysById[enemyCell.tileId].customAura = "drain"; }],
+    ["item-unknown-field", (p) => { p.itemsById[resourceCell.tileId].customPickupHook = "core.x()"; }],
+    ["tile-unknown-field", (p) => {
+      p.mapTilesByNumber[String(enemyCell.tileNumber)].customCollisionHook = "core.x()";
+    }],
+    ["floor-unknown-field", (p) => { p.floorsById[floorId].customFloorRule = "core.x()"; }],
+    ["changeFloor-unknown-field", (p) => { p.floorsById[floorId].changeFloor[exitKey].stair = "downFloor"; }],
+    ["changeFloor-invalid-target", (p) => { p.floorsById[floorId].changeFloor[exitKey].floorId = ""; }],
+    ["changeFloor-invalid-loc", (p) => { p.floorsById[floorId].changeFloor[exitKey].loc = [1]; }],
+    ["changeFloor-missing-target", (p) => { p.floorsById[floorId].changeFloor[exitKey] = null; }],
+    ["semantic-map-zero-definition", (p) => {
+      p.mapTilesByNumber["0"] = { id: "customBlank", cls: "animates", canPass: true, trigger: "action" };
+    }],
+    ["semantic-map-zero-script", (p) => {
+      p.mapTilesByNumber["0"] = { id: "blank", cls: "terrains", canPass: true, event: [{ type: "text" }] };
+    }],
+  ];
+
   const mutationReports = [];
-  for (const [label, mutate] of mutations) {
+  for (const [label, mutate] of mutations.concat(schemaMutations)) {
     const mutated = clone(fixture.project);
     mutate(mutated);
     const probe = inspectH5StaticFloorEligibility(mutated);
     const adapted = adaptH5StaticFloor(mutated);
+    // inspect and adapt must agree exactly: a probe that says "fine" while the
+    // adaptation refuses (or the reverse) would make the probe useless.
+    assert.strictEqual(
+      probe.eligible,
+      adapted.eligible,
+      `mutation ${label}: inspect and adapt disagree on eligibility`,
+    );
+    assert.deepStrictEqual(
+      probe.unsupported,
+      adapted.unsupported,
+      `mutation ${label}: inspect and adapt report different reasons`,
+    );
+    assert.strictEqual(probe.interactionCount, 0, `mutation ${label} must report no interactions`);
     assert.strictEqual(
       probe.eligible,
       false,
@@ -343,6 +406,18 @@ function main() {
     assert.deepStrictEqual(mappingAttempt.steps, []);
     mutationReports.push({ mutation: label, reasons: adapted.unsupported.length, firstReason: adapted.unsupported[0].reason });
   }
+
+  // A non-array route is a caller error; an empty array is a legitimate zero-step
+  // route for a problem whose start already reaches the goal.
+  [null, undefined, "route", 7, {}, { length: 1 }].forEach((badRoute) => {
+    const result = mapStaticRouteToH5Steps(adaptation, badRoute);
+    assert.strictEqual(result.ok, false, `route ${String(badRoute)} must be refused`);
+    assert.strictEqual(result.reason, "route-must-be-an-array");
+    assert.deepStrictEqual(result.steps, []);
+  });
+  const emptyRoute = mapStaticRouteToH5Steps(adaptation, []);
+  assert.strictEqual(emptyRoute.ok, true, "an empty route must still map");
+  assert.deepStrictEqual(emptyRoute.steps, []);
   sampleRss();
 
   // The unmutated fixture must still be eligible after all that cloning.
@@ -387,8 +462,15 @@ function main() {
     },
     a3: {
       mutations: mutationReports.length,
+      originalMutations: mutations.length,
+      schemaMutations: schemaMutations.length,
       allFailedClosed: true,
-      mutationList: mutationReports.map((entry) => entry.mutation),
+      inspectMatchesAdapt: true,
+      reasonCategories: mutationReports.reduce((accumulator, entry) => {
+        const category = entry.firstReason.split(":")[0];
+        accumulator[category] = (accumulator[category] || 0) + 1;
+        return accumulator;
+      }, {}),
     },
     a4: {
       wallMs,

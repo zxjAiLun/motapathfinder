@@ -82,6 +82,72 @@ const FORBIDDEN_ENEMY_KEYS = [
 ];
 const ZERO_ONLY_ENEMY_KEYS = ["money", "exp", "point"];
 
+/**
+ * Strict field allowlists for every object that takes part in classification.
+ *
+ * A denylist can only reject the mechanics we already thought of; an unknown key
+ * would slip through and be silently ignored, which is exactly how a floor that
+ * carries extra semantics could look like a plain static floor. So each list below
+ * is closed: it holds the fields this adapter reads, the fields it explicitly
+ * validates and rejects, and pure-display fields enumerated one by one. Anything
+ * else fails the whole floor.
+ */
+const ALLOWED_HERO_KEYS = new Set([
+  // read
+  "hp", "atk", "def", "mdef", "loc",
+  // explicitly validated as zero/empty
+  "money", "exp", "level", "lv", "steps", "items", "equipment", "flags",
+]);
+const ALLOWED_HERO_LOC_KEYS = new Set(["x", "y", "direction"]);
+const ALLOWED_FLOOR_KEYS = new Set([
+  // read
+  "floorId", "width", "height", "ratio", "map", "changeFloor",
+  // pure display, enumerated deliberately
+  "title", "name",
+  // explicitly validated as empty
+  ...FLOOR_EVENT_KEYS,
+]);
+const ALLOWED_TILE_KEYS = new Set([
+  // read
+  "id", "cls", "canPass", "trigger",
+  // explicitly validated as empty
+  "event", "script", "afterGetItem", "afterBattle",
+]);
+const ALLOWED_ITEM_KEYS = new Set([
+  // read
+  "id", "cls", "itemEffect",
+  // pure display, enumerated deliberately
+  "name", "text",
+  // explicitly validated as absent
+  "useItemEffect", "canUseItemEffect", "equip", "equipType", "hideStatus",
+]);
+const ALLOWED_ENEMY_KEYS = new Set([
+  // read
+  "id", "hp", "atk", "def",
+  // pure display, enumerated deliberately
+  "name", "displayIdInBook",
+  // explicitly validated as zero/empty/absent
+  ...FORBIDDEN_ENEMY_KEYS,
+  ...ZERO_ONLY_ENEMY_KEYS,
+]);
+const ALLOWED_CHANGE_FLOOR_KEYS = new Set(["floorId", "loc"]);
+
+// The only tile class this round accepts as pure terrain. A tile with no trigger
+// but an interactive class is NOT terrain, and must never fall through to the
+// wall/floor branch.
+const TERRAIN_CLASSES = new Set(["terrains"]);
+const ENEMY_CLASSES = new Set(["enemys", "enemy48"]);
+const ITEM_CLASSES = new Set(["items"]);
+
+/**
+ * Report every key an object carries that the allowlist does not name. Returns the
+ * offending keys so the caller can fail the floor with a precise reason.
+ */
+function unknownKeys(value, allowed) {
+  if (value == null || typeof value !== "object") return [];
+  return Object.keys(value).filter((key) => !allowed.has(key)).sort();
+}
+
 function isSafeInt(value) {
   return typeof value === "number" && Number.isSafeInteger(value);
 }
@@ -134,10 +200,14 @@ function sortUnsupported(entries) {
 function buildResourceGain(item, tileId, values, ratio) {
   const canonical = CANONICAL_RESOURCE_ITEMS[tileId];
   if (canonical == null) return { ok: false, reason: `unsupported-item:${tileId}` };
-  if (item == null || typeof item !== "object") {
+  if (item == null || typeof item !== "object" || Array.isArray(item)) {
     return { ok: false, reason: `unknown-item:${tileId}` };
   }
-  if (item.cls !== "items") return { ok: false, reason: `unsupported-item-class:${tileId}` };
+  const unknownItemKeys = unknownKeys(item, ALLOWED_ITEM_KEYS);
+  if (unknownItemKeys.length > 0) {
+    return { ok: false, reason: `unsupported-item-field:${tileId}.${unknownItemKeys[0]}` };
+  }
+  if (!ITEM_CLASSES.has(item.cls)) return { ok: false, reason: `unsupported-item-class:${tileId}` };
   // A usable/equippable item is a different mechanic even under a known id.
   for (const key of ["useItemEffect", "canUseItemEffect", "equip", "equipType", "hideStatus"]) {
     if (item[key] != null) {
@@ -170,8 +240,12 @@ function buildResourceGain(item, tileId, values, ratio) {
 }
 
 function buildMonsterStats(enemy, tileId) {
-  if (enemy == null || typeof enemy !== "object") {
+  if (enemy == null || typeof enemy !== "object" || Array.isArray(enemy)) {
     return { ok: false, reason: `unknown-enemy:${tileId}` };
+  }
+  const unknownEnemyKeys = unknownKeys(enemy, ALLOWED_ENEMY_KEYS);
+  if (unknownEnemyKeys.length > 0) {
+    return { ok: false, reason: `unsupported-enemy-field:${tileId}.${unknownEnemyKeys[0]}` };
   }
   if (!isPositiveInt(enemy.hp)) return { ok: false, reason: `unsupported-enemy-hp:${tileId}` };
   if (!isNonNegativeInt(enemy.atk)) return { ok: false, reason: `unsupported-enemy-atk:${tileId}` };
@@ -226,9 +300,12 @@ function analyzeH5StaticFloor(project) {
     return bail();
   }
   const heroSource = firstData.hero;
-  if (heroSource == null || typeof heroSource !== "object") {
+  if (heroSource == null || typeof heroSource !== "object" || Array.isArray(heroSource)) {
     fail("missing-first-data-hero");
     return bail();
+  }
+  for (const key of unknownKeys(heroSource, ALLOWED_HERO_KEYS)) {
+    fail(`unsupported-hero-field:${key}`);
   }
   const hero = {
     hp: heroSource.hp,
@@ -249,12 +326,20 @@ function analyzeH5StaticFloor(project) {
   if (!isEmptyValue(heroSource.equipment)) fail("unsupported-hero-equipment");
   if (!isEmptyValue(heroSource.flags)) fail("unsupported-hero-flags");
   const loc = heroSource.loc;
-  if (loc == null || !isNonNegativeInt(loc.x) || !isNonNegativeInt(loc.y)) {
+  if (loc == null || typeof loc !== "object" || Array.isArray(loc) ||
+      !isNonNegativeInt(loc.x) || !isNonNegativeInt(loc.y)) {
     fail("missing-hero-loc");
     return bail();
   }
+  for (const key of unknownKeys(loc, ALLOWED_HERO_LOC_KEYS)) {
+    fail(`unsupported-hero-loc-field:${key}`);
+  }
 
-  // Floor-level script hooks.
+  // Floor field allowlist, then the script hooks it is allowed to carry but must
+  // leave empty.
+  for (const key of unknownKeys(floor, ALLOWED_FLOOR_KEYS)) {
+    fail(`unsupported-floor-field:${key}`);
+  }
   for (const key of FLOOR_EVENT_KEYS) {
     if (!isEmptyValue(floor[key])) fail(`floor-event:${key}`);
   }
@@ -291,10 +376,51 @@ function analyzeH5StaticFloor(project) {
     } else {
       goal = { x: gx, y: gy };
     }
+    // The target floor is never loaded here, but the entry still has to be a
+    // recognised shape: an unvalidated target is an unread assumption.
+    const target = changeFloor[exitKeys[0]];
+    if (target == null || typeof target !== "object" || Array.isArray(target)) {
+      fail("unsupported-change-floor-target", gx, gy);
+    } else {
+      for (const key of unknownKeys(target, ALLOWED_CHANGE_FLOOR_KEYS)) {
+        fail(`unsupported-change-floor-field:${key}`, gx, gy);
+      }
+      if (!isNonEmptyString(target.floorId)) {
+        fail("unsupported-change-floor-floor-id", gx, gy);
+      }
+      if (!Array.isArray(target.loc) || target.loc.length !== 2 ||
+          !isNonNegativeInt(target.loc[0]) || !isNonNegativeInt(target.loc[1])) {
+        fail("unsupported-change-floor-loc", gx, gy);
+      }
+    }
   }
   const values = source.values || {};
   const ratio = floor.ratio == null ? 1 : floor.ratio;
   const tilesByNumber = source.mapTilesByNumber || {};
+  // Map number 0 is the canonical empty cell. If the project redefines it, every
+  // blank cell on the floor would silently carry that definition, so a 0 that
+  // declares anything semantic fails the floor rather than being skipped.
+  const zeroTile = tilesByNumber["0"];
+  if (zeroTile != null) {
+    if (typeof zeroTile !== "object" || Array.isArray(zeroTile)) {
+      fail("semantic-map-zero-definition");
+    } else {
+      for (const key of unknownKeys(zeroTile, ALLOWED_TILE_KEYS)) {
+        fail(`unsupported-map-zero-field:${key}`);
+      }
+      if (zeroTile.trigger != null && zeroTile.trigger !== "null") {
+        fail(`semantic-map-zero-trigger:${String(zeroTile.trigger)}`);
+      }
+      if (zeroTile.cls != null && !TERRAIN_CLASSES.has(zeroTile.cls)) {
+        fail(`semantic-map-zero-class:${String(zeroTile.cls)}`);
+      }
+      if (zeroTile.canPass === false) fail("semantic-map-zero-impassable");
+      if (!isEmptyValue(zeroTile.event) || !isEmptyValue(zeroTile.script) ||
+          !isEmptyValue(zeroTile.afterGetItem) || !isEmptyValue(zeroTile.afterBattle)) {
+        fail("semantic-map-zero-script");
+      }
+    }
+  }
   const itemsById = source.itemsById || {};
   const enemysById = source.enemysById || {};
 
@@ -325,6 +451,12 @@ function analyzeH5StaticFloor(project) {
         row += WALL;
         continue;
       }
+      const unknownTileKeys = unknownKeys(tile, ALLOWED_TILE_KEYS);
+      if (unknownTileKeys.length > 0) {
+        fail(`unsupported-tile-field:${tile.id}.${unknownTileKeys[0]}`, x, y);
+        row += WALL;
+        continue;
+      }
       const trigger = tile.trigger == null || tile.trigger === "null" ? null : tile.trigger;
       if (trigger != null && !SUPPORTED_TRIGGERS.has(trigger)) {
         fail(`unsupported-tile-trigger:${tile.id}:${trigger}`, x, y);
@@ -338,12 +470,13 @@ function analyzeH5StaticFloor(project) {
         continue;
       }
       if (isGoalCell) {
-        if (trigger !== "changeFloor") {
-          fail(`floor-exit-tile-mismatch:${tile.id}`, x, y);
+        // A terminal exit must be a real, passable terrain stair. Reaching it ends
+        // this problem; it is never executed.
+        if (trigger !== "changeFloor" || !TERRAIN_CLASSES.has(tile.cls) || tile.canPass !== true) {
+          fail(`floor-exit-tile-mismatch:${tile.id}:${String(tile.cls)}:${String(tile.canPass)}`, x, y);
           row += WALL;
           continue;
         }
-        // The exit is terminal: reaching it ends this problem, it is not executed.
         row += FLOOR;
         continue;
       }
@@ -354,8 +487,10 @@ function analyzeH5StaticFloor(project) {
       }
       const onStart = loc.x === x && loc.y === y;
       if (trigger === "battle") {
-        if (tile.cls !== "enemys" && tile.cls !== "enemy48") {
-          fail(`unsupported-enemy-class:${tile.id}:${String(tile.cls)}`, x, y);
+        // Each trigger is locked to the class AND passability it may appear with.
+        // Accepting a mismatch would mean guessing which of the two is the truth.
+        if (!ENEMY_CLASSES.has(tile.cls) || tile.canPass !== false) {
+          fail(`unsupported-enemy-tile:${tile.id}:${String(tile.cls)}:${String(tile.canPass)}`, x, y);
           row += WALL;
           continue;
         }
@@ -386,8 +521,8 @@ function analyzeH5StaticFloor(project) {
         continue;
       }
       if (trigger === "getItem") {
-        if (tile.cls !== "items") {
-          fail(`unsupported-item-class:${tile.id}:${String(tile.cls)}`, x, y);
+        if (!ITEM_CLASSES.has(tile.cls) || tile.canPass !== false) {
+          fail(`unsupported-item-tile:${tile.id}:${String(tile.cls)}:${String(tile.canPass)}`, x, y);
           row += WALL;
           continue;
         }
@@ -417,17 +552,22 @@ function analyzeH5StaticFloor(project) {
         row += FLOOR;
         continue;
       }
-      // No trigger: pure terrain. Passability must be stated explicitly.
-      if (tile.canPass === true) {
-        row += FLOOR;
-        continue;
-      }
-      if (tile.canPass === false) {
+      // No trigger. This is the branch that must not be generous: previously any
+      // tile without a trigger became floor or wall purely on canPass, so deleting
+      // the trigger from an enemy or item tile silently turned that interaction
+      // into a wall and the floor still "adapted". An untriggered tile is terrain
+      // only if its class says it is terrain, and its passability must be stated.
+      if (!TERRAIN_CLASSES.has(tile.cls)) {
+        fail(`untriggered-non-terrain-tile:${tile.id}:${String(tile.cls)}`, x, y);
         row += WALL;
         continue;
       }
-      fail(`unknown-tile-passability:${tile.id}`, x, y);
-      row += WALL;
+      if (typeof tile.canPass !== "boolean") {
+        fail(`unknown-tile-passability:${tile.id}`, x, y);
+        row += WALL;
+        continue;
+      }
+      row += tile.canPass ? FLOOR : WALL;
     }
     grid.push(row);
   }
@@ -504,9 +644,14 @@ function mapStaticRouteToH5Steps(adaptation, route) {
   if (adaptation == null || !adaptation.eligible || adaptation.provenance == null) {
     return { ok: false, reason: "adaptation-not-eligible", steps: [] };
   }
+  // An empty array is legitimate -- a problem whose start already reaches the goal
+  // has a zero-step route -- but anything that is not an array is a caller error.
+  if (!Array.isArray(route)) {
+    return { ok: false, reason: "route-must-be-an-array", steps: [] };
+  }
   const byIndex = adaptation.provenance.byIndex;
   const steps = [];
-  const source = route || [];
+  const source = route;
   for (let index = 0; index < source.length; index += 1) {
     const step = source[index];
     if (step == null || !isNonNegativeInt(step.interactionIndex)) {
