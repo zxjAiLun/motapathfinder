@@ -2448,7 +2448,23 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.20a static combat-economy vertical slice. Scope is ONLY its own restricted static schema: rectangular map, walls, start, goal, hero hp/atk/def/mdef, plain monsters hp/atk/def and one-time attribute resources; validateStaticCombatEconomyProblem rejects event/flag/equipment/key/money/exp/skill and monster special-ability fields instead of ignoring them. Does NOT read H5Mota data and is NOT a claim of H5Mota support, so correctnessSource=false: it does not participate in the trusted semantic or DP correctness path. Route discovery is automatic (BFS-collapsed macro actions, consumed+reachable structural buckets, 4-dimension Pareto inside a bucket, parentId/actionId route links) with no hand-written path, checkpoint, goal split or monster ordering hint."
+      "notes": "PR-5.20a/5.20b static combat-economy vertical slice and scale gate. Scope is ONLY its own restricted static schema: rectangular map ('#'/'.' terrain only), hero hp/atk/def/mdef, plain monsters hp/atk/def and one-time attribute resources; validateStaticCombatEconomyProblem uses strict allowlists and rejects every unknown field, illegal grid character and duplicate/missing interaction id instead of ignoring them. Route discovery is automatic (BFS-collapsed macro actions, consumed+reachable structural buckets, 4-dimension Pareto inside a bucket, parentId/actionId route links) with no hand-written path, checkpoint, goal split or monster ordering hint. PR-5.20b adds dual CONSERVE_HP/BREAK_BOTTLENECK agendas holding only {id,rank} tickets over a single pending map (with rebuild() to drop stale tickets), a mode switch that only fires while a real blocker deficit exists, a goal Pareto archive keeping every non-dominated finish, and a scale gate proving two 24-32 interaction cases reach SOLVED inside 50000 expansions with peakFrontier<=10000. Does NOT read H5Mota data; correctnessSource=false because it does not participate in the trusted semantic or DP correctness path."
+    },
+    "shared-solver/lib/static-combat-economy-h5-adapter.js": {
+      "id": "static-combat-economy-h5-adapter",
+      "path": "shared-solver/lib/static-combat-economy-h5-adapter.js",
+      "layer": "domain",
+      "status": "experimental",
+      "role": "restricted-native-h5-static-floor-data-adapter",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.20c maps ONE event-free H5 floor into the static-combat-economy-core problem. Data mapping only: reads an already-in-memory H5-shaped project object and never touches the filesystem, project-loader, functions.js runtime, battle resolver, simulator or event resolver, and never evaluates or pattern-matches an effect string. Resources are accepted only from a canonical gem/potion allowlist whose itemEffect must equal one of two exact canonical strings, with gains built solely from project.values and floor.ratio. Anything outside the subdomain (events/autoEvent/firstArrive/eachArrive/parallelDo/beforeBattle/afterBattle/afterGetItem, doors, keys, shops, equipment, skills, money/exp/level, special monsters, custom itemEffect, tool-sensitive tiles, multiple or missing exits, cross-floor continuation, unknown map/item/enemy) fails the WHOLE floor closed with a stably sorted floorId/x/y/reason list; an offending cell is never rewritten into an obstacle. The unique changeFloor tile is a TERMINAL goal -- the next floor is not executed and goalArchive is not a cross-floor continuation archive. correctnessSource=false: this proves restricted native-data mapping, NOT semantic equivalence with arbitrary H5 functions.js."
     }
   },
   "tests": {
@@ -3521,7 +3537,14 @@
       "allowsNotFound": false,
       "requiresStrictReplay": true,
       "cleanCheckout": true,
-      "notes": "PR-5.20a verifies the frozen H1-H4 hypotheses in a single process with no worker pool: H1 four fixed cases match the unpruned exhaustive oracle on found and optimal final hp; H2 the invest-before-conserve case is missed by a conserve-only schedule at maxExpandedStates=32 while the adaptive schedule switches CONSERVE_HP->BREAK_BOTTLENECK and reaches the goal; H3 32 fixed seeds with at most 7 interactions agree with the oracle; H4 wall<10s, observed peak RSS<256MB, compact stdout<5KB. Every successful route is strictly replayed and one permanently attack-blocked case guards against false success."
+      "notes": "PR-5.20a/5.20b verifies the frozen H1-H6 acceptance in a single process with no worker pool: H1 fixed cases match the unpruned exhaustive oracle on found, optimal final hp AND goal archive set; H2 the invest-before-conserve case is missed by a conserve-only schedule at maxExpandedStates=32 while the adaptive schedule switches CONSERVE_HP->BREAK_BOTTLENECK and reaches the goal; H3 32 fixed seeds with at most 7 interactions agree with the oracle; H4 wall<10s, observed peak RSS<256MB, compact stdout<5KB; H5 the goal Pareto archive keeps >=2 mutually non-dominated finishes on the trade-off case; H6 the scale gate solves both 24-32 interaction cases inside 50000 expansions with peakFrontier<=10000. Also locks the exact-budget boundary (budget==expanded is SOLVED, budget-1 is RESOURCE_LIMIT), that agenda tickets carry only id/rank, and that heap rebuild preserves pop order. Every successful route is strictly replayed and a permanently attack-blocked case guards against false success."
+    },
+    "shared-solver/check-static-combat-economy-h5-adapter.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.20c locks A1-A4 in a single process with no worker pool, no disk cache and no real tower: A1 the native H5-shaped fixture adapts automatically and equals an independently derived expectedStaticProblem; A2 the static solver finds a route and goal archive on its own, every archive route strictly replays and every mapped H5 step matches the recorded provenance cell for cell; A3 41 mutations covering each unsupported semantic all give eligible=false, problem=null and no route; A4 wall<10s, observed peak RSS<256MB, compact stdout<5KB."
     }
   }
 }

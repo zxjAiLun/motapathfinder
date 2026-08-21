@@ -443,11 +443,12 @@ function applyStaticMacroAction(problem, state, action, interactionByCell) {
 const HEX_DIGITS = "0123456789abcdef";
 
 /**
- * Pack a cell bitset four cells per character. This is an exact, injective
- * encoding -- the same cells always give the same string and different cells never
- * can -- but one structural key is built for every generated state, so the
- * difference between one character per cell and four cells per character is the
- * difference between tens of megabytes of short-lived string churn and a few.
+ * Pack a cell bitset four cells per character. The encoding is injective over
+ * fixed-length bitsets -- every state on one map shares that map's cell count, so
+ * the same cells always give the same string and different cells never can -- but
+ * one structural key is built for every generated state, so the difference between
+ * one character per cell and four cells per character is the difference between
+ * tens of megabytes of short-lived string churn and a few.
  */
 function bitsetToString(bits) {
   let out = "";

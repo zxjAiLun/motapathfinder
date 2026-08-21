@@ -1,0 +1,719 @@
+{
+  "schema": "motapathfinder.static-combat-economy-h5-native-fixture.v1",
+  "description": "PR-5.20c native H5-shaped fixture for the static combat-economy adapter. Uses real H5 field names only (data.firstData, values, mapTilesByNumber, itemsById, enemysById, floorsById) and is entirely event-free: one floor, one changeFloor exit, plain monsters with special/money/exp/point all zero, and standard gems and potions whose itemEffect strings are the canonical forms. expectedStaticProblem is derived from the same layout spec independently of the adapter so the comparison is a real cross-check, and there is NO route, checkpoint, goal decomposition or monster ordering hint anywhere in this file.",
+  "layout": [
+    "###############",
+    "#S..a..b..c..X#",
+    "#.###########.#",
+    "#d.e.f.g.h.i.j#",
+    "#.###########.#",
+    "#k..l..m..n..o#",
+    "#.###########.#",
+    "#p.q.r.s.t.u.v#",
+    "###############"
+  ],
+  "project": {
+    "data": {
+      "firstData": {
+        "floorId": "MT1",
+        "hero": {
+          "hp": 620,
+          "atk": 22,
+          "def": 10,
+          "mdef": 8,
+          "money": 0,
+          "exp": 0,
+          "items": {},
+          "equipment": {},
+          "flags": {},
+          "loc": {
+            "x": 1,
+            "y": 1,
+            "direction": "down"
+          }
+        }
+      }
+    },
+    "values": {
+      "redJewel": 3,
+      "blueJewel": 3,
+      "greenJewel": 5,
+      "redPotion": 60,
+      "bluePotion": 120,
+      "yellowPotion": 250,
+      "greenPotion": 40
+    },
+    "mapTilesByNumber": {
+      "1": {
+        "id": "yellowWall",
+        "cls": "terrains",
+        "canPass": false
+      },
+      "2": {
+        "id": "downFloor",
+        "cls": "terrains",
+        "canPass": true,
+        "trigger": "changeFloor"
+      },
+      "11": {
+        "id": "greenSlime",
+        "cls": "enemys",
+        "canPass": false,
+        "trigger": "battle"
+      },
+      "12": {
+        "id": "redSlime",
+        "cls": "enemys",
+        "canPass": false,
+        "trigger": "battle"
+      },
+      "13": {
+        "id": "blackSlime",
+        "cls": "enemys",
+        "canPass": false,
+        "trigger": "battle"
+      },
+      "14": {
+        "id": "bat",
+        "cls": "enemys",
+        "canPass": false,
+        "trigger": "battle"
+      },
+      "15": {
+        "id": "skeleton",
+        "cls": "enemys",
+        "canPass": false,
+        "trigger": "battle"
+      },
+      "16": {
+        "id": "bigBat",
+        "cls": "enemys",
+        "canPass": false,
+        "trigger": "battle"
+      },
+      "17": {
+        "id": "zombie",
+        "cls": "enemys",
+        "canPass": false,
+        "trigger": "battle"
+      },
+      "18": {
+        "id": "rock",
+        "cls": "enemys",
+        "canPass": false,
+        "trigger": "battle"
+      },
+      "19": {
+        "id": "slimelord",
+        "cls": "enemys",
+        "canPass": false,
+        "trigger": "battle"
+      },
+      "20": {
+        "id": "skeletonSoldier",
+        "cls": "enemys",
+        "canPass": false,
+        "trigger": "battle"
+      },
+      "21": {
+        "id": "vampire",
+        "cls": "enemys",
+        "canPass": false,
+        "trigger": "battle"
+      },
+      "31": {
+        "id": "redJewel",
+        "cls": "items",
+        "canPass": false,
+        "trigger": "getItem"
+      },
+      "32": {
+        "id": "blueJewel",
+        "cls": "items",
+        "canPass": false,
+        "trigger": "getItem"
+      },
+      "33": {
+        "id": "greenJewel",
+        "cls": "items",
+        "canPass": false,
+        "trigger": "getItem"
+      },
+      "41": {
+        "id": "redPotion",
+        "cls": "items",
+        "canPass": false,
+        "trigger": "getItem"
+      },
+      "42": {
+        "id": "bluePotion",
+        "cls": "items",
+        "canPass": false,
+        "trigger": "getItem"
+      },
+      "43": {
+        "id": "yellowPotion",
+        "cls": "items",
+        "canPass": false,
+        "trigger": "getItem"
+      },
+      "44": {
+        "id": "greenPotion",
+        "cls": "items",
+        "canPass": false,
+        "trigger": "getItem"
+      }
+    },
+    "itemsById": {
+      "redJewel": {
+        "id": "redJewel",
+        "name": "redJewel",
+        "cls": "items",
+        "itemEffect": "core.status.hero.atk += core.values.redJewel * core.status.thisMap.ratio"
+      },
+      "blueJewel": {
+        "id": "blueJewel",
+        "name": "blueJewel",
+        "cls": "items",
+        "itemEffect": "core.status.hero.def += core.values.blueJewel * core.status.thisMap.ratio"
+      },
+      "greenJewel": {
+        "id": "greenJewel",
+        "name": "greenJewel",
+        "cls": "items",
+        "itemEffect": "core.status.hero.mdef += core.values.greenJewel * core.status.thisMap.ratio"
+      },
+      "redPotion": {
+        "id": "redPotion",
+        "name": "redPotion",
+        "cls": "items",
+        "itemEffect": "core.status.hero.hp += core.values.redPotion"
+      },
+      "bluePotion": {
+        "id": "bluePotion",
+        "name": "bluePotion",
+        "cls": "items",
+        "itemEffect": "core.status.hero.hp += core.values.bluePotion"
+      },
+      "yellowPotion": {
+        "id": "yellowPotion",
+        "name": "yellowPotion",
+        "cls": "items",
+        "itemEffect": "core.status.hero.hp += core.values.yellowPotion"
+      },
+      "greenPotion": {
+        "id": "greenPotion",
+        "name": "greenPotion",
+        "cls": "items",
+        "itemEffect": "core.status.hero.hp += core.values.greenPotion"
+      }
+    },
+    "enemysById": {
+      "greenSlime": {
+        "id": "greenSlime",
+        "name": "greenSlime",
+        "hp": 35,
+        "atk": 18,
+        "def": 2,
+        "special": 0,
+        "money": 0,
+        "exp": 0,
+        "point": 0
+      },
+      "redSlime": {
+        "id": "redSlime",
+        "name": "redSlime",
+        "hp": 45,
+        "atk": 22,
+        "def": 4,
+        "special": 0,
+        "money": 0,
+        "exp": 0,
+        "point": 0
+      },
+      "blackSlime": {
+        "id": "blackSlime",
+        "name": "blackSlime",
+        "hp": 60,
+        "atk": 28,
+        "def": 6,
+        "special": 0,
+        "money": 0,
+        "exp": 0,
+        "point": 0
+      },
+      "bat": {
+        "id": "bat",
+        "name": "bat",
+        "hp": 40,
+        "atk": 24,
+        "def": 3,
+        "special": 0,
+        "money": 0,
+        "exp": 0,
+        "point": 0
+      },
+      "skeleton": {
+        "id": "skeleton",
+        "name": "skeleton",
+        "hp": 55,
+        "atk": 30,
+        "def": 8,
+        "special": 0,
+        "money": 0,
+        "exp": 0,
+        "point": 0
+      },
+      "bigBat": {
+        "id": "bigBat",
+        "name": "bigBat",
+        "hp": 70,
+        "atk": 34,
+        "def": 10,
+        "special": 0,
+        "money": 0,
+        "exp": 0,
+        "point": 0
+      },
+      "zombie": {
+        "id": "zombie",
+        "name": "zombie",
+        "hp": 90,
+        "atk": 40,
+        "def": 14,
+        "special": 0,
+        "money": 0,
+        "exp": 0,
+        "point": 0
+      },
+      "rock": {
+        "id": "rock",
+        "name": "rock",
+        "hp": 120,
+        "atk": 20,
+        "def": 26,
+        "special": 0,
+        "money": 0,
+        "exp": 0,
+        "point": 0
+      },
+      "slimelord": {
+        "id": "slimelord",
+        "name": "slimelord",
+        "hp": 110,
+        "atk": 46,
+        "def": 18,
+        "special": 0,
+        "money": 0,
+        "exp": 0,
+        "point": 0
+      },
+      "skeletonSoldier": {
+        "id": "skeletonSoldier",
+        "name": "skeletonSoldier",
+        "hp": 130,
+        "atk": 52,
+        "def": 22,
+        "special": 0,
+        "money": 0,
+        "exp": 0,
+        "point": 0
+      },
+      "vampire": {
+        "id": "vampire",
+        "name": "vampire",
+        "hp": 150,
+        "atk": 58,
+        "def": 28,
+        "special": 0,
+        "money": 0,
+        "exp": 0,
+        "point": 0
+      }
+    },
+    "floorsById": {
+      "MT1": {
+        "floorId": "MT1",
+        "title": "static core native floor",
+        "width": 15,
+        "height": 9,
+        "ratio": 2,
+        "map": [
+          [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            0,
+            0,
+            0,
+            11,
+            0,
+            0,
+            12,
+            0,
+            0,
+            13,
+            0,
+            0,
+            2,
+            1
+          ],
+          [
+            1,
+            0,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ],
+          [
+            1,
+            31,
+            0,
+            14,
+            0,
+            42,
+            0,
+            15,
+            0,
+            32,
+            0,
+            16,
+            0,
+            41,
+            1
+          ],
+          [
+            1,
+            0,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ],
+          [
+            1,
+            33,
+            0,
+            0,
+            17,
+            0,
+            0,
+            43,
+            0,
+            0,
+            18,
+            0,
+            0,
+            31,
+            1
+          ],
+          [
+            1,
+            0,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ],
+          [
+            1,
+            44,
+            0,
+            19,
+            0,
+            32,
+            0,
+            20,
+            0,
+            33,
+            0,
+            21,
+            0,
+            31,
+            1
+          ],
+          [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        ],
+        "changeFloor": {
+          "13,1": {
+            "floorId": "MT2",
+            "loc": [
+              1,
+              1
+            ]
+          }
+        },
+        "events": {},
+        "autoEvent": {},
+        "firstArrive": [],
+        "eachArrive": [],
+        "parallelDo": ""
+      }
+    }
+  },
+  "expectedStaticProblem": {
+    "id": "MT1",
+    "grid": [
+      "###############",
+      "#.............#",
+      "#.###########.#",
+      "#.............#",
+      "#.###########.#",
+      "#.............#",
+      "#.###########.#",
+      "#.............#",
+      "###############"
+    ],
+    "start": {
+      "x": 1,
+      "y": 1
+    },
+    "goal": {
+      "x": 13,
+      "y": 1
+    },
+    "hero": {
+      "hp": 620,
+      "atk": 22,
+      "def": 10,
+      "mdef": 8
+    },
+    "interactions": [
+      {
+        "kind": "monster",
+        "id": "MT1:4,1:greenSlime",
+        "x": 4,
+        "y": 1,
+        "hp": 35,
+        "atk": 18,
+        "def": 2
+      },
+      {
+        "kind": "monster",
+        "id": "MT1:7,1:redSlime",
+        "x": 7,
+        "y": 1,
+        "hp": 45,
+        "atk": 22,
+        "def": 4
+      },
+      {
+        "kind": "monster",
+        "id": "MT1:10,1:blackSlime",
+        "x": 10,
+        "y": 1,
+        "hp": 60,
+        "atk": 28,
+        "def": 6
+      },
+      {
+        "kind": "resource",
+        "id": "MT1:1,3:redJewel",
+        "x": 1,
+        "y": 3,
+        "atk": 6
+      },
+      {
+        "kind": "monster",
+        "id": "MT1:3,3:bat",
+        "x": 3,
+        "y": 3,
+        "hp": 40,
+        "atk": 24,
+        "def": 3
+      },
+      {
+        "kind": "resource",
+        "id": "MT1:5,3:bluePotion",
+        "x": 5,
+        "y": 3,
+        "hp": 120
+      },
+      {
+        "kind": "monster",
+        "id": "MT1:7,3:skeleton",
+        "x": 7,
+        "y": 3,
+        "hp": 55,
+        "atk": 30,
+        "def": 8
+      },
+      {
+        "kind": "resource",
+        "id": "MT1:9,3:blueJewel",
+        "x": 9,
+        "y": 3,
+        "def": 6
+      },
+      {
+        "kind": "monster",
+        "id": "MT1:11,3:bigBat",
+        "x": 11,
+        "y": 3,
+        "hp": 70,
+        "atk": 34,
+        "def": 10
+      },
+      {
+        "kind": "resource",
+        "id": "MT1:13,3:redPotion",
+        "x": 13,
+        "y": 3,
+        "hp": 60
+      },
+      {
+        "kind": "resource",
+        "id": "MT1:1,5:greenJewel",
+        "x": 1,
+        "y": 5,
+        "mdef": 10
+      },
+      {
+        "kind": "monster",
+        "id": "MT1:4,5:zombie",
+        "x": 4,
+        "y": 5,
+        "hp": 90,
+        "atk": 40,
+        "def": 14
+      },
+      {
+        "kind": "resource",
+        "id": "MT1:7,5:yellowPotion",
+        "x": 7,
+        "y": 5,
+        "hp": 250
+      },
+      {
+        "kind": "monster",
+        "id": "MT1:10,5:rock",
+        "x": 10,
+        "y": 5,
+        "hp": 120,
+        "atk": 20,
+        "def": 26
+      },
+      {
+        "kind": "resource",
+        "id": "MT1:13,5:redJewel",
+        "x": 13,
+        "y": 5,
+        "atk": 6
+      },
+      {
+        "kind": "resource",
+        "id": "MT1:1,7:greenPotion",
+        "x": 1,
+        "y": 7,
+        "hp": 40
+      },
+      {
+        "kind": "monster",
+        "id": "MT1:3,7:slimelord",
+        "x": 3,
+        "y": 7,
+        "hp": 110,
+        "atk": 46,
+        "def": 18
+      },
+      {
+        "kind": "resource",
+        "id": "MT1:5,7:blueJewel",
+        "x": 5,
+        "y": 7,
+        "def": 6
+      },
+      {
+        "kind": "monster",
+        "id": "MT1:7,7:skeletonSoldier",
+        "x": 7,
+        "y": 7,
+        "hp": 130,
+        "atk": 52,
+        "def": 22
+      },
+      {
+        "kind": "resource",
+        "id": "MT1:9,7:greenJewel",
+        "x": 9,
+        "y": 7,
+        "mdef": 10
+      },
+      {
+        "kind": "monster",
+        "id": "MT1:11,7:vampire",
+        "x": 11,
+        "y": 7,
+        "hp": 150,
+        "atk": 58,
+        "def": 28
+      },
+      {
+        "kind": "resource",
+        "id": "MT1:13,7:redJewel",
+        "x": 13,
+        "y": 7,
+        "atk": 6
+      }
+    ]
+  }
+}
