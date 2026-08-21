@@ -126,6 +126,7 @@
     "check:strategic-hierarchy-call-chronology": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery --hierarchy-call-attribution --hierarchy-call-chronology",
     "check:strategic-root-attempt-separability": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery --hierarchy-call-attribution --hierarchy-call-chronology --root-attempt-separability",
     "check:strategic-root-retry-novelty": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery --hierarchy-call-attribution --hierarchy-call-chronology --root-attempt-separability --root-retry-novelty",
+    "check:strategic-root-retry-metric-applicability": "node check-strategic-survival-opportunity-prerequisite.js --qualification-1000 --residual-recovery --second-residual-recovery --hierarchy-call-attribution --hierarchy-call-chronology --root-retry-metric-applicability",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",

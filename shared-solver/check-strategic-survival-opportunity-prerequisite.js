@@ -19,6 +19,8 @@ const {
   classifyPreHierarchyRootRetryNovelty,
   classifyRootAttemptSeparability,
   classifyRootRetryOfflineVerdict,
+  classifyStageConditionalRootRetryComparability,
+  classifyStageConditionalRootRetryOfflineVerdict,
 } = require("./lib/strategic-d2-search");
 const { createMt5EntryState, detachCheckpoint } = require("./qualify-blind-discovery");
 
@@ -73,6 +75,8 @@ function main() {
   const includeHierarchyCallChronology = process.argv.includes("--hierarchy-call-chronology");
   const includeRootAttemptSeparability = process.argv.includes("--root-attempt-separability");
   const includeRootRetryNovelty = process.argv.includes("--root-retry-novelty");
+  const includeRootRetryMetricApplicability =
+    process.argv.includes("--root-retry-metric-applicability");
   const project = loadProject(PROJECT_ROOT);
   const initialState = detachCheckpoint(createMt5EntryState(project));
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
@@ -242,6 +246,8 @@ function main() {
       enableHierarchyCallChronology: includeHierarchyCallChronology && enable,
       enableRootAttemptSeparabilityAttribution: includeRootAttemptSeparability && enable,
       enableRootRetryNoveltyAttribution: includeRootRetryNovelty && enable,
+      enableRootRetryMetricApplicabilityAttribution:
+        includeRootRetryMetricApplicability && enable,
       enablePostResidualAttribution: includePostO3Observation && enable,
     });
 
@@ -309,9 +315,45 @@ function main() {
       enablePostResidualAttribution: false,
     });
 
+    // 5.19w: metric-applicability isolation mirrors the generic candidate's
+    // search / second-residual / hierarchy configuration exactly (so the
+    // generic candidate can be reused as the candidate side, keeping this
+    // checker at 3 total 1000-work runs) and toggles only the stage-conditional
+    // observation flag.
+    const runWithMetricApplicabilityIsolation = (enableMetricApplicability) =>
+      runStrategicD2Search({
+        project,
+        projectRoot: PROJECT_ROOT,
+        initialState,
+        terminalGoal,
+        simulatorFactory: () => makeBlindSimulator(project),
+        connectorMode: "battle-access-prerequisite",
+        enableConnector: true,
+        maxExpansions: 1000,
+        connectorMaxExpansions: 50,
+        connectorMaxCalls: 8,
+        lazyDrainEvery: 8,
+        maxTotalSearchExpansions: 1000,
+        enableParentDependencyContinuation: true,
+        enableHierarchicalCallAllocation: true,
+        enableBattleStagePrerequisiteDecomposition: true,
+        enableContinuationAnchorExpansionScheduling: true,
+        enableSurvivalOpportunityPrerequisite: true,
+        enableSurvivalResidualAttribution: true,
+        enableSurvivalResidualRecovery: includeSecondResidualRecovery || includeResidualRecovery,
+        enableSecondSurvivalResidualRecovery: includeSecondResidualRecovery ||
+          includeO4ContinuationAttribution,
+        enableO4ContinuationAttribution: includeO4ContinuationAttribution,
+        enableHierarchyCallAttribution: includeHierarchyCallAttribution,
+        enableHierarchyCallChronology: includeHierarchyCallChronology,
+        enableRootAttemptSeparabilityAttribution: includeRootAttemptSeparability,
+        enableRootRetryNoveltyAttribution: includeRootRetryNovelty,
+        enableRootRetryMetricApplicabilityAttribution: enableMetricApplicability,
+        enablePostResidualAttribution: includePostO3Observation,
+      });
+
     const control = runWithResidualObservation(false);
-    const candidate = runWithResidualObservation(true);
-    const sameOutcomeFields = includeSecondResidualRecovery
+    const candidate = runWithResidualObservation(true);    const sameOutcomeFields = includeSecondResidualRecovery
       ? ["totalSearchExpansions", "expansions", "battleAccessPrerequisiteCalls"]
       : [
         "totalSearchExpansions",
@@ -1248,6 +1290,465 @@ function main() {
       assert.deepStrictEqual(completeNonProductive.nonProductiveFlaggedCallOrdinals, [2]);
     }
 
+    if (includeRootRetryMetricApplicability) {
+      const applicabilityControl = runWithMetricApplicabilityIsolation(false);
+      const applicabilityCandidate = candidate;
+      const applicabilityStripWall = (outcome) => {
+        const copy = { ...outcome };
+        delete copy.wallMs;
+        return copy;
+      };
+      assert.deepStrictEqual(
+        applicabilityStripWall(applicabilityCandidate.outcome),
+        applicabilityStripWall(applicabilityControl.outcome),
+        "metric applicability observation changed outcome",
+      );
+      assert.deepStrictEqual(
+        applicabilityCandidate.bestTerminalBlocker,
+        applicabilityControl.bestTerminalBlocker,
+        "metric applicability observation changed bestTerminalBlocker",
+      );
+      [
+        "totalSearchExpansions",
+        "expansions",
+        "battleAccessPrerequisiteCalls",
+        "rootLevelCalls",
+        "continuationDerivedCalls",
+      ].forEach((field) => {
+        assert.strictEqual(
+          applicabilityControl.stats[field],
+          applicabilityCandidate.stats[field],
+          `${field} changed with metric applicability observation`,
+        );
+      });
+      assert.deepStrictEqual(
+        applicabilityCandidate.stats.battleAccessPrerequisiteWitnesses.map((w) => w.attemptId),
+        applicabilityControl.stats.battleAccessPrerequisiteWitnesses.map((w) => w.attemptId),
+        "charged witness identities changed with metric applicability observation",
+      );
+      const applicabilityCompactResiduals = (stats) =>
+        stats.survivalOpportunityResidualRecoveries.map((r) => ({
+          recoveryIndex: r.recoveryIndex,
+          target: r.selectedResidualTarget ? r.selectedResidualTarget.enemyId : null,
+          materialized: r.materialized,
+          parentContinuationCreated: r.parentContinuationCreated,
+        }));
+      assert.deepStrictEqual(
+        applicabilityCompactResiduals(applicabilityCandidate.stats),
+        applicabilityCompactResiduals(applicabilityControl.stats),
+        "residual/materialization results changed with metric applicability observation",
+      );
+
+      assert.strictEqual(
+        applicabilityControl.stats.rootRetryMetricApplicabilityAttribution,
+        null,
+      );
+      const applicability = applicabilityCandidate.stats.rootRetryMetricApplicabilityAttribution;
+      assert.ok(applicability);
+      assert.strictEqual(
+        applicability.schema,
+        "motapathfinder.strategic-root-retry-metric-applicability-attribution.v1",
+      );
+      assert.strictEqual(applicability.rootCallCount, 5);
+      assert.ok(Array.isArray(applicability.preChargeComparisons));
+      assert.ok(Array.isArray(applicability.postSearchEvaluation));
+      assert.strictEqual(applicability.postSearchEvaluation.length, 5);
+      assert.ok([
+        "PRODUCTIVE-ROOT-WOULD-BE-FLAGGED",
+        "STAGE-CONDITIONAL-EVIDENCE-INCOMPLETE",
+        "TRACE-LOCAL-STAGE-CONDITIONAL-NONIMPROVING-RETRY-OBSERVED",
+        "NO-STAGE-CONDITIONAL-NONIMPROVING-RETRY",
+      ].includes(applicability.verdict));
+      const applicabilityClassifications = [
+        "FIRST-SEEN",
+        "EXACT-OBSERVABLE-RETRY",
+        "STAGE-PROGRESS",
+        "STAGE-REGRESSION",
+        "SAME-STAGE-PRIOR-DOMINATES",
+        "SAME-STAGE-CURRENT-IMPROVES",
+        "SAME-STAGE-METRIC-TIE-CONTEXT-ONLY",
+        "SAME-STAGE-MIXED-TRADEOFF",
+        "INCOMPARABLE-UNSUPPORTED",
+        "UNEXPECTED-MISSING-APPLICABLE-METRIC",
+      ];
+      for (const comparison of applicability.preChargeComparisons) {
+        const keys = Object.keys(comparison);
+        assert.ok(
+          !keys.some((key) => /productive|directSatisfied|satisfied|materializ|continuation/i.test(key)),
+          `post-hoc field leaked into preChargeComparisons: ${keys.join(",")}`,
+        );
+        assert.ok(applicabilityClassifications.includes(comparison.classification));
+        for (const pair of comparison.pairwiseComparisons || []) {
+          assert.ok(applicabilityClassifications.includes(pair.classification));
+          assert.ok(["same", "progress", "regression", "incomparable"].includes(pair.stageRelation));
+          // damage/survivalMargin can never be both not-applicable and missing.
+          for (const metric of pair.notApplicableMetrics) {
+            assert.ok(
+              !pair.unexpectedMissingMetrics.includes(metric),
+              `${metric} reported as both not-applicable and unexpectedly missing`,
+            );
+            assert.ok(
+              !pair.applicableMetrics.includes(metric),
+              `${metric} reported as both not-applicable and applicable`,
+            );
+          }
+          // attack-blocked on either side must never demand damage/survivalMargin.
+          if (pair.earlierStage === "attack-blocked" || pair.currentStage === "attack-blocked") {
+            assert.deepStrictEqual(
+              [...pair.notApplicableMetrics].sort(),
+              ["damage", "survivalMargin"],
+            );
+            assert.ok(!pair.applicableMetrics.includes("damage"));
+            assert.ok(!pair.applicableMetrics.includes("survivalMargin"));
+          }
+        }
+      }
+      assert.deepStrictEqual(
+        applicability.postSearchEvaluation.map((entry) => entry.productive),
+        [false, false, false, false, true],
+      );
+      assert.ok(!("rootCompileEvents" in applicability));
+
+      // --- 5.19w frozen real corpus facts -------------------------------------
+      assert.strictEqual(applicability.repeatGroupCount, 1);
+      assert.deepStrictEqual(applicability.repeatGroups.map((group) => ({
+        groupKey: group.groupKey,
+        callOrdinals: group.callOrdinals,
+        stages: group.stages,
+      })), [{
+        groupKey: "e9c03049d436f6f2|MT5|evilHero|9|10",
+        callOrdinals: [1, 2, 4],
+        stages: ["attack-blocked", "attack-blocked", "lethal"],
+      }]);
+      assert.deepStrictEqual(
+        applicability.preChargeComparisons.map((entry) => entry.callOrdinal),
+        [1, 2, 4, 3, 5],
+      );
+      assert.strictEqual(
+        applicability.preChargeComparisons.map((entry) => entry.classification).join(","),
+        "FIRST-SEEN,SAME-STAGE-METRIC-TIE-CONTEXT-ONLY,STAGE-PROGRESS,FIRST-SEEN,FIRST-SEEN",
+      );
+      assert.deepStrictEqual(
+        applicability.preChargeComparisons.map((entry) => entry.stage),
+        ["attack-blocked", "attack-blocked", "lethal", "attack-blocked", "lethal"],
+      );
+      assert.strictEqual(
+        applicability.verdict,
+        "TRACE-LOCAL-STAGE-CONDITIONAL-NONIMPROVING-RETRY-OBSERVED",
+      );
+      assert.deepStrictEqual(applicability.productiveFlaggedCallOrdinals, []);
+      assert.deepStrictEqual(applicability.nonProductiveFlaggedCallOrdinals, [2]);
+      assert.deepStrictEqual(applicability.incompleteCallOrdinals, []);
+      assert.deepStrictEqual(applicability.missingEvaluationCallOrdinals, []);
+      // The whole frozen trace is NOT-APPLICABLE, never unexpectedly missing:
+      // this is the PR-5.19w answer to the PR-5.19v EVIDENCE-INCOMPLETE result.
+      assert.deepStrictEqual(
+        applicability.preChargeComparisons.flatMap((entry) =>
+          (entry.pairwiseComparisons || []).flatMap((pair) => pair.unexpectedMissingMetrics)),
+        [],
+      );
+      const applicabilityComparison2 = applicability.preChargeComparisons.find(
+        (entry) => entry.callOrdinal === 2,
+      );
+      assert.ok(applicabilityComparison2);
+      assert.deepStrictEqual(applicabilityComparison2.decisiveEarlierCallOrdinals, [1]);
+      assert.strictEqual(applicabilityComparison2.pairwiseComparisons.length, 1);
+      const applicabilityPair2 = applicabilityComparison2.pairwiseComparisons[0];
+      assert.strictEqual(applicabilityPair2.stageRelation, "same");
+      assert.strictEqual(applicabilityPair2.earlierStage, "attack-blocked");
+      assert.strictEqual(applicabilityPair2.currentStage, "attack-blocked");
+      assert.strictEqual(applicabilityPair2.classification, "SAME-STAGE-METRIC-TIE-CONTEXT-ONLY");
+      assert.deepStrictEqual(
+        applicabilityPair2.applicableMetrics,
+        ["attackMargin", "sourceTerminalProgressScore", "reachableAtCompileTime"],
+      );
+      assert.deepStrictEqual(applicabilityPair2.notApplicableMetrics, ["damage", "survivalMargin"]);
+      assert.deepStrictEqual(applicabilityPair2.improvedFields, []);
+      assert.deepStrictEqual(applicabilityPair2.regressedFields, []);
+      assert.deepStrictEqual(applicabilityPair2.contextDifferenceKeys, ["sourceDepth"]);
+      assert.strictEqual(applicabilityPair2.exactObservableVectorEqual, false);
+      const applicabilityComparison4 = applicability.preChargeComparisons.find(
+        (entry) => entry.callOrdinal === 4,
+      );
+      assert.ok(applicabilityComparison4);
+      assert.strictEqual(applicabilityComparison4.classification, "STAGE-PROGRESS");
+      assert.deepStrictEqual(applicabilityComparison4.decisiveEarlierCallOrdinals, [1, 2]);
+      assert.strictEqual(applicabilityComparison4.pairwiseComparisons.length, 2);
+      for (const pair of applicabilityComparison4.pairwiseComparisons) {
+        assert.strictEqual(pair.stageRelation, "progress");
+        assert.strictEqual(pair.earlierStage, "attack-blocked");
+        assert.strictEqual(pair.currentStage, "lethal");
+        assert.strictEqual(pair.classification, "STAGE-PROGRESS");
+        assert.deepStrictEqual(
+          pair.improvedFields,
+          ["attackMargin", "sourceTerminalProgressScore"],
+        );
+        assert.deepStrictEqual(pair.regressedFields, []);
+        assert.deepStrictEqual(pair.notApplicableMetrics, ["damage", "survivalMargin"]);
+      }
+      // Productive root #5 is still FIRST-SEEN under the stage-conditional contract.
+      const applicabilityComparison5 = applicability.preChargeComparisons.find(
+        (entry) => entry.callOrdinal === 5,
+      );
+      assert.ok(applicabilityComparison5);
+      assert.strictEqual(applicabilityComparison5.classification, "FIRST-SEEN");
+      assert.deepStrictEqual(applicabilityComparison5.pairwiseComparisons, []);
+
+      // --- 5.19w pure-helper synthetics ---------------------------------------
+      const stageBaseSemantic = {
+        prerequisiteKind: "battle-access-prerequisite",
+        stageGoal: null,
+        parentDependencyKind: "battle-access",
+        parentDependencyCapability: null,
+        reachableAtCompileTime: false,
+        sourceDepth: 0,
+        sourceFloor: "MT5",
+        beforeStage: "attack-blocked",
+        attackMargin: -273,
+        damage: null,
+        survivalMargin: null,
+        sourceTerminalProgressScore: 999999998777,
+        compiledCandidateRank: 1,
+        compiledCandidateCount: 4,
+      };
+      const stageLethalSemantic = {
+        ...stageBaseSemantic,
+        beforeStage: "lethal",
+        attackMargin: -173,
+        damage: 1978814,
+        survivalMargin: -1741823,
+      };
+      const mkStageCall = (callOrdinal, semantic) => ({
+        callOrdinal,
+        attemptId: `A${callOrdinal}`,
+        prerequisiteId: "P1",
+        parentDependencyId: "D1",
+        identity: { floorId: "MT5", enemyId: "evilHero", x: 9, y: 10 },
+        semantic,
+        temporal: { firstHierarchyActivationOccurred: false },
+      });
+      const stagePair = (earlier, current) => classifyStageConditionalRootRetryComparability(
+        [mkStageCall(1, earlier), mkStageCall(2, current)],
+      ).comparisons[1];
+      const stagePairwise = (earlier, current) => stagePair(earlier, current).pairwiseComparisons[0];
+
+      // attack-blocked same stage: damage/survivalMargin NOT-APPLICABLE, never missing.
+      const stageAttackBlockedTie = stagePairwise(
+        stageBaseSemantic,
+        { ...stageBaseSemantic, sourceDepth: 2 },
+      );
+      assert.strictEqual(stageAttackBlockedTie.classification, "SAME-STAGE-METRIC-TIE-CONTEXT-ONLY");
+      assert.deepStrictEqual(stageAttackBlockedTie.notApplicableMetrics, ["damage", "survivalMargin"]);
+      assert.deepStrictEqual(stageAttackBlockedTie.unexpectedMissingMetrics, []);
+      assert.deepStrictEqual(
+        stageAttackBlockedTie.applicableMetrics,
+        ["attackMargin", "sourceTerminalProgressScore", "reachableAtCompileTime"],
+      );
+      assert.deepStrictEqual(stageAttackBlockedTie.contextDifferenceKeys, ["sourceDepth"]);
+      // beforeStage is the stage axis now, never a context key.
+      assert.ok(!stageAttackBlockedTie.contextDifferenceKeys.includes("beforeStage"));
+
+      // attack-blocked -> lethal/viable = STAGE-PROGRESS; reverse = STAGE-REGRESSION.
+      assert.strictEqual(
+        stagePairwise(stageBaseSemantic, stageLethalSemantic).classification,
+        "STAGE-PROGRESS",
+      );
+      assert.strictEqual(
+        stagePairwise(
+          stageBaseSemantic,
+          { ...stageLethalSemantic, beforeStage: "viable", survivalMargin: 50 },
+        ).classification,
+        "STAGE-PROGRESS",
+      );
+      assert.strictEqual(
+        stagePairwise(stageLethalSemantic, stageBaseSemantic).classification,
+        "STAGE-REGRESSION",
+      );
+      assert.strictEqual(
+        stagePairwise(stageLethalSemantic, { ...stageLethalSemantic, beforeStage: "viable", survivalMargin: 50 })
+          .classification,
+        "STAGE-PROGRESS",
+      );
+
+      // Same damageable stage: dominance / improvement / mixed / tie.
+      assert.strictEqual(
+        stagePairwise(stageLethalSemantic, { ...stageLethalSemantic, attackMargin: -400 }).classification,
+        "SAME-STAGE-PRIOR-DOMINATES",
+      );
+      assert.strictEqual(
+        stagePairwise(stageLethalSemantic, { ...stageLethalSemantic, attackMargin: -100 }).classification,
+        "SAME-STAGE-CURRENT-IMPROVES",
+      );
+      assert.strictEqual(
+        stagePairwise(
+          stageLethalSemantic,
+          { ...stageLethalSemantic, attackMargin: -100, damage: 2000000 },
+        ).classification,
+        "SAME-STAGE-MIXED-TRADEOFF",
+      );
+      assert.strictEqual(
+        stagePairwise(stageLethalSemantic, { ...stageLethalSemantic, sourceDepth: 3 }).classification,
+        "SAME-STAGE-METRIC-TIE-CONTEXT-ONLY",
+      );
+      const stageLethalDominance = stagePairwise(
+        stageLethalSemantic,
+        { ...stageLethalSemantic, attackMargin: -400 },
+      );
+      assert.deepStrictEqual(stageLethalDominance.notApplicableMetrics, []);
+      assert.deepStrictEqual(
+        stageLethalDominance.applicableMetrics,
+        ["attackMargin", "damage", "survivalMargin", "sourceTerminalProgressScore", "reachableAtCompileTime"],
+      );
+
+      // Only a damageable stage can be UNEXPECTED-MISSING for damage.
+      const stageUnexpectedMissing = stagePairwise(
+        stageLethalSemantic,
+        { ...stageLethalSemantic, damage: null, sourceDepth: 1 },
+      );
+      assert.strictEqual(stageUnexpectedMissing.classification, "UNEXPECTED-MISSING-APPLICABLE-METRIC");
+      assert.deepStrictEqual(stageUnexpectedMissing.unexpectedMissingMetrics, ["damage"]);
+      assert.strictEqual(
+        stagePairwise(stageLethalSemantic, { ...stageLethalSemantic, attackMargin: null }).classification,
+        "UNEXPECTED-MISSING-APPLICABLE-METRIC",
+      );
+
+      // unsupported never enters an ordered comparison.
+      assert.strictEqual(
+        stagePairwise(stageBaseSemantic, { ...stageBaseSemantic, beforeStage: "unsupported" }).classification,
+        "INCOMPARABLE-UNSUPPORTED",
+      );
+      assert.strictEqual(
+        stagePairwise({ ...stageBaseSemantic, beforeStage: "unsupported" }, stageBaseSemantic).classification,
+        "INCOMPARABLE-UNSUPPORTED",
+      );
+      assert.strictEqual(
+        stagePairwise(stageBaseSemantic, { ...stageBaseSemantic, beforeStage: null }).classification,
+        "INCOMPARABLE-UNSUPPORTED",
+      );
+      const stageIncomparable = stagePairwise(
+        stageBaseSemantic,
+        { ...stageBaseSemantic, beforeStage: "unsupported" },
+      );
+      assert.deepStrictEqual(stageIncomparable.applicableMetrics, []);
+      assert.deepStrictEqual(stageIncomparable.improvedFields, []);
+      assert.deepStrictEqual(stageIncomparable.regressedFields, []);
+
+      // Exact observable retry outranks everything, including all-null metrics.
+      assert.strictEqual(
+        stagePairwise(stageBaseSemantic, { ...stageBaseSemantic }).classification,
+        "EXACT-OBSERVABLE-RETRY",
+      );
+      const stageUnsupportedExact = {
+        ...stageBaseSemantic,
+        beforeStage: "unsupported",
+        attackMargin: null,
+        sourceTerminalProgressScore: null,
+      };
+      assert.strictEqual(
+        stagePairwise(stageUnsupportedExact, { ...stageUnsupportedExact }).classification,
+        "EXACT-OBSERVABLE-RETRY",
+      );
+
+      // Retry-level: a dominance witness outranks a stage-progress witness and
+      // keeps full pairwise provenance.
+      const stageThreeCalls = classifyStageConditionalRootRetryComparability([
+        mkStageCall(1, stageLethalSemantic),
+        mkStageCall(2, stageBaseSemantic),
+        mkStageCall(3, { ...stageLethalSemantic, attackMargin: -400 }),
+      ]);
+      const stageRetryThree = stageThreeCalls.comparisons[2];
+      assert.strictEqual(stageRetryThree.classification, "SAME-STAGE-PRIOR-DOMINATES");
+      assert.deepStrictEqual(stageRetryThree.decisiveEarlierCallOrdinals, [1]);
+      assert.strictEqual(stageRetryThree.pairwiseComparisons.length, 2);
+      assert.strictEqual(stageRetryThree.pairwiseComparisons[1].classification, "STAGE-PROGRESS");
+      assert.deepStrictEqual(
+        stageThreeCalls.repeatGroups[0].stages,
+        ["lethal", "attack-blocked", "lethal"],
+      );
+      assert.strictEqual(
+        classifyStageConditionalRootRetryComparability([mkStageCall(1, stageBaseSemantic)])
+          .comparisons[0].classification,
+        "FIRST-SEEN",
+      );
+
+      // Offline verdict: productive false-positive wins, audit arrays survive.
+      const stageProductivePriority = classifyStageConditionalRootRetryOfflineVerdict(
+        [
+          { callOrdinal: 1, classification: "INCOMPARABLE-UNSUPPORTED" },
+          { callOrdinal: 2, classification: "SAME-STAGE-PRIOR-DOMINATES" },
+          { callOrdinal: 3, classification: "STAGE-REGRESSION" },
+          { callOrdinal: 4, classification: "EXACT-OBSERVABLE-RETRY" },
+        ],
+        [{ callOrdinal: 2, productive: true }, { callOrdinal: 3, productive: false }],
+      );
+      assert.strictEqual(stageProductivePriority.verdict, "PRODUCTIVE-ROOT-WOULD-BE-FLAGGED");
+      assert.deepStrictEqual(stageProductivePriority.productiveFlaggedCallOrdinals, [2]);
+      assert.deepStrictEqual(stageProductivePriority.nonProductiveFlaggedCallOrdinals, [3]);
+      assert.deepStrictEqual(stageProductivePriority.incompleteCallOrdinals, [1]);
+      assert.deepStrictEqual(stageProductivePriority.missingEvaluationCallOrdinals, [4]);
+
+      // STAGE-PROGRESS / SAME-STAGE-CURRENT-IMPROVES are never suppression candidates.
+      assert.strictEqual(
+        classifyStageConditionalRootRetryOfflineVerdict(
+          [
+            { callOrdinal: 2, classification: "STAGE-PROGRESS" },
+            { callOrdinal: 3, classification: "SAME-STAGE-CURRENT-IMPROVES" },
+            { callOrdinal: 4, classification: "SAME-STAGE-MIXED-TRADEOFF" },
+          ],
+          [
+            { callOrdinal: 2, productive: false },
+            { callOrdinal: 3, productive: false },
+            { callOrdinal: 4, productive: false },
+          ],
+        ).verdict,
+        "NO-STAGE-CONDITIONAL-NONIMPROVING-RETRY",
+      );
+      const stageTraceLocal = classifyStageConditionalRootRetryOfflineVerdict(
+        [{ callOrdinal: 2, classification: "SAME-STAGE-METRIC-TIE-CONTEXT-ONLY" }],
+        [{ callOrdinal: 2, productive: false }],
+      );
+      assert.strictEqual(
+        stageTraceLocal.verdict,
+        "TRACE-LOCAL-STAGE-CONDITIONAL-NONIMPROVING-RETRY-OBSERVED",
+      );
+      assert.deepStrictEqual(stageTraceLocal.nonProductiveFlaggedCallOrdinals, [2]);
+
+      // Fail-closed linkage: missing / duplicate / non-boolean evaluation.
+      [
+        [],
+        [{ callOrdinal: 2, productive: "false" }],
+        [{ callOrdinal: 2, productive: false }, { callOrdinal: 2, productive: false }],
+      ].forEach((evaluation, index) => {
+        const failClosed = classifyStageConditionalRootRetryOfflineVerdict(
+          [{ callOrdinal: 2, classification: "SAME-STAGE-PRIOR-DOMINATES" }],
+          evaluation,
+        );
+        assert.strictEqual(
+          failClosed.verdict,
+          "STAGE-CONDITIONAL-EVIDENCE-INCOMPLETE",
+          `evaluation case ${index} did not fail closed`,
+        );
+        assert.deepStrictEqual(failClosed.missingEvaluationCallOrdinals, [2]);
+        assert.deepStrictEqual(failClosed.nonProductiveFlaggedCallOrdinals, []);
+      });
+
+      // Unexpected-missing / incomparable force incomplete but keep the witness.
+      const stageIncompleteKeepsWitness = classifyStageConditionalRootRetryOfflineVerdict(
+        [
+          { callOrdinal: 1, classification: "UNEXPECTED-MISSING-APPLICABLE-METRIC" },
+          { callOrdinal: 2, classification: "SAME-STAGE-PRIOR-DOMINATES" },
+        ],
+        [{ callOrdinal: 1, productive: false }, { callOrdinal: 2, productive: false }],
+      );
+      assert.strictEqual(
+        stageIncompleteKeepsWitness.verdict,
+        "STAGE-CONDITIONAL-EVIDENCE-INCOMPLETE",
+      );
+      assert.deepStrictEqual(stageIncompleteKeepsWitness.nonProductiveFlaggedCallOrdinals, [2]);
+      assert.deepStrictEqual(stageIncompleteKeepsWitness.incompleteCallOrdinals, [1]);
+      assert.deepStrictEqual(stageIncompleteKeepsWitness.missingEvaluationCallOrdinals, []);
+    }
+
     if (includeO4ContinuationAttribution) {
       assert.strictEqual(control.stats.o4ContinuationAttributions.length, 0);
       assert.strictEqual(candidate.stats.o4ContinuationAttributions.length, 1);
@@ -1401,49 +1902,104 @@ function main() {
         })()
         : null,
       compactRootRetryNoveltyAttribution: includeRootRetryNovelty
-         ? (() => {
-           const full = candidate.stats.rootRetryNoveltyAttribution;
-           if (!full) return null;
-           const beforeStable = JSON.stringify(full);
-           const compact = {
-             schema: full.schema,
-             rootCallCount: full.rootCallCount,
+        ? (() => {
+          const full = candidate.stats.rootRetryNoveltyAttribution;
+          if (!full) return null;
+          const beforeStable = JSON.stringify(full);
+          const compact = {
+            schema: full.schema,
+            rootCallCount: full.rootCallCount,
             repeatGroupCount: full.repeatGroupCount,
             comparisons: full.preChargeComparisons.map((entry) => ({
               callOrdinal: entry.callOrdinal,
               attemptId: entry.attemptId,
               groupKey: entry.groupKey,
-               classification: entry.classification,
-               improvedFields: entry.improvedFields,
-               regressedFields: entry.regressedFields,
-               missingFields: [...entry.missingFields],
-               contextDifferenceKeys: entry.contextDifferenceKeys,
-               exactSemanticEqual: entry.exactSemanticEqual,
-               comparedCallOrdinals: entry.comparedCallOrdinals,
+              classification: entry.classification,
+              improvedFields: entry.improvedFields,
+              regressedFields: entry.regressedFields,
+              missingFields: [...entry.missingFields],
+              contextDifferenceKeys: entry.contextDifferenceKeys,
+              exactSemanticEqual: entry.exactSemanticEqual,
+              comparedCallOrdinals: entry.comparedCallOrdinals,
               decisiveEarlierCallOrdinals: entry.decisiveEarlierCallOrdinals,
               pairwiseComparisons: (entry.pairwiseComparisons || []).map((pair) => ({
                 earlierCallOrdinal: pair.earlierCallOrdinal,
-                 classification: pair.classification,
-                 improvedFields: pair.improvedFields,
-                 regressedFields: pair.regressedFields,
-                 missingFields: [...pair.missingFields],
-                 exactSemanticEqual: pair.exactSemanticEqual,
-               })),
-             })),
-             postSearchEvaluation: full.postSearchEvaluation,
-             verdict: full.verdict,
-             productiveFlaggedCallOrdinals: [...full.productiveFlaggedCallOrdinals],
-             nonProductiveFlaggedCallOrdinals: [...full.nonProductiveFlaggedCallOrdinals],
-             incompleteCallOrdinals: [...full.incompleteCallOrdinals],
-             missingEvaluationCallOrdinals: [...full.missingEvaluationCallOrdinals],
-           };
-           assert.ok(!("rootCompileEvents" in compact));
-           assert.ok(!("candidates" in compact));
-           assert.strictEqual(JSON.stringify(full), beforeStable);
-           const compactLength = JSON.stringify(compact).length;
+                classification: pair.classification,
+                improvedFields: pair.improvedFields,
+                regressedFields: pair.regressedFields,
+                missingFields: [...pair.missingFields],
+                exactSemanticEqual: pair.exactSemanticEqual,
+              })),
+            })),
+            postSearchEvaluation: full.postSearchEvaluation,
+            verdict: full.verdict,
+            productiveFlaggedCallOrdinals: [...full.productiveFlaggedCallOrdinals],
+            nonProductiveFlaggedCallOrdinals: [...full.nonProductiveFlaggedCallOrdinals],
+            incompleteCallOrdinals: [...full.incompleteCallOrdinals],
+            missingEvaluationCallOrdinals: [...full.missingEvaluationCallOrdinals],
+          };
+          assert.ok(!("rootCompileEvents" in compact));
+          assert.ok(!("candidates" in compact));
+          assert.strictEqual(JSON.stringify(full), beforeStable);
+          const compactLength = JSON.stringify(compact).length;
           assert.ok(
             compactLength < 20000,
             `compactRootRetryNoveltyAttribution too large: ${compactLength}`,
+          );
+          return compact;
+        })()
+        : null,
+      compactRootRetryMetricApplicabilityAttribution: includeRootRetryMetricApplicability
+        ? (() => {
+          const full = candidate.stats.rootRetryMetricApplicabilityAttribution;
+          if (!full) return null;
+          const beforeStable = JSON.stringify(full);
+          const compact = {
+            schema: full.schema,
+            rootCallCount: full.rootCallCount,
+            repeatGroupCount: full.repeatGroupCount,
+            repeatGroups: full.repeatGroups.map((group) => ({
+              groupKey: group.groupKey,
+              callOrdinals: [...group.callOrdinals],
+              stages: [...group.stages],
+            })),
+            comparisons: full.preChargeComparisons.map((entry) => ({
+              callOrdinal: entry.callOrdinal,
+              attemptId: entry.attemptId,
+              groupKey: entry.groupKey,
+              stage: entry.stage,
+              classification: entry.classification,
+              comparedCallOrdinals: entry.comparedCallOrdinals,
+              decisiveEarlierCallOrdinals: entry.decisiveEarlierCallOrdinals,
+              pairwiseComparisons: (entry.pairwiseComparisons || []).map((pair) => ({
+                earlierCallOrdinal: pair.earlierCallOrdinal,
+                earlierStage: pair.earlierStage,
+                currentStage: pair.currentStage,
+                stageRelation: pair.stageRelation,
+                classification: pair.classification,
+                applicableMetrics: [...pair.applicableMetrics],
+                notApplicableMetrics: [...pair.notApplicableMetrics],
+                unexpectedMissingMetrics: [...pair.unexpectedMissingMetrics],
+                improvedFields: [...pair.improvedFields],
+                regressedFields: [...pair.regressedFields],
+                contextDifferenceKeys: [...pair.contextDifferenceKeys],
+                exactObservableVectorEqual: pair.exactObservableVectorEqual,
+              })),
+            })),
+            postSearchEvaluation: full.postSearchEvaluation,
+            verdict: full.verdict,
+            productiveFlaggedCallOrdinals: [...full.productiveFlaggedCallOrdinals],
+            nonProductiveFlaggedCallOrdinals: [...full.nonProductiveFlaggedCallOrdinals],
+            incompleteCallOrdinals: [...full.incompleteCallOrdinals],
+            missingEvaluationCallOrdinals: [...full.missingEvaluationCallOrdinals],
+          };
+          assert.ok(!("rootCompileEvents" in compact));
+          assert.ok(!("candidates" in compact));
+          assert.strictEqual(JSON.stringify(full), beforeStable);
+          const compactLength = JSON.stringify(compact).length;
+          assert.ok(
+            compactLength < 20000,
+            `compactRootRetryMetricApplicabilityAttribution too large: ${compactLength}`,
           );
           return compact;
         })()

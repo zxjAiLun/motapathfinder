@@ -452,6 +452,365 @@ function classifyRootRetryOfflineVerdict(preChargeComparisons, postSearchEvaluat
 }
 
 /**
+ * PR-5.19w pure stage-conditional root retry comparability classification.
+ *
+ * PR-5.19v established that demanding damage/survivalMargin from every retry
+ * comparison cannot succeed across the attack-blocked -> damageable boundary:
+ * `strategic-battle-viability.js` leaves damage null (and therefore
+ * survivalMargin null) while hero ATK cannot pierce enemy DEF, so the absence
+ * is a property of the battle stage rather than missing telemetry. This
+ * classifier conditions the metric requirement on the stage instead of filling
+ * the null in. It never re-runs the battle resolver, never rewrites hero state,
+ * and never substitutes 0/Infinity/estimates for an undefined damage.
+ *
+ * Deliberately parallel to classifyPreHierarchyRootRetryNovelty /
+ * classifyRootRetryOfflineVerdict rather than a refactor of them: the v2
+ * retry-novelty contract is frozen and reviewed, so it is left untouched.
+ * `beforeStage` is the formal stage axis here, so it is absent from the
+ * stage-conditional context keys below.
+ */
+const STAGE_CONDITIONAL_STAGE_ORDER = new Map([
+  ["attack-blocked", 0],
+  ["lethal", 1],
+  ["viable", 2],
+]);
+const STAGE_CONDITIONAL_METRIC_ORDER = [
+  "attackMargin",
+  "damage",
+  "survivalMargin",
+  "sourceTerminalProgressScore",
+  "reachableAtCompileTime",
+];
+const STAGE_CONDITIONAL_UNIVERSAL_METRICS = [
+  "sourceTerminalProgressScore",
+  "reachableAtCompileTime",
+];
+const STAGE_CONDITIONAL_DAMAGEABLE_METRICS = ["damage", "survivalMargin"];
+const STAGE_CONDITIONAL_CONTEXT_KEYS = [
+  "sourceDepth",
+  "sourceFloor",
+  "stageGoal",
+  "compiledCandidateRank",
+  "compiledCandidateCount",
+];
+const STAGE_CONDITIONAL_RETRY_LEVEL_PRIORITY = [
+  "EXACT-OBSERVABLE-RETRY",
+  "SAME-STAGE-PRIOR-DOMINATES",
+  "STAGE-REGRESSION",
+  "SAME-STAGE-METRIC-TIE-CONTEXT-ONLY",
+  "UNEXPECTED-MISSING-APPLICABLE-METRIC",
+  "INCOMPARABLE-UNSUPPORTED",
+  "SAME-STAGE-MIXED-TRADEOFF",
+  "STAGE-PROGRESS",
+  "SAME-STAGE-CURRENT-IMPROVES",
+];
+
+/**
+ * Which metrics an ordered comparison between two stages may use. Either side
+ * being unsupported makes the pair incomparable outright. damage and
+ * survivalMargin are NOT-APPLICABLE (never "missing") whenever either side is
+ * attack-blocked, because the resolver never defines them there.
+ */
+function stageConditionalPairApplicability(earlierStage, currentStage) {
+  if (!STAGE_CONDITIONAL_STAGE_ORDER.has(earlierStage) ||
+      !STAGE_CONDITIONAL_STAGE_ORDER.has(currentStage)) {
+    return { comparable: false, applicableMetrics: [], notApplicableMetrics: [] };
+  }
+  const eitherAttackBlocked = earlierStage === "attack-blocked" ||
+    currentStage === "attack-blocked";
+  const applicable = new Set(["attackMargin", ...STAGE_CONDITIONAL_UNIVERSAL_METRICS]);
+  if (!eitherAttackBlocked) {
+    for (const metric of STAGE_CONDITIONAL_DAMAGEABLE_METRICS) applicable.add(metric);
+  }
+  return {
+    comparable: true,
+    applicableMetrics: STAGE_CONDITIONAL_METRIC_ORDER.filter((metric) => applicable.has(metric)),
+    notApplicableMetrics: eitherAttackBlocked
+      ? STAGE_CONDITIONAL_METRIC_ORDER.filter((metric) =>
+        STAGE_CONDITIONAL_DAMAGEABLE_METRICS.includes(metric))
+      : [],
+  };
+}
+
+function compareStageConditionalMetrics(retrySemantic, earlierSemantic, applicableMetrics) {
+  const improvedFields = [];
+  const regressedFields = [];
+  const equalFields = [];
+  const unexpectedMissingMetrics = [];
+  for (const metric of applicableMetrics) {
+    const retryValue = retrySemantic[metric];
+    const earlierValue = earlierSemantic[metric];
+    if (retryValue == null || earlierValue == null) {
+      unexpectedMissingMetrics.push(metric);
+      continue;
+    }
+    if (isDeepStrictEqual(retryValue, earlierValue)) {
+      equalFields.push(metric);
+      continue;
+    }
+    let improved;
+    if (metric === "reachableAtCompileTime") {
+      improved = retryValue === true && earlierValue === false;
+    } else if (RETRY_HIGHER_BETTER.has(metric)) {
+      improved = retryValue > earlierValue;
+    } else if (RETRY_LOWER_BETTER.has(metric)) {
+      improved = retryValue < earlierValue;
+    } else {
+      improved = false;
+    }
+    if (improved) improvedFields.push(metric);
+    else regressedFields.push(metric);
+  }
+  return { improvedFields, regressedFields, equalFields, unexpectedMissingMetrics };
+}
+
+/**
+ * Pairwise priority: exact observable retry first (an identical pre-charge
+ * observation stays a witness even when metrics are not applicable), then
+ * incomparable-unsupported, then the stage relation for cross-stage supported
+ * pairs, and only within one stage do the stage's applicable metrics decide.
+ * Cross-stage pairs still report applicability/missing evidence honestly, but
+ * the stage transition is what classifies them.
+ */
+function classifyStageConditionalPairwise(retryCall, earlierCall) {
+  const retrySemantic = retryCall.semantic;
+  const earlierSemantic = earlierCall.semantic;
+  const currentStage = retrySemantic.beforeStage == null ? null : retrySemantic.beforeStage;
+  const earlierStage = earlierSemantic.beforeStage == null ? null : earlierSemantic.beforeStage;
+  const applicability = stageConditionalPairApplicability(earlierStage, currentStage);
+  const metric = compareStageConditionalMetrics(
+    retrySemantic,
+    earlierSemantic,
+    applicability.applicableMetrics,
+  );
+  const contextDifferenceKeys = STAGE_CONDITIONAL_CONTEXT_KEYS.filter((key) =>
+    !isDeepStrictEqual(retrySemantic[key], earlierSemantic[key]));
+  const exactObservableVectorEqual = isDeepStrictEqual(retrySemantic, earlierSemantic);
+  let stageRelation;
+  if (!applicability.comparable) {
+    stageRelation = "incomparable";
+  } else {
+    const earlierRank = STAGE_CONDITIONAL_STAGE_ORDER.get(earlierStage);
+    const currentRank = STAGE_CONDITIONAL_STAGE_ORDER.get(currentStage);
+    if (currentRank === earlierRank) stageRelation = "same";
+    else if (currentRank > earlierRank) stageRelation = "progress";
+    else stageRelation = "regression";
+  }
+  let classification;
+  if (exactObservableVectorEqual) {
+    classification = "EXACT-OBSERVABLE-RETRY";
+  } else if (stageRelation === "incomparable") {
+    classification = "INCOMPARABLE-UNSUPPORTED";
+  } else if (stageRelation === "progress") {
+    classification = "STAGE-PROGRESS";
+  } else if (stageRelation === "regression") {
+    classification = "STAGE-REGRESSION";
+  } else if (metric.unexpectedMissingMetrics.length > 0) {
+    classification = "UNEXPECTED-MISSING-APPLICABLE-METRIC";
+  } else if (metric.improvedFields.length > 0 && metric.regressedFields.length > 0) {
+    classification = "SAME-STAGE-MIXED-TRADEOFF";
+  } else if (metric.improvedFields.length > 0) {
+    classification = "SAME-STAGE-CURRENT-IMPROVES";
+  } else if (metric.regressedFields.length > 0) {
+    classification = "SAME-STAGE-PRIOR-DOMINATES";
+  } else {
+    classification = "SAME-STAGE-METRIC-TIE-CONTEXT-ONLY";
+  }
+  return {
+    earlierCallOrdinal: earlierCall.callOrdinal,
+    earlierAttemptId: earlierCall.attemptId,
+    earlierStage,
+    currentStage,
+    stageRelation,
+    classification,
+    applicableMetrics: applicability.applicableMetrics.slice(),
+    notApplicableMetrics: applicability.notApplicableMetrics.slice(),
+    unexpectedMissingMetrics: metric.unexpectedMissingMetrics.slice(),
+    improvedFields: metric.improvedFields.slice(),
+    regressedFields: metric.regressedFields.slice(),
+    equalFields: metric.equalFields.slice(),
+    contextDifferenceKeys: contextDifferenceKeys.slice(),
+    exactObservableVectorEqual,
+  };
+}
+
+// Retry-level aggregation reports the decisive earlier witness kind by fixed
+// priority and keeps every pairwise provenance entry. Fail-closed kinds
+// (unexpected missing / incomparable) rank below the decisive non-improving
+// witnesses here, exactly as in the reviewed v2 design; the offline verdict is
+// where they force EVIDENCE-INCOMPLETE.
+function aggregateStageConditionalRetryLevel(pairwiseComparisons) {
+  for (const classification of STAGE_CONDITIONAL_RETRY_LEVEL_PRIORITY) {
+    const matches = pairwiseComparisons.filter((entry) => entry.classification === classification);
+    if (matches.length > 0) {
+      return {
+        classification,
+        decisiveEarlierCallOrdinals: matches.map((entry) => entry.earlierCallOrdinal),
+      };
+    }
+  }
+  return { classification: "UNEXPECTED-MISSING-APPLICABLE-METRIC", decisiveEarlierCallOrdinals: [] };
+}
+
+function classifyStageConditionalRootRetryComparability(rootCalls) {
+  const preHierarchyCalls = (rootCalls || []).filter((call) =>
+    call && call.temporal && call.temporal.firstHierarchyActivationOccurred === false);
+  const groups = new Map();
+  for (const call of preHierarchyCalls) {
+    const key = `${call.prerequisiteId || "?"}|${retryBoundaryIdentityKey(call.identity)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(call);
+  }
+  const comparisons = [];
+  const repeatGroups = [];
+  for (const [groupKey, groupCalls] of groups.entries()) {
+    groupCalls.sort((left, right) => left.callOrdinal - right.callOrdinal);
+    if (groupCalls.length > 1) {
+      repeatGroups.push({
+        groupKey,
+        prerequisiteId: groupCalls[0].prerequisiteId,
+        identity: groupCalls[0].identity,
+        callOrdinals: groupCalls.map((call) => call.callOrdinal),
+        stages: groupCalls.map((call) => call.semantic.beforeStage == null
+          ? null
+          : call.semantic.beforeStage),
+      });
+    }
+    for (let index = 0; index < groupCalls.length; index += 1) {
+      const retry = groupCalls[index];
+      const base = {
+        callOrdinal: retry.callOrdinal,
+        attemptId: retry.attemptId,
+        prerequisiteId: retry.prerequisiteId,
+        parentDependencyId: retry.parentDependencyId,
+        groupKey,
+        identity: retry.identity,
+        stage: retry.semantic.beforeStage == null ? null : retry.semantic.beforeStage,
+      };
+      if (index === 0) {
+        comparisons.push({
+          ...base,
+          classification: "FIRST-SEEN",
+          comparedCallOrdinals: [],
+          pairwiseComparisons: [],
+          applicableMetrics: [],
+          notApplicableMetrics: [],
+          unexpectedMissingMetrics: [],
+          improvedFields: [],
+          regressedFields: [],
+          equalFields: [],
+          contextDifferenceKeys: [],
+          exactObservableVectorEqual: false,
+          decisiveEarlierCallOrdinals: [],
+        });
+        continue;
+      }
+      const earlierCalls = groupCalls.slice(0, index);
+      const pairwiseComparisons = earlierCalls.map((earlier) =>
+        classifyStageConditionalPairwise(retry, earlier));
+      const aggregated = aggregateStageConditionalRetryLevel(pairwiseComparisons);
+      const union = (key) => Array.from(new Set(
+        pairwiseComparisons.flatMap((entry) => entry[key] || []),
+      ));
+      comparisons.push({
+        ...base,
+        classification: aggregated.classification,
+        comparedCallOrdinals: earlierCalls.map((call) => call.callOrdinal),
+        pairwiseComparisons,
+        applicableMetrics: union("applicableMetrics"),
+        notApplicableMetrics: union("notApplicableMetrics"),
+        unexpectedMissingMetrics: union("unexpectedMissingMetrics"),
+        improvedFields: union("improvedFields"),
+        regressedFields: union("regressedFields"),
+        equalFields: union("equalFields"),
+        contextDifferenceKeys: union("contextDifferenceKeys"),
+        exactObservableVectorEqual: pairwiseComparisons.some(
+          (entry) => entry.exactObservableVectorEqual),
+        decisiveEarlierCallOrdinals: aggregated.decisiveEarlierCallOrdinals,
+      });
+    }
+  }
+  return {
+    rootCallCount: preHierarchyCalls.length,
+    repeatGroupCount: repeatGroups.length,
+    repeatGroups,
+    comparisons,
+  };
+}
+
+/**
+ * Offline verdict for the stage-conditional contract. Same fail-closed linkage
+ * rule as the reviewed v2 verdict: every non-improving comparison must link to
+ * exactly one post-search evaluation whose `productive` is a real boolean, or
+ * the call ordinal is recorded as a missing evaluation and the verdict fails
+ * closed. Unexpected-missing and incomparable comparisons are themselves
+ * incomplete evidence. All four audit arrays reflect actual detection in every
+ * verdict branch.
+ */
+function classifyStageConditionalRootRetryOfflineVerdict(preChargeComparisons, postSearchEvaluation) {
+  const comparisons = preChargeComparisons || [];
+  const nonImprovingClassifications = new Set([
+    "EXACT-OBSERVABLE-RETRY",
+    "STAGE-REGRESSION",
+    "SAME-STAGE-PRIOR-DOMINATES",
+    "SAME-STAGE-METRIC-TIE-CONTEXT-ONLY",
+  ]);
+  const failClosedClassifications = new Set([
+    "UNEXPECTED-MISSING-APPLICABLE-METRIC",
+    "INCOMPARABLE-UNSUPPORTED",
+  ]);
+  const evaluationsByCall = new Map();
+  for (const entry of postSearchEvaluation || []) {
+    if (entry == null || entry.callOrdinal == null) continue;
+    const entries = evaluationsByCall.get(entry.callOrdinal) || [];
+    entries.push(entry);
+    evaluationsByCall.set(entry.callOrdinal, entries);
+  }
+  const incompleteOrdinals = [];
+  const productiveFlaggedOrdinals = [];
+  const nonProductiveFlaggedOrdinals = [];
+  const missingEvaluationCallOrdinals = [];
+  for (const entry of comparisons) {
+    if (failClosedClassifications.has(entry.classification)) {
+      incompleteOrdinals.push(entry.callOrdinal);
+      continue;
+    }
+    if (!nonImprovingClassifications.has(entry.classification)) continue;
+    const evaluationEntries = evaluationsByCall.get(entry.callOrdinal) || [];
+    if (evaluationEntries.length !== 1 || typeof evaluationEntries[0].productive !== "boolean") {
+      if (!missingEvaluationCallOrdinals.includes(entry.callOrdinal)) {
+        missingEvaluationCallOrdinals.push(entry.callOrdinal);
+      }
+      continue;
+    }
+    if (evaluationEntries[0].productive) productiveFlaggedOrdinals.push(entry.callOrdinal);
+    else nonProductiveFlaggedOrdinals.push(entry.callOrdinal);
+  }
+  const ascending = (values) => values.slice().sort((a, b) => a - b);
+  const audit = {
+    productiveFlaggedCallOrdinals: ascending(productiveFlaggedOrdinals),
+    nonProductiveFlaggedCallOrdinals: ascending(nonProductiveFlaggedOrdinals),
+    incompleteCallOrdinals: ascending(incompleteOrdinals),
+    missingEvaluationCallOrdinals: ascending(missingEvaluationCallOrdinals),
+  };
+  // Priority: PRODUCTIVE > STAGE-CONDITIONAL-EVIDENCE-INCOMPLETE > TRACE-LOCAL > NO-RETRY.
+  if (audit.productiveFlaggedCallOrdinals.length > 0) {
+    return { verdict: "PRODUCTIVE-ROOT-WOULD-BE-FLAGGED", ...audit };
+  }
+  if (audit.incompleteCallOrdinals.length > 0 ||
+      audit.missingEvaluationCallOrdinals.length > 0) {
+    return { verdict: "STAGE-CONDITIONAL-EVIDENCE-INCOMPLETE", ...audit };
+  }
+  if (audit.nonProductiveFlaggedCallOrdinals.length > 0) {
+    return {
+      verdict: "TRACE-LOCAL-STAGE-CONDITIONAL-NONIMPROVING-RETRY-OBSERVED",
+      ...audit,
+    };
+  }
+  return { verdict: "NO-STAGE-CONDITIONAL-NONIMPROVING-RETRY", ...audit };
+}
+
+/**
  * PR-5.19u pure classification. U2/U3 are mutually exclusive:
  *   U2 = partial collision (>=1 but not all failed roots equal the productive root)
  *   U3 = ALL failed roots semantically equal the productive root AND a real
@@ -922,6 +1281,8 @@ function runStrategicD2Search(options) {
   const enableRootAttemptSeparabilityAttribution =
     config.enableRootAttemptSeparabilityAttribution === true;
   const enableRootRetryNoveltyAttribution = config.enableRootRetryNoveltyAttribution === true;
+  const enableRootRetryMetricApplicabilityAttribution =
+    config.enableRootRetryMetricApplicabilityAttribution === true;
   const enablePostResidualAttribution = config.enablePostResidualAttribution === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
@@ -1058,6 +1419,7 @@ function runStrategicD2Search(options) {
     hierarchyCallChronology: null,
     rootAttemptSeparabilityAttribution: null,
     rootRetryNoveltyAttribution: null,
+    rootRetryMetricApplicabilityAttribution: null,
     rootLevelCompiledCapBlockedSelectionEvents: 0,
     rootLevelCapBlockedCompiledCandidateInstances: 0,
     rootLevelCompiledOutstandingBlockedSelectionEvents: 0,
@@ -1080,7 +1442,8 @@ function runStrategicD2Search(options) {
     },
   } : null;
   const rootAttemptSeparabilityCalls = enableRootAttemptSeparabilityAttribution ||
-    enableRootRetryNoveltyAttribution ? [] : null;
+    enableRootRetryNoveltyAttribution ||
+    enableRootRetryMetricApplicabilityAttribution ? [] : null;
   const rootCompileEvents = enableRootAttemptSeparabilityAttribution ? [] : null;
   let hierarchyChronologyFirstContinuationRecorded = false;
   let hierarchyChronologyFirstActivationRecorded = false;
@@ -2220,7 +2583,8 @@ function runStrategicD2Search(options) {
       const beforeBattle = enableBattleViabilityAttribution
         ? analyzeBattleViabilityBlocker(simulator, sourceNode.state, prerequisite.boundary)
         : null;
-      if ((enableRootAttemptSeparabilityAttribution || enableRootRetryNoveltyAttribution) &&
+      if ((enableRootAttemptSeparabilityAttribution || enableRootRetryNoveltyAttribution ||
+            enableRootRetryMetricApplicabilityAttribution) &&
           number(work.hierarchyLevel, 0) === 0) {
         const boundary = prerequisite.boundary || {};
         const projection = terminalBattleProjection(simulator, sourceNode.state, terminalGoal);
@@ -3947,7 +4311,11 @@ function runStrategicD2Search(options) {
       availability,
     };
   }
-  if (enableRootRetryNoveltyAttribution && rootAttemptSeparabilityCalls) {
+  // Shared post-search label source for the root retry attributions (5.19v v2
+  // and 5.19w v1): a pure derivation from already-recorded witnesses. It never
+  // re-runs the battle resolver, and these labels are kept strictly out of
+  // preChargeComparisons on both sides.
+  const buildLabeledRootCalls = () => {
     const originOpportunityMaterializations = new Map();
     const originResidualMaterializations = new Map();
     for (const witness of stats.survivalOpportunityWitnesses) {
@@ -3976,7 +4344,7 @@ function runStrategicD2Search(options) {
         directSatisfiedByAttempt.set(witness.attemptId, true);
       }
     }
-    const labeledCalls = rootAttemptSeparabilityCalls.map((call) => {
+    return rootAttemptSeparabilityCalls.map((call) => {
       const directSatisfied = directSatisfiedByAttempt.has(call.attemptId);
       const derivedMaterializedProgress =
         number(originOpportunityMaterializations.get(call.attemptId), 0) +
@@ -3997,6 +4365,9 @@ function runStrategicD2Search(options) {
         },
       };
     });
+  };
+  if (enableRootRetryNoveltyAttribution && rootAttemptSeparabilityCalls) {
+    const labeledCalls = buildLabeledRootCalls();
     const retryAttribution = classifyPreHierarchyRootRetryNovelty(labeledCalls);
     const offlineVerdictResult = classifyRootRetryOfflineVerdict(
       retryAttribution.comparisons,
@@ -4022,6 +4393,36 @@ function runStrategicD2Search(options) {
       nonProductiveFlaggedCallOrdinals: offlineVerdictResult.nonProductiveFlaggedCallOrdinals,
       incompleteCallOrdinals: offlineVerdictResult.incompleteCallOrdinals,
       missingEvaluationCallOrdinals: offlineVerdictResult.missingEvaluationCallOrdinals,
+    };
+  }
+  if (enableRootRetryMetricApplicabilityAttribution && rootAttemptSeparabilityCalls) {
+    const labeledCalls = buildLabeledRootCalls();
+    const applicabilityAttribution =
+      classifyStageConditionalRootRetryComparability(labeledCalls);
+    const applicabilityVerdict = classifyStageConditionalRootRetryOfflineVerdict(
+      applicabilityAttribution.comparisons,
+      labeledCalls.map((call) => ({
+        callOrdinal: call.callOrdinal,
+        productive: call.label.productive,
+      })),
+    );
+    stats.rootRetryMetricApplicabilityAttribution = {
+      schema: "motapathfinder.strategic-root-retry-metric-applicability-attribution.v1",
+      rootCallCount: applicabilityAttribution.rootCallCount,
+      repeatGroupCount: applicabilityAttribution.repeatGroupCount,
+      repeatGroups: applicabilityAttribution.repeatGroups,
+      preChargeComparisons: applicabilityAttribution.comparisons,
+      postSearchEvaluation: labeledCalls.map((call) => ({
+        callOrdinal: call.callOrdinal,
+        attemptId: call.attemptId,
+        productive: call.label.productive,
+        directSatisfied: call.label.directSatisfied,
+      })),
+      verdict: applicabilityVerdict.verdict,
+      productiveFlaggedCallOrdinals: applicabilityVerdict.productiveFlaggedCallOrdinals,
+      nonProductiveFlaggedCallOrdinals: applicabilityVerdict.nonProductiveFlaggedCallOrdinals,
+      incompleteCallOrdinals: applicabilityVerdict.incompleteCallOrdinals,
+      missingEvaluationCallOrdinals: applicabilityVerdict.missingEvaluationCallOrdinals,
     };
   }
   const frontierSize = agenda.activeSize(expanded);
@@ -4329,6 +4730,8 @@ module.exports = {
   classifyPreHierarchyRootRetryNovelty,
   classifyRootAttemptSeparability,
   classifyRootRetryOfflineVerdict,
+  classifyStageConditionalRootRetryComparability,
+  classifyStageConditionalRootRetryOfflineVerdict,
   enumerateStrategicActions,
   runStrategicD2Search,
 };
