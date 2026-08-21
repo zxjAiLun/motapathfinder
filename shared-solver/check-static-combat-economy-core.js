@@ -35,6 +35,7 @@ const path = require("node:path");
 const {
   BinaryHeap,
   applyStaticMacroAction,
+  buildAgendaTicket,
   buildStaticStructuralKey,
   computeStaticBattleOutcome,
   computeStaticReachableRegion,
@@ -322,6 +323,48 @@ function main() {
     heapOrder.push(item.key);
   }
   assert.deepStrictEqual(heapOrder, heapInput.slice().sort((a, b) => a - b), "heap must pop in order");
+
+  // An agenda entry must be a ticket and nothing else. Holding the state here is
+  // what made an expanded state stay resident through the other agenda's stale
+  // entry, so the shape is part of the contract, not an implementation detail.
+  const ticket = buildAgendaTicket(7, [1, -2, 3]);
+  assert.deepStrictEqual(Object.keys(ticket).sort(), ["id", "rank"]);
+  assert.strictEqual(ticket.id, 7);
+  assert.deepStrictEqual(ticket.rank, [1, -2, 3]);
+  [
+    "hero", "consumed", "region", "frontierInteractions", "deficit",
+    "goalReachable", "originIndex", "entry", "state",
+  ].forEach((field) => {
+    assert.strictEqual(
+      Object.prototype.hasOwnProperty.call(ticket, field),
+      false,
+      `an agenda ticket must not carry ${field}`,
+    );
+  });
+  // rebuild() is memory hygiene only: same members, same order.
+  const rebuildHeap = new BinaryHeap((left, right) => {
+    for (let index = 0; index < left.rank.length; index += 1) {
+      if (left.rank[index] !== right.rank[index]) return left.rank[index] - right.rank[index];
+    }
+    return 0;
+  });
+  const rebuildTickets = [5, 1, 9, 3, 7, 2].map((id) => buildAgendaTicket(id, [id % 3, id]));
+  rebuildTickets.forEach((entry) => rebuildHeap.push(entry));
+  const drain = (target) => {
+    const order = [];
+    for (;;) {
+      const item = target.pop();
+      if (item == null) break;
+      order.push(item.id);
+    }
+    return order;
+  };
+  const beforeRebuild = new BinaryHeap(rebuildHeap.compare);
+  rebuildTickets.forEach((entry) => beforeRebuild.push(entry));
+  const expectedOrder = drain(beforeRebuild);
+  rebuildHeap.rebuild(rebuildTickets);
+  assert.strictEqual(rebuildHeap.size, rebuildTickets.length);
+  assert.deepStrictEqual(drain(rebuildHeap), expectedOrder, "rebuild must not change pop order");
   sampleRss();
 
   // --- fixture cases: H1, H2 and the negative control ----------------------
@@ -504,6 +547,35 @@ function main() {
     adaptiveGenerous.goalArchive.map((entry) => generousVector(entry.hero)).sort(),
     "mode must not change the goal archive",
   );
+
+  // --- exact-budget boundary -------------------------------------------------
+  // A search that finishes in exactly E expansions must report SOLVED at budget E.
+  // Reporting RESOURCE_LIMIT there means something other than the live pending set
+  // was consulted -- a heap holding only stale tickets, for instance.
+  const exhaustiveExpanded = adaptiveGenerous.expanded;
+  const atBudget = solveStaticCombatEconomy(investProblem, {
+    maxExpandedStates: exhaustiveExpanded,
+  });
+  assert.strictEqual(
+    atBudget.status,
+    "SOLVED",
+    `budget == expanded (${exhaustiveExpanded}) must be SOLVED, got ${atBudget.status}`,
+  );
+  assert.strictEqual(atBudget.expanded, exhaustiveExpanded);
+  assert.deepStrictEqual(
+    atBudget.goalArchive.map((entry) => generousVector(entry.hero)).sort(),
+    adaptiveGenerous.goalArchive.map((entry) => generousVector(entry.hero)).sort(),
+    "budget == expanded must yield the same goal archive as the generous run",
+  );
+  const belowBudget = solveStaticCombatEconomy(investProblem, {
+    maxExpandedStates: exhaustiveExpanded - 1,
+  });
+  assert.strictEqual(
+    belowBudget.status,
+    "RESOURCE_LIMIT",
+    `budget == expanded-1 (${exhaustiveExpanded - 1}) must be RESOURCE_LIMIT, got ${belowBudget.status}`,
+  );
+  assert.strictEqual(belowBudget.expanded, exhaustiveExpanded - 1);
   sampleRss();
 
   // --- H3: generated maps vs the unpruned oracle ---------------------------
@@ -864,6 +936,7 @@ function main() {
       expanded: solved.expanded,
       dominated: solved.dominated,
       retiredStates: solved.retiredStates,
+      agendaRebuilds: solved.agendaRebuilds,
       peakFrontier: solved.peakFrontier,
       modeSwitches: solved.modeSwitches,
     });
@@ -914,6 +987,13 @@ function main() {
         modeSwitches: adaptiveRun.modeSwitches,
         peakFrontier: adaptiveRun.peakFrontier,
       },
+    },
+    budgetBoundary: {
+      case: "invest-before-conserve",
+      exhaustiveExpanded,
+      atBudgetStatus: atBudget.status,
+      belowBudgetStatus: belowBudget.status,
+      agendaRebuilds: adaptiveGenerous.agendaRebuilds,
     },
     h5: {
       tradeoffCase: "goal-tradeoff-archive",

@@ -320,10 +320,24 @@ function buildInteractionIndex(problem) {
  * whole connected free area is one node. Un-consumed interaction cells block
  * movement and are reported as the frontier: those are the only real choices.
  */
+let scratchVisited = null;
+
+function borrowScratchVisited(total) {
+  if (scratchVisited == null || scratchVisited.length < total) {
+    scratchVisited = new Uint8Array(total);
+    return scratchVisited;
+  }
+  scratchVisited.fill(0, 0, total);
+  return scratchVisited;
+}
+
 function computeStaticReachableRegion(problem, originIndex, consumed, interactionByCell) {
   const byCell = interactionByCell || buildInteractionIndex(problem);
   const total = problem.width * problem.height;
-  const visited = new Uint8Array(total);
+  // `visited` never escapes this call, so it is borrowed rather than allocated:
+  // one reachability call happens per generated state and the churn is what makes
+  // V8 grow its heap far beyond the live set.
+  const visited = borrowScratchVisited(total);
   const region = new Uint8Array(total);
   const frontierInteractions = [];
   const frontierSeen = new Set();
@@ -426,9 +440,29 @@ function applyStaticMacroAction(problem, state, action, interactionByCell) {
   };
 }
 
+const HEX_DIGITS = "0123456789abcdef";
+
+/**
+ * Pack a cell bitset four cells per character. This is an exact, injective
+ * encoding -- the same cells always give the same string and different cells never
+ * can -- but one structural key is built for every generated state, so the
+ * difference between one character per cell and four cells per character is the
+ * difference between tens of megabytes of short-lived string churn and a few.
+ */
 function bitsetToString(bits) {
   let out = "";
-  for (let index = 0; index < bits.length; index += 1) out += bits[index] ? "1" : "0";
+  let nibble = 0;
+  let filled = 0;
+  for (let index = 0; index < bits.length; index += 1) {
+    nibble = (nibble << 1) | (bits[index] ? 1 : 0);
+    filled += 1;
+    if (filled === 4) {
+      out += HEX_DIGITS[nibble];
+      nibble = 0;
+      filled = 0;
+    }
+  }
+  if (filled > 0) out += HEX_DIGITS[nibble << (4 - filled)];
   return out;
 }
 
@@ -559,7 +593,15 @@ const BREAK_BOTTLENECK = "BREAK_BOTTLENECK";
 const STAGNATION_LIMIT = 4;
 const BREAK_BOTTLENECK_WINDOW = 4;
 
-/** Minimal array-backed binary heap; ties break on the trailing sequence key. */
+/**
+ * Minimal array-backed binary heap; ties break on the trailing sequence key.
+ *
+ * The agendas store only lightweight tickets (see `buildAgendaTicket`), never the
+ * state itself. That matters for memory, not just tidiness: a state pushed into
+ * two agendas and expanded from one would otherwise stay alive through the other
+ * agenda's stale entry, keeping its consumed Set, region bitset, frontier list and
+ * blocker array resident long after the state was done with.
+ */
 class BinaryHeap {
   constructor(compare) {
     this.items = [];
@@ -568,6 +610,35 @@ class BinaryHeap {
 
   get size() {
     return this.items.length;
+  }
+
+  /**
+   * Replace the contents with `items` and re-heapify in place. Used purely to
+   * drop accumulated stale tickets: ranks, membership and therefore pop order are
+   * unchanged, because every ticket rank ends in the node id and is a total order.
+   */
+  rebuild(items) {
+    this.items = items.slice();
+    for (let index = (this.items.length >> 1) - 1; index >= 0; index -= 1) {
+      this.siftDown(index);
+    }
+  }
+
+  siftDown(startIndex) {
+    const items = this.items;
+    let index = startIndex;
+    for (;;) {
+      const left = index * 2 + 1;
+      const right = left + 1;
+      let best = index;
+      if (left < items.length && this.compare(items[left], items[best]) < 0) best = left;
+      if (right < items.length && this.compare(items[right], items[best]) < 0) best = right;
+      if (best === index) return;
+      const swap = items[best];
+      items[best] = items[index];
+      items[index] = swap;
+      index = best;
+    }
   }
 
   push(item) {
@@ -591,22 +662,19 @@ class BinaryHeap {
     const last = items.pop();
     if (items.length > 0) {
       items[0] = last;
-      let index = 0;
-      for (;;) {
-        const left = index * 2 + 1;
-        const right = left + 1;
-        let best = index;
-        if (left < items.length && this.compare(items[left], items[best]) < 0) best = left;
-        if (right < items.length && this.compare(items[right], items[best]) < 0) best = right;
-        if (best === index) break;
-        const swap = items[best];
-        items[best] = items[index];
-        items[index] = swap;
-        index = best;
-      }
+      this.siftDown(0);
     }
     return top;
   }
+}
+
+/**
+ * The only thing an agenda is allowed to hold: a node id and its rank vector.
+ * Deliberately not the entry, so expanding a state from one agenda lets it be
+ * collected even while the other agenda still holds a stale ticket for it.
+ */
+function buildAgendaTicket(id, rank) {
+  return { id, rank };
 }
 
 function compareRankArrays(left, right) {
@@ -674,31 +742,29 @@ function solveStaticCombatEconomy(problem, options) {
   const retired = new Set();
   let nextId = 0;
 
-  const conserveHeap = new BinaryHeap((left, right) =>
-    compareRankArrays(left.conserveRank, right.conserveRank));
-  const breakHeap = new BinaryHeap((left, right) =>
-    compareRankArrays(left.breakRank, right.breakRank));
+  const conserveHeap = new BinaryHeap((left, right) => compareRankArrays(left.rank, right.rank));
+  const breakHeap = new BinaryHeap((left, right) => compareRankArrays(left.rank, right.rank));
 
   let expanded = 0;
   let generated = 0;
   let dominated = 0;
   let peakFrontier = 0;
   let modeSwitches = 0;
+  let agendaRebuilds = 0;
   let mode = CONSERVE_HP;
   let stagnation = 0;
   let breakBottleneckRemaining = 0;
   let bestDeficit = null;
   const goalArchive = [];
 
-  // Every admitted state goes into BOTH heaps; `pending` is the single source of
-  // truth for what is still expandable, so a state is expanded exactly once no
-  // matter which agenda reaches it first.
+  // Every admitted state goes into BOTH heaps as a ticket; `pending` is the single
+  // source of truth both for what is still expandable AND for the state objects
+  // themselves, so a state is expanded exactly once no matter which agenda reaches
+  // it first, and becomes collectable the moment it leaves `pending`.
   const admit = (entry) => {
     pending.set(entry.id, entry);
-    entry.conserveRank = conserveHpRank(entry);
-    entry.breakRank = breakBottleneckRank(entry);
-    conserveHeap.push(entry);
-    breakHeap.push(entry);
+    conserveHeap.push(buildAgendaTicket(entry.id, conserveHpRank(entry)));
+    breakHeap.push(buildAgendaTicket(entry.id, breakBottleneckRank(entry)));
     if (pending.size > peakFrontier) peakFrontier = pending.size;
   };
   const retire = (nodeId) => {
@@ -706,26 +772,49 @@ function solveStaticCombatEconomy(problem, options) {
     pending.delete(nodeId);
     retired.add(nodeId);
   };
+  // Stale tickets are cheap but unbounded; once they dominate the agendas, rebuild
+  // both from the live pending set. Pure memory hygiene: same ranks, same
+  // membership, same pop order.
+  const compactAgendas = () => {
+    if (conserveHeap.size + breakHeap.size <= pending.size * 4 + 4096) return;
+    const conserveTickets = [];
+    const breakTickets = [];
+    for (const entry of pending.values()) {
+      conserveTickets.push(buildAgendaTicket(entry.id, conserveHpRank(entry)));
+      breakTickets.push(buildAgendaTicket(entry.id, breakBottleneckRank(entry)));
+    }
+    conserveHeap.rebuild(conserveTickets);
+    breakHeap.rebuild(breakTickets);
+    agendaRebuilds += 1;
+  };
   const popNext = () => {
     const heap = mode === BREAK_BOTTLENECK ? breakHeap : conserveHeap;
     for (;;) {
-      const candidate = heap.pop();
-      if (candidate == null) return null;
+      const ticket = heap.pop();
+      if (ticket == null) return null;
+      const entry = pending.get(ticket.id);
       // Stale: already expanded from the other agenda, or Pareto-evicted.
-      if (!pending.has(candidate.id)) continue;
-      if (pending.get(candidate.id) !== candidate) continue;
-      pending.delete(candidate.id);
-      return candidate;
+      if (entry == null) continue;
+      pending.delete(ticket.id);
+      return entry;
     }
   };
 
   const initial = buildInitialState(problem, interactionByCell);
   const rootId = (nextId += 1);
   nodes.set(rootId, { parentId: null, action: null });
+  const rootDeficit = describeStaticBlockerDeficit(problem, initial);
   const rootEntry = {
     id: rootId,
-    ...initial,
-    deficit: describeStaticBlockerDeficit(problem, initial),
+    hero: initial.hero,
+    consumed: initial.consumed,
+    originIndex: initial.originIndex,
+    frontierInteractions: initial.frontierInteractions,
+    goalReachable: initial.goalReachable,
+    deficit: {
+      attackDeficit: rootDeficit.attackDeficit,
+      survivalDeficit: rootDeficit.survivalDeficit,
+    },
   };
   const rootKey = buildStaticStructuralKey(initial.consumed, initial.region);
   buckets.set(rootKey, []);
@@ -740,9 +829,13 @@ function solveStaticCombatEconomy(problem, options) {
   let limitReached = false;
   for (;;) {
     if (expanded >= maxExpandedStates) {
-      limitReached = pending.size > 0 || conserveHeap.size > 0;
+      // Only the live pending set can say whether work remains. A heap may hold
+      // nothing but stale tickets, which would otherwise make an exhausted search
+      // report RESOURCE_LIMIT at exactly its own expansion count.
+      limitReached = pending.size > 0;
       break;
     }
+    compactAgendas();
     const entry = popNext();
     if (entry == null) break;
     expanded += 1;
@@ -790,10 +883,21 @@ function solveStaticCombatEconomy(problem, options) {
         parentId: entry.id,
         action: { interactionIndex: action.interactionIndex, kind: action.kind, id: action.id },
       });
+      const nextDeficit = describeStaticBlockerDeficit(problem, next);
       const nextEntry = {
         id: nodeId,
-        ...next,
-        deficit: describeStaticBlockerDeficit(problem, next),
+        hero: next.hero,
+        consumed: next.consumed,
+        originIndex: next.originIndex,
+        frontierInteractions: next.frontierInteractions,
+        goalReachable: next.goalReachable,
+        // No `region` and no `blockers`: the key is already built and ranking only
+        // reads the two deficit numbers, so holding them would pin bytes per
+        // pending state for nothing.
+        deficit: {
+          attackDeficit: nextDeficit.attackDeficit,
+          survivalDeficit: nextDeficit.survivalDeficit,
+        },
       };
       if (nextEntry.goalReachable) {
         insertStaticGoalParetoState(goalArchive, { hero: nextEntry.hero, nodeId });
@@ -827,6 +931,7 @@ function solveStaticCombatEconomy(problem, options) {
     peakFrontier,
     modeSwitches,
     retiredStates: retired.size,
+    agendaRebuilds,
   };
 }
 
@@ -934,6 +1039,7 @@ module.exports = {
   BREAK_BOTTLENECK,
   BinaryHeap,
   CONSERVE_HP,
+  buildAgendaTicket,
   STATIC_SCHEMA,
   applyStaticMacroAction,
   buildStaticStructuralKey,
