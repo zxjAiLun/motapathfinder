@@ -811,6 +811,232 @@ function classifyStageConditionalRootRetryOfflineVerdict(preChargeComparisons, p
 }
 
 /**
+ * PR-5.19x pure fixed-8 shadow call-budget reclamation accounting.
+ *
+ * Answers one accounting question and nothing more: if the root retries that
+ * PR-5.19w flags at charge time were removed from the fixed connector-call
+ * ledger, would the reclaimed slot have let an already-observed cap-blocked
+ * continuation pass the SAME selection gates that actually ran?
+ *
+ * It executes nothing. No connector call is issued, no prerequisite is
+ * scheduled, no cap is changed, and the real selector/dedupe are never invoked
+ * a second time — `actualBlockingReason` is the reason the live gates already
+ * recorded. A positive verdict means only "on the observed ledger the reclaimed
+ * slot clears the gates as they stood at that moment"; it does NOT claim that a
+ * real suppression would leave the trace, materialization, or outcome unchanged.
+ *
+ * Pre-charge flags come exclusively from the four PR-5.19w non-improving
+ * classifications. `postSearchEvaluation` is used only for the independent
+ * false-positive / evidence audit and never feeds a flag.
+ */
+const SHADOW_FLAG_CLASSIFICATIONS = [
+  "EXACT-OBSERVABLE-RETRY",
+  "STAGE-REGRESSION",
+  "SAME-STAGE-PRIOR-DOMINATES",
+  "SAME-STAGE-METRIC-TIE-CONTEXT-ONLY",
+];
+const SHADOW_FAIL_CLOSED_CLASSIFICATIONS = [
+  "UNEXPECTED-MISSING-APPLICABLE-METRIC",
+  "INCOMPARABLE-UNSUPPORTED",
+];
+const SHADOW_EVENT_REQUIRED_NUMBER_FIELDS = [
+  "actualCallsExecuted",
+  "maxCalls",
+  "queuedCount",
+  "maxOutstanding",
+];
+
+function shadowFiniteNumber(value) {
+  if (value == null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildRootRetryShadowCallBudgetAttribution(options) {
+  const config = options || {};
+  const maxCalls = shadowFiniteNumber(config.maxCalls);
+  const preChargeComparisons = config.preChargeComparisons || [];
+  const postSearchEvaluation = config.postSearchEvaluation || [];
+  const continuationSelectionEvents = config.continuationSelectionEvents || [];
+  // Never sort or otherwise mutate a caller array: copy first.
+  const chargedCalls = (config.chargedCalls || []).slice().sort((left, right) =>
+    shadowFiniteNumber(left && left.callOrdinal) - shadowFiniteNumber(right && right.callOrdinal));
+  const ascending = (values) => values.slice().sort((a, b) => a - b);
+
+  const flagClassifications = new Set(SHADOW_FLAG_CLASSIFICATIONS);
+  const failClosedClassifications = new Set(SHADOW_FAIL_CLOSED_CLASSIFICATIONS);
+  const flaggedOrdinals = [];
+  const incompleteOrdinals = [];
+  for (const entry of preChargeComparisons) {
+    if (entry == null || entry.callOrdinal == null) continue;
+    if (failClosedClassifications.has(entry.classification)) {
+      incompleteOrdinals.push(entry.callOrdinal);
+      continue;
+    }
+    if (flagClassifications.has(entry.classification)) flaggedOrdinals.push(entry.callOrdinal);
+  }
+  const preChargeFlaggedRootCallOrdinals = ascending(flaggedOrdinals);
+  const flaggedSet = new Set(preChargeFlaggedRootCallOrdinals);
+
+  // Independent audit. Same fail-closed linkage rule as the reviewed v2/v1
+  // verdicts: exactly one evaluation entry with a real boolean `productive`.
+  const evaluationsByCall = new Map();
+  for (const entry of postSearchEvaluation) {
+    if (entry == null || entry.callOrdinal == null) continue;
+    const entries = evaluationsByCall.get(entry.callOrdinal) || [];
+    entries.push(entry);
+    evaluationsByCall.set(entry.callOrdinal, entries);
+  }
+  const productiveFlaggedOrdinals = [];
+  const nonProductiveFlaggedOrdinals = [];
+  const missingEvaluationOrdinals = [];
+  for (const callOrdinal of preChargeFlaggedRootCallOrdinals) {
+    const entries = evaluationsByCall.get(callOrdinal) || [];
+    if (entries.length !== 1 || typeof entries[0].productive !== "boolean") {
+      if (!missingEvaluationOrdinals.includes(callOrdinal)) {
+        missingEvaluationOrdinals.push(callOrdinal);
+      }
+      continue;
+    }
+    if (entries[0].productive) productiveFlaggedOrdinals.push(callOrdinal);
+    else nonProductiveFlaggedOrdinals.push(callOrdinal);
+  }
+
+  // Accounting timeline over the real charged calls. A removed call keeps its
+  // real callOrdinal for provenance but has no shadow ordinal; every later
+  // surviving call shifts down by the number of removals before it.
+  const shadowTimeline = [];
+  let removedSoFar = 0;
+  const chargedOrdinals = new Set();
+  for (const call of chargedCalls) {
+    const callOrdinal = shadowFiniteNumber(call && call.callOrdinal);
+    if (callOrdinal != null) chargedOrdinals.add(callOrdinal);
+    const shadowRemoved = callOrdinal != null && flaggedSet.has(callOrdinal);
+    if (shadowRemoved) removedSoFar += 1;
+    shadowTimeline.push({
+      callOrdinal,
+      hierarchyLevel: shadowFiniteNumber(call && call.hierarchyLevel),
+      attemptId: call && call.attemptId != null ? call.attemptId : null,
+      expansionAtCharge: shadowFiniteNumber(call && call.expansionAtCharge),
+      callsRemainingAfter: shadowFiniteNumber(call && call.callsRemainingAfter),
+      shadowCharged: !shadowRemoved,
+      shadowOrdinal: shadowRemoved || callOrdinal == null ? null : callOrdinal - removedSoFar,
+    });
+  }
+  const actualChargedCallCount = shadowTimeline.length;
+  const shadowChargedCallCount = shadowTimeline.filter((entry) => entry.shadowCharged).length;
+  const reclaimedSlots = actualChargedCallCount - shadowChargedCallCount;
+  // A flag on a call that was never charged cannot reclaim anything: fail closed
+  // instead of silently counting it.
+  const unchargedFlaggedCallOrdinals = preChargeFlaggedRootCallOrdinals.filter(
+    (callOrdinal) => !chargedOrdinals.has(callOrdinal));
+
+  const evaluatedEvents = [];
+  const evidenceIncompleteEventOrdinals = [];
+  for (let index = 0; index < continuationSelectionEvents.length; index += 1) {
+    const event = continuationSelectionEvents[index] || {};
+    const eventOrdinal = shadowFiniteNumber(event.eventOrdinal) == null
+      ? index + 1
+      : shadowFiniteNumber(event.eventOrdinal);
+    const numbersComplete = SHADOW_EVENT_REQUIRED_NUMBER_FIELDS.every((field) =>
+      shadowFiniteNumber(event[field]) != null);
+    const selectedComplete = typeof event.actualSelected === "boolean" &&
+      (event.actualSelected === true ||
+        (typeof event.actualBlockingReason === "string" && event.actualBlockingReason.length > 0));
+    const evidenceComplete = numbersComplete && selectedComplete &&
+      typeof event.dedupeSeenBeforeSelection === "boolean";
+    if (!evidenceComplete) evidenceIncompleteEventOrdinals.push(eventOrdinal);
+    const actualCallsExecuted = shadowFiniteNumber(event.actualCallsExecuted);
+    const eventMaxCalls = shadowFiniteNumber(event.maxCalls);
+    const queuedCount = shadowFiniteNumber(event.queuedCount);
+    const maxOutstanding = shadowFiniteNumber(event.maxOutstanding);
+    // Only calls already charged when this selection ran can free a slot for it.
+    const flaggedBeforeEvent = evidenceComplete
+      ? preChargeFlaggedRootCallOrdinals.filter((callOrdinal) =>
+        chargedOrdinals.has(callOrdinal) && callOrdinal <= actualCallsExecuted)
+      : [];
+    const shadowCallsExecuted = evidenceComplete
+      ? actualCallsExecuted - flaggedBeforeEvent.length
+      : null;
+    const shadowCapacity = evidenceComplete
+      ? eventMaxCalls - shadowCallsExecuted - queuedCount
+      : null;
+    const shadowWouldBeSelectable = Boolean(evidenceComplete &&
+      event.actualBlockingReason === "call-cap-exhausted" &&
+      shadowCapacity > 0 &&
+      queuedCount < maxOutstanding &&
+      event.dedupeSeenBeforeSelection === false);
+    evaluatedEvents.push({
+      eventOrdinal,
+      expansionAtSelection: shadowFiniteNumber(event.expansionAtSelection),
+      continuationId: event.continuationId != null ? event.continuationId : null,
+      hierarchyLevel: shadowFiniteNumber(event.hierarchyLevel),
+      nextPrerequisiteId: event.nextPrerequisiteId != null ? event.nextPrerequisiteId : null,
+      nextPrerequisiteAttemptId: event.nextPrerequisiteAttemptId != null
+        ? event.nextPrerequisiteAttemptId
+        : null,
+      actualCallsExecuted,
+      maxCalls: eventMaxCalls,
+      queuedCount,
+      maxOutstanding,
+      dedupeSeenBeforeSelection: typeof event.dedupeSeenBeforeSelection === "boolean"
+        ? event.dedupeSeenBeforeSelection
+        : null,
+      actualSelected: typeof event.actualSelected === "boolean" ? event.actualSelected : null,
+      actualBlockingReason: event.actualBlockingReason != null ? event.actualBlockingReason : null,
+      evidenceComplete,
+      flaggedBeforeEvent,
+      shadowCallsExecuted,
+      shadowCapacity,
+      shadowWouldBeSelectable,
+    });
+  }
+  const shadowSelectableEvents = evaluatedEvents.filter((entry) => entry.shadowWouldBeSelectable);
+
+  const audit = {
+    preChargeFlaggedRootCallOrdinals,
+    productiveFlaggedCallOrdinals: ascending(productiveFlaggedOrdinals),
+    nonProductiveFlaggedCallOrdinals: ascending(nonProductiveFlaggedOrdinals),
+    incompleteCallOrdinals: ascending(incompleteOrdinals),
+    missingEvaluationCallOrdinals: ascending(missingEvaluationOrdinals),
+    unchargedFlaggedCallOrdinals: ascending(unchargedFlaggedCallOrdinals),
+    evidenceIncompleteEventOrdinals: ascending(evidenceIncompleteEventOrdinals),
+  };
+  // Priority: PRODUCTIVE > EVIDENCE-INCOMPLETE > TRACE-LOCAL reach > reclaimed
+  // without eligible block > no pre-charge flag at all.
+  let verdict;
+  if (audit.productiveFlaggedCallOrdinals.length > 0) {
+    verdict = "PRODUCTIVE-ROOT-WOULD-BE-SHADOW-FLAGGED";
+  } else if (audit.incompleteCallOrdinals.length > 0 ||
+      audit.missingEvaluationCallOrdinals.length > 0 ||
+      audit.unchargedFlaggedCallOrdinals.length > 0 ||
+      audit.evidenceIncompleteEventOrdinals.length > 0) {
+    verdict = "SHADOW-CALL-BUDGET-EVIDENCE-INCOMPLETE";
+  } else if (shadowSelectableEvents.length > 0) {
+    verdict = "TRACE-LOCAL-SHADOW-SLOT-REACHES-CAP-BLOCKED-DERIVED-WORK";
+  } else if (reclaimedSlots > 0) {
+    verdict = "SHADOW-SLOT-RECLAIMED-NO-ELIGIBLE-CAP-BLOCK";
+  } else {
+    verdict = "NO-PRECHARGE-NONIMPROVING-ROOT-RETRY";
+  }
+  return {
+    maxCalls,
+    actualChargedCallCount,
+    shadowChargedCallCount,
+    reclaimedSlots,
+    ...audit,
+    shadowTimeline,
+    continuationSelectionEvents: evaluatedEvents,
+    shadowSelectableEventOrdinals: shadowSelectableEvents.map((entry) => entry.eventOrdinal),
+    shadowSelectableContinuationIds: Array.from(new Set(
+      shadowSelectableEvents.map((entry) => entry.continuationId))),
+    shadowSelectableNextPrerequisiteIds: Array.from(new Set(
+      shadowSelectableEvents.map((entry) => entry.nextPrerequisiteId))),
+    verdict,
+  };
+}
+
+/**
  * PR-5.19u pure classification. U2/U3 are mutually exclusive:
  *   U2 = partial collision (>=1 but not all failed roots equal the productive root)
  *   U3 = ALL failed roots semantically equal the productive root AND a real
@@ -1283,6 +1509,8 @@ function runStrategicD2Search(options) {
   const enableRootRetryNoveltyAttribution = config.enableRootRetryNoveltyAttribution === true;
   const enableRootRetryMetricApplicabilityAttribution =
     config.enableRootRetryMetricApplicabilityAttribution === true;
+  const enableRootRetryShadowCallBudgetAttribution =
+    config.enableRootRetryShadowCallBudgetAttribution === true;
   const enablePostResidualAttribution = config.enablePostResidualAttribution === true;
   const maxTotalSearchExpansions = config.maxTotalSearchExpansions == null
     ? null
@@ -1420,6 +1648,7 @@ function runStrategicD2Search(options) {
     rootAttemptSeparabilityAttribution: null,
     rootRetryNoveltyAttribution: null,
     rootRetryMetricApplicabilityAttribution: null,
+    rootRetryShadowCallBudgetAttribution: null,
     rootLevelCompiledCapBlockedSelectionEvents: 0,
     rootLevelCapBlockedCompiledCandidateInstances: 0,
     rootLevelCompiledOutstandingBlockedSelectionEvents: 0,
@@ -1443,7 +1672,10 @@ function runStrategicD2Search(options) {
   } : null;
   const rootAttemptSeparabilityCalls = enableRootAttemptSeparabilityAttribution ||
     enableRootRetryNoveltyAttribution ||
-    enableRootRetryMetricApplicabilityAttribution ? [] : null;
+    enableRootRetryMetricApplicabilityAttribution ||
+    enableRootRetryShadowCallBudgetAttribution ? [] : null;
+  const rootRetryShadowChargedCalls = enableRootRetryShadowCallBudgetAttribution ? [] : null;
+  const rootRetryShadowSelectionEvents = enableRootRetryShadowCallBudgetAttribution ? [] : null;
   const rootCompileEvents = enableRootAttemptSeparabilityAttribution ? [] : null;
   let hierarchyChronologyFirstContinuationRecorded = false;
   let hierarchyChronologyFirstActivationRecorded = false;
@@ -1848,6 +2080,27 @@ function runStrategicD2Search(options) {
           witness.stageGoal = nextStageGoal;
           const queuedBattleAccess = lazyWork.queued()
             .filter((item) => item.kind === "battle-access-prerequisite-choice").length;
+          // PR-5.19x read-only selection-gate snapshot. `dedupe.has` and
+          // `dependencyAttemptId` are pure reads; the selector below still runs
+          // exactly once and the dedupe set is only mutated by it.
+          const shadowSelectionEvent = rootRetryShadowSelectionEvents ? {
+            eventOrdinal: rootRetryShadowSelectionEvents.length + 1,
+            expansionAtSelection: stats.expansions,
+            continuationId: continuation.id,
+            hierarchyLevel: number(continuation.hierarchyLevel, 0),
+            nextPrerequisiteId: nextPrerequisite.id,
+            nextPrerequisiteAttemptId: dependencyAttemptId(nextPrerequisite, sourceNode.state),
+            actualCallsExecuted: stats.battleAccessPrerequisiteCalls,
+            maxCalls: dependencyConnectorMaxCalls,
+            queuedCount: queuedBattleAccess,
+            maxOutstanding: dependencyAttemptMaxOutstanding,
+            dedupeSeenBeforeSelection: dependencyAttemptDedupe.has(
+              nextPrerequisite,
+              sourceNode.state,
+            ),
+            actualSelected: null,
+            actualBlockingReason: null,
+          } : null;
           const selected = selectFeedbackAwareDependencyAttempts({
             candidates: [nextPrerequisite],
             sourceState: sourceNode.state,
@@ -1895,6 +2148,14 @@ function runStrategicD2Search(options) {
             } else {
               releaseHierarchyPriorityForContinuation(continuation);
             }
+          }
+          if (shadowSelectionEvent) {
+            // Reuse the reason the live gates already recorded; never re-derive it.
+            shadowSelectionEvent.actualSelected = selected.length > 0;
+            shadowSelectionEvent.actualBlockingReason = selected.length > 0
+              ? null
+              : witness.statusReason;
+            rootRetryShadowSelectionEvents.push(shadowSelectionEvent);
           }
         } else {
           witness.status = "parent-blocked-by-unsupported-boundary";
@@ -2579,12 +2840,27 @@ function runStrategicD2Search(options) {
           recordHierarchyChronologyCheckpoint("firstLevelOneCallCharged", stats.expansions);
         }
       }
+      // PR-5.19x read-only ledger record. Charging and enqueueing above are
+      // untouched; this only remembers what the fixed cap was actually spent on.
+      if (rootRetryShadowChargedCalls) {
+        rootRetryShadowChargedCalls.push({
+          callOrdinal: stats.battleAccessPrerequisiteCalls,
+          hierarchyLevel: number(work.hierarchyLevel, 0),
+          attemptId,
+          expansionAtCharge: stats.expansions,
+          callsRemainingAfter: Math.max(
+            0,
+            dependencyConnectorMaxCalls - stats.battleAccessPrerequisiteCalls,
+          ),
+        });
+      }
       const beforeViability = evaluateBattleViability(simulator, sourceNode.state, prerequisite.boundary);
       const beforeBattle = enableBattleViabilityAttribution
         ? analyzeBattleViabilityBlocker(simulator, sourceNode.state, prerequisite.boundary)
         : null;
       if ((enableRootAttemptSeparabilityAttribution || enableRootRetryNoveltyAttribution ||
-            enableRootRetryMetricApplicabilityAttribution) &&
+            enableRootRetryMetricApplicabilityAttribution ||
+            enableRootRetryShadowCallBudgetAttribution) &&
           number(work.hierarchyLevel, 0) === 0) {
         const boundary = prerequisite.boundary || {};
         const projection = terminalBattleProjection(simulator, sourceNode.state, terminalGoal);
@@ -4425,6 +4701,34 @@ function runStrategicD2Search(options) {
       missingEvaluationCallOrdinals: applicabilityVerdict.missingEvaluationCallOrdinals,
     };
   }
+  if (enableRootRetryShadowCallBudgetAttribution && rootAttemptSeparabilityCalls) {
+    const labeledCalls = buildLabeledRootCalls();
+    // Reuses the 5.19w stage classifier without enabling or touching its stats.
+    const stageAttribution = classifyStageConditionalRootRetryComparability(labeledCalls);
+    const shadowBudget = buildRootRetryShadowCallBudgetAttribution({
+      maxCalls: dependencyConnectorMaxCalls,
+      chargedCalls: rootRetryShadowChargedCalls,
+      preChargeComparisons: stageAttribution.comparisons,
+      postSearchEvaluation: labeledCalls.map((call) => ({
+        callOrdinal: call.callOrdinal,
+        productive: call.label.productive,
+      })),
+      continuationSelectionEvents: rootRetryShadowSelectionEvents,
+    });
+    stats.rootRetryShadowCallBudgetAttribution = {
+      schema: "motapathfinder.strategic-root-retry-shadow-call-budget-attribution.v1",
+      rootCallCount: stageAttribution.rootCallCount,
+      repeatGroupCount: stageAttribution.repeatGroupCount,
+      preChargeComparisons: stageAttribution.comparisons,
+      postSearchEvaluation: labeledCalls.map((call) => ({
+        callOrdinal: call.callOrdinal,
+        attemptId: call.attemptId,
+        productive: call.label.productive,
+        directSatisfied: call.label.directSatisfied,
+      })),
+      ...shadowBudget,
+    };
+  }
   const frontierSize = agenda.activeSize(expanded);
   const activeLazyWork = lazyWork.activeSize();
   const strategicBudgetExhausted = !goalNode && stats.expansions >= maxExpansions &&
@@ -4727,6 +5031,7 @@ function runStrategicD2Search(options) {
 
 module.exports = {
   buildRootAttemptSemanticVector,
+  buildRootRetryShadowCallBudgetAttribution,
   classifyPreHierarchyRootRetryNovelty,
   classifyRootAttemptSeparability,
   classifyRootRetryOfflineVerdict,

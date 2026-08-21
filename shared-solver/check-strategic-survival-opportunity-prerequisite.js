@@ -16,6 +16,7 @@ const { verifyConnectorChain } = require("./lib/strategic-connector");
 const { buildStateKey } = require("./lib/state-key");
 const {
   runStrategicD2Search,
+  buildRootRetryShadowCallBudgetAttribution,
   classifyPreHierarchyRootRetryNovelty,
   classifyRootAttemptSeparability,
   classifyRootRetryOfflineVerdict,
@@ -77,6 +78,8 @@ function main() {
   const includeRootRetryNovelty = process.argv.includes("--root-retry-novelty");
   const includeRootRetryMetricApplicability =
     process.argv.includes("--root-retry-metric-applicability");
+  const includeRootRetryShadowCallBudget =
+    process.argv.includes("--root-retry-shadow-call-budget");
   const project = loadProject(PROJECT_ROOT);
   const initialState = detachCheckpoint(createMt5EntryState(project));
   const terminalGoal = readBlindGoal(GOAL_FILE).goal;
@@ -248,6 +251,8 @@ function main() {
       enableRootRetryNoveltyAttribution: includeRootRetryNovelty && enable,
       enableRootRetryMetricApplicabilityAttribution:
         includeRootRetryMetricApplicability && enable,
+      enableRootRetryShadowCallBudgetAttribution:
+        includeRootRetryShadowCallBudget && enable,
       enablePostResidualAttribution: includePostO3Observation && enable,
     });
 
@@ -349,6 +354,42 @@ function main() {
         enableRootAttemptSeparabilityAttribution: includeRootAttemptSeparability,
         enableRootRetryNoveltyAttribution: includeRootRetryNovelty,
         enableRootRetryMetricApplicabilityAttribution: enableMetricApplicability,
+        enablePostResidualAttribution: includePostO3Observation,
+      });
+
+    // 5.19x: shadow call-budget isolation mirrors the generic candidate field
+    // for field (so the generic candidate is the candidate side and the checker
+    // stays at 3 total 1000-work runs) and toggles only the ledger observation.
+    const runWithShadowCallBudgetIsolation = (enableShadowCallBudget) =>
+      runStrategicD2Search({
+        project,
+        projectRoot: PROJECT_ROOT,
+        initialState,
+        terminalGoal,
+        simulatorFactory: () => makeBlindSimulator(project),
+        connectorMode: "battle-access-prerequisite",
+        enableConnector: true,
+        maxExpansions: 1000,
+        connectorMaxExpansions: 50,
+        connectorMaxCalls: 8,
+        lazyDrainEvery: 8,
+        maxTotalSearchExpansions: 1000,
+        enableParentDependencyContinuation: true,
+        enableHierarchicalCallAllocation: true,
+        enableBattleStagePrerequisiteDecomposition: true,
+        enableContinuationAnchorExpansionScheduling: true,
+        enableSurvivalOpportunityPrerequisite: true,
+        enableSurvivalResidualAttribution: true,
+        enableSurvivalResidualRecovery: includeSecondResidualRecovery || includeResidualRecovery,
+        enableSecondSurvivalResidualRecovery: includeSecondResidualRecovery ||
+          includeO4ContinuationAttribution,
+        enableO4ContinuationAttribution: includeO4ContinuationAttribution,
+        enableHierarchyCallAttribution: includeHierarchyCallAttribution,
+        enableHierarchyCallChronology: includeHierarchyCallChronology,
+        enableRootAttemptSeparabilityAttribution: includeRootAttemptSeparability,
+        enableRootRetryNoveltyAttribution: includeRootRetryNovelty,
+        enableRootRetryMetricApplicabilityAttribution: includeRootRetryMetricApplicability,
+        enableRootRetryShadowCallBudgetAttribution: enableShadowCallBudget,
         enablePostResidualAttribution: includePostO3Observation,
       });
 
@@ -1749,6 +1790,512 @@ function main() {
       assert.deepStrictEqual(stageIncompleteKeepsWitness.missingEvaluationCallOrdinals, []);
     }
 
+    if (includeRootRetryShadowCallBudget) {
+      const shadowControl = runWithShadowCallBudgetIsolation(false);
+      const shadowCandidate = candidate;
+      const shadowStripWall = (outcome) => {
+        const copy = { ...outcome };
+        delete copy.wallMs;
+        return copy;
+      };
+      assert.deepStrictEqual(
+        shadowStripWall(shadowCandidate.outcome),
+        shadowStripWall(shadowControl.outcome),
+        "shadow call-budget observation changed outcome",
+      );
+      assert.deepStrictEqual(
+        shadowCandidate.bestTerminalBlocker,
+        shadowControl.bestTerminalBlocker,
+        "shadow call-budget observation changed bestTerminalBlocker",
+      );
+      [
+        "totalSearchExpansions",
+        "expansions",
+        "battleAccessPrerequisiteCalls",
+        "rootLevelCalls",
+        "continuationDerivedCalls",
+        "parentDependencyContinuationNextPrerequisiteCompiled",
+        "childPrerequisitesScheduled",
+      ].forEach((field) => {
+        assert.strictEqual(
+          shadowControl.stats[field],
+          shadowCandidate.stats[field],
+          `${field} changed with shadow call-budget observation`,
+        );
+      });
+      assert.deepStrictEqual(
+        shadowCandidate.stats.battleAccessPrerequisiteWitnesses.map((w) => w.attemptId),
+        shadowControl.stats.battleAccessPrerequisiteWitnesses.map((w) => w.attemptId),
+        "charged witness identities changed with shadow call-budget observation",
+      );
+      const shadowCompactResiduals = (stats) =>
+        stats.survivalOpportunityResidualRecoveries.map((r) => ({
+          recoveryIndex: r.recoveryIndex,
+          target: r.selectedResidualTarget ? r.selectedResidualTarget.enemyId : null,
+          materialized: r.materialized,
+          parentContinuationCreated: r.parentContinuationCreated,
+        }));
+      assert.deepStrictEqual(
+        shadowCompactResiduals(shadowCandidate.stats),
+        shadowCompactResiduals(shadowControl.stats),
+        "residual/materialization results changed with shadow call-budget observation",
+      );
+      const shadowCompactContinuations = (stats) =>
+        stats.parentDependencyContinuationWitnesses.map((w) => ({
+          continuationId: w.continuationId,
+          status: w.status,
+          statusReason: w.statusReason,
+          nextPrerequisiteId: w.nextPrerequisiteId == null ? null : w.nextPrerequisiteId,
+        }));
+      assert.deepStrictEqual(
+        shadowCompactContinuations(shadowCandidate.stats),
+        shadowCompactContinuations(shadowControl.stats),
+        "continuation witnesses changed with shadow call-budget observation",
+      );
+
+      assert.strictEqual(shadowControl.stats.rootRetryShadowCallBudgetAttribution, null);
+      const shadow = shadowCandidate.stats.rootRetryShadowCallBudgetAttribution;
+      assert.ok(shadow);
+      assert.strictEqual(
+        shadow.schema,
+        "motapathfinder.strategic-root-retry-shadow-call-budget-attribution.v1",
+      );
+      // The 5.19w stats must stay untouched unless its own flag is on.
+      if (!includeRootRetryMetricApplicability) {
+        assert.strictEqual(shadowCandidate.stats.rootRetryMetricApplicabilityAttribution, null);
+      }
+      assert.ok([
+        "PRODUCTIVE-ROOT-WOULD-BE-SHADOW-FLAGGED",
+        "SHADOW-CALL-BUDGET-EVIDENCE-INCOMPLETE",
+        "TRACE-LOCAL-SHADOW-SLOT-REACHES-CAP-BLOCKED-DERIVED-WORK",
+        "SHADOW-SLOT-RECLAIMED-NO-ELIGIBLE-CAP-BLOCK",
+        "NO-PRECHARGE-NONIMPROVING-ROOT-RETRY",
+      ].includes(shadow.verdict));
+      for (const comparison of shadow.preChargeComparisons) {
+        const keys = Object.keys(comparison);
+        assert.ok(
+          !keys.some((key) => /productive|directSatisfied|satisfied|materializ|continuation/i.test(key)),
+          `post-hoc field leaked into preChargeComparisons: ${keys.join(",")}`,
+        );
+      }
+      assert.ok(!("rootCompileEvents" in shadow));
+      // Timeline must account for every charged call exactly once, and shadow
+      // ordinals must be a gap-free 1..N sequence over the surviving calls.
+      assert.strictEqual(shadow.actualChargedCallCount, shadow.shadowTimeline.length);
+      assert.strictEqual(
+        shadow.actualChargedCallCount,
+        shadowCandidate.stats.battleAccessPrerequisiteCalls,
+      );
+      assert.deepStrictEqual(
+        shadow.shadowTimeline.map((entry) => entry.callOrdinal),
+        shadow.shadowTimeline.map((_entry, index) => index + 1),
+      );
+      assert.deepStrictEqual(
+        shadow.shadowTimeline.filter((entry) => entry.shadowCharged)
+          .map((entry) => entry.shadowOrdinal),
+        shadow.shadowTimeline.filter((entry) => entry.shadowCharged)
+          .map((_entry, index) => index + 1),
+      );
+      shadow.shadowTimeline.forEach((entry) => {
+        assert.strictEqual(
+          entry.shadowCharged,
+          !shadow.preChargeFlaggedRootCallOrdinals.includes(entry.callOrdinal),
+        );
+        if (!entry.shadowCharged) assert.strictEqual(entry.shadowOrdinal, null);
+      });
+      assert.strictEqual(
+        shadow.reclaimedSlots,
+        shadow.actualChargedCallCount - shadow.shadowChargedCallCount,
+      );
+      // No call was executed for the shadow: the real ledger is the only ledger.
+      assert.strictEqual(shadow.maxCalls, 8);
+      assert.ok(shadow.actualChargedCallCount <= shadow.maxCalls);
+      for (const event of shadow.continuationSelectionEvents) {
+        assert.ok(["boolean"].includes(typeof event.shadowWouldBeSelectable));
+        if (event.shadowWouldBeSelectable) {
+          assert.strictEqual(event.actualBlockingReason, "call-cap-exhausted");
+          assert.ok(event.shadowCapacity > 0);
+          assert.ok(event.queuedCount < event.maxOutstanding);
+          assert.strictEqual(event.dedupeSeenBeforeSelection, false);
+          assert.strictEqual(event.evidenceComplete, true);
+        }
+        if (event.evidenceComplete) {
+          assert.strictEqual(
+            event.shadowCallsExecuted,
+            event.actualCallsExecuted - event.flaggedBeforeEvent.length,
+          );
+          assert.strictEqual(
+            event.shadowCapacity,
+            event.maxCalls - event.shadowCallsExecuted - event.queuedCount,
+          );
+          event.flaggedBeforeEvent.forEach((callOrdinal) => {
+            assert.ok(callOrdinal <= event.actualCallsExecuted);
+            assert.ok(shadow.preChargeFlaggedRootCallOrdinals.includes(callOrdinal));
+          });
+        }
+      }
+
+      // --- 5.19x frozen real corpus facts -------------------------------------
+      assert.strictEqual(shadow.maxCalls, 8);
+      assert.strictEqual(shadow.actualChargedCallCount, 8);
+      assert.strictEqual(shadow.shadowChargedCallCount, 7);
+      assert.strictEqual(shadow.reclaimedSlots, 1);
+      assert.deepStrictEqual(shadow.preChargeFlaggedRootCallOrdinals, [2]);
+      assert.deepStrictEqual(shadow.productiveFlaggedCallOrdinals, []);
+      assert.deepStrictEqual(shadow.nonProductiveFlaggedCallOrdinals, [2]);
+      assert.deepStrictEqual(shadow.incompleteCallOrdinals, []);
+      assert.deepStrictEqual(shadow.missingEvaluationCallOrdinals, []);
+      assert.deepStrictEqual(shadow.unchargedFlaggedCallOrdinals, []);
+      assert.deepStrictEqual(shadow.evidenceIncompleteEventOrdinals, []);
+      // Productive root #5 is never shadow-flagged.
+      assert.ok(!shadow.preChargeFlaggedRootCallOrdinals.includes(5));
+      assert.strictEqual(
+        shadow.preChargeComparisons.find((entry) => entry.callOrdinal === 5).classification,
+        "FIRST-SEEN",
+      );
+      // Real ledger: 5 root calls then 3 derived calls at levels 1/2/3.
+      assert.deepStrictEqual(
+        shadow.shadowTimeline.map((entry) => entry.hierarchyLevel),
+        [0, 0, 0, 0, 0, 1, 2, 3],
+      );
+      assert.strictEqual(
+        shadow.shadowTimeline.filter((entry) => entry.hierarchyLevel === 0).length,
+        5,
+      );
+      assert.strictEqual(
+        shadow.shadowTimeline.filter((entry) => entry.hierarchyLevel > 0).length,
+        3,
+      );
+      assert.deepStrictEqual(
+        shadow.shadowTimeline.map((entry) => entry.shadowOrdinal),
+        [1, null, 2, 3, 4, 5, 6, 7],
+      );
+      assert.deepStrictEqual(
+        shadow.shadowTimeline.map((entry) => entry.shadowCharged),
+        [true, false, true, true, true, true, true, true],
+      );
+      // Four continuation selections happened; only the last one hit the cap.
+      assert.strictEqual(shadow.continuationSelectionEvents.length, 4);
+      assert.deepStrictEqual(
+        shadow.continuationSelectionEvents.map((event) => event.actualSelected),
+        [true, true, true, false],
+      );
+      assert.deepStrictEqual(
+        shadow.continuationSelectionEvents.map((event) => event.actualBlockingReason),
+        [null, null, null, "call-cap-exhausted"],
+      );
+      assert.deepStrictEqual(
+        shadow.continuationSelectionEvents.map((event) => event.hierarchyLevel),
+        [1, 2, 3, 4],
+      );
+      assert.deepStrictEqual(
+        shadow.continuationSelectionEvents.map((event) => event.actualCallsExecuted),
+        [5, 6, 7, 8],
+      );
+      assert.deepStrictEqual(
+        shadow.continuationSelectionEvents.map((event) => event.shadowCallsExecuted),
+        [4, 5, 6, 7],
+      );
+      assert.deepStrictEqual(
+        shadow.continuationSelectionEvents.map((event) => event.shadowCapacity),
+        [4, 3, 2, 1],
+      );
+      assert.deepStrictEqual(
+        shadow.continuationSelectionEvents.map((event) => event.shadowWouldBeSelectable),
+        [false, false, false, true],
+      );
+      const shadowCapBlockedEvent = shadow.continuationSelectionEvents[3];
+      assert.strictEqual(shadowCapBlockedEvent.eventOrdinal, 4);
+      assert.strictEqual(shadowCapBlockedEvent.queuedCount, 0);
+      assert.strictEqual(shadowCapBlockedEvent.maxOutstanding, 1);
+      assert.strictEqual(shadowCapBlockedEvent.dedupeSeenBeforeSelection, false);
+      assert.strictEqual(shadowCapBlockedEvent.evidenceComplete, true);
+      assert.deepStrictEqual(shadowCapBlockedEvent.flaggedBeforeEvent, [2]);
+      assert.strictEqual(shadowCapBlockedEvent.continuationId, "859c7785d5c70f85");
+      assert.strictEqual(shadowCapBlockedEvent.nextPrerequisiteId, "cb70ef61ad4b231a");
+      assert.deepStrictEqual(shadow.shadowSelectableEventOrdinals, [4]);
+      assert.deepStrictEqual(shadow.shadowSelectableContinuationIds, ["859c7785d5c70f85"]);
+      assert.deepStrictEqual(shadow.shadowSelectableNextPrerequisiteIds, ["cb70ef61ad4b231a"]);
+      assert.strictEqual(
+        shadow.verdict,
+        "TRACE-LOCAL-SHADOW-SLOT-REACHES-CAP-BLOCKED-DERIVED-WORK",
+      );
+
+      // --- 5.19x pure-helper synthetics ---------------------------------------
+      const mkShadowCharged = (count) => Array.from({ length: count }, (_value, index) => ({
+        callOrdinal: index + 1,
+        hierarchyLevel: index < 5 ? 0 : 1,
+        attemptId: `SA${index + 1}`,
+        expansionAtCharge: 10 + index,
+        callsRemainingAfter: count - (index + 1),
+      }));
+      const mkShadowFlag = (callOrdinal) => ({
+        callOrdinal,
+        classification: "SAME-STAGE-METRIC-TIE-CONTEXT-ONLY",
+      });
+      const mkShadowEvaluation = (pairs) => pairs.map(([callOrdinal, productive]) => ({
+        callOrdinal,
+        productive,
+      }));
+      const mkShadowCapEvent = (overrides) => ({
+        eventOrdinal: 1,
+        expansionAtSelection: 40,
+        continuationId: "SC1",
+        hierarchyLevel: 1,
+        nextPrerequisiteId: "SP9",
+        nextPrerequisiteAttemptId: "SAP9",
+        actualCallsExecuted: 8,
+        maxCalls: 8,
+        queuedCount: 0,
+        maxOutstanding: 1,
+        dedupeSeenBeforeSelection: false,
+        actualSelected: false,
+        actualBlockingReason: "call-cap-exhausted",
+        ...overrides,
+      });
+
+      // No flag at all: nothing is reclaimed and nothing becomes selectable.
+      const shadowNoFlag = buildRootRetryShadowCallBudgetAttribution({
+        maxCalls: 8,
+        chargedCalls: mkShadowCharged(8),
+        preChargeComparisons: [],
+        postSearchEvaluation: mkShadowEvaluation([[1, false]]),
+        continuationSelectionEvents: [mkShadowCapEvent({})],
+      });
+      assert.strictEqual(shadowNoFlag.verdict, "NO-PRECHARGE-NONIMPROVING-ROOT-RETRY");
+      assert.deepStrictEqual(shadowNoFlag.preChargeFlaggedRootCallOrdinals, []);
+      assert.strictEqual(shadowNoFlag.reclaimedSlots, 0);
+      assert.strictEqual(shadowNoFlag.shadowChargedCallCount, 8);
+      assert.strictEqual(shadowNoFlag.continuationSelectionEvents[0].shadowCapacity, 0);
+      assert.strictEqual(
+        shadowNoFlag.continuationSelectionEvents[0].shadowWouldBeSelectable,
+        false,
+      );
+
+      // #2 removed: #3..#8 shift down one, shadowCalls=7, capacity=1, selectable.
+      const shadowReclaim = buildRootRetryShadowCallBudgetAttribution({
+        maxCalls: 8,
+        chargedCalls: mkShadowCharged(8),
+        preChargeComparisons: [mkShadowFlag(2)],
+        postSearchEvaluation: mkShadowEvaluation([
+          [1, false], [2, false], [3, false], [4, false], [5, true],
+        ]),
+        continuationSelectionEvents: [mkShadowCapEvent({})],
+      });
+      assert.deepStrictEqual(shadowReclaim.preChargeFlaggedRootCallOrdinals, [2]);
+      assert.deepStrictEqual(shadowReclaim.nonProductiveFlaggedCallOrdinals, [2]);
+      assert.deepStrictEqual(shadowReclaim.productiveFlaggedCallOrdinals, []);
+      assert.strictEqual(shadowReclaim.actualChargedCallCount, 8);
+      assert.strictEqual(shadowReclaim.shadowChargedCallCount, 7);
+      assert.strictEqual(shadowReclaim.reclaimedSlots, 1);
+      assert.deepStrictEqual(
+        shadowReclaim.shadowTimeline.map((entry) =>
+          [entry.callOrdinal, entry.shadowCharged, entry.shadowOrdinal]),
+        [
+          [1, true, 1], [2, false, null], [3, true, 2], [4, true, 3],
+          [5, true, 4], [6, true, 5], [7, true, 6], [8, true, 7],
+        ],
+      );
+      const shadowReclaimEvent = shadowReclaim.continuationSelectionEvents[0];
+      assert.deepStrictEqual(shadowReclaimEvent.flaggedBeforeEvent, [2]);
+      assert.strictEqual(shadowReclaimEvent.shadowCallsExecuted, 7);
+      assert.strictEqual(shadowReclaimEvent.shadowCapacity, 1);
+      assert.strictEqual(shadowReclaimEvent.shadowWouldBeSelectable, true);
+      assert.strictEqual(
+        shadowReclaim.verdict,
+        "TRACE-LOCAL-SHADOW-SLOT-REACHES-CAP-BLOCKED-DERIVED-WORK",
+      );
+      assert.deepStrictEqual(shadowReclaim.shadowSelectableEventOrdinals, [1]);
+      assert.deepStrictEqual(shadowReclaim.shadowSelectableContinuationIds, ["SC1"]);
+      assert.deepStrictEqual(shadowReclaim.shadowSelectableNextPrerequisiteIds, ["SP9"]);
+
+      // Outstanding barrier is never reclaimable, whatever the recorded reason.
+      [
+        mkShadowCapEvent({
+          queuedCount: 1, maxOutstanding: 1, actualBlockingReason: "outstanding-barrier",
+        }),
+        mkShadowCapEvent({ queuedCount: 1, maxOutstanding: 1 }),
+      ].forEach((event) => {
+        const outstanding = buildRootRetryShadowCallBudgetAttribution({
+          maxCalls: 8,
+          chargedCalls: mkShadowCharged(8),
+          preChargeComparisons: [mkShadowFlag(2)],
+          postSearchEvaluation: mkShadowEvaluation([[2, false]]),
+          continuationSelectionEvents: [event],
+        });
+        assert.strictEqual(
+          outstanding.continuationSelectionEvents[0].shadowWouldBeSelectable,
+          false,
+        );
+        assert.strictEqual(outstanding.verdict, "SHADOW-SLOT-RECLAIMED-NO-ELIGIBLE-CAP-BLOCK");
+      });
+
+      // Dedupe barrier is never reclaimable.
+      const shadowDedupe = buildRootRetryShadowCallBudgetAttribution({
+        maxCalls: 8,
+        chargedCalls: mkShadowCharged(8),
+        preChargeComparisons: [mkShadowFlag(2)],
+        postSearchEvaluation: mkShadowEvaluation([[2, false]]),
+        continuationSelectionEvents: [mkShadowCapEvent({ dedupeSeenBeforeSelection: true })],
+      });
+      assert.strictEqual(
+        shadowDedupe.continuationSelectionEvents[0].shadowWouldBeSelectable,
+        false,
+      );
+      assert.strictEqual(shadowDedupe.verdict, "SHADOW-SLOT-RECLAIMED-NO-ELIGIBLE-CAP-BLOCK");
+
+      // A flag charged AFTER the event cannot free a slot for that event.
+      const shadowLaterFlag = buildRootRetryShadowCallBudgetAttribution({
+        maxCalls: 8,
+        chargedCalls: mkShadowCharged(8),
+        preChargeComparisons: [mkShadowFlag(5)],
+        postSearchEvaluation: mkShadowEvaluation([[5, false]]),
+        continuationSelectionEvents: [mkShadowCapEvent({ actualCallsExecuted: 4 })],
+      });
+      assert.deepStrictEqual(
+        shadowLaterFlag.continuationSelectionEvents[0].flaggedBeforeEvent,
+        [],
+      );
+      assert.strictEqual(shadowLaterFlag.continuationSelectionEvents[0].shadowCallsExecuted, 4);
+
+      // Productive false-positive outranks everything.
+      const shadowProductive = buildRootRetryShadowCallBudgetAttribution({
+        maxCalls: 8,
+        chargedCalls: mkShadowCharged(8),
+        preChargeComparisons: [mkShadowFlag(2), mkShadowFlag(5)],
+        postSearchEvaluation: mkShadowEvaluation([[2, false], [5, true]]),
+        continuationSelectionEvents: [mkShadowCapEvent({})],
+      });
+      assert.strictEqual(shadowProductive.verdict, "PRODUCTIVE-ROOT-WOULD-BE-SHADOW-FLAGGED");
+      assert.deepStrictEqual(shadowProductive.productiveFlaggedCallOrdinals, [5]);
+      assert.deepStrictEqual(shadowProductive.nonProductiveFlaggedCallOrdinals, [2]);
+
+      // Fail-closed: missing / duplicate / non-boolean evaluation.
+      [
+        [],
+        mkShadowEvaluation([[2, false], [2, false]]),
+        [{ callOrdinal: 2, productive: "false" }],
+      ].forEach((evaluation, index) => {
+        const failClosed = buildRootRetryShadowCallBudgetAttribution({
+          maxCalls: 8,
+          chargedCalls: mkShadowCharged(8),
+          preChargeComparisons: [mkShadowFlag(2)],
+          postSearchEvaluation: evaluation,
+          continuationSelectionEvents: [mkShadowCapEvent({})],
+        });
+        assert.strictEqual(
+          failClosed.verdict,
+          "SHADOW-CALL-BUDGET-EVIDENCE-INCOMPLETE",
+          `shadow evaluation case ${index} did not fail closed`,
+        );
+        assert.deepStrictEqual(failClosed.missingEvaluationCallOrdinals, [2]);
+        assert.deepStrictEqual(failClosed.nonProductiveFlaggedCallOrdinals, []);
+      });
+
+      // Fail-closed: pre-charge fail-closed class, malformed event, uncharged flag.
+      const shadowPreChargeIncomplete = buildRootRetryShadowCallBudgetAttribution({
+        maxCalls: 8,
+        chargedCalls: mkShadowCharged(8),
+        preChargeComparisons: [
+          { callOrdinal: 3, classification: "UNEXPECTED-MISSING-APPLICABLE-METRIC" },
+          mkShadowFlag(2),
+        ],
+        postSearchEvaluation: mkShadowEvaluation([[2, false]]),
+        continuationSelectionEvents: [mkShadowCapEvent({})],
+      });
+      assert.strictEqual(
+        shadowPreChargeIncomplete.verdict,
+        "SHADOW-CALL-BUDGET-EVIDENCE-INCOMPLETE",
+      );
+      assert.deepStrictEqual(shadowPreChargeIncomplete.incompleteCallOrdinals, [3]);
+      assert.deepStrictEqual(shadowPreChargeIncomplete.nonProductiveFlaggedCallOrdinals, [2]);
+      [
+        { queuedCount: null },
+        { maxOutstanding: undefined },
+        { maxCalls: "eight" },
+        { dedupeSeenBeforeSelection: "no" },
+        { actualSelected: null },
+        { actualBlockingReason: "" },
+      ].forEach((overrides) => {
+        const malformed = buildRootRetryShadowCallBudgetAttribution({
+          maxCalls: 8,
+          chargedCalls: mkShadowCharged(8),
+          preChargeComparisons: [mkShadowFlag(2)],
+          postSearchEvaluation: mkShadowEvaluation([[2, false]]),
+          continuationSelectionEvents: [mkShadowCapEvent(overrides)],
+        });
+        assert.strictEqual(
+          malformed.verdict,
+          "SHADOW-CALL-BUDGET-EVIDENCE-INCOMPLETE",
+          `malformed event ${JSON.stringify(overrides)} did not fail closed`,
+        );
+        assert.deepStrictEqual(malformed.evidenceIncompleteEventOrdinals, [1]);
+        assert.strictEqual(
+          malformed.continuationSelectionEvents[0].shadowWouldBeSelectable,
+          false,
+        );
+      });
+      const shadowUncharged = buildRootRetryShadowCallBudgetAttribution({
+        maxCalls: 8,
+        chargedCalls: mkShadowCharged(4),
+        preChargeComparisons: [mkShadowFlag(7)],
+        postSearchEvaluation: mkShadowEvaluation([[7, false]]),
+        continuationSelectionEvents: [],
+      });
+      assert.strictEqual(shadowUncharged.verdict, "SHADOW-CALL-BUDGET-EVIDENCE-INCOMPLETE");
+      assert.deepStrictEqual(shadowUncharged.unchargedFlaggedCallOrdinals, [7]);
+
+      // A selected event is complete evidence and never shadow-selectable.
+      const shadowSelected = buildRootRetryShadowCallBudgetAttribution({
+        maxCalls: 8,
+        chargedCalls: mkShadowCharged(8),
+        preChargeComparisons: [mkShadowFlag(2)],
+        postSearchEvaluation: mkShadowEvaluation([[2, false]]),
+        continuationSelectionEvents: [
+          mkShadowCapEvent({ actualSelected: true, actualBlockingReason: null }),
+        ],
+      });
+      assert.deepStrictEqual(shadowSelected.evidenceIncompleteEventOrdinals, []);
+      assert.strictEqual(
+        shadowSelected.continuationSelectionEvents[0].shadowWouldBeSelectable,
+        false,
+      );
+      assert.strictEqual(shadowSelected.verdict, "SHADOW-SLOT-RECLAIMED-NO-ELIGIBLE-CAP-BLOCK");
+
+      // Inputs must never be sorted or otherwise mutated.
+      const shadowUnsorted = [
+        mkShadowCharged(3)[2], mkShadowCharged(3)[0], mkShadowCharged(3)[1],
+      ];
+      const shadowComparisonsInput = [mkShadowFlag(2)];
+      const shadowEvaluationInput = mkShadowEvaluation([[2, false]]);
+      const shadowEventsInput = [mkShadowCapEvent({})];
+      const shadowInputSnapshot = JSON.stringify([
+        shadowUnsorted, shadowComparisonsInput, shadowEvaluationInput, shadowEventsInput,
+      ]);
+      const shadowUnsortedResult = buildRootRetryShadowCallBudgetAttribution({
+        maxCalls: 8,
+        chargedCalls: shadowUnsorted,
+        preChargeComparisons: shadowComparisonsInput,
+        postSearchEvaluation: shadowEvaluationInput,
+        continuationSelectionEvents: shadowEventsInput,
+      });
+      assert.strictEqual(
+        JSON.stringify([
+          shadowUnsorted, shadowComparisonsInput, shadowEvaluationInput, shadowEventsInput,
+        ]),
+        shadowInputSnapshot,
+        "shadow helper mutated its inputs",
+      );
+      assert.deepStrictEqual(
+        shadowUnsortedResult.shadowTimeline.map((entry) => entry.callOrdinal),
+        [1, 2, 3],
+      );
+      assert.deepStrictEqual(
+        shadowUnsortedResult.shadowTimeline.map((entry) => entry.shadowOrdinal),
+        [1, null, 2],
+      );
+    }
+
     if (includeO4ContinuationAttribution) {
       assert.strictEqual(control.stats.o4ContinuationAttributions.length, 0);
       assert.strictEqual(candidate.stats.o4ContinuationAttributions.length, 1);
@@ -2000,6 +2547,76 @@ function main() {
           assert.ok(
             compactLength < 20000,
             `compactRootRetryMetricApplicabilityAttribution too large: ${compactLength}`,
+          );
+          return compact;
+        })()
+        : null,
+      compactRootRetryShadowCallBudgetAttribution: includeRootRetryShadowCallBudget
+        ? (() => {
+          const full = candidate.stats.rootRetryShadowCallBudgetAttribution;
+          if (!full) return null;
+          const beforeStable = JSON.stringify(full);
+          const compact = {
+            schema: full.schema,
+            maxCalls: full.maxCalls,
+            rootCallCount: full.rootCallCount,
+            repeatGroupCount: full.repeatGroupCount,
+            actualChargedCallCount: full.actualChargedCallCount,
+            shadowChargedCallCount: full.shadowChargedCallCount,
+            reclaimedSlots: full.reclaimedSlots,
+            preChargeFlaggedRootCallOrdinals: [...full.preChargeFlaggedRootCallOrdinals],
+            productiveFlaggedCallOrdinals: [...full.productiveFlaggedCallOrdinals],
+            nonProductiveFlaggedCallOrdinals: [...full.nonProductiveFlaggedCallOrdinals],
+            incompleteCallOrdinals: [...full.incompleteCallOrdinals],
+            missingEvaluationCallOrdinals: [...full.missingEvaluationCallOrdinals],
+            unchargedFlaggedCallOrdinals: [...full.unchargedFlaggedCallOrdinals],
+            evidenceIncompleteEventOrdinals: [...full.evidenceIncompleteEventOrdinals],
+            preChargeClassifications: full.preChargeComparisons.map((entry) => ({
+              callOrdinal: entry.callOrdinal,
+              stage: entry.stage,
+              classification: entry.classification,
+            })),
+            shadowTimeline: full.shadowTimeline.map((entry) => ({
+              callOrdinal: entry.callOrdinal,
+              hierarchyLevel: entry.hierarchyLevel,
+              attemptId: entry.attemptId,
+              expansionAtCharge: entry.expansionAtCharge,
+              callsRemainingAfter: entry.callsRemainingAfter,
+              shadowCharged: entry.shadowCharged,
+              shadowOrdinal: entry.shadowOrdinal,
+            })),
+            continuationSelectionEvents: full.continuationSelectionEvents.map((event) => ({
+              eventOrdinal: event.eventOrdinal,
+              expansionAtSelection: event.expansionAtSelection,
+              continuationId: event.continuationId,
+              hierarchyLevel: event.hierarchyLevel,
+              nextPrerequisiteId: event.nextPrerequisiteId,
+              actualCallsExecuted: event.actualCallsExecuted,
+              queuedCount: event.queuedCount,
+              maxOutstanding: event.maxOutstanding,
+              dedupeSeenBeforeSelection: event.dedupeSeenBeforeSelection,
+              actualSelected: event.actualSelected,
+              actualBlockingReason: event.actualBlockingReason,
+              evidenceComplete: event.evidenceComplete,
+              flaggedBeforeEvent: [...event.flaggedBeforeEvent],
+              shadowCallsExecuted: event.shadowCallsExecuted,
+              shadowCapacity: event.shadowCapacity,
+              shadowWouldBeSelectable: event.shadowWouldBeSelectable,
+            })),
+            shadowSelectableEventOrdinals: [...full.shadowSelectableEventOrdinals],
+            shadowSelectableContinuationIds: [...full.shadowSelectableContinuationIds],
+            shadowSelectableNextPrerequisiteIds: [...full.shadowSelectableNextPrerequisiteIds],
+            postSearchEvaluation: full.postSearchEvaluation,
+            verdict: full.verdict,
+          };
+          assert.ok(!("rootCompileEvents" in compact));
+          assert.ok(!("candidates" in compact));
+          assert.ok(!("preChargeComparisons" in compact));
+          assert.strictEqual(JSON.stringify(full), beforeStable);
+          const compactLength = JSON.stringify(compact).length;
+          assert.ok(
+            compactLength < 20000,
+            `compactRootRetryShadowCallBudgetAttribution too large: ${compactLength}`,
           );
           return compact;
         })()
