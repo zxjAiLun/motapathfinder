@@ -351,11 +351,19 @@ function analyzeH5StaticFloor(project) {
   }
   const height = map.length;
   const width = map[0].length;
+  // Bail BEFORE the per-cell scan. A missing, null or short row would otherwise be
+  // recorded as a finding and then indexed as map[y][x] further down, turning a
+  // fail-closed report into a thrown TypeError.
+  let mapShapeSound = true;
   for (let y = 0; y < height; y += 1) {
-    if (!Array.isArray(map[y]) || map[y].length !== width) fail(`floor-map-not-rectangular:${y}`);
+    if (!Array.isArray(map[y]) || map[y].length !== width) {
+      fail(`floor-map-not-rectangular:${y}`);
+      mapShapeSound = false;
+    }
   }
   if (floor.width != null && floor.width !== width) fail("floor-width-mismatch");
   if (floor.height != null && floor.height !== height) fail("floor-height-mismatch");
+  if (!mapShapeSound) return bail();
 
   // Exactly one changeFloor tile, and it is the terminal goal for this round.
   const changeFloor = floor.changeFloor || {};

@@ -282,6 +282,11 @@ function main() {
     ["unknown-enemy", (p) => { delete p.enemysById[enemyCell.tileId]; }],
     ["unknown-item-value", (p) => { delete p.values[CANONICAL_RESOURCE_ITEMS[jewelCell.tileId].valueKey]; }],
     ["non-rectangular-map", (p) => { p.floorsById[floorId].map[1].push(0); }],
+    // PR-5.20c review 2 (P2): a malformed row must be reported and abandoned, not
+    // reported and then indexed.
+    ["null-row-map", (p) => { p.floorsById[floorId].map[1] = null; }],
+    ["deleted-row-map", (p) => { delete p.floorsById[floorId].map[1]; }],
+    ["short-row-map", (p) => { p.floorsById[floorId].map[1] = p.floorsById[floorId].map[1].slice(0, 5); }],
     ["missing-floor", (p) => { p.data.firstData.floorId = "MT99"; }],
     ["missing-hero", (p) => { delete p.data.firstData.hero; }],
     ["interaction-on-start", (p) => {
@@ -342,8 +347,13 @@ function main() {
   for (const [label, mutate] of mutations.concat(schemaMutations)) {
     const mutated = clone(fixture.project);
     mutate(mutated);
-    const probe = inspectH5StaticFloorEligibility(mutated);
-    const adapted = adaptH5StaticFloor(mutated);
+    // Neither entry point may throw on hostile input: a crash is not fail-closed.
+    let probe = null;
+    let adapted = null;
+    assert.doesNotThrow(() => { probe = inspectH5StaticFloorEligibility(mutated); },
+      `mutation ${label} made inspect throw`);
+    assert.doesNotThrow(() => { adapted = adaptH5StaticFloor(mutated); },
+      `mutation ${label} made adapt throw`);
     // inspect and adapt must agree exactly: a probe that says "fine" while the
     // adaptation refuses (or the reverse) would make the probe useless.
     assert.strictEqual(

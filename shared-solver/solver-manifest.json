@@ -2465,6 +2465,22 @@
         "cleanCheckout": true
       },
       "notes": "PR-5.20c maps ONE event-free H5 floor into the static-combat-economy-core problem. Data mapping only: reads an already-in-memory H5-shaped project object and never touches the filesystem, project-loader, functions.js runtime, battle resolver, simulator or event resolver, and never evaluates or pattern-matches an effect string. Resources are accepted only from a canonical gem/potion allowlist whose itemEffect must equal one of two exact canonical strings, with gains built solely from project.values and floor.ratio. Anything outside the subdomain (events/autoEvent/firstArrive/eachArrive/parallelDo/beforeBattle/afterBattle/afterGetItem, doors, keys, shops, equipment, skills, money/exp/level, special monsters, custom itemEffect, tool-sensitive tiles, multiple or missing exits, cross-floor continuation, unknown map/item/enemy) fails the WHOLE floor closed with a stably sorted floorId/x/y/reason list; an offending cell is never rewritten into an obstacle. The unique changeFloor tile is a TERMINAL goal -- the next floor is not executed and goalArchive is not a cross-floor continuation archive. correctnessSource=false: this proves restricted native-data mapping, NOT semantic equivalence with arbitrary H5 functions.js."
+    },
+    "shared-solver/lib/onlyup-mt1-real-route-gate.js": {
+      "id": "onlyup-mt1-real-route-gate",
+      "path": "shared-solver/lib/onlyup-mt1-real-route-gate.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "real-tower-mt1-route-go-no-go-gate",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.20d decisive Go/No-Go gate: drives the REAL Only Up project from its own firstData start state to MT2 using only existing trusted machinery -- project-loader.loadProject, StaticSimulator, FunctionBackedBattleResolver, simulator.createInitialState/enumerateActions/applyAction, searchDP and the existing buildStateKey/buildDominanceKey. Implements NO battle/item/event semantics and NO new search: the DP only orders primitive actions the runtime already offers, with macro layers (resourcePocket/Cluster/Chain, fightToLevelUp) off and searchGraphMode=primitive. Difficulty levers (I581/I582/level0) are filtered out of every expansion and counted so a route can never win by lowering difficulty. The choice resolver only accepts a unique no-state-change branch and otherwise reports UNRESOLVED_REQUIRED_CHOICE instead of guessing. Strict replay runs on a fresh simulator and re-derives every recorded decision from the live enumeration through route-store.resolveRecordedAction, so nothing is executed from a summary string; `auto:` route entries are runtime bookkeeping re-performed by the runtime and are proven identical by the final exact-state-key comparison. Fixed budget: maxExpandedStates=50000, wall<30s, RSS<256MB, single process, no worker, no disk frontier."
     }
   },
   "tests": {
@@ -3545,6 +3561,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.20c locks A1-A4 in a single process with no worker pool, no disk cache and no real tower: A1 the native H5-shaped fixture adapts automatically and equals an independently derived expectedStaticProblem; A2 the static solver finds a route and goal archive on its own, every archive route strictly replays and every mapped H5 step matches the recorded provenance cell for cell; A3 41 mutations covering each unsupported semantic all give eligible=false, problem=null and no route; A4 wall<10s, observed peak RSS<256MB, compact stdout<5KB."
+    },
+    "shared-solver/check-onlyup-mt1-real-route-gate.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.20d locks the real-tower gate: source identity (title='Only Up', start MT1@6,7, target MT2), the fixed 50000/30s/256MB budget, verdict REAL_MT1_GATE_PASSED, final floor MT2 for both search and strict replay, per-field hero/inventory/flags/floorMutations equality plus identical exact state keys, every recorded decision re-derived from the live enumeration, and zero unresolved required choices. Also unit tests the difficulty guard and proves the choice resolver refuses ambiguous or consequential choices and never picks by option text. Deliberately does NOT lock route content, route length or monster order -- the search decides those. A failure means 5.20 static promotion is frozen."
     }
   }
 }
