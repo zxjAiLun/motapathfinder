@@ -20,14 +20,24 @@
 const assert = require("node:assert");
 
 const {
+  EVIDENCE_SCHEMA,
   MAX_EXPANDED_STATES,
   RSS_LIMIT_BYTES,
   TARGET_FLOOR_ID,
   WALL_LIMIT_MS,
   createNoStateChangeChoiceResolver,
+  difficultySnapshot,
   runOnlyUpMt1RealRouteGate,
   touchesDifficulty,
 } = require("./lib/onlyup-mt1-real-route-gate");
+
+const IDENTITY_GRADE_MATCH_TYPES = [
+  "postExactState",
+  "postDominanceKey",
+  "fingerprint",
+  "path",
+  "target-stance-direction",
+];
 
 const COMPACT_STDOUT_LIMIT = 5120;
 const EXPECTED_TITLE = "Only Up";
@@ -52,6 +62,26 @@ function main() {
   });
   assert.strictEqual(touchesDifficulty({ kind: "battle", enemyId: "greenSlime" }), false);
   assert.strictEqual(touchesDifficulty(null), false);
+
+  // difficultySnapshot must normalize all three levers, however they are spelled.
+  assert.deepStrictEqual(
+    difficultySnapshot({ inventory: {}, flags: {} }),
+    { I581: 0, I582: 0, "flag:level0": 0 },
+    "an unset difficulty must normalize to all zeros (Chaos)",
+  );
+  assert.deepStrictEqual(
+    difficultySnapshot({ inventory: { I581: 1 }, flags: {} }),
+    { I581: 1, I582: 0, "flag:level0": 0 },
+  );
+  assert.deepStrictEqual(
+    difficultySnapshot({ inventory: { I582: 2 }, flags: { level0: true } }),
+    { I581: 0, I582: 2, "flag:level0": 1 },
+    "booleans and counts must both normalize to numbers",
+  );
+  assert.deepStrictEqual(
+    difficultySnapshot({}),
+    { I581: 0, I582: 0, "flag:level0": 0 },
+  );
 
   // The choice resolver may only take a unique no-state-change branch, and must
   // refuse rather than guess anywhere else. No coordinates, no option text.
@@ -110,12 +140,96 @@ function main() {
   );
   assert.strictEqual(result.failureReason, null);
 
-  // Every PASS condition, asserted individually.
-  assert.ok(result.routeLength > 0, "a route must exist");
-  assert.ok(result.decisionCount > 0, "the route must contain real decisions");
+  // Evidence schema v2.
+  assert.strictEqual(result.evidenceSchema, EVIDENCE_SCHEMA);
+  assert.strictEqual(result.targetFloorId, TARGET_FLOOR_ID);
+
+  // Every PASS condition, asserted individually. Note what is deliberately NOT
+  // asserted: no route length, no decision count, no monster order. Those are the
+  // search's to decide, and pinning them would turn discovery into recall.
+  assert.ok(result.recordedArtifactEntryCount > 0, "a recorded artifact must exist");
+  assert.ok(result.recordedDecisionCount > 0, "the artifact must contain real decisions");
+  assert.ok(result.runtimeReplayEntryCount > 0, "a runtime transcript must exist");
   assert.strictEqual(result.searchFinal.floorId, TARGET_FLOOR_ID, "search must end on MT2");
   assert.strictEqual(result.replayFinal.floorId, TARGET_FLOOR_ID, "replay must end on MT2");
   assert.deepStrictEqual(result.mismatches, [], "strict replay must not diverge");
+
+  // Difficulty: identical at search start, search end and replay end, and this
+  // corpus is Chaos, i.e. none of the three levers set.
+  const CHAOS = { I581: 0, I582: 0, "flag:level0": 0 };
+  assert.deepStrictEqual(result.initial.difficulty, CHAOS, "corpus must start on Chaos");
+  assert.deepStrictEqual(result.searchFinal.difficulty, CHAOS);
+  assert.deepStrictEqual(result.replayFinal.difficulty, CHAOS);
+
+  // The two accounting views must be distinct concepts but consistent numbers.
+  assert.strictEqual(
+    result.metrics.recordedArtifactEntryCount,
+    result.recordedDecisionCount + result.initialAutoPrefixCount,
+    "the recorded artifact is exactly an auto prefix plus one entry per decision",
+  );
+  assert.strictEqual(
+    result.metrics.runtimeReplayEntryCount,
+    result.recordedDecisionCount + result.metrics.runtimeReplayAutoCount,
+    "the runtime transcript is every decision plus every auto step",
+  );
+  assert.strictEqual(
+    result.metrics.searchRawRouteLength,
+    result.metrics.replayRawRouteLength,
+    "search and replay must agree on raw route length",
+  );
+  assert.strictEqual(
+    result.metrics.replayRawRouteLength,
+    result.metrics.runtimeReplayEntryCount,
+    "raw route length must equal the materialized transcript length",
+  );
+  assert.strictEqual(result.metrics.searchAutoStepCount, result.metrics.replayAutoStepCount);
+  ["decisionDepth", "autoStepCount", "autoPickupCount", "autoBattleCount"].forEach((key) => {
+    assert.strictEqual(
+      result.searchFinal.accounting[key],
+      result.replayFinal.accounting[key],
+      `accounting.${key} must match between search and replay`,
+    );
+  });
+  // The transcript really is bigger than the artifact for this corpus: that is the
+  // whole reason the two are reported separately.
+  assert.ok(
+    result.metrics.runtimeReplayEntryCount > result.metrics.recordedArtifactEntryCount,
+    "this corpus must exercise auto steps beyond the recorded artifact",
+  );
+
+  // Canonical snapshot sources must actually be populated -- evidence schema v1
+  // read fields that do not exist, so both comparisons were vacuously equal.
+  assert.ok(
+    Object.keys(result.replayFinal.inventory).length > 0,
+    "inventory snapshot must read canonical state.inventory and be non-empty here",
+  );
+  assert.ok(
+    Array.isArray(result.replayFinal.floorMutations) && result.replayFinal.floorMutations.length > 0,
+    "floor mutation snapshot must read state.floorStates and be non-empty here",
+  );
+
+  // Decision identity: every replayed decision matched at an identity grade, never
+  // by summary string or bare kind.
+  assert.strictEqual(
+    result.metrics.identityGradedDecisionCount,
+    result.metrics.decisionsReplayed,
+    "every decision must match at an identity grade",
+  );
+  Object.keys(result.metrics.decisionMatchTypeCounts).forEach((matchType) => {
+    assert.ok(
+      IDENTITY_GRADE_MATCH_TYPES.includes(matchType),
+      `match type ${matchType} is not identity grade`,
+    );
+  });
+  assert.ok(
+    Number.isInteger(result.metrics.fingerprintMatchedDecisionCount),
+    "fingerprint match count must be reported",
+  );
+  assert.strictEqual(
+    typeof result.metrics.fingerprintFormatReconciled,
+    "boolean",
+    "fingerprint format reconciliation must be reported explicitly",
+  );
   ["hp", "atk", "def", "mdef", "exp", "lv"].forEach((key) => {
     assert.strictEqual(
       result.replayFinal.hero[key],
@@ -135,7 +249,7 @@ function main() {
   assert.ok(result.metrics.decisionsReplayed > 0, "decisions must be re-derived, not assumed");
   assert.strictEqual(
     result.metrics.decisionsReplayed,
-    result.decisionCount,
+    result.recordedDecisionCount,
     "every recorded decision must be replayed",
   );
   // No difficulty action was taken, and no required choice was guessed.
@@ -161,7 +275,8 @@ function main() {
 
   const compact = {
     status: "passed",
-    schema: "motapathfinder.onlyup-mt1-real-route-gate-check.v1",
+    schema: "motapathfinder.onlyup-mt1-real-route-gate-check.v2",
+    evidenceSchema: result.evidenceSchema,
     verdict: result.verdict,
     source: result.source,
     initial: {
@@ -174,10 +289,29 @@ function main() {
       rssLimitMb: result.budget.rssLimitBytes / (1024 * 1024),
     },
     metrics: result.metrics,
-    route: {
-      totalEntries: result.routeLength,
-      decisions: result.decisionCount,
-      autoEntries: result.routeLength - result.decisionCount,
+    recordedArtifact: {
+      entryCount: result.recordedArtifactEntryCount,
+      decisionCount: result.recordedDecisionCount,
+      initialAutoPrefixCount: result.initialAutoPrefixCount,
+    },
+    runtimeTranscript: {
+      entryCount: result.runtimeReplayEntryCount,
+      autoCount: result.runtimeReplayAutoCount,
+      autoPickupCount: result.replayFinal.accounting.autoPickupCount,
+      autoBattleCount: result.replayFinal.accounting.autoBattleCount,
+      decisionDepth: result.replayFinal.accounting.decisionDepth,
+    },
+    difficulty: {
+      initial: result.initial.difficulty,
+      searchFinal: result.searchFinal.difficulty,
+      replayFinal: result.replayFinal.difficulty,
+      identical: true,
+    },
+    decisionIdentity: {
+      identityGraded: result.metrics.identityGradedDecisionCount,
+      matchTypes: result.metrics.decisionMatchTypeCounts,
+      fingerprintMatched: result.metrics.fingerprintMatchedDecisionCount,
+      fingerprintFormatReconciled: result.metrics.fingerprintFormatReconciled,
     },
     finalFloorId: result.searchFinal.floorId,
     finalHero: result.searchFinal.hero,
@@ -185,6 +319,8 @@ function main() {
       decisionsReplayed: result.metrics.decisionsReplayed,
       mismatches: result.mismatches,
       exactStateKeyIdentical: true,
+      inventoryEntryCount: Object.keys(result.replayFinal.inventory).length,
+      floorMutationFloorCount: result.replayFinal.floorMutations.length,
     },
   };
   const serialized = `${JSON.stringify(compact, null, 2)}\n`;
