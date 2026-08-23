@@ -2692,20 +2692,22 @@ class StaticSimulator {
   }
 
   stabilizeState(state) {
-    const stabilized = this.autoResolver.stabilizeState({
-      project: this.project,
-      state,
-      battleResolver: this.battleResolver,
-      executeActionList,
-      choiceResolver: this.choiceResolver,
-      resolvePickupAt: (currentState, x, y) => this.resolvePickupAt(currentState, x, y),
+    return timeActivePhase("stabilization", () => {
+      const stabilized = this.autoResolver.stabilizeState({
+        project: this.project,
+        state,
+        battleResolver: this.battleResolver,
+        executeActionList,
+        choiceResolver: this.choiceResolver,
+        resolvePickupAt: (currentState, x, y) => this.resolvePickupAt(currentState, x, y),
+      });
+      projectSolverState(
+        stabilized,
+        this.solverModel.explicit ? this.solverModel : null,
+      );
+      syncProgress(stabilized);
+      return stabilized;
     });
-    projectSolverState(
-      stabilized,
-      this.solverModel.explicit ? this.solverModel : null,
-    );
-    syncProgress(stabilized);
-    return stabilized;
   }
 }
 
