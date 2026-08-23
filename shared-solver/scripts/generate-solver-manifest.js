@@ -1376,6 +1376,27 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": false,
     "cleanCheckout": true,
     "notes": "PR-5.21b/PR-5.21b1 stateful exact-cache removal regression and 100-expansion consistency contract"
+  },
+  "shared-solver/check-expansion-profiler-parity.js": {
+    "grade": "local-regression",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.22a expansion-cost profiler parity with frozen 100-expansion contract, attribution consistency, and overhead qualification"
+  },
+  "shared-solver/check-expansion-cost-attribution.js": {
+    "grade": "integration-local",
+    "allowsNotFound": true,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.22a first-region direct search expansion-cost attribution, top-level self-time breakdown, inclusive subsystem metrics, and slow-expansion sampling"
+  },
+  "shared-solver/check-onlyup-first-region-expansion-profile.js": {
+    "grade": "integration-local",
+    "allowsNotFound": true,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.22a real OnlyUp first-region direct gate execution with opt-in expansion profiling"
   }
 };
 

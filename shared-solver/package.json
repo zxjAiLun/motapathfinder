@@ -296,7 +296,10 @@
     "check:remaining-materialization-attribution": "node check-remaining-materialization-attribution.js",
     "check:battle-evaluation-projection": "node check-battle-evaluation-projection.js",
     "check:reachability-optimization-requalification": "node check-reachability-optimization-requalification.js",
-    "check:full-solve-hotspot-reprofiling": "node check-full-solve-hotspot-reprofiling.js"
+    "check:full-solve-hotspot-reprofiling": "node check-full-solve-hotspot-reprofiling.js",
+    "check:expansion-profiler-parity": "node check-expansion-profiler-parity.js",
+    "check:expansion-cost-attribution": "node --max-old-space-size=256 check-expansion-cost-attribution.js",
+    "check:onlyup-first-region-expansion-profile": "node --max-old-space-size=256 check-onlyup-first-region-expansion-profile.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"
