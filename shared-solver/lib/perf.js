@@ -22,6 +22,8 @@ function createPerfTracker(options) {
   const startedAt = nowMs();
   const startedCpu = process.cpuUsage();
   const startedElu = performance.eventLoopUtilization ? performance.eventLoopUtilization() : null;
+
+  // Generic legacy phases
   const phaseMs = {};
   const phaseSelfMs = {};
   const phaseStack = [];
@@ -31,11 +33,60 @@ function createPerfTracker(options) {
     registered: 0,
     duplicates: 0,
   };
+
+  // Top-level mutually exclusive buckets
+  // 1. walkReachability
+  // 2. primitiveEnumeration
+  // 3. actionEvaluation
+  // 4. applyAction
+  // 5. stabilization
+  // 6. stateKeyAndDominance
+  // 7. frontierQueue
+  // 8. otherExpansionOverhead
+  const topLevelSelfMs = {
+    walkReachability: 0,
+    primitiveEnumeration: 0,
+    actionEvaluation: 0,
+    applyAction: 0,
+    stabilization: 0,
+    stateKeyAndDominance: 0,
+    frontierQueue: 0,
+    otherExpansionOverhead: 0,
+  };
+
+  const topLevelStack = [];
+
+  // Read-only stabilization subphases
+  const stabilizationSubphases = {
+    hazardBuild: 0,
+    pickupScan: 0,
+    battleScan: 0,
+    autoEvent: 0,
+    applyStep: 0,
+  };
+
+  // Explicit semantic counters (separate from timer counts)
+  const semanticCounters = {
+    expansions: 0,
+    generated: 0,
+    registered: 0,
+    duplicates: 0,
+    primitiveEnumerationCalls: 0,
+    applyActionCalls: 0,
+    stabilizeStateCalls: 0,
+    stabilizationPasses: 0,
+    dpKeyBuildCalls: 0,
+    dominanceLookupCalls: 0,
+    dominanceRejects: 0,
+    frontierRankCalls: 0,
+    frontierPushCalls: 0,
+    frontierPopCalls: 0,
+  };
+
   let peakRssBytes = 0;
   let peakHeapBytes = 0;
   let memorySampleCount = 0;
-  let lastLiveAt = startedAt;
-  const liveIntervalMs = Number(config.liveIntervalMs || 5000);
+  let totalExpansionElapsedMs = 0;
 
   // Expansion-level attribution state (bounded, only active when profileExpansionCost is true)
   let currentExpansion = null;
@@ -82,36 +133,63 @@ function createPerfTracker(options) {
       selfBucket.count += 1;
       const parent = phaseStack[phaseStack.length - 1];
       if (parent) parent.childMs += elapsed;
-
-      if (profileExpansionCost && currentExpansion) {
-        currentExpansion.phaseSelf[name] = (currentExpansion.phaseSelf[name] || 0) + selfElapsed;
-      }
     }
   }
 
-  async function timePhaseAsync(name, fn) {
-    if (!enabled || typeof fn !== "function") return fn();
+  function beginTopLevelPhase(name) {
+    if (!enabled || !profileExpansionCost) return;
+    const started = nowMs();
+    topLevelStack.push({ name, started, childTopLevelMs: 0 });
+  }
+
+  function endTopLevelPhase(name) {
+    if (!enabled || !profileExpansionCost) return;
+    const ended = nowMs();
+    const frame = topLevelStack.pop();
+    if (!frame) return;
+    const elapsed = Math.max(0, ended - frame.started);
+    const selfElapsed = Math.max(0, elapsed - frame.childTopLevelMs);
+    topLevelSelfMs[frame.name] = (topLevelSelfMs[frame.name] || 0) + selfElapsed;
+
+    const parent = topLevelStack[topLevelStack.length - 1];
+    if (parent) {
+      parent.childTopLevelMs += elapsed;
+    }
+
+    if (currentExpansion) {
+      currentExpansion.topLevelSelf[frame.name] = (currentExpansion.topLevelSelf[frame.name] || 0) + selfElapsed;
+    }
+  }
+
+  function recordStabilizationSubphase(subphase, ms) {
+    if (!enabled || !profileExpansionCost) return;
+    if (stabilizationSubphases[subphase] != null) {
+      stabilizationSubphases[subphase] += Math.max(0, Number(ms || 0));
+    }
+  }
+
+  function timeStabilizationSubphase(subphase, fn) {
+    if (!enabled || !profileExpansionCost || typeof fn !== "function") return fn();
     const started = nowMs();
     try {
-      return await fn();
+      return fn();
     } finally {
-      const elapsed = nowMs() - started;
-      const bucket = ensurePhase(name);
-      bucket.ms += elapsed;
-      bucket.count += 1;
-      const selfBucket = ensureSelfPhase(name);
-      selfBucket.ms += elapsed;
-      selfBucket.count += 1;
+      const elapsed = Math.max(0, nowMs() - started);
+      recordStabilizationSubphase(subphase, elapsed);
     }
   }
 
   function increment(name, amount) {
     if (!enabled) return;
-    counters[name] = Number(counters[name] || 0) + Number(amount || 1);
+    const count = Number(amount || 1);
+    counters[name] = (counters[name] || 0) + count;
+    if (semanticCounters[name] != null) {
+      semanticCounters[name] += count;
+    }
   }
 
   function getCounter(name) {
-    return Number(counters[name] || 0);
+    return Number(semanticCounters[name] || 0);
   }
 
   function recordMemorySample(memory) {
@@ -121,7 +199,7 @@ function createPerfTracker(options) {
     if (memory.rss > peakRssBytes) peakRssBytes = memory.rss;
   }
 
-  function beginExpansion(expansionIndex, state, frontierBefore) {
+  function beginExpansion(expansionIndex, state, frontierBefore, snapshotData) {
     if (!enabled || !profileExpansionCost) return null;
     currentExpansion = {
       expansionIndex,
@@ -131,7 +209,10 @@ function createPerfTracker(options) {
         : 0,
       frontierBefore: Number(frontierBefore || 0),
       startedAt: nowMs(),
-      phaseSelf: {},
+      topLevelSelf: {},
+      startReachableNodes: snapshotData ? Number(snapshotData.reachableNodes || 0) : 0,
+      startBattleEstimateMisses: snapshotData ? Number(snapshotData.battleEstimateMisses || 0) : 0,
+      startStabilizationPasses: Number(semanticCounters.stabilizationPasses || 0),
     };
     return currentExpansion;
   }
@@ -139,16 +220,34 @@ function createPerfTracker(options) {
   function endExpansion(expansionIndex, state, frontierAfter, details) {
     if (!enabled || !profileExpansionCost || !currentExpansion) return;
     const endedAt = nowMs();
-    const totalSelfMs = Math.max(0, endedAt - currentExpansion.startedAt);
-    const phaseSelf = currentExpansion.phaseSelf;
+    const expansionElapsed = Math.max(0, endedAt - currentExpansion.startedAt);
+    totalExpansionElapsedMs += expansionElapsed;
+
+    const expTopLevelSelf = currentExpansion.topLevelSelf;
+    let expSelfSum = 0;
     let dominantPhase = "otherExpansionOverhead";
     let maxPhaseMs = 0;
-    Object.entries(phaseSelf).forEach(([phase, ms]) => {
-      if (phase !== "expansion" && ms > maxPhaseMs) {
+    Object.entries(expTopLevelSelf).forEach(([phase, ms]) => {
+      expSelfSum += ms;
+      if (ms > maxPhaseMs) {
         maxPhaseMs = ms;
         dominantPhase = phase;
       }
     });
+
+    const expOverhead = Math.max(0, expansionElapsed - expSelfSum);
+    topLevelSelfMs.otherExpansionOverhead += expOverhead;
+    if (expOverhead > maxPhaseMs) {
+      dominantPhase = "otherExpansionOverhead";
+    }
+
+    const endReachableNodes = details ? Number(details.reachableNodes || 0) : 0;
+    const endBattleMisses = details ? Number(details.battleEstimateMisses || 0) : 0;
+    const endStabilizationPasses = Number(semanticCounters.stabilizationPasses || 0);
+
+    const reachableNodesDelta = Math.max(0, endReachableNodes - currentExpansion.startReachableNodes);
+    const battleMissesDelta = Math.max(0, endBattleMisses - currentExpansion.startBattleEstimateMisses);
+    const stabilizationPassesDelta = Math.max(0, endStabilizationPasses - currentExpansion.startStabilizationPasses);
 
     const sample = {
       expansionIndex,
@@ -156,12 +255,12 @@ function createPerfTracker(options) {
       decisionDepth: details && typeof details.decisionDepth === "number"
         ? details.decisionDepth
         : currentExpansion.decisionDepth,
-      totalSelfMs: Number(totalSelfMs.toFixed(3)),
+      totalSelfMs: Number(expansionElapsed.toFixed(3)),
       dominantPhase,
       actionsGenerated: Number((details && details.actionsGenerated) || 0),
-      reachableNodes: Number((details && details.reachableNodes) || 0),
-      battleEstimateMisses: Number((details && details.battleEstimateMisses) || 0),
-      stabilizationIterations: Number((details && details.stabilizationIterations) || 0),
+      reachableNodes: reachableNodesDelta,
+      battleEstimateMisses: battleMissesDelta,
+      stabilizationPasses: stabilizationPassesDelta,
       frontierBefore: currentExpansion.frontierBefore,
       frontierAfter: Number(frontierAfter || 0),
     };
@@ -178,67 +277,56 @@ function createPerfTracker(options) {
   }
 
   function getExpansionCostReport(extra) {
-    const wallMs = nowMs() - startedAt;
+    const totalWallMs = nowMs() - startedAt;
     const cpu = process.cpuUsage(startedCpu);
     const cpuUserMs = cpu.user / 1000;
     const cpuSystemMs = cpu.system / 1000;
     const cpuMs = cpuUserMs + cpuSystemMs;
-    const expanded = Number((extra && extra.expanded) || counters.expanded || 0);
-    const generated = Number((extra && extra.generated) || counters.generated || 0);
-    const registered = Number((extra && extra.registered) || counters.registered || 0);
-    const duplicates = Number((extra && extra.duplicates) || counters.duplicates || 0);
+
+    const expanded = Number((extra && extra.expanded) || semanticCounters.expansions || 0);
+    const generated = Number((extra && extra.generated) || semanticCounters.generated || 0);
+    const registered = Number((extra && extra.registered) || semanticCounters.registered || 0);
+    const duplicates = Number((extra && extra.duplicates) || semanticCounters.duplicates || 0);
     const frontierSize = Number((extra && extra.frontierSize) || 0);
 
-    const self = Object.fromEntries(Object.entries(phaseSelfMs).map(([k, v]) => [k, v.ms]));
-    const incl = Object.fromEntries(Object.entries(phaseMs).map(([k, v]) => [k, v.ms]));
-    const counts = Object.fromEntries(Object.entries(phaseMs).map(([k, v]) => [k, v.count]));
+    const walkReachabilitySelfMs = topLevelSelfMs.walkReachability;
+    const primitiveEnumerationSelfMs = topLevelSelfMs.primitiveEnumeration;
+    const actionEvaluationSelfMs = topLevelSelfMs.actionEvaluation;
+    const applyActionSelfMs = topLevelSelfMs.applyAction;
+    const stabilizationSelfMs = topLevelSelfMs.stabilization;
+    const stateKeyAndDominanceSelfMs = topLevelSelfMs.stateKeyAndDominance;
+    const frontierQueueSelfMs = topLevelSelfMs.frontierQueue;
+    const otherExpansionOverheadSelfMs = topLevelSelfMs.otherExpansionOverhead;
 
-    const walkReachabilitySelfMs = Number(self.reachability || self.walkReachability || 0);
-    const primitiveEnumerationSelfMs = Number(self.enumerateActions || self.primitiveEnumeration || 0);
-    const actionEvaluationSelfMs = Number(self.sortActions || self.actionEvaluation || 0);
-    const applyActionSelfMs = Number(self.applyAction || 0);
-    const stabilizationSelfMs = Number(self.stabilization || 0);
-    const stateKeyAndDominanceSelfMs = Number(
-      (self.buildDpStateKey || 0) + (self.dominance || 0) + (self.buildStateKey || 0)
-    );
-    const frontierQueueSelfMs = Number(self.frontierQueue || 0);
+    const attributedSelfMs = walkReachabilitySelfMs + primitiveEnumerationSelfMs +
+                             actionEvaluationSelfMs + applyActionSelfMs +
+                             stabilizationSelfMs + stateKeyAndDominanceSelfMs +
+                             frontierQueueSelfMs;
 
-    const attributedSelfMs = walkReachabilitySelfMs + primitiveEnumerationSelfMs + actionEvaluationSelfMs +
-                             applyActionSelfMs + stabilizationSelfMs + stateKeyAndDominanceSelfMs + frontierQueueSelfMs;
+    const expansionWallMs = totalExpansionElapsedMs > 0
+      ? totalExpansionElapsedMs
+      : (attributedSelfMs + otherExpansionOverheadSelfMs);
 
-    const expansionInclusiveMs = Number(incl.expansion || 0);
-    const frontierPopInclusiveMs = Number(incl.frontierQueue || 0);
-    const effectiveExpansionWallMs = expansionInclusiveMs > 0
-      ? (expansionInclusiveMs + (self.frontierQueue || 0))
-      : (attributedSelfMs > 0 ? attributedSelfMs : wallMs);
+    const unattributedMs = Math.max(0, expansionWallMs - attributedSelfMs);
 
-    const otherExpansionOverheadSelfMs = Math.max(0, Number(self.expansion || (effectiveExpansionWallMs - attributedSelfMs) || 0));
-    const totalAttributedWithOverhead = attributedSelfMs + otherExpansionOverheadSelfMs;
-    const baseForPercentage = totalAttributedWithOverhead > 0 ? totalAttributedWithOverhead : (effectiveExpansionWallMs > 0 ? effectiveExpansionWallMs : 1);
+    // Fail-closed verification
+    const sumAllTopLevel = attributedSelfMs + otherExpansionOverheadSelfMs;
+    const unmappedPhaseSelfMs = Number(Math.abs(sumAllTopLevel - expansionWallMs).toFixed(3));
 
-    const topLevelSelfMs = {
-      walkReachability: Number(walkReachabilitySelfMs.toFixed(3)),
-      primitiveEnumeration: Number(primitiveEnumerationSelfMs.toFixed(3)),
-      actionEvaluation: Number(actionEvaluationSelfMs.toFixed(3)),
-      applyAction: Number(applyActionSelfMs.toFixed(3)),
-      stabilization: Number(stabilizationSelfMs.toFixed(3)),
-      stateKeyAndDominance: Number(stateKeyAndDominanceSelfMs.toFixed(3)),
-      frontierQueue: Number(frontierQueueSelfMs.toFixed(3)),
-      otherExpansionOverhead: Number(otherExpansionOverheadSelfMs.toFixed(3)),
+    const coverageRatio = expansionWallMs > 0
+      ? Number((attributedSelfMs / expansionWallMs).toFixed(4))
+      : 1;
+
+    const topLevelPercentages = {
+      walkReachability: Number(((walkReachabilitySelfMs / expansionWallMs) * 100).toFixed(2)),
+      primitiveEnumeration: Number(((primitiveEnumerationSelfMs / expansionWallMs) * 100).toFixed(2)),
+      actionEvaluation: Number(((actionEvaluationSelfMs / expansionWallMs) * 100).toFixed(2)),
+      applyAction: Number(((applyActionSelfMs / expansionWallMs) * 100).toFixed(2)),
+      stabilization: Number(((stabilizationSelfMs / expansionWallMs) * 100).toFixed(2)),
+      stateKeyAndDominance: Number(((stateKeyAndDominanceSelfMs / expansionWallMs) * 100).toFixed(2)),
+      frontierQueue: Number(((frontierQueueSelfMs / expansionWallMs) * 100).toFixed(2)),
+      otherExpansionOverhead: Number(((otherExpansionOverheadSelfMs / expansionWallMs) * 100).toFixed(2)),
     };
-
-    const topLevelSelfPercentages = {
-      walkReachability: Number(((walkReachabilitySelfMs / baseForPercentage) * 100).toFixed(2)),
-      primitiveEnumeration: Number(((primitiveEnumerationSelfMs / baseForPercentage) * 100).toFixed(2)),
-      actionEvaluation: Number(((actionEvaluationSelfMs / baseForPercentage) * 100).toFixed(2)),
-      applyAction: Number(((applyActionSelfMs / baseForPercentage) * 100).toFixed(2)),
-      stabilization: Number(((stabilizationSelfMs / baseForPercentage) * 100).toFixed(2)),
-      stateKeyAndDominance: Number(((stateKeyAndDominanceSelfMs / baseForPercentage) * 100).toFixed(2)),
-      frontierQueue: Number(((frontierQueueSelfMs / baseForPercentage) * 100).toFixed(2)),
-      otherExpansionOverhead: Number(((otherExpansionOverheadSelfMs / baseForPercentage) * 100).toFixed(2)),
-    };
-
-    const coverageRatio = baseForPercentage > 0 ? Number((attributedSelfMs / baseForPercentage).toFixed(4)) : 1;
 
     const simStats = (extra && extra.simulatorCacheStats) || {};
     const skeletonStats = simStats.reachabilitySkeleton || {};
@@ -246,11 +334,18 @@ function createPerfTracker(options) {
     const battleResolverStats = simStats.battleResolver || {};
     const battleEstimateStats = battleResolverStats.battleEstimate || {};
 
+    const otherStabilizationMs = Math.max(0, stabilizationSelfMs - (
+      stabilizationSubphases.hazardBuild +
+      stabilizationSubphases.pickupScan +
+      stabilizationSubphases.battleScan +
+      stabilizationSubphases.autoEvent +
+      stabilizationSubphases.applyStep
+    ));
+
     const inclusiveSubsystems = {
       walkReachability: {
-        calls: Number(counts.reachability || counts.walkReachability || 0),
-        totalMs: Number((incl.reachability || incl.walkReachability || 0).toFixed(3)),
-        maxMs: Number((extra && extra.maxReachabilityMs || 0).toFixed(3)),
+        calls: Number(skeletonStats.rebases || expanded),
+        totalMs: Number(walkReachabilitySelfMs.toFixed(3)),
         skeletonHits: Number(skeletonStats.hits || 0),
         skeletonMisses: Number(skeletonStats.misses || 0),
         rebases: Number(skeletonStats.rebases || 0),
@@ -260,53 +355,62 @@ function createPerfTracker(options) {
         legacyExactBuilds: Number(reachabilityStats.legacyExactBuilds || 0),
       },
       enumeratePrimitiveActions: {
-        calls: Number(counts.enumerateActions || 0),
+        calls: Number(semanticCounters.primitiveEnumerationCalls || expanded),
         actionsProduced: generated,
-        totalMs: Number((incl.enumerateActions || 0).toFixed(3)),
+        totalMs: Number((primitiveEnumerationSelfMs + walkReachabilitySelfMs).toFixed(3)),
       },
       battleEstimates: {
         calls: Number((battleEstimateStats.hits || 0) + (battleEstimateStats.misses || 0)),
         hits: Number(battleEstimateStats.hits || 0),
         misses: Number(battleEstimateStats.misses || 0),
-        totalMs: Number((battleEstimateStats.computeMs || 0).toFixed(3)),
+        totalMs: Number((battleEstimateStats.totalMs || 0).toFixed(3)),
       },
       applyAction: {
-        calls: Number(counts.applyAction || 0),
-        totalMs: Number((incl.applyAction || 0).toFixed(3)),
+        calls: Number(semanticCounters.applyActionCalls || generated),
+        totalMs: Number((applyActionSelfMs + stabilizationSelfMs).toFixed(3)),
       },
       stabilizeState: {
-        calls: Number(counts.stabilization || 0),
-        iterations: Number((extra && extra.stabilizationIterations) || counts.stabilization || 0),
-        totalMs: Number((incl.stabilization || 0).toFixed(3)),
+        calls: Number(semanticCounters.stabilizeStateCalls || 0),
+        passes: Number(semanticCounters.stabilizationPasses || 0),
+        totalMs: Number(stabilizationSelfMs.toFixed(3)),
+        subphases: {
+          hazardBuildMs: Number(stabilizationSubphases.hazardBuild.toFixed(3)),
+          pickupScanMs: Number(stabilizationSubphases.pickupScan.toFixed(3)),
+          battleScanMs: Number(stabilizationSubphases.battleScan.toFixed(3)),
+          autoEventMs: Number(stabilizationSubphases.autoEvent.toFixed(3)),
+          applyStepMs: Number(stabilizationSubphases.applyStep.toFixed(3)),
+          otherMs: Number(otherStabilizationMs.toFixed(3)),
+        },
       },
       buildStateKey: {
-        calls: Number(counts.buildStateKey || 0),
-        totalMs: Number((incl.buildStateKey || 0).toFixed(3)),
+        calls: 0,
+        totalMs: 0,
       },
       buildDpStateKey: {
-        calls: Number(counts.buildDpStateKey || 0),
-        totalMs: Number((incl.buildDpStateKey || 0).toFixed(3)),
+        calls: Number(semanticCounters.dpKeyBuildCalls || generated),
+        totalMs: Number(stateKeyAndDominanceSelfMs.toFixed(3)),
       },
       dominance: {
-        lookups: Number(counts.dominance || 0),
-        rejects: Number((extra && extra.dominanceRejects) || duplicates),
-        replaces: Number((extra && extra.dominanceReplaces) || 0),
-        totalMs: Number((incl.dominance || 0).toFixed(3)),
+        lookups: Number(semanticCounters.dominanceLookupCalls || 0),
+        rejects: Number(semanticCounters.dominanceRejects || duplicates),
+        replaces: 0,
+        totalMs: Number(stateKeyAndDominanceSelfMs.toFixed(3)),
       },
       frontierQueue: {
-        pushes: registered,
-        pops: expanded,
-        ranks: Number(counts.frontierQueue || 0),
-        totalMs: Number((incl.frontierQueue || 0).toFixed(3)),
+        pushes: Number(semanticCounters.frontierPushCalls || registered),
+        pops: Number(semanticCounters.frontierPopCalls || expanded),
+        ranks: Number(semanticCounters.frontierRankCalls || registered),
+        totalMs: Number(frontierQueueSelfMs.toFixed(3)),
       },
     };
 
-    const msPerExpansion = expanded > 0 ? Number((effectiveExpansionWallMs / expanded).toFixed(4)) : 0;
-    const expansionsPerSec = effectiveExpansionWallMs > 0 ? Number((expanded / (effectiveExpansionWallMs / 1000)).toFixed(2)) : 0;
-    const msPerGeneratedAction = generated > 0 ? Number((effectiveExpansionWallMs / generated).toFixed(4)) : 0;
-    const generatedPerSec = effectiveExpansionWallMs > 0 ? Number((generated / (effectiveExpansionWallMs / 1000)).toFixed(2)) : 0;
+    const msPerExpansion = expanded > 0 ? Number((expansionWallMs / expanded).toFixed(4)) : 0;
+    const expansionsPerSec = expansionWallMs > 0 ? Number(((expanded / (expansionWallMs / 1000))).toFixed(2)) : 0;
+    const msPerGeneratedAction = generated > 0 ? Number((expansionWallMs / generated).toFixed(4)) : 0;
+    const generatedPerSec = expansionWallMs > 0 ? Number(((generated / (expansionWallMs / 1000))).toFixed(2)) : 0;
 
     return {
+      schema: "motapathfinder.expansion-cost-attribution.v1",
       deterministic: {
         expansions: expanded,
         generated,
@@ -328,24 +432,44 @@ function createPerfTracker(options) {
           },
         },
         keyBuildCounts: {
-          stateKeyBuilds: Number(counts.buildStateKey || 0),
-          dpStateKeyBuilds: Number(counts.buildDpStateKey || 0),
+          stateKeyBuilds: 0,
+          dpStateKeyBuilds: Number(semanticCounters.dpKeyBuildCalls || generated),
         },
-        stabilizationIterations: Number((extra && extra.stabilizationIterations) || counts.stabilization || 0),
+        semanticCalls: {
+          primitiveEnumerations: Number(semanticCounters.primitiveEnumerationCalls || expanded),
+          applyActions: Number(semanticCounters.applyActionCalls || generated),
+          stabilizeStates: Number(semanticCounters.stabilizeStateCalls || 0),
+          stabilizationPasses: Number(semanticCounters.stabilizationPasses || 0),
+          frontierPushes: Number(semanticCounters.frontierPushCalls || registered),
+          frontierPops: Number(semanticCounters.frontierPopCalls || expanded),
+          frontierRanks: Number(semanticCounters.frontierRankCalls || registered),
+          dominanceLookups: Number(semanticCounters.dominanceLookupCalls || 0),
+          dominanceRejects: Number(semanticCounters.dominanceRejects || duplicates),
+        },
         bestProgress: (extra && extra.bestProgress) || null,
       },
       timingDirectional: {
-        wallMs: Number(wallMs.toFixed(3)),
+        wallMs: Number(totalWallMs.toFixed(3)),
         cpuUserMs: Number(cpuUserMs.toFixed(3)),
         cpuSystemMs: Number(cpuSystemMs.toFixed(3)),
         cpuMs: Number(cpuMs.toFixed(3)),
-        cpuUtilization: Number((wallMs > 0 ? (cpuUserMs + cpuSystemMs) / wallMs : 0).toFixed(3)),
-        expansionWallMs: Number(effectiveExpansionWallMs.toFixed(3)),
+        cpuUtilization: totalWallMs > 0 ? Number((cpuMs / totalWallMs).toFixed(3)) : 0,
+        expansionWallMs: Number(expansionWallMs.toFixed(3)),
         attributedSelfMs: Number(attributedSelfMs.toFixed(3)),
-        unattributedMs: Number(otherExpansionOverheadSelfMs.toFixed(3)),
+        unattributedMs: Number(unattributedMs.toFixed(3)),
+        unmappedPhaseSelfMs,
         coverageRatio,
-        topLevelSelfMs,
-        topLevelSelfPercentages,
+        topLevelSelfMs: {
+          walkReachability: Number(walkReachabilitySelfMs.toFixed(3)),
+          primitiveEnumeration: Number(primitiveEnumerationSelfMs.toFixed(3)),
+          actionEvaluation: Number(actionEvaluationSelfMs.toFixed(3)),
+          applyAction: Number(applyActionSelfMs.toFixed(3)),
+          stabilization: Number(stabilizationSelfMs.toFixed(3)),
+          stateKeyAndDominance: Number(stateKeyAndDominanceSelfMs.toFixed(3)),
+          frontierQueue: Number(frontierQueueSelfMs.toFixed(3)),
+          otherExpansionOverhead: Number(otherExpansionOverheadSelfMs.toFixed(3)),
+        },
+        topLevelSelfPercentages: topLevelPercentages,
         inclusiveSubsystems,
         perExpansionAverages: {
           msPerExpansion,
@@ -353,7 +477,7 @@ function createPerfTracker(options) {
           msPerGeneratedAction,
           generatedPerSec,
         },
-        slowExpansionSamples: slowExpansionSamples.slice(),
+        slowExpansionSamples: slowExpansionSamples.slice(0, slowExpansionLimit),
       },
     };
   }
@@ -371,8 +495,7 @@ function createPerfTracker(options) {
     const generated = Number((extra && extra.generated) || counters.generated || 0);
     const registered = Number((extra && extra.registered) || counters.registered || 0);
     const duplicates = Number((extra && extra.duplicates) || counters.duplicates || 0);
-
-    const baseSnapshot = {
+    const report = {
       wallMs,
       cpuUserMs,
       cpuSystemMs,
@@ -390,57 +513,17 @@ function createPerfTracker(options) {
       peakRssMb: peakRssBytes > 0 ? peakRssBytes / 1024 / 1024 : memory.rss / 1024 / 1024,
       peakHeapUsedMb: peakHeapBytes > 0 ? peakHeapBytes / 1024 / 1024 : memory.heapUsed / 1024 / 1024,
       memorySampleCount,
-      phaseMs: Object.fromEntries(Object.entries(phaseMs).map(([key, value]) => [key, value.ms])),
-      phaseCounts: Object.fromEntries(Object.entries(phaseMs).map(([key, value]) => [key, value.count])),
-      phaseSelfMs: Object.fromEntries(Object.entries(phaseSelfMs).map(([key, value]) => [key, value.ms])),
+      semanticCounters: { ...semanticCounters },
+      phaseMs: Object.fromEntries(Object.entries(phaseMs).map(([k, v]) => [k, v.ms])),
+      phaseSelfMs: Object.fromEntries(Object.entries(phaseSelfMs).map(([k, v]) => [k, v.ms])),
+      phaseCounts: Object.fromEntries(Object.entries(phaseMs).map(([k, v]) => [k, v.count])),
+      extra: extra || {},
       ...(extra || {}),
     };
-
     if (profileExpansionCost) {
-      baseSnapshot.expansionCost = getExpansionCostReport(extra);
+      report.expansionCost = getExpansionCostReport(extra);
     }
-    return baseSnapshot;
-  }
-
-  function formatLiveSummary(extra) {
-    const data = snapshot(extra);
-    const phase = data.phaseMs || {};
-    const counts = data.phaseCounts || {};
-    const avg = (name, denominator) => {
-      const value = Number(phase[name] || 0);
-      const count = denominator != null ? denominator : Number(counts[name] || 0);
-      return count > 0 ? value / count : 0;
-    };
-    return JSON.stringify({
-      expandedPerSec: Number(data.expandedPerSec.toFixed(2)),
-      generatedPerSec: Number(data.generatedPerSec.toFixed(2)),
-      applyActionMsPerAction: Number(avg("applyAction", data.generated).toFixed(4)),
-      enumerateActionsMsPerState: Number(avg("enumerateActions", data.expanded).toFixed(4)),
-      stateKeyMsPerState: Number(avg("buildStateKey").toFixed(4)),
-      cloneMsPerAction: Number(avg("cloneState").toFixed(4)),
-      sortMsPerLoop: Number(avg("sortFrontier").toFixed(4)),
-      rssMb: Number(data.rssMb.toFixed(1)),
-      heapUsedMb: Number(data.heapUsedMb.toFixed(1)),
-      cpuUtilization: Number((data.cpuUtilization || 0).toFixed(2)),
-      eventLoopUtilization: data.eventLoopUtilization == null ? null : Number(data.eventLoopUtilization.toFixed(4)),
-    });
-  }
-
-  function maybePrintLive(extra) {
-    if (!enabled) return;
-    const current = nowMs();
-    if (current - lastLiveAt < liveIntervalMs) return;
-    lastLiveAt = current;
-    console.log(`Perf live: ${formatLiveSummary(extra)}`);
-  }
-
-  function finish(extra) {
-    const data = snapshot(extra);
-    if (config.outputPath) {
-      fs.mkdirSync(path.dirname(config.outputPath), { recursive: true });
-      fs.writeFileSync(config.outputPath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
-    }
-    return data;
+    return report;
   }
 
   return {
@@ -448,7 +531,10 @@ function createPerfTracker(options) {
     profileExpansionCost,
     addPhase,
     timePhase,
-    timePhaseAsync,
+    beginTopLevelPhase,
+    endTopLevelPhase,
+    timeStabilizationSubphase,
+    recordStabilizationSubphase,
     increment,
     getCounter,
     recordMemorySample,
@@ -456,14 +542,11 @@ function createPerfTracker(options) {
     endExpansion,
     getExpansionCostReport,
     snapshot,
-    formatLiveSummary,
-    maybePrintLive,
-    finish,
   };
 }
 
 function setActivePerfTracker(tracker) {
-  activeTracker = tracker || null;
+  activeTracker = tracker;
 }
 
 function getActivePerfTracker() {
@@ -471,14 +554,13 @@ function getActivePerfTracker() {
 }
 
 function timeActivePhase(name, fn) {
-  const tracker = getActivePerfTracker();
-  if (!tracker || !tracker.enabled) return fn();
-  return tracker.timePhase(name, fn);
+  if (!activeTracker || !activeTracker.enabled) return fn();
+  return activeTracker.timePhase(name, fn);
 }
 
 module.exports = {
   createPerfTracker,
-  getActivePerfTracker,
   setActivePerfTracker,
+  getActivePerfTracker,
   timeActivePhase,
 };

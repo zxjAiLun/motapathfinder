@@ -141,7 +141,13 @@ class AutoActionResolver {
     return this.autoBattleEnabled && Number(state.flags.autoBattle == null ? 1 : state.flags.autoBattle) !== 0;
   }
 
-  buildHazards(project, state, battleResolver) {
+  buildHazards(project, state, battleResolver, perfTracker) {
+    if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
+      return perfTracker.timeStabilizationSubphase("hazardBuild", () => buildMovementHazards(project, state, {
+        floorId: state.floorId,
+        battleResolver,
+      }));
+    }
     return buildMovementHazards(project, state, {
       floorId: state.floorId,
       battleResolver,
@@ -164,13 +170,13 @@ class AutoActionResolver {
     };
   }
 
-  collectAutoPickupTargets(project, state, battleResolver) {
-    const hazards = this.buildHazards(project, state, battleResolver);
+  collectAutoPickupTargets(project, state, battleResolver, perfTracker) {
+    const hazards = this.buildHazards(project, state, battleResolver, perfTracker);
     if (hasHazardAt(hazards, state.hero.loc.x, state.hero.loc.y, { damage: true, repulse: true, ambush: true })) {
       return [];
     }
 
-    return collectTargets(project, state, {
+    const runCollect = () => collectTargets(project, state, {
       evaluateTarget: (_, __, tile, x, y) => {
         if (!isAutoPickupTile(tile)) return null;
         return {
@@ -180,25 +186,35 @@ class AutoActionResolver {
       },
       canTraverse: (_, __, ___, x, y) => !hasHazardAt(hazards, x, y, { damage: true, repulse: true, ambush: true }),
     });
+
+    if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
+      return perfTracker.timeStabilizationSubphase("pickupScan", runCollect);
+    }
+    return runCollect();
   }
 
-  collectAutoBattleTargets(project, state, battleResolver) {
-    const hazards = this.buildHazards(project, state, battleResolver);
+  collectAutoBattleTargets(project, state, battleResolver, perfTracker) {
+    const hazards = this.buildHazards(project, state, battleResolver, perfTracker);
     const nearOnly = hasHazardAt(hazards, state.hero.loc.x, state.hero.loc.y, { damage: true, repulse: true, ambush: true });
     const collector = nearOnly ? collectNearTargets : collectTargets;
 
-    return collector(project, state, {
+    const runCollect = () => collector(project, state, {
       evaluateTarget: (currentProject, currentState, tile, x, y) =>
         this.evaluateAutoBattleTarget(currentProject, currentState, battleResolver, hazards, tile, x, y),
       canTraverse: (_, __, ___, x, y) => !hasHazardAt(hazards, x, y, { damage: true, repulse: true, ambush: true }),
     });
+
+    if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
+      return perfTracker.timeStabilizationSubphase("battleScan", runCollect);
+    }
+    return runCollect();
   }
 
   runAutoPickupPass(context) {
-    const { project, state, battleResolver, resolvePickupAt, choiceResolver } = context;
+    const { project, state, battleResolver, resolvePickupAt, choiceResolver, perfTracker } = context;
     if (!this.canAutoPickup(state)) return false;
 
-    const targets = this.collectAutoPickupTargets(project, state, battleResolver);
+    const targets = this.collectAutoPickupTargets(project, state, battleResolver, perfTracker);
     if (targets.length === 0) return false;
 
     let changed = false;
@@ -206,23 +222,31 @@ class AutoActionResolver {
       if (state.floorId == null || state.hero.hp <= 0) break;
       const tile = getTileDefinitionAt(project, state, state.floorId, target.x, target.y);
       if (!isAutoPickupTile(tile)) continue;
-      resolvePickupAt(state, target.x, target.y);
+      if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
+        perfTracker.timeStabilizationSubphase("applyStep", () => resolvePickupAt(state, target.x, target.y));
+      } else {
+        resolvePickupAt(state, target.x, target.y);
+      }
       appendRouteStep(state, `auto:pickup:${tile.id}@${state.floorId}:${target.x},${target.y}`, {
         decision: false,
         auto: "pickup",
       });
-      runAutoEvents(project, state, { choiceResolver });
+      if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
+        perfTracker.timeStabilizationSubphase("autoEvent", () => runAutoEvents(project, state, { choiceResolver }));
+      } else {
+        runAutoEvents(project, state, { choiceResolver });
+      }
       changed = true;
     }
     return changed;
   }
 
   runAutoBattlePass(context) {
-    const { project, state, battleResolver, executeActionList, choiceResolver } = context;
+    const { project, state, battleResolver, executeActionList, choiceResolver, perfTracker } = context;
     if (!this.canAutoBattle(state)) return false;
     if (!battleResolver || typeof battleResolver.applyBattleAt !== "function") return false;
 
-    const targets = this.collectAutoBattleTargets(project, state, battleResolver);
+    const targets = this.collectAutoBattleTargets(project, state, battleResolver, perfTracker);
     if (targets.length === 0) return false;
 
     let changed = false;
@@ -231,32 +255,55 @@ class AutoActionResolver {
       const tile = getTileDefinitionAt(project, state, state.floorId, target.x, target.y);
       if (!isAutoBattleTile(tile)) continue;
 
-      const verified = this.evaluateAutoBattleTarget(project, state, battleResolver, this.buildHazards(project, state, battleResolver), tile, target.x, target.y);
+      const hazards = this.buildHazards(project, state, battleResolver, perfTracker);
+      const verified = this.evaluateAutoBattleTarget(project, state, battleResolver, hazards, tile, target.x, target.y);
       if (!verified) continue;
 
-      battleResolver.applyBattleAt({
-        project,
-        state,
-        floorId: state.floorId,
-        x: target.x,
-        y: target.y,
-        enemyId: tile.id,
-        executeActionList,
-        choiceResolver,
-      });
+      if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
+        perfTracker.timeStabilizationSubphase("applyStep", () => {
+          battleResolver.applyBattleAt({
+            project,
+            state,
+            floorId: state.floorId,
+            x: target.x,
+            y: target.y,
+            enemyId: tile.id,
+            executeActionList,
+            choiceResolver,
+          });
+        });
+      } else {
+        battleResolver.applyBattleAt({
+          project,
+          state,
+          floorId: state.floorId,
+          x: target.x,
+          y: target.y,
+          enemyId: tile.id,
+          executeActionList,
+          choiceResolver,
+        });
+      }
       appendRouteStep(state, `auto:battle:${tile.id}@${state.floorId}:${target.x},${target.y}`, {
         decision: false,
         auto: "battle",
       });
-      runAutoEvents(project, state, { choiceResolver });
+      if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
+        perfTracker.timeStabilizationSubphase("autoEvent", () => runAutoEvents(project, state, { choiceResolver }));
+      } else {
+        runAutoEvents(project, state, { choiceResolver });
+      }
       changed = true;
     }
     return changed;
   }
 
   stabilizeState(context) {
-    const { state } = context;
+    const { state, perfTracker } = context;
     if (!this.repeatUntilStable) {
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("stabilizationPasses", 1);
+      }
       this.runAutoPickupPass(context);
       if (state.floorId == null || state.hero.hp <= 0) return state;
       this.runAutoBattlePass(context);
@@ -265,6 +312,9 @@ class AutoActionResolver {
 
     let passes = 0;
     while (passes < this.maxPasses) {
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("stabilizationPasses", 1);
+      }
       let changed = false;
       changed = this.runAutoPickupPass(context) || changed;
       if (state.floorId == null || state.hero.hp <= 0) return state;

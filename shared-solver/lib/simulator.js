@@ -28,7 +28,7 @@ const {
 const { ToolRegistry } = require("./tool-registry");
 const { syncProgress } = require("./progress");
 const { normalizeSolverModel, projectSolverState } = require("./solver-model");
-const { timeActivePhase } = require("./perf");
+const { getActivePerfTracker, timeActivePhase } = require("./perf");
 const { ReachabilityReuseAttribution } = require("./reachability-reuse-attribution");
 const { ReachabilityRebaseAttribution } = require("./reachability-rebase-attribution");
 const {
@@ -631,77 +631,88 @@ class StaticSimulator {
   }
 
   getWalkReachability(state) {
+    const tracker = getActivePerfTracker();
+    if (tracker && tracker.profileExpansionCost) {
+      tracker.beginTopLevelPhase("walkReachability");
+      try {
+        return this._buildWalkReachabilityInstance(state);
+      } finally {
+        tracker.endTopLevelPhase("walkReachability");
+      }
+    }
+    // Perf-tracker hook (no-op unless a tracker is active): reachability BFS is
+    // one of the search hot phases the PR-5.4b baseline measures separately.
+    return timeActivePhase("reachability", () => this._buildWalkReachabilityInstance(state));
+  }
+
+  _buildWalkReachabilityInstance(state) {
     const stats = this.actionExpansionCacheStats && this.actionExpansionCacheStats.reachability;
     if (stats) stats.misses += 1;
     const skeletonStats = this.actionExpansionCacheStats &&
       this.actionExpansionCacheStats.reachabilitySkeleton;
-    // Perf-tracker hook (no-op unless a tracker is active): reachability BFS is
-    // one of the search hot phases the PR-5.4b baseline measures separately.
-    return timeActivePhase("reachability", () => {
-      const reachability = buildWalkReachability(this.project, state, {
-        battleResolver: this.battleResolver,
-        executeActionList,
-        choiceResolver: this.choiceResolver,
-        stabilizeState: (nextState) => this.stabilizeState(nextState),
-        walkReachabilityMode: this.walkReachabilityMode,
-        safeWalkSkeletonCache: this.enableActionExpansionCache && this.enableReachabilitySkeletonCache
-          ? {
-            get: (cacheKey) => this.cacheGet("reachabilitySkeleton", cacheKey),
-            set: (cacheKey, skeleton, computeMs) => this.cacheSet(
-              "reachabilitySkeleton",
-              cacheKey,
-              skeleton,
-              null,
-              computeMs,
-            ),
-          }
-          : null,
-        topologyFirstMaterialization: this.enableTopologyFirstMaterialization,
-        onTopologyNodeCost: (event) => {
-          if (stats && event.type === "state-clone") stats.stateClones += 1;
-          if (stats && event.type === "dominance-key") stats.dominanceKeyBuilds += 1;
-          if (skeletonStats && event.type === "state-clone") skeletonStats.nodesMaterialized += 1;
-          if (!this.reachabilityRebaseAttribution) return;
-          this.reachabilityRebaseAttribution.recordTopologyNodeCost(event);
-        },
-      });
-      const diagnostics = reachability && reachability.diagnostics || {};
-      if (this.reachabilityRebaseAttribution) {
-        this.reachabilityRebaseAttribution.instrumentReachability(reachability);
-      }
-      if (stats) {
-        if (diagnostics.mode === "safe-fast") stats.safeFastBuilds += 1;
-        else stats.legacyExactBuilds += 1;
-        [
-          "nodesExpanded",
-          "transitionAttempts",
-          "stateClones",
-          "dominanceKeyBuilds",
-          "hazardScanMs",
-          "safetyProbeMs",
-        ].forEach((field) => {
-          stats[field] = Number(stats[field] || 0) + Number(diagnostics[field] || 0);
-        });
-      }
-      if (skeletonStats) {
-        skeletonStats.safetyClassifications += 1;
-        if (diagnostics.mode === "safe-fast") {
-          skeletonStats.builds += diagnostics.skeletonBuilt ? 1 : 0;
-          skeletonStats.rebases += 1;
-          skeletonStats.nodesRebased += Number(diagnostics.skeletonNodeCount || 0);
-          if (diagnostics.topologyFirstMaterialization !== true) {
-            skeletonStats.nodesMaterialized += Number(diagnostics.skeletonNodeCount || 0);
-          }
-        } else {
-          skeletonStats.unsafeBypasses += 1;
+    const reachability = buildWalkReachability(this.project, state, {
+      battleResolver: this.battleResolver,
+      executeActionList,
+      choiceResolver: this.choiceResolver,
+      stabilizeState: (nextState) => this.stabilizeState(nextState),
+      walkReachabilityMode: this.walkReachabilityMode,
+      safeWalkSkeletonCache: this.enableActionExpansionCache && this.enableReachabilitySkeletonCache
+        ? {
+          get: (cacheKey) => this.cacheGet("reachabilitySkeleton", cacheKey),
+          set: (cacheKey, skeleton, computeMs) => this.cacheSet(
+            "reachabilitySkeleton",
+            cacheKey,
+            skeleton,
+            null,
+            computeMs,
+          ),
         }
-      }
-      if (this.reachabilityReuseAttribution) {
-        const key = buildStateKey(state);
-        this.reachabilityReuseAttribution.recordMiss(state, key, reachability);
-      }
-      return reachability;
+        : null,
+      topologyFirstMaterialization: this.enableTopologyFirstMaterialization,
+      onTopologyNodeCost: (event) => {
+        if (stats && event.type === "state-clone") stats.stateClones += 1;
+        if (stats && event.type === "dominance-key") stats.dominanceKeyBuilds += 1;
+        if (skeletonStats && event.type === "state-clone") skeletonStats.nodesMaterialized += 1;
+        if (!this.reachabilityRebaseAttribution) return;
+        this.reachabilityRebaseAttribution.recordTopologyNodeCost(event);
+      },
     });
+    const diagnostics = reachability && reachability.diagnostics || {};
+    if (this.reachabilityRebaseAttribution) {
+      this.reachabilityRebaseAttribution.instrumentReachability(reachability);
+    }
+    if (stats) {
+      if (diagnostics.mode === "safe-fast") stats.safeFastBuilds += 1;
+      else stats.legacyExactBuilds += 1;
+      [
+        "nodesExpanded",
+        "transitionAttempts",
+        "stateClones",
+        "dominanceKeyBuilds",
+        "hazardScanMs",
+        "safetyProbeMs",
+      ].forEach((field) => {
+        stats[field] = Number(stats[field] || 0) + Number(diagnostics[field] || 0);
+      });
+    }
+    if (skeletonStats) {
+      skeletonStats.safetyClassifications += 1;
+      if (diagnostics.mode === "safe-fast") {
+        skeletonStats.builds += diagnostics.skeletonBuilt ? 1 : 0;
+        skeletonStats.rebases += 1;
+        skeletonStats.nodesRebased += Number(diagnostics.skeletonNodeCount || 0);
+        if (diagnostics.topologyFirstMaterialization !== true) {
+          skeletonStats.nodesMaterialized += Number(diagnostics.skeletonNodeCount || 0);
+        }
+      } else {
+        skeletonStats.unsafeBypasses += 1;
+      }
+    }
+    if (this.reachabilityReuseAttribution) {
+      const key = buildStateKey(state);
+      this.reachabilityReuseAttribution.recordMiss(state, key, reachability);
+    }
+    return reachability;
   }
 
   clonePrimitiveActions(value) {
@@ -844,72 +855,78 @@ class StaticSimulator {
   enumeratePrimitiveActions(state) {
     const stats = this.actionExpansionCacheStats && this.actionExpansionCacheStats.primitiveActions;
     if (stats) stats.misses += 1;
+    const tracker = getActivePerfTracker();
+    if (tracker && tracker.profileExpansionCost) {
+      return this._enumeratePrimitiveActionsBody(state);
+    }
     // Perf-tracker hook: action generation is one of the baseline hot phases.
-    return timeActivePhase("enumerateActions", () => {
-      const floor = this.project.floorsById[state.floorId];
-      const reachability = this.getWalkReachability(state);
-      const actions = [];
-      const helper = {
-        findAdjacencyActions: (predicate, buildAction) =>
-          findAdjacencyActions(this.project, reachability, predicate, buildAction),
-      };
+    return timeActivePhase("enumerateActions", () => this._enumeratePrimitiveActionsBody(state));
+  }
 
-      const pickupActions = this.withReachabilityConsumer("pickup", () => helper.findAdjacencyActions(
-        (node, tile) => tile && tile.cls === "items",
-        (node, direction, targetX, targetY, tile, path, nodeState) => ({
-          kind: "pickup",
-          floorId: nodeState.floorId,
-          stance: { x: node.x, y: node.y },
-          direction,
-          x: targetX,
-          y: targetY,
-          path,
-          travelState: nodeState,
-          summary: `pickup:${tile.id}@${nodeState.floorId}:${targetX},${targetY}`,
-        })
-      ));
-      actions.push(...this.recordReachabilityActions("pickup", pickupActions));
+  _enumeratePrimitiveActionsBody(state) {
+    const floor = this.project.floorsById[state.floorId];
+    const reachability = this.getWalkReachability(state);
+    const actions = [];
+    const helper = {
+      findAdjacencyActions: (predicate, buildAction) =>
+        findAdjacencyActions(this.project, reachability, predicate, buildAction),
+    };
 
-      const changeFloorActions = this.withReachabilityConsumer("changeFloor", () => helper.findAdjacencyActions(
-        (node, tile, targetX, targetY) => Boolean((floor.changeFloor || {})[coordinateKey(targetX, targetY)]),
-        (node, direction, targetX, targetY, tile, path, nodeState) => ({
-          kind: "changeFloor",
-          floorId: nodeState.floorId,
-          stance: { x: node.x, y: node.y },
-          direction,
-          x: targetX,
-          y: targetY,
-          path,
-          travelState: nodeState,
-          changeFloor: (floor.changeFloor || {})[coordinateKey(targetX, targetY)],
-          summary: `changeFloor@${nodeState.floorId}:${targetX},${targetY}`,
-        })
-      ));
-      actions.push(...this.recordReachabilityActions("changeFloor", changeFloorActions));
+    const pickupActions = this.withReachabilityConsumer("pickup", () => helper.findAdjacencyActions(
+      (node, tile) => tile && tile.cls === "items",
+      (node, direction, targetX, targetY, tile, path, nodeState) => ({
+        kind: "pickup",
+        floorId: nodeState.floorId,
+        stance: { x: node.x, y: node.y },
+        direction,
+        x: targetX,
+        y: targetY,
+        path,
+        travelState: nodeState,
+        summary: `pickup:${tile.id}@${nodeState.floorId}:${targetX},${targetY}`,
+      })
+    ));
+    actions.push(...this.recordReachabilityActions("pickup", pickupActions));
 
-      for (const [name, resolver] of [
-        ["door", () => this.doorResolver.enumerateActions({ project: this.project, state, reachability, helper })],
-        ["equipment", () => this.equipmentResolver.enumerateActions({ project: this.project, state, floor, reachability, helper })],
-        ["event", () => this.eventResolver.enumerateActions({ project: this.project, state, floor, reachability, helper })],
-        ["tool", () => this.toolRegistry.enumerateActions({ project: this.project, state, floor, reachability, helper })],
-      ]) {
-        const resolved = this.withReachabilityConsumer(name, resolver);
-        actions.push(...this.recordReachabilityActions(name, resolved));
-      }
+    const changeFloorActions = this.withReachabilityConsumer("changeFloor", () => helper.findAdjacencyActions(
+      (node, tile, targetX, targetY) => Boolean((floor.changeFloor || {})[coordinateKey(targetX, targetY)]),
+      (node, direction, targetX, targetY, tile, path, nodeState) => ({
+        kind: "changeFloor",
+        floorId: nodeState.floorId,
+        stance: { x: node.x, y: node.y },
+        direction,
+        x: targetX,
+        y: targetY,
+        path,
+        travelState: nodeState,
+        changeFloor: (floor.changeFloor || {})[coordinateKey(targetX, targetY)],
+        summary: `changeFloor@${nodeState.floorId}:${targetX},${targetY}`,
+      })
+    ));
+    actions.push(...this.recordReachabilityActions("changeFloor", changeFloorActions));
 
-      const battleActions = this.withReachabilityConsumer("battle", () => this.battleResolver.enumerateActions({
-        project: this.project,
-        state,
-        reachability,
-        enableBattleEvaluationProjection: this.enableBattleEvaluationProjection,
-        recordCandidateOutcome: this.reachabilityRebaseAttribution
-          ? (outcome, subject) => this.recordReachabilityCandidateOutcome("battle", outcome, subject)
-          : null,
-      }));
-      actions.push(...this.recordReachabilityActions("battle", battleActions));
+    for (const [name, resolver] of [
+      ["door", () => this.doorResolver.enumerateActions({ project: this.project, state, reachability, helper })],
+      ["equipment", () => this.equipmentResolver.enumerateActions({ project: this.project, state, floor, reachability, helper })],
+      ["event", () => this.eventResolver.enumerateActions({ project: this.project, state, floor, reachability, helper })],
+      ["tool", () => this.toolRegistry.enumerateActions({ project: this.project, state, floor, reachability, helper })],
+    ]) {
+      const resolved = this.withReachabilityConsumer(name, resolver);
+      actions.push(...this.recordReachabilityActions(name, resolved));
+    }
 
-      return { actions, battleActions };
-    });
+    const battleActions = this.withReachabilityConsumer("battle", () => this.battleResolver.enumerateActions({
+      project: this.project,
+      state,
+      reachability,
+      enableBattleEvaluationProjection: this.enableBattleEvaluationProjection,
+      recordCandidateOutcome: this.reachabilityRebaseAttribution
+        ? (outcome, subject) => this.recordReachabilityCandidateOutcome("battle", outcome, subject)
+        : null,
+    }));
+    actions.push(...this.recordReachabilityActions("battle", battleActions));
+
+    return { actions, battleActions };
   }
 
   enumerateMacroActions(state, primitiveActions, battleActions) {
@@ -2430,6 +2447,10 @@ class StaticSimulator {
   }
 
   applyAction(state, action, options) {
+    const tracker = getActivePerfTracker();
+    if (tracker && tracker.profileExpansionCost) {
+      return this._applyActionInner(state, action, options);
+    }
     // Perf-tracker hook: action application is one of the baseline hot phases.
     return timeActivePhase("applyAction", () => this._applyActionInner(state, action, options));
   }
@@ -2692,6 +2713,30 @@ class StaticSimulator {
   }
 
   stabilizeState(state) {
+    const tracker = getActivePerfTracker();
+    if (tracker && tracker.profileExpansionCost) {
+      tracker.increment("stabilizeStateCalls");
+      tracker.beginTopLevelPhase("stabilization");
+      try {
+        const stabilized = this.autoResolver.stabilizeState({
+          project: this.project,
+          state,
+          battleResolver: this.battleResolver,
+          executeActionList,
+          choiceResolver: this.choiceResolver,
+          resolvePickupAt: (currentState, x, y) => this.resolvePickupAt(currentState, x, y),
+          perfTracker: tracker,
+        });
+        projectSolverState(
+          stabilized,
+          this.solverModel.explicit ? this.solverModel : null,
+        );
+        syncProgress(stabilized);
+        return stabilized;
+      } finally {
+        tracker.endTopLevelPhase("stabilization");
+      }
+    }
     return timeActivePhase("stabilization", () => {
       const stabilized = this.autoResolver.stabilizeState({
         project: this.project,

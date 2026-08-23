@@ -1113,6 +1113,7 @@ function searchDP(simulator, initialState, options) {
   // benchmark sets one); zero measurable overhead in normal search.
   const perfTracker = getActivePerfTracker();
   const perfActive = Boolean(perfTracker && perfTracker.enabled);
+  const profileExpansion = Boolean(perfActive && perfTracker.profileExpansionCost);
   const trackPerfCount = (name, amount) => {
     if (!perfActive) return;
     perfTracker.increment(name, amount);
@@ -1576,25 +1577,66 @@ function searchDP(simulator, initialState, options) {
     }
     const rawLength = getRawRouteLength(state);
     if (rawLength > maxRawRouteLength) maxRawRouteLength = rawLength;
-    const key = trackPerfPhase("buildDpStateKey", () => (
-      typeof config.dpStateKeyBuilder === "function"
-        ? config.dpStateKeyBuilder(state, config)
-        : buildDpStateKey(simulator, state, config)
-    ));
-    const dominanceEvaluation = trackPerfPhase("dominance", () => {
-      const existingSkyline = bestByKey instanceof SkylineSet ? bestByKey.getAll(key) : null;
-      const timingConflict = existingSkyline &&
+    let key;
+    let existingSkyline = null;
+    let timingConflict = false;
+    let adaptiveTiming = false;
+    let dominated = false;
+
+    if (profileExpansion) {
+      perfTracker.increment("dpKeyBuildCalls");
+      perfTracker.increment("dominanceLookupCalls");
+      perfTracker.beginTopLevelPhase("stateKeyAndDominance");
+      try {
+        key = typeof config.dpStateKeyBuilder === "function"
+          ? config.dpStateKeyBuilder(state, config)
+          : buildDpStateKey(simulator, state, config);
+        existingSkyline = bestByKey instanceof SkylineSet ? bestByKey.getAll(key) : null;
+        timingConflict = existingSkyline &&
+          config.dominanceConfig &&
+          typeof config.dominanceConfig.hasConflict === "function" &&
+          existingSkyline.some((candidate) => config.dominanceConfig.hasConflict(state, candidate.state));
+        adaptiveTiming = Boolean(
+          config.dominanceConfig &&
+          typeof config.dominanceConfig.hasConflict === "function",
+        );
+        const preserveAlternative = existingSkyline &&
+          (config.preserveSkylineAlternatives === true || timingConflict === true) &&
+          existingSkyline.length < skylineMax;
+        dominated = bestByKey instanceof SkylineSet
+          ? existingSkyline.length > 0 && !preserveAlternative && (
+              adaptiveTiming && timingConflict
+                ? existingSkyline.every((n) => !isBetterForSameDpKey(state, n.state, config.dominanceConfig))
+                : adaptiveTiming
+                  ? !isBetterForSameDpKey(state, existingSkyline[0].state, config.dominanceConfig)
+                  : existingSkyline.every((n) => !isBetterForSameDpKey(state, n.state, config.dominanceConfig))
+            )
+          : !isBetterForSameDpKey(state, bestByKey.get(key) && bestByKey.get(key).state, config.dominanceConfig);
+      } finally {
+        perfTracker.endTopLevelPhase("stateKeyAndDominance");
+      }
+      if (dominated) {
+        perfTracker.increment("dominanceRejects");
+      }
+    } else {
+      key = trackPerfPhase("buildDpStateKey", () => (
+        typeof config.dpStateKeyBuilder === "function"
+          ? config.dpStateKeyBuilder(state, config)
+          : buildDpStateKey(simulator, state, config)
+      ));
+      existingSkyline = bestByKey instanceof SkylineSet ? bestByKey.getAll(key) : null;
+      timingConflict = existingSkyline &&
         config.dominanceConfig &&
         typeof config.dominanceConfig.hasConflict === "function" &&
         existingSkyline.some((candidate) => config.dominanceConfig.hasConflict(state, candidate.state));
-      const adaptiveTiming = Boolean(
+      adaptiveTiming = Boolean(
         config.dominanceConfig &&
         typeof config.dominanceConfig.hasConflict === "function",
       );
       const preserveAlternative = existingSkyline &&
         (config.preserveSkylineAlternatives === true || timingConflict === true) &&
         existingSkyline.length < skylineMax;
-      const dominated = bestByKey instanceof SkylineSet
+      dominated = bestByKey instanceof SkylineSet
         ? existingSkyline.length > 0 && !preserveAlternative && (
             adaptiveTiming && timingConflict
               ? existingSkyline.every((n) => !isBetterForSameDpKey(state, n.state, config.dominanceConfig))
@@ -1603,9 +1645,7 @@ function searchDP(simulator, initialState, options) {
                 : existingSkyline.every((n) => !isBetterForSameDpKey(state, n.state, config.dominanceConfig))
           )
         : !isBetterForSameDpKey(state, bestByKey.get(key) && bestByKey.get(key).state, config.dominanceConfig);
-      return { existingSkyline, timingConflict, adaptiveTiming, dominated };
-    });
-    const { existingSkyline, timingConflict, adaptiveTiming, dominated } = dominanceEvaluation;
+    }
     if (candidateKeyShadowRecorder) {
       try {
         const existingForRecorder = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);
@@ -1745,11 +1785,21 @@ function searchDP(simulator, initialState, options) {
       ? createChildNode(parentNode, state, key, actionForEntry, nextNodeId++, sequence)
       : createRootNode(state, key);
     node.key = key;
-    node.rank = trackPerfPhase("frontierQueue", () => (
-      config.dpPriorityMode === "goal-directed"
+    if (profileExpansion) {
+      perfTracker.increment("frontierRankCalls");
+      perfTracker.beginTopLevelPhase("frontierQueue");
+      try {
+        node.rank = config.dpPriorityMode === "goal-directed"
+          ? buildGoalDirectedDpAgendaRank(simulator, state, sourceAction, sequence, config)
+          : buildDpAgendaRank(simulator, state, sourceAction, sequence, config);
+      } finally {
+        perfTracker.endTopLevelPhase("frontierQueue");
+      }
+    } else {
+      node.rank = config.dpPriorityMode === "goal-directed"
         ? buildGoalDirectedDpAgendaRank(simulator, state, sourceAction, sequence, config)
-        : buildDpAgendaRank(simulator, state, sourceAction, sequence, config)
-    ));
+        : buildDpAgendaRank(simulator, state, sourceAction, sequence, config);
+    }
     sequence += 1;
     let skylineInserted = true;
     const beforeSkylineIds = bestByKey instanceof SkylineSet
@@ -1757,17 +1807,17 @@ function searchDP(simulator, initialState, options) {
       : (existing ? [existing.nodeId] : []);
     if (bestByKey instanceof SkylineSet) {
       if (existingSkyline.length > 0 && adaptiveTiming && timingConflict !== true) {
-        trackPerfPhase("dominance", () => bestByKey.replace(key, node));
+        bestByKey.replace(key, node);
       } else {
-        skylineInserted = trackPerfPhase("dominance", () => bestByKey.add(
+        skylineInserted = bestByKey.add(
           key,
           node,
           typeof config.skylineCompare === "function" ? config.skylineCompare : compareDpBest,
           config.skylineRoles,
-        ));
+        );
       }
     } else {
-      trackPerfPhase("dominance", () => bestByKey.set(key, node));
+      bestByKey.set(key, node);
     }
     const afterSkylineIds = bestByKey instanceof SkylineSet
       ? bestByKey.getAll(key).map((candidate) => candidate.nodeId)
@@ -1912,14 +1962,19 @@ function searchDP(simulator, initialState, options) {
         fairPopsAtEnqueue,
       }));
     }
-    trackPerfPhase("frontierQueue", () => {
-      if (heap) heap.push(node);
-      else fifoEntries.push(node);
-      if (fairEntries) {
-        fairEntries.push(node);
-        fairEnqueueExpansions.set(node.nodeId, expansions);
-      }
-    });
+    if (profileExpansion) {
+      perfTracker.increment("frontierPushCalls");
+      perfTracker.beginTopLevelPhase("frontierQueue");
+    }
+    if (heap) heap.push(node);
+    else fifoEntries.push(node);
+    if (fairEntries) {
+      fairEntries.push(node);
+      fairEnqueueExpansions.set(node.nodeId, expansions);
+    }
+    if (profileExpansion) {
+      perfTracker.endTopLevelPhase("frontierQueue");
+    }
     registered += 1;
     trackPerfCount("registered");
     recordStatProgress(state, actionForEntry, parentNode, node);
@@ -2160,7 +2215,15 @@ function searchDP(simulator, initialState, options) {
       stoppedReason = "goal-collection-limit";
       break;
     }
-    const selected = trackPerfPhase("frontierQueue", () => popNext());
+    let selected;
+    if (profileExpansion) {
+      perfTracker.beginTopLevelPhase("frontierQueue");
+      selected = popNext();
+      perfTracker.endTopLevelPhase("frontierQueue");
+      if (selected) perfTracker.increment("frontierPopCalls");
+    } else {
+      selected = popNext();
+    }
     if (!selected) break;
     const entry = selected.entry;
     const popExpansion = observer ? expansions : null;
@@ -2213,119 +2276,180 @@ function searchDP(simulator, initialState, options) {
     }
     const state = entry.state;
     if (!continueAfterGoal && isGoalState(state)) continue;
+
     const frontierBefore = heap ? heap.length : Math.max(0, fifoEntries.length - cursor);
-    if (perfActive && typeof perfTracker.beginExpansion === "function") {
-      perfTracker.beginExpansion(expansions + 1, state, frontierBefore);
+    if (profileExpansion) {
+      const simStats = simulator.getActionExpansionCacheStats ? simulator.getActionExpansionCacheStats() : {};
+      const reachableNodes = simStats.reachability ? simStats.reachability.nodesExpanded : 0;
+      const battleMisses = simStats.battleResolver && simStats.battleResolver.battleEstimate
+        ? simStats.battleResolver.battleEstimate.misses
+        : 0;
+      perfTracker.beginExpansion(expansions + 1, state, frontierBefore, {
+        reachableNodes,
+        battleEstimateMisses: battleMisses,
+      });
     }
-    let shouldBreakDueToMemory = false;
-    let actionsForSampling = null;
-    trackPerfPhase("expansion", () => {
-      expansions += 1;
-      const expandedNode = nodes.get(entry.nodeId);
-      if (!deepestExpandedNode || number(expandedNode && expandedNode.depth, 0) > number(deepestExpandedNode.depth, 0)) {
-        deepestExpandedNode = expandedNode || entry;
+
+    expansions += 1;
+    const expandedNode = nodes.get(entry.nodeId);
+    if (!deepestExpandedNode || number(expandedNode && expandedNode.depth, 0) > number(deepestExpandedNode.depth, 0)) {
+      deepestExpandedNode = expandedNode || entry;
+    }
+    trackPerfCount("expanded");
+    if (profileExpansion) {
+      perfTracker.increment("expansions");
+    }
+    if (shadowCheckState) {
+      try {
+        shadowCheckState(state);
+      } catch (error) {
+        // Observation must never affect the search.
       }
-      trackPerfCount("expanded");
-      if (shadowCheckState) {
-        try {
-          shadowCheckState(state);
-        } catch (error) {
-          // Observation must never affect the search.
-        }
+    }
+    if (captureEnabled && capturedExpandedStates.length < captureLimit) {
+      const captureKey = getDecisionDepth(state) + ":" + getRawRouteLength(state) + ":" + buildStateKey(state);
+      if (!capturedStateKeys.has(captureKey)) {
+        capturedStateKeys.add(captureKey);
+        capturedExpandedStates.push(state);
       }
-      if (captureEnabled && capturedExpandedStates.length < captureLimit) {
-        const captureKey = getDecisionDepth(state) + ":" + getRawRouteLength(state) + ":" + buildStateKey(state);
-        if (!capturedStateKeys.has(captureKey)) {
-          capturedStateKeys.add(captureKey);
-          capturedExpandedStates.push(state);
-        }
+    }
+    if (perfActive) {
+      // Node depth (from search-nodes) is authoritative here: the segment-DP
+      // states do not carry meta.decisionDepth (the DP tracks depth on nodes).
+      const entryNode = expandedNode;
+      const nodeDepth = entryNode && typeof entryNode.depth === "number"
+        ? entryNode.depth
+        : getDecisionDepth(state);
+      depthSum += nodeDepth;
+      if (nodeDepth > depthMax) depthMax = nodeDepth;
+      // Synchronous in-search memory sampling: process.memoryUsage() cannot run
+      // on the event loop during the search, so sample here at intervals.
+      if (expansions % 32 === 0) {
+        perfTracker.recordMemorySample(process.memoryUsage());
       }
-      if (perfActive) {
-        // Node depth (from search-nodes) is authoritative here: the segment-DP
-        // states do not carry meta.decisionDepth (the DP tracks depth on nodes).
-        const entryNode = expandedNode;
-        const nodeDepth = entryNode && typeof entryNode.depth === "number"
-          ? entryNode.depth
-          : getDecisionDepth(state);
-        depthSum += nodeDepth;
-        if (nodeDepth > depthMax) depthMax = nodeDepth;
-        // Synchronous in-search memory sampling: process.memoryUsage() cannot run
-        // on the event loop during the search, so sample here at intervals.
-        if (expansions % 32 === 0) {
-          perfTracker.recordMemorySample(process.memoryUsage());
-        }
-      }
-      let actions = [];
+    }
+    let actions = [];
+    if (profileExpansion) {
+      perfTracker.increment("primitiveEnumerationCalls");
+      perfTracker.beginTopLevelPhase("primitiveEnumeration");
       try {
         actions = typeof config.actionProvider === "function"
           ? config.actionProvider(simulator, state, entry)
-          : trackPerfPhase("enumerateActions", () => simulator.enumeratePrimitiveActions(state)).actions;
+          : simulator.enumeratePrimitiveActions(state).actions;
+      } catch (error) {
+        perfTracker.endTopLevelPhase("primitiveEnumeration");
+        invalid += 1;
+        if (observer) observer.emit("actionProviderError", () => observerStatePayload(simulator, state, entry, config, {
+          reasonCode: "action-provider-error",
+          error: { name: error && error.name || "Error", message: error && error.message || String(error) },
+        }));
+        if (stopForMemoryIfNeeded("after-action-provider", expansions, expansionOrdinal)) break;
+        continue;
+      }
+      perfTracker.endTopLevelPhase("primitiveEnumeration");
+    } else {
+      try {
+        actions = typeof config.actionProvider === "function"
+          ? config.actionProvider(simulator, state, entry)
+          : (perfActive
+              ? trackPerfPhase("enumerateActions", () => simulator.enumeratePrimitiveActions(state)).actions
+              : simulator.enumeratePrimitiveActions(state).actions);
       } catch (error) {
         invalid += 1;
         if (observer) observer.emit("actionProviderError", () => observerStatePayload(simulator, state, entry, config, {
           reasonCode: "action-provider-error",
           error: { name: error && error.name || "Error", message: error && error.message || String(error) },
         }));
-        if (stopForMemoryIfNeeded("after-action-provider", expansions, expansionOrdinal)) {
-          shouldBreakDueToMemory = true;
-        }
-        return;
+        if (stopForMemoryIfNeeded("after-action-provider", expansions, expansionOrdinal)) break;
+        continue;
       }
-      if (typeof config.actionFilter === "function") {
-        actions = actions.filter((action) => config.actionFilter(action, state));
-      }
-      if (stopForMemoryIfNeeded("after-action-provider", expansions, expansionOrdinal)) {
-        shouldBreakDueToMemory = true;
-        return;
-      }
-      actionsForSampling = actions;
-      maxActionsGeneratedForState = Math.max(maxActionsGeneratedForState, actions.length);
-      if (observer) observer.emit("actionSetGenerated", () => observerStatePayload(simulator, state, entry, config, {
-        reasonCode: "action-set-generated",
-        actionCount: actions.length,
-        selectedActionCount: Math.min(actions.length, maxActionsPerState),
-        trimmedCount: Math.max(0, actions.length - maxActionsPerState),
-        maxActionsPerState,
-        expansions,
-        frontierSize: heap ? heap.length : Math.max(0, fifoEntries.length - cursor),
-      }));
-      for (const action of actions) {
-        recordAction(actionStats, action, "generated");
-      }
-      if (actions.length > maxActionsPerState) {
-        actionTrimmed += actions.length - maxActionsPerState;
-        statesWithActionTrim += 1;
-      }
-      const sortedActions = trackPerfPhase("sortActions", () => sortDpActions(actions));
-      if (observer && sortedActions.length > maxActionsPerState) {
-        sortedActions.slice(maxActionsPerState).forEach((action, index) => observer.emit(
-          "candidateRejected",
-          () => observerStatePayload(simulator, state, entry, config, {
-            reasonCode: "action-trimmed",
-            candidateId: `${entry.nodeId}:trimmed:${index}`,
-            action: compactObserverAction(simulator, action),
-          }),
-        ));
-      }
-      let stopAfterSuccessorBatch = false;
-      sortedActions
-        .slice(0, maxActionsPerState)
-        .forEach((action, actionIndex) => {
-          if (stopAfterSuccessorBatch) return;
-          generated += 1;
-          trackPerfCount("generated");
-          recordAction(actionStats, action, "expanded");
-          const candidateId = `${entry.nodeId}:${actionIndex}`;
-          if (observer) observer.emit("candidateGenerated", () => observerStatePayload(simulator, state, entry, config, {
-            reasonCode: "candidate-generated",
-            candidateId,
-            action: compactObserverAction(simulator, action),
-          }));
-          let nextStates;
+    }
+    if (typeof config.actionFilter === "function") {
+      actions = actions.filter((action) => config.actionFilter(action, state));
+    }
+    if (stopForMemoryIfNeeded("after-action-provider", expansions, expansionOrdinal)) break;
+    maxActionsGeneratedForState = Math.max(maxActionsGeneratedForState, actions.length);
+    if (observer) observer.emit("actionSetGenerated", () => observerStatePayload(simulator, state, entry, config, {
+      reasonCode: "action-set-generated",
+      actionCount: actions.length,
+      selectedActionCount: Math.min(actions.length, maxActionsPerState),
+      trimmedCount: Math.max(0, actions.length - maxActionsPerState),
+      maxActionsPerState,
+      expansions,
+      frontierSize: heap ? heap.length : Math.max(0, fifoEntries.length - cursor),
+    }));
+    for (const action of actions) {
+      recordAction(actionStats, action, "generated");
+    }
+    if (actions.length > maxActionsPerState) {
+      actionTrimmed += actions.length - maxActionsPerState;
+      statesWithActionTrim += 1;
+    }
+    let sortedActions;
+    if (profileExpansion) {
+      perfTracker.beginTopLevelPhase("actionEvaluation");
+      sortedActions = sortDpActions(actions);
+      perfTracker.endTopLevelPhase("actionEvaluation");
+    } else if (perfActive) {
+      sortedActions = trackPerfPhase("sortActions", () => sortDpActions(actions));
+    } else {
+      sortedActions = sortDpActions(actions);
+    }
+    if (observer && sortedActions.length > maxActionsPerState) {
+      sortedActions.slice(maxActionsPerState).forEach((action, index) => observer.emit(
+        "candidateRejected",
+        () => observerStatePayload(simulator, state, entry, config, {
+          reasonCode: "action-trimmed",
+          candidateId: `${entry.nodeId}:trimmed:${index}`,
+          action: compactObserverAction(simulator, action),
+        }),
+      ));
+    }
+    let stopAfterSuccessorBatch = false;
+    sortedActions
+      .slice(0, maxActionsPerState)
+      .forEach((action, actionIndex) => {
+        if (stopAfterSuccessorBatch) return;
+        generated += 1;
+        trackPerfCount("generated");
+        if (profileExpansion) perfTracker.increment("generated");
+        recordAction(actionStats, action, "expanded");
+        const candidateId = `${entry.nodeId}:${actionIndex}`;
+        if (observer) observer.emit("candidateGenerated", () => observerStatePayload(simulator, state, entry, config, {
+          reasonCode: "candidate-generated",
+          candidateId,
+          action: compactObserverAction(simulator, action),
+        }));
+        let nextStates;
+        if (profileExpansion) {
+          perfTracker.increment("applyActionCalls");
+          perfTracker.beginTopLevelPhase("applyAction");
           try {
             const applier = typeof config.actionApplier === "function"
               ? config.actionApplier
-              : (s, a) => trackPerfPhase("applyAction", () => simulator.applyAction(s, a, { storeRoute: false }));
+              : (s, a) => simulator.applyAction(s, a, { storeRoute: false });
+            const result = applier(state, action);
+            nextStates = Array.isArray(result) ? result : [result];
+          } catch (error) {
+            perfTracker.endTopLevelPhase("applyAction");
+            invalid += 1;
+            recordAction(actionStats, action, "invalid");
+            if (observer) observer.emit("candidateRejected", () => observerStatePayload(simulator, state, entry, config, {
+              reasonCode: "action-apply-error",
+              candidateId,
+              action: compactObserverAction(simulator, action),
+              error: { name: error && error.name || "Error", message: error && error.message || String(error) },
+            }));
+            return;
+          }
+          perfTracker.endTopLevelPhase("applyAction");
+        } else {
+          try {
+            const applier = typeof config.actionApplier === "function"
+              ? config.actionApplier
+              : (perfActive
+                  ? (s, a) => trackPerfPhase("applyAction", () => simulator.applyAction(s, a, { storeRoute: false }))
+                  : (s, a) => simulator.applyAction(s, a, { storeRoute: false }));
             const result = applier(state, action);
             nextStates = Array.isArray(result) ? result : [result];
           } catch (error) {
@@ -2339,55 +2463,53 @@ function searchDP(simulator, initialState, options) {
             }));
             return;
           }
-          nextStates.forEach((nextState, successorIndex) => {
-            if (stopAfterSuccessorBatch) return;
-            if (typeof config.stateAnnotator === "function") {
-              try {
-                config.stateAnnotator(nextState, state, action);
-              } catch (error) {
-                // Timing annotations are diagnostic and must not make the search fail.
-              }
+        }
+        nextStates.forEach((nextState, successorIndex) => {
+          if (stopAfterSuccessorBatch) return;
+          if (typeof config.stateAnnotator === "function") {
+            try {
+              config.stateAnnotator(nextState, state, action);
+            } catch (error) {
+              // Timing annotations are diagnostic and must not make the search fail.
             }
-            const observedAction = observer
-              ? { ...action, __observerCandidateId: candidateId, __observerSuccessorId: `${candidateId}:${successorIndex}` }
-              : action;
-            const childNode = enqueueCandidate(nextState, observedAction, entry);
-            if (childNode) recordAction(actionStats, action, "kept");
-            else recordAction(actionStats, action, "dominated");
-          });
-          const actionOrdinal = actionIndex + 1;
-          if (
-            memoryLimitsEnabled &&
-            actionOrdinal % memoryCheckIntervalActions === 0 &&
-            stopForMemoryIfNeeded(
-              "after-successor-enqueue",
-              expansions,
-              expansionOrdinal,
-              true,
-            )
-          ) {
-            stopAfterSuccessorBatch = true;
           }
+          const observedAction = observer
+            ? { ...action, __observerCandidateId: candidateId, __observerSuccessorId: `${candidateId}:${successorIndex}` }
+            : action;
+          const childNode = enqueueCandidate(nextState, observedAction, entry);
+          if (childNode) recordAction(actionStats, action, "kept");
+          else recordAction(actionStats, action, "dominated");
         });
-      if (stopAfterSuccessorBatch) {
-        shouldBreakDueToMemory = true;
-      }
-    });
-    if (perfActive && typeof perfTracker.endExpansion === "function") {
-      const expandedNode = nodes.get(entry.nodeId);
+        const actionOrdinal = actionIndex + 1;
+        if (
+          memoryLimitsEnabled &&
+          actionOrdinal % memoryCheckIntervalActions === 0 &&
+          stopForMemoryIfNeeded(
+            "after-successor-enqueue",
+            expansions,
+            expansionOrdinal,
+            true,
+          )
+        ) {
+          stopAfterSuccessorBatch = true;
+        }
+      });
+
+    if (profileExpansion) {
+      const simStats = simulator.getActionExpansionCacheStats ? simulator.getActionExpansionCacheStats() : {};
+      const endReachableNodes = simStats.reachability ? simStats.reachability.nodesExpanded : 0;
+      const endBattleMisses = simStats.battleResolver && simStats.battleResolver.battleEstimate
+        ? simStats.battleResolver.battleEstimate.misses
+        : 0;
       perfTracker.endExpansion(expansions, state, heap ? heap.length : Math.max(0, fifoEntries.length - cursor), {
-        actionsGenerated: actionsForSampling ? actionsForSampling.length : 0,
-        reachableNodes: simulator.actionExpansionCacheStats && simulator.actionExpansionCacheStats.reachability
-          ? simulator.actionExpansionCacheStats.reachability.nodesExpanded
-          : 0,
-        battleEstimateMisses: simulator.battleResolver && simulator.battleResolver.cacheStats && simulator.battleResolver.cacheStats.battleEstimate
-          ? simulator.battleResolver.cacheStats.battleEstimate.misses
-          : 0,
-        stabilizationIterations: typeof perfTracker.getCounter === "function" ? perfTracker.getCounter("stabilization") : 0,
+        actionsGenerated: actions.length,
+        reachableNodes: endReachableNodes,
+        battleEstimateMisses: endBattleMisses,
         decisionDepth: expandedNode && typeof expandedNode.depth === "number" ? expandedNode.depth : getDecisionDepth(state),
       });
     }
-    if (shouldBreakDueToMemory) break;
+
+    if (stopAfterSuccessorBatch) break;
     if (!memoryLimitsEnabled) {
       recordMemoryUsage("after-expansion", expansions, false);
     }

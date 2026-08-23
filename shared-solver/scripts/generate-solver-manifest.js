@@ -1657,8 +1657,9 @@ const manifest = {
         "shared-solver/check-mt1-post-promotion-regression-contract.js",
         "shared-solver/check-multi-region-key-shadow-contract.js",
         "shared-solver/check-multi-region-boundary-matrix-contract.js",
-        "shared-solver/check-action-expansion-cache-correctness.js"
-],
+        "shared-solver/check-action-expansion-cache-correctness.js",
+        "shared-solver/check-expansion-profiler-parity.js"
+      ],
       requiredCommands: ["check:no-tower-solver-js"],
       paths: ["shared-solver/check-launcher-api.js"],
     },
