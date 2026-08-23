@@ -431,10 +431,8 @@ class StaticSimulator {
     this.enableActionExpansionCache = config.enableActionExpansionCache !== false;
     this.actionExpansionCacheLimit = Number(config.actionExpansionCacheLimit || 1024);
     this.actionExpansionCaches = {
-      reachability: new Map(),
       reachabilitySkeleton: new Map(),
       regionSignature: new Map(),
-      primitiveActions: new Map(),
       resourceCluster: new Map(),
       resourcePreviewApply: new Map(),
       resourceLookahead: createResourceLookaheadCache(),
@@ -443,16 +441,31 @@ class StaticSimulator {
     this.actionExpansionCacheStats = Object.keys(this.actionExpansionCaches).reduce((stats, name) => {
       stats[name] = { hits: 0, misses: 0, stores: 0, evictions: 0, computeMs: 0, estimatedMsSaved: 0 };
       return stats;
-    }, {});
-    Object.assign(this.actionExpansionCacheStats.reachability, {
-      safeFastBuilds: 0,
-      legacyExactBuilds: 0,
-      nodesExpanded: 0,
-      transitionAttempts: 0,
-      stateClones: 0,
-      dominanceKeyBuilds: 0,
-      hazardScanMs: 0,
-      safetyProbeMs: 0,
+    }, {
+      reachability: {
+        hits: 0,
+        misses: 0,
+        stores: 0,
+        evictions: 0,
+        computeMs: 0,
+        estimatedMsSaved: 0,
+        safeFastBuilds: 0,
+        legacyExactBuilds: 0,
+        nodesExpanded: 0,
+        transitionAttempts: 0,
+        stateClones: 0,
+        dominanceKeyBuilds: 0,
+        hazardScanMs: 0,
+        safetyProbeMs: 0,
+      },
+      primitiveActions: {
+        hits: 0,
+        misses: 0,
+        stores: 0,
+        evictions: 0,
+        computeMs: 0,
+        estimatedMsSaved: 0,
+      },
     });
     Object.assign(this.actionExpansionCacheStats.reachabilitySkeleton, {
       builds: 0,
@@ -516,6 +529,32 @@ class StaticSimulator {
 
   getActionExpansionCacheStats() {
     const stats = cloneJson(this.actionExpansionCacheStats);
+    if (!stats.reachability) {
+      stats.reachability = {
+        hits: 0, misses: 0, stores: 0, evictions: 0, computeMs: 0, estimatedMsSaved: 0,
+        safeFastBuilds: 0, legacyExactBuilds: 0, nodesExpanded: 0, transitionAttempts: 0,
+        stateClones: 0, dominanceKeyBuilds: 0, hazardScanMs: 0, safetyProbeMs: 0,
+      };
+    }
+    stats.reachability.size = 0;
+    stats.reachability.hits = 0;
+    stats.reachability.stores = 0;
+    stats.reachability.hitRate = 0;
+    stats.reachability.avgComputeMs = 0;
+    stats.reachability.avgMsSaved = 0;
+
+    if (!stats.primitiveActions) {
+      stats.primitiveActions = {
+        hits: 0, misses: 0, stores: 0, evictions: 0, computeMs: 0, estimatedMsSaved: 0,
+      };
+    }
+    stats.primitiveActions.size = 0;
+    stats.primitiveActions.hits = 0;
+    stats.primitiveActions.stores = 0;
+    stats.primitiveActions.hitRate = 0;
+    stats.primitiveActions.avgComputeMs = 0;
+    stats.primitiveActions.avgMsSaved = 0;
+
     Object.entries(this.actionExpansionCaches || {}).forEach(([name, cache]) => {
       if (!stats[name]) stats[name] = { hits: 0, misses: 0, stores: 0, evictions: 0, computeMs: 0, estimatedMsSaved: 0 };
       if (cache && cache.stats) {
@@ -556,7 +595,9 @@ class StaticSimulator {
 
   getReachabilityCacheStats() {
     const stats = this.actionExpansionCacheStats && this.actionExpansionCacheStats.reachability;
-    return stats ? { ...stats } : { hits: 0, misses: 0, stores: 0, evictions: 0 };
+    return stats
+      ? { ...stats, hits: 0, stores: 0, size: 0 }
+      : { hits: 0, misses: 0, stores: 0, evictions: 0, size: 0 };
   }
 
   getReachabilityReuseAttribution() {
@@ -590,21 +631,13 @@ class StaticSimulator {
   }
 
   getWalkReachability(state) {
-    const key = buildStateKey(state);
-    const cached = this.cacheGet("reachability", key);
-    if (cached) {
-      if (this.reachabilityReuseAttribution) {
-        this.reachabilityReuseAttribution.recordHit(state, key, cached);
-      }
-      return cached;
-    }
     const stats = this.actionExpansionCacheStats && this.actionExpansionCacheStats.reachability;
+    if (stats) stats.misses += 1;
     const skeletonStats = this.actionExpansionCacheStats &&
       this.actionExpansionCacheStats.reachabilitySkeleton;
     // Perf-tracker hook (no-op unless a tracker is active): reachability BFS is
     // one of the search hot phases the PR-5.4b baseline measures separately.
     return timeActivePhase("reachability", () => {
-      const startedAt = Date.now();
       const reachability = buildWalkReachability(this.project, state, {
         battleResolver: this.battleResolver,
         executeActionList,
@@ -664,9 +697,10 @@ class StaticSimulator {
         }
       }
       if (this.reachabilityReuseAttribution) {
+        const key = buildStateKey(state);
         this.reachabilityReuseAttribution.recordMiss(state, key, reachability);
       }
-      return this.cacheSet("reachability", key, reachability, null, Date.now() - startedAt);
+      return reachability;
     });
   }
 
@@ -808,12 +842,10 @@ class StaticSimulator {
   }
 
   enumeratePrimitiveActions(state) {
-    const cacheKey = buildStateKey(state);
-    const cached = this.cacheGet("primitiveActions", cacheKey, (value) => this.clonePrimitiveActions(value));
-    if (cached) return cached;
+    const stats = this.actionExpansionCacheStats && this.actionExpansionCacheStats.primitiveActions;
+    if (stats) stats.misses += 1;
     // Perf-tracker hook: action generation is one of the baseline hot phases.
     return timeActivePhase("enumerateActions", () => {
-      const startedAt = Date.now();
       const floor = this.project.floorsById[state.floorId];
       const reachability = this.getWalkReachability(state);
       const actions = [];
@@ -876,8 +908,7 @@ class StaticSimulator {
       }));
       actions.push(...this.recordReachabilityActions("battle", battleActions));
 
-      const result = { actions, battleActions };
-      return this.cacheSet("primitiveActions", cacheKey, result, (value) => this.clonePrimitiveActions(value), Date.now() - startedAt);
+      return { actions, battleActions };
     });
   }
 

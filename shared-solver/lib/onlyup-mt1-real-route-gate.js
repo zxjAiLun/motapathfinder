@@ -456,7 +456,9 @@ function runOnlyUpRealRouteGate(options) {
     // resolver: it enumerates the candidates available in this very state and
     // matches the recorded decision against them by fingerprint. The action that
     // gets applied is the freshly enumerated object, never the recorded summary.
-    const resolved = resolveRecordedAction(replaySimulator, replayState, entry);
+    const resolved = resolveRecordedAction(replaySimulator, replayState, entry, {
+      requireFingerprintMatch: true,
+    });
     if (resolved == null || resolved.action == null) {
       return failed("replay-action-not-enumerated", {
         searchFinal,

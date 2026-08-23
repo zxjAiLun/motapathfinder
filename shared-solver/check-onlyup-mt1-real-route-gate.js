@@ -221,14 +221,20 @@ function main() {
       `match type ${matchType} is not identity grade`,
     );
   });
-  assert.ok(
-    Number.isInteger(result.metrics.fingerprintMatchedDecisionCount),
-    "fingerprint match count must be reported",
+  assert.strictEqual(
+    result.metrics.fingerprintMatchedDecisionCount,
+    10,
+    "all 10 decisions must match by fingerprint",
   );
   assert.strictEqual(
-    typeof result.metrics.fingerprintFormatReconciled,
-    "boolean",
-    "fingerprint format reconciliation must be reported explicitly",
+    result.metrics.identityGradedDecisionCount,
+    10,
+    "all 10 decisions must be identity graded",
+  );
+  assert.strictEqual(
+    result.metrics.fingerprintFormatReconciled,
+    true,
+    "fingerprint format must be fully reconciled",
   );
   ["hp", "atk", "def", "mdef", "exp", "lv"].forEach((key) => {
     assert.strictEqual(

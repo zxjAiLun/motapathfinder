@@ -12,6 +12,7 @@ const assert = require("node:assert");
 const {
   buildRouteRecord,
   composeRouteRecords,
+  resolveRecordedAction,
   ROUTE_SCHEMA,
 } = require("./lib/route-store");
 
@@ -170,10 +171,124 @@ function checkComposedRouteBoundary() {
   );
 }
 
+function checkFingerprintDialectAndStrictRejection() {
+  const project = makeProject();
+  const simulator = {
+    project,
+    createInitialState: () => makeState(50, []),
+    getActionFingerprint: (action) => {
+      if (action.kind === "battle") return `battle|${action.floorId}|${action.target.x}|${action.target.y}|${action.enemyId}`;
+      if (action.kind === "changeFloor") return `changeFloor|${action.summary}`;
+      return `${action.kind}|${action.summary || ""}`;
+    },
+  };
+  const state = makeState(50, []);
+  const battleCandidate = {
+    kind: "battle",
+    floorId: "SYNTHETIC",
+    target: { x: 1, y: 1 },
+    enemyId: "slime",
+    path: [{ x: 1, y: 1 }],
+    summary: "battle:slime@SYNTHETIC:1,1",
+  };
+  const changeFloorCandidate = {
+    kind: "changeFloor",
+    floorId: "SYNTHETIC",
+    target: { x: 2, y: 2 },
+    path: [{ x: 2, y: 2 }],
+    changeFloor: { floorId: "NEXT", x: 0, y: 0 },
+    summary: "changeFloor@SYNTHETIC:2,2",
+  };
+
+  const candidates = [battleCandidate, changeFloorCandidate];
+
+  // 1. Battle dialect test: simulator format ("battle|SYNTHETIC|1|1|slime")
+  const simBattleDecision = {
+    kind: "battle",
+    fingerprint: "battle|SYNTHETIC|1|1|slime",
+    path: [{ x: 1, y: 1 }],
+  };
+  const resSimBattle = resolveRecordedAction(simulator, state, simBattleDecision, {
+    candidates,
+    requireFingerprintMatch: true,
+  });
+  assert.ok(resSimBattle.action, "simulator dialect battle must resolve");
+  assert.strictEqual(resSimBattle.fingerprintMatches, true);
+  assert.strictEqual(resSimBattle.matchType, "fingerprint");
+  assert.strictEqual(resSimBattle.action.enemyId, "slime");
+
+  // 2. Battle dialect test: route-store format ("battle|SYNTHETIC|1,1|slime")
+  const rsBattleDecision = {
+    kind: "battle",
+    fingerprint: "battle|SYNTHETIC|1,1|slime",
+    path: [{ x: 1, y: 1 }],
+  };
+  const resRsBattle = resolveRecordedAction(simulator, state, rsBattleDecision, {
+    candidates,
+    requireFingerprintMatch: true,
+  });
+  assert.ok(resRsBattle.action, "route-store dialect battle must resolve");
+  assert.strictEqual(resRsBattle.fingerprintMatches, true);
+  assert.strictEqual(resRsBattle.matchType, "fingerprint");
+
+  // 3. ChangeFloor dialect test: simulator format ("changeFloor|changeFloor@SYNTHETIC:2,2")
+  const simChangeFloorDecision = {
+    kind: "changeFloor",
+    fingerprint: "changeFloor|changeFloor@SYNTHETIC:2,2",
+    path: [{ x: 2, y: 2 }],
+  };
+  const resSimFloor = resolveRecordedAction(simulator, state, simChangeFloorDecision, {
+    candidates,
+    requireFingerprintMatch: true,
+  });
+  assert.ok(resSimFloor.action, "simulator dialect changeFloor must resolve");
+  assert.strictEqual(resSimFloor.fingerprintMatches, true);
+  assert.strictEqual(resSimFloor.matchType, "fingerprint");
+
+  // 4. ChangeFloor dialect test: route-store format ("changeFloor|SYNTHETIC|2,2|NEXT|0,0")
+  const rsChangeFloorDecision = {
+    kind: "changeFloor",
+    fingerprint: "changeFloor|SYNTHETIC|2,2|NEXT|0,0",
+    path: [{ x: 2, y: 2 }],
+  };
+  const resRsFloor = resolveRecordedAction(simulator, state, rsChangeFloorDecision, {
+    candidates,
+    requireFingerprintMatch: true,
+  });
+  assert.ok(resRsFloor.action, "route-store dialect changeFloor must resolve");
+  assert.strictEqual(resRsFloor.fingerprintMatches, true);
+  assert.strictEqual(resRsFloor.matchType, "fingerprint");
+
+  // 5. Forged fingerprint with matching path must be rejected under requireFingerprintMatch: true
+  const forgedDecision = {
+    kind: "battle",
+    fingerprint: "battle|SYNTHETIC|1|1|forgedSlime",
+    path: ["up"], // matching path
+    summary: "battle:forgedSlime@SYNTHETIC:1,1",
+  };
+  battleCandidate.path = ["up"];
+  const resForged = resolveRecordedAction(simulator, state, forgedDecision, {
+    candidates,
+    requireFingerprintMatch: true,
+  });
+  assert.strictEqual(resForged.action, null, "forged fingerprint must be rejected even if path matches");
+  assert.strictEqual(resForged.reason, "recorded-action-not-matched");
+
+  // Under loose mode (requireFingerprintMatch: false), path match may fall back
+  const resForgedLoose = resolveRecordedAction(simulator, state, forgedDecision, {
+    candidates,
+    requireFingerprintMatch: false,
+  });
+  assert.ok(resForgedLoose.action, "loose mode falls back to path");
+  assert.strictEqual(resForgedLoose.matchType, "path");
+  assert.strictEqual(resForgedLoose.fingerprintMatches, false);
+}
+
 function main() {
   checkExactFinalMismatch();
   checkStartSnapshotDoesNotMarkUnvisitedFloors();
   checkComposedRouteBoundary();
+  checkFingerprintDialectAndStrictRejection();
   console.log("check-route-store-exact: ok");
 }
 
@@ -184,4 +299,5 @@ module.exports = {
   checkExactFinalMismatch,
   checkStartSnapshotDoesNotMarkUnvisitedFloors,
   checkComposedRouteBoundary,
+  checkFingerprintDialectAndStrictRejection,
 };

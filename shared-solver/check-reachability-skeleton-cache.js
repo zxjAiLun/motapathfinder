@@ -199,17 +199,17 @@ async function main() {
     assert.strictEqual(sample.skeletonCache.hits, 0);
     assert.strictEqual(sample.skeletonCache.misses, 0);
     assert.strictEqual(sample.skeletonCache.stores, 0);
-    assert.strictEqual(sample.skeletonCache.builds, 123);
-    assert.strictEqual(sample.skeletonCache.rebases, 123);
-    assert.strictEqual(sample.skeletonCache.safetyClassifications, 123);
+    assert.strictEqual(sample.skeletonCache.builds, 173);
+    assert.strictEqual(sample.skeletonCache.rebases, 173);
+    assert.strictEqual(sample.skeletonCache.safetyClassifications, 173);
   });
   repairs.forEach((sample) => {
-    assert.strictEqual(sample.skeletonCache.hits, 50);
+    assert.strictEqual(sample.skeletonCache.hits, 100);
     assert.strictEqual(sample.skeletonCache.misses, 73);
     assert.strictEqual(sample.skeletonCache.stores, 73);
     assert.strictEqual(sample.skeletonCache.builds, 73);
-    assert.strictEqual(sample.skeletonCache.rebases, 123);
-    assert.strictEqual(sample.skeletonCache.safetyClassifications, 123);
+    assert.strictEqual(sample.skeletonCache.rebases, 173);
+    assert.strictEqual(sample.skeletonCache.safetyClassifications, 173);
     assert.strictEqual(sample.skeletonCache.unsafeBypasses, 0);
     assert.strictEqual(sample.skeletonPayloadViolationCount, 0,
       "cached skeletons must not contain state/hero/inventory/flags payloads");

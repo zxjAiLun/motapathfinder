@@ -132,6 +132,7 @@
     "check:static-combat-economy-h5-adapter": "node check-static-combat-economy-h5-adapter.js",
     "check:onlyup-mt1-real-route-gate": "node --max-old-space-size=256 check-onlyup-mt1-real-route-gate.js",
     "check:onlyup-first-region-real-route-gate": "node --max-old-space-size=256 check-onlyup-first-region-real-route-gate.js",
+    "check:action-expansion-cache-correctness": "node check-action-expansion-cache-correctness.js",
     "probe:strategic-d2-search": "node probe-d2-strategic-search.js",
     "check:repair-actual-closure": "node check-repair-actual-closure.js",
     "check:region-specs": "node check-region-specs.js",

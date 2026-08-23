@@ -608,6 +608,7 @@ function snapshotMatches(project, state, expectedSnapshot, simulator) {
  */
 function resolveRecordedAction(simulator, state, decision, options) {
   const config = options || {};
+  const requireFingerprintMatch = Boolean(config.requireFingerprintMatch);
   if (!decision) return { action: null, reason: "missing-decision", candidates: 0 };
   let expected;
   try {
@@ -661,8 +662,17 @@ function resolveRecordedAction(simulator, state, decision, options) {
     } catch (error) {
       continue;
     }
-    const fingerprintMatches = Boolean(expectedFingerprint) && normalized.fingerprint === expectedFingerprint;
+    const simFingerprint = simulator && typeof simulator.getActionFingerprint === "function"
+      ? simulator.getActionFingerprint(action)
+      : null;
+    const fingerprintMatches = Boolean(expectedFingerprint) && (
+      normalized.fingerprint === expectedFingerprint ||
+      simFingerprint === expectedFingerprint
+    );
     if (fingerprintMatches) choiceAliasCount += 1;
+    if (requireFingerprintMatch && !fingerprintMatches) {
+      continue;
+    }
     const pathMatches = Array.isArray(expected.path) && expected.path.length > 0 && samePath(normalized.path, expected.path);
     const structuralFields = [];
     if (expected.target) structuralFields.push(samePoint(normalized.target, expected.target));

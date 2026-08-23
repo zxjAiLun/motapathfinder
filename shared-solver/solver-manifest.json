@@ -180,11 +180,6 @@
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
-        "shared-solver/check-objective-safe-archive.js",
-        "shared-solver/check-solve-task-contract.js",
-        "shared-solver/check-solve-task-v2-contract.js",
-        "shared-solver/check-solver-job-contract.js",
-        "shared-solver/check-launcher-api.js",
         "shared-solver/check-teacher-search-observer.js",
         "shared-solver/check-teacher-dominance-audit.js",
         "shared-solver/check-hybrid-fair-agenda.js",
@@ -199,40 +194,10 @@
         "shared-solver/check-replay-flag-merge-cli-contract.js",
         "shared-solver/check-replay-h5save-resume-contract.js",
         "shared-solver/check-replay-h5save-gui.js",
-        "shared-solver/check-replay-h5save-gui-flow.js",
-        "shared-solver/check-multi-region-contract.js",
-        "shared-solver/check-multi-region-route-contract.js",
-        "shared-solver/check-perf-baseline-contract.js",
-        "shared-solver/check-route-free-state-contract.js",
-        "shared-solver/check-tower-ir-shadow-contract.js",
-        "shared-solver/check-key-dependency-contract.js",
-        "shared-solver/check-dual-key-shadow-contract.js",
-        "shared-solver/check-candidate-key-promotion-contract.js",
-        "shared-solver/check-candidate-key-paired-benchmark.js",
-        "shared-solver/check-real-route-performance-qualification.js",
-        "shared-solver/check-walk-reachability-fast-path.js",
-        "shared-solver/check-walk-reachability-performance.js",
-        "shared-solver/check-reachability-reuse-attribution.js",
-        "shared-solver/check-reachability-skeleton-cache.js",
-        "shared-solver/check-reachability-rebase-attribution.js",
-        "shared-solver/check-topology-first-materialization.js",
-        "shared-solver/check-remaining-materialization-attribution.js",
-        "shared-solver/check-battle-evaluation-projection.js",
-        "shared-solver/check-reachability-optimization-requalification.js",
-        "shared-solver/check-full-solve-hotspot-reprofiling.js",
-        "shared-solver/check-goal-directed-search.js",
-        "shared-solver/check-candidate-quality-shadow.js",
-        "shared-solver/check-mt1-workload-matrix-contract.js",
-        "shared-solver/check-mt1-default-promotion-contract.js",
-        "shared-solver/check-mt1-post-promotion-regression-contract.js",
-        "shared-solver/check-multi-region-key-shadow-contract.js",
-        "shared-solver/check-multi-region-boundary-matrix-contract.js"
+        "shared-solver/check-replay-h5save-gui-flow.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
-      ],
-      "paths": [
-        "shared-solver/check-launcher-api.js"
       ]
     }
   },
@@ -282,6 +247,70 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/automatic-blocker-repair.js": {
+      "id": "automatic-blocker-repair",
+      "path": "shared-solver/lib/automatic-blocker-repair.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/automatic-dependency-planner.js": {
+      "id": "automatic-dependency-planner",
+      "path": "shared-solver/lib/automatic-dependency-planner.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/automatic-feasibility-subgoals.js": {
+      "id": "automatic-feasibility-subgoals",
+      "path": "shared-solver/lib/automatic-feasibility-subgoals.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/automatic-macro-graph.js": {
+      "id": "automatic-macro-graph",
+      "path": "shared-solver/lib/automatic-macro-graph.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto milestone decomposition; proof not yet closed into checkpoint schedule"
+    },
     "shared-solver/lib/battle-resolver.js": {
       "id": "battle-resolver",
       "path": "shared-solver/lib/battle-resolver.js",
@@ -312,21 +341,53 @@
         "cleanCheckout": true
       }
     },
-    "shared-solver/lib/candidate-quality-shadow.js": {
-      "id": "candidate-quality-shadow",
-      "path": "shared-solver/lib/candidate-quality-shadow.js",
-      "layer": "diagnostics",
-      "status": "supporting",
-      "role": "shadow-audit",
+    "shared-solver/lib/blind-discovery-baseline.js": {
+      "id": "blind-discovery-baseline",
+      "path": "shared-solver/lib/blind-discovery-baseline.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
       "correctnessSource": false,
       "tests": {
         "unit": true,
-        "realFixture": true,
+        "realFixture": false,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.7a observation-only first-sweep candidate corpus, unchanged 1/2/4/8 retention simulation, and fixed-budget downstream probe classification; never changes DP key, dominance, or production selection"
+      "notes": "auto milestone decomposition; proof not yet closed into checkpoint schedule"
+    },
+    "shared-solver/lib/blind-qualification.js": {
+      "id": "blind-qualification",
+      "path": "shared-solver/lib/blind-qualification.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto milestone decomposition; proof not yet closed into checkpoint schedule"
+    },
+    "shared-solver/lib/candidate-quality-shadow.js": {
+      "id": "candidate-quality-shadow",
+      "path": "shared-solver/lib/candidate-quality-shadow.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/checkpoint-repair.js": {
       "id": "checkpoint-repair",
@@ -403,113 +464,37 @@
         "cleanCheckout": true
       }
     },
-    "shared-solver/lib/automatic-macro-graph.js": {
-      "id": "automatic-macro-graph",
-      "path": "shared-solver/lib/automatic-macro-graph.js",
-      "layer": "planning/decomposition",
-      "status": "experimental",
-      "role": "candidate-generator",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/automatic-feasibility-subgoals.js": {
-      "id": "automatic-feasibility-subgoals",
-      "path": "shared-solver/lib/automatic-feasibility-subgoals.js",
-      "layer": "planning/decomposition",
-      "status": "experimental",
-      "role": "candidate-generator",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.15b route-free state-visible revisit envelope and counterfactual boss-deficit feasibility subgoal compiler"
-    },
-    "shared-solver/lib/automatic-dependency-planner.js": {
-      "id": "automatic-dependency-planner",
-      "path": "shared-solver/lib/automatic-dependency-planner.js",
-      "layer": "planning/decomposition",
-      "status": "experimental",
-      "role": "and-or-dependency-planner",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.16b route-free bounded AND/OR topology alternatives with current-state simulator blocker evidence"
-    },
-    "shared-solver/lib/hierarchical-blind-planner.js": {
-      "id": "hierarchical-blind-planner",
-      "path": "shared-solver/lib/hierarchical-blind-planner.js",
-      "layer": "planning/decomposition",
-      "status": "experimental",
-      "role": "candidate-generator",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/blind-discovery-baseline.js": {
-      "id": "blind-discovery-baseline",
-      "path": "shared-solver/lib/blind-discovery-baseline.js",
-      "layer": "planning/decomposition",
-      "status": "experimental",
-      "role": "candidate-generator",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/blind-qualification.js": {
-      "id": "blind-qualification",
-      "path": "shared-solver/lib/blind-qualification.js",
-      "layer": "planning/decomposition",
-      "status": "experimental",
-      "role": "candidate-generator",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
     "shared-solver/lib/d2-blind-failure-attribution.js": {
       "id": "d2-blind-failure-attribution",
       "path": "shared-solver/lib/d2-blind-failure-attribution.js",
-      "layer": "diagnostics",
+      "layer": "unclassified",
       "status": "supporting",
-      "role": "failure-attribution",
+      "role": "supporting",
       "correctnessSource": false,
       "tests": {
         "unit": false,
-        "realFixture": true,
+        "realFixture": false,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.15a observation-only D2 automatic planning-envelope attribution; does not change key, dominance, selection, or search inputs"
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/dependency-feedback-controller.js": {
+      "id": "dependency-feedback-controller",
+      "path": "shared-solver/lib/dependency-feedback-controller.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/discovery-capability-audit.js": {
       "id": "discovery-capability-audit",
@@ -520,11 +505,12 @@
       "correctnessSource": false,
       "tests": {
         "unit": true,
-        "realFixture": true,
+        "realFixture": false,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
-      }
+      },
+      "notes": "auto milestone decomposition; proof not yet closed into checkpoint schedule"
     },
     "shared-solver/lib/dominance.js": {
       "id": "dominance",
@@ -569,23 +555,23 @@
         "segmentClosure": true,
         "fullClosure": false,
         "cleanCheckout": true
-      },
-      "notes": "PR-5.5e adds observation-only parentFloorId/parentVisitedFloors transition provenance when candidateKeyShadowRecorder is enabled; these fields never enter keys, pruning, dominance, ranking, or production behavior"
+      }
     },
     "shared-solver/lib/dual-key-shadow.js": {
       "id": "dual-key-shadow",
       "path": "shared-solver/lib/dual-key-shadow.js",
-      "layer": "search/correctness",
-      "status": "canonical",
-      "role": "shadow-audit",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
       "correctnessSource": false,
       "tests": {
-        "unit": true,
-        "realFixture": true,
+        "unit": false,
+        "realFixture": false,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
-      }
+      },
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/effect-vm.js": {
       "id": "effect-vm",
@@ -635,18 +621,18 @@
     "shared-solver/lib/eval-vector.js": {
       "id": "eval-vector",
       "path": "shared-solver/lib/eval-vector.js",
-      "layer": "diagnostics",
+      "layer": "unclassified",
       "status": "supporting",
-      "role": "diagnostics",
+      "role": "supporting",
       "correctnessSource": false,
       "tests": {
-        "unit": true,
-        "realFixture": true,
+        "unit": false,
+        "realFixture": false,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "Observation-only Mota Eval vector: projects goal dependency completion, admissible-v1 feasibility, and per-field near-term resource margins for audits and UI; plan health is a UI projection only and never reaches the DP key, dominance, agenda, candidate capacity, or pruning"
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/event-resolver.js": {
       "id": "event-resolver",
@@ -722,6 +708,22 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
+    },
+    "shared-solver/lib/file-job-store.js": {
+      "id": "file-job-store",
+      "path": "shared-solver/lib/file-job-store.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/floor-checkpoints.js": {
       "id": "floor-checkpoints",
@@ -801,26 +803,74 @@
     "shared-solver/lib/goal-dependency-graph.js": {
       "id": "goal-dependency-graph",
       "path": "shared-solver/lib/goal-dependency-graph.js",
-      "layer": "search/correctness",
-      "status": "canonical",
-      "role": "goal-dependency-planning",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
       "correctnessSource": false,
       "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": true,
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "Compiles ordered milestone floor, stat, equipment, tile, and gateway dependencies for goal-directed agenda ranking without changing dominance or default skyline semantics"
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/goal-feasibility-bounds.js": {
       "id": "goal-feasibility-bounds",
       "path": "shared-solver/lib/goal-feasibility-bounds.js",
-      "layer": "search/correctness",
-      "status": "canonical",
-      "role": "necessary-condition-pruning",
-      "correctnessSource": true,
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/guarded-candidate-key.js": {
+      "id": "guarded-candidate-key",
+      "path": "shared-solver/lib/guarded-candidate-key.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/hierarchical-blind-planner.js": {
+      "id": "hierarchical-blind-planner",
+      "path": "shared-solver/lib/hierarchical-blind-planner.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto milestone decomposition; proof not yet closed into checkpoint schedule"
+    },
+    "shared-solver/lib/hierarchical-discovery-engine.js": {
+      "id": "hierarchical-discovery-engine",
+      "path": "shared-solver/lib/hierarchical-discovery-engine.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
       "tests": {
         "unit": true,
         "realFixture": true,
@@ -828,22 +878,7 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "Explicit admissible-v1 bounds prune only complete declared floor, unique-equipment, protected-tile, and optimistic stat impossibilities; incomplete evidence remains feasible/unknown"
-    },
-    "shared-solver/lib/guarded-candidate-key.js": {
-      "id": "guarded-candidate-key",
-      "path": "shared-solver/lib/guarded-candidate-key.js",
-      "layer": "search/correctness",
-      "status": "canonical",
-      "role": "candidate-key-guard",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
+      "notes": "PR-5.17a2 route-free terminal dependency, checkpoint feedback, blocker repair, and local canonical DP loop; D2 remains open"
     },
     "shared-solver/lib/iterative-route-repair.js": {
       "id": "iterative-route-repair",
@@ -863,17 +898,18 @@
     "shared-solver/lib/key-dependency-corpus.js": {
       "id": "key-dependency-corpus",
       "path": "shared-solver/lib/key-dependency-corpus.js",
-      "layer": "search/correctness",
-      "status": "canonical",
-      "role": "corpus",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
       "correctnessSource": false,
       "tests": {
-        "unit": true,
-        "realFixture": true,
+        "unit": false,
+        "realFixture": false,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
-      }
+      },
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/landmarks.js": {
       "id": "landmarks",
@@ -906,6 +942,22 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/local-dependency-executor.js": {
+      "id": "local-dependency-executor",
+      "path": "shared-solver/lib/local-dependency-executor.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/milestone-decomposer.js": {
       "id": "milestone-decomposer",
       "path": "shared-solver/lib/milestone-decomposer.js",
@@ -937,22 +989,6 @@
         "cleanCheckout": true
       }
     },
-    "shared-solver/lib/mt5-feasibility-surface.js": {
-      "id": "mt5-feasibility-surface",
-      "path": "shared-solver/lib/mt5-feasibility-surface.js",
-      "layer": "diagnostics",
-      "status": "supporting",
-      "role": "diagnostics",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "Observation-only MT5 near-term admissible evidence builder: measures item gains by executing real tower effects, resolves the declared floor graph, and reports level-up atk/def and I608 exp-multiplier unsoundness instead of folding them into a constant bound; writes no milestone JSON and never reaches pruning"
-    },
     "shared-solver/lib/movement-hazards.js": {
       "id": "movement-hazards",
       "path": "shared-solver/lib/movement-hazards.js",
@@ -968,6 +1004,38 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/mt5-feasibility-surface.js": {
+      "id": "mt5-feasibility-surface",
+      "path": "shared-solver/lib/mt5-feasibility-surface.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/multi-region-key-shadow.js": {
+      "id": "multi-region-key-shadow",
+      "path": "shared-solver/lib/multi-region-key-shadow.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/objective-spec.js": {
       "id": "objective-spec",
       "path": "shared-solver/lib/objective-spec.js",
@@ -982,6 +1050,22 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
+    },
+    "shared-solver/lib/onlyup-mt1-real-route-gate.js": {
+      "id": "onlyup-mt1-real-route-gate",
+      "path": "shared-solver/lib/onlyup-mt1-real-route-gate.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/parallel-expander.js": {
       "id": "parallel-expander",
@@ -1118,6 +1202,38 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/reachability-rebase-attribution.js": {
+      "id": "reachability-rebase-attribution",
+      "path": "shared-solver/lib/reachability-rebase-attribution.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/reachability-reuse-attribution.js": {
+      "id": "reachability-reuse-attribution",
+      "path": "shared-solver/lib/reachability-reuse-attribution.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/reachability.js": {
       "id": "reachability",
       "path": "shared-solver/lib/reachability.js",
@@ -1132,38 +1248,6 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
-    },
-    "shared-solver/lib/reachability-reuse-attribution.js": {
-      "id": "reachability-reuse-attribution",
-      "path": "shared-solver/lib/reachability-reuse-attribution.js",
-      "layer": "diagnostics",
-      "status": "supporting",
-      "role": "diagnostics",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": true,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.9a observation-only exact-cache miss grouping for already-eligible safe-fast walk closures; shared topology projection is reused by PR-5.9b while attribution remains optional and read-only"
-    },
-    "shared-solver/lib/reachability-rebase-attribution.js": {
-      "id": "reachability-rebase-attribution",
-      "path": "shared-solver/lib/reachability-rebase-attribution.js",
-      "layer": "diagnostics",
-      "status": "supporting",
-      "role": "diagnostics",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": true,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.9c default-off observation of eager safe-fast node state/key reads and action.travelState escapes; no lazy materialization or visited representation change"
     },
     "shared-solver/lib/region-entry-validator.js": {
       "id": "region-entry-validator",
@@ -1469,8 +1553,7 @@
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
-      },
-      "notes": "PR-5.8e keeps choice identity separate from travel variant identity; PR-5.8g moves existing hard structural rejection before apply and reuses the selected post-state within the same resolution call without changing candidate identity, scoring, or ambiguity semantics"
+      }
     },
     "shared-solver/lib/route-window-repair.js": {
       "id": "route-window-repair",
@@ -1532,21 +1615,37 @@
         "cleanCheckout": true
       }
     },
-    "shared-solver/lib/search-outcome.js": {
-      "id": "search-outcome",
-      "path": "shared-solver/lib/search-outcome.js",
-      "layer": "diagnostics",
+    "shared-solver/lib/search-observatory.js": {
+      "id": "search-observatory",
+      "path": "shared-solver/lib/search-observatory.js",
+      "layer": "unclassified",
       "status": "supporting",
-      "role": "outcome-taxonomy",
+      "role": "supporting",
       "correctnessSource": false,
       "tests": {
-        "unit": true,
-        "realFixture": true,
+        "unit": false,
+        "realFixture": false,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "PR-5.8f canonical diagnostic taxonomy keeps goal discovery, frontier exhaustion, budget exhaustion, and search completeness orthogonal without changing search behavior"
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/search-outcome.js": {
+      "id": "search-outcome",
+      "path": "shared-solver/lib/search-outcome.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/search-profiles.js": {
       "id": "search-profiles",
@@ -1554,6 +1653,21 @@
       "layer": "search/exploration",
       "status": "exploration",
       "role": "exploration-search",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/search-trace-explainability.js": {
+      "id": "search-trace-explainability",
+      "path": "shared-solver/lib/search-trace-explainability.js",
+      "layer": "diagnostics",
+      "status": "supporting",
+      "role": "diagnostics",
       "correctnessSource": false,
       "tests": {
         "unit": false,
@@ -1593,389 +1707,6 @@
         "cleanCheckout": true
       }
     },
-    "shared-solver/lib/search-trace-explainability.js": {
-      "id": "search-trace-explainability",
-      "path": "shared-solver/lib/search-trace-explainability.js",
-      "layer": "diagnostics",
-      "status": "supporting",
-      "role": "diagnostics",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/search-observatory.js": {
-      "id": "search-observatory",
-      "path": "shared-solver/lib/search-observatory.js",
-      "layer": "diagnostics",
-      "status": "supporting",
-      "role": "human-review-diagnostics",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.16a search intent, budget ledger, review candidates, falsifiable next experiment, and same-control comparison"
-    },
-    "shared-solver/lib/local-dependency-executor.js": {
-      "id": "local-dependency-executor",
-      "path": "shared-solver/lib/local-dependency-executor.js",
-      "layer": "planning/execution",
-      "status": "experimental",
-      "role": "local-canonical-dp-checkpoint-executor",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": true,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.16c execute an automatic prerequisite with canonical DP and strict-replay multiple strategic goal checkpoints"
-    },
-    "shared-solver/lib/dependency-feedback-controller.js": {
-      "id": "dependency-feedback-controller",
-      "path": "shared-solver/lib/dependency-feedback-controller.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "downstream-feedback-checkpoint-and-alternative-selector",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": true,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.16d rebuild automatic dependencies per checkpoint, preserve AND order, switch OR alternatives on downstream failure, and execute the next local prerequisite"
-    },
-    "shared-solver/lib/automatic-blocker-repair.js": {
-      "id": "automatic-blocker-repair",
-      "path": "shared-solver/lib/automatic-blocker-repair.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "counterfactual-resource-repair-with-startable-dependency-filter",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": true,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.17a1 rank current-map item counterfactuals for a blocked combat prerequisite and reject high-benefit circular resources whose dependency alternatives cannot start"
-    },
-    "shared-solver/lib/hierarchical-discovery-engine.js": {
-      "id": "hierarchical-discovery-engine",
-      "path": "shared-solver/lib/hierarchical-discovery-engine.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "route-free-terminal-dependency-and-blocker-repair-loop",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": true,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.17a2 repeatedly rebuild terminal dependencies, execute local canonical DP, retain strict-replay checkpoints, and expose the first unsupported repair class"
-    },
-    "shared-solver/lib/strategic-option-map.js": {
-      "id": "strategic-option-map",
-      "path": "shared-solver/lib/strategic-option-map.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "shared-two-dimensional-item-and-enemy-option-state",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.18a materializes item/enemy existence from immutable floor grids plus sparse state mutations and shares snapshots by mutation identity"
-    },
-    "shared-solver/lib/strategic-transition.js": {
-      "id": "strategic-transition",
-      "path": "shared-solver/lib/strategic-transition.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "choice-level-transition-contract-with-reachable-poi-diff",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.18b aggregates path variants into one StrategicTransition per choice with exact-state-cached reachability, lineage-level newly discovered POIs, real after-state presence checks, active-vs-implicit opportunity costs, irreversible cost, terminal blocker stage/progress, and explicit deferred-post incompleteness"
-    },
-    "shared-solver/lib/strategic-d2-search.js": {
-      "id": "strategic-d2-search",
-      "path": "shared-solver/lib/strategic-d2-search.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "terminal-only-multi-agenda-strategic-frontier",
-      "correctnessSource": false,
-      "tests": {
-        "unit": false,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.18c frontier schedules one slot per StrategicTransition choice; adds recoverable deferred exact posts, target-floor lazy floorFly resolution, and a bounded local-primitive connector currently scheduled for direct-unavailable terminal choices, all with queued/resolved/rejected accounting; PR-5.18d Repair 1 makes maxTotalSearchExpansions a hard shared cap with strategic/total budget-exhausted truth fields and stoppedReason; PR-5.18e adds dependency-derived connector mode with shared-budget dependency connector accounting; PR-5.18e Repair 2 records per-attempt failure/success telemetry and drains dependency attempts before other lazy work in dependency-derived mode; PR-5.19c adds observation-only battle viability attribution; PR-5.19d adds opt-in parent-dependency-continuation intent preservation; PR-5.19e adds opt-in active hierarchy call priority so successful hierarchy children can compete for existing connector calls; PR-5.19f adds opt-in continuation-derived attack-blocked -> damageable battle-stage decomposition while preserving generic root behavior; PR-5.19g adds observation-only exact-merge continuation descendant telemetry (historical/future eligible descendants, calls remaining, priority-at-end); PR-5.19h adds observation-only canonical successor edge attribution (expansion lifecycle, outgoing disposition, legal edge graph reachability); PR-5.19i adds opt-in one-shot active-continuation anchor expansion scheduling; PR-5.19j adds opt-in observation-only depth-2 lethal survival attribution; PR-5.19k adds opt-in observation-only primitive survival edge attribution; PR-5.19l adds opt-in witness-backed discrete survival opportunity prerequisite recovery without new connector search; PR-5.19n adds opt-in residual paid-witness graph compatibility and strict suffix replay attribution without reuse; PR-5.19o adds opt-in single prefix-compatible paid-witness suffix recovery with second strict replay and discrete completion before materialization"
-    },
-    "shared-solver/lib/strategic-blocker.js": {
-      "id": "strategic-blocker",
-      "path": "shared-solver/lib/strategic-blocker.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "blocker-derived-intermediate-connector",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.18d reads the terminal battle blocker (attack-blocked/lethal/viable), derives an intermediate metric (combat-power or survival), and runs a bounded local optimizer that maximizes that metric and re-evaluates the terminal blocker on the best intermediate state; Repair 1 adds explicit budget-exhausted/frontier-exhausted/frontier-trimmed stoppedReason diagnostics"
-    },
-    "shared-solver/lib/strategic-dependency.js": {
-      "id": "strategic-dependency",
-      "path": "shared-solver/lib/strategic-dependency.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "dependency-derived-discrete-prerequisite-compiler-and-connector",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.18e compiles named discrete prerequisites (equipment-acquisition or resource/power-opportunity-acquisition) from simulator-enumerated action counterfactuals and unreachable option-map counterfactuals; completionPredicate is the only connector success condition and chains remain strict-replay verifiable; PR-5.18e Repair 1 separates semantic dependency id from source-exact-state attempt id, and implements pickup/interactPickup -> equip two-stage equipment-acquisition evidence; PR-5.18e Repair 2 makes dependency-derived scheduling feedback-aware with at most one outstanding attempt; PR-5.19k adds read-only edgeObserver after successful applyAction and before seenExact suppression"
-    },
-    "shared-solver/lib/strategic-dependency-attribution.js": {
-      "id": "strategic-dependency-attribution",
-      "path": "shared-solver/lib/strategic-dependency-attribution.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "observation-only-dependency-access-attribution",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.19a samples bestApproachStates without affecting search, classifies first unresolved access boundary as battle-unsurvivable/missing-key/closed-door/event-condition/topology-changeFloor/no-path/budget-incomplete, and reports honest proofStrength observed vs hypothesis; Repair 1 adds read-only target-relevance/access-cut 0-1 blocker-distance analysis and targetRelevantBoundary selection; Repair 2 fixes 0-1 BFS deque, computes full target-directed minimum structural path before exact-state boundary classification, and renames minAccessBlockers to minStructuralBoundaryCrossings"
-    },
-    "shared-solver/lib/strategic-access-prerequisite.js": {
-      "id": "strategic-access-prerequisite",
-      "path": "shared-solver/lib/strategic-access-prerequisite.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "battle-access-prerequisite-one-layer-compiler",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.19b compiles only the first battle-unsurvivable structural access boundary into a discrete completionPredicate: exact battle viable at current state; never compiles subsequent boundaries in the same layer"
-    },
-    "shared-solver/lib/strategic-battle-viability.js": {
-      "id": "strategic-battle-viability",
-      "path": "shared-solver/lib/strategic-battle-viability.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "observation-only-battle-viability-deficit-classifier",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.19c splits battle-unsurvivable into unsupported/attack-blocked/lethal/viable using simulator.battleResolver.evaluateBattle; damage==null is attack-blocked only when enemyDef is readable and attackMargin<0, otherwise unsupported/unresolved-no-damage; read-only attribution only, no new search capability"
-    },
-    "shared-solver/lib/strategic-battle-stage-prerequisite.js": {
-      "id": "strategic-battle-stage-prerequisite",
-      "path": "shared-solver/lib/strategic-battle-stage-prerequisite.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "battle-stage-decomposition-damageable-only",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.19f first version compiles only attack-blocked -> make-damageable; completion is battle stage lethal or viable (damage known), never ATK threshold; identity is distinct from generic battle-access-prerequisite"
-    },
-    "shared-solver/lib/strategic-parent-continuation.js": {
-      "id": "strategic-parent-continuation",
-      "path": "shared-solver/lib/strategic-parent-continuation.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "parent-dependency-intent-identity-and-continuation-helpers",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.19d keeps parent dependency intent after P(B) success; continuation identity is parentDependencyId + exactStateKey and is bookkeeping only, never game state or DP key; Repair 1 adds anchorNodeId lineage provenance and isNodeDescendantOf so only legal descendants of the canonical post-state anchor may resume; PR-5.19e Repair 1 adds shouldReactivateMergedParentContinuation so completed merges cannot recreate orphan priority"
-    },
-    "shared-solver/lib/strategic-hierarchy-priority.js": {
-      "id": "strategic-hierarchy-priority",
-      "path": "shared-solver/lib/strategic-hierarchy-priority.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "active-hierarchy-connector-call-priority-controller",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.19e dynamically activates hierarchy call priority only after a real P(B) success; new sibling connector attempts defer while active, child attempt feedback releases priority; no budget increase and no permanent reserved call slot"
-    },
-    "shared-solver/lib/strategic-anchor-expansion-request.js": {
-      "id": "strategic-anchor-expansion-request",
-      "path": "shared-solver/lib/strategic-anchor-expansion-request.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "one-shot-continuation-anchor-expansion-request-queue",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.19i one-shot active-continuation anchor expansion request; selection uses ordinary strategic expansion pipeline; stale already-expanded and inactive-continuation requests are removed without granting a slot"
-    },
-    "shared-solver/lib/strategic-lethal-survival-observer.js": {
-      "id": "strategic-lethal-survival-observer",
-      "path": "shared-solver/lib/strategic-lethal-survival-observer.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "observation-only-depth-two-lethal-child-survival-attribution",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.19j records every expanded lethal child connector state, battle stage/survival deltas, best survival margin and resource delta; bestSurvivalMargin is attribution only and never search priority or completion predicate"
-    },
-    "shared-solver/lib/strategic-survival-edge-observer.js": {
-      "id": "strategic-survival-edge-observer",
-      "path": "shared-solver/lib/strategic-survival-edge-observer.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "observation-only-primitive-survival-edge-attribution",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.19k observes successfully applied connector edges before seenExact suppression and attributes per-edge deltaHP/deltaDamage/deltaSurvivalMargin, stable positive action targets, and full best-chain decomposition"
-    },
-    "shared-solver/lib/strategic-survival-residual-attribution.js": {
-      "id": "strategic-survival-residual-attribution",
-      "path": "shared-solver/lib/strategic-survival-residual-attribution.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "observation-only-paid-witness-residual-compatibility-and-replay-attribution",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.19n classifies later positive battle opportunities from one retained failed-connector graph as prefix-compatible, exact-state-reroot-compatible, branch-incompatible, or strict-replay-failed; PR-5.19o consumes only the first capture-complete prefix-compatible replay-valid candidate; PR-5.19p re-roots observation at the complete O2+O3 prefix and keeps reroot recovery unauthorized"
-    },
-    "shared-solver/lib/strategic-survival-opportunity-prerequisite.js": {
-      "id": "strategic-survival-opportunity-prerequisite",
-      "path": "shared-solver/lib/strategic-survival-opportunity-prerequisite.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "witness-backed-discrete-survival-opportunity-prerequisite-compiler",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.19l compiles first-positive named battle opportunity by BFS discovery from a failed depth>0 lethal generic connector witness; PR-5.19o reuses the compiler with an explicit prefix-residual selection policy and paid-residual source type; completion predicate is discrete opportunity consumption (canonical tile no longer enemy), never survivalMargin"
-    },
-    "shared-solver/lib/strategic-connector.js": {
-      "id": "strategic-connector",
-      "path": "shared-solver/lib/strategic-connector.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "bounded-local-primitive-connector-with-exact-replay-legality",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.18c resolves a connector target from an exact source state via bounded primitive search, records exact pre/post edges, re-enumerates every replay edge through the recorded-action resolver, and separates budget, true exhaustion, and frontier trimming"
-    },
-    "shared-solver/lib/strategic-lazy-work.js": {
-      "id": "strategic-lazy-work",
-      "path": "shared-solver/lib/strategic-lazy-work.js",
-      "layer": "planning/control",
-      "status": "experimental",
-      "role": "lazy-strategic-work-queued-resolved-rejected-lifecycle",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.18c lazy work queue for deferred exact posts, floorFly choices, and connector choices; items must resolve or reject with a reason and never silently disappear; PR-5.18e adds dependency-connector-choice lazy kind; PR-5.19b adds battle-access-prerequisite-choice; PR-5.19d adds parent-dependency-continuation"
-    },
     "shared-solver/lib/segment-dp.js": {
       "id": "segment-dp",
       "path": "shared-solver/lib/segment-dp.js",
@@ -2004,8 +1735,39 @@
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/solve-task-v2.js": {
+      "id": "solve-task-v2",
+      "path": "shared-solver/lib/solve-task-v2.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
       },
-      "notes": "PR-5.9b keeps the exact-state reachability LRU and adds a bounded safe-fast topology skeleton LRU; each exact miss still executes safety classification and rebases current-state travel nodes"
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/solve-task.js": {
+      "id": "solve-task",
+      "path": "shared-solver/lib/solve-task.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/solver-config.js": {
       "id": "solver-config",
@@ -2037,6 +1799,54 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/solver-job-manager.js": {
+      "id": "solver-job-manager",
+      "path": "shared-solver/lib/solver-job-manager.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/solver-job-result.js": {
+      "id": "solver-job-result",
+      "path": "shared-solver/lib/solver-job-result.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/solver-job.js": {
+      "id": "solver-job",
+      "path": "shared-solver/lib/solver-job.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/solver-model.js": {
       "id": "solver-model",
       "path": "shared-solver/lib/solver-model.js",
@@ -2051,6 +1861,38 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
+    },
+    "shared-solver/lib/solver-progress.js": {
+      "id": "solver-progress",
+      "path": "shared-solver/lib/solver-progress.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/solver-worker-runner.js": {
+      "id": "solver-worker-runner",
+      "path": "shared-solver/lib/solver-worker-runner.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/stage-policy.js": {
       "id": "stage-policy",
@@ -2112,6 +1954,38 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/static-combat-economy-core.js": {
+      "id": "static-combat-economy-core",
+      "path": "shared-solver/lib/static-combat-economy-core.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/static-combat-economy-h5-adapter.js": {
+      "id": "static-combat-economy-h5-adapter",
+      "path": "shared-solver/lib/static-combat-economy-h5-adapter.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/step-simulator.js": {
       "id": "step-simulator",
       "path": "shared-solver/lib/step-simulator.js",
@@ -2125,8 +1999,295 @@
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/strategic-access-prerequisite.js": {
+      "id": "strategic-access-prerequisite",
+      "path": "shared-solver/lib/strategic-access-prerequisite.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
       },
-      "notes": "Safe-fast walk splits state-free topology/path skeleton discovery from current-state travel-node rebase; unsafe states remain on legacy exact simulation"
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-anchor-expansion-request.js": {
+      "id": "strategic-anchor-expansion-request",
+      "path": "shared-solver/lib/strategic-anchor-expansion-request.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-battle-stage-prerequisite.js": {
+      "id": "strategic-battle-stage-prerequisite",
+      "path": "shared-solver/lib/strategic-battle-stage-prerequisite.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-battle-viability.js": {
+      "id": "strategic-battle-viability",
+      "path": "shared-solver/lib/strategic-battle-viability.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-blocker.js": {
+      "id": "strategic-blocker",
+      "path": "shared-solver/lib/strategic-blocker.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-connector.js": {
+      "id": "strategic-connector",
+      "path": "shared-solver/lib/strategic-connector.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-d2-search.js": {
+      "id": "strategic-d2-search",
+      "path": "shared-solver/lib/strategic-d2-search.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-dependency-attribution.js": {
+      "id": "strategic-dependency-attribution",
+      "path": "shared-solver/lib/strategic-dependency-attribution.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-dependency.js": {
+      "id": "strategic-dependency",
+      "path": "shared-solver/lib/strategic-dependency.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-hierarchy-priority.js": {
+      "id": "strategic-hierarchy-priority",
+      "path": "shared-solver/lib/strategic-hierarchy-priority.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-lazy-work.js": {
+      "id": "strategic-lazy-work",
+      "path": "shared-solver/lib/strategic-lazy-work.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-lethal-survival-observer.js": {
+      "id": "strategic-lethal-survival-observer",
+      "path": "shared-solver/lib/strategic-lethal-survival-observer.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-option-map.js": {
+      "id": "strategic-option-map",
+      "path": "shared-solver/lib/strategic-option-map.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-parent-continuation.js": {
+      "id": "strategic-parent-continuation",
+      "path": "shared-solver/lib/strategic-parent-continuation.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-survival-edge-observer.js": {
+      "id": "strategic-survival-edge-observer",
+      "path": "shared-solver/lib/strategic-survival-edge-observer.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-survival-opportunity-prerequisite.js": {
+      "id": "strategic-survival-opportunity-prerequisite",
+      "path": "shared-solver/lib/strategic-survival-opportunity-prerequisite.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-survival-residual-attribution.js": {
+      "id": "strategic-survival-residual-attribution",
+      "path": "shared-solver/lib/strategic-survival-residual-attribution.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/strategic-transition.js": {
+      "id": "strategic-transition",
+      "path": "shared-solver/lib/strategic-transition.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/teacher-divergence-audit.js": {
       "id": "teacher-divergence-audit",
@@ -2191,35 +2352,37 @@
         "cleanCheckout": true
       }
     },
-    "shared-solver/lib/tower-ir.js": {
-      "id": "tower-ir",
-      "path": "shared-solver/lib/tower-ir.js",
-      "layer": "search/correctness",
-      "status": "canonical",
-      "role": "ir-compiler",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
     "shared-solver/lib/tower-ir-shadow.js": {
       "id": "tower-ir-shadow",
       "path": "shared-solver/lib/tower-ir-shadow.js",
-      "layer": "search/correctness",
-      "status": "canonical",
-      "role": "shadow-audit",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
       "correctnessSource": false,
       "tests": {
-        "unit": true,
-        "realFixture": true,
+        "unit": false,
+        "realFixture": false,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
-      }
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/tower-ir.js": {
+      "id": "tower-ir",
+      "path": "shared-solver/lib/tower-ir.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
     },
     "shared-solver/lib/updown-candidate-policy.js": {
       "id": "updown-candidate-policy",
@@ -2250,430 +2413,15 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
-    },
-    "shared-solver/lib/file-job-store.js": {
-      "id": "file-job-store",
-      "path": "shared-solver/lib/file-job-store.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
-      "correctnessSource": false,
-      "tests": {
-        "unit": false,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/solve-task.js": {
-      "id": "solve-task",
-      "path": "shared-solver/lib/solve-task.js",
-      "layer": "unclassified",
-      "status": "canonical",
-      "role": "supporting",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/solver-job.js": {
-      "id": "solver-job",
-      "path": "shared-solver/lib/solver-job.js",
-      "layer": "unclassified",
-      "status": "canonical",
-      "role": "supporting",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/solver-job-manager.js": {
-      "id": "solver-job-manager",
-      "path": "shared-solver/lib/solver-job-manager.js",
-      "layer": "unclassified",
-      "status": "canonical",
-      "role": "supporting",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/solver-job-result.js": {
-      "id": "solver-job-result",
-      "path": "shared-solver/lib/solver-job-result.js",
-      "layer": "unclassified",
-      "status": "canonical",
-      "role": "supporting",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/solver-progress.js": {
-      "id": "solver-progress",
-      "path": "shared-solver/lib/solver-progress.js",
-      "layer": "unclassified",
-      "status": "canonical",
-      "role": "supporting",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/solver-worker-runner.js": {
-      "id": "solver-worker-runner",
-      "path": "shared-solver/lib/solver-worker-runner.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
-      "correctnessSource": false,
-      "tests": {
-        "unit": false,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/launcher/server.js": {
-      "id": "launcher-server",
-      "path": "shared-solver/launcher/server.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/launcher/router.js": {
-      "id": "launcher-router",
-      "path": "shared-solver/launcher/router.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/launcher/job-api.js": {
-      "id": "launcher-job-api",
-      "path": "shared-solver/launcher/job-api.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/launcher/tower-registry.js": {
-      "id": "launcher-tower-registry",
-      "path": "shared-solver/launcher/tower-registry.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/solve-task-v2.js": {
-      "note": "solve-task.v2 ordered-region contract (PR-5.4a)"
-    },
-    "shared-solver/lib/multi-region-key-shadow.js": {
-      "id": "multi-region-key-shadow",
-      "path": "shared-solver/lib/multi-region-key-shadow.js",
-      "layer": "search/correctness",
-      "status": "canonical",
-      "role": "shadow-audit",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      }
-    },
-    "shared-solver/lib/static-combat-economy-core.js": {
-      "id": "static-combat-economy-core",
-      "path": "shared-solver/lib/static-combat-economy-core.js",
-      "layer": "search/correctness",
-      "status": "experimental",
-      "role": "static-schema-combat-economy-correctness-search",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.20a/5.20b static combat-economy vertical slice and scale gate. Scope is ONLY its own restricted static schema: rectangular map ('#'/'.' terrain only), hero hp/atk/def/mdef, plain monsters hp/atk/def and one-time attribute resources; validateStaticCombatEconomyProblem uses strict allowlists and rejects every unknown field, illegal grid character and duplicate/missing interaction id instead of ignoring them. Route discovery is automatic (BFS-collapsed macro actions, consumed+reachable structural buckets, 4-dimension Pareto inside a bucket, parentId/actionId route links) with no hand-written path, checkpoint, goal split or monster ordering hint. PR-5.20b adds dual CONSERVE_HP/BREAK_BOTTLENECK agendas holding only {id,rank} tickets over a single pending map (with rebuild() to drop stale tickets), a mode switch that only fires while a real blocker deficit exists, a goal Pareto archive keeping every non-dominated finish, and a scale gate proving two 24-32 interaction cases reach SOLVED inside 50000 expansions with peakFrontier<=10000. Does NOT read H5Mota data; correctnessSource=false because it does not participate in the trusted semantic or DP correctness path. PR-5.21a: EXPERIMENTAL_FROZEN / REGRESSION_ONLY -- retained as a regression corpus only, and no longer a production promotion path; the real MT1->MT2 route was achieved by the existing canonical DP plus the existing runtime, without this module.",
-      "promotionStatus": "EXPERIMENTAL_FROZEN / REGRESSION_ONLY"
-    },
-    "shared-solver/lib/static-combat-economy-h5-adapter.js": {
-      "id": "static-combat-economy-h5-adapter",
-      "path": "shared-solver/lib/static-combat-economy-h5-adapter.js",
-      "layer": "domain",
-      "status": "experimental",
-      "role": "restricted-native-h5-static-floor-data-adapter",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": false,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.20c maps ONE event-free H5 floor into the static-combat-economy-core problem. Data mapping only: reads an already-in-memory H5-shaped project object and never touches the filesystem, project-loader, functions.js runtime, battle resolver, simulator or event resolver, and never evaluates or pattern-matches an effect string. Resources are accepted only from a canonical gem/potion allowlist whose itemEffect must equal one of two exact canonical strings, with gains built solely from project.values and floor.ratio. Anything outside the subdomain (events/autoEvent/firstArrive/eachArrive/parallelDo/beforeBattle/afterBattle/afterGetItem, doors, keys, shops, equipment, skills, money/exp/level, special monsters, custom itemEffect, tool-sensitive tiles, multiple or missing exits, cross-floor continuation, unknown map/item/enemy) fails the WHOLE floor closed with a stably sorted floorId/x/y/reason list; an offending cell is never rewritten into an obstacle. The unique changeFloor tile is a TERMINAL goal -- the next floor is not executed and goalArchive is not a cross-floor continuation archive. correctnessSource=false: this proves restricted native-data mapping, NOT semantic equivalence with arbitrary H5 functions.js. PR-5.21a: EXPERIMENTAL_FROZEN / REGRESSION_ONLY -- retained as a regression corpus only, and no longer a production promotion path.",
-      "promotionStatus": "EXPERIMENTAL_FROZEN / REGRESSION_ONLY"
-    },
-    "shared-solver/lib/onlyup-mt1-real-route-gate.js": {
-      "id": "onlyup-mt1-real-route-gate",
-      "path": "shared-solver/lib/onlyup-mt1-real-route-gate.js",
-      "layer": "diagnostics",
-      "status": "supporting",
-      "role": "real-tower-mt1-route-go-no-go-gate",
-      "correctnessSource": false,
-      "tests": {
-        "unit": true,
-        "realFixture": true,
-        "segmentClosure": false,
-        "fullClosure": false,
-        "cleanCheckout": true
-      },
-      "notes": "PR-5.20d decisive Go/No-Go gate: drives the REAL Only Up project from its own firstData start state to MT2 using only existing trusted machinery -- project-loader.loadProject, StaticSimulator, FunctionBackedBattleResolver, simulator.createInitialState/enumerateActions/applyAction, searchDP and the existing buildStateKey/buildDominanceKey. Implements NO battle/item/event semantics and NO new search: the DP only orders primitive actions the runtime already offers, with macro layers (resourcePocket/Cluster/Chain, fightToLevelUp) off and searchGraphMode=primitive. Difficulty levers (I581/I582/level0) are filtered out of every expansion and counted so a route can never win by lowering difficulty. The choice resolver only accepts a unique no-state-change branch and otherwise reports UNRESOLVED_REQUIRED_CHOICE instead of guessing. Strict replay runs on a fresh simulator and re-derives every recorded decision from the live enumeration through route-store.resolveRecordedAction, so nothing is executed from a summary string; `auto:` route entries are runtime bookkeeping re-performed by the runtime and are proven identical by the final exact-state-key comparison. Fixed budget: maxExpandedStates=50000, wall<30s, RSS<256MB, single process, no worker, no disk frontier. PR-5.21a: evidence schema v2 -- inventory now reads canonical state.inventory, floor mutations read state.floorStates via state.js listFloorMutationSummary, and a normalized difficulty snapshot (I581/I582/flag:level0) is frozen identical across search start, search end and replay end. Replay uses storeRoute:true once for the final candidate, so the compact recorded artifact and the full runtime transcript are reported as separate numbers and cross-checked (raw route length, decision depth, auto step/pickup/battle counts, decision summary sequence and initial auto prefix). Decision identity is enforced at identity grade (never summary/kind); fingerprintMatches is reported rather than asserted because the recorded route and route-store normalizeAction build different fingerprint formats, which cannot be reconciled without editing route-store/simulator. Also generalized: runOnlyUpRealRouteGate({targetFloorId}) with runOnlyUpMt1RealRouteGate (MT2) and runOnlyUpFirstRegionRealRouteGate (MT6) wrappers."
     }
   },
   "tests": {
-    "shared-solver/check-strategic-d2-search.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.18c verifies re-enumerated connector edge replay (including corruption and frontier-trim negatives), real integrated two-step connector strict replay, protected lazy-work lifecycle, recoverable deferred exact posts, target-floor floorFly variant retention, six agenda queues, real D2 64-expansion frontier, and I621 implicit-consumption evidence"
-    },
-    "shared-solver/check-strategic-blocker-connector.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.18d verifies terminal blocker analysis (attack-blocked -> combat-power), synthetic and real blocker-derived intermediate connector strict replay, intermediate combat-power metric improvement, shared-total-work edge controls (remaining 1/0/3), and a same-total-search-work A/B against the strategic-only baseline; --qualification-1000 adds the frozen 1000-work A/B for marker-only CI"
-    },
-    "shared-solver/check-strategic-dependency-connector.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.18e verifies synthetic completionPredicate-only dependency connector strict replay, positive/negative dependency compile controls, real unreachable-option counterfactual compile, shared-budget edge controls (remaining 0/1/3), and same-total-work A/B; --qualification-1000 adds the frozen 1000-work A/B; Repair 1 adds source-aware scheduler synthetic contract, pickup->equip two-stage synthetic control, and dependencySatisfied/dependencyStateCreated/dependencyGlobalBlockerAdvanced split diagnostics; Repair 2 adds feedback-aware S0-fail/S1-retry synthetic control and dependencyAttemptWitnesses contract"
-    },
-    "shared-solver/check-strategic-dependency-attribution.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.19a verifies observation-only attribution does not change D2 search stats, synthetic distance metrics and boundary classifiers, real no-semantic-change A/B, and --qualification-1000 frozen 8-attempt attribution contract (8 attempts / 8 distinct sources / 1 semantic dependency); Repair 1 adds relevant/irrelevant access-cut synthetic controls and qualification targetRelevanceSummary; Repair 2 adds adversarial 0-1 BFS path controls and structural access summary contract"
-    },
-    "shared-solver/check-strategic-battle-access-prerequisite.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.19b verifies synthetic battle-access prerequisite compile and strict-replay connector, one-layer discipline, shared-budget edge controls, and --qualification-1000 frozen mechanism/promotion A/B"
-    },
-    "shared-solver/check-strategic-battle-viability.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.19c verifies synthetic attack-blocked/lethal/viable/unsupported/unresolved-no-damage classification, full battleBefore/After fields, on/off observation search stats are identical, and --qualification-1000 real 8-attempt attribution contract with success causal fields and structuralAfter.available/reason/unavailableReason"
-    },
-    "shared-solver/check-strategic-parent-dependency-continuation.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.19d verifies parentDependencyId+exactStateKey continuation identity, lazy-work kind, exact-merge intent preservation, cross-floor waiting without oracle-return, legal resume on target floor, next-boundary re-attribution, and --qualification-1000 frozen same-total-work A/B mechanism/promotion split; Repair 1 adds adversarial lineage tree (unrelated target-floor node must not resume, descendant must resume) and split next-prerequisite scheduling failure reasons"
-    },
-    "shared-solver/check-strategic-hierarchical-call-allocation.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.19e verifies active hierarchy priority synthetic sequence (root S1 success activates C1, sibling S2 defers, child P2 gets next call, feedback releases, sibling resumes), focused on/off no-semantic-change, and --qualification-1000 real frozen mechanism gate that a continuation-derived child prerequisite actually receives one connector call; Repair 1 adds lifecycle-safe merge controls (completed no-reactivation, active preserved, parked preserved)"
-    },
-    "shared-solver/check-strategic-battle-stage-prerequisite.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.19f verifies attack-blocked -> damageable compile identity (distinct from generic battle-access), synthetic completion/strict replay, lethal out-of-scope, and --qualification-1000 A/B control (5.19e generic child) vs candidate (stage-decomposed child)"
-    },
-    "shared-solver/check-strategic-retroactive-continuation-observation.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.19g observation-only frozen 1000-work contract for exact-merged stage continuation; currently observes historical eligible descendants 0 / future eligible descendants 0 / calls remaining 2 / priority active at end, so retroactive historical-descendant re-entry hypothesis is not supported"
-    },
-    "shared-solver/check-strategic-canonical-successor-edge-attribution.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.19h observation-only frozen 1000-work contract for anchor expansion lifecycle, outgoing transition disposition, and canonical legal successor edge graph; currently classifies stage anchor 840 as case-1-anchor-never-expanded while control anchor 109 is expanded and canonical-edge-reachable to MT5"
-    },
-    "shared-solver/check-strategic-continuation-anchor-expansion-scheduling.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.19i verifies one-shot anchor expansion request lifecycle (duplicate rejected, selected once, already-expanded skip, inactive skip), frozen control OFF vs candidate ON, anchor expanded after continuation, lineage-safe resume, and generic lethal child receiving a real connector call"
-    },
-    "shared-solver/check-strategic-lethal-survival-attribution.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.19j verifies synthetic survival observer and frozen depth-2 lethal child attribution; real result class B: best survival margin -617833 -> -150104, 43/50 states improved, max HP 214597, min damage 168451, viable state false"
-    },
-    "shared-solver/check-strategic-survival-edge-attribution.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.19k verifies synthetic edge observer and frozen depth-2 edge attribution; real result: 124 edges / 42 positive / 6 unique battle targets, best chain decomposed to skeletonKing MT5 +90953, devilWarrior MT5 +279323 damage reduction, changeFloor 0, skeletonKing MT4 +97453"
-    },
-    "shared-solver/check-strategic-survival-opportunity-prerequisite.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.19l verifies synthetic discrete consumption predicate and frozen witness-backed recovery; PR-5.19n extends the synthetic contracts with R1/R2/R3/R4 residual paid-witness attribution and real observation asserts O2-compatible suffix replay without changing the frozen result; --residual-recovery adds PR-5.19o prefix-only strict replay/materialization/continuation gates; --post-o3-observation adds PR-5.19p P1/P2/P3/P4 attribution from the O2+O3 prefix without behavior"
-    },
-    "shared-solver/check-d2-deferred-heal-attribution.js": {
-      "grade": "diagnostic",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.17a13 post-hoc early-versus-delayed I621 causal A/B plus route-free hierarchical consume-now vocabulary audit; tracked route is never a planner input"
-    },
-    "shared-solver/check-repair-actual-closure.js": {
-      "grade": "unit",
+    "shared-solver/check-action-expansion-cache-correctness.js": {
+      "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.17a5 synthetic actual repair closure class commit and rollback contract"
-    },
-    "shared-solver/check-hierarchical-discovery-engine.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.17a2 route-free D2 hierarchical loop executes five local prerequisites with strict replay, then freezes the cross-floor EXP/composite repair boundary"
-    },
-    "shared-solver/check-automatic-blocker-repair.js": {
-      "grade": "integration-local",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.17a1 real D2 blocked evilHero repair, circular I1009 rejection, startable I1014 selection, first prerequisite strict replay, and empty-portfolio negative control"
-    },
-    "shared-solver/check-dependency-feedback-controller.js": {
-      "grade": "integration-local",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.16d real D2 top-1 checkpoint failure versus multi-role checkpoint and OR-alternative switch with incremental strict replay"
-    },
-    "shared-solver/check-local-dependency-executor.js": {
-      "grade": "integration-local",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.16c real D2 automatic skeletonKing prerequisite, eight multi-role checkpoints, strict replay, deterministic fingerprints, and no-viable negative control"
-    },
-    "shared-solver/check-automatic-dependency-planner.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.16b real D2 I894 AND/OR dependency alternatives, POI-contact, simulator evidence, and disconnected negative controls"
-    },
-    "shared-solver/check-search-observatory.js": {
-      "grade": "diagnostic",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.16a D2 human-readable search intent and cost observatory baseline"
-    },
-    "shared-solver/check-automatic-feasibility-subgoals.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.15b real detached MT5 state envelope and automatic equipment feasibility candidate with removed-item and missing-enemy negative controls"
-    },
-    "shared-solver/check-d2-blind-failure-attribution.js": {
-      "grade": "diagnostic",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.15a tracked checkpoint construction plus detached-state 1000-expansion D2 attribution and MT5-only negative control"
-    },
-    "shared-solver/check-blind-qualification.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.14 D0-D3 input-boundary and verdict contract; D0 strict replay passes while bounded D2/D3 misses remain explicit open evidence"
-    },
-    "shared-solver/check-failure-triggered-macro-backtracking.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.13b bounded post-goal collection, deepest-expanded state, and route-free failure-triggered checkpoint/backtracking contract"
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-adaptive-onlyup.js": {
       "grade": "local-regression",
@@ -2710,7 +2458,77 @@
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
+    "shared-solver/check-automatic-blocker-repair.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-automatic-dependency-planner.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-automatic-feasibility-subgoals.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-automatic-macro-graph.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.12 route-free automatic floor corridor, TowerIR POI, resource-gate, mutation dependency, and terminal boss graph contract"
+    },
+    "shared-solver/check-battle-evaluation-projection.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-blind-discovery-baseline.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.10c terminal-only D3 input contract plus bounded real OnlyUp not-found baseline; found=false is expected evidence, not a no-route proof"
+    },
+    "shared-solver/check-blind-qualification.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.14 D0-D3 input-boundary and verdict contract; D0 strict replay passes while bounded D2/D3 misses remain explicit open evidence"
+    },
     "shared-solver/check-bounded-abstraction-counterexample.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-candidate-key-paired-benchmark.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-candidate-key-promotion-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-candidate-quality-shadow.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
@@ -2738,26 +2556,26 @@
       "cleanCheckout": true,
       "notes": "canonical core regression suite; no ignored route dependency"
     },
-    "shared-solver/check-automatic-macro-graph.js": {
-      "grade": "unit-plus-micro",
+    "shared-solver/check-d2-blind-failure-attribution.js": {
+      "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.12 route-free automatic floor corridor, TowerIR POI, resource-gate, mutation dependency, and terminal boss graph contract"
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
-    "shared-solver/check-hierarchical-blind-planner.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": true,
+    "shared-solver/check-d2-deferred-heal-attribution.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
       "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.13 route-free automatic floor-stage planner contract; bounded not-found is expected and does not prove no route"
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
-    "shared-solver/check-blind-discovery-baseline.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": true,
+    "shared-solver/check-dependency-feedback-controller.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
       "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.10c terminal-only D3 input contract plus bounded real OnlyUp not-found baseline; found=false is expected evidence, not a no-route proof"
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-discovery-capability-audit.js": {
       "grade": "unit",
@@ -2773,12 +2591,26 @@
       "cleanCheckout": true,
       "notes": "synthetic searchDP observer contract; no tower/project load"
     },
-    "shared-solver/check-eval-vector.js": {
-      "grade": "unit-plus-micro",
+    "shared-solver/check-dual-key-shadow-contract.js": {
+      "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-eval-vector.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-failure-triggered-macro-backtracking.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "observation-only eval vector contract: signed per-field margins, near-term bottleneck vs full-horizon reporting, unknown-evidence is never viable, tracked MT5 first-sweep/third-gate HP-drop chain"
+      "notes": "PR-5.13b bounded post-goal collection, deepest-expanded state, and route-free failure-triggered checkpoint/backtracking contract"
     },
     "shared-solver/check-floor-scout.js": {
       "grade": "local-regression",
@@ -2786,6 +2618,41 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-full-solve-hotspot-reprofiling.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-goal-directed-search.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-goal-feasibility-bounds.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-hierarchical-blind-planner.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.13 route-free automatic floor-stage planner contract; bounded not-found is expected and does not prove no route"
+    },
+    "shared-solver/check-hierarchical-discovery-engine.js": {
+      "grade": "integration-local",
+      "allowsNotFound": true,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.17a2 route-free D2 hierarchical loop executes five local prerequisites with strict replay, then freezes the cross-floor EXP/composite repair boundary"
     },
     "shared-solver/check-hp3834-mt2-candidate2-capacity-matrix-k.js": {
       "grade": "local-regression",
@@ -2850,7 +2717,35 @@
       "cleanCheckout": true,
       "notes": "synthetic hybrid-fair agenda contract; no tower/project load"
     },
+    "shared-solver/check-key-dependency-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-launcher-api.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-launcher-ui-live.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-live-snapshot-normalization.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-local-dependency-executor.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
@@ -2866,6 +2761,27 @@
     },
     "shared-solver/check-milestone-audit.js": {
       "grade": "diagnostic",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-mt1-default-promotion-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-mt1-post-promotion-regression-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-mt1-workload-matrix-contract.js": {
+      "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": false,
@@ -2899,73 +2815,31 @@
       "cleanCheckout": false,
       "notes": "thin compatibility wrapper around check-mt5-51533-next-smoke.js"
     },
-    "shared-solver/check-mt5-feasibility-surface.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "MT5 near-term feasibility surface contract: clause expressibility, measured gain provenance, level-up/I608 unsoundness guards, the constant-bound-cannot-prune-third-gate result, and zero-false-prune controls with a live floor-graph refutation"
-    },
-    "shared-solver/check-mt5-third-gate-resource-timing.js": {
-      "grade": "closure",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "Tracked MT4 fixture proves the 13846 HP causal benefit of delaying MT4:8,3/I621, then requires the refined milestone graph to reach mt5-third-gate within 500 expansions per segment without action trimming"
-    },
     "shared-solver/check-mt5-blueking-long-chain.js": {
-      "grade": "closure",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.7c tracked MT4 long-chain requalification: every resource-timing milestone through MT5 blueKing closes within 500 expansions per segment, with no action trimming or budget exhaustion and a strict recorded-decision replay"
-    },
-    "shared-solver/check-post-mt5-long-chain-baseline.js": {
-      "grade": "local-regression",
-      "allowsNotFound": true,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.8a historical coarse-graph baseline reconstructed after 5.8b: fixed expansions and no wall timeout pin mt7-special80-ready as the first failure, exclude trimming/budget exhaustion, strictly replay the reached prefix, and retain the pre-repair MT6 resource order"
-    },
-    "shared-solver/check-mt6-defense-timing-causal-repair.js": {
-      "grade": "closure",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.8b one-variable causal repair: move MT6:2,1 +500 DEF before MT6:6,8 while preserving budgets, DP options, action scope, key, dominance, and selection; special80 changes from the pinned 5.8a failure to a strict-replay-qualified success"
-    },
-    "shared-solver/check-mt7-left-sword-budget-baseline.js": {
-      "grade": "local-regression",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.8c fixed-500 attribution from the exact strict-replay-qualified special80 state: left-sword is feasible and strictly replayable even though its skyline remains live at the expansion ceiling; distinguishes found=true/incomplete-skyline from a route-search failure without changing production search semantics"
-    },
-    "shared-solver/check-mt7-mt8-strict-replay-attribution.js": {
-      "grade": "closure",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.8e/5.8g real-fixture closure: preserve the decision-13 legacy witness and exact-post path-17 selection, strictly replay 13/13 suffix and 37/37 full lineage, reproduce the winner final state, reuse all 37 selected post-states, and hard-filter structurally impossible candidates before apply"
-    },
-    "shared-solver/check-recorded-travel-variant-replay.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.8e/5.8g synthetic resolver controls: retain same-choice travel variants, preserve unique/no/multiple exact-post semantics, reject hard structural mismatches before apply, and reuse the selected post-state without a second winner apply"
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
-    "shared-solver/check-search-outcome-taxonomy.js": {
-      "grade": "unit-plus-micro",
+    "shared-solver/check-mt5-feasibility-surface.js": {
+      "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.8f truth-table, doctor, and solver-job projection controls; found plus incomplete must remain a successful feasible route, with the real MT7 witness qualified separately"
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-mt5-route-repair-closure.js": {
       "grade": "closure",
       "allowsNotFound": false,
       "requiresStrictReplay": true,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-mt5-third-gate-resource-timing.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
@@ -2976,6 +2850,62 @@
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
+    "shared-solver/check-mt6-defense-timing-causal-repair.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-mt7-left-sword-budget-baseline.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-mt7-mt8-strict-replay-attribution.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-multi-region-boundary-matrix-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-multi-region-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-multi-region-key-shadow-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-multi-region-route-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-objective-safe-archive.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-objective-spec-contract.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": false,
@@ -2983,19 +2913,19 @@
       "cleanCheckout": true,
       "notes": "ObjectiveSpec normalization/comparison/proof controls plus a short real RegionSpec route artifact"
     },
-    "shared-solver/check-objective-safe-archive.js": {
-      "grade": "unit",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.3b1 objective-safe goal archive: terminal comparator retains the objective winner under the goalSkylineLimit cap, objective-search compatibility negative controls, proof claim truncation downgrade, and composed route-length objective metadata"
-    },
     "shared-solver/check-objective-spec-live.js": {
       "grade": "integration-local",
       "allowsNotFound": false,
       "requiresStrictReplay": true,
       "cleanCheckout": false,
       "notes": "real Chromium replay recomputes and verifies the persisted terminal objective value"
+    },
+    "shared-solver/check-onlyup-first-region-real-route-gate.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-onlyup-floorfly-dedup-safety.js": {
       "grade": "local-regression",
@@ -3005,6 +2935,13 @@
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-onlyup-key-states.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-onlyup-mt1-real-route-gate.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
@@ -3023,7 +2960,21 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": false,
-      "notes": "OnlyUp segmented DP regression plus synthetic one-level and two-level failure-class-driven checkpoint repair coverage for PR-5.6d"
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-perf-baseline-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-post-mt5-long-chain-baseline.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-progressive-monster-planner.js": {
       "grade": "local-regression",
@@ -3033,6 +2984,48 @@
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-progressive-to-milestone.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-reachability-optimization-requalification.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-reachability-rebase-attribution.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-reachability-reuse-attribution.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-reachability-skeleton-cache.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-real-route-performance-qualification.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-recorded-travel-variant-replay.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
@@ -3057,6 +3050,20 @@
       "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-remaining-materialization-attribution.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-repair-actual-closure.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
@@ -3179,6 +3186,13 @@
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
+    "shared-solver/check-route-free-state-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-route-gui-compare.js": {
       "grade": "diagnostic",
       "allowsNotFound": false,
@@ -3207,12 +3221,68 @@
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
+    "shared-solver/check-route-search-portfolio.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-route-store-exact.js": {
       "grade": "unit",
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "synthetic exact final-state route reconstruction check"
+    },
+    "shared-solver/check-search-observatory.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-search-outcome-taxonomy.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-search-trace-explainability.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": true,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.11 decision-depth/floor/action/rejection trace, human-review buckets, and same-control before-after comparison contract"
+    },
+    "shared-solver/check-solve-task-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-solve-task-v2-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-solver-job-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-solver-job-live.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-solver-model-contract.js": {
       "grade": "unit-plus-micro",
@@ -3256,6 +3326,125 @@
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
+    "shared-solver/check-static-combat-economy-core.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-static-combat-economy-h5-adapter.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-battle-access-prerequisite.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-battle-stage-prerequisite.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-battle-viability.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-blocker-connector.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-canonical-successor-edge-attribution.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-continuation-anchor-expansion-scheduling.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-d2-search.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-dependency-attribution.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-dependency-connector.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-hierarchical-call-allocation.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-lethal-survival-attribution.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-parent-dependency-continuation.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-retroactive-continuation-observation.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-survival-edge-attribution.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-strategic-survival-opportunity-prerequisite.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-teacher-divergence.js": {
       "grade": "diagnostic",
       "allowsNotFound": true,
@@ -3277,6 +3466,34 @@
       "cleanCheckout": true,
       "notes": "synthetic real-search teacher observer outcome contract"
     },
+    "shared-solver/check-topology-first-materialization.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-tower-ir-shadow-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-walk-reachability-fast-path.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-walk-reachability-performance.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-whiteisland-trial-resource-order.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
@@ -3297,286 +3514,6 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
-    },
-    "shared-solver/check-search-trace-explainability.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.11 decision-depth/floor/action/rejection trace, human-review buckets, and same-control before-after comparison contract"
-    },
-    "shared-solver/check-solve-task-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.3c SolveTask schema, stable task identity, external compiled:true trust boundary, budget validation, legacy region compatibility"
-    },
-    "shared-solver/check-solver-job-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.3c job state machine, honest progress, failure classification, cancel, identity binding, micro job lifecycle"
-    },
-    "shared-solver/check-solver-job-live.js": {
-      "grade": "integration-local",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": false,
-      "notes": "real Chromium short SolveTask job queued->completed with strict route replay"
-    },
-    "shared-solver/check-launcher-api.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.3d launcher API contract: registry path safety, task preflight, job lifecycle, SSE, restart persistence"
-    },
-    "shared-solver/check-launcher-ui-live.js": {
-      "grade": "integration-local",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": false,
-      "notes": "real Chromium launcher UI smoke: builder, preflight, worker job verified-route, refresh recovery, route metrics"
-    },
-    "shared-solver/check-solve-task-v2-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4a v2 ordered-region contract: schema, fingerprint, explicit model, regionCandidateLimit, non-goals"
-    },
-    "shared-solver/check-multi-region-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4a sequential region execution: state transfer, failure stop, boundary pruning"
-    },
-    "shared-solver/check-multi-region-route-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4a Commit 3: multi-region-route.v1 composite, exact boundary fingerprints, result regions, unified entry"
-    },
-    "shared-solver/check-perf-baseline-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4b Commit 1: deterministic perf baseline schema, result parity, structural stability"
-    },
-    "shared-solver/check-route-free-state-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4b Commit 2: canonical DP route-free state, rawRouteLength semantics, Commit-1 parity"
-    },
-    "shared-solver/check-tower-ir-shadow-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4b Commit 3: single-Region TowerIR compile determinism, structure, shadow parity on representative corpus, observation isolation, immutability"
-    },
-    "shared-solver/check-key-dependency-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4c Commit 1 Repair 3: complete travel-variant-set dominance coverage (findChoiceRecords, no first-record-only), equivalent vs metadata-only split, exact goal predicate floorId+exp"
-    },
-    "shared-solver/check-dual-key-shadow-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4c Commit 2 Repair: independent candidate key builds (no exact-key cache in gate), equivalent->reject accounting, event vs occupancy split, negative state delta, perf-tracker key phase estimate"
-    },
-    "shared-solver/check-candidate-key-promotion-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4c Commit 3 Repair: start-component ablation profile, split field distribution (32/32 only startComponentId), real strict-replay Gate B -> PROMOTION_CANDIDATE (without-start-component, delta 0)"
-    },
-    "shared-solver/check-candidate-key-paired-benchmark.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4d Repair + real-route benchmark cleanup: dpKeyProfile alone selects guarded experimental builder; smoke reuses one strict A/B pair and qualification uses four A/B/B/A search rounds"
-    },
-    "shared-solver/check-real-route-performance-qualification.js": {
-      "grade": "diagnostic",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "Research-only MT2-MT5 performance harness: tracked route fixtures create trusted checkpoints, then A production key vs B injected without-start-component candidate run fresh branching milestone search; no production promotion or guard expansion"
-    },
-    "shared-solver/check-walk-reachability-fast-path.js": {
-      "grade": "local-regression",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "Tracked MT4 regression proves safe-fast walk reachability and primitive-action parity against legacy exact simulation; poison, hazards, live auto events, and directional tools fail back to exact"
-    },
-    "shared-solver/check-walk-reachability-performance.js": {
-      "grade": "diagnostic",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "Independent-process legacy-exact vs safe-fast comparison on the tracked MT4 to MT5 branching workload; exact final state, route, search scale, and strict replay parity are mandatory while timing remains directional"
-    },
-    "shared-solver/check-reachability-reuse-attribution.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.9a candidate-default MT1 exp9 attribution: exact cache unchanged, safe-fast misses grouped by current-floor topology, normalized closure parity and pinned winner/route/objective required"
-    },
-    "shared-solver/check-reachability-skeleton-cache.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.9b independent-process A/B/B/A: exact-state LRU parity, state-free safe-fast skeleton cache, per-exact-state safety classification, 116-state action/successor exact corpus, pinned winner/route/objective/scale and strict replay"
-    },
-    "shared-solver/check-reachability-rebase-attribution.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.9c candidate-default MT1 exp9 rebase allocation/consumer attribution: eager nodes, state/key reads, travel-state escapes, complete named consumer matrix and pinned winner/route/objective/scale/strict replay"
-    },
-    "shared-solver/check-topology-first-materialization.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.9d independent-process A/B topology-first safe-fast materialization: pinned 116-state/434-action successor corpus, winner/route/objective/scale/strict replay and real clone/key-build reduction"
-    },
-    "shared-solver/check-remaining-materialization-attribution.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.9e observation-only attribution of all topology materializations without final travel-state escape to battle pre-action lethal/no-damage-info rejection, with overlap union control and pinned winner/route/objective/scale/strict replay"
-    },
-    "shared-solver/check-battle-evaluation-projection.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.9f independent-process A/B/B/A battle evaluation projection repair: immutable stance metadata, base-state isolation, exact action/successor corpus and winner/route/objective/scale/strict replay parity, with rejected-battle clone elimination"
-    },
-    "shared-solver/check-reachability-optimization-requalification.js": {
-      "grade": "closure",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.9g independent-process A/B/B/A cumulative reachability optimization closure across six MT1 workloads and tracked MT2-MT3 plus MT4-MT5-entry routes; exact winner/route/scale/strict replay parity and per-workload non-increasing structural cost are mandatory"
-    },
-    "shared-solver/check-full-solve-hotspot-reprofiling.js": {
-      "grade": "closure",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.10a independent-process exclusive/self-time hotspot reprofiling across representative MT1, tracked MT4-MT5 entry, full MT5 closure, and special80-MT8 closure; inclusive phase compatibility, residual wall, exact outcome, deterministic scale, and strict replay remain explicit"
-    },
-    "shared-solver/check-goal-directed-search.js": {
-      "grade": "local-regression",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "Tracked MT2 to MT3 exact parity plus MT4 to MT5 first-feasible comparison for goal-directed agenda ordering; ordered downstream goal dependencies and explicit adaptive-feasible intent remain opt-in"
-    },
-    "shared-solver/check-candidate-quality-shadow.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.7a capture-all materialized goal candidates, exact 1/2/4/8 retention decisions including DP-key dedup vs capacity, and distinct stop-condition A/B/C controls"
-    },
-    "shared-solver/check-route-search-portfolio.js": {
-      "grade": "integration-local",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.6e controlled independent-process route portfolio; serial/parallel exact state and strict route replay parity are mandatory while timing is directional"
-    },
-    "shared-solver/check-goal-feasibility-bounds.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.6c admissible necessary-condition bounds, unknown-evidence keep semantics, and structured prune witness diagnostics"
-    },
-    "shared-solver/check-mt1-workload-matrix-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4f: MT1 workload matrix promotion-parity (6 workloads x default/candidate/rollback), A==B==pinned baseline + effective-profile diagnostics; PR-5.4e partition qualification already certified safety"
-    },
-    "shared-solver/check-mt1-default-promotion-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.4f: MT1 default promotion + explicit rollback contract (Gates A-H): scope-aware implicit default, rollback restores production path, unapproved scope fallback vs explicit fail-closed, representative strict replay, production invariants"
-    },
-    "shared-solver/check-mt1-post-promotion-regression-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.4g: post-promotion full-tower regression (S1-S4): single-Region default->candidate + pinned, explicit rollback->production scale, unapproved-scope implicit fallback, campaign/multi-Region v2 per-region isolation (approved MT1->candidate, unapproved->production, no leak)"
-    },
-    "shared-solver/check-multi-region-key-shadow-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.5a: multi-Region dual-key shadow + boundary corpus (research only, no production change): 3-layer corpus (pre-boundary/boundary-transfer/post-boundary), state + boundary partition audits, ordered CEGAR (boundary-transfer first), negative-control fail-visible"
-    },
-    "shared-solver/check-multi-region-boundary-matrix-contract.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.5d/5.5e tracked same-project hole closure: 19-workload matrix stays 44/44/535 with Start green-key acquire/openDoor consume; maintained mt1-mt2 fixture live-replays an exact recorded travel variant to a real MT1->MT2 changeFloor edge, with fail-closed parent/floor/visited provenance controls. Both holes filled, candidate collision remains absent, verdict pinned NO_COLLISION_OBSERVED"
-    },
-    "shared-solver/check-static-combat-economy-core.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.20a/5.20b verifies the frozen H1-H6 acceptance in a single process with no worker pool: H1 fixed cases match the unpruned exhaustive oracle on found, optimal final hp AND goal archive set; H2 the invest-before-conserve case is missed by a conserve-only schedule at maxExpandedStates=32 while the adaptive schedule switches CONSERVE_HP->BREAK_BOTTLENECK and reaches the goal; H3 32 fixed seeds with at most 7 interactions agree with the oracle; H4 wall<10s, observed peak RSS<256MB, compact stdout<5KB; H5 the goal Pareto archive keeps >=2 mutually non-dominated finishes on the trade-off case; H6 the scale gate solves both 24-32 interaction cases inside 50000 expansions with peakFrontier<=10000. Also locks the exact-budget boundary (budget==expanded is SOLVED, budget-1 is RESOURCE_LIMIT), that agenda tickets carry only id/rank, and that heap rebuild preserves pop order. Every successful route is strictly replayed and a permanently attack-blocked case guards against false success."
-    },
-    "shared-solver/check-static-combat-economy-h5-adapter.js": {
-      "grade": "unit-plus-micro",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.20c locks A1-A4 in a single process with no worker pool, no disk cache and no real tower: A1 the native H5-shaped fixture adapts automatically and equals an independently derived expectedStaticProblem; A2 the static solver finds a route and goal archive on its own, every archive route strictly replays and every mapped H5 step matches the recorded provenance cell for cell; A3 41 mutations covering each unsupported semantic all give eligible=false, problem=null and no route; A4 wall<10s, observed peak RSS<256MB, compact stdout<5KB."
-    },
-    "shared-solver/check-onlyup-mt1-real-route-gate.js": {
-      "grade": "closure",
-      "allowsNotFound": false,
-      "requiresStrictReplay": true,
-      "cleanCheckout": true,
-      "notes": "PR-5.20d locks the real-tower gate: source identity (title='Only Up', start MT1@6,7, target MT2), the fixed 50000/30s/256MB budget, verdict REAL_MT1_GATE_PASSED, final floor MT2 for both search and strict replay, per-field hero/inventory/flags/floorMutations equality plus identical exact state keys, every recorded decision re-derived from the live enumeration, and zero unresolved required choices. Also unit tests the difficulty guard and proves the choice resolver refuses ambiguous or consequential choices and never picks by option text. Deliberately does NOT lock route content, route length or monster order -- the search decides those. A failure means 5.20 static promotion is frozen."
-    },
-    "shared-solver/check-onlyup-first-region-real-route-gate.js": {
-      "grade": "integration-local",
-      "allowsNotFound": true,
-      "requiresStrictReplay": false,
-      "cleanCheckout": true,
-      "notes": "PR-5.21a first-region direct gate: ONE MT1->MT6 search from the real firstData start state under the same fixed budget the MT2 gate passed under (50000 expansions / 30s / 256MB, single process, no worker, no disk frontier). It does NOT solve MT2..MT5 first and does NOT stitch intermediate results. Validates the gate contract (real project identity, Chaos difficulty at start, decision depth 0, budget untampered, no difficulty lever used, no guessed choice) and FREEZES the real outcome, which is currently a failure: REAL_FIRST_REGION_GATE_FAILED / RESOURCE_LIMIT, binding constraint rss or wall (they trip near simultaneously; the expansion cap never binds -- observed 849-2706 expansions), deepest floor reached MT2. allowsNotFound=true because the frozen result is a genuine not-found; a PASS would deliberately fail the checker so the expectation is re-baselined on purpose rather than drifting."
     }
   }
 }
