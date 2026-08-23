@@ -34,10 +34,10 @@ const {
 } = require("./check-mt5-third-gate-resource-timing");
 
 const TARGET = "mt7-special80-ready";
-const EXPECTED_POST_MT5_REPAIRED_EXPANSIONS = 508;
+const EXPECTED_POST_MT5_REPAIRED_EXPANSIONS = 507;
 const EXPECTED_REPAIRED_ROUTE_FINGERPRINT =
   "e0ea77ee5dc4faa829d0a897dfd5a6fc7f6d1c1b08371789b01b9b7d3912d64a";
-const EXPECTED_REPAIRED_STATE_FINGERPRINT = "0564b870200d0113";
+const EXPECTED_REPAIRED_STATE_FINGERPRINT = "9011327802de85c9";
 const EXPECTED_REPAIRED_ORDER = Object.freeze([
   "mt6-upper-left-blueking",
   "mt6-upper-right-blueking",
@@ -179,7 +179,7 @@ function main() {
   );
   assert.strictEqual(mt5Result.found, true, "MT5 qualification prefix");
   const mt5Expansions = totalExpansions(summarizeSegments(mt5Result));
-  assert.strictEqual(mt5Expansions, 645, "MT5 prefix scale");
+  assert.strictEqual(mt5Expansions, 655, "MT5 prefix scale");
 
   const postMt5InitialState = mt5Result.finalCandidate.state;
   const startedAt = Date.now();

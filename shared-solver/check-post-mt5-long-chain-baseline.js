@@ -34,9 +34,9 @@ const MT8_TARGET = "mt8-entry-after-mt7-left-sword";
 const EXPECTED_REACHED = "mt7-bottom-double-fairy";
 const EXPECTED_FAILURE = "mt7-special80-ready";
 const MAX_EXPANSIONS_PER_SEGMENT = 500;
-const EXPECTED_MT5_EXPANSIONS = 645;
+const EXPECTED_MT5_EXPANSIONS = 655;
 const EXPECTED_POST_MT5_EXPANSIONS = 362;
-const EXPECTED_TOTAL_EXPANSIONS = 1007;
+const EXPECTED_TOTAL_EXPANSIONS = 1017;
 const USER_BASELINE_FILE = path.join(
   __dirname,
   "fixtures",

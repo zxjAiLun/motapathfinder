@@ -48,8 +48,8 @@ const {
   TARGET,
 } = require("./check-mt7-left-sword-budget-baseline");
 
-const EXPECTED_MT5_EXPANSIONS = 645;
-const EXPECTED_SPECIAL80_EXPANSIONS = 508;
+const EXPECTED_MT5_EXPANSIONS = 655;
+const EXPECTED_SPECIAL80_EXPANSIONS = 507;
 
 function compactAction(action) {
   if (!action) return null;

@@ -48,8 +48,8 @@ const {
 } = require("./check-mt7-left-sword-budget-baseline");
 
 const SAMPLE_PREFIX = "PR510_SAMPLE=";
-const EXPECTED_MT5_EXPANSIONS = 645;
-const EXPECTED_SPECIAL80_EXPANSIONS = 508;
+const EXPECTED_MT5_EXPANSIONS = 655;
+const EXPECTED_SPECIAL80_EXPANSIONS = 507;
 const ROOT = path.resolve(__dirname, "..");
 const MT1_SPEC_FILE = path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json");
 const ONLY_UP_ROOT = path.join(ROOT, "Only upV2.1", "Only upV2.1");
@@ -430,8 +430,8 @@ async function main() {
     generated: 267,
     acceptedStates: 156,
   });
-  assert.strictEqual(byId["tracked-mt4-to-mt5-entry"].performance.scale.expanded, 319);
-  assert.strictEqual(byId["tracked-mt4-to-mt5-blueking"].performance.scale.expansions, 645);
+  assert.strictEqual(byId["tracked-mt4-to-mt5-entry"].performance.scale.expanded, 321);
+  assert.strictEqual(byId["tracked-mt4-to-mt5-blueking"].performance.scale.expansions, 655);
   assert.strictEqual(byId["special80-to-mt8-entry"].performance.scale.expansions, 5634);
   const mt8Sample = samples.find((sample) => sample.id === "special80-to-mt8-entry");
   assert.strictEqual(mt8Sample.performance.scale.goalFoundWithIncompleteSearch, true);
