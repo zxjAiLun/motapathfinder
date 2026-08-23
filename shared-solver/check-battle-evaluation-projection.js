@@ -235,12 +235,30 @@ async function main() {
     workload: expectedCorrectness,
     corpus: expectedCorpus,
     structuralDelta: {
-      materializedNodes: { control: 722, repair: 566 },
-      reachabilityStateClones: { control: 845, repair: 689 },
-      materializedWithoutTravelStateEscape: { control: 156, repair: 0 },
-      dominanceKeyBuilds: { control: 0, repair: 0 },
-      battleMaterializedNodes: { control: 568, repair: 289 },
-      battleEmittedTravelStateNodes: { control: 289, repair: 289 },
+      materializedNodes: {
+        control: controls[0].attribution.materializedNodes,
+        repair: repairs[0].attribution.materializedNodes,
+      },
+      reachabilityStateClones: {
+        control: controls[0].reachabilityCost.stateClones,
+        repair: repairs[0].reachabilityCost.stateClones,
+      },
+      materializedWithoutTravelStateEscape: {
+        control: controls[0].attribution.materializedNodesWithoutTravelStateEscape,
+        repair: repairs[0].attribution.materializedNodesWithoutTravelStateEscape,
+      },
+      dominanceKeyBuilds: {
+        control: controls[0].reachabilityCost.dominanceKeyBuilds,
+        repair: repairs[0].reachabilityCost.dominanceKeyBuilds,
+      },
+      battleMaterializedNodes: {
+        control: controls[0].attribution.consumers.battle.uniqueStateNodes,
+        repair: repairs[0].attribution.consumers.battle.uniqueStateNodes,
+      },
+      battleEmittedTravelStateNodes: {
+        control: controls[0].attribution.consumers.battle.uniqueTravelStateNodes,
+        repair: repairs[0].attribution.consumers.battle.uniqueTravelStateNodes,
+      },
     },
     verdict: "BATTLE_EVALUATION_PROJECTION_PROMOTED",
   }, null, 2)}\n`);

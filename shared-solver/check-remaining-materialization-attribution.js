@@ -204,7 +204,7 @@ async function main() {
     conclusion: {
       mechanism: "BATTLE_PRE_ACTION_REJECTION_MATERIALIZATION",
       dedupContribution: 0,
-      repairUpperBoundNodes: 156,
+      repairUpperBoundNodes: attribution.materializedNodesWithoutTravelStateEscape,
       nextRepairScope: "project battle stance into evaluation without cloning mutable travel state; materialize only viable emitted actions",
     },
     verdict: "REMAINING_MATERIALIZATION_ATTRIBUTED",
