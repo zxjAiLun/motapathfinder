@@ -33,12 +33,9 @@ function hasHazardAt(hazards, x, y, options) {
   return false;
 }
 
-function isAutoTraverseTile(project, state, floorId, x, y) {
-  if (!floorHasCoordinate(project, floorId, x, y)) return false;
-  const floor = project.floorsById[floorId];
-  if ((floor.changeFloor || {})[coordinateKey(x, y)]) return false;
-
-  const tile = getTileDefinitionAt(project, state, floorId, x, y);
+function isAutoTraverseGivenTile(floor, tile, x, y) {
+  if (!floor) return false;
+  if (floor.changeFloor && floor.changeFloor[coordinateKey(x, y)]) return false;
   if (tile == null) return true;
   if (isEnemyTile(tile)) return false;
   if (isDoorTile(tile)) return false;
@@ -56,22 +53,27 @@ function isAutoBattleTile(tile) {
 }
 
 function collectTargets(project, state, options) {
+  const floorId = state.floorId;
+  const floor = project.floorsById[floorId];
+  if (!floor) return [];
+
   const queue = [{ x: state.hero.loc.x, y: state.hero.loc.y, distance: 0 }];
   const visited = new Set([coordinateKey(state.hero.loc.x, state.hero.loc.y)]);
   const targets = [];
+  let head = 0;
 
-  while (queue.length > 0) {
-    const current = queue.shift();
+  while (head < queue.length) {
+    const current = queue[head++];
 
-    DIRECTIONS.forEach((direction) => {
-      const delta = DIRECTION_DELTAS[direction];
+    for (let i = 0; i < DIRECTIONS.length; i++) {
+      const delta = DIRECTION_DELTAS[DIRECTIONS[i]];
       const x = current.x + delta.x;
       const y = current.y + delta.y;
       const key = coordinateKey(x, y);
-      if (visited.has(key)) return;
-      if (!floorHasCoordinate(project, state.floorId, x, y)) return;
+      if (visited.has(key)) continue;
+      if (!floorHasCoordinate(project, floorId, x, y)) continue;
 
-      const tile = getTileDefinitionAt(project, state, state.floorId, x, y);
+      const tile = getTileDefinitionAt(project, state, floorId, x, y);
       const target = options.evaluateTarget(project, state, tile, x, y);
       if (target) {
         targets.push({
@@ -79,43 +81,44 @@ function collectTargets(project, state, options) {
           x,
           y,
           distance: current.distance + 1,
-          approach: direction,
+          approach: DIRECTIONS[i],
         });
         if (target.continuePast === true) {
           visited.add(key);
           queue.push({ x, y, distance: current.distance + 1 });
         }
-        return;
+        continue;
       }
 
-      if (!isAutoTraverseTile(project, state, state.floorId, x, y)) return;
-      if (typeof options.canTraverse === "function" && !options.canTraverse(project, state, tile, x, y)) return;
+      if (!isAutoTraverseGivenTile(floor, tile, x, y)) continue;
+      if (typeof options.canTraverse === "function" && !options.canTraverse(project, state, tile, x, y)) continue;
       visited.add(key);
       queue.push({ x, y, distance: current.distance + 1 });
-    });
+    }
   }
 
   return targets;
 }
 
 function collectNearTargets(project, state, options) {
+  const floorId = state.floorId;
   const targets = [];
-  DIRECTIONS.forEach((direction) => {
-    const delta = DIRECTION_DELTAS[direction];
+  for (let i = 0; i < DIRECTIONS.length; i++) {
+    const delta = DIRECTION_DELTAS[DIRECTIONS[i]];
     const x = state.hero.loc.x + delta.x;
     const y = state.hero.loc.y + delta.y;
-    if (!floorHasCoordinate(project, state.floorId, x, y)) return;
-    const tile = getTileDefinitionAt(project, state, state.floorId, x, y);
+    if (!floorHasCoordinate(project, floorId, x, y)) continue;
+    const tile = getTileDefinitionAt(project, state, floorId, x, y);
     const target = options.evaluateTarget(project, state, tile, x, y);
-    if (!target) return;
+    if (!target) continue;
     targets.push({
       ...target,
       x,
       y,
       distance: 1,
-      approach: direction,
+      approach: DIRECTIONS[i],
     });
-  });
+  }
   return targets;
 }
 
@@ -157,6 +160,7 @@ class AutoActionResolver {
   evaluateAutoBattleTarget(project, state, battleResolver, hazards, tile, x, y) {
     if (!isAutoBattleTile(tile)) return null;
     const enemy = project.enemysById[tile.id];
+    if (!enemy) return null;
     if (hasAnySpecial(enemy, AUTO_BATTLE_BLOCKED_SPECIALS)) return null;
     if (!battleResolver || typeof battleResolver.evaluateBattle !== "function") return null;
 
@@ -170,10 +174,10 @@ class AutoActionResolver {
     };
   }
 
-  collectAutoPickupTargets(project, state, battleResolver, perfTracker) {
-    const hazards = this.buildHazards(project, state, battleResolver, perfTracker);
+  collectAutoPickupTargets(project, state, battleResolver, perfTracker, existingHazards) {
+    const hazards = existingHazards || this.buildHazards(project, state, battleResolver, perfTracker);
     if (hasHazardAt(hazards, state.hero.loc.x, state.hero.loc.y, { damage: true, repulse: true, ambush: true })) {
-      return [];
+      return { targets: [], hazards };
     }
 
     const runCollect = () => collectTargets(project, state, {
@@ -187,14 +191,15 @@ class AutoActionResolver {
       canTraverse: (_, __, ___, x, y) => !hasHazardAt(hazards, x, y, { damage: true, repulse: true, ambush: true }),
     });
 
-    if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
-      return perfTracker.timeStabilizationSubphase("pickupScan", runCollect);
-    }
-    return runCollect();
+    const targets = (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function")
+      ? perfTracker.timeStabilizationSubphase("pickupScan", runCollect)
+      : runCollect();
+
+    return { targets, hazards };
   }
 
-  collectAutoBattleTargets(project, state, battleResolver, perfTracker) {
-    const hazards = this.buildHazards(project, state, battleResolver, perfTracker);
+  collectAutoBattleTargets(project, state, battleResolver, perfTracker, existingHazards) {
+    const hazards = existingHazards || this.buildHazards(project, state, battleResolver, perfTracker);
     const nearOnly = hasHazardAt(hazards, state.hero.loc.x, state.hero.loc.y, { damage: true, repulse: true, ambush: true });
     const collector = nearOnly ? collectNearTargets : collectTargets;
 
@@ -204,18 +209,19 @@ class AutoActionResolver {
       canTraverse: (_, __, ___, x, y) => !hasHazardAt(hazards, x, y, { damage: true, repulse: true, ambush: true }),
     });
 
-    if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
-      return perfTracker.timeStabilizationSubphase("battleScan", runCollect);
-    }
-    return runCollect();
+    const targets = (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function")
+      ? perfTracker.timeStabilizationSubphase("battleScan", runCollect)
+      : runCollect();
+
+    return { targets, hazards };
   }
 
-  runAutoPickupPass(context) {
+  runAutoPickupPass(context, existingHazards) {
     const { project, state, battleResolver, resolvePickupAt, choiceResolver, perfTracker } = context;
-    if (!this.canAutoPickup(state)) return false;
+    if (!this.canAutoPickup(state)) return { changed: false, hazards: existingHazards || null };
 
-    const targets = this.collectAutoPickupTargets(project, state, battleResolver, perfTracker);
-    if (targets.length === 0) return false;
+    const { targets, hazards } = this.collectAutoPickupTargets(project, state, battleResolver, perfTracker, existingHazards);
+    if (targets.length === 0) return { changed: false, hazards };
 
     let changed = false;
     for (const target of targets) {
@@ -238,15 +244,15 @@ class AutoActionResolver {
       }
       changed = true;
     }
-    return changed;
+    return { changed, hazards: changed ? null : hazards };
   }
 
-  runAutoBattlePass(context) {
+  runAutoBattlePass(context, existingHazards) {
     const { project, state, battleResolver, executeActionList, choiceResolver, perfTracker } = context;
     if (!this.canAutoBattle(state)) return false;
     if (!battleResolver || typeof battleResolver.applyBattleAt !== "function") return false;
 
-    const targets = this.collectAutoBattleTargets(project, state, battleResolver, perfTracker);
+    let { targets, hazards } = this.collectAutoBattleTargets(project, state, battleResolver, perfTracker, existingHazards);
     if (targets.length === 0) return false;
 
     let changed = false;
@@ -255,9 +261,11 @@ class AutoActionResolver {
       const tile = getTileDefinitionAt(project, state, state.floorId, target.x, target.y);
       if (!isAutoBattleTile(tile)) continue;
 
-      const hazards = this.buildHazards(project, state, battleResolver, perfTracker);
-      const verified = this.evaluateAutoBattleTarget(project, state, battleResolver, hazards, tile, target.x, target.y);
-      if (!verified) continue;
+      if (changed) {
+        hazards = this.buildHazards(project, state, battleResolver, perfTracker);
+        const verified = this.evaluateAutoBattleTarget(project, state, battleResolver, hazards, tile, target.x, target.y);
+        if (!verified) continue;
+      }
 
       if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
         perfTracker.timeStabilizationSubphase("applyStep", () => {
@@ -304,9 +312,9 @@ class AutoActionResolver {
       if (perfTracker && typeof perfTracker.increment === "function") {
         perfTracker.increment("stabilizationPasses", 1);
       }
-      this.runAutoPickupPass(context);
+      const pickupResult = this.runAutoPickupPass(context, null);
       if (state.floorId == null || state.hero.hp <= 0) return state;
-      this.runAutoBattlePass(context);
+      this.runAutoBattlePass(context, pickupResult ? pickupResult.hazards : null);
       return state;
     }
 
@@ -316,9 +324,13 @@ class AutoActionResolver {
         perfTracker.increment("stabilizationPasses", 1);
       }
       let changed = false;
-      changed = this.runAutoPickupPass(context) || changed;
+      const pickupResult = this.runAutoPickupPass(context, null);
+      changed = (pickupResult && pickupResult.changed) || changed;
       if (state.floorId == null || state.hero.hp <= 0) return state;
-      changed = this.runAutoBattlePass(context) || changed;
+
+      const reusableHazards = (pickupResult && !pickupResult.changed) ? pickupResult.hazards : null;
+      const battleChanged = this.runAutoBattlePass(context, reusableHazards);
+      changed = battleChanged || changed;
       if (!changed) return state;
       passes += 1;
     }
