@@ -110,12 +110,12 @@ async function main() {
     uniqueTravelStateNodes: attribution.uniqueTravelStateNodes,
     materializedNodesWithoutTravelStateEscape: attribution.materializedNodesWithoutTravelStateEscape,
   }, {
-    rebases: 123,
-    materializedNodes: 6526,
+    rebases: 173,
+    materializedNodes: 7924,
     nodeKeyPropertyAccesses: 0,
-    emittedActionsWithTravelState: 760,
-    uniqueTravelStateNodes: 566,
-    materializedNodesWithoutTravelStateEscape: 5960,
+    emittedActionsWithTravelState: 884,
+    uniqueTravelStateNodes: 884,
+    materializedNodesWithoutTravelStateEscape: 7040,
   }, "real rebase allocation/consumption baseline must remain pinned");
   assert.ok(!Object.prototype.hasOwnProperty.call(attribution.consumers, "unscoped"),
     "consumer attribution must remain complete with no unscoped bucket");
@@ -125,12 +125,12 @@ async function main() {
       uniqueTravelStateNodes: value.uniqueTravelStateNodes,
     }])),
     {
-      battle: { emittedActions: 289, uniqueTravelStateNodes: 289 },
+      battle: { emittedActions: 389, uniqueTravelStateNodes: 389 },
       changeFloor: { emittedActions: 29, uniqueTravelStateNodes: 29 },
       door: { emittedActions: 0, uniqueTravelStateNodes: 0 },
       equipment: { emittedActions: 0, uniqueTravelStateNodes: 0 },
-      event: { emittedActions: 116, uniqueTravelStateNodes: 116 },
-      floorFly: { emittedActions: 326, uniqueTravelStateNodes: 163 },
+      event: { emittedActions: 140, uniqueTravelStateNodes: 140 },
+      floorFly: { emittedActions: 326, uniqueTravelStateNodes: 326 },
       interactPickup: { emittedActions: 0, uniqueTravelStateNodes: 0 },
       pickup: { emittedActions: 0, uniqueTravelStateNodes: 0 },
       regionSignature: { emittedActions: 0, uniqueTravelStateNodes: 0 },

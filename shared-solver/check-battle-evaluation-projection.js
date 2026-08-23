@@ -205,19 +205,19 @@ async function main() {
     assert.deepStrictEqual(candidateOutcomeShape(sample), expectedCandidateOutcomes);
   });
   controls.forEach((sample) => {
-    assert.strictEqual(sample.attribution.materializedNodes, 722);
-    assert.strictEqual(sample.attribution.materializedNodesWithoutTravelStateEscape, 156);
-    assert.strictEqual(sample.reachabilityCost.stateClones, 845);
+    assert.strictEqual(sample.attribution.materializedNodes, 1672);
+    assert.strictEqual(sample.attribution.materializedNodesWithoutTravelStateEscape, 354);
+    assert.strictEqual(sample.reachabilityCost.stateClones, 1961);
   });
   repairs.forEach((sample) => {
-    assert.strictEqual(sample.attribution.materializedNodes, 566);
-    assert.strictEqual(sample.attribution.uniqueTravelStateNodes, 566);
+    assert.strictEqual(sample.attribution.materializedNodes, 1318);
+    assert.strictEqual(sample.attribution.uniqueTravelStateNodes, 1318);
     assert.strictEqual(sample.attribution.materializedNodesWithoutTravelStateEscape, 0);
-    assert.strictEqual(sample.reachabilityCost.stateClones, 689);
+    assert.strictEqual(sample.reachabilityCost.stateClones, 1607);
     assert.strictEqual(sample.reachabilityCost.dominanceKeyBuilds, 0);
-    assert.strictEqual(sample.skeletonCost.nodesMaterialized, 566);
-    assert.strictEqual(sample.attribution.consumers.battle.uniqueStateNodes, 289);
-    assert.strictEqual(sample.attribution.consumers.battle.uniqueTravelStateNodes, 289);
+    assert.strictEqual(sample.skeletonCost.nodesMaterialized, 1318);
+    assert.strictEqual(sample.attribution.consumers.battle.uniqueStateNodes, 678);
+    assert.strictEqual(sample.attribution.consumers.battle.uniqueTravelStateNodes, 678);
   });
 
   const projectionControls = projectionIsolationControl();

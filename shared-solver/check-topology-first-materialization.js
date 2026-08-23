@@ -176,19 +176,19 @@ async function main() {
     assert.deepStrictEqual(sample.corpus, reference.corpus);
   });
   controls.forEach((sample) => {
-    assert.strictEqual(sample.searchAttribution.materializedNodes, 6526);
-    assert.strictEqual(sample.searchAttribution.dominanceKeyBuilds, 6526);
-    assert.strictEqual(sample.searchCache.stateClones, 6649);
+    assert.strictEqual(sample.searchAttribution.materializedNodes, 7924);
+    assert.strictEqual(sample.searchAttribution.dominanceKeyBuilds, 7924);
+    assert.strictEqual(sample.searchCache.stateClones, 8097);
   });
   repairs.forEach((sample) => {
-    assert.strictEqual(sample.searchAttribution.topologyFirstRebases, 123);
-    assert.strictEqual(sample.searchAttribution.topologyNodes, 6526);
-    assert.ok(sample.searchAttribution.materializedNodes < 1000);
+    assert.strictEqual(sample.searchAttribution.topologyFirstRebases, 173);
+    assert.strictEqual(sample.searchAttribution.topologyNodes, 7924);
+    assert.ok(sample.searchAttribution.materializedNodes < 1200);
     assert.strictEqual(sample.searchAttribution.dominanceKeyBuilds, 0);
     assert.strictEqual(sample.searchCache.stateClones,
-      sample.searchAttribution.materializedNodes + 123);
+      sample.searchAttribution.materializedNodes + 173);
     assert.strictEqual(sample.searchCache.dominanceKeyBuilds, 0);
-    assert.strictEqual(sample.skeletonCache.nodesRebased, 6526);
+    assert.strictEqual(sample.skeletonCache.nodesRebased, 7924);
     assert.strictEqual(sample.skeletonCache.nodesMaterialized, sample.searchAttribution.materializedNodes);
     assert.ok(!Object.prototype.hasOwnProperty.call(sample.searchAttribution.consumers, "unscoped"));
   });

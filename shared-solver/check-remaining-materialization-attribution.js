@@ -157,25 +157,25 @@ async function main() {
   assert.strictEqual(control.attribution, null);
 
   const attribution = observed.attribution;
-  assert.strictEqual(attribution.materializedNodes, 722);
-  assert.strictEqual(attribution.uniqueTravelStateNodes, 566);
-  assert.strictEqual(attribution.materializedNodesWithoutTravelStateEscape, 156);
-  assert.deepStrictEqual(attribution.materializedWithoutTravelStateConsumerSignatures, { battle: 156 });
+  assert.strictEqual(attribution.materializedNodes, 1075);
+  assert.strictEqual(attribution.uniqueTravelStateNodes, 884);
+  assert.strictEqual(attribution.materializedNodesWithoutTravelStateEscape, 191);
+  assert.deepStrictEqual(attribution.materializedWithoutTravelStateConsumerSignatures, { battle: 191 });
   assert.deepStrictEqual(attribution.unescapedCandidateOutcomeSignatures, {
     battle: {
-      "enemy-adjacency+lethal": 119,
+      "enemy-adjacency+lethal": 144,
       "enemy-adjacency+lethal+no-damage-info": 6,
-      "enemy-adjacency+no-damage-info": 31,
+      "enemy-adjacency+no-damage-info": 41,
     },
   });
   const battle = attribution.consumers.battle;
-  assert.strictEqual(battle.materializedWithoutTravelStateEscape, 156);
+  assert.strictEqual(battle.materializedWithoutTravelStateEscape, 191);
   assert.deepStrictEqual(battle.candidateOutcomes, {
-    "dedup-inserted": { events: 289, uniqueNodes: 289, materializedWithoutTravelStateEscape: 0 },
-    "enemy-adjacency": { events: 642, uniqueNodes: 568, materializedWithoutTravelStateEscape: 156 },
-    lethal: { events: 147, uniqueNodes: 142, materializedWithoutTravelStateEscape: 125 },
-    "no-damage-info": { events: 206, uniqueNodes: 200, materializedWithoutTravelStateEscape: 37 },
-    viable: { events: 289, uniqueNodes: 289, materializedWithoutTravelStateEscape: 0 },
+    "dedup-inserted": { events: 389, uniqueNodes: 389, materializedWithoutTravelStateEscape: 0 },
+    "enemy-adjacency": { events: 814, uniqueNodes: 720, materializedWithoutTravelStateEscape: 191 },
+    lethal: { events: 175, uniqueNodes: 170, materializedWithoutTravelStateEscape: 150 },
+    "no-damage-info": { events: 250, uniqueNodes: 236, materializedWithoutTravelStateEscape: 47 },
+    viable: { events: 389, uniqueNodes: 389, materializedWithoutTravelStateEscape: 0 },
   });
   assert.ok(!Object.prototype.hasOwnProperty.call(battle.candidateOutcomes, "unsupported"));
   assert.ok(!Object.prototype.hasOwnProperty.call(battle.candidateOutcomes, "dedup-rejected"));

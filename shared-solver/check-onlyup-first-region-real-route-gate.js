@@ -143,8 +143,8 @@ function main() {
       "a wall-bound failure must actually have reached the wall limit",
     );
   }
-  assert.ok(result.bestProgress || result.bestSeen, "a failed gate must still report its best progress or best seen state");
-  const progressState = result.bestProgress || result.bestSeen;
+  assert.ok(result.bestProgress, "a failed gate must report its best progress state");
+  const progressState = result.bestProgress;
   assert.strictEqual(
     progressState.floorId,
     FROZEN_DEEPEST_FLOOR,

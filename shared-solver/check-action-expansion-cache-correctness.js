@@ -160,6 +160,68 @@ function checkStatefulExactCacheRegression() {
   );
 }
 
+const EXPECTED_FRONTIER_SIZE = 53;
+const EXPECTED_REGISTERED = 171;
+const EXPECTED_GENERATED = 342;
+const EXPECTED_STOPPED_REASON = null;
+const EXPECTED_BEST_PROGRESS_KEY = JSON.stringify({
+  floorId: "MT2",
+  progressSig: "1:MT1,MT2:MT1,MT2:2",
+  hero: {
+    x: 5,
+    y: 1,
+    direction: null,
+    hp: 5524,
+    hpmax: 9999,
+    mana: 0,
+    manamax: -1,
+    atk: 21,
+    def: 19,
+    mdef: 130,
+    money: 0,
+    exp: 9,
+    lv: 3,
+    equipment: [],
+    followers: [],
+  },
+  inventory: {
+    I600: 1,
+    book: 1,
+    fly: 1,
+  },
+  flags: {
+    __leaveLoc__: {
+      MT1: {
+        x: 6,
+        y: 0,
+        direction: "up",
+      },
+    },
+    autoBattle: 1,
+    hatred: 44,
+    shiqu: 1,
+  },
+  visitedFloors: ["MT1", "MT2"],
+  mutations: [
+    {
+      floorId: "MT1",
+      removed: [
+        "0,11", "1,11", "1,2", "1,5", "10,1", "10,11", "10,3", "10,5", "10,7", "10,8",
+        "11,11", "11,2", "11,5", "12,11", "2,1", "2,11", "2,3", "2,5", "2,7", "2,8",
+        "3,10", "3,2", "3,4", "3,6", "3,9", "4,1", "4,11", "4,3", "4,7", "5,1",
+        "5,11", "5,3", "5,6", "5,8", "7,1", "7,11", "7,3", "7,6", "7,8", "8,11",
+        "8,3", "8,7", "9,10", "9,2", "9,4", "9,6", "9,9",
+      ],
+      replaced: [],
+    },
+    {
+      floorId: "MT2",
+      removed: ["2,3", "3,2", "4,1", "5,1", "7,1"],
+      replaced: [],
+    },
+  ],
+});
+
 function checkHundredExpansionSearchConsistency() {
   const project = loadProject("Only upV2.1/Only upV2.1");
   const choiceResolver1 = createNoStateChangeChoiceResolver();
@@ -193,12 +255,20 @@ function checkHundredExpansionSearchConsistency() {
     targetFloorId: "MT6",
   });
 
-  // Lock exact consistency between two independent fresh simulators
+  // Lock exact consistency against frozen baseline
   assert.strictEqual(res1.expansions, 100, "must expand exactly 100 states");
   assert.strictEqual(res2.expansions, 100, "must expand exactly 100 states");
-  assert.strictEqual(res1.expansions, res2.expansions);
-  assert.strictEqual(res1.frontierSize, res2.frontierSize);
-  assert.strictEqual(res1.stoppedReason, res2.stoppedReason);
+  assert.strictEqual(res1.frontierSize, EXPECTED_FRONTIER_SIZE, `frontierSize must be ${EXPECTED_FRONTIER_SIZE}`);
+  assert.strictEqual(res2.frontierSize, EXPECTED_FRONTIER_SIZE, `frontierSize must be ${EXPECTED_FRONTIER_SIZE}`);
+  assert.strictEqual(res1.stoppedReason, EXPECTED_STOPPED_REASON, "stoppedReason must match expected");
+  assert.strictEqual(res2.stoppedReason, EXPECTED_STOPPED_REASON, "stoppedReason must match expected");
+  assert.strictEqual(res1.diagnostics.registered, EXPECTED_REGISTERED, `registered states must be ${EXPECTED_REGISTERED}`);
+  assert.strictEqual(res2.diagnostics.registered, EXPECTED_REGISTERED, `registered states must be ${EXPECTED_REGISTERED}`);
+  assert.strictEqual(res1.diagnostics.generated, EXPECTED_GENERATED, `generated states must be ${EXPECTED_GENERATED}`);
+  assert.strictEqual(res2.diagnostics.generated, EXPECTED_GENERATED, `generated states must be ${EXPECTED_GENERATED}`);
+
+  assert.strictEqual(buildStateKey(res1.bestProgressState), EXPECTED_BEST_PROGRESS_KEY, "bestProgress exact stateKey must match frozen contract");
+  assert.strictEqual(buildStateKey(res2.bestProgressState), EXPECTED_BEST_PROGRESS_KEY, "bestProgress exact stateKey must match frozen contract");
   assert.strictEqual(buildStateKey(res1.bestProgressState), buildStateKey(res2.bestProgressState));
   assert.deepStrictEqual(res1.bestProgressState.meta, res2.bestProgressState.meta);
 
