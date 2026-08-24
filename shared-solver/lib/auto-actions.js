@@ -144,7 +144,13 @@ class AutoActionResolver {
     return this.autoBattleEnabled && Number(state.flags.autoBattle == null ? 1 : state.flags.autoBattle) !== 0;
   }
 
-  buildHazards(project, state, battleResolver, perfTracker) {
+  buildHazards(project, state, battleResolver, perfTracker, reason) {
+    if (perfTracker && typeof perfTracker.increment === "function") {
+      perfTracker.increment("hazardBuildCalls", 1);
+      if (reason) {
+        perfTracker.increment(reason, 1);
+      }
+    }
     if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
       return perfTracker.timeStabilizationSubphase("hazardBuild", () => buildMovementHazards(project, state, {
         floorId: state.floorId,
@@ -157,16 +163,60 @@ class AutoActionResolver {
     });
   }
 
-  evaluateAutoBattleTarget(project, state, battleResolver, hazards, tile, x, y) {
+  evaluateAutoBattleTarget(project, state, battleResolver, hazards, tile, x, y, perfTracker, isReverification) {
     if (!isAutoBattleTile(tile)) return null;
     const enemy = project.enemysById[tile.id];
     if (!enemy) return null;
-    if (hasAnySpecial(enemy, AUTO_BATTLE_BLOCKED_SPECIALS)) return null;
-    if (!battleResolver || typeof battleResolver.evaluateBattle !== "function") return null;
 
-    const battle = battleResolver.evaluateBattle(state, state.floorId, x, y, tile.id);
-    if (!battle.supported || !battle.damageInfo || battle.damageInfo.damage == null) return null;
-    if (Number(battle.damageInfo.damage || 0) !== 0) return null;
+    if (perfTracker && typeof perfTracker.increment === "function") {
+      perfTracker.increment("battleTilesSeen", 1);
+      if (isReverification) {
+        perfTracker.increment("battleReverificationCalls", 1);
+      } else {
+        perfTracker.increment("battleEvaluationCalls", 1);
+      }
+    }
+
+    if (hasAnySpecial(enemy, AUTO_BATTLE_BLOCKED_SPECIALS)) {
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
+        else perfTracker.increment("battleEvaluationRejected", 1);
+      }
+      return null;
+    }
+    if (!battleResolver || typeof battleResolver.evaluateBattle !== "function") {
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
+        else perfTracker.increment("battleEvaluationRejected", 1);
+      }
+      return null;
+    }
+
+    let battle;
+    if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
+      battle = perfTracker.timeStabilizationSubphase("battleEvaluation", () => battleResolver.evaluateBattle(state, state.floorId, x, y, tile.id));
+    } else {
+      battle = battleResolver.evaluateBattle(state, state.floorId, x, y, tile.id);
+    }
+
+    if (!battle.supported || !battle.damageInfo || battle.damageInfo.damage == null) {
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
+        else perfTracker.increment("battleEvaluationRejected", 1);
+      }
+      return null;
+    }
+    if (Number(battle.damageInfo.damage || 0) !== 0) {
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
+        else perfTracker.increment("battleEvaluationRejected", 1);
+      }
+      return null;
+    }
+
+    if (perfTracker && typeof perfTracker.increment === "function") {
+      if (!isReverification) perfTracker.increment("battleEvaluationAccepted", 1);
+    }
 
     return {
       enemyId: tile.id,
@@ -175,7 +225,13 @@ class AutoActionResolver {
   }
 
   collectAutoPickupTargets(project, state, battleResolver, perfTracker, existingHazards) {
-    const hazards = existingHazards || this.buildHazards(project, state, battleResolver, perfTracker);
+    let hazards;
+    if (existingHazards) {
+      hazards = existingHazards;
+      if (perfTracker && typeof perfTracker.increment === "function") perfTracker.increment("hazardReuses", 1);
+    } else {
+      hazards = this.buildHazards(project, state, battleResolver, perfTracker, "hazardBuildCalls");
+    }
     if (hasHazardAt(hazards, state.hero.loc.x, state.hero.loc.y, { damage: true, repulse: true, ambush: true })) {
       return { targets: [], hazards };
     }
@@ -199,19 +255,38 @@ class AutoActionResolver {
   }
 
   collectAutoBattleTargets(project, state, battleResolver, perfTracker, existingHazards) {
-    const hazards = existingHazards || this.buildHazards(project, state, battleResolver, perfTracker);
+    let hazards;
+    if (existingHazards) {
+      hazards = existingHazards;
+      if (perfTracker && typeof perfTracker.increment === "function") perfTracker.increment("hazardReuses", 1);
+    } else {
+      hazards = this.buildHazards(project, state, battleResolver, perfTracker, "hazardBuildCalls");
+    }
     const nearOnly = hasHazardAt(hazards, state.hero.loc.x, state.hero.loc.y, { damage: true, repulse: true, ambush: true });
     const collector = nearOnly ? collectNearTargets : collectTargets;
 
-    const runCollect = () => collector(project, state, {
-      evaluateTarget: (currentProject, currentState, tile, x, y) =>
-        this.evaluateAutoBattleTarget(currentProject, currentState, battleResolver, hazards, tile, x, y),
-      canTraverse: (_, __, ___, x, y) => !hasHazardAt(hazards, x, y, { damage: true, repulse: true, ambush: true }),
-    });
+    const runCollect = () => {
+      const traversalStarted = (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function")
+        ? Date.now()
+        : 0;
+      const res = collector(project, state, {
+        evaluateTarget: (currentProject, currentState, tile, x, y) =>
+          this.evaluateAutoBattleTarget(currentProject, currentState, battleResolver, hazards, tile, x, y, perfTracker, false),
+        canTraverse: (_, __, ___, x, y) => !hasHazardAt(hazards, x, y, { damage: true, repulse: true, ambush: true }),
+      });
+      return res;
+    };
 
-    const targets = (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function")
-      ? perfTracker.timeStabilizationSubphase("battleScan", runCollect)
-      : runCollect();
+    let targets;
+    if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
+      const beforeScan = performance.now();
+      targets = perfTracker.timeStabilizationSubphase("battleScan", runCollect);
+      const scanElapsed = performance.now() - beforeScan;
+      // battleTraversal is total battleScan minus battleEvaluation
+      // recordStabilizationSubphase for battleTraversal is handled by subtraction in perf.js snapshot
+    } else {
+      targets = runCollect();
+    }
 
     return { targets, hazards };
   }
@@ -228,8 +303,13 @@ class AutoActionResolver {
       if (state.floorId == null || state.hero.hp <= 0) break;
       const tile = getTileDefinitionAt(project, state, state.floorId, target.x, target.y);
       if (!isAutoPickupTile(tile)) continue;
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("pickupApplyCalls", 1);
+      }
       if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
-        perfTracker.timeStabilizationSubphase("applyStep", () => resolvePickupAt(state, target.x, target.y));
+        perfTracker.timeStabilizationSubphase("applyStep", () => {
+          perfTracker.timeStabilizationSubphase("pickupApply", () => resolvePickupAt(state, target.x, target.y));
+        });
       } else {
         resolvePickupAt(state, target.x, target.y);
       }
@@ -244,6 +324,9 @@ class AutoActionResolver {
       }
       changed = true;
     }
+    if (changed && perfTracker && typeof perfTracker.increment === "function") {
+      perfTracker.increment("hazardInvalidationsAfterPickup", 1);
+    }
     return { changed, hazards: changed ? null : hazards };
   }
 
@@ -256,28 +339,39 @@ class AutoActionResolver {
     if (targets.length === 0) return false;
 
     let changed = false;
+    let mutatedSinceHazardBuild = false;
+
     for (const target of targets) {
       if (state.floorId == null || state.hero.hp <= 0) break;
       const tile = getTileDefinitionAt(project, state, state.floorId, target.x, target.y);
       if (!isAutoBattleTile(tile)) continue;
 
       if (changed) {
-        hazards = this.buildHazards(project, state, battleResolver, perfTracker);
-        const verified = this.evaluateAutoBattleTarget(project, state, battleResolver, hazards, tile, target.x, target.y);
+        if (!mutatedSinceHazardBuild && perfTracker && typeof perfTracker.increment === "function") {
+          perfTracker.increment("hazardRebuildWithoutInterveningMutation", 1);
+        }
+        hazards = this.buildHazards(project, state, battleResolver, perfTracker, "hazardRebuildForBattleReverify");
+        mutatedSinceHazardBuild = false;
+        const verified = this.evaluateAutoBattleTarget(project, state, battleResolver, hazards, tile, target.x, target.y, perfTracker, true);
         if (!verified) continue;
       }
 
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("battleApplyCalls", 1);
+      }
       if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
         perfTracker.timeStabilizationSubphase("applyStep", () => {
-          battleResolver.applyBattleAt({
-            project,
-            state,
-            floorId: state.floorId,
-            x: target.x,
-            y: target.y,
-            enemyId: tile.id,
-            executeActionList,
-            choiceResolver,
+          perfTracker.timeStabilizationSubphase("battleApply", () => {
+            battleResolver.applyBattleAt({
+              project,
+              state,
+              floorId: state.floorId,
+              x: target.x,
+              y: target.y,
+              enemyId: tile.id,
+              executeActionList,
+              choiceResolver,
+            });
           });
         });
       } else {
@@ -302,6 +396,10 @@ class AutoActionResolver {
         runAutoEvents(project, state, { choiceResolver });
       }
       changed = true;
+      mutatedSinceHazardBuild = true;
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("hazardInvalidationsAfterBattle", 1);
+      }
     }
     return changed;
   }

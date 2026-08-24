@@ -61,8 +61,12 @@ function createPerfTracker(options) {
     hazardBuild: 0,
     pickupScan: 0,
     battleScan: 0,
+    battleTraversal: 0,
+    battleEvaluation: 0,
     autoEvent: 0,
     applyStep: 0,
+    pickupApply: 0,
+    battleApply: 0,
   };
 
   // Explicit semantic counters (separate from timer counts)
@@ -81,6 +85,21 @@ function createPerfTracker(options) {
     frontierRankCalls: 0,
     frontierPushCalls: 0,
     frontierPopCalls: 0,
+    // PR-5.22c fine-grained battleScan & hazard & apply counters
+    battleTilesSeen: 0,
+    battleEvaluationCalls: 0,
+    battleEvaluationAccepted: 0,
+    battleEvaluationRejected: 0,
+    battleReverificationCalls: 0,
+    battleReverificationRejected: 0,
+    hazardBuildCalls: 0,
+    hazardReuses: 0,
+    hazardInvalidationsAfterPickup: 0,
+    hazardInvalidationsAfterBattle: 0,
+    hazardRebuildForBattleReverify: 0,
+    hazardRebuildWithoutInterveningMutation: 0,
+    pickupApplyCalls: 0,
+    battleApplyCalls: 0,
   };
 
   let peakRssBytes = 0;
@@ -334,6 +353,10 @@ function createPerfTracker(options) {
     const battleResolverStats = simStats.battleResolver || {};
     const battleEstimateStats = battleResolverStats.battleEstimate || {};
 
+    const battleEvaluationMs = stabilizationSubphases.battleEvaluation;
+    const battleTraversalMs = Math.max(0, stabilizationSubphases.battleScan - battleEvaluationMs);
+    stabilizationSubphases.battleTraversal = battleTraversalMs;
+
     const otherStabilizationMs = Math.max(0, stabilizationSelfMs - (
       stabilizationSubphases.hazardBuild +
       stabilizationSubphases.pickupScan +
@@ -363,7 +386,10 @@ function createPerfTracker(options) {
         calls: Number((battleEstimateStats.hits || 0) + (battleEstimateStats.misses || 0)),
         hits: Number(battleEstimateStats.hits || 0),
         misses: Number(battleEstimateStats.misses || 0),
-        totalMs: Number((battleEstimateStats.totalMs || 0).toFixed(3)),
+        stores: Number(battleEstimateStats.stores || 0),
+        computeMs: Number((battleEstimateStats.computeMs || 0).toFixed(3)),
+        totalMs: Number((battleEstimateStats.totalMs || battleEstimateStats.computeMs || 0).toFixed(3)),
+        estimatedMsSaved: Number((battleEstimateStats.estimatedMsSaved || 0).toFixed(3)),
       },
       applyAction: {
         calls: Number(semanticCounters.applyActionCalls || generated),
@@ -377,9 +403,29 @@ function createPerfTracker(options) {
           hazardBuildMs: Number(stabilizationSubphases.hazardBuild.toFixed(3)),
           pickupScanMs: Number(stabilizationSubphases.pickupScan.toFixed(3)),
           battleScanMs: Number(stabilizationSubphases.battleScan.toFixed(3)),
+          battleTraversalMs: Number(stabilizationSubphases.battleTraversal.toFixed(3)),
+          battleEvaluationMs: Number(stabilizationSubphases.battleEvaluation.toFixed(3)),
           autoEventMs: Number(stabilizationSubphases.autoEvent.toFixed(3)),
           applyStepMs: Number(stabilizationSubphases.applyStep.toFixed(3)),
+          pickupApplyMs: Number(stabilizationSubphases.pickupApply.toFixed(3)),
+          battleApplyMs: Number(stabilizationSubphases.battleApply.toFixed(3)),
           otherMs: Number(otherStabilizationMs.toFixed(3)),
+        },
+        counters: {
+          battleTilesSeen: Number(semanticCounters.battleTilesSeen || 0),
+          battleEvaluationCalls: Number(semanticCounters.battleEvaluationCalls || 0),
+          battleEvaluationAccepted: Number(semanticCounters.battleEvaluationAccepted || 0),
+          battleEvaluationRejected: Number(semanticCounters.battleEvaluationRejected || 0),
+          battleReverificationCalls: Number(semanticCounters.battleReverificationCalls || 0),
+          battleReverificationRejected: Number(semanticCounters.battleReverificationRejected || 0),
+          hazardBuildCalls: Number(semanticCounters.hazardBuildCalls || 0),
+          hazardReuses: Number(semanticCounters.hazardReuses || 0),
+          hazardInvalidationsAfterPickup: Number(semanticCounters.hazardInvalidationsAfterPickup || 0),
+          hazardInvalidationsAfterBattle: Number(semanticCounters.hazardInvalidationsAfterBattle || 0),
+          hazardRebuildForBattleReverify: Number(semanticCounters.hazardRebuildForBattleReverify || 0),
+          hazardRebuildWithoutInterveningMutation: Number(semanticCounters.hazardRebuildWithoutInterveningMutation || 0),
+          pickupApplyCalls: Number(semanticCounters.pickupApplyCalls || 0),
+          battleApplyCalls: Number(semanticCounters.battleApplyCalls || 0),
         },
       },
       buildStateKey: {
