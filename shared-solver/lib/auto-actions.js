@@ -169,53 +169,63 @@ class AutoActionResolver {
     if (!enemy) return null;
 
     if (perfTracker && typeof perfTracker.increment === "function") {
-      perfTracker.increment("battleTilesSeen", 1);
+      perfTracker.increment("battleCandidateChecks", 1);
       if (isReverification) {
         perfTracker.increment("battleReverificationCalls", 1);
-      } else {
-        perfTracker.increment("battleEvaluationCalls", 1);
       }
     }
 
     if (hasAnySpecial(enemy, AUTO_BATTLE_BLOCKED_SPECIALS)) {
       if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("battleRejectedBlockedSpecial", 1);
         if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
-        else perfTracker.increment("battleEvaluationRejected", 1);
       }
       return null;
     }
     if (!battleResolver || typeof battleResolver.evaluateBattle !== "function") {
       if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("battleRejectedNoResolver", 1);
         if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
-        else perfTracker.increment("battleEvaluationRejected", 1);
-      }
-      return null;
-    }
-
-    let battle;
-    if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
-      battle = perfTracker.timeStabilizationSubphase("battleEvaluation", () => battleResolver.evaluateBattle(state, state.floorId, x, y, tile.id));
-    } else {
-      battle = battleResolver.evaluateBattle(state, state.floorId, x, y, tile.id);
-    }
-
-    if (!battle.supported || !battle.damageInfo || battle.damageInfo.damage == null) {
-      if (perfTracker && typeof perfTracker.increment === "function") {
-        if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
-        else perfTracker.increment("battleEvaluationRejected", 1);
-      }
-      return null;
-    }
-    if (Number(battle.damageInfo.damage || 0) !== 0) {
-      if (perfTracker && typeof perfTracker.increment === "function") {
-        if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
-        else perfTracker.increment("battleEvaluationRejected", 1);
       }
       return null;
     }
 
     if (perfTracker && typeof perfTracker.increment === "function") {
-      if (!isReverification) perfTracker.increment("battleEvaluationAccepted", 1);
+      perfTracker.increment("battleResolverEvaluateCalls", 1);
+    }
+
+    const evalPhaseName = isReverification ? "reverifyBattleEvaluation" : "scanBattleEvaluation";
+    let battle;
+    if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
+      battle = perfTracker.timeStabilizationSubphase(evalPhaseName, () => battleResolver.evaluateBattle(state, state.floorId, x, y, tile.id));
+    } else {
+      battle = battleResolver.evaluateBattle(state, state.floorId, x, y, tile.id);
+    }
+
+    if (!battle.supported) {
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("battleRejectedUnsupported", 1);
+        if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
+      }
+      return null;
+    }
+    if (!battle.damageInfo || battle.damageInfo.damage == null) {
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("battleRejectedNoDamageInfo", 1);
+        if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
+      }
+      return null;
+    }
+    if (Number(battle.damageInfo.damage || 0) !== 0) {
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("battleRejectedNonZeroDamage", 1);
+        if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
+      }
+      return null;
+    }
+
+    if (perfTracker && typeof perfTracker.increment === "function") {
+      perfTracker.increment("battleAcceptedZeroDamage", 1);
     }
 
     return {
@@ -230,7 +240,7 @@ class AutoActionResolver {
       hazards = existingHazards;
       if (perfTracker && typeof perfTracker.increment === "function") perfTracker.increment("hazardReuses", 1);
     } else {
-      hazards = this.buildHazards(project, state, battleResolver, perfTracker, "hazardBuildCalls");
+      hazards = this.buildHazards(project, state, battleResolver, perfTracker);
     }
     if (hasHazardAt(hazards, state.hero.loc.x, state.hero.loc.y, { damage: true, repulse: true, ambush: true })) {
       return { targets: [], hazards };
@@ -260,7 +270,7 @@ class AutoActionResolver {
       hazards = existingHazards;
       if (perfTracker && typeof perfTracker.increment === "function") perfTracker.increment("hazardReuses", 1);
     } else {
-      hazards = this.buildHazards(project, state, battleResolver, perfTracker, "hazardBuildCalls");
+      hazards = this.buildHazards(project, state, battleResolver, perfTracker);
     }
     const nearOnly = hasHazardAt(hazards, state.hero.loc.x, state.hero.loc.y, { damage: true, repulse: true, ambush: true });
     const collector = nearOnly ? collectNearTargets : collectTargets;
