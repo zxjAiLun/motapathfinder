@@ -6,8 +6,9 @@
  * PR-5.22g Movement Hazard Fast Path & Block Materialization Qualification Contract.
  *
  * Verifies:
- * 1. 12-case Synthetic Adversarial Parity Matrix comparing OFF (legacy cell-by-cell) vs ON (fast materialized traversal):
- *    - Case 1: lavaNet + without amulet vs with amulet
+ * 1. Synthetic Hazard-Family Coverage Matrix comparing OFF (legacy cell-by-cell) vs ON (fast materialized traversal):
+ *    - Case 1a: lavaNet without amulet (applies lavaDamage)
+ *    - Case 1b: lavaNet with amulet (amulet immunity)
  *    - Case 2: Special 15 zone (diamond shape vs zoneSquare)
  *    - Case 3: Special 18 repulse (backward knockback & block check)
  *    - Case 4: Special 24 laser (row & column beam)
@@ -18,10 +19,11 @@
  *    - Case 9: Floor mutations: removed tiles
  *    - Case 10: Floor mutations: replaced tiles
  *    - Case 11: Unknown tile handling
- *    - Case 12: Sequential state mutations across consecutive rebuilds
+ *    - Case 12: Sequential state mutations across multi-step build/rebuild cycles
  * 2. 100% exact deterministic search parity between OFF and ON on frozen 100-expansion search.
- * 3. MT1 Real Route Gate in production ON mode: 10/10 decisions matched, 0 replay mismatches.
- * 4. Paired A/B benchmark (5 alternating pairs) on 400-expansion workload.
+ * 3. Path polarity verification (OFF: fastCalls === 0, legacyCalls > 0; ON: fastCalls > 0, legacyCalls === 0).
+ * 4. MT1 Real Route Gate in production ON mode: 10/10 decisions matched, 0 replay mismatches.
+ * 5. Paired A/B benchmark (5 alternating pairs) on 400-expansion workload with strict qualification assertion.
  */
 
 const path = require("node:path");
@@ -182,6 +184,8 @@ function runFixedWorkloadBenchmark(project, enableFast, maxExpansions = 400) {
     hazardSpecialScanMs: sub.subphases.hazardSpecialScanMs,
     hazardBuildCalls: cnt.hazardBuildCalls,
     hazardBlockIndexCalls: cnt.hazardBlockIndexCalls,
+    hazardBlockIndexFastCalls: cnt.hazardBlockIndexFastCalls,
+    hazardBlockIndexLegacyCalls: cnt.hazardBlockIndexLegacyCalls,
     hazardCellsScanned: cnt.hazardCellsScanned,
     hazardBlocksMaterialized: cnt.hazardBlocksMaterialized,
     stabilizationMs: sub.totalMs,
@@ -200,7 +204,7 @@ function main() {
   };
 
   // -------------------------------------------------------------------------
-  // 1. Synthetic Adversarial Parity Matrix (12 Cases)
+  // 1. Synthetic Hazard-Family Coverage Matrix (Cases 1-11)
   // -------------------------------------------------------------------------
   const sim = new StaticSimulator(synthProject);
 
@@ -244,13 +248,6 @@ function main() {
       },
     },
     { name: "Case 11: Unknown tile handling (tile 999 at 3,6)", stateMutator: (s) => {} },
-    {
-      name: "Case 12: Consecutive mutations and hazard rebuilds",
-      stateMutator: (s) => {
-        removeTileAt(s, "SYNTH_HAZARD", 0, 4);
-        replaceTileAt(s, "SYNTH_HAZARD", 1, 4, 906);
-      },
-    },
   ];
 
   for (const tc of testCases) {
@@ -277,8 +274,42 @@ function main() {
     assert.deepStrictEqual(hazardsON.betweenAttackLocs, hazardsOFF.betweenAttackLocs, `${tc.name}: betweenAttackLocs mismatch`);
   }
 
+  // Case 12: Sequential multi-step mutation & hazard rebuild cycle
+  {
+    const stateOFF = makeBaseState();
+    const stateON = makeBaseState();
+
+    // Step 1: Initial hazard build
+    let hOFF = buildMovementHazards(synthProject, stateOFF, { floorId: "SYNTH_HAZARD", enableFastHazardBlockIndex: false });
+    let hON = buildMovementHazards(synthProject, stateON, { floorId: "SYNTH_HAZARD", enableFastHazardBlockIndex: true });
+    assert.deepStrictEqual(hON.damage, hOFF.damage, "Case 12 Step 1 damage mismatch");
+    assert.deepStrictEqual(hON.type, hOFF.type, "Case 12 Step 1 type mismatch");
+
+    // Mutation 1: remove lavaNet and between attack enemy
+    removeTileAt(stateOFF, "SYNTH_HAZARD", 1, 0);
+    removeTileAt(stateOFF, "SYNTH_HAZARD", 0, 4);
+    removeTileAt(stateON, "SYNTH_HAZARD", 1, 0);
+    removeTileAt(stateON, "SYNTH_HAZARD", 0, 4);
+
+    // Step 2: Rebuild after mutation 1
+    hOFF = buildMovementHazards(synthProject, stateOFF, { floorId: "SYNTH_HAZARD", enableFastHazardBlockIndex: false });
+    hON = buildMovementHazards(synthProject, stateON, { floorId: "SYNTH_HAZARD", enableFastHazardBlockIndex: true });
+    assert.deepStrictEqual(hON.damage, hOFF.damage, "Case 12 Step 2 damage mismatch");
+    assert.deepStrictEqual(hON.betweenAttackLocs, hOFF.betweenAttackLocs, "Case 12 Step 2 betweenAttackLocs mismatch");
+
+    // Mutation 2: replace tile with laser
+    replaceTileAt(stateOFF, "SYNTH_HAZARD", 3, 3, 904);
+    replaceTileAt(stateON, "SYNTH_HAZARD", 3, 3, 904);
+
+    // Step 3: Rebuild after mutation 2
+    hOFF = buildMovementHazards(synthProject, stateOFF, { floorId: "SYNTH_HAZARD", enableFastHazardBlockIndex: false });
+    hON = buildMovementHazards(synthProject, stateON, { floorId: "SYNTH_HAZARD", enableFastHazardBlockIndex: true });
+    assert.deepStrictEqual(hON.damage, hOFF.damage, "Case 12 Step 3 damage mismatch");
+    assert.deepStrictEqual(hON.type, hOFF.type, "Case 12 Step 3 type mismatch");
+  }
+
   // -------------------------------------------------------------------------
-  // 2. Frozen 100-expansion Deterministic Parity
+  // 2. Frozen 100-expansion Deterministic Parity & Path Polarity Verification
   // -------------------------------------------------------------------------
   const runOFF = runFrozen100Search(baseProject, false);
   const runON = runFrozen100Search(baseProject, true);
@@ -301,6 +332,15 @@ function main() {
   const metaON = JSON.stringify(resON.bestProgressState && resON.bestProgressState.meta);
   assert.strictEqual(metaON, metaOFF, "Best progress meta parity mismatch");
 
+  // Path polarity verification on frozen 100 search
+  const cntOFF = runOFF.snapshot.expansionCost.timingDirectional.inclusiveSubsystems.stabilizeState.counters;
+  const cntON = runON.snapshot.expansionCost.timingDirectional.inclusiveSubsystems.stabilizeState.counters;
+
+  assert.strictEqual(cntOFF.hazardBlockIndexFastCalls, 0, "OFF mode must execute 0 fast hazard block index calls");
+  assert.ok(cntOFF.hazardBlockIndexLegacyCalls > 0, "OFF mode must execute >0 legacy hazard block index calls");
+  assert.strictEqual(cntON.hazardBlockIndexLegacyCalls, 0, "ON mode must execute 0 legacy hazard block index calls");
+  assert.ok(cntON.hazardBlockIndexFastCalls > 0, "ON mode must execute >0 fast hazard block index calls");
+
   // -------------------------------------------------------------------------
   // 3. MT1 Real Route Gate in Production ON Mode
   // -------------------------------------------------------------------------
@@ -313,9 +353,11 @@ function main() {
   // -------------------------------------------------------------------------
   // 4. Paired A/B Benchmark (5 Alternating Pairs, 400 Expansions)
   // -------------------------------------------------------------------------
-  // JIT Warmup
-  runFixedWorkloadBenchmark(baseProject, false, 150);
-  runFixedWorkloadBenchmark(baseProject, true, 150);
+  // JIT Warmup (2 rounds of alternating warmup to stabilize V8 baseline & turbo optimization)
+  runFixedWorkloadBenchmark(baseProject, false, 200);
+  runFixedWorkloadBenchmark(baseProject, true, 200);
+  runFixedWorkloadBenchmark(baseProject, false, 200);
+  runFixedWorkloadBenchmark(baseProject, true, 200);
 
   const pairs = [];
   const PAIR_COUNT = 5;
@@ -340,6 +382,12 @@ function main() {
     assert.strictEqual(onMetrics.stoppedReason, offMetrics.stoppedReason, `Pair ${i}: stopped reason mismatch`);
     assert.strictEqual(onMetrics.bestProgressStateKey, offMetrics.bestProgressStateKey, `Pair ${i}: best progress stateKey mismatch`);
     assert.strictEqual(onMetrics.bestProgressMeta, offMetrics.bestProgressMeta, `Pair ${i}: best progress meta mismatch`);
+
+    // Path polarity verification per pair
+    assert.strictEqual(offMetrics.hazardBlockIndexFastCalls, 0, `Pair ${i}: OFF mode must have 0 fast calls`);
+    assert.ok(offMetrics.hazardBlockIndexLegacyCalls > 0, `Pair ${i}: OFF mode must have >0 legacy calls`);
+    assert.strictEqual(onMetrics.hazardBlockIndexLegacyCalls, 0, `Pair ${i}: ON mode must have 0 legacy calls`);
+    assert.ok(onMetrics.hazardBlockIndexFastCalls > 0, `Pair ${i}: ON mode must have >0 fast calls`);
 
     const msPerExpDelta = offMetrics.msPerExpansion - onMetrics.msPerExpansion;
     const msPerExpRatio = offMetrics.msPerExpansion > 0 ? msPerExpDelta / offMetrics.msPerExpansion : 0;
@@ -366,7 +414,7 @@ function main() {
     status: "passed",
     verdict: isPromoted ? "HAZARD_BUILD_FAST_PATH_PROMOTED" : "HAZARD_BUILD_FAST_PATH_NOT_PROMOTED",
     adversarialParity: {
-      casesChecked: testCases.length,
+      casesChecked: testCases.length + 1, // 11 matrix cases + 1 sequential rebuild case
       exactParityVerified: true,
     },
     frozen100Parity: {
@@ -377,6 +425,12 @@ function main() {
       stoppedReason: resON.stoppedReason,
       exactBestProgressKeyMatched: true,
       exactMetaMatched: true,
+      pathPolarityVerified: {
+        offFastCalls: cntOFF.hazardBlockIndexFastCalls,
+        offLegacyCalls: cntOFF.hazardBlockIndexLegacyCalls,
+        onFastCalls: cntON.hazardBlockIndexFastCalls,
+        onLegacyCalls: cntON.hazardBlockIndexLegacyCalls,
+      },
       hazardBuildMsBefore: runOFF.snapshot.expansionCost.timingDirectional.inclusiveSubsystems.stabilizeState.subphases.hazardBuildMs,
       hazardBuildMsAfter: runON.snapshot.expansionCost.timingDirectional.inclusiveSubsystems.stabilizeState.subphases.hazardBuildMs,
     },
@@ -401,10 +455,10 @@ function main() {
 
   console.log(JSON.stringify(summary, null, 2));
 
-  if (isPromoted) {
-    assert.ok(positivePairs >= 4, `Expected at least 4 positive pairs, got ${positivePairs}`);
-    assert.ok(medianImprovementRatio >= 0.03, `Expected median improvement >= 3%, got ${(medianImprovementRatio * 100).toFixed(2)}%`);
-  }
+  assert.ok(
+    isPromoted,
+    `Hazard fast path failed qualification: median=${(medianImprovementRatio * 100).toFixed(2)}%, positive=${positivePairs}/${PAIR_COUNT}`
+  );
 }
 
 if (require.main === module) {

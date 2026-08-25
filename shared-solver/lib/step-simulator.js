@@ -54,6 +54,7 @@ function getHazardsForState(project, state, options, cache) {
       buildMovementHazards(project, state, {
         floorId: state.floorId,
         battleResolver: options.battleResolver,
+        enableFastHazardBlockIndex: options.enableFastHazardBlockIndex,
       })
     );
   }
@@ -247,6 +248,7 @@ function classifySafeStaticWalk(project, state, options) {
   const hazards = buildMovementHazards(project, state, {
     floorId: state.floorId,
     battleResolver: config.battleResolver,
+    enableFastHazardBlockIndex: config.enableFastHazardBlockIndex,
   });
   const hazardScanMs = Number(process.hrtime.bigint() - hazardStartedAt) / 1e6;
   if (hasMovementHazards(hazards)) {

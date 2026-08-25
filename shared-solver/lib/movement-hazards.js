@@ -40,6 +40,7 @@ function buildBlockIndex(project, state, floorId, perfTracker, options = {}) {
 
   if (useFastPath) {
     if (perfTracker && typeof perfTracker.increment === "function") {
+      perfTracker.increment("hazardBlockIndexFastCalls", 1);
       const floor = project.floorsById[floorId];
       if (floor) {
         perfTracker.increment("hazardCellsScanned", floor.width * floor.height);
@@ -58,6 +59,10 @@ function buildBlockIndex(project, state, floorId, perfTracker, options = {}) {
       };
     });
     return blocks;
+  }
+
+  if (perfTracker && typeof perfTracker.increment === "function") {
+    perfTracker.increment("hazardBlockIndexLegacyCalls", 1);
   }
 
   const floor = project.floorsById[floorId];

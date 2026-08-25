@@ -233,12 +233,13 @@ function getTileDefinitionAt(project, state, floorId, x, y) {
 
 function forEachMaterializedFloorTile(project, state, floorId, callback) {
   const floor = project.floorsById[floorId];
-  if (!floor) return;
+  if (!floor) {
+    throw new Error(`Floor not found: ${floorId}`);
+  }
   const floorState = ensureFloorState(state, floorId);
   const removed = floorState.removed;
   const replaced = floorState.replaced;
   const map = floor.map;
-  const mapTilesByNumber = project.mapTilesByNumber;
   const height = floor.height;
   const width = floor.width;
 
@@ -250,14 +251,12 @@ function forEachMaterializedFloorTile(project, state, floorId, callback) {
 
       const number = Object.prototype.hasOwnProperty.call(replaced, locKey)
         ? replaced[locKey]
-        : (row ? row[x] : 0);
+        : row[x];
 
       if (!number) continue;
 
-      const definition = mapTilesByNumber[String(number)];
-      const tile = definition == null
-        ? { number, id: `X${number}`, cls: "unknown", canPass: false, noPass: true }
-        : { number, ...definition };
+      const tile = getTileDefinitionByNumber(project, number);
+      if (!tile) continue;
 
       callback(tile, x, y, locKey);
     }
