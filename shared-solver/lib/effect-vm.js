@@ -42,44 +42,49 @@ function buildEffectCore(project, state) {
   };
 }
 
-const COMPILED_EFFECT_CACHE = new Map();
+const SCRIPT_CACHE_MAX_ENTRIES = 1024;
+const COMPILED_SCRIPT_CACHE = new Map();
 
-function clearCompiledEffectCache() {
-  COMPILED_EFFECT_CACHE.clear();
+function clearCompiledScriptCache() {
+  COMPILED_SCRIPT_CACHE.clear();
 }
 
-function getCompiledEffectFunction(code) {
+function getCompiledEffectScript(code) {
   if (typeof code !== "string") return null;
-  let fn = COMPILED_EFFECT_CACHE.get(code);
-  if (fn === undefined) {
+  let script = COMPILED_SCRIPT_CACHE.get(code);
+  if (script === undefined) {
     try {
-      fn = new Function("core", "Math", code);
+      script = new vm.Script(code);
     } catch (error) {
-      fn = null;
+      script = null;
     }
-    COMPILED_EFFECT_CACHE.set(code, fn);
+    if (COMPILED_SCRIPT_CACHE.size >= SCRIPT_CACHE_MAX_ENTRIES) {
+      const firstKey = COMPILED_SCRIPT_CACHE.keys().next().value;
+      COMPILED_SCRIPT_CACHE.delete(firstKey);
+    }
+    COMPILED_SCRIPT_CACHE.set(code, script);
   }
-  return fn;
+  return script;
 }
 
 function executeItemEffect(project, state, item, options = {}) {
   if (!item || !item.itemEffect) return;
-  const core = buildEffectCore(project, state);
-  const useFastPath = options.enableCompiledEffectCache !== false;
+  const timeout = typeof options.timeoutMs === "number" ? options.timeoutMs : 1000;
+  const context = {
+    core: buildEffectCore(project, state),
+    Math,
+  };
+  const useFastPath = Boolean(options.enableCompiledEffectCache);
 
   if (useFastPath) {
-    const compiledFn = getCompiledEffectFunction(item.itemEffect);
-    if (typeof compiledFn === "function") {
-      compiledFn(core, Math);
+    const script = getCompiledEffectScript(item.itemEffect);
+    if (script) {
+      script.runInNewContext(context, { timeout });
       return;
     }
   }
 
-  const context = {
-    core,
-    Math,
-  };
-  vm.runInNewContext(item.itemEffect, context, { timeout: 1000 });
+  vm.runInNewContext(item.itemEffect, context, { timeout });
 }
 
 function applyPickup(project, state, itemId, options = {}) {
@@ -100,7 +105,7 @@ function applyPickup(project, state, itemId, options = {}) {
 module.exports = {
   applyPickup,
   buildEffectCore,
-  clearCompiledEffectCache,
+  clearCompiledScriptCache,
   executeItemEffect,
-  getCompiledEffectFunction,
+  getCompiledEffectScript,
 };

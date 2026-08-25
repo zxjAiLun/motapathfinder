@@ -253,6 +253,7 @@ function buildSimulator(project, choiceResolver, targetFloorId, options) {
     autoPickupEnabled: true,
     autoBattleEnabled: true,
     autoBattleFastRejectEnabled: config.autoBattleFastRejectEnabled === true,
+    enableCompiledEffectCache: config.enableCompiledEffectCache === true,
     choiceResolver,
   });
 }
