@@ -37,21 +37,32 @@ function resolveFastRejectQualification(options = {}) {
     return parseBoolean(options.args["fast-reject"], false);
   }
 
-  // 2. Direct configuration flags
-  const config = options.config || options.runtimeOptions || {};
-  if (config.autoBattleFastRejectQualified === true || config.enableFastReject === true) {
-    return true;
-  }
-  if (config.autoBattleFastRejectQualified === false || config.enableFastReject === false) {
-    return false;
+  // 2. Direct runtime options overrides (highest programmatic precedence)
+  if (options.runtimeOptions) {
+    if (options.runtimeOptions.autoBattleFastRejectQualified === true || options.runtimeOptions.enableFastReject === true) {
+      return true;
+    }
+    if (options.runtimeOptions.autoBattleFastRejectQualified === false || options.runtimeOptions.enableFastReject === false) {
+      return false;
+    }
   }
 
-  // 3. Task qualification
+  // 3. Simulator/Searcher config overrides
+  if (options.config) {
+    if (options.config.autoBattleFastRejectQualified === true || options.config.enableFastReject === true) {
+      return true;
+    }
+    if (options.config.autoBattleFastRejectQualified === false || options.config.enableFastReject === false) {
+      return false;
+    }
+  }
+
+  // 4. Task qualification
   if (options.task && options.task.autoBattleFastRejectQualified === true) {
     return true;
   }
 
-  // 4. Region/Trial Spec qualification
+  // 5. Region/Trial Spec qualification
   const spec = options.spec || options.regionSpec;
   if (spec) {
     if (spec.autoBattleFastRejectQualified === true) return true;
@@ -59,7 +70,7 @@ function resolveFastRejectQualification(options = {}) {
     if (spec.tower === "onlyup") return true;
   }
 
-  // 5. Default fail-closed
+  // 6. Default fail-closed
   return false;
 }
 

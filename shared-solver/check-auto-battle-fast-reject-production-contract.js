@@ -28,6 +28,7 @@ const { searchDP } = require("./lib/dp-search");
 const { createNoStateChangeChoiceResolver, runOnlyUpMt1RealRouteGate } = require("./lib/onlyup-mt1-real-route-gate");
 const { makeSimulator: makeSolverJobSimulator } = require("./lib/solver-job");
 const { makeSimulator: makeAdaptiveSimulator } = require("./run-adaptive-segment-dp");
+const { makeSimulator: makeSegmentedSimulator } = require("./run-segmented-dp");
 const { buildStateKey } = require("./lib/state-key");
 const { createPerfTracker, setActivePerfTracker } = require("./lib/perf");
 
@@ -329,6 +330,45 @@ function main() {
     "Adaptive runner with explicit --fast-reject=0 must NOT enable resolver classifier",
   );
 
+  // F. Segmented DP Runner: default/generic args without flag -> MUST be fail-closed (OFF)
+  const segmentedDefaultSim = makeSegmentedSimulator(project, {});
+  assert.strictEqual(
+    segmentedDefaultSim.autoResolver.enableFastRejectSkip,
+    false,
+    "Segmented runner without explicit flag must default to fast reject disabled (fail-closed)",
+  );
+  assert.strictEqual(
+    segmentedDefaultSim.battleResolver.fastRejectClassifier,
+    null,
+    "Segmented runner without explicit flag must NOT enable resolver classifier",
+  );
+
+  // G. Segmented DP Runner: explicit --fast-reject=1 -> MUST be qualified (ON)
+  const segmentedExplicitOnSim = makeSegmentedSimulator(project, { "fast-reject": "1" });
+  assert.strictEqual(
+    segmentedExplicitOnSim.autoResolver.enableFastRejectSkip,
+    true,
+    "Segmented runner with explicit --fast-reject=1 must have fast reject enabled",
+  );
+  assert.strictEqual(
+    typeof segmentedExplicitOnSim.battleResolver.fastRejectClassifier,
+    "function",
+    "Segmented runner with explicit --fast-reject=1 must enable resolver classifier",
+  );
+
+  // H. Segmented DP Runner: explicit --fast-reject=0 -> MUST be disabled (OFF)
+  const segmentedExplicitOffSim = makeSegmentedSimulator(project, { "fast-reject": "0" });
+  assert.strictEqual(
+    segmentedExplicitOffSim.autoResolver.enableFastRejectSkip,
+    false,
+    "Segmented runner with explicit --fast-reject=0 must have fast reject disabled",
+  );
+  assert.strictEqual(
+    segmentedExplicitOffSim.battleResolver.fastRejectClassifier,
+    null,
+    "Segmented runner with explicit --fast-reject=0 must NOT enable resolver classifier",
+  );
+
   const summary = {
     schema: "motapathfinder.auto-battle-fast-reject-production.v1",
     status: "passed",
@@ -357,6 +397,8 @@ function main() {
       whiteislandUnqualified: genericProdSim.autoResolver.enableFastRejectSkip === false,
       adaptiveDefaultUnqualified: adaptiveDefaultSim.autoResolver.enableFastRejectSkip === false,
       adaptiveExplicitQualified: adaptiveExplicitOnSim.autoResolver.enableFastRejectSkip === true,
+      segmentedDefaultUnqualified: segmentedDefaultSim.autoResolver.enableFastRejectSkip === false,
+      segmentedExplicitQualified: segmentedExplicitOnSim.autoResolver.enableFastRejectSkip === true,
     },
     pairedBenchmark: {
       pairCount: PAIR_COUNT,

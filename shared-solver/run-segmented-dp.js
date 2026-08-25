@@ -17,6 +17,7 @@ const { runMilestoneGraph } = require("./lib/segment-dp");
 const { buildSolverDoctorReport } = require("./lib/solver-doctor");
 const { StaticSimulator } = require("./lib/simulator");
 const { buildDominanceKey } = require("./lib/state-key");
+const { resolveFastRejectQualification } = require("./lib/fast-reject-qualification");
 const {
   loadStartState,
   summarizeStartState,
@@ -61,12 +62,14 @@ function optionalNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function makeSimulator(project) {
+function makeSimulator(project, args) {
+  const isQualified = resolveFastRejectQualification({ args });
   return new StaticSimulator(project, {
-    stopFloorId: "MT6",
-    battleResolver: new FunctionBackedBattleResolver(project),
+    stopFloorId: (args && args["stop-floor"]) || "MT6",
+    battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: isQualified }),
     autoPickupEnabled: true,
     autoBattleEnabled: true,
+    autoBattleFastRejectEnabled: isQualified,
     enableFightToLevelUp: false,
     enableResourcePocket: false,
     enableResourceCluster: false,
@@ -366,7 +369,7 @@ function main() {
     args["project-root"] || DEFAULT_PROJECT_ROOT,
   );
   const project = loadProject(projectRoot);
-  const simulator = makeSimulator(project);
+  const simulator = makeSimulator(project, args);
   const routeName = args["route-name"] || "onlyup-chaos-mt5-blueking";
   const spec = getMilestoneSpec(project, routeName);
   const startStateFile = args["start-state"]
@@ -532,4 +535,10 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  makeSimulator,
+};
