@@ -168,8 +168,11 @@ class AutoActionResolver {
     const enemy = project.enemysById[tile.id];
     if (!enemy) return null;
 
+    const prefix = isReverification ? "reverify" : "scan";
+
     if (perfTracker && typeof perfTracker.increment === "function") {
       perfTracker.increment("battleCandidateChecks", 1);
+      perfTracker.increment(`${prefix}BattleCandidateChecks`, 1);
       if (isReverification) {
         perfTracker.increment("battleReverificationCalls", 1);
       }
@@ -178,6 +181,7 @@ class AutoActionResolver {
     if (hasAnySpecial(enemy, AUTO_BATTLE_BLOCKED_SPECIALS)) {
       if (perfTracker && typeof perfTracker.increment === "function") {
         perfTracker.increment("battleRejectedBlockedSpecial", 1);
+        perfTracker.increment(`${prefix}BattleRejectedBlockedSpecial`, 1);
         if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
       }
       return null;
@@ -185,6 +189,7 @@ class AutoActionResolver {
     if (!battleResolver || typeof battleResolver.evaluateBattle !== "function") {
       if (perfTracker && typeof perfTracker.increment === "function") {
         perfTracker.increment("battleRejectedNoResolver", 1);
+        perfTracker.increment(`${prefix}BattleRejectedNoResolver`, 1);
         if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
       }
       return null;
@@ -192,6 +197,7 @@ class AutoActionResolver {
 
     if (perfTracker && typeof perfTracker.increment === "function") {
       perfTracker.increment("battleResolverEvaluateCalls", 1);
+      perfTracker.increment(`${prefix}BattleResolverEvaluateCalls`, 1);
     }
 
     const evalPhaseName = isReverification ? "reverifyBattleEvaluation" : "scanBattleEvaluation";
@@ -205,6 +211,7 @@ class AutoActionResolver {
     if (!battle.supported) {
       if (perfTracker && typeof perfTracker.increment === "function") {
         perfTracker.increment("battleRejectedUnsupported", 1);
+        perfTracker.increment(`${prefix}BattleRejectedUnsupported`, 1);
         if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
       }
       return null;
@@ -212,6 +219,7 @@ class AutoActionResolver {
     if (!battle.damageInfo || battle.damageInfo.damage == null) {
       if (perfTracker && typeof perfTracker.increment === "function") {
         perfTracker.increment("battleRejectedNoDamageInfo", 1);
+        perfTracker.increment(`${prefix}BattleRejectedNoDamageInfo`, 1);
         if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
       }
       return null;
@@ -219,6 +227,7 @@ class AutoActionResolver {
     if (Number(battle.damageInfo.damage || 0) !== 0) {
       if (perfTracker && typeof perfTracker.increment === "function") {
         perfTracker.increment("battleRejectedNonZeroDamage", 1);
+        perfTracker.increment(`${prefix}BattleRejectedNonZeroDamage`, 1);
         if (isReverification) perfTracker.increment("battleReverificationRejected", 1);
       }
       return null;
@@ -226,6 +235,7 @@ class AutoActionResolver {
 
     if (perfTracker && typeof perfTracker.increment === "function") {
       perfTracker.increment("battleAcceptedZeroDamage", 1);
+      perfTracker.increment(`${prefix}BattleAcceptedZeroDamage`, 1);
     }
 
     return {

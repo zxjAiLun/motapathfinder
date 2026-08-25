@@ -2481,6 +2481,13 @@
       "cleanCheckout": true,
       "notes": "synthetic agenda policy matrix and aggregation checks; no tower/project load"
     },
+    "shared-solver/check-auto-battle-attribution-contract.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-auto-milestone-decomposition.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": false,

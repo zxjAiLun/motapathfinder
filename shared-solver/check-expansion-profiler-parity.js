@@ -214,6 +214,75 @@ function main() {
   assert.ok(inclusive.stabilizeState.calls > 0);
   assert.strictEqual(inclusive.frontierQueue.pops, 100);
 
+  // PR-5.22c2 Fine-grained measurement contract assertions
+  const stab = inclusive.stabilizeState;
+  assert.ok(stab.subphases, "stabilizeState.subphases must exist");
+  assert.ok(stab.counters, "stabilizeState.counters must exist");
+
+  const sub = stab.subphases;
+  const cnt = stab.counters;
+
+  // 1. Timer conservation assertions
+  assert.ok(
+    Math.abs(sub.battleEvaluationTotalMs - (sub.scanBattleEvaluationMs + sub.reverifyBattleEvaluationMs)) < 0.001,
+    "battleEvaluationTotalMs must equal scanBattleEvaluationMs + reverifyBattleEvaluationMs",
+  );
+  assert.ok(
+    Math.abs(sub.battleTraversalMs - Math.max(0, sub.battleScanMs - sub.scanBattleEvaluationMs)) < 0.001,
+    "battleTraversalMs must equal max(0, battleScanMs - scanBattleEvaluationMs)",
+  );
+
+  // 2. Candidate checks conservation
+  assert.strictEqual(
+    cnt.battleCandidateChecks,
+    cnt.scanBattleCandidateChecks + cnt.reverifyBattleCandidateChecks,
+    "battleCandidateChecks must equal scan + reverify candidate checks",
+  );
+  assert.strictEqual(
+    cnt.battleCandidateChecks,
+    cnt.battleRejectedBlockedSpecial + cnt.battleRejectedNoResolver + cnt.battleResolverEvaluateCalls,
+    "battleCandidateChecks must equal blockedSpecial + noResolver + evaluateCalls",
+  );
+  assert.strictEqual(
+    cnt.scanBattleCandidateChecks,
+    cnt.scanBattleRejectedBlockedSpecial + cnt.scanBattleRejectedNoResolver + cnt.scanBattleResolverEvaluateCalls,
+    "scanBattleCandidateChecks must equal scanBlockedSpecial + scanNoResolver + scanEvaluateCalls",
+  );
+  assert.strictEqual(
+    cnt.reverifyBattleCandidateChecks,
+    cnt.reverifyBattleRejectedBlockedSpecial + cnt.reverifyBattleRejectedNoResolver + cnt.reverifyBattleResolverEvaluateCalls,
+    "reverifyBattleCandidateChecks must equal reverifyBlockedSpecial + reverifyNoResolver + reverifyEvaluateCalls",
+  );
+
+  // 3. Resolver evaluate calls conservation
+  assert.strictEqual(
+    cnt.battleResolverEvaluateCalls,
+    cnt.scanBattleResolverEvaluateCalls + cnt.reverifyBattleResolverEvaluateCalls,
+    "battleResolverEvaluateCalls must equal scan + reverify evaluate calls",
+  );
+  assert.strictEqual(
+    cnt.battleResolverEvaluateCalls,
+    cnt.battleRejectedUnsupported + cnt.battleRejectedNoDamageInfo + cnt.battleRejectedNonZeroDamage + cnt.battleAcceptedZeroDamage,
+    "battleResolverEvaluateCalls must equal unsupported + noDamageInfo + nonZeroDamage + acceptedZeroDamage",
+  );
+  assert.strictEqual(
+    cnt.scanBattleResolverEvaluateCalls,
+    cnt.scanBattleRejectedUnsupported + cnt.scanBattleRejectedNoDamageInfo + cnt.scanBattleRejectedNonZeroDamage + cnt.scanBattleAcceptedZeroDamage,
+    "scanBattleResolverEvaluateCalls must equal scan rejected + accepted breakdown",
+  );
+  assert.strictEqual(
+    cnt.reverifyBattleResolverEvaluateCalls,
+    cnt.reverifyBattleRejectedUnsupported + cnt.reverifyBattleRejectedNoDamageInfo + cnt.reverifyBattleRejectedNonZeroDamage + cnt.reverifyBattleAcceptedZeroDamage,
+    "reverifyBattleResolverEvaluateCalls must equal reverify rejected + accepted breakdown",
+  );
+
+  // 4. Reverification call consistency
+  assert.strictEqual(
+    cnt.battleReverificationCalls,
+    cnt.reverifyBattleCandidateChecks,
+    "battleReverificationCalls must equal reverifyBattleCandidateChecks",
+  );
+
   // Slow expansion samples
   assert.ok(Array.isArray(timing.slowExpansionSamples));
   assert.ok(timing.slowExpansionSamples.length > 0 && timing.slowExpansionSamples.length <= 20);

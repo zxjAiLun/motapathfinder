@@ -87,15 +87,31 @@ function createPerfTracker(options) {
     frontierRankCalls: 0,
     frontierPushCalls: 0,
     frontierPopCalls: 0,
-    // PR-5.22c1 fine-grained battleScan & hazard & apply counters
+    // PR-5.22c2 fine-grained battleScan & hazard & apply counters (with scan/reverify split)
     battleCandidateChecks: 0,
+    scanBattleCandidateChecks: 0,
+    reverifyBattleCandidateChecks: 0,
     battleRejectedBlockedSpecial: 0,
+    scanBattleRejectedBlockedSpecial: 0,
+    reverifyBattleRejectedBlockedSpecial: 0,
     battleRejectedNoResolver: 0,
+    scanBattleRejectedNoResolver: 0,
+    reverifyBattleRejectedNoResolver: 0,
     battleResolverEvaluateCalls: 0,
+    scanBattleResolverEvaluateCalls: 0,
+    reverifyBattleResolverEvaluateCalls: 0,
     battleRejectedUnsupported: 0,
+    scanBattleRejectedUnsupported: 0,
+    reverifyBattleRejectedUnsupported: 0,
     battleRejectedNoDamageInfo: 0,
+    scanBattleRejectedNoDamageInfo: 0,
+    reverifyBattleRejectedNoDamageInfo: 0,
     battleRejectedNonZeroDamage: 0,
+    scanBattleRejectedNonZeroDamage: 0,
+    reverifyBattleRejectedNonZeroDamage: 0,
     battleAcceptedZeroDamage: 0,
+    scanBattleAcceptedZeroDamage: 0,
+    reverifyBattleAcceptedZeroDamage: 0,
     battleReverificationCalls: 0,
     battleReverificationRejected: 0,
     hazardBuildCalls: 0,
@@ -359,11 +375,12 @@ function createPerfTracker(options) {
     const battleResolverStats = simStats.battleResolver || {};
     const battleEstimateStats = battleResolverStats.battleEstimate || {};
 
-    const scanBattleEvaluationMs = stabilizationSubphases.scanBattleEvaluation;
-    const reverifyBattleEvaluationMs = stabilizationSubphases.reverifyBattleEvaluation;
-    const battleEvaluationTotalMs = scanBattleEvaluationMs + reverifyBattleEvaluationMs;
+    const scanBattleEvaluationMs = Number(stabilizationSubphases.scanBattleEvaluation.toFixed(3));
+    const reverifyBattleEvaluationMs = Number(stabilizationSubphases.reverifyBattleEvaluation.toFixed(3));
+    const battleEvaluationTotalMs = Number((scanBattleEvaluationMs + reverifyBattleEvaluationMs).toFixed(3));
     stabilizationSubphases.battleEvaluation = battleEvaluationTotalMs;
-    const battleTraversalMs = Math.max(0, stabilizationSubphases.battleScan - scanBattleEvaluationMs);
+    const battleScanMsRounded = Number(stabilizationSubphases.battleScan.toFixed(3));
+    const battleTraversalMs = Number(Math.max(0, battleScanMsRounded - scanBattleEvaluationMs).toFixed(3));
     stabilizationSubphases.battleTraversal = battleTraversalMs;
 
     const otherStabilizationMs = Math.max(0, stabilizationSelfMs - (
@@ -425,13 +442,29 @@ function createPerfTracker(options) {
         },
         counters: {
           battleCandidateChecks: Number(semanticCounters.battleCandidateChecks || 0),
+          scanBattleCandidateChecks: Number(semanticCounters.scanBattleCandidateChecks || 0),
+          reverifyBattleCandidateChecks: Number(semanticCounters.reverifyBattleCandidateChecks || 0),
           battleRejectedBlockedSpecial: Number(semanticCounters.battleRejectedBlockedSpecial || 0),
+          scanBattleRejectedBlockedSpecial: Number(semanticCounters.scanBattleRejectedBlockedSpecial || 0),
+          reverifyBattleRejectedBlockedSpecial: Number(semanticCounters.reverifyBattleRejectedBlockedSpecial || 0),
           battleRejectedNoResolver: Number(semanticCounters.battleRejectedNoResolver || 0),
+          scanBattleRejectedNoResolver: Number(semanticCounters.scanBattleRejectedNoResolver || 0),
+          reverifyBattleRejectedNoResolver: Number(semanticCounters.reverifyBattleRejectedNoResolver || 0),
           battleResolverEvaluateCalls: Number(semanticCounters.battleResolverEvaluateCalls || 0),
+          scanBattleResolverEvaluateCalls: Number(semanticCounters.scanBattleResolverEvaluateCalls || 0),
+          reverifyBattleResolverEvaluateCalls: Number(semanticCounters.reverifyBattleResolverEvaluateCalls || 0),
           battleRejectedUnsupported: Number(semanticCounters.battleRejectedUnsupported || 0),
+          scanBattleRejectedUnsupported: Number(semanticCounters.scanBattleRejectedUnsupported || 0),
+          reverifyBattleRejectedUnsupported: Number(semanticCounters.reverifyBattleRejectedUnsupported || 0),
           battleRejectedNoDamageInfo: Number(semanticCounters.battleRejectedNoDamageInfo || 0),
+          scanBattleRejectedNoDamageInfo: Number(semanticCounters.scanBattleRejectedNoDamageInfo || 0),
+          reverifyBattleRejectedNoDamageInfo: Number(semanticCounters.reverifyBattleRejectedNoDamageInfo || 0),
           battleRejectedNonZeroDamage: Number(semanticCounters.battleRejectedNonZeroDamage || 0),
+          scanBattleRejectedNonZeroDamage: Number(semanticCounters.scanBattleRejectedNonZeroDamage || 0),
+          reverifyBattleRejectedNonZeroDamage: Number(semanticCounters.reverifyBattleRejectedNonZeroDamage || 0),
           battleAcceptedZeroDamage: Number(semanticCounters.battleAcceptedZeroDamage || 0),
+          scanBattleAcceptedZeroDamage: Number(semanticCounters.scanBattleAcceptedZeroDamage || 0),
+          reverifyBattleAcceptedZeroDamage: Number(semanticCounters.reverifyBattleAcceptedZeroDamage || 0),
           battleReverificationCalls: Number(semanticCounters.battleReverificationCalls || 0),
           battleReverificationRejected: Number(semanticCounters.battleReverificationRejected || 0),
           hazardBuildCalls: Number(semanticCounters.hazardBuildCalls || 0),
