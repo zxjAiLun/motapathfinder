@@ -59,14 +59,22 @@ function solverRelativePath(filePath) {
 
 function makeSimulator(project, spec, args) {
   const simulatorConfig = spec.simulator || {};
+  const isQualified = Boolean(
+    parseBoolean(args["fast-reject"], false) ||
+    simulatorConfig.autoBattleFastRejectQualified === true ||
+    spec.autoBattleFastRejectQualified === true ||
+    spec.tower === "onlyup"
+  );
   return new StaticSimulator(project, {
     solverModel: spec.model || null,
     stopFloorId: args["stop-floor"] || simulatorConfig.stopFloorId || null,
     battleResolver: new FunctionBackedBattleResolver(project, {
       autoLevelUp: simulatorConfig.autoLevelUp !== false,
+      enableFastReject: isQualified,
     }),
     autoPickupEnabled: parseBoolean(args["auto-pickup"], parseBoolean(simulatorConfig.autoPickupEnabled, true)),
     autoBattleEnabled: parseBoolean(args["auto-battle"], parseBoolean(simulatorConfig.autoBattleEnabled, true)),
+    autoBattleFastRejectEnabled: isQualified,
     enableFightToLevelUp: parseBoolean(args["fight-to-levelup"], parseBoolean(simulatorConfig.enableFightToLevelUp, false)),
     enableResourcePocket: false,
     enableResourceCluster: false,

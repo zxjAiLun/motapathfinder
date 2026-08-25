@@ -10,14 +10,17 @@ const { StaticSimulator } = require("./simulator");
 const { buildStateKey } = require("./state-key");
 
 const project = loadProject(workerData.projectRoot);
+const isQualified = Boolean(workerData.autoBattleFastRejectQualified);
 const simulator = new StaticSimulator(project, {
   stopFloorId: workerData.stopFloorId,
   battleResolver: new FunctionBackedBattleResolver(project, {
     enableBattleEstimateCache: workerData.enableBattleEstimateCache !== false,
     battleEstimateCacheLimit: workerData.battleEstimateCacheLimit,
+    enableFastReject: isQualified,
   }),
   autoPickupEnabled: workerData.autoPickupEnabled !== false,
   autoBattleEnabled: workerData.autoBattleEnabled !== false,
+  autoBattleFastRejectEnabled: isQualified,
   enableFightToLevelUp: Boolean(workerData.enableFightToLevelUp),
   enableResourcePocket: Boolean(workerData.enableResourcePocket),
   enableResourceChain: Boolean(workerData.enableResourceChain),

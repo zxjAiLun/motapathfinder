@@ -1413,6 +1413,7 @@ async function searchTopKParallel(simulator, initialState, options) {
       primitiveFallbackMode: config.primitiveFallbackMode,
       enableBattleEstimateCache: config.enableBattleEstimateCache !== false,
       battleEstimateCacheLimit: config.battleEstimateCacheLimit,
+      autoBattleFastRejectQualified: Boolean(config.autoBattleFastRejectQualified || config.enableFastReject),
       profileName: config.profileName || "stage-mt1-mt11",
       targetFloorId: config.targetFloorId || simulator.stopFloorId,
       maxActionsPerState: config.maxActionsPerState,

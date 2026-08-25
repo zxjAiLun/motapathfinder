@@ -85,11 +85,13 @@ function writeReplayCache(routeFile, projectRoot, rank, state, captureTrace) {
 }
 
 function makeSimulator(project, args) {
+  const isQualified = parseBoolean(args && args["fast-reject"], true);
   return new StaticSimulator(project, {
     stopFloorId: args["stop-floor"] || "MT11",
-    battleResolver: new FunctionBackedBattleResolver(project),
+    battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: isQualified }),
     autoPickupEnabled: true,
     autoBattleEnabled: true,
+    autoBattleFastRejectEnabled: isQualified,
     enableFightToLevelUp: false,
     enableResourcePocket: false,
     enableResourceCluster: false,

@@ -127,19 +127,28 @@ class SolverJob {
 }
 
 function makeSimulator(project, regionSpec, task, runtimeOptions) {
-  const simulatorConfig = regionSpec.simulator || {};
+  const simulatorConfig = (regionSpec && regionSpec.simulator) || {};
   const runtimeConfig = runtimeOptions || {};
   const solverModel = (task && task.normalizedTask && task.normalizedTask.model) ||
-    regionSpec.model ||
+    (regionSpec && regionSpec.model) ||
     null;
+  const isQualified = Boolean(
+    simulatorConfig.autoBattleFastRejectQualified === true ||
+    (regionSpec && regionSpec.autoBattleFastRejectQualified === true) ||
+    runtimeConfig.autoBattleFastRejectQualified === true ||
+    (regionSpec && regionSpec.tower === "onlyup") ||
+    (task && task.autoBattleFastRejectQualified === true)
+  );
   return new StaticSimulator(project, {
     solverModel,
     stopFloorId: simulatorConfig.stopFloorId || null,
     battleResolver: new FunctionBackedBattleResolver(project, {
       autoLevelUp: simulatorConfig.autoLevelUp !== false,
+      enableFastReject: isQualified,
     }),
     autoPickupEnabled: simulatorConfig.autoPickupEnabled !== false,
     autoBattleEnabled: simulatorConfig.autoBattleEnabled !== false,
+    autoBattleFastRejectEnabled: isQualified,
     enableFightToLevelUp: Boolean(simulatorConfig.enableFightToLevelUp),
     enableResourcePocket: false,
     enableResourceCluster: false,

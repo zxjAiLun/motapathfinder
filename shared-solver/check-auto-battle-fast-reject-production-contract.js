@@ -26,6 +26,7 @@ const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { StaticSimulator } = require("./lib/simulator");
 const { searchDP } = require("./lib/dp-search");
 const { createNoStateChangeChoiceResolver, runOnlyUpMt1RealRouteGate } = require("./lib/onlyup-mt1-real-route-gate");
+const { makeSimulator: makeSolverJobSimulator } = require("./lib/solver-job");
 const { buildStateKey } = require("./lib/state-key");
 const { createPerfTracker, setActivePerfTracker } = require("./lib/perf");
 
@@ -107,6 +108,12 @@ function runFixedWorkloadBenchmark(project, fastRejectEnabled, maxExpansions = 4
   return {
     wallMs,
     expansions: result.expansions,
+    generated: result.diagnostics.generated,
+    registered: result.diagnostics.registered,
+    frontierSize: result.frontierSize,
+    stoppedReason: result.stoppedReason,
+    bestProgressStateKey: buildStateKey(result.bestProgressState),
+    bestProgressMeta: JSON.stringify(result.bestProgressState && result.bestProgressState.meta),
     msPerExpansion: result.expansions > 0 ? wallMs / result.expansions : 0,
     scanBattleResolverEvaluateCalls: cnt.scanBattleResolverEvaluateCalls,
     scanFastRejectSkipped: cnt.scanFastRejectSkipped,
@@ -206,6 +213,15 @@ function main() {
       offMetrics = runFixedWorkloadBenchmark(project, false, WORKLOAD_EXPANSIONS);
     }
 
+    // Apples-to-apples search result & trajectory exact parity on every 400-expansion pair
+    assert.strictEqual(onMetrics.expansions, offMetrics.expansions, `Pair ${i}: expansions mismatch`);
+    assert.strictEqual(onMetrics.generated, offMetrics.generated, `Pair ${i}: generated count mismatch`);
+    assert.strictEqual(onMetrics.registered, offMetrics.registered, `Pair ${i}: registered count mismatch`);
+    assert.strictEqual(onMetrics.frontierSize, offMetrics.frontierSize, `Pair ${i}: frontier size mismatch`);
+    assert.strictEqual(onMetrics.stoppedReason, offMetrics.stoppedReason, `Pair ${i}: stopped reason mismatch`);
+    assert.strictEqual(onMetrics.bestProgressStateKey, offMetrics.bestProgressStateKey, `Pair ${i}: best progress stateKey mismatch`);
+    assert.strictEqual(onMetrics.bestProgressMeta, offMetrics.bestProgressMeta, `Pair ${i}: best progress meta mismatch`);
+
     const msPerExpDelta = offMetrics.msPerExpansion - onMetrics.msPerExpansion;
     const msPerExpRatio = offMetrics.msPerExpansion > 0 ? msPerExpDelta / offMetrics.msPerExpansion : 0;
     const wallRatio = offMetrics.wallMs > 0 ? (offMetrics.wallMs - onMetrics.wallMs) / offMetrics.wallMs : 0;
@@ -224,6 +240,54 @@ function main() {
   const sortedRatios = pairs.map((p) => p.improvementRatio).sort((a, b) => a - b);
   const medianImprovementRatio = sortedRatios[Math.floor(sortedRatios.length / 2)];
   const positivePairs = pairs.filter((p) => p.improvementRatio > 0).length;
+
+  // -------------------------------------------------------------------------
+  // 4. Production Plumbing Qualification & Tower Boundary Verification
+  // -------------------------------------------------------------------------
+  // A. Canonical OnlyUp Region Spec through makeSolverJobSimulator -> MUST be qualified
+  const onlyupSpec = {
+    tower: "onlyup",
+    simulator: { stopFloorId: "MT6", autoPickupEnabled: true, autoBattleEnabled: true },
+  };
+  const onlyupProdSim = makeSolverJobSimulator(project, onlyupSpec, {});
+  assert.strictEqual(
+    onlyupProdSim.autoResolver.enableFastRejectSkip,
+    true,
+    "OnlyUp production simulator must have fast reject skip enabled",
+  );
+  assert.strictEqual(
+    typeof onlyupProdSim.battleResolver.fastRejectClassifier,
+    "function",
+    "OnlyUp production simulator must have qualified resolver classifier",
+  );
+
+  const trackerProd = createPerfTracker({ enabled: true, profileExpansionCost: true });
+  setActivePerfTracker(trackerProd);
+  try {
+    searchDP(onlyupProdSim, onlyupProdSim.createInitialState(), { maxExpansions: 50, stopFloorId: "MT6", targetFloorId: "MT6" });
+  } finally {
+    setActivePerfTracker(null);
+  }
+  const snapProd = trackerProd.snapshot({ expanded: 50, generated: 50, registered: 50, duplicates: 0, frontierSize: 1 });
+  const cntProd = snapProd.expansionCost.timingDirectional.inclusiveSubsystems.stabilizeState.counters;
+  assert.ok(cntProd.scanFastRejectSkipped > 0, "OnlyUp production path must actually skip evaluations in search");
+
+  // B. Non-qualified tower (e.g. whiteisland or generic spec without qualification) -> MUST be unqualified
+  const genericSpec = {
+    tower: "whiteisland",
+    simulator: { stopFloorId: "A3", autoPickupEnabled: true, autoBattleEnabled: true },
+  };
+  const genericProdSim = makeSolverJobSimulator(project, genericSpec, {});
+  assert.strictEqual(
+    genericProdSim.autoResolver.enableFastRejectSkip,
+    false,
+    "Non-qualified tower simulator must NOT have fast reject skip enabled",
+  );
+  assert.strictEqual(
+    genericProdSim.battleResolver.fastRejectClassifier,
+    null,
+    "Non-qualified tower resolver must NOT have fast reject classifier",
+  );
 
   const summary = {
     schema: "motapathfinder.auto-battle-fast-reject-production.v1",
@@ -246,6 +310,11 @@ function main() {
       verdict: gateResult.verdict,
       decisionsReplayed: gateResult.recordedDecisionCount,
       strictReplayClean: gateResult.mismatches.length === 0,
+    },
+    productionPlumbingVerified: {
+      onlyupQualified: onlyupProdSim.autoResolver.enableFastRejectSkip === true,
+      onlyupSkippedCount: cntProd.scanFastRejectSkipped,
+      whiteislandUnqualified: genericProdSim.autoResolver.enableFastRejectSkip === false,
     },
     pairedBenchmark: {
       pairCount: PAIR_COUNT,
