@@ -1434,6 +1434,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": false,
     "cleanCheckout": true,
     "notes": "PR-5.22g movement hazard build cost decomposition, fast floor block materialization traversal adversarial parity matrix, MT1 real route gate, and paired A/B qualification"
+  },
+  "shared-solver/check-onlyup-first-region-production-requalification.js": {
+    "grade": "local-regression",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.23a real first-region (MT1 -> MT6) direct search production requalification under full promoted fast path configuration"
   }
 };
 
@@ -1700,7 +1707,8 @@ const manifest = {
         "shared-solver/check-auto-battle-fast-reject-matrix.js",
         "shared-solver/check-auto-battle-fast-reject-production-contract.js",
         "shared-solver/check-auto-pickup-apply-contract.js",
-        "shared-solver/check-movement-hazard-fast-path.js"
+        "shared-solver/check-movement-hazard-fast-path.js",
+        "shared-solver/check-onlyup-first-region-production-requalification.js"
       ],
       requiredCommands: ["check:no-tower-solver-js"],
       paths: ["shared-solver/check-launcher-api.js"],

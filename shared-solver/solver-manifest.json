@@ -233,7 +233,8 @@
         "shared-solver/check-auto-battle-fast-reject-matrix.js",
         "shared-solver/check-auto-battle-fast-reject-production-contract.js",
         "shared-solver/check-auto-pickup-apply-contract.js",
-        "shared-solver/check-movement-hazard-fast-path.js"
+        "shared-solver/check-movement-hazard-fast-path.js",
+        "shared-solver/check-onlyup-first-region-production-requalification.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -3047,6 +3048,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.22a real OnlyUp first-region direct gate execution with opt-in expansion profiling"
+    },
+    "shared-solver/check-onlyup-first-region-production-requalification.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.23a real first-region (MT1 -> MT6) direct search production requalification under full promoted fast path configuration"
     },
     "shared-solver/check-onlyup-first-region-real-route-gate.js": {
       "grade": "integration-local",
