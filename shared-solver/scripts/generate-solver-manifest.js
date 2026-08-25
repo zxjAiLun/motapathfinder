@@ -1412,6 +1412,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": false,
     "cleanCheckout": true,
     "notes": "PR-5.22d auto-battle safe fast-reject adversarial boundary matrix validating zero false rejects across vanilla, special, and modified states"
+  },
+  "shared-solver/check-auto-battle-fast-reject-production-contract.js": {
+    "grade": "local-regression",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.22e auto-battle safe fast-reject production fast path exact parity, counter conservation, MT1 real route gate, and paired A/B qualification"
   }
 };
 
@@ -1675,7 +1682,8 @@ const manifest = {
         "shared-solver/check-action-expansion-cache-correctness.js",
         "shared-solver/check-expansion-profiler-parity.js",
         "shared-solver/check-auto-battle-attribution-contract.js",
-        "shared-solver/check-auto-battle-fast-reject-matrix.js"
+        "shared-solver/check-auto-battle-fast-reject-matrix.js",
+        "shared-solver/check-auto-battle-fast-reject-production-contract.js"
       ],
       requiredCommands: ["check:no-tower-solver-js"],
       paths: ["shared-solver/check-launcher-api.js"],
