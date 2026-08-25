@@ -417,7 +417,7 @@ function runOnlyUpRealRouteGate(options) {
 
   // --- strict replay on a FRESH simulator with the same stateless resolver -----
   const replayChoiceResolver = createNoStateChangeChoiceResolver();
-  const replaySimulator = buildSimulator(project, replayChoiceResolver, targetFloorId);
+  const replaySimulator = buildSimulator(project, replayChoiceResolver, targetFloorId, config);
   let replayState = replaySimulator.createInitialState();
   if (buildStateKey(replayState) !== initialSnapshot.exactStateKey) {
     return failed("replay-initial-state-divergence", { searchFinal });

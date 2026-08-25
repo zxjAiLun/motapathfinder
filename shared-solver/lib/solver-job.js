@@ -14,6 +14,7 @@ const { buildStateKey } = require("./state-key");
 const { verifyRouteObjective, replayRouteFile } = require("./live-replay");
 const { SolverProgressAccumulator } = require("./solver-progress");
 const { classifyJobFailure, buildSolverJobResult } = require("./solver-job-result");
+const { resolveFastRejectQualification } = require("./fast-reject-qualification");
 const { buildResultSearchOutcome } = require("./search-outcome");
 const { SOLVE_TASK_SCHEMA } = require("./solve-task");
 const { fingerprintJson } = require("./solve-task");
@@ -132,13 +133,12 @@ function makeSimulator(project, regionSpec, task, runtimeOptions) {
   const solverModel = (task && task.normalizedTask && task.normalizedTask.model) ||
     (regionSpec && regionSpec.model) ||
     null;
-  const isQualified = Boolean(
-    simulatorConfig.autoBattleFastRejectQualified === true ||
-    (regionSpec && regionSpec.autoBattleFastRejectQualified === true) ||
-    runtimeConfig.autoBattleFastRejectQualified === true ||
-    (regionSpec && regionSpec.tower === "onlyup") ||
-    (task && task.autoBattleFastRejectQualified === true)
-  );
+  const isQualified = resolveFastRejectQualification({
+    spec: regionSpec,
+    task,
+    runtimeOptions: runtimeConfig,
+    config: simulatorConfig,
+  });
   return new StaticSimulator(project, {
     solverModel,
     stopFloorId: simulatorConfig.stopFloorId || null,

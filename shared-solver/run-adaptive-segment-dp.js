@@ -14,6 +14,7 @@ const { buildDominanceKey } = require("./lib/state-key");
 const { buildRouteRecord, createStateFromSnapshot, fingerprintAction, readRouteFile, writeRouteFile } = require("./lib/route-store");
 const { buildSolverDoctorReport } = require("./lib/solver-doctor");
 const { StaticSimulator } = require("./lib/simulator");
+const { resolveFastRejectQualification } = require("./lib/fast-reject-qualification");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
 
@@ -85,9 +86,9 @@ function writeReplayCache(routeFile, projectRoot, rank, state, captureTrace) {
 }
 
 function makeSimulator(project, args) {
-  const isQualified = parseBoolean(args && args["fast-reject"], true);
+  const isQualified = resolveFastRejectQualification({ args });
   return new StaticSimulator(project, {
-    stopFloorId: args["stop-floor"] || "MT11",
+    stopFloorId: (args && args["stop-floor"]) || "MT11",
     battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: isQualified }),
     autoPickupEnabled: true,
     autoBattleEnabled: true,
@@ -579,4 +580,10 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  makeSimulator,
+};

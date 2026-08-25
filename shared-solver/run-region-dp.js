@@ -19,6 +19,7 @@ const { buildRegionMilestoneSpec, buildRegionProofClaim, loadRegionSpec } = requ
 const { buildRouteRecord, readRouteFile, writeRouteFile } = require("./lib/route-store");
 const { runMilestoneGraph } = require("./lib/segment-dp");
 const { StaticSimulator } = require("./lib/simulator");
+const { resolveFastRejectQualification } = require("./lib/fast-reject-qualification");
 
 const PREFLIGHT_SCHEMA = "motapathfinder.region-entry-preflight.v1";
 const STRUCTURED_ERROR_SCHEMA = "motapathfinder.region-dp-error.v1";
@@ -59,12 +60,11 @@ function solverRelativePath(filePath) {
 
 function makeSimulator(project, spec, args) {
   const simulatorConfig = spec.simulator || {};
-  const isQualified = Boolean(
-    parseBoolean(args["fast-reject"], false) ||
-    simulatorConfig.autoBattleFastRejectQualified === true ||
-    spec.autoBattleFastRejectQualified === true ||
-    spec.tower === "onlyup"
-  );
+  const isQualified = resolveFastRejectQualification({
+    args,
+    spec,
+    config: simulatorConfig,
+  });
   return new StaticSimulator(project, {
     solverModel: spec.model || null,
     stopFloorId: args["stop-floor"] || simulatorConfig.stopFloorId || null,

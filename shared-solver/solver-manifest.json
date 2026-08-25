@@ -764,6 +764,21 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/fast-reject-qualification.js": {
+      "id": "fast-reject-qualification",
+      "path": "shared-solver/lib/fast-reject-qualification.js",
+      "layer": "simulation",
+      "status": "canonical",
+      "role": "simulation-core",
+      "correctnessSource": true,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/file-job-store.js": {
       "id": "file-job-store",
       "path": "shared-solver/lib/file-job-store.js",

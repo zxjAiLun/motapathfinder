@@ -26,6 +26,7 @@ const CORE_SIM = new Set([
   "tool-registry.js",
   "auto-actions.js",
   "auto-battle-fast-reject.js",
+  "fast-reject-qualification.js",
   "expression.js",
   "floor-transitions.js",
   "reachability.js",
