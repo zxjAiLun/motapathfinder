@@ -5,6 +5,7 @@ const path = require("path");
 const vm = require("vm");
 
 const { DIRECTIONS, DIRECTION_DELTAS, isEnemyTile } = require("./reachability");
+const { classifyAutoBattleFastReject } = require("./auto-battle-fast-reject");
 const { executeActionList, runLevelUps } = require("./events");
 const { cloneState, getTileDefinitionAt, removeTileAt } = require("./state");
 
@@ -461,6 +462,13 @@ class FunctionBackedBattleResolver {
     const startedAt = Date.now();
     const result = this.evaluateBattleUncached(state, floorId, x, y, enemyId);
     return this.cacheSet("battleEstimate", this.battleEstimateCache, key, result, this.battleEstimateCacheLimit, Date.now() - startedAt);
+  }
+
+  classifyAutoBattleFastReject(state, floorId, x, y, enemyId) {
+    const enemy = this.runtime && this.runtime.materialEnemys
+      ? (this.runtime.materialEnemys[enemyId] || (this.project.enemysById && this.project.enemysById[enemyId]))
+      : (this.project.enemysById && this.project.enemysById[enemyId]);
+    return classifyAutoBattleFastReject(this.project, state, enemy, { floorId, x, y });
   }
 
   enumerateActions(context) {

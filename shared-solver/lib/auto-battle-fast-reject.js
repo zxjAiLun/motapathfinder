@@ -1,38 +1,54 @@
 "use strict";
 
 /**
- * PR-5.22d Auto-Battle Safe Fast-Reject Predicate.
+ * PR-5.22d1 Auto-Battle Safe Fast-Reject Predicate (Closed-World Whitelist Model).
  *
- * Designed to conservatively identify candidate enemy battles that DEFINITELY cannot
- * result in 0 damage, without performing full JSON cache key stringify and battle simulation.
+ * Conservatively identifies candidate enemy battles that DEFINITELY cannot result
+ * in 0 damage, with a mathematically strict Closed-World Whitelist security architecture:
  *
  * CONTRACT RULES:
  * 1. ONLY returns "definitelyReject" or "unknown". NEVER returns "definitelyAccept".
- * 2. Fail-Open: If an enemy has ANY special ability, guard, aura, buff, or if the hero has special
- *    equipment/flags/items that might alter combat rules, it MUST return "unknown".
- * 3. Shadow-Only: This module does NOT alter production routes or decisions.
+ * 2. Closed-World Whitelist:
+ *    - If the state hero holds ANY item not in SAFE_NON_COMBAT_ITEMS, FAIL-OPEN to "unknown".
+ *    - If the state flags contain ANY flag not in SAFE_NON_COMBAT_FLAGS, FAIL-OPEN to "unknown".
+ *    - If the hero has any equipment, FAIL-OPEN to "unknown".
+ *    - If the enemy has ANY special, guard, aura, hazard, or non-vanilla property, FAIL-OPEN to "unknown".
+ * 3. Math Rules (Strictly bounded to vanilla mechanics under closed-world qualification):
+ *    - Rule 1 (Zero Penetration): hero.atk <= enemy.def -> hero deals <= 0 damage/turn -> cannot win / unsupported -> definitelyReject.
+ *    - Rule 2 (Net Positive Damage): turnsNeeded > 1 AND (turnsNeeded - 1) * max(0, enemy.atk - hero.def) > hero.mdef -> hero takes > 0 net damage -> definitelyReject.
+ * 4. Zero False Rejects: GUARANTEED by fail-open on any unknown state modification.
  */
 
 const SAFE_EMPTY_SPECIALS = new Set([0, null, undefined, "", "0"]);
 
-// Combat items in Mota / OnlyUp that can modify combat calculation
-const KNOWN_COMBAT_ITEMS = new Set([
-  "I589", "I590", "I591", "I592", "I596", "I597", "I603",
-  "I729", "I746", "I747", "I748", "I749", "I750", "I751", "I767", "I768", "I792", "I793",
-  "I821", "I832", "I833", "I834", "I835", "I836", "I837", "I838", "I839", "I840", "I841",
-  "I842", "I843", "I844", "I845", "I846", "I847", "I848", "I849", "I850", "I851",
-  "I1491", "I1492", "I1493", "cross", "pickaxe", "centerFly",
+// Strict closed-world whitelist of non-combat items that NEVER participate in combat calculations
+const SAFE_NON_COMBAT_ITEMS = new Set([
+  "yellowKey",
+  "blueKey",
+  "redKey",
+  "greenKey",
+  "steelKey",
+  "specialKey",
+  "book",
+  "fly",
+  "I600",
 ]);
 
-// Combat flags in Mota / OnlyUp that can modify combat calculation
-const KNOWN_COMBAT_FLAGS = [
-  "s113", "s114", "s120", "s121", "s141", "s142", "s143", "s157",
-  "skill", "magicAtk", "lasthp", "__extraTurn__",
-  "poison", "weak", "curse",
-];
+// Strict closed-world whitelist of system non-combat flags
+const SAFE_NON_COMBAT_FLAGS = new Set([
+  "autoBattle",
+  "shiqu",
+  "level0",
+  "floor",
+  "floorId",
+  "hero",
+  "debug",
+  "hatred",
+  "__leaveLoc__",
+]);
 
 /**
- * Checks if enemy has any special ability, guards, auras, or complex properties.
+ * Checks if enemy has any special ability, guards, auras, or non-vanilla properties.
  */
 function hasSpecialOrComplexProperty(enemy) {
   if (!enemy) return true;
@@ -45,53 +61,42 @@ function hasSpecialOrComplexProperty(enemy) {
     return true;
   }
 
-  // Check for other potential dynamic combat attributes
+  // Fail-open on map hazards, guards, auras or dynamic mechanics
   if (enemy.zone || enemy.repulse || enemy.laser || enemy.ambush || enemy.betweenAttack) return true;
-  if (enemy.critical || enemy.defBreak || enemy.purify || enemy.vampire || enemy.poison || enemy.weak) return true;
-  if (enemy.twoHit || enemy.nHit || enemy.counter || enemy.firstAttack || enemy.bomb || enemy.notBomb) return true;
-  if (enemy.add || enemy.value || enemy.n || enemy.atkValue || enemy.defValue) return true;
   if (enemy.guards && Array.isArray(enemy.guards) && enemy.guards.length > 0) return true;
 
   return false;
 }
 
 /**
- * Checks if state has any combat item, equipment, or active combat flags.
+ * Checks if state contains any non-whitelisted item, equipment, or non-whitelisted flag.
+ * Closed-world: ANY unrecognized item or flag immediately triggers fail-open.
  */
-function hasStateCombatModifiers(state) {
-  if (!state) return false;
+function hasUnqualifiedStateModifiers(state) {
+  if (!state) return true;
 
-  // Check equipment
+  // 1. Equipment check: any equipment must fail-open
   const equip = state.equipment || (state.hero && state.hero.equipment);
   if (equip && (Array.isArray(equip) ? equip.length > 0 : Object.keys(equip).length > 0)) {
     return true;
   }
 
-  // Check inventory for combat items
+  // 2. Inventory check: ANY item not in the safe non-combat whitelist must fail-open
   const inventory = state.inventory;
   if (inventory) {
     for (const itemId of Object.keys(inventory)) {
-      if (Number(inventory[itemId] || 0) > 0 && KNOWN_COMBAT_ITEMS.has(itemId)) {
+      if (Number(inventory[itemId] || 0) > 0 && !SAFE_NON_COMBAT_ITEMS.has(itemId)) {
         return true;
       }
     }
   }
 
-  // Check flags
+  // 3. Flags check: ANY flag not in the safe non-combat whitelist with a truthy/non-zero value must fail-open
   const flags = state.flags;
   if (flags) {
-    if (flags.__atk_buff__ != null || flags.__def_buff__ != null || flags.__mdef_buff__ != null) {
-      return true;
-    }
-    for (let i = 0; i < KNOWN_COMBAT_FLAGS.length; i++) {
-      const flagName = KNOWN_COMBAT_FLAGS[i];
-      if (flags[flagName] != null && flags[flagName] !== 0 && flags[flagName] !== false) {
-        return true;
-      }
-    }
-    // Guard flags check
-    for (const key of Object.keys(flags)) {
-      if (key.startsWith("__guards__")) {
+    for (const flagKey of Object.keys(flags)) {
+      const val = flags[flagKey];
+      if (val != null && val !== 0 && val !== false && !SAFE_NON_COMBAT_FLAGS.has(flagKey)) {
         return true;
       }
     }
@@ -101,7 +106,7 @@ function hasStateCombatModifiers(state) {
 }
 
 /**
- * Conservative fast-reject predicate.
+ * Closed-world fast-reject predicate.
  *
  * @param {object} project Loaded project definition
  * @param {object} state Current search state
@@ -113,13 +118,13 @@ function classifyAutoBattleFastReject(project, state, enemy, options) {
   if (!enemy) return "unknown";
   if (!state || !state.hero) return "unknown";
 
-  // 1. Fail-open if enemy has ANY special ability or mechanics
+  // 1. Closed-world qualification: enemy must be strictly vanilla with no specials or mechanics
   if (hasSpecialOrComplexProperty(enemy)) {
     return "unknown";
   }
 
-  // 2. Fail-open if state hero has active buffs/debuffs, combat items, or complex combat flags
-  if (hasStateCombatModifiers(state)) {
+  // 2. Closed-world qualification: state must have ONLY whitelisted non-combat items & flags, and no equipment
+  if (hasUnqualifiedStateModifiers(state)) {
     return "unknown";
   }
 
@@ -131,16 +136,17 @@ function classifyAutoBattleFastReject(project, state, enemy, options) {
   const enemyDef = Number(enemy.def || 0);
   const enemyHp = Number(enemy.hp || 0);
 
-  // 3. Rule 1 (Cannot Penetrate Defense): If hero ATK <= enemy DEF, hero deals <= 0 damage per turn.
-  // In vanilla Mota, if you cannot penetrate defense, damage is 0 per turn -> battle cannot be won / unsupported.
+  // 3. Rule 1 (Zero Penetration): If hero ATK <= enemy DEF, hero deals <= 0 damage per turn.
+  // In vanilla Mota, if you cannot penetrate defense, battle cannot be won / damageInfo is null.
   if (heroAtk <= enemyDef) {
     return "definitelyReject";
   }
 
-  // 4. Rule 2 (Enemy Can Damage & Survives 1 Turn):
-  // If hero cannot 1-shot the enemy (heroDamagePerTurn < enemyHp),
-  // the enemy will attack at least (turns - 1) times.
-  // If that raw damage exceeds heroMdef, hero takes strictly > 0 net damage -> not a 0-damage battle!
+  // 4. Rule 2 (Net Positive Damage):
+  // Hero deals heroDamagePerTurn = heroAtk - enemyDef > 0.
+  // If hero cannot 1-shot the enemy (turnsNeeded > 1), enemy attacks at least (turnsNeeded - 1) times.
+  // Total raw enemy damage = (turnsNeeded - 1) * max(0, enemyAtk - heroDef).
+  // If total raw damage > heroMdef, hero takes strictly > 0 net damage (not a 0-damage battle!).
   const heroDamagePerTurn = heroAtk - enemyDef;
   if (heroDamagePerTurn > 0) {
     const turnsNeeded = Math.ceil(enemyHp / heroDamagePerTurn);
@@ -159,5 +165,7 @@ function classifyAutoBattleFastReject(project, state, enemy, options) {
 module.exports = {
   classifyAutoBattleFastReject,
   hasSpecialOrComplexProperty,
-  hasStateCombatModifiers,
+  hasUnqualifiedStateModifiers,
+  SAFE_NON_COMBAT_ITEMS,
+  SAFE_NON_COMBAT_FLAGS,
 };

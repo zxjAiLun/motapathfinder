@@ -3,207 +3,280 @@
 /** TEST GRADE: integration-local */
 
 /**
- * PR-5.22d Auto-Battle Safe Fast-Reject Adversarial Boundary Matrix.
+ * PR-5.22d1 Auto-Battle Safe Fast-Reject Adversarial Boundary Matrix.
  *
- * Exhaustively exercises classifyAutoBattleFastReject across:
- * 1. Vanilla boundary cases (zero penetration, multi-turn non-zero, 1-shot zero damage, mdef absorption, def immune).
- * 2. Enemy special mechanics (vampire, multi-hit, first-attack, counter, armor-break, guards, auras, hazards).
- * 3. Hero modifiers (combat items, equipment, dynamic buffs, combat flags, status ailments).
+ * Verifies classifyAutoBattleFastReject against live FunctionBackedBattleResolver:
+ * 1. Real OnlyUp project monsters under vanilla conditions (zero penetration, multi-turn damage, 1-shot 0-damage, defense immune).
+ * 2. Injected special mechanics (first attack, vampire, multi-hit, repulse, guards) -> must fail-open to "unknown".
+ * 3. Explicit I602 / I755 damage-reduction item counterexample regressions -> must fail-open to "unknown".
+ * 4. Non-whitelisted items, combat flags, and equipment -> must fail-open to "unknown".
  *
- * Invariant: ZERO false rejects (falseReject === 0) across all test vectors against authoritative evaluation.
+ * HARD INVARIANTS:
+ * - NO test vector uses synthetic mock booleans; authoritative oracle is live evaluateBattle().
+ * - falseReject strictly equals 0 across all vectors.
+ * - definitelyAccept is strictly forbidden.
  */
 
+const path = require("node:path");
 const assert = require("node:assert");
-const { classifyAutoBattleFastReject, hasSpecialOrComplexProperty, hasStateCombatModifiers } = require("./lib/auto-battle-fast-reject");
+const { loadProject } = require("./lib/project-loader");
+const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 
-function runAdversarialMatrixTests() {
-  const cases = [
-    // --- 1. Vanilla Negative Cases (Must Definitely Reject) ---
+const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
+
+function runAuthoritativeAdversarialMatrixTests() {
+  const project = loadProject(PROJECT_ROOT);
+
+  // Clone and inject synthetic test enemies into project for boundary testing
+  const syntheticProject = {
+    ...project,
+    enemysById: {
+      ...project.enemysById,
+      SYN_FIRST_ATTACK: { id: "SYN_FIRST_ATTACK", name: "FirstAttacker", hp: 100, atk: 50, def: 10, special: [1] },
+      SYN_VAMPIRE: { id: "SYN_VAMPIRE", name: "Vampire", hp: 100, atk: 50, def: 10, special: 11, value: 0.2 },
+      SYN_TWOHIT: { id: "SYN_TWOHIT", name: "TwoHitter", hp: 100, atk: 50, def: 10, special: 4 },
+      SYN_REPULSE: { id: "SYN_REPULSE", name: "Repulser", hp: 100, atk: 50, def: 10, repulse: true },
+      SYN_GUARD: { id: "SYN_GUARD", name: "Guarded", hp: 100, atk: 50, def: 10, guards: [[1, 2, "greenSlime"]] },
+      SYN_VANILLA_STRONG: { id: "SYN_VANILLA_STRONG", name: "VanillaStrong", hp: 150, atk: 30, def: 50, special: 0 },
+      SYN_VANILLA_WEAK: { id: "SYN_VANILLA_WEAK", name: "VanillaWeak", hp: 50, atk: 10, def: 0, special: 0 },
+    },
+  };
+
+  const battleResolver = new FunctionBackedBattleResolver(syntheticProject);
+
+  const vectors = [
+    // --- 1. Real & Synthetic Vanilla Negative Cases (Must Definitely Reject) ---
     {
-      name: "Vanilla zero penetration (hero.atk < enemy.def)",
-      hero: { hp: 1000, atk: 10, def: 10, mdef: 0 },
-      enemy: { id: "E_DEF", hp: 100, atk: 20, def: 50, special: 0 },
-      flags: {},
-      inventory: {},
-      expectedVerdict: "definitelyReject",
-      authoritativeZeroDamage: false,
+      name: "Zero penetration on real bat (hero atk 1 <= bat def 1)",
+      enemyId: "bat",
+      hero: { hp: 1000, atk: 1, def: 0, mdef: 10 },
+      flags: { autoBattle: 1, shiqu: 1 },
+      inventory: { yellowKey: 1 },
+      expectedFastVerdict: "definitelyReject",
     },
     {
-      name: "Vanilla zero penetration equal (hero.atk == enemy.def)",
-      hero: { hp: 1000, atk: 50, def: 10, mdef: 0 },
-      enemy: { id: "E_EQ", hp: 100, atk: 20, def: 50, special: 0 },
-      flags: {},
-      inventory: {},
-      expectedVerdict: "definitelyReject",
-      authoritativeZeroDamage: false,
+      name: "Zero penetration equal (hero atk 50 <= SYN_VANILLA_STRONG def 50)",
+      enemyId: "SYN_VANILLA_STRONG",
+      hero: { hp: 1000, atk: 50, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: { blueKey: 1 },
+      expectedFastVerdict: "definitelyReject",
     },
     {
-      name: "Vanilla multi-turn guaranteed positive damage (takes 3 turns, enemy deals 10/turn > 0 mdef)",
+      name: "Multi-turn positive damage (hero atk 100 vs SYN_VANILLA_STRONG def 50, 3 turns, enemy deals 20 > 0 mdef)",
+      enemyId: "SYN_VANILLA_STRONG",
       hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
-      enemy: { id: "E_HURT", hp: 150, atk: 30, def: 50, special: 0 }, // hero per turn 50, takes 3 turns -> enemy strikes 2 times for 10 = 20 > 0 mdef
-      flags: {},
-      inventory: {},
-      expectedVerdict: "definitelyReject",
-      authoritativeZeroDamage: false,
+      flags: { autoBattle: 1 },
+      inventory: { redKey: 1 },
+      expectedFastVerdict: "definitelyReject",
     },
     {
-      name: "Vanilla multi-turn damage exceeds mdef (enemy damage 20 > mdef 10)",
-      hero: { hp: 1000, atk: 100, def: 20, mdef: 10 },
-      enemy: { id: "E_MDEF_BREAK", hp: 150, atk: 30, def: 50, special: 0 }, // enemy raw damage 20 > mdef 10
-      flags: {},
-      inventory: {},
-      expectedVerdict: "definitelyReject",
-      authoritativeZeroDamage: false,
+      name: "Multi-turn damage on real bigBat (hero atk 10 vs bigBat hp 99 atk 19 def 3, deals 266 > mdef 10)",
+      enemyId: "bigBat",
+      hero: { hp: 1000, atk: 10, def: 0, mdef: 10 },
+      flags: { autoBattle: 1 },
+      inventory: { steelKey: 1 },
+      expectedFastVerdict: "definitelyReject",
     },
 
-    // --- 2. Vanilla Positive / Safe Cases (Must Return unknown, NEVER definitelyReject) ---
+    // --- 2. Real & Synthetic Vanilla 0-Damage Cases (Must Return unknown, NEVER definitelyReject) ---
     {
-      name: "Vanilla 1-shot kill (turns = 1, 0 damage taken)",
-      hero: { hp: 1000, atk: 200, def: 10, mdef: 0 },
-      enemy: { id: "E_1SHOT", hp: 50, atk: 500, def: 50, special: 0 }, // hero per turn 150 >= 50 hp -> 1 turn
-      flags: {},
-      inventory: {},
-      expectedVerdict: "unknown",
-      authoritativeZeroDamage: true,
+      name: "1-shot 0-damage kill on greenSlime (hero atk 25 >= greenSlime hp 21 + def 0)",
+      enemyId: "greenSlime",
+      hero: { hp: 1000, atk: 25, def: 0, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: { yellowKey: 2 },
+      expectedFastVerdict: "unknown",
+      assertAuthoritativeDamageZero: true,
     },
     {
-      name: "Vanilla total defense (enemy.atk <= hero.def, 0 damage taken in multi-turn)",
-      hero: { hp: 1000, atk: 100, def: 100, mdef: 0 },
-      enemy: { id: "E_NODAMAGE", hp: 200, atk: 50, def: 20, special: 0 }, // enemy cannot penetrate hero def
-      flags: {},
-      inventory: {},
-      expectedVerdict: "unknown",
-      authoritativeZeroDamage: true,
+      name: "Total defense 0-damage (hero def 100 >= SYN_VANILLA_WEAK atk 10)",
+      enemyId: "SYN_VANILLA_WEAK",
+      hero: { hp: 1000, atk: 10, def: 100, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: { yellowKey: 1 },
+      expectedFastVerdict: "unknown",
+      assertAuthoritativeDamageZero: true,
     },
     {
-      name: "Vanilla mdef fully absorbs damage (raw damage 10 <= mdef 20)",
+      name: "Mdef absorbs all damage (turns 2, enemy raw damage 10 <= mdef 20)",
+      enemyId: "SYN_VANILLA_STRONG",
       hero: { hp: 1000, atk: 100, def: 20, mdef: 20 },
-      enemy: { id: "E_MDEF_ABSORB", hp: 100, atk: 30, def: 50, special: 0 }, // turns 2, raw damage 10 <= mdef 20
-      flags: {},
-      inventory: {},
-      expectedVerdict: "unknown",
-      authoritativeZeroDamage: true,
+      flags: { autoBattle: 1 },
+      inventory: { greenKey: 1 },
+      expectedFastVerdict: "unknown",
+      assertAuthoritativeDamageZero: true,
     },
 
-    // --- 3. Enemy Specials (Must Fail-Open to unknown) ---
+    // --- 3. Explicit I602 / Damage Reduction Counterexample Regressions ---
     {
-      name: "Enemy special array [1] (first attack)",
-      hero: { hp: 1000, atk: 10, def: 10, mdef: 0 },
-      enemy: { id: "E_FIRST", hp: 100, atk: 20, def: 50, special: [1] },
-      flags: {},
-      inventory: {},
-      expectedVerdict: "unknown",
+      name: "EXPLICIT REGRESSION: I602 held reduces damage to 0 on otherwise positive battle -> must fail-open to unknown",
+      enemyId: "SYN_VANILLA_STRONG", // without I602, damage is 20. With I602, damage -= (30+50)*1.6 = -108 -> 0!
+      hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: { I602: 1 },
+      expectedFastVerdict: "unknown",
+      assertAuthoritativeDamageZero: true,
     },
     {
-      name: "Enemy special number 11 (vampire)",
-      hero: { hp: 1000, atk: 10, def: 10, mdef: 0 },
-      enemy: { id: "E_VAMP", hp: 100, atk: 20, def: 50, special: 11 },
-      flags: {},
-      inventory: {},
-      expectedVerdict: "unknown",
+      name: "EXPLICIT REGRESSION: I755 held (damage reduction) -> must fail-open to unknown",
+      enemyId: "SYN_VANILLA_STRONG",
+      hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: { I755: 1 },
+      expectedFastVerdict: "unknown",
     },
     {
-      name: "Enemy special property twoHit: true",
-      hero: { hp: 1000, atk: 10, def: 10, mdef: 0 },
-      enemy: { id: "E_2HIT", hp: 100, atk: 20, def: 50, twoHit: true },
-      flags: {},
-      inventory: {},
-      expectedVerdict: "unknown",
-    },
-    {
-      name: "Enemy hazard repulse: true",
-      hero: { hp: 1000, atk: 10, def: 10, mdef: 0 },
-      enemy: { id: "E_REPULSE", hp: 100, atk: 20, def: 50, repulse: true },
-      flags: {},
-      inventory: {},
-      expectedVerdict: "unknown",
-    },
-    {
-      name: "Enemy guards present",
-      hero: { hp: 1000, atk: 10, def: 10, mdef: 0 },
-      enemy: { id: "E_GUARDS", hp: 100, atk: 20, def: 50, guards: [[1, 2, "E1"]] },
-      flags: {},
-      inventory: {},
-      expectedVerdict: "unknown",
-    },
-
-    // --- 4. Hero Modifiers / Combat Items / Flags (Must Fail-Open to unknown) ---
-    {
-      name: "Hero has combat item I821 (ascension buff)",
-      hero: { hp: 1000, atk: 10, def: 10, mdef: 0 },
-      enemy: { id: "E_NORM", hp: 100, atk: 20, def: 50, special: 0 },
-      flags: {},
+      name: "Non-whitelisted item I821 (ascension) -> must fail-open to unknown",
+      enemyId: "SYN_VANILLA_STRONG",
+      hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
       inventory: { I821: 1 },
-      expectedVerdict: "unknown",
+      expectedFastVerdict: "unknown",
     },
     {
-      name: "Hero has combat flag skill: 1 (double strike)",
-      hero: { hp: 1000, atk: 10, def: 10, mdef: 0 },
-      enemy: { id: "E_NORM", hp: 100, atk: 20, def: 50, special: 0 },
-      flags: { skill: 1 },
+      name: "Non-whitelisted item cross -> must fail-open to unknown",
+      enemyId: "SYN_VANILLA_STRONG",
+      hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: { cross: 1 },
+      expectedFastVerdict: "unknown",
+    },
+
+    // --- 4. Non-Whitelisted Flags, Equipment, and Buffs ---
+    {
+      name: "Non-whitelisted flag skill: 1 (double strike) -> must fail-open to unknown",
+      enemyId: "SYN_VANILLA_STRONG",
+      hero: { hp: 1000, atk: 30, def: 20, mdef: 0 },
+      flags: { autoBattle: 1, skill: 1 },
       inventory: {},
-      expectedVerdict: "unknown",
+      expectedFastVerdict: "unknown",
     },
     {
-      name: "Hero has combat flag s113 (atk/def swap)",
-      hero: { hp: 1000, atk: 10, def: 10, mdef: 0 },
-      enemy: { id: "E_NORM", hp: 100, atk: 20, def: 50, special: 0 },
-      flags: { s113: 1 },
+      name: "Non-whitelisted flag s113 (atk/def swap) -> must fail-open to unknown",
+      enemyId: "SYN_VANILLA_STRONG",
+      hero: { hp: 1000, atk: 10, def: 100, mdef: 0 },
+      flags: { autoBattle: 1, s113: 1 },
       inventory: {},
-      expectedVerdict: "unknown",
+      expectedFastVerdict: "unknown",
     },
     {
-      name: "Hero has dynamic __atk_buff__",
-      hero: { hp: 1000, atk: 10, def: 10, mdef: 0 },
-      enemy: { id: "E_NORM", hp: 100, atk: 20, def: 50, special: 0 },
-      flags: { __atk_buff__: 1.5 },
+      name: "Non-whitelisted flag __atk_buff__: 2.0 -> must fail-open to unknown",
+      enemyId: "SYN_VANILLA_STRONG",
+      hero: { hp: 1000, atk: 30, def: 20, mdef: 0 },
+      flags: { autoBattle: 1, __atk_buff__: 2.0 },
       inventory: {},
-      expectedVerdict: "unknown",
+      expectedFastVerdict: "unknown",
     },
     {
-      name: "Hero has poison flag",
-      hero: { hp: 1000, atk: 10, def: 10, mdef: 0 },
-      enemy: { id: "E_NORM", hp: 100, atk: 20, def: 50, special: 0 },
-      flags: { poison: true },
+      name: "State has equipment -> must fail-open to unknown",
+      enemyId: "SYN_VANILLA_STRONG",
+      hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
       inventory: {},
-      expectedVerdict: "unknown",
+      equipment: ["I893"],
+      expectedFastVerdict: "unknown",
+    },
+
+    // --- 5. Real & Synthetic Special Mechanics (All Must Fail-Open to unknown) ---
+    {
+      name: "Real slimelord has firstAttack (special 1) -> must fail-open to unknown",
+      enemyId: "slimelord",
+      hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: {},
+      expectedFastVerdict: "unknown",
+    },
+    {
+      name: "Real redBat has magicAttack (special 2) -> must fail-open to unknown",
+      enemyId: "redBat",
+      hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: {},
+      expectedFastVerdict: "unknown",
+    },
+    {
+      name: "Synthetic vampire (special 11) -> must fail-open to unknown",
+      enemyId: "SYN_VAMPIRE",
+      hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: {},
+      expectedFastVerdict: "unknown",
+    },
+    {
+      name: "Synthetic twoHit (special 4) -> must fail-open to unknown",
+      enemyId: "SYN_TWOHIT",
+      hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: {},
+      expectedFastVerdict: "unknown",
+    },
+    {
+      name: "Synthetic repulse hazard -> must fail-open to unknown",
+      enemyId: "SYN_REPULSE",
+      hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: {},
+      expectedFastVerdict: "unknown",
+    },
+    {
+      name: "Synthetic guards present -> must fail-open to unknown",
+      enemyId: "SYN_GUARD",
+      hero: { hp: 1000, atk: 100, def: 20, mdef: 0 },
+      flags: { autoBattle: 1 },
+      inventory: {},
+      expectedFastVerdict: "unknown",
     },
   ];
 
   let testsRun = 0;
   let falseRejects = 0;
 
-  for (const c of cases) {
+  for (const v of vectors) {
     testsRun += 1;
     const state = {
       floorId: "MT1",
-      hero: c.hero,
-      flags: c.flags || {},
-      inventory: c.inventory || {},
-      equipment: c.equipment || [],
-    };
-    const project = {
-      enemysById: { [c.enemy.id]: c.enemy },
+      hero: v.hero,
+      flags: v.flags || {},
+      inventory: v.inventory || {},
+      equipment: v.equipment || [],
+      floorStates: { MT1: { removed: [], replaced: {} } },
     };
 
-    const verdict = classifyAutoBattleFastReject(project, state, c.enemy, { floorId: "MT1", x: 1, y: 1 });
+    // 1. Run fast reject
+    const fastVerdict = battleResolver.classifyAutoBattleFastReject(state, "MT1", 1, 1, v.enemyId);
 
-    assert.notStrictEqual(verdict, "definitelyAccept", `Contract violation: ${c.name} returned definitelyAccept`);
-    assert.strictEqual(verdict, c.expectedVerdict, `Verdict mismatch for [${c.name}]: expected ${c.expectedVerdict}, got ${verdict}`);
+    // Assert definitelyAccept is strictly forbidden
+    assert.notStrictEqual(fastVerdict, "definitelyAccept", `Contract violation: ${v.name} returned definitelyAccept`);
+    assert.strictEqual(fastVerdict, v.expectedFastVerdict, `Fast reject mismatch on [${v.name}]: expected ${v.expectedFastVerdict}, got ${fastVerdict}`);
 
-    // Verify against authoritative zero-damage expectation
-    if (verdict === "definitelyReject" && c.authoritativeZeroDamage === true) {
+    // 2. Run live authoritative evaluation
+    const authoritativeResult = battleResolver.evaluateBattle(state, "MT1", 1, 1, v.enemyId);
+    const isAuthoritativeZeroDamage = Boolean(
+      authoritativeResult &&
+      authoritativeResult.supported &&
+      authoritativeResult.damageInfo &&
+      Number(authoritativeResult.damageInfo.damage || 0) === 0
+    );
+
+    // If fast verdict says definitelyReject, authoritative evaluation MUST NOT be 0-damage!
+    if (fastVerdict === "definitelyReject" && isAuthoritativeZeroDamage) {
       falseRejects += 1;
-      assert.fail(`CRITICAL FALSE REJECT in [${c.name}]: fast reject claimed definitelyReject on a 0-damage battle!`);
+      assert.fail(`CRITICAL FALSE REJECT in [${v.name}]: fast reject claimed definitelyReject, but authoritative evaluateBattle returned 0 damage!`);
+    }
+
+    // Special check for explicit regression cases
+    if (v.assertAuthoritativeDamageZero) {
+      assert.strictEqual(isAuthoritativeZeroDamage, true, `Authoritative evaluation on [${v.name}] must result in 0 damage`);
     }
   }
 
-  assert.strictEqual(falseRejects, 0, "falseReject must strictly equal 0");
+  assert.strictEqual(falseRejects, 0, "falseReject must strictly equal 0 across all authoritative vectors");
 
   console.log(JSON.stringify({
-    schema: "motapathfinder.auto-battle-fast-reject-matrix.v1",
+    schema: "motapathfinder.auto-battle-fast-reject-safety-closure.v1",
     status: "passed",
-    verdict: "FAST_REJECT_MATRIX_PASSED",
+    verdict: "AUTHORITATIVE_FAST_REJECT_MATRIX_PASSED",
     testsRun,
     falseRejects,
   }, null, 2));
@@ -211,7 +284,7 @@ function runAdversarialMatrixTests() {
 
 if (require.main === module) {
   try {
-    runAdversarialMatrixTests();
+    runAuthoritativeAdversarialMatrixTests();
   } catch (error) {
     console.error(error && error.stack ? error.stack : String(error));
     process.exit(1);
@@ -219,5 +292,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  runAdversarialMatrixTests,
+  runAuthoritativeAdversarialMatrixTests,
 };

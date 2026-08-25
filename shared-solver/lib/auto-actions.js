@@ -202,19 +202,27 @@ class AutoActionResolver {
     }
 
     let shadowVerdict = null;
-    if (perfTracker && typeof perfTracker.increment === "function") {
+    if (!isReverification && perfTracker && typeof perfTracker.increment === "function") {
+      perfTracker.increment("scanShadowChecks", 1);
       perfTracker.increment("shadowChecks", 1);
+      const runPredicate = () => {
+        if (battleResolver && typeof battleResolver.classifyAutoBattleFastReject === "function") {
+          return battleResolver.classifyAutoBattleFastReject(state, state.floorId, x, y, tile.id);
+        }
+        return classifyAutoBattleFastReject(project, state, enemy, { floorId: state.floorId, x, y });
+      };
+
       if (typeof perfTracker.timeStabilizationSubphase === "function") {
-        shadowVerdict = perfTracker.timeStabilizationSubphase("shadowPredicate", () => (
-          classifyAutoBattleFastReject(project, state, enemy, { floorId: state.floorId, x, y })
-        ));
+        shadowVerdict = perfTracker.timeStabilizationSubphase("shadowPredicate", runPredicate);
       } else {
-        shadowVerdict = classifyAutoBattleFastReject(project, state, enemy, { floorId: state.floorId, x, y });
+        shadowVerdict = runPredicate();
       }
 
       if (shadowVerdict === "definitelyReject") {
+        perfTracker.increment("scanShadowDefinitelyReject", 1);
         perfTracker.increment("shadowDefinitelyReject", 1);
       } else {
+        perfTracker.increment("scanShadowUnknown", 1);
         perfTracker.increment("shadowUnknown", 1);
       }
     }
@@ -229,22 +237,28 @@ class AutoActionResolver {
 
     const isAcceptedZeroDamage = Boolean(battle && battle.supported && battle.damageInfo && Number(battle.damageInfo.damage || 0) === 0);
 
-    if (shadowVerdict != null && perfTracker && typeof perfTracker.increment === "function") {
+    if (!isReverification && shadowVerdict != null && perfTracker && typeof perfTracker.increment === "function") {
       if (shadowVerdict === "definitelyReject") {
         if (isAcceptedZeroDamage) {
+          perfTracker.increment("scanShadowFalseReject", 1);
           perfTracker.increment("shadowFalseReject", 1);
         } else {
+          perfTracker.increment("scanShadowTrueReject", 1);
           perfTracker.increment("shadowTrueReject", 1);
           if (!battle.supported) {
+            perfTracker.increment("scanShadowRejectedUnsupported", 1);
             perfTracker.increment("shadowRejectedUnsupported", 1);
           } else if (!battle.damageInfo || battle.damageInfo.damage == null) {
+            perfTracker.increment("scanShadowRejectedNoDamageInfo", 1);
             perfTracker.increment("shadowRejectedNoDamageInfo", 1);
           } else if (Number(battle.damageInfo.damage || 0) !== 0) {
+            perfTracker.increment("scanShadowRejectedNonZeroDamage", 1);
             perfTracker.increment("shadowRejectedNonZeroDamage", 1);
           }
         }
       } else if (shadowVerdict === "unknown") {
         if (!isAcceptedZeroDamage) {
+          perfTracker.increment("scanShadowMissedReject", 1);
           perfTracker.increment("shadowMissedReject", 1);
         }
       }
