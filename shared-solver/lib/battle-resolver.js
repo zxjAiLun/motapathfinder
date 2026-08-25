@@ -346,6 +346,9 @@ class FunctionBackedBattleResolver {
     this.runtime = loadFunctionsRuntime(project);
     this.enableBattleEstimateCache = config.enableBattleEstimateCache !== false;
     this.battleEstimateCacheLimit = Number(config.battleEstimateCacheLimit || 4096);
+    this.fastRejectClassifier = typeof config.fastRejectClassifier === "function"
+      ? config.fastRejectClassifier
+      : (config.enableFastReject === true ? classifyAutoBattleFastReject : null);
     this.battleEstimateCache = new Map();
     this.cacheStats = {
       battleEstimate: { hits: 0, misses: 0, stores: 0, evictions: 0, computeMs: 0, estimatedMsSaved: 0 },
@@ -465,10 +468,13 @@ class FunctionBackedBattleResolver {
   }
 
   classifyAutoBattleFastReject(state, floorId, x, y, enemyId) {
+    if (typeof this.fastRejectClassifier !== "function") {
+      return "unknown";
+    }
     const enemy = this.runtime && this.runtime.materialEnemys
       ? (this.runtime.materialEnemys[enemyId] || (this.project.enemysById && this.project.enemysById[enemyId]))
       : (this.project.enemysById && this.project.enemysById[enemyId]);
-    return classifyAutoBattleFastReject(this.project, state, enemy, { floorId, x, y });
+    return this.fastRejectClassifier(this.project, state, enemy, { floorId, x, y });
   }
 
   enumerateActions(context) {

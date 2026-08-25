@@ -42,7 +42,33 @@ function runAuthoritativeAdversarialMatrixTests() {
     },
   };
 
-  const battleResolver = new FunctionBackedBattleResolver(syntheticProject);
+  // 1. Negative Control: Custom resolver without fast-reject capability must fail-open to unknown
+  const mockCustomResolver = {
+    evaluateBattle: (state, floorId, x, y, enemyId) => ({ supported: true, damageInfo: { damage: 999 } }),
+  };
+  assert.strictEqual(
+    typeof mockCustomResolver.classifyAutoBattleFastReject,
+    "undefined",
+    "Custom resolver must not have fast reject capability",
+  );
+
+  // 2. Negative Control: FunctionBackedBattleResolver without explicit opt-in must strictly return unknown
+  const unqualifiedResolver = new FunctionBackedBattleResolver(syntheticProject);
+  const unqualifiedVerdict = unqualifiedResolver.classifyAutoBattleFastReject(
+    { floorId: "MT1", hero: { hp: 1000, atk: 1, def: 0, mdef: 10 }, flags: {}, inventory: {} },
+    "MT1",
+    1,
+    1,
+    "bat",
+  );
+  assert.strictEqual(
+    unqualifiedVerdict,
+    "unknown",
+    "Unqualified FunctionBackedBattleResolver must strictly return 'unknown' even on Rule-1 zero-penetration enemy",
+  );
+
+  // 3. Qualified Resolver: Explicitly opt-in with { enableFastReject: true }
+  const battleResolver = new FunctionBackedBattleResolver(syntheticProject, { enableFastReject: true });
 
   const vectors = [
     // --- 1. Real & Synthetic Vanilla Negative Cases (Must Definitely Reject) ---

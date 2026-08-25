@@ -90,7 +90,7 @@ function createTestSimulator(project) {
   const choiceResolver = createNoStateChangeChoiceResolver();
   return new StaticSimulator(project, {
     stopFloorId: "MT6",
-    battleResolver: new FunctionBackedBattleResolver(project),
+    battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: true }),
     searchGraphMode: "primitive",
     enableFightToLevelUp: false,
     enableResourcePocket: false,
@@ -281,6 +281,33 @@ function main() {
     cnt.battleReverificationCalls,
     cnt.reverifyBattleCandidateChecks,
     "battleReverificationCalls must equal reverifyBattleCandidateChecks",
+  );
+
+  // 5. Scan-only shadow probe conservation
+  assert.strictEqual(
+    cnt.scanShadowChecks,
+    cnt.scanBattleResolverEvaluateCalls,
+    "scanShadowChecks must equal scanBattleResolverEvaluateCalls",
+  );
+  assert.strictEqual(
+    cnt.scanShadowChecks,
+    cnt.scanShadowDefinitelyReject + cnt.scanShadowUnknown,
+    "scanShadowChecks must equal scanShadowDefinitelyReject + scanShadowUnknown",
+  );
+  assert.strictEqual(
+    cnt.scanShadowDefinitelyReject,
+    cnt.scanShadowTrueReject + cnt.scanShadowFalseReject,
+    "scanShadowDefinitelyReject must equal scanShadowTrueReject + scanShadowFalseReject",
+  );
+  assert.strictEqual(
+    cnt.scanShadowTrueReject,
+    cnt.scanShadowRejectedUnsupported + cnt.scanShadowRejectedNoDamageInfo + cnt.scanShadowRejectedNonZeroDamage,
+    "scanShadowTrueReject must equal scanShadowRejectedUnsupported + scanShadowRejectedNoDamageInfo + scanShadowRejectedNonZeroDamage",
+  );
+  assert.strictEqual(
+    cnt.scanShadowFalseReject,
+    0,
+    "scanShadowFalseReject must strictly equal 0",
   );
 
   // Slow expansion samples

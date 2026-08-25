@@ -1,6 +1,5 @@
 "use strict";
 
-const { classifyAutoBattleFastReject } = require("./auto-battle-fast-reject");
 const { runAutoEvents } = require("./events");
 const { buildMovementHazards } = require("./movement-hazards");
 const { DIRECTIONS, DIRECTION_DELTAS, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
@@ -209,7 +208,7 @@ class AutoActionResolver {
         if (battleResolver && typeof battleResolver.classifyAutoBattleFastReject === "function") {
           return battleResolver.classifyAutoBattleFastReject(state, state.floorId, x, y, tile.id);
         }
-        return classifyAutoBattleFastReject(project, state, enemy, { floorId: state.floorId, x, y });
+        return "unknown";
       };
 
       if (typeof perfTracker.timeStabilizationSubphase === "function") {

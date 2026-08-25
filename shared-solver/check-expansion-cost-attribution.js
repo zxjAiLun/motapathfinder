@@ -37,7 +37,7 @@ function profileFirstRegionSearch(options = {}) {
   const choiceResolver = createNoStateChangeChoiceResolver();
   const simulator = new StaticSimulator(project, {
     stopFloorId: FIRST_REGION_TARGET_FLOOR_ID,
-    battleResolver: new FunctionBackedBattleResolver(project),
+    battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: true }),
     searchGraphMode: "primitive",
     enableFightToLevelUp: false,
     enableResourcePocket: false,

@@ -242,7 +242,7 @@ function isAutoEntry(entry) {
 function buildSimulator(project, choiceResolver, targetFloorId) {
   return new StaticSimulator(project, {
     stopFloorId: targetFloorId,
-    battleResolver: new FunctionBackedBattleResolver(project),
+    battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: true }),
     // Primitive graph only: no macro layer decides anything on the search's behalf.
     searchGraphMode: "primitive",
     enableFightToLevelUp: false,
