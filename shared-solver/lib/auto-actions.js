@@ -127,6 +127,7 @@ class AutoActionResolver {
     const config = options || {};
     this.autoPickupEnabled = config.autoPickupEnabled !== false;
     this.autoBattleEnabled = config.autoBattleEnabled !== false;
+    this.enableFastRejectSkip = config.enableFastRejectSkip === true;
     this.repeatUntilStable = config.repeatUntilStable === true;
     this.maxPasses = Number(config.maxPasses || 256);
   }
@@ -195,13 +196,39 @@ class AutoActionResolver {
       return null;
     }
 
-    if (perfTracker && typeof perfTracker.increment === "function") {
-      perfTracker.increment("battleResolverEvaluateCalls", 1);
-      perfTracker.increment(`${prefix}BattleResolverEvaluateCalls`, 1);
+    // PR-5.22e Production Safe Fast-Reject Bypass (strictly scan-only; reverify remains 100% authoritative)
+    if (!isReverification && this.enableFastRejectSkip && battleResolver && typeof battleResolver.classifyAutoBattleFastReject === "function") {
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("scanFastRejectChecks", 1);
+      }
+
+      let fastVerdict = null;
+      if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
+        fastVerdict = perfTracker.timeStabilizationSubphase("fastRejectPredicate", () => (
+          battleResolver.classifyAutoBattleFastReject(state, state.floorId, x, y, tile.id)
+        ));
+      } else {
+        fastVerdict = battleResolver.classifyAutoBattleFastReject(state, state.floorId, x, y, tile.id);
+      }
+
+      if (fastVerdict === "definitelyReject") {
+        if (perfTracker && typeof perfTracker.increment === "function") {
+          perfTracker.increment("scanFastRejectDefinitelyReject", 1);
+          perfTracker.increment("scanFastRejectSkipped", 1);
+          perfTracker.increment("scanBattleRejectedFastReject", 1);
+          perfTracker.increment("battleRejectedFastReject", 1);
+        }
+        return null;
+      }
+
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("scanFastRejectUnknown", 1);
+      }
     }
 
+    // Shadow probe: active only when production skip is OFF and perfTracker is profiling
     let shadowVerdict = null;
-    if (!isReverification && perfTracker && typeof perfTracker.increment === "function") {
+    if (!isReverification && !this.enableFastRejectSkip && perfTracker && typeof perfTracker.increment === "function") {
       perfTracker.increment("scanShadowChecks", 1);
       perfTracker.increment("shadowChecks", 1);
       const runPredicate = () => {
@@ -224,6 +251,12 @@ class AutoActionResolver {
         perfTracker.increment("scanShadowUnknown", 1);
         perfTracker.increment("shadowUnknown", 1);
       }
+    }
+
+    // Authoritative evaluateBattle call: counter increment strictly placed at the actual call site
+    if (perfTracker && typeof perfTracker.increment === "function") {
+      perfTracker.increment("battleResolverEvaluateCalls", 1);
+      perfTracker.increment(`${prefix}BattleResolverEvaluateCalls`, 1);
     }
 
     const evalPhaseName = isReverification ? "reverifyBattleEvaluation" : "scanBattleEvaluation";

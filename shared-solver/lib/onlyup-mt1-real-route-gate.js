@@ -239,7 +239,8 @@ function isAutoEntry(entry) {
   return typeof entry === "string" && entry.startsWith("auto:");
 }
 
-function buildSimulator(project, choiceResolver, targetFloorId) {
+function buildSimulator(project, choiceResolver, targetFloorId, options) {
+  const config = options || {};
   return new StaticSimulator(project, {
     stopFloorId: targetFloorId,
     battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: true }),
@@ -251,6 +252,7 @@ function buildSimulator(project, choiceResolver, targetFloorId) {
     enableResourceChain: false,
     autoPickupEnabled: true,
     autoBattleEnabled: true,
+    autoBattleFastRejectEnabled: config.autoBattleFastRejectEnabled === true,
     choiceResolver,
   });
 }
@@ -310,7 +312,7 @@ function runOnlyUpRealRouteGate(options) {
   sampleRss();
 
   const searchChoiceResolver = createNoStateChangeChoiceResolver();
-  const simulator = buildSimulator(project, searchChoiceResolver, targetFloorId);
+  const simulator = buildSimulator(project, searchChoiceResolver, targetFloorId, config);
   // The real initial state: createInitialState runs firstArrive and the auto
   // stabilization the tower itself would run on entry.
   const initialState = simulator.createInitialState();

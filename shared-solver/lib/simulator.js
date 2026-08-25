@@ -374,6 +374,7 @@ class StaticSimulator {
     this.autoResolver = config.autoResolver || new AutoActionResolver({
       autoPickupEnabled: config.autoPickupEnabled,
       autoBattleEnabled: config.autoBattleEnabled,
+      enableFastRejectSkip: config.autoBattleFastRejectEnabled === true,
       repeatUntilStable: config.autoRepeatUntilStable !== false,
     });
     this.choiceResolver = config.choiceResolver;
