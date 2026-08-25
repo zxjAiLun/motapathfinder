@@ -91,7 +91,7 @@ function createCheckpointPool(options) {
   };
 }
 
-function buildCheckpoint(simulator, parentState, childState, action, index) {
+function buildCheckpoint(simulator, parentState, childState, action, index, options) {
   const edge = `${parentState.floorId}->${childState.floorId}`;
   let scout = null;
   try {
@@ -103,13 +103,19 @@ function buildCheckpoint(simulator, parentState, childState, action, index) {
       unsupportedNotes: [error.message],
     };
   }
+  const customRoute = options && Array.isArray(options.route) ? options.route.slice() : null;
+  const customRouteLength = options && typeof options.routeLength === "number"
+    ? options.routeLength
+    : (customRoute ? customRoute.length : (Array.isArray(childState.route) ? childState.route.length : 0));
+  const checkpointState = options && options.state ? options.state : childState;
+
   return {
     id: `${edge}#${index}`,
     edge,
     fromFloorId: parentState.floorId,
     toFloorId: childState.floorId,
-    route: Array.isArray(childState.route) ? childState.route.slice() : [],
-    routeLength: Array.isArray(childState.route) ? childState.route.length : 0,
+    route: customRoute || (Array.isArray(childState.route) ? childState.route.slice() : []),
+    routeLength: customRouteLength,
     decisionDepth: getDecisionDepth(childState),
     hero: heroSnapshot(childState),
     equipment: Array.isArray((childState.hero || {}).equipment) ? childState.hero.equipment.slice().sort() : [],
@@ -117,7 +123,7 @@ function buildCheckpoint(simulator, parentState, childState, action, index) {
     tags: [],
     skylineKey: null,
     scout,
-    state: childState,
+    state: checkpointState,
     score: 0,
   };
 }
@@ -260,14 +266,14 @@ function pruneEdgeCheckpoints(list, options) {
   return keep;
 }
 
-function recordFloorEntryCheckpoint(pool, simulator, parentState, childState, action) {
+function recordFloorEntryCheckpoint(pool, simulator, parentState, childState, action, options) {
   if (!pool || !isForwardChangeFloor(parentState, childState, action)) return null;
   const edge = `${parentState.floorId}->${childState.floorId}`;
   const list = pool.edges[edge] || [];
   if (!pool.nextIndexByEdge) pool.nextIndexByEdge = {};
   const index = number(pool.nextIndexByEdge[edge], 0);
   pool.nextIndexByEdge[edge] = index + 1;
-  const checkpoint = buildCheckpoint(simulator, parentState, childState, action, index);
+  const checkpoint = buildCheckpoint(simulator, parentState, childState, action, index, options);
   list.push(checkpoint);
   pool.edges[edge] = pruneEdgeCheckpoints(list, pool.options || {});
   return checkpoint;
@@ -412,15 +418,57 @@ function baseSortedComparator(sorted) {
   return (left, right) => number(rank.get(left.id), Number.MAX_SAFE_INTEGER) - number(rank.get(right.id), Number.MAX_SAFE_INTEGER);
 }
 
+function selectParetoRepresentatives(pool, edge, options) {
+  const list = edge && pool && pool.edges ? (pool.edges[edge] || []) : [];
+  const maxRepresentatives = number(options && (options.limit || options.maxRepresentatives), 12);
+  const selected = [];
+  const add = (checkpoint, role) => {
+    if (!checkpoint) return;
+    const existing = selected.find((candidate) => candidate.id === checkpoint.id);
+    if (existing) {
+      if (!existing.roles) existing.roles = [existing.representativeRole || "initial"];
+      if (!existing.roles.includes(role)) existing.roles.push(role);
+      return;
+    }
+    if (selected.length >= maxRepresentatives) return;
+    selected.push({ ...checkpoint, representativeRole: role, roles: [role] });
+  };
+  const byTag = (tag) => list.filter((checkpoint) => (checkpoint.tags || []).includes(tag));
+  const bestBy = (role, candidates, compare) => {
+    const poolCandidates = candidates && candidates.length ? candidates : list;
+    const sorted = poolCandidates.slice().sort(compare);
+    if (sorted.length > 0) add(sorted[0], role);
+  };
+
+  bestBy("highest-hp", byTag("skyline-highest-hp").concat(byTag("highest-hp")), compareByHp);
+  bestBy("highest-atk", byTag("highest-atk"), (l, r) => r.hero.atk - l.hero.atk || compareByHp(l, r));
+  bestBy("highest-def", byTag("highest-def"), (l, r) => r.hero.def - l.hero.def || compareByHp(l, r));
+  bestBy("highest-mdef", byTag("highest-mdef"), (l, r) => r.hero.mdef - l.hero.mdef || compareByHp(l, r));
+  bestBy("highest-combat", byTag("skyline-highest-combat").concat(byTag("highest-combat")), compareByCombat);
+  bestBy("near-level", byTag("skyline-near-level").concat(byTag("near-levelup")), compareByExp);
+  bestBy("most-keys", byTag("skyline-most-keys"), compareByKeys);
+  bestBy("best-scout", byTag("skyline-best-scout").concat(byTag("best-scout")), compareByScout);
+  bestBy("fastest-route", byTag("skyline-fastest").concat(byTag("skyline-shortest-route")).concat(byTag("shortest-route")).concat(byTag("fastest")), compareByRoute);
+
+  const remaining = list
+    .slice()
+    .sort((l, r) => (r.score || 0) - (l.score || 0) || compareByHp(l, r));
+  remaining.forEach((c) => add(c, "skyline-ranked"));
+
+  return selected.slice(0, maxRepresentatives);
+}
+
 module.exports = {
   combatScore,
   combatSignature,
   createCheckpointPool,
   hydrateCheckpointPool,
+  isForwardChangeFloor,
   keyCount,
   keySignature,
   recordFloorEntryCheckpoint,
   requirementDeficitScore,
+  selectParetoRepresentatives,
   selectRepairCheckpoints,
   summarizeCheckpointPool,
 };

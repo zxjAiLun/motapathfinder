@@ -8,7 +8,11 @@ const {
   SOLVER_HERO_FIELDS,
   getSolverModel,
 } = require("./solver-model");
-const { createCheckpointPool } = require("./floor-checkpoints");
+const {
+  createCheckpointPool,
+  isForwardChangeFloor,
+  recordFloorEntryCheckpoint,
+} = require("./floor-checkpoints");
 const {
   createChildNode,
   createRootNode,
@@ -1209,6 +1213,10 @@ function searchDP(simulator, initialState, options) {
   let nextNodeId = 1;
   const skylineMax = number(config.dpSkylineMax, 1);
   const bestByKey = skylineMax > 1 ? new SkylineSet(skylineMax) : new Map();
+  const checkpointPool = createCheckpointPool(config.checkpointOptions);
+  const acceptedNodesByFloor = {};
+  const rootFloorId = rootState && rootState.floorId;
+  if (rootFloorId) acceptedNodesByFloor[rootFloorId] = 1;
   const observerAgendaMeta = observer ? new Map() : null;
   const actionStats = emptyActionStats();
   const startedAt = Date.now();
@@ -1977,6 +1985,31 @@ function searchDP(simulator, initialState, options) {
     }
     registered += 1;
     trackPerfCount("registered");
+    if (state && state.floorId) {
+      acceptedNodesByFloor[state.floorId] = Number(acceptedNodesByFloor[state.floorId] || 0) + 1;
+    }
+    if (parentNode && parentNode.state) {
+      if (isForwardChangeFloor(parentNode.state, state, sourceAction)) {
+        const ephemeralNode = {
+          parentId: parentNode.nodeId,
+          state,
+          actionEntry: normalizeActionEntry(sourceAction),
+        };
+        const materializedRoute = initialRoutePrefix.concat(
+          reconstructMaterializedActionEntries(nodes, ephemeralNode),
+        );
+        const canonicalRawRouteLength = getRawRouteLength(state);
+        const stateWithRoute = cloneState(state);
+        stateWithRoute.route = materializedRoute;
+        if (!stateWithRoute.meta) stateWithRoute.meta = {};
+        stateWithRoute.meta.rawRouteLength = canonicalRawRouteLength;
+        recordFloorEntryCheckpoint(checkpointPool, simulator, parentNode.state, state, sourceAction, {
+          route: materializedRoute,
+          routeLength: materializedRoute.length,
+          state: stateWithRoute,
+        });
+      }
+    }
     recordStatProgress(state, actionForEntry, parentNode, node);
     if (!bestSeenNode || compareDpBest(state, bestSeenNode.state) > 0) bestSeenNode = node;
     const progressDiff = bestProgressNode ? compareProgress(state, bestProgressNode.state) : 1;
@@ -2702,7 +2735,7 @@ function searchDP(simulator, initialState, options) {
     stoppedReason,
     cancelled: stoppedReason === "cancel-requested",
     searchOutcome,
-    checkpointPool: createCheckpointPool(config.checkpointOptions),
+    checkpointPool,
     results: [bestGoalState, firstGoalState, ...goalSkylineStates].filter((state, index, list) => state && list.indexOf(state) === index),
     diagnostics: {
       algorithm: "dp",
@@ -2714,6 +2747,25 @@ function searchDP(simulator, initialState, options) {
         "dp-same-hp-not-shorter": sameHpRejected,
         "goal-necessary-condition-failed": goalFeasibilityPruned,
         invalid,
+      },
+      retention: {
+        nodesSize: nodes.size,
+        bestByKeySize: bestByKey instanceof SkylineSet ? bestByKey.map.size : bestByKey.size,
+        bestByKeyEntries: (() => {
+          if (bestByKey instanceof SkylineSet) {
+            let total = 0;
+            bestByKey.map.forEach((entries) => { total += entries.length; });
+            return total;
+          }
+          return bestByKey.size;
+        })(),
+        agendaPhysicalEntries: heap ? heap.length : Math.max(0, fifoEntries.length - cursor),
+        agendaActiveEntries: frontierSize,
+        acceptedNodes: registered,
+        generatedNodes: generated,
+        replacedNodes: replacedLowerHp + sameHpShorterRoute,
+        rejectedNodes: rejectedByHigherHp + sameHpRejected,
+        acceptedNodesByFloor: { ...acceptedNodesByFloor },
       },
       byActionType: actionStats.byActionType,
       byActionRole: actionStats.byActionRole,

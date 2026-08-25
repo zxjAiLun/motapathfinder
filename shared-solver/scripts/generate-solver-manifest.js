@@ -1441,6 +1441,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": false,
     "cleanCheckout": true,
     "notes": "PR-5.23a real first-region (MT1 -> MT6) direct search production requalification under full promoted fast path configuration"
+  },
+  "shared-solver/check-onlyup-structured-planning-ab.js": {
+    "grade": "local-regression",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.23b search retention shape measurement and floor-boundary Pareto structured planning slice A/B qualification"
   }
 };
 
@@ -1708,7 +1715,8 @@ const manifest = {
         "shared-solver/check-auto-battle-fast-reject-production-contract.js",
         "shared-solver/check-auto-pickup-apply-contract.js",
         "shared-solver/check-movement-hazard-fast-path.js",
-        "shared-solver/check-onlyup-first-region-production-requalification.js"
+        "shared-solver/check-onlyup-first-region-production-requalification.js",
+        "shared-solver/check-onlyup-structured-planning-ab.js"
       ],
       requiredCommands: ["check:no-tower-solver-js"],
       paths: ["shared-solver/check-launcher-api.js"],

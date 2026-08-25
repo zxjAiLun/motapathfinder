@@ -234,7 +234,8 @@
         "shared-solver/check-auto-battle-fast-reject-production-contract.js",
         "shared-solver/check-auto-pickup-apply-contract.js",
         "shared-solver/check-movement-hazard-fast-path.js",
-        "shared-solver/check-onlyup-first-region-production-requalification.js"
+        "shared-solver/check-onlyup-first-region-production-requalification.js",
+        "shared-solver/check-onlyup-structured-planning-ab.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -3097,6 +3098,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "OnlyUp segmented DP regression plus synthetic one-level and two-level failure-class-driven checkpoint repair coverage for PR-5.6d"
+    },
+    "shared-solver/check-onlyup-structured-planning-ab.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.23b search retention shape measurement and floor-boundary Pareto structured planning slice A/B qualification"
     },
     "shared-solver/check-perf-baseline-contract.js": {
       "grade": "unit-plus-micro",
