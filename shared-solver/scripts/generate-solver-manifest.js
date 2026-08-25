@@ -1397,6 +1397,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": false,
     "cleanCheckout": true,
     "notes": "PR-5.22a real OnlyUp first-region direct gate execution with opt-in expansion profiling"
+  },
+  "shared-solver/check-auto-battle-attribution-contract.js": {
+    "grade": "integration-local",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.22c2 auto-battle attribution contract & reverify rejection fixture demonstrating live hazardRebuildWithoutInterveningMutation counter"
   }
 };
 
@@ -1658,7 +1665,8 @@ const manifest = {
         "shared-solver/check-multi-region-key-shadow-contract.js",
         "shared-solver/check-multi-region-boundary-matrix-contract.js",
         "shared-solver/check-action-expansion-cache-correctness.js",
-        "shared-solver/check-expansion-profiler-parity.js"
+        "shared-solver/check-expansion-profiler-parity.js",
+        "shared-solver/check-auto-battle-attribution-contract.js"
       ],
       requiredCommands: ["check:no-tower-solver-js"],
       paths: ["shared-solver/check-launcher-api.js"],
