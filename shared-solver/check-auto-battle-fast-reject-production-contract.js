@@ -194,8 +194,8 @@ function main() {
   // 3. Paired A/B Benchmark (5 Alternating Pairs)
   // -------------------------------------------------------------------------
   // JIT Warmup
-  runFixedWorkloadBenchmark(project, false, 50);
-  runFixedWorkloadBenchmark(project, true, 50);
+  runFixedWorkloadBenchmark(project, false, 150);
+  runFixedWorkloadBenchmark(project, true, 150);
 
   const pairs = [];
   const PAIR_COUNT = 5;
