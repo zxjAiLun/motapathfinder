@@ -409,7 +409,7 @@ function main() {
   // -------------------------------------------------------------------------
   // 3. MT1 Real Route Gate in Production ON Mode
   // -------------------------------------------------------------------------
-  const gateResult = runOnlyUpMt1RealRouteGate({ enableCompiledEffectCache: true });
+  const gateResult = runOnlyUpMt1RealRouteGate({ autoBattleFastRejectEnabled: true, enableCompiledEffectCache: true });
   assert.strictEqual(gateResult.verdict, "REAL_MT1_GATE_PASSED", "MT1 gate verdict mismatch");
   assert.strictEqual(gateResult.failureReason, null, "MT1 gate failureReason must be null");
   assert.deepStrictEqual(gateResult.mismatches, [], "MT1 gate strict replay reported mismatches");
@@ -508,9 +508,7 @@ function main() {
     promotionDecision: {
       criteriaMet: isPromoted,
       verdict: isPromoted ? "PROMOTE" : "REJECT",
-      reason: isPromoted
-        ? "Met >= 3% median improvement and >= 4/5 positive pairs"
-        : "vm.Script cache alone yields ~2.5% median speedup (< 3% threshold, 3/5 positive pairs) due to V8 context creation dominating pickupApply rather than script compilation",
+      reason: `median=${(medianImprovementRatio * 100).toFixed(2)}%, positive=${positivePairs}/${PAIR_COUNT}`,
     },
   };
 

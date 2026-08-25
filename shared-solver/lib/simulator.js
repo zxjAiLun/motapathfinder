@@ -375,6 +375,7 @@ class StaticSimulator {
       autoPickupEnabled: config.autoPickupEnabled,
       autoBattleEnabled: config.autoBattleEnabled,
       enableFastRejectSkip: config.autoBattleFastRejectEnabled === true,
+      enableFastHazardBlockIndex: config.enableFastHazardBlockIndex !== false,
       repeatUntilStable: config.autoRepeatUntilStable !== false,
     });
     this.choiceResolver = config.choiceResolver;

@@ -128,6 +128,7 @@ class AutoActionResolver {
     this.autoPickupEnabled = config.autoPickupEnabled !== false;
     this.autoBattleEnabled = config.autoBattleEnabled !== false;
     this.enableFastRejectSkip = config.enableFastRejectSkip === true;
+    this.enableFastHazardBlockIndex = config.enableFastHazardBlockIndex !== false;
     this.repeatUntilStable = config.repeatUntilStable === true;
     this.maxPasses = Number(config.maxPasses || 256);
   }
@@ -156,11 +157,15 @@ class AutoActionResolver {
       return perfTracker.timeStabilizationSubphase("hazardBuild", () => buildMovementHazards(project, state, {
         floorId: state.floorId,
         battleResolver,
+        perfTracker,
+        enableFastHazardBlockIndex: this.enableFastHazardBlockIndex,
       }));
     }
     return buildMovementHazards(project, state, {
       floorId: state.floorId,
       battleResolver,
+      perfTracker,
+      enableFastHazardBlockIndex: this.enableFastHazardBlockIndex,
     });
   }
 

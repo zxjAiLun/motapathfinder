@@ -208,10 +208,8 @@ function getTileNumberAt(project, state, floorId, x, y) {
   return getBaseTileNumber(project, floorId, x, y);
 }
 
-function getTileDefinitionAt(project, state, floorId, x, y) {
-  const number = getTileNumberAt(project, state, floorId, x, y);
-  if (number == null) return null;
-  if (number === 0) return null;
+function getTileDefinitionByNumber(project, number) {
+  if (number == null || number === 0) return null;
   const definition = project.mapTilesByNumber[String(number)];
   if (definition == null) {
     return {
@@ -226,6 +224,44 @@ function getTileDefinitionAt(project, state, floorId, x, y) {
     number,
     ...definition,
   };
+}
+
+function getTileDefinitionAt(project, state, floorId, x, y) {
+  const number = getTileNumberAt(project, state, floorId, x, y);
+  return getTileDefinitionByNumber(project, number);
+}
+
+function forEachMaterializedFloorTile(project, state, floorId, callback) {
+  const floor = project.floorsById[floorId];
+  if (!floor) return;
+  const floorState = ensureFloorState(state, floorId);
+  const removed = floorState.removed;
+  const replaced = floorState.replaced;
+  const map = floor.map;
+  const mapTilesByNumber = project.mapTilesByNumber;
+  const height = floor.height;
+  const width = floor.width;
+
+  for (let y = 0; y < height; y += 1) {
+    const row = map[y];
+    for (let x = 0; x < width; x += 1) {
+      const locKey = `${x},${y}`;
+      if (removed[locKey]) continue;
+
+      const number = Object.prototype.hasOwnProperty.call(replaced, locKey)
+        ? replaced[locKey]
+        : (row ? row[x] : 0);
+
+      if (!number) continue;
+
+      const definition = mapTilesByNumber[String(number)];
+      const tile = definition == null
+        ? { number, id: `X${number}`, cls: "unknown", canPass: false, noPass: true }
+        : { number, ...definition };
+
+      callback(tile, x, y, locKey);
+    }
+  }
 }
 
 function removeTileAt(state, floorId, x, y) {
@@ -289,12 +325,14 @@ module.exports = {
   ensureMeta,
   ensureFloorState,
   floorHasCoordinate,
+  forEachMaterializedFloorTile,
   getDecisionDepth,
   getMaterializedRouteLength,
   getRawRouteLength,
   getBaseTileNumber,
   getInventoryCount,
   getTileDefinitionAt,
+  getTileDefinitionByNumber,
   getTileNumberAt,
   hasItem,
   hasVisitedFloor,

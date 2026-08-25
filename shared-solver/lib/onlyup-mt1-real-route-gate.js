@@ -254,6 +254,7 @@ function buildSimulator(project, choiceResolver, targetFloorId, options) {
     autoBattleEnabled: true,
     autoBattleFastRejectEnabled: config.autoBattleFastRejectEnabled === true,
     enableCompiledEffectCache: config.enableCompiledEffectCache === true,
+    enableFastHazardBlockIndex: config.enableFastHazardBlockIndex !== false,
     choiceResolver,
   });
 }
