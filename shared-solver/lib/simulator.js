@@ -429,6 +429,7 @@ class StaticSimulator {
       actionsOutput: 0,
       examples: [],
     };
+    this.enableCompiledEffectCache = config.enableCompiledEffectCache !== false;
     this.enableActionExpansionCache = config.enableActionExpansionCache !== false;
     this.actionExpansionCacheLimit = Number(config.actionExpansionCacheLimit || 1024);
     this.actionExpansionCaches = {
@@ -2550,25 +2551,62 @@ class StaticSimulator {
   }
 
   resolvePickupAt(state, x, y) {
-    const tile = getTileDefinitionAt(this.project, state, state.floorId, x, y);
+    const tracker = getActivePerfTracker();
+    const tile = tracker && typeof tracker.timeStabilizationSubphase === "function"
+      ? tracker.timeStabilizationSubphase("pickupTileLookup", () => getTileDefinitionAt(this.project, state, state.floorId, x, y))
+      : getTileDefinitionAt(this.project, state, state.floorId, x, y);
+
     if (!tile || tile.cls !== "items") {
       throw new Error(`No pickup item at ${state.floorId}:${x},${y}`);
     }
-    removeTileAt(state, state.floorId, x, y);
-    applyPickup(this.project, state, tile.id);
+
+    if (tracker && typeof tracker.timeStabilizationSubphase === "function") {
+      tracker.timeStabilizationSubphase("pickupTileRemove", () => removeTileAt(state, state.floorId, x, y));
+      const itemDef = this.project.itemsById && this.project.itemsById[tile.id];
+      if (itemDef && itemDef.cls === "items") {
+        tracker.increment("pickupItemEffectCalls", 1);
+      } else {
+        tracker.increment("pickupInventoryOnlyCalls", 1);
+      }
+      tracker.timeStabilizationSubphase("pickupItemEffect", () => applyPickup(this.project, state, tile.id, { enableCompiledEffectCache: this.enableCompiledEffectCache !== false }));
+    } else {
+      removeTileAt(state, state.floorId, x, y);
+      applyPickup(this.project, state, tile.id, { enableCompiledEffectCache: this.enableCompiledEffectCache !== false });
+    }
 
     const floor = this.project.floorsById[state.floorId];
     const afterGetItem = (floor.afterGetItem || {})[coordinateKey(x, y)];
     if (afterGetItem) {
-      executeActionList(
-        this.project,
-        state,
-        afterGetItem,
-        { floorId: state.floorId, eventLoc: { x, y } },
-        { choiceResolver: this.choiceResolver }
-      );
+      if (tracker && typeof tracker.timeStabilizationSubphase === "function") {
+        tracker.increment("pickupAfterGetItemCalls", 1);
+        tracker.timeStabilizationSubphase("pickupAfterGetItem", () => {
+          executeActionList(
+            this.project,
+            state,
+            afterGetItem,
+            { floorId: state.floorId, eventLoc: { x, y } },
+            { choiceResolver: this.choiceResolver }
+          );
+        });
+      } else {
+        executeActionList(
+          this.project,
+          state,
+          afterGetItem,
+          { floorId: state.floorId, eventLoc: { x, y } },
+          { choiceResolver: this.choiceResolver }
+        );
+      }
     }
-    runLevelUps(this.project, state, { choiceResolver: this.choiceResolver });
+
+    if (tracker && typeof tracker.timeStabilizationSubphase === "function") {
+      tracker.increment("pickupLevelUpChecks", 1);
+      tracker.timeStabilizationSubphase("pickupLevelUp", () => {
+        runLevelUps(this.project, state, { choiceResolver: this.choiceResolver });
+      });
+    } else {
+      runLevelUps(this.project, state, { choiceResolver: this.choiceResolver });
+    }
   }
 
   resolvePickupOnCurrentTile(state, action) {

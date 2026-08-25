@@ -42,16 +42,47 @@ function buildEffectCore(project, state) {
   };
 }
 
-function executeItemEffect(project, state, item) {
+const COMPILED_EFFECT_CACHE = new Map();
+
+function clearCompiledEffectCache() {
+  COMPILED_EFFECT_CACHE.clear();
+}
+
+function getCompiledEffectFunction(code) {
+  if (typeof code !== "string") return null;
+  let fn = COMPILED_EFFECT_CACHE.get(code);
+  if (fn === undefined) {
+    try {
+      fn = new Function("core", "Math", code);
+    } catch (error) {
+      fn = null;
+    }
+    COMPILED_EFFECT_CACHE.set(code, fn);
+  }
+  return fn;
+}
+
+function executeItemEffect(project, state, item, options = {}) {
   if (!item || !item.itemEffect) return;
+  const core = buildEffectCore(project, state);
+  const useFastPath = options.enableCompiledEffectCache !== false;
+
+  if (useFastPath) {
+    const compiledFn = getCompiledEffectFunction(item.itemEffect);
+    if (typeof compiledFn === "function") {
+      compiledFn(core, Math);
+      return;
+    }
+  }
+
   const context = {
-    core: buildEffectCore(project, state),
+    core,
     Math,
   };
   vm.runInNewContext(item.itemEffect, context, { timeout: 1000 });
 }
 
-function applyPickup(project, state, itemId) {
+function applyPickup(project, state, itemId, options = {}) {
   const item = project.itemsById[itemId];
   if (!item) {
     state.notes.push(`Unknown item pickup: ${itemId}`);
@@ -59,7 +90,7 @@ function applyPickup(project, state, itemId) {
   }
 
   if (item.cls === "items") {
-    executeItemEffect(project, state, item);
+    executeItemEffect(project, state, item, options);
     return;
   }
 
@@ -68,5 +99,8 @@ function applyPickup(project, state, itemId) {
 
 module.exports = {
   applyPickup,
+  buildEffectCore,
+  clearCompiledEffectCache,
   executeItemEffect,
+  getCompiledEffectFunction,
 };
