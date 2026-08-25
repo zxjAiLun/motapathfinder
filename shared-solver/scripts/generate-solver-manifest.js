@@ -25,6 +25,7 @@ const CORE_SIM = new Set([
   "door-resolver.js",
   "tool-registry.js",
   "auto-actions.js",
+  "auto-battle-fast-reject.js",
   "expression.js",
   "floor-transitions.js",
   "reachability.js",
@@ -1404,6 +1405,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": false,
     "cleanCheckout": true,
     "notes": "PR-5.22c2 auto-battle attribution contract & reverify rejection fixture demonstrating live hazardRebuildWithoutInterveningMutation counter"
+  },
+  "shared-solver/check-auto-battle-fast-reject-matrix.js": {
+    "grade": "integration-local",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.22d auto-battle safe fast-reject adversarial boundary matrix validating zero false rejects across vanilla, special, and modified states"
   }
 };
 
@@ -1666,7 +1674,8 @@ const manifest = {
         "shared-solver/check-multi-region-boundary-matrix-contract.js",
         "shared-solver/check-action-expansion-cache-correctness.js",
         "shared-solver/check-expansion-profiler-parity.js",
-        "shared-solver/check-auto-battle-attribution-contract.js"
+        "shared-solver/check-auto-battle-attribution-contract.js",
+        "shared-solver/check-auto-battle-fast-reject-matrix.js"
       ],
       requiredCommands: ["check:no-tower-solver-js"],
       paths: ["shared-solver/check-launcher-api.js"],

@@ -229,7 +229,8 @@
         "shared-solver/check-multi-region-boundary-matrix-contract.js",
         "shared-solver/check-action-expansion-cache-correctness.js",
         "shared-solver/check-expansion-profiler-parity.js",
-        "shared-solver/check-auto-battle-attribution-contract.js"
+        "shared-solver/check-auto-battle-attribution-contract.js",
+        "shared-solver/check-auto-battle-fast-reject-matrix.js"
       ],
       "requiredCommands": [
         "check:no-tower-solver-js"
@@ -273,6 +274,21 @@
     "shared-solver/lib/auto-actions.js": {
       "id": "auto-actions",
       "path": "shared-solver/lib/auto-actions.js",
+      "layer": "simulation",
+      "status": "canonical",
+      "role": "simulation-core",
+      "correctnessSource": true,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
+    "shared-solver/lib/auto-battle-fast-reject.js": {
+      "id": "auto-battle-fast-reject",
+      "path": "shared-solver/lib/auto-battle-fast-reject.js",
       "layer": "simulation",
       "status": "canonical",
       "role": "simulation-core",
@@ -2488,6 +2504,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.22c2 auto-battle attribution contract & reverify rejection fixture demonstrating live hazardRebuildWithoutInterveningMutation counter"
+    },
+    "shared-solver/check-auto-battle-fast-reject-matrix.js": {
+      "grade": "integration-local",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.22d auto-battle safe fast-reject adversarial boundary matrix validating zero false rejects across vanilla, special, and modified states"
     },
     "shared-solver/check-auto-milestone-decomposition.js": {
       "grade": "unit-plus-micro",

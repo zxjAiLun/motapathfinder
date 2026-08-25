@@ -69,6 +69,7 @@ function createPerfTracker(options) {
     applyStep: 0,
     pickupApply: 0,
     battleApply: 0,
+    shadowPredicate: 0,
   };
 
   // Explicit semantic counters (separate from timer counts)
@@ -114,6 +115,16 @@ function createPerfTracker(options) {
     reverifyBattleAcceptedZeroDamage: 0,
     battleReverificationCalls: 0,
     battleReverificationRejected: 0,
+    // PR-5.22d auto-battle safe reject shadow probe counters
+    shadowChecks: 0,
+    shadowDefinitelyReject: 0,
+    shadowUnknown: 0,
+    shadowTrueReject: 0,
+    shadowFalseReject: 0,
+    shadowRejectedUnsupported: 0,
+    shadowRejectedNoDamageInfo: 0,
+    shadowRejectedNonZeroDamage: 0,
+    shadowMissedReject: 0,
     hazardBuildCalls: 0,
     hazardReuses: 0,
     hazardInvalidationsAfterPickup: 0,
@@ -438,6 +449,7 @@ function createPerfTracker(options) {
           applyStepMs: Number(stabilizationSubphases.applyStep.toFixed(3)),
           pickupApplyMs: Number(stabilizationSubphases.pickupApply.toFixed(3)),
           battleApplyMs: Number(stabilizationSubphases.battleApply.toFixed(3)),
+          shadowPredicateMs: Number(stabilizationSubphases.shadowPredicate.toFixed(3)),
           otherMs: Number(otherStabilizationMs.toFixed(3)),
         },
         counters: {
@@ -467,6 +479,15 @@ function createPerfTracker(options) {
           reverifyBattleAcceptedZeroDamage: Number(semanticCounters.reverifyBattleAcceptedZeroDamage || 0),
           battleReverificationCalls: Number(semanticCounters.battleReverificationCalls || 0),
           battleReverificationRejected: Number(semanticCounters.battleReverificationRejected || 0),
+          shadowChecks: Number(semanticCounters.shadowChecks || 0),
+          shadowDefinitelyReject: Number(semanticCounters.shadowDefinitelyReject || 0),
+          shadowUnknown: Number(semanticCounters.shadowUnknown || 0),
+          shadowTrueReject: Number(semanticCounters.shadowTrueReject || 0),
+          shadowFalseReject: Number(semanticCounters.shadowFalseReject || 0),
+          shadowRejectedUnsupported: Number(semanticCounters.shadowRejectedUnsupported || 0),
+          shadowRejectedNoDamageInfo: Number(semanticCounters.shadowRejectedNoDamageInfo || 0),
+          shadowRejectedNonZeroDamage: Number(semanticCounters.shadowRejectedNonZeroDamage || 0),
+          shadowMissedReject: Number(semanticCounters.shadowMissedReject || 0),
           hazardBuildCalls: Number(semanticCounters.hazardBuildCalls || 0),
           hazardReuses: Number(semanticCounters.hazardReuses || 0),
           hazardInvalidationsAfterPickup: Number(semanticCounters.hazardInvalidationsAfterPickup || 0),

@@ -1,5 +1,6 @@
 "use strict";
 
+const { classifyAutoBattleFastReject } = require("./auto-battle-fast-reject");
 const { runAutoEvents } = require("./events");
 const { buildMovementHazards } = require("./movement-hazards");
 const { DIRECTIONS, DIRECTION_DELTAS, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
@@ -200,12 +201,53 @@ class AutoActionResolver {
       perfTracker.increment(`${prefix}BattleResolverEvaluateCalls`, 1);
     }
 
+    let shadowVerdict = null;
+    if (perfTracker && typeof perfTracker.increment === "function") {
+      perfTracker.increment("shadowChecks", 1);
+      if (typeof perfTracker.timeStabilizationSubphase === "function") {
+        shadowVerdict = perfTracker.timeStabilizationSubphase("shadowPredicate", () => (
+          classifyAutoBattleFastReject(project, state, enemy, { floorId: state.floorId, x, y })
+        ));
+      } else {
+        shadowVerdict = classifyAutoBattleFastReject(project, state, enemy, { floorId: state.floorId, x, y });
+      }
+
+      if (shadowVerdict === "definitelyReject") {
+        perfTracker.increment("shadowDefinitelyReject", 1);
+      } else {
+        perfTracker.increment("shadowUnknown", 1);
+      }
+    }
+
     const evalPhaseName = isReverification ? "reverifyBattleEvaluation" : "scanBattleEvaluation";
     let battle;
     if (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function") {
       battle = perfTracker.timeStabilizationSubphase(evalPhaseName, () => battleResolver.evaluateBattle(state, state.floorId, x, y, tile.id));
     } else {
       battle = battleResolver.evaluateBattle(state, state.floorId, x, y, tile.id);
+    }
+
+    const isAcceptedZeroDamage = Boolean(battle && battle.supported && battle.damageInfo && Number(battle.damageInfo.damage || 0) === 0);
+
+    if (shadowVerdict != null && perfTracker && typeof perfTracker.increment === "function") {
+      if (shadowVerdict === "definitelyReject") {
+        if (isAcceptedZeroDamage) {
+          perfTracker.increment("shadowFalseReject", 1);
+        } else {
+          perfTracker.increment("shadowTrueReject", 1);
+          if (!battle.supported) {
+            perfTracker.increment("shadowRejectedUnsupported", 1);
+          } else if (!battle.damageInfo || battle.damageInfo.damage == null) {
+            perfTracker.increment("shadowRejectedNoDamageInfo", 1);
+          } else if (Number(battle.damageInfo.damage || 0) !== 0) {
+            perfTracker.increment("shadowRejectedNonZeroDamage", 1);
+          }
+        }
+      } else if (shadowVerdict === "unknown") {
+        if (!isAcceptedZeroDamage) {
+          perfTracker.increment("shadowMissedReject", 1);
+        }
+      }
     }
 
     if (!battle.supported) {
