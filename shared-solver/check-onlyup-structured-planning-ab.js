@@ -159,28 +159,49 @@ function runRepairSubprocess(config) {
   const seedState = candidate.bestProgressState || candidate.state;
 
   const fakeResult = {
-    failedSegment: { segmentId: "MT2->MT3" },
-    finalCandidates: [{ state: seedState, route: seedState.route || candidate.route }],
-    failureClass: config.failureClass || "target-action-unreachable",
-    missingGoalFields: ["floorId:MT3"],
+    failedSegment: {
+      segmentId: "MT2->MT3",
+      failureClass: config.failureClass || "target-action-unreachable",
+      missingGoalFields: [
+        {
+          field: "floorId",
+          expected: "MT3",
+          actual: seedState.floorId,
+        },
+      ],
+    },
+    finalCandidates: [{ id: candidate.id, state: seedState, route: candidate.route }],
   };
 
   const repairSegments = buildRepairSegments(simulator, fakeResult, {
     currentSpec: {
       milestones: [
-        { id: "MT1->MT2", allowedFloors: ["MT1"] },
-        { id: "MT2->MT3", allowedFloors: ["MT2"], goal: { floorId: "MT3" } },
+        { id: "MT1->MT2", actionPolicy: { allowedFloors: ["MT1"] } },
+        { id: "MT2->MT3", actionPolicy: { allowedFloors: ["MT2"] }, goal: { floorId: "MT3" } },
       ],
     },
   });
 
+  repairSegments.forEach((seg) => {
+    assert.strictEqual(
+      seg.generatedBy && seg.generatedBy.failureClass,
+      "target-action-unreachable",
+      `Repair segment ${seg.id} must carry target-action-unreachable failureClass provenance`
+    );
+  });
+
   const repairResults = [];
   let totalRepairExpansions = 0;
+  let remainingSliceExpansions = config.maxExpansions || 500;
+  let remainingSliceWallMs = config.maxRuntimeMs || 1500;
 
   for (const repairSeg of repairSegments) {
+    if (remainingSliceExpansions <= 0 || remainingSliceWallMs <= 100) break;
+
+    const branchStart = Date.now();
     const res = searchDP(simulator, seedState, {
-      maxExpansions: config.maxExpansions || 1500,
-      maxRuntimeMs: config.maxRuntimeMs || 4000,
+      maxExpansions: remainingSliceExpansions,
+      maxRuntimeMs: remainingSliceWallMs,
       actionPolicy: repairSeg.actionPolicy,
       goal: repairSeg.goal,
       captureFloorCheckpoints: true,
@@ -192,23 +213,35 @@ function runRepairSubprocess(config) {
       },
     });
 
+    const branchElapsed = Date.now() - branchStart;
     totalRepairExpansions += res.expansions;
+    remainingSliceExpansions = Math.max(0, remainingSliceExpansions - res.expansions);
+    remainingSliceWallMs = Math.max(0, remainingSliceWallMs - branchElapsed);
     peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
 
-    const repairedState = res.bestGoalState || res.bestProgressState || seedState;
+    const foundGoal = Boolean(res.foundGoal && res.bestGoalState);
+    const goalState = foundGoal ? res.bestGoalState : null;
+    const goalRoute = foundGoal && goalState ? goalState.route : null;
+    const bestProgressState = res.bestProgressState || seedState;
+    const bestProgressRoute = bestProgressState ? bestProgressState.route : null;
+
     repairResults.push({
       repairSegmentId: repairSeg.id,
       repairMode: repairSeg.generatedBy ? repairSeg.generatedBy.mode : "unknown",
-      repairIntentKind: repairSeg.generatedBy ? repairSeg.generatedBy.intentKind : "unknown",
-      repairFloors: (repairSeg.actionPolicy && repairSeg.actionPolicy.allowedFloors) || ["MT1", "MT2"],
-      foundGoal: Boolean(res.foundGoal || res.bestGoalState),
+      repairIntentKind: repairSeg.generatedBy ? (repairSeg.generatedBy.intentKind || repairSeg.generatedBy.mode) : "unknown",
+      repairFloors: repairSeg.actionPolicy && Array.isArray(repairSeg.actionPolicy.allowedFloors)
+        ? repairSeg.actionPolicy.allowedFloors
+        : [],
+      foundGoal,
       expansions: res.expansions,
       frontierSize: res.frontierSize != null ? res.frontierSize : 0,
       stoppedReason: res.stoppedReason,
-      repairedHero: repairedState.hero,
-      repairedFloor: repairedState.floorId,
-      repairedState,
-      repairedRoute: repairedState.route,
+      goalHero: goalState ? goalState.hero : null,
+      goalState,
+      goalRoute,
+      bestProgressHero: bestProgressState ? bestProgressState.hero : null,
+      bestProgressState,
+      bestProgressRoute,
     });
   }
 
@@ -601,6 +634,11 @@ function main() {
   const exhaustedRepresentatives = stage2Round1Results.filter((r) => r.terminationClass === "frontier-exhausted");
   const repairRecords = [];
   let repairPeakRssMb = 0;
+  let totalProposalsGenerated = 0;
+  let totalSearchesExecuted = 0;
+  let totalGoalsFound = 0;
+  let totalStrictReplaysPassed = 0;
+  let totalRetriesExecuted = 0;
 
   for (const exhaustedRep of exhaustedRepresentatives) {
     const sourceRep = stage1Result.representatives.find((r) => (r.lineageId || r.id) === exhaustedRep.lineageId);
@@ -620,54 +658,66 @@ function main() {
     if (!repairExecution) break;
     const repairRes = repairExecution.result;
     repairPeakRssMb = Math.max(repairPeakRssMb, repairRes.peakRssMb);
+    totalProposalsGenerated += repairRes.repairsCount;
 
     for (const branch of repairRes.repairBranches) {
-      let repairStrictReplayPass = false;
-      if (branch.repairedState && branch.repairedRoute) {
-        const branchRepStart = Date.now();
-        try {
-          const replaySummary = verifyRepresentativeStrictReplay(project, {
-            id: `repair-${branch.repairSegmentId}`,
-            route: branch.repairedRoute,
-            state: branch.repairedState,
-          });
-          repairStrictReplayPass = replaySummary.passed;
-        } catch (e) {
-          repairStrictReplayPass = false;
-        }
-        qualificationWallMs += (Date.now() - branchRepStart);
-      }
+      totalSearchesExecuted += 1;
 
-      // If repaired state is obtained, execute active investment retry toward MT3
+      // Validate that cross-floor repair envelope actually contains MT1 and MT2
+      assert.ok(
+        branch.repairFloors.includes("MT1") && branch.repairFloors.includes("MT2"),
+        `Cross-floor repair branch ${branch.repairSegmentId} must declare allowedFloors including MT1 and MT2`
+      );
+
+      let repairStrictReplay = null;
       let retryExpansions = 0;
-      let retryTerminationClass = "unknown";
-      let retryDeepestFloor = branch.repairedFloor || "MT2";
+      let retryTerminationClass = null;
+      let retryDeepestFloor = null;
+      let reachedMT3FromRetry = false;
 
-      const retryExecution = spawnWithBudget(spawnRepSearch, {
-        candidate: {
-          id: `retry-${branch.repairSegmentId}`,
-          lineageId: `retry|${branch.repairSegmentId}`,
-          role: `${exhaustedRep.role}-repaired`,
-          hero: branch.repairedHero,
-          state: branch.repairedState,
-        },
-        fromFloor: "MT2",
-        toFloor: "MT3",
-        targetFloorId: FIRST_REGION_TARGET_FLOOR_ID,
-      }, {
-        maxExpansions: 500,
-        maxRuntimeMs: 1500,
-      });
+      if (branch.foundGoal && branch.goalState && branch.goalRoute) {
+        totalGoalsFound += 1;
+        const branchRepStart = Date.now();
+        const replaySummary = verifyRepresentativeStrictReplay(project, {
+          id: `repair-${branch.repairSegmentId}`,
+          route: branch.goalRoute,
+          state: branch.goalState,
+        });
+        qualificationWallMs += (Date.now() - branchRepStart);
+        if (replaySummary.passed) {
+          totalStrictReplaysPassed += 1;
+          repairStrictReplay = true;
 
-      if (retryExecution) {
-        const retryRes = retryExecution.result;
-        retryExpansions = retryRes.expansions;
-        retryTerminationClass = retryRes.terminationClass;
-        retryDeepestFloor = retryRes.deepestFloor;
-        stage2PeakRssMb = Math.max(stage2PeakRssMb, retryRes.peakRssMb);
+          // Execute active investment retry toward MT3 only from validated repaired state
+          totalRetriesExecuted += 1;
+          const retryExecution = spawnWithBudget(spawnRepSearch, {
+            candidate: {
+              id: `retry-${branch.repairSegmentId}`,
+              lineageId: `retry|${branch.repairSegmentId}`,
+              role: `${exhaustedRep.role}-repaired`,
+              hero: branch.goalHero,
+              state: branch.goalState,
+            },
+            fromFloor: "MT2",
+            toFloor: "MT3",
+            targetFloorId: FIRST_REGION_TARGET_FLOOR_ID,
+          }, {
+            maxExpansions: 500,
+            maxRuntimeMs: 1500,
+          });
 
-        if (retryRes.checkpoints && retryRes.checkpoints.length > 0) {
-          stage2AggregatedPool.edges["MT2->MT3"].push(...retryRes.checkpoints);
+          if (retryExecution) {
+            const retryRes = retryExecution.result;
+            retryExpansions = retryRes.expansions;
+            retryTerminationClass = retryRes.terminationClass;
+            retryDeepestFloor = retryRes.deepestFloor;
+            stage2PeakRssMb = Math.max(stage2PeakRssMb, retryRes.peakRssMb);
+
+            if (retryRes.checkpoints && retryRes.checkpoints.length > 0) {
+              stage2AggregatedPool.edges["MT2->MT3"].push(...retryRes.checkpoints);
+            }
+            reachedMT3FromRetry = retryDeepestFloor === "MT3";
+          }
         }
       }
 
@@ -679,13 +729,15 @@ function main() {
         repairIntentKind: branch.repairIntentKind,
         repairFloors: branch.repairFloors,
         repairFound: branch.foundGoal,
-        repairStrictReplay: repairStrictReplayPass,
+        repairStrictReplay,
         beforeHero: exhaustedRep.hero,
-        afterHero: branch.repairedHero,
+        repairedGoalHero: branch.goalHero,
+        bestProgressHero: branch.bestProgressHero,
+        retryAttempted: branch.foundGoal,
         retryExpansions,
         retryTerminationClass,
         retryDeepestFloor,
-        reachedMT3: retryDeepestFloor === "MT3",
+        reachedMT3: reachedMT3FromRetry,
       });
     }
   }
@@ -860,13 +912,22 @@ function main() {
         repairRecords,
       },
     },
+    repairQualification: {
+      exhaustedRepresentativesSeen: exhaustedRepresentatives.length,
+      repairProposalsGenerated: totalProposalsGenerated,
+      repairSearchesExecuted: totalSearchesExecuted,
+      repairGoalsFound: totalGoalsFound,
+      successfulRepairsStrictReplayed: totalStrictReplaysPassed,
+      successfulRepairRetriesExecuted: totalRetriesExecuted,
+    },
     mechanismQualification: {
       canonicalCheckpointCapture: true,
       paretoDiversity: true,
       allStage1RepsStrictReplay: true,
       allStage2RepsAttempted: true,
       noRepresentativeStarvation: true,
-      crossFloorRepairAttempted: true,
+      crossFloorRepairProposalsGenerated: totalProposalsGenerated > 0,
+      crossFloorRepairSearchesExecuted: totalSearchesExecuted > 0,
       processLifecycleIsolation: true,
       authoritativeBudgetRespected: true,
     },
