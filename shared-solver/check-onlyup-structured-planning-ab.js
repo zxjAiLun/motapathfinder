@@ -3,14 +3,14 @@
 /** TEST GRADE: local-regression */
 
 /**
- * PR-5.23d Failure-Driven Cross-Floor Repair Planning & Active Investment Retry Gate.
+ * PR-5.23d Repair 2: Failure-Driven Cross-Floor Repair Planning & Active Investment Retry Gate.
  *
  * Compares:
  *   A (Baseline): Flat Canonical DP search directly from MT1 -> MT6 with
  *                 captureFloorCheckpoints: false (uncontaminated canonical search).
  *   B (Candidate): Process-Isolated Structured Planning with Fair Scheduling,
- *                  Failure-Driven Cross-Floor Repair Planning (MT2 <-> MT1),
- *                  and Active Investment Retry.
+ *                  Failure-Driven Cross-Floor Repair Planning (Window & Intent branches),
+ *                  Canonical searchSegmentDP execution, Strict Replay, and Active Investment Retry.
  *
  * Hard constraints:
  *   - Production fast paths ON: autoBattleFastRejectEnabled=true, enableFastHazardBlockIndex=true.
@@ -26,6 +26,7 @@ const { spawnSync } = require("node:child_process");
 const { loadProject } = require("./lib/project-loader");
 const { StaticSimulator } = require("./lib/simulator");
 const { searchDP } = require("./lib/dp-search");
+const { searchSegmentDP } = require("./lib/segment-dp");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { selectParetoRepresentatives } = require("./lib/floor-checkpoints");
 const { buildRepairSegments } = require("./lib/adaptive-segment-planner");
@@ -137,7 +138,7 @@ function runSingleRepresentativeSubprocess(config) {
 }
 
 /**
- * Executes a repair branch search in an isolated process.
+ * Executes repair branch searches (Window + Intent families) in an isolated process via searchSegmentDP.
  */
 function runRepairSubprocess(config) {
   const project = loadProject(DEFAULT_PROJECT_ROOT);
@@ -173,16 +174,30 @@ function runRepairSubprocess(config) {
     finalCandidates: [{ id: candidate.id, state: seedState, route: candidate.route }],
   };
 
-  const repairSegments = buildRepairSegments(simulator, fakeResult, {
-    currentSpec: {
-      milestones: [
-        { id: "MT1->MT2", actionPolicy: { allowedFloors: ["MT1"] } },
-        { id: "MT2->MT3", actionPolicy: { allowedFloors: ["MT2"] }, goal: { floorId: "MT3" } },
-      ],
-    },
-  });
+  const currentSpec = {
+    milestones: [
+      { id: "MT1->MT2", actionPolicy: { allowedFloors: ["MT1"] } },
+      { id: "MT2->MT3", actionPolicy: { allowedFloors: ["MT2", "MT3"] }, goal: { floorId: "MT3" } },
+    ],
+  };
 
-  repairSegments.forEach((seg) => {
+  // Generate Window Family segments
+  const windowSegments = buildRepairSegments(simulator, fakeResult, {
+    enableWindowRepair: true,
+    repairBranchLimit: 1,
+    currentSpec,
+  }).map((seg) => ({ ...seg, branchFamily: "window" }));
+
+  // Generate Intent Family segments
+  const intentSegments = buildRepairSegments(simulator, fakeResult, {
+    enableWindowRepair: false,
+    repairBranchLimit: 3,
+    currentSpec,
+  }).map((seg) => ({ ...seg, branchFamily: "intent" }));
+
+  const allRepairSegments = [...windowSegments, ...intentSegments];
+
+  allRepairSegments.forEach((seg) => {
     assert.strictEqual(
       seg.generatedBy && seg.generatedBy.failureClass,
       "target-action-unreachable",
@@ -192,50 +207,59 @@ function runRepairSubprocess(config) {
 
   const repairResults = [];
   let totalRepairExpansions = 0;
-  let remainingSliceExpansions = config.maxExpansions || 500;
-  let remainingSliceWallMs = config.maxRuntimeMs || 1500;
+  let remainingSliceExpansions = config.maxExpansions || 1000;
+  let remainingSliceWallMs = config.maxRuntimeMs || 3000;
 
-  for (const repairSeg of repairSegments) {
+  for (const repairSeg of allRepairSegments) {
     if (remainingSliceExpansions <= 0 || remainingSliceWallMs <= 100) break;
 
     const branchStart = Date.now();
-    const res = searchDP(simulator, seedState, {
-      maxExpansions: remainingSliceExpansions,
-      maxRuntimeMs: remainingSliceWallMs,
-      actionPolicy: repairSeg.actionPolicy,
-      goal: repairSeg.goal,
-      captureFloorCheckpoints: true,
-      sourceRepresentativeId: `repair|${candidate.lineageId || candidate.id}`,
-      shouldStop: () => {
-        const currentRss = process.memoryUsage().rss;
-        peakRssBytes = Math.max(peakRssBytes, currentRss);
-        return currentRss >= RSS_LIMIT_BYTES;
+    const executableSegment = {
+      ...repairSeg,
+      dp: {
+        ...(repairSeg.dp || {}),
+        maxExpansions: remainingSliceExpansions,
+        maxRuntimeMs: remainingSliceWallMs,
+      },
+    };
+
+    const execution = searchSegmentDP(simulator, seedState, executableSegment, {
+      candidateId: candidate.id,
+      prefixRoute: seedState.route || candidate.route || [],
+      candidateLimit: 8,
+      dpOverrides: {
+        maxExpansions: remainingSliceExpansions,
+        maxRuntimeMs: remainingSliceWallMs,
       },
     });
 
     const branchElapsed = Date.now() - branchStart;
-    totalRepairExpansions += res.expansions;
-    remainingSliceExpansions = Math.max(0, remainingSliceExpansions - res.expansions);
+    const branchExpansions = (execution.diagnostics && execution.diagnostics.dp && execution.diagnostics.dp.expansions) || 0;
+    totalRepairExpansions += branchExpansions;
+    remainingSliceExpansions = Math.max(0, remainingSliceExpansions - branchExpansions);
     remainingSliceWallMs = Math.max(0, remainingSliceWallMs - branchElapsed);
     peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
 
-    const foundGoal = Boolean(res.foundGoal && res.bestGoalState);
-    const goalState = foundGoal ? res.bestGoalState : null;
+    const foundGoal = Boolean(execution.found && execution.goalSkyline && execution.goalSkyline.length > 0);
+    const goalState = foundGoal ? execution.goalSkyline[0].state : null;
     const goalRoute = foundGoal && goalState ? goalState.route : null;
-    const bestProgressState = res.bestProgressState || seedState;
+    const bestProgressState = execution.bestProgress || seedState;
     const bestProgressRoute = bestProgressState ? bestProgressState.route : null;
 
     repairResults.push({
-      repairSegmentId: repairSeg.id,
+      segmentId: repairSeg.id,
+      branchFamily: repairSeg.branchFamily,
       repairMode: repairSeg.generatedBy ? repairSeg.generatedBy.mode : "unknown",
       repairIntentKind: repairSeg.generatedBy ? (repairSeg.generatedBy.intentKind || repairSeg.generatedBy.mode) : "unknown",
+      goal: repairSeg.goal,
       repairFloors: repairSeg.actionPolicy && Array.isArray(repairSeg.actionPolicy.allowedFloors)
         ? repairSeg.actionPolicy.allowedFloors
         : [],
       foundGoal,
-      expansions: res.expansions,
-      frontierSize: res.frontierSize != null ? res.frontierSize : 0,
-      stoppedReason: res.stoppedReason,
+      searchOutcome: execution.searchOutcome || (foundGoal ? "goal-found" : "no-goal"),
+      expansions: branchExpansions,
+      frontierSize: (execution.diagnostics && execution.diagnostics.dp && execution.diagnostics.dp.frontierSize) || 0,
+      stoppedReason: execution.diagnostics && execution.diagnostics.dp && execution.diagnostics.dp.stoppedReason,
       goalHero: goalState ? goalState.hero : null,
       goalState,
       goalRoute,
@@ -249,7 +273,9 @@ function runRepairSubprocess(config) {
     candidateId: candidate.id,
     lineageId: candidate.lineageId || candidate.id,
     role: candidate.role || candidate.representativeRole,
-    repairsCount: repairSegments.length,
+    windowProposalsCount: windowSegments.length,
+    intentProposalsCount: intentSegments.length,
+    repairsCount: allRepairSegments.length,
     totalRepairExpansions,
     peakRssMb: Math.round((peakRssBytes / 1048576) * 10) / 10,
     wallMs: Date.now() - startedAt,
@@ -628,17 +654,22 @@ function main() {
     );
   });
 
-  // --- 5. Failure-Driven Cross-Floor Repair Planning (MT2 <-> MT1) ---
-  // For representatives whose Stage 2 forward search was frontier-exhausted,
-  // invoke buildRepairSegments() to generate cross-floor resource/path-blocker repairs.
+  // --- 5. Failure-Driven Cross-Floor Repair Planning (MT2 <-> MT1 via Window & Intent Branches) ---
   const exhaustedRepresentatives = stage2Round1Results.filter((r) => r.terminationClass === "frontier-exhausted");
   const repairRecords = [];
   let repairPeakRssMb = 0;
-  let totalProposalsGenerated = 0;
-  let totalSearchesExecuted = 0;
-  let totalGoalsFound = 0;
-  let totalStrictReplaysPassed = 0;
-  let totalRetriesExecuted = 0;
+
+  let windowProposalsGenerated = 0;
+  let windowSearchesExecuted = 0;
+  let windowGoalsFound = 0;
+
+  let intentProposalsGenerated = 0;
+  let intentSearchesExecuted = 0;
+  let intentGoalsFound = 0;
+
+  let successfulRepairsStrictReplayed = 0;
+  let successfulRepairRetriesExecuted = 0;
+  let directWindowMT3Reached = false;
 
   for (const exhaustedRep of exhaustedRepresentatives) {
     const sourceRep = stage1Result.representatives.find((r) => (r.lineageId || r.id) === exhaustedRep.lineageId);
@@ -651,72 +682,90 @@ function main() {
       },
       failureClass: "target-action-unreachable",
     }, {
-      maxExpansions: 500,
-      maxRuntimeMs: 1500,
+      maxExpansions: 1000,
+      maxRuntimeMs: 3000,
     });
 
     if (!repairExecution) break;
     const repairRes = repairExecution.result;
     repairPeakRssMb = Math.max(repairPeakRssMb, repairRes.peakRssMb);
-    totalProposalsGenerated += repairRes.repairsCount;
+
+    windowProposalsGenerated += repairRes.windowProposalsCount || 0;
+    intentProposalsGenerated += repairRes.intentProposalsCount || 0;
 
     for (const branch of repairRes.repairBranches) {
-      totalSearchesExecuted += 1;
+      if (branch.branchFamily === "window") {
+        windowSearchesExecuted += 1;
+        if (branch.foundGoal) windowGoalsFound += 1;
+      } else {
+        intentSearchesExecuted += 1;
+        if (branch.foundGoal) intentGoalsFound += 1;
+      }
 
-      // Validate that cross-floor repair envelope actually contains MT1 and MT2
+      // Hard assert: action policy must include MT1 and MT2 for cross-floor repairs
       assert.ok(
         branch.repairFloors.includes("MT1") && branch.repairFloors.includes("MT2"),
-        `Cross-floor repair branch ${branch.repairSegmentId} must declare allowedFloors including MT1 and MT2`
+        `Repair branch ${branch.segmentId} must declare allowedFloors including MT1 and MT2`
       );
 
       let repairStrictReplay = null;
+      let retryAttempted = false;
       let retryExpansions = 0;
       let retryTerminationClass = null;
       let retryDeepestFloor = null;
-      let reachedMT3FromRetry = false;
+      let reachedMT3FromBranch = false;
 
       if (branch.foundGoal && branch.goalState && branch.goalRoute) {
-        totalGoalsFound += 1;
         const branchRepStart = Date.now();
         const replaySummary = verifyRepresentativeStrictReplay(project, {
-          id: `repair-${branch.repairSegmentId}`,
+          id: `repair-${branch.segmentId}`,
           route: branch.goalRoute,
           state: branch.goalState,
         });
         qualificationWallMs += (Date.now() - branchRepStart);
+
         if (replaySummary.passed) {
-          totalStrictReplaysPassed += 1;
+          successfulRepairsStrictReplayed += 1;
           repairStrictReplay = true;
 
-          // Execute active investment retry toward MT3 only from validated repaired state
-          totalRetriesExecuted += 1;
-          const retryExecution = spawnWithBudget(spawnRepSearch, {
-            candidate: {
-              id: `retry-${branch.repairSegmentId}`,
-              lineageId: `retry|${branch.repairSegmentId}`,
-              role: `${exhaustedRep.role}-repaired`,
-              hero: branch.goalHero,
-              state: branch.goalState,
-            },
-            fromFloor: "MT2",
-            toFloor: "MT3",
-            targetFloorId: FIRST_REGION_TARGET_FLOOR_ID,
-          }, {
-            maxExpansions: 500,
-            maxRuntimeMs: 1500,
-          });
+          // Case A: Window repair directly reaches MT3 as its terminal goal!
+          if (branch.branchFamily === "window" && branch.goalState.floorId === "MT3") {
+            directWindowMT3Reached = true;
+            reachedMT3FromBranch = true;
+            retryDeepestFloor = "MT3";
+          } else {
+            // Case B: Intermediate intent repair achieved (e.g. path-blocker / stat-atk on MT1/MT2).
+            // Launch active investment retry towards MT3!
+            const retryExecution = spawnWithBudget(spawnRepSearch, {
+              candidate: {
+                id: `retry-${branch.segmentId}`,
+                lineageId: `retry|${branch.segmentId}`,
+                role: `${exhaustedRep.role}-repaired`,
+                hero: branch.goalHero,
+                state: branch.goalState,
+              },
+              fromFloor: branch.goalState.floorId || "MT2",
+              toFloor: "MT3",
+              targetFloorId: FIRST_REGION_TARGET_FLOOR_ID,
+            }, {
+              maxExpansions: 500,
+              maxRuntimeMs: 1500,
+            });
 
-          if (retryExecution) {
-            const retryRes = retryExecution.result;
-            retryExpansions = retryRes.expansions;
-            retryTerminationClass = retryRes.terminationClass;
-            retryDeepestFloor = retryRes.deepestFloor;
-            stage2PeakRssMb = Math.max(stage2PeakRssMb, retryRes.peakRssMb);
+            if (retryExecution) {
+              successfulRepairRetriesExecuted += 1;
+              retryAttempted = true;
+              const retryRes = retryExecution.result;
+              retryExpansions = retryRes.expansions;
+              retryTerminationClass = retryRes.terminationClass;
+              retryDeepestFloor = retryRes.deepestFloor;
+              stage2PeakRssMb = Math.max(stage2PeakRssMb, retryRes.peakRssMb);
 
-            if (retryRes.checkpoints && retryRes.checkpoints.length > 0) {
-              stage2AggregatedPool.edges["MT2->MT3"].push(...retryRes.checkpoints);
+              if (retryRes.checkpoints && retryRes.checkpoints.length > 0) {
+                stage2AggregatedPool.edges["MT2->MT3"].push(...retryRes.checkpoints);
+              }
+              reachedMT3FromBranch = retryDeepestFloor === "MT3";
             }
-            reachedMT3FromRetry = retryDeepestFloor === "MT3";
           }
         }
       }
@@ -724,27 +773,32 @@ function main() {
       repairRecords.push({
         sourceRepresentativeRole: exhaustedRep.role,
         sourceRepresentativeId: exhaustedRep.lineageId,
-        failureClass: "target-action-unreachable",
+        segmentId: branch.segmentId,
+        branchFamily: branch.branchFamily,
         repairMode: branch.repairMode,
         repairIntentKind: branch.repairIntentKind,
+        goal: branch.goal,
         repairFloors: branch.repairFloors,
         repairFound: branch.foundGoal,
+        searchOutcome: branch.searchOutcome,
+        expansions: branch.expansions,
+        frontierSize: branch.frontierSize,
         repairStrictReplay,
         beforeHero: exhaustedRep.hero,
         repairedGoalHero: branch.goalHero,
         bestProgressHero: branch.bestProgressHero,
-        retryAttempted: branch.foundGoal,
+        retryAttempted,
         retryExpansions,
         retryTerminationClass,
         retryDeepestFloor,
-        reachedMT3: reachedMT3FromRetry,
+        reachedMT3: reachedMT3FromBranch,
       });
     }
   }
 
   // --- 6. Stage 2 Round 2: Focused strategic deep search on non-exhausted viable candidates ---
   const stage2Round2Results = [];
-  if (stage2AggregatedPool.edges["MT2->MT3"].length === 0) {
+  if (stage2AggregatedPool.edges["MT2->MT3"].length === 0 && !directWindowMT3Reached) {
     const viableCandidates = stage2Round1Results.filter((r) => r.terminationClass !== "frontier-exhausted");
 
     const focusRoles = ["highest-hp", "fastest-route", "highest-atk", "highest-mdef"];
@@ -785,7 +839,7 @@ function main() {
   const stage2Checkpoints = stage2AggregatedPool.edges["MT2->MT3"];
   const stage2Reps = selectParetoRepresentatives(stage2AggregatedPool, "MT2->MT3", { limit: 8 });
 
-  let reachedMT3 = false;
+  let reachedMT3 = directWindowMT3Reached;
   let stage2IdentityGradedDecisions = 0;
   if (stage2Reps.length > 0) {
     const stage2ReplayStart = Date.now();
@@ -798,7 +852,9 @@ function main() {
       }
     });
     qualificationWallMs += (Date.now() - stage2ReplayStart);
-    reachedMT3 = stage2ReplayPassCount === stage2Reps.length && stage2Reps.length > 0;
+    if (stage2ReplayPassCount === stage2Reps.length && stage2Reps.length > 0) {
+      reachedMT3 = true;
+    }
   }
 
   const overallPeakRssMb = Math.max(stage1Result.stagePeakRssMb, stage2PeakRssMb, repairPeakRssMb);
@@ -914,11 +970,14 @@ function main() {
     },
     repairQualification: {
       exhaustedRepresentativesSeen: exhaustedRepresentatives.length,
-      repairProposalsGenerated: totalProposalsGenerated,
-      repairSearchesExecuted: totalSearchesExecuted,
-      repairGoalsFound: totalGoalsFound,
-      successfulRepairsStrictReplayed: totalStrictReplaysPassed,
-      successfulRepairRetriesExecuted: totalRetriesExecuted,
+      windowProposalsGenerated,
+      windowSearchesExecuted,
+      windowGoalsFound,
+      intentProposalsGenerated,
+      intentSearchesExecuted,
+      intentGoalsFound,
+      successfulRepairsStrictReplayed,
+      successfulRepairRetriesExecuted,
     },
     mechanismQualification: {
       canonicalCheckpointCapture: true,
@@ -926,8 +985,9 @@ function main() {
       allStage1RepsStrictReplay: true,
       allStage2RepsAttempted: true,
       noRepresentativeStarvation: true,
-      crossFloorRepairProposalsGenerated: totalProposalsGenerated > 0,
-      crossFloorRepairSearchesExecuted: totalSearchesExecuted > 0,
+      crossFloorRepairProposalsGenerated: (windowProposalsGenerated + intentProposalsGenerated) > 0,
+      crossFloorRepairSearchesExecuted: (windowSearchesExecuted + intentSearchesExecuted) > 0,
+      canonicalSegmentDPExecution: true,
       processLifecycleIsolation: true,
       authoritativeBudgetRespected: true,
     },
