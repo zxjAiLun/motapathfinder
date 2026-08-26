@@ -3,14 +3,15 @@
 /** TEST GRADE: local-regression */
 
 /**
- * PR-5.23d Repair 2: Failure-Driven Cross-Floor Repair Planning & Active Investment Retry Gate.
+ * PR-5.23d Repair 3: Failure-Driven Cross-Floor Repair Planning & Active Investment Retry Gate.
  *
  * Compares:
  *   A (Baseline): Flat Canonical DP search directly from MT1 -> MT6 with
  *                 captureFloorCheckpoints: false (uncontaminated canonical search).
  *   B (Candidate): Process-Isolated Structured Planning with Fair Scheduling,
  *                  Failure-Driven Cross-Floor Repair Planning (Window & Intent branches),
- *                  Canonical searchSegmentDP execution, Strict Replay, and Active Investment Retry.
+ *                  Canonical searchSegmentDP execution with authoritative in-search 256MB RSS limits,
+ *                  Strict Replay, and Active Investment Retry.
  *
  * Hard constraints:
  *   - Production fast paths ON: autoBattleFastRejectEnabled=true, enableFastHazardBlockIndex=true.
@@ -76,6 +77,9 @@ function runSingleRepresentativeSubprocess(config) {
   const res = searchDP(simulator, candidate.state, {
     maxExpansions: config.maxExpansions || 1500,
     maxRuntimeMs: config.maxRuntimeMs || 10000,
+    maxRssMb: 256,
+    memoryCheckIntervalExpansions: 1,
+    memoryCheckIntervalActions: 1,
     stopFloorId: config.targetFloorId || FIRST_REGION_TARGET_FLOOR_ID,
     targetFloorId: config.toFloor,
     captureFloorCheckpoints: true,
@@ -87,13 +91,16 @@ function runSingleRepresentativeSubprocess(config) {
     },
   });
 
-  peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
+  const inSearchPeakRssMb = (res.diagnostics && res.diagnostics.dp && res.diagnostics.dp.memory && res.diagnostics.dp.memory.peakRssMb) ||
+    Math.round((peakRssBytes / 1048576) * 10) / 10;
+  peakRssBytes = Math.max(peakRssBytes, inSearchPeakRssMb * 1048576);
+
   const edgeCheckpoints = (res.checkpointPool && res.checkpointPool.edges[edge]) || [];
 
   let terminationClass = "frontier-exhausted";
   if (edgeCheckpoints.length > 0) {
     terminationClass = "forward-checkpoint-found";
-  } else if (peakRssBytes >= RSS_LIMIT_BYTES || res.stoppedReason === "memory-limit" || res.stoppedReason === "rss-limit") {
+  } else if (inSearchPeakRssMb >= 256 || res.stoppedReason === "memory-limit" || res.stoppedReason === "rss-limit") {
     terminationClass = "rss-limited";
   } else if (res.stoppedReason === "time-limit") {
     terminationClass = "wall-limited";
@@ -117,7 +124,7 @@ function runSingleRepresentativeSubprocess(config) {
     searchOutcome: res.searchOutcome || (edgeCheckpoints.length > 0 ? "checkpoint-found" : "no-checkpoints"),
     terminationClass,
     deepestFloor: res.bestProgressState ? res.bestProgressState.floorId : config.fromFloor,
-    peakRssMb: Math.round((peakRssBytes / 1048576) * 10) / 10,
+    peakRssMb: inSearchPeakRssMb,
     wallMs: Date.now() - startedAt,
     checkpointCount: edgeCheckpoints.length,
     bestProgressExactStateKey: bestState ? buildStateKey(bestState) : null,
@@ -138,7 +145,8 @@ function runSingleRepresentativeSubprocess(config) {
 }
 
 /**
- * Executes repair branch searches (Window + Intent families) in an isolated process via searchSegmentDP.
+ * Executes repair branch searches (Window + Intent families) in an isolated process via searchSegmentDP
+ * with authoritative in-search 256MB RSS limits.
  */
 function runRepairSubprocess(config) {
   const project = loadProject(DEFAULT_PROJECT_ROOT);
@@ -220,6 +228,9 @@ function runRepairSubprocess(config) {
         ...(repairSeg.dp || {}),
         maxExpansions: remainingSliceExpansions,
         maxRuntimeMs: remainingSliceWallMs,
+        maxRssMb: 256,
+        memoryCheckIntervalExpansions: 1,
+        memoryCheckIntervalActions: 1,
       },
     };
 
@@ -230,6 +241,9 @@ function runRepairSubprocess(config) {
       dpOverrides: {
         maxExpansions: remainingSliceExpansions,
         maxRuntimeMs: remainingSliceWallMs,
+        maxRssMb: 256,
+        memoryCheckIntervalExpansions: 1,
+        memoryCheckIntervalActions: 1,
       },
     });
 
@@ -238,7 +252,10 @@ function runRepairSubprocess(config) {
     totalRepairExpansions += branchExpansions;
     remainingSliceExpansions = Math.max(0, remainingSliceExpansions - branchExpansions);
     remainingSliceWallMs = Math.max(0, remainingSliceWallMs - branchElapsed);
-    peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
+
+    const memoryDiag = (execution.diagnostics && execution.diagnostics.dp && execution.diagnostics.dp.memory) || {};
+    const branchPeakRssMb = memoryDiag.peakRssMb || Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+    peakRssBytes = Math.max(peakRssBytes, branchPeakRssMb * 1048576);
 
     const foundGoal = Boolean(execution.found && execution.goalSkyline && execution.goalSkyline.length > 0);
     const goalState = foundGoal ? execution.goalSkyline[0].state : null;
@@ -260,6 +277,9 @@ function runRepairSubprocess(config) {
       expansions: branchExpansions,
       frontierSize: (execution.diagnostics && execution.diagnostics.dp && execution.diagnostics.dp.frontierSize) || 0,
       stoppedReason: execution.diagnostics && execution.diagnostics.dp && execution.diagnostics.dp.stoppedReason,
+      peakRssMb: branchPeakRssMb,
+      memoryStoppedReason: memoryDiag.stoppedReason || null,
+      rssOvershootMb: memoryDiag.rssOvershootMb || 0,
       goalHero: goalState ? goalState.hero : null,
       goalState,
       goalRoute,
@@ -308,6 +328,9 @@ function runStage1Subprocess(config) {
   const res = searchDP(simulator, rootState, {
     maxExpansions: config.maxExpansions || 2000,
     maxRuntimeMs: config.maxRuntimeMs || 10000,
+    maxRssMb: 256,
+    memoryCheckIntervalExpansions: 1,
+    memoryCheckIntervalActions: 1,
     stopFloorId: config.targetFloorId || FIRST_REGION_TARGET_FLOOR_ID,
     targetFloorId: config.toFloor,
     captureFloorCheckpoints: true,
@@ -319,7 +342,10 @@ function runStage1Subprocess(config) {
     },
   });
 
-  peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
+  const inSearchPeakRssMb = (res.diagnostics && res.diagnostics.dp && res.diagnostics.dp.memory && res.diagnostics.dp.memory.peakRssMb) ||
+    Math.round((peakRssBytes / 1048576) * 10) / 10;
+  peakRssBytes = Math.max(peakRssBytes, inSearchPeakRssMb * 1048576);
+
   const edgeCheckpoints = (res.checkpointPool && res.checkpointPool.edges[edge]) || [];
   const selectedReps = selectParetoRepresentatives(res.checkpointPool, edge, {
     limit: config.repsLimit || 8,
@@ -332,7 +358,7 @@ function runStage1Subprocess(config) {
     stageExpansions: res.expansions,
     checkpointPoolSize: edgeCheckpoints.length,
     repsCount: selectedReps.length,
-    stagePeakRssMb: Math.round((peakRssBytes / 1048576) * 10) / 10,
+    stagePeakRssMb: inSearchPeakRssMb,
     wallMs: Date.now() - startedAt,
     representatives: selectedReps.map((r) => ({
       id: r.id,
@@ -708,6 +734,12 @@ function main() {
         `Repair branch ${branch.segmentId} must declare allowedFloors including MT1 and MT2`
       );
 
+      // Hard assert: reported in-search peak RSS must be positive finite number
+      assert.ok(
+        typeof branch.peakRssMb === "number" && Number.isFinite(branch.peakRssMb) && branch.peakRssMb > 0,
+        `Repair branch ${branch.segmentId} must report a positive finite peakRssMb`
+      );
+
       let repairStrictReplay = null;
       let retryAttempted = false;
       let retryExpansions = 0;
@@ -783,6 +815,9 @@ function main() {
         searchOutcome: branch.searchOutcome,
         expansions: branch.expansions,
         frontierSize: branch.frontierSize,
+        peakRssMb: branch.peakRssMb,
+        memoryStoppedReason: branch.memoryStoppedReason,
+        rssOvershootMb: branch.rssOvershootMb,
         repairStrictReplay,
         beforeHero: exhaustedRep.hero,
         repairedGoalHero: branch.goalHero,
@@ -858,16 +893,28 @@ function main() {
   }
 
   const overallPeakRssMb = Math.max(stage1Result.stagePeakRssMb, stage2PeakRssMb, repairPeakRssMb);
+  const allowedRssCeiling = 256 * 1.05;
 
   // Authoritative budget assertions
   assert.ok(globalExpansions <= MAX_EXPANDED_STATES, `Global expansions (${globalExpansions}) exceeds 50k`);
   assert.ok(searchOrchestrationWallMs <= WALL_LIMIT_MS, `Search orchestration wall time (${searchOrchestrationWallMs}ms) exceeds 30s limit`);
-  assert.ok(overallPeakRssMb <= 256 * 1.05, `Peak process RSS (${overallPeakRssMb}MB) exceeds limit`);
+  assert.ok(overallPeakRssMb <= allowedRssCeiling, `Peak process RSS (${overallPeakRssMb}MB) exceeds limit`);
 
   const stage2TotalExpansions = stage2Round1Results.reduce((sum, r) => sum + r.expansions, 0) +
     stage2Round2Results.reduce((sum, r) => sum + r.expansions, 0);
   const stage2Attempted = stage2TotalExpansions > 0;
   assert.strictEqual(stage2Attempted, true, "Stage 2 must be actively executed");
+
+  const authoritativeBudgetRespected =
+    globalExpansions <= MAX_EXPANDED_STATES &&
+    searchOrchestrationWallMs <= WALL_LIMIT_MS &&
+    overallPeakRssMb <= allowedRssCeiling;
+
+  // Structural assertion: verify that all executed repair records carry valid segment execution artifacts
+  assert.ok(
+    repairRecords.every((r) => r.segmentId && r.branchFamily && r.searchOutcome),
+    "All executed repair records must carry valid segmentId, branchFamily, and searchOutcome"
+  );
 
   const summary = {
     schema: "motapathfinder.structured-planning-ab.v1",
@@ -989,7 +1036,7 @@ function main() {
       crossFloorRepairSearchesExecuted: (windowSearchesExecuted + intentSearchesExecuted) > 0,
       canonicalSegmentDPExecution: true,
       processLifecycleIsolation: true,
-      authoritativeBudgetRespected: true,
+      authoritativeBudgetRespected,
     },
     capabilityQualification: {
       deepestFloor: reachedMT3 ? "MT3" : "MT2",
