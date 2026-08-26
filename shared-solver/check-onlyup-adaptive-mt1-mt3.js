@@ -11,7 +11,7 @@
  *   - Native fail-closed VM: enableCompiledEffectCache=false.
  *   - Generic milestone spec: onlyup-chaos-mt1-mt3.json (Zero manual coordinate/route heuristics).
  *   - Unified runMilestoneGraph execution with searchIntent: "adaptive-feasible".
- *   - 30s wall clock, 50,000 global expansions, 256MB RSS process boundary.
+ *   - 30s wall clock, 50,000 global expansions, 256MB RSS stop threshold + bounded sampling overshoot.
  *   - 100% Strict Replay on fresh StaticSimulator from real MT1 start state.
  */
 
@@ -22,7 +22,7 @@ const { spawnSync } = require("node:child_process");
 const { loadProject } = require("./lib/project-loader");
 const { StaticSimulator } = require("./lib/simulator");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
-const { runMilestoneGraph } = require("./lib/segment-dp");
+const { runMilestoneGraph, __testHooks } = require("./lib/segment-dp");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { buildStateKey } = require("./lib/state-key");
 const { resolveRecordedAction } = require("./lib/route-store");
@@ -42,6 +42,66 @@ const EXPECTED_TITLE = "Only Up";
 const EXPECTED_START_FLOOR = "MT1";
 const EXPECTED_START_X = 6;
 const EXPECTED_START_Y = 7;
+
+const RSS_STOP_THRESHOLD_MB = 256;
+const ALLOWED_SAMPLING_OVERSHOOT_MB = 4;
+const RSS_HARD_QUALIFICATION_CEILING_MB = 260;
+
+function testRelativeFloorPolicyContract(project) {
+  const { isAllowedChangeFloor, resolveActionTargetFloorId } = __testHooks;
+
+  // 1. Absolute floor target
+  const absoluteAction = {
+    kind: "changeFloor",
+    summary: "changeFloor@MT1:6,0",
+    floorId: "MT1",
+    changeFloor: { floorId: "MT2" },
+  };
+  const resolvedAbs = resolveActionTargetFloorId(project, absoluteAction, { floorId: "MT1" });
+  assert.strictEqual(resolvedAbs, "MT2", "Absolute floor ID must resolve directly");
+  assert.strictEqual(
+    isAllowedChangeFloor(absoluteAction, { floorId: "MT1" }, { allowedFloors: ["MT1", "MT2"] }, { project }),
+    true,
+    "Absolute target within allowedFloors must be accepted"
+  );
+
+  // 2. Relative :next
+  const nextAction = {
+    kind: "changeFloor",
+    summary: "changeFloor@MT1:6,0",
+    floorId: "MT1",
+    changeFloor: { floorId: ":next" },
+  };
+  const resolvedNext = resolveActionTargetFloorId(project, nextAction, { floorId: "MT1" });
+  assert.strictEqual(resolvedNext, "MT2", "MT1 + :next must resolve to MT2");
+  assert.strictEqual(
+    isAllowedChangeFloor(nextAction, { floorId: "MT1" }, { allowedFloors: ["MT1", "MT2"] }, { project }),
+    true,
+    "MT1 + :next within allowedFloors must be accepted"
+  );
+
+  // 3. Relative :before
+  const beforeAction = {
+    kind: "changeFloor",
+    summary: "changeFloor@MT2:6,0",
+    floorId: "MT2",
+    changeFloor: { floorId: ":before" },
+  };
+  const resolvedBefore = resolveActionTargetFloorId(project, beforeAction, { floorId: "MT2" });
+  assert.strictEqual(resolvedBefore, "MT1", "MT2 + :before must resolve to MT1");
+  assert.strictEqual(
+    isAllowedChangeFloor(beforeAction, { floorId: "MT2" }, { allowedFloors: ["MT1", "MT2"] }, { project }),
+    true,
+    "MT2 + :before within allowedFloors must be accepted"
+  );
+
+  // 4. Out of envelope reject
+  assert.strictEqual(
+    isAllowedChangeFloor(nextAction, { floorId: "MT1" }, { allowedFloors: ["MT1"] }, { project }),
+    false,
+    "Target floor outside allowedFloors must be rejected"
+  );
+}
 
 function runAdaptiveRollbackSubprocess(config) {
   const project = loadProject(DEFAULT_PROJECT_ROOT);
@@ -77,7 +137,7 @@ function runAdaptiveRollbackSubprocess(config) {
     budgetScope: "global-run",
     maxExpansions: config.maxExpansions || MAX_EXPANDED_STATES,
     maxRuntimeMs: config.maxRuntimeMs || WALL_LIMIT_MS,
-    maxRssMb: 256,
+    maxRssMb: RSS_STOP_THRESHOLD_MB,
     memoryCheckIntervalExpansions: 1,
     memoryCheckIntervalActions: 1,
   });
@@ -87,29 +147,42 @@ function runAdaptiveRollbackSubprocess(config) {
   const reportedPeakRssMb = memoryDiag.peakRssMb || Math.round((peakRssBytes / 1048576) * 10) / 10;
 
   const segmentSummaries = (result.segmentResults || []).map((seg) => {
-    const att = (seg.attempts && seg.attempts[0]) || {};
-    const dpDiag = att.diagnostics && att.diagnostics.dp ? att.diagnostics.dp : {};
+    const initialAtt = (seg.attempts && seg.attempts[0]) || null;
+    const initialDp = (initialAtt && initialAtt.diagnostics && initialAtt.diagnostics.dp) || null;
+
+    const initialAttempt = initialAtt ? {
+      found: initialAtt.found,
+      expansions: initialDp ? initialDp.expansions : undefined,
+      frontierSize: initialDp ? initialDp.frontierSize : undefined,
+      stoppedReason: initialDp ? (initialDp.stoppedReason || null) : null,
+      searchOutcome: initialDp ? (initialDp.searchOutcome || null) : null,
+      peakRssMb: initialDp && initialDp.memory ? initialDp.memory.peakRssMb : undefined,
+      missingGoalFields: initialAtt.missingGoalFields || [],
+    } : null;
+
+    const attempts = (seg.attempts || []).map((att, idx) => {
+      const dp = (att.diagnostics && att.diagnostics.dp) || {};
+      return {
+        attemptIndex: idx,
+        startCandidateId: att.startCandidateId,
+        found: att.found,
+        expansions: dp.expansions,
+        frontierSize: dp.frontierSize,
+        stoppedReason: dp.stoppedReason || null,
+        searchOutcome: dp.searchOutcome || null,
+        peakRssMb: dp.memory ? dp.memory.peakRssMb : undefined,
+      };
+    });
+
     return {
       segmentId: seg.segmentId,
       label: seg.label,
-      found: seg.found,
-      startCandidatesTried: seg.startCandidatesTried,
+      segmentFound: seg.found,
       candidatesCount: (seg.candidates || []).length,
-      expansions: dpDiag.expansions != null ? dpDiag.expansions : seg.expansions,
-      frontierSize: dpDiag.frontierSize != null ? dpDiag.frontierSize : 0,
-      stoppedReason: dpDiag.stoppedReason || seg.stoppedReason || null,
-      searchOutcome: dpDiag.searchOutcome || null,
-      bestSeen: att.bestSeen ? {
-        floorId: att.bestSeen.floorId,
-        hero: att.bestSeen.hero,
-      } : null,
-      missingGoalFields: att.missingGoalFields || [],
-      actionScope: att.actionScope || null,
-      memory: dpDiag.memory ? {
-        peakRssMb: dpDiag.memory.peakRssMb,
-        stoppedReason: dpDiag.memory.stoppedReason,
-      } : null,
+      startCandidatesTried: seg.startCandidatesTried,
       backtrack: seg.backtrack || null,
+      initialAttempt,
+      attempts,
     };
   });
 
@@ -121,14 +194,19 @@ function runAdaptiveRollbackSubprocess(config) {
     state: c.state,
   }));
 
-  const evaluationLedger = (result.evaluationAttemptLedger || []).map((att) => ({
-    phase: att.phase,
-    segmentId: att.segmentId,
-    found: att.found,
-    expansions: att.expansions,
-    stoppedReason: att.stoppedReason,
-    peakRssMb: att.peakRssMb,
-  }));
+  const evaluationLedger = (result.evaluationAttemptLedger || []).map((att) => {
+    const dp = (att.diagnostics && att.diagnostics.dp) || {};
+    return {
+      phase: att.phase,
+      segmentId: att.segmentId,
+      found: att.found,
+      expansions: dp.expansions,
+      frontierSize: dp.frontierSize,
+      stoppedReason: dp.stoppedReason || null,
+      searchOutcome: dp.searchOutcome || null,
+      peakRssMb: dp.memory ? dp.memory.peakRssMb : undefined,
+    };
+  });
 
   return {
     found: result.found,
@@ -238,6 +316,11 @@ function verifyCandidateStrictReplay(project, candidate) {
 }
 
 function main() {
+  const project = loadProject(DEFAULT_PROJECT_ROOT);
+
+  // Run unit regression checks on relative floor resolution
+  testRelativeFloorPolicyContract(project);
+
   if (process.argv.includes("--child-mode")) {
     const rawInput = fs.readFileSync(0, "utf8");
     const config = JSON.parse(rawInput);
@@ -245,8 +328,6 @@ function main() {
     console.log(JSON.stringify(result));
     return;
   }
-
-  const project = loadProject(DEFAULT_PROJECT_ROOT);
 
   const spawnRun = (config) => {
     const proc = spawnSync(process.execPath, ["--expose-gc", __filename, "--child-mode"], {
@@ -271,12 +352,27 @@ function main() {
   });
   const wallMs = Date.now() - startedAt;
 
-  // Fail-closed budget and execution asserts
-  assert.ok(wallMs <= WALL_LIMIT_MS + 2000, `Parent wall time ${wallMs}ms exceeded ${WALL_LIMIT_MS}ms budget`);
+  // Fail-closed budget & authority hard asserts
+  assert.ok(runResult.budget, "Run result must report budget object");
+  assert.strictEqual(runResult.budget.scope, "global-run", "Budget scope must be global-run");
+  assert.strictEqual(runResult.budget.requestedExpansions, MAX_EXPANDED_STATES, `Requested expansions must be ${MAX_EXPANDED_STATES}`);
+  assert.strictEqual(runResult.budget.requestedRuntimeMs, WALL_LIMIT_MS, `Requested runtime must be ${WALL_LIMIT_MS}`);
+
   const actualExpansions = (runResult.budget && runResult.budget.consumedExpansions) || 0;
   assert.ok(actualExpansions <= MAX_EXPANDED_STATES, `Consumed expansions ${actualExpansions} exceeded ${MAX_EXPANDED_STATES}`);
+
+  assert.ok(wallMs <= WALL_LIMIT_MS, `Parent wall time ${wallMs}ms exceeded hard limit ${WALL_LIMIT_MS}ms`);
+
   const peakRssMb = (runResult.memory && runResult.memory.peakRssMb) || 0;
-  assert.ok(peakRssMb <= 260, `Peak RSS ${peakRssMb}MB exceeded 256MB boundary`);
+  assert.ok(
+    peakRssMb <= RSS_HARD_QUALIFICATION_CEILING_MB,
+    `Peak RSS ${peakRssMb}MB exceeded hard qualification ceiling ${RSS_HARD_QUALIFICATION_CEILING_MB}MB`
+  );
+  const rssOvershootMb = Math.max(0, Math.round((peakRssMb - RSS_STOP_THRESHOLD_MB) * 10) / 10);
+  assert.ok(
+    rssOvershootMb <= ALLOWED_SAMPLING_OVERSHOOT_MB,
+    `RSS overshoot ${rssOvershootMb}MB exceeded allowed ${ALLOWED_SAMPLING_OVERSHOOT_MB}MB`
+  );
 
   let strictReplayPassed = 0;
   let identityGradedDecisions = 0;
@@ -308,12 +404,17 @@ function main() {
     schema: "motapathfinder.canonical-adaptive-rollback.v1",
     contractStatus: "passed",
     budget: {
-      wallLimitMs: WALL_LIMIT_MS,
+      scope: runResult.budget.scope,
+      requestedWallLimitMs: WALL_LIMIT_MS,
       actualWallMs: wallMs,
-      maxExpansions: MAX_EXPANDED_STATES,
+      requestedExpansions: MAX_EXPANDED_STATES,
       actualExpansions,
-      rssLimitMb: 256,
+      rssStopThresholdMb: RSS_STOP_THRESHOLD_MB,
       peakRssMb,
+      rssOvershootMb,
+      allowedOvershootMb: ALLOWED_SAMPLING_OVERSHOOT_MB,
+      rssHardQualificationCeilingMb: RSS_HARD_QUALIFICATION_CEILING_MB,
+      rssQualificationPassed: peakRssMb <= RSS_HARD_QUALIFICATION_CEILING_MB,
     },
     run: {
       found: runResult.found,
@@ -348,5 +449,6 @@ if (require.main === module) {
 module.exports = {
   main,
   runAdaptiveRollbackSubprocess,
+  testRelativeFloorPolicyContract,
   verifyCandidateStrictReplay,
 };

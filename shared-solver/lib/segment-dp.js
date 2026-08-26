@@ -489,6 +489,23 @@ function actionTargetAlreadyRemovedByGoal(project, state, goal, summary) {
   );
 }
 
+function resolveActionTargetFloorId(project, action, state) {
+  if (!action || action.kind !== "changeFloor" || !action.changeFloor) return null;
+  const rawTargetFloor = action.changeFloor.floorId;
+  if (!rawTargetFloor) return null;
+  if (rawTargetFloor === ":next" || rawTargetFloor === ":before") {
+    const floorId = action.floorId || (state && state.floorId);
+    if (project && floorId) {
+      try {
+        return resolveRelativeFloor(project, floorId, rawTargetFloor);
+      } catch (error) {
+        return rawTargetFloor;
+      }
+    }
+  }
+  return rawTargetFloor;
+}
+
 function goalActionScore(simulator, state, action, segment) {
   const goal = (segment || {}).goal || {};
   let score = 0;
@@ -541,11 +558,16 @@ function goalActionScore(simulator, state, action, segment) {
   if (
     action &&
     action.kind === "changeFloor" &&
-    goal.floorId &&
-    action.changeFloor &&
-    action.changeFloor.floorId === goal.floorId
+    goal.floorId
   ) {
-    score += 500000;
+    const resolvedTarget = resolveActionTargetFloorId(
+      simulator && simulator.project,
+      action,
+      state,
+    );
+    if (resolvedTarget === goal.floorId) {
+      score += 500000;
+    }
   }
   return score;
 }
@@ -778,20 +800,14 @@ function isAllowedChangeFloor(action, state, policy, simulator) {
   const allowed = new Set((policy.allowChangeFloors || []).map(String));
   const changeKey = parseChangeFloorSummary(action.summary);
   if (changeKey && allowed.has(changeKey)) return true;
-  const floorId = action.floorId || state.floorId;
+  const floorId = action.floorId || (state && state.floorId);
   if (policy.allowedFloors && !policy.allowedFloors.includes(floorId))
     return false;
-  let targetFloor = action.changeFloor && action.changeFloor.floorId;
-  if (targetFloor && (targetFloor === ":next" || targetFloor === ":before")) {
-    const project = simulator && simulator.project;
-    if (project) {
-      try {
-        targetFloor = resolveRelativeFloor(project, floorId, targetFloor);
-      } catch (error) {
-        // Fall back to original targetFloor
-      }
-    }
-  }
+  const targetFloor = resolveActionTargetFloorId(
+    simulator && simulator.project,
+    action,
+    state,
+  );
   return (
     !targetFloor ||
     !policy.allowedFloors ||
@@ -4590,6 +4606,8 @@ module.exports = {
     actionTargetsProtectedTile,
     buildSegmentStateFeasibilityPredicate,
     isAllowedAction,
+    isAllowedChangeFloor,
+    resolveActionTargetFloorId,
     projectSegmentGoalProgress,
     selectCandidateSkyline,
   },
