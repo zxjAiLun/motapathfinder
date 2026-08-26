@@ -3043,6 +3043,13 @@
       "cleanCheckout": false,
       "notes": "real Chromium replay recomputes and verifies the persisted terminal objective value"
     },
+    "shared-solver/check-onlyup-adaptive-mt1-mt3.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-onlyup-first-region-expansion-profile.js": {
       "grade": "integration-local",
       "allowsNotFound": true,

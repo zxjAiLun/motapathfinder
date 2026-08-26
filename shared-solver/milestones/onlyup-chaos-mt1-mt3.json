@@ -1,0 +1,38 @@
+{
+  "routeName": "onlyup-chaos-mt1-mt3",
+  "milestones": [
+    {
+      "id": "mt1-to-mt2",
+      "label": "Reach MT2 from MT1",
+      "goal": {
+        "floorId": "MT2"
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT1",
+          "MT2"
+        ]
+      },
+      "dp": {
+        "maxExpansions": 8000
+      }
+    },
+    {
+      "id": "mt2-to-mt3",
+      "label": "Reach MT3 from MT2",
+      "startFrom": "mt1-to-mt2",
+      "goal": {
+        "floorId": "MT3"
+      },
+      "actionPolicy": {
+        "allowedFloors": [
+          "MT2",
+          "MT3"
+        ]
+      },
+      "dp": {
+        "maxExpansions": 8000
+      }
+    }
+  ]
+}
