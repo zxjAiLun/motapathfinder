@@ -421,8 +421,12 @@ function requirementDeficitScore(checkpoint, minHero) {
 }
 
 function baseSortedComparator(sorted) {
-  const rank = new Map((sorted || []).map((checkpoint, index) => [checkpoint.id, index]));
-  return (left, right) => number(rank.get(left.id), Number.MAX_SAFE_INTEGER) - number(rank.get(right.id), Number.MAX_SAFE_INTEGER);
+  const rank = new Map((sorted || []).map((checkpoint, index) => [checkpoint.lineageId || checkpoint.id, index]));
+  return (left, right) => {
+    const leftKey = left ? (left.lineageId || left.id) : null;
+    const rightKey = right ? (right.lineageId || right.id) : null;
+    return number(rank.get(leftKey), Number.MAX_SAFE_INTEGER) - number(rank.get(rightKey), Number.MAX_SAFE_INTEGER);
+  };
 }
 
 function selectParetoRepresentatives(pool, edge, options) {
