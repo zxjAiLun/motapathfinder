@@ -10,13 +10,14 @@
  *                 captureFloorCheckpoints: false (uncontaminated canonical search).
  *   B (Candidate): Fair Multi-Representative Process-Isolated Structured Planning.
  *                  Every Stage 1 retained Pareto representative gets an isolated
- *                  search process with guaranteed non-zero search budget (zero starvation),
- *                  followed by focused multi-round strategic deep exploration.
+ *                  search process with guaranteed non-zero search opportunity (zero starvation),
+ *                  followed by focused deep exploration on viable unexhausted futures.
  *
  * Hard constraints:
  *   - Production fast paths ON: autoBattleFastRejectEnabled=true, enableFastHazardBlockIndex=true.
  *   - Fail-closed native VM: enableCompiledEffectCache=false.
- *   - Chaos difficulty, start MT1, target MT6, 50k expansions, 30s wall, 256 MB RSS per process.
+ *   - Chaos difficulty, start MT1, target MT6.
+ *   - Authoritative global limits: 50,000 expansions, 30,000 ms wall clock, 256 MB RSS per process.
  */
 
 const fs = require("node:fs");
@@ -88,13 +89,30 @@ function runSingleRepresentativeSubprocess(config) {
   peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
   const edgeCheckpoints = (res.checkpointPool && res.checkpointPool.edges[edge]) || [];
 
+  let terminationClass = "frontier-exhausted";
+  if (edgeCheckpoints.length > 0) {
+    terminationClass = "forward-checkpoint-found";
+  } else if (peakRssBytes >= RSS_LIMIT_BYTES || res.stoppedReason === "memory-limit" || res.stoppedReason === "rss-limit") {
+    terminationClass = "rss-limited";
+  } else if (res.stoppedReason === "time-limit") {
+    terminationClass = "wall-limited";
+  } else if (res.expansions >= (config.maxExpansions || 1500) || res.stoppedReason === "expansion-limit") {
+    terminationClass = "expansion-limited";
+  } else if (res.frontierSize === 0 || res.stoppedReason === "frontier-exhausted" || res.stoppedReason == null) {
+    terminationClass = "frontier-exhausted";
+  }
+
   return {
     candidateId: candidate.id,
     lineageId: candidate.lineageId || candidate.id,
     role: candidate.role || candidate.representativeRole,
     hero: candidate.hero,
     expansions: res.expansions,
+    frontierSize: res.frontierSize != null ? res.frontierSize : 0,
+    expansionBudgetExhausted: res.expansions >= (config.maxExpansions || 1500),
     stoppedReason: res.stoppedReason,
+    searchOutcome: res.searchOutcome || (edgeCheckpoints.length > 0 ? "checkpoint-found" : "no-checkpoints"),
+    terminationClass,
     deepestFloor: res.bestProgressState ? res.bestProgressState.floorId : config.fromFloor,
     peakRssMb: Math.round((peakRssBytes / 1048576) * 10) / 10,
     wallMs: Date.now() - startedAt,
@@ -341,14 +359,47 @@ function main() {
   assert.strictEqual(baselineA.failureReason, "RESOURCE_LIMIT");
   assert.ok(["rss", "wall"].includes(baselineA.bindingConstraint));
 
-  // --- 2. Evaluate Candidate B Stage 1 (MT1 -> MT2) in Clean Subprocess ---
-  const stage1Result = spawnStage1({
+  // --- Parent Authoritative Budget Tracker ---
+  let searchOrchestrationWallMs = 0;
+  let qualificationWallMs = 0;
+  let globalExpansions = 0;
+
+  const spawnWithBudget = (spawnFn, config, requestedSlice) => {
+    const remainingWallMs = WALL_LIMIT_MS - searchOrchestrationWallMs;
+    const remainingExpansions = MAX_EXPANDED_STATES - globalExpansions;
+    assert.ok(remainingWallMs > 0, `Wall budget exhausted: remaining ${remainingWallMs}ms`);
+    assert.ok(remainingExpansions > 0, `Expansion budget exhausted: remaining ${remainingExpansions}`);
+
+    const safetyHeadroomMs = 500;
+    const effectiveRuntimeMs = Math.max(100, Math.min(requestedSlice.maxRuntimeMs, remainingWallMs - safetyHeadroomMs));
+    const effectiveExpansions = Math.min(requestedSlice.maxExpansions, remainingExpansions);
+
+    const adjustedConfig = {
+      ...config,
+      maxRuntimeMs: effectiveRuntimeMs,
+      maxExpansions: effectiveExpansions,
+    };
+
+    const parentStart = Date.now();
+    const result = spawnFn(adjustedConfig);
+    const parentElapsed = Date.now() - parentStart;
+
+    searchOrchestrationWallMs += parentElapsed;
+    globalExpansions += (result.stageExpansions || result.expansions || 0);
+
+    return { result, parentElapsed };
+  };
+
+  // --- 2. Evaluate Candidate B Stage 1 (MT1 -> MT2) with Parent Authoritative Timing ---
+  const stage1Execution = spawnWithBudget(spawnStage1, {
     fromFloor: "MT1",
     toFloor: "MT2",
+    repsLimit: 8,
+  }, {
     maxExpansions: 1500,
     maxRuntimeMs: 10000,
-    repsLimit: 8,
   });
+  const stage1Result = stage1Execution.result;
 
   assert.strictEqual(stage1Result.edge, "MT1->MT2");
   assert.ok(stage1Result.checkpointPoolSize > 0, "Stage 1 must find checkpoints");
@@ -364,6 +415,7 @@ function main() {
   );
 
   // --- 3. Strict Replay Verification on ALL Retained Stage 1 Representatives ---
+  const replayStart = Date.now();
   let stage1IdentityGradedDecisions = 0;
   let stage1ReplayPassCount = 0;
 
@@ -373,6 +425,7 @@ function main() {
     stage1IdentityGradedDecisions += replaySummary.identityGradedDecisions;
     stage1ReplayPassCount += 1;
   });
+  qualificationWallMs += (Date.now() - replayStart);
 
   assert.strictEqual(
     stage1ReplayPassCount,
@@ -384,25 +437,23 @@ function main() {
   // Round 1: Deterministic Fair Slices across all 8 Stage 1 representatives.
   // Each representative runs in its own freshly spawned process (Zero Starvation, Clean RSS).
   const stage2Round1Results = [];
-  let stage2TotalExpansions = 0;
-  let stage2TotalWallMs = 0;
   let stage2PeakRssMb = 0;
   const stage2AggregatedPool = { edges: { "MT2->MT3": [] } };
 
   for (let i = 0; i < stage1Result.representatives.length; i++) {
     const rep = stage1Result.representatives[i];
-    const repResult = spawnRepSearch({
+    const repExecution = spawnWithBudget(spawnRepSearch, {
       candidate: rep,
       fromFloor: "MT2",
       toFloor: "MT3",
+      targetFloorId: FIRST_REGION_TARGET_FLOOR_ID,
+    }, {
       maxExpansions: 500,
       maxRuntimeMs: 2500,
-      targetFloorId: FIRST_REGION_TARGET_FLOOR_ID,
     });
 
+    const repResult = repExecution.result;
     stage2Round1Results.push(repResult);
-    stage2TotalExpansions += repResult.expansions;
-    stage2TotalWallMs += repResult.wallMs;
     stage2PeakRssMb = Math.max(stage2PeakRssMb, repResult.peakRssMb);
 
     if (repResult.checkpoints && repResult.checkpoints.length > 0) {
@@ -423,33 +474,37 @@ function main() {
     );
   });
 
-  // Stage 2 Round 2: Focused strategic deep search on top distinct representatives if MT3 not yet found
+  // Stage 2 Round 2: Focused strategic deep search on non-exhausted viable candidates if MT3 not yet found
   const stage2Round2Results = [];
   if (stage2AggregatedPool.edges["MT2->MT3"].length === 0) {
-    // Select top 3 distinct strategic representatives:
-    // 1. Highest HP survival representative
-    // 2. Highest ATK / DEF combat representative
-    // 3. Highest MDEF / EXP resource representative
-    const focusRoles = ["highest-hp", "highest-atk", "highest-mdef"];
+    // Only invest additional budget in candidates that were NOT frontier-exhausted in Round 1
+    const viableCandidates = stage2Round1Results.filter((r) => r.terminationClass !== "frontier-exhausted");
+
+    const focusRoles = ["highest-hp", "fastest-route", "highest-atk", "highest-mdef"];
     const focusCandidates = [];
     focusRoles.forEach((role) => {
-      const match = stage1Result.representatives.find((r) => r.role === role);
-      if (match && !focusCandidates.includes(match)) focusCandidates.push(match);
+      const match = viableCandidates.find((r) => r.role === role);
+      if (match) {
+        const sourceRep = stage1Result.representatives.find((rep) => (rep.lineageId || rep.id) === match.lineageId);
+        if (sourceRep && !focusCandidates.includes(sourceRep)) {
+          focusCandidates.push(sourceRep);
+        }
+      }
     });
 
     for (const focusRep of focusCandidates) {
-      const deepResult = spawnRepSearch({
+      const deepExecution = spawnWithBudget(spawnRepSearch, {
         candidate: focusRep,
         fromFloor: "MT2",
         toFloor: "MT3",
+        targetFloorId: FIRST_REGION_TARGET_FLOOR_ID,
+      }, {
         maxExpansions: 1500,
         maxRuntimeMs: 4000,
-        targetFloorId: FIRST_REGION_TARGET_FLOOR_ID,
       });
 
+      const deepResult = deepExecution.result;
       stage2Round2Results.push(deepResult);
-      stage2TotalExpansions += deepResult.expansions;
-      stage2TotalWallMs += deepResult.wallMs;
       stage2PeakRssMb = Math.max(stage2PeakRssMb, deepResult.peakRssMb);
 
       if (deepResult.checkpoints && deepResult.checkpoints.length > 0) {
@@ -465,6 +520,7 @@ function main() {
   let reachedMT3 = false;
   let stage2IdentityGradedDecisions = 0;
   if (stage2Reps.length > 0) {
+    const stage2ReplayStart = Date.now();
     let stage2ReplayPassCount = 0;
     stage2Reps.forEach((rep) => {
       const replaySummary = verifyRepresentativeStrictReplay(project, rep);
@@ -473,21 +529,36 @@ function main() {
         stage2ReplayPassCount += 1;
       }
     });
+    qualificationWallMs += (Date.now() - stage2ReplayStart);
     reachedMT3 = stage2ReplayPassCount === stage2Reps.length && stage2Reps.length > 0;
   }
 
-  const globalTotalExpansions = stage1Result.stageExpansions + stage2TotalExpansions;
-  const globalWallMs = stage1Result.wallMs + stage2TotalWallMs;
   const overallPeakRssMb = Math.max(stage1Result.stagePeakRssMb, stage2PeakRssMb);
 
-  // Budget invariance assertions
-  assert.ok(globalTotalExpansions <= MAX_EXPANDED_STATES, `Global expansions (${globalTotalExpansions}) exceeds 50k`);
-  assert.ok(globalWallMs <= WALL_LIMIT_MS, `Global wall time (${globalWallMs}ms) exceeds 30s`);
+  // Authoritative budget assertions
+  assert.ok(globalExpansions <= MAX_EXPANDED_STATES, `Global expansions (${globalExpansions}) exceeds 50k`);
+  assert.ok(searchOrchestrationWallMs <= WALL_LIMIT_MS, `Search orchestration wall time (${searchOrchestrationWallMs}ms) exceeds 30s limit`);
   assert.ok(overallPeakRssMb <= 256 * 1.05, `Peak process RSS (${overallPeakRssMb}MB) exceeds limit`);
+
+  const stage2TotalExpansions = stage2Round1Results.reduce((sum, r) => sum + r.expansions, 0) +
+    stage2Round2Results.reduce((sum, r) => sum + r.expansions, 0);
+  const stage2Attempted = stage2TotalExpansions > 0;
+  assert.strictEqual(stage2Attempted, true, "Stage 2 must be actively executed");
 
   const summary = {
     schema: "motapathfinder.structured-planning-ab.v1",
     contractStatus: "passed",
+    budget: {
+      wallLimitMs: WALL_LIMIT_MS,
+      searchOrchestrationWallMs,
+      qualificationWallMs,
+      maxExpansions: MAX_EXPANDED_STATES,
+      actualExpansions: globalExpansions,
+      budgetExhausted: false,
+      rssLimitMb: 256,
+      peakRssMb: overallPeakRssMb,
+      rssOvershootMb: Math.max(0, Math.round((overallPeakRssMb - 256) * 10) / 10),
+    },
     baselineA: {
       mode: "flat-canonical-dp",
       captureFloorCheckpoints: false,
@@ -505,8 +576,8 @@ function main() {
       verdict: "STRUCTURED_PLANNING_STOPPED",
       failureReason: reachedMT3 ? null : "NO_FORWARD_CHECKPOINTS",
       deepestFloor: reachedMT3 ? "MT3" : "MT2",
-      totalExpansions: globalTotalExpansions,
-      wallMs: globalWallMs,
+      totalExpansions: globalExpansions,
+      searchOrchestrationWallMs,
       peakRssMb: overallPeakRssMb,
       stage1: {
         edge: stage1Result.edge,
@@ -531,7 +602,7 @@ function main() {
         },
       },
       stage2: {
-        attempted: true,
+        attempted: stage2Attempted,
         edge: "MT2->MT3",
         totalExpansions: stage2TotalExpansions,
         checkpointPoolSize: stage2Checkpoints.length,
@@ -543,14 +614,28 @@ function main() {
           role: r.role,
           hero: r.hero,
           expansions: r.expansions,
+          frontierSize: r.frontierSize,
+          expansionBudgetExhausted: r.expansionBudgetExhausted,
+          stoppedReason: r.stoppedReason,
+          searchOutcome: r.searchOutcome,
+          terminationClass: r.terminationClass,
           peakRssMb: r.peakRssMb,
           wallMs: r.wallMs,
           deepestFloor: r.deepestFloor,
           checkpointCount: r.checkpointCount,
-          stoppedReason: r.stoppedReason,
         })),
         round2FocusCount: stage2Round2Results.length,
         round2Expansions: stage2Round2Results.reduce((sum, r) => sum + r.expansions, 0),
+        round2PerRepresentative: stage2Round2Results.map((r) => ({
+          candidateId: r.candidateId,
+          lineageId: r.lineageId,
+          role: r.role,
+          expansions: r.expansions,
+          frontierSize: r.frontierSize,
+          terminationClass: r.terminationClass,
+          peakRssMb: r.peakRssMb,
+          wallMs: r.wallMs,
+        })),
       },
     },
     mechanismQualification: {
@@ -560,6 +645,7 @@ function main() {
       allStage2RepsAttempted: true,
       noRepresentativeStarvation: true,
       processLifecycleIsolation: true,
+      authoritativeBudgetRespected: true,
     },
     capabilityQualification: {
       deepestFloor: reachedMT3 ? "MT3" : "MT2",
