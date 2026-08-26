@@ -12,7 +12,7 @@
  *   - Generic milestone spec: onlyup-chaos-mt1-mt3.json (Zero manual coordinate/route heuristics).
  *   - Unified runMilestoneGraph execution with searchIntent: "adaptive-feasible".
  *   - 30s wall clock, 50,000 global expansions, 256MB RSS process boundary.
- *   - 100% Strict Replay on fresh StaticSimulator if MT3 is reached.
+ *   - 100% Strict Replay on fresh StaticSimulator from real MT1 start state.
  */
 
 const fs = require("node:fs");
@@ -38,6 +38,10 @@ const {
 
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
 const CHAOS_DIFFICULTY = { I581: 0, I582: 0, "flag:level0": 0 };
+const EXPECTED_TITLE = "Only Up";
+const EXPECTED_START_FLOOR = "MT1";
+const EXPECTED_START_X = 6;
+const EXPECTED_START_Y = 7;
 
 function runAdaptiveRollbackSubprocess(config) {
   const project = loadProject(DEFAULT_PROJECT_ROOT);
@@ -53,10 +57,18 @@ function runAdaptiveRollbackSubprocess(config) {
     choiceResolver,
   });
 
+  // 1. Hard Assert Initial State Identity & Chaos Difficulty
+  const initialState = simulator.createInitialState();
+  assert.strictEqual(project.data.firstData.title, EXPECTED_TITLE, "Project title mismatch");
+  assert.strictEqual(initialState.floorId, EXPECTED_START_FLOOR, "Start floor must be MT1");
+  assert.strictEqual(initialState.hero.loc.x, EXPECTED_START_X, "Start X must be 6");
+  assert.strictEqual(initialState.hero.loc.y, EXPECTED_START_Y, "Start Y must be 7");
+  assert.deepStrictEqual(difficultySnapshot(initialState), CHAOS_DIFFICULTY, "Initial state must be Chaos");
+  assert.strictEqual((initialState.route || []).filter(isDecisionEntry).length, 0, "Initial state must have no decision route prefix");
+
   const startedAt = Date.now();
   let peakRssBytes = process.memoryUsage().rss;
   const spec = getMilestoneSpec(project, config.routeName || "onlyup-chaos-mt1-mt3");
-  const initialState = simulator.createInitialState();
 
   const result = runMilestoneGraph(simulator, initialState, spec, {
     searchIntent: "adaptive-feasible",
@@ -71,17 +83,35 @@ function runAdaptiveRollbackSubprocess(config) {
   });
 
   peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
-  const memoryDiag = (result.memory) || {};
+  const memoryDiag = result.memory || {};
   const reportedPeakRssMb = memoryDiag.peakRssMb || Math.round((peakRssBytes / 1048576) * 10) / 10;
 
-  const segmentSummaries = (result.segmentResults || []).map((seg) => ({
-    segmentId: seg.segmentId,
-    label: seg.label,
-    found: seg.found,
-    candidatesCount: (seg.candidates || []).length,
-    startCandidatesTried: seg.startCandidatesTried,
-    backtrack: seg.backtrack || null,
-  }));
+  const segmentSummaries = (result.segmentResults || []).map((seg) => {
+    const att = (seg.attempts && seg.attempts[0]) || {};
+    const dpDiag = att.diagnostics && att.diagnostics.dp ? att.diagnostics.dp : {};
+    return {
+      segmentId: seg.segmentId,
+      label: seg.label,
+      found: seg.found,
+      startCandidatesTried: seg.startCandidatesTried,
+      candidatesCount: (seg.candidates || []).length,
+      expansions: dpDiag.expansions != null ? dpDiag.expansions : seg.expansions,
+      frontierSize: dpDiag.frontierSize != null ? dpDiag.frontierSize : 0,
+      stoppedReason: dpDiag.stoppedReason || seg.stoppedReason || null,
+      searchOutcome: dpDiag.searchOutcome || null,
+      bestSeen: att.bestSeen ? {
+        floorId: att.bestSeen.floorId,
+        hero: att.bestSeen.hero,
+      } : null,
+      missingGoalFields: att.missingGoalFields || [],
+      actionScope: att.actionScope || null,
+      memory: dpDiag.memory ? {
+        peakRssMb: dpDiag.memory.peakRssMb,
+        stoppedReason: dpDiag.memory.stoppedReason,
+      } : null,
+      backtrack: seg.backtrack || null,
+    };
+  });
 
   const finalCandidates = (result.finalCandidates || []).map((c) => ({
     id: c.id,
@@ -89,6 +119,15 @@ function runAdaptiveRollbackSubprocess(config) {
     route: c.route,
     routeLength: Array.isArray(c.route) ? c.route.length : 0,
     state: c.state,
+  }));
+
+  const evaluationLedger = (result.evaluationAttemptLedger || []).map((att) => ({
+    phase: att.phase,
+    segmentId: att.segmentId,
+    found: att.found,
+    expansions: att.expansions,
+    stoppedReason: att.stoppedReason,
+    peakRssMb: att.peakRssMb,
   }));
 
   return {
@@ -102,6 +141,7 @@ function runAdaptiveRollbackSubprocess(config) {
     } : null,
     segmentSummaries,
     finalCandidates,
+    evaluationLedger,
     budget: result.budget,
     memory: {
       ...result.memory,
@@ -193,6 +233,7 @@ function verifyCandidateStrictReplay(project, candidate) {
     identityGradedDecisions,
     finalFloorId: replayState.floorId,
     exactStateKey: replayedStateKey,
+    finalHero: replayState.hero,
   };
 }
 
@@ -208,7 +249,7 @@ function main() {
   const project = loadProject(DEFAULT_PROJECT_ROOT);
 
   const spawnRun = (config) => {
-    const proc = spawnSync(process.execPath, [__filename, "--child-mode"], {
+    const proc = spawnSync(process.execPath, ["--expose-gc", __filename, "--child-mode"], {
       input: JSON.stringify(config),
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
@@ -230,9 +271,17 @@ function main() {
   });
   const wallMs = Date.now() - startedAt;
 
+  // Fail-closed budget and execution asserts
+  assert.ok(wallMs <= WALL_LIMIT_MS + 2000, `Parent wall time ${wallMs}ms exceeded ${WALL_LIMIT_MS}ms budget`);
+  const actualExpansions = (runResult.budget && runResult.budget.consumedExpansions) || 0;
+  assert.ok(actualExpansions <= MAX_EXPANDED_STATES, `Consumed expansions ${actualExpansions} exceeded ${MAX_EXPANDED_STATES}`);
+  const peakRssMb = (runResult.memory && runResult.memory.peakRssMb) || 0;
+  assert.ok(peakRssMb <= 260, `Peak RSS ${peakRssMb}MB exceeded 256MB boundary`);
+
   let strictReplayPassed = 0;
   let identityGradedDecisions = 0;
   let reachedMT3 = false;
+  const replayedCandidates = [];
 
   if (runResult.found && runResult.finalCandidates && runResult.finalCandidates.length > 0) {
     runResult.finalCandidates.forEach((cand) => {
@@ -241,9 +290,19 @@ function main() {
         strictReplayPassed += 1;
         identityGradedDecisions += replay.identityGradedDecisions;
         if (replay.finalFloorId === "MT3") reachedMT3 = true;
+        replayedCandidates.push({
+          candidateId: cand.id,
+          finalFloorId: replay.finalFloorId,
+          decisionsReplayed: replay.decisionsReplayed,
+          identityGradedDecisions: replay.identityGradedDecisions,
+          finalHero: replay.finalHero,
+        });
       }
     });
   }
+
+  const adaptiveRollbackTriggered = (runResult.segmentSummaries || []).some((s) => s.backtrack != null) ||
+    (runResult.evaluationLedger || []).some((att) => att.phase === "adaptive-expand" || att.phase === "adaptive-replay");
 
   const summary = {
     schema: "motapathfinder.canonical-adaptive-rollback.v1",
@@ -252,23 +311,25 @@ function main() {
       wallLimitMs: WALL_LIMIT_MS,
       actualWallMs: wallMs,
       maxExpansions: MAX_EXPANDED_STATES,
-      actualExpansions: (runResult.budget && runResult.budget.consumedExpansions) || 0,
+      actualExpansions,
       rssLimitMb: 256,
-      peakRssMb: (runResult.memory && runResult.memory.peakRssMb) || 0,
+      peakRssMb,
     },
     run: {
       found: runResult.found,
       reachedMilestone: runResult.reachedMilestone,
       failedSegment: runResult.failedSegment,
       segmentSummaries: runResult.segmentSummaries,
+      evaluationLedger: runResult.evaluationLedger,
       finalCandidatesCount: (runResult.finalCandidates || []).length,
     },
     qualification: {
       engineMode: "canonical-runMilestoneGraph",
       searchIntent: "adaptive-feasible",
-      adaptiveRollbackTriggered: (runResult.segmentSummaries || []).some((s) => s.backtrack != null),
+      adaptiveRollbackTriggered,
       strictReplayPassed: strictReplayPassed === (runResult.finalCandidates || []).length && strictReplayPassed > 0,
       reachedMT3,
+      replayedCandidates,
     },
   };
 

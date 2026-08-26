@@ -20,6 +20,7 @@ const {
   getTileDefinitionAt,
 } = require("./state");
 const { getFloorOrder } = require("./floor-id");
+const { resolveRelativeFloor } = require("./floor-transitions");
 const { compileGoalDependencyGraph } = require("./goal-dependency-graph");
 const { compileAdmissibleFeasibilityBounds } = require("./goal-feasibility-bounds");
 const reachAndBattleOracle = require("./reach-and-battle-oracle");
@@ -773,14 +774,24 @@ function parseChangeFloorSummary(summary) {
   return match ? `${match[1]}:${match[2]},${match[3]}` : null;
 }
 
-function isAllowedChangeFloor(action, state, policy) {
+function isAllowedChangeFloor(action, state, policy, simulator) {
   const allowed = new Set((policy.allowChangeFloors || []).map(String));
   const changeKey = parseChangeFloorSummary(action.summary);
   if (changeKey && allowed.has(changeKey)) return true;
   const floorId = action.floorId || state.floorId;
   if (policy.allowedFloors && !policy.allowedFloors.includes(floorId))
     return false;
-  const targetFloor = action.changeFloor && action.changeFloor.floorId;
+  let targetFloor = action.changeFloor && action.changeFloor.floorId;
+  if (targetFloor && (targetFloor === ":next" || targetFloor === ":before")) {
+    const project = simulator && simulator.project;
+    if (project) {
+      try {
+        targetFloor = resolveRelativeFloor(project, floorId, targetFloor);
+      } catch (error) {
+        // Fall back to original targetFloor
+      }
+    }
+  }
   return (
     !targetFloor ||
     !policy.allowedFloors ||
@@ -827,7 +838,7 @@ function isAllowedAction(action, state, segment, simulator) {
       return false;
   }
   if (action.kind === "changeFloor")
-    return isAllowedChangeFloor(action, state, policy);
+    return isAllowedChangeFloor(action, state, policy, simulator);
   if (action.kind === "floorFly") {
     const targetFloor =
       action.targetFloorId || (action.target && action.target.floorId);
