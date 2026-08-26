@@ -1213,10 +1213,9 @@ function searchDP(simulator, initialState, options) {
   let nextNodeId = 1;
   const skylineMax = number(config.dpSkylineMax, 1);
   const bestByKey = skylineMax > 1 ? new SkylineSet(skylineMax) : new Map();
-  const checkpointPool = createCheckpointPool(config.checkpointOptions);
-  const acceptedNodesByFloor = {};
-  const rootFloorId = rootState && rootState.floorId;
-  if (rootFloorId) acceptedNodesByFloor[rootFloorId] = 1;
+  const captureFloorCheckpoints = config.captureFloorCheckpoints === true;
+  const checkpointPool = captureFloorCheckpoints ? createCheckpointPool(config.checkpointOptions) : null;
+  const acceptedNodesCumulativeByFloor = {};
   const observerAgendaMeta = observer ? new Map() : null;
   const actionStats = emptyActionStats();
   const startedAt = Date.now();
@@ -1986,9 +1985,9 @@ function searchDP(simulator, initialState, options) {
     registered += 1;
     trackPerfCount("registered");
     if (state && state.floorId) {
-      acceptedNodesByFloor[state.floorId] = Number(acceptedNodesByFloor[state.floorId] || 0) + 1;
+      acceptedNodesCumulativeByFloor[state.floorId] = Number(acceptedNodesCumulativeByFloor[state.floorId] || 0) + 1;
     }
-    if (parentNode && parentNode.state) {
+    if (captureFloorCheckpoints && parentNode && parentNode.state) {
       if (isForwardChangeFloor(parentNode.state, state, sourceAction)) {
         const ephemeralNode = {
           parentId: parentNode.nodeId,
@@ -2007,6 +2006,7 @@ function searchDP(simulator, initialState, options) {
           route: materializedRoute,
           routeLength: materializedRoute.length,
           state: stateWithRoute,
+          sourceRepresentativeId: config.sourceRepresentativeId || null,
         });
       }
     }
@@ -2735,7 +2735,7 @@ function searchDP(simulator, initialState, options) {
     stoppedReason,
     cancelled: stoppedReason === "cancel-requested",
     searchOutcome,
-    checkpointPool,
+    checkpointPool: checkpointPool || createCheckpointPool(config.checkpointOptions),
     results: [bestGoalState, firstGoalState, ...goalSkylineStates].filter((state, index, list) => state && list.indexOf(state) === index),
     diagnostics: {
       algorithm: "dp",
@@ -2765,7 +2765,7 @@ function searchDP(simulator, initialState, options) {
         generatedNodes: generated,
         replacedNodes: replacedLowerHp + sameHpShorterRoute,
         rejectedNodes: rejectedByHigherHp + sameHpRejected,
-        acceptedNodesByFloor: { ...acceptedNodesByFloor },
+        acceptedNodesCumulativeByFloor: { ...acceptedNodesCumulativeByFloor },
       },
       byActionType: actionStats.byActionType,
       byActionRole: actionStats.byActionRole,

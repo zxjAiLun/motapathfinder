@@ -108,10 +108,16 @@ function buildCheckpoint(simulator, parentState, childState, action, index, opti
     ? options.routeLength
     : (customRoute ? customRoute.length : (Array.isArray(childState.route) ? childState.route.length : 0));
   const checkpointState = options && options.state ? options.state : childState;
+  const sourceRepresentativeId = options && options.sourceRepresentativeId ? options.sourceRepresentativeId : null;
+  const id = `${edge}#${index}`;
+  const lineageId = sourceRepresentativeId ? `${sourceRepresentativeId}|${id}` : id;
 
   return {
-    id: `${edge}#${index}`,
+    id,
+    lineageId,
+    sourceRepresentativeId,
     edge,
+    localIndex: index,
     fromFloorId: parentState.floorId,
     toFloorId: childState.floorId,
     route: customRoute || (Array.isArray(childState.route) ? childState.route.slice() : []),
@@ -370,7 +376,8 @@ function selectRepairCheckpoints(pool, blocker, options) {
   const selected = [];
   const add = (checkpoint, strategy) => {
     if (!checkpoint) return;
-    const existing = selected.find((candidate) => candidate.id === checkpoint.id);
+    const checkpointKey = checkpoint.lineageId || checkpoint.id;
+    const existing = selected.find((candidate) => (candidate.lineageId || candidate.id) === checkpointKey);
     if (existing) {
       if (!existing.repairStrategies.includes(strategy)) existing.repairStrategies.push(strategy);
       return;
@@ -424,7 +431,8 @@ function selectParetoRepresentatives(pool, edge, options) {
   const selected = [];
   const add = (checkpoint, role) => {
     if (!checkpoint) return;
-    const existing = selected.find((candidate) => candidate.id === checkpoint.id);
+    const checkpointKey = checkpoint.lineageId || checkpoint.id;
+    const existing = selected.find((candidate) => (candidate.lineageId || candidate.id) === checkpointKey);
     if (existing) {
       if (!existing.roles) existing.roles = [existing.representativeRole || "initial"];
       if (!existing.roles.includes(role)) existing.roles.push(role);
