@@ -3,7 +3,7 @@
 /** TEST GRADE: local-regression */
 
 /**
- * PR-5.24b Iteration 2 Repair 1 – Backend Semantic Parity Gate
+ * PR-5.24b Iteration 2 Repair 2 – Backend Semantic Parity Gate (FAIL-CLOSED)
  *
  * Verifies that isolated-process backend is semantically equivalent to
  * direct local execution when both are not resource-limited.
@@ -16,11 +16,12 @@
  *   - found (boolean)
  *   - goal candidate count (merged length)
  *   - sorted output StateKey set
- *   - stoppedReason (memoryLimited + primary failureClass)
+ *   - stoppedReason (canonical diagnostics.dp.stoppedReason, including time/expansion)
  *   - failure class / propagation
+ *   - simulatorProfileIdentity (requested === applied)
  *
- * Fail-closed: any unsupported simulator profile or StateKey mismatched amount
- * causes gate failure rather than silent fallback.
+ * Fail-closed: both probes must be conclusive; resource-limited is FAIL, not PASS.
+ * Empty solver-generated frontier is FAIL.
  */
 
 const assert = require("node:assert");
@@ -59,6 +60,21 @@ function sortedOutputStateKeys(result) {
   return merged.map((cand) => buildStateKey(cand.state)).sort();
 }
 
+function extractCanonicalStoppedReason(result) {
+  if (result && result.memoryStopReason) return result.memoryStopReason;
+  const summaryAttempts = (result && result.summary && result.summary.attempts) || [];
+  for (const att of summaryAttempts) {
+    const dp = att && att.diagnostics && att.diagnostics.dp;
+    if (dp && dp.stoppedReason) return dp.stoppedReason;
+  }
+  const directAttempts = (result && result.attempts) || [];
+  for (const att of directAttempts) {
+    const dp = att && att.diagnostics && att.diagnostics.dp;
+    if (dp && dp.stoppedReason) return dp.stoppedReason;
+  }
+  return null;
+}
+
 function resultFingerprint(result) {
   const merged = (result && result.merged) || [];
   const found = Boolean(result && result.merged && result.merged.length > 0);
@@ -66,8 +82,8 @@ function resultFingerprint(result) {
   const keys = sortedOutputStateKeys(result);
   const memoryLimited = Boolean(result && result.memoryLimited);
   const memoryStopReason = result ? result.memoryStopReason : null;
+  const stoppedReason = extractCanonicalStoppedReason(result);
   const attempts = (result && result.summary && result.summary.attempts) || (result && result.attempts ? result.attempts.map((a) => a) : []);
-  // Derive stopped reason / failure class from summary when not found
   const failurePropagation = result && result.summary && result.summary.failurePropagation;
   const failureClass = failurePropagation ? failurePropagation.failureClass || failurePropagation.primaryFailureClass : null;
   return {
@@ -76,6 +92,7 @@ function resultFingerprint(result) {
     sortedKeys: keys,
     memoryLimited,
     memoryStopReason,
+    stoppedReason,
     failureClass,
     attempts: attempts.length,
   };
@@ -86,11 +103,16 @@ function assertParity(probeName, localResult, isolatedResult) {
   const isolatedFp = resultFingerprint(isolatedResult);
 
   // Both must not be resource-limited for parity to be meaningful (spec: "双方均未 resource-limited")
-  const localResourceLimited = localFp.memoryLimited || localFp.memoryStopReason === "rss-limit" || localFp.memoryStopReason === "heap-limit";
-  const isolatedResourceLimited = isolatedFp.memoryLimited || isolatedFp.memoryStopReason === "rss-limit" || isolatedFp.memoryStopReason === "heap-limit";
-  // Also check expansion / time limited? We treat any stoppedReason as resource-limited if present and found==false
-  const localStopped = localFp.memoryStopReason || null;
-  const isolatedStopped = isolatedFp.memoryStopReason || null;
+  const isResourceLimited = (fp) => {
+    if (fp.memoryLimited) return true;
+    if (["rss-limit", "heap-limit", "time-limit", "expansion-limit"].includes(fp.memoryStopReason)) return true;
+    if (["rss-limit", "heap-limit", "time-limit", "expansion-limit"].includes(fp.stoppedReason)) return true;
+    // Also treat any budget-exhausted with found==false as resource-limited for parity purposes
+    if (!fp.found && fp.stoppedReason) return true;
+    return false;
+  };
+  const localResourceLimited = isResourceLimited(localFp);
+  const isolatedResourceLimited = isResourceLimited(isolatedFp);
 
   const context = {
     probe: probeName,
@@ -100,36 +122,37 @@ function assertParity(probeName, localResult, isolatedResult) {
     isolatedTelemetry: isolatedResult.telemetry || null,
   };
 
-  // StateKey identity is already enforced inside isolated executor (strict counts). Verify counts here too.
-  const localKeys = localFp.sortedKeys;
-  const isolatedKeys = isolatedFp.sortedKeys;
-  // Input StateKey identity: frontier was same object; we just verify both runs consumed same startLimit (1 candidate)
   assert.strictEqual(
     (localResult.inputFrontier || []).length,
     (isolatedResult.inputFrontier || []).length,
     `${probeName}: inputFrontier length mismatch`
   );
 
-  // If either side is resource-limited, probe is inconclusive – report but don't fail parity.
-  // For Repair 1 gate we require at least one probe where both sides completed without resource limit.
+  // If either side is resource-limited, probe is inconclusive – Repair 2 treats this as FAIL (not PASS)
   const eitherResourceLimited = localResourceLimited || isolatedResourceLimited;
   if (eitherResourceLimited) {
-    return { parityChecked: false, reason: "resource-limited", context, eitherResourceLimited };
+    return { parityChecked: false, reason: "resource-limited", context, eitherResourceLimited, localResourceLimited, isolatedResourceLimited };
   }
 
-  // Hard parity asserts (both not resource-limited)
+  // Hard parity asserts (both not resource-limited) – Repair 2 requires exact stoppedReason parity
   assert.strictEqual(localFp.found, isolatedFp.found, `${probeName}: found mismatch local=${localFp.found} isolated=${isolatedFp.found}\n${JSON.stringify(context, null, 2)}`);
   assert.strictEqual(localFp.goalCount, isolatedFp.goalCount, `${probeName}: goalCount mismatch local=${localFp.goalCount} isolated=${isolatedFp.goalCount}\n${JSON.stringify(context, null, 2)}`);
   assert.deepStrictEqual(localFp.sortedKeys, isolatedFp.sortedKeys, `${probeName}: sorted output StateKey set mismatch\nlocal keys: ${localFp.sortedKeys.join("\n")}\n---\nisolated: ${isolatedFp.sortedKeys.join("\n")}`);
   assert.strictEqual(localFp.memoryLimited, isolatedFp.memoryLimited, `${probeName}: memoryLimited mismatch`);
   assert.strictEqual(localFp.memoryStopReason, isolatedFp.memoryStopReason, `${probeName}: memoryStopReason mismatch`);
+  assert.strictEqual(localFp.stoppedReason, isolatedFp.stoppedReason, `${probeName}: stoppedReason mismatch (canonical)`);
   assert.strictEqual(localFp.failureClass, isolatedFp.failureClass, `${probeName}: failureClass mismatch`);
 
-  // Also verify telemetry StateKey verification counts when available
+  // Verify telemetry StateKey verification counts and profile identity when available
   if (isolatedResult.telemetry) {
     assert.strictEqual(isolatedResult.telemetry.inputStateKeysVerified, (isolatedResult.inputFrontier || []).length, `${probeName}: isolated inputStateKeysVerified mismatch`);
     assert.strictEqual(isolatedResult.telemetry.outputStateKeysVerified, isolatedFp.goalCount, `${probeName}: isolated outputStateKeysVerified mismatch`);
     assert.strictEqual(isolatedResult.telemetry.stateRoundTripIdentity, true, `${probeName}: isolated stateRoundTripIdentity must be true`);
+    // Simulator profile identity – parent and worker must agree
+    if (isolatedResult.telemetry.requestedSimulatorProfile || isolatedResult.telemetry.appliedSimulatorProfile) {
+      assert.strictEqual(isolatedResult.telemetry.simulatorProfileIdentity, true, `${probeName}: simulatorProfileIdentity must be true`);
+      assert.deepStrictEqual(isolatedResult.telemetry.appliedSimulatorProfile, isolatedResult.telemetry.requestedSimulatorProfile, `${probeName}: simulator profile mismatch`);
+    }
   }
 
   return { parityChecked: true, context };
@@ -148,12 +171,10 @@ function main() {
   assert.ok(mt1ToMt2, "mt1-to-mt2 segment missing");
   assert.ok(mt2ToMt3, "mt2-to-mt3 segment missing");
 
-  // Use generous memory cap to avoid spurious resource-limited parity inconclusive, but still test real semantics.
-  // For parity gate we set high threshold so headroom (threshold - planner) won't artificially limit isolated vs local.
-  // Planner baseline after first DP is ~300 MB in this process; need >800 to keep headroom >500 for MT2->MT3.
+  // Use generous caps to avoid spurious resource-limited parity inconclusive
   const probeConfig = {
-    maxExpansions: 8000,
-    maxRuntimeMs: 15000,
+    maxExpansions: 10000,
+    maxRuntimeMs: 30000,
     maxRssMb: 1024,
     candidateLimit: 8,
   };
@@ -199,16 +220,15 @@ function main() {
     console.log(`Probe 2 (empty frontier) parityChecked=${p2.parityChecked}`);
   }
 
-  // Overall gate: at least one probe must have parityChecked===true and both non-resource-limited
-  const anyParityChecked = (p1.parityChecked || (p2 && p2.parityChecked));
-  if (!anyParityChecked) {
-    console.error("Parity gate inconclusive: both probes were resource-limited; increase budget and retry (do not change milestone).");
-    // For Repair 1, we still require at least MT1→MT2 to be non-resource-limited; if it is limited, fail gate so issue is visible.
-    throw new Error(`Parity gate unable to prove equivalence: p1 resourceLimited=${p1.eitherResourceLimited}, p2 resourceLimited=${p2 ? p2.eitherResourceLimited : "n/a"}`);
-  }
+  // Repair 2: FAIL-CLOSED parity gate – both probes must be conclusive and solver-generated frontier must exist
+  assert.ok(frontier1.length > 0, `Probe 2 requires solver-generated MT2 frontier, but frontier1.length=${frontier1.length} (MT1→MT2 produced no candidates)`);
+  assert.strictEqual(p1.parityChecked, true, `MT1→MT2 parity inconclusive: resourceLimited=${p1.eitherResourceLimited} – parity must be proven on non-resource-limited execution`);
+  assert.ok(p2, "MT2→MT3 probe missing");
+  assert.strictEqual(p2.parityChecked, true, `MT2→MT3 parity inconclusive: resourceLimited=${p2.eitherResourceLimited} – both probes must pass`);
 
-  // Report telemetry for resource headroom
+  // Report telemetry for resource headroom (Repair 2 atSpawn authoritative)
   const isolated1Telemetry = isolated1.telemetry || {};
+  const isolated2Telemetry = (typeof isolated2 !== "undefined" && isolated2 && isolated2.telemetry) ? isolated2.telemetry : {};
   console.log(JSON.stringify({
     schema: "motapathfinder.isolated-parity.v1",
     contractStatus: "passed",
@@ -220,22 +240,40 @@ function main() {
         localGoalCount: local1.merged.length,
         isolatedGoalCount: isolated1.merged.length,
         resourceLimited: p1.eitherResourceLimited || false,
+        stoppedReasonLocal: resultFingerprint(local1).stoppedReason,
+        stoppedReasonIsolated: resultFingerprint(isolated1).stoppedReason,
       },
       mt2ToMt3: p2 ? {
         parityChecked: p2.parityChecked,
+        localFound: local2 ? local2.merged.length > 0 : false,
+        isolatedFound: isolated2 ? isolated2.merged.length > 0 : false,
         resourceLimited: p2.eitherResourceLimited || false,
+        stoppedReasonLocal: local2 ? resultFingerprint(local2).stoppedReason : null,
+        stoppedReasonIsolated: isolated2 ? resultFingerprint(isolated2).stoppedReason : null,
       } : null,
     },
-    simulatorProfile: isolated1Telemetry.simulatorProfile || "implicit",
+    simulatorProfileIdentity: isolated1Telemetry.simulatorProfileIdentity === true,
+    requestedSimulatorProfile: isolated1Telemetry.requestedSimulatorProfile || null,
+    appliedSimulatorProfile: isolated1Telemetry.appliedSimulatorProfile || null,
     telemetry: {
       mt1ToMt2: {
-        plannerRssBeforeSpawnMb: isolated1Telemetry.plannerRssBeforeSpawnMb,
+        plannerRssBeforeSerializationMb: isolated1Telemetry.plannerRssBeforeSerializationMb,
+        plannerRssAtSpawnMb: isolated1Telemetry.plannerRssAtSpawnMb,
+        plannerRssAfterSpawnMb: isolated1Telemetry.plannerRssAfterSpawnMb,
         workerPeakRssMb: isolated1Telemetry.workerPeakRssMb,
         aggregateConcurrentRssUpperBoundMb: isolated1Telemetry.aggregateConcurrentRssUpperBoundMb,
+        workerMaxRssMb: isolated1Telemetry.workerMaxRssMb,
+        invocationId: isolated1Telemetry.invocationId,
         inputStateKeysVerified: isolated1Telemetry.inputStateKeysVerified,
         outputStateKeysVerified: isolated1Telemetry.outputStateKeysVerified,
         stateRoundTripIdentity: isolated1Telemetry.stateRoundTripIdentity,
-      }
+        simulatorProfileIdentity: isolated1Telemetry.simulatorProfileIdentity,
+      },
+      mt2ToMt3: isolated2Telemetry ? {
+        plannerRssAtSpawnMb: isolated2Telemetry.plannerRssAtSpawnMb,
+        aggregateConcurrentRssUpperBoundMb: isolated2Telemetry.aggregateConcurrentRssUpperBoundMb,
+        invocationId: isolated2Telemetry.invocationId,
+      } : null,
     }
   }, null, 2));
 }

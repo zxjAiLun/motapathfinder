@@ -49,6 +49,7 @@ function buildSimulatorProfile(simulator) {
     autoBattleEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoBattleEnabled) : true,
     autoBattleFastRejectEnabled: simulator.autoResolver ? simulator.autoResolver.enableFastRejectSkip === true : false,
     battleResolverEnableFastReject: simulator.battleResolver && typeof simulator.battleResolver.fastRejectClassifier === "function",
+    battleResolverType: simulator.battleResolver ? simulator.battleResolver.constructor.name : null,
     walkReachabilityMode: simulator.walkReachabilityMode || null,
     searchGraphMode: simulator.searchGraphMode || null,
     unsupported: false,
@@ -59,11 +60,12 @@ function buildSimulatorProfile(simulator) {
     profile.unsupported = true;
     profile.unsupportedReason = "custom-solverModel explicit not serializable";
   }
-  if (simulator.battleResolver && simulator.battleResolver.constructor && simulator.battleResolver.constructor.name !== "FunctionBackedBattleResolver" && simulator.battleResolver.constructor.name !== "UnsupportedBattleResolver") {
-    // Allow FunctionBacked only; anything else is considered unsupported for isolated mode
-    // Note: UnsupportedBattleResolver would fail anyway, but we treat as unsupported profile
-    profile.unsupported = true;
-    profile.unsupportedReason = `unsupported battleResolver ${simulator.battleResolver.constructor.name}`;
+  if (simulator.battleResolver && simulator.battleResolver.constructor) {
+    const name = simulator.battleResolver.constructor.name;
+    if (name !== "FunctionBackedBattleResolver") {
+      profile.unsupported = true;
+      profile.unsupportedReason = `unsupported battleResolver ${name} – isolated backend only supports FunctionBackedBattleResolver`;
+    }
   }
   // Resource macro flags not part of canonical isolated path – treat as unsupported if enabled
   if (simulator.enableResourceChain || simulator.enableResourceCluster || simulator.enableResourcePocket || simulator.enableFightToLevelUp) {
@@ -160,15 +162,8 @@ function executeIsolatedSegment(options) {
     };
   }
 
-  const plannerRssBeforeSpawnMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
-
-  // Compute worker headroom: threshold - planner (configurable, defaults to process-tree threshold)
-  const requestedStopMb = Number((config && config.maxRssMb) || PROCESS_TREE_RSS_STOP_THRESHOLD_MB);
-  const requestedHardMb = Number((config && config.maxRssHardCeilingMb) || PROCESS_TREE_RSS_HARD_CEILING_MB);
-  const effectiveStopThresholdMb = Number.isFinite(requestedStopMb) && requestedStopMb > 0 ? requestedStopMb : PROCESS_TREE_RSS_STOP_THRESHOLD_MB;
-  const effectiveHardThresholdMb = Number.isFinite(requestedHardMb) && requestedHardMb > effectiveStopThresholdMb ? requestedHardMb : effectiveStopThresholdMb + PROCESS_TREE_ALLOWED_OVERSHOOT_MB;
-  const workerMaxRssMb = Math.max(1, effectiveStopThresholdMb - plannerRssBeforeSpawnMb);
-  const workerHardCeilingMb = Math.max(1, effectiveHardThresholdMb - plannerRssBeforeSpawnMb);
+  // Repair 2: three-point planner RSS sampling – beforeSerialization / atSpawn / afterSpawn
+  const plannerRssBeforeSerializationMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
 
   // Child search reserve: don't expand parent deadline, reserve 2s inside child slice
   const childDeadlineMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedDeadlineMs - CHILD_EXIT_RESERVE_MS : assignedDeadlineMs;
@@ -176,7 +171,7 @@ function executeIsolatedSegment(options) {
 
   const simulatorProfile = buildSimulatorProfile(simulator);
   if (simulatorProfile && simulatorProfile.unsupported) {
-    const plannerRssAfterSpawnMb = plannerRssBeforeSpawnMb;
+    const plannerRssAfterSpawnMb = plannerRssBeforeSerializationMb;
     return {
       segment,
       inputFrontier,
@@ -199,11 +194,13 @@ function executeIsolatedSegment(options) {
       memoryLimited: false,
       memoryStopReason: null,
       telemetry: {
-        plannerRssBeforeSpawnMb,
+        plannerRssBeforeSerializationMb,
+        plannerRssAtSpawnMb: plannerRssBeforeSerializationMb,
+        plannerRssBeforeSpawnMb: plannerRssBeforeSerializationMb,
         plannerRssAfterSpawnMb,
         workerPeakRssMb: 0,
         workerStartRssMb: 0,
-        aggregateConcurrentRssUpperBoundMb: Math.max(plannerRssBeforeSpawnMb, plannerRssAfterSpawnMb),
+        aggregateConcurrentRssUpperBoundMb: Math.max(plannerRssBeforeSerializationMb, plannerRssAfterSpawnMb),
         processWallMs: 0,
         assignedExpansions,
         consumedExpansions: 0,
@@ -211,6 +208,9 @@ function executeIsolatedSegment(options) {
         inputStateKeysVerified: 0,
         outputStateKeysVerified: 0,
         stateRoundTripIdentity: false,
+        simulatorProfileIdentity: false,
+        requestedSimulatorProfile: simulatorProfile,
+        appliedSimulatorProfile: null,
       },
     };
   }
@@ -241,7 +241,15 @@ function executeIsolatedSegment(options) {
     };
   }
 
-  const workerPayload = {
+  // Compute initial worker headroom based on beforeSerialization (will be recomputed atSpawn)
+  const requestedStopMbInit = Number((config && config.maxRssMb) || PROCESS_TREE_RSS_STOP_THRESHOLD_MB);
+  const requestedHardMbInit = Number((config && config.maxRssHardCeilingMb) || PROCESS_TREE_RSS_HARD_CEILING_MB);
+  const effectiveStopThresholdMbInit = Number.isFinite(requestedStopMbInit) && requestedStopMbInit > 0 ? requestedStopMbInit : PROCESS_TREE_RSS_STOP_THRESHOLD_MB;
+  const effectiveHardThresholdMbInit = Number.isFinite(requestedHardMbInit) && requestedHardMbInit > effectiveStopThresholdMbInit ? requestedHardMbInit : effectiveStopThresholdMbInit + PROCESS_TREE_ALLOWED_OVERSHOOT_MB;
+  const workerMaxRssMbInit = Math.max(1, effectiveStopThresholdMbInit - plannerRssBeforeSerializationMb);
+  const workerHardCeilingMbInit = Math.max(1, effectiveHardThresholdMbInit - plannerRssBeforeSerializationMb);
+
+  let workerPayload = {
     projectRoot,
     segment,
     inputFrontier,
@@ -250,28 +258,49 @@ function executeIsolatedSegment(options) {
     assignedExpansions,
     assignedDeadlineMs,
     childDeadlineMs,
+    invocationId: runId,
     config: {
       ...(config || {}),
-      // Child authoritative budget – fairness allocator will slice among candidates
       globalBudget: childGlobalBudget,
-      // Explicit absolute deadline for worker (already included in globalBudget, but also top-level for fallback)
       deadlineMs: childDeadlineMs,
-      // Worker search caps: expansions total budget, runtime with reserve, RSS headroom
       maxExpansions: assignedExpansions,
       maxRuntimeMs: childSearchRuntimeMs,
-      maxRssMb: workerMaxRssMb,
-      // Keep hard ceiling info for telemetry (worker may enforce plus telemetry)
-      maxRssHardCeilingMb: workerHardCeilingMb,
-      // Preserve original assigned for parent assertion (also top-level)
+      maxRssMb: workerMaxRssMbInit,
+      maxRssHardCeilingMb: workerHardCeilingMbInit,
       assignedExpansions,
       assignedDeadlineMs: childDeadlineMs,
-      // Clear parent deadline references that would confuse worker
       deadlineEpochMs: undefined,
     },
     overrides: overrides || {},
   };
 
-  fs.writeFileSync(inputPath, JSON.stringify(workerPayload));
+  // Serialize payload – capture string temporarily then release
+  let payloadJson = JSON.stringify(workerPayload);
+  fs.writeFileSync(inputPath, payloadJson);
+  // Release transient serialization allocations before atSpawn measurement
+  payloadJson = null;
+  // Allow GC to reclaim serialization buffers if available
+  if (typeof global.gc === "function") {
+    try { global.gc(); } catch (_) {}
+  }
+  const plannerRssAtSpawnMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+
+  // Recompute worker headroom based on atSpawn (authoritative)
+  const effectiveStopThresholdMb = effectiveStopThresholdMbInit;
+  const effectiveHardThresholdMb = effectiveHardThresholdMbInit;
+  const workerMaxRssMb = Math.max(1, effectiveStopThresholdMb - plannerRssAtSpawnMb);
+  const workerHardCeilingMb = Math.max(1, effectiveHardThresholdMb - plannerRssAtSpawnMb);
+  // Update payload on disk if headroom changed
+  if (workerMaxRssMb !== workerMaxRssMbInit || workerHardCeilingMb !== workerHardCeilingMbInit) {
+    workerPayload.config.maxRssMb = workerMaxRssMb;
+    workerPayload.config.maxRssHardCeilingMb = workerHardCeilingMb;
+    fs.writeFileSync(inputPath, JSON.stringify(workerPayload));
+  }
+  // Release payload reference after atSpawn (payload stays on disk)
+  workerPayload = null;
+  if (typeof global.gc === "function") {
+    try { global.gc(); } catch (_) {}
+  }
 
   const workerScript = path.resolve(__dirname, "../segment-worker.js");
   // Parent wall timeout: assigned runtime + small grace (not +2000 expansion). Reserve already inside child.
@@ -317,6 +346,7 @@ function executeIsolatedSegment(options) {
       if (isTimeout) globalBudget.stoppedReason = "time-limit";
       globalBudget.consumedWallMs = Date.now() - globalBudget.startedAt;
     }
+    const maxPlannerRss = Math.max(plannerRssBeforeSerializationMb, plannerRssAtSpawnMb, plannerRssAfterSpawnMb);
     return {
       segment,
       inputFrontier,
@@ -339,11 +369,18 @@ function executeIsolatedSegment(options) {
       memoryLimited: false,
       memoryStopReason: null,
       telemetry: {
-        plannerRssBeforeSpawnMb,
+        plannerRssBeforeSerializationMb,
+        plannerRssAtSpawnMb,
+        plannerRssBeforeSpawnMb: plannerRssAtSpawnMb,
         plannerRssAfterSpawnMb,
         workerPeakRssMb: 0,
         workerStartRssMb: 0,
-        aggregateConcurrentRssUpperBoundMb: Math.max(plannerRssBeforeSpawnMb, plannerRssAfterSpawnMb),
+        aggregateConcurrentRssUpperBoundMb: maxPlannerRss,
+        maxPlannerRssDuringIsolatedExecutionMb: maxPlannerRss,
+        maxWorkerPeakRssMb: 0,
+        maxAggregateConcurrentRssUpperBoundMb: maxPlannerRss,
+        isolatedInvocationCount: 1,
+        invocationId: runId,
         processWallMs,
         assignedExpansions,
         consumedExpansions: 0,
@@ -351,6 +388,9 @@ function executeIsolatedSegment(options) {
         inputStateKeysVerified: 0,
         outputStateKeysVerified: 0,
         stateRoundTripIdentity: false,
+        simulatorProfileIdentity: false,
+        requestedSimulatorProfile: simulatorProfile,
+        appliedSimulatorProfile: workerResponse ? workerResponse.appliedSimulatorProfile : null,
       },
     };
   }
@@ -408,10 +448,29 @@ function executeIsolatedSegment(options) {
     }
   }
 
+  // Simulator profile identity check (Repair 2)
+  const requestedSimulatorProfile = simulatorProfile;
+  const appliedSimulatorProfile = workerResponse.appliedSimulatorProfile || null;
+  let simulatorProfileIdentity = false;
+  if (appliedSimulatorProfile && requestedSimulatorProfile) {
+    try {
+      simulatorProfileIdentity = JSON.stringify(appliedSimulatorProfile) === JSON.stringify(requestedSimulatorProfile);
+    } catch (_) {
+      simulatorProfileIdentity = false;
+    }
+    if (!simulatorProfileIdentity) {
+      throw new Error(`Simulator profile mismatch: requested ${JSON.stringify(requestedSimulatorProfile)} != applied ${JSON.stringify(appliedSimulatorProfile)}`);
+    }
+  } else if (!appliedSimulatorProfile && requestedSimulatorProfile) {
+    // Worker didn't return profile – treat as mismatch unless worker is old (fail-closed)
+    throw new Error(`Missing appliedSimulatorProfile in worker response`);
+  }
+
   const workerPeakRssMb = Number(workerResponse.workerPeakRssMb || 0);
   const workerStartRssMb = Number(workerResponse.workerStartRssMb || 0);
   const workerEndRssMb = Number(workerResponse.workerEndRssMb || 0);
-  const aggregateConcurrentRssUpperBoundMb = Math.round((Math.max(plannerRssBeforeSpawnMb, plannerRssAfterSpawnMb) + workerPeakRssMb) * 10) / 10;
+  const maxPlannerRss = Math.max(plannerRssBeforeSerializationMb, plannerRssAtSpawnMb, plannerRssAfterSpawnMb);
+  const aggregateConcurrentRssUpperBoundMb = Math.round((maxPlannerRss + workerPeakRssMb) * 10) / 10;
 
   return {
     segment,
@@ -423,16 +482,19 @@ function executeIsolatedSegment(options) {
     memoryLimited: Boolean(workerResponse.memoryLimited),
     memoryStopReason: workerResponse.memoryStopReason || null,
     telemetry: {
-      plannerRssBeforeSpawnMb,
+      plannerRssBeforeSerializationMb,
+      plannerRssAtSpawnMb,
+      plannerRssBeforeSpawnMb: plannerRssAtSpawnMb,
       plannerRssAfterSpawnMb,
       workerStartRssMb,
       workerEndRssMb,
       workerPeakRssMb,
       aggregateConcurrentRssUpperBoundMb,
-      maxPlannerRssDuringIsolatedExecutionMb: Math.max(plannerRssBeforeSpawnMb, plannerRssAfterSpawnMb),
+      maxPlannerRssDuringIsolatedExecutionMb: maxPlannerRss,
       maxWorkerPeakRssMb: workerPeakRssMb,
       maxAggregateConcurrentRssUpperBoundMb: aggregateConcurrentRssUpperBoundMb,
       isolatedInvocationCount: 1,
+      invocationId: runId,
       processWallMs,
       searchWallMs: workerResponse.searchWallMs || processWallMs,
       assignedExpansions,
@@ -443,6 +505,9 @@ function executeIsolatedSegment(options) {
       inputStateKeysVerified,
       outputStateKeysVerified,
       stateRoundTripIdentity,
+      simulatorProfileIdentity,
+      requestedSimulatorProfile,
+      appliedSimulatorProfile,
     },
   };
 }

@@ -15,6 +15,10 @@ function buildSimulatorFromProfile(project, profile) {
     console.error(`Unsupported simulator profile in worker: ${profile.unsupportedReason}`);
     process.exit(3);
   }
+  if (profile && profile.battleResolverType && profile.battleResolverType !== "FunctionBackedBattleResolver") {
+    console.error(`Unsupported battleResolverType in worker: ${profile.battleResolverType}`);
+    process.exit(3);
+  }
   const stopFloorId = (profile && profile.stopFloorId) || "MT11";
   const enableFastHazardBlockIndex = profile ? profile.enableFastHazardBlockIndex !== false : true;
   const enableCompiledEffectCache = profile ? Boolean(profile.enableCompiledEffectCache) : false;
@@ -22,7 +26,9 @@ function buildSimulatorFromProfile(project, profile) {
   const autoBattleEnabled = profile ? profile.autoBattleEnabled !== false : true;
   const autoBattleFastRejectEnabled = profile ? profile.autoBattleFastRejectEnabled === true : true;
   const battleEnableFastReject = profile ? profile.battleResolverEnableFastReject !== false : true;
-  const simulator = new StaticSimulator(project, {
+  const walkReachabilityMode = profile && profile.walkReachabilityMode ? String(profile.walkReachabilityMode) : undefined;
+  const searchGraphMode = profile && profile.searchGraphMode ? String(profile.searchGraphMode) : undefined;
+  const simulatorOptions = {
     stopFloorId,
     battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: battleEnableFastReject }),
     autoBattleFastRejectEnabled,
@@ -31,10 +37,30 @@ function buildSimulatorFromProfile(project, profile) {
     enableFastHazardBlockIndex,
     enableCompiledEffectCache,
     choiceResolver,
-  });
-  // Attach choiceResolver for later inspection if needed
+  };
+  if (walkReachabilityMode) simulatorOptions.walkReachabilityMode = walkReachabilityMode;
+  if (searchGraphMode) simulatorOptions.searchGraphMode = searchGraphMode;
+  const simulator = new StaticSimulator(project, simulatorOptions);
   simulator.__workerChoiceResolver = choiceResolver;
   return simulator;
+}
+
+function buildAppliedProfile(simulator) {
+  if (!simulator) return null;
+  return {
+    stopFloorId: simulator.stopFloorId || "MT11",
+    enableFastHazardBlockIndex: simulator.enableFastHazardBlockIndex !== false,
+    enableCompiledEffectCache: Boolean(simulator.enableCompiledEffectCache),
+    autoPickupEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoPickupEnabled) : true,
+    autoBattleEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoBattleEnabled) : true,
+    autoBattleFastRejectEnabled: simulator.autoResolver ? simulator.autoResolver.enableFastRejectSkip === true : false,
+    battleResolverEnableFastReject: simulator.battleResolver && typeof simulator.battleResolver.fastRejectClassifier === "function",
+    battleResolverType: simulator.battleResolver ? simulator.battleResolver.constructor.name : null,
+    walkReachabilityMode: simulator.walkReachabilityMode || null,
+    searchGraphMode: simulator.searchGraphMode || null,
+    unsupported: false,
+    unsupportedReason: null,
+  };
 }
 
 function main() {
@@ -64,6 +90,7 @@ function main() {
       choiceResolver,
     });
   }
+  const appliedSimulatorProfile = buildAppliedProfile(simulator);
 
   // P2: strict input StateKey verification – counts must match exactly
   const inputFrontier = Array.isArray(payload.inputFrontier) ? payload.inputFrontier : [];
@@ -162,6 +189,10 @@ function main() {
     assignedDeadlineMs,
     childDeadlineMs,
     deadlineEpochMs: assignedDeadlineMs || childDeadlineMs || null,
+    invocationId: payload.invocationId || null,
+    appliedSimulatorProfile,
+    requestedSimulatorProfile: payload.simulatorProfile || null,
+    simulatorProfileIdentity: payload.simulatorProfile ? JSON.stringify(appliedSimulatorProfile) === JSON.stringify(payload.simulatorProfile) : true,
     searchWallMs,
     workerStartRssMb,
     workerEndRssMb,

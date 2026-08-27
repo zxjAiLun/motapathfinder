@@ -4472,11 +4472,21 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     maxConsumedExpansionsPerInvocation: 0,
     records: [],
   };
+  const seenInvocationIds = new Set();
   const recordIsolatedTelemetry = (execution) => {
     if (!execution || !execution.telemetry) return;
     const t = execution.telemetry;
+    const invocationId = t.invocationId || t.runId || null;
+    if (invocationId && seenInvocationIds.has(invocationId)) return;
+    if (invocationId) seenInvocationIds.add(invocationId);
     isolatedProcessTreeTelemetry.isolatedInvocationCount += 1;
-    const plannerMax = Math.max(Number(t.plannerRssBeforeSpawnMb || 0), Number(t.plannerRssAfterSpawnMb || 0), Number(t.maxPlannerRssDuringIsolatedExecutionMb || 0));
+    const plannerMax = Math.max(
+      Number(t.plannerRssBeforeSerializationMb || 0),
+      Number(t.plannerRssBeforeSpawnMb || 0),
+      Number(t.plannerRssAtSpawnMb || 0),
+      Number(t.plannerRssAfterSpawnMb || 0),
+      Number(t.maxPlannerRssDuringIsolatedExecutionMb || 0)
+    );
     if (plannerMax > isolatedProcessTreeTelemetry.maxPlannerRssDuringIsolatedExecutionMb) isolatedProcessTreeTelemetry.maxPlannerRssDuringIsolatedExecutionMb = plannerMax;
     const workerPeak = Number(t.workerPeakRssMb || t.maxWorkerPeakRssMb || 0);
     if (workerPeak > isolatedProcessTreeTelemetry.maxWorkerPeakRssMb) isolatedProcessTreeTelemetry.maxWorkerPeakRssMb = workerPeak;
