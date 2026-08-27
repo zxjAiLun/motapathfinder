@@ -954,6 +954,22 @@
       },
       "notes": "PR-5.17a2 route-free terminal dependency, checkpoint feedback, blocker repair, and local canonical DP loop; D2 remains open"
     },
+    "shared-solver/lib/isolated-segment-executor.js": {
+      "id": "isolated-segment-executor",
+      "path": "shared-solver/lib/isolated-segment-executor.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/iterative-route-repair.js": {
       "id": "iterative-route-repair",
       "path": "shared-solver/lib/iterative-route-repair.js",
@@ -2832,6 +2848,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "synthetic hybrid-fair agenda contract; no tower/project load"
+    },
+    "shared-solver/check-isolated-parity.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-key-dependency-contract.js": {
       "grade": "unit-plus-micro",

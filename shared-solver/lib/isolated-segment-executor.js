@@ -6,27 +6,121 @@ const path = require("node:path");
 const childProcess = require("node:child_process");
 const { buildStateKey } = require("./state-key");
 
+const PROCESS_TREE_RSS_STOP_THRESHOLD_MB = 256;
+const PROCESS_TREE_RSS_HARD_CEILING_MB = 260;
+const PROCESS_TREE_ALLOWED_OVERSHOOT_MB = 4;
+const CHILD_EXIT_RESERVE_MS = 2000;
+
+function numericOption(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function resolveStartCandidateLimit(segment, config, overrides, frontierLength) {
+  return numericOption(
+    overrides && overrides.startCandidateLimit,
+    numericOption(
+      config && config.startCandidateLimit,
+      numericOption(
+        segment && segment.dp && segment.dp.startCandidateLimit,
+        frontierLength == null ? null : (frontierLength || 1)
+      )
+    )
+  );
+}
+
+function segmentCandidateLimit(segment, config, overrides) {
+  return numericOption(
+    overrides && overrides.candidateLimit,
+    numericOption(
+      config && config.candidateLimit,
+      numericOption(segment && segment.dp && segment.dp.goalSkylineLimit, 8)
+    )
+  );
+}
+
+function buildSimulatorProfile(simulator) {
+  if (!simulator) return null;
+  const profile = {
+    stopFloorId: simulator.stopFloorId || "MT11",
+    enableFastHazardBlockIndex: simulator.enableFastHazardBlockIndex !== false,
+    enableCompiledEffectCache: Boolean(simulator.enableCompiledEffectCache),
+    autoPickupEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoPickupEnabled) : true,
+    autoBattleEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoBattleEnabled) : true,
+    autoBattleFastRejectEnabled: simulator.autoResolver ? simulator.autoResolver.enableFastRejectSkip === true : false,
+    battleResolverEnableFastReject: simulator.battleResolver && typeof simulator.battleResolver.fastRejectClassifier === "function",
+    walkReachabilityMode: simulator.walkReachabilityMode || null,
+    searchGraphMode: simulator.searchGraphMode || null,
+    unsupported: false,
+    unsupportedReason: null,
+  };
+  // Detect unsupported customizations that cannot be safely replicated in worker
+  if (simulator.solverModel && simulator.solverModel.explicit) {
+    profile.unsupported = true;
+    profile.unsupportedReason = "custom-solverModel explicit not serializable";
+  }
+  if (simulator.battleResolver && simulator.battleResolver.constructor && simulator.battleResolver.constructor.name !== "FunctionBackedBattleResolver" && simulator.battleResolver.constructor.name !== "UnsupportedBattleResolver") {
+    // Allow FunctionBacked only; anything else is considered unsupported for isolated mode
+    // Note: UnsupportedBattleResolver would fail anyway, but we treat as unsupported profile
+    profile.unsupported = true;
+    profile.unsupportedReason = `unsupported battleResolver ${simulator.battleResolver.constructor.name}`;
+  }
+  // Resource macro flags not part of canonical isolated path – treat as unsupported if enabled
+  if (simulator.enableResourceChain || simulator.enableResourceCluster || simulator.enableResourcePocket || simulator.enableFightToLevelUp) {
+    profile.unsupported = true;
+    profile.unsupportedReason = "resource macro enabled (resourceChain/cluster/pocket/fightToLevelUp) not serialized for isolated mode";
+  }
+  return profile;
+}
+
 function executeIsolatedSegment(options) {
   const { simulator, segment, frontier, config, overrides } = options;
   const projectRoot = (simulator && simulator.project && (simulator.project.root || simulator.project.projectRoot)) ||
     (config && (config.projectRoot || config.projectPath)) ||
     path.resolve(__dirname, "../..", "Only upV2.1", "Only upV2.1");
 
-  const startLimit = (config && config.candidateLimit != null)
-    ? Math.max(1, Number(config.candidateLimit))
-    : (frontier || []).length;
+  // P2: use proper resolver for startLimit (not candidateLimit)
+  const resolvedStartLimit = resolveStartCandidateLimit(segment, config || {}, overrides || {}, (frontier || []).length);
+  const startLimit = resolvedStartLimit != null ? Math.max(1, Number(resolvedStartLimit)) : (frontier || []).length;
   const inputFrontier = (frontier || []).slice(0, startLimit);
+  const candidateLimit = segmentCandidateLimit(segment, config || {}, overrides || {});
 
   const globalBudget = config && config.globalBudget;
-  const deadlineEpochMs = (globalBudget && globalBudget.deadlineMs) ||
-    (config && config.deadlineMs) ||
-    (Date.now() + Number((config && config.maxRuntimeMs) || 30000));
-  const globalRemainingExpansions = globalBudget && globalBudget.requestedExpansions > 0
-    ? Math.max(0, globalBudget.requestedExpansions - globalBudget.consumedExpansions)
-    : Number((config && config.maxExpansions) || 50000);
-  const globalRemainingRuntimeMs = Math.max(0, deadlineEpochMs - Date.now());
+  const now = Date.now();
+  let assignedDeadlineMs;
+  let assignedRuntimeMs;
+  let globalRemainingExpansions = null;
+  let globalRemainingRuntimeMs = null;
 
-  if (globalBudget && (globalRemainingExpansions <= 0 || globalRemainingRuntimeMs <= 0)) {
+  if (globalBudget && globalBudget.deadlineMs != null && Number.isFinite(Number(globalBudget.deadlineMs))) {
+    assignedDeadlineMs = Number(globalBudget.deadlineMs);
+    globalRemainingRuntimeMs = Math.max(0, assignedDeadlineMs - now);
+  } else if (config && config.deadlineMs != null && Number.isFinite(Number(config.deadlineMs))) {
+    assignedDeadlineMs = Number(config.deadlineMs);
+    globalRemainingRuntimeMs = Math.max(0, assignedDeadlineMs - now);
+  } else {
+    assignedRuntimeMs = Math.max(0, Number((config && config.maxRuntimeMs) || 30000));
+    assignedDeadlineMs = now + assignedRuntimeMs;
+    globalRemainingRuntimeMs = assignedRuntimeMs;
+  }
+  if (assignedRuntimeMs == null) {
+    assignedRuntimeMs = globalRemainingRuntimeMs;
+  }
+
+  if (globalBudget && globalBudget.requestedExpansions > 0) {
+    globalRemainingExpansions = Math.max(0, globalBudget.requestedExpansions - globalBudget.consumedExpansions);
+  }
+
+  let assignedExpansions;
+  if (globalRemainingExpansions != null) {
+    assignedExpansions = globalRemainingExpansions;
+  } else {
+    assignedExpansions = Number((config && config.maxExpansions) || 50000);
+    if (!Number.isFinite(assignedExpansions) || assignedExpansions <= 0) assignedExpansions = 50000;
+  }
+
+  // Fail-closed if already exhausted before spawn
+  if (globalBudget && ((globalRemainingExpansions != null && globalRemainingExpansions <= 0) || (globalRemainingRuntimeMs != null && globalRemainingRuntimeMs <= 0))) {
     globalBudget.stoppedReason = globalRemainingRuntimeMs <= 0 ? "time-limit" : "expansion-limit";
     return {
       segment,
@@ -46,31 +140,133 @@ function executeIsolatedSegment(options) {
           reason: globalBudget.stoppedReason,
         },
       },
-      candidateLimit: startLimit,
+      candidateLimit,
       memoryLimited: false,
       memoryStopReason: null,
+      telemetry: {
+        plannerRssBeforeSpawnMb: Math.round((process.memoryUsage().rss / 1048576) * 10) / 10,
+        plannerRssAfterSpawnMb: Math.round((process.memoryUsage().rss / 1048576) * 10) / 10,
+        workerPeakRssMb: 0,
+        workerStartRssMb: 0,
+        aggregateConcurrentRssUpperBoundMb: Math.round((process.memoryUsage().rss / 1048576) * 10) / 10,
+        processWallMs: 0,
+        assignedExpansions,
+        consumedExpansions: 0,
+        deadlineEpochMs: assignedDeadlineMs,
+        inputStateKeysVerified: 0,
+        outputStateKeysVerified: 0,
+        stateRoundTripIdentity: false,
+      },
     };
   }
 
   const plannerRssBeforeSpawnMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+
+  // Compute worker headroom: threshold - planner (configurable, defaults to process-tree threshold)
+  const requestedStopMb = Number((config && config.maxRssMb) || PROCESS_TREE_RSS_STOP_THRESHOLD_MB);
+  const requestedHardMb = Number((config && config.maxRssHardCeilingMb) || PROCESS_TREE_RSS_HARD_CEILING_MB);
+  const effectiveStopThresholdMb = Number.isFinite(requestedStopMb) && requestedStopMb > 0 ? requestedStopMb : PROCESS_TREE_RSS_STOP_THRESHOLD_MB;
+  const effectiveHardThresholdMb = Number.isFinite(requestedHardMb) && requestedHardMb > effectiveStopThresholdMb ? requestedHardMb : effectiveStopThresholdMb + PROCESS_TREE_ALLOWED_OVERSHOOT_MB;
+  const workerMaxRssMb = Math.max(1, effectiveStopThresholdMb - plannerRssBeforeSpawnMb);
+  const workerHardCeilingMb = Math.max(1, effectiveHardThresholdMb - plannerRssBeforeSpawnMb);
+
+  // Child search reserve: don't expand parent deadline, reserve 2s inside child slice
+  const childDeadlineMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedDeadlineMs - CHILD_EXIT_RESERVE_MS : assignedDeadlineMs;
+  const childSearchRuntimeMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedRuntimeMs - CHILD_EXIT_RESERVE_MS : Math.max(1, assignedRuntimeMs);
+
+  const simulatorProfile = buildSimulatorProfile(simulator);
+  if (simulatorProfile && simulatorProfile.unsupported) {
+    const plannerRssAfterSpawnMb = plannerRssBeforeSpawnMb;
+    return {
+      segment,
+      inputFrontier,
+      merged: [],
+      attempts: [],
+      summary: {
+        segmentId: segment.id,
+        label: segment.label,
+        found: false,
+        startCandidatesTried: inputFrontier.length,
+        candidates: [],
+        attempts: [],
+        failurePropagation: {
+          failureClass: "unsupported-simulator-profile",
+          primaryFailureClass: "unsupported-simulator-profile",
+          reason: simulatorProfile.unsupportedReason,
+        },
+      },
+      candidateLimit,
+      memoryLimited: false,
+      memoryStopReason: null,
+      telemetry: {
+        plannerRssBeforeSpawnMb,
+        plannerRssAfterSpawnMb,
+        workerPeakRssMb: 0,
+        workerStartRssMb: 0,
+        aggregateConcurrentRssUpperBoundMb: Math.max(plannerRssBeforeSpawnMb, plannerRssAfterSpawnMb),
+        processWallMs: 0,
+        assignedExpansions,
+        consumedExpansions: 0,
+        deadlineEpochMs: assignedDeadlineMs,
+        inputStateKeysVerified: 0,
+        outputStateKeysVerified: 0,
+        stateRoundTripIdentity: false,
+      },
+    };
+  }
+
   const parentInputStateKeys = inputFrontier.map((cand) => buildStateKey(cand.state));
+  // P2: strict count check before spawn (fail-closed if parent keys count mismatched)
+  if (parentInputStateKeys.length !== inputFrontier.length) {
+    throw new Error(`Input frontier length ${inputFrontier.length} != parentInputStateKeys length ${parentInputStateKeys.length}`);
+  }
 
   const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const tmpDir = os.tmpdir();
   const inputPath = path.join(tmpDir, `segment-input-${runId}.json`);
   const outputPath = path.join(tmpDir, `segment-output-${runId}.json`);
 
+  // Build child globalBudget if parent had global budget authority
+  let childGlobalBudget = null;
+  if (globalBudget) {
+    childGlobalBudget = {
+      scope: "global-run",
+      requestedExpansions: assignedExpansions,
+      requestedRuntimeMs: childSearchRuntimeMs,
+      consumedExpansions: 0,
+      consumedWallMs: 0,
+      startedAt: Date.now(),
+      deadlineMs: childDeadlineMs,
+      stoppedReason: null,
+    };
+  }
+
   const workerPayload = {
     projectRoot,
     segment,
     inputFrontier,
     parentInputStateKeys,
+    simulatorProfile,
+    assignedExpansions,
+    assignedDeadlineMs,
+    childDeadlineMs,
     config: {
       ...(config || {}),
-      globalBudget: undefined,
-      deadlineEpochMs,
-      maxExpansions: globalRemainingExpansions,
-      maxRuntimeMs: globalRemainingRuntimeMs,
+      // Child authoritative budget – fairness allocator will slice among candidates
+      globalBudget: childGlobalBudget,
+      // Explicit absolute deadline for worker (already included in globalBudget, but also top-level for fallback)
+      deadlineMs: childDeadlineMs,
+      // Worker search caps: expansions total budget, runtime with reserve, RSS headroom
+      maxExpansions: assignedExpansions,
+      maxRuntimeMs: childSearchRuntimeMs,
+      maxRssMb: workerMaxRssMb,
+      // Keep hard ceiling info for telemetry (worker may enforce plus telemetry)
+      maxRssHardCeilingMb: workerHardCeilingMb,
+      // Preserve original assigned for parent assertion (also top-level)
+      assignedExpansions,
+      assignedDeadlineMs: childDeadlineMs,
+      // Clear parent deadline references that would confuse worker
+      deadlineEpochMs: undefined,
     },
     overrides: overrides || {},
   };
@@ -78,7 +274,8 @@ function executeIsolatedSegment(options) {
   fs.writeFileSync(inputPath, JSON.stringify(workerPayload));
 
   const workerScript = path.resolve(__dirname, "../segment-worker.js");
-  const spawnTimeout = Math.max(1000, globalRemainingRuntimeMs + 2000);
+  // Parent wall timeout: assigned runtime + small grace (not +2000 expansion). Reserve already inside child.
+  const spawnTimeout = Math.max(1000, assignedRuntimeMs + 1000);
   const spawnStartedAt = Date.now();
 
   let childExitCode = -1;
@@ -115,13 +312,11 @@ function executeIsolatedSegment(options) {
   if (childExitCode !== 0 || !workerResponse || !workerResponse.success) {
     const isTimeout = spawnError && spawnError.code === "ETIMEDOUT";
     const failureClass = isTimeout ? "time-limit" : "subprocess-execution-failed";
-    const failureReason = isTimeout ? "child worker execution timed out" : `child worker exited with code ${childExitCode}: ${spawnStderr}`;
-
+    const failureReason = isTimeout ? "child worker execution timed out" : `child worker exited with code ${childExitCode}: ${spawnStderr.slice(0, 2000)}`;
     if (globalBudget) {
       if (isTimeout) globalBudget.stoppedReason = "time-limit";
       globalBudget.consumedWallMs = Date.now() - globalBudget.startedAt;
     }
-
     return {
       segment,
       inputFrontier,
@@ -140,30 +335,71 @@ function executeIsolatedSegment(options) {
           reason: failureReason,
         },
       },
-      candidateLimit: startLimit,
+      candidateLimit,
       memoryLimited: false,
       memoryStopReason: null,
       telemetry: {
         plannerRssBeforeSpawnMb,
         plannerRssAfterSpawnMb,
         workerPeakRssMb: 0,
+        workerStartRssMb: 0,
         aggregateConcurrentRssUpperBoundMb: Math.max(plannerRssBeforeSpawnMb, plannerRssAfterSpawnMb),
         processWallMs,
+        assignedExpansions,
+        consumedExpansions: 0,
+        deadlineEpochMs: assignedDeadlineMs,
+        inputStateKeysVerified: 0,
+        outputStateKeysVerified: 0,
+        stateRoundTripIdentity: false,
       },
     };
   }
 
-  // Round-trip state key verification on returned merged candidates
-  const merged = workerResponse.merged || [];
-  for (const cand of merged) {
-    const parentKey = buildStateKey(cand.state);
-    if (cand.outputStateKey && parentKey !== cand.outputStateKey) {
-      throw new Error(`Round-trip stateKey mismatch on output candidate ${cand.id}: worker ${cand.outputStateKey} !== parent ${parentKey}`);
-    }
+  // P1-1: hard assert worker consumed <= assigned BEFORE updating ledger
+  const consumedExpansions = Number(workerResponse.consumedExpansions || 0);
+  const workerAssignedExpansions = Number(workerResponse.assignedExpansions || assignedExpansions);
+  if (globalBudget && consumedExpansions > workerAssignedExpansions) {
+    throw new Error(`Worker budget overrun: consumed ${consumedExpansions} > assigned ${workerAssignedExpansions}`);
+  }
+  if (globalBudget && consumedExpansions > assignedExpansions) {
+    throw new Error(`Worker budget overrun vs parent assigned: consumed ${consumedExpansions} > parent assigned ${assignedExpansions}`);
+  }
+  // Wall check: worker search should not exceed assignedRuntimeMs (with small grace)
+  const workerSearchWallMs = Number(workerResponse.searchWallMs || 0);
+  if (globalBudget && workerSearchWallMs > assignedRuntimeMs + 500) {
+    // Allow 500ms grace for process exit, but hard fail if significantly over
+    throw new Error(`Worker wall overrun: searchWallMs ${workerSearchWallMs} > assignedRuntimeMs ${assignedRuntimeMs}`);
   }
 
-  // Update parent global budget authoritatively
-  const consumedExpansions = Number(workerResponse.consumedExpansions || 0);
+  // P2: strict StateKey protocol – input count already verified by worker, but parent verifies output strictly
+  const merged = workerResponse.merged || [];
+  // Verify every output has outputStateKey and matches parent recomputed key (fail-closed)
+  let outputStateKeysVerified = 0;
+  for (const cand of merged) {
+    if (!cand.outputStateKey) {
+      throw new Error(`Missing outputStateKey on output candidate ${cand.id}: subprocess protocol failure`);
+    }
+    const parentKey = buildStateKey(cand.state);
+    if (parentKey !== cand.outputStateKey) {
+      throw new Error(`Round-trip stateKey mismatch on output candidate ${cand.id}: worker ${cand.outputStateKey} !== parent ${parentKey}`);
+    }
+    outputStateKeysVerified += 1;
+  }
+  // Counts must match exactly; missing key already throws, but also verify lengths if mismatch between verified and expected
+  const inputStateKeysVerified = Number(workerResponse.inputStateKeysVerified || parentInputStateKeys.length);
+  // If worker reported verification counts, hard assert they match expected
+  if (workerResponse.inputFrontierLength != null && workerResponse.inputFrontierLength !== inputFrontier.length) {
+    throw new Error(`Worker inputFrontierLength ${workerResponse.inputFrontierLength} != parent ${inputFrontier.length}`);
+  }
+  if (inputStateKeysVerified !== inputFrontier.length) {
+    throw new Error(`Input StateKey verification count ${inputStateKeysVerified} != inputFrontier length ${inputFrontier.length}`);
+  }
+  if (outputStateKeysVerified !== merged.length) {
+    throw new Error(`Output StateKey verification count ${outputStateKeysVerified} != merged length ${merged.length}`);
+  }
+  const stateRoundTripIdentity = inputStateKeysVerified === inputFrontier.length && outputStateKeysVerified === merged.length;
+
+  // Update parent global budget authoritatively AFTER assertions
   if (globalBudget) {
     globalBudget.consumedExpansions += consumedExpansions;
     globalBudget.consumedWallMs = Date.now() - globalBudget.startedAt;
@@ -173,6 +409,8 @@ function executeIsolatedSegment(options) {
   }
 
   const workerPeakRssMb = Number(workerResponse.workerPeakRssMb || 0);
+  const workerStartRssMb = Number(workerResponse.workerStartRssMb || 0);
+  const workerEndRssMb = Number(workerResponse.workerEndRssMb || 0);
   const aggregateConcurrentRssUpperBoundMb = Math.round((Math.max(plannerRssBeforeSpawnMb, plannerRssAfterSpawnMb) + workerPeakRssMb) * 10) / 10;
 
   return {
@@ -181,20 +419,37 @@ function executeIsolatedSegment(options) {
     merged,
     attempts: workerResponse.attempts || [],
     summary: workerResponse.summary || {},
-    candidateLimit: workerResponse.candidateLimit || startLimit,
+    candidateLimit: workerResponse.candidateLimit || candidateLimit,
     memoryLimited: Boolean(workerResponse.memoryLimited),
     memoryStopReason: workerResponse.memoryStopReason || null,
     telemetry: {
       plannerRssBeforeSpawnMb,
       plannerRssAfterSpawnMb,
+      workerStartRssMb,
+      workerEndRssMb,
       workerPeakRssMb,
       aggregateConcurrentRssUpperBoundMb,
+      maxPlannerRssDuringIsolatedExecutionMb: Math.max(plannerRssBeforeSpawnMb, plannerRssAfterSpawnMb),
+      maxWorkerPeakRssMb: workerPeakRssMb,
+      maxAggregateConcurrentRssUpperBoundMb: aggregateConcurrentRssUpperBoundMb,
+      isolatedInvocationCount: 1,
       processWallMs,
       searchWallMs: workerResponse.searchWallMs || processWallMs,
+      assignedExpansions,
+      consumedExpansions,
+      deadlineEpochMs: assignedDeadlineMs,
+      childDeadlineMs,
+      workerMaxRssMb,
+      inputStateKeysVerified,
+      outputStateKeysVerified,
+      stateRoundTripIdentity,
     },
   };
 }
 
 module.exports = {
   executeIsolatedSegment,
+  PROCESS_TREE_RSS_STOP_THRESHOLD_MB,
+  PROCESS_TREE_RSS_HARD_CEILING_MB,
+  PROCESS_TREE_ALLOWED_OVERSHOOT_MB,
 };

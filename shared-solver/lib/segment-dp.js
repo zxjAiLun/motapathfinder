@@ -3877,6 +3877,7 @@ function toCompactLedgerExecution(execution) {
     },
     merged: [],
     inputFrontier: [],
+    telemetry: execution.telemetry ? { ...execution.telemetry } : undefined,
   };
 }
 
@@ -4459,11 +4460,61 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   const graphConfigBase = globalBudget
     ? { ...objectiveConfig, globalBudget }
     : objectiveConfig;
+  // Process-tree isolated execution telemetry (canonical qualification source)
+  const isolatedProcessTreeTelemetry = {
+    maxPlannerRssDuringIsolatedExecutionMb: 0,
+    maxWorkerPeakRssMb: 0,
+    maxAggregateConcurrentRssUpperBoundMb: 0,
+    isolatedInvocationCount: 0,
+    totalAssignedExpansions: 0,
+    totalConsumedExpansions: 0,
+    maxAssignedExpansionsPerInvocation: 0,
+    maxConsumedExpansionsPerInvocation: 0,
+    records: [],
+  };
+  const recordIsolatedTelemetry = (execution) => {
+    if (!execution || !execution.telemetry) return;
+    const t = execution.telemetry;
+    isolatedProcessTreeTelemetry.isolatedInvocationCount += 1;
+    const plannerMax = Math.max(Number(t.plannerRssBeforeSpawnMb || 0), Number(t.plannerRssAfterSpawnMb || 0), Number(t.maxPlannerRssDuringIsolatedExecutionMb || 0));
+    if (plannerMax > isolatedProcessTreeTelemetry.maxPlannerRssDuringIsolatedExecutionMb) isolatedProcessTreeTelemetry.maxPlannerRssDuringIsolatedExecutionMb = plannerMax;
+    const workerPeak = Number(t.workerPeakRssMb || t.maxWorkerPeakRssMb || 0);
+    if (workerPeak > isolatedProcessTreeTelemetry.maxWorkerPeakRssMb) isolatedProcessTreeTelemetry.maxWorkerPeakRssMb = workerPeak;
+    const agg = Number(t.aggregateConcurrentRssUpperBoundMb || t.maxAggregateConcurrentRssUpperBoundMb || 0);
+    if (agg > isolatedProcessTreeTelemetry.maxAggregateConcurrentRssUpperBoundMb) isolatedProcessTreeTelemetry.maxAggregateConcurrentRssUpperBoundMb = agg;
+    if (t.assignedExpansions != null) {
+      isolatedProcessTreeTelemetry.totalAssignedExpansions += Number(t.assignedExpansions || 0);
+      isolatedProcessTreeTelemetry.maxAssignedExpansionsPerInvocation = Math.max(isolatedProcessTreeTelemetry.maxAssignedExpansionsPerInvocation, Number(t.assignedExpansions || 0));
+    }
+    if (t.consumedExpansions != null) {
+      isolatedProcessTreeTelemetry.totalConsumedExpansions += Number(t.consumedExpansions || 0);
+      isolatedProcessTreeTelemetry.maxConsumedExpansionsPerInvocation = Math.max(isolatedProcessTreeTelemetry.maxConsumedExpansionsPerInvocation, Number(t.consumedExpansions || 0));
+    }
+    isolatedProcessTreeTelemetry.records.push({ ...t, segmentId: execution.segment ? execution.segment.id : (execution.summary && execution.summary.segmentId) });
+  };
+  const processTreeMemoryForResult = () => {
+    const overshoot = Math.max(0, Math.round((isolatedProcessTreeTelemetry.maxAggregateConcurrentRssUpperBoundMb - 256) * 10) / 10);
+    return {
+      maxPlannerRssDuringIsolatedExecutionMb: isolatedProcessTreeTelemetry.maxPlannerRssDuringIsolatedExecutionMb,
+      maxWorkerPeakRssMb: isolatedProcessTreeTelemetry.maxWorkerPeakRssMb,
+      maxAggregateConcurrentRssUpperBoundMb: isolatedProcessTreeTelemetry.maxAggregateConcurrentRssUpperBoundMb,
+      isolatedInvocationCount: isolatedProcessTreeTelemetry.isolatedInvocationCount,
+      assignedExpansionsTotal: isolatedProcessTreeTelemetry.totalAssignedExpansions,
+      consumedExpansionsTotal: isolatedProcessTreeTelemetry.totalConsumedExpansions,
+      hardCeilingMb: 260,
+      stopThresholdMb: 256,
+      allowedOvershootMb: 4,
+      overshootMb: overshoot,
+      qualified: isolatedProcessTreeTelemetry.maxAggregateConcurrentRssUpperBoundMb <= 260 && overshoot <= 4,
+    };
+  };
   const finishResult = (result) => ({
     ...result,
     searchIntent: config.searchIntent || "skyline",
     budget: summarizeGlobalBudget(globalBudget),
     memory: summarizeMemoryAttempts(result.evaluationAttemptLedger, objectiveConfig),
+    processTreeMemory: processTreeMemoryForResult(),
+    isolatedProcessTreeTelemetry: { ...isolatedProcessTreeTelemetry },
     objectiveStopPolicy,
   });
   const rangeError = milestoneRangeError(
@@ -4656,6 +4707,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       }),
     );
     appendLedger(execution, "initial");
+    recordIsolatedTelemetry(execution);
     if (execution.merged.length === 0) {
       if (execution.memoryLimited && (graphConfig.searchIntent !== "adaptive-feasible" || graphConfig.enableFailureBacktracking === false)) {
         return finishMemoryLimited(execution, segmentIndex, frontier);
@@ -4670,6 +4722,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       );
       if (configuredRepair && configuredRepair.repairedCurrent) {
         appendLedger(configuredRepair.repairedCurrent, "configured-repair");
+        recordIsolatedTelemetry(configuredRepair.repairedCurrent);
       }
       if (configuredRepair && configuredRepair.repairedCurrent && configuredRepair.repairedCurrent.memoryLimited) {
         return finishMemoryLimited(configuredRepair.repairedCurrent, segmentIndex, frontier);
@@ -4700,7 +4753,10 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       if (adaptiveRepair) {
         (adaptiveRepair.ledgerExecutions || adaptiveRepair.executions).forEach((entry, index) => {
           appendLedger(entry, index === 0 ? "adaptive-expand" : "adaptive-replay");
+          recordIsolatedTelemetry(entry);
         });
+        // Also record any memoryExecution not in ledgerExecutions (when present, it is same as one entry, but ensure)
+        if (adaptiveRepair.memoryExecution) recordIsolatedTelemetry(adaptiveRepair.memoryExecution);
       }
       if (adaptiveRepair && adaptiveRepair.found) {
         const anchorIndex = adaptiveRepair.anchorHistoryIndex;
@@ -4776,9 +4832,11 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         );
       if (repair && repair.expandedPrevious) {
         appendLedger(repair.expandedPrevious, "expanded-previous");
+        recordIsolatedTelemetry(repair.expandedPrevious);
       }
       if (repair && repair.repairedCurrent) {
         appendLedger(repair.repairedCurrent, "retry-current");
+        recordIsolatedTelemetry(repair.repairedCurrent);
       }
       if (repair && repair.repairedCurrent && repair.repairedCurrent.memoryLimited) {
         if (repair.expandedPrevious) {

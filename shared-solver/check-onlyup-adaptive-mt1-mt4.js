@@ -47,6 +47,9 @@ const TARGET_FLOOR_ID = "MT4";
 const RSS_STOP_THRESHOLD_MB = 256;
 const ALLOWED_SAMPLING_OVERSHOOT_MB = 4;
 const RSS_HARD_QUALIFICATION_CEILING_MB = 260;
+const PROCESS_TREE_RSS_STOP_THRESHOLD_MB = 256;
+const PROCESS_TREE_ALLOWED_OVERSHOOT_MB = 4;
+const PROCESS_TREE_RSS_HARD_CEILING_MB = 260;
 
 function runAdaptiveRollbackSubprocess(config) {
   const project = loadProject(DEFAULT_PROJECT_ROOT);
@@ -154,6 +157,9 @@ function runAdaptiveRollbackSubprocess(config) {
     };
   });
 
+  // Expose process-tree telemetry as canonical qualification source (Repair 1)
+  const processTreeMemory = result.processTreeMemory || null;
+  const isolatedTelemetry = result.isolatedProcessTreeTelemetry || null;
   return {
     found: result.found,
     reachedMilestone: result.reachedMilestone,
@@ -171,6 +177,8 @@ function runAdaptiveRollbackSubprocess(config) {
       ...result.memory,
       peakRssMb: reportedPeakRssMb,
     },
+    processTreeMemory,
+    isolatedTelemetry,
     wallMs: Date.now() - startedAt,
   };
 }
@@ -304,16 +312,28 @@ function main() {
 
   assert.ok(wallMs <= WALL_LIMIT_MS, `Parent wall time ${wallMs}ms exceeded hard limit ${WALL_LIMIT_MS}ms`);
 
+  // Legacy single-process RSS (diagnostic only – not qualification)
   const peakRssMb = (runResult.memory && runResult.memory.peakRssMb) || 0;
-  assert.ok(
-    peakRssMb <= RSS_HARD_QUALIFICATION_CEILING_MB,
-    `Peak RSS ${peakRssMb}MB exceeded hard qualification ceiling ${RSS_HARD_QUALIFICATION_CEILING_MB}MB`
-  );
   const rssOvershootMb = Math.max(0, Math.round((peakRssMb - RSS_STOP_THRESHOLD_MB) * 10) / 10);
+
+  // Process-tree RSS is the canonical qualification source (Repair 1)
+  const processTree = runResult.processTreeMemory || runResult.processTreeMem || null;
+  assert.ok(processTree, "Run result must report processTreeMemory (isolated-process telemetry)");
+  const aggregatePeakMb = Number(processTree.maxAggregateConcurrentRssUpperBoundMb || 0);
+  const plannerPeakMb = Number(processTree.maxPlannerRssDuringIsolatedExecutionMb || 0);
+  const workerPeakMb = Number(processTree.maxWorkerPeakRssMb || 0);
+  const isolatedInvocationCount = Number(processTree.isolatedInvocationCount || 0);
   assert.ok(
-    rssOvershootMb <= ALLOWED_SAMPLING_OVERSHOOT_MB,
-    `RSS overshoot ${rssOvershootMb}MB exceeded allowed ${ALLOWED_SAMPLING_OVERSHOOT_MB}MB`
+    aggregatePeakMb <= PROCESS_TREE_RSS_HARD_CEILING_MB,
+    `Process-tree peak RSS ${aggregatePeakMb}MB (planner ${plannerPeakMb} + worker ${workerPeakMb}, invocations ${isolatedInvocationCount}) exceeded hard ceiling ${PROCESS_TREE_RSS_HARD_CEILING_MB}MB`
   );
+  const processTreeOvershootMb = Math.max(0, Math.round((aggregatePeakMb - PROCESS_TREE_RSS_STOP_THRESHOLD_MB) * 10) / 10);
+  assert.ok(
+    processTreeOvershootMb <= PROCESS_TREE_ALLOWED_OVERSHOOT_MB,
+    `Process-tree RSS overshoot ${processTreeOvershootMb}MB exceeded allowed ${PROCESS_TREE_ALLOWED_OVERSHOOT_MB}MB (aggregate ${aggregatePeakMb} > ${PROCESS_TREE_RSS_STOP_THRESHOLD_MB})`
+  );
+  // Also keep legacy check but as diagnostic: if legacy passes but process-tree fails, the failure is the correct evidence
+  // (do not increase budget – Repair 1 expects ~329 MB aggregate to correctly trip this gate)
 
   let strictReplayPassed = 0;
   let identityGradedDecisions = 0;
@@ -432,6 +452,30 @@ function main() {
     assert.ok(depth2AnchorSearchExecuted, "depth2DownstreamReplayExecuted => depth2AnchorSearchExecuted must be true");
   }
 
+  // Budget authority verification across isolated invocations
+  const isolatedRecords = (runResult.isolatedTelemetry && runResult.isolatedTelemetry.records) || (processTree && processTree.records) || [];
+  let globalBudgetAuthorityViolated = false;
+  let stateRoundTripIdentity = true;
+  let totalVerifiedInputs = 0;
+  let totalVerifiedOutputs = 0;
+  isolatedRecords.forEach((rec) => {
+    if (rec.assignedExpansions != null && rec.consumedExpansions != null) {
+      if (Number(rec.consumedExpansions) > Number(rec.assignedExpansions)) globalBudgetAuthorityViolated = true;
+    }
+    if (rec.stateRoundTripIdentity === false) stateRoundTripIdentity = false;
+    if (Number(rec.inputStateKeysVerified) !== Number(rec.inputFrontierLength || rec.inputStateKeysVerified)) {
+      // If counts available and mismatch, consider failure
+      if (rec.inputFrontierLength != null && Number(rec.inputStateKeysVerified) !== Number(rec.inputFrontierLength)) stateRoundTripIdentity = false;
+    }
+    totalVerifiedInputs += Number(rec.inputStateKeysVerified || 0);
+    totalVerifiedOutputs += Number(rec.outputStateKeysVerified || 0);
+  });
+  // If no isolated records, stateRoundTripIdentity remains true but invocationCount should be >0 for isolated mode
+  assert.ok(!globalBudgetAuthorityViolated, `Global budget authority violated: some worker consumed > assigned (see isolated records)`);
+  if (isolatedInvocationCount > 0) {
+    assert.ok(stateRoundTripIdentity, `State round-trip identity failed across ${isolatedInvocationCount} isolated invocations`);
+  }
+
   const summary = {
     schema: "motapathfinder.canonical-adaptive-rollback.v1",
     contractStatus: "passed",
@@ -447,6 +491,20 @@ function main() {
       allowedOvershootMb: ALLOWED_SAMPLING_OVERSHOOT_MB,
       rssHardQualificationCeilingMb: RSS_HARD_QUALIFICATION_CEILING_MB,
       rssQualificationPassed: peakRssMb <= RSS_HARD_QUALIFICATION_CEILING_MB,
+      processTree: {
+        maxPlannerRssDuringIsolatedExecutionMb: plannerPeakMb,
+        maxWorkerPeakRssMb: workerPeakMb,
+        maxAggregateConcurrentRssUpperBoundMb: aggregatePeakMb,
+        isolatedInvocationCount,
+        overshootMb: processTreeOvershootMb,
+        hardCeilingMb: PROCESS_TREE_RSS_HARD_CEILING_MB,
+        qualified: aggregatePeakMb <= PROCESS_TREE_RSS_HARD_CEILING_MB && processTreeOvershootMb <= PROCESS_TREE_ALLOWED_OVERSHOOT_MB,
+      },
+      globalBudgetAuthority: {
+        violated: globalBudgetAuthorityViolated,
+        totalVerifiedInputs,
+        totalVerifiedOutputs,
+      },
     },
     run: {
       found: runResult.found,
@@ -460,7 +518,11 @@ function main() {
       engineMode: "canonical-runMilestoneGraph",
       searchIntent: "adaptive-feasible",
       segmentExecutionMode: "isolated-process",
-      stateRoundTripIdentity: true,
+      stateRoundTripIdentity,
+      inputStateKeysVerified: totalVerifiedInputs,
+      outputStateKeysVerified: totalVerifiedOutputs,
+      globalBudgetAuthorityPassed: !globalBudgetAuthorityViolated,
+      processTreeQualified: aggregatePeakMb <= PROCESS_TREE_RSS_HARD_CEILING_MB && processTreeOvershootMb <= PROCESS_TREE_ALLOWED_OVERSHOOT_MB,
       adaptiveRollbackTriggered,
       mechanismAudit: {
         depth1AnchorSearchExecuted,
