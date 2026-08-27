@@ -3403,11 +3403,6 @@ function runSegmentAgainstFrontier(
       break;
     }
     if (remainingRuntimeMs != null && remainingRuntimeMs <= 0) break;
-    if (globalBudget && ["heap-limit", "rss-limit"].includes(globalBudget.stoppedReason)) {
-      memoryLimited = true;
-      memoryStopReason = globalBudget.stoppedReason;
-      break;
-    }
     const dpOverrides = segmentDpOverrides(segment, config || {}, overrides || {});
     const remainingCandidates = Math.max(1, inputFrontier.length - candidateIndex);
     const globalAllocation = allocateGlobalAttemptBudget({
@@ -3479,7 +3474,6 @@ function runSegmentAgainstFrontier(
     if (dp && ["heap-limit", "rss-limit"].includes(dp.stoppedReason)) {
       memoryLimited = true;
       memoryStopReason = dp.stoppedReason;
-      if (globalBudget) globalBudget.stoppedReason = dp.stoppedReason;
     }
     if (globalBudget) {
       globalBudget.consumedExpansions += number(dp && dp.expansions, 0);
@@ -3831,125 +3825,201 @@ function tryAdaptiveCheckpointRepair(
   const failedSummary = failedExecution && failedExecution.summary;
   const preferredTags =
     ((failedSummary || {}).failurePropagation || {}).preferredCandidateTags || [];
+  const triggerFailure = {
+    segmentId: segments[segmentIndex].id,
+    failureClass: (failedSummary && failedSummary.failureClass) || "frontier-exhausted",
+    failureReason: (failedSummary && failedSummary.failureReason) || null,
+    missingGoalFields: (failedExecution && failedExecution.missingGoalFields) || [],
+    preferredCandidateTags: preferredTags,
+  };
   const maxDepth = Math.min(
     history.length,
     Math.max(1, numericOption(config && config.adaptiveBacktrackDepth, 3)),
   );
+  const waveBatchSize = Math.max(1, numericOption(config && config.adaptiveWaveBatchSize, 1));
   const attempts = [];
   const ledgerExecutions = [];
 
   for (let depth = 1; depth <= maxDepth; depth += 1) {
     const anchorHistoryIndex = history.length - depth;
     const anchor = history[anchorHistoryIndex];
-    if (!anchor || !anchor.segment || !Array.isArray(anchor.inputFrontier)) continue;
-    const executions = [];
-    const anchorConfig = { ...(config || {}), stopOnFirstGoal: undefined };
-    const expandedAnchor = runSegmentAgainstFrontier(
-      simulator,
-      anchor.segment,
-      anchor.inputFrontier,
-      {
-        ...anchorConfig,
-        segmentIndex: anchorHistoryIndex,
-        segmentTotal: segments.length,
-        goalDependencySegments: segments.slice(anchorHistoryIndex),
-      },
-      withManualBudgetAuthority(anchorConfig, {
-        candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
-        dpOverrides: backtrackDpOverrides(anchor.segment, config || {}),
-        preserveSkylineRoles: true,
-      }),
-    );
-    expandedAnchor.summary.backtrack = {
-      mode: "adaptive-checkpoint-expand",
-      depth,
-      triggeredBySegment: segments[segmentIndex].id,
-      preferredCandidateTags: preferredTags,
-      previousCandidateCount: anchor.merged.length,
-      expandedCandidateCount: expandedAnchor.merged.length,
-    };
-    executions.push(expandedAnchor);
-    let repairFrontier = expandedAnchor.merged;
-    let failedAtIndex = repairFrontier.length > 0 ? null : anchorHistoryIndex;
-    let memoryExecution = expandedAnchor.memoryLimited ? expandedAnchor : null;
-    let memorySegmentIndex = expandedAnchor.memoryLimited ? anchorHistoryIndex : null;
+    if (!anchor || !anchor.segment || !Array.isArray(anchor.inputFrontier) || anchor.inputFrontier.length === 0) continue;
 
-    for (
-      let replayIndex = anchorHistoryIndex + 1;
-      repairFrontier.length > 0 && replayIndex <= segmentIndex && !memoryExecution;
-      replayIndex += 1
-    ) {
-      const replaySegment = segments[replayIndex];
-      const rankedFrontier = rankCandidatesByPreferredTags(
-        repairFrontier,
-        preferredTags,
-      ).slice(0, backtrackCandidateLimit(replaySegment, config || {}));
-      const replayed = runSegmentAgainstFrontier(
+    const rankedInputFrontier = rankCandidatesByPreferredTags(
+      anchor.inputFrontier,
+      preferredTags,
+    );
+
+    const totalWaves = Math.max(1, Math.ceil(rankedInputFrontier.length / waveBatchSize));
+
+    for (let waveIndex = 0; waveIndex < totalWaves; waveIndex += 1) {
+      const waveInputCandidates = rankedInputFrontier.slice(
+        waveIndex * waveBatchSize,
+        (waveIndex + 1) * waveBatchSize,
+      );
+      if (waveInputCandidates.length === 0) continue;
+
+      const waveStartedAt = Date.now();
+      const waveStartExpansions = config && config.globalBudget ? config.globalBudget.consumedExpansions : 0;
+      const waveExecutions = [];
+      const anchorConfig = { ...(config || {}), stopOnFirstGoal: undefined };
+
+      const expandedAnchor = runSegmentAgainstFrontier(
         simulator,
-        replaySegment,
-        rankedFrontier,
+        anchor.segment,
+        waveInputCandidates,
         {
-          ...(config || {}),
-          segmentIndex: replayIndex,
+          ...anchorConfig,
+          segmentIndex: anchorHistoryIndex,
           segmentTotal: segments.length,
-          goalDependencySegments: segments.slice(replayIndex),
+          goalDependencySegments: segments.slice(anchorHistoryIndex),
         },
-        withManualBudgetAuthority(config || {}, {
-          candidateLimit: backtrackCandidateLimit(replaySegment, config || {}),
+        withManualBudgetAuthority(anchorConfig, {
+          candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
+          dpOverrides: backtrackDpOverrides(anchor.segment, config || {}),
           preserveSkylineRoles: true,
         }),
       );
-      replayed.summary.backtrack = {
-        mode: "adaptive-checkpoint-replay",
+      expandedAnchor.summary.backtrack = {
+        mode: "adaptive-checkpoint-expand",
         depth,
-        repairedFromSegment: anchor.segment.id,
+        waveIndex,
         triggeredBySegment: segments[segmentIndex].id,
         preferredCandidateTags: preferredTags,
-        startCandidatesTried: rankedFrontier.length,
+        previousCandidateCount: anchor.merged.length,
+        expandedCandidateCount: expandedAnchor.merged.length,
       };
-      executions.push(replayed);
-      repairFrontier = replayed.merged;
-      if (replayed.memoryLimited) {
-        memoryExecution = replayed;
-        memorySegmentIndex = replayIndex;
-      } else if (repairFrontier.length === 0) {
-        failedAtIndex = replayIndex;
+      waveExecutions.push(expandedAnchor);
+      ledgerExecutions.push(expandedAnchor);
+
+      let repairFrontier = expandedAnchor.merged;
+      let failedAtIndex = repairFrontier.length > 0 ? null : anchorHistoryIndex;
+      let memoryExecution = expandedAnchor.memoryLimited ? expandedAnchor : null;
+      let memorySegmentIndex = expandedAnchor.memoryLimited ? anchorHistoryIndex : null;
+
+      const replaySegments = [];
+      for (
+        let replayIndex = anchorHistoryIndex + 1;
+        repairFrontier.length > 0 && replayIndex <= segmentIndex;
+        replayIndex += 1
+      ) {
+        const replaySegment = segments[replayIndex];
+        replaySegments.push(replaySegment);
+        const rankedFrontier = rankCandidatesByPreferredTags(
+          repairFrontier,
+          preferredTags,
+        ).slice(0, backtrackCandidateLimit(replaySegment, config || {}));
+        const replayed = runSegmentAgainstFrontier(
+          simulator,
+          replaySegment,
+          rankedFrontier,
+          {
+            ...(config || {}),
+            segmentIndex: replayIndex,
+            segmentTotal: segments.length,
+            goalDependencySegments: segments.slice(replayIndex),
+          },
+          withManualBudgetAuthority(config || {}, {
+            candidateLimit: backtrackCandidateLimit(replaySegment, config || {}),
+            preserveSkylineRoles: true,
+          }),
+        );
+        replayed.summary.backtrack = {
+          mode: "adaptive-checkpoint-replay",
+          depth,
+          waveIndex,
+          repairedFromSegment: anchor.segment.id,
+          triggeredBySegment: segments[segmentIndex].id,
+          preferredCandidateTags: preferredTags,
+          startCandidatesTried: rankedFrontier.length,
+        };
+        waveExecutions.push(replayed);
+        ledgerExecutions.push(replayed);
+        repairFrontier = replayed.merged;
+        if (replayed.memoryLimited) {
+          memoryExecution = replayed;
+          memorySegmentIndex = replayIndex;
+          if (repairFrontier.length === 0) break;
+        } else if (repairFrontier.length === 0) {
+          failedAtIndex = replayIndex;
+          break;
+        }
+      }
+
+      const waveConsumedExpansions = (config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) - waveStartExpansions;
+      const waveConsumedWallMs = Date.now() - waveStartedAt;
+      const goalReached = repairFrontier.length > 0 && waveExecutions.length === (segmentIndex - anchorHistoryIndex + 1);
+
+      attempts.push({
+        depth,
+        anchorSegmentId: anchor.segment.id,
+        waveIndex,
+        anchorInputCandidates: waveInputCandidates.length,
+        anchorExpandedCandidates: expandedAnchor ? expandedAnchor.merged.length : 0,
+        replaySegmentIds: replaySegments.map((s) => s.id),
+        failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,
+        segmentCandidateCounts: waveExecutions.map((entry) => ({
+          segmentId: entry.segment.id,
+          candidates: entry.merged.length,
+        })),
+        depthGoalReached: goalReached,
+        depthExhausted: !goalReached,
+        depthConsumedExpansions: waveConsumedExpansions,
+        depthConsumedWallMs: waveConsumedWallMs,
+        depthStopReason: memoryExecution ? (memoryExecution.memoryStopReason || "memory-limit") : null,
+      });
+
+      if (goalReached) {
+        return {
+          found: true,
+          triggerFailure,
+          attempts,
+          executions: waveExecutions,
+          ledgerExecutions,
+          anchorHistoryIndex,
+          finalFrontier: repairFrontier,
+        };
+      }
+
+      if (!goalReached) {
+        // Free intermediate wave candidate states and search caches so GC can reclaim RSS
+        expandedAnchor.inputFrontier = null;
+        expandedAnchor.merged = [];
+        waveExecutions.forEach((exec) => {
+          exec.inputFrontier = null;
+          exec.merged = [];
+        });
+      }
+
+      if (typeof global.gc === "function") {
+        try { global.gc(); } catch (_) {}
+      }
+
+      if (config.globalBudget && (
+        config.globalBudget.stoppedReason === "time-limit" ||
+        config.globalBudget.stoppedReason === "expansion-limit"
+      )) {
+        return {
+          found: false,
+          triggerFailure,
+          attempts,
+          executions: waveExecutions,
+          ledgerExecutions,
+          anchorHistoryIndex,
+          memoryExecution,
+          memorySegmentIndex,
+        };
       }
     }
-
-    attempts.push({
-      depth,
-      anchorSegmentId: anchor.segment.id,
-      failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,
-      segmentCandidateCounts: executions.map((entry) => ({
-        segmentId: entry.segment.id,
-        candidates: entry.merged.length,
-      })),
-    });
-    ledgerExecutions.push(...executions);
-    if (memoryExecution) {
-      return {
-        found: false,
-        attempts,
-        executions,
-        ledgerExecutions,
-        anchorHistoryIndex,
-        memoryExecution,
-        memorySegmentIndex,
-      };
-    }
-    if (repairFrontier.length > 0 && executions.length === segmentIndex - anchorHistoryIndex + 1) {
-      return {
-        found: true,
-        attempts,
-        executions,
-        ledgerExecutions,
-        anchorHistoryIndex,
-        finalFrontier: repairFrontier,
-      };
-    }
   }
-  return { found: false, attempts, executions: [], ledgerExecutions };
+
+  return {
+    found: false,
+    triggerFailure,
+    attempts,
+    executions: [],
+    ledgerExecutions,
+  };
 }
 
 function configuredRepairStartFrom(segment) {
@@ -4038,10 +4108,11 @@ function createGlobalBudget(config) {
   if (!config || config.budgetScope !== "global-run") return null;
   const startedAt = Date.now();
   const requestedRuntimeMs = Math.max(0, number(config.maxRuntimeMs, 0));
+  const safetyMarginMs = requestedRuntimeMs > 2000 ? 500 : 0;
   return {
     scope: "global-run",
     startedAt,
-    deadlineMs: requestedRuntimeMs > 0 ? startedAt + requestedRuntimeMs : Number.POSITIVE_INFINITY,
+    deadlineMs: requestedRuntimeMs > 0 ? startedAt + Math.max(1000, requestedRuntimeMs - safetyMarginMs) : Number.POSITIVE_INFINITY,
     requestedExpansions: Math.max(0, number(config.maxExpansions, 0)),
     requestedRuntimeMs,
     consumedExpansions: 0,
@@ -4317,6 +4388,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         cancelled: true,
       });
     }
+    if (typeof global.gc === "function") {
+      try { global.gc(); } catch (_) {}
+    }
     const segment = segments[segmentIndex];
     const execution = runSegmentAgainstFrontier(
       simulator,
@@ -4334,7 +4408,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     );
     appendLedger(execution, "initial");
     if (execution.merged.length === 0) {
-      if (execution.memoryLimited) {
+      if (execution.memoryLimited && (graphConfig.searchIntent !== "adaptive-feasible" || graphConfig.enableFailureBacktracking === false)) {
         return finishMemoryLimited(execution, segmentIndex, frontier);
       }
       const configuredRepair = tryRepairFromConfiguredMilestone(
@@ -4379,13 +4453,6 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
           appendLedger(entry, index === 0 ? "adaptive-expand" : "adaptive-replay");
         });
       }
-      if (adaptiveRepair && adaptiveRepair.memoryExecution) {
-        return finishMemoryLimited(
-          adaptiveRepair.memoryExecution,
-          adaptiveRepair.memorySegmentIndex,
-          frontier,
-        );
-      }
       if (adaptiveRepair && adaptiveRepair.found) {
         const anchorIndex = adaptiveRepair.anchorHistoryIndex;
         history.splice(anchorIndex);
@@ -4406,6 +4473,13 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         });
         frontier = adaptiveRepair.finalFrontier;
         continue;
+      }
+      if (adaptiveRepair && adaptiveRepair.memoryExecution) {
+        return finishMemoryLimited(
+          adaptiveRepair.memoryExecution,
+          adaptiveRepair.memorySegmentIndex,
+          frontier,
+        );
       }
       const repair = adaptiveRepair
         ? null

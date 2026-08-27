@@ -2205,7 +2205,15 @@ function searchDP(simulator, initialState, options) {
       if (maxHeapMb > 0 && heapUsedMb >= maxHeapMb) {
         memoryStoppedReason = "heap-limit";
       } else if (maxRssMb > 0 && rssMb >= maxRssMb) {
-        memoryStoppedReason = "rss-limit";
+        if (typeof global.gc === "function") {
+          try { global.gc(); } catch (_) {}
+          const retryUsage = readMemoryUsage();
+          if (retryUsage.rssMb >= maxRssMb && (expansion > 0 || (maxHeapMb > 0 && retryUsage.heapUsedMb >= maxHeapMb))) {
+            memoryStoppedReason = "rss-limit";
+          }
+        } else if (expansion > 0) {
+          memoryStoppedReason = "rss-limit";
+        }
       }
       if (memoryStoppedReason) {
         stopHeapUsedMb = heapUsedMb;
