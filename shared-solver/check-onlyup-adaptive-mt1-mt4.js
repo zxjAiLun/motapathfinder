@@ -77,6 +77,7 @@ function runAdaptiveRollbackSubprocess(config) {
 
   const result = runMilestoneGraph(simulator, initialState, spec, {
     searchIntent: "adaptive-feasible",
+    segmentExecutionMode: "isolated-process",
     enableFailureBacktracking: true,
     adaptiveBacktrackDepth: config.adaptiveBacktrackDepth || 3,
     budgetScope: "global-run",
@@ -261,8 +262,6 @@ function verifyCandidateStrictReplay(project, candidate) {
 }
 
 function main() {
-  const project = loadProject(DEFAULT_PROJECT_ROOT);
-
   if (process.argv.includes("--child-mode")) {
     const rawInput = fs.readFileSync(0, "utf8");
     const config = JSON.parse(rawInput);
@@ -322,8 +321,9 @@ function main() {
   const replayedCandidates = [];
 
   if (runResult.found && runResult.finalCandidates && runResult.finalCandidates.length > 0) {
+    const replayProject = loadProject(DEFAULT_PROJECT_ROOT);
     runResult.finalCandidates.forEach((cand) => {
-      const replay = verifyCandidateStrictReplay(project, cand);
+      const replay = verifyCandidateStrictReplay(replayProject, cand);
       if (replay.passed) {
         strictReplayPassed += 1;
         identityGradedDecisions += replay.identityGradedDecisions;
@@ -374,6 +374,19 @@ function main() {
 
   // Strict semantic invariant assertions on allDepthSummaries
   allDepthSummaries.forEach((d) => {
+    assert.ok(d.wavesAttempted <= d.wavesTotal, `Depth ${d.depth}: wavesAttempted (${d.wavesAttempted}) must be <= wavesTotal (${d.wavesTotal})`);
+    assert.ok(d.wavesCompleted <= d.wavesAttempted, `Depth ${d.depth}: wavesCompleted (${d.wavesCompleted}) must be <= wavesAttempted (${d.wavesAttempted})`);
+
+    if (d.depthOutcome === "resource-limited") {
+      assert.ok(
+        ["rss-limit", "heap-limit"].includes(d.stopReason),
+        `Depth ${d.depth}: resource-limited outcome must have rss-limit or heap-limit stopReason, got ${d.stopReason}`
+      );
+    }
+    if (d.depthOutcome === "exhausted") {
+      assert.strictEqual(d.depthExhausted, true, `Depth ${d.depth}: depthOutcome === "exhausted" must have depthExhausted === true`);
+    }
+
     if (d.depthExhausted) {
       assert.strictEqual(
         d.stopReason,
@@ -446,6 +459,8 @@ function main() {
     qualification: {
       engineMode: "canonical-runMilestoneGraph",
       searchIntent: "adaptive-feasible",
+      segmentExecutionMode: "isolated-process",
+      stateRoundTripIdentity: true,
       adaptiveRollbackTriggered,
       mechanismAudit: {
         depth1AnchorSearchExecuted,

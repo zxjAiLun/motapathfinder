@@ -25,6 +25,7 @@ const { compileGoalDependencyGraph } = require("./goal-dependency-graph");
 const { compileAdmissibleFeasibilityBounds } = require("./goal-feasibility-bounds");
 const reachAndBattleOracle = require("./reach-and-battle-oracle");
 const { buildSearchOutcome } = require("./search-outcome");
+const { executeIsolatedSegment } = require("./isolated-segment-executor");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -3329,7 +3330,7 @@ function allocateGlobalAttemptBudget(options) {
   return allocation;
 }
 
-function runSegmentAgainstFrontier(
+function runSegmentAgainstFrontierLocal(
   simulator,
   segment,
   frontier,
@@ -3488,6 +3489,13 @@ function runSegmentAgainstFrontier(
         id: `${segment.id}:${candidate.id}:${goal.id}`,
       }),
     );
+    // Release heavy rawResult search nodes so subsequent candidate searches don't accumulate live memory
+    result.rawResult = null;
+    if (result.diagnostics && result.diagnostics.dp) {
+      result.diagnostics.dp.goalSkyline = null;
+      result.diagnostics.dp.bestSeenState = null;
+      result.diagnostics.dp.bestProgressState = null;
+    }
     if (typeof global.gc === "function") global.gc();
     if (memoryLimited) break;
   }
@@ -3557,6 +3565,31 @@ function runSegmentAgainstFrontier(
     memoryLimited,
     memoryStopReason,
   };
+}
+
+function runSegmentAgainstFrontier(
+  simulator,
+  segment,
+  frontier,
+  config,
+  overrides,
+) {
+  if (config && config.segmentExecutionMode === "isolated-process") {
+    return executeIsolatedSegment({
+      simulator,
+      segment,
+      frontier,
+      config,
+      overrides,
+    });
+  }
+  return runSegmentAgainstFrontierLocal(
+    simulator,
+    segment,
+    frontier,
+    config,
+    overrides,
+  );
 }
 
 function preferredTagScore(candidate, preferredTags) {
@@ -4907,6 +4940,8 @@ module.exports = {
   resolveStartCandidateLimit,
   resolveSearchIntentOptions,
   runMilestoneGraph,
+  runSegmentAgainstFrontier,
+  runSegmentAgainstFrontierLocal,
   searchSegmentDP,
   segmentCandidateLimit,
   summarizeEffectiveHero,
