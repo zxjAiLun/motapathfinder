@@ -2208,10 +2208,10 @@ function searchDP(simulator, initialState, options) {
         if (typeof global.gc === "function") {
           try { global.gc(); } catch (_) {}
           const retryUsage = readMemoryUsage();
-          if (retryUsage.rssMb >= maxRssMb && (expansion > 0 || (maxHeapMb > 0 && retryUsage.heapUsedMb >= maxHeapMb))) {
+          if (retryUsage.rssMb >= maxRssMb) {
             memoryStoppedReason = "rss-limit";
           }
-        } else if (expansion > 0) {
+        } else {
           memoryStoppedReason = "rss-limit";
         }
       }

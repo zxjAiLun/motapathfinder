@@ -342,6 +342,46 @@ function main() {
   const adaptiveRollbackTriggered = (runResult.segmentSummaries || []).some((s) => s.backtrack != null) ||
     (runResult.evaluationLedger || []).some((att) => att.phase === "adaptive-expand" || att.phase === "adaptive-replay");
 
+  // Semantic audit of backtrack attempts
+  const allBacktrackAttempts = [];
+  (runResult.segmentSummaries || []).forEach((seg) => {
+    if (seg.backtrack && Array.isArray(seg.backtrack.attempts)) {
+      allBacktrackAttempts.push(...seg.backtrack.attempts);
+    }
+  });
+
+  let depth1AnchorSearchExecuted = false;
+  let depth1DownstreamReplayExecuted = false;
+  let depth1GenuinelyExhausted = false;
+  let depth2AnchorSearchExecuted = false;
+  let depth2DownstreamReplayExecuted = false;
+  let memoryRecoveryCount = 0;
+  let memoryRecoveryFailures = 0;
+
+  allBacktrackAttempts.forEach((att) => {
+    if (att.memoryRecoveryAttempted) memoryRecoveryCount += 1;
+    if (att.memoryRecoveryAttempted && !att.memoryRecovered) memoryRecoveryFailures += 1;
+
+    // Semantic invariant: depthExhausted MUST have depthStopReason === null
+    if (att.depthExhausted) {
+      assert.strictEqual(
+        att.depthStopReason,
+        null,
+        `Attempt at depth ${att.depth} wave ${att.waveIndex} claimed depthExhausted: true but had stopReason: ${att.depthStopReason}`
+      );
+    }
+
+    if (att.depth === 1) {
+      if (att.anchorExpandedCandidates > 0) depth1AnchorSearchExecuted = true;
+      if (att.replaySegmentIds && att.replaySegmentIds.length > 0) depth1DownstreamReplayExecuted = true;
+      if (att.depthExhausted) depth1GenuinelyExhausted = true;
+    }
+    if (att.depth === 2) {
+      if (att.anchorExpandedCandidates > 0) depth2AnchorSearchExecuted = true;
+      if (att.replaySegmentIds && att.replaySegmentIds.length > 0) depth2DownstreamReplayExecuted = true;
+    }
+  });
+
   const summary = {
     schema: "motapathfinder.canonical-adaptive-rollback.v1",
     contractStatus: "passed",
@@ -370,6 +410,15 @@ function main() {
       engineMode: "canonical-runMilestoneGraph",
       searchIntent: "adaptive-feasible",
       adaptiveRollbackTriggered,
+      mechanismAudit: {
+        depth1AnchorSearchExecuted,
+        depth1DownstreamReplayExecuted,
+        depth1GenuinelyExhausted,
+        depth2AnchorSearchExecuted,
+        depth2DownstreamReplayExecuted,
+        memoryRecoveryCount,
+        memoryRecoveryFailures,
+      },
       strictReplayPassed: strictReplayPassed === (runResult.finalCandidates || []).length && strictReplayPassed > 0,
       reachedMT4,
       replayedCandidates,

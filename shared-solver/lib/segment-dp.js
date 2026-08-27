@@ -3811,6 +3811,20 @@ function tryRepairFromPreviousMilestone(
   };
 }
 
+function toCompactLedgerExecution(execution) {
+  if (!execution) return null;
+  const summary = execution.summary || {};
+  return {
+    segment: { id: execution.segment ? execution.segment.id : summary.segmentId },
+    summary: {
+      segmentId: summary.segmentId || (execution.segment ? execution.segment.id : null),
+      attempts: summary.attempts || [],
+    },
+    merged: [],
+    inputFrontier: [],
+  };
+}
+
 function tryAdaptiveCheckpointRepair(
   simulator,
   segments,
@@ -3822,16 +3836,23 @@ function tryAdaptiveCheckpointRepair(
   if ((config || {}).searchIntent !== "adaptive-feasible") return null;
   if ((config || {}).enableFailureBacktracking === false) return null;
   if (!Array.isArray(history) || history.length === 0 || segmentIndex <= 0) return null;
+
   const failedSummary = failedExecution && failedExecution.summary;
-  const preferredTags =
-    ((failedSummary || {}).failurePropagation || {}).preferredCandidateTags || [];
+  const failedAttempt = failedSummary && failedSummary.attempts && failedSummary.attempts[failedSummary.attempts.length - 1];
+  const failedDiagnostics = (failedAttempt && failedAttempt.diagnostics) || {};
+  const failurePropagation = (failedSummary && failedSummary.failurePropagation) ||
+    (failedDiagnostics.failure && failedDiagnostics.failure.failurePropagation) || {};
+  const preferredTags = failurePropagation.preferredCandidateTags || [];
+  const missingGoalFields = (failedAttempt && failedAttempt.missingGoalFields) ||
+    (failedDiagnostics.dp && failedDiagnostics.dp.missingGoalFields) || [];
   const triggerFailure = {
     segmentId: segments[segmentIndex].id,
-    failureClass: (failedSummary && failedSummary.failureClass) || "frontier-exhausted",
-    failureReason: (failedSummary && failedSummary.failureReason) || null,
-    missingGoalFields: (failedExecution && failedExecution.missingGoalFields) || [],
+    failureClass: (failedSummary && failedSummary.failureClass) || failurePropagation.primaryFailureClass || "frontier-exhausted",
+    failureReason: (failedSummary && failedSummary.failureReason) || failurePropagation.reason || null,
+    missingGoalFields,
     preferredCandidateTags: preferredTags,
   };
+
   const maxDepth = Math.min(
     history.length,
     Math.max(1, numericOption(config && config.adaptiveBacktrackDepth, 3)),
@@ -3890,7 +3911,6 @@ function tryAdaptiveCheckpointRepair(
         expandedCandidateCount: expandedAnchor.merged.length,
       };
       waveExecutions.push(expandedAnchor);
-      ledgerExecutions.push(expandedAnchor);
 
       let repairFrontier = expandedAnchor.merged;
       let failedAtIndex = repairFrontier.length > 0 ? null : anchorHistoryIndex;
@@ -3934,7 +3954,6 @@ function tryAdaptiveCheckpointRepair(
           startCandidatesTried: rankedFrontier.length,
         };
         waveExecutions.push(replayed);
-        ledgerExecutions.push(replayed);
         repairFrontier = replayed.merged;
         if (replayed.memoryLimited) {
           memoryExecution = replayed;
@@ -3950,29 +3969,83 @@ function tryAdaptiveCheckpointRepair(
       const waveConsumedWallMs = Date.now() - waveStartedAt;
       const goalReached = repairFrontier.length > 0 && waveExecutions.length === (segmentIndex - anchorHistoryIndex + 1);
 
+      // Memory Recovery and Diagnostic evaluation
+      const preGcRssMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+      let postGcRssMb = preGcRssMb;
+      let memoryRecoveryAttempted = false;
+      let memoryRecovered = true;
+
+      if (!goalReached) {
+        // Compact failed wave to release memory
+        waveExecutions.forEach((exec) => {
+          ledgerExecutions.push(toCompactLedgerExecution(exec));
+        });
+        expandedAnchor.inputFrontier = null;
+        expandedAnchor.merged = [];
+        waveExecutions.forEach((exec) => {
+          exec.inputFrontier = null;
+          exec.merged = [];
+        });
+
+        if (memoryExecution || preGcRssMb >= (config.maxRssMb || 256)) {
+          memoryRecoveryAttempted = true;
+          if (typeof global.gc === "function") {
+            try { global.gc(); } catch (_) {}
+          }
+          postGcRssMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+          memoryRecovered = postGcRssMb < (config.maxRssMb || 256);
+        }
+      } else {
+        waveExecutions.forEach((exec) => {
+          ledgerExecutions.push(exec);
+        });
+      }
+
+      const waveStopReason = memoryExecution
+        ? (memoryExecution.memoryStopReason || "memory-limit")
+        : (config.globalBudget && config.globalBudget.stoppedReason) || null;
+
+      const depthOutcome = goalReached
+        ? "goal-reached"
+        : waveStopReason === "rss-limit" || waveStopReason === "heap-limit" || !memoryRecovered
+          ? "resource-limited"
+          : waveStopReason === "time-limit"
+            ? "time-limited"
+            : waveStopReason === "expansion-limit"
+              ? "expansion-limited"
+              : "exhausted";
+
+      const depthExhausted = depthOutcome === "exhausted";
+
       attempts.push({
         depth,
         anchorSegmentId: anchor.segment.id,
         waveIndex,
         anchorInputCandidates: waveInputCandidates.length,
-        anchorExpandedCandidates: expandedAnchor ? expandedAnchor.merged.length : 0,
+        anchorExpandedCandidates: expandedAnchor ? expandedAnchor.summary.attempts.reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0) : 0,
         replaySegmentIds: replaySegments.map((s) => s.id),
         failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,
         segmentCandidateCounts: waveExecutions.map((entry) => ({
           segmentId: entry.segment.id,
-          candidates: entry.merged.length,
+          candidates: (entry.summary && entry.summary.attempts) ? entry.summary.attempts.reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0) : 0,
         })),
         depthGoalReached: goalReached,
-        depthExhausted: !goalReached,
+        depthOutcome,
+        depthExhausted,
         depthConsumedExpansions: waveConsumedExpansions,
         depthConsumedWallMs: waveConsumedWallMs,
-        depthStopReason: memoryExecution ? (memoryExecution.memoryStopReason || "memory-limit") : null,
+        depthStopReason: waveStopReason,
+        preGcRssMb,
+        postGcRssMb,
+        memoryRecoveryAttempted,
+        memoryRecovered,
       });
 
       if (goalReached) {
         return {
           found: true,
           triggerFailure,
+          maxDepth,
           attempts,
           executions: waveExecutions,
           ledgerExecutions,
@@ -3981,18 +4054,31 @@ function tryAdaptiveCheckpointRepair(
         };
       }
 
-      if (!goalReached) {
-        // Free intermediate wave candidate states and search caches so GC can reclaim RSS
-        expandedAnchor.inputFrontier = null;
-        expandedAnchor.merged = [];
-        waveExecutions.forEach((exec) => {
-          exec.inputFrontier = null;
-          exec.merged = [];
-        });
-      }
-
-      if (typeof global.gc === "function") {
-        try { global.gc(); } catch (_) {}
+      if (memoryRecoveryAttempted && !memoryRecovered) {
+        return {
+          found: false,
+          triggerFailure,
+          maxDepth,
+          attempts,
+          executions: [],
+          ledgerExecutions,
+          anchorHistoryIndex,
+          memoryExecution: memoryExecution || {
+            segment: anchor.segment,
+            summary: {
+              segmentId: anchor.segment.id,
+              failureClass: "memory-limited",
+              failureReason: `memory recovery failed: postGcRssMb ${postGcRssMb} >= maxRssMb ${config.maxRssMb || 256}`,
+            },
+            memoryLimited: true,
+            memoryStopReason: "rss-limit",
+          },
+          memorySegmentIndex: anchorHistoryIndex,
+          memoryRecoveryAttempted: true,
+          memoryRecovered: false,
+          preGcRssMb,
+          postGcRssMb,
+        };
       }
 
       if (config.globalBudget && (
@@ -4002,8 +4088,9 @@ function tryAdaptiveCheckpointRepair(
         return {
           found: false,
           triggerFailure,
+          maxDepth,
           attempts,
-          executions: waveExecutions,
+          executions: [],
           ledgerExecutions,
           anchorHistoryIndex,
           memoryExecution,
@@ -4016,6 +4103,7 @@ function tryAdaptiveCheckpointRepair(
   return {
     found: false,
     triggerFailure,
+    maxDepth,
     attempts,
     executions: [],
     ledgerExecutions,
@@ -4474,12 +4562,42 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         frontier = adaptiveRepair.finalFrontier;
         continue;
       }
-      if (adaptiveRepair && adaptiveRepair.memoryExecution) {
-        return finishMemoryLimited(
-          adaptiveRepair.memoryExecution,
-          adaptiveRepair.memorySegmentIndex,
-          frontier,
-        );
+      if (adaptiveRepair && !adaptiveRepair.found) {
+        if (adaptiveRepair.memoryExecution) {
+          const failureSummary = memoryLimitedSummary(adaptiveRepair.memoryExecution);
+          failureSummary.backtrack = {
+            attempted: true,
+            repaired: false,
+            mode: "adaptive-checkpoint-window",
+            maxDepth: adaptiveRepair.maxDepth || (graphConfig && graphConfig.adaptiveBacktrackDepth) || 3,
+            triggerFailure: adaptiveRepair.triggerFailure,
+            attempts: adaptiveRepair.attempts || [],
+            memoryRecoveryAttempted: adaptiveRepair.memoryRecoveryAttempted,
+            memoryRecovered: adaptiveRepair.memoryRecovered,
+            preGcRssMb: adaptiveRepair.preGcRssMb,
+            postGcRssMb: adaptiveRepair.postGcRssMb,
+          };
+          upsertSegmentSummary(failureSummary);
+          return finishMemoryLimited(
+            { ...adaptiveRepair.memoryExecution, summary: failureSummary },
+            adaptiveRepair.memorySegmentIndex,
+            frontier,
+          );
+        }
+        if (execution && execution.summary) {
+          execution.summary.backtrack = {
+            attempted: true,
+            repaired: false,
+            mode: "adaptive-checkpoint-window",
+            maxDepth: adaptiveRepair.maxDepth || (graphConfig && graphConfig.adaptiveBacktrackDepth) || 3,
+            triggerFailure: adaptiveRepair.triggerFailure,
+            attempts: adaptiveRepair.attempts || [],
+            memoryRecoveryAttempted: adaptiveRepair.memoryRecoveryAttempted,
+            memoryRecovered: adaptiveRepair.memoryRecovered,
+            preGcRssMb: adaptiveRepair.preGcRssMb,
+            postGcRssMb: adaptiveRepair.postGcRssMb,
+          };
+        }
       }
       const repair = adaptiveRepair
         ? null
