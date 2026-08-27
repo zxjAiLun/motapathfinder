@@ -342,49 +342,75 @@ function main() {
   const adaptiveRollbackTriggered = (runResult.segmentSummaries || []).some((s) => s.backtrack != null) ||
     (runResult.evaluationLedger || []).some((att) => att.phase === "adaptive-expand" || att.phase === "adaptive-replay");
 
-  // Semantic audit of backtrack attempts
+  // Semantic audit of depth summaries and backtrack attempts
   const allBacktrackAttempts = [];
+  const allDepthSummaries = [];
   (runResult.segmentSummaries || []).forEach((seg) => {
-    if (seg.backtrack && Array.isArray(seg.backtrack.attempts)) {
-      allBacktrackAttempts.push(...seg.backtrack.attempts);
+    if (seg.backtrack) {
+      if (Array.isArray(seg.backtrack.attempts)) {
+        allBacktrackAttempts.push(...seg.backtrack.attempts);
+      }
+      if (Array.isArray(seg.backtrack.depthSummaries)) {
+        allDepthSummaries.push(...seg.backtrack.depthSummaries);
+      }
     }
   });
 
-  let depth1AnchorSearchExecuted = false;
-  let depth1DownstreamReplayExecuted = false;
-  let depth1GenuinelyExhausted = false;
-  let depth2AnchorSearchExecuted = false;
-  let depth2DownstreamReplayExecuted = false;
   let memoryRecoveryCount = 0;
   let memoryRecoveryFailures = 0;
-
   allBacktrackAttempts.forEach((att) => {
     if (att.memoryRecoveryAttempted) memoryRecoveryCount += 1;
     if (att.memoryRecoveryAttempted && !att.memoryRecovered) memoryRecoveryFailures += 1;
+  });
 
-    // Semantic invariant: depthExhausted MUST have depthStopReason === null
-    if (att.depthExhausted) {
+  const depth1Summary = allDepthSummaries.find((d) => d.depth === 1);
+  const depth2Summary = allDepthSummaries.find((d) => d.depth === 2);
+
+  const depth1AnchorSearchExecuted = Boolean(depth1Summary && depth1Summary.anchorExpandedCandidates > 0);
+  const depth1DownstreamReplayExecuted = Boolean(depth1Summary && depth1Summary.downstreamReplayCount > 0);
+  const depth1GenuinelyExhausted = Boolean(depth1Summary && depth1Summary.depthExhausted);
+  const depth2AnchorSearchExecuted = Boolean(depth2Summary && depth2Summary.anchorExpandedCandidates > 0);
+  const depth2DownstreamReplayExecuted = Boolean(depth2Summary && depth2Summary.downstreamReplayCount > 0);
+
+  // Strict semantic invariant assertions on allDepthSummaries
+  allDepthSummaries.forEach((d) => {
+    if (d.depthExhausted) {
       assert.strictEqual(
-        att.depthStopReason,
+        d.stopReason,
         null,
-        `Attempt at depth ${att.depth} wave ${att.waveIndex} claimed depthExhausted: true but had stopReason: ${att.depthStopReason}`
+        `Depth ${d.depth} claimed depthExhausted: true but had stopReason: ${d.stopReason}`
       );
-    }
-
-    if (att.depth === 1) {
-      if (att.anchorExpandedCandidates > 0) depth1AnchorSearchExecuted = true;
-      if (att.replaySegmentIds && att.replaySegmentIds.length > 0) depth1DownstreamReplayExecuted = true;
-      if (att.depthExhausted) depth1GenuinelyExhausted = true;
-    }
-    if (att.depth === 2) {
-      if (att.anchorExpandedCandidates > 0) depth2AnchorSearchExecuted = true;
-      if (att.replaySegmentIds && att.replaySegmentIds.length > 0) depth2DownstreamReplayExecuted = true;
+      assert.strictEqual(
+        d.wavesAttempted,
+        d.wavesTotal,
+        `Depth ${d.depth} claimed depthExhausted: true but wavesAttempted (${d.wavesAttempted}) != wavesTotal (${d.wavesTotal})`
+      );
+      assert.strictEqual(
+        d.wavesCompleted,
+        d.wavesTotal,
+        `Depth ${d.depth} claimed depthExhausted: true but wavesCompleted (${d.wavesCompleted}) != wavesTotal (${d.wavesTotal})`
+      );
+      assert.strictEqual(
+        d.depthOutcome,
+        "exhausted",
+        `Depth ${d.depth} claimed depthExhausted: true but depthOutcome was: ${d.depthOutcome}`
+      );
+      assert.ok(
+        d.downstreamReplayCount > 0,
+        `Depth ${d.depth} claimed depthExhausted: true but downstreamReplayCount was 0`
+      );
     }
   });
 
   // Implication assertions
   if (depth1GenuinelyExhausted) {
     assert.ok(depth1DownstreamReplayExecuted, "depth1GenuinelyExhausted => depth1DownstreamReplayExecuted must be true");
+  }
+  if (depth2Summary) {
+    assert.ok(
+      depth1Summary && depth1Summary.depthOutcome === "exhausted",
+      `depth2 exists => depth1.depthOutcome must be 'exhausted' but was ${depth1Summary ? depth1Summary.depthOutcome : "none"}`
+    );
   }
   if (depth2AnchorSearchExecuted) {
     assert.ok(depth1GenuinelyExhausted, "depth2AnchorSearchExecuted => depth1GenuinelyExhausted must be true");

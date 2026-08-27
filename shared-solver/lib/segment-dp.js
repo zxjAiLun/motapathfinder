@@ -3880,6 +3880,7 @@ function tryAdaptiveCheckpointRepair(
   );
   const waveBatchSize = Math.max(1, numericOption(config && config.adaptiveWaveBatchSize, 1));
   const attempts = [];
+  const depthSummaries = [];
   const ledgerExecutions = [];
 
   for (let depth = 1; depth <= maxDepth; depth += 1) {
@@ -3897,6 +3898,8 @@ function tryAdaptiveCheckpointRepair(
     let depthWavesCompleted = 0;
     let depthDownstreamReplayCount = 0;
     let depthStopReason = null;
+    let depthAnchorExpandedCandidates = 0;
+    let depthGoalReached = false;
 
     for (let waveIndex = 0; waveIndex < totalWaves; waveIndex += 1) {
       const waveInputCandidates = rankedInputFrontier.slice(
@@ -3995,6 +3998,9 @@ function tryAdaptiveCheckpointRepair(
       const waveConsumedExpansions = (config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) - waveStartExpansions;
       const waveConsumedWallMs = Date.now() - waveStartedAt;
       const goalReached = Boolean(repairFrontier && repairFrontier.length > 0 && waveExecutions.length === (segmentIndex - anchorHistoryIndex + 1));
+      if (goalReached) {
+        depthGoalReached = true;
+      }
 
       const preReleaseRssMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
       let postGcRssMb = preReleaseRssMb;
@@ -4006,6 +4012,7 @@ function tryAdaptiveCheckpointRepair(
       const expandedAnchorCandidatesCount = expandedAnchor && expandedAnchor.summary && expandedAnchor.summary.attempts
         ? expandedAnchor.summary.attempts.reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0)
         : 0;
+      depthAnchorExpandedCandidates += expandedAnchorCandidatesCount;
 
       const recordedSegmentCandidateCounts = waveExecutions.map((entry) => ({
         segmentId: (entry.segment && entry.segment.id) || (entry.summary && entry.summary.segmentId),
@@ -4072,7 +4079,7 @@ function tryAdaptiveCheckpointRepair(
 
       if (waveOutcome === "exhausted") {
         depthWavesCompleted += 1;
-      } else {
+      } else if (!depthStopReason) {
         depthStopReason = waveStopReason || (!memoryRecovered ? "rss-limit" : null);
       }
 
@@ -4097,12 +4104,43 @@ function tryAdaptiveCheckpointRepair(
         releasedAttemptCount,
       });
 
+      const pushCurrentDepthSummary = () => {
+        const depthOutcome = depthGoalReached
+          ? "goal-reached"
+          : depthWavesCompleted === totalWaves && depthStopReason === null
+            ? "exhausted"
+            : depthStopReason === "rss-limit" || depthStopReason === "heap-limit" || !memoryRecovered
+              ? "resource-limited"
+              : depthStopReason === "time-limit"
+                ? "time-limited"
+                : depthStopReason === "expansion-limit"
+                  ? "expansion-limited"
+                  : "incomplete";
+        const hasDownstreamSegments = segmentIndex > anchorHistoryIndex;
+        const depthExhausted = depthOutcome === "exhausted" && (!hasDownstreamSegments || depthDownstreamReplayCount > 0);
+
+        depthSummaries.push({
+          depth,
+          anchorSegmentId: anchor.segment.id,
+          wavesTotal: totalWaves,
+          wavesAttempted: depthWavesAttempted,
+          wavesCompleted: depthWavesCompleted,
+          downstreamReplayCount: depthDownstreamReplayCount,
+          anchorExpandedCandidates: depthAnchorExpandedCandidates,
+          depthOutcome,
+          depthExhausted,
+          stopReason: depthStopReason,
+        });
+      };
+
       if (goalReached) {
+        pushCurrentDepthSummary();
         return {
           found: true,
           triggerFailure,
           maxDepth,
           attempts,
+          depthSummaries,
           executions: waveExecutions,
           ledgerExecutions,
           anchorHistoryIndex,
@@ -4111,11 +4149,13 @@ function tryAdaptiveCheckpointRepair(
       }
 
       if (memoryRecoveryAttempted && !memoryRecovered) {
+        pushCurrentDepthSummary();
         return {
           found: false,
           triggerFailure,
           maxDepth,
           attempts,
+          depthSummaries,
           executions: [],
           ledgerExecutions,
           anchorHistoryIndex,
@@ -4141,11 +4181,13 @@ function tryAdaptiveCheckpointRepair(
         config.globalBudget.stoppedReason === "time-limit" ||
         config.globalBudget.stoppedReason === "expansion-limit"
       )) {
+        pushCurrentDepthSummary();
         return {
           found: false,
           triggerFailure,
           maxDepth,
           attempts,
+          depthSummaries,
           executions: [],
           ledgerExecutions,
           anchorHistoryIndex,
@@ -4154,6 +4196,33 @@ function tryAdaptiveCheckpointRepair(
         };
       }
     }
+
+    if (!depthSummaries.some((d) => d.depth === depth)) {
+      const depthOutcome = depthWavesCompleted === totalWaves && depthStopReason === null
+        ? "exhausted"
+        : depthStopReason === "rss-limit" || depthStopReason === "heap-limit"
+          ? "resource-limited"
+          : depthStopReason === "time-limit"
+            ? "time-limited"
+            : depthStopReason === "expansion-limit"
+              ? "expansion-limited"
+              : "incomplete";
+      const hasDownstreamSegments = segmentIndex > anchorHistoryIndex;
+      const depthExhausted = depthOutcome === "exhausted" && (!hasDownstreamSegments || depthDownstreamReplayCount > 0);
+
+      depthSummaries.push({
+        depth,
+        anchorSegmentId: anchor.segment.id,
+        wavesTotal: totalWaves,
+        wavesAttempted: depthWavesAttempted,
+        wavesCompleted: depthWavesCompleted,
+        downstreamReplayCount: depthDownstreamReplayCount,
+        anchorExpandedCandidates: depthAnchorExpandedCandidates,
+        depthOutcome,
+        depthExhausted,
+        stopReason: depthStopReason,
+      });
+    }
   }
 
   return {
@@ -4161,6 +4230,7 @@ function tryAdaptiveCheckpointRepair(
     triggerFailure,
     maxDepth,
     attempts,
+    depthSummaries,
     executions: [],
     ledgerExecutions,
   };
@@ -4630,6 +4700,8 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
             maxDepth: adaptiveRepair.maxDepth || (graphConfig && graphConfig.adaptiveBacktrackDepth) || 3,
             triggerFailure: adaptiveRepair.triggerFailure,
             attempts: adaptiveRepair.attempts || [],
+            depthSummaries: adaptiveRepair.depthSummaries || [],
+            depths: adaptiveRepair.depthSummaries || [],
             memoryRecoveryAttempted: adaptiveRepair.memoryRecoveryAttempted,
             memoryRecovered: adaptiveRepair.memoryRecovered,
             preGcRssMb: adaptiveRepair.preGcRssMb,
@@ -4650,6 +4722,8 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
             maxDepth: adaptiveRepair.maxDepth || (graphConfig && graphConfig.adaptiveBacktrackDepth) || 3,
             triggerFailure: adaptiveRepair.triggerFailure,
             attempts: adaptiveRepair.attempts || [],
+            depthSummaries: adaptiveRepair.depthSummaries || [],
+            depths: adaptiveRepair.depthSummaries || [],
             memoryRecoveryAttempted: adaptiveRepair.memoryRecoveryAttempted,
             memoryRecovered: adaptiveRepair.memoryRecovered,
             preGcRssMb: adaptiveRepair.preGcRssMb,
