@@ -3814,11 +3814,33 @@ function tryRepairFromPreviousMilestone(
 function toCompactLedgerExecution(execution) {
   if (!execution) return null;
   const summary = execution.summary || {};
+  const compactAttempts = (summary.attempts || []).map((att) => ({
+    attemptIndex: att.attemptIndex,
+    startCandidateId: att.startCandidateId,
+    found: att.found,
+    goalCount: att.goalCount,
+    missingGoalFields: att.missingGoalFields || [],
+    diagnostics: {
+      dp: att.diagnostics && att.diagnostics.dp ? {
+        expansions: att.diagnostics.dp.expansions,
+        frontierSize: att.diagnostics.dp.frontierSize,
+        stoppedReason: att.diagnostics.dp.stoppedReason,
+        searchOutcome: att.diagnostics.dp.searchOutcome,
+        memory: att.diagnostics.dp.memory,
+      } : {},
+      failure: att.diagnostics && att.diagnostics.failure ? {
+        failureClass: att.diagnostics.failure.failureClass,
+        failureReason: att.diagnostics.failure.failureReason,
+        missingGoalFields: att.diagnostics.failure.missingGoalFields,
+        preferredCandidateTags: att.diagnostics.failure.preferredCandidateTags,
+      } : {},
+    },
+  }));
   return {
     segment: { id: execution.segment ? execution.segment.id : summary.segmentId },
     summary: {
       segmentId: summary.segmentId || (execution.segment ? execution.segment.id : null),
-      attempts: summary.attempts || [],
+      attempts: compactAttempts,
     },
     merged: [],
     inputFrontier: [],
@@ -3840,17 +3862,16 @@ function tryAdaptiveCheckpointRepair(
   const failedSummary = failedExecution && failedExecution.summary;
   const failedAttempt = failedSummary && failedSummary.attempts && failedSummary.attempts[failedSummary.attempts.length - 1];
   const failedDiagnostics = (failedAttempt && failedAttempt.diagnostics) || {};
-  const failurePropagation = (failedSummary && failedSummary.failurePropagation) ||
-    (failedDiagnostics.failure && failedDiagnostics.failure.failurePropagation) || {};
-  const preferredTags = failurePropagation.preferredCandidateTags || [];
-  const missingGoalFields = (failedAttempt && failedAttempt.missingGoalFields) ||
-    (failedDiagnostics.dp && failedDiagnostics.dp.missingGoalFields) || [];
+  const failure = failedDiagnostics.failure || (failedSummary && failedSummary.failurePropagation) || {};
+  const preferredTags = failure.preferredCandidateTags || (failedSummary && failedSummary.failurePropagation && failedSummary.failurePropagation.preferredCandidateTags) || [];
+  const missingGoalFields = failure.missingGoalFields || (failedAttempt && failedAttempt.missingGoalFields) || [];
   const triggerFailure = {
     segmentId: segments[segmentIndex].id,
-    failureClass: (failedSummary && failedSummary.failureClass) || failurePropagation.primaryFailureClass || "frontier-exhausted",
-    failureReason: (failedSummary && failedSummary.failureReason) || failurePropagation.reason || null,
+    failureClass: failure.failureClass || (failedSummary && failedSummary.failureClass) || "frontier-exhausted",
+    failureReason: failure.failureReason || (failedSummary && failedSummary.failureReason) || null,
     missingGoalFields,
     preferredCandidateTags: preferredTags,
+    failurePropagation: failure.failurePropagation || (failedSummary && failedSummary.failurePropagation) || null,
   };
 
   const maxDepth = Math.min(
@@ -3872,6 +3893,10 @@ function tryAdaptiveCheckpointRepair(
     );
 
     const totalWaves = Math.max(1, Math.ceil(rankedInputFrontier.length / waveBatchSize));
+    let depthWavesAttempted = 0;
+    let depthWavesCompleted = 0;
+    let depthDownstreamReplayCount = 0;
+    let depthStopReason = null;
 
     for (let waveIndex = 0; waveIndex < totalWaves; waveIndex += 1) {
       const waveInputCandidates = rankedInputFrontier.slice(
@@ -3880,12 +3905,13 @@ function tryAdaptiveCheckpointRepair(
       );
       if (waveInputCandidates.length === 0) continue;
 
+      depthWavesAttempted += 1;
       const waveStartedAt = Date.now();
       const waveStartExpansions = config && config.globalBudget ? config.globalBudget.consumedExpansions : 0;
-      const waveExecutions = [];
+      let waveExecutions = [];
       const anchorConfig = { ...(config || {}), stopOnFirstGoal: undefined };
 
-      const expandedAnchor = runSegmentAgainstFrontier(
+      let expandedAnchor = runSegmentAgainstFrontier(
         simulator,
         anchor.segment,
         waveInputCandidates,
@@ -3907,24 +3933,25 @@ function tryAdaptiveCheckpointRepair(
         waveIndex,
         triggeredBySegment: segments[segmentIndex].id,
         preferredCandidateTags: preferredTags,
-        previousCandidateCount: anchor.merged.length,
-        expandedCandidateCount: expandedAnchor.merged.length,
+        previousCandidateCount: anchor.merged ? anchor.merged.length : 0,
+        expandedCandidateCount: expandedAnchor.merged ? expandedAnchor.merged.length : 0,
       };
       waveExecutions.push(expandedAnchor);
 
       let repairFrontier = expandedAnchor.merged;
-      let failedAtIndex = repairFrontier.length > 0 ? null : anchorHistoryIndex;
+      let failedAtIndex = repairFrontier && repairFrontier.length > 0 ? null : anchorHistoryIndex;
       let memoryExecution = expandedAnchor.memoryLimited ? expandedAnchor : null;
       let memorySegmentIndex = expandedAnchor.memoryLimited ? anchorHistoryIndex : null;
 
       const replaySegments = [];
       for (
         let replayIndex = anchorHistoryIndex + 1;
-        repairFrontier.length > 0 && replayIndex <= segmentIndex;
+        repairFrontier && repairFrontier.length > 0 && replayIndex <= segmentIndex;
         replayIndex += 1
       ) {
         const replaySegment = segments[replayIndex];
         replaySegments.push(replaySegment);
+        depthDownstreamReplayCount += 1;
         const rankedFrontier = rankCandidatesByPreferredTags(
           repairFrontier,
           preferredTags,
@@ -3958,8 +3985,8 @@ function tryAdaptiveCheckpointRepair(
         if (replayed.memoryLimited) {
           memoryExecution = replayed;
           memorySegmentIndex = replayIndex;
-          if (repairFrontier.length === 0) break;
-        } else if (repairFrontier.length === 0) {
+          if (!repairFrontier || repairFrontier.length === 0) break;
+        } else if (!repairFrontier || repairFrontier.length === 0) {
           failedAtIndex = replayIndex;
           break;
         }
@@ -3967,27 +3994,55 @@ function tryAdaptiveCheckpointRepair(
 
       const waveConsumedExpansions = (config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) - waveStartExpansions;
       const waveConsumedWallMs = Date.now() - waveStartedAt;
-      const goalReached = repairFrontier.length > 0 && waveExecutions.length === (segmentIndex - anchorHistoryIndex + 1);
+      const goalReached = Boolean(repairFrontier && repairFrontier.length > 0 && waveExecutions.length === (segmentIndex - anchorHistoryIndex + 1));
 
-      // Memory Recovery and Diagnostic evaluation
-      const preGcRssMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
-      let postGcRssMb = preGcRssMb;
+      const preReleaseRssMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+      let postGcRssMb = preReleaseRssMb;
       let memoryRecoveryAttempted = false;
       let memoryRecovered = true;
+      let releasedExecutionCount = 0;
+      let releasedAttemptCount = 0;
+
+      const expandedAnchorCandidatesCount = expandedAnchor && expandedAnchor.summary && expandedAnchor.summary.attempts
+        ? expandedAnchor.summary.attempts.reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0)
+        : 0;
+
+      const recordedSegmentCandidateCounts = waveExecutions.map((entry) => ({
+        segmentId: (entry.segment && entry.segment.id) || (entry.summary && entry.summary.segmentId),
+        candidates: (entry.summary && entry.summary.attempts) ? entry.summary.attempts.reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0) : 0,
+      }));
 
       if (!goalReached) {
-        // Compact failed wave to release memory
+        // Strict Detachment of all heavy execution structures
+        releasedExecutionCount = waveExecutions.length;
         waveExecutions.forEach((exec) => {
+          releasedAttemptCount += (exec.attempts ? exec.attempts.length : 0);
           ledgerExecutions.push(toCompactLedgerExecution(exec));
-        });
-        expandedAnchor.inputFrontier = null;
-        expandedAnchor.merged = [];
-        waveExecutions.forEach((exec) => {
           exec.inputFrontier = null;
-          exec.merged = [];
+          exec.merged = null;
+          if (Array.isArray(exec.attempts)) {
+            exec.attempts.forEach((att) => {
+              att.rawResult = null;
+              att.result = null;
+              att.state = null;
+              att.hero = null;
+              att.goalSkyline = null;
+              att.frontier = null;
+              if (att.diagnostics && att.diagnostics.dp) {
+                att.diagnostics.dp.goalSkyline = null;
+                att.diagnostics.dp.bestSeenState = null;
+                att.diagnostics.dp.bestProgressState = null;
+              }
+            });
+            exec.attempts.length = 0;
+          }
         });
 
-        if (memoryExecution || preGcRssMb >= (config.maxRssMb || 256)) {
+        repairFrontier = null;
+        expandedAnchor = null;
+        waveExecutions.length = 0;
+
+        if (memoryExecution || preReleaseRssMb >= (config.maxRssMb || 256)) {
           memoryRecoveryAttempted = true;
           if (typeof global.gc === "function") {
             try { global.gc(); } catch (_) {}
@@ -4005,7 +4060,7 @@ function tryAdaptiveCheckpointRepair(
         ? (memoryExecution.memoryStopReason || "memory-limit")
         : (config.globalBudget && config.globalBudget.stoppedReason) || null;
 
-      const depthOutcome = goalReached
+      const waveOutcome = goalReached
         ? "goal-reached"
         : waveStopReason === "rss-limit" || waveStopReason === "heap-limit" || !memoryRecovered
           ? "resource-limited"
@@ -4015,30 +4070,31 @@ function tryAdaptiveCheckpointRepair(
               ? "expansion-limited"
               : "exhausted";
 
-      const depthExhausted = depthOutcome === "exhausted";
+      if (waveOutcome === "exhausted") {
+        depthWavesCompleted += 1;
+      } else {
+        depthStopReason = waveStopReason || (!memoryRecovered ? "rss-limit" : null);
+      }
 
       attempts.push({
         depth,
         anchorSegmentId: anchor.segment.id,
         waveIndex,
         anchorInputCandidates: waveInputCandidates.length,
-        anchorExpandedCandidates: expandedAnchor ? expandedAnchor.summary.attempts.reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0) : 0,
+        anchorExpandedCandidates: expandedAnchorCandidatesCount,
         replaySegmentIds: replaySegments.map((s) => s.id),
         failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,
-        segmentCandidateCounts: waveExecutions.map((entry) => ({
-          segmentId: entry.segment.id,
-          candidates: (entry.summary && entry.summary.attempts) ? entry.summary.attempts.reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0) : 0,
-        })),
-        depthGoalReached: goalReached,
-        depthOutcome,
-        depthExhausted,
+        segmentCandidateCounts: recordedSegmentCandidateCounts,
+        waveOutcome,
         depthConsumedExpansions: waveConsumedExpansions,
         depthConsumedWallMs: waveConsumedWallMs,
         depthStopReason: waveStopReason,
-        preGcRssMb,
+        preReleaseRssMb,
         postGcRssMb,
         memoryRecoveryAttempted,
         memoryRecovered,
+        releasedExecutionCount,
+        releasedAttemptCount,
       });
 
       if (goalReached) {
@@ -4076,7 +4132,7 @@ function tryAdaptiveCheckpointRepair(
           memorySegmentIndex: anchorHistoryIndex,
           memoryRecoveryAttempted: true,
           memoryRecovered: false,
-          preGcRssMb,
+          preReleaseRssMb,
           postGcRssMb,
         };
       }
@@ -4416,7 +4472,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     if (index >= 0) checkpointResults[index] = checkpoint;
     else checkpointResults.push(checkpoint);
   };
-  const finishMemoryLimited = (execution, executionSegmentIndex, fallbackCandidates) => {
+  const finishMemoryLimited = (execution, executionSegmentIndex, fallbackCandidates, options = {}) => {
     const summary = memoryLimitedSummary(execution);
     upsertSegmentSummary(summary);
     upsertCheckpoint(execution);
@@ -4426,11 +4482,13 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     const finalCandidates = retainedCandidates.length > 0
       ? rankFinalCandidates(retainedCandidates, config.qualityFloor || null, config.objectiveSpec || null)
       : (fallbackCandidates || []);
+    const deepestHistoryMilestone = history.length > 0 ? history[history.length - 1].segment.id : null;
+    const reachedMilestone = retainedCandidates.length > 0
+      ? execution.segment.id
+      : (options.reachedMilestone || deepestHistoryMilestone || (execution && execution.segment && execution.segment.startFrom) || null);
     return finishResult({
       found,
-      reachedMilestone: retainedCandidates.length > 0
-        ? execution.segment.id
-        : execution.segment.startFrom || null,
+      reachedMilestone,
       failedSegment: found ? null : summary,
       finalCandidate: found ? finalCandidates[0] : null,
       finalCandidates,

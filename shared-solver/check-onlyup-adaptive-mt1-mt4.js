@@ -382,6 +382,17 @@ function main() {
     }
   });
 
+  // Implication assertions
+  if (depth1GenuinelyExhausted) {
+    assert.ok(depth1DownstreamReplayExecuted, "depth1GenuinelyExhausted => depth1DownstreamReplayExecuted must be true");
+  }
+  if (depth2AnchorSearchExecuted) {
+    assert.ok(depth1GenuinelyExhausted, "depth2AnchorSearchExecuted => depth1GenuinelyExhausted must be true");
+  }
+  if (depth2DownstreamReplayExecuted) {
+    assert.ok(depth2AnchorSearchExecuted, "depth2DownstreamReplayExecuted => depth2AnchorSearchExecuted must be true");
+  }
+
   const summary = {
     schema: "motapathfinder.canonical-adaptive-rollback.v1",
     contractStatus: "passed",
