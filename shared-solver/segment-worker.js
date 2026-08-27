@@ -64,14 +64,43 @@ function buildAppliedProfile(simulator) {
 }
 
 function main() {
-  const [,, inputPath, outputPath] = process.argv;
+  const [,, inputPath, outputPath, envelopePath] = process.argv;
   if (!inputPath || !outputPath) {
-    console.error("Usage: node segment-worker.js <inputPath> <outputPath>");
+    console.error("Usage: node segment-worker.js <inputPath> <outputPath> [envelopePath]");
     process.exit(1);
   }
 
   const rawInput = fs.readFileSync(inputPath, "utf8");
   const payload = JSON.parse(rawInput);
+
+  // Repair 3: tiny envelope B carries authoritative atSpawn headroom – overrides large payload's placeholder
+  if (envelopePath && fs.existsSync(envelopePath)) {
+    try {
+      const envelopeRaw = fs.readFileSync(envelopePath, "utf8");
+      const envelope = JSON.parse(envelopeRaw);
+      if (envelope && typeof envelope.workerMaxRssMb === "number" && payload.config) {
+        payload.config.maxRssMb = Number(envelope.workerMaxRssMb);
+      }
+      if (envelope && typeof envelope.workerHardCeilingMb === "number" && payload.config) {
+        payload.config.maxRssHardCeilingMb = Number(envelope.workerHardCeilingMb);
+      }
+      if (envelope && typeof envelope.effectiveStopThresholdMb === "number" && payload.config) {
+        // Keep for debugging, not directly used
+      }
+      // Verify invocationId consistency if present in both
+      if (envelope && envelope.invocationId && payload.invocationId && envelope.invocationId !== payload.invocationId) {
+        console.error(`Envelope invocationId ${envelope.invocationId} != payload ${payload.invocationId}`);
+        process.exit(5);
+      }
+      // Preserve envelope invocationId as authoritative if payload missing
+      if (envelope && envelope.invocationId && !payload.invocationId) {
+        payload.invocationId = envelope.invocationId;
+      }
+    } catch (e) {
+      console.error(`Failed to read envelope ${envelopePath}: ${e.message}`);
+      process.exit(5);
+    }
+  }
 
   const project = loadProject(payload.projectRoot || payload.projectDir);
   let simulator;

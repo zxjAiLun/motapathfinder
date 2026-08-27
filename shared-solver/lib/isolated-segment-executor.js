@@ -241,15 +241,18 @@ function executeIsolatedSegment(options) {
     };
   }
 
-  // Compute initial worker headroom based on beforeSerialization (will be recomputed atSpawn)
-  const requestedStopMbInit = Number((config && config.maxRssMb) || PROCESS_TREE_RSS_STOP_THRESHOLD_MB);
-  const requestedHardMbInit = Number((config && config.maxRssHardCeilingMb) || PROCESS_TREE_RSS_HARD_CEILING_MB);
-  const effectiveStopThresholdMbInit = Number.isFinite(requestedStopMbInit) && requestedStopMbInit > 0 ? requestedStopMbInit : PROCESS_TREE_RSS_STOP_THRESHOLD_MB;
-  const effectiveHardThresholdMbInit = Number.isFinite(requestedHardMbInit) && requestedHardMbInit > effectiveStopThresholdMbInit ? requestedHardMbInit : effectiveStopThresholdMbInit + PROCESS_TREE_ALLOWED_OVERSHOOT_MB;
-  const workerMaxRssMbInit = Math.max(1, effectiveStopThresholdMbInit - plannerRssBeforeSerializationMb);
-  const workerHardCeilingMbInit = Math.max(1, effectiveHardThresholdMbInit - plannerRssBeforeSerializationMb);
+  const runIdForEnvelope = runId; // stable invocationId for both files
+  const envelopePath = path.join(tmpDir, `segment-envelope-${runId}.json`);
 
-  let workerPayload = {
+  // Compute effective thresholds once (independent of RSS)
+  const requestedStopMb = Number((config && config.maxRssMb) || PROCESS_TREE_RSS_STOP_THRESHOLD_MB);
+  const requestedHardMb = Number((config && config.maxRssHardCeilingMb) || PROCESS_TREE_RSS_HARD_CEILING_MB);
+  const effectiveStopThresholdMb = Number.isFinite(requestedStopMb) && requestedStopMb > 0 ? requestedStopMb : PROCESS_TREE_RSS_STOP_THRESHOLD_MB;
+  const effectiveHardThresholdMb = Number.isFinite(requestedHardMb) && requestedHardMb > effectiveStopThresholdMb ? requestedHardMb : effectiveStopThresholdMb + PROCESS_TREE_ALLOWED_OVERSHOOT_MB;
+
+  // Build large immutable payload A (state/frontier/segment/profile) – without authoritative workerMax
+  // WorkerMax will be supplied via tiny envelope B after atSpawn
+  let workerPayloadA = {
     projectRoot,
     segment,
     inputFrontier,
@@ -258,15 +261,16 @@ function executeIsolatedSegment(options) {
     assignedExpansions,
     assignedDeadlineMs,
     childDeadlineMs,
-    invocationId: runId,
+    invocationId: runIdForEnvelope,
     config: {
       ...(config || {}),
       globalBudget: childGlobalBudget,
       deadlineMs: childDeadlineMs,
       maxExpansions: assignedExpansions,
       maxRuntimeMs: childSearchRuntimeMs,
-      maxRssMb: workerMaxRssMbInit,
-      maxRssHardCeilingMb: workerHardCeilingMbInit,
+      // Placeholder – will be overridden by envelope's authoritative value
+      maxRssMb: Math.max(1, effectiveStopThresholdMb - plannerRssBeforeSerializationMb),
+      maxRssHardCeilingMb: Math.max(1, effectiveHardThresholdMb - plannerRssBeforeSerializationMb),
       assignedExpansions,
       assignedDeadlineMs: childDeadlineMs,
       deadlineEpochMs: undefined,
@@ -274,36 +278,32 @@ function executeIsolatedSegment(options) {
     overrides: overrides || {},
   };
 
-  // Serialize payload – capture string temporarily then release
-  let payloadJson = JSON.stringify(workerPayload);
-  fs.writeFileSync(inputPath, payloadJson);
-  // Release transient serialization allocations before atSpawn measurement
-  payloadJson = null;
-  // Allow GC to reclaim serialization buffers if available
+  // Serialize and write large payload A
+  let payloadJsonA = JSON.stringify(workerPayloadA);
+  fs.writeFileSync(inputPath, payloadJsonA);
+  // Release large transient allocations before FINAL atSpawn
+  payloadJsonA = null;
+  workerPayloadA = null;
   if (typeof global.gc === "function") {
     try { global.gc(); } catch (_) {}
   }
   const plannerRssAtSpawnMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
 
-  // Recompute worker headroom based on atSpawn (authoritative)
-  const effectiveStopThresholdMb = effectiveStopThresholdMbInit;
-  const effectiveHardThresholdMb = effectiveHardThresholdMbInit;
+  // Authoritative worker headroom based on FINAL atSpawn
   const workerMaxRssMb = Math.max(1, effectiveStopThresholdMb - plannerRssAtSpawnMb);
   const workerHardCeilingMb = Math.max(1, effectiveHardThresholdMb - plannerRssAtSpawnMb);
-  // Update payload on disk if headroom changed
-  if (workerMaxRssMb !== workerMaxRssMbInit || workerHardCeilingMb !== workerHardCeilingMbInit) {
-    workerPayload.config.maxRssMb = workerMaxRssMb;
-    workerPayload.config.maxRssHardCeilingMb = workerHardCeilingMb;
-    fs.writeFileSync(inputPath, JSON.stringify(workerPayload));
-  }
-  // Release payload reference after atSpawn (payload stays on disk)
-  workerPayload = null;
-  if (typeof global.gc === "function") {
-    try { global.gc(); } catch (_) {}
-  }
+
+  // Write tiny envelope B (authoritative execution limits) – minimal serialization cost after FINAL sample
+  const envelope = {
+    invocationId: runIdForEnvelope,
+    workerMaxRssMb,
+    workerHardCeilingMb,
+    effectiveStopThresholdMb,
+    effectiveHardThresholdMb,
+  };
+  fs.writeFileSync(envelopePath, JSON.stringify(envelope));
 
   const workerScript = path.resolve(__dirname, "../segment-worker.js");
-  // Parent wall timeout: assigned runtime + small grace (not +2000 expansion). Reserve already inside child.
   const spawnTimeout = Math.max(1000, assignedRuntimeMs + 1000);
   const spawnStartedAt = Date.now();
 
@@ -312,7 +312,7 @@ function executeIsolatedSegment(options) {
   let spawnStderr = "";
 
   try {
-    const spawnRes = childProcess.spawnSync(process.execPath, ["--expose-gc", workerScript, inputPath, outputPath], {
+    const spawnRes = childProcess.spawnSync(process.execPath, ["--expose-gc", workerScript, inputPath, outputPath, envelopePath], {
       timeout: spawnTimeout,
       maxBuffer: 50 * 1024 * 1024,
       encoding: "utf8",
@@ -334,9 +334,10 @@ function executeIsolatedSegment(options) {
     } catch (_) {}
   }
 
-  // Cleanup temp files
+  // Cleanup temp files (including tiny envelope)
   try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (_) {}
   try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (_) {}
+  try { if (fs.existsSync(envelopePath)) fs.unlinkSync(envelopePath); } catch (_) {}
 
   if (childExitCode !== 0 || !workerResponse || !workerResponse.success) {
     const isTimeout = spawnError && spawnError.code === "ETIMEDOUT";
@@ -425,9 +426,15 @@ function executeIsolatedSegment(options) {
     }
     outputStateKeysVerified += 1;
   }
-  // Counts must match exactly; missing key already throws, but also verify lengths if mismatch between verified and expected
-  const inputStateKeysVerified = Number(workerResponse.inputStateKeysVerified || parentInputStateKeys.length);
-  // If worker reported verification counts, hard assert they match expected
+  // P2 strict: worker must explicitly report input verification count – no fallback
+  if (workerResponse.inputStateKeysVerified == null) {
+    throw new Error(`Missing inputStateKeysVerified in worker response (IPC protocol requires explicit count)`);
+  }
+  const inputStateKeysVerified = Number(workerResponse.inputStateKeysVerified);
+  if (!Number.isInteger(inputStateKeysVerified)) {
+    throw new Error(`Invalid inputStateKeysVerified ${workerResponse.inputStateKeysVerified}`);
+  }
+  // If worker reported frontier length, hard assert match
   if (workerResponse.inputFrontierLength != null && workerResponse.inputFrontierLength !== inputFrontier.length) {
     throw new Error(`Worker inputFrontierLength ${workerResponse.inputFrontierLength} != parent ${inputFrontier.length}`);
   }
