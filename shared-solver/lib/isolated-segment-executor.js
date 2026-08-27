@@ -76,8 +76,10 @@ function buildSimulatorProfile(simulator) {
 }
 
 function executeIsolatedSegment(options) {
-  const { simulator, segment, frontier, config, overrides } = options;
-  const projectRoot = (simulator && simulator.project && (simulator.project.root || simulator.project.projectRoot)) ||
+  const { simulator, segment, frontier, config, overrides, isolatedRuntimeDescriptor, descriptor } = options;
+  const runtimeDescriptor = isolatedRuntimeDescriptor || descriptor || null;
+  const projectRoot = (runtimeDescriptor && runtimeDescriptor.projectRoot) ||
+    (simulator && simulator.project && (simulator.project.root || simulator.project.projectRoot)) ||
     (config && (config.projectRoot || config.projectPath)) ||
     path.resolve(__dirname, "../..", "Only upV2.1", "Only upV2.1");
 
@@ -169,7 +171,10 @@ function executeIsolatedSegment(options) {
   const childDeadlineMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedDeadlineMs - CHILD_EXIT_RESERVE_MS : assignedDeadlineMs;
   const childSearchRuntimeMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedRuntimeMs - CHILD_EXIT_RESERVE_MS : Math.max(1, assignedRuntimeMs);
 
-  const simulatorProfile = buildSimulatorProfile(simulator);
+  const simulatorProfile = runtimeDescriptor ? runtimeDescriptor.simulatorProfile : buildSimulatorProfile(simulator);
+  if (!simulatorProfile) {
+    throw new Error("Missing simulatorProfile for isolated execution – need simulator or isolatedRuntimeDescriptor");
+  }
   if (simulatorProfile && simulatorProfile.unsupported) {
     const plannerRssAfterSpawnMb = plannerRssBeforeSerializationMb;
     return {

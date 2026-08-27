@@ -3581,6 +3581,7 @@ function runSegmentAgainstFrontier(
       frontier,
       config,
       overrides,
+      isolatedRuntimeDescriptor: config && config.isolatedRuntimeDescriptor,
     });
   }
   return runSegmentAgainstFrontierLocal(

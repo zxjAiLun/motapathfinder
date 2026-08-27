@@ -2427,6 +2427,22 @@
       },
       "notes": "real search event diagnostics; synthetic contract plus manual teacher fixture runs; never feeds teacher actions into production search"
     },
+    "shared-solver/lib/thin-planner.js": {
+      "id": "thin-planner",
+      "path": "shared-solver/lib/thin-planner.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/tool-registry.js": {
       "id": "tool-registry",
       "path": "shared-solver/lib/tool-registry.js",
@@ -3646,6 +3662,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "synthetic real-search teacher observer outcome contract"
+    },
+    "shared-solver/check-thin-planner.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-topology-first-materialization.js": {
       "grade": "unit-plus-micro",
