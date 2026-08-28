@@ -2275,8 +2275,8 @@ function searchDP(simulator, initialState, options) {
   let rssGcCurrentIntervalExpansions = rssGcMinIntervalExpansions;
   let rssGcWallMsTotal = 0;
   let rssGcWallMsMax = 0;
-  let rssGcReclaimedMbTotal = 0;
-  let rssGcReclaimedMbMax = 0;
+  let gcHeapReclaimedMbTotal = 0;
+  let gcHeapReclaimedMbMax = 0;
   let rssGcUsefulCount = 0;
   let rssGcIneffectiveCount = 0;
   let rssGcLastReclaimedMb = null;
@@ -2293,8 +2293,8 @@ function searchDP(simulator, initialState, options) {
     // heap garbage headroom (RSS - heapUsed) before spending wall on GC.
     const usageNow = readMemoryUsage();
     const effectiveMinGarbageMb = rssGcMinHeapGarbageMb + rssGcConsecutiveLowYield * 16;
-    const heapGarbageMb = usageNow.rssMb - usageNow.heapUsedMb;
-    const heapGarbageOk = heapGarbageMb >= effectiveMinGarbageMb;
+    const gcEligibilityHeadroomMb = usageNow.rssMb - usageNow.heapUsedMb;
+    const heapGarbageOk = gcEligibilityHeadroomMb >= effectiveMinGarbageMb;
     const dangerMb = maxRssMb * rssGcDangerFraction;
     // Danger zone (close to the stop threshold): always eligible to GC regardless of
     // the heap-garbage estimate – V8's lazy page commits can raise RSS while heapUsed
@@ -2327,8 +2327,8 @@ function searchDP(simulator, initialState, options) {
     rssGcLastAtExpansion = expansionOrdinal == null ? rssGcLastAtExpansion : expansionOrdinal;
     rssGcWallMsTotal += gcWallMs;
     if (gcWallMs > rssGcWallMsMax) rssGcWallMsMax = gcWallMs;
-    rssGcReclaimedMbTotal += heapReclaimedMb;
-    if (heapReclaimedMb > rssGcReclaimedMbMax) rssGcReclaimedMbMax = heapReclaimedMb;
+    gcHeapReclaimedMbTotal += heapReclaimedMb;
+    if (heapReclaimedMb > gcHeapReclaimedMbMax) gcHeapReclaimedMbMax = heapReclaimedMb;
     rssGcLastReclaimedMb = heapReclaimedMb;
     if (heapReclaimedMb >= RSS_GC_LOW_YIELD_MB) {
       rssGcUsefulCount += 1;
@@ -3016,8 +3016,11 @@ function searchDP(simulator, initialState, options) {
           rssGcCount,
           rssGcWallMsTotal: Math.round(rssGcWallMsTotal),
           rssGcWallMsMax: Math.round(rssGcWallMsMax),
-          rssGcReclaimedMbTotal: Number(rssGcReclaimedMbTotal.toFixed(1)),
-          rssGcReclaimedMbMax: Number(rssGcReclaimedMbMax.toFixed(1)),
+          gcHeapReclaimedMbTotal: Number(gcHeapReclaimedMbTotal.toFixed(1)),
+          gcHeapReclaimedMbMax: Number(gcHeapReclaimedMbMax.toFixed(1)),
+          // Legacy aliases (deprecated: values are heap reclamation, not RSS)
+          rssGcReclaimedMbTotal: Number(gcHeapReclaimedMbTotal.toFixed(1)),
+          rssGcReclaimedMbMax: Number(gcHeapReclaimedMbMax.toFixed(1)),
           rssGcUsefulCount,
           rssGcIneffectiveCount,
           rssGcFinalIntervalExpansions: rssGcCurrentIntervalExpansions,

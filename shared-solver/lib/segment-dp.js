@@ -2414,7 +2414,52 @@ function summarizeSegmentFailure(project, segment, result, simulator, startState
   };
 }
 
+// Iteration 3 – compact perf aggregate for a single DP attempt: hot phases only.
+function perfSnapshotCompact(perfTracker) {
+  try {
+    const snap = perfTracker.snapshot();
+    const phases = snap.phaseSelfMs || {};
+    return {
+      wallMs: Math.round(snap.wallMs),
+      expanded: snap.expanded,
+      generated: snap.generated,
+      expandedPerSec: snap.expandedPerSec,
+      phasesMs: Object.fromEntries(
+        Object.entries(phases).map(([k, v]) => [k, Math.round(v)]),
+      ),
+      topLevelSelfMs: snap.topLevelSelfMs || null,
+      stabilizationSubphasesMs: snap.stabilizationSubphasesMs || null,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
 function searchSegmentDP(simulator, startState, segment, options) {
+  const config = options || {};
+  // Iteration 3 – throughput profiling: install a lightweight perf tracker so the
+  // canonical hot phases (buildDpStateKey / enumerateActions / sortActions /
+  // applyAction / walkReachability / stabilization) are timed for every attempt.
+  // Zero overhead when disabled; phase aggregates land in diagnostics.dp.perf.
+  const perfEnabled = config.perfProfile !== false;
+  let perfTracker = null;
+  let perfRestoreTracker = null;
+  if (perfEnabled) {
+    const { createPerfTracker, setActivePerfTracker, getActivePerfTracker } = require("./perf");
+    perfTracker = createPerfTracker({ enabled: true, profileExpansionCost: true });
+    const previous = getActivePerfTracker();
+    setActivePerfTracker(perfTracker);
+    perfRestoreTracker = () => setActivePerfTracker(previous);
+  }
+  try {
+    return searchSegmentDPWithPerf(simulator, startState, segment, options, perfTracker, perfRestoreTracker);
+  } catch (error) {
+    if (perfRestoreTracker) perfRestoreTracker();
+    throw error;
+  }
+}
+
+function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTracker, perfRestoreTracker) {
   const config = options || {};
   const dpConfig = {
     ...(segment.dp || {}),
@@ -2819,6 +2864,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     actionTrimmed: baseDpDiagnostics.actionTrimmed,
     stopOnFirstGoal: baseDpDiagnostics.stopOnFirstGoal,
   });
+  if (perfRestoreTracker) perfRestoreTracker();
   return {
     segmentId: segment.id,
     found: goalSkyline.length > 0,
@@ -2832,6 +2878,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     diagnostics: {
       dp: {
         ...baseDpDiagnostics,
+        perf: perfTracker ? perfSnapshotCompact(perfTracker) : null,
         expansions: result.expansions,
         frontierSize: result.frontierSize,
         maxExpansions,

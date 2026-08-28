@@ -275,7 +275,7 @@ function runThinMilestoneGraph(options) {
   }, 0);
   const gcReclaimedMbTotal = (graphResult.evaluationAttemptLedger || []).reduce((sum, att) => {
     const mem = att && att.diagnostics && att.diagnostics.dp && att.diagnostics.dp.memory;
-    return sum + Number((mem && mem.rssGcReclaimedMbTotal) || 0);
+    return sum + Number((mem && (mem.gcHeapReclaimedMbTotal != null ? mem.gcHeapReclaimedMbTotal : mem.rssGcReclaimedMbTotal)) || 0);
   }, 0);
   const wallDecomposition = {
     wholeRunWallMs: overallWallMs,
@@ -284,7 +284,7 @@ function runThinMilestoneGraph(options) {
     workerSearchWallMsTotal,
     gcWallMsTotal: Math.round(gcWallMsTotal),
     gcCountTotal,
-    gcReclaimedMbTotal: Number(gcReclaimedMbTotal.toFixed(1)),
+    gcHeapReclaimedMbTotal: Number(gcReclaimedMbTotal.toFixed(1)),
     spawnAndProtocolOverheadMs: Math.max(0, isolatedWorkerWallMsTotal - workerSearchWallMsTotal),
     plannerSideRemainderMs: Math.max(
       0,

@@ -705,6 +705,14 @@ function createPerfTracker(options) {
       ...counters,
       expandedPerSec: wallMs > 0 ? expanded / (wallMs / 1000) : 0,
       generatedPerSec: wallMs > 0 ? generated / (wallMs / 1000) : 0,
+      // Iteration 3 – stabilization subphase attribution is part of the standard
+      // compact snapshot (search throughput profiling), not only expansion-cost reports.
+      stabilizationSubphasesMs: Object.fromEntries(
+        Object.entries(stabilizationSubphases).map(([k, v]) => [k, Math.round(v)]),
+      ),
+      topLevelSelfMs: Object.fromEntries(
+        Object.entries(topLevelSelfMs).map(([k, v]) => [k, Math.round(v)]),
+      ),
       rssMb: memory.rss / 1024 / 1024,
       heapUsedMb: memory.heapUsed / 1024 / 1024,
       peakRssMb: peakRssBytes > 0 ? peakRssBytes / 1024 / 1024 : memory.rss / 1024 / 1024,
