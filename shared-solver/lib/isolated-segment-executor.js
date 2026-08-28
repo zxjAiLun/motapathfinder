@@ -10,10 +10,6 @@ const PROCESS_TREE_RSS_STOP_THRESHOLD_MB = 256;
 const PROCESS_TREE_RSS_HARD_CEILING_MB = 260;
 const PROCESS_TREE_ALLOWED_OVERSHOOT_MB = 4;
 const CHILD_EXIT_RESERVE_MS = 2000;
-// Parent RSS can grow between atSpawn and afterSpawn (worker output deserialization).
-// The aggregate upper bound counts max(beforeSerialization, atSpawn, afterSpawn), so the
-// worker grant must reserve headroom for that growth to keep the sum within the ceiling.
-const PARENT_RSS_GROWTH_RESERVE_MB = 4;
 
 function numericOption(value, fallback) {
   const parsed = Number(value);
@@ -303,10 +299,18 @@ function executeIsolatedSegment(options) {
   }
   const plannerRssAtSpawnMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
 
-  // Authoritative worker headroom based on FINAL atSpawn, reserving room for parent RSS
-  // growth during the worker's lifetime (aggregate counts the three-point planner max).
-  const workerMaxRssMb = Math.max(1, effectiveStopThresholdMb - plannerRssAtSpawnMb - PARENT_RSS_GROWTH_RESERVE_MB);
-  const workerHardCeilingMb = Math.max(1, effectiveHardThresholdMb - plannerRssAtSpawnMb - PARENT_RSS_GROWTH_RESERVE_MB);
+  // Authoritative worker headroom based on FINAL atSpawn (phase-correct model):
+  // only parent RSS that is resident while the child is live (atSpawn) is charged
+  // against the process-tree budget. Parent-only growth after child exit is a
+  // separate phase and cannot shrink the child's envelope.
+  // Both grants carry a sampling margin: the worker's DP memory checks run after
+  // each action batch, so transient clones can overshoot between two checks. The
+  // margins keep the phase-B concurrent sum (atSpawn + workerPeak) within the
+  // 256 stop / 260 hard ceilings even with one batch of sampling overshoot.
+  const WORKER_STOP_SAMPLING_MARGIN_MB = 4;
+  const WORKER_HARD_SAMPLING_MARGIN_MB = 2;
+  const workerMaxRssMb = Math.max(1, effectiveStopThresholdMb - plannerRssAtSpawnMb - WORKER_STOP_SAMPLING_MARGIN_MB);
+  const workerHardCeilingMb = Math.max(1, effectiveHardThresholdMb - plannerRssAtSpawnMb - WORKER_HARD_SAMPLING_MARGIN_MB);
 
   // Write tiny envelope B (authoritative execution limits) – minimal serialization cost after FINAL sample
   const envelope = {
@@ -326,20 +330,31 @@ function executeIsolatedSegment(options) {
   let spawnError = null;
   let spawnStderr = "";
 
+  // Phase-correct spawn: worker returns data via output file (existing protocol), so
+  // stdout must not accumulate in parent-resident buffers. stderr goes to a temp file
+  // that is read only AFTER the child exits (parent-only phase).
+  const stderrPath = path.join(tmpDir, `segment-stderr-${runId}.log`);
+  let stderrFd = null;
+  try { stderrFd = fs.openSync(stderrPath, "w"); } catch (_) { stderrFd = null; }
   try {
     const spawnRes = childProcess.spawnSync(process.execPath, ["--expose-gc", workerScript, inputPath, outputPath, envelopePath], {
       timeout: spawnTimeout,
-      maxBuffer: 50 * 1024 * 1024,
-      encoding: "utf8",
+      stdio: ["ignore", "ignore", stderrFd != null ? stderrFd : "ignore"],
     });
     childExitCode = spawnRes.status;
-    spawnStderr = spawnRes.stderr || "";
     if (spawnRes.error) spawnError = spawnRes.error;
   } catch (err) {
     spawnError = err;
+  } finally {
+    if (stderrFd != null) {
+      try { fs.closeSync(stderrFd); } catch (_) {}
+    }
   }
-
-  const plannerRssAfterSpawnMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+  // Phase C begins here: child has fully exited; parent-only RSS sampling.
+  const plannerRssAfterChildExitMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+  if (fs.existsSync(stderrPath)) {
+    try { spawnStderr = fs.readFileSync(stderrPath, "utf8"); } catch (_) { spawnStderr = ""; }
+  }
   const processWallMs = Date.now() - spawnStartedAt;
 
   let workerResponse = null;
@@ -348,11 +363,13 @@ function executeIsolatedSegment(options) {
       workerResponse = JSON.parse(fs.readFileSync(outputPath, "utf8"));
     } catch (_) {}
   }
+  const plannerRssAfterOutputReadMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
 
-  // Cleanup temp files (including tiny envelope)
+  // Cleanup temp files (including tiny envelope and stderr capture)
   try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (_) {}
   try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (_) {}
   try { if (fs.existsSync(envelopePath)) fs.unlinkSync(envelopePath); } catch (_) {}
+  try { if (fs.existsSync(stderrPath)) fs.unlinkSync(stderrPath); } catch (_) {}
 
   if (childExitCode !== 0 || !workerResponse || !workerResponse.success) {
     const isTimeout = spawnError && spawnError.code === "ETIMEDOUT";
@@ -362,7 +379,14 @@ function executeIsolatedSegment(options) {
       if (isTimeout) globalBudget.stoppedReason = "time-limit";
       globalBudget.consumedWallMs = Date.now() - globalBudget.startedAt;
     }
-    const maxPlannerRss = Math.max(plannerRssBeforeSerializationMb, plannerRssAtSpawnMb, plannerRssAfterSpawnMb);
+    // Phase-correct invocation peak: only genuinely concurrent RSS is summed.
+    const concurrentChildPhaseUpperBoundMb = plannerRssAtSpawnMb; // worker never reported a peak
+    const parentOnlyPostPeakMb = Math.max(plannerRssAfterChildExitMb, plannerRssAfterOutputReadMb);
+    const invocationProcessTreePeakMb = Math.max(
+      plannerRssBeforeSerializationMb,
+      concurrentChildPhaseUpperBoundMb,
+      parentOnlyPostPeakMb,
+    );
     return {
       segment,
       inputFrontier,
@@ -388,13 +412,18 @@ function executeIsolatedSegment(options) {
         plannerRssBeforeSerializationMb,
         plannerRssAtSpawnMb,
         plannerRssBeforeSpawnMb: plannerRssAtSpawnMb,
-        plannerRssAfterSpawnMb,
+        plannerRssAfterSpawnMb: plannerRssAfterChildExitMb,
+        plannerRssAfterChildExitMb,
+        plannerRssAfterOutputReadMb,
         workerPeakRssMb: 0,
         workerStartRssMb: 0,
-        aggregateConcurrentRssUpperBoundMb: maxPlannerRss,
-        maxPlannerRssDuringIsolatedExecutionMb: maxPlannerRss,
+        aggregateConcurrentRssUpperBoundMb: invocationProcessTreePeakMb,
+        maxPlannerRssDuringIsolatedExecutionMb: parentOnlyPostPeakMb,
         maxWorkerPeakRssMb: 0,
-        maxAggregateConcurrentRssUpperBoundMb: maxPlannerRss,
+        maxAggregateConcurrentRssUpperBoundMb: invocationProcessTreePeakMb,
+        concurrentChildPhaseUpperBoundMb,
+        parentOnlyPostPeakMb,
+        invocationProcessTreePeakMb,
         isolatedInvocationCount: 1,
         invocationId: runId,
         processWallMs,
@@ -513,8 +542,21 @@ function executeIsolatedSegment(options) {
   const workerPeakRssMb = Number(workerResponse.workerPeakRssMb || 0);
   const workerStartRssMb = Number(workerResponse.workerStartRssMb || 0);
   const workerEndRssMb = Number(workerResponse.workerEndRssMb || 0);
-  const maxPlannerRss = Math.max(plannerRssBeforeSerializationMb, plannerRssAtSpawnMb, plannerRssAfterSpawnMb);
-  const aggregateConcurrentRssUpperBoundMb = Math.round((maxPlannerRss + workerPeakRssMb) * 10) / 10;
+  // Phase-correct invocation peak (Iteration 2c):
+  //   Phase A (parent-only before child):      plannerRssBeforeSerializationMb
+  //   Phase B (child-live concurrent):          plannerRssAtSpawnMb + workerPeakRssMb
+  //   Phase C (parent-only after child exits):  max(afterChildExit, afterOutputRead)
+  // Only genuinely concurrent RSS is summed; post-child parent growth cannot be
+  // retroactively charged against the child-live phase.
+  const concurrentChildPhaseUpperBoundMb = Math.round((plannerRssAtSpawnMb + workerPeakRssMb) * 10) / 10;
+  const parentOnlyPostPeakMb = Math.max(plannerRssAfterChildExitMb, plannerRssAfterOutputReadMb);
+  const invocationProcessTreePeakMb = Math.max(
+    plannerRssBeforeSerializationMb,
+    concurrentChildPhaseUpperBoundMb,
+    parentOnlyPostPeakMb,
+  );
+  const aggregateConcurrentRssUpperBoundMb = invocationProcessTreePeakMb;
+  const maxPlannerRss = parentOnlyPostPeakMb;
 
   return {
     segment,
@@ -529,7 +571,9 @@ function executeIsolatedSegment(options) {
       plannerRssBeforeSerializationMb,
       plannerRssAtSpawnMb,
       plannerRssBeforeSpawnMb: plannerRssAtSpawnMb,
-      plannerRssAfterSpawnMb,
+      plannerRssAfterSpawnMb: plannerRssAfterChildExitMb,
+      plannerRssAfterChildExitMb,
+      plannerRssAfterOutputReadMb,
       workerStartRssMb,
       workerEndRssMb,
       workerPeakRssMb,
@@ -537,6 +581,9 @@ function executeIsolatedSegment(options) {
       maxPlannerRssDuringIsolatedExecutionMb: maxPlannerRss,
       maxWorkerPeakRssMb: workerPeakRssMb,
       maxAggregateConcurrentRssUpperBoundMb: aggregateConcurrentRssUpperBoundMb,
+      concurrentChildPhaseUpperBoundMb,
+      parentOnlyPostPeakMb,
+      invocationProcessTreePeakMb,
       isolatedInvocationCount: 1,
       invocationId: runId,
       processWallMs,

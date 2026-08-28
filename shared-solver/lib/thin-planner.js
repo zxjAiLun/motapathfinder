@@ -83,29 +83,55 @@ function runBootstrap(projectRoot, stopFloorId, options) {
   if (typeof global.gc === "function") try { global.gc(); } catch (_) {}
   const rssAtSpawn = rssNowMb();
   const startedAt = Date.now();
-  const res = childProcess.spawnSync(process.execPath, ["--expose-gc", workerScript, inputPath, outputPath], {
-    timeout: timeoutMs,
-    maxBuffer: 20 * 1024 * 1024,
-    encoding: "utf8",
-  });
+  // Phase-correct spawn: worker output goes via file; do not capture stdout/stderr
+  // into parent-resident buffers during the child-live phase.
+  const stderrPath = path.join(tmpDir, `bootstrap-stderr-${runId}.log`);
+  let stderrFd = null;
+  try { stderrFd = fs.openSync(stderrPath, "w"); } catch (_) { stderrFd = null; }
+  let res;
+  try {
+    res = childProcess.spawnSync(process.execPath, ["--expose-gc", workerScript, inputPath, outputPath], {
+      timeout: timeoutMs,
+      maxBuffer: 20 * 1024 * 1024,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", stderrFd != null ? stderrFd : "ignore"],
+    });
+  } finally {
+    if (stderrFd != null) {
+      try { fs.closeSync(stderrFd); } catch (_) {}
+    }
+  }
   const wallMs = Date.now() - startedAt;
+  // Phase C: child exited – parent-only sampling
   const rssAfter = rssNowMb();
+  let bootstrapStderr = "";
+  if (fs.existsSync(stderrPath)) {
+    try { bootstrapStderr = fs.readFileSync(stderrPath, "utf8"); } catch (_) { bootstrapStderr = ""; }
+  }
   let out = null;
   if (fs.existsSync(outputPath)) {
     try { out = JSON.parse(fs.readFileSync(outputPath, "utf8")); } catch (_) {}
   }
+  const rssAfterOutputRead = rssNowMb();
   try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (_) {}
   try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (_) {}
+  try { if (fs.existsSync(stderrPath)) fs.unlinkSync(stderrPath); } catch (_) {}
 
   if (res.status !== 0 || !out || !out.success) {
-    const err = `Bootstrap worker failed code=${res.status} stderr=${(res.stderr||"").slice(0,2000)}`;
+    const err = `Bootstrap worker failed code=${res.status} stderr=${(bootstrapStderr || (res.stderr || "")).slice(0, 2000)}`;
     throw new Error(err);
   }
 
   const bootstrapPeakRssMb = Number(out.bootstrapPeakRssMb || 0);
-  // Conservative process-tree upper bound: planner and worker are concurrent
-  const bootstrapAggregateUpperBoundMb = Math.round((Math.max(rssAtSpawn, rssAfter) + bootstrapPeakRssMb) * 10) / 10;
-  const maxBootstrapRss = Math.max(rssBefore, rssAtSpawn, rssAfter, bootstrapPeakRssMb, bootstrapAggregateUpperBoundMb);
+  // Phase-correct bootstrap process-tree (Iteration 2c):
+  //   Phase B (child-live concurrent): rssAtSpawn + bootstrapWorkerPeak
+  //   Phase C (parent-only after exit): max(rssAfter, rssAfterOutputRead)
+  const bootstrapConcurrentUpperBoundMb = Math.round((rssAtSpawn + bootstrapPeakRssMb) * 10) / 10;
+  const parentOnlyPostPeakMb = Math.max(rssAfter, rssAfterOutputRead);
+  const bootstrapOverallPeakMb = Math.max(rssBefore, bootstrapConcurrentUpperBoundMb, parentOnlyPostPeakMb);
+  // Legacy alias: aggregate = phase-correct overall peak (was: max-of-three + workerPeak)
+  const bootstrapAggregateUpperBoundMb = bootstrapOverallPeakMb;
+  const maxBootstrapRss = Math.max(rssBefore, rssAtSpawn, rssAfter, bootstrapPeakRssMb, bootstrapOverallPeakMb);
   return {
     projectRoot: out.projectRoot,
     projectIdentity: out.projectIdentity,
@@ -118,8 +144,12 @@ function runBootstrap(projectRoot, stopFloorId, options) {
     plannerRssBeforeBootstrapMb: rssBefore,
     plannerRssAtBootstrapSpawnMb: rssAtSpawn,
     plannerRssAfterBootstrapMb: rssAfter,
+    plannerRssAfterOutputReadMb: rssAfterOutputRead,
+    bootstrapConcurrentUpperBoundMb,
+    parentOnlyPostPeakMb,
+    bootstrapOverallPeakMb,
     bootstrapAggregateUpperBoundMb,
-    maxBootstrapConcurrentRssMb: bootstrapAggregateUpperBoundMb,
+    maxBootstrapConcurrentRssMb: bootstrapConcurrentUpperBoundMb,
     maxBootstrapRss,
   };
 }
@@ -206,10 +236,14 @@ function runThinMilestoneGraph(options) {
 
   const graphResult = runMilestoneGraph(null, initialState, spec, thinConfig);
 
-  // Overall process-tree peak: bootstrap concurrent aggregate vs segment aggregate
-  const bootstrapAggregateUpperBoundMb = Number(bootstrap.bootstrapAggregateUpperBoundMb || 0);
+  // Overall process-tree peak (phase-correct, Iteration 2c):
+  // bootstrap = max(parent-before, atSpawn+workerPeak, parent-only-post)
+  // segments  = max over invocations of invocationProcessTreePeakMb
+  const bootstrapOverallPeakMb = Number(
+    bootstrap.bootstrapOverallPeakMb || bootstrap.bootstrapAggregateUpperBoundMb || 0,
+  );
   const segmentMaxAggregate = Number((graphResult.processTreeMemory && graphResult.processTreeMemory.maxAggregateConcurrentRssUpperBoundMb) || 0);
-  const maxConcurrentProcessTreeRssMb = Math.max(bootstrapAggregateUpperBoundMb, segmentMaxAggregate);
+  const maxConcurrentProcessTreeRssMb = Math.max(bootstrapOverallPeakMb, segmentMaxAggregate);
   const overallOvershootMb = Math.max(0, Math.round((maxConcurrentProcessTreeRssMb - PROCESS_TREE_RSS_STOP_THRESHOLD_MB) * 10) / 10);
   const overallQualified = maxConcurrentProcessTreeRssMb <= PROCESS_TREE_RSS_HARD_CEILING_MB && overallOvershootMb <= PROCESS_TREE_ALLOWED_OVERSHOOT_MB;
 
@@ -235,9 +269,10 @@ function runThinMilestoneGraph(options) {
       plannerBaselineRssMb,
       plannerRssAtSegmentSpawnMb,
       bootstrapPeakRssMb: bootstrap.bootstrapPeakRssMb,
-      bootstrapAggregateUpperBoundMb,
+      bootstrapConcurrentUpperBoundMb: bootstrap.bootstrapConcurrentUpperBoundMb,
+      bootstrapOverallPeakMb,
       bootstrapWallMs: bootstrap.bootstrapWallMs,
-      maxBootstrapConcurrentRssMb: bootstrapAggregateUpperBoundMb,
+      maxBootstrapConcurrentRssMb: bootstrap.bootstrapConcurrentUpperBoundMb,
       segmentMaxAggregateConcurrentRssUpperBoundMb: segmentMaxAggregate,
       maxConcurrentProcessTreeRssMb,
       overallOvershootMb,
@@ -249,7 +284,8 @@ function runThinMilestoneGraph(options) {
     },
     processTreeMemory: {
       ...graphResult.processTreeMemory,
-      bootstrapAggregateUpperBoundMb,
+      bootstrapConcurrentUpperBoundMb: bootstrap.bootstrapConcurrentUpperBoundMb,
+      bootstrapOverallPeakMb,
       segmentMaxAggregateConcurrentRssUpperBoundMb: segmentMaxAggregate,
       maxConcurrentProcessTreeRssMb,
       overshootMb: overallOvershootMb,

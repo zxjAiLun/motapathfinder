@@ -2704,6 +2704,9 @@ function searchSegmentDP(simulator, startState, segment, options) {
     maxRssMb: number(dpConfig.maxRssMb, 0),
     memoryCheckIntervalExpansions: number(dpConfig.memoryCheckIntervalExpansions, 1),
     memoryCheckIntervalActions: number(dpConfig.memoryCheckIntervalActions, 1),
+    rssGcFlatten: dpConfig.rssGcFlatten !== false,
+    rssGcHighWaterFraction: number(dpConfig.rssGcHighWaterFraction, 0.85),
+    rssGcMinIntervalExpansions: number(dpConfig.rssGcMinIntervalExpansions, 16),
     memoryUsageProvider: dpConfig.memoryUsageProvider || config.memoryUsageProvider,
     dpKeyMode: dpConfig.keyMode || dpConfig.dpKeyMode || "region",
     dpAgendaMode: dpConfig.agendaMode || "best-first",
@@ -4481,6 +4484,11 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     if (invocationId && seenInvocationIds.has(invocationId)) return;
     if (invocationId) seenInvocationIds.add(invocationId);
     isolatedProcessTreeTelemetry.isolatedInvocationCount += 1;
+    // Phase-correct invocation peak (Iteration 2c): prefer the executor's authoritative
+    // invocationProcessTreePeakMb; fall back to legacy aggregate only when absent.
+    const invocationPeak = Number(t.invocationProcessTreePeakMb || 0);
+    const legacyAgg = Number(t.aggregateConcurrentRssUpperBoundMb || t.maxAggregateConcurrentRssUpperBoundMb || 0);
+    const agg = invocationPeak > 0 ? invocationPeak : legacyAgg;
     const plannerMax = Math.max(
       Number(t.plannerRssBeforeSerializationMb || 0),
       Number(t.plannerRssBeforeSpawnMb || 0),
@@ -4491,7 +4499,6 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     if (plannerMax > isolatedProcessTreeTelemetry.maxPlannerRssDuringIsolatedExecutionMb) isolatedProcessTreeTelemetry.maxPlannerRssDuringIsolatedExecutionMb = plannerMax;
     const workerPeak = Number(t.workerPeakRssMb || t.maxWorkerPeakRssMb || 0);
     if (workerPeak > isolatedProcessTreeTelemetry.maxWorkerPeakRssMb) isolatedProcessTreeTelemetry.maxWorkerPeakRssMb = workerPeak;
-    const agg = Number(t.aggregateConcurrentRssUpperBoundMb || t.maxAggregateConcurrentRssUpperBoundMb || 0);
     if (agg > isolatedProcessTreeTelemetry.maxAggregateConcurrentRssUpperBoundMb) isolatedProcessTreeTelemetry.maxAggregateConcurrentRssUpperBoundMb = agg;
     if (t.assignedExpansions != null) {
       isolatedProcessTreeTelemetry.totalAssignedExpansions += Number(t.assignedExpansions || 0);

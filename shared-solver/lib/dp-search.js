@@ -2224,11 +2224,45 @@ function searchDP(simulator, initialState, options) {
     }
     return usage;
   };
+  // Adaptive-wave live-set flattening (Iteration 2c): transient successor clones
+  // drive the V8 heap high between GC cycles; since V8 rarely returns committed
+  // pages to the OS, those transient peaks permanently raise RSS and trip the
+  // rss-limit even though the retained set is small. A periodic proactive GC
+  // while approaching the stop threshold keeps RSS close to the retained-set
+  // watermark without changing any search semantics (GC is transparent to JS).
+  // GC is throttled: only above the high-water fraction, at most once per
+  // rssGcMinIntervalExpansions expansions, so the wall-clock cost stays bounded.
+  const rssGcFlattenEnabled = config.rssGcFlatten !== false && maxRssMb > 0;
+  const rssGcHighWaterFraction = Math.max(
+    0.5,
+    Math.min(0.95, number(config.rssGcHighWaterFraction, 0.85)),
+  );
+  const rssGcMinIntervalExpansions = Math.max(
+    1,
+    Math.floor(number(config.rssGcMinIntervalExpansions, 16)),
+  );
+  let rssGcCount = 0;
+  let rssGcLastAtExpansion = -Infinity;
+  const maybeFlattenRss = (phase, expansionOrdinal) => {
+    if (!rssGcFlattenEnabled || typeof global.gc !== "function") return;
+    if (expansionOrdinal != null && expansionOrdinal - rssGcLastAtExpansion < rssGcMinIntervalExpansions) return;
+    const highWaterMb = maxRssMb * rssGcHighWaterFraction;
+    const usage = readMemoryUsage();
+    if (usage.rssMb < highWaterMb) return;
+    // Skip when a stop decision is imminent on this sample; the stop path already GCs.
+    if (usage.rssMb >= maxRssMb) return;
+    try { global.gc(); } catch (_) { return; }
+    rssGcCount += 1;
+    rssGcLastAtExpansion = expansionOrdinal == null ? rssGcLastAtExpansion : expansionOrdinal;
+    const flattened = readMemoryUsage();
+    peakRssMb = Math.max(peakRssMb, flattened.rssMb);
+  };
   const memoryCheckDue = (expansionOrdinal) =>
     expansionOrdinal <= 0 || expansionOrdinal % memoryCheckIntervalExpansions === 0;
   const stopForMemoryIfNeeded = (phase, expansion, expansionOrdinal, force = false) => {
     if (!memoryLimitsEnabled) return false;
     if (!force && !memoryCheckDue(expansionOrdinal)) return false;
+    maybeFlattenRss(phase, expansionOrdinal);
     recordMemoryUsage(phase, expansion, true);
     if (memoryStoppedReason) {
       stoppedReason = memoryStoppedReason;
@@ -2879,6 +2913,8 @@ function searchDP(simulator, initialState, options) {
           successorCheckGranularity: "action-batch",
           peakHeapUsedMb: Number(maxHeapUsedMb.toFixed(1)),
           peakRssMb: Number(peakRssMb.toFixed(1)),
+          rssGcFlattenEnabled,
+          rssGcCount,
           stopHeapUsedMb: stopHeapUsedMb == null ? null : Number(stopHeapUsedMb.toFixed(1)),
           stopRssMb: stopRssMb == null ? null : Number(stopRssMb.toFixed(1)),
           stoppedReason: memoryStoppedReason,

@@ -462,6 +462,13 @@ function main() {
     if (rec.assignedExpansions != null && rec.consumedExpansions != null) {
       if (Number(rec.consumedExpansions) > Number(rec.assignedExpansions)) globalBudgetAuthorityViolated = true;
     }
+    // Pre-spawn budget-exhausted invocations never ran a worker: identity flags are
+    // "not run" (executed=false, zero verified counts), not verification failures.
+    const notRun = rec.executed === false &&
+      Number(rec.inputStateKeysVerified || 0) === 0 &&
+      Number(rec.outputStateKeysVerified || 0) === 0 &&
+      Number(rec.consumedExpansions || 0) === 0;
+    if (notRun) return;
     if (rec.stateRoundTripIdentity === false) stateRoundTripIdentity = false;
     if (Number(rec.inputStateKeysVerified) !== Number(rec.inputFrontierLength || rec.inputStateKeysVerified)) {
       // If counts available and mismatch, consider failure

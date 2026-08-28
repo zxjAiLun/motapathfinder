@@ -120,8 +120,12 @@ function extractFinalFailureSemantics(thinResult) {
     adaptiveDownstreamReplayCount: adaptiveLedger.filter((att) => att.phase === "adaptive-replay").length,
     depthSummaries: depthSummaries.map((d) => ({
       depth: d.depth,
-      waves: d.waveIndex != null ? d.waveIndex : undefined,
-      stopReason: d.depthStopReason || null,
+      depthOutcome: d.depthOutcome || null,
+      depthExhausted: Boolean(d.depthExhausted),
+      wavesAttempted: d.wavesAttempted != null ? d.wavesAttempted : undefined,
+      wavesCompleted: d.wavesCompleted != null ? d.wavesCompleted : undefined,
+      downstreamReplayCount: d.downstreamReplayCount != null ? d.downstreamReplayCount : undefined,
+      stopReason: d.stopReason != null ? d.stopReason : (d.depthStopReason || null),
     })),
     adaptiveResourceLimited,
     budgetStoppedReason: budgetStopped || null,
@@ -163,17 +167,17 @@ function main() {
     "overallWallMs must include bootstrap wall time",
   );
 
-  // --- P1-2: overall process-tree peak (bootstrap concurrent sum included) ---
+  // --- P1-2: overall process-tree peak (phase-correct, Iteration 2c) ---
   const thinProcessTree = thinResult.processTreeMemory;
   assert.ok(thinProcessTree, "Thin result must have processTreeMemory");
   assert.ok(
-    thinProcessTree.bootstrapAggregateUpperBoundMb >=
-      Math.round((Math.max(bootstrap.plannerRssAtBootstrapSpawnMb, bootstrap.plannerRssAfterBootstrapMb) + bootstrap.bootstrapPeakRssMb) * 10) / 10 - 0.5,
-    `bootstrapAggregateUpperBoundMb ${thinProcessTree.bootstrapAggregateUpperBoundMb} must be a concurrent sum (planner + worker), not max()`,
+    thinProcessTree.bootstrapConcurrentUpperBoundMb >=
+      Math.round((Math.max(bootstrap.plannerRssAtBootstrapSpawnMb || 0, 0) + bootstrap.bootstrapPeakRssMb) * 10) / 10 - 0.5,
+    `bootstrapConcurrentUpperBoundMb ${thinProcessTree.bootstrapConcurrentUpperBoundMb} must be the child-live concurrent sum (plannerAtSpawn + workerPeak)`,
   );
   assert.ok(
-    thinProcessTree.maxConcurrentProcessTreeRssMb >= thinProcessTree.bootstrapAggregateUpperBoundMb,
-    "overall peak must include bootstrap aggregate",
+    thinProcessTree.maxConcurrentProcessTreeRssMb >= thinProcessTree.bootstrapOverallPeakMb - 0.5,
+    "overall peak must include bootstrap overall (phase-correct) peak",
   );
   assert.ok(
     thinProcessTree.maxConcurrentProcessTreeRssMb >= thinProcessTree.segmentMaxAggregateConcurrentRssUpperBoundMb - 0.5,
