@@ -73,36 +73,74 @@ function main() {
   const rawInput = fs.readFileSync(inputPath, "utf8");
   const payload = JSON.parse(rawInput);
 
-  // Repair 3: tiny envelope B carries authoritative atSpawn headroom – overrides large payload's placeholder
-  if (envelopePath && fs.existsSync(envelopePath)) {
+  // P2-3: envelope is required for isolated invocations (fail-closed)
+  const isIsolatedInvocation = Boolean(payload.invocationId);
+  if (isIsolatedInvocation) {
+    if (!envelopePath || !fs.existsSync(envelopePath)) {
+      console.error(`Missing required envelope for isolated invocation ${payload.invocationId || "unknown"}`);
+      process.exit(5);
+    }
+    // Validate envelope fields before proceeding
     try {
       const envelopeRaw = fs.readFileSync(envelopePath, "utf8");
       const envelope = JSON.parse(envelopeRaw);
+      if (!envelope || typeof envelope.workerMaxRssMb !== "number" || !Number.isFinite(envelope.workerMaxRssMb) || envelope.workerMaxRssMb <= 0) {
+        console.error(`Invalid envelope workerMaxRssMb: ${envelope && envelope.workerMaxRssMb}`);
+        process.exit(5);
+      }
+      if (typeof envelope.workerHardCeilingMb !== "number" || !Number.isFinite(envelope.workerHardCeilingMb) || envelope.workerHardCeilingMb <= 0) {
+        console.error(`Invalid envelope workerHardCeilingMb`);
+        process.exit(5);
+      }
+      if (!envelope.invocationId || envelope.invocationId !== payload.invocationId) {
+        console.error(`Envelope invocationId mismatch: envelope ${envelope && envelope.invocationId} vs payload ${payload.invocationId}`);
+        process.exit(5);
+      }
+      // Apply authoritative envelope values
+      payload.config = payload.config || {};
+      payload.config.maxRssMb = Number(envelope.workerMaxRssMb);
+      payload.config.maxRssHardCeilingMb = Number(envelope.workerHardCeilingMb);
+    } catch (e) {
+      console.error(`Failed to validate envelope ${envelopePath}: ${e.message}`);
+      process.exit(5);
+    }
+  } else if (envelopePath && fs.existsSync(envelopePath)) {
+    // Non-isolated but envelope provided – still apply if valid (defensive)
+    try {
+      const envelope = JSON.parse(fs.readFileSync(envelopePath, "utf8"));
       if (envelope && typeof envelope.workerMaxRssMb === "number" && payload.config) {
         payload.config.maxRssMb = Number(envelope.workerMaxRssMb);
       }
       if (envelope && typeof envelope.workerHardCeilingMb === "number" && payload.config) {
         payload.config.maxRssHardCeilingMb = Number(envelope.workerHardCeilingMb);
       }
-      if (envelope && typeof envelope.effectiveStopThresholdMb === "number" && payload.config) {
-        // Keep for debugging, not directly used
-      }
-      // Verify invocationId consistency if present in both
-      if (envelope && envelope.invocationId && payload.invocationId && envelope.invocationId !== payload.invocationId) {
-        console.error(`Envelope invocationId ${envelope.invocationId} != payload ${payload.invocationId}`);
-        process.exit(5);
-      }
-      // Preserve envelope invocationId as authoritative if payload missing
-      if (envelope && envelope.invocationId && !payload.invocationId) {
-        payload.invocationId = envelope.invocationId;
-      }
-    } catch (e) {
-      console.error(`Failed to read envelope ${envelopePath}: ${e.message}`);
-      process.exit(5);
-    }
+    } catch (_) {}
   }
 
   const project = loadProject(payload.projectRoot || payload.projectDir);
+
+  // P2-2: verify projectIdentity if expected provided
+  let appliedProjectIdentity = null;
+  let projectIdentityMatch = true;
+  if (payload.expectedProjectIdentity) {
+    const firstData = (project.data || {}).firstData || {};
+    appliedProjectIdentity = {
+      title: firstData.title || null,
+      startFloorId: firstData.floorId || null,
+      startLoc: firstData.hero && firstData.hero.loc ? { x: firstData.hero.loc.x, y: firstData.hero.loc.y } : null,
+      floorCount: Object.keys(project.floorsById || {}).length,
+      stopFloorId: (payload.simulatorProfile && payload.simulatorProfile.stopFloorId) || null,
+    };
+    const expected = payload.expectedProjectIdentity;
+    const keys = Object.keys(expected);
+    for (const k of keys) {
+      if (JSON.stringify(expected[k]) !== JSON.stringify(appliedProjectIdentity[k])) {
+        console.error(`ProjectIdentity mismatch on ${k}: expected ${JSON.stringify(expected[k])} vs applied ${JSON.stringify(appliedProjectIdentity[k])}`);
+        process.exit(5);
+      }
+    }
+    projectIdentityMatch = true;
+  }
   let simulator;
   if (payload.simulatorProfile) {
     simulator = buildSimulatorFromProfile(project, payload.simulatorProfile);
@@ -222,6 +260,9 @@ function main() {
     appliedSimulatorProfile,
     requestedSimulatorProfile: payload.simulatorProfile || null,
     simulatorProfileIdentity: payload.simulatorProfile ? JSON.stringify(appliedSimulatorProfile) === JSON.stringify(payload.simulatorProfile) : true,
+    appliedProjectIdentity: typeof appliedProjectIdentity !== "undefined" ? appliedProjectIdentity : null,
+    expectedProjectIdentity: payload.expectedProjectIdentity || null,
+    projectIdentityMatch: typeof projectIdentityMatch !== "undefined" ? projectIdentityMatch : true,
     searchWallMs,
     workerStartRssMb,
     workerEndRssMb,

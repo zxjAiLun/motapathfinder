@@ -7,6 +7,13 @@
  * It owns: milestone history, rollback depth, global budget, compact candidate state.
  * Heavy work (project + simulator + DP) is done in fresh segment workers and
  * one-time bootstrap worker.
+ *
+ * Repair 1:
+ *  - whole-run deadline: bootstrap + segment graph share one globalBudget created
+ *    from segment-dp's authoritative createGlobalBudget (no duplicated schema)
+ *  - bootstrap process-tree memory = concurrent sum (planner at spawn + worker peak)
+ *  - overall process-tree qualification gates on max(bootstrap, segment) aggregate
+ *  - computed (not self-attested) evidence that planner never loaded heavy modules
  */
 
 const fs = require("node:fs");
@@ -14,10 +21,46 @@ const os = require("node:os");
 const path = require("node:path");
 const childProcess = require("node:child_process");
 const { buildStateKey } = require("./state-key");
+const { getMilestoneSpec } = require("./milestone-spec");
+const {
+  createGlobalBudget,
+  runMilestoneGraph,
+} = require("./segment-dp");
 
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, "../..", "Only upV2.1", "Only upV2.1");
+const PROCESS_TREE_RSS_STOP_THRESHOLD_MB = 256;
+const PROCESS_TREE_RSS_HARD_CEILING_MB = 260;
+const PROCESS_TREE_ALLOWED_OVERSHOOT_MB = 4;
 
-function runBootstrap(projectRoot, stopFloorId) {
+function rssNowMb() {
+  return Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+}
+
+function heavyModuleLoadedEvidence() {
+  // Computed evidence, not self-attestation: check require.cache for heavy modules
+  // that must never be loaded inside the thin planner process.
+  const heavyModules = [
+    "./project-loader",
+    "./simulator",
+    "./battle-resolver",
+    "./onlyup-mt1-real-route-gate",
+  ];
+  const loaded = [];
+  for (const mod of heavyModules) {
+    try {
+      if (require.cache[require.resolve(mod)]) loaded.push(mod);
+    } catch (_) {}
+  }
+  return {
+    thinPlannerNeverLoadsProject: !loaded.includes("./project-loader"),
+    thinPlannerNeverConstructsSimulator: !loaded.includes("./simulator"),
+    heavyModulesLoadedInPlannerProcess: loaded,
+  };
+}
+
+function runBootstrap(projectRoot, stopFloorId, options) {
+  const opts = options || {};
+  const timeoutMs = Math.max(1000, Number(opts.timeoutMs || 30000));
   const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const tmpDir = os.tmpdir();
   const inputPath = path.join(tmpDir, `bootstrap-input-${runId}.json`);
@@ -32,16 +75,21 @@ function runBootstrap(projectRoot, stopFloorId) {
     autoBattleEnabled: true,
   };
   fs.writeFileSync(inputPath, JSON.stringify(payload));
+  // Release payload string before spawn measurement
+  if (typeof global.gc === "function") try { global.gc(); } catch (_) {}
   const workerScript = path.resolve(__dirname, "../planner-bootstrap-worker.js");
-  const rssBefore = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+  const rssBefore = rssNowMb();
+  // Final atSpawn sample immediately before spawn (after large payload GC)
+  if (typeof global.gc === "function") try { global.gc(); } catch (_) {}
+  const rssAtSpawn = rssNowMb();
   const startedAt = Date.now();
   const res = childProcess.spawnSync(process.execPath, ["--expose-gc", workerScript, inputPath, outputPath], {
-    timeout: 30000,
+    timeout: timeoutMs,
     maxBuffer: 20 * 1024 * 1024,
     encoding: "utf8",
   });
   const wallMs = Date.now() - startedAt;
-  const rssAfter = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+  const rssAfter = rssNowMb();
   let out = null;
   if (fs.existsSync(outputPath)) {
     try { out = JSON.parse(fs.readFileSync(outputPath, "utf8")); } catch (_) {}
@@ -55,7 +103,9 @@ function runBootstrap(projectRoot, stopFloorId) {
   }
 
   const bootstrapPeakRssMb = Number(out.bootstrapPeakRssMb || 0);
-  const maxBootstrapRss = Math.max(rssBefore, rssAfter, bootstrapPeakRssMb);
+  // Conservative process-tree upper bound: planner and worker are concurrent
+  const bootstrapAggregateUpperBoundMb = Math.round((Math.max(rssAtSpawn, rssAfter) + bootstrapPeakRssMb) * 10) / 10;
+  const maxBootstrapRss = Math.max(rssBefore, rssAtSpawn, rssAfter, bootstrapPeakRssMb, bootstrapAggregateUpperBoundMb);
   return {
     projectRoot: out.projectRoot,
     projectIdentity: out.projectIdentity,
@@ -66,35 +116,18 @@ function runBootstrap(projectRoot, stopFloorId) {
     bootstrapPeakRssMb,
     bootstrapWallMs: wallMs,
     plannerRssBeforeBootstrapMb: rssBefore,
+    plannerRssAtBootstrapSpawnMb: rssAtSpawn,
     plannerRssAfterBootstrapMb: rssAfter,
-    maxBootstrapConcurrentRssMb: maxBootstrapRss,
+    bootstrapAggregateUpperBoundMb,
+    maxBootstrapConcurrentRssMb: bootstrapAggregateUpperBoundMb,
+    maxBootstrapRss,
   };
 }
 
 function loadMilestoneSpecThin(routeName) {
-  // Thin planner loads spec without project – via raw milestone JSON
-  const filePath = path.resolve(__dirname, "..", "milestones", `${routeName}.json`);
-  if (!fs.existsSync(filePath)) throw new Error(`Unknown milestone route: ${routeName} at ${filePath}`);
-  const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
-  // Reuse milestone-spec's normalize but without project
-  const { loadMilestoneData } = (() => {
-    try { return require("./milestone-spec"); } catch (_) { return null; }
-  })();
-  if (loadMilestoneData) {
-    // Use thin load without project – call normalize with null project via internal helper if available
-    // Fallback: just return raw milestones as spec
-    const spec = { ...raw, milestones: raw.milestones.map(m => ({ ...m })) };
-    // Ensure each milestone has dp defaults as milestone-spec does
-    const BASE_DP = { keyMode: "region", stopOnFirstGoal: false, maxActionsPerState: 9999, maxExpansions: 8000, maxRuntimeMs: 15000, goalSkylineLimit: 8 };
-    spec.milestones = spec.milestones.map(m => ({
-      ...m,
-      actionPolicy: { actionKinds: ["battle","pickup","equip","openDoor","useTool","changeFloor","event"], forbidUnsupportedEvents: true, ...(m.actionPolicy||{}) },
-      dp: { ...BASE_DP, ...(m.dp||{}) },
-      goal: { ...(m.goal||{}) },
-    }));
-    return spec;
-  }
-  return raw;
+  // Authoritative milestone-spec with project=null – exact same normalization,
+  // tile propagation and validation as heavy path (no duplicated schema).
+  return getMilestoneSpec(null, routeName);
 }
 
 function runThinMilestoneGraph(options) {
@@ -103,11 +136,34 @@ function runThinMilestoneGraph(options) {
   const routeName = config.routeName || "onlyup-chaos-mt1-mt4";
   const stopFloorId = config.stopFloorId || "MT6";
 
-  const plannerRssBeforeBootstrapMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+  // Whole-run lifecycle budget: bootstrap + segment graph share ONE deadline
+  // created by the authoritative segment-dp schema (no duplicate budget code).
+  const overallStartedAt = Date.now();
+  const overallBudget = createGlobalBudget({
+    budgetScope: "global-run",
+    maxRuntimeMs: config.maxRuntimeMs,
+    maxExpansions: config.maxExpansions,
+  });
+  if (config.globalBudget) {
+    throw new Error("runThinMilestoneGraph owns the whole-run budget; external globalBudget is not accepted");
+  }
+
+  const plannerRssBeforeBootstrapMb = rssNowMb();
   if (typeof global.gc === "function") try { global.gc(); } catch (_) {}
-  const bootstrap = runBootstrap(projectRoot, stopFloorId);
+  // Bootstrap consumes the SAME whole-run deadline; graph gets remaining time.
+  const bootstrapTimeoutMs = overallBudget
+    ? Math.max(1000, overallBudget.deadlineMs - Date.now())
+    : 30000;
+  const bootstrap = runBootstrap(projectRoot, stopFloorId, { timeoutMs: bootstrapTimeoutMs });
+
   if (typeof global.gc === "function") try { global.gc(); } catch (_) {}
-  const plannerBaselineRssMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+  const plannerBaselineRssMb = rssNowMb();
+
+  // Hard fail-closed: bootstrap must not exceed the whole-run deadline
+  if (overallBudget && Date.now() > overallBudget.deadlineMs) {
+    overallBudget.stoppedReason = "time-limit";
+    throw new Error(`Bootstrap consumed whole-run deadline: bootstrapWall=${bootstrap.bootstrapWallMs}ms deadline=${overallBudget.deadlineMs - overallStartedAt}ms`);
+  }
 
   // Verify bootstrap difficulty / identity as gates do
   const expectedChaos = { I581: 0, I582: 0, "flag:level0": 0 };
@@ -116,7 +172,13 @@ function runThinMilestoneGraph(options) {
     throw new Error(`Bootstrap difficulty not Chaos: ${JSON.stringify(diff)}`);
   }
 
+  // Authoritative spec via milestone-spec (project=null) – same normalization
+  // (BASE_DP, actionKinds, propagateSuccessorHardPresentTiles, validation).
   const spec = config.milestoneSpec || loadMilestoneSpecThin(routeName);
+  if (config.milestoneSpec && !config.milestoneSpec.projectTitle && bootstrap.projectIdentity) {
+    spec.projectTitle = bootstrap.projectIdentity.title || null;
+  }
+
   const initialState = bootstrap.initialState;
   // Verify StateKey round-trip for bootstrap
   const recomputedKey = buildStateKey(initialState);
@@ -131,50 +193,72 @@ function runThinMilestoneGraph(options) {
   };
 
   // Delegate to canonical runMilestoneGraph with thin descriptor – planner never has simulator
-  const { runMilestoneGraph } = require("./segment-dp");
   const thinConfig = {
     ...config,
-    milestoneSpec: undefined,
+    globalBudget: overallBudget,
+    milestoneSpec: spec,
     projectRoot: undefined,
     isolatedRuntimeDescriptor,
     segmentExecutionMode: "isolated-process",
-    // Preserve budget scope etc
   };
-  // Remove routeName from thinConfig to avoid confusion – spec is already resolved
   delete thinConfig.routeName;
   delete thinConfig.stopFloorId;
 
   const graphResult = runMilestoneGraph(null, initialState, spec, thinConfig);
 
-  // Lifecycle telemetry: bootstrap + segment workers are sequential, concurrent peak is max of each
-  const segmentProcessTree = graphResult.processTreeMemory || graphResult.processTreeMemory;
+  // Overall process-tree peak: bootstrap concurrent aggregate vs segment aggregate
+  const bootstrapAggregateUpperBoundMb = Number(bootstrap.bootstrapAggregateUpperBoundMb || 0);
   const segmentMaxAggregate = Number((graphResult.processTreeMemory && graphResult.processTreeMemory.maxAggregateConcurrentRssUpperBoundMb) || 0);
-  const bootstrapConcurrent = Number(bootstrap.maxBootstrapConcurrentRssMb || 0);
-  const maxConcurrentProcessTreeRssMb = Math.max(segmentMaxAggregate, bootstrapConcurrent, Number(bootstrap.bootstrapPeakRssMb || 0));
+  const maxConcurrentProcessTreeRssMb = Math.max(bootstrapAggregateUpperBoundMb, segmentMaxAggregate);
+  const overallOvershootMb = Math.max(0, Math.round((maxConcurrentProcessTreeRssMb - PROCESS_TREE_RSS_STOP_THRESHOLD_MB) * 10) / 10);
+  const overallQualified = maxConcurrentProcessTreeRssMb <= PROCESS_TREE_RSS_HARD_CEILING_MB && overallOvershootMb <= PROCESS_TREE_ALLOWED_OVERSHOOT_MB;
 
-  // Planner atSpawn is the baseline after bootstrap, before first segment worker
-  const plannerRssAtSegmentSpawnMb = plannerBaselineRssMb;
+  const plannerRssAtSegmentSpawnMb = Math.max(
+    plannerBaselineRssMb,
+    Number((graphResult.isolatedProcessTreeTelemetry && graphResult.isolatedProcessTreeTelemetry.maxPlannerRssDuringIsolatedExecutionMb) || 0),
+  );
+  const overallWallMs = Date.now() - overallStartedAt;
+
+  // Computed evidence (not self-attestation): heavy modules must not be in
+  // this planner process's require.cache at the end of the run.
+  const heavyEvidence = heavyModuleLoadedEvidence();
 
   return {
     ...graphResult,
     thinPlanner: true,
     bootstrap,
+    overallStartedAt,
+    overallDeadlineMs: overallBudget ? overallBudget.deadlineMs : null,
+    overallWallMs,
     lifecycleTelemetry: {
       plannerRssBeforeBootstrapMb,
       plannerBaselineRssMb,
       plannerRssAtSegmentSpawnMb,
       bootstrapPeakRssMb: bootstrap.bootstrapPeakRssMb,
+      bootstrapAggregateUpperBoundMb,
       bootstrapWallMs: bootstrap.bootstrapWallMs,
-      maxBootstrapConcurrentRssMb: bootstrapConcurrent,
+      maxBootstrapConcurrentRssMb: bootstrapAggregateUpperBoundMb,
       segmentMaxAggregateConcurrentRssUpperBoundMb: segmentMaxAggregate,
       maxConcurrentProcessTreeRssMb,
+      overallOvershootMb,
+      overallQualified,
+      overallWallMs,
+      requestedRuntimeMs: overallBudget ? overallBudget.requestedRuntimeMs : 0,
       isolatedInvocationCount: (graphResult.isolatedProcessTreeTelemetry && graphResult.isolatedProcessTreeTelemetry.isolatedInvocationCount) || 0,
-      thinPlannerNeverLoadsProject: true,
-      thinPlannerNeverConstructsSimulator: true,
+      ...heavyEvidence,
     },
     processTreeMemory: {
       ...graphResult.processTreeMemory,
+      bootstrapAggregateUpperBoundMb,
+      segmentMaxAggregateConcurrentRssUpperBoundMb: segmentMaxAggregate,
       maxConcurrentProcessTreeRssMb,
+      overshootMb: overallOvershootMb,
+      qualified: overallQualified,
+      overallOvershootMb,
+      overallQualified,
+      hardCeilingMb: PROCESS_TREE_RSS_HARD_CEILING_MB,
+      stopThresholdMb: PROCESS_TREE_RSS_STOP_THRESHOLD_MB,
+      allowedOvershootMb: PROCESS_TREE_ALLOWED_OVERSHOOT_MB,
       plannerBaselineRssMb,
       bootstrapPeakRssMb: bootstrap.bootstrapPeakRssMb,
     },

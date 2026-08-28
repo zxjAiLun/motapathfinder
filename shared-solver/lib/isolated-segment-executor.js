@@ -263,6 +263,7 @@ function executeIsolatedSegment(options) {
     inputFrontier,
     parentInputStateKeys,
     simulatorProfile,
+    expectedProjectIdentity: runtimeDescriptor ? runtimeDescriptor.projectIdentity : null,
     assignedExpansions,
     assignedDeadlineMs,
     childDeadlineMs,
@@ -476,6 +477,28 @@ function executeIsolatedSegment(options) {
   } else if (!appliedSimulatorProfile && requestedSimulatorProfile) {
     // Worker didn't return profile – treat as mismatch unless worker is old (fail-closed)
     throw new Error(`Missing appliedSimulatorProfile in worker response`);
+  } else {
+    simulatorProfileIdentity = true;
+  }
+
+  // P2-2: projectIdentity verification (thin path)
+  const expectedProjectIdentity = runtimeDescriptor ? runtimeDescriptor.projectIdentity : null;
+  const appliedProjectIdentity = workerResponse.appliedProjectIdentity || null;
+  let projectIdentityMatch = true;
+  if (expectedProjectIdentity) {
+    if (!appliedProjectIdentity) {
+      throw new Error("Missing appliedProjectIdentity in worker response (expected projectIdentity verification)");
+    }
+    try {
+      const expectedStr = JSON.stringify(expectedProjectIdentity);
+      const appliedStr = JSON.stringify(appliedProjectIdentity);
+      projectIdentityMatch = expectedStr === appliedStr;
+      if (!projectIdentityMatch) {
+        throw new Error(`ProjectIdentity mismatch: expected ${expectedStr} != applied ${appliedStr}`);
+      }
+    } catch (e) {
+      throw new Error(`ProjectIdentity comparison failed: ${e.message}`);
+    }
   }
 
   const workerPeakRssMb = Number(workerResponse.workerPeakRssMb || 0);
@@ -520,6 +543,9 @@ function executeIsolatedSegment(options) {
       simulatorProfileIdentity,
       requestedSimulatorProfile,
       appliedSimulatorProfile,
+      projectIdentityMatch,
+      expectedProjectIdentity,
+      appliedProjectIdentity,
     },
   };
 }

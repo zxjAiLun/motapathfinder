@@ -3663,6 +3663,13 @@
       "cleanCheckout": true,
       "notes": "synthetic real-search teacher observer outcome contract"
     },
+    "shared-solver/check-thin-planner-runtime-child.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-thin-planner.js": {
       "grade": "local-regression",
       "allowsNotFound": false,

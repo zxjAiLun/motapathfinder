@@ -174,5 +174,6 @@ module.exports = {
   getMilestoneById,
   getMilestoneSpec,
   listMilestones,
+  propagateSuccessorHardPresentTiles,
   validateMilestoneSpec,
 };

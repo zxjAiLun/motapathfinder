@@ -5011,6 +5011,8 @@ module.exports = {
   runMilestoneGraph,
   runSegmentAgainstFrontier,
   runSegmentAgainstFrontierLocal,
+  createGlobalBudget,
+  summarizeGlobalBudget,
   searchSegmentDP,
   segmentCandidateLimit,
   summarizeEffectiveHero,
