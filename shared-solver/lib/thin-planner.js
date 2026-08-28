@@ -94,7 +94,7 @@ function runBootstrap(projectRoot, stopFloorId, options) {
       timeout: timeoutMs,
       maxBuffer: 20 * 1024 * 1024,
       encoding: "utf8",
-      stdio: ["ignore", "pipe", stderrFd != null ? stderrFd : "ignore"],
+      stdio: ["ignore", "ignore", stderrFd != null ? stderrFd : "ignore"],
     });
   } finally {
     if (stderrFd != null) {

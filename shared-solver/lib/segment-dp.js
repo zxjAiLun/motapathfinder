@@ -2702,6 +2702,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
     maxRuntimeMs,
     maxHeapMb: number(dpConfig.maxHeapMb, 0),
     maxRssMb: number(dpConfig.maxRssMb, 0),
+    maxRssHardCeilingMb: number(dpConfig.maxRssHardCeilingMb, 0),
     memoryCheckIntervalExpansions: number(dpConfig.memoryCheckIntervalExpansions, 1),
     memoryCheckIntervalActions: number(dpConfig.memoryCheckIntervalActions, 1),
     rssGcFlatten: dpConfig.rssGcFlatten !== false,

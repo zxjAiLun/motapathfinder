@@ -2164,6 +2164,13 @@ function searchDP(simulator, initialState, options) {
 
   const maxHeapMb = Number(config.maxHeapMb || 0);
   const maxRssMb = Number(config.maxRssMb || 0);
+  // Hard ceiling: fail-closed stop that does not retry-GC. When provided it must be
+  // >= maxRssMb; a sample at/above it stops immediately (the stop threshold is the
+  // soft contract, the hard ceiling is the sampling-overshoot backstop).
+  const maxRssHardCeilingMb = Math.max(
+    maxRssMb,
+    Number(config.maxRssHardCeilingMb || 0),
+  );
   const memoryCheckIntervalExpansions = Math.max(
     1,
     Math.floor(number(config.memoryCheckIntervalExpansions, 1)),
@@ -2204,6 +2211,9 @@ function searchDP(simulator, initialState, options) {
     if (shouldStop && !memoryStoppedReason) {
       if (maxHeapMb > 0 && heapUsedMb >= maxHeapMb) {
         memoryStoppedReason = "heap-limit";
+      } else if (maxRssHardCeilingMb > maxRssMb && rssMb >= maxRssHardCeilingMb) {
+        // Hard ceiling: immediate fail-closed stop, no GC retry.
+        memoryStoppedReason = "rss-limit";
       } else if (maxRssMb > 0 && rssMb >= maxRssMb) {
         if (typeof global.gc === "function") {
           try { global.gc(); } catch (_) {}

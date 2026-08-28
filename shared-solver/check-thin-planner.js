@@ -242,21 +242,31 @@ function main() {
       );
     }
   }
+  // --- Iteration 2c Repair 1: MT1→MT4 RSS-to-wall transfer contract ---
+  // MT4 may legitimately fail (not found yet), but the binding constraint must be
+  // wall time, NOT RSS/heap/expansions. A regression back to rss-limit must turn
+  // this gate red immediately. When MT4 is eventually found, only the resource
+  // prohibition below still applies.
+  if (!thinResult.found) {
+    const mt4LedgerStops = (thinResult.evaluationAttemptLedger || [])
+      .map((att) => att.diagnostics && att.diagnostics.dp && att.diagnostics.dp.stoppedReason)
+      .filter(Boolean);
+    assert.ok(!mt4LedgerStops.includes("rss-limit"), `MT1→MT4 must not regress to rss-limit (ledger stops: ${mt4LedgerStops.join(",") || "none"})`);
+    assert.ok(!mt4LedgerStops.includes("heap-limit"), `MT1→MT4 must not regress to heap-limit (ledger stops: ${mt4LedgerStops.join(",") || "none"})`);
+    assert.ok(!mt4LedgerStops.includes("expansion-limit"), `MT1→MT4 must not regress to expansion-limit (ledger stops: ${mt4LedgerStops.join(",") || "none"})`);
+    assert.ok(
+      thinResult.budget.stoppedReason == null || thinResult.budget.stoppedReason === "time-limit",
+      `MT1→MT4 global stop reason must be time-limit (or null), got ${thinResult.budget.stoppedReason}`,
+    );
+  }
 
-  // --- Repair 2: Thin MT1→MT3 capability classification (frozen 5.24a semantics, depth=2) ---
-  // The gate must be deterministic. Empirical finding (Repair 2 measurement):
-  //   - initial MT1→MT2 and MT2→MT3 searches are deterministic (62/152 expansions, peak 169-177MB)
-  //   - the adaptive-expand wave on mt1-to-mt2 has live-set ~200-205MB while the worker
-  //     envelope is stopThreshold(256) - plannerAtSpawn(~55) = ~201MB
-  //   - therefore the capability flips (~50%) on the envelope boundary: this is the
-  //     STRUCTURAL Branch-B finding, not a regression to hide behind a flaky hard gate.
-  // The gate thus classifies deterministically and hard-asserts the classification invariants:
-  //   PASS  -> capability retained: strict replay + all lifecycle gates (as originally required)
-  //   FAIL  -> capability envelope-blocked: initial searches must be non-resource-complete,
-  //            the adaptive wave must be rss-limited, and the process tree must still be
-  //            qualified (≤260/4) – i.e. the failure is attributable to the thin split
-  //            envelope, not to unbounded memory or a lifecycle breach.
-  console.log("== Thin MT1→MT3 Capability Classification (clean child, depth=2) ==");
+  // --- Iteration 2c Repair 1: Thin MT1→MT3 restored capability is a CONTRACT ---
+  // The capability was empirically restored by phase-correct RSS + wave live-set
+  // flattening (8/8 found, peak 243-245, wall ~17s). This gate now fail-closes:
+  // any regression back to envelope/rss-limit forms is a TEST FAILURE, not a
+  // diagnostic classification. extractFinalFailureSemantics() is retained for
+  // diagnostics only.
+  console.log("== Thin MT1→MT3 Restored Capability Contract (clean child, depth=2) ==");
   const { thinResult: thinMt3 } = runCleanThinRuntimeChild({
     routeName: "onlyup-chaos-mt1-mt3",
     maxExpansions: 50000,
@@ -270,60 +280,45 @@ function main() {
   });
   const mt3Records = thinMt3.isolatedProcessTreeTelemetry.records || [];
   mt3Records.forEach((rec) => {
+    const notRun = rec.executed === false && rec.inputStateKeysVerified === 0 && rec.outputStateKeysVerified === 0 && Number(rec.consumedExpansions || 0) === 0;
+    if (notRun) return;
     assert.strictEqual(rec.stateRoundTripIdentity, true, `Thin MT1→MT3 record ${rec.segmentId} stateRoundTripIdentity false`);
     assert.strictEqual(rec.simulatorProfileIdentity, true, `Thin MT1→MT3 record ${rec.segmentId} profileIdentity false`);
     if (rec.expectedProjectIdentity) {
       assert.strictEqual(rec.projectIdentityMatch, true, `Thin MT1→MT3 record ${rec.segmentId} projectIdentityMatch false`);
     }
   });
-  // Whole-run budget + process-tree gates hold in BOTH classifications
+  // Hard contract: capability MUST be found
+  assert.strictEqual(thinMt3.found, true, `Thin MT1→MT3 restored capability is a contract: found=false (regression to ${extractFinalFailureSemantics(thinMt3).finalCanonicalOutcome})`);
+  assert.strictEqual(thinMt3.reachedMilestone, "mt2-to-mt3", `Thin MT1→MT3 reachedMilestone must be mt2-to-mt3, got ${thinMt3.reachedMilestone}`);
+  assert.ok(thinMt3.finalCandidates && thinMt3.finalCandidates.length > 0, "Thin MT1→MT3 must produce final candidates");
+  // Whole-run budget + process-tree hard gates
   assert.strictEqual(thinMt3.budget.requestedRuntimeMs, 30000, "Thin MT1→MT3 requestedRuntimeMs must report original 30000");
   assert.ok(thinMt3.budget.consumedExpansions <= 50000, `Thin MT1→MT3 consumed expansions ${thinMt3.budget.consumedExpansions} > 50000`);
   assert.ok(thinMt3.lifecycleTelemetry.overallWallMs <= 30000, `Thin MT1→MT3 whole-run wall ${thinMt3.lifecycleTelemetry.overallWallMs}ms exceeded 30000`);
   assert.ok(thinMt3.processTreeMemory.maxConcurrentProcessTreeRssMb <= 260, `Thin MT1→MT3 processTree ${thinMt3.processTreeMemory.maxConcurrentProcessTreeRssMb} > 260`);
   assert.ok(thinMt3.processTreeMemory.overshootMb <= 4, `Thin MT1→MT3 overshoot ${thinMt3.processTreeMemory.overshootMb} > 4`);
+  // Hard contract: NO resource stops of any kind
+  const mt3LedgerStops = (thinMt3.evaluationAttemptLedger || [])
+    .map((att) => att.diagnostics && att.diagnostics.dp && att.diagnostics.dp.stoppedReason)
+    .filter(Boolean);
+  assert.ok(!mt3LedgerStops.includes("rss-limit"), `Thin MT1→MT3 must not be rss-limited (ledger stops: ${mt3LedgerStops.join(",") || "none"})`);
+  assert.ok(!mt3LedgerStops.includes("heap-limit"), `Thin MT1→MT3 must not be heap-limited (ledger stops: ${mt3LedgerStops.join(",") || "none"})`);
+  assert.ok(!mt3LedgerStops.includes("expansion-limit"), `Thin MT1→MT3 must not be expansion-limited (ledger stops: ${mt3LedgerStops.join(",") || "none"})`);
+  assert.notStrictEqual(thinMt3.budget.stoppedReason, "rss-limit", "Thin MT1→MT3 global budget must not be rss-limited");
+  assert.notStrictEqual(thinMt3.budget.stoppedReason, "heap-limit", "Thin MT1→MT3 global budget must not be heap-limited");
+  assert.notStrictEqual(thinMt3.budget.stoppedReason, "expansion-limit", "Thin MT1→MT3 global budget must not be expansion-limited");
 
   const mt3Semantics = extractFinalFailureSemantics(thinMt3);
-  let thinMt3CapabilityRetained = false;
+  const thinMt3CapabilityRetained = true;
   let mt3StrictReplayPassed = 0;
   const mt3ReplayedCandidates = [];
-  if (thinMt3.found) {
-    assert.strictEqual(thinMt3.reachedMilestone, "mt2-to-mt3", `Thin MT1→MT3 reachedMilestone must be mt2-to-mt3, got ${thinMt3.reachedMilestone}`);
-    assert.ok(thinMt3.finalCandidates && thinMt3.finalCandidates.length > 0, "Thin MT1→MT3 must produce final candidates");
-    thinMt3CapabilityRetained = true;
-    // strict replay performed on the heavy side below, after project is loaded
-  } else {
-    // Deterministic envelope-blocked classification. Two observed forms (both are the
-    // same structural phenomenon: the thin-split worker envelope truncates a search
-    // that the heavy single-process form completed within its 256MB budget):
-    //   form A: initial MT2→MT3 frontier-exhausted (complete, non-resource), then the
-    //           adaptive wave on mt1-to-mt2 hits rss-limit inside the envelope.
-    //   form B: the very first MT1→MT2 search is rss-limited at the envelope because
-    //           its own live-set crosses the (256 - planner) boundary.
-    // In both forms the canonical final outcome must be RESOURCE_LIMITED with at least
-    // one rss-limited worker record, and the process tree must remain qualified.
-    assert.strictEqual(mt3Semantics.finalCanonicalOutcome, "RESOURCE_LIMITED", `Envelope-blocked final outcome must be RESOURCE_LIMITED, got ${mt3Semantics.finalCanonicalOutcome}`);
-    const envelopeTruncatedInitial = mt3Semantics.initialStopReason === "rss-limit";
-    const envelopeTruncatedWave = mt3Semantics.adaptiveRollbackTriggered && mt3Semantics.adaptiveResourceLimited;
-    assert.ok(
-      envelopeTruncatedInitial || envelopeTruncatedWave,
-      `Envelope-blocked classification requires either the initial search or the adaptive wave to be rss-limited, got initialStop=${mt3Semantics.initialStopReason} waveLimited=${mt3Semantics.adaptiveResourceLimited}`,
-    );
-    if (envelopeTruncatedWave) {
-      assert.strictEqual(mt3Semantics.initialOutcome, "goal-not-found-search-complete", `Form-A envelope-blocked requires initial MT2→MT3 frontier exhaustion, got ${mt3Semantics.initialOutcome}`);
-      assert.strictEqual(mt3Semantics.initialStopReason, null, "Form-A initial MT2→MT3 must not be resource-limited");
-    }
-    // The rss-limit must be visible in the canonical ledger (authoritative DP diagnostics)
-    const ledgerStops = (thinMt3.evaluationAttemptLedger || [])
-      .map((att) => att.diagnostics && att.diagnostics.dp && att.diagnostics.dp.stoppedReason)
-      .filter((reason) => reason === "rss-limit");
-    assert.ok(ledgerStops.length > 0, "Envelope-blocked classification requires at least one rss-limited ledger attempt");
-  }
   console.log(JSON.stringify({
-    thinMt1ToMt3Found: thinMt3.found,
-    capabilityRetained: thinMt3CapabilityRetained,
-    classification: thinMt3CapabilityRetained ? "CAPABILITY_RETAINED" : "ENVELOPE_BLOCKED",
+    thinMt1ToMt3Found: true,
+    capabilityRetained: true,
+    classification: "CAPABILITY_RETAINED",
     finalCanonicalOutcome: mt3Semantics.finalCanonicalOutcome,
+    ledgerStops: mt3LedgerStops,
     workerPeaks: mt3Records.map((rec) => rec.workerPeakRssMb),
     workerEnvelopes: mt3Records.map((rec) => rec.workerMaxRssMb),
   }));
@@ -470,26 +465,28 @@ function main() {
       plannerBaselineRssMb: plannerBaseline,
       maxConcurrentProcessTreeRssMb: thinProcessTree.maxConcurrentProcessTreeRssMb,
       bootstrapPeakRssMb: bootstrap.bootstrapPeakRssMb,
-      bootstrapAggregateUpperBoundMb: thinProcessTree.bootstrapAggregateUpperBoundMb,
+      bootstrapConcurrentUpperBoundMb: thinProcessTree.bootstrapConcurrentUpperBoundMb,
+      bootstrapOverallPeakMb: thinProcessTree.bootstrapOverallPeakMb,
       isolatedInvocationCount: thinResult.isolatedProcessTreeTelemetry.isolatedInvocationCount,
       processTreeQualified: thinProcessTree.qualified,
     },
     thinMt1ToMt3Capability: {
       found: thinMt3.found,
-      classification: thinMt3CapabilityRetained ? "CAPABILITY_RETAINED" : "ENVELOPE_BLOCKED",
+      classification: "CAPABILITY_RETAINED",
+      contract: "fail-closed (restored capability is a regression gate)",
       reachedMilestone: thinMt3.reachedMilestone,
       overallWallMs: thinMt3.lifecycleTelemetry.overallWallMs,
       maxConcurrentProcessTreeRssMb: thinMt3.processTreeMemory.maxConcurrentProcessTreeRssMb,
       consumedExpansions: thinMt3.budget.consumedExpansions,
       finalCanonicalOutcome: mt3Semantics.finalCanonicalOutcome,
+      ledgerStops: mt3LedgerStops,
       workerPeaksRssMb: mt3Records.map((rec) => rec.workerPeakRssMb),
       workerEnvelopesRssMb: mt3Records.map((rec) => rec.workerMaxRssMb),
-      strictReplayPassed: thinMt3CapabilityRetained
-        ? mt3StrictReplayPassed === thinMt3.finalCandidates.length && mt3StrictReplayPassed > 0
-        : null,
+      strictReplayPassed: mt3StrictReplayPassed === thinMt3.finalCandidates.length && mt3StrictReplayPassed > 0,
       replayedCandidates: mt3ReplayedCandidates,
     },
     mt1ToMt4FinalFailure: mt4Semantics,
+    mt1ToMt4ResourceBinding: thinResult.found ? "FOUND" : "time-limit-only (rss/heap/expansion prohibited)",
     lifecycleBudget: {
       requestedRuntimeMs: thinResult.budget.requestedRuntimeMs,
       overallWallMs: thinResult.lifecycleTelemetry.overallWallMs,
