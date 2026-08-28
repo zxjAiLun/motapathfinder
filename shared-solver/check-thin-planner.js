@@ -97,11 +97,23 @@ function extractFinalFailureSemantics(thinResult) {
 
   const budgetStopped = thinResult.budget && thinResult.budget.stoppedReason;
   const memoryLimitedFailed = Boolean(failed && failed.failureClass === "memory-limited");
+  // Iteration 4 invariant: any candidate still locally incomplete at the global
+  // stop (deferred queue non-empty) means its frontier was NOT fully explored,
+  // so the canonical outcome cannot be EXHAUSTED.
+  const incompleteSlices = (thinResult.segmentResults || []).reduce((sum, seg) => {
+    const t = seg && seg.candidateSliceTelemetry;
+    return sum + Number((t && t.candidateSliceStillIncompleteAtGlobalStop) || 0);
+  }, 0);
 
   let finalCanonicalOutcome;
   if (thinResult.found) {
     finalCanonicalOutcome = "FOUND";
-  } else if (memoryLimitedFailed || adaptiveResourceLimited || (budgetStopped && resourceStopReasons.has(budgetStopped))) {
+  } else if (
+    memoryLimitedFailed ||
+    adaptiveResourceLimited ||
+    incompleteSlices > 0 ||
+    (budgetStopped && resourceStopReasons.has(budgetStopped))
+  ) {
     finalCanonicalOutcome = "RESOURCE_LIMITED";
   } else if (thinResult.cancelled) {
     finalCanonicalOutcome = "CANCELLED";
@@ -115,6 +127,7 @@ function extractFinalFailureSemantics(thinResult) {
     initialOutcome,
     initialStopReason,
     initialFrontierExhausted: initialOutcome === "goal-not-found-search-complete" || initialOutcome === "frontier-exhausted",
+    incompleteCandidateSlices: incompleteSlices,
     adaptiveRollbackTriggered,
     adaptiveWavesAttempted: adaptiveLedger.filter((att) => att.phase === "adaptive-expand").length,
     adaptiveDownstreamReplayCount: adaptiveLedger.filter((att) => att.phase === "adaptive-replay").length,

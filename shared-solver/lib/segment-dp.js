@@ -2441,7 +2441,7 @@ function searchSegmentDP(simulator, startState, segment, options) {
   // canonical hot phases (buildDpStateKey / enumerateActions / sortActions /
   // applyAction / walkReachability / stabilization) are timed for every attempt.
   // Zero overhead when disabled; phase aggregates land in diagnostics.dp.perf.
-  const perfEnabled = config.perfProfile !== false;
+  const perfEnabled = config.perfProfile === true;
   let perfTracker = null;
   let perfRestoreTracker = null;
   if (perfEnabled) {
@@ -3426,16 +3426,23 @@ function runSegmentAgainstFrontierLocal(
       segmentTotal: Number((config && config.segmentTotal) || 0),
     }));
   }
-  for (const [candidateIndex, candidate] of inputFrontier.entries()) {
-    if (lifecycle && typeof lifecycle.emit === "function") {
-      lifecycle.emit("attemptStarted", () => ({
-        segmentId: segment.id,
-        segmentIndex: Number((config && config.segmentIndex) || 0),
-        segmentTotal: Number((config && config.segmentTotal) || 0),
-        attempt: candidateIndex + 1,
-        startCandidates: inputFrontier.length,
-      }));
-    }
+  // Iteration 4 – work-conserving candidate slice completion.
+  // Fair per-candidate slices can locally time out while the global deadline is
+  // still in the future (e.g. later candidates exhaust early and release their
+  // slices). A local time-limit is therefore NOT search completion for that
+  // candidate: its remaining frontier is unexplored. We retry deferred
+  // locally-timed-out candidates with the remaining global wall until they
+  // complete, the segment is found, or the global budget actually runs out.
+  const candidateSliceTelemetry = {
+    candidateSliceInitialAttempts: 0,
+    candidateSliceLocalTimeouts: 0,
+    candidateSliceDeferredRetries: 0,
+    candidateSliceRecoveredToExhausted: 0,
+    candidateSliceRecoveredToFound: 0,
+    candidateSliceStillIncompleteAtGlobalStop: 0,
+    unusedGlobalWallMsAtReturn: null,
+  };
+  const runCandidateAttempt = (candidate, attemptOrdinal) => {
     const configuredRemainingRuntimeMs = config && config.deadlineMs
       ? Math.max(0, number(config.deadlineMs, 0) - Date.now())
       : null;
@@ -3457,11 +3464,13 @@ function runSegmentAgainstFrontierLocal(
       globalBudget.stoppedReason = globalRemainingRuntimeMs != null && globalRemainingRuntimeMs <= 0
         ? "time-limit"
         : "expansion-limit";
-      break;
+      return { kind: "global-limited" };
     }
-    if (remainingRuntimeMs != null && remainingRuntimeMs <= 0) break;
+    if (remainingRuntimeMs != null && remainingRuntimeMs <= 0) {
+      return { kind: "global-limited" };
+    }
     const dpOverrides = segmentDpOverrides(segment, config || {}, overrides || {});
-    const remainingCandidates = Math.max(1, inputFrontier.length - candidateIndex);
+    const remainingCandidates = Math.max(1, deferredQueue.length + 1);
     const globalAllocation = allocateGlobalAttemptBudget({
       remainingExpansions: globalRemainingExpansions,
       remainingRuntimeMs,
@@ -3493,6 +3502,7 @@ function runSegmentAgainstFrontierLocal(
       prefixTrace:
         config && config.captureTrace === true ? candidate.trace : [],
       candidateLimit,
+      perfProfile: config && config.perfProfile === true,
       preserveSkylineRoles: Boolean(
         (config || {}).preserveSkylineRoles ||
         (config || {}).qualityFloor ||
@@ -3520,7 +3530,7 @@ function runSegmentAgainstFrontierLocal(
         config.pipelineObserver.onAttempt({
           segment,
           candidate,
-          candidateIndex,
+          candidateIndex: attemptOrdinal,
           attempt: result,
         });
       } catch (error) {
@@ -3553,7 +3563,75 @@ function runSegmentAgainstFrontierLocal(
       result.diagnostics.dp.bestProgressState = null;
     }
     if (typeof global.gc === "function") global.gc();
+    const stoppedReason = dp && dp.stoppedReason;
+    const goalFound = Array.isArray(result.goalSkyline) && result.goalSkyline.length > 0;
+    return {
+      kind: goalFound ? "found" : (stoppedReason === "time-limit" ? "local-time-limited" : "completed"),
+      result,
+    };
+  };
+
+  // Work-conserving scheduler: first a fair pass over all candidates, then as
+  // many retry rounds as needed for locally-timed-out candidates while the
+  // global budget still has wall time.
+  const deferredQueue = [];
+  let attemptOrdinal = 0;
+  for (const candidate of inputFrontier) {
+    if (lifecycle && typeof lifecycle.emit === "function") {
+      lifecycle.emit("attemptStarted", () => ({
+        segmentId: segment.id,
+        segmentIndex: Number((config && config.segmentIndex) || 0),
+        segmentTotal: Number((config && config.segmentTotal) || 0),
+        attempt: attemptOrdinal + 1,
+        startCandidates: inputFrontier.length,
+      }));
+    }
+    const outcome = runCandidateAttempt(candidate, attemptOrdinal);
+    attemptOrdinal += 1;
+    candidateSliceTelemetry.candidateSliceInitialAttempts += 1;
+    if (outcome.kind === "global-limited") break;
+    if (outcome.kind === "local-time-limited") {
+      candidateSliceTelemetry.candidateSliceLocalTimeouts += 1;
+      deferredQueue.push(candidate);
+    }
     if (memoryLimited) break;
+  }
+  // Deferred retry rounds (work-conserving): only while global wall remains.
+  while (deferredQueue.length > 0) {
+    const globalRemainingMs = globalBudget && globalBudget.requestedRuntimeMs > 0
+      ? globalBudget.deadlineMs - Date.now()
+      : Number.POSITIVE_INFINITY;
+    if (!(globalRemainingMs > 0)) {
+      candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop = deferredQueue.length;
+      globalBudget.stoppedReason = "time-limit";
+      break;
+    }
+    const retryRound = deferredQueue.splice(0, deferredQueue.length);
+    for (const candidate of retryRound) {
+      const outcome = runCandidateAttempt(candidate, attemptOrdinal);
+      attemptOrdinal += 1;
+      if (outcome.kind === "global-limited") {
+        candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop = deferredQueue.length + 1;
+        break;
+      }
+      candidateSliceTelemetry.candidateSliceDeferredRetries += 1;
+      if (outcome.kind === "local-time-limited") {
+        deferredQueue.push(candidate);
+        continue;
+      }
+      if (outcome.kind === "found") {
+        candidateSliceTelemetry.candidateSliceRecoveredToFound += 1;
+      } else {
+        candidateSliceTelemetry.candidateSliceRecoveredToExhausted += 1;
+      }
+    }
+    if (memoryLimited) break;
+  }
+  if (globalBudget && globalBudget.requestedRuntimeMs > 0) {
+    candidateSliceTelemetry.unusedGlobalWallMsAtReturn = Math.max(
+      0,
+      globalBudget.deadlineMs - Date.now(),
+    );
   }
   if (lifecycle && typeof lifecycle.emit === "function") {
     lifecycle.emit("segmentCompleted", () => ({
@@ -3592,6 +3670,7 @@ function runSegmentAgainstFrontierLocal(
     found: merged.length > 0,
     startCandidatesTried: attempts.length,
     startCandidatesAvailable: (frontier || []).length,
+    candidateSliceTelemetry,
     candidates: compactSegmentCandidates(merged),
     milestoneFrontierTrimmed: merged.milestoneFrontierTrimmed === true,
     milestoneFrontierCandidateCount: merged.milestoneFrontierCandidateCount,

@@ -25,6 +25,8 @@ function main() {
     budgetScope: "global-run",
     stopFloorId: config.stopFloorId || "MT6",
     projectRoot: config.projectRoot,
+    // Qualification runs keep the perf-phase telemetry enabled (opt-in).
+    perfProfile: config.perfProfile !== false,
   });
 
   console.error(JSON.stringify({

@@ -78,7 +78,7 @@ function parseCallArguments(argSource) {
       args.push({ type: "string", value: str[1] });
       continue;
     }
-    if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(trimmed) || /^-?\d+[eE][+-]?\d+$/.test(trimmed)) {
       args.push({ type: "number", value: Number(trimmed) });
       continue;
     }
@@ -109,7 +109,7 @@ function splitTopLevel(source) {
 // Recursive-descent arithmetic parser over a tiny token set:
 //   number | core.values.<name> | core.status.thisMap.ratio |
 //   core.status.hero.<field> | ( expr ) | expr op expr (with + - * / precedence)
-const ARITH_TOKEN = /^(\d+\.?\d*|\.\d+|core\.values\.[a-zA-Z][a-zA-Z0-9_]*|core\.status\.thisMap\.ratio|core\.status\.hero\.[a-zA-Z][a-zA-Z0-9_]*|[()+\-*/])/;
+const ARITH_TOKEN = /^(\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|core\.values\.[a-zA-Z][a-zA-Z0-9_]*|core\.status\.thisMap\.ratio|core\.status\.hero\.[a-zA-Z][a-zA-Z0-9_]*|[()+\-*/])/;
 
 function tokenizeArithmetic(source) {
   const tokens = [];
@@ -139,7 +139,7 @@ function parseArithmeticExpression(source) {
       pos += 1;
       return inner;
     }
-    if (/^\d/.test(token) || /^\./.test(token)) {
+    if (/^(\d|\.)/.test(token)) {
       pos += 1;
       return { type: "number", value: Number(token) };
     }
@@ -200,19 +200,25 @@ function getEffectInterpretation(source) {
   return parsed;
 }
 
-function evaluateArithmetic(node, context) {
+// Read-only coverage probe for gates: does this itemEffect source parse into the
+// interpreter subset (i.e. will the fast path be taken when enabled)?
+function canInterpretItemEffect(source) {
+  return getEffectInterpretation(source) != null;
+}
+
+function evaluateArithmetic(node, core) {
   switch (node.type) {
     case "number":
       return node.value;
     case "value":
-      return context.values[node.name];
+      return core.values[node.name];
     case "ratio":
-      return context.ratio;
+      return core.status.thisMap.ratio;
     case "hero":
-      return context.hero[node.field];
+      return core.status.hero[node.field];
     case "binary": {
-      const left = evaluateArithmetic(node.left, context);
-      const right = evaluateArithmetic(node.right, context);
+      const left = evaluateArithmetic(node.left, core);
+      const right = evaluateArithmetic(node.right, core);
       if (node.op === "+") return left + right;
       if (node.op === "-") return left - right;
       if (node.op === "*") return left * right;
@@ -224,22 +230,28 @@ function evaluateArithmetic(node, context) {
   }
 }
 
-function runEffectInterpretation(program, state, context) {
+// The interpretation runs EXCLUSIVELY on the authoritative buildEffectCore object:
+// ratio fallback (`floor.ratio || 1`), addItem/setFlag/addFlag defaults (`amount || 1`,
+// raw undefined writes, `(flag || 0) + value`) all keep exactly ONE implementation.
+// The interpreter only replaces the V8 context, never the core semantics.
+function runEffectInterpretation(program, core) {
   for (const stmt of program.statements) {
     if (stmt.kind === "method") {
+      // Call the authoritative core method with parsed argument expressions.
+      // Missing arguments are passed exactly as the VM would see them: undefined.
       const args = stmt.args.map((arg) => arg.value);
       if (stmt.method === "addItem") {
-        addItem(state, args[0], args.length > 1 ? args[1] : 1);
+        core.addItem(args[0], args[1]);
       } else if (stmt.method === "setFlag") {
-        state.flags[args[0]] = args.length > 1 ? args[1] : 0;
+        core.setFlag(args[0], args[1]);
       } else if (stmt.method === "addFlag") {
-        state.flags[args[0]] = (state.flags[args[0]] || 0) + (args.length > 1 ? args[1] : 1);
+        core.addFlag(args[0], args[1]);
       }
       continue;
     }
-    // assignment
-    const right = evaluateArithmetic(stmt.expr, context);
-    const hero = state.hero;
+    // assignment on core.status.hero
+    const right = evaluateArithmetic(stmt.expr, core);
+    const hero = core.status.hero;
     switch (stmt.op) {
       case "+=": hero[stmt.field] += right; break;
       case "-=": hero[stmt.field] -= right; break;
@@ -324,17 +336,15 @@ function executeItemEffect(project, state, item, options = {}) {
   // programs are simple core-interface statement sequences (see analysis above).
   // When the source parses into the supported subset we evaluate in-process with
   // no V8 context; anything else falls back to the VM exactly as before.
-  // The interpreter is only a semantic re-implementation of the same statement
-  // semantics against the same core interface – identical state mutations.
-  const program = getEffectInterpretation(item.itemEffect);
+  // The program executes EXCLUSIVELY on the authoritative buildEffectCore object,
+  // so ratio fallbacks, addItem/setFlag/addFlag defaults and every other core
+  // semantic keep exactly one implementation. There is no second semantics to
+  // drift. The interpreter replaces only the V8 context, never the core.
+  const interpreterEnabled = options.enableItemEffectInterpreter !== false;
+  const program = interpreterEnabled ? getEffectInterpretation(item.itemEffect) : null;
   if (program) {
-    const floor = project.floorsById[state.floorId];
-    const context = {
-      values: project.values,
-      ratio: floor && floor.ratio != null ? floor.ratio : 1,
-      hero: state.hero,
-    };
-    runEffectInterpretation(program, state, context);
+    const core = buildEffectCore(project, state);
+    runEffectInterpretation(program, core);
     return;
   }
 
@@ -372,6 +382,7 @@ function applyPickup(project, state, itemId, options = {}) {
 module.exports = {
   applyPickup,
   buildEffectCore,
+  canInterpretItemEffect,
   clearCompiledScriptCache,
   executeItemEffect,
   getCompiledEffectScript,

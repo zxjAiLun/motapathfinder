@@ -432,6 +432,7 @@ class StaticSimulator {
       examples: [],
     };
     this.enableCompiledEffectCache = Boolean(config.enableCompiledEffectCache);
+    this.enableItemEffectInterpreter = config.enableItemEffectInterpreter !== false;
     this.enableActionExpansionCache = config.enableActionExpansionCache !== false;
     this.actionExpansionCacheLimit = Number(config.actionExpansionCacheLimit || 1024);
     this.actionExpansionCaches = {
@@ -2572,10 +2573,10 @@ class StaticSimulator {
       } else {
         tracker.increment("pickupInventoryOnlyCalls", 1);
       }
-      tracker.timeStabilizationSubphase("pickupItemEffect", () => applyPickup(this.project, state, tile.id, { enableCompiledEffectCache: this.enableCompiledEffectCache === true }));
+      tracker.timeStabilizationSubphase("pickupItemEffect", () => applyPickup(this.project, state, tile.id, { enableCompiledEffectCache: this.enableCompiledEffectCache === true, enableItemEffectInterpreter: this.enableItemEffectInterpreter }));
     } else {
       removeTileAt(state, state.floorId, x, y);
-      applyPickup(this.project, state, tile.id, { enableCompiledEffectCache: this.enableCompiledEffectCache === true });
+      applyPickup(this.project, state, tile.id, { enableCompiledEffectCache: this.enableCompiledEffectCache === true, enableItemEffectInterpreter: this.enableItemEffectInterpreter });
     }
 
     const floor = this.project.floorsById[state.floorId];
