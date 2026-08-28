@@ -307,7 +307,7 @@ function executeIsolatedSegment(options) {
   // each action batch, so transient clones can overshoot between two checks. The
   // margins keep the phase-B concurrent sum (atSpawn + workerPeak) within the
   // 256 stop / 260 hard ceilings even with one batch of sampling overshoot.
-  const WORKER_STOP_SAMPLING_MARGIN_MB = 4;
+  const WORKER_STOP_SAMPLING_MARGIN_MB = 8;
   const WORKER_HARD_SAMPLING_MARGIN_MB = 2;
   const workerMaxRssMb = Math.max(1, effectiveStopThresholdMb - plannerRssAtSpawnMb - WORKER_STOP_SAMPLING_MARGIN_MB);
   const workerHardCeilingMb = Math.max(1, effectiveHardThresholdMb - plannerRssAtSpawnMb - WORKER_HARD_SAMPLING_MARGIN_MB);

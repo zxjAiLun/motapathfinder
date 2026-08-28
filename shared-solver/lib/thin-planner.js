@@ -257,6 +257,41 @@ function runThinMilestoneGraph(options) {
   // this planner process's require.cache at the end of the run.
   const heavyEvidence = heavyModuleLoadedEvidence();
 
+  // Iteration 2d – wall decomposition (aggregate, approximate):
+  //   wholeRun = bootstrap + sum(worker processWall) + planner-side remainder
+  //   workerSearch = sum(worker searchWall)  (excludes spawn/exit overhead)
+  //   gcWall = sum over attempts of rssGcWallMsTotal (inside worker search)
+  //   spawnAndProtocolOverhead ≈ workerWall − workerSearch
+  const isolatedRecords = (graphResult.isolatedProcessTreeTelemetry && graphResult.isolatedProcessTreeTelemetry.records) || [];
+  const isolatedWorkerWallMsTotal = isolatedRecords.reduce((sum, rec) => sum + Number(rec.processWallMs || 0), 0);
+  const workerSearchWallMsTotal = isolatedRecords.reduce((sum, rec) => sum + Number(rec.searchWallMs || 0), 0);
+  const gcWallMsTotal = (graphResult.evaluationAttemptLedger || []).reduce((sum, att) => {
+    const mem = att && att.diagnostics && att.diagnostics.dp && att.diagnostics.dp.memory;
+    return sum + Number((mem && mem.rssGcWallMsTotal) || 0);
+  }, 0);
+  const gcCountTotal = (graphResult.evaluationAttemptLedger || []).reduce((sum, att) => {
+    const mem = att && att.diagnostics && att.diagnostics.dp && att.diagnostics.dp.memory;
+    return sum + Number((mem && mem.rssGcCount) || 0);
+  }, 0);
+  const gcReclaimedMbTotal = (graphResult.evaluationAttemptLedger || []).reduce((sum, att) => {
+    const mem = att && att.diagnostics && att.diagnostics.dp && att.diagnostics.dp.memory;
+    return sum + Number((mem && mem.rssGcReclaimedMbTotal) || 0);
+  }, 0);
+  const wallDecomposition = {
+    wholeRunWallMs: overallWallMs,
+    bootstrapWallMs: bootstrap.bootstrapWallMs,
+    isolatedWorkerWallMsTotal,
+    workerSearchWallMsTotal,
+    gcWallMsTotal: Math.round(gcWallMsTotal),
+    gcCountTotal,
+    gcReclaimedMbTotal: Number(gcReclaimedMbTotal.toFixed(1)),
+    spawnAndProtocolOverheadMs: Math.max(0, isolatedWorkerWallMsTotal - workerSearchWallMsTotal),
+    plannerSideRemainderMs: Math.max(
+      0,
+      overallWallMs - bootstrap.bootstrapWallMs - isolatedWorkerWallMsTotal,
+    ),
+  };
+
   return {
     ...graphResult,
     thinPlanner: true,
@@ -280,6 +315,7 @@ function runThinMilestoneGraph(options) {
       overallWallMs,
       requestedRuntimeMs: overallBudget ? overallBudget.requestedRuntimeMs : 0,
       isolatedInvocationCount: (graphResult.isolatedProcessTreeTelemetry && graphResult.isolatedProcessTreeTelemetry.isolatedInvocationCount) || 0,
+      wallDecomposition,
       ...heavyEvidence,
     },
     processTreeMemory: {

@@ -486,7 +486,13 @@ function main() {
       replayedCandidates: mt3ReplayedCandidates,
     },
     mt1ToMt4FinalFailure: mt4Semantics,
-    mt1ToMt4ResourceBinding: thinResult.found ? "FOUND" : "time-limit-only (rss/heap/expansion prohibited)",
+    mt1ToMt4ResourceBinding: thinResult.found
+      ? "FOUND"
+      : (thinResult.budget.stoppedReason === "time-limit"
+        ? "TIME_LIMIT (rss/heap/expansion prohibited)"
+        : (mt4Semantics.finalCanonicalOutcome === "EXHAUSTED"
+          ? "SEARCH_EXHAUSTED (canonical search graph completed without MT4 – algorithm phase)"
+          : `INDETERMINATE (stop=${thinResult.budget.stoppedReason}, outcome=${mt4Semantics.finalCanonicalOutcome})`)),
     lifecycleBudget: {
       requestedRuntimeMs: thinResult.budget.requestedRuntimeMs,
       overallWallMs: thinResult.lifecycleTelemetry.overallWallMs,

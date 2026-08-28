@@ -2240,8 +2240,17 @@ function searchDP(simulator, initialState, options) {
   // rss-limit even though the retained set is small. A periodic proactive GC
   // while approaching the stop threshold keeps RSS close to the retained-set
   // watermark without changing any search semantics (GC is transparent to JS).
-  // GC is throttled: only above the high-water fraction, at most once per
-  // rssGcMinIntervalExpansions expansions, so the wall-clock cost stays bounded.
+  //
+  // Iteration 2d – benefit-driven throttling: a proactive GC only costs wall
+  // when it actually reclaims RSS. The interval adapts to the observed yield:
+  //   reclaimed >= 12MB  -> GC is very worthwhile: keep (or slightly tighten) interval
+  //   reclaimed 4–12MB   -> interval × 1.5
+  //   reclaimed < 4MB    -> interval × 2
+  // bounded to [rssGcMinIntervalExpansions, rssGcMaxIntervalExpansions]. A danger
+  // zone (rss >= rssGcDangerFraction × maxRss) bypasses the adaptive interval so
+  // RSS safety is never traded for wall time.
+  // Aggregate telemetry only (no per-event arrays): count, wall total/max,
+  // reclaimed total/max, useful/ineffective counts.
   const rssGcFlattenEnabled = config.rssGcFlatten !== false && maxRssMb > 0;
   const rssGcHighWaterFraction = Math.max(
     0.5,
@@ -2251,20 +2260,100 @@ function searchDP(simulator, initialState, options) {
     1,
     Math.floor(number(config.rssGcMinIntervalExpansions, 16)),
   );
+  const rssGcMaxIntervalExpansions = Math.max(
+    rssGcMinIntervalExpansions,
+    Math.floor(number(config.rssGcMaxIntervalExpansions, 128)),
+  );
+  const rssGcDangerFraction = Math.max(
+    rssGcHighWaterFraction,
+    Math.min(0.99, number(config.rssGcDangerFraction, 0.94)),
+  );
+  const RSS_GC_GOOD_YIELD_MB = number(config.rssGcGoodYieldMb, 12);
+  const RSS_GC_LOW_YIELD_MB = number(config.rssGcLowYieldMb, 4);
   let rssGcCount = 0;
   let rssGcLastAtExpansion = -Infinity;
+  let rssGcCurrentIntervalExpansions = rssGcMinIntervalExpansions;
+  let rssGcWallMsTotal = 0;
+  let rssGcWallMsMax = 0;
+  let rssGcReclaimedMbTotal = 0;
+  let rssGcReclaimedMbMax = 0;
+  let rssGcUsefulCount = 0;
+  let rssGcIneffectiveCount = 0;
+  let rssGcLastReclaimedMb = null;
+  let rssGcMinHeapGarbageMb = number(config.rssGcMinHeapGarbageMb, 16);
+  // Consecutive ineffective GCs raise the heap-garbage bar: when recent GCs keep
+  // freeing almost nothing, the danger-zone bypass must stop paying wall for them.
+  let rssGcConsecutiveLowYield = 0;
+  const RSS_GC_MAX_CONSECUTIVE_LOW_YIELD = 3;
   const maybeFlattenRss = (phase, expansionOrdinal) => {
     if (!rssGcFlattenEnabled || typeof global.gc !== "function") return;
-    if (expansionOrdinal != null && expansionOrdinal - rssGcLastAtExpansion < rssGcMinIntervalExpansions) return;
+    // A proactive GC can only reclaim RSS when there is actual heap garbage:
+    // when heapUsed is low, V8 simply has no committed-but-unused pages to free,
+    // so a GC at RSS high-water would burn wall for nothing. Require a minimum
+    // heap garbage headroom (RSS - heapUsed) before spending wall on GC.
+    const usageNow = readMemoryUsage();
+    const effectiveMinGarbageMb = rssGcMinHeapGarbageMb + rssGcConsecutiveLowYield * 16;
+    const heapGarbageMb = usageNow.rssMb - usageNow.heapUsedMb;
+    const heapGarbageOk = heapGarbageMb >= effectiveMinGarbageMb;
+    const dangerMb = maxRssMb * rssGcDangerFraction;
+    // Danger zone (close to the stop threshold): always eligible to GC regardless of
+    // the heap-garbage estimate – V8's lazy page commits can raise RSS while heapUsed
+    // stays low, and only a full GC lets V8 shrink. Rate-limited below instead.
+    const inDangerZone = usageNow.rssMb >= dangerMb && usageNow.rssMb < maxRssMb;
+    if (expansionOrdinal != null && expansionOrdinal - rssGcLastAtExpansion < rssGcCurrentIntervalExpansions) {
+      // Adaptive interval not elapsed; only a danger-zone reading may bypass it.
+      // The bypass is itself rate-limited so ineffective danger GCs cannot spin.
+      if (!inDangerZone) return;
+      if (expansionOrdinal - rssGcLastAtExpansion < rssGcMinIntervalExpansions) return;
+    }
     const highWaterMb = maxRssMb * rssGcHighWaterFraction;
-    const usage = readMemoryUsage();
-    if (usage.rssMb < highWaterMb) return;
+    if (usageNow.rssMb < highWaterMb) return;
     // Skip when a stop decision is imminent on this sample; the stop path already GCs.
-    if (usage.rssMb >= maxRssMb) return;
+    if (usageNow.rssMb >= maxRssMb) return;
+    // No garbage to collect and not in danger: GC cannot lower RSS; skip to save wall.
+    if (!heapGarbageOk && !inDangerZone) return;
+    const rssBeforeMb = usageNow.rssMb;
+    const heapBeforeMb = usageNow.heapUsedMb;
+    const gcStartedAt = Date.now();
     try { global.gc(); } catch (_) { return; }
+    const gcWallMs = Date.now() - gcStartedAt;
+    const flattened = readMemoryUsage();
+    const reclaimedMb = Math.max(0, rssBeforeMb - flattened.rssMb);
+    // Heap reclaim is the true benefit metric: a GC that frees heap space gives V8
+    // reusable committed pages, which stops further RSS growth (the flattening
+    // goal) even when the RSS reading itself barely drops.
+    const heapReclaimedMb = Math.max(0, heapBeforeMb - flattened.heapUsedMb);
     rssGcCount += 1;
     rssGcLastAtExpansion = expansionOrdinal == null ? rssGcLastAtExpansion : expansionOrdinal;
-    const flattened = readMemoryUsage();
+    rssGcWallMsTotal += gcWallMs;
+    if (gcWallMs > rssGcWallMsMax) rssGcWallMsMax = gcWallMs;
+    rssGcReclaimedMbTotal += heapReclaimedMb;
+    if (heapReclaimedMb > rssGcReclaimedMbMax) rssGcReclaimedMbMax = heapReclaimedMb;
+    rssGcLastReclaimedMb = heapReclaimedMb;
+    if (heapReclaimedMb >= RSS_GC_LOW_YIELD_MB) {
+      rssGcUsefulCount += 1;
+      rssGcConsecutiveLowYield = 0;
+    } else {
+      rssGcIneffectiveCount += 1;
+      rssGcConsecutiveLowYield += 1;
+    }
+    // Benefit-driven interval adaptation (heap-reclaim based)
+    if (heapReclaimedMb >= RSS_GC_GOOD_YIELD_MB) {
+      rssGcCurrentIntervalExpansions = Math.max(
+        rssGcMinIntervalExpansions,
+        Math.floor(rssGcCurrentIntervalExpansions / 1.25),
+      );
+    } else if (heapReclaimedMb >= RSS_GC_LOW_YIELD_MB) {
+      rssGcCurrentIntervalExpansions = Math.min(
+        rssGcMaxIntervalExpansions,
+        Math.floor(rssGcCurrentIntervalExpansions * 1.5),
+      );
+    } else {
+      rssGcCurrentIntervalExpansions = Math.min(
+        rssGcMaxIntervalExpansions,
+        rssGcCurrentIntervalExpansions * 2,
+      );
+    }
     peakRssMb = Math.max(peakRssMb, flattened.rssMb);
   };
   const memoryCheckDue = (expansionOrdinal) =>
@@ -2925,6 +3014,13 @@ function searchDP(simulator, initialState, options) {
           peakRssMb: Number(peakRssMb.toFixed(1)),
           rssGcFlattenEnabled,
           rssGcCount,
+          rssGcWallMsTotal: Math.round(rssGcWallMsTotal),
+          rssGcWallMsMax: Math.round(rssGcWallMsMax),
+          rssGcReclaimedMbTotal: Number(rssGcReclaimedMbTotal.toFixed(1)),
+          rssGcReclaimedMbMax: Number(rssGcReclaimedMbMax.toFixed(1)),
+          rssGcUsefulCount,
+          rssGcIneffectiveCount,
+          rssGcFinalIntervalExpansions: rssGcCurrentIntervalExpansions,
           stopHeapUsedMb: stopHeapUsedMb == null ? null : Number(stopHeapUsedMb.toFixed(1)),
           stopRssMb: stopRssMb == null ? null : Number(stopRssMb.toFixed(1)),
           stoppedReason: memoryStoppedReason,
