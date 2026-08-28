@@ -10,6 +10,10 @@ const PROCESS_TREE_RSS_STOP_THRESHOLD_MB = 256;
 const PROCESS_TREE_RSS_HARD_CEILING_MB = 260;
 const PROCESS_TREE_ALLOWED_OVERSHOOT_MB = 4;
 const CHILD_EXIT_RESERVE_MS = 2000;
+// Parent RSS can grow between atSpawn and afterSpawn (worker output deserialization).
+// The aggregate upper bound counts max(beforeSerialization, atSpawn, afterSpawn), so the
+// worker grant must reserve headroom for that growth to keep the sum within the ceiling.
+const PARENT_RSS_GROWTH_RESERVE_MB = 4;
 
 function numericOption(value, fallback) {
   const parsed = Number(value);
@@ -159,7 +163,11 @@ function executeIsolatedSegment(options) {
         deadlineEpochMs: assignedDeadlineMs,
         inputStateKeysVerified: 0,
         outputStateKeysVerified: 0,
+        // Pre-spawn budget exhaustion: no worker ran, so no round-trip was performed.
+        // (false with zero verified counts and consumedExpansions=0 marks "not run",
+        //  not a verification failure)
         stateRoundTripIdentity: false,
+        executed: false,
       },
     };
   }
@@ -295,9 +303,10 @@ function executeIsolatedSegment(options) {
   }
   const plannerRssAtSpawnMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
 
-  // Authoritative worker headroom based on FINAL atSpawn
-  const workerMaxRssMb = Math.max(1, effectiveStopThresholdMb - plannerRssAtSpawnMb);
-  const workerHardCeilingMb = Math.max(1, effectiveHardThresholdMb - plannerRssAtSpawnMb);
+  // Authoritative worker headroom based on FINAL atSpawn, reserving room for parent RSS
+  // growth during the worker's lifetime (aggregate counts the three-point planner max).
+  const workerMaxRssMb = Math.max(1, effectiveStopThresholdMb - plannerRssAtSpawnMb - PARENT_RSS_GROWTH_RESERVE_MB);
+  const workerHardCeilingMb = Math.max(1, effectiveHardThresholdMb - plannerRssAtSpawnMb - PARENT_RSS_GROWTH_RESERVE_MB);
 
   // Write tiny envelope B (authoritative execution limits) – minimal serialization cost after FINAL sample
   const envelope = {
