@@ -3427,22 +3427,45 @@ function runSegmentAgainstFrontierLocal(
     }));
   }
   // Iteration 4 – work-conserving candidate slice completion.
-  // Fair per-candidate slices can locally time out while the global deadline is
-  // still in the future (e.g. later candidates exhaust early and release their
-  // slices). A local time-limit is therefore NOT search completion for that
-  // candidate: its remaining frontier is unexplored. We retry deferred
-  // locally-timed-out candidates with the remaining global wall until they
-  // complete, the segment is found, or the global budget actually runs out.
+  // Fair per-candidate slices can locally stop (time or expansions) while the
+  // global budget is still in the future (e.g. later candidates exhaust early
+  // and release their slices). A local slice stop is therefore NOT search
+  // completion for that candidate: its remaining frontier is unexplored. We
+  // retry deferred locally-stopped candidates with the remaining global budget
+  // until they complete, the segment is found, or the global budget actually
+  // runs out.
+  //
+  // Repair 1 – round-aware fairness:
+  //   * Each round (first pass or a deferred retry round) divides the remaining
+  //     global budget by the candidates REMAINING IN THAT ROUND. Candidates that
+  //     re-queue for the next round do not count toward the current round's
+  //     denominator.
+  //   * Incomplete accounting counts every candidate that never received a
+  //     complete search: the current one, the unvisited tail of the round, and
+  //     everything already re-deferred.
+  //   * `completed` requires stoppedReason == null AND a genuinely complete
+  //     searchOutcome; local expansion-limit is deferred like local time-limit.
+  //   * Termination guard: without a finite authoritative global budget (no
+  //     globalBudget with requestedRuntimeMs/requestedExpansions/deadlineMs),
+  //     deferred rounds must not run at all – such candidates stay incomplete
+  //     and the segment cannot claim exhaustion.
   const candidateSliceTelemetry = {
     candidateSliceInitialAttempts: 0,
     candidateSliceLocalTimeouts: 0,
+    candidateSliceLocalExpansionStops: 0,
     candidateSliceDeferredRetries: 0,
     candidateSliceRecoveredToExhausted: 0,
     candidateSliceRecoveredToFound: 0,
     candidateSliceStillIncompleteAtGlobalStop: 0,
     unusedGlobalWallMsAtReturn: null,
   };
-  const runCandidateAttempt = (candidate, attemptOrdinal) => {
+  const hasFiniteGlobalBudget = Boolean(
+    globalBudget &&
+    (globalBudget.requestedRuntimeMs > 0 ||
+      globalBudget.requestedExpansions > 0 ||
+      Number.isFinite(Number(globalBudget.deadlineMs))),
+  );
+  const runCandidateAttempt = (candidate, attemptOrdinal, roundRemainingCandidates) => {
     const configuredRemainingRuntimeMs = config && config.deadlineMs
       ? Math.max(0, number(config.deadlineMs, 0) - Date.now())
       : null;
@@ -3470,7 +3493,7 @@ function runSegmentAgainstFrontierLocal(
       return { kind: "global-limited" };
     }
     const dpOverrides = segmentDpOverrides(segment, config || {}, overrides || {});
-    const remainingCandidates = Math.max(1, deferredQueue.length + 1);
+    const remainingCandidates = Math.max(1, roundRemainingCandidates);
     const globalAllocation = allocateGlobalAttemptBudget({
       remainingExpansions: globalRemainingExpansions,
       remainingRuntimeMs,
@@ -3564,19 +3587,36 @@ function runSegmentAgainstFrontierLocal(
     }
     if (typeof global.gc === "function") global.gc();
     const stoppedReason = dp && dp.stoppedReason;
+    const searchOutcome = dp && dp.searchOutcome;
     const goalFound = Array.isArray(result.goalSkyline) && result.goalSkyline.length > 0;
-    return {
-      kind: goalFound ? "found" : (stoppedReason === "time-limit" ? "local-time-limited" : "completed"),
-      result,
-    };
+    let kind;
+    if (goalFound) {
+      kind = "found";
+    } else if (stoppedReason === "time-limit") {
+      kind = "local-time-limited";
+    } else if (stoppedReason === "expansion-limit" || dp && dp.expansionBudgetExhausted === true) {
+      // Local fair-slice expansion exhaustion (frontier still open) is a local
+      // slice stop, not search completion: the global budget may still have
+      // room and the candidate must be retried work-conservingly.
+      kind = "local-expansion-limited";
+    } else {
+      // Genuinely complete only when nothing stopped the search AND the outcome
+      // says the frontier was exhausted (not a truncated/incomplete pass).
+      kind = (stoppedReason == null &&
+        searchOutcome && (searchOutcome.searchComplete === true || searchOutcome.frontierExhausted === true))
+        ? "completed"
+        : "incomplete";
+    }
+    return { kind, result };
   };
 
   // Work-conserving scheduler: first a fair pass over all candidates, then as
-  // many retry rounds as needed for locally-timed-out candidates while the
-  // global budget still has wall time.
+  // many retry rounds as needed for locally-stopped candidates while the
+  // global budget still has room.
   const deferredQueue = [];
   let attemptOrdinal = 0;
-  for (const candidate of inputFrontier) {
+  for (let candidateIndex = 0; candidateIndex < inputFrontier.length; candidateIndex += 1) {
+    const candidate = inputFrontier[candidateIndex];
     if (lifecycle && typeof lifecycle.emit === "function") {
       lifecycle.emit("attemptStarted", () => ({
         segmentId: segment.id,
@@ -3586,36 +3626,65 @@ function runSegmentAgainstFrontierLocal(
         startCandidates: inputFrontier.length,
       }));
     }
-    const outcome = runCandidateAttempt(candidate, attemptOrdinal);
+    const roundRemainingCandidates = inputFrontier.length - candidateIndex;
+    const outcome = runCandidateAttempt(candidate, attemptOrdinal, roundRemainingCandidates);
     attemptOrdinal += 1;
     candidateSliceTelemetry.candidateSliceInitialAttempts += 1;
-    if (outcome.kind === "global-limited") break;
+    if (outcome.kind === "global-limited") {
+      // Current candidate never started; everything from here on is incomplete.
+      candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop +=
+        deferredQueue.length + (inputFrontier.length - candidateIndex);
+      break;
+    }
     if (outcome.kind === "local-time-limited") {
       candidateSliceTelemetry.candidateSliceLocalTimeouts += 1;
       deferredQueue.push(candidate);
+    } else if (outcome.kind === "local-expansion-limited") {
+      candidateSliceTelemetry.candidateSliceLocalExpansionStops += 1;
+      deferredQueue.push(candidate);
     }
-    if (memoryLimited) break;
+    if (memoryLimited) {
+      // Memory-limited attempts keep their partial results but cannot claim
+      // completeness for the unvisited tail either.
+      candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop +=
+        deferredQueue.length + (inputFrontier.length - candidateIndex - 1);
+      break;
+    }
   }
-  // Deferred retry rounds (work-conserving): only while global wall remains.
-  while (deferredQueue.length > 0) {
-    const globalRemainingMs = globalBudget && globalBudget.requestedRuntimeMs > 0
+  // Deferred retry rounds (work-conserving): only with a finite authoritative
+  // global budget (termination guard) AND remaining global room.
+  while (
+    deferredQueue.length > 0 &&
+    hasFiniteGlobalBudget &&
+    !memoryLimited
+  ) {
+    const globalRemainingMs = globalBudget.requestedRuntimeMs > 0
       ? globalBudget.deadlineMs - Date.now()
       : Number.POSITIVE_INFINITY;
-    if (!(globalRemainingMs > 0)) {
-      candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop = deferredQueue.length;
-      globalBudget.stoppedReason = "time-limit";
+    const globalRemainingExpansions = globalBudget.requestedExpansions > 0
+      ? Math.max(0, globalBudget.requestedExpansions - globalBudget.consumedExpansions)
+      : Number.POSITIVE_INFINITY;
+    if (!(globalRemainingMs > 0) || !(globalRemainingExpansions > 0)) {
+      candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop += deferredQueue.length;
+      globalBudget.stoppedReason = globalBudget.stoppedReason ||
+        (globalRemainingMs > 0 ? "expansion-limit" : "time-limit");
       break;
     }
     const retryRound = deferredQueue.splice(0, deferredQueue.length);
-    for (const candidate of retryRound) {
-      const outcome = runCandidateAttempt(candidate, attemptOrdinal);
+    for (let retryIndex = 0; retryIndex < retryRound.length; retryIndex += 1) {
+      const candidate = retryRound[retryIndex];
+      const roundRemainingCandidates = retryRound.length - retryIndex;
+      const outcome = runCandidateAttempt(candidate, attemptOrdinal, roundRemainingCandidates);
       attemptOrdinal += 1;
       if (outcome.kind === "global-limited") {
-        candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop = deferredQueue.length + 1;
+        // Current retry never started; count it plus the round tail plus any
+        // already re-deferred candidates.
+        candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop +=
+          deferredQueue.length + (retryRound.length - retryIndex);
         break;
       }
       candidateSliceTelemetry.candidateSliceDeferredRetries += 1;
-      if (outcome.kind === "local-time-limited") {
+      if (outcome.kind === "local-time-limited" || outcome.kind === "local-expansion-limited") {
         deferredQueue.push(candidate);
         continue;
       }
@@ -3625,7 +3694,13 @@ function runSegmentAgainstFrontierLocal(
         candidateSliceTelemetry.candidateSliceRecoveredToExhausted += 1;
       }
     }
-    if (memoryLimited) break;
+  }
+  // Candidates left in the queue without a finite global budget (or after a
+  // memory stop) remain incomplete – the segment cannot claim exhaustion.
+  // (Rounds that exited via the budget-exhausted branch above have already
+  // counted their queue; only guard-path leftovers are counted here.)
+  if (deferredQueue.length > 0 && !hasFiniteGlobalBudget) {
+    candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop += deferredQueue.length;
   }
   if (globalBudget && globalBudget.requestedRuntimeMs > 0) {
     candidateSliceTelemetry.unusedGlobalWallMsAtReturn = Math.max(
