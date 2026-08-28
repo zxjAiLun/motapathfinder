@@ -88,34 +88,55 @@ function extractFinalFailureSemantics(thinResult) {
   const adaptiveLedger = ledger.filter((att) => att.phase === "adaptive-expand" || att.phase === "adaptive-replay");
   const adaptiveRollbackTriggered = Boolean(backtrack && backtrack.attempted) || adaptiveLedger.length > 0;
   const resourceStopReasons = new Set(["rss-limit", "heap-limit", "time-limit", "expansion-limit"]);
-  const adaptiveResourceLimited = adaptiveLedger.some((att) => {
+  // Iteration 4 Repair 2 – authoritative final completion state.
+  // A historical local slice stop (time/expansion) that was later recovered by
+  // a work-conserving retry is NOT final resource limitation: the candidate's
+  // authoritative completion says COMPLETE. Final semantics must therefore be
+  // driven by:
+  //   * the authoritative global budget stop (a real global resource limit)
+  //   * candidates still pending (LOCAL_INCOMPLETE_PENDING) at return
+  //   * terminal-incomplete candidates (actionTrimmed/cancelled – not resource)
+  //   * memory-limited execution summaries
+  // and NOT by "some historical attempt once carried a local slice stop".
+  const sliceTelemetry = (thinResult.segmentResults || [])
+    .map((seg) => seg && seg.candidateSliceTelemetry)
+    .filter(Boolean);
+  const finalPending = sliceTelemetry.reduce((sum, t) => sum + Number(t.candidateSliceFinalPending || 0), 0);
+  const terminalIncomplete = sliceTelemetry.reduce((sum, t) => sum + Number(t.candidateSliceTerminalIncomplete || 0), 0);
+  const finalCompleteCount = sliceTelemetry.reduce((sum, t) => sum + Number(t.candidateSliceFinalComplete || 0), 0);
+  const finalFoundCount = sliceTelemetry.reduce((sum, t) => sum + Number(t.candidateSliceFinalFound || 0), 0);
+  const historicalLocalStops = sliceTelemetry.reduce(
+    (sum, t) => sum + Number(t.candidateSliceLocalTimeouts || 0) + Number(t.candidateSliceLocalExpansionStops || 0),
+    0,
+  );
+  // Unrecovered memory/global hard stops still count as resource limitation.
+  const memoryOrHardStop = ledger.some((att) => {
     const dp = att.diagnostics && att.diagnostics.dp;
-    if (dp && resourceStopReasons.has(dp.stoppedReason)) return true;
-    if (att.diagnostics && att.diagnostics.memory && resourceStopReasons.has(att.diagnostics.memory.stoppedReason)) return true;
-    return false;
-  }) || Boolean(backtrack && backtrack.attempts && backtrack.attempts.some((att) => att.depthStopReason && resourceStopReasons.has(att.depthStopReason)));
+    return dp && (dp.stoppedReason === "rss-limit" || dp.stoppedReason === "heap-limit");
+  }) || Boolean(backtrack && backtrack.attempts && backtrack.attempts.some((att) => {
+    const reason = att.depthStopReason || att.stopReason;
+    return reason === "rss-limit" || reason === "heap-limit";
+  }));
 
   const budgetStopped = thinResult.budget && thinResult.budget.stoppedReason;
   const memoryLimitedFailed = Boolean(failed && failed.failureClass === "memory-limited");
   // Iteration 4 invariant: any candidate still locally incomplete at the global
   // stop (deferred queue non-empty) means its frontier was NOT fully explored,
   // so the canonical outcome cannot be EXHAUSTED.
-  const incompleteSlices = (thinResult.segmentResults || []).reduce((sum, seg) => {
-    const t = seg && seg.candidateSliceTelemetry;
-    return sum + Number((t && t.candidateSliceStillIncompleteAtGlobalStop) || 0);
-  }, 0);
+  const incompleteSlices = sliceTelemetry.reduce((sum, t) => sum + Number(t.candidateSliceStillIncompleteAtGlobalStop || 0), 0);
 
   let finalCanonicalOutcome;
   if (thinResult.found) {
     finalCanonicalOutcome = "FOUND";
   } else if (
     memoryLimitedFailed ||
-    adaptiveResourceLimited ||
+    memoryOrHardStop ||
+    finalPending > 0 ||
     incompleteSlices > 0 ||
     (budgetStopped && resourceStopReasons.has(budgetStopped))
   ) {
     finalCanonicalOutcome = "RESOURCE_LIMITED";
-  } else if (thinResult.cancelled) {
+  } else if (thinResult.cancelled || terminalIncomplete > 0) {
     finalCanonicalOutcome = "CANCELLED";
   } else {
     finalCanonicalOutcome = "EXHAUSTED";
@@ -128,6 +149,14 @@ function extractFinalFailureSemantics(thinResult) {
     initialStopReason,
     initialFrontierExhausted: initialOutcome === "goal-not-found-search-complete" || initialOutcome === "frontier-exhausted",
     incompleteCandidateSlices: incompleteSlices,
+    finalCandidateCompletion: {
+      finalFound: finalFoundCount,
+      finalComplete: finalCompleteCount,
+      finalPending,
+      terminalIncomplete,
+      historicalLocalStops,
+      searchComplete: finalPending === 0 && terminalIncomplete === 0,
+    },
     adaptiveRollbackTriggered,
     adaptiveWavesAttempted: adaptiveLedger.filter((att) => att.phase === "adaptive-expand").length,
     adaptiveDownstreamReplayCount: adaptiveLedger.filter((att) => att.phase === "adaptive-replay").length,
@@ -140,7 +169,15 @@ function extractFinalFailureSemantics(thinResult) {
       downstreamReplayCount: d.downstreamReplayCount != null ? d.downstreamReplayCount : undefined,
       stopReason: d.stopReason != null ? d.stopReason : (d.depthStopReason || null),
     })),
-    adaptiveResourceLimited,
+    // Final semantics no longer equate historical local slice stops with final
+    // resource limitation; recovered stops are folded into authoritative
+    // completion. Kept as diagnostics for the report only.
+    adaptiveResourceLimited: Boolean(
+      (budgetStopped && resourceStopReasons.has(budgetStopped)) ||
+      finalPending > 0 ||
+      memoryOrHardStop ||
+      memoryLimitedFailed,
+    ),
     budgetStoppedReason: budgetStopped || null,
     finalCanonicalOutcome,
   };

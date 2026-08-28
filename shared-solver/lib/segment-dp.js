@@ -3457,7 +3457,23 @@ function runSegmentAgainstFrontierLocal(
     candidateSliceRecoveredToExhausted: 0,
     candidateSliceRecoveredToFound: 0,
     candidateSliceStillIncompleteAtGlobalStop: 0,
+    candidateSliceTerminalIncomplete: 0,
     unusedGlobalWallMsAtReturn: null,
+  };
+  // Iteration 4 Repair 2 – authoritative per-candidate completion state.
+  // Historical telemetry records that a local slice stop HAPPENED; this map
+  // records the candidate's FINAL state after all work-conserving retries.
+  // A candidate that timed out on its fair slice but completed on retry is
+  // COMPLETE here – the historical timeout must not pollute final semantics.
+  //   FOUND               goal reached (terminal success)
+  //   COMPLETE            frontier exhausted / genuinely complete search
+  //   LOCAL_INCOMPLETE_PENDING   local slice stop, retry pending or impossible
+  //   TERMINAL_INCOMPLETE stoppedReason==null but searchOutcome incomplete
+  //                       (e.g. actionTrimmed, cancelled) – more wall will not
+  //                       fix it; never retried, never claimed complete.
+  const candidateCompletion = new Map();
+  const setCompletion = (candidateId, state) => {
+    candidateCompletion.set(candidateId, state);
   };
   const hasFiniteGlobalBudget = Boolean(
     globalBudget &&
@@ -3601,9 +3617,11 @@ function runSegmentAgainstFrontierLocal(
       kind = "local-expansion-limited";
     } else {
       // Genuinely complete only when nothing stopped the search AND the outcome
-      // says the frontier was exhausted (not a truncated/incomplete pass).
-      kind = (stoppedReason == null &&
-        searchOutcome && (searchOutcome.searchComplete === true || searchOutcome.frontierExhausted === true))
+      // explicitly reports searchComplete (frontier exhausted with a complete
+      // action scope, no cancel, no early-stop). frontierExhausted alone is NOT
+      // sufficient: a trimmed action scope can exhaust the trimmed frontier
+      // while leaving real actions unexplored (terminal incompleteness).
+      kind = (stoppedReason == null && searchOutcome && searchOutcome.searchComplete === true)
         ? "completed"
         : "incomplete";
     }
@@ -3632,20 +3650,39 @@ function runSegmentAgainstFrontierLocal(
     candidateSliceTelemetry.candidateSliceInitialAttempts += 1;
     if (outcome.kind === "global-limited") {
       // Current candidate never started; everything from here on is incomplete.
+      setCompletion(candidate.id, "LOCAL_INCOMPLETE_PENDING");
+      for (let tailIndex = candidateIndex + 1; tailIndex < inputFrontier.length; tailIndex += 1) {
+        setCompletion(inputFrontier[tailIndex].id, "LOCAL_INCOMPLETE_PENDING");
+      }
       candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop +=
         deferredQueue.length + (inputFrontier.length - candidateIndex);
       break;
     }
     if (outcome.kind === "local-time-limited") {
       candidateSliceTelemetry.candidateSliceLocalTimeouts += 1;
+      setCompletion(candidate.id, "LOCAL_INCOMPLETE_PENDING");
       deferredQueue.push(candidate);
     } else if (outcome.kind === "local-expansion-limited") {
       candidateSliceTelemetry.candidateSliceLocalExpansionStops += 1;
+      setCompletion(candidate.id, "LOCAL_INCOMPLETE_PENDING");
       deferredQueue.push(candidate);
+    } else if (outcome.kind === "incomplete") {
+      // Terminal incompleteness (stoppedReason==null but searchOutcome not
+      // complete, e.g. actionTrimmed or cancelled): more wall will not fix it.
+      // Never retried, never claimed complete.
+      candidateSliceTelemetry.candidateSliceTerminalIncomplete += 1;
+      setCompletion(candidate.id, "TERMINAL_INCOMPLETE");
+    } else if (outcome.kind === "found") {
+      setCompletion(candidate.id, "FOUND");
+    } else {
+      setCompletion(candidate.id, "COMPLETE");
     }
     if (memoryLimited) {
       // Memory-limited attempts keep their partial results but cannot claim
       // completeness for the unvisited tail either.
+      for (let tailIndex = candidateIndex + 1; tailIndex < inputFrontier.length; tailIndex += 1) {
+        setCompletion(inputFrontier[tailIndex].id, "LOCAL_INCOMPLETE_PENDING");
+      }
       candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop +=
         deferredQueue.length + (inputFrontier.length - candidateIndex - 1);
       break;
@@ -3679,19 +3716,31 @@ function runSegmentAgainstFrontierLocal(
       if (outcome.kind === "global-limited") {
         // Current retry never started; count it plus the round tail plus any
         // already re-deferred candidates.
+        setCompletion(candidate.id, "LOCAL_INCOMPLETE_PENDING");
+        for (let tailIndex = retryIndex + 1; tailIndex < retryRound.length; tailIndex += 1) {
+          setCompletion(retryRound[tailIndex].id, "LOCAL_INCOMPLETE_PENDING");
+        }
         candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop +=
           deferredQueue.length + (retryRound.length - retryIndex);
         break;
       }
       candidateSliceTelemetry.candidateSliceDeferredRetries += 1;
       if (outcome.kind === "local-time-limited" || outcome.kind === "local-expansion-limited") {
+        setCompletion(candidate.id, "LOCAL_INCOMPLETE_PENDING");
         deferredQueue.push(candidate);
+        continue;
+      }
+      if (outcome.kind === "incomplete") {
+        candidateSliceTelemetry.candidateSliceTerminalIncomplete += 1;
+        setCompletion(candidate.id, "TERMINAL_INCOMPLETE");
         continue;
       }
       if (outcome.kind === "found") {
         candidateSliceTelemetry.candidateSliceRecoveredToFound += 1;
+        setCompletion(candidate.id, "FOUND");
       } else {
         candidateSliceTelemetry.candidateSliceRecoveredToExhausted += 1;
+        setCompletion(candidate.id, "COMPLETE");
       }
     }
   }
@@ -3701,6 +3750,9 @@ function runSegmentAgainstFrontierLocal(
   // counted their queue; only guard-path leftovers are counted here.)
   if (deferredQueue.length > 0 && !hasFiniteGlobalBudget) {
     candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop += deferredQueue.length;
+    for (const candidate of deferredQueue) {
+      setCompletion(candidate.id, "LOCAL_INCOMPLETE_PENDING");
+    }
   }
   if (globalBudget && globalBudget.requestedRuntimeMs > 0) {
     candidateSliceTelemetry.unusedGlobalWallMsAtReturn = Math.max(
@@ -3708,6 +3760,26 @@ function runSegmentAgainstFrontierLocal(
       globalBudget.deadlineMs - Date.now(),
     );
   }
+  // Authoritative final completion rollup (Iteration 4 Repair 2):
+  //   final counts reflect the candidate's LAST state, so a locally-timed-out
+  //   candidate that completed on retry counts as COMPLETE here even though
+  //   candidateSliceLocalTimeouts > 0 in the historical telemetry.
+  let finalFound = 0;
+  let finalComplete = 0;
+  let finalPending = 0;
+  let finalTerminalIncomplete = 0;
+  for (const state of candidateCompletion.values()) {
+    if (state === "FOUND") finalFound += 1;
+    else if (state === "COMPLETE") finalComplete += 1;
+    else if (state === "LOCAL_INCOMPLETE_PENDING") finalPending += 1;
+    else if (state === "TERMINAL_INCOMPLETE") finalTerminalIncomplete += 1;
+  }
+  candidateSliceTelemetry.candidateSliceFinalFound = finalFound;
+  candidateSliceTelemetry.candidateSliceFinalComplete = finalComplete;
+  candidateSliceTelemetry.candidateSliceFinalPending = finalPending;
+  candidateSliceTelemetry.candidateSliceTerminalIncomplete = finalTerminalIncomplete;
+  candidateSliceTelemetry.candidateSliceSearchComplete =
+    finalPending === 0 && finalTerminalIncomplete === 0;
   if (lifecycle && typeof lifecycle.emit === "function") {
     lifecycle.emit("segmentCompleted", () => ({
       segmentId: segment.id,

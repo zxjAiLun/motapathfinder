@@ -122,7 +122,7 @@ function gateDeferredRetryRecovery(simulator, spec, states) {
     { id: "B", state: states.atGoal, tags: [] },
     { id: "C", state: states.atGoal, tags: [] },
   ];
-  const budget = makeBudget(50000, 2500);
+  const budget = makeBudget(50000, 1100);
   const result = runSegmentAgainstFrontierLocal(
     simulator,
     segment,
@@ -228,6 +228,106 @@ function gateTerminationGuard(simulator, spec, states) {
   return t;
 }
 
+function gateTerminalIncomplete(simulator, spec, states) {
+  // Fixture 5 (Repair 2): a candidate whose search ends with stoppedReason=null
+  // but searchComplete=false (e.g. action scope trimmed) is TERMINAL-incomplete:
+  // counted, not retried, and must force candidateSliceSearchComplete=false.
+  const segment = spec.milestones[1];
+  // maxActionsPerState=1 trims the action scope: the DP exhausts its (trimmed)
+  // frontier without a resource stop and without genuine search completeness.
+  const frontier = [{ id: "A", state: states.mt2State, tags: [] }];
+  const budget = makeBudget(50000, 30000);
+  const result = runSegmentAgainstFrontierLocal(
+    simulator,
+    segment,
+    frontier,
+    {
+      globalBudget: budget,
+      maxRssMb: 1024,
+      memoryCheckIntervalExpansions: 1,
+    },
+    { dpOverrides: { maxActionsPerState: 1, maxExpansions: 50000, maxRuntimeMs: 30000 } },
+  );
+  const t = result.summary.candidateSliceTelemetry;
+  const dp = result.summary.attempts[0] && result.summary.attempts[0].diagnostics.dp;
+  assert.ok(dp && dp.actionTrimmed > 0, `terminal-incomplete gate setup: action scope must actually be trimmed, got actionTrimmed=${dp && dp.actionTrimmed}`);
+  assert.ok(t, "terminal-incomplete gate: candidateSliceTelemetry must be reported");
+  assert.strictEqual(
+    t.candidateSliceTerminalIncomplete,
+    1,
+    `terminal-incomplete gate: trimmed-scope candidate must be counted TERMINAL_INCOMPLETE, got ${JSON.stringify(t)}`,
+  );
+  assert.strictEqual(
+    t.candidateSliceFinalPending,
+    0,
+    `terminal-incomplete gate: terminal-incomplete must not be retried, got ${JSON.stringify(t)}`,
+  );
+  assert.strictEqual(
+    t.candidateSliceSearchComplete,
+    false,
+    `terminal-incomplete gate: searchComplete must be false, got ${JSON.stringify(t)}`,
+  );
+  return t;
+}
+
+function gateRecoveredStopNotResourceLimited(simulator, spec, states) {
+  // Fixture 6 (Repair 2): candidate A times out on its first fair slice, B/C
+  // complete instantly, A's retry finds the goal. The HISTORICAL local timeout
+  // must remain in telemetry, but the FINAL completion must be FOUND with zero
+  // pending – i.e. the run's final semantics are NOT resource-limited by the
+  // recovered slice stop.
+  const segment = spec.milestones[1];
+  const frontier = [
+    { id: "A", state: states.mt2State, tags: [] },
+    { id: "B", state: states.atGoal, tags: [] },
+    { id: "C", state: states.atGoal, tags: [] },
+  ];
+  const budget = makeBudget(50000, 1100);
+  const result = runSegmentAgainstFrontierLocal(
+    simulator,
+    segment,
+    frontier,
+    { globalBudget: budget, maxRssMb: 1024, memoryCheckIntervalExpansions: 1 },
+    {},
+  );
+  const t = result.summary.candidateSliceTelemetry;
+  assert.ok(
+    t.candidateSliceLocalTimeouts + t.candidateSliceLocalExpansionStops > 0,
+    `recovered-stop gate: a historical local stop must have happened, got ${JSON.stringify(t)}`,
+  );
+  assert.ok(
+    t.candidateSliceDeferredRetries > 0,
+    `recovered-stop gate: deferred retries must have run, got ${JSON.stringify(t)}`,
+  );
+  assert.ok(
+    t.candidateSliceRecoveredToFound > 0,
+    `recovered-stop gate: recovery to found must have happened, got ${JSON.stringify(t)}`,
+  );
+  assert.strictEqual(
+    t.candidateSliceFinalPending,
+    0,
+    `recovered-stop gate: no candidate may be pending after successful retry, got ${JSON.stringify(t)}`,
+  );
+  assert.strictEqual(
+    t.candidateSliceTerminalIncomplete,
+    0,
+    `recovered-stop gate: no terminal incompleteness expected, got ${JSON.stringify(t)}`,
+  );
+  assert.strictEqual(
+    t.candidateSliceSearchComplete,
+    true,
+    `recovered-stop gate: searchComplete must be true after full recovery, got ${JSON.stringify(t)}`,
+  );
+  // Final-semantics assertion: with all candidates FOUND and nothing pending,
+  // the global budget must NOT have been stopped by the recovered slice.
+  assert.strictEqual(
+    budget.stoppedReason,
+    null,
+    `recovered-stop gate: global budget must not be stopped when every candidate completed/found, got ${budget.stoppedReason}`,
+  );
+  return t;
+}
+
 function main() {
   const project = loadProject(DEFAULT_PROJECT_ROOT);
   const simulator = buildSimulator(project);
@@ -238,14 +338,18 @@ function main() {
   const recovery = gateDeferredRetryRecovery(simulator, spec, states);
   const incomplete = gateExactIncompleteAccounting(simulator, spec, states);
   const guard = gateTerminationGuard(simulator, spec, states);
+  const terminalIncomplete = gateTerminalIncomplete(simulator, spec, states);
+  const recoveredStop = gateRecoveredStopNotResourceLimited(simulator, spec, states);
 
   console.log(JSON.stringify({
-    schema: "motapathfinder.work-conserving-slices.v1",
+    schema: "motapathfinder.work-conserving-slices.v2",
     contractStatus: "passed",
     fairSlice: fair,
     deferredRecovery: recovery,
     exactIncomplete: incomplete,
     terminationGuard: guard,
+    terminalIncomplete,
+    recoveredStopNotResourceLimited: recoveredStop,
   }, null, 2));
 }
 
