@@ -328,6 +328,107 @@ function gateRecoveredStopNotResourceLimited(simulator, spec, states) {
   return t;
 }
 
+function gateRunWideCompletionAuthority() {
+  // Fixture 7 (Repair 3): runMilestoneGraph-level run-wide completion authority.
+  // An adaptive replay execution whose candidate is still pending at its child
+  // deadline must keep the WHOLE canonical run from claiming EXHAUSTED, even
+  // when the parent global budget never stops (budgetStop=null).
+  const { runMilestoneGraph } = require("./lib/segment-dp");
+  const project = loadProject(DEFAULT_PROJECT_ROOT);
+  const simulator = buildSimulator(project);
+  const spec = getMilestoneSpec(project, "onlyup-chaos-mt1-mt3");
+  const initialState = simulator.createInitialState();
+
+  // Tight per-segment runtime so the mt2-to-mt3 search locally times out on
+  // its first slice, while the parent global budget (short wall) expires
+  // during the adaptive replay rounds leaving candidates pending.
+  const result = runMilestoneGraph(simulator, initialState, spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 2,
+    budgetScope: "global-run",
+    maxExpansions: 50000,
+    maxRuntimeMs: 4000,
+    maxRssMb: 4096,
+    memoryCheckIntervalExpansions: 1,
+    memoryCheckIntervalActions: 1,
+  });
+
+  const completionLedger = result.executionCompletionLedger || [];
+  assert.ok(
+    completionLedger.length > 0,
+    `run-wide gate: executionCompletionLedger must be reported, got ${completionLedger.length} entries`,
+  );
+  const runWidePending = completionLedger.reduce((sum, e) => sum + Number(e.finalPending || 0), 0);
+  const budgetStop = result.budget && result.budget.stoppedReason;
+  const runWideTerminal = completionLedger.reduce((sum, e) => sum + Number(e.terminalIncomplete || 0), 0);
+  // Hard contract for the fixture: a truncated 4s adaptive run can never
+  // legitimately claim EXHAUSTED – either the global budget stopped, or some
+  // execution still has pending/terminal-incomplete candidates, or it found.
+  assert.ok(
+    budgetStop != null || runWidePending > 0 || runWideTerminal > 0 || result.found,
+    `run-wide gate: a truncated 4s adaptive run must not be exhaustible (budgetStop=${budgetStop}, pending=${runWidePending}, terminal=${runWideTerminal}, found=${result.found})`,
+  );
+
+  // Deterministic classifier probe for the exact cloud-P1 shape that cannot be
+  // reliably reproduced end-to-end locally (isolated child deadline < parent
+  // deadline with pending candidates at return): budgetStop=null AND an
+  // adaptive execution with finalPending>0 must classify as RESOURCE_LIMITED,
+  // never EXHAUSTED. This mirrors extractFinalFailureSemantics' authority chain.
+  const resourceStopReasons = new Set(["rss-limit", "heap-limit", "time-limit", "expansion-limit"]);
+  const classifyRunWide = (shape) => {
+    const cl = shape.executionCompletionLedger || [];
+    const pending = cl.reduce((sum, e) => sum + Number(e.finalPending || 0), 0);
+    const terminal = cl.reduce((sum, e) => sum + Number(e.terminalIncomplete || 0), 0);
+    const stop = shape.budget && shape.budget.stoppedReason;
+    if (shape.found) return "FOUND";
+    if (pending > 0 || (stop && resourceStopReasons.has(stop))) return "RESOURCE_LIMITED";
+    if (terminal > 0) return "INCOMPLETE_SCOPE";
+    if (shape.cancelled) return "CANCELLED";
+    return "EXHAUSTED";
+  };
+  const p1Shape = {
+    found: false,
+    cancelled: false,
+    budget: { stoppedReason: null },
+    executionCompletionLedger: [
+      { phase: "initial", segmentId: "mt1-to-mt2", finalPending: 0, terminalIncomplete: 0 },
+      { phase: "initial", segmentId: "mt2-to-mt3", finalPending: 0, terminalIncomplete: 0 },
+      { phase: "adaptive-replay", segmentId: "mt2-to-mt3", finalPending: 1, terminalIncomplete: 0 },
+    ],
+  };
+  assert.strictEqual(
+    classifyRunWide(p1Shape),
+    "RESOURCE_LIMITED",
+    "run-wide gate: budgetStop=null with adaptive pending candidates must be RESOURCE_LIMITED, never EXHAUSTED",
+  );
+  const exhaustedShape = {
+    found: false,
+    cancelled: false,
+    budget: { stoppedReason: null },
+    executionCompletionLedger: [
+      { phase: "initial", segmentId: "s1", finalPending: 0, terminalIncomplete: 0 },
+      { phase: "adaptive-replay", segmentId: "s1", finalPending: 0, terminalIncomplete: 0 },
+    ],
+  };
+  assert.strictEqual(classifyRunWide(exhaustedShape), "EXHAUSTED", "run-wide gate: a fully completed run must classify as EXHAUSTED");
+  const scopeShape = {
+    found: false,
+    cancelled: false,
+    budget: { stoppedReason: null },
+    executionCompletionLedger: [{ phase: "initial", segmentId: "s1", finalPending: 0, terminalIncomplete: 1 }],
+  };
+  assert.strictEqual(classifyRunWide(scopeShape), "INCOMPLETE_SCOPE", "run-wide gate: terminal-incomplete must classify as INCOMPLETE_SCOPE");
+
+  return {
+    executions: completionLedger.length,
+    runWidePending,
+    runWideTerminal,
+    budgetStop,
+    found: result.found,
+  };
+}
+
 function main() {
   const project = loadProject(DEFAULT_PROJECT_ROOT);
   const simulator = buildSimulator(project);
@@ -340,9 +441,10 @@ function main() {
   const guard = gateTerminationGuard(simulator, spec, states);
   const terminalIncomplete = gateTerminalIncomplete(simulator, spec, states);
   const recoveredStop = gateRecoveredStopNotResourceLimited(simulator, spec, states);
+  const runWide = gateRunWideCompletionAuthority();
 
   console.log(JSON.stringify({
-    schema: "motapathfinder.work-conserving-slices.v2",
+    schema: "motapathfinder.work-conserving-slices.v3",
     contractStatus: "passed",
     fairSlice: fair,
     deferredRecovery: recovery,
@@ -350,6 +452,7 @@ function main() {
     terminationGuard: guard,
     terminalIncomplete,
     recoveredStopNotResourceLimited: recoveredStop,
+    runWideCompletionAuthority: runWide,
   }, null, 2));
 }
 

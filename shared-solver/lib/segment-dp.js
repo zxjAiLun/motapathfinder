@@ -4812,6 +4812,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     memory: summarizeMemoryAttempts(result.evaluationAttemptLedger, objectiveConfig),
     processTreeMemory: processTreeMemoryForResult(),
     isolatedProcessTreeTelemetry: { ...isolatedProcessTreeTelemetry },
+    executionCompletionLedger: [...executionCompletionLedger],
     objectiveStopPolicy,
   });
   const rangeError = milestoneRangeError(
@@ -4895,6 +4896,33 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         goalCount: attempt.goalCount,
         diagnostics: attempt.diagnostics,
       });
+    });
+  };
+  // Iteration 4 Repair 3 – run-wide execution completion ledger.
+  // Every real runSegmentAgainstFrontier execution (initial, configured-repair,
+  // adaptive-expand, adaptive-replay, expanded-previous, retry-current) appends
+  // its OWN final candidate completion here. Adaptive executions that never
+  // reach segmentResults (repair failed without memory failure) are therefore
+  // still visible to run-wide exhaustion semantics. Conservative by design:
+  // an adaptive execution with finalPending > 0 keeps the whole canonical run
+  // from claiming EXHAUSTED, even if a later execution re-ran the same input
+  // (supersession can come later if the false-negative ever matters).
+  const executionCompletionLedger = [];
+  const appendExecutionCompletion = (execution, phase) => {
+    const summary = execution && execution.summary;
+    if (!summary) return;
+    const t = summary.candidateSliceTelemetry || null;
+    executionCompletionLedger.push({
+      phase,
+      segmentId: summary.segmentId || null,
+      found: Boolean(summary.found),
+      finalFound: t ? Number(t.candidateSliceFinalFound || 0) : null,
+      finalComplete: t ? Number(t.candidateSliceFinalComplete || 0) : null,
+      finalPending: t ? Number(t.candidateSliceFinalPending || 0) : null,
+      terminalIncomplete: t ? Number(t.candidateSliceTerminalIncomplete || 0) : null,
+      searchComplete: t ? Boolean(t.candidateSliceSearchComplete) : null,
+      historicalLocalTimeouts: t ? Number(t.candidateSliceLocalTimeouts || 0) : null,
+      historicalLocalExpansionStops: t ? Number(t.candidateSliceLocalExpansionStops || 0) : null,
     });
   };
   const memoryLimitedSummary = (execution) => ({
@@ -5004,6 +5032,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       }),
     );
     appendLedger(execution, "initial");
+    appendExecutionCompletion(execution, "initial");
     recordIsolatedTelemetry(execution);
     if (execution.merged.length === 0) {
       if (execution.memoryLimited && (graphConfig.searchIntent !== "adaptive-feasible" || graphConfig.enableFailureBacktracking === false)) {
@@ -5019,6 +5048,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       );
       if (configuredRepair && configuredRepair.repairedCurrent) {
         appendLedger(configuredRepair.repairedCurrent, "configured-repair");
+        appendExecutionCompletion(configuredRepair.repairedCurrent, "configured-repair");
         recordIsolatedTelemetry(configuredRepair.repairedCurrent);
       }
       if (configuredRepair && configuredRepair.repairedCurrent && configuredRepair.repairedCurrent.memoryLimited) {
@@ -5050,6 +5080,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       if (adaptiveRepair) {
         (adaptiveRepair.ledgerExecutions || adaptiveRepair.executions).forEach((entry, index) => {
           appendLedger(entry, index === 0 ? "adaptive-expand" : "adaptive-replay");
+          appendExecutionCompletion(entry, index === 0 ? "adaptive-expand" : "adaptive-replay");
           recordIsolatedTelemetry(entry);
         });
         // Also record any memoryExecution not in ledgerExecutions (when present, it is same as one entry, but ensure)
@@ -5129,10 +5160,12 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         );
       if (repair && repair.expandedPrevious) {
         appendLedger(repair.expandedPrevious, "expanded-previous");
+        appendExecutionCompletion(repair.expandedPrevious, "expanded-previous");
         recordIsolatedTelemetry(repair.expandedPrevious);
       }
       if (repair && repair.repairedCurrent) {
         appendLedger(repair.repairedCurrent, "retry-current");
+        appendExecutionCompletion(repair.repairedCurrent, "retry-current");
         recordIsolatedTelemetry(repair.repairedCurrent);
       }
       if (repair && repair.repairedCurrent && repair.repairedCurrent.memoryLimited) {
