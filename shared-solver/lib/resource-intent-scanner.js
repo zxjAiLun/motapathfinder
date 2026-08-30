@@ -258,6 +258,11 @@ function desiredStatsFromFailure(failureClass, missingGoalFields) {
   }
   if (failureClass === "equipment-missing") stats.add("equipment");
   if (failureClass === "target-action-unreachable" || failureClass === "target-tile-not-cleared" || failureClass === "floor-scope-mismatch") stats.add("path");
+  // Iteration 5 – a complete search that cannot progress to the target floor
+  // needs different resource-investment histories, not a scope fix.
+  if (failureClass === "floor-progress-blocked") {
+    ["atk", "def", "mdef", "hp", "path"].forEach((stat) => stats.add(stat));
+  }
   if (stats.size === 0) ["atk", "def", "mdef", "hp", "path"].forEach((stat) => stats.add(stat));
   return Array.from(stats);
 }
@@ -443,6 +448,28 @@ function buildIntentGoal(intent) {
   if (top && top.actionKind === "changeFloor" && tileRecords.length === 0 && top.after && top.after.floorId) {
     goal.floorId = top.after.floorId;
     goal.minHero = { hp: 1 };
+  }
+  // Iteration 5 – a path-blocker whose top record is a non-tile action (e.g.
+  // equip) must still carry a concrete subgoal: an equip action repairs via
+  // equipment membership, and any other applied action repairs via its
+  // after-state checkpoint. Without this, floor-progress-blocked failures
+  // (whose desired stats now include atk/def/mdef/hp) can rank an equip
+  // record first and produce an empty {type}-only goal.
+  if (
+    intent.kind === "path-blocker" &&
+    tileRecords.length === 0 &&
+    top &&
+    top.actionKind !== "changeFloor" &&
+    top.actionKind !== "floorFly"
+  ) {
+    const equipMatch = /^equip:(.+)$/.exec(top.actionSummary || "");
+    if (equipMatch) {
+      goal.equipmentIncludes = [equipMatch[1]];
+    } else if (top.after && top.after.floorId) {
+      goal.floorId = top.after.floorId;
+      const afterHero = summarizeHero(top.after);
+      goal.minHero = { ...(goal.minHero || {}), hp: Math.max(1, afterHero.hp) };
+    }
   }
   if (intent.primaryStat && top && top.after) {
     if (intent.primaryStat === "hp") {

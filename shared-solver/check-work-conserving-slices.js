@@ -113,21 +113,26 @@ function prepareStates(simulator, spec) {
 }
 
 function gateDeferredRetryRecovery(simulator, spec, states) {
-  // Global wall 2.5s: first fair slice ≈ 833ms is insufficient for A
-  // (local time-limit), B/C complete instantly and release their slices,
-  // A's retry receives the remaining ~1.6s and finds the goal.
+  // Deterministic (expansion-based) work-conserving recovery: with a global
+  // expansion budget of 240, A's fair first slice is 240/3 = 80 expansions,
+  // which is locally expansion-limited (A's first goal lies deeper), B/C
+  // complete instantly with 0 expansions and release their slices; A's retry
+  // receives the remaining 160 and finds the goal.
+  // (Iteration 5 hardening: replaces the wall-time-sensitive 1100ms form
+  // which was flaky on faster/slower machines — the recovery SEMANTICS are
+  // the contract, not the slice arithmetic.)
   const segment = spec.milestones[1];
   const frontier = [
     { id: "A", state: states.mt2State, tags: [] },
     { id: "B", state: states.atGoal, tags: [] },
     { id: "C", state: states.atGoal, tags: [] },
   ];
-  const budget = makeBudget(50000, 1100);
+  const budget = makeBudget(240, 60000);
   const result = runSegmentAgainstFrontierLocal(
     simulator,
     segment,
     frontier,
-    { globalBudget: budget, maxRssMb: 1024, memoryCheckIntervalExpansions: 1 },
+    { globalBudget: budget, maxRssMb: 1024, memoryCheckIntervalExpansions: 1, maxRuntimeMs: 60000 },
     {},
   );
   const t = result.summary.candidateSliceTelemetry;
@@ -282,12 +287,18 @@ function gateRecoveredStopNotResourceLimited(simulator, spec, states) {
     { id: "B", state: states.atGoal, tags: [] },
     { id: "C", state: states.atGoal, tags: [] },
   ];
-  const budget = makeBudget(50000, 1100);
+  // Iteration 5 hardening: deterministic expansion-based form (see fixture 2).
+  // A's first fair slice (80) is locally expansion-limited; B/C release
+  // instantly; A's retry (160 remaining) finds the goal. The HISTORICAL local
+  // stop must remain in telemetry while the FINAL completion is FOUND with
+  // zero pending — the run's final semantics are NOT resource-limited by the
+  // recovered slice stop.
+  const budget = makeBudget(240, 60000);
   const result = runSegmentAgainstFrontierLocal(
     simulator,
     segment,
     frontier,
-    { globalBudget: budget, maxRssMb: 1024, memoryCheckIntervalExpansions: 1 },
+    { globalBudget: budget, maxRssMb: 1024, memoryCheckIntervalExpansions: 1, maxRuntimeMs: 60000 },
     {},
   );
   const t = result.summary.candidateSliceTelemetry;
@@ -375,11 +386,14 @@ function gateRunWideCompletionAuthority() {
   // deadline with pending candidates at return): budgetStop=null AND an
   // adaptive execution with finalPending>0 must classify as RESOURCE_LIMITED,
   // never EXHAUSTED. This mirrors extractFinalFailureSemantics' authority chain.
+  // Iteration 5 (P2): unknown completion (searchComplete === null) must also
+  // fail closed as INCOMPLETE_SCOPE – never silently default to 0/complete.
   const resourceStopReasons = new Set(["rss-limit", "heap-limit", "time-limit", "expansion-limit"]);
   const classifyRunWide = (shape) => {
     const cl = shape.executionCompletionLedger || [];
     const pending = cl.reduce((sum, e) => sum + Number(e.finalPending || 0), 0);
-    const terminal = cl.reduce((sum, e) => sum + Number(e.terminalIncomplete || 0), 0);
+    const unknown = cl.filter((e) => e.searchComplete !== true && e.searchComplete !== false).length;
+    const terminal = cl.reduce((sum, e) => sum + Number(e.terminalIncomplete || 0), 0) + unknown;
     const stop = shape.budget && shape.budget.stoppedReason;
     if (shape.found) return "FOUND";
     if (pending > 0 || (stop && resourceStopReasons.has(stop))) return "RESOURCE_LIMITED";
@@ -392,9 +406,9 @@ function gateRunWideCompletionAuthority() {
     cancelled: false,
     budget: { stoppedReason: null },
     executionCompletionLedger: [
-      { phase: "initial", segmentId: "mt1-to-mt2", finalPending: 0, terminalIncomplete: 0 },
-      { phase: "initial", segmentId: "mt2-to-mt3", finalPending: 0, terminalIncomplete: 0 },
-      { phase: "adaptive-replay", segmentId: "mt2-to-mt3", finalPending: 1, terminalIncomplete: 0 },
+      { phase: "initial", segmentId: "mt1-to-mt2", finalPending: 0, terminalIncomplete: 0, searchComplete: true },
+      { phase: "initial", segmentId: "mt2-to-mt3", finalPending: 0, terminalIncomplete: 0, searchComplete: true },
+      { phase: "adaptive-replay", segmentId: "mt2-to-mt3", finalPending: 1, terminalIncomplete: 0, searchComplete: false },
     ],
   };
   assert.strictEqual(
@@ -407,8 +421,8 @@ function gateRunWideCompletionAuthority() {
     cancelled: false,
     budget: { stoppedReason: null },
     executionCompletionLedger: [
-      { phase: "initial", segmentId: "s1", finalPending: 0, terminalIncomplete: 0 },
-      { phase: "adaptive-replay", segmentId: "s1", finalPending: 0, terminalIncomplete: 0 },
+      { phase: "initial", segmentId: "s1", finalPending: 0, terminalIncomplete: 0, searchComplete: true },
+      { phase: "adaptive-replay", segmentId: "s1", finalPending: 0, terminalIncomplete: 0, searchComplete: true },
     ],
   };
   assert.strictEqual(classifyRunWide(exhaustedShape), "EXHAUSTED", "run-wide gate: a fully completed run must classify as EXHAUSTED");
@@ -416,9 +430,23 @@ function gateRunWideCompletionAuthority() {
     found: false,
     cancelled: false,
     budget: { stoppedReason: null },
-    executionCompletionLedger: [{ phase: "initial", segmentId: "s1", finalPending: 0, terminalIncomplete: 1 }],
+    executionCompletionLedger: [{ phase: "initial", segmentId: "s1", finalPending: 0, terminalIncomplete: 1, searchComplete: false }],
   };
   assert.strictEqual(classifyRunWide(scopeShape), "INCOMPLETE_SCOPE", "run-wide gate: terminal-incomplete must classify as INCOMPLETE_SCOPE");
+  const unknownCompletionShape = {
+    found: false,
+    cancelled: false,
+    budget: { stoppedReason: null },
+    executionCompletionLedger: [
+      { phase: "initial", segmentId: "s1", finalPending: 0, terminalIncomplete: 0, searchComplete: true },
+      { phase: "adaptive-replay", segmentId: "s1", finalPending: null, terminalIncomplete: null, searchComplete: null },
+    ],
+  };
+  assert.strictEqual(
+    classifyRunWide(unknownCompletionShape),
+    "INCOMPLETE_SCOPE",
+    "run-wide gate: unknown completion (searchComplete=null) must fail closed as INCOMPLETE_SCOPE, never EXHAUSTED",
+  );
 
   return {
     executions: completionLedger.length,
@@ -426,6 +454,141 @@ function gateRunWideCompletionAuthority() {
     runWideTerminal,
     budgetStop,
     found: result.found,
+  };
+}
+
+function gateCompactLedgerCompletionPreservation() {
+  // Fixture 8 (Iteration 5 Repair, pre-commit P1) – PRODUCTION-PATH gate.
+  //
+  // The `4246468` EXHAUSTED qualification was invalidated because the chain
+  //   real execution -> toCompactLedgerExecution() -> candidateSliceTelemetry
+  //   dropped -> appendExecutionCompletion() -> null -> checker unknown-as-zero
+  // silently reported unknown completions as 0/complete.
+  //
+  // This fixture drives the REAL production path: a runMilestoneGraph run
+  // whose mt2-to-mt3 failure triggers tryAdaptiveCheckpointRepair, whose
+  // failed wave detaches its executions through toCompactLedgerExecution()
+  // into ledgerExecutions, which runMilestoneGraph then feeds to
+  // appendExecutionCompletion. Hard assertions:
+  //
+  //   1. at least one compact adaptive entry (adaptive-expand/adaptive-replay
+  //      phase) is present in the run-wide executionCompletionLedger;
+  //   2. EVERY ledger entry carries non-null completion fields (finalFound,
+  //      finalComplete, finalPending, terminalIncomplete, searchComplete) —
+  //      no unknown-as-zero can ever repeat;
+  //   3. for every compacted entry, ledger readings === the completion proof
+  //      snapshotted at compaction time (compact-before === compact-after);
+  //   4. adaptive phases come from the execution source (executionPhase),
+  //      never inferred from array index.
+  const { runMilestoneGraph } = require("./lib/segment-dp");
+  const project = loadProject(DEFAULT_PROJECT_ROOT);
+  const simulator = buildSimulator(project);
+  const spec = getMilestoneSpec(project, "onlyup-chaos-mt1-mt3");
+  const initialState = simulator.createInitialState();
+
+  // Deterministic adaptive-failure shape (fixture 7's): tight global runtime so
+  // mt2-to-mt3 fails its slices, adaptive rollback triggers, the wave cannot
+  // reach the goal within the budget, and all wave executions detach through
+  // the compact ledger path. Memory limits are disabled to keep the shape
+  // machine-independent.
+  const result = runMilestoneGraph(simulator, initialState, spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 50000,
+    maxRuntimeMs: 4000,
+    maxRssMb: 4096,
+    memoryCheckIntervalExpansions: 1,
+    memoryCheckIntervalActions: 1,
+  });
+
+  const ledger = result.executionCompletionLedger || [];
+  assert.ok(
+    ledger.length > 0,
+    `compact-ledger gate: executionCompletionLedger must be reported, got ${ledger.length} entries`,
+  );
+
+  const adaptiveEntries = ledger.filter(
+    (e) => e.phase === "adaptive-expand" || e.phase === "adaptive-replay",
+  );
+  assert.ok(
+    adaptiveEntries.length > 0,
+    `compact-ledger gate: the run must produce at least one adaptive (compact-path) execution, got phases [${ledger.map((e) => e.phase).join(",")}]`,
+  );
+
+  const compactProofEntries = ledger.filter((e) => e.compactCompletionProof);
+  assert.ok(
+    compactProofEntries.length > 0,
+    "compact-ledger gate: at least one ledger entry must carry the compaction-time completion proof",
+  );
+
+  // (2) Every real execution in the run-wide ledger has KNOWN completion.
+  ledger.forEach((entry, index) => {
+    const label = `entry ${index} (phase=${entry.phase}, segment=${entry.segmentId})`;
+    assert.ok(
+      entry.finalFound != null && entry.finalComplete != null && entry.finalPending != null,
+      `compact-ledger gate: ${label} has null final completion counters — unknown completion must never reach the ledger`,
+    );
+    assert.ok(
+      entry.terminalIncomplete != null,
+      `compact-ledger gate: ${label} has null terminalIncomplete`,
+    );
+    assert.ok(
+      typeof entry.searchComplete === "boolean",
+      `compact-ledger gate: ${label} has non-boolean searchComplete (${String(entry.searchComplete)}) — unknown-as-zero bug resurfaced`,
+    );
+  });
+
+  // (3) Compact-before === compact-after for every compacted entry.
+  compactProofEntries.forEach((entry, index) => {
+    const proof = entry.compactCompletionProof;
+    const label = `compact entry ${index} (phase=${entry.phase}, segment=${entry.segmentId})`;
+    assert.strictEqual(
+      entry.finalFound,
+      proof.finalFound,
+      `compact-ledger gate: ${label} finalFound ${entry.finalFound} !== compaction proof ${proof.finalFound}`,
+    );
+    assert.strictEqual(
+      entry.finalComplete,
+      proof.finalComplete,
+      `compact-ledger gate: ${label} finalComplete ${entry.finalComplete} !== compaction proof ${proof.finalComplete}`,
+    );
+    assert.strictEqual(
+      entry.finalPending,
+      proof.finalPending,
+      `compact-ledger gate: ${label} finalPending ${entry.finalPending} !== compaction proof ${proof.finalPending}`,
+    );
+    assert.strictEqual(
+      entry.terminalIncomplete,
+      proof.terminalIncomplete,
+      `compact-ledger gate: ${label} terminalIncomplete ${entry.terminalIncomplete} !== compaction proof ${proof.terminalIncomplete}`,
+    );
+    assert.strictEqual(
+      entry.searchComplete,
+      proof.searchComplete,
+      `compact-ledger gate: ${label} searchComplete ${entry.searchComplete} !== compaction proof ${proof.searchComplete}`,
+    );
+  });
+
+  // (4) Phase fidelity: compact adaptive executions must carry source-stamped
+  // phases; the first compact entry may be adaptive-expand (anchor) and every
+  // subsequent segment advance is adaptive-replay. Multi-wave runs must never
+  // mislabel a later wave's expand entry — stamped phases guarantee this.
+  adaptiveEntries.forEach((entry, index) => {
+    assert.ok(
+      entry.phase === "adaptive-expand" || entry.phase === "adaptive-replay",
+      `compact-ledger gate: adaptive entry ${index} has non-adaptive phase ${entry.phase}`,
+    );
+  });
+
+  return {
+    executions: ledger.length,
+    adaptiveEntries: adaptiveEntries.length,
+    compactProofEntries: compactProofEntries.length,
+    phases: ledger.map((e) => e.phase),
+    allCompletionsKnown: true,
+    compactBeforeEqualsAfter: true,
   };
 }
 
@@ -442,9 +605,10 @@ function main() {
   const terminalIncomplete = gateTerminalIncomplete(simulator, spec, states);
   const recoveredStop = gateRecoveredStopNotResourceLimited(simulator, spec, states);
   const runWide = gateRunWideCompletionAuthority();
+  const compactLedger = gateCompactLedgerCompletionPreservation();
 
   console.log(JSON.stringify({
-    schema: "motapathfinder.work-conserving-slices.v3",
+    schema: "motapathfinder.work-conserving-slices.v4",
     contractStatus: "passed",
     fairSlice: fair,
     deferredRecovery: recovery,
@@ -453,6 +617,7 @@ function main() {
     terminalIncomplete,
     recoveredStopNotResourceLimited: recoveredStop,
     runWideCompletionAuthority: runWide,
+    compactLedgerCompletionPreservation: compactLedger,
   }, null, 2));
 }
 

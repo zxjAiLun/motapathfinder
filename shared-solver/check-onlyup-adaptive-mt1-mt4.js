@@ -89,6 +89,7 @@ function runAdaptiveRollbackSubprocess(config) {
     maxRssMb: RSS_STOP_THRESHOLD_MB,
     memoryCheckIntervalExpansions: 1,
     memoryCheckIntervalActions: 1,
+    captureSelectionAudit: config.captureSelectionAudit !== false,
   });
 
   peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
@@ -160,6 +161,28 @@ function runAdaptiveRollbackSubprocess(config) {
   // Expose process-tree telemetry as canonical qualification source (Repair 1)
   const processTreeMemory = result.processTreeMemory || null;
   const isolatedTelemetry = result.isolatedProcessTreeTelemetry || null;
+  // Iteration 5 – compact milestone-frontier selection audit (no state dumps):
+  // unique vs selected candidates, capacity/dp-key-dedup drops, and resource
+  // signature coverage (selected vs dropped distinct signatures).
+  const selectionAudit = (result.segmentResults || [])
+    .map((seg) => {
+      const audit = seg && seg.milestoneFrontierSelectionAudit;
+      if (!audit) return null;
+      return {
+        segmentId: seg.segmentId,
+        inputCandidateCount: audit.inputCandidateCount,
+        uniqueDpKeyCount: audit.uniqueDpKeyCount,
+        selectedCount: audit.selectedCount,
+        capacityDrops: (audit.decisions || []).filter(
+          (d) => d.reason === "milestone-frontier-capacity",
+        ).length,
+        dpKeyDedupDrops: (audit.decisions || []).filter(
+          (d) => d.reason === "milestone-frontier-dp-key-deduplication",
+        ).length,
+        resourceDiversity: audit.resourceDiversity || null,
+      };
+    })
+    .filter(Boolean);
   return {
     found: result.found,
     reachedMilestone: result.reachedMilestone,
@@ -172,6 +195,8 @@ function runAdaptiveRollbackSubprocess(config) {
     segmentSummaries,
     finalCandidates,
     evaluationLedger,
+    executionCompletionLedger: result.executionCompletionLedger || [],
+    selectionAudit,
     budget: result.budget,
     memory: {
       ...result.memory,
@@ -521,6 +546,27 @@ function main() {
       evaluationLedger: runResult.evaluationLedger,
       finalCandidatesCount: (runResult.finalCandidates || []).length,
     },
+    milestoneFrontierSelectionAudit: {
+      segments: runResult.selectionAudit || [],
+      resourceDiversityEnabled: (runResult.selectionAudit || []).some(
+        (entry) => entry.resourceDiversity && entry.resourceDiversity.enabled,
+      ),
+    },
+    runWideCandidateCompletion: (() => {
+      const ledger = runResult.executionCompletionLedger || [];
+      const unknown = ledger.filter(
+        (e) => e.searchComplete !== true && e.searchComplete !== false,
+      ).length;
+      return {
+        executions: ledger.length,
+        finalPending: ledger.reduce((sum, e) => sum + Number(e.finalPending || 0), 0),
+        terminalIncomplete: ledger.reduce(
+          (sum, e) => sum + Number(e.terminalIncomplete || 0),
+          0,
+        ) + unknown,
+        unknownCompletion: unknown,
+      };
+    })(),
     qualification: {
       engineMode: "canonical-runMilestoneGraph",
       searchIntent: "adaptive-feasible",

@@ -54,6 +54,8 @@ function resolveSearchIntentOptions(options) {
       ? {
           enableFailureBacktracking: config.enableFailureBacktracking !== false,
           adaptiveBacktrackDepth: Math.max(1, number(config.adaptiveBacktrackDepth, 3)),
+          milestoneFrontierResourceDiversity:
+            config.milestoneFrontierResourceDiversity !== false,
         }
       : {}),
   };
@@ -1709,6 +1711,87 @@ function addTag(record, tag) {
   if (!record.tags.includes(tag)) record.tags.push(tag);
 }
 
+// Iteration 5 – generic resource signature for milestone frontier diversity.
+// The algorithm only understands "this candidate differs from others on some
+// maintainable resource dimension"; it has NO knowledge of specific item ids,
+// monsters or equipment. Dimensions:
+//   hero numeric fields (hp/atk/def/mdef/lv/exp/money – generic, from summarizeHero)
+//   inventory entries with count > 0 (itemId -> count, sorted)
+//   equipment membership (sorted set)
+function buildCandidateResourceSignature(state) {
+  const hero = summarizeHero(state);
+  const inventory = {};
+  const inventorySource = (state || {}).inventory || {};
+  Object.keys(inventorySource)
+    .sort()
+    .forEach((itemId) => {
+      const count = Number(inventorySource[itemId] || 0);
+      if (count > 0) inventory[itemId] = count;
+    });
+  return {
+    hero: {
+      hp: hero.hp,
+      atk: hero.atk,
+      def: hero.def,
+      mdef: hero.mdef,
+      lv: hero.lv,
+      exp: hero.exp,
+      money: hero.money,
+    },
+    inventory,
+    equipment: Array.isArray(hero.equipment)
+      ? hero.equipment.slice().sort()
+      : [],
+  };
+}
+
+// Resource-vector projection for Pareto/novelty computations. Higher is better
+// for every dimension (inventory counts, equipment membership as 0/1, hero
+// numeric fields). Returns a plain map dimensionKey -> numeric value, where
+// inventory dimensions are `inv:<itemId>` and equipment dimensions `eq:<itemId>`.
+function resourceProjection(signature) {
+  const projection = {};
+  const hero = (signature || {}).hero || {};
+  ["hp", "atk", "def", "mdef", "lv", "exp", "money"].forEach((field) => {
+    projection[`hero:${field}`] = Number(hero[field] || 0);
+  });
+  const inventory = (signature || {}).inventory || {};
+  Object.keys(inventory)
+    .sort()
+    .forEach((itemId) => {
+      projection[`inv:${itemId}`] = Number(inventory[itemId] || 0);
+    });
+  ((signature || {}).equipment || []).forEach((itemId) => {
+    projection[`eq:${itemId}`] = 1;
+  });
+  return projection;
+}
+
+// Dominates = >= on EVERY dimension present in either projection and > on at
+// least one. Dimensions absent from one side count as 0.
+function resourceDominates(left, right, dimensions) {
+  let strictlyGreater = false;
+  for (const dim of dimensions) {
+    const leftValue = Number(left[dim] || 0);
+    const rightValue = Number(right[dim] || 0);
+    if (leftValue < rightValue) return false;
+    if (leftValue > rightValue) strictlyGreater = true;
+  }
+  return strictlyGreater;
+}
+
+// Greedy resource novelty: how many dimensions the candidate improves (or
+// introduces) relative to the current selected set's best values.
+function resourceNovelty(projection, selectedBest, dimensions) {
+  let novelty = 0;
+  for (const dim of dimensions) {
+    const value = Number(projection[dim] || 0);
+    const best = selectedBest[dim] != null ? Number(selectedBest[dim]) : null;
+    if (value > 0 && (best == null || value > best)) novelty += 1;
+  }
+  return novelty;
+}
+
 function buildTraceSnapshot(project, state) {
   if (!state) return null;
   const snapshot = buildSolverSnapshot(project, state, {
@@ -1970,7 +2053,12 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
     goal.actionSurvivable && goal.actionSurvivable.summary
       ? goal.actionSurvivable.summary
       : null;
-  const records = Array.from(byKey.values()).map((candidate, index) => {
+  // Iteration 5 – deterministic record order: the byKey map iterates in input
+  // order, so downstream stable sorts (role winners, novelty ties) could depend
+  // on candidate input order. Sorting records by their DP key makes every
+  // selection decision input-order independent.
+  const records = Array.from(byKey.keys()).sort().map((key, index) => {
+    const candidate = byKey.get(key);
     const record = normalizeCandidateRecord(candidate, index, segment.id);
     if (actionSurvivableTarget) {
       try {
@@ -2067,7 +2155,113 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
     const winner = records.slice().sort(compare)[0];
     if (winner) addTag(winner, tag);
   });
-  if ((options || {}).preserveSkylineRoles === true) {
+  // Iteration 5 – resource-diversity frontier selection. Under
+  // preserveSkylineRoles (the adaptive repair default) the fixed role winners
+  // no longer consume the whole capacity: only the conserve/combat anchors and
+  // the atk/def/exp resource anchors keep mandatory seats; `shortest` loses
+  // its forced seat in the investment frontier; remaining slots are filled by
+  // (a) Pareto protection on the generic resource vector, then (b) greedy
+  // resource novelty, then (c) legacy ranking fallback. Capacity stays at the
+  // configured limit (default 8) — this NEVER widens the enumeration.
+  const diversitySelection =
+    (options || {}).milestoneFrontierResourceDiversity === true &&
+    (options || {}).preserveSkylineRoles === true;
+  let diversityAudit = null;
+  if (diversitySelection) {
+    const anchorTags = [
+      "highest-hp",
+      "best-combat",
+      "highest-atk",
+      "highest-def",
+      "highest-exp",
+    ];
+    const anchorCompare = new Map(rolePickers);
+    anchorTags.forEach((tag) => {
+      const compare = anchorCompare.get(tag);
+      if (!compare) return;
+      keepCandidate(records.slice().sort(compare)[0]);
+    });
+    // Resource projections over the (dp-key deduplicated) records.
+    const projections = new Map();
+    records.forEach((record) => {
+      projections.set(
+        record.id,
+        resourceProjection(buildCandidateResourceSignature(record.state)),
+      );
+    });
+    const dimensions = new Set();
+    projections.forEach((projection) => {
+      Object.keys(projection).forEach((dim) => dimensions.add(dim));
+    });
+    const dimensionList = Array.from(dimensions).sort();
+    // Pareto protection: nondominated candidates on the resource vector may
+    // not be dropped merely because another candidate has higher HP/combat.
+    const nondominated = records.filter((record) => {
+      const projection = projections.get(record.id);
+      return !records.some((other) => {
+        if (other === record) return false;
+        return resourceDominates(
+          projections.get(other.id),
+          projection,
+          dimensionList,
+        );
+      });
+    });
+    const selectedBest = {};
+    const refreshSelectedBest = () => {
+      Object.keys(selectedBest).forEach((key) => delete selectedBest[key]);
+      selected.forEach((record) => {
+        const projection = projections.get(record.id) || {};
+        dimensionList.forEach((dim) => {
+          const value = Number(projection[dim] || 0);
+          if (
+            selectedBest[dim] == null ||
+            value > Number(selectedBest[dim])
+          ) {
+            selectedBest[dim] = value;
+          }
+        });
+      });
+    };
+    refreshSelectedBest();
+    // Greedy resource novelty fill: iteratively pick the unselected candidate
+    // introducing the most new/better resource dimensions, tie-broken by the
+    // legacy ordering so the result is input-order independent (deterministic).
+    const remaining = () =>
+      records
+        .filter((record) => !selectedIds.has(record.id))
+        .sort(compareGoalRecords);
+    let guard = records.length + 1;
+    while (selected.length < limit && guard > 0) {
+      guard -= 1;
+      let bestRecord = null;
+      let bestNovelty = 0;
+      remaining().forEach((record) => {
+        const novelty = resourceNovelty(
+          projections.get(record.id) || {},
+          selectedBest,
+          dimensionList,
+        );
+        if (novelty > bestNovelty) {
+          bestNovelty = novelty;
+          bestRecord = record;
+        }
+      });
+      if (bestNovelty === 0 || !bestRecord) break;
+      keepCandidate(bestRecord);
+      refreshSelectedBest();
+    }
+    // Pareto-protected leftovers (deterministic order), then legacy fallback.
+    nondominated
+      .filter((record) => !selectedIds.has(record.id))
+      .sort(compareGoalRecords)
+      .forEach(keepCandidate);
+    diversityAudit = {
+      anchorTags,
+      nondominatedCount: nondominated.length,
+      noveltyFilled: selected.length,
+    };
+  } else if ((options || {}).preserveSkylineRoles === true) {
     rolePickers.forEach(([, compare]) =>
       keepCandidate(records.slice().sort(compare)[0]),
     );
@@ -2076,6 +2270,12 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
   const frontier = selected.slice(0, limit).sort(compareGoalRecords);
   frontier.milestoneFrontierTrimmed = records.length > limit;
   frontier.milestoneFrontierCandidateCount = records.length;
+  if (diversityAudit) {
+    frontier.milestoneFrontierDiversity = {
+      ...diversityAudit,
+      resourceDimensions: null,
+    };
+  }
   if ((options || {}).captureSelectionAudit === true) {
     const winnerByKey = new Map(
       Array.from(byKey.entries()).map(([key, candidate]) => [key, candidate.id]),
@@ -2084,10 +2284,37 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
       rank: index,
       tags: Array.isArray(record.tags) ? record.tags.slice() : [],
     }]));
+    // Iteration 5 – compact resource-signature statistics (no state dumps):
+    // selected and dropped signatures are hashed to stable strings so the
+    // qualification can report resource coverage without megabytes of output.
+    const signatureDigests = new Map();
+    const signatureDigest = (record) => {
+      if (!signatureDigests.has(record.id)) {
+        const signature = buildCandidateResourceSignature(record.state);
+        signatureDigests.set(record.id, JSON.stringify(signature));
+      }
+      return signatureDigests.get(record.id);
+    };
+    const selectedSignatures = new Set(
+      frontier.map((record) => signatureDigest(record)),
+    );
+    const droppedResourceDistinct = new Set(
+      records
+        .filter((record) => !selectedIds.has(record.id))
+        .map((record) => signatureDigest(record)),
+    );
     frontier.selectionAudit = {
       inputCandidateCount: inputCandidates.length,
       uniqueDpKeyCount: records.length,
       selectedCount: frontier.length,
+      resourceDiversity: {
+        enabled: diversitySelection,
+        selectedResourceSignatureCount: selectedSignatures.size,
+        droppedResourceSignatureCount: droppedResourceDistinct.size,
+        droppedResourceDistinctFromSelected: Array.from(
+          droppedResourceDistinct,
+        ).filter((digest) => !selectedSignatures.has(digest)).length,
+      },
       decisions: inputCandidates.map((candidate) => {
         const key = candidateKeys.get(candidate.id);
         const winnerId = winnerByKey.get(key);
@@ -2309,12 +2536,43 @@ function classifySegmentFailure(missing, segment, upstreamPresentTileIssues) {
   }
 
   if (hasMissingField(missingFields, (field) => field === "floorId")) {
-    addClass(
-      "floor-scope-mismatch",
-      "best seen state did not reach the target floor",
-      ["shortest", "best-combat"],
-      "check allowedFloors and allowChangeFloors for the segment",
-    );
+    // Iteration 5 – split the old floor-scope-mismatch into two classes.
+    // True scope violation: the goal floor is not reachable under the segment's
+    // own allowedFloors/allowChangeFloors policy (a spec/config problem).
+    // Otherwise: the search completed but could not progress to the target
+    // floor from the current frontier – the repair direction is resource
+    // diversity, not scope fixing.
+    const goalFloorId = ((segment || {}).goal || {}).floorId || null;
+    const policy = (segment || {}).actionPolicy || {};
+    const allowedFloors = Array.isArray(policy.allowedFloors)
+      ? policy.allowedFloors.map(String)
+      : null;
+    const goalFloorAllowed =
+      !goalFloorId ||
+      !allowedFloors ||
+      allowedFloors.includes(String(goalFloorId));
+    if (goalFloorAllowed) {
+      addClass(
+        "floor-progress-blocked",
+        "complete search could not progress to the target floor from the current frontier",
+        [
+          "highest-hp",
+          "highest-atk",
+          "highest-def",
+          "highest-exp",
+          "best-combat",
+          "resource-diverse",
+        ],
+        "backtrack to the previous milestone and regenerate candidates from different resource-investment states",
+      );
+    } else {
+      addClass(
+        "floor-scope-mismatch",
+        "target floor is not permitted by the segment floor policy",
+        ["shortest", "best-combat"],
+        "check allowedFloors and allowChangeFloors for the segment",
+      );
+    }
   }
 
   if (classes.length === 0) {
@@ -2333,6 +2591,7 @@ function classifySegmentFailure(missing, segment, upstreamPresentTileIssues) {
     "present-tile-overconstrained": 90,
     "action-survivability-deficit": 85,
     "floor-scope-mismatch": 80,
+    "floor-progress-blocked": 78,
     "target-tile-not-cleared": 75,
     "hp-deficit": 70,
     "def-deficit": 65,
@@ -3054,6 +3313,12 @@ function mergeMilestoneFrontier(simulator, candidates, segment, options) {
   }));
   merged.milestoneFrontierTrimmed = selected.milestoneFrontierTrimmed === true;
   merged.milestoneFrontierCandidateCount = selected.milestoneFrontierCandidateCount;
+  if (selected.milestoneFrontierDiversity) {
+    merged.milestoneFrontierDiversity = selected.milestoneFrontierDiversity;
+  }
+  if (selected.selectionAudit) {
+    merged.selectionAudit = selected.selectionAudit;
+  }
   return merged;
 }
 
@@ -3792,9 +4057,13 @@ function runSegmentAgainstFrontierLocal(
     objectiveSpec,
     preserveSkylineRoles: Boolean(
       (config || {}).preserveSkylineRoles ||
-      (config || {}).qualityFloor ||
-      (overrides || {}).preserveSkylineRoles,
+        (config || {}).qualityFloor ||
+        (overrides || {}).preserveSkylineRoles,
     ),
+    milestoneFrontierResourceDiversity: Boolean(
+      (config || {}).milestoneFrontierResourceDiversity,
+    ),
+    captureSelectionAudit: Boolean((config || {}).captureSelectionAudit),
   });
   if (config && config.pipelineObserver && typeof config.pipelineObserver.onMerge === "function") {
     try {
@@ -3821,6 +4090,8 @@ function runSegmentAgainstFrontierLocal(
     candidates: compactSegmentCandidates(merged),
     milestoneFrontierTrimmed: merged.milestoneFrontierTrimmed === true,
     milestoneFrontierCandidateCount: merged.milestoneFrontierCandidateCount,
+    milestoneFrontierSelectionAudit: merged.selectionAudit || null,
+    milestoneFrontierDiversity: merged.milestoneFrontierDiversity || null,
     attempts: attempts.map((attempt) => ({
       startCandidateId: attempt.startCandidateId,
       found: attempt.found,
@@ -4154,9 +4425,35 @@ function toCompactLedgerExecution(execution) {
   }));
   return {
     segment: { id: execution.segment ? execution.segment.id : summary.segmentId },
+    // Iteration 5 Repair (P2, phase fidelity) – the stamped execution phase
+    // survives compaction so ledger consumers never infer phase from index.
+    executionPhase: execution.executionPhase || null,
+    // Iteration 5 Repair (P1, pre-commit review) – compaction proof: a
+    // first-class snapshot of the completion counters taken AT COMPACTION
+    // TIME from the live candidateSliceTelemetry. appendExecutionCompletion
+    // exposes it alongside its own readings so the production-path gate can
+    // assert compact-before === compact-after; a compaction that loses
+    // telemetry produces null proof entries that fail the gate immediately.
+    compactCompletionProof: summary.candidateSliceTelemetry
+      ? {
+          finalFound: Number(summary.candidateSliceTelemetry.candidateSliceFinalFound || 0),
+          finalComplete: Number(summary.candidateSliceTelemetry.candidateSliceFinalComplete || 0),
+          finalPending: Number(summary.candidateSliceTelemetry.candidateSliceFinalPending || 0),
+          terminalIncomplete: Number(summary.candidateSliceTelemetry.candidateSliceTerminalIncomplete || 0),
+          searchComplete: Boolean(summary.candidateSliceTelemetry.candidateSliceSearchComplete),
+        }
+      : null,
     summary: {
       segmentId: summary.segmentId || (execution.segment ? execution.segment.id : null),
       attempts: compactAttempts,
+      // Iteration 5 (P2 from `4246468` review) – the completion telemetry is
+      // compact (counters only) and MUST survive compaction: adaptive
+      // executions released for memory are still real executions whose final
+      // candidate completion feeds run-wide exhaustion semantics. Dropping it
+      // here previously produced searchComplete=null entries that downstream
+      // checkers silently defaulted to 0/complete.
+      candidateSliceTelemetry: summary.candidateSliceTelemetry || null,
+      found: summary.found,
     },
     merged: [],
     inputFrontier: [],
@@ -4256,6 +4553,11 @@ function tryAdaptiveCheckpointRepair(
         previousCandidateCount: anchor.merged ? anchor.merged.length : 0,
         expandedCandidateCount: expandedAnchor.merged ? expandedAnchor.merged.length : 0,
       };
+      // Iteration 5 Repair (P2, phase fidelity) – the execution itself carries
+      // its canonical ledger phase so the run-wide ledger never has to guess
+      // from array position (multi-wave repairs would otherwise mislabel
+      // wave1's expand entry as an adaptive-replay).
+      expandedAnchor.executionPhase = "adaptive-expand";
       waveExecutions.push(expandedAnchor);
 
       let repairFrontier = expandedAnchor.merged;
@@ -4300,6 +4602,7 @@ function tryAdaptiveCheckpointRepair(
           preferredCandidateTags: preferredTags,
           startCandidatesTried: rankedFrontier.length,
         };
+        replayed.executionPhase = "adaptive-replay";
         waveExecutions.push(replayed);
         repairFrontier = replayed.merged;
         if (replayed.memoryLimited) {
@@ -4912,6 +5215,10 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     const summary = execution && execution.summary;
     if (!summary) return;
     const t = summary.candidateSliceTelemetry || null;
+    // Iteration 5 (P2 from `4246468` review) – fail-closed unknown completion.
+    // An execution without candidateSliceTelemetry has UNKNOWN final completion.
+    // It must surface as terminal incompleteness (INCOMPLETE_SCOPE for the run)
+    // instead of silently defaulting to 0/complete.
     executionCompletionLedger.push({
       phase,
       segmentId: summary.segmentId || null,
@@ -4919,10 +5226,16 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       finalFound: t ? Number(t.candidateSliceFinalFound || 0) : null,
       finalComplete: t ? Number(t.candidateSliceFinalComplete || 0) : null,
       finalPending: t ? Number(t.candidateSliceFinalPending || 0) : null,
-      terminalIncomplete: t ? Number(t.candidateSliceTerminalIncomplete || 0) : null,
-      searchComplete: t ? Boolean(t.candidateSliceSearchComplete) : null,
+      terminalIncomplete: t
+        ? Number(t.candidateSliceTerminalIncomplete || 0)
+        : 1,
+      searchComplete: t ? Boolean(t.candidateSliceSearchComplete) : false,
       historicalLocalTimeouts: t ? Number(t.candidateSliceLocalTimeouts || 0) : null,
       historicalLocalExpansionStops: t ? Number(t.candidateSliceLocalExpansionStops || 0) : null,
+      // Iteration 5 Repair (P1, pre-commit review) – compaction proof passthrough:
+      // compacted adaptive executions carry a completion snapshot taken at
+      // compaction time; the production-path gate asserts ledger === proof.
+      compactCompletionProof: execution.compactCompletionProof || null,
     });
   };
   const memoryLimitedSummary = (execution) => ({
@@ -5079,8 +5392,16 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       );
       if (adaptiveRepair) {
         (adaptiveRepair.ledgerExecutions || adaptiveRepair.executions).forEach((entry, index) => {
-          appendLedger(entry, index === 0 ? "adaptive-expand" : "adaptive-replay");
-          appendExecutionCompletion(entry, index === 0 ? "adaptive-expand" : "adaptive-replay");
+          // Iteration 5 Repair (P2, phase fidelity) – the phase comes from the
+          // execution source itself (stamped at push time), so multi-wave
+          // repairs label each wave's expand entry correctly. The index-based
+          // inference remains only as a legacy fallback for unstamped entries.
+          const entryPhase =
+            entry && entry.executionPhase
+              ? entry.executionPhase
+              : index === 0 ? "adaptive-expand" : "adaptive-replay";
+          appendLedger(entry, entryPhase);
+          appendExecutionCompletion(entry, entryPhase);
           recordIsolatedTelemetry(entry);
         });
         // Also record any memoryExecution not in ledgerExecutions (when present, it is same as one entry, but ensure)

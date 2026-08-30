@@ -162,6 +162,7 @@ function checkProtectedPresentTileGate() {
       stopOnFirstGoal: true,
       dpPriorityMode: "goal-directed",
       enableFailureBacktracking: true,
+      milestoneFrontierResourceDiversity: true,
     },
   );
   assert.throws(

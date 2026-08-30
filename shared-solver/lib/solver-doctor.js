@@ -203,6 +203,9 @@ function doctorRecommendation(failureClass, evidence) {
   ) {
     return "check allowedFloors, allowChangeFloors, presentTiles, and action scope";
   }
+  if (failureClass === "floor-progress-blocked") {
+    return "backtrack to the previous milestone and regenerate candidates from different resource-investment states (resource diversity)";
+  }
   if (failureClass === "upstream-checkpoint-incompatible") {
     return "backtrack to the previous milestone and regenerate a checkpoint preserving required hard presentTiles";
   }
@@ -241,6 +244,9 @@ function likelyCause(failureClass, evidence) {
     failureClass === "present-tile-overconstrained"
   ) {
     return "goal is unreachable under the current action scope";
+  }
+  if (failureClass === "floor-progress-blocked") {
+    return "complete search could not progress to the target floor from the current frontier (resource-diversity gap)";
   }
   if (failureClass === "upstream-checkpoint-incompatible") {
     return "upstream checkpoint already consumed a required hard present tile";

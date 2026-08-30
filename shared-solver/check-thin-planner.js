@@ -97,8 +97,17 @@ function extractFinalFailureSemantics(thinResult) {
   const completionLedger = Array.isArray(thinResult.executionCompletionLedger)
     ? thinResult.executionCompletionLedger
     : [];
+  // Iteration 5 (P2) – unknown completion fails closed: an entry with a null
+  // searchComplete has UNKNOWN final completion and must count as terminal
+  // incompleteness (INCOMPLETE_SCOPE), never as 0/complete.
+  const runWideUnknownCompletion = completionLedger.filter(
+    (e) => e.searchComplete !== true && e.searchComplete !== false,
+  ).length;
   const runWidePending = completionLedger.reduce((sum, e) => sum + Number(e.finalPending || 0), 0);
-  const runWideTerminalIncomplete = completionLedger.reduce((sum, e) => sum + Number(e.terminalIncomplete || 0), 0);
+  const runWideTerminalIncomplete = completionLedger.reduce(
+    (sum, e) => sum + Number(e.terminalIncomplete || 0),
+    0,
+  ) + runWideUnknownCompletion;
   const runWideFinalFound = completionLedger.reduce((sum, e) => sum + Number(e.finalFound || 0), 0);
   const runWideFinalComplete = completionLedger.reduce((sum, e) => sum + Number(e.finalComplete || 0), 0);
   const runWideHistoricalLocalStops = completionLedger.reduce(
@@ -163,6 +172,7 @@ function extractFinalFailureSemantics(thinResult) {
       finalComplete: runWideFinalComplete,
       finalPending: runWidePending,
       terminalIncomplete: runWideTerminalIncomplete,
+      unknownCompletion: runWideUnknownCompletion,
       historicalLocalStops: runWideHistoricalLocalStops,
       searchComplete: runWidePending === 0 && runWideTerminalIncomplete === 0,
     },
