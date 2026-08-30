@@ -1,0 +1,46 @@
+name: iteration6-mt4-authority-round
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - qualification/iteration6-mt4-linux
+
+jobs:
+  iteration6-authority-round:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+
+      - name: Environment capture
+        run: |
+          uname -a
+          lscpu
+          free -m
+          node --version
+          node -p process.versions.v8
+          node -p process.arch
+          node -p process.platform
+          git rev-parse HEAD
+
+      - name: Run Iteration-6 authority round (single canonical MT1→MT4)
+        run: |
+          node --expose-gc qualification/iteration6-mt4-linux/run-authority-round.js | tee routes/generated/iteration6-authority-round.json
+
+      - name: Upload authority artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iteration6-authority-round
+          path: |
+            shared-solver/routes/generated/iteration6-authority-round.json
+          if-no-files-found: error
+          retention-days: 90
