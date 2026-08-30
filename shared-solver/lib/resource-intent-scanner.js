@@ -258,6 +258,12 @@ function desiredStatsFromFailure(failureClass, missingGoalFields) {
   }
   if (failureClass === "equipment-missing") stats.add("equipment");
   if (failureClass === "target-action-unreachable" || failureClass === "target-tile-not-cleared" || failureClass === "floor-scope-mismatch") stats.add("path");
+  // Iteration 5 Repair 1 (P1-A) – an INCOMPLETE floor search has an unexplored
+  // frontier; it is not evidence about resource histories. No resource-diverse
+  // intent direction: treat as path/budget incompleteness only.
+  if (failureClass === "floor-search-incomplete") {
+    stats.add("path");
+  }
   // Iteration 5 – a complete search that cannot progress to the target floor
   // needs different resource-investment histories, not a scope fix.
   if (failureClass === "floor-progress-blocked") {

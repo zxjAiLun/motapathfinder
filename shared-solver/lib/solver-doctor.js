@@ -206,6 +206,9 @@ function doctorRecommendation(failureClass, evidence) {
   if (failureClass === "floor-progress-blocked") {
     return "backtrack to the previous milestone and regenerate candidates from different resource-investment states (resource diversity)";
   }
+  if (failureClass === "floor-search-incomplete") {
+    return "complete the search (budget/slice) before drawing resource conclusions for this segment";
+  }
   if (failureClass === "upstream-checkpoint-incompatible") {
     return "backtrack to the previous milestone and regenerate a checkpoint preserving required hard presentTiles";
   }
@@ -247,6 +250,9 @@ function likelyCause(failureClass, evidence) {
   }
   if (failureClass === "floor-progress-blocked") {
     return "complete search could not progress to the target floor from the current frontier (resource-diversity gap)";
+  }
+  if (failureClass === "floor-search-incomplete") {
+    return "search stopped before completion; floor progress is unestablished, not disproven";
   }
   if (failureClass === "upstream-checkpoint-incompatible") {
     return "upstream checkpoint already consumed a required hard present tile";

@@ -2147,9 +2147,10 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
   const selectedIds = new Set();
   const keepCandidate = (record) => {
     if (!record || selectedIds.has(record.id) || selected.length >= limit)
-      return;
+      return false;
     selectedIds.add(record.id);
     selected.push(record);
+    return true;
   };
   rolePickers.forEach(([tag, compare]) => {
     const winner = records.slice().sort(compare)[0];
@@ -2160,9 +2161,10 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
   // no longer consume the whole capacity: only the conserve/combat anchors and
   // the atk/def/exp resource anchors keep mandatory seats; `shortest` loses
   // its forced seat in the investment frontier; remaining slots are filled by
-  // (a) Pareto protection on the generic resource vector, then (b) greedy
-  // resource novelty, then (c) legacy ranking fallback. Capacity stays at the
-  // configured limit (default 8) — this NEVER widens the enumeration.
+  // (a) Pareto protection on the generic resource vector FIRST, then (b)
+  // greedy resource novelty over remaining candidates, then (c) legacy
+  // ranking fallback. Capacity stays at the configured limit (default 8) —
+  // this NEVER widens the enumeration.
   const diversitySelection =
     (options || {}).milestoneFrontierResourceDiversity === true &&
     (options || {}).preserveSkylineRoles === true;
@@ -2194,8 +2196,11 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
       Object.keys(projection).forEach((dim) => dimensions.add(dim));
     });
     const dimensionList = Array.from(dimensions).sort();
-    // Pareto protection: nondominated candidates on the resource vector may
-    // not be dropped merely because another candidate has higher HP/combat.
+    // Pareto protection (Iteration 5 Repair 1, P1-B): nondominated candidates
+    // on the resource vector may not be dropped merely because another
+    // candidate has higher HP/combat. The protection is ORDERED: while any
+    // unselected nondominated candidate exists, no dominated candidate may
+    // consume a remaining (non-anchor) slot.
     const nondominated = records.filter((record) => {
       const projection = projections.get(record.id);
       return !records.some((other) => {
@@ -2207,6 +2212,7 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
         );
       });
     });
+    const nondominatedIds = new Set(nondominated.map((record) => record.id));
     const selectedBest = {};
     const refreshSelectedBest = () => {
       Object.keys(selectedBest).forEach((key) => delete selectedBest[key]);
@@ -2224,42 +2230,77 @@ function selectCandidateSkyline(simulator, candidates, segment, options) {
       });
     };
     refreshSelectedBest();
-    // Greedy resource novelty fill: iteratively pick the unselected candidate
-    // introducing the most new/better resource dimensions, tie-broken by the
-    // legacy ordering so the result is input-order independent (deterministic).
-    const remaining = () =>
-      records
-        .filter((record) => !selectedIds.has(record.id))
-        .sort(compareGoalRecords);
-    let guard = records.length + 1;
-    while (selected.length < limit && guard > 0) {
-      guard -= 1;
-      let bestRecord = null;
-      let bestNovelty = 0;
-      remaining().forEach((record) => {
-        const novelty = resourceNovelty(
-          projections.get(record.id) || {},
-          selectedBest,
-          dimensionList,
-        );
-        if (novelty > bestNovelty) {
-          bestNovelty = novelty;
-          bestRecord = record;
-        }
-      });
-      if (bestNovelty === 0 || !bestRecord) break;
-      keepCandidate(bestRecord);
-      refreshSelectedBest();
-    }
-    // Pareto-protected leftovers (deterministic order), then legacy fallback.
+    // Greedy resource novelty over a restricted pool. Ties break by the legacy
+    // ordering so the result is input-order independent (deterministic).
+    // Phase 1 (Pareto-first): only nondominated leftovers compete.
+    // Phase 2 (general novelty): all remaining candidates compete.
+    // Non-anchor diversity selections are tagged `resource-diverse` (and
+    // Pareto survivors additionally `resource-pareto` for diagnostics) so
+    // failure-driven rollback ranking can actually prefer them.
+    const noveltyFilledIds = [];
+    const noveltyFill = (pool) => {
+      let guard = records.length + 1;
+      while (selected.length < limit && guard > 0) {
+        guard -= 1;
+        let bestRecord = null;
+        let bestNovelty = 0;
+        pool
+          .filter((record) => !selectedIds.has(record.id))
+          .sort(compareGoalRecords)
+          .forEach((record) => {
+            const novelty = resourceNovelty(
+              projections.get(record.id) || {},
+              selectedBest,
+              dimensionList,
+            );
+            if (novelty > bestNovelty) {
+              bestNovelty = novelty;
+              bestRecord = record;
+            }
+          });
+        if (bestNovelty === 0 || !bestRecord) break;
+        keepCandidate(bestRecord);
+        noveltyFilledIds.push(bestRecord.id);
+        refreshSelectedBest();
+      }
+    };
+    // Phase 1: Pareto-first novelty fill (only nondominated leftovers compete).
+    noveltyFill(nondominated);
+    // Phase 2: nondominated leftovers with zero novelty still outrank every
+    // dominated candidate for the remaining capacity (true Pareto protection:
+    // while any unselected nondominated candidate exists, no dominated
+    // candidate may consume a non-anchor slot).
+    const paretoLeftoverIds = [];
     nondominated
       .filter((record) => !selectedIds.has(record.id))
       .sort(compareGoalRecords)
-      .forEach(keepCandidate);
+      .forEach((record) => {
+        if (keepCandidate(record)) paretoLeftoverIds.push(record.id);
+      });
+    // Phase 3: general novelty fill over everything remaining.
+    noveltyFill(records);
+    // Tag every non-anchor diversity selection so preferredCandidateTags
+    // like "resource-diverse" are LIVE (rollback ranking can act on them).
+    noveltyFilledIds.forEach((id) => {
+      const record = records.find((entry) => entry.id === id);
+      if (record) {
+        addTag(record, "resource-diverse");
+        if (nondominatedIds.has(id)) addTag(record, "resource-pareto");
+      }
+    });
+    paretoLeftoverIds.forEach((id) => {
+      const record = records.find((entry) => entry.id === id);
+      if (record) {
+        addTag(record, "resource-diverse");
+        addTag(record, "resource-pareto");
+      }
+    });
     diversityAudit = {
       anchorTags,
       nondominatedCount: nondominated.length,
-      noveltyFilled: selected.length,
+      noveltyFilled: noveltyFilledIds.length,
+      paretoLeftoverKept: paretoLeftoverIds.length,
+      resourceDiverseTagged: noveltyFilledIds.length + paretoLeftoverIds.length,
     };
   } else if ((options || {}).preserveSkylineRoles === true) {
     rolePickers.forEach(([, compare]) =>
@@ -2381,11 +2422,20 @@ function upstreamCheckpointPresentTileIssues(project, startState, segment) {
     : [];
 }
 
-function classifySegmentFailure(missing, segment, upstreamPresentTileIssues) {
+function classifySegmentFailure(missing, segment, upstreamPresentTileIssues, searchOutcome) {
   const missingFields = missing || [];
   const classes = [];
   const preferredCandidateTags = [];
   const recommendedNext = [];
+  // Iteration 5 Repair 1 (P1-A) – authoritative search completion. A search
+  // that stopped early (time/expansion slice, resource limit, trimmed action
+  // scope, cancellation) has an UNEXPLORED frontier: its failure must never
+  // be read as "resources insufficient to progress" because the missing
+  // progress may simply be unexplored. floor-progress-blocked (and its
+  // resource-diverse repair direction) is only legitimate after a genuinely
+  // complete search.
+  const outcome = searchOutcome || {};
+  const searchComplete = outcome.searchComplete === true;
   const addClass = (failureClass, reason, tags, recommendation) => {
     classes.push({ failureClass, reason, recommendation });
     (tags || []).forEach((tag) => {
@@ -2536,22 +2586,32 @@ function classifySegmentFailure(missing, segment, upstreamPresentTileIssues) {
   }
 
   if (hasMissingField(missingFields, (field) => field === "floorId")) {
-    // Iteration 5 – split the old floor-scope-mismatch into two classes.
+    // Iteration 5 – split the old floor-scope-mismatch into distinct classes.
     // True scope violation: the goal floor is not reachable under the segment's
-    // own allowedFloors/allowChangeFloors policy (a spec/config problem).
-    // Otherwise: the search completed but could not progress to the target
-    // floor from the current frontier – the repair direction is resource
-    // diversity, not scope fixing.
+    // own allowedFloors/allowChangeFloors/actionKinds policy (a spec/config
+    // problem). Otherwise, only a GENUINELY COMPLETE search may conclude
+    // "floor-progress-blocked" – the resource-diverse repair direction must
+    // never fire on an incomplete search (P1-A).
     const goalFloorId = ((segment || {}).goal || {}).floorId || null;
     const policy = (segment || {}).actionPolicy || {};
     const allowedFloors = Array.isArray(policy.allowedFloors)
       ? policy.allowedFloors.map(String)
       : null;
-    const goalFloorAllowed =
+    const actionKinds = Array.isArray(policy.actionKinds)
+      ? policy.actionKinds.map(String)
+      : null;
+    const floorTransitKinds = ["changeFloor", "floorFly"];
+    // Scope violation: either the goal floor is outside allowedFloors, or the
+    // action kinds forbid every floor-transit action kind (changeFloor and
+    // floorFly), making the goal floor structurally unreachable from any
+    // frontier state of this segment.
+    const floorTransitPermitted =
+      !actionKinds || floorTransitKinds.some((kind) => actionKinds.includes(kind));
+    const goalFloorInScope =
       !goalFloorId ||
-      !allowedFloors ||
-      allowedFloors.includes(String(goalFloorId));
-    if (goalFloorAllowed) {
+      (!allowedFloors || allowedFloors.includes(String(goalFloorId)));
+    const goalFloorAllowed = goalFloorInScope && floorTransitPermitted;
+    if (goalFloorAllowed && searchComplete) {
       addClass(
         "floor-progress-blocked",
         "complete search could not progress to the target floor from the current frontier",
@@ -2564,6 +2624,17 @@ function classifySegmentFailure(missing, segment, upstreamPresentTileIssues) {
           "resource-diverse",
         ],
         "backtrack to the previous milestone and regenerate candidates from different resource-investment states",
+      );
+    } else if (goalFloorAllowed) {
+      // Incomplete search (time/expansion slice stop, resource limit, action
+      // scope trimming, cancellation): the frontier is unexplored, so this
+      // attempt's missing floor is NOT evidence about resource histories.
+      // Classify by incompleteness; no resource-diverse repair direction.
+      addClass(
+        "floor-search-incomplete",
+        "search stopped before completion, so progress to the target floor was not established either way",
+        ["highest-hp", "best-combat"],
+        "complete the search (budget/slice) before drawing resource conclusions for this segment",
       );
     } else {
       addClass(
@@ -2592,6 +2663,7 @@ function classifySegmentFailure(missing, segment, upstreamPresentTileIssues) {
     "action-survivability-deficit": 85,
     "floor-scope-mismatch": 80,
     "floor-progress-blocked": 78,
+    "floor-search-incomplete": 12,
     "target-tile-not-cleared": 75,
     "hp-deficit": 70,
     "def-deficit": 65,
@@ -2618,7 +2690,7 @@ function classifySegmentFailure(missing, segment, upstreamPresentTileIssues) {
   };
 }
 
-function summarizeSegmentFailure(project, segment, result, simulator, startState) {
+function summarizeSegmentFailure(project, segment, result, simulator, startState, searchOutcome) {
   const best =
     (result && (result.bestProgressState || result.bestSeenState)) || null;
   const missing = best
@@ -2629,10 +2701,14 @@ function summarizeSegmentFailure(project, segment, result, simulator, startState
     startState,
     segment,
   );
+  // Iteration 5 Repair 1 (P1-A) – pass the authoritative search outcome into
+  // classification so "resource-diverse" repair directions only fire on
+  // genuinely complete searches.
   const classification = classifySegmentFailure(
     missing,
     segment,
     upstreamPresentTileIssues,
+    searchOutcome,
   );
   return {
     failedSegmentId: segment.id,
@@ -3239,6 +3315,7 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
                 result,
                 simulator,
                 startState,
+                searchOutcome,
               ),
       goalSkyline: {
         primaryOutput: true,
@@ -5680,5 +5757,7 @@ module.exports = {
     resolveActionTargetFloorId,
     projectSegmentGoalProgress,
     selectCandidateSkyline,
+    rankCandidatesByPreferredTags,
+    classifySegmentFailure,
   },
 };
