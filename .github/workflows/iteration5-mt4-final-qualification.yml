@@ -1,0 +1,50 @@
+name: iteration5-mt4-final-qualification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - qualification/iteration5-mt4-linux
+
+jobs:
+  iteration5-final-qualification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+
+      - name: Environment capture
+        run: |
+          uname -a
+          lscpu
+          free -m
+          node --version
+          node -p process.versions.v8
+          node -p process.arch
+          node -p process.platform
+          git rev-parse HEAD
+          sha256sum qualification/iteration5-mt4-linux/qualify-iteration5.js
+          sha256sum qualification/iteration5-mt4-linux/qualify-iteration5-run.js
+
+      - name: Run qualification (smoke gate + frozen 3+3)
+        run: |
+          node --expose-gc qualification/iteration5-mt4-linux/run-qualification.js
+
+      - name: Upload qualification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iteration5-final-qualification
+          path: |
+            shared-solver/routes/generated/iteration5-final-smoke.json
+            shared-solver/routes/generated/iteration5-final-qualification.json
+            shared-solver/routes/generated/iteration5-requalification.json
+          if-no-files-found: error
+          retention-days: 90
