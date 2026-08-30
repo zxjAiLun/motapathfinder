@@ -582,6 +582,43 @@ function gateCompactLedgerCompletionPreservation() {
     );
   });
 
+  // (5) Iteration 6 — terminalIncomplete attribution: every ledger entry that
+  // reports terminalIncomplete > 0 must carry a classifiable completionSource
+  // (not-run-budget-exhausted / unknown-completion / genuinely-executed), so
+  // the authority-run shape "terminalIncomplete=1 in every run" can never be
+  // conflated across sources. Entries with terminalIncomplete > 0 and NO
+  // completion source are unattributable and fail the gate.
+  ledger.forEach((entry, index) => {
+    if (Number(entry.terminalIncomplete || 0) === 0) return;
+    const label = `entry ${index} (phase=${entry.phase}, segment=${entry.segmentId})`;
+    assert.ok(
+      entry.completionSource === "not-run-budget-exhausted" ||
+        entry.completionSource === "unknown-completion" ||
+        entry.completionSource == null, // genuinely-executed scope-trim / goal-found-incomplete
+      `compact-ledger gate: ${label} has terminalIncomplete=${entry.terminalIncomplete} with unattributable completionSource ${String(entry.completionSource)}`,
+    );
+    // A not-run execution is a resource stop, NOT terminal scope incompleteness.
+    if (entry.completionSource === "not-run-budget-exhausted") {
+      assert.strictEqual(
+        entry.terminalIncomplete,
+        0,
+        `compact-ledger gate: ${label} is a not-run (budget-exhausted) execution and must NOT report terminalIncomplete > 0`,
+      );
+      assert.ok(
+        entry.executionNotRunReason === "time-limit" || entry.executionNotRunReason === "expansion-limit",
+        `compact-ledger gate: ${label} must carry its not-run stop reason`,
+      );
+    }
+    if (entry.completionSource === "unknown-completion") {
+      // fail-closed shape: telemetry missing must surface as terminal=1, never 0
+      assert.strictEqual(
+        entry.terminalIncomplete,
+        1,
+        `compact-ledger gate: ${label} is an unknown-completion entry and must fail closed with terminalIncomplete=1`,
+      );
+    }
+  });
+
   return {
     executions: ledger.length,
     adaptiveEntries: adaptiveEntries.length,

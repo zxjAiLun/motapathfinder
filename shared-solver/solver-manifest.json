@@ -2977,6 +2977,13 @@
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
+    "shared-solver/check-mt3-mt4-witness-differential.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-mt5-51533-next-smoke.js": {
       "grade": "smoke",
       "allowsNotFound": true,

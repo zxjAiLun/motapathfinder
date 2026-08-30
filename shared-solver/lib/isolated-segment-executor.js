@@ -138,6 +138,28 @@ function executeIsolatedSegment(options) {
         startCandidatesTried: 0,
         candidates: [],
         attempts: [],
+        // Iteration 6 (terminalIncomplete=1 attribution) – a pre-spawn
+        // budget-exhausted execution never ran: its completion is NOT
+        // terminal-scope-incomplete, it is a resource stop with zero work.
+        // Carry an explicit zero-attempt slice telemetry so the run-wide
+        // ledger records a KNOWN (not unknown) completion, and mark the
+        // synthesized shape for attribution.
+        executionNotRunReason: globalBudget.stoppedReason,
+        candidateSliceTelemetry: {
+          candidateSliceInitialAttempts: 0,
+          candidateSliceLocalTimeouts: 0,
+          candidateSliceLocalExpansionStops: 0,
+          candidateSliceDeferredRetries: 0,
+          candidateSliceRecoveredToExhausted: 0,
+          candidateSliceRecoveredToFound: 0,
+          candidateSliceStillIncompleteAtGlobalStop: 0,
+          unusedGlobalWallMsAtReturn: 0,
+          candidateSliceFinalFound: 0,
+          candidateSliceFinalComplete: 0,
+          candidateSliceFinalPending: 0,
+          candidateSliceTerminalIncomplete: 0,
+          candidateSliceSearchComplete: true,
+        },
         failurePropagation: {
           failureClass: "budget-exhausted",
           primaryFailureClass: "budget-exhausted",

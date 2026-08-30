@@ -5292,6 +5292,17 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     const summary = execution && execution.summary;
     if (!summary) return;
     const t = summary.candidateSliceTelemetry || null;
+    // Iteration 6 (terminalIncomplete attribution) – classify the completion
+    // source so terminal incompleteness is never conflated:
+    //   not-run-budget-exhausted  execution never spawned (pre-spawn stop)
+    //   unknown-completion         telemetry missing (fail-closed bug signal)
+    //   (absent)                   a genuinely executed search
+    let completionSource = null;
+    if (t && summary.executionNotRunReason) {
+      completionSource = "not-run-budget-exhausted";
+    } else if (!t) {
+      completionSource = "unknown-completion";
+    }
     // Iteration 5 (P2 from `4246468` review) – fail-closed unknown completion.
     // An execution without candidateSliceTelemetry has UNKNOWN final completion.
     // It must surface as terminal incompleteness (INCOMPLETE_SCOPE for the run)
@@ -5300,6 +5311,8 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       phase,
       segmentId: summary.segmentId || null,
       found: Boolean(summary.found),
+      completionSource,
+      executionNotRunReason: summary.executionNotRunReason || null,
       finalFound: t ? Number(t.candidateSliceFinalFound || 0) : null,
       finalComplete: t ? Number(t.candidateSliceFinalComplete || 0) : null,
       finalPending: t ? Number(t.candidateSliceFinalPending || 0) : null,
