@@ -629,6 +629,145 @@ function gateCompactLedgerCompletionPreservation() {
   };
 }
 
+function gatePreSpawnNotRunCompletion() {
+  // Fixture 9 (Iteration 6 Repair 1, P1-3) – DETERMINISTIC pre-spawn
+  // budget-exhausted gate through the REAL isolated execution production path
+  // (`executeIsolatedSegment` via runSegmentAgainstFrontier with
+  // segmentExecutionMode: "isolated-process"). No reliance on racing the
+  // deadline: the global budget is already fully consumed before spawn.
+  //
+  // Hard contract (the Iteration-5 authority `terminalIncomplete=1` root
+  // cause, now sealed):
+  //   WORKER_EXECUTED       = false (consumedExpansions=0, workerPeakRssMb=0)
+  //   COMPLETION_SOURCE     = not-run-budget-exhausted
+  //   EXECUTION_NOT_RUN     = expansion-limit (deterministic form)
+  //   FINAL_FOUND/COMPLETE  = 0
+  //   FINAL_PENDING         = inputFrontier.length (never searched)
+  //   TERMINAL_INCOMPLETE   = 0
+  //   SEARCH_COMPLETE       = false (NOT RUN is never COMPLETE)
+  //   FINAL_CANONICAL       = RESOURCE_LIMITED
+  const { runMilestoneGraph } = require("./lib/segment-dp");
+  const project = loadProject(DEFAULT_PROJECT_ROOT);
+  const simulator = buildSimulator(project);
+  const spec = getMilestoneSpec(project, "onlyup-chaos-mt1-mt3");
+  const initialState = simulator.createInitialState();
+
+  // Deterministic exhausted-expansions budget: 10 requested, 10 consumed.
+  const exhaustedBudget = {
+    scope: "global-run",
+    startedAt: Date.now(),
+    deadlineMs: Date.now() + 60000,
+    requestedExpansions: 10,
+    requestedRuntimeMs: 60000,
+    consumedExpansions: 10,
+    consumedWallMs: 1,
+    stoppedReason: null,
+  };
+
+  const result = runMilestoneGraph(simulator, initialState, spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    segmentExecutionMode: "isolated-process",
+    globalBudget: exhaustedBudget,
+    maxExpansions: 10,
+    maxRuntimeMs: 60000,
+    maxRssMb: 4096,
+    memoryCheckIntervalExpansions: 1,
+    memoryCheckIntervalActions: 1,
+  });
+
+  const ledger = result.executionCompletionLedger || [];
+  assert.ok(
+    ledger.length > 0,
+    `pre-spawn gate: the run must produce at least one (not-run) execution entry, got ${ledger.length}`,
+  );
+  const notRun = ledger.filter((e) => e.completionSource === "not-run-budget-exhausted");
+  assert.ok(
+    notRun.length > 0,
+    `pre-spawn gate: at least one not-run-budget-exhausted entry must exist (sources: [${ledger.map((e) => e.completionSource).join(",")}])`,
+  );
+  notRun.forEach((entry, index) => {
+    const label = `not-run entry ${index} (phase=${entry.phase}, segment=${entry.segmentId})`;
+    assert.strictEqual(
+      entry.executionNotRunReason,
+      "expansion-limit",
+      `pre-spawn gate: ${label} must carry the deterministic expansion-limit not-run reason (got ${entry.executionNotRunReason})`,
+    );
+    assert.strictEqual(
+      entry.finalFound,
+      0,
+      `pre-spawn gate: ${label} finalFound must be 0`,
+    );
+    assert.strictEqual(
+      entry.finalComplete,
+      0,
+      `pre-spawn gate: ${label} finalComplete must be 0 — a never-run execution is never COMPLETE`,
+    );
+    assert.strictEqual(
+      entry.terminalIncomplete,
+      0,
+      `pre-spawn gate: ${label} terminalIncomplete must be 0 — not-run is a resource stop, not a scope issue`,
+    );
+    assert.strictEqual(
+      entry.searchComplete,
+      false,
+      `pre-spawn gate: ${label} searchComplete must be false — NOT RUN is never COMPLETE`,
+    );
+    assert.ok(
+      Number(entry.finalPending || 0) > 0,
+      `pre-spawn gate: ${label} finalPending must be > 0 (the unsearched candidates)`,
+    );
+  });
+
+  // Runtime telemetry: the worker never spawned.
+  const records = (result.isolatedProcessTreeTelemetry && result.isolatedProcessTreeTelemetry.records) || [];
+  const notRunRecords = records.filter((r) => r.executed === false);
+  assert.ok(
+    notRunRecords.length > 0,
+    `pre-spawn gate: at least one isolated telemetry record must be executed=false (got ${records.length} records)`,
+  );
+  notRunRecords.forEach((rec, index) => {
+    assert.strictEqual(
+      Number(rec.consumedExpansions || 0),
+      0,
+      `pre-spawn gate: not-run record ${index} consumedExpansions must be 0`,
+    );
+    assert.strictEqual(
+      Number(rec.workerPeakRssMb || 0),
+      0,
+      `pre-spawn gate: not-run record ${index} workerPeakRssMb must be 0`,
+    );
+  });
+
+  // Final canonical outcome: RESOURCE_LIMITED for the RIGHT reason
+  // (pending from a not-run execution + the budget stop), never EXHAUSTED.
+  const budgetStop = result.budget && result.budget.stoppedReason;
+  assert.ok(
+    budgetStop === "expansion-limit" || budgetStop === "time-limit",
+    `pre-spawn gate: the run-wide budget must stop (got ${budgetStop})`,
+  );
+  const runWidePending = ledger.reduce((sum, e) => sum + Number(e.finalPending || 0), 0);
+  assert.ok(
+    runWidePending > 0,
+    "pre-spawn gate: run-wide pending must be > 0 after a not-run execution",
+  );
+  assert.notStrictEqual(
+    result.found,
+    true,
+    "pre-spawn gate: a fully exhausted budget cannot find anything",
+  );
+
+  return {
+    executions: ledger.length,
+    notRunEntries: notRun.length,
+    notRunTelemetryRecords: notRunRecords.length,
+    runWidePending,
+    budgetStop,
+  };
+}
+
 function main() {
   const project = loadProject(DEFAULT_PROJECT_ROOT);
   const simulator = buildSimulator(project);
@@ -643,9 +782,10 @@ function main() {
   const recoveredStop = gateRecoveredStopNotResourceLimited(simulator, spec, states);
   const runWide = gateRunWideCompletionAuthority();
   const compactLedger = gateCompactLedgerCompletionPreservation();
+  const preSpawnNotRun = gatePreSpawnNotRunCompletion();
 
   console.log(JSON.stringify({
-    schema: "motapathfinder.work-conserving-slices.v4",
+    schema: "motapathfinder.work-conserving-slices.v5",
     contractStatus: "passed",
     fairSlice: fair,
     deferredRecovery: recovery,
@@ -655,6 +795,7 @@ function main() {
     recoveredStopNotResourceLimited: recoveredStop,
     runWideCompletionAuthority: runWide,
     compactLedgerCompletionPreservation: compactLedger,
+    preSpawnNotRunCompletion: preSpawnNotRun,
   }, null, 2));
 }
 

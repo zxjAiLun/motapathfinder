@@ -43,6 +43,7 @@
       },
       "actionPolicy": {
         "allowedFloors": [
+          "MT2",
           "MT3",
           "MT4"
         ]

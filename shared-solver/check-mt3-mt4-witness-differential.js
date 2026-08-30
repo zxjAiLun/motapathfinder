@@ -46,7 +46,7 @@ const FIXTURE = path.join(__dirname, "routes", "fixtures", "mt1-mt4-hp6428-best.
 const CHAOS_DIFFICULTY = { I581: 0, I582: 0, "flag:level0": 0 };
 const WITNESS_FLOOR = "MT3";
 
-function buildSimulator(project) {
+function buildSimulator(project, choiceResolver) {
   return new StaticSimulator(project, {
     stopFloorId: FIRST_REGION_TARGET_FLOOR_ID,
     battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: true }),
@@ -55,13 +55,17 @@ function buildSimulator(project) {
     autoBattleEnabled: true,
     enableFastHazardBlockIndex: true,
     enableCompiledEffectCache: false,
-    choiceResolver: createNoStateChangeChoiceResolver(),
+    // Iteration 6 Repair 1 (P1-1) – the SAME resolver instance the simulator
+    // actually uses, so the unresolved-choices hard gate observes the real
+    // replay rather than an unused parallel resolver.
+    choiceResolver,
   });
 }
 
 function main() {
   const project = loadProject(DEFAULT_PROJECT_ROOT);
-  const simulator = buildSimulator(project);
+  const choiceResolver = createNoStateChangeChoiceResolver();
+  const simulator = buildSimulator(project, choiceResolver);
   const routeFile = JSON.parse(fs.readFileSync(FIXTURE, "utf8"));
   const route = (routeFile.decisions || []).filter(isDecisionEntry);
   assert.ok(route.length > 0, "fixture must contain decision entries");
@@ -74,7 +78,6 @@ function main() {
     "Replay must start on Chaos difficulty",
   );
 
-  const choiceResolver = createNoStateChangeChoiceResolver();
   let witnessIndex = -1;
   for (let index = 0; index < route.length; index += 1) {
     const entry = route[index];
@@ -95,10 +98,12 @@ function main() {
     witnessIndex >= 0,
     "fixture replay never reached MT3 — fixture unusable as witness source",
   );
+  // Iteration 6 Repair 1 (P1-1) – REAL unresolved-choices gate: this resolver
+  // is the one wired into the simulator that performed the replay above.
   assert.strictEqual(
     choiceResolver.unresolved.length,
     0,
-    "witness prefix replay must leave no unresolved choices",
+    `witness prefix replay must leave no unresolved choices (got ${choiceResolver.unresolved.length})`,
   );
 
   const witnessMt3State = replayState;
@@ -147,13 +152,36 @@ function main() {
   console.log(`witness mt3-to-mt4 solo: found=${found} expansions=${dp.expansions} frontierSize=${dp.frontierSize} stoppedReason=${stoppedReason} outcomeClass=${outcome.outcomeClass} actionTrimmed=${dp.actionTrimmed}`);
 
   // ---- branch verdict ----
+  // Iteration 6 Repair 1 (P1-2) – Branch B requires the AUTHORITATIVE
+  // searchComplete only. frontierExhausted alone can mean "the trimmed
+  // frontier was exhausted" (actionTrimmed > 0) which does not prove the real
+  // action graph was exhausted — the exact semantics hole Iteration 4
+  // Repair 2 closed for candidate slices. Anything not found and not
+  // search-complete is INCONCLUSIVE (budget/trim/truncated), never Branch B.
   let branch;
   if (found) {
     branch = "A";
-  } else if (searchComplete || (frontierExhausted && !stoppedReason)) {
+  } else if (searchComplete) {
     branch = "B";
   } else {
     branch = "INCONCLUSIVE";
+  }
+  if (branch === "B") {
+    assert.strictEqual(
+      stoppedReason,
+      null,
+      `Branch B requires stoppedReason=null (got ${stoppedReason}) — a budget stop is not a complete search`,
+    );
+    assert.strictEqual(
+      dp.actionTrimmed,
+      0,
+      `Branch B requires actionTrimmed=0 (got ${dp.actionTrimmed}) — a trimmed action scope is not a complete search`,
+    );
+    assert.strictEqual(
+      searchComplete,
+      true,
+      "Branch B requires the authoritative searchOutcome.searchComplete=true",
+    );
   }
 
   // ---- Branch-B missing-branch oracle: walk the fixture MT3->MT4 suffix

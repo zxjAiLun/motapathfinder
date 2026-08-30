@@ -126,6 +126,14 @@ function executeIsolatedSegment(options) {
   // Fail-closed if already exhausted before spawn
   if (globalBudget && ((globalRemainingExpansions != null && globalRemainingExpansions <= 0) || (globalRemainingRuntimeMs != null && globalRemainingRuntimeMs <= 0))) {
     globalBudget.stoppedReason = globalRemainingRuntimeMs <= 0 ? "time-limit" : "expansion-limit";
+    // Iteration 6 Repair 1 (P1-3) – a pre-spawn budget-exhausted execution
+    // NEVER RAN. Its candidates are NOT complete and NOT terminal-scope
+    // incomplete: they are resource-pending. Encoding:
+    //   TERMINAL_INCOMPLETE = 0 (no scope issue)
+    //   FINAL_PENDING = inputFrontier.length (never searched)
+    //   SEARCH_COMPLETE = false (never completed)
+    // so the run-wide outcome stays RESOURCE_LIMITED for the right reason.
+    const notRunCandidateCount = inputFrontier.length;
     return {
       segment,
       inputFrontier,
@@ -138,12 +146,6 @@ function executeIsolatedSegment(options) {
         startCandidatesTried: 0,
         candidates: [],
         attempts: [],
-        // Iteration 6 (terminalIncomplete=1 attribution) – a pre-spawn
-        // budget-exhausted execution never ran: its completion is NOT
-        // terminal-scope-incomplete, it is a resource stop with zero work.
-        // Carry an explicit zero-attempt slice telemetry so the run-wide
-        // ledger records a KNOWN (not unknown) completion, and mark the
-        // synthesized shape for attribution.
         executionNotRunReason: globalBudget.stoppedReason,
         candidateSliceTelemetry: {
           candidateSliceInitialAttempts: 0,
@@ -152,13 +154,13 @@ function executeIsolatedSegment(options) {
           candidateSliceDeferredRetries: 0,
           candidateSliceRecoveredToExhausted: 0,
           candidateSliceRecoveredToFound: 0,
-          candidateSliceStillIncompleteAtGlobalStop: 0,
+          candidateSliceStillIncompleteAtGlobalStop: notRunCandidateCount,
           unusedGlobalWallMsAtReturn: 0,
           candidateSliceFinalFound: 0,
           candidateSliceFinalComplete: 0,
-          candidateSliceFinalPending: 0,
+          candidateSliceFinalPending: notRunCandidateCount,
           candidateSliceTerminalIncomplete: 0,
-          candidateSliceSearchComplete: true,
+          candidateSliceSearchComplete: false,
         },
         failurePropagation: {
           failureClass: "budget-exhausted",
