@@ -1,30 +1,31 @@
 "use strict";
 
 /**
- * PR-5.24b Iteration 6 Qualification — baseline vs candidate authority rounds.
+ * PR-5.24b Iteration 6 Final Authority — three fresh-process arms.
  *
- * Two fresh-process rounds on the same commit (a22f7e3 solver behavior):
- *   BASELINE : enableFailureIntentRanking = false  (pre-iteration-6 order;
- *              reproduces ad324b8 rollback behavior)
- *   CANDIDATE: enableFailureIntentRanking = true   (failure-conditioned
- *              investment ranking active)
+ *   A = anchor OFF / replay OFF          (baseline)
+ *   E = anchor breadth wave-ordered ON / replay OFF
+ *   F = anchor breadth wave-ordered ON / replay breadth top-n ON
+ *
  * Frozen contracts: 30s / 50k / 256MB stop / 260 hard / candidateLimit 8 /
- * adaptiveDepth 3 / no OFF-ON diversity comparison (Iteration 5 closed).
+ * adaptiveDepth 3 / adaptiveWaveBatchSize production default (unset) /
+ * milestoneFrontierResourceDiversity=true. ubuntu-24.04 / Node 20.20.2.
  *
- * Qualification-only fixes over the previous runner (per authorization):
- *   - verifyCandidateStrictReplay wires the SAME choiceResolver instance
- *     into the simulator (no resolver bypass);
- *   - classifyRun checks RESOURCE_LIMITED before INCOMPLETE_SCOPE so the
- *     INCOMPLETE_SCOPE branch is reachable.
+ * This IS a capability authority round: FOUND triggers a fresh strict replay
+ * (fresh simulator, correctly-wired choiceResolver, fingerprint match, exact
+ * final StateKey, no difficulty drift, zero unresolved choices, MT4 reached).
+ *
+ * Intent-alternative execution proof (hard requirement):
+ *   INTENT_ALTERNATIVE_INJECTED  — an anchor event injected a candidate;
+ *   INTENT_ALTERNATIVE_WAVE_ATTEMPTED — that candidate appears in an adaptive
+ *   attempt's anchorInputCandidateIds (the wave actually ran).
+ * Without both, a "shape unchanged" E/F result is INVALID as repair evidence.
  */
 
 const path = require("node:path");
 const assert = require("node:assert");
 const { spawnSync } = require("node:child_process");
 
-// ---------------------------------------------------------------------------
-// Single-round child, spawned fresh per round.
-// ---------------------------------------------------------------------------
 const CHILD_SOURCE = `
 "use strict";
 const path = require("node:path");
@@ -47,8 +48,13 @@ const {
 const PROJECT_ROOT = path.resolve(process.env.SOLVER_DIR, "..", "Only upV2.1", "Only upV2.1");
 const CHAOS_DIFFICULTY = { I581: 0, I582: 0, "flag:level0": 0 };
 const TARGET_FLOOR_ID = "MT4";
-const ENABLE_INTENT = process.argv[2] === "candidate";
-const LABEL = process.argv[3] || (ENABLE_INTENT ? "CANDIDATE" : "BASELINE");
+const ARM = process.argv[2] || "A";
+const ARMS = {
+  A: { anchor: false, replay: false },
+  E: { anchor: true, replay: false },
+  F: { anchor: true, replay: true },
+};
+const arm = ARMS[ARM] || ARMS.A;
 
 function buildSimulator(project, choiceResolver) {
   return new StaticSimulator(project, {
@@ -90,7 +96,6 @@ function classifyRun(result) {
 }
 
 function verifyCandidateStrictReplay(project, candidate) {
-  // Qualification fix: ONE resolver, wired into the simulator that replays.
   const choiceResolver = createNoStateChangeChoiceResolver();
   const simulator = buildSimulator(project, choiceResolver);
   let replayState = simulator.createInitialState();
@@ -125,12 +130,7 @@ function verifyCandidateStrictReplay(project, candidate) {
     0,
     "Unresolved choice decisions during replay of candidate " + candidate.id,
   );
-  return {
-    passed: true,
-    decisionsReplayed,
-    finalFloorId: replayState.floorId,
-    exactStateKey: replayedStateKey,
-  };
+  return { passed: true, decisionsReplayed, finalFloorId: replayState.floorId };
 }
 
 function main() {
@@ -154,7 +154,8 @@ function main() {
     memoryCheckIntervalActions: 1,
     candidateLimit: 8,
     milestoneFrontierResourceDiversity: true,
-    enableFailureIntentRanking: ENABLE_INTENT,
+    enableFailureIntentAnchorRanking: arm.anchor,
+    enableFailureIntentReplayRanking: arm.replay,
     captureSelectionAudit: true,
   });
   const wallMs = Date.now() - startedAt;
@@ -163,10 +164,53 @@ function main() {
   const cls = classifyRun(result);
   const failed = result.failedSegment || null;
   const backtrack = (failed && failed.backtrack) || null;
-  const intentRanking = backtrack && backtrack.failureIntentRanking ? {
-    anchor: backtrack.failureIntentRanking.anchor,
-    replay: backtrack.failureIntentRanking.replay,
-  } : null;
+  const intentRanking = backtrack && backtrack.failureIntentRanking
+    ? {
+        anchorActivated: backtrack.failureIntentRanking.anchor
+          ? Boolean(backtrack.failureIntentRanking.anchor.activated) : false,
+        replayActivated: backtrack.failureIntentRanking.replay
+          ? Boolean(backtrack.failureIntentRanking.replay.activated) : false,
+        events: (backtrack.failureIntentRanking.events || []).map((e) => ({
+          phase: e.phase,
+          depth: e.depth,
+          waveIndex: e.waveIndex,
+          replaySegmentId: e.replaySegmentId,
+          inputCandidateCount: e.inputCandidateCount,
+          candidateLimit: e.candidateLimit,
+          activated: e.activated,
+          reason: e.reason || null,
+          consumptionMode: e.consumptionMode || null,
+          injectedCandidateId: e.injectedCandidateId || null,
+          injectedIndex: e.injectedIndex != null ? e.injectedIndex : null,
+          protectedLegacyPrefixSize: e.protectedLegacyPrefixSize != null ? e.protectedLegacyPrefixSize : null,
+          firstEligibleWaveIndex: e.firstEligibleWaveIndex != null ? e.firstEligibleWaveIndex : null,
+          waveBatchSize: e.waveBatchSize != null ? e.waveBatchSize : null,
+          topCandidateBefore: e.topCandidateBefore,
+          topCandidateAfter: e.topCandidateAfter,
+          promotedCandidateIds: e.promotedCandidateIds,
+          selectedCandidateIds: e.selectedCandidateIds,
+          rankedCandidateIds: e.rankedCandidateIds || null,
+          evidenceCandidates: e.evidenceCandidates || [],
+        })),
+      }
+    : null;
+
+  // ---- intent-alternative execution proof ----
+  const injectedIds = new Set();
+  (intentRanking ? intentRanking.events : []).forEach((event) => {
+    if (event.phase === "adaptive-expand" && event.injectedCandidateId) {
+      injectedIds.add(event.injectedCandidateId);
+    }
+  });
+  const attemptCandidateIds = new Set();
+  ((backtrack && backtrack.attempts) || []).forEach((attempt) => {
+    (attempt.anchorInputCandidateIds || []).forEach((id) => attemptCandidateIds.add(id));
+  });
+  const attemptedInjected = Array.from(injectedIds).filter((id) => attemptCandidateIds.has(id));
+
+  const ledger = result.executionCompletionLedger || [];
+  const adaptivePhases = {};
+  ledger.forEach((e) => { adaptivePhases[e.phase] = (adaptivePhases[e.phase] || 0) + 1; });
 
   let strictReplay = null;
   let reachedMT4 = false;
@@ -184,13 +228,10 @@ function main() {
     strictReplay = { allPassed: true, candidates: replays, reachedMT4 };
   }
 
-  const ledger = result.executionCompletionLedger || [];
-  const adaptivePhases = {};
-  ledger.forEach((e) => { adaptivePhases[e.phase] = (adaptivePhases[e.phase] || 0) + 1; });
-
   process.stdout.write(JSON.stringify({
-    label: LABEL,
-    enableFailureIntentRanking: ENABLE_INTENT,
+    arm,
+    anchorIntent: arm.anchor,
+    replayIntent: arm.replay,
     found: Boolean(result.found),
     finalCanonicalOutcome: cls.finalCanonicalOutcome,
     reachedMilestone: result.reachedMilestone || null,
@@ -221,8 +262,16 @@ function main() {
       triggered: Boolean(backtrack && backtrack.attempted),
       phases: adaptivePhases,
       waveAttempts: (backtrack && backtrack.attempts) ? backtrack.attempts.length : 0,
+      attemptAnchorInputCandidateIds: ((backtrack && backtrack.attempts) || [])
+        .map((attempt) => attempt.anchorInputCandidateIds || []),
     },
     failureIntentRanking: intentRanking,
+    intentAlternativeProof: {
+      injected: injectedIds.size > 0,
+      injectedCandidateIds: Array.from(injectedIds),
+      waveAttempted: attemptedInjected.length > 0,
+      attemptedInjectedCandidateIds: attemptedInjected,
+    },
     strictReplay,
     reachedMT4,
   }) + "\\n");
@@ -233,56 +282,59 @@ main();
 
 const fs = require("node:fs");
 const os = require("node:os");
-const CHILD_PATH = path.join(os.tmpdir(), "iteration6b-round-child.js");
+const CHILD_PATH = path.join(os.tmpdir(), "iteration6d-final-child.js");
 fs.writeFileSync(CHILD_PATH, CHILD_SOURCE);
 
-function runRound(label, mode) {
+function runRound(arm) {
   const res = spawnSync(
     process.execPath,
-    ["--expose-gc", CHILD_PATH, mode, label],
+    ["--expose-gc", CHILD_PATH, arm],
     { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 180000, env: { ...process.env, SOLVER_DIR: path.resolve(__dirname, "..", "..") } },
   );
   if (res.error) throw res.error;
   if (res.status !== 0) {
-    throw new Error(`round ${label} failed (${res.status}): ${res.stderr}\n${res.stdout}`);
+    throw new Error(`arm ${arm} failed (${res.status}): ${res.stderr}\n${res.stdout}`);
   }
   const lines = res.stdout.trim().split("\n");
   return JSON.parse(lines[lines.length - 1]);
 }
 
 function main() {
-  const baseline = runRound("BASELINE", "baseline");
-  process.stderr.write(
-    `BASELINE: found=${baseline.found} outcome=${baseline.finalCanonicalOutcome} ` +
-    `stop=${baseline.budget.stoppedReason} exp=${baseline.budget.consumedExpansions} ` +
-    `wall=${baseline.wallMs} tree=${baseline.processTree.peakRssMb} ` +
-    `pend=${baseline.runWide.finalPending} waves=${baseline.adaptive.waveAttempts}\n`,
-  );
-  const candidate = runRound("CANDIDATE", "candidate");
-  process.stderr.write(
-    `CANDIDATE: found=${candidate.found} outcome=${candidate.finalCanonicalOutcome} ` +
-    `stop=${candidate.budget.stoppedReason} exp=${candidate.budget.consumedExpansions} ` +
-    `wall=${candidate.wallMs} tree=${candidate.processTree.peakRssMb} ` +
-    `pend=${candidate.runWide.finalPending} waves=${candidate.adaptive.waveAttempts}\n`,
-  );
+  const arms = {};
+  for (const arm of ["A", "E", "F"]) {
+    const record = runRound(arm);
+    arms[arm] = record;
+    const proof = record.intentAlternativeProof || {};
+    process.stderr.write(
+      `${arm} (anchor=${record.anchorIntent}/replay=${record.replayIntent}): ` +
+      `found=${record.found} outcome=${record.finalCanonicalOutcome} ` +
+      `stop=${record.budget.stoppedReason} exp=${record.budget.consumedExpansions} ` +
+      `wall=${record.wallMs} tree=${record.processTree.peakRssMb} ` +
+      `pend=${record.runWide.finalPending} waves=${record.adaptive.waveAttempts} ` +
+      `failed=${record.failedSegment ? record.failedSegment.segmentId + ":" + record.failedSegment.failureClass : "none"} ` +
+      `intentInjected=${proof.injected} intentWaveAttempted=${proof.waveAttempted}\n`,
+    );
+  }
 
   const aggregate = {
-    schema: "motapathfinder.iteration6-baseline-vs-candidate.v1",
-    baseCommit: "a22f7e3 (dev; failure-conditioned investment)",
+    schema: "motapathfinder.iteration6-final-authority.v1",
+    baseCommit: "734be0a (dev; iteration-6 repair 2a: scheduler-aware breadth injection)",
     config: {
       route: "onlyup-chaos-mt1-mt4",
       searchIntent: "adaptive-feasible",
       adaptiveBacktrackDepth: 3,
+      adaptiveWaveBatchSize: "production default (unset)",
       budgetScope: "global-run",
       maxExpansions: 50000,
       maxRuntimeMs: 30000,
       maxRssMb: 256,
       processTreeHardMb: 260,
       candidateLimit: 8,
-      freshProcessPerRound: true,
+      milestoneFrontierResourceDiversity: true,
+      freshProcessPerArm: true,
+      purpose: "CAPABILITY AUTHORITY (strict replay restored; intent-execution proof required)",
     },
-    baseline,
-    candidate,
+    arms,
   };
   process.stdout.write(JSON.stringify(aggregate, null, 2) + "\n");
 }
