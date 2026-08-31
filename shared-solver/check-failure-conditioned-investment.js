@@ -208,12 +208,27 @@ function main() {
     },
   ];
 
+  // candidateLimit 2 with 3 candidates: legacy top-2 = {A, F}; B is outside
+  // and gets the single reserved injection slot.
+  const threeCandidates = candidates.concat([
+    {
+      id: "F",
+      state: makeState({
+        hp: 11000, atk: 110, def: 90,
+        floorStates: { S1: { removed: { "1,0": true, "2,0": true }, replaced: {} } },
+      }),
+      hero: { hp: 11000, atk: 110, def: 90, mdef: 10, lv: 1, exp: 0, money: 0, equipment: [] },
+      tags: [],
+      score: 90,
+      route: [],
+    },
+  ]);
   const result = rankCandidatesByFailureIntent(
     opportunitySim,
-    candidates,
+    threeCandidates,
     COMPLETE_FAILURE,
     COMPLETE_FAILURE.preferredCandidateTags,
-    {},
+    { candidateLimit: 2 },
   );
   assert.strictEqual(
     result.activated,
@@ -224,8 +239,43 @@ function main() {
     result.telemetry.candidatesWithEvidence >= 1,
     "positive gate: at least one candidate must carry failure-relevant evidence",
   );
+  // Iteration 6 Repair 2 — breadth-preserving default: the legacy order is
+  // the main line; B (the only evidence holder, outside legacy top-N) is
+  // injected into the LAST reserved slot, not hard-promoted to the front.
   const rankedIds = result.ranked.map((candidate) => candidate.id);
-  assert.strictEqual(rankedIds[0], "B", `positive gate: B must rank above A (got [${rankedIds.join(",")}])`);
+  assert.strictEqual(
+    rankedIds[1],
+    "B",
+    `breadth gate: with candidateLimit=2 and legacy top-2 = {A, F}, B must be injected into the reserved slot at index 1 (got [${rankedIds.join(",")}])`,
+  );
+  assert.strictEqual(
+    rankedIds[0],
+    "A",
+    "breadth gate: legacy main line must keep A first (legacy order preserved)",
+  );
+  assert.strictEqual(
+    result.telemetry.injection && result.telemetry.injection.mode,
+    "breadth-preserving",
+    "breadth gate: injection telemetry must report breadth-preserving mode",
+  );
+  assert.strictEqual(
+    result.telemetry.injection && result.telemetry.injection.injectedCandidateId,
+    "B",
+    "breadth gate: the injected alternative must be B",
+  );
+  // Hard mode remains available for attribution runs only.
+  const hardResult = rankCandidatesByFailureIntent(
+    opportunitySim,
+    threeCandidates,
+    COMPLETE_FAILURE,
+    COMPLETE_FAILURE.preferredCandidateTags,
+    { candidateLimit: 2, mode: "hard" },
+  );
+  assert.strictEqual(
+    hardResult.ranked[0].id,
+    "B",
+    "hard-mode gate (attribution-only): evidence-first ordering still available via mode=hard",
+  );
 
   // No OnlyUp hints anywhere in the mechanism: the gate itself only knows
   // generic ids; assert the synthetic world ids are generic.
@@ -238,10 +288,10 @@ function main() {
   for (const seed of [1, 7, 42, 20260831]) {
     const shuffledResult = rankCandidatesByFailureIntent(
       opportunitySim,
-      shuffled(candidates, seed),
+      shuffled(threeCandidates, seed),
       COMPLETE_FAILURE,
       COMPLETE_FAILURE.preferredCandidateTags,
-      {},
+      { candidateLimit: 2 },
     );
     assert.strictEqual(
       shuffledResult.ranked.map((c) => c.id).join(","),

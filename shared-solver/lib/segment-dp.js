@@ -4287,6 +4287,39 @@ function failureIntentComplete(triggerFailure) {
 // Iteration 6 Repair 2: telemetry now returns bounded per-candidate evidence
 // details (top-N up to candidateLimit) so site attribution can rebuild the
 // ranking history from events[] without re-deriving scanner internals.
+// Iteration 6 Repair 2 — breadth-preserving injection mode.
+//
+// Site attribution (2x2 Linux authority) proved ANCHOR_HARD_PROMOTION_COST:
+// evidence-first hard promotion collapsed wave breadth (4→2) and raised
+// pending (18→32). The repair keeps the legacy ordering as the main line and
+// reserves AT MOST ONE slot for the top failure-intent candidate:
+//
+//   candidateLimit = N  →  legacy top-(N-1) + at most 1 intent alternative
+//
+// Rules (per authorization):
+//   no evidence            → selected set/order identical to legacy;
+//   incomplete failure     → identical to legacy;
+//   intent candidate already in legacy top-N → selected set unchanged;
+//   intent candidate outside legacy top-N    → replaces only the LOWEST
+//   priority legacy slot, at most one such replacement;
+//   deterministic; no new planner; no OnlyUp hints; scanner budget unchanged.
+function breadthPreservingIntentOrder(legacy, evidenceIds, limit) {
+  if (evidenceIds.length === 0) return legacy.slice();
+  // Highest-evidence candidate not already inside the legacy top-N.
+  const topN = new Set(legacy.slice(0, limit).map((candidate) => candidate.id));
+  const alternative = evidenceIds.find((id) => !topN.has(id));
+  if (alternative == null) return legacy.slice();
+  const ranked = legacy.slice();
+  const alternativeIndex = ranked.findIndex((candidate) => candidate.id === alternative);
+  if (alternativeIndex < 0) return legacy.slice();
+  const [alternativeCandidate] = ranked.splice(alternativeIndex, 1);
+  // Insert directly above the lowest-priority legacy slot (position limit-1),
+  // replacing it in the top-N while preserving legacy relative order.
+  const insertAt = Math.min(limit - 1, ranked.length);
+  ranked.splice(insertAt, 0, alternativeCandidate);
+  return ranked;
+}
+
 function rankCandidatesByFailureIntent(
   simulator,
   candidates,
@@ -4378,27 +4411,56 @@ function rankCandidatesByFailureIntent(
     bestEvidence.has(candidate && candidate.id)
       ? Number(bestEvidence.get(candidate.id).score)
       : null;
-  const ranked = list.slice().sort((left, right) => {
-    const leftScore = intentScore(left);
-    const rightScore = intentScore(right);
-    // Candidates WITH evidence outrank candidates without; among evidence
-    // holders the best-record score decides.
-    if (leftScore == null && rightScore == null) {
-      // fall through to the legacy chain below
-    } else if (leftScore == null) return 1;
-    else if (rightScore == null) return -1;
-    else if (rightScore !== leftScore) return rightScore - leftScore;
-    const tagDiff =
-      preferredTagScore(right, preferredTags) -
-      preferredTagScore(left, preferredTags);
-    if (tagDiff !== 0) return tagDiff;
-    const stateDiff = compareCandidateStates(
-      left && left.state,
-      right && right.state,
-    );
-    if (stateDiff !== 0) return stateDiff;
-    return candidateOutcomeScore(right) - candidateOutcomeScore(left);
-  });
+  // Iteration 6 Repair 2 – breadth-preserving mode (default after site
+  // attribution proved ANCHOR_HARD_PROMOTION_COST). The legacy order stays
+  // the main line; at most ONE highest-evidence candidate outside the legacy
+  // top-N is injected into the last reserved slot. The old hard evidence-
+  // first ordering remains available via config.mode === "hard" for
+  // attribution purposes only.
+  const hardMode = config.mode === "hard";
+  const breadthLimit = Math.max(1, number(config.candidateLimit, 8));
+  const evidenceIdsDescending = list
+    .filter((candidate) => bestEvidence.has(candidate.id))
+    .map((candidate) => ({
+      id: candidate.id,
+      score: Number(bestEvidence.get(candidate.id).score),
+    }))
+    .sort((left, right) => right.score - left.score)
+    .map((entry) => entry.id);
+  let ranked;
+  let injection = null;
+  if (hardMode) {
+    ranked = list.slice().sort((left, right) => {
+      const leftScore = intentScore(left);
+      const rightScore = intentScore(right);
+      // Candidates WITH evidence outrank candidates without; among evidence
+      // holders the best-record score decides.
+      if (leftScore == null && rightScore == null) {
+        // fall through to the legacy chain below
+      } else if (leftScore == null) return 1;
+      else if (rightScore == null) return -1;
+      else if (rightScore !== leftScore) return rightScore - leftScore;
+      const tagDiff =
+        preferredTagScore(right, preferredTags) -
+        preferredTagScore(left, preferredTags);
+      if (tagDiff !== 0) return tagDiff;
+      const stateDiff = compareCandidateStates(
+        left && left.state,
+        right && right.state,
+      );
+      if (stateDiff !== 0) return stateDiff;
+      return candidateOutcomeScore(right) - candidateOutcomeScore(left);
+    });
+  } else {
+    ranked = breadthPreservingIntentOrder(legacy, evidenceIdsDescending, breadthLimit);
+    const legacyTopN = new Set(legacy.slice(0, breadthLimit).map((c) => c.id));
+    const injectedId = evidenceIdsDescending.find((id) => !legacyTopN.has(id)) || null;
+    injection = {
+      mode: "breadth-preserving",
+      injectedCandidateId: injectedId,
+      replacedSlot: injectedId != null ? breadthLimit - 1 : null,
+    };
+  }
   const rankedIndexById = new Map(ranked.map((c, index) => [c.id, index]));
   const topBefore = legacy.length > 0 ? legacy[0].id : null;
   const topAfter = ranked.length > 0 ? ranked[0].id : null;
@@ -4439,6 +4501,7 @@ function rankCandidatesByFailureIntent(
       topCandidateBefore: topBefore,
       topCandidateAfter: topAfter,
       promotedCandidateIds,
+      injection,
     },
     evidenceCandidates,
   };
@@ -4819,6 +4882,7 @@ function tryAdaptiveCheckpointRepair(
       {
         phase: "adaptive-expand",
         enabled: anchorIntentEnabled,
+        candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
         evidenceDetailLimit: backtrackCandidateLimit(anchor.segment, config || {}),
       },
     );
@@ -4924,6 +4988,7 @@ function tryAdaptiveCheckpointRepair(
           {
             phase: "adaptive-replay",
             enabled: replayIntentEnabled,
+            candidateLimit: replayIntentLimit,
             evidenceDetailLimit: replayIntentLimit,
           },
         );
