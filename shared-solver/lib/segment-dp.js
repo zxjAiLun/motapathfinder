@@ -4281,6 +4281,9 @@ function failureIntentComplete(triggerFailure) {
   );
 }
 
+// Iteration 6 qualification: baseline mode disables the new ranking path
+// entirely (order identical to pre-iteration-6 behavior) while running the
+// same commit, for clean baseline-vs-candidate comparison.
 function rankCandidatesByFailureIntent(
   simulator,
   candidates,
@@ -4291,6 +4294,13 @@ function rankCandidatesByFailureIntent(
   const config = options || {};
   const list = candidates || [];
   const legacy = rankCandidatesByPreferredTags(list, preferredTags);
+  if (config.enabled === false) {
+    return {
+      ranked: legacy,
+      activated: false,
+      telemetry: { reason: "disabled-by-config" },
+    };
+  }
   if (!failureIntentComplete(triggerFailure)) {
     return {
       ranked: legacy,
@@ -4748,7 +4758,10 @@ function tryAdaptiveCheckpointRepair(
       anchor.inputFrontier,
       triggerFailure,
       preferredTags,
-      { phase: "adaptive-expand" },
+      {
+        phase: "adaptive-expand",
+        enabled: (config || {}).enableFailureIntentRanking !== false,
+      },
     );
     failureIntentRanking.anchor = {
       activated: anchorIntentRanking.activated,
@@ -4828,7 +4841,10 @@ function tryAdaptiveCheckpointRepair(
           repairFrontier,
           triggerFailure,
           preferredTags,
-          { phase: "adaptive-replay" },
+          {
+            phase: "adaptive-replay",
+            enabled: (config || {}).enableFailureIntentRanking !== false,
+          },
         );
         if (replayIntentRanking.activated) {
           failureIntentRanking.replay = {
