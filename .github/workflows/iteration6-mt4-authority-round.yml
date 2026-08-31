@@ -1,0 +1,46 @@
+name: iteration6b-mt4-authority-round
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - qualification/iteration6b-mt4-linux
+
+jobs:
+  iteration6-baseline-vs-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: shared-solver
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+
+      - name: Environment capture
+        run: |
+          uname -a
+          lscpu
+          free -m
+          node --version
+          node -p process.versions.v8
+          node -p process.arch
+          node -p process.platform
+          git rev-parse HEAD
+
+      - name: Run Iteration-6 baseline vs candidate authority rounds
+        run: |
+          node --expose-gc qualification/iteration6-mt4-linux/run-authority-round.js | tee routes/generated/iteration6-baseline-vs-candidate.json
+
+      - name: Upload authority artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iteration6-baseline-vs-candidate
+          path: |
+            shared-solver/routes/generated/iteration6-baseline-vs-candidate.json
+          if-no-files-found: error
+          retention-days: 90
