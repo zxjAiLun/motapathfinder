@@ -26,6 +26,12 @@ const { compileAdmissibleFeasibilityBounds } = require("./goal-feasibility-bound
 const reachAndBattleOracle = require("./reach-and-battle-oracle");
 const { buildSearchOutcome } = require("./search-outcome");
 const { executeIsolatedSegment } = require("./isolated-segment-executor");
+// Iteration 6 – failure-conditioned adaptive investment. The scanner derives
+// generic resource intents (atk/def/mdef/hp/path/equipment) from a trusted
+// complete failure and inspects the REAL action opportunities near each
+// rollback candidate. No circular dependency: the scanner does not import
+// segment-dp.
+const { scanResourceIntents } = require("./resource-intent-scanner");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -4247,6 +4253,152 @@ function rankCandidatesByPreferredTags(candidates, preferredTags) {
   });
 }
 
+// Iteration 6 – failure-conditioned adaptive investment ranking.
+//
+// Given a TRUSTED COMPLETE downstream failure (currently only
+// floor-progress-blocked) and the rollback anchor frontier, ask the existing
+// generic resource-intent scanner which candidates actually sit near relevant
+// investment opportunities (pickup/equip/battle/path deltas that improve the
+// resources the failure asked for), and rank those candidates first.
+//
+// Comparator (fixed, per authorization):
+//   failureIntentScore DESC  (each candidate's BEST evidence record score —
+//                             never an unbounded sum of many small chances)
+//   → existing preferred-tag score DESC
+//   → existing deterministic candidate comparator
+//
+// If the scanner yields no usable evidence, the returned order must be
+// IDENTICAL to rankCandidatesByPreferredTags (legacy order).
+// The scan is bounded by the scanner's existing small-scale constraints; no
+// new search is performed. No witness/fixture/route information is visible
+// here — only the candidates' own nearby generic action/value deltas.
+const FAILURE_INTENT_ELIGIBLE_CLASSES = new Set(["floor-progress-blocked"]);
+
+function failureIntentComplete(triggerFailure) {
+  return (
+    triggerFailure &&
+    FAILURE_INTENT_ELIGIBLE_CLASSES.has(String(triggerFailure.failureClass))
+  );
+}
+
+function rankCandidatesByFailureIntent(
+  simulator,
+  candidates,
+  triggerFailure,
+  preferredTags,
+  options,
+) {
+  const config = options || {};
+  const list = candidates || [];
+  const legacy = rankCandidatesByPreferredTags(list, preferredTags);
+  if (!failureIntentComplete(triggerFailure)) {
+    return {
+      ranked: legacy,
+      activated: false,
+      telemetry: {
+        reason: "failure-class-not-eligible",
+        failureClass: triggerFailure && triggerFailure.failureClass,
+      },
+    };
+  }
+  const startedAt = Date.now();
+  let intents = [];
+  try {
+    intents = scanResourceIntents(
+      simulator,
+      list,
+      {
+        failureClass: triggerFailure.failureClass,
+        missingGoalFields: triggerFailure.missingGoalFields || [],
+      },
+      {
+        maxIntentRecords: 24,
+        recordsPerIntent: 6,
+        maxIntents: 6,
+        intentDepth: 1,
+        maxIntentNodes: 80,
+      },
+    );
+  } catch (error) {
+    intents = [];
+  }
+  // Aggregate evidence per start candidate: keep only the BEST record score
+  // (never an unbounded sum).
+  const bestEvidence = new Map();
+  intents.forEach((intent) => {
+    (intent.records || []).forEach((record) => {
+      const candidateId = record.startCandidateId;
+      if (!candidateId) return;
+      const score = Number(record.score || 0);
+      if (!bestEvidence.has(candidateId) || score > bestEvidence.get(candidateId)) {
+        bestEvidence.set(candidateId, score);
+      }
+    });
+  });
+  const candidatesWithEvidence = Array.from(bestEvidence.keys());
+  if (candidatesWithEvidence.length === 0) {
+    return {
+      ranked: legacy,
+      activated: false,
+      telemetry: {
+        reason: "no-usable-evidence",
+        failureClass: triggerFailure.failureClass,
+        intentScanWallMs: Date.now() - startedAt,
+        candidatesScored: list.length,
+        candidatesWithEvidence: 0,
+        intents: intents.length,
+      },
+    };
+  }
+  const intentScore = (candidate) =>
+    bestEvidence.has(candidate && candidate.id)
+      ? Number(bestEvidence.get(candidate.id))
+      : null;
+  const ranked = list.slice().sort((left, right) => {
+    const leftScore = intentScore(left);
+    const rightScore = intentScore(right);
+    // Candidates WITH evidence outrank candidates without; among evidence
+    // holders the best-record score decides.
+    if (leftScore == null && rightScore == null) {
+      // fall through to the legacy chain below
+    } else if (leftScore == null) return 1;
+    else if (rightScore == null) return -1;
+    else if (rightScore !== leftScore) return rightScore - leftScore;
+    const tagDiff =
+      preferredTagScore(right, preferredTags) -
+      preferredTagScore(left, preferredTags);
+    if (tagDiff !== 0) return tagDiff;
+    const stateDiff = compareCandidateStates(
+      left && left.state,
+      right && right.state,
+    );
+    if (stateDiff !== 0) return stateDiff;
+    return candidateOutcomeScore(right) - candidateOutcomeScore(left);
+  });
+  const topBefore = legacy.length > 0 ? legacy[0].id : null;
+  const topAfter = ranked.length > 0 ? ranked[0].id : null;
+  const promotedCandidateIds = [];
+  const legacyIndexById = new Map(legacy.map((c, index) => [c.id, index]));
+  ranked.forEach((candidate, index) => {
+    const before = legacyIndexById.get(candidate.id);
+    if (before != null && index < before) promotedCandidateIds.push(candidate.id);
+  });
+  return {
+    ranked,
+    activated: true,
+    telemetry: {
+      failureClass: triggerFailure.failureClass,
+      intentScanWallMs: Date.now() - startedAt,
+      candidatesScored: list.length,
+      candidatesWithEvidence: candidatesWithEvidence.length,
+      intents: intents.length,
+      topCandidateBefore: topBefore,
+      topCandidateAfter: topAfter,
+      promotedCandidateIds,
+    },
+  };
+}
+
 function qualityFloorHero(qualityFloor) {
   return (qualityFloor && (qualityFloor.minHero || qualityFloor.hero)) || {};
 }
@@ -4565,6 +4717,18 @@ function tryAdaptiveCheckpointRepair(
     failurePropagation: failure.failurePropagation || (failedSummary && failedSummary.failurePropagation) || null,
   };
 
+  // Iteration 6 – failure-conditioned adaptive investment. Only TRUSTED
+  // COMPLETE failures may steer rollback toward investment opportunities.
+  // floor-progress-blocked is only ever emitted for searchComplete===true
+  // searches (Iteration 5 Repair 1 P1-A), so class eligibility here implies
+  // completeness. Incomplete classes (floor-search-incomplete, budget-exhausted,
+  // time/expansion/memory limits, unknown/not-run) must NEVER generate
+  // investment signals.
+  const failureIntentRanking = {
+    anchor: { activated: false, telemetry: { reason: "not-reached" } },
+    replay: { activated: false, telemetry: { reason: "not-reached" } },
+  };
+
   const maxDepth = Math.min(
     history.length,
     Math.max(1, numericOption(config && config.adaptiveBacktrackDepth, 3)),
@@ -4579,10 +4743,18 @@ function tryAdaptiveCheckpointRepair(
     const anchor = history[anchorHistoryIndex];
     if (!anchor || !anchor.segment || !Array.isArray(anchor.inputFrontier) || anchor.inputFrontier.length === 0) continue;
 
-    const rankedInputFrontier = rankCandidatesByPreferredTags(
+    const anchorIntentRanking = rankCandidatesByFailureIntent(
+      simulator,
       anchor.inputFrontier,
+      triggerFailure,
       preferredTags,
+      { phase: "adaptive-expand" },
     );
+    failureIntentRanking.anchor = {
+      activated: anchorIntentRanking.activated,
+      telemetry: anchorIntentRanking.telemetry,
+    };
+    const rankedInputFrontier = anchorIntentRanking.ranked;
 
     const totalWaves = Math.max(1, Math.ceil(rankedInputFrontier.length / waveBatchSize));
     let depthWavesAttempted = 0;
@@ -4651,10 +4823,23 @@ function tryAdaptiveCheckpointRepair(
         const replaySegment = segments[replayIndex];
         replaySegments.push(replaySegment);
         depthDownstreamReplayCount += 1;
-        const rankedFrontier = rankCandidatesByPreferredTags(
+        const replayIntentRanking = rankCandidatesByFailureIntent(
+          simulator,
           repairFrontier,
+          triggerFailure,
           preferredTags,
-        ).slice(0, backtrackCandidateLimit(replaySegment, config || {}));
+          { phase: "adaptive-replay" },
+        );
+        if (replayIntentRanking.activated) {
+          failureIntentRanking.replay = {
+            activated: true,
+            telemetry: replayIntentRanking.telemetry,
+          };
+        }
+        const rankedFrontier = replayIntentRanking.ranked.slice(
+          0,
+          backtrackCandidateLimit(replaySegment, config || {}),
+        );
         const replayed = runSegmentAgainstFrontier(
           simulator,
           replaySegment,
@@ -4835,6 +5020,7 @@ function tryAdaptiveCheckpointRepair(
         return {
           found: true,
           triggerFailure,
+          failureIntentRanking,
           maxDepth,
           attempts,
           depthSummaries,
@@ -4850,6 +5036,7 @@ function tryAdaptiveCheckpointRepair(
         return {
           found: false,
           triggerFailure,
+          failureIntentRanking,
           maxDepth,
           attempts,
           depthSummaries,
@@ -4882,6 +5069,7 @@ function tryAdaptiveCheckpointRepair(
         return {
           found: false,
           triggerFailure,
+          failureIntentRanking,
           maxDepth,
           attempts,
           depthSummaries,
@@ -4925,6 +5113,7 @@ function tryAdaptiveCheckpointRepair(
   return {
     found: false,
     triggerFailure,
+    failureIntentRanking,
     maxDepth,
     attempts,
     depthSummaries,
@@ -5527,6 +5716,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
             mode: "adaptive-checkpoint-window",
             maxDepth: adaptiveRepair.maxDepth || (graphConfig && graphConfig.adaptiveBacktrackDepth) || 3,
             triggerFailure: adaptiveRepair.triggerFailure,
+            failureIntentRanking: adaptiveRepair.failureIntentRanking || null,
             attempts: adaptiveRepair.attempts || [],
             depthSummaries: adaptiveRepair.depthSummaries || [],
             depths: adaptiveRepair.depthSummaries || [],
@@ -5549,6 +5739,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
             mode: "adaptive-checkpoint-window",
             maxDepth: adaptiveRepair.maxDepth || (graphConfig && graphConfig.adaptiveBacktrackDepth) || 3,
             triggerFailure: adaptiveRepair.triggerFailure,
+            failureIntentRanking: adaptiveRepair.failureIntentRanking || null,
             attempts: adaptiveRepair.attempts || [],
             depthSummaries: adaptiveRepair.depthSummaries || [],
             depths: adaptiveRepair.depthSummaries || [],
@@ -5771,6 +5962,7 @@ module.exports = {
     projectSegmentGoalProgress,
     selectCandidateSkyline,
     rankCandidatesByPreferredTags,
+    rankCandidatesByFailureIntent,
     classifySegmentFailure,
   },
 };

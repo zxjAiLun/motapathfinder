@@ -2753,6 +2753,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.22a expansion-cost profiler parity with frozen 100-expansion contract, attribution consistency, and overhead qualification"
     },
+    "shared-solver/check-failure-conditioned-investment.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-failure-triggered-macro-backtracking.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": true,
