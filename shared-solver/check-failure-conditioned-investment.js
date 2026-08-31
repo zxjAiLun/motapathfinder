@@ -583,8 +583,13 @@ function main() {
   // repair) so the append-only events[] semantics are verified end-to-end.
   gateEventTelemetry();
 
+  // ---- PR-5.24b FINAL CLOSURE: default enablement resolution ----
+  // Unset configuration must reproduce Final Authority Arm A (both sites
+  // disabled); the mechanism is strictly opt-in.
+  gateClosureDefaultEnablement(opportunitySim, threeCandidates);
+
   console.log(JSON.stringify({
-    schema: "motapathfinder.failure-conditioned-investment.v2",
+    schema: "motapathfinder.failure-conditioned-investment.v3",
     contractStatus: "passed",
     positive: {
       intentActivated: true,
@@ -608,9 +613,125 @@ function main() {
       entries: result.evidenceCandidates.length,
     },
     eventTelemetry: "verified (append-only, per-site attribution, deterministic)",
+    closureDefaultEnablement: "verified (opt-in; unset = Arm A behavior)",
     determinism: "4/4 shuffled inputs rank identically",
     noItemOrMonsterOrRouteHints: true,
   }, null, 2));
+}
+
+function gateClosureDefaultEnablement(simulator, candidates) {
+  // The closure changes tryAdaptiveCheckpointRepair's flag resolution, which
+  // cannot be driven through rankCandidatesByFailureIntent directly. Drive a
+  // real adaptive repair (mt1-mt3) under each resolution shape and verify,
+  // via the anchor/replay event activation, which sites were enabled.
+  const path = require("node:path");
+  const { loadProject } = require("./lib/project-loader");
+  const { StaticSimulator } = require("./lib/simulator");
+  const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
+  const { getMilestoneSpec } = require("./lib/milestone-spec");
+  const { runMilestoneGraph } = require("./lib/segment-dp");
+  const {
+    createNoStateChangeChoiceResolver,
+  } = require("./lib/onlyup-mt1-real-route-gate");
+
+  const project = loadProject(path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1"));
+  const spec = getMilestoneSpec(project, "onlyup-chaos-mt1-mt3");
+
+  const runOnce = (intentConfig) => {
+    const choiceResolver = createNoStateChangeChoiceResolver();
+    const simulator = new StaticSimulator(project, {
+      stopFloorId: "MT6",
+      battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: true }),
+      autoBattleFastRejectEnabled: true,
+      autoPickupEnabled: true,
+      autoBattleEnabled: true,
+      enableFastHazardBlockIndex: true,
+      enableCompiledEffectCache: false,
+      choiceResolver,
+    });
+    const result = runMilestoneGraph(simulator, simulator.createInitialState(), spec, {
+      searchIntent: "adaptive-feasible",
+      enableFailureBacktracking: true,
+      adaptiveBacktrackDepth: 2,
+      budgetScope: "global-run",
+      maxExpansions: 50000,
+      maxRuntimeMs: 8000,
+      maxRssMb: 4096,
+      memoryCheckIntervalExpansions: 1,
+      memoryCheckIntervalActions: 1,
+      candidateLimit: 8,
+      milestoneFrontierResourceDiversity: true,
+      ...intentConfig,
+    });
+    const failed = result.failedSegment || {};
+    const backtrack = failed.backtrack || {};
+    const ranking = backtrack.failureIntentRanking || { events: [] };
+    const events = ranking.events || [];
+    const anchorTried = events.some(
+      (e) => e.phase === "adaptive-expand" && e.activated !== false && e.reason !== "disabled-by-config",
+    );
+    const replayTried = events.some(
+      (e) => e.phase === "adaptive-replay" && e.activated !== false && e.reason !== "disabled-by-config",
+    );
+    // "Enabled" = the site was NOT disabled by config (it may still be
+    // inactive for class/evidence reasons — that is the mechanism's own
+    // gating, not the closure default).
+    const anchorDisabled = events.some(
+      (e) => e.phase === "adaptive-expand" && e.reason === "disabled-by-config",
+    );
+    const replayDisabled = events.some(
+      (e) => e.phase === "adaptive-replay" && e.reason === "disabled-by-config",
+    );
+    return {
+      anchorEnabled: !anchorDisabled && (events.some((e) => e.phase === "adaptive-expand")),
+      replayEnabled: !replayDisabled && (events.some((e) => e.phase === "adaptive-replay")),
+      anchorTried,
+      replayTried,
+      events: events.length,
+    };
+  };
+
+  const shapes = [
+    {
+      label: "1: unset master + unset sub-gates → both disabled",
+      config: {},
+      expect: { anchor: false, replay: false },
+    },
+    {
+      label: "2: master=true → both sites enabled",
+      config: { enableFailureIntentRanking: true },
+      expect: { anchor: true, replay: true },
+    },
+    {
+      label: "3: master unset + anchor=true → only anchor enabled",
+      config: { enableFailureIntentAnchorRanking: true },
+      expect: { anchor: true, replay: false },
+    },
+    {
+      label: "4: master unset + replay=true → only replay enabled",
+      config: { enableFailureIntentReplayRanking: true },
+      expect: { anchor: false, replay: true },
+    },
+    {
+      label: "5: master=true + replay=false → anchor on / replay off",
+      config: { enableFailureIntentRanking: true, enableFailureIntentReplayRanking: false },
+      expect: { anchor: true, replay: false },
+    },
+  ];
+
+  for (const shape of shapes) {
+    const outcome = runOnce(shape.config);
+    assert.strictEqual(
+      outcome.anchorEnabled,
+      shape.expect.anchor,
+      `closure gate ${shape.label}: anchorEnabled=${outcome.anchorEnabled}, expected ${shape.expect.anchor} (events=${outcome.events})`,
+    );
+    assert.strictEqual(
+      outcome.replayEnabled,
+      shape.expect.replay,
+      `closure gate ${shape.label}: replayEnabled=${outcome.replayEnabled}, expected ${shape.expect.replay}`,
+    );
+  }
 }
 
 function gateEventTelemetry() {
@@ -657,6 +778,9 @@ function gateEventTelemetry() {
       memoryCheckIntervalActions: 1,
       candidateLimit: 8,
       milestoneFrontierResourceDiversity: true,
+      // The event-telemetry contract is tested with the mechanism explicitly
+      // opted in (final closure made failure-intent ranking OFF by default).
+      enableFailureIntentRanking: true,
     });
     const failed = result.failedSegment || {};
     const backtrack = failed.backtrack || {};

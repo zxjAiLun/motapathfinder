@@ -4917,7 +4917,26 @@ function tryAdaptiveCheckpointRepair(
   //   real ranking call) so attribution can rebuild the per-wave ranking
   //   history; the legacy anchor/replay summary slots are kept for existing
   //   consumers but attribution must read events[].
-  const masterIntentEnabled = (config || {}).enableFailureIntentRanking !== false;
+  //
+  // PR-5.24b FINAL CLOSURE (P1) — the failure-intent ranking is now OFF by
+  // default (opt-in). The final authority (run 33380984827) proved the
+  // mechanism executes (injected + wave attempted) but shows no capability
+  // benefit and a breadth/liveness regression (waves 4→2, pending 18→32),
+  // so an unset configuration must reproduce Final Authority Arm A exactly:
+  //
+  //   enableFailureIntentRanking === true        → master opt-in; unset
+  //     sub-gates follow the master (both on).
+  //   enableFailureIntentAnchorRanking === true  → anchor only (master unset).
+  //   enableFailureIntentReplayRanking === true  → replay only (master unset).
+  //   enableFailureIntentRanking === true +
+  //     enableFailureIntentReplayRanking === false → anchor on / replay off.
+  //   everything unset                           → anchor=false, replay=false.
+  //
+  // The whole mechanism (scanner wiring, wave-ordered / top-n-truncate
+  // injection, deterministic evidence ordering, append-only events, hard
+  // mode) is retained as a gated experimental mechanism for future
+  // scheduling/budget milestones.
+  const masterIntentEnabled = (config || {}).enableFailureIntentRanking === true;
   const anchorIntentEnabled = (config || {}).enableFailureIntentAnchorRanking == null
     ? masterIntentEnabled
     : (config || {}).enableFailureIntentAnchorRanking !== false;
