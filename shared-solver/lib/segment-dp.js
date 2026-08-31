@@ -4284,6 +4284,9 @@ function failureIntentComplete(triggerFailure) {
 // Iteration 6 qualification: baseline mode disables the new ranking path
 // entirely (order identical to pre-iteration-6 behavior) while running the
 // same commit, for clean baseline-vs-candidate comparison.
+// Iteration 6 Repair 2: telemetry now returns bounded per-candidate evidence
+// details (top-N up to candidateLimit) so site attribution can rebuild the
+// ranking history from events[] without re-deriving scanner internals.
 function rankCandidatesByFailureIntent(
   simulator,
   candidates,
@@ -4294,11 +4297,13 @@ function rankCandidatesByFailureIntent(
   const config = options || {};
   const list = candidates || [];
   const legacy = rankCandidatesByPreferredTags(list, preferredTags);
+  const legacyIndexById = new Map(legacy.map((c, index) => [c.id, index]));
   if (config.enabled === false) {
     return {
       ranked: legacy,
       activated: false,
       telemetry: { reason: "disabled-by-config" },
+      evidenceCandidates: [],
     };
   }
   if (!failureIntentComplete(triggerFailure)) {
@@ -4309,6 +4314,7 @@ function rankCandidatesByFailureIntent(
         reason: "failure-class-not-eligible",
         failureClass: triggerFailure && triggerFailure.failureClass,
       },
+      evidenceCandidates: [],
     };
   }
   const startedAt = Date.now();
@@ -4333,15 +4339,22 @@ function rankCandidatesByFailureIntent(
     intents = [];
   }
   // Aggregate evidence per start candidate: keep only the BEST record score
-  // (never an unbounded sum).
+  // (never an unbounded sum) plus its compact provenance for attribution.
   const bestEvidence = new Map();
   intents.forEach((intent) => {
     (intent.records || []).forEach((record) => {
       const candidateId = record.startCandidateId;
       if (!candidateId) return;
       const score = Number(record.score || 0);
-      if (!bestEvidence.has(candidateId) || score > bestEvidence.get(candidateId)) {
-        bestEvidence.set(candidateId, score);
+      const existing = bestEvidence.get(candidateId);
+      if (!existing || score > existing.score) {
+        bestEvidence.set(candidateId, {
+          score,
+          actionKind: record.actionKind || null,
+          category: intent.kind || null,
+          delta: record.delta || null,
+          frontierDelta: record.frontierDelta || null,
+        });
       }
     });
   });
@@ -4358,11 +4371,12 @@ function rankCandidatesByFailureIntent(
         candidatesWithEvidence: 0,
         intents: intents.length,
       },
+      evidenceCandidates: [],
     };
   }
   const intentScore = (candidate) =>
     bestEvidence.has(candidate && candidate.id)
-      ? Number(bestEvidence.get(candidate.id))
+      ? Number(bestEvidence.get(candidate.id).score)
       : null;
   const ranked = list.slice().sort((left, right) => {
     const leftScore = intentScore(left);
@@ -4385,14 +4399,34 @@ function rankCandidatesByFailureIntent(
     if (stateDiff !== 0) return stateDiff;
     return candidateOutcomeScore(right) - candidateOutcomeScore(left);
   });
+  const rankedIndexById = new Map(ranked.map((c, index) => [c.id, index]));
   const topBefore = legacy.length > 0 ? legacy[0].id : null;
   const topAfter = ranked.length > 0 ? ranked[0].id : null;
   const promotedCandidateIds = [];
-  const legacyIndexById = new Map(legacy.map((c, index) => [c.id, index]));
   ranked.forEach((candidate, index) => {
     const before = legacyIndexById.get(candidate.id);
     if (before != null && index < before) promotedCandidateIds.push(candidate.id);
   });
+  // Bounded per-candidate evidence details (top-N by intent rank, at most
+  // candidateLimit entries) for site attribution. Compact deltas only.
+  const evidenceDetailLimit = Math.max(1, number(config.evidenceDetailLimit, 8));
+  const evidenceCandidates = ranked
+    .filter((candidate) => bestEvidence.has(candidate.id))
+    .slice(0, evidenceDetailLimit)
+    .map((candidate) => {
+      const evidence = bestEvidence.get(candidate.id);
+      return {
+        candidateId: candidate.id,
+        intentScore: evidence.score,
+        legacyRank: legacyIndexById.has(candidate.id)
+          ? legacyIndexById.get(candidate.id) : null,
+        intentRank: rankedIndexById.get(candidate.id),
+        bestEvidenceActionKind: evidence.actionKind,
+        bestEvidenceCategory: evidence.category,
+        delta: evidence.delta,
+        frontierDelta: evidence.frontierDelta,
+      };
+    });
   return {
     ranked,
     activated: true,
@@ -4406,6 +4440,7 @@ function rankCandidatesByFailureIntent(
       topCandidateAfter: topAfter,
       promotedCandidateIds,
     },
+    evidenceCandidates,
   };
 }
 
@@ -4734,9 +4769,32 @@ function tryAdaptiveCheckpointRepair(
   // completeness. Incomplete classes (floor-search-incomplete, budget-exhausted,
   // time/expansion/memory limits, unknown/not-run) must NEVER generate
   // investment signals.
+  //
+  // Iteration 6 Repair 2 – site-split gates + append-only event telemetry.
+  //   enableFailureIntentAnchorRanking / enableFailureIntentReplayRanking
+  //   control the two ranking sites independently; when neither is set the
+  //   legacy master switch enableFailureIntentRanking applies (back-compat:
+  //   unset sub-gates + unset master = enabled, exactly as HEAD).
+  //   failureIntentRanking.events[] is append-only (one compact event per
+  //   real ranking call) so attribution can rebuild the per-wave ranking
+  //   history; the legacy anchor/replay summary slots are kept for existing
+  //   consumers but attribution must read events[].
+  const masterIntentEnabled = (config || {}).enableFailureIntentRanking !== false;
+  const anchorIntentEnabled = (config || {}).enableFailureIntentAnchorRanking == null
+    ? masterIntentEnabled
+    : (config || {}).enableFailureIntentAnchorRanking !== false;
+  const replayIntentEnabled = (config || {}).enableFailureIntentReplayRanking == null
+    ? masterIntentEnabled
+    : (config || {}).enableFailureIntentReplayRanking !== false;
+  const FAILURE_INTENT_EVENT_LIMIT = 64;
   const failureIntentRanking = {
     anchor: { activated: false, telemetry: { reason: "not-reached" } },
     replay: { activated: false, telemetry: { reason: "not-reached" } },
+    events: [],
+  };
+  const appendIntentEvent = (event) => {
+    if (failureIntentRanking.events.length >= FAILURE_INTENT_EVENT_LIMIT) return;
+    failureIntentRanking.events.push(event);
   };
 
   const maxDepth = Math.min(
@@ -4760,13 +4818,34 @@ function tryAdaptiveCheckpointRepair(
       preferredTags,
       {
         phase: "adaptive-expand",
-        enabled: (config || {}).enableFailureIntentRanking !== false,
+        enabled: anchorIntentEnabled,
+        evidenceDetailLimit: backtrackCandidateLimit(anchor.segment, config || {}),
       },
     );
     failureIntentRanking.anchor = {
       activated: anchorIntentRanking.activated,
       telemetry: anchorIntentRanking.telemetry,
     };
+    appendIntentEvent({
+      phase: "adaptive-expand",
+      depth,
+      waveIndex: 0,
+      anchorHistoryIndex,
+      replaySegmentId: null,
+      inputCandidateCount: anchor.inputFrontier.length,
+      candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
+      activated: anchorIntentRanking.activated,
+      reason: anchorIntentRanking.activated
+        ? null
+        : (anchorIntentRanking.telemetry && anchorIntentRanking.telemetry.reason) || null,
+      topCandidateBefore: anchorIntentRanking.telemetry.topCandidateBefore || null,
+      topCandidateAfter: anchorIntentRanking.telemetry.topCandidateAfter || null,
+      promotedCandidateIds: anchorIntentRanking.telemetry.promotedCandidateIds || [],
+      selectedCandidateIds: anchorIntentRanking.ranked
+        .slice(0, waveBatchSize)
+        .map((candidate) => candidate.id),
+      evidenceCandidates: anchorIntentRanking.evidenceCandidates || [],
+    });
     const rankedInputFrontier = anchorIntentRanking.ranked;
 
     const totalWaves = Math.max(1, Math.ceil(rankedInputFrontier.length / waveBatchSize));
@@ -4836,6 +4915,7 @@ function tryAdaptiveCheckpointRepair(
         const replaySegment = segments[replayIndex];
         replaySegments.push(replaySegment);
         depthDownstreamReplayCount += 1;
+        const replayIntentLimit = backtrackCandidateLimit(replaySegment, config || {});
         const replayIntentRanking = rankCandidatesByFailureIntent(
           simulator,
           repairFrontier,
@@ -4843,7 +4923,8 @@ function tryAdaptiveCheckpointRepair(
           preferredTags,
           {
             phase: "adaptive-replay",
-            enabled: (config || {}).enableFailureIntentRanking !== false,
+            enabled: replayIntentEnabled,
+            evidenceDetailLimit: replayIntentLimit,
           },
         );
         if (replayIntentRanking.activated) {
@@ -4852,9 +4933,29 @@ function tryAdaptiveCheckpointRepair(
             telemetry: replayIntentRanking.telemetry,
           };
         }
+        appendIntentEvent({
+          phase: "adaptive-replay",
+          depth,
+          waveIndex,
+          anchorHistoryIndex,
+          replaySegmentId: replaySegment.id,
+          inputCandidateCount: repairFrontier.length,
+          candidateLimit: replayIntentLimit,
+          activated: replayIntentRanking.activated,
+          reason: replayIntentRanking.activated
+            ? null
+            : (replayIntentRanking.telemetry && replayIntentRanking.telemetry.reason) || null,
+          topCandidateBefore: replayIntentRanking.telemetry.topCandidateBefore || null,
+          topCandidateAfter: replayIntentRanking.telemetry.topCandidateAfter || null,
+          promotedCandidateIds: replayIntentRanking.telemetry.promotedCandidateIds || [],
+          selectedCandidateIds: replayIntentRanking.ranked
+            .slice(0, replayIntentLimit)
+            .map((candidate) => candidate.id),
+          evidenceCandidates: replayIntentRanking.evidenceCandidates || [],
+        });
         const rankedFrontier = replayIntentRanking.ranked.slice(
           0,
-          backtrackCandidateLimit(replaySegment, config || {}),
+          replayIntentLimit,
         );
         const replayed = runSegmentAgainstFrontier(
           simulator,
@@ -5861,6 +5962,8 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
           repaired: false,
           mode: "adaptive-checkpoint-window",
           maxDepth: numericOption(graphConfig.adaptiveBacktrackDepth, 3),
+          triggerFailure: adaptiveRepair.triggerFailure,
+          failureIntentRanking: adaptiveRepair.failureIntentRanking || null,
           attempts: adaptiveRepair.attempts,
         };
       }

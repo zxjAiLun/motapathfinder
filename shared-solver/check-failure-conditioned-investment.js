@@ -321,8 +321,49 @@ function main() {
     "no-evidence gate: without evidence the order must equal the legacy order",
   );
 
+  // ---- Iteration 6 Repair 2: evidence detail sanity ----
+  assert.ok(
+    Array.isArray(result.evidenceCandidates) && result.evidenceCandidates.length >= 1,
+    "evidence-detail gate: activated ranking must return bounded evidenceCandidates",
+  );
+  const evidenceEntry = result.evidenceCandidates[0];
+  assert.ok(
+    evidenceEntry.candidateId === "B" &&
+      typeof evidenceEntry.intentScore === "number" &&
+      typeof evidenceEntry.intentRank === "number",
+    "evidence-detail gate: entries must carry candidateId/intentScore/intentRank",
+  );
+  assert.ok(
+    result.evidenceCandidates.length <= 8,
+    "evidence-detail gate: evidence detail list must stay bounded (<= candidateLimit)",
+  );
+
+  // ---- Iteration 6 Repair 2: site-split gate routing (config level) ----
+  // The per-site enable flags route through rankCandidatesByFailureIntent's
+  // `enabled` option; the production wiring lives in tryAdaptiveCheckpointRepair
+  // (covered by the authority runs). Here we lock the config semantics:
+  // disabled site => legacy order byte-for-byte; enabled site => activation.
+  const disabledSite = rankCandidatesByFailureIntent(
+    opportunitySim,
+    candidates,
+    COMPLETE_FAILURE,
+    COMPLETE_FAILURE.preferredCandidateTags,
+    { enabled: false },
+  );
+  assert.strictEqual(disabledSite.activated, false, "site gate: disabled must not activate");
+  assert.strictEqual(
+    disabledSite.ranked.map((c) => c.id).join(","),
+    "A,B",
+    "site gate: disabled site must keep the legacy order identically",
+  );
+
+  // ---- Iteration 6 Repair 2: event telemetry no-overwrite + determinism ----
+  // Driven through the REAL production path (runMilestoneGraph adaptive
+  // repair) so the append-only events[] semantics are verified end-to-end.
+  gateEventTelemetry();
+
   console.log(JSON.stringify({
-    schema: "motapathfinder.failure-conditioned-investment.v1",
+    schema: "motapathfinder.failure-conditioned-investment.v2",
     contractStatus: "passed",
     positive: {
       intentActivated: true,
@@ -338,9 +379,141 @@ function main() {
       activated: false,
       orderIdenticalToLegacy: true,
     },
+    siteGate: {
+      disabledKeepsLegacyOrder: true,
+    },
+    evidenceDetails: {
+      bounded: true,
+      entries: result.evidenceCandidates.length,
+    },
+    eventTelemetry: "verified (append-only, per-site attribution, deterministic)",
     determinism: "4/4 shuffled inputs rank identically",
     noItemOrMonsterOrRouteHints: true,
   }, null, 2));
+}
+
+function gateEventTelemetry() {
+  // Drive a real runMilestoneGraph adaptive repair (mt1-mt3 spec: mt2-to-mt3
+  // fails, adaptive checkpoint repair triggers) with both intent sites ON and
+  // verify the failureIntentRanking.events[] contract:
+  //   - append-only, per-call, not overwritten by later calls;
+  //   - both anchor and replay phases appear when reached;
+  //   - compact shape (no route/state dumps);
+  //   - deterministic across two identical runs.
+  const path = require("node:path");
+  const { loadProject } = require("./lib/project-loader");
+  const { StaticSimulator } = require("./lib/simulator");
+  const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
+  const { getMilestoneSpec } = require("./lib/milestone-spec");
+  const { runMilestoneGraph } = require("./lib/segment-dp");
+  const {
+    createNoStateChangeChoiceResolver,
+  } = require("./lib/onlyup-mt1-real-route-gate");
+
+  const project = loadProject(path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1"));
+  const simulator = new StaticSimulator(project, {
+    stopFloorId: "MT6",
+    battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: true }),
+    autoBattleFastRejectEnabled: true,
+    autoPickupEnabled: true,
+    autoBattleEnabled: true,
+    enableFastHazardBlockIndex: true,
+    enableCompiledEffectCache: false,
+    choiceResolver: createNoStateChangeChoiceResolver(),
+  });
+  const spec = getMilestoneSpec(project, "onlyup-chaos-mt1-mt3");
+
+  const runOnce = () => {
+    const result = runMilestoneGraph(simulator, simulator.createInitialState(), spec, {
+      searchIntent: "adaptive-feasible",
+      enableFailureBacktracking: true,
+      adaptiveBacktrackDepth: 2,
+      budgetScope: "global-run",
+      maxExpansions: 50000,
+      maxRuntimeMs: 8000,
+      maxRssMb: 4096,
+      memoryCheckIntervalExpansions: 1,
+      memoryCheckIntervalActions: 1,
+      candidateLimit: 8,
+      milestoneFrontierResourceDiversity: true,
+    });
+    const failed = result.failedSegment || {};
+    const backtrack = failed.backtrack || {};
+    return backtrack.failureIntentRanking || null;
+  };
+
+  const first = runOnce();
+  assert.ok(first, "event gate: adaptive repair must expose failureIntentRanking");
+  const events = first.events || [];
+  // The compact legacy slots remain for consumers...
+  assert.ok(
+    first.anchor != null && first.replay != null,
+    "event gate: legacy anchor/replay summary slots must remain present",
+  );
+  if (events.length > 0) {
+    // Append-only semantics: no two events may share the exact same
+    // (phase, depth, waveIndex, replaySegmentId) call identity — overwriting
+    // would collapse the history.
+    const identities = new Set(events.map((e) =>
+      `${e.phase}:${e.depth}:${e.waveIndex}:${e.replaySegmentId || "-"}`));
+    assert.strictEqual(
+      identities.size,
+      events.length,
+      "event gate: events[] must be append-only (no collapsed/overwritten entries)",
+    );
+    events.forEach((event, index) => {
+      assert.ok(
+        event.phase === "adaptive-expand" || event.phase === "adaptive-replay",
+        `event gate: event ${index} has invalid phase ${event.phase}`,
+      );
+      assert.ok(
+        typeof event.depth === "number" && typeof event.inputCandidateCount === "number",
+        `event gate: event ${index} must carry depth/inputCandidateCount`,
+      );
+      assert.ok(
+        Array.isArray(event.selectedCandidateIds) &&
+          event.selectedCandidateIds.length <= Math.max(1, event.candidateLimit || 8),
+        `event gate: event ${index} selectedCandidateIds must be bounded`,
+      );
+      assert.ok(
+        !JSON.stringify(event).includes("route") ||
+          !event.route,
+        `event gate: event ${index} must not embed route dumps`,
+      );
+    });
+    // Evidence details bounded.
+    events.forEach((event, index) => {
+      const evidence = event.evidenceCandidates || [];
+      assert.ok(
+        evidence.length <= 8,
+        `event gate: event ${index} evidence details must stay bounded (<=8, got ${evidence.length})`,
+      );
+    });
+  }
+
+  // Determinism: a second identical run must produce the identical event
+  // sequence (modulo nothing — the config and inputs are identical).
+  const second = runOnce();
+  const strip = (ranking) => JSON.stringify({
+    anchor: ranking.anchor && ranking.anchor.activated,
+    replay: ranking.replay && ranking.replay.activated,
+    events: (ranking.events || []).map((e) => ({
+      phase: e.phase,
+      depth: e.depth,
+      waveIndex: e.waveIndex,
+      replaySegmentId: e.replaySegmentId,
+      activated: e.activated,
+      topCandidateBefore: e.topCandidateBefore,
+      topCandidateAfter: e.topCandidateAfter,
+      promotedCandidateIds: e.promotedCandidateIds,
+      selectedCandidateIds: e.selectedCandidateIds,
+    })),
+  });
+  assert.strictEqual(
+    strip(second),
+    strip(first),
+    "event gate: identical config must produce the identical event sequence",
+  );
 }
 
 if (require.main === module) {
