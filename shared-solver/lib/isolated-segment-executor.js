@@ -196,8 +196,27 @@ function executeIsolatedSegment(options) {
   const plannerRssBeforeSerializationMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
 
   // Child search reserve: don't expand parent deadline, reserve 2s inside child slice
-  const childDeadlineMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedDeadlineMs - CHILD_EXIT_RESERVE_MS : assignedDeadlineMs;
-  const childSearchRuntimeMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedRuntimeMs - CHILD_EXIT_RESERVE_MS : Math.max(1, assignedRuntimeMs);
+  let childDeadlineMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedDeadlineMs - CHILD_EXIT_RESERVE_MS : assignedDeadlineMs;
+  let childSearchRuntimeMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedRuntimeMs - CHILD_EXIT_RESERVE_MS : Math.max(1, assignedRuntimeMs);
+
+  // PR-5.24c Repair 1 (P1-4) – an epoch-absolute probe deadline must also
+  // tighten the child's assigned runtime: without this the child could be
+  // granted the full global runtime while the probe wall expires first,
+  // producing a global-looking timeout instead of a probe-limited yield.
+  {
+    const probeDeadline = config && config.probeDeadlineMs;
+    if (probeDeadline != null && Number.isFinite(Number(probeDeadline))) {
+      const probeDeadlineNum = Number(probeDeadline);
+      if (probeDeadlineNum < childDeadlineMs) {
+        // The probe wall ends before the child deadline; clamp the child
+        // runtime so the child's own attempt scheduler reports a LOCAL
+        // probe-limited stop instead of a global timeout.
+        const clampedRuntimeMs = Math.max(1, probeDeadlineNum - Date.now());
+        childDeadlineMs = probeDeadlineNum;
+        childSearchRuntimeMs = Math.min(childSearchRuntimeMs, clampedRuntimeMs);
+      }
+    }
+  }
 
   const simulatorProfile = runtimeDescriptor ? runtimeDescriptor.simulatorProfile : buildSimulatorProfile(simulator);
   if (!simulatorProfile) {
@@ -273,6 +292,27 @@ function executeIsolatedSegment(options) {
       stoppedReason: null,
     };
   }
+  // PR-5.24c Repair 1 (P1-1) – rebase the probe expansion budget to the
+  // CHILD-LOCAL coordinate. The parent's probeExpansionCap is an absolute
+  // parent-global counter, but the child's globalBudget.consumedExpansions
+  // restarts at 0; without rebasing, a parent cap of (3000+100) would let
+  // the child run up to 3100 LOCAL expansions instead of the intended 100.
+  // probeDeadlineMs is epoch-absolute and needs no rebase. The child's
+  // globalBudget itself stays the GLOBAL authority — only the probe cap is
+  // translated. The probe cap also tightens the assigned expansions so the
+  // child can never be granted more than the remaining probe allowance.
+  const parentProbeExpansionCap =
+    config && config.probeExpansionCap != null ? Number(config.probeExpansionCap) : null;
+  let childProbeExpansionCap = null;
+  if (parentProbeExpansionCap != null && Number.isFinite(parentProbeExpansionCap)) {
+    const parentGlobalConsumed = globalBudget
+      ? Number(globalBudget.consumedExpansions || 0)
+      : 0;
+    childProbeExpansionCap = Math.max(0, parentProbeExpansionCap - parentGlobalConsumed);
+    if (childProbeExpansionCap < assignedExpansions) {
+      assignedExpansions = childProbeExpansionCap;
+    }
+  }
 
   const runIdForEnvelope = runId; // stable invocationId for both files
   const envelopePath = path.join(tmpDir, `segment-envelope-${runId}.json`);
@@ -302,6 +342,10 @@ function executeIsolatedSegment(options) {
       deadlineMs: childDeadlineMs,
       maxExpansions: assignedExpansions,
       maxRuntimeMs: childSearchRuntimeMs,
+      // PR-5.24c Repair 1 (P1-1) – child-local probe cap (rebased above);
+      // probeDeadlineMs stays epoch-absolute (P1-4: the child's attempt
+      // scheduler uses it to clamp per-attempt runtime to the probe wall).
+      probeExpansionCap: childProbeExpansionCap,
       // Placeholder – will be overridden by envelope's authoritative value
       maxRssMb: Math.max(1, effectiveStopThresholdMb - plannerRssBeforeSerializationMb),
       maxRssHardCeilingMb: Math.max(1, effectiveHardThresholdMb - plannerRssBeforeSerializationMb),

@@ -3858,9 +3858,17 @@ function runSegmentAgainstFrontierLocal(
     // yields WITHOUT touching globalBudget.stoppedReason and WITHOUT claiming
     // any completion semantics — the caller (the budgeted scheduler) marks
     // the hypothesis PROBE_PENDING and moves on.
+    // Repair 1 (P1-4): the probe wall must ALSO bind INSIDE an attempt: the
+    // per-attempt runtime is clamped to the remaining probe wall, and an
+    // attempt whose runtime slice expired on the probe deadline classifies
+    // as probe-limited (never a global timeout, never a deferred retry).
     const probeDeadlineMs = config && config.probeDeadlineMs;
     const probeExpansionCap = config && config.probeExpansionCap;
-    if (probeDeadlineMs != null && Date.now() >= probeDeadlineMs) {
+    const remainingProbeRuntimeMs = probeDeadlineMs != null &&
+      Number.isFinite(Number(probeDeadlineMs))
+      ? Math.max(0, Number(probeDeadlineMs) - Date.now())
+      : null;
+    if (probeDeadlineMs != null && remainingProbeRuntimeMs <= 0) {
       return { kind: "probe-limited" };
     }
     if (probeExpansionCap != null &&
@@ -3890,6 +3898,28 @@ function runSegmentAgainstFrontierLocal(
         number(dpOverrides.maxRuntimeMs, fairCandidateRuntimeMs),
         fairCandidateRuntimeMs,
       ));
+    }
+    // PR-5.24c Repair 1 (P1-4) – clamp the attempt runtime to the probe wall.
+    if (remainingProbeRuntimeMs != null) {
+      dpOverrides.maxRuntimeMs = Math.max(1, Math.min(
+        number(dpOverrides.maxRuntimeMs, remainingProbeRuntimeMs),
+        remainingProbeRuntimeMs,
+      ));
+    }
+    // PR-5.24c Repair 1 (P1-1, local side) – clamp the attempt expansions to
+    // the remaining probe expansion allowance (child-local coordinates).
+    if (probeExpansionCap != null && globalBudget) {
+      const remainingProbeExpansions = Math.max(
+        0,
+        probeExpansionCap - globalBudget.consumedExpansions,
+      );
+      if (remainingProbeExpansions <= 0) {
+        return { kind: "probe-limited" };
+      }
+      dpOverrides.maxExpansions = Math.min(
+        number(dpOverrides.maxExpansions, remainingProbeExpansions),
+        remainingProbeExpansions,
+      );
     }
     if (config && config.maxHeapMb != null) {
       dpOverrides.maxHeapMb = number(config.maxHeapMb, 0);
@@ -3970,6 +4000,25 @@ function runSegmentAgainstFrontierLocal(
     let kind;
     if (goalFound) {
       kind = "found";
+    } else if (
+      stoppedReason === "time-limit" &&
+      remainingProbeRuntimeMs != null &&
+      remainingProbeRuntimeMs <= 0
+    ) {
+      // PR-5.24c Repair 1 (P1-4) – the attempt's runtime slice was the PROBE
+      // wall, not the global/fair runtime: this is a probe-limited yield
+      // (pending, no retry, no global semantics), not a deferred local
+      // timeout.
+      kind = "probe-limited";
+    } else if (
+      (stoppedReason === "expansion-limit" || (dp && dp.expansionBudgetExhausted === true)) &&
+      probeExpansionCap != null &&
+      globalBudget &&
+      globalBudget.consumedExpansions >= probeExpansionCap
+    ) {
+      // PR-5.24c Repair 1 (P1-1) – the attempt exhausted the PROBE expansion
+      // allowance, not the global/fair slice.
+      kind = "probe-limited";
     } else if (stoppedReason === "time-limit") {
       kind = "local-time-limited";
     } else if (stoppedReason === "expansion-limit" || dp && dp.expansionBudgetExhausted === true) {
@@ -5057,14 +5106,19 @@ function tryAdaptiveCheckpointRepair(
     stopReason: null,
   });
   // Local probe budget for a wave: strictly tighter than the remaining
-  // global budget; null when scheduling is disabled (legacy behavior).
-  // Wave 0 stays FIRST in production order — it is simply the first
-  // hypothesis to receive its bounded probe, so ordering semantics are
-  // preserved while no wave (including the first) may monopolize the wall.
+  // global budget. PR-5.24c Repair 1 (P1-3): when the scheduler is ENABLED
+  // but no strictly-tighter probe can be carved out of the remaining global
+  // budget, the result is { insufficientHeadroom: true } — the caller must
+  // NOT fall back to a full-global legacy wave; it leaves the hypothesis
+  // PROBE_PENDING and moves on. (When the global budget is already
+  // exhausted, null is returned so the global authority handles the stop.)
+  // Wave 0 takes part in the first-probe round like every other hypothesis
+  // (cloud-revised contract): legacy ORDER is preserved — wave 0 is simply
+  // the first hypothesis to receive its bounded probe.
   const probeBudgetForWave = () => {
     if (!budgetedSchedulingEnabled) return null;
     const globalBudget = config && config.globalBudget;
-    if (!globalBudget) return null;
+    if (!globalBudget) return { insufficientHeadroom: true };
     const now = Date.now();
     const remainingWallMs = globalBudget.deadlineMs != null &&
       Number.isFinite(Number(globalBudget.deadlineMs))
@@ -5083,10 +5137,11 @@ function tryAdaptiveCheckpointRepair(
     const localExpansions = remainingExpansions != null
       ? Math.min(probeExpansions, remainingExpansions)
       : probeExpansions;
-    // Strictly tighter than remaining global budget in at least one axis.
+    // Strictly tighter than remaining global budget in at least one axis;
+    // otherwise there is insufficient headroom for a bounded probe.
     if (localWallMs >= (remainingWallMs != null ? remainingWallMs : Infinity) &&
         localExpansions >= (remainingExpansions != null ? remainingExpansions : Infinity)) {
-      return null;
+      return { insufficientHeadroom: true };
     }
     return { wallMs: localWallMs, deadlineMs: now + localWallMs, expansions: localExpansions };
   };
@@ -5168,6 +5223,39 @@ function tryAdaptiveCheckpointRepair(
       // PR-5.24c – budgeted hypothesis scheduling for this wave.
       const hypothesisKey = `${depth}:${waveIndex}`;
       const waveProbeBudget = probeBudgetForWave();
+      // P1-3 fail-closed: enabled scheduler + insufficient probe headroom
+      // must NEVER degrade into a full-global legacy wave. The hypothesis
+      // stays PROBE_PENDING and the scheduler moves on.
+      if (budgetedSchedulingEnabled && waveProbeBudget &&
+          waveProbeBudget.insufficientHeadroom === true) {
+        const pendingTicket = hypothesisTicket(
+          depth,
+          waveIndex,
+          anchor.segment.id,
+          waveInputCandidates.map((candidate) => candidate.id),
+        );
+        pendingTicket.status = "PROBE_PENDING";
+        pendingTicket.stopReason = "insufficient-probe-headroom";
+        repairScheduling.hypotheses.push(pendingTicket);
+        appendSchedulingEvent({
+          hypothesisId: pendingTicket.hypothesisId,
+          probeIndex: 0,
+          depth,
+          anchorCandidateIds: pendingTicket.anchorInputCandidateIds,
+          startReplayIndex: anchorHistoryIndex + 1,
+          endReplayIndex: anchorHistoryIndex,
+          allocatedWallMs: null,
+          allocatedExpansions: null,
+          consumedWallMs: 0,
+          consumedExpansions: 0,
+          progressBefore: null,
+          progressAfter: { waveOutcome: "not-started" },
+          yieldReason: "insufficient-probe-headroom",
+          pendingAfterProbe: true,
+          globalStopReason: (config.globalBudget && config.globalBudget.stoppedReason) || null,
+        });
+        continue;
+      }
       const schedulingWave = budgetedSchedulingEnabled && waveProbeBudget != null;
       // Fairness: Iteration 1 grants at most one probe per hypothesis; if
       // this hypothesis somehow already probed (contract guard), skip to the
@@ -5251,7 +5339,9 @@ function tryAdaptiveCheckpointRepair(
       let memorySegmentIndex = expandedAnchor.memoryLimited ? anchorHistoryIndex : null;
 
       // PR-5.24c – probe expiry right after the anchor expand: if the local
-      // budget is already gone, yield the hypothesis before any replay leg.
+      // budget is already gone, yield the hypothesis BEFORE any replay leg
+      // (Repair 1 P1-2: never spawn a replay that would only immediately
+      // return probe-limited just to move a cursor).
       if (schedulingWave && waveProbeBudget) {
         const consumedByProbe =
           (config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) -
@@ -5261,17 +5351,33 @@ function tryAdaptiveCheckpointRepair(
           probeExpired = true;
         }
       }
-
+      // PR-5.24c Repair 1 (P1-2) – continuation cursor semantics:
+      // nextReplaySegmentIndex = the FIRST STILL-UNFINISHED downstream
+      // replay segment. Anchor expiry with no started replay → the first
+      // replay index; a probe-expired replay K → K (K unfinished); a
+      // genuinely completed replay K → K+1.
+      let completedReplayCount = 0;
+      if (ticket) {
+        ticket.nextReplaySegmentIndex = anchorHistoryIndex + 1;
+      }
 
       const replaySegments = [];
       for (
         let replayIndex = anchorHistoryIndex + 1;
-        repairFrontier && repairFrontier.length > 0 && replayIndex <= segmentIndex;
+        !probeExpired && repairFrontier && repairFrontier.length > 0 && replayIndex <= segmentIndex;
         replayIndex += 1
       ) {
         const replaySegment = segments[replayIndex];
         replaySegments.push(replaySegment);
         depthDownstreamReplayCount += 1;
+        const replayProbeExpiredBefore = (() => {
+          if (!schedulingWave || !waveProbeBudget) return false;
+          const consumedByProbe =
+            (config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) -
+            probeStartExpansions;
+          return Date.now() >= waveProbeBudget.deadlineMs ||
+            consumedByProbe >= waveProbeBudget.expansions;
+        })();
         const replayIntentLimit = backtrackCandidateLimit(replaySegment, config || {});
         const replayIntentRanking = rankCandidatesByFailureIntent(
           simulator,
@@ -5356,7 +5462,23 @@ function tryAdaptiveCheckpointRepair(
         replayed.executionPhase = "adaptive-replay";
         waveExecutions.push(replayed);
         repairFrontier = replayed.merged;
-        if (ticket) ticket.nextReplaySegmentIndex = replayIndex + 1;
+        // PR-5.24c Repair 1 (P1-2) – cursor advances past replay K only when
+        // the PROBE did not expire inside K; a probe-expired replay leaves
+        // the cursor AT K (K is the first still-unfinished segment). Other
+        // stop reasons (global limits, memory) are handled by their own
+        // authorities and do not rewind the cursor.
+        const replayProbeExpiredAfter = schedulingWave && waveProbeBudget
+          ? (Date.now() >= waveProbeBudget.deadlineMs ||
+             ((config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) -
+              probeStartExpansions) >= waveProbeBudget.expansions)
+          : false;
+        const replayProbeCompleted = !replayProbeExpiredAfter && !replayProbeExpiredBefore;
+        if (replayProbeCompleted) {
+          completedReplayCount += 1;
+          if (ticket) ticket.nextReplaySegmentIndex = replayIndex + 1;
+        } else {
+          if (ticket) ticket.nextReplaySegmentIndex = replayIndex;
+        }
         if (replayed.memoryLimited) {
           memoryExecution = replayed;
           memorySegmentIndex = replayIndex;
@@ -5379,6 +5501,7 @@ function tryAdaptiveCheckpointRepair(
           }
         }
       }
+
 
       const waveConsumedExpansions = (config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) - waveStartExpansions;
       const waveConsumedWallMs = Date.now() - waveStartedAt;
@@ -5485,13 +5608,16 @@ function tryAdaptiveCheckpointRepair(
           // (or had) work; it stays PROBE_PENDING for a future iteration.
           ticket.status = "PROBE_PENDING";
         } else {
-          // Unscheduled legacy wave (wave 0): executed under the global
-          // contract; its outcome is the legacy wave outcome.
-          ticket.status = "PROBE_COMPLETE_OR_GOAL";
+          // Cloud-revised contract (Repair 1): when the scheduler is enabled
+          // every attempted wave is a probed hypothesis; an unscheduled wave
+          // under an enabled scheduler can only mean the global budget was
+          // exhausted mid-wave — never a completion claim.
+          ticket.status = "PROBE_PENDING";
         }
         ticket.lastProgress = {
           waveOutcome,
-          replaySegmentsReached: replaySegments.length,
+          replaySegmentsEntered: replaySegments.length,
+          replaySegmentsCompleted: completedReplayCount,
           failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,
           goalReached,
         };
@@ -5501,7 +5627,11 @@ function tryAdaptiveCheckpointRepair(
           depth,
           anchorCandidateIds: ticket.anchorInputCandidateIds,
           startReplayIndex: anchorHistoryIndex + 1,
+          // P1-2: endReplayIndex reflects the last ENTERED replay segment —
+          // an immediately probe-limited replay is still "entered"; use
+          // progressAfter.replaySegmentsCompleted for completed count.
           endReplayIndex: anchorHistoryIndex + replaySegments.length,
+          nextReplaySegmentIndex: ticket.nextReplaySegmentIndex,
           allocatedWallMs: schedulingWave ? waveProbeBudget.wallMs : null,
           allocatedExpansions: schedulingWave ? waveProbeBudget.expansions : null,
           consumedWallMs: ticket.consumedWallMs,
@@ -5951,6 +6081,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     processTreeMemory: processTreeMemoryForResult(),
     isolatedProcessTreeTelemetry: { ...isolatedProcessTreeTelemetry },
     executionCompletionLedger: [...executionCompletionLedger],
+    // PR-5.24c – top-level repair-scheduling telemetry so FOUND runs (which
+    // have no failedSegment) still expose the hypothesis/probe history.
+    repairScheduling: lastRepairScheduling,
     objectiveStopPolicy,
   });
   const rangeError = milestoneRangeError(
@@ -6137,6 +6270,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       evaluationAttemptLedger,
     });
   };
+  // PR-5.24c – the most recent adaptive repair's scheduling telemetry, also
+  // exposed on successful (FOUND) runs.
+  let lastRepairScheduling = null;
   const history = [];
   const shouldStop = typeof config.shouldStop === "function"
     ? config.shouldStop
@@ -6239,6 +6375,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         graphConfig,
       );
       if (adaptiveRepair) {
+        if (adaptiveRepair.repairScheduling) {
+          lastRepairScheduling = adaptiveRepair.repairScheduling;
+        }
         (adaptiveRepair.ledgerExecutions || adaptiveRepair.executions).forEach((entry, index) => {
           // Iteration 5 Repair (P2, phase fidelity) – the phase comes from the
           // execution source itself (stamped at push time), so multi-wave
