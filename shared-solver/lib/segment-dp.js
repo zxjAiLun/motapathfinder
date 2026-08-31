@@ -4303,18 +4303,60 @@ function failureIntentComplete(triggerFailure) {
 //   intent candidate outside legacy top-N    → replaces only the LOWEST
 //   priority legacy slot, at most one such replacement;
 //   deterministic; no new planner; no OnlyUp hints; scanner budget unchanged.
-function breadthPreservingIntentOrder(legacy, evidenceIds, limit) {
-  if (evidenceIds.length === 0) return legacy.slice();
-  // Highest-evidence candidate not already inside the legacy top-N.
+// Iteration 6 Repair 2 — breadth-preserving injection.
+//
+// Site attribution (2x2 Linux authority) proved ANCHOR_HARD_PROMOTION_COST:
+// evidence-first hard promotion collapsed wave breadth (4→2) and raised
+// pending (18→32). The repair keeps the legacy ordering as the main line and
+// reserves at most ONE slot for the top failure-intent candidate.
+//
+// Iteration 6 Repair 2a — the two ranking sites have DIFFERENT consumption
+// semantics and must not share one insertion rule:
+//
+//   ANCHOR = "wave-ordered": the anchor frontier is consumed wave by wave
+//     (adaptiveWaveBatchSize per wave). Injection must be SCHEDULER-AWARE:
+//     the first full legacy wave is protected, the highest-evidence
+//     alternative (if not already in that first wave) is moved to the head
+//     of the SECOND wave (insertion index = waveBatchSize), and everything
+//     else keeps its legacy order. No candidate is ever removed. With the
+//     frozen batchSize=1: legacy A B C D ... + intent C → A C B D ...
+//
+//   REPLAY = "top-n-truncate": the replay frontier is genuinely truncated to
+//     the top-N (`.slice(0, replayIntentLimit)`), so the legacy top-(N-1)
+//     plus at most one intent alternative is the correct capacity semantics.
+//
+// Determinism: the evidence candidate selection comparator is
+// intentScore desc → legacyRank asc → candidateId lexical, so equal scores
+// never depend on input array order.
+function breadthPreservingIntentOrder(
+  legacy,
+  evidenceOrder,
+  mode,
+  limit,
+  waveBatchSize,
+) {
+  if (evidenceOrder.length === 0) return legacy.slice();
+  if (mode === "wave-ordered") {
+    const batchSize = Math.max(1, waveBatchSize || 1);
+    const firstWave = new Set(legacy.slice(0, batchSize).map((c) => c.id));
+    const alternative = evidenceOrder.find((id) => !firstWave.has(id));
+    if (alternative == null) return legacy.slice();
+    const ranked = legacy.slice();
+    const alternativeIndex = ranked.findIndex((c) => c.id === alternative);
+    if (alternativeIndex < 0) return legacy.slice();
+    const [alternativeCandidate] = ranked.splice(alternativeIndex, 1);
+    const insertAt = Math.min(batchSize, ranked.length);
+    ranked.splice(insertAt, 0, alternativeCandidate);
+    return ranked;
+  }
+  // top-n-truncate
   const topN = new Set(legacy.slice(0, limit).map((candidate) => candidate.id));
-  const alternative = evidenceIds.find((id) => !topN.has(id));
+  const alternative = evidenceOrder.find((id) => !topN.has(id));
   if (alternative == null) return legacy.slice();
   const ranked = legacy.slice();
   const alternativeIndex = ranked.findIndex((candidate) => candidate.id === alternative);
   if (alternativeIndex < 0) return legacy.slice();
   const [alternativeCandidate] = ranked.splice(alternativeIndex, 1);
-  // Insert directly above the lowest-priority legacy slot (position limit-1),
-  // replacing it in the top-N while preserving legacy relative order.
   const insertAt = Math.min(limit - 1, ranked.length);
   ranked.splice(insertAt, 0, alternativeCandidate);
   return ranked;
@@ -4411,21 +4453,34 @@ function rankCandidatesByFailureIntent(
     bestEvidence.has(candidate && candidate.id)
       ? Number(bestEvidence.get(candidate.id).score)
       : null;
-  // Iteration 6 Repair 2 – breadth-preserving mode (default after site
-  // attribution proved ANCHOR_HARD_PROMOTION_COST). The legacy order stays
-  // the main line; at most ONE highest-evidence candidate outside the legacy
-  // top-N is injected into the last reserved slot. The old hard evidence-
-  // first ordering remains available via config.mode === "hard" for
-  // attribution purposes only.
+  // Iteration 6 Repair 2a – breadth-preserving with site-aware consumption
+  // semantics. ANCHOR fronts are consumed wave-by-wave (wave-ordered
+  // injection at index=waveBatchSize, first legacy wave protected); REPLAY
+  // fronts are genuinely truncated to top-N (top-n-truncate injection at
+  // index=N-1). The hard evidence-first ordering remains available via
+  // config.mode === "hard" for attribution purposes only.
   const hardMode = config.mode === "hard";
+  const consumptionMode = config.consumptionMode === "wave-ordered"
+    ? "wave-ordered"
+    : "top-n-truncate";
   const breadthLimit = Math.max(1, number(config.candidateLimit, 8));
-  const evidenceIdsDescending = list
+  const waveBatchSize = Math.max(1, number(config.waveBatchSize, 1));
+  // Deterministic evidence ordering (Repair 2a P1-B): intentScore desc →
+  // legacyRank asc → candidateId lexical. Equal scores never depend on the
+  // input array order.
+  const evidenceOrder = list
     .filter((candidate) => bestEvidence.has(candidate.id))
     .map((candidate) => ({
       id: candidate.id,
       score: Number(bestEvidence.get(candidate.id).score),
+      legacyRank: legacyIndexById.has(candidate.id)
+        ? legacyIndexById.get(candidate.id) : Number.MAX_SAFE_INTEGER,
     }))
-    .sort((left, right) => right.score - left.score)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      if (left.legacyRank !== right.legacyRank) return left.legacyRank - right.legacyRank;
+      return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+    })
     .map((entry) => entry.id);
   let ranked;
   let injection = null;
@@ -4452,13 +4507,33 @@ function rankCandidatesByFailureIntent(
       return candidateOutcomeScore(right) - candidateOutcomeScore(left);
     });
   } else {
-    ranked = breadthPreservingIntentOrder(legacy, evidenceIdsDescending, breadthLimit);
-    const legacyTopN = new Set(legacy.slice(0, breadthLimit).map((c) => c.id));
-    const injectedId = evidenceIdsDescending.find((id) => !legacyTopN.has(id)) || null;
+    ranked = breadthPreservingIntentOrder(
+      legacy,
+      evidenceOrder,
+      consumptionMode,
+      breadthLimit,
+      waveBatchSize,
+    );
+    const protectedPrefixSize = consumptionMode === "wave-ordered"
+      ? waveBatchSize
+      : breadthLimit;
+    const protectedPrefix = new Set(
+      legacy.slice(0, protectedPrefixSize).map((c) => c.id),
+    );
+    const injectedId = evidenceOrder.find((id) => !protectedPrefix.has(id)) || null;
+    const injectedIndex = injectedId != null
+      ? ranked.findIndex((c) => c.id === injectedId)
+      : null;
     injection = {
       mode: "breadth-preserving",
+      consumptionMode,
       injectedCandidateId: injectedId,
-      replacedSlot: injectedId != null ? breadthLimit - 1 : null,
+      injectedIndex: injectedIndex != null && injectedIndex >= 0 ? injectedIndex : null,
+      protectedLegacyPrefixSize: protectedPrefixSize,
+      firstEligibleWaveIndex: consumptionMode === "wave-ordered" ? 1 : null,
+      waveBatchSize: consumptionMode === "wave-ordered" ? waveBatchSize : null,
+      replacedSlot: injectedId != null && consumptionMode === "top-n-truncate"
+        ? breadthLimit - 1 : null,
     };
   }
   const rankedIndexById = new Map(ranked.map((c, index) => [c.id, index]));
@@ -4882,6 +4957,8 @@ function tryAdaptiveCheckpointRepair(
       {
         phase: "adaptive-expand",
         enabled: anchorIntentEnabled,
+        consumptionMode: "wave-ordered",
+        waveBatchSize,
         candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
         evidenceDetailLimit: backtrackCandidateLimit(anchor.segment, config || {}),
       },
@@ -4907,6 +4984,20 @@ function tryAdaptiveCheckpointRepair(
       promotedCandidateIds: anchorIntentRanking.telemetry.promotedCandidateIds || [],
       selectedCandidateIds: anchorIntentRanking.ranked
         .slice(0, waveBatchSize)
+        .map((candidate) => candidate.id),
+      consumptionMode: anchorIntentRanking.telemetry.injection
+        ? anchorIntentRanking.telemetry.injection.consumptionMode : null,
+      injectedCandidateId: anchorIntentRanking.telemetry.injection
+        ? anchorIntentRanking.telemetry.injection.injectedCandidateId : null,
+      injectedIndex: anchorIntentRanking.telemetry.injection
+        ? anchorIntentRanking.telemetry.injection.injectedIndex : null,
+      protectedLegacyPrefixSize: anchorIntentRanking.telemetry.injection
+        ? anchorIntentRanking.telemetry.injection.protectedLegacyPrefixSize : null,
+      firstEligibleWaveIndex: anchorIntentRanking.telemetry.injection
+        ? anchorIntentRanking.telemetry.injection.firstEligibleWaveIndex : null,
+      waveBatchSize,
+      rankedCandidateIds: anchorIntentRanking.ranked
+        .slice(0, Math.min(anchorIntentRanking.ranked.length, 2 * waveBatchSize + 4))
         .map((candidate) => candidate.id),
       evidenceCandidates: anchorIntentRanking.evidenceCandidates || [],
     });
@@ -4988,6 +5079,7 @@ function tryAdaptiveCheckpointRepair(
           {
             phase: "adaptive-replay",
             enabled: replayIntentEnabled,
+            consumptionMode: "top-n-truncate",
             candidateLimit: replayIntentLimit,
             evidenceDetailLimit: replayIntentLimit,
           },
@@ -5152,6 +5244,12 @@ function tryAdaptiveCheckpointRepair(
         anchorSegmentId: anchor.segment.id,
         waveIndex,
         anchorInputCandidates: waveInputCandidates.length,
+        // Iteration 6 Repair 2a – proof that the injected intent alternative
+        // was actually scheduled into an attempted wave (bounded: one wave's
+        // worth of candidate ids).
+        anchorInputCandidateIds: waveInputCandidates
+          .slice(0, waveBatchSize)
+          .map((candidate) => candidate.id),
         anchorExpandedCandidates: expandedAnchorCandidatesCount,
         replaySegmentIds: replaySegments.map((s) => s.id),
         failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,

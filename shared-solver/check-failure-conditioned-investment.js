@@ -223,12 +223,100 @@ function main() {
       route: [],
     },
   ]);
+
+  // ===== Iteration 6 Repair 2a — wave-ordered ANCHOR semantics =====
+  // Legacy order A F G B (hp/score descending). B is the only evidence
+  // holder and sits outside the first legacy wave.
+  const anchorCandidates = threeCandidates.concat([
+    {
+      id: "G",
+      state: makeState({
+        hp: 10000, atk: 105, def: 85,
+        floorStates: { S1: { removed: { "1,0": true, "2,0": true }, replaced: {} } },
+      }),
+      hero: { hp: 10000, atk: 105, def: 85, mdef: 10, lv: 1, exp: 0, money: 0, equipment: [] },
+      tags: [],
+      score: 85,
+      route: [],
+    },
+  ]);
+  const legacyAnchorOrder = rankCandidatesByPreferredTags(
+    anchorCandidates,
+    COMPLETE_FAILURE.preferredCandidateTags,
+  ).map((c) => c.id);
+  assert.strictEqual(
+    legacyAnchorOrder.join(","),
+    "A,F,G,B",
+    `anchor gate setup: legacy order must be A,F,G,B (got [${legacyAnchorOrder.join(",")}])`,
+  );
+
+  // Gate 1 — wave-ordered batchSize=1: A B F G
+  const waveOne = rankCandidatesByFailureIntent(
+    opportunitySim,
+    anchorCandidates,
+    COMPLETE_FAILURE,
+    COMPLETE_FAILURE.preferredCandidateTags,
+    { consumptionMode: "wave-ordered", waveBatchSize: 1, candidateLimit: 8 },
+  );
+  assert.deepStrictEqual(
+    waveOne.ranked.map((c) => c.id),
+    ["A", "B", "F", "G"],
+    "wave gate (b=1): legacy A first, intent B injected at index 1, remaining legacy order preserved, no candidate removed",
+  );
+  assert.strictEqual(waveOne.telemetry.injection.injectedIndex, 1, "wave gate (b=1): injectedIndex must be 1");
+  assert.strictEqual(waveOne.telemetry.injection.protectedLegacyPrefixSize, 1, "wave gate (b=1): protected prefix = 1");
+  assert.strictEqual(waveOne.telemetry.injection.firstEligibleWaveIndex, 1, "wave gate (b=1): intent wave index = 1");
+
+  // Gate 2 — wave-ordered batchSize=2: A F B G (first wave A/F protected)
+  const waveTwo = rankCandidatesByFailureIntent(
+    opportunitySim,
+    anchorCandidates,
+    COMPLETE_FAILURE,
+    COMPLETE_FAILURE.preferredCandidateTags,
+    { consumptionMode: "wave-ordered", waveBatchSize: 2, candidateLimit: 8 },
+  );
+  assert.deepStrictEqual(
+    waveTwo.ranked.map((c) => c.id),
+    ["A", "F", "B", "G"],
+    "wave gate (b=2): first legacy wave A/F fully protected, intent B injected at index 2",
+  );
+  assert.strictEqual(waveTwo.telemetry.injection.injectedIndex, 2, "wave gate (b=2): injectedIndex must be 2");
+  assert.strictEqual(waveTwo.telemetry.injection.protectedLegacyPrefixSize, 2, "wave gate (b=2): protected prefix = 2");
+
+  // Gate 3 — evidence candidate already inside the first legacy wave:
+  // order identical to legacy (no reorder).
+  const inWaveCandidates = anchorCandidates.map((candidate) => (
+    candidate.id === "F"
+      ? {
+          ...candidate,
+          state: makeState({
+            hp: 11000, atk: 110, def: 90,
+            floorStates: { S1: { removed: {}, replaced: {} } },
+          }),
+        }
+      : candidate
+  ));
+  const inWave = rankCandidatesByFailureIntent(
+    opportunitySim,
+    inWaveCandidates,
+    COMPLETE_FAILURE,
+    COMPLETE_FAILURE.preferredCandidateTags,
+    { consumptionMode: "wave-ordered", waveBatchSize: 1, candidateLimit: 8 },
+  );
+  assert.deepStrictEqual(
+    inWave.ranked.map((c) => c.id),
+    rankCandidatesByPreferredTags(inWaveCandidates, COMPLETE_FAILURE.preferredCandidateTags).map((c) => c.id),
+    "in-first-wave gate: when the evidence candidate is already in the first legacy wave, the order must be identical to legacy",
+  );
+
+  // ===== Replay top-N semantics (unchanged by Repair 2a) =====
+  // Gate 4 — candidateLimit=2, legacy A/F/B: selected top-2 = A/B.
   const result = rankCandidatesByFailureIntent(
     opportunitySim,
     threeCandidates,
     COMPLETE_FAILURE,
     COMPLETE_FAILURE.preferredCandidateTags,
-    { candidateLimit: 2 },
+    { consumptionMode: "top-n-truncate", candidateLimit: 2 },
   );
   assert.strictEqual(
     result.activated,
@@ -239,30 +327,113 @@ function main() {
     result.telemetry.candidatesWithEvidence >= 1,
     "positive gate: at least one candidate must carry failure-relevant evidence",
   );
-  // Iteration 6 Repair 2 — breadth-preserving default: the legacy order is
-  // the main line; B (the only evidence holder, outside legacy top-N) is
-  // injected into the LAST reserved slot, not hard-promoted to the front.
   const rankedIds = result.ranked.map((candidate) => candidate.id);
   assert.strictEqual(
     rankedIds[1],
     "B",
-    `breadth gate: with candidateLimit=2 and legacy top-2 = {A, F}, B must be injected into the reserved slot at index 1 (got [${rankedIds.join(",")}])`,
+    `replay gate: with candidateLimit=2 and legacy top-2 = {A, F}, B must be injected into the reserved slot at index 1 (got [${rankedIds.join(",")}])`,
   );
   assert.strictEqual(
     rankedIds[0],
     "A",
-    "breadth gate: legacy main line must keep A first (legacy order preserved)",
+    "replay gate: legacy main line must keep A first (legacy order preserved)",
   );
   assert.strictEqual(
     result.telemetry.injection && result.telemetry.injection.mode,
     "breadth-preserving",
-    "breadth gate: injection telemetry must report breadth-preserving mode",
+    "replay gate: injection telemetry must report breadth-preserving mode",
+  );
+  assert.strictEqual(
+    result.telemetry.injection && result.telemetry.injection.consumptionMode,
+    "top-n-truncate",
+    "replay gate: consumptionMode must be top-n-truncate",
   );
   assert.strictEqual(
     result.telemetry.injection && result.telemetry.injection.injectedCandidateId,
     "B",
-    "breadth gate: the injected alternative must be B",
+    "replay gate: the injected alternative must be B",
   );
+
+  // ===== Equal-score determinism (Repair 2a P1-B) =====
+  // Two evidence holders outside the protected prefix with IDENTICAL scores:
+  // the deterministic comparator (score desc → legacyRank asc → id lexical)
+  // must pick the same injected candidate regardless of input order.
+  const equalScoreCandidates = [
+    {
+      id: "A",
+      state: makeState({
+        hp: 12000, atk: 120, def: 100,
+        floorStates: { S1: { removed: { "1,0": true, "2,0": true }, replaced: {} } },
+      }),
+      hero: { hp: 12000, atk: 120, def: 100, mdef: 10, lv: 1, exp: 0, money: 0, equipment: [] },
+      tags: ["highest-hp"],
+      score: 100,
+      route: [],
+    },
+    {
+      id: "X",
+      state: makeState({
+        hp: 8000, atk: 90, def: 70,
+        floorStates: { S1: { removed: {}, replaced: {} } },
+      }),
+      hero: { hp: 8000, atk: 90, def: 70, mdef: 10, lv: 1, exp: 0, money: 0, equipment: [] },
+      tags: [],
+      score: 70,
+      route: [],
+    },
+    {
+      id: "Y",
+      state: makeState({
+        hp: 7900, atk: 89, def: 69,
+        floorStates: { S1: { removed: {}, replaced: {} } },
+      }),
+      hero: { hp: 7900, atk: 89, def: 69, mdef: 10, lv: 1, exp: 0, money: 0, equipment: [] },
+      tags: [],
+      score: 69,
+      route: [],
+    },
+  ];
+  // Both X and Y sit next to the same generic opportunities and therefore
+  // receive identical scanner evidence scores (both pickup+battle chains).
+  const equalBaseline = rankCandidatesByFailureIntent(
+    opportunitySim,
+    equalScoreCandidates,
+    COMPLETE_FAILURE,
+    COMPLETE_FAILURE.preferredCandidateTags,
+    { consumptionMode: "wave-ordered", waveBatchSize: 1, candidateLimit: 8 },
+  );
+  const equalInjected = equalBaseline.telemetry.injection.injectedCandidateId;
+  assert.ok(
+    equalInjected === "X" || equalInjected === "Y",
+    `equal-score gate setup: one of X/Y must be injected (got ${equalInjected})`,
+  );
+  // legacyRank ascending among equal scores: X (rank 1) before Y (rank 2).
+  assert.strictEqual(
+    equalInjected,
+    "X",
+    "equal-score gate: with identical intentScore the candidate closer to legacy (X, legacyRank 1) must be injected",
+  );
+  const equalOrder = equalBaseline.ranked.map((c) => c.id).join(",");
+  for (const seed of [1, 7, 42, 20260831]) {
+    const shuffledEqual = rankCandidatesByFailureIntent(
+      opportunitySim,
+      shuffled(equalScoreCandidates, seed),
+      COMPLETE_FAILURE,
+      COMPLETE_FAILURE.preferredCandidateTags,
+      { consumptionMode: "wave-ordered", waveBatchSize: 1, candidateLimit: 8 },
+    );
+    assert.strictEqual(
+      shuffledEqual.ranked.map((c) => c.id).join(","),
+      equalOrder,
+      `equal-score determinism gate: shuffled input (seed=${seed}) must inject the same candidate and produce the identical sequence`,
+    );
+    assert.strictEqual(
+      shuffledEqual.telemetry.injection.injectedCandidateId,
+      "X",
+      `equal-score determinism gate: shuffled input (seed=${seed}) must still inject X`,
+    );
+  }
+
   // Hard mode remains available for attribution runs only.
   const hardResult = rankCandidatesByFailureIntent(
     opportunitySim,
@@ -291,7 +462,7 @@ function main() {
       shuffled(threeCandidates, seed),
       COMPLETE_FAILURE,
       COMPLETE_FAILURE.preferredCandidateTags,
-      { candidateLimit: 2 },
+      { consumptionMode: "top-n-truncate", candidateLimit: 2 },
     );
     assert.strictEqual(
       shuffledResult.ranked.map((c) => c.id).join(","),
