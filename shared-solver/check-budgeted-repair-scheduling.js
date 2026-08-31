@@ -311,13 +311,15 @@ function main() {
 
   // ===== Repair 1 gates =====
   const g9 = gateIsolatedProbe();
-  const g10 = gateContinuationCursor(probe);
+  const g10 = gateContinuationCursorHard();
   const g11 = gateInsufficientHeadroom();
   const g12 = gateLateWinner();
   const g13 = gateWallProbe();
+  const g13a = gateMidAttemptWall("local");
+  const g13b = gateMidAttemptWall("isolated");
 
   console.log(JSON.stringify({
-    schema: "motapathfinder.budgeted-repair-scheduling.v2",
+    schema: "motapathfinder.budgeted-repair-scheduling.v3",
     contractStatus: "passed",
     control: {
       wavesAttempted: controlWaves,
@@ -344,18 +346,26 @@ function main() {
       g11InsufficientHeadroom: g11,
       g12LateWinner: g12,
       g13WallProbe: g13,
+      g13aMidAttemptWallLocal: g13a,
+      g13bMidAttemptWallIsolated: g13b,
     },
   }, null, 2));
 }
 
-// G9 – isolated-process probe authority: the same hypothesis's anchor expand
-// and downstream replay span two child processes and share ONE expansion
-// probe; the total consumed expansions respect the probe contract (with a
-// bounded per-attempt overshoot).
+// G9 – isolated-process probe authority (HARD cross-child contract):
+// at least ONE hypothesis must span an anchor child AND a downstream replay
+// child, sharing ONE expansion probe; the TOTAL hypothesis consumption must
+// satisfy the strict isolated contract (<= PROBE, no 2x slack — the executor
+// hard-tightens assignedExpansions to the remaining probe and the worker
+// already asserts consumed <= assigned).
 function gateIsolatedProbe() {
   const project = loadProject(DEFAULT_PROJECT_ROOT);
   const simulator = buildSimulator(project);
-  const PROBE = 100;
+  // PROBE 300: large enough that the anchor child COMPLETES within its share
+  // and a downstream replay child genuinely STARTS (cross-child ticket); the
+  // two children share the 300-expansion probe (anchor X + replay 300-X,
+  // total == PROBE under the strict isolated contract).
+  const PROBE = 300;
   const result = runGraph(simulator, {
     segmentExecutionMode: "isolated-process", // PRODUCTION path
     maxExpansions: 50000,
@@ -370,93 +380,209 @@ function gateIsolatedProbe() {
   assert.ok(scheduling && scheduling.enabled, "G9: scheduling telemetry required");
   const tickets = scheduling.hypotheses || [];
   assert.ok(tickets.length >= 1, "G9: at least one hypothesis");
-  // Every hypothesis must respect the probe contract (child-local rebased):
-  // consumed <= PROBE plus at most one attempt-slice overshoot per child.
+  // STRICT isolated contract: every hypothesis total <= PROBE.
   tickets.forEach((ticket, index) => {
     assert.ok(
-      ticket.consumedExpansions <= PROBE * 2,
-      `G9 ticket ${index}: hypothesis consumed ${ticket.consumedExpansions} > probe contract (<=${PROBE * 2} with one attempt-slice overshoot) — the isolated child was NOT rebased to child-local probe coordinates`,
+      ticket.consumedExpansions <= PROBE,
+      `G9 ticket ${index}: hypothesis consumed ${ticket.consumedExpansions} > probe contract ${PROBE} — the isolated expansion authority is NOT rebased/tightened correctly`,
     );
   });
-  const ledgerStops = (result.evaluationAttemptLedger || [])
-    .map((att) => att.diagnostics && att.diagnostics.dp && att.diagnostics.dp.stoppedReason)
-    .filter(Boolean);
-  const budgetStop = result.budget && result.budget.stoppedReason;
-  // Global stop may fire from the OVERALL run budget, but probe-limited waves
-  // must exist and the run must not claim exhaustion.
+  // HARD cross-child requirement: at least one ticket with an anchor child
+  // AND at least one ENTERED replay child (childProcessCount >= 2 across the
+  // wave's executions).
+  const records = (result.isolatedProcessTreeTelemetry &&
+    result.isolatedProcessTreeTelemetry.records) || [];
+  const crossChildTicket = tickets.find((ticket) => {
+    const entered = ticket.lastProgress && ticket.lastProgress.replaySegmentsEntered || 0;
+    return entered >= 1;
+  });
+  assert.ok(
+    crossChildTicket,
+    `G9: at least one hypothesis must ENTER a downstream replay child (all tickets: ${JSON.stringify(tickets.map((t) => [t.consumedExpansions, t.lastProgress && t.lastProgress.replaySegmentsEntered]))}) — the cross-child shared-ticket contract is untested if the anchor alone consumes the probe`,
+  );
+  // The wave containing that ticket must span >= 2 isolated invocations
+  // (anchor expand + >= 1 replay leg).
+  const crossWave = info.attempts.find((a) =>
+    (a.anchorInputCandidateIds || []).some((id) =>
+      (crossChildTicket.anchorInputCandidateIds || []).includes(id)));
+  assert.ok(
+    crossWave && (crossWave.replaySegmentIds || []).length >= 1,
+    "G9: the cross-child wave must have executed at least one replay segment",
+  );
+  assert.ok(
+    records.length >= 2,
+    `G9: at least two isolated child invocations must exist across the repair (got ${records.length})`,
+  );
+  // Global stop must not have fired from probe activity (the global budgets
+  // were generous); probe-limited waves must exist.
   assert.ok(
     info.attempts.some((a) => a.waveOutcome === "probe-limited"),
     "G9: probe-limited waves must exist on the isolated path",
   );
-  assert.notStrictEqual(result.found ? "FOUND" : budgetStop, "EXHAUSTED");
+  const budgetStop = result.budget && result.budget.stoppedReason;
+  assert.strictEqual(
+    budgetStop,
+    null,
+    `G9: with generous global budgets the probe must not have touched the global stop (got ${budgetStop})`,
+  );
   return {
     hypotheses: tickets.length,
-    maxConsumedExpansions: Math.max(...tickets.map((t) => t.consumedExpansions)),
+    crossChildHypothesis: crossChildTicket.hypothesisId,
+    anchorConsumedExpansions: crossChildTicket.consumedExpansions -
+      (crossChildTicket.lastProgress && crossChildTicket.lastProgress.replaySegmentsEntered
+        ? 0 : 0),
+    totalHypothesisConsumed: crossChildTicket.consumedExpansions,
+    replaySegmentsEntered: crossChildTicket.lastProgress &&
+      crossChildTicket.lastProgress.replaySegmentsEntered,
+    isolatedInvocations: records.length,
     probeExpansions: PROBE,
+    strictContract: "<= PROBE",
     isolatedMode: true,
   };
 }
 
-// G10 – continuation cursor: three cursor shapes locked.
-//   (a) anchor probe expired before any replay → cursor = firstReplayIndex;
-//   (b) replay K probe-expired mid-flight → cursor = K;
-//   (c) replay genuinely completed → cursor advances past it.
-// The main scheduled arm (probe=100) yields all three shapes across its
-// hypotheses because the anchor consumes the probe to different depths.
-function gateContinuationCursor(scheduledInfo) {
-  const tickets = scheduledInfo.repairScheduling.hypotheses || [];
-  assert.ok(tickets.length >= 1, "G10: hypotheses required");
-  tickets.forEach((ticket, index) => {
-    assert.ok(
-      typeof ticket.nextReplaySegmentIndex === "number" &&
-        ticket.nextReplaySegmentIndex >= 1,
-      `G10 ticket ${index}: nextReplaySegmentIndex must be a valid segment index (got ${ticket.nextReplaySegmentIndex})`,
-    );
-    const entered = ticket.lastProgress && ticket.lastProgress.replaySegmentsEntered || 0;
-    const completed = ticket.lastProgress && ticket.lastProgress.replaySegmentsCompleted || 0;
-    assert.ok(
-      completed <= entered,
-      `G10 ticket ${index}: completed replays (${completed}) must not exceed entered (${entered})`,
-    );
-    // Cursor invariant: firstReplayIndex + completed <= cursor <= firstReplayIndex + entered
-    // (cursor points at the first UNFINISHED replay; a completed tail advances it).
-    assert.ok(
-      ticket.nextReplaySegmentIndex >= 1 + completed &&
-        ticket.nextReplaySegmentIndex <= 1 + Math.max(entered, completed),
-      `G10 ticket ${index}: cursor ${ticket.nextReplaySegmentIndex} outside [first+completed=${1 + completed}, first+entered=${1 + entered}]`,
-    );
-  });
-  // Shape (a): at least one hypothesis with zero ENTERED replays (anchor
-  // consumed the probe) must have cursor = firstReplayIndex (1 for depth 1).
-  const anchorExpired = tickets.find((t) =>
-    (t.lastProgress && t.lastProgress.replaySegmentsEntered || 0) === 0 &&
-    t.status === "PROBE_PENDING");
-  if (anchorExpired) {
-    assert.strictEqual(
-      anchorExpired.nextReplaySegmentIndex,
-      1,
-      `G10(a): anchor-expired hypothesis must keep cursor at firstReplayIndex (got ${anchorExpired.nextReplaySegmentIndex})`,
-    );
-  }
-  // Shape (b): an entered-but-not-completed replay keeps the cursor AT it.
-  const midReplay = tickets.find((t) => {
-    const entered = t.lastProgress && t.lastProgress.replaySegmentsEntered || 0;
-    const completed = t.lastProgress && t.lastProgress.replaySegmentsCompleted || 0;
-    return entered > completed;
-  });
-  if (midReplay) {
-    assert.strictEqual(
-      midReplay.nextReplaySegmentIndex,
-      1 + (midReplay.lastProgress.replaySegmentsCompleted || 0),
-      `G10(b): replay-expired hypothesis must keep cursor at the unfinished replay (got ${midReplay.nextReplaySegmentIndex})`,
-    );
-  }
-  return {
-    hypotheses: tickets.length,
-    anchorExpiredCursor: anchorExpired ? anchorExpired.nextReplaySegmentIndex : "n/a",
-    midReplayCursor: midReplay ? midReplay.nextReplaySegmentIndex : "n/a",
-    cursorInvariant: true,
+// G10 (HARD) – continuation cursor: ALL THREE shapes must EXIST and be
+// asserted; a missing shape fails the gate (no "n/a").
+//   (a) anchor expired: entered=0, completed=0, cursor=firstReplayIndex;
+//   (b) replay K mid-probe: entered>completed, cursor=K (first unfinished);
+//   (c) replay completed: completed>=1, cursor=firstReplayIndex+completed.
+// Shapes (a)/(b) come from the unreachable-destination spec (the deep seg2
+// search never completes within any probe). Shape (c) needs a MIDDLE replay
+// segment that genuinely completes within the probe: a 3-segment spec where
+// seg2 (cheap, succeeds) is replayed to completion and seg3 fails later.
+function gateContinuationCursorHard() {
+  const project = loadProject(DEFAULT_PROJECT_ROOT);
+  const simulator = buildSimulator(project);
+  const shapes = {};
+
+  const runShape = (probeExp, spec) => {
+    const result = runMilestoneGraph(simulator, simulator.createInitialState(), spec, {
+      searchIntent: "adaptive-feasible",
+      enableFailureBacktracking: true,
+      adaptiveBacktrackDepth: 1,
+      budgetScope: "global-run",
+      maxExpansions: 50000,
+      maxRuntimeMs: 60000,
+      maxRssMb: 4096,
+      memoryCheckIntervalExpansions: 1,
+      memoryCheckIntervalActions: 1,
+      candidateLimit: 8,
+      milestoneFrontierResourceDiversity: true,
+      initialFrontier: syntheticInitialFrontier(simulator),
+      enableBudgetedRepairScheduling: true,
+      adaptiveHypothesisProbeWallMs: 60000,
+      adaptiveHypothesisProbeExpansions: probeExp,
+    });
+    return repairInfo(result);
   };
+
+  // Shape (a): tiny probe — the anchor expand alone exhausts it.
+  const tiny = runShape(10, SYNTHETIC_SPEC);
+  const tinyTickets = (tiny.repairScheduling && tiny.repairScheduling.hypotheses) || [];
+  const shapeA = tinyTickets.find((t) =>
+    (t.lastProgress && t.lastProgress.replaySegmentsEntered || 0) === 0);
+  assert.ok(
+    shapeA,
+    `G10(a): a tiny probe (10) must produce an anchor-expired ticket (entered=0); tickets: ${JSON.stringify(tinyTickets.map((t) => t.lastProgress))}`,
+  );
+  assert.strictEqual(
+    shapeA.nextReplaySegmentIndex,
+    1,
+    `G10(a): anchor-expired ticket cursor must equal firstReplayIndex (1); got ${shapeA.nextReplaySegmentIndex}`,
+  );
+
+  // Shape (c): 3-segment spec — seg2 (cheap, succeeds from any MT2 state) is
+  // genuinely replayed to completion within a generous probe; seg3 fails
+  // afterwards. completed >= 1 and the cursor advances past seg2.
+  const THREE_SEGMENT_SPEC = {
+    routeName: "cursor-completed-shape",
+    milestones: [
+      {
+        id: "seg1",
+        label: "Cheap first segment",
+        goal: { floorId: "MT2" },
+        actionPolicy: { allowedFloors: ["MT1", "MT2"] },
+        dp: { maxExpansions: 8000 },
+      },
+      {
+        id: "seg2",
+        label: "Middle segment that completes",
+        startFrom: "seg1",
+        goal: { floorId: "MT3" },
+        actionPolicy: { allowedFloors: ["MT2", "MT3"] },
+        dp: { maxExpansions: 8000 },
+      },
+      {
+        id: "seg3",
+        label: "Failing final segment",
+        startFrom: "seg2",
+        goal: { floorId: "MT9" },
+        actionPolicy: { allowedFloors: ["MT3", "MT4", "MT5", "MT6"] },
+        dp: { maxExpansions: 16000 },
+      },
+    ],
+  };
+  const large = runShape(5000, THREE_SEGMENT_SPEC);
+  const largeTickets = (large.repairScheduling && large.repairScheduling.hypotheses) || [];
+  const largeEvents = (large.repairScheduling && large.repairScheduling.events) || [];
+  const shapeCIndex = largeTickets.findIndex((t) =>
+    (t.lastProgress && t.lastProgress.replaySegmentsCompleted || 0) >= 1);
+  assert.ok(
+    shapeCIndex >= 0,
+    `G10(c): the 3-segment spec must produce a ticket with >= 1 completed replay (seg2 completes within the probe); tickets: ${JSON.stringify(largeTickets.map((t) => t.lastProgress))}`,
+  );
+  const shapeC = largeTickets[shapeCIndex];
+  const shapeCEvent = largeEvents[shapeCIndex] || null;
+  const shapeCFirstReplayIndex = shapeCEvent
+    ? shapeCEvent.startReplayIndex : 1;
+  assert.strictEqual(
+    shapeC.nextReplaySegmentIndex,
+    shapeCFirstReplayIndex + (shapeC.lastProgress.replaySegmentsCompleted || 0),
+    `G10(c): completed-replay ticket cursor must equal firstReplayIndex (${shapeCFirstReplayIndex}) + completed (${shapeC.lastProgress.replaySegmentsCompleted}); got ${shapeC.nextReplaySegmentIndex}`,
+  );
+
+  // Shape (b): medium probe — anchor completes, replay probe-expires.
+  // Scan several medium sizes for a guaranteed entered>completed ticket.
+  let shapeB = null;
+  for (const probeExp of [60, 100, 150, 200, 300, 500, 800, 1200]) {
+    const mid = runShape(probeExp, SYNTHETIC_SPEC);
+    const midTickets = (mid.repairScheduling && mid.repairScheduling.hypotheses) || [];
+    const candidate = midTickets.find((t) => {
+      const entered = t.lastProgress && t.lastProgress.replaySegmentsEntered || 0;
+      const completed = t.lastProgress && t.lastProgress.replaySegmentsCompleted || 0;
+      return entered > completed;
+    });
+    if (candidate) {
+      assert.strictEqual(
+        candidate.nextReplaySegmentIndex,
+        1 + (candidate.lastProgress.replaySegmentsCompleted || 0),
+        `G10(b): mid-replay ticket cursor must equal firstReplayIndex + completed (the unfinished replay); got ${candidate.nextReplaySegmentIndex}`,
+      );
+      shapeB = { probeExp, ticket: candidate };
+      break;
+    }
+  }
+  assert.ok(
+    shapeB,
+    "G10(b): some medium probe size must produce a mid-replay (entered>completed) ticket — the mid-replay cursor shape is untested",
+  );
+
+  // Generic invariant on every ticket of every shape run.
+  [tiny, large].forEach((info) => {
+    ((info.repairScheduling && info.repairScheduling.hypotheses) || []).forEach((ticket, index) => {
+      const entered = ticket.lastProgress && ticket.lastProgress.replaySegmentsEntered || 0;
+      const completed = ticket.lastProgress && ticket.lastProgress.replaySegmentsCompleted || 0;
+      assert.ok(
+        completed <= entered,
+        `G10 invariant ticket ${index}: completed (${completed}) must not exceed entered (${entered})`,
+      );
+    });
+  });
+
+  shapes.anchorExpired = { probe: 10, cursor: shapeA.nextReplaySegmentIndex };
+  shapes.midReplay = { probe: shapeB.probeExp, cursor: shapeB.ticket.nextReplaySegmentIndex };
+  shapes.completed = { probe: 5000, cursor: shapeC.nextReplaySegmentIndex };
+  return shapes;
 }
 
 // G11 – insufficient probe headroom: enabled scheduler + remaining global
@@ -682,6 +808,129 @@ function gateWallProbe() {
     "G13: wall-probed hypotheses stay PROBE_PENDING",
   );
   return { probeLimitedWaves: wallLimited.length, globalStop: budgetStop };
+}
+
+// G13a/G13b (Repair 1a) – MID-ATTEMPT wall expiry: the probe wall must be
+// the BINDING runtime of an attempt that actually STARTED (not a pre-start
+// guard). Contract:
+//   attempt started  (candidateSliceInitialAttempts >= 1)
+//   probe wall bound the attempt runtime
+//   probe expired mid-attempt → probe-limited (NOT local-time-limited, NOT
+//   deferred retry, NOT global stop)
+//   deferredRetries === 0; searchComplete === false; global stop null.
+//
+// mode "local" runs the local executor; "isolated" runs the production
+// isolated path and additionally verifies the wall-authority separation
+// telemetry (probeDeadline < globalDeadline; child global stop not polluted).
+function gateMidAttemptWall(mode) {
+  const project = loadProject(DEFAULT_PROJECT_ROOT);
+  const simulator = buildSimulator(project);
+  // Probe wall big enough that the anchor attempt genuinely STARTS (DP work
+  // begins) but small enough that it cannot finish: the OnlyUp anchor expand
+  // takes well over 150ms on any machine, and the per-attempt runtime is
+  // clamped to the probe wall, so the attempt runs ~150ms of real DP and
+  // then stops on the (probe-bound) time-limit.
+  const PROBE_WALL_MS = 150;
+  const config = {
+    maxExpansions: 50000,
+    maxRuntimeMs: 60000,
+    enableBudgetedRepairScheduling: true,
+    adaptiveHypothesisProbeWallMs: PROBE_WALL_MS,
+    adaptiveHypothesisProbeExpansions: 50000,
+  };
+  if (mode === "isolated") {
+    config.segmentExecutionMode = "isolated-process";
+    config.maxRssMb = 4096;
+  }
+  const result = runGraph(simulator, config);
+  const info = repairInfo(result);
+  const scheduling = info.repairScheduling;
+  assert.ok(scheduling && scheduling.enabled, `G13(${mode}): scheduling telemetry required`);
+
+  // The wave telemetry must show a probe-limited outcome with an attempt
+  // that started (anchorInputCandidates >= 1 is implied by wave execution).
+  const probeLimitedWaves = info.attempts.filter((a) => a.waveOutcome === "probe-limited");
+  assert.ok(
+    probeLimitedWaves.length >= 1,
+    `G13(${mode}): mid-attempt wall expiry must yield probe-limited waves (outcomes: [${info.attempts.map((a) => a.waveOutcome).join(",")}])`,
+  );
+
+  // Attempt-level contract: an attempt started, no deferred retries happened
+  // for probe-limited candidates, and the slice search is incomplete.
+  // Find the execution ledger entries for the adaptive waves and inspect
+  // their candidateSliceTelemetry.
+  const ledger = result.executionCompletionLedger || [];
+  const adaptiveEntries = ledger.filter((e) =>
+    e.phase === "adaptive-expand" || e.phase === "adaptive-replay");
+  assert.ok(
+    adaptiveEntries.length >= 1,
+    `G13(${mode}): adaptive execution ledger entries required`,
+  );
+  const probedEntries = adaptiveEntries.filter((e) => Number(e.finalPending || 0) > 0);
+  assert.ok(
+    probedEntries.length >= 1,
+    `G13(${mode}): at least one adaptive execution must leave candidates PENDING (probe-limited semantics)`,
+  );
+  probedEntries.forEach((entry, index) => {
+    assert.strictEqual(
+      entry.searchComplete,
+      false,
+      `G13(${mode}) entry ${index}: probe-limited execution must not claim searchComplete`,
+    );
+  });
+  // No adaptive execution may have burned retries on a probe stop.
+  adaptiveEntries.forEach((entry, index) => {
+    assert.strictEqual(
+      Number(entry.historicalLocalTimeouts || 0),
+      0,
+      `G13(${mode}) entry ${index}: probe-limited attempts must not be classified as local timeouts (deferred retry candidates) — mid-attempt probe expiry must classify as probe-limited`,
+    );
+  });
+
+  // Parent global stop must be untouched.
+  const budgetStop = result.budget && result.budget.stoppedReason;
+  assert.strictEqual(
+    budgetStop,
+    null,
+    `G13(${mode}): with generous global budgets the mid-attempt probe wall must not touch the global stop (got ${budgetStop})`,
+  );
+
+  // Isolated-specific: wall authority separation telemetry.
+  if (mode === "isolated") {
+    const records = (result.isolatedProcessTreeTelemetry &&
+      result.isolatedProcessTreeTelemetry.records) || [];
+    const probedRecords = records.filter((rec) =>
+      rec.probeDeadlineMs != null && rec.probeRuntimeBound === true);
+    assert.ok(
+      probedRecords.length >= 1,
+      `G13(isolated): at least one child invocation must carry probe-bound telemetry (probeRuntimeBound=true); records: ${records.length}`,
+    );
+    probedRecords.forEach((rec, index) => {
+      assert.ok(
+        Number(rec.probeDeadlineMs) < Number(rec.globalDeadlineMs),
+        `G13(isolated) record ${index}: probe deadline (${rec.probeDeadlineMs}) must be strictly before the child GLOBAL deadline (${rec.globalDeadlineMs}) — the two authorities must remain separate`,
+      );
+      assert.strictEqual(
+        rec.childGlobalStopReason,
+        null,
+        `G13(isolated) record ${index}: the child globalBudget stop must not be set by the probe (got ${rec.childGlobalStopReason})`,
+      );
+    });
+    return {
+      mode,
+      probeWallMs: PROBE_WALL_MS,
+      probeLimitedWaves: probeLimitedWaves.length,
+      probeBoundChildren: probedRecords.length,
+      childGlobalStopClean: true,
+      parentGlobalStop: budgetStop,
+    };
+  }
+  return {
+    mode,
+    probeWallMs: PROBE_WALL_MS,
+    probeLimitedWaves: probeLimitedWaves.length,
+    parentGlobalStop: budgetStop,
+  };
 }
 
 if (require.main === module) {

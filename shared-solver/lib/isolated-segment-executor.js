@@ -196,27 +196,16 @@ function executeIsolatedSegment(options) {
   const plannerRssBeforeSerializationMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
 
   // Child search reserve: don't expand parent deadline, reserve 2s inside child slice
-  let childDeadlineMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedDeadlineMs - CHILD_EXIT_RESERVE_MS : assignedDeadlineMs;
-  let childSearchRuntimeMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedRuntimeMs - CHILD_EXIT_RESERVE_MS : Math.max(1, assignedRuntimeMs);
+  const childDeadlineMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedDeadlineMs - CHILD_EXIT_RESERVE_MS : assignedDeadlineMs;
+  const childSearchRuntimeMs = assignedRuntimeMs > CHILD_EXIT_RESERVE_MS ? assignedRuntimeMs - CHILD_EXIT_RESERVE_MS : Math.max(1, assignedRuntimeMs);
 
-  // PR-5.24c Repair 1 (P1-4) – an epoch-absolute probe deadline must also
-  // tighten the child's assigned runtime: without this the child could be
-  // granted the full global runtime while the probe wall expires first,
-  // producing a global-looking timeout instead of a probe-limited yield.
-  {
-    const probeDeadline = config && config.probeDeadlineMs;
-    if (probeDeadline != null && Number.isFinite(Number(probeDeadline))) {
-      const probeDeadlineNum = Number(probeDeadline);
-      if (probeDeadlineNum < childDeadlineMs) {
-        // The probe wall ends before the child deadline; clamp the child
-        // runtime so the child's own attempt scheduler reports a LOCAL
-        // probe-limited stop instead of a global timeout.
-        const clampedRuntimeMs = Math.max(1, probeDeadlineNum - Date.now());
-        childDeadlineMs = probeDeadlineNum;
-        childSearchRuntimeMs = Math.min(childSearchRuntimeMs, clampedRuntimeMs);
-      }
-    }
-  }
+  // PR-5.24c Repair 1a (P1-A) – wall authority separation: the child's
+  // globalBudget keeps the TRUE global remaining authority (childDeadlineMs
+  // is NOT clamped to the probe wall). The probe deadline is an epoch-
+  // absolute INDEPENDENT local authority carried via config.probeDeadlineMs;
+  // the worker's per-attempt scheduler clamps each attempt's runtime to the
+  // probe wall and classifies probe expiry as probe-limited WITHOUT touching
+  // the child globalBudget stop reason.
 
   const simulatorProfile = runtimeDescriptor ? runtimeDescriptor.simulatorProfile : buildSimulatorProfile(simulator);
   if (!simulatorProfile) {
@@ -656,6 +645,13 @@ function executeIsolatedSegment(options) {
       invocationId: runId,
       processWallMs,
       searchWallMs: workerResponse.searchWallMs || processWallMs,
+      // PR-5.24c Repair 1a (G13b) – probe/global authority telemetry passthrough.
+      probeDeadlineMs: workerResponse.probeDeadlineMs != null
+        ? Number(workerResponse.probeDeadlineMs) : null,
+      globalDeadlineMs: workerResponse.globalDeadlineMs != null
+        ? Number(workerResponse.globalDeadlineMs) : null,
+      probeRuntimeBound: Boolean(workerResponse.probeRuntimeBound),
+      childGlobalStopReason: workerResponse.childGlobalStopReason || null,
       assignedExpansions,
       consumedExpansions,
       deadlineEpochMs: assignedDeadlineMs,

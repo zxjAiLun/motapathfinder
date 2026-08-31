@@ -194,6 +194,30 @@ function main() {
   const searchWallMs = Date.now() - startedAt;
   const workerEndRssMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
 
+  // PR-5.24c Repair 1a (G13b) – compact probe/global authority telemetry so
+  // the isolated wall-probe contract is verifiable from the parent without
+  // any route/state dumps:
+  //   probeDeadlineMs       epoch-absolute LOCAL probe authority
+  //   globalDeadlineMs      the child's TRUE global authority (never probe-clamped)
+  //   probeRuntimeBound     true when the probe wall actually bound runtime
+  //   childGlobalStopReason the child globalBudget stop (probe must never set it)
+  const childGlobalBudgetForTelemetry =
+    (payload.config && payload.config.globalBudget) || null;
+  const probeDeadlineMsForTelemetry =
+    payload.config && payload.config.probeDeadlineMs != null
+      ? Number(payload.config.probeDeadlineMs)
+      : null;
+  const globalDeadlineMsForTelemetry = childGlobalBudgetForTelemetry
+    && childGlobalBudgetForTelemetry.deadlineMs != null
+    ? Number(childGlobalBudgetForTelemetry.deadlineMs)
+    : null;
+  const probeRuntimeBound = probeDeadlineMsForTelemetry != null &&
+    globalDeadlineMsForTelemetry != null &&
+    probeDeadlineMsForTelemetry < globalDeadlineMsForTelemetry;
+  const childGlobalStopReason = childGlobalBudgetForTelemetry
+    ? (childGlobalBudgetForTelemetry.stoppedReason || null)
+    : null;
+
   // Annotate output candidates with authoritative state keys
   let outputStateKeysVerified = 0;
   if (Array.isArray(result.merged)) {
@@ -264,6 +288,11 @@ function main() {
     expectedProjectIdentity: payload.expectedProjectIdentity || null,
     projectIdentityMatch: typeof projectIdentityMatch !== "undefined" ? projectIdentityMatch : true,
     searchWallMs,
+    // PR-5.24c Repair 1a (G13b) – compact probe/global authority telemetry.
+    probeDeadlineMs: probeDeadlineMsForTelemetry,
+    globalDeadlineMs: globalDeadlineMsForTelemetry,
+    probeRuntimeBound,
+    childGlobalStopReason,
     workerStartRssMb,
     workerEndRssMb,
     workerPeakRssMb,

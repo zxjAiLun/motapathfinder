@@ -3899,12 +3899,20 @@ function runSegmentAgainstFrontierLocal(
         fairCandidateRuntimeMs,
       ));
     }
-    // PR-5.24c Repair 1 (P1-4) – clamp the attempt runtime to the probe wall.
+    // PR-5.24c Repair 1a (P1-B) – clamp the attempt runtime to the probe wall
+    // and RECORD whether the probe wall is the binding runtime authority for
+    // THIS attempt. The stale pre-attempt remaining value must never be used
+    // for post-attempt classification.
+    let probeRuntimeWasBinding = false;
     if (remainingProbeRuntimeMs != null) {
+      const preClampRuntime = number(dpOverrides.maxRuntimeMs, remainingProbeRuntimeMs);
       dpOverrides.maxRuntimeMs = Math.max(1, Math.min(
-        number(dpOverrides.maxRuntimeMs, remainingProbeRuntimeMs),
+        preClampRuntime,
         remainingProbeRuntimeMs,
       ));
+      probeRuntimeWasBinding =
+        dpOverrides.maxRuntimeMs < preClampRuntime ||
+        remainingProbeRuntimeMs <= preClampRuntime;
     }
     // PR-5.24c Repair 1 (P1-1, local side) – clamp the attempt expansions to
     // the remaining probe expansion allowance (child-local coordinates).
@@ -4002,13 +4010,13 @@ function runSegmentAgainstFrontierLocal(
       kind = "found";
     } else if (
       stoppedReason === "time-limit" &&
-      remainingProbeRuntimeMs != null &&
-      remainingProbeRuntimeMs <= 0
+      probeRuntimeWasBinding
     ) {
-      // PR-5.24c Repair 1 (P1-4) – the attempt's runtime slice was the PROBE
-      // wall, not the global/fair runtime: this is a probe-limited yield
-      // (pending, no retry, no global semantics), not a deferred local
-      // timeout.
+      // PR-5.24c Repair 1a (P1-B) – the attempt's runtime slice was bound by
+      // the PROBE wall (recorded at attempt start when the clamp actually
+      // tightened the runtime): a mid-attempt probe expiry classifies as
+      // probe-limited (pending, no retry, no global semantics), never a
+      // deferred local timeout and never a global stop.
       kind = "probe-limited";
     } else if (
       (stoppedReason === "expansion-limit" || (dp && dp.expansionBudgetExhausted === true)) &&
@@ -5499,6 +5507,21 @@ function tryAdaptiveCheckpointRepair(
             probeExpired = true;
             break;
           }
+        }
+      }
+
+      // PR-5.24c Repair 1a – final probe-expiry evaluation AFTER the replay
+      // loop, regardless of WHY the loop exited (natural empty-frontier
+      // breaks used to skip the in-loop check and misclassify probe-exhausted
+      // waves as "exhausted"). The probe's own budget is the authority on
+      // whether the hypothesis was cut short.
+      if (schedulingWave && waveProbeBudget && !probeExpired) {
+        const consumedByProbe =
+          (config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) -
+          probeStartExpansions;
+        if (Date.now() >= waveProbeBudget.deadlineMs ||
+            consumedByProbe >= waveProbeBudget.expansions) {
+          probeExpired = true;
         }
       }
 
