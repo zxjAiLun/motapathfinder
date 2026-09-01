@@ -5112,7 +5112,113 @@ function tryAdaptiveCheckpointRepair(
     probeCount: 0,
     lastProgress: null,
     stopReason: null,
+    // PR-5.24c Iteration 2 – progress-gated continuation fields.
+    progressClass: null,
+    progressEvidence: null,
+    continuationEligible: false,
+    continuationDecision: null,
+    continuationMode: null,
+    grantHistory: [],
   });
+
+  // PR-5.24c Iteration 2 – progress-gated second-grant scheduling.
+  // Strictly opt-in; requires the Iteration 1 scheduler to be enabled too.
+  const continuationEnabled =
+    budgetedSchedulingEnabled &&
+    (config || {}).enableBudgetedRepairContinuation === true;
+  const continuationWallMs = Math.max(1, number(
+    (config || {}).adaptiveHypothesisContinuationWallMs,
+    probeWallMs * 2,
+  ));
+  const continuationExpansions = Math.max(1, number(
+    (config || {}).adaptiveHypothesisContinuationExpansions,
+    probeExpansions * 2,
+  ));
+  const continuationMaxPerDepth = Math.max(1, number(
+    (config || {}).adaptiveHypothesisContinuationMaxPerDepth,
+    2,
+  ));
+  repairScheduling.continuationEnabled = continuationEnabled;
+  repairScheduling.continuationWallMs = continuationEnabled ? continuationWallMs : null;
+  repairScheduling.continuationExpansions = continuationEnabled ? continuationExpansions : null;
+
+  // Compact goal-progress projection for a state against a segment — reuses
+  // the existing goal dependency graph projector (no new score invention).
+  const projectGoalProgressFor = (state, segment) => {
+    if (!state) return null;
+    try {
+      return projectSegmentGoalProgress(simulator.project, state, segment);
+    } catch (error) {
+      return null;
+    }
+  };
+  // Discrete, weightless progress comparator over the structured projection:
+  // fixed lexicographic order per the authorized semantics. Returns >0 when
+  // `after` is strictly better than `before`, 0 when equal, null when the
+  // comparison is unavailable.
+  const compareGoalProgress = (before, after) => {
+    if (!before || !after) return null;
+    // feasibility improvement (false -> true)
+    const feasibleDiff = Number(after.feasible === true) - Number(before.feasible === true);
+    if (feasibleDiff !== 0) return feasibleDiff;
+    // floor match improvement (false -> true): the state reached the goal floor
+    const floorDiff = Number(after.floorMatch === true) - Number(before.floorMatch === true);
+    if (floorDiff !== 0) return floorDiff;
+    // completion increase
+    const completionDiff = Number(after.completion || 0) - Number(before.completion || 0);
+    if (completionDiff !== 0) return completionDiff > 0 ? 1 : -1;
+    // requirementsMet increase
+    const reqDiff = Number(after.requirementsMet || 0) - Number(before.requirementsMet || 0);
+    if (reqDiff !== 0) return reqDiff;
+    // downstreamCompletion increase
+    const dsDiff = Number(after.downstreamCompletion || 0) - Number(before.downstreamCompletion || 0);
+    if (dsDiff !== 0) return dsDiff > 0 ? 1 : -1;
+    // irreversible landmarks increase
+    const lmDiff = Number(after.irreversibleLandmarksMet || 0) - Number(before.irreversibleLandmarksMet || 0);
+    if (lmDiff !== 0) return lmDiff;
+    // next landmark unreachable -> reachable
+    const reachDiff = Number(after.nextLandmarkReachable === true) -
+      Number(before.nextLandmarkReachable === true);
+    if (reachDiff !== 0) return reachDiff;
+    // next landmark distance decrease (both finite and reachable)
+    if (before.nextLandmarkReachable && after.nextLandmarkReachable) {
+      const distDiff = Number(before.nextLandmarkDistance || 0) -
+        Number(after.nextLandmarkDistance || 0);
+      if (distDiff !== 0) return distDiff > 0 ? 1 : -1;
+    }
+    // stat deficit decrease
+    const deficitDiff = Number(before.statDeficit || 0) - Number(after.statDeficit || 0);
+    if (deficitDiff !== 0) return deficitDiff > 0 ? 1 : -1;
+    return 0;
+  };
+  // Discrete progress classification: SEGMENT_ADVANCE > WITHIN_SEGMENT_PROGRESS
+  // > NO_MEASURABLE_PROGRESS. No scalar scores anywhere.
+  const classifyProgress = (ticket, evidence) => {
+    const completed = evidence && evidence.replaySegmentsCompleted || 0;
+    if (completed >= 1) return "SEGMENT_ADVANCE";
+    const cmp = compareGoalProgress(
+      evidence && evidence.goalProgressBefore,
+      evidence && evidence.goalProgressAfter,
+    );
+    if (cmp != null && cmp > 0) return "WITHIN_SEGMENT_PROGRESS";
+    return "NO_MEASURABLE_PROGRESS";
+  };
+  // Fail-closed continuation eligibility: ONLY probe-limited tickets with a
+  // clean global context and measurable progress may apply. Every other
+  // stop class (memory/resource/global/exhausted/headroom/complete) is
+  // explicitly NOT eligible.
+  const isContinuationEligible = (ticket, globalStopReason) => {
+    if (!continuationEnabled) return false;
+    if (!ticket) return false;
+    if (ticket.status !== "PROBE_PENDING") return false;
+    if (ticket.probeCount !== 1) return false;
+    if (ticket.stopReason !== "probe-limited") return false;
+    if (globalStopReason) return false;
+    if (ticket.progressClass === "NO_MEASURABLE_PROGRESS") return false;
+    if (ticket.progressClass !== "SEGMENT_ADVANCE" &&
+        ticket.progressClass !== "WITHIN_SEGMENT_PROGRESS") return false;
+    return true;
+  };
   // Local probe budget for a wave: strictly tighter than the remaining
   // global budget. PR-5.24c Repair 1 (P1-3): when the scheduler is ENABLED
   // but no strictly-tighter probe can be carved out of the remaining global
@@ -5244,10 +5350,13 @@ function tryAdaptiveCheckpointRepair(
         );
         pendingTicket.status = "PROBE_PENDING";
         pendingTicket.stopReason = "insufficient-probe-headroom";
+        pendingTicket.progressClass = "NO_MEASURABLE_PROGRESS";
+        pendingTicket.continuationDecision = "insufficient-headroom";
         repairScheduling.hypotheses.push(pendingTicket);
         appendSchedulingEvent({
           hypothesisId: pendingTicket.hypothesisId,
           probeIndex: 0,
+          grantKind: "first-probe",
           depth,
           anchorCandidateIds: pendingTicket.anchorInputCandidateIds,
           startReplayIndex: anchorHistoryIndex + 1,
@@ -5284,6 +5393,14 @@ function tryAdaptiveCheckpointRepair(
       const probeStartExpansions = config && config.globalBudget
         ? config.globalBudget.consumedExpansions : 0;
       let probeExpired = false;
+      // PR-5.24c Iteration 2 – progress evidence capture: projections of the
+      // anchor-input state and the final best-progress state against the
+      // FIRST unfinished replay segment (cursor target). Restart semantics
+      // mean replay legs run from the anchor expand; the "before" projection
+      // is the anchor's own frontier state pre-replay, "after" is the best
+      // progress state the probe actually reached.
+      let goalProgressBefore = null;
+      let goalProgressAfter = null;
 
       depthWavesAttempted += 1;
       const waveStartedAt = Date.now();
@@ -5345,6 +5462,30 @@ function tryAdaptiveCheckpointRepair(
       let failedAtIndex = repairFrontier && repairFrontier.length > 0 ? null : anchorHistoryIndex;
       let memoryExecution = expandedAnchor.memoryLimited ? expandedAnchor : null;
       let memorySegmentIndex = expandedAnchor.memoryLimited ? anchorHistoryIndex : null;
+
+      // PR-5.24c Iteration 2 – "before" projection: the anchor-expanded
+      // frontier's best state against the first replay segment (the probe
+      // starts here; any "after" improvement over this is attributable to
+      // the probe's own work).
+      if (ticket && repairFrontier && repairFrontier.length > 0) {
+        const firstReplaySegment = segments[anchorHistoryIndex + 1];
+        if (firstReplaySegment && firstReplaySegment !== anchor.segment) {
+          const anchorBest = (expandedAnchor.summary && expandedAnchor.summary.attempts || [])
+            .filter(Boolean)
+            .reduce((best, att) => {
+              if (!att.bestProgress) return best;
+              if (!best) return att;
+              return att;
+            }, null);
+          const anchorState = anchorBest && anchorBest.bestProgress
+            ? anchorBest.bestProgress
+            : repairFrontier[0].state;
+          goalProgressBefore = projectGoalProgressFor(anchorState, firstReplaySegment);
+        } else {
+          const anchorState = repairFrontier[0] && repairFrontier[0].state;
+          goalProgressBefore = projectGoalProgressFor(anchorState, anchor.segment);
+        }
+      }
 
       // PR-5.24c – probe expiry right after the anchor expand: if the local
       // budget is already gone, yield the hypothesis BEFORE any replay leg
@@ -5470,6 +5611,32 @@ function tryAdaptiveCheckpointRepair(
         replayed.executionPhase = "adaptive-replay";
         waveExecutions.push(replayed);
         repairFrontier = replayed.merged;
+        // PR-5.24c Iteration 2 – capture this replay leg's best-progress
+        // projection against its own segment (the first unfinished segment
+        // from the cursor's perspective is the segment the probe is inside).
+        // NOTE: bestProgress lives on the RAW attempts (replayed.attempts),
+        // not the compact summary attempts.
+        if (ticket && Array.isArray(replayed.attempts)) {
+          let bestProgressState = null;
+          replayed.attempts.forEach((att) => {
+            if (!att || !att.bestProgress) return;
+            if (!bestProgressState) {
+              bestProgressState = att.bestProgress;
+              return;
+            }
+            const cmp = compareGoalProgress(
+              projectGoalProgressFor(bestProgressState, replaySegment),
+              projectGoalProgressFor(att.bestProgress, replaySegment),
+            );
+            if (cmp != null && cmp > 0) bestProgressState = att.bestProgress;
+          });
+          if (bestProgressState) {
+            goalProgressAfter = projectGoalProgressFor(
+              bestProgressState,
+              replaySegment,
+            );
+          }
+        }
         // PR-5.24c Repair 1 (P1-2) – cursor advances past replay K only when
         // the PROBE did not expire inside K; a probe-expired replay leaves
         // the cursor AT K (K is the first still-unfinished segment). Other
@@ -5644,9 +5811,38 @@ function tryAdaptiveCheckpointRepair(
           failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,
           goalReached,
         };
+        // PR-5.24c Iteration 2 – discrete progress classification and
+        // fail-closed continuation eligibility (no scalar scores).
+        ticket.progressEvidence = {
+          replaySegmentsCompleted: completedReplayCount,
+          nextReplaySegmentIndex: ticket.nextReplaySegmentIndex,
+          goalProgressBefore,
+          goalProgressAfter,
+        };
+        ticket.progressClass = classifyProgress(ticket, ticket.progressEvidence);
+        const globalStopNow = (config.globalBudget && config.globalBudget.stoppedReason) || null;
+        ticket.continuationEligible = isContinuationEligible(ticket, globalStopNow);
+        ticket.continuationDecision = ticket.continuationEligible
+          ? "eligible"
+          : (ticket.stopReason === "probe-limited" && !globalStopNow
+            ? "no-measurable-progress"
+            : ticket.stopReason === "insufficient-probe-headroom"
+              ? "insufficient-headroom"
+              : "not-eligible");
+        ticket.grantHistory.push({
+          probeIndex: ticket.probeCount,
+          grantKind: "first-probe",
+          allocatedWallMs: schedulingWave ? waveProbeBudget.wallMs : null,
+          allocatedExpansions: schedulingWave ? waveProbeBudget.expansions : null,
+          consumedWallMs: ticket.consumedWallMs,
+          consumedExpansions: ticket.consumedExpansions,
+          outcome: waveOutcome,
+          progressClass: ticket.progressClass,
+        });
         appendSchedulingEvent({
           hypothesisId: ticket.hypothesisId,
           probeIndex: ticket.probeCount,
+          grantKind: "first-probe",
           depth,
           anchorCandidateIds: ticket.anchorInputCandidateIds,
           startReplayIndex: anchorHistoryIndex + 1,
@@ -5659,15 +5855,17 @@ function tryAdaptiveCheckpointRepair(
           allocatedExpansions: schedulingWave ? waveProbeBudget.expansions : null,
           consumedWallMs: ticket.consumedWallMs,
           consumedExpansions: ticket.consumedExpansions,
-          progressBefore: null,
+          progressBefore: goalProgressBefore,
           progressAfter: ticket.lastProgress,
+          progressClass: ticket.progressClass,
+          continuationEligible: ticket.continuationEligible,
           yieldReason: probeExpired
             ? "probe-expired"
             : goalReached
               ? "goal-reached"
               : null,
           pendingAfterProbe: !goalReached && waveOutcome !== "exhausted",
-          globalStopReason: (config.globalBudget && config.globalBudget.stoppedReason) || null,
+          globalStopReason: globalStopNow,
         });
       }
 
@@ -5800,6 +5998,327 @@ function tryAdaptiveCheckpointRepair(
           memoryExecution,
           memorySegmentIndex,
         };
+      }
+    }
+
+    // PR-5.24c Iteration 2 – progress-gated second-grant round (AFTER the
+    // whole first round completed: the first-round barrier is structural —
+    // the continuation loop only starts here). Restart-from-anchor semantics:
+    // an eligible hypothesis re-runs from its original anchor candidates
+    // under a fresh, larger bounded grant. probeCount <= 2 (no third grant).
+    // Selection order: SEGMENT_ADVANCE before WITHIN_SEGMENT_PROGRESS, then
+    // legacy wave order within a class. All probe authorities (wall local
+    // authority, expansion child-local rebase, isolated-process, headroom
+    // fail-closed) apply unchanged.
+    if (continuationEnabled && !depthGoalReached) {
+      const globalStopNow = (config.globalBudget && config.globalBudget.stoppedReason) || null;
+      const depthTickets = repairScheduling.hypotheses.filter(
+        (t) => t.depth === depth,
+      );
+      const eligible = depthTickets
+        .filter((t) => isContinuationEligible(t, globalStopNow))
+        .sort((left, right) => {
+          // SEGMENT_ADVANCE outranks WITHIN_SEGMENT_PROGRESS; within a class
+          // the original ticket order (legacy/wave order) is preserved.
+          const rank = (t) => (t.progressClass === "SEGMENT_ADVANCE" ? 0 : 1);
+          const rankDiff = rank(left) - rank(right);
+          if (rankDiff !== 0) return rankDiff;
+          return depthTickets.indexOf(left) - depthTickets.indexOf(right);
+        })
+        .slice(0, continuationMaxPerDepth);
+      const ineligible = depthTickets.filter(
+        (t) => !isContinuationEligible(t, globalStopNow) &&
+          t.probeCount === 1 &&
+          t.continuationDecision == null,
+      );
+      ineligible.forEach((t) => {
+        t.continuationDecision = t.stopReason === "probe-limited" && !globalStopNow
+          ? "no-measurable-progress"
+          : "not-eligible";
+      });
+      let continuationGrants = 0;
+      for (const candidateTicket of eligible) {
+        if (globalStopNow) break;
+        if (config.globalBudget && (
+          config.globalBudget.stoppedReason === "time-limit" ||
+          config.globalBudget.stoppedReason === "expansion-limit"
+        )) break;
+        // Continuation budget under the SAME probe authority: strictly
+        // tighter than remaining global.
+        const now = Date.now();
+        const remainingWallMs = config.globalBudget.deadlineMs != null &&
+          Number.isFinite(Number(config.globalBudget.deadlineMs))
+          ? Math.max(0, config.globalBudget.deadlineMs - now)
+          : null;
+        const remainingExpansions = config.globalBudget.requestedExpansions > 0
+          ? Math.max(0, config.globalBudget.requestedExpansions - config.globalBudget.consumedExpansions)
+          : null;
+        if ((remainingWallMs != null && remainingWallMs <= 0) ||
+            (remainingExpansions != null && remainingExpansions <= 0)) break;
+        const localWallMs = remainingWallMs != null
+          ? Math.min(continuationWallMs, remainingWallMs)
+          : continuationWallMs;
+        const localExpansions = remainingExpansions != null
+          ? Math.min(continuationExpansions, remainingExpansions)
+          : continuationExpansions;
+        if (localWallMs >= (remainingWallMs != null ? remainingWallMs : Infinity) &&
+            localExpansions >= (remainingExpansions != null ? remainingExpansions : Infinity)) {
+          candidateTicket.continuationDecision = "insufficient-headroom";
+          appendSchedulingEvent({
+            hypothesisId: candidateTicket.hypothesisId,
+            probeIndex: 1,
+            grantKind: "continuation",
+            depth,
+            anchorCandidateIds: candidateTicket.anchorInputCandidateIds,
+            startReplayIndex: anchorHistoryIndex + 1,
+            endReplayIndex: anchorHistoryIndex,
+            allocatedWallMs: null,
+            allocatedExpansions: null,
+            consumedWallMs: 0,
+            consumedExpansions: 0,
+            progressBefore: null,
+            progressAfter: null,
+            yieldReason: "insufficient-probe-headroom",
+            pendingAfterProbe: true,
+            globalStopReason: (config.globalBudget && config.globalBudget.stoppedReason) || null,
+          });
+          continue;
+        }
+        const continuationBudget = {
+          wallMs: localWallMs,
+          deadlineMs: now + localWallMs,
+          expansions: localExpansions,
+        };
+        // Restart-from-anchor: locate the wave's original input candidates.
+        const waveSliceStart = depthTickets.indexOf(candidateTicket) * waveBatchSize;
+        const restartCandidates = rankedInputFrontier.slice(
+          waveSliceStart,
+          waveSliceStart + waveBatchSize,
+        );
+        if (restartCandidates.length === 0) continue;
+        candidateTicket.continuationDecision = "granted";
+        candidateTicket.continuationMode = "restart-from-anchor";
+        candidateTicket.probeCount = 2;
+        continuationGrants += 1;
+
+        const contStartedAt = Date.now();
+        const contStartExpansions = config.globalBudget.consumedExpansions;
+        let contExpired = false;
+        let contGoalReached = false;
+        let contCompletedReplays = 0;
+        const contAnchorConfig = {
+          ...(config || {}),
+          stopOnFirstGoal: undefined,
+          probeDeadlineMs: continuationBudget.deadlineMs,
+          probeExpansionCap: contStartExpansions + continuationBudget.expansions,
+          maxExpansions: Math.min(
+            number((config || {}).maxExpansions, continuationBudget.expansions),
+            continuationBudget.expansions,
+          ),
+        };
+        let contExpanded = runSegmentAgainstFrontier(
+          simulator,
+          anchor.segment,
+          restartCandidates,
+          {
+            ...contAnchorConfig,
+            segmentIndex: anchorHistoryIndex,
+            segmentTotal: segments.length,
+            goalDependencySegments: segments.slice(anchorHistoryIndex),
+          },
+          withManualBudgetAuthority(contAnchorConfig, {
+            candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
+            dpOverrides: backtrackDpOverrides(anchor.segment, config || {}),
+            preserveSkylineRoles: true,
+          }),
+        );
+        contExpanded.summary.backtrack = {
+          mode: "adaptive-checkpoint-expand",
+          depth,
+          waveIndex: depthTickets.indexOf(candidateTicket),
+          continuation: true,
+          triggeredBySegment: segments[segmentIndex].id,
+        };
+        contExpanded.executionPhase = "adaptive-expand";
+        let contRepairFrontier = contExpanded.merged;
+        const contExecutions = [contExpanded];
+        depthWavesAttempted += 1;
+        depthAnchorExpandedCandidates += (contExpanded.summary && contExpanded.summary.attempts || [])
+          .reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0);
+
+        for (
+          let replayIndex = anchorHistoryIndex + 1;
+          !contExpired && contRepairFrontier && contRepairFrontier.length > 0 && replayIndex <= segmentIndex;
+          replayIndex += 1
+        ) {
+          const replaySegment = segments[replayIndex];
+          depthDownstreamReplayCount += 1;
+          const contReplayConfig = {
+            ...(config || {}),
+            probeDeadlineMs: continuationBudget.deadlineMs,
+            probeExpansionCap: contStartExpansions + continuationBudget.expansions,
+            maxExpansions: Math.min(
+              number((config || {}).maxExpansions, continuationBudget.expansions),
+              continuationBudget.expansions,
+            ),
+          };
+          const contReplayIntentLimit = backtrackCandidateLimit(replaySegment, config || {});
+          const contRankedFrontier = rankCandidatesByPreferredTags(
+            contRepairFrontier,
+            preferredTags,
+          ).slice(0, contReplayIntentLimit);
+          const contReplayed = runSegmentAgainstFrontier(
+            simulator,
+            replaySegment,
+            contRankedFrontier,
+            {
+              ...contReplayConfig,
+              segmentIndex: replayIndex,
+              segmentTotal: segments.length,
+              goalDependencySegments: segments.slice(replayIndex),
+            },
+            withManualBudgetAuthority(contReplayConfig, {
+              candidateLimit: contReplayIntentLimit,
+              preserveSkylineRoles: true,
+            }),
+          );
+          contReplayed.summary.backtrack = {
+            mode: "adaptive-checkpoint-replay",
+            depth,
+            waveIndex: depthTickets.indexOf(candidateTicket),
+            continuation: true,
+            repairedFromSegment: anchor.segment.id,
+            triggeredBySegment: segments[segmentIndex].id,
+          };
+          contReplayed.executionPhase = "adaptive-replay";
+          contExecutions.push(contReplayed);
+          contRepairFrontier = contReplayed.merged;
+          const contExpiredAfter = Date.now() >= continuationBudget.deadlineMs ||
+            ((config.globalBudget.consumedExpansions - contStartExpansions) >=
+              continuationBudget.expansions);
+          if (!contExpiredAfter) contCompletedReplays += 1;
+          if (contReplayed.memoryLimited) break;
+          if (!contRepairFrontier || contRepairFrontier.length === 0) break;
+          if (contExpiredAfter) { contExpired = true; break; }
+        }
+        if (Date.now() >= continuationBudget.deadlineMs ||
+            (config.globalBudget.consumedExpansions - contStartExpansions) >=
+              continuationBudget.expansions) {
+          contExpired = true;
+        }
+        contGoalReached = Boolean(
+          contRepairFrontier && contRepairFrontier.length > 0 &&
+          contExecutions.length === (segmentIndex - anchorHistoryIndex + 1),
+        );
+
+        const contConsumedWallMs = Date.now() - contStartedAt;
+        const contConsumedExpansions = config.globalBudget.consumedExpansions - contStartExpansions;
+        let contOutcome;
+        if (contGoalReached) contOutcome = "goal-reached";
+        else if (contExpired) contOutcome = "probe-limited";
+        else if (contRepairFrontier && contRepairFrontier.length === 0) contOutcome = "exhausted";
+        else contOutcome = "probe-limited";
+
+        candidateTicket.consumedWallMs += contConsumedWallMs;
+        candidateTicket.consumedExpansions += contConsumedExpansions;
+        candidateTicket.stopReason = contOutcome;
+        candidateTicket.status = contGoalReached || contOutcome === "exhausted"
+          ? "PROBE_COMPLETE_OR_GOAL"
+          : "PROBE_PENDING";
+        if (contCompletedReplays > 0) {
+          candidateTicket.nextReplaySegmentIndex = anchorHistoryIndex + 1 + contCompletedReplays;
+        }
+        candidateTicket.grantHistory.push({
+          probeIndex: 2,
+          grantKind: "continuation",
+          allocatedWallMs: continuationBudget.wallMs,
+          allocatedExpansions: continuationBudget.expansions,
+          consumedWallMs: contConsumedWallMs,
+          consumedExpansions: contConsumedExpansions,
+          outcome: contOutcome,
+          progressClass: contCompletedReplays >= 1
+            ? "SEGMENT_ADVANCE"
+            : null,
+        });
+        appendSchedulingEvent({
+          hypothesisId: candidateTicket.hypothesisId,
+          probeIndex: 2,
+          grantKind: "continuation",
+          depth,
+          anchorCandidateIds: candidateTicket.anchorInputCandidateIds,
+          startReplayIndex: anchorHistoryIndex + 1,
+          endReplayIndex: anchorHistoryIndex + contCompletedReplays + (contExpired ? 1 : 0),
+          nextReplaySegmentIndex: candidateTicket.nextReplaySegmentIndex,
+          allocatedWallMs: continuationBudget.wallMs,
+          allocatedExpansions: continuationBudget.expansions,
+          consumedWallMs: contConsumedWallMs,
+          consumedExpansions: contConsumedExpansions,
+          progressBefore: null,
+          progressAfter: {
+            waveOutcome: contOutcome,
+            replaySegmentsCompleted: contCompletedReplays,
+            goalReached: contGoalReached,
+            continuationMode: "restart-from-anchor",
+          },
+          progressClass: contCompletedReplays >= 1 ? "SEGMENT_ADVANCE" : null,
+          yieldReason: contGoalReached
+            ? "goal-reached"
+            : contExpired
+              ? "probe-expired"
+              : null,
+          pendingAfterProbe: !contGoalReached && contOutcome !== "exhausted",
+          globalStopReason: (config.globalBudget && config.globalBudget.stoppedReason) || null,
+        });
+        attempts.push({
+          depth,
+          anchorSegmentId: anchor.segment.id,
+          waveIndex: depthTickets.indexOf(candidateTicket),
+          anchorInputCandidates: restartCandidates.length,
+          anchorInputCandidateIds: restartCandidates.map((c) => c.id),
+          continuation: true,
+          anchorExpandedCandidates: (contExpanded.summary && contExpanded.summary.attempts || [])
+            .reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0),
+          replaySegmentIds: contExecutions.slice(1).map((e) => e.segment && e.segment.id),
+          waveOutcome: contOutcome,
+          depthConsumedExpansions: contConsumedExpansions,
+          depthConsumedWallMs: contConsumedWallMs,
+          depthStopReason: null,
+        });
+
+        if (contGoalReached) {
+          depthGoalReached = true;
+          const depthOutcome = "goal-reached";
+          depthSummaries.push({
+            depth,
+            anchorSegmentId: anchor.segment.id,
+            wavesTotal: totalWaves,
+            wavesAttempted: depthWavesAttempted,
+            wavesCompleted: depthWavesCompleted,
+            downstreamReplayCount: depthDownstreamReplayCount,
+            anchorExpandedCandidates: depthAnchorExpandedCandidates,
+            depthOutcome,
+            depthExhausted: false,
+            stopReason: depthStopReason,
+          });
+          return {
+            found: true,
+            triggerFailure,
+            failureIntentRanking,
+            repairScheduling,
+            maxDepth,
+            attempts,
+            depthSummaries,
+            executions: contExecutions,
+            ledgerExecutions,
+            anchorHistoryIndex,
+            finalFrontier: contRepairFrontier,
+          };
+        }
+        // Detach continuation executions (they failed).
+        contExecutions.forEach((exec) => {
+          ledgerExecutions.push(toCompactLedgerExecution(exec));
+        });
+        if (continuationGrants >= continuationMaxPerDepth) break;
       }
     }
 

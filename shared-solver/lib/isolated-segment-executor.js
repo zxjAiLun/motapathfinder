@@ -650,7 +650,7 @@ function executeIsolatedSegment(options) {
         ? Number(workerResponse.probeDeadlineMs) : null,
       globalDeadlineMs: workerResponse.globalDeadlineMs != null
         ? Number(workerResponse.globalDeadlineMs) : null,
-      probeRuntimeBound: Boolean(workerResponse.probeRuntimeBound),
+      probeDeadlinePrecedesGlobal: Boolean(workerResponse.probeDeadlinePrecedesGlobal),
       childGlobalStopReason: workerResponse.childGlobalStopReason || null,
       assignedExpansions,
       consumedExpansions,

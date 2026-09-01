@@ -199,7 +199,7 @@ function main() {
   // any route/state dumps:
   //   probeDeadlineMs       epoch-absolute LOCAL probe authority
   //   globalDeadlineMs      the child's TRUE global authority (never probe-clamped)
-  //   probeRuntimeBound     true when the probe wall actually bound runtime
+  //   probeDeadlinePrecedesGlobal     true when the probe wall actually bound runtime
   //   childGlobalStopReason the child globalBudget stop (probe must never set it)
   const childGlobalBudgetForTelemetry =
     (payload.config && payload.config.globalBudget) || null;
@@ -211,7 +211,7 @@ function main() {
     && childGlobalBudgetForTelemetry.deadlineMs != null
     ? Number(childGlobalBudgetForTelemetry.deadlineMs)
     : null;
-  const probeRuntimeBound = probeDeadlineMsForTelemetry != null &&
+  const probeDeadlinePrecedesGlobal = probeDeadlineMsForTelemetry != null &&
     globalDeadlineMsForTelemetry != null &&
     probeDeadlineMsForTelemetry < globalDeadlineMsForTelemetry;
   const childGlobalStopReason = childGlobalBudgetForTelemetry
@@ -270,6 +270,9 @@ function main() {
       startCandidateId: att.startCandidateId,
       found: att.found,
       goalCount: (att.goalSkyline || []).length,
+      // PR-5.24c Iteration 2 – best-progress state for progress-gated
+      // continuation evidence (compact: one state per attempt).
+      bestProgress: att.bestProgress || null,
       diagnostics: att.diagnostics,
     })),
     candidateLimit: result.candidateLimit,
@@ -291,7 +294,7 @@ function main() {
     // PR-5.24c Repair 1a (G13b) – compact probe/global authority telemetry.
     probeDeadlineMs: probeDeadlineMsForTelemetry,
     globalDeadlineMs: globalDeadlineMsForTelemetry,
-    probeRuntimeBound,
+    probeDeadlinePrecedesGlobal,
     childGlobalStopReason,
     workerStartRssMb,
     workerEndRssMb,
