@@ -435,6 +435,59 @@ function isReplayDeterminatelyComplete(execution, options) {
   return true;
 }
 
+// PR-5.24c Iteration 2 Repair 1b – hypothesis-level determinate outcome.
+// Production pure helper used by BOTH the first-probe wave loop and the
+// continuation loop. It encodes the frozen priority:
+//   goal-reached
+//   → probe-limited (local probe stop, no authoritative global stop)
+//   → resource-limited (authoritative memory/global stop)
+//   → incomplete (replay chain or anchor execution indeterminate — the
+//     canonical completion contract was not satisfied somewhere)
+//   → exhausted (determinate natural failure: every ENTERED execution was
+//     determinately complete and the frontier is empty)
+// An indeterminate chain can NEVER claim exhausted: the hypothesis stays
+// PROBE_PENDING and the run can never claim canonical EXHAUSTED through it.
+//
+// Inputs (all from the production call sites):
+//   goalReached        boolean
+//   probeExpired       boolean (local probe stop occurred)
+//   resourceInterrupted boolean (memory/global authoritative stop occurred)
+//   enteredReplays     number of replay legs actually entered
+//   completedReplays   number of determinately-completed replay legs
+//   emptyFrontier      repair frontier empty at chain end
+//   anchorExecution    the anchor-expand execution (for the anchor-only case:
+//                      enteredReplays === 0; an empty anchor frontier may
+//                      only claim exhaustion when the anchor itself was
+//                      determinately complete)
+//   globalStopReason   authoritative global budget stop at outcome time
+function classifyAdaptiveHypothesisOutcome(shape) {
+  const s = shape || {};
+  if (s.goalReached === true) return "goal-reached";
+  if (s.probeExpired === true && s.resourceInterrupted !== true) return "probe-limited";
+  if (s.resourceInterrupted === true) return "resource-limited";
+  const entered = Number(s.enteredReplays || 0);
+  const completed = Number(s.completedReplays || 0);
+  if (entered > 0) {
+    if (completed !== entered) return "incomplete";
+    // Every entered replay leg was determinately complete: a determinate
+    // natural failure may claim exhaustion when the frontier is empty.
+    if (s.emptyFrontier === true) return "exhausted";
+    return "probe-limited";
+  }
+  // Anchor-only chain (no replay legs entered): an EMPTY frontier may only
+  // claim exhaustion when the anchor execution itself was determinately
+  // complete. A non-empty frontier simply continues (probe-limited shape
+  // keeps the hypothesis pending).
+  if (s.emptyFrontier === true) {
+    const anchorDeterminate = isReplayDeterminatelyComplete(
+      s.anchorExecution,
+      { resourceInterrupted: s.resourceInterrupted === true },
+    );
+    return anchorDeterminate ? "exhausted" : "incomplete";
+  }
+  return "probe-limited";
+}
+
 function buildSegmentStateFeasibilityPredicate(project, segment, mode) {
   const normalizedMode = String(mode || "off");
   if (normalizedMode === "off") return null;
@@ -5797,19 +5850,35 @@ function tryAdaptiveCheckpointRepair(
       // PR-5.24c – probe-limited is its OWN wave outcome: a locally expired
       // probe is neither a global time-limit nor a complete search; the
       // hypothesis stays PROBE_PENDING and the run stays incomplete.
-      let waveOutcome;
-      if (goalReached) {
-        waveOutcome = "goal-reached";
-      } else if (probeExpired) {
-        waveOutcome = "probe-limited";
-      } else if (waveStopReason === "rss-limit" || waveStopReason === "heap-limit" || !memoryRecovered) {
-        waveOutcome = "resource-limited";
-      } else if (waveStopReason === "time-limit") {
-        waveOutcome = "time-limited";
-      } else if (waveStopReason === "expansion-limit") {
-        waveOutcome = "expansion-limited";
-      } else {
-        waveOutcome = "exhausted";
+      // Repair 1b: the outcome now runs through the shared production
+      // classifier so an INDETERMINATE replay chain (searchComplete=false /
+      // finalPending>0 / terminalIncomplete>0 with no probe/resource/global
+      // stop) classifies as "incomplete" — never "exhausted". The internal
+      // resource/time/expansion stop classes are preserved for diagnostics.
+      const enteredReplayCount = replaySegments.length;
+      const waveResourceInterrupted =
+        waveStopReason === "rss-limit" ||
+        waveStopReason === "heap-limit" ||
+        waveStopReason === "time-limit" ||
+        waveStopReason === "expansion-limit" ||
+        !memoryRecovered;
+      let waveOutcome = classifyAdaptiveHypothesisOutcome({
+        goalReached,
+        probeExpired,
+        resourceInterrupted: waveResourceInterrupted,
+        enteredReplays: enteredReplayCount,
+        completedReplays: completedReplayCount,
+        emptyFrontier: !repairFrontier || repairFrontier.length === 0,
+        anchorExecution: expandedAnchor,
+        globalStopReason: waveStopReason,
+      });
+      if (
+        !goalReached &&
+        waveOutcome === "resource-limited" &&
+        (waveStopReason === "time-limit" || waveStopReason === "expansion-limit")
+      ) {
+        // Preserve the finer diagnostic classes for global wall/expansion stops.
+        waveOutcome = waveStopReason === "time-limit" ? "time-limited" : "expansion-limited";
       }
 
       // PR-5.24c – record the hypothesis ticket + scheduling event.
@@ -6285,19 +6354,21 @@ function tryAdaptiveCheckpointRepair(
           0, contExecutions.length - 1); // minus the anchor expand
         const contChainDeterminate =
           contCompletedReplays === contEnteredReplays && contEnteredReplays > 0;
-        let contOutcome;
-        if (contGoalReached) contOutcome = "goal-reached";
-        else if (contResourceInterrupted) contOutcome = "resource-limited";
-        else if (contExpired) contOutcome = "probe-limited";
-        else if (contChainDeterminate && contRepairFrontier && contRepairFrontier.length === 0) {
-          contOutcome = "exhausted";
-        } else if (!contChainDeterminate && contEnteredReplays > 0) {
-          contOutcome = "incomplete";
-        } else if (contRepairFrontier && contRepairFrontier.length === 0) {
-          // No replay legs entered (anchor-only chain): empty merged frontier
-          // with no interruptions means the anchor itself died naturally.
-          contOutcome = "exhausted";
-        } else contOutcome = "probe-limited";
+        // Repair 1b: route the continuation outcome through the SAME shared
+        // production classifier — the anchor-only empty-frontier case now
+        // requires the anchor execution itself to be determinately complete
+        // before "exhausted" may be claimed; an indeterminate anchor-only
+        // chain classifies as "incomplete".
+        const contOutcome = classifyAdaptiveHypothesisOutcome({
+          goalReached: contGoalReached,
+          probeExpired: contExpired,
+          resourceInterrupted: contResourceInterrupted,
+          enteredReplays: contEnteredReplays,
+          completedReplays: contCompletedReplays,
+          emptyFrontier: !contRepairFrontier || contRepairFrontier.length === 0,
+          anchorExecution: contExpanded,
+          globalStopReason: contGlobalStopFinal,
+        });
 
         candidateTicket.consumedWallMs += contConsumedWallMs;
         candidateTicket.consumedExpansions += contConsumedExpansions;
@@ -7277,6 +7348,7 @@ module.exports = {
   withManualBudgetAuthority,
   projectSegmentGoalProgress,
   isReplayDeterminatelyComplete,
+  classifyAdaptiveHypothesisOutcome,
   __testHooks: {
     allocateGlobalAttemptBudget,
     BLOCKER_TILE_NUMBER: reachAndBattleOracle.BLOCKER_TILE_NUMBER,

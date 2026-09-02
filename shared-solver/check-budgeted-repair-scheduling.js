@@ -1722,42 +1722,116 @@ function gateDeterminateCompletionFailClose() {
     );
   });
 
-  // 5. Outcome classification fail-close (B shape): a continuation whose
-  //    replay chain stopped indeterminately must classify as "incomplete",
-  //    never "exhausted" — verified against the priority order implemented
-  //    in the continuation outcome block (goal > resource > probe >
-  //    determinate-exhausted > incomplete).
-  const classifyContOutcome = (shape) => {
-    if (shape.goalReached) return "goal-reached";
-    if (shape.resourceInterrupted) return "resource-limited";
-    if (shape.expired) return "probe-limited";
-    if (shape.chainDeterminate && shape.emptyFrontier) return "exhausted";
-    if (!shape.chainDeterminate && shape.enteredReplays > 0) return "incomplete";
-    if (shape.emptyFrontier) return "exhausted";
-    return "probe-limited";
-  };
+  // 5. Repair 1b: test the PRODUCTION classifier directly (no copied
+  //    classifier in the gate — the exact helper both loops call). Covers
+  //    the authorized A-E wiring shapes:
+  //    A. first-probe replay indeterminate → incomplete
+  //    B. first-probe determinate natural failure → exhausted (allowed)
+  //    C. continuation replay indeterminate → incomplete
+  //    D. continuation anchor-only indeterminate → incomplete
+  //    E. anchor-only determinate natural failure → exhausted (allowed)
+  const { classifyAdaptiveHypothesisOutcome } = require("./lib/segment-dp");
+  const completeAnchor = makeExecution(completeTelemetry);
+  const indeterminateAnchor = makeExecution({
+    candidateSliceSearchComplete: false,
+    candidateSliceFinalPending: 1,
+    candidateSliceTerminalIncomplete: 0,
+  });
+
+  // A. first-probe replay indeterminate (entered=1, completed=0, no stops).
   assert.strictEqual(
-    classifyContOutcome({
-      goalReached: false, resourceInterrupted: false, expired: false,
-      chainDeterminate: false, enteredReplays: 1, emptyFrontier: true,
+    classifyAdaptiveHypothesisOutcome({
+      goalReached: false, probeExpired: false, resourceInterrupted: false,
+      enteredReplays: 1, completedReplays: 0, emptyFrontier: true,
+      anchorExecution: completeAnchor, globalStopReason: null,
     }),
     "incomplete",
-    "G19c (second grant indeterminate): an indeterminate replay chain with an empty frontier must classify as incomplete, never exhausted",
+    "G19c(A): a first-probe indeterminate replay chain must classify as incomplete, never exhausted",
   );
+
+  // B. first-probe determinate natural failure (entered=1, completed=1,
+  //    empty frontier) → exhausted is legitimate.
   assert.strictEqual(
-    classifyContOutcome({
-      goalReached: false, resourceInterrupted: false, expired: false,
-      chainDeterminate: true, enteredReplays: 1, emptyFrontier: true,
+    classifyAdaptiveHypothesisOutcome({
+      goalReached: false, probeExpired: false, resourceInterrupted: false,
+      enteredReplays: 1, completedReplays: 1, emptyFrontier: true,
+      anchorExecution: completeAnchor, globalStopReason: null,
     }),
     "exhausted",
-    "G19c (determinate natural complete): a determinately-complete chain with an empty frontier legitimately classifies as exhausted",
+    "G19c(B): a determinately-complete chain with an empty frontier legitimately classifies as exhausted",
+  );
+
+  // C. continuation replay indeterminate (entered=2, completed=1).
+  assert.strictEqual(
+    classifyAdaptiveHypothesisOutcome({
+      goalReached: false, probeExpired: false, resourceInterrupted: false,
+      enteredReplays: 2, completedReplays: 1, emptyFrontier: true,
+      anchorExecution: completeAnchor, globalStopReason: null,
+    }),
+    "incomplete",
+    "G19c(C): a continuation indeterminate replay chain must classify as incomplete, never exhausted",
+  );
+
+  // D. continuation anchor-only indeterminate (entered=0, anchor
+  //    searchComplete=false/finalPending=1, empty frontier).
+  assert.strictEqual(
+    classifyAdaptiveHypothesisOutcome({
+      goalReached: false, probeExpired: false, resourceInterrupted: false,
+      enteredReplays: 0, completedReplays: 0, emptyFrontier: true,
+      anchorExecution: indeterminateAnchor, globalStopReason: null,
+    }),
+    "incomplete",
+    "G19c(D): an indeterminate anchor-only chain with an empty frontier must classify as incomplete, never exhausted",
+  );
+
+  // E. anchor-only determinate natural failure (entered=0, anchor
+  //    determinately complete, empty frontier) → exhausted is legitimate.
+  assert.strictEqual(
+    classifyAdaptiveHypothesisOutcome({
+      goalReached: false, probeExpired: false, resourceInterrupted: false,
+      enteredReplays: 0, completedReplays: 0, emptyFrontier: true,
+      anchorExecution: completeAnchor, globalStopReason: null,
+    }),
+    "exhausted",
+    "G19c(E): a determinately-complete anchor-only chain with an empty frontier legitimately classifies as exhausted",
+  );
+
+  // 5b. Priority wiring: probe stop classifies as probe-limited; resource
+  //     stop as resource-limited; goal dominates everything.
+  assert.strictEqual(
+    classifyAdaptiveHypothesisOutcome({
+      goalReached: false, probeExpired: true, resourceInterrupted: false,
+      enteredReplays: 1, completedReplays: 1, emptyFrontier: true,
+      anchorExecution: completeAnchor, globalStopReason: null,
+    }),
+    "probe-limited",
+    "G19c(priority): a probe stop must classify as probe-limited",
+  );
+  assert.strictEqual(
+    classifyAdaptiveHypothesisOutcome({
+      goalReached: false, probeExpired: false, resourceInterrupted: true,
+      enteredReplays: 1, completedReplays: 1, emptyFrontier: true,
+      anchorExecution: completeAnchor, globalStopReason: "expansion-limit",
+    }),
+    "resource-limited",
+    "G19c(priority): an authoritative resource stop must classify as resource-limited",
+  );
+  assert.strictEqual(
+    classifyAdaptiveHypothesisOutcome({
+      goalReached: true, probeExpired: true, resourceInterrupted: true,
+      enteredReplays: 1, completedReplays: 0, emptyFrontier: false,
+      anchorExecution: completeAnchor, globalStopReason: "time-limit",
+    }),
+    "goal-reached",
+    "G19c(priority): goal-reached dominates every stop",
   );
 
   return {
     unitShapes: 1 + indeterminateShapes.length + interruptionShapes.length,
     eligibilityShapes: ineligibleShapes.length,
-    outcomeShapes: 2,
-    definition: "shared isReplayDeterminatelyComplete (both loops)",
+    wiringShapes: ["A", "B", "C", "D", "E"],
+    priorityShapes: 3,
+    definition: "PRODUCTION classifyAdaptiveHypothesisOutcome (both loops call it)",
   };
 }
 
@@ -2402,9 +2476,28 @@ function gateIsolatedSecondGrantAuthority() {
 }
 
 if (require.main === module) {
-  try { main(); } catch (error) {
-    console.error(error && error.stack ? error.stack : String(error));
-    process.exit(1);
+  // --fast: run ONLY the synthetic correctness gates (G18/G19b/G19c plus the
+  // determinate-completion unit contract). No OnlyUp loading, no real-map
+  // probes — sub-second iteration for narrow correctness repairs.
+  if (process.argv.includes("--fast")) {
+    try {
+      gateSecondGrantLateWinnerSynthetic();
+      gateSecondGrantResourceInterrupt();
+      gateDeterminateCompletionFailClose();
+      console.log(JSON.stringify({
+        schema: "motapathfinder.budgeted-repair-scheduling.fast",
+        contractStatus: "passed",
+        gates: ["G18", "G19b", "G19c"],
+      }));
+    } catch (error) {
+      console.error(error && error.stack ? error.stack : String(error));
+      process.exit(1);
+    }
+  } else {
+    try { main(); } catch (error) {
+      console.error(error && error.stack ? error.stack : String(error));
+      process.exit(1);
+    }
   }
 }
 
