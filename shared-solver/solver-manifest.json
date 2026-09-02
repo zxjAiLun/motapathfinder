@@ -1812,6 +1812,22 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/segment-progress.js": {
+      "id": "segment-progress",
+      "path": "shared-solver/lib/segment-progress.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/simulator.js": {
       "id": "simulator",
       "path": "shared-solver/lib/simulator.js",

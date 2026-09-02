@@ -7,6 +7,9 @@ const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { buildStateKey } = require("./lib/state-key");
 const { runSegmentAgainstFrontierLocal } = require("./lib/segment-dp");
 const { createNoStateChangeChoiceResolver } = require("./lib/onlyup-mt1-real-route-gate");
+// PR-5.24c Iteration 2 Repair 1 – compact progress projection (P1-D).
+const { compactProgressProjection } = require("./lib/segment-progress");
+const { projectSegmentGoalProgress } = require("./lib/segment-dp");
 
 function buildSimulatorFromProfile(project, profile) {
   const choiceResolver = createNoStateChangeChoiceResolver();
@@ -270,9 +273,21 @@ function main() {
       startCandidateId: att.startCandidateId,
       found: att.found,
       goalCount: (att.goalSkyline || []).length,
-      // PR-5.24c Iteration 2 – best-progress state for progress-gated
-      // continuation evidence (compact: one state per attempt).
-      bestProgress: att.bestProgress || null,
+      // PR-5.24c Iteration 2 Repair 1 (P1-D) – COMPACT progress projection
+      // instead of the raw route-attached bestProgressState. The projection
+      // is computed INSIDE the child against the attempt's segment; the full
+      // state (hero/inventory/flags/floorStates/route) never crosses the
+      // child/parent boundary.
+      bestProgressProjection: (() => {
+        if (!att.bestProgress) return null;
+        try {
+          return compactProgressProjection(
+            projectSegmentGoalProgress(project, att.bestProgress, payload.segment),
+          );
+        } catch (error) {
+          return null;
+        }
+      })(),
       diagnostics: att.diagnostics,
     })),
     candidateLimit: result.candidateLimit,

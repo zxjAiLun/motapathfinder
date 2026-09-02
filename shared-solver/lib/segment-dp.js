@@ -32,6 +32,13 @@ const { executeIsolatedSegment } = require("./isolated-segment-executor");
 // rollback candidate. No circular dependency: the scanner does not import
 // segment-dp.
 const { scanResourceIntents } = require("./resource-intent-scanner");
+// PR-5.24c Iteration 2 Repair 1 – shared compact progress projection and
+// weightless comparator (also used by the isolated worker for IPC-safe
+// progress evidence).
+const {
+  compactProgressProjection,
+  compareProgressProjections,
+} = require("./segment-progress");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -5147,7 +5154,11 @@ function tryAdaptiveCheckpointRepair(
   const projectGoalProgressFor = (state, segment) => {
     if (!state) return null;
     try {
-      return projectSegmentGoalProgress(simulator.project, state, segment);
+      // Repair 1 (P1-D): normalize to the COMPACT projection whitelist so
+      // local and isolated evidence carry exactly the same IPC-safe fields.
+      return compactProgressProjection(
+        projectSegmentGoalProgress(simulator.project, state, segment),
+      );
     } catch (error) {
       return null;
     }
@@ -5156,41 +5167,10 @@ function tryAdaptiveCheckpointRepair(
   // fixed lexicographic order per the authorized semantics. Returns >0 when
   // `after` is strictly better than `before`, 0 when equal, null when the
   // comparison is unavailable.
-  const compareGoalProgress = (before, after) => {
-    if (!before || !after) return null;
-    // feasibility improvement (false -> true)
-    const feasibleDiff = Number(after.feasible === true) - Number(before.feasible === true);
-    if (feasibleDiff !== 0) return feasibleDiff;
-    // floor match improvement (false -> true): the state reached the goal floor
-    const floorDiff = Number(after.floorMatch === true) - Number(before.floorMatch === true);
-    if (floorDiff !== 0) return floorDiff;
-    // completion increase
-    const completionDiff = Number(after.completion || 0) - Number(before.completion || 0);
-    if (completionDiff !== 0) return completionDiff > 0 ? 1 : -1;
-    // requirementsMet increase
-    const reqDiff = Number(after.requirementsMet || 0) - Number(before.requirementsMet || 0);
-    if (reqDiff !== 0) return reqDiff;
-    // downstreamCompletion increase
-    const dsDiff = Number(after.downstreamCompletion || 0) - Number(before.downstreamCompletion || 0);
-    if (dsDiff !== 0) return dsDiff > 0 ? 1 : -1;
-    // irreversible landmarks increase
-    const lmDiff = Number(after.irreversibleLandmarksMet || 0) - Number(before.irreversibleLandmarksMet || 0);
-    if (lmDiff !== 0) return lmDiff;
-    // next landmark unreachable -> reachable
-    const reachDiff = Number(after.nextLandmarkReachable === true) -
-      Number(before.nextLandmarkReachable === true);
-    if (reachDiff !== 0) return reachDiff;
-    // next landmark distance decrease (both finite and reachable)
-    if (before.nextLandmarkReachable && after.nextLandmarkReachable) {
-      const distDiff = Number(before.nextLandmarkDistance || 0) -
-        Number(after.nextLandmarkDistance || 0);
-      if (distDiff !== 0) return distDiff > 0 ? 1 : -1;
-    }
-    // stat deficit decrease
-    const deficitDiff = Number(before.statDeficit || 0) - Number(after.statDeficit || 0);
-    if (deficitDiff !== 0) return deficitDiff > 0 ? 1 : -1;
-    return 0;
-  };
+  // Repair 1: delegated to the shared lib/segment-progress.js helper (the
+  // same pure function is used by the isolated worker for compact cross-
+  // process progress evidence).
+  const compareGoalProgress = compareProgressProjections;
   // Discrete progress classification: SEGMENT_ADVANCE > WITHIN_SEGMENT_PROGRESS
   // > NO_MEASURABLE_PROGRESS. No scalar scores anywhere.
   const classifyProgress = (ticket, evidence) => {
@@ -5464,26 +5444,21 @@ function tryAdaptiveCheckpointRepair(
       let memorySegmentIndex = expandedAnchor.memoryLimited ? anchorHistoryIndex : null;
 
       // PR-5.24c Iteration 2 – "before" projection: the anchor-expanded
-      // frontier's best state against the first replay segment (the probe
-      // starts here; any "after" improvement over this is attributable to
-      // the probe's own work).
+      // frontier's first merged candidate state against the first replay
+      // segment (the probe starts here; any "after" improvement over this is
+      // attributable to the probe's own work). The anchor merged frontier is
+      // real search output (not a progress-only payload), so it exists in
+      // the parent for both local and isolated executions.
       if (ticket && repairFrontier && repairFrontier.length > 0) {
         const firstReplaySegment = segments[anchorHistoryIndex + 1];
-        if (firstReplaySegment && firstReplaySegment !== anchor.segment) {
-          const anchorBest = (expandedAnchor.summary && expandedAnchor.summary.attempts || [])
-            .filter(Boolean)
-            .reduce((best, att) => {
-              if (!att.bestProgress) return best;
-              if (!best) return att;
-              return att;
-            }, null);
-          const anchorState = anchorBest && anchorBest.bestProgress
-            ? anchorBest.bestProgress
-            : repairFrontier[0].state;
-          goalProgressBefore = projectGoalProgressFor(anchorState, firstReplaySegment);
-        } else {
-          const anchorState = repairFrontier[0] && repairFrontier[0].state;
-          goalProgressBefore = projectGoalProgressFor(anchorState, anchor.segment);
+        const anchorState = repairFrontier[0] && repairFrontier[0].state;
+        if (anchorState) {
+          goalProgressBefore = projectGoalProgressFor(
+            anchorState,
+            firstReplaySegment && firstReplaySegment !== anchor.segment
+              ? firstReplaySegment
+              : anchor.segment,
+          );
         }
       }
 
@@ -5617,24 +5592,30 @@ function tryAdaptiveCheckpointRepair(
         // NOTE: bestProgress lives on the RAW attempts (replayed.attempts),
         // not the compact summary attempts.
         if (ticket && Array.isArray(replayed.attempts)) {
-          let bestProgressState = null;
+          // Repair 1 (P1-D): local attempts carry the raw bestProgress
+          // state (projected here); isolated attempts carry the COMPACT
+          // bestProgressProjection computed inside the worker (the full state
+          // never crosses the process boundary). Both forms feed the same
+          // weightless comparator.
+          let bestAfterProjection = null;
           replayed.attempts.forEach((att) => {
-            if (!att || !att.bestProgress) return;
-            if (!bestProgressState) {
-              bestProgressState = att.bestProgress;
+            if (!att) return;
+            let projection = null;
+            if (att.bestProgressProjection) {
+              projection = att.bestProgressProjection;
+            } else if (att.bestProgress) {
+              projection = projectGoalProgressFor(att.bestProgress, replaySegment);
+            }
+            if (!projection) return;
+            if (!bestAfterProjection) {
+              bestAfterProjection = projection;
               return;
             }
-            const cmp = compareGoalProgress(
-              projectGoalProgressFor(bestProgressState, replaySegment),
-              projectGoalProgressFor(att.bestProgress, replaySegment),
-            );
-            if (cmp != null && cmp > 0) bestProgressState = att.bestProgress;
+            const cmp = compareGoalProgress(bestAfterProjection, projection);
+            if (cmp != null && cmp > 0) bestAfterProjection = projection;
           });
-          if (bestProgressState) {
-            goalProgressAfter = projectGoalProgressFor(
-              bestProgressState,
-              replaySegment,
-            );
+          if (bestAfterProjection) {
+            goalProgressAfter = bestAfterProjection;
           }
         }
         // PR-5.24c Repair 1 (P1-2) – cursor advances past replay K only when
@@ -5647,7 +5628,22 @@ function tryAdaptiveCheckpointRepair(
              ((config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) -
               probeStartExpansions) >= waveProbeBudget.expansions)
           : false;
-        const replayProbeCompleted = !replayProbeExpiredAfter && !replayProbeExpiredBefore;
+        // Iteration 2 Repair 1 (P1-A) – replay completion authority: a replay
+        // segment counts as COMPLETED only when NO higher authority interrupted
+        // it. Resource/memory/global stops are checked BEFORE the increment
+        // (the previous order counted a memory-limited replay as completed
+        // first). An interrupted replay keeps the cursor AT K and never
+        // claims exhaustion or searchComplete.
+        const replayGlobalStopReason =
+          (config && config.globalBudget && config.globalBudget.stoppedReason) || null;
+        const replayResourceInterrupted =
+          Boolean(replayed.memoryLimited) ||
+          replayGlobalStopReason === "rss-limit" ||
+          replayGlobalStopReason === "heap-limit" ||
+          replayGlobalStopReason === "time-limit" ||
+          replayGlobalStopReason === "expansion-limit";
+        const replayProbeCompleted =
+          !replayProbeExpiredAfter && !replayProbeExpiredBefore && !replayResourceInterrupted;
         if (replayProbeCompleted) {
           completedReplayCount += 1;
           if (ticket) ticket.nextReplaySegmentIndex = replayIndex + 1;
@@ -6193,10 +6189,23 @@ function tryAdaptiveCheckpointRepair(
           contReplayed.executionPhase = "adaptive-replay";
           contExecutions.push(contReplayed);
           contRepairFrontier = contReplayed.merged;
+          // Iteration 2 Repair 1 (P1-A) – continuation replay completion
+          // authority: higher authorities are checked BEFORE the increment.
+          // A resource/memory/global-interrupted replay is NEVER completed,
+          // the cursor stays at K, and the ticket can never claim exhaustion
+          // or searchComplete from an interrupted replay.
+          const contGlobalStopAfter =
+            (config.globalBudget && config.globalBudget.stoppedReason) || null;
+          const contResourceInterrupted =
+            Boolean(contReplayed.memoryLimited) ||
+            contGlobalStopAfter === "rss-limit" ||
+            contGlobalStopAfter === "heap-limit" ||
+            contGlobalStopAfter === "time-limit" ||
+            contGlobalStopAfter === "expansion-limit";
           const contExpiredAfter = Date.now() >= continuationBudget.deadlineMs ||
             ((config.globalBudget.consumedExpansions - contStartExpansions) >=
               continuationBudget.expansions);
-          if (!contExpiredAfter) contCompletedReplays += 1;
+          if (!contExpiredAfter && !contResourceInterrupted) contCompletedReplays += 1;
           if (contReplayed.memoryLimited) break;
           if (!contRepairFrontier || contRepairFrontier.length === 0) break;
           if (contExpiredAfter) { contExpired = true; break; }
@@ -6213,8 +6222,23 @@ function tryAdaptiveCheckpointRepair(
 
         const contConsumedWallMs = Date.now() - contStartedAt;
         const contConsumedExpansions = config.globalBudget.consumedExpansions - contStartExpansions;
+        // Iteration 2 Repair 1 (P1-B) – the continuation outcome must NOT
+        // swallow the global/resource authority. Authoritative stops are
+        // checked FIRST: a resource- or global-interrupted second grant is
+        // resource-limited (canonical RESOURCE_LIMITED semantics), never
+        // exhausted, never searchComplete, never PROBE_COMPLETE_OR_GOAL.
+        const contGlobalStopFinal =
+          (config.globalBudget && config.globalBudget.stoppedReason) || null;
+        const contMemoryLimited = contExecutions.some((exec) => exec && exec.memoryLimited);
+        const contResourceInterrupted =
+          contMemoryLimited ||
+          contGlobalStopFinal === "rss-limit" ||
+          contGlobalStopFinal === "heap-limit" ||
+          contGlobalStopFinal === "time-limit" ||
+          contGlobalStopFinal === "expansion-limit";
         let contOutcome;
         if (contGoalReached) contOutcome = "goal-reached";
+        else if (contResourceInterrupted) contOutcome = "resource-limited";
         else if (contExpired) contOutcome = "probe-limited";
         else if (contRepairFrontier && contRepairFrontier.length === 0) contOutcome = "exhausted";
         else contOutcome = "probe-limited";
@@ -7195,6 +7219,7 @@ module.exports = {
   summarizeHero,
   summarizeSegmentFailure,
   withManualBudgetAuthority,
+  projectSegmentGoalProgress,
   __testHooks: {
     allocateGlobalAttemptBudget,
     BLOCKER_TILE_NUMBER: reachAndBattleOracle.BLOCKER_TILE_NUMBER,
