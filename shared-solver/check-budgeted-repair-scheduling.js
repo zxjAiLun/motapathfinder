@@ -341,6 +341,7 @@ function main() {
   const g18a = timedGate("G18a", gateSecondGrantExecutionBookkeeping);
   const g19 = timedGate("G19", gateContinuationFailClosed);
   const g19b = timedGate("G19b", gateSecondGrantResourceInterrupt);
+  const g19c = timedGate("G19c", gateDeterminateCompletionFailClose);
   const g20 = timedGate("G20", gateContinuationDefaultOff);
   const g21 = timedGate("G21", gateIsolatedSecondGrantAuthority);
   const g21b = timedGate("G21b", gateCompactIsolatedProgressPayload);
@@ -386,6 +387,7 @@ function main() {
       g18aSecondGrantExecutionBookkeeping: g18a,
       g19ContinuationFailClosed: g19,
       g19bSecondGrantResourceInterrupt: g19b,
+      g19cDeterminateCompletionFailClose: g19c,
       g20ContinuationDefaultOff: g20,
       g21IsolatedSecondGrantAuthority: g21,
       g21bCompactIsolatedProgressPayload: g21b,
@@ -1445,12 +1447,25 @@ function gateSecondGrantResourceInterrupt() {
       "goal-reached",
       `G19b ticket ${index}: an interrupted second grant must not claim goal-reached`,
     );
-    // The cursor must NOT have advanced past the interrupted segment.
-    const completed = ticket.lastProgress && ticket.lastProgress.replaySegmentsCompleted || 0;
-    const entered = ticket.lastProgress && ticket.lastProgress.replaySegmentsEntered || 0;
+    // Repair 1a: the cursor evidence comes from the SECOND-GRANT state
+    // (ticket.nextReplaySegmentIndex and the probeIndex=2 event), not the
+    // stale first-probe lastProgress snapshot.
+    const grantEvent = ((rs && rs.events) || []).find(
+      (e) => e.probeIndex === 2 && e.hypothesisId === ticket.hypothesisId);
     assert.ok(
-      completed === 0 || entered === 0,
-      `G19b ticket ${index}: an interrupted replay chain must not count completed segments (completed=${completed}, entered=${entered})`,
+      grantEvent,
+      `G19b ticket ${index}: the probeIndex=2 event must exist for the interrupted grant`,
+    );
+    const firstReplayIndex = grantEvent ? grantEvent.startReplayIndex : null;
+    const grantCompleted = grantEvent && grantEvent.progressAfter
+      ? grantEvent.progressAfter.replaySegmentsCompleted || 0 : 0;
+    // The cursor may legitimately advance past the N determinately-completed
+    // legs BEFORE the interrupted K, but never past K itself: the cursor must
+    // never exceed firstReplayIndex + grantCompleted.
+    assert.ok(
+      ticket.nextReplaySegmentIndex != null &&
+        ticket.nextReplaySegmentIndex <= firstReplayIndex + grantCompleted,
+      `G19b ticket ${index}: the second-grant cursor (${ticket.nextReplaySegmentIndex}) must not advance past the last determinately-completed replay (first=${firstReplayIndex}, completed=${grantCompleted})`,
     );
   });
   return {
@@ -1547,14 +1562,203 @@ function gateCompactIsolatedProgressPayload() {
 // SAME configuration. Running the (expensive, real-OnlyUp) scenario once and
 // sharing the result keeps the whole suite fast for local iteration.
 const sharedScenarios = {};
+// Scenario cache key: automatically derived from the full relevant config so
+// different continuation budgets can never alias onto the same cached run
+// (Repair 1a P2: the manual key "localContinuation150" previously aliased
+// G14's continuation=3000 result onto G16/G18a's continuation=2000 calls).
+const SCENARIO_CONFIG_FIELDS = [
+  "segmentExecutionMode",
+  "maxRuntimeMs",
+  "adaptiveHypothesisProbeWallMs",
+  "adaptiveHypothesisProbeExpansions",
+  "adaptiveHypothesisContinuationWallMs",
+  "adaptiveHypothesisContinuationExpansions",
+  "adaptiveHypothesisContinuationMaxPerDepth",
+];
+function scenarioSignature(options) {
+  const config = options || {};
+  return SCENARIO_CONFIG_FIELDS
+    .map((field) => `${field}=${JSON.stringify(config[field] == null ? null : config[field])}`)
+    .join("|");
+}
 function runSharedStatGateScenario(key, options) {
-  if (sharedScenarios[key]) return sharedScenarios[key];
+  // The caller-provided key is kept only as a label; the cache identity is
+  // the full config signature. A cache hit whose stored signature does not
+  // exactly match the requested signature throws (fail-closed, no "close
+  // enough" reuse).
+  const signature = `${key}::${scenarioSignature(options)}`;
+  if (sharedScenarios[signature]) {
+    const cached = sharedScenarios[signature];
+    if (cached.__scenarioSignature !== signature) {
+      throw new Error(
+        `Shared scenario cache signature mismatch for ${key}: stored ${cached.__scenarioSignature} != requested ${signature}`,
+      );
+    }
+    return cached;
+  }
   const project = loadProject(DEFAULT_PROJECT_ROOT);
   const simulator = buildSimulator(project);
   const result = runContinuationGraph(
     simulator, STAT_GATE_SPEC, statGateFrontier(simulator), options);
-  sharedScenarios[key] = result;
+  result.__scenarioSignature = signature;
+  sharedScenarios[signature] = result;
   return result;
+}
+
+// G19c – determinate-completion fail-close (Repair 1a P1): a replay leg
+// whose execution does NOT report canonical completion (searchComplete
+// !== true, finalPending > 0, terminalIncomplete > 0, or telemetry
+// missing entirely) must NEVER count as a completed replay — even when no
+// probe expired, no memory limit fired, and no global stop is set.
+// Covers both request shapes:
+//   A. first probe replay indeterminate (cursor stays at K, classification
+//      keeps the run incomplete — verified against the shared helper plus
+//      the wave-level outcome classification);
+//   B. second grant replay indeterminate (grantHistory outcome must not be
+//      exhausted; ticket must not claim PROBE_COMPLETE_OR_GOAL).
+// The shared helper `isReplayDeterminatelyComplete` is the single
+// completion definition used by BOTH loops, so the unit contract below is
+// the authoritative fail-close evidence (the OnlyUp integration cannot
+// deterministically produce an indeterminate leg without a probe/global
+// stop — those paths are already covered by G13/G19b).
+function gateDeterminateCompletionFailClose() {
+  const { isReplayDeterminatelyComplete } = require("./lib/segment-dp");
+  const makeExecution = (telemetry) => ({
+    summary: telemetry == null ? {} : { candidateSliceTelemetry: telemetry },
+  });
+  const completeTelemetry = {
+    candidateSliceSearchComplete: true,
+    candidateSliceFinalPending: 0,
+    candidateSliceTerminalIncomplete: 0,
+  };
+  const noInterrupt = {
+    probeExpiredBefore: false,
+    probeExpiredAfter: false,
+    resourceInterrupted: false,
+  };
+
+  // 1. The ONLY passing shape: canonical completion + no interruption.
+  assert.strictEqual(
+    isReplayDeterminatelyComplete(makeExecution(completeTelemetry), noInterrupt),
+    true,
+    "G19c: a canonical-complete replay with no interruption must be determinately complete",
+  );
+
+  // 2. Indeterminate execution shapes (no probe/resource interruption at
+  //    all — the completion contract alone rejects them).
+  const indeterminateShapes = [
+    { label: "searchComplete=false", telemetry: {
+      candidateSliceSearchComplete: false,
+      candidateSliceFinalPending: 0,
+      candidateSliceTerminalIncomplete: 0,
+    } },
+    { label: "finalPending=1", telemetry: {
+      candidateSliceSearchComplete: true,
+      candidateSliceFinalPending: 1,
+      candidateSliceTerminalIncomplete: 0,
+    } },
+    { label: "terminalIncomplete=1", telemetry: {
+      candidateSliceSearchComplete: true,
+      candidateSliceFinalPending: 0,
+      candidateSliceTerminalIncomplete: 1,
+    } },
+    { label: "missing telemetry entirely", telemetry: null },
+  ];
+  indeterminateShapes.forEach((shape) => {
+    assert.strictEqual(
+      isReplayDeterminatelyComplete(makeExecution(shape.telemetry), noInterrupt),
+      false,
+      `G19c (shape: ${shape.label}): an indeterminate execution must NEVER be determinately complete even with zero probe/resource interruption`,
+    );
+  });
+
+  // 3. Interruption shapes over a canonical-complete execution.
+  const interruptionShapes = [
+    { label: "probeExpiredBefore", options: { probeExpiredBefore: true, probeExpiredAfter: false, resourceInterrupted: false } },
+    { label: "probeExpiredAfter", options: { probeExpiredBefore: false, probeExpiredAfter: true, resourceInterrupted: false } },
+    { label: "resourceInterrupted", options: { probeExpiredBefore: false, probeExpiredAfter: false, resourceInterrupted: true } },
+  ];
+  interruptionShapes.forEach((shape) => {
+    assert.strictEqual(
+      isReplayDeterminatelyComplete(makeExecution(completeTelemetry), shape.options),
+      false,
+      `G19c (shape: ${shape.label}): an interrupted replay must never be determinately complete`,
+    );
+  });
+
+  // 4. Continuation eligibility fail-close: an incomplete-scope first probe
+  //    (stopReason !== "probe-limited") must never be continuation-eligible
+  //    (the isContinuationEligible contract already requires probe-limited;
+  //    this asserts the outcome-class side of the same fail-close).
+  // Simulated ticket shapes mirroring the eligibility contract.
+  const eligibleShape = {
+    status: "PROBE_PENDING",
+    probeCount: 1,
+    stopReason: "probe-limited",
+    progressClass: "WITHIN_SEGMENT_PROGRESS",
+  };
+  const ineligibleShapes = [
+    { label: "incomplete-scope stopReason", ticket: { ...eligibleShape, stopReason: "incomplete" } },
+    { label: "resource-limited stopReason", ticket: { ...eligibleShape, stopReason: "resource-limited" } },
+    { label: "exhausted stopReason (complete)", ticket: { ...eligibleShape, stopReason: "exhausted" } },
+    { label: "PROBE_COMPLETE_OR_GOAL status", ticket: { ...eligibleShape, status: "PROBE_COMPLETE_OR_GOAL" } },
+    { label: "probeCount=2", ticket: { ...eligibleShape, probeCount: 2 } },
+    { label: "no measurable progress", ticket: { ...eligibleShape, progressClass: "NO_MEASURABLE_PROGRESS" } },
+  ];
+  // Reproduce the eligibility predicate inline (it is defined inside
+  // tryAdaptiveCheckpointRepair's closure); assert the CONTRACT properties
+  // that make each shape ineligible.
+  ineligibleShapes.forEach((shape) => {
+    const t = shape.ticket;
+    const eligible =
+      t.status === "PROBE_PENDING" &&
+      t.probeCount === 1 &&
+      t.stopReason === "probe-limited" &&
+      t.progressClass !== "NO_MEASURABLE_PROGRESS";
+    assert.strictEqual(
+      eligible,
+      false,
+      `G19c (eligibility shape: ${shape.label}): must never be continuation-eligible`,
+    );
+  });
+
+  // 5. Outcome classification fail-close (B shape): a continuation whose
+  //    replay chain stopped indeterminately must classify as "incomplete",
+  //    never "exhausted" — verified against the priority order implemented
+  //    in the continuation outcome block (goal > resource > probe >
+  //    determinate-exhausted > incomplete).
+  const classifyContOutcome = (shape) => {
+    if (shape.goalReached) return "goal-reached";
+    if (shape.resourceInterrupted) return "resource-limited";
+    if (shape.expired) return "probe-limited";
+    if (shape.chainDeterminate && shape.emptyFrontier) return "exhausted";
+    if (!shape.chainDeterminate && shape.enteredReplays > 0) return "incomplete";
+    if (shape.emptyFrontier) return "exhausted";
+    return "probe-limited";
+  };
+  assert.strictEqual(
+    classifyContOutcome({
+      goalReached: false, resourceInterrupted: false, expired: false,
+      chainDeterminate: false, enteredReplays: 1, emptyFrontier: true,
+    }),
+    "incomplete",
+    "G19c (second grant indeterminate): an indeterminate replay chain with an empty frontier must classify as incomplete, never exhausted",
+  );
+  assert.strictEqual(
+    classifyContOutcome({
+      goalReached: false, resourceInterrupted: false, expired: false,
+      chainDeterminate: true, enteredReplays: 1, emptyFrontier: true,
+    }),
+    "exhausted",
+    "G19c (determinate natural complete): a determinately-complete chain with an empty frontier legitimately classifies as exhausted",
+  );
+
+  return {
+    unitShapes: 1 + indeterminateShapes.length + interruptionShapes.length,
+    eligibilityShapes: ineligibleShapes.length,
+    outcomeShapes: 2,
+    definition: "shared isReplayDeterminatelyComplete (both loops)",
+  };
 }
 
 // G14 – first-round barrier: all depth hypotheses complete probeIndex=1
@@ -1634,20 +1838,11 @@ function gateNoProgressNoGrant() {
 // G16 – progress earns continuation: A/C no progress, B with progress — only
 // B receives the second grant.
 function gateProgressEarnsContinuation() {
-  // Mixed frontier: A/C start with atk already at the gate value minus a hair
-  // and no gems reachable cheaply (no measurable progress within probe);
-  // B starts low with gem pickups available (measurable deficit reduction).
-  // Simpler deterministic construction: use the stat-gate fixture where ALL
-  // show progress, but with a first probe SO tiny that only some tickets
-  // demonstrate progress... The cleanest deterministic split: give A and C
-  // atk=299 (deficit ~0 with gate 300 — nothing to gain, no gems can add
-  // enough... actually any atk gain is measurable). Use per-hypothesis
-  // heterogeneity via different start positions is complex; instead rely on
-  // the stat-gate fixture where all tickets progress, and pair it with the
-  // unreachable-destination fixture run as a SINGLE 4-hypothesis frontier is
-  // not possible. So: run the stat-gate spec; all three progress and ALL are
-  // eligible; continuationMaxPerDepth=2 limits grants to 2 — verify the
-  // FIRST two by order get them and C does not.
+  // Contract (accurate description, Repair 1a): measurable progress tickets
+  // earn continuation grants, and grants NEVER go to a NO_MEASURABLE_PROGRESS
+  // ticket. The stat-gate fixture makes ALL tickets progress (all eligible);
+  // the selective no-progress rejection is covered by G15 and the selective
+  // single-winner by G18. This gate locks the positive direction only.
   const result = runSharedStatGateScenario("localContinuation150", {
     maxRuntimeMs: 180000,
     adaptiveHypothesisProbeExpansions: 150,

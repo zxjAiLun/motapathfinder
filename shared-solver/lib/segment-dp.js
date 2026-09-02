@@ -408,6 +408,33 @@ function projectSegmentGoalProgress(project, state, segment) {
   return graph.project(state, segment && segment.id);
 }
 
+// PR-5.24c Iteration 2 Repair 1a – determinate replay completion.
+// A replay segment counts as determinately COMPLETE only when the execution
+// itself reports a canonical complete search AND no authority (probe, memory,
+// resource, global) truncated it. Both the first-probe wave loop and the
+// continuation loop share this single definition:
+//   * probeExpired (before or after the leg)
+//   * memoryLimited / resource / global stop
+//   * candidateSliceSearchComplete !== true
+//   * candidateSliceFinalPending > 0
+//   * candidateSliceTerminalIncomplete > 0
+// Any of these => NOT determinately complete: the cursor stays at K, the
+// ticket never claims PROBE_COMPLETE_OR_GOAL from this leg, and the run can
+// never claim canonical EXHAUSTED through this replay.
+function isReplayDeterminatelyComplete(execution, options) {
+  const context = options || {};
+  if (context.probeExpiredBefore === true) return false;
+  if (context.probeExpiredAfter === true) return false;
+  if (context.resourceInterrupted === true) return false;
+  const telemetry =
+    execution && execution.summary && execution.summary.candidateSliceTelemetry;
+  if (!telemetry) return false;
+  if (telemetry.candidateSliceSearchComplete !== true) return false;
+  if (Number(telemetry.candidateSliceFinalPending || 0) > 0) return false;
+  if (Number(telemetry.candidateSliceTerminalIncomplete || 0) > 0) return false;
+  return true;
+}
+
 function buildSegmentStateFeasibilityPredicate(project, segment, mode) {
   const normalizedMode = String(mode || "off");
   if (normalizedMode === "off") return null;
@@ -5642,8 +5669,14 @@ function tryAdaptiveCheckpointRepair(
           replayGlobalStopReason === "heap-limit" ||
           replayGlobalStopReason === "time-limit" ||
           replayGlobalStopReason === "expansion-limit";
-        const replayProbeCompleted =
-          !replayProbeExpiredAfter && !replayProbeExpiredBefore && !replayResourceInterrupted;
+        // Repair 1a: the canonical completion contract (searchComplete +
+        // finalPending===0 + terminalIncomplete===0) is now part of the
+        // shared determinate-completion definition.
+        const replayProbeCompleted = isReplayDeterminatelyComplete(replayed, {
+          probeExpiredBefore: replayProbeExpiredBefore,
+          probeExpiredAfter: replayProbeExpiredAfter,
+          resourceInterrupted: replayResourceInterrupted,
+        });
         if (replayProbeCompleted) {
           completedReplayCount += 1;
           if (ticket) ticket.nextReplaySegmentIndex = replayIndex + 1;
@@ -6189,11 +6222,13 @@ function tryAdaptiveCheckpointRepair(
           contReplayed.executionPhase = "adaptive-replay";
           contExecutions.push(contReplayed);
           contRepairFrontier = contReplayed.merged;
-          // Iteration 2 Repair 1 (P1-A) – continuation replay completion
-          // authority: higher authorities are checked BEFORE the increment.
-          // A resource/memory/global-interrupted replay is NEVER completed,
-          // the cursor stays at K, and the ticket can never claim exhaustion
-          // or searchComplete from an interrupted replay.
+          // Iteration 2 Repair 1a (P1) – continuation replay completion uses
+          // the SAME shared determinate-completion definition as the first
+          // probe: probe expiry, resource/global interruption, AND the
+          // canonical completion contract (candidateSliceSearchComplete +
+          // finalPending===0 + terminalIncomplete===0) are all checked
+          // before the increment. An indeterminate replay never advances the
+          // cursor and never feeds PROBE_COMPLETE_OR_GOAL / exhausted.
           const contGlobalStopAfter =
             (config.globalBudget && config.globalBudget.stoppedReason) || null;
           const contResourceInterrupted =
@@ -6205,7 +6240,11 @@ function tryAdaptiveCheckpointRepair(
           const contExpiredAfter = Date.now() >= continuationBudget.deadlineMs ||
             ((config.globalBudget.consumedExpansions - contStartExpansions) >=
               continuationBudget.expansions);
-          if (!contExpiredAfter && !contResourceInterrupted) contCompletedReplays += 1;
+          const contReplayDeterminate = isReplayDeterminatelyComplete(contReplayed, {
+            probeExpiredAfter: contExpiredAfter,
+            resourceInterrupted: contResourceInterrupted,
+          });
+          if (contReplayDeterminate) contCompletedReplays += 1;
           if (contReplayed.memoryLimited) break;
           if (!contRepairFrontier || contRepairFrontier.length === 0) break;
           if (contExpiredAfter) { contExpired = true; break; }
@@ -6236,12 +6275,29 @@ function tryAdaptiveCheckpointRepair(
           contGlobalStopFinal === "heap-limit" ||
           contGlobalStopFinal === "time-limit" ||
           contGlobalStopFinal === "expansion-limit";
+        // Repair 1a: "exhausted" is only legitimate when EVERY entered replay
+        // leg was determinately complete (canonical search completion, no
+        // probe/resource truncation, no pending/terminal-incomplete). A
+        // replay chain that stopped indeterminately (searchComplete=false,
+        // finalPending>0, terminalIncomplete>0, unsupported backend, ...)
+        // classifies as "incomplete" and can never claim exhaustion.
+        const contEnteredReplays = Math.max(
+          0, contExecutions.length - 1); // minus the anchor expand
+        const contChainDeterminate =
+          contCompletedReplays === contEnteredReplays && contEnteredReplays > 0;
         let contOutcome;
         if (contGoalReached) contOutcome = "goal-reached";
         else if (contResourceInterrupted) contOutcome = "resource-limited";
         else if (contExpired) contOutcome = "probe-limited";
-        else if (contRepairFrontier && contRepairFrontier.length === 0) contOutcome = "exhausted";
-        else contOutcome = "probe-limited";
+        else if (contChainDeterminate && contRepairFrontier && contRepairFrontier.length === 0) {
+          contOutcome = "exhausted";
+        } else if (!contChainDeterminate && contEnteredReplays > 0) {
+          contOutcome = "incomplete";
+        } else if (contRepairFrontier && contRepairFrontier.length === 0) {
+          // No replay legs entered (anchor-only chain): empty merged frontier
+          // with no interruptions means the anchor itself died naturally.
+          contOutcome = "exhausted";
+        } else contOutcome = "probe-limited";
 
         candidateTicket.consumedWallMs += contConsumedWallMs;
         candidateTicket.consumedExpansions += contConsumedExpansions;
@@ -7220,6 +7276,7 @@ module.exports = {
   summarizeSegmentFailure,
   withManualBudgetAuthority,
   projectSegmentGoalProgress,
+  isReplayDeterminatelyComplete,
   __testHooks: {
     allocateGlobalAttemptBudget,
     BLOCKER_TILE_NUMBER: reachAndBattleOracle.BLOCKER_TILE_NUMBER,
