@@ -61,7 +61,37 @@ function compareProgressProjections(before, after) {
   return 0;
 }
 
+/**
+ * PR-5.24c Iteration 2 Follow-up A – best frontier goal progress.
+ * Projects every state in a frontier against a segment's goal and returns
+ * the lexicographically best compact projection (NOT [0] order). Requires a
+ * caller-provided per-state projector `(state) => rawProjection`; this module
+ * stays project-free so it can be unit-tested without a tower.
+ */
+function bestFrontierGoalProgress(frontier, projectState) {
+  let best = null;
+  for (const candidate of frontier || []) {
+    const state = candidate && candidate.state ? candidate.state : candidate;
+    if (!state) continue;
+    let projection = null;
+    try {
+      projection = compactProgressProjection(projectState(state));
+    } catch (error) {
+      projection = null;
+    }
+    if (!projection) continue;
+    if (!best) {
+      best = projection;
+      continue;
+    }
+    const cmp = compareProgressProjections(best, projection);
+    if (cmp != null && cmp > 0) best = projection;
+  }
+  return best;
+}
+
 module.exports = {
   compactProgressProjection,
   compareProgressProjections,
+  bestFrontierGoalProgress,
 };

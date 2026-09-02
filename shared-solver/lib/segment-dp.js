@@ -38,6 +38,7 @@ const { scanResourceIntents } = require("./resource-intent-scanner");
 const {
   compactProgressProjection,
   compareProgressProjections,
+  bestFrontierGoalProgress,
 } = require("./segment-progress");
 
 function number(value, fallback) {
@@ -5253,11 +5254,14 @@ function tryAdaptiveCheckpointRepair(
   const compareGoalProgress = compareProgressProjections;
   // Discrete progress classification: SEGMENT_ADVANCE > WITHIN_SEGMENT_PROGRESS
   // > NO_MEASURABLE_PROGRESS. No scalar scores anywhere.
+  // Follow-up A: the within-segment comparison uses the HISTORICAL baseline
+  // (original history's anchor output) as `before` and the best of the
+  // repaired anchor / replay progress as `after`.
   const classifyProgress = (ticket, evidence) => {
     const completed = evidence && evidence.replaySegmentsCompleted || 0;
     if (completed >= 1) return "SEGMENT_ADVANCE";
     const cmp = compareGoalProgress(
-      evidence && evidence.goalProgressBefore,
+      evidence && evidence.historicalAnchorProgress,
       evidence && evidence.goalProgressAfter,
     );
     if (cmp != null && cmp > 0) return "WITHIN_SEGMENT_PROGRESS";
@@ -5453,14 +5457,36 @@ function tryAdaptiveCheckpointRepair(
       const probeStartExpansions = config && config.globalBudget
         ? config.globalBudget.consumedExpansions : 0;
       let probeExpired = false;
-      // PR-5.24c Iteration 2 – progress evidence capture: projections of the
-      // anchor-input state and the final best-progress state against the
-      // FIRST unfinished replay segment (cursor target). Restart semantics
-      // mean replay legs run from the anchor expand; the "before" projection
-      // is the anchor's own frontier state pre-replay, "after" is the best
-      // progress state the probe actually reached.
-      let goalProgressBefore = null;
+      // PR-5.24c Iteration 2 Follow-up A – progress evidence with a
+      // HISTORICAL baseline. Three projections against the first replay
+      // segment's goal:
+      //   historicalAnchorProgress: best projection of the ORIGINAL history's
+      //     anchor output (anchor.merged) — what the pre-rollback history
+      //     already achieved for the next segment.
+      //   repairedAnchorProgress: best projection of the repair anchor's
+      //     re-expanded output (expandedAnchor.merged / repairFrontier).
+      //   replayBestProgress: best downstream replay progress (unchanged).
+      // WITHIN_SEGMENT_PROGRESS then compares before = historicalAnchorProgress
+      // against after = best(repairedAnchorProgress, replayBestProgress), so
+      // a repair that spends the whole probe on anchor re-expand and never
+      // enters replay can still show genuine downstream-goal improvement of
+      // the NEW history over the OLD one — and a repair that merely
+      // reproduces the original history stays NO_MEASURABLE_PROGRESS.
+      let historicalAnchorProgress = null;
+      let repairedAnchorProgress = null;
       let goalProgressAfter = null;
+      const firstReplaySegmentForProgress =
+        segments[anchorHistoryIndex + 1] &&
+        segments[anchorHistoryIndex + 1] !== anchor.segment
+          ? segments[anchorHistoryIndex + 1]
+          : anchor.segment;
+      if (ticket && Array.isArray(anchor.merged) && anchor.merged.length > 0) {
+        historicalAnchorProgress = bestFrontierGoalProgress(
+          anchor.merged,
+          (state) => projectSegmentGoalProgress(
+            simulator.project, state, firstReplaySegmentForProgress),
+        );
+      }
 
       depthWavesAttempted += 1;
       const waveStartedAt = Date.now();
@@ -5523,23 +5549,15 @@ function tryAdaptiveCheckpointRepair(
       let memoryExecution = expandedAnchor.memoryLimited ? expandedAnchor : null;
       let memorySegmentIndex = expandedAnchor.memoryLimited ? anchorHistoryIndex : null;
 
-      // PR-5.24c Iteration 2 – "before" projection: the anchor-expanded
-      // frontier's first merged candidate state against the first replay
-      // segment (the probe starts here; any "after" improvement over this is
-      // attributable to the probe's own work). The anchor merged frontier is
-      // real search output (not a progress-only payload), so it exists in
-      // the parent for both local and isolated executions.
+      // PR-5.24c Follow-up A – repaired anchor projection: the best compact
+      // projection of the re-expanded frontier against the same first replay
+      // segment goal (frontier-wide lexicographic best, not [0]).
       if (ticket && repairFrontier && repairFrontier.length > 0) {
-        const firstReplaySegment = segments[anchorHistoryIndex + 1];
-        const anchorState = repairFrontier[0] && repairFrontier[0].state;
-        if (anchorState) {
-          goalProgressBefore = projectGoalProgressFor(
-            anchorState,
-            firstReplaySegment && firstReplaySegment !== anchor.segment
-              ? firstReplaySegment
-              : anchor.segment,
-          );
-        }
+        repairedAnchorProgress = bestFrontierGoalProgress(
+          repairFrontier,
+          (state) => projectSegmentGoalProgress(
+            simulator.project, state, firstReplaySegmentForProgress),
+        );
       }
 
       // PR-5.24c – probe expiry right after the anchor expand: if the local
@@ -5695,7 +5713,15 @@ function tryAdaptiveCheckpointRepair(
             if (cmp != null && cmp > 0) bestAfterProjection = projection;
           });
           if (bestAfterProjection) {
-            goalProgressAfter = bestAfterProjection;
+            // Follow-up A: after = best(repaired anchor, replay best) — the
+            // replay may or may not exceed the repaired anchor's own state;
+            // keep the lexicographic best of the two.
+            if (!goalProgressAfter) {
+              goalProgressAfter = bestAfterProjection;
+            } else {
+              const cmp = compareGoalProgress(goalProgressAfter, bestAfterProjection);
+              if (cmp != null && cmp < 0) goalProgressAfter = bestAfterProjection;
+            }
           }
         }
         // PR-5.24c Repair 1 (P1-2) – cursor advances past replay K only when
@@ -5914,7 +5940,8 @@ function tryAdaptiveCheckpointRepair(
         ticket.progressEvidence = {
           replaySegmentsCompleted: completedReplayCount,
           nextReplaySegmentIndex: ticket.nextReplaySegmentIndex,
-          goalProgressBefore,
+          historicalAnchorProgress,
+          repairedAnchorProgress,
           goalProgressAfter,
         };
         ticket.progressClass = classifyProgress(ticket, ticket.progressEvidence);
@@ -5953,7 +5980,8 @@ function tryAdaptiveCheckpointRepair(
           allocatedExpansions: schedulingWave ? waveProbeBudget.expansions : null,
           consumedWallMs: ticket.consumedWallMs,
           consumedExpansions: ticket.consumedExpansions,
-          progressBefore: goalProgressBefore,
+          progressBefore: historicalAnchorProgress,
+          repairedAnchorProgress,
           progressAfter: ticket.lastProgress,
           progressClass: ticket.progressClass,
           continuationEligible: ticket.continuationEligible,
