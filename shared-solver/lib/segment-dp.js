@@ -20,11 +20,7 @@ const {
   getTileDefinitionAt,
 } = require("./state");
 const { buildStateKey } = require("./state-key");
-const {
-  buildCounterfactualRepairIntents,
-  filterParetoOpportunities,
-  paretoDominates,
-} = require("./counterfactual-repair");
+const { buildCounterfactualRepairIntents } = require("./counterfactual-repair");
 const { getFloorOrder } = require("./floor-id");
 const { resolveRelativeFloor } = require("./floor-transitions");
 const { compileGoalDependencyGraph } = require("./goal-dependency-graph");
@@ -6323,19 +6319,23 @@ function tryAdaptiveCheckpointRepair(
       }
     }
 
-    // PR-5.24e — Counterfactual Resource-Investment Repair Generation.
+    // PR-5.24e / Repair 1 — Counterfactual Resource-Investment Repair Generation.
     // Triggered ONLY when:
-    //   1. Normal repair waves at this depth produced zero positive progress tickets;
-    //   2. At least one real repaired history completed its first probe;
+    //   1. Normal first round is truly complete: all normal tickets have probeCount >= 1;
+    //   2. Normal repair waves at this depth produced zero positive progress tickets;
     //   3. Global stop is clean (null);
-    //   4. Failure class is a trusted complete failure;
-    //   5. Not goal-reached.
+    //   4. Failure class is an eligible trusted complete failure;
+    //   5. Failed execution has canonical completion proof (isReplayDeterminatelyComplete);
+    //   6. Not goal-reached.
     // Executes at most one round of counterfactual generation per depth (no recursion).
-    const depthTicketsInitial = repairScheduling.hypotheses.filter((t) => t.depth === depth);
-    const realProbedInitial = depthTicketsInitial.filter(
-      (t) => t.probeCount >= 1 && t.anchorOutputStateKey != null,
+    const normalDepthTickets = repairScheduling.hypotheses.filter(
+      (t) => t.depth === depth && t.counterfactualIntentId == null,
     );
-    const positiveInitial = depthTicketsInitial.filter(
+    const normalFirstRoundComplete =
+      normalDepthTickets.length > 0 &&
+      normalDepthTickets.every((t) => t.probeCount >= 1);
+
+    const positiveInitial = normalDepthTickets.filter(
       (t) => t.progressClass === "WITHIN_SEGMENT_PROGRESS" || t.progressClass === "SEGMENT_ADVANCE",
     ).length;
     const globalStopBeforeCf = (config.globalBudget && config.globalBudget.stoppedReason) || null;
@@ -6348,17 +6348,26 @@ function tryAdaptiveCheckpointRepair(
       "action-survivability-deficit",
       "equipment-missing",
       "floor-progress-blocked",
+      "floor-scope-mismatch",
       "frontier-exhausted",
     ]);
     const currentFailureClass = triggerFailure.failureClass || "frontier-exhausted";
     const isTrustedCompleteFailure = trustedFailureClasses.has(currentFailureClass);
 
+    // Canonical completion proof on the failed execution itself
+    const failureExecutionDeterminateComplete = isReplayDeterminatelyComplete(failedExecution, {
+      probeExpiredBefore: false,
+      probeExpiredAfter: false,
+      resourceInterrupted: false,
+    });
+
     const shouldTriggerCounterfactual =
       !depthGoalReached &&
-      realProbedInitial.length >= 1 &&
+      normalFirstRoundComplete &&
       positiveInitial === 0 &&
       globalStopBeforeCf === null &&
       isTrustedCompleteFailure &&
+      failureExecutionDeterminateComplete &&
       typeof buildCounterfactualRepairIntents === "function" &&
       !counterfactualRepair.triggered;
 
@@ -7353,6 +7362,7 @@ function tryAdaptiveCheckpointRepair(
     depthSummaries,
     executions: [],
     ledgerExecutions,
+    counterfactualRepair,
   };
 }
 
@@ -8202,9 +8212,11 @@ module.exports = {
   isReplayDeterminatelyComplete,
   classifyAdaptiveHypothesisOutcome,
   buildRepairedHistoryHypotheses,
+  buildCounterfactualRepairIntents,
   __testHooks: {
     allocateGlobalAttemptBudget,
     buildRepairedHistoryHypotheses,
+    buildCounterfactualRepairIntents,
     BLOCKER_TILE_NUMBER: reachAndBattleOracle.BLOCKER_TILE_NUMBER,
     isTileBlocking: reachAndBattleOracle.isTileBlocking,
     closeStateForBattleFrontier:

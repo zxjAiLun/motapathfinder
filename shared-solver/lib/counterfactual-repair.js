@@ -1,15 +1,14 @@
 "use strict";
 
-const { buildDpStateKey } = require("./dp-search");
-
 /**
  * PR-5.24e — Counterfactual Resource-Investment Repair Generation.
  *
  * When normal "HP-conserving" repair histories fail to advance downstream,
  * this module scans for investment opportunities (willing to spend HP, money,
- * or keys to gain ATK, DEF, MDEF, EXP, LV, equipment, or path openings),
- * performs unweighted Pareto trade-off filtering and intent-kind coverage,
- * and synthesizes concrete canonical subgoals to be realized by canonical DP.
+ * or inventory resources to gain ATK, DEF, MDEF, EXP, LV, equipment, items,
+ * or path openings), performs unweighted Pareto trade-off filtering and
+ * intent-kind coverage, and synthesizes concrete canonical subgoals to be
+ * realized by canonical DP.
  */
 
 function number(value, fallback) {
@@ -18,10 +17,34 @@ function number(value, fallback) {
 }
 
 /**
+ * Computes component-wise inventory delta between before and after states.
+ * delta > 0 is recorded in inventoryGain[itemId]
+ * delta < 0 is recorded in inventoryCost[itemId]
+ */
+function diffInventory(beforeInventory, afterInventory) {
+  const before = beforeInventory || {};
+  const after = afterInventory || {};
+  const allKeys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  const inventoryGain = {};
+  const inventoryCost = {};
+  for (const k of allKeys) {
+    const bCount = number(before[k], 0);
+    const aCount = number(after[k], 0);
+    const delta = aCount - bCount;
+    if (delta > 0) {
+      inventoryGain[k] = delta;
+    } else if (delta < 0) {
+      inventoryCost[k] = -delta;
+    }
+  }
+  return { inventoryGain, inventoryCost };
+}
+
+/**
  * Checks whether opportunity A Pareto-dominates opportunity B.
  * Direction:
- *   Gains (atk, def, mdef, lv, exp, equipCount, pathOpportunity): larger is better.
- *   Costs (hpCost, moneyCost, keyCost): smaller is better.
+ *   Gains (atk, def, mdef, lv, exp, equipCount, pathOpportunity, moneyGain, inventoryGain[itemId]): larger is better.
+ *   Costs (hpCost, moneyCost, inventoryCost[itemId]): smaller is better.
  * A dominates B iff A is no worse in all dimensions and strictly better in at least one.
  */
 function paretoDominates(a, b) {
@@ -30,22 +53,44 @@ function paretoDominates(a, b) {
   const aCost = a.cost || {};
   const bCost = b.cost || {};
 
-  const gainKeys = ["atk", "def", "mdef", "lv", "exp", "equipCount", "pathOpportunity"];
-  const costKeys = ["hpCost", "moneyCost", "keyCost"];
+  const scalarGainKeys = ["atk", "def", "mdef", "lv", "exp", "equipCount", "pathOpportunity", "moneyGain"];
+  const scalarCostKeys = ["hpCost", "moneyCost"];
 
   let strictlyBetter = false;
 
-  for (const k of costKeys) {
+  for (const k of scalarCostKeys) {
     const cA = number(aCost[k], 0);
     const cB = number(bCost[k], 0);
     if (cA > cB) return false; // A has higher cost -> cannot dominate
     if (cA < cB) strictlyBetter = true;
   }
 
-  for (const k of gainKeys) {
+  for (const k of scalarGainKeys) {
     const gA = number(aGain[k], 0);
     const gB = number(bGain[k], 0);
     if (gA < gB) return false; // A has smaller gain -> cannot dominate
+    if (gA > gB) strictlyBetter = true;
+  }
+
+  // Component-wise inventory cost comparison (smaller is better)
+  const aInvCost = aCost.inventoryCost || {};
+  const bInvCost = bCost.inventoryCost || {};
+  const allCostItemIds = new Set([...Object.keys(aInvCost), ...Object.keys(bInvCost)]);
+  for (const itemId of allCostItemIds) {
+    const cA = number(aInvCost[itemId], 0);
+    const cB = number(bInvCost[itemId], 0);
+    if (cA > cB) return false;
+    if (cA < cB) strictlyBetter = true;
+  }
+
+  // Component-wise inventory gain comparison (larger is better)
+  const aInvGain = aGain.inventoryGain || {};
+  const bInvGain = bGain.inventoryGain || {};
+  const allGainItemIds = new Set([...Object.keys(aInvGain), ...Object.keys(bInvGain)]);
+  for (const itemId of allGainItemIds) {
+    const gA = number(aInvGain[itemId], 0);
+    const gB = number(bInvGain[itemId], 0);
+    if (gA < gB) return false;
     if (gA > gB) strictlyBetter = true;
   }
 
@@ -59,7 +104,6 @@ function paretoDominates(a, b) {
 function filterParetoOpportunities(opportunities) {
   const list = Array.isArray(opportunities) ? opportunities.filter(Boolean) : [];
   return list.filter((oppA, idxA) => {
-    // Check if any other opportunity B strictly dominates oppA
     for (let idxB = 0; idxB < list.length; idxB += 1) {
       if (idxA === idxB) continue;
       if (paretoDominates(list[idxB], oppA)) {
@@ -74,7 +118,7 @@ function filterParetoOpportunities(opportunities) {
  * Verifies that a synthesized goal has at least one concrete constraint,
  * preventing empty or no-op goals.
  */
-function isConcreteGoal(goal) {
+function isConcreteGoal(goal, opp) {
   if (!goal || typeof goal !== "object") return false;
   if (goal.floorId == null) return false;
   const hasMinHero = goal.minHero && Object.keys(goal.minHero).some((k) => number(goal.minHero[k], 0) > 0);
@@ -83,7 +127,12 @@ function isConcreteGoal(goal) {
   const hasTiles = (Array.isArray(goal.removedTiles) && goal.removedTiles.length > 0) ||
                    (Array.isArray(goal.presentTiles) && goal.presentTiles.length > 0);
   const hasAction = goal.actionSurvivable && (goal.actionSurvivable.summary || goal.actionSurvivable.action);
-  return Boolean(hasMinHero || hasMinEffective || hasEquipment || hasTiles || hasAction);
+
+  const isFloorTransition = opp && opp.action && (opp.action.kind === "changeFloor" || opp.action.kind === "floorFly") &&
+    opp.afterState && opp.startCandidate &&
+    opp.afterState.floorId !== ((opp.startCandidate.state && opp.startCandidate.state.floorId) || opp.startCandidate.floorId);
+
+  return Boolean(hasMinHero || hasMinEffective || hasEquipment || hasTiles || hasAction || isFloorTransition);
 }
 
 /**
@@ -135,6 +184,10 @@ function extractCandidateOpportunities(simulator, candidate, triggerFailure) {
     const aEquip = Array.isArray(aHero.equipment) ? aHero.equipment : [];
     const equipGained = aEquip.filter((item) => !sEquip.includes(item));
 
+    // Generic inventory delta
+    const { inventoryGain, inventoryCost } = diffInventory(state.inventory, after.inventory);
+    const hasInventoryGain = Object.keys(inventoryGain).some((k) => inventoryGain[k] > 0);
+
     // Path / Unlock / Transition opportunities
     let pathOpportunity = 0;
     if (after.floorId !== state.floorId) pathOpportunity += 1;
@@ -143,7 +196,7 @@ function extractCandidateOpportunities(simulator, candidate, triggerFailure) {
     // Costs (must be non-negative)
     const hpCost = Math.max(0, -hpDelta);
     const moneyCost = Math.max(0, -moneyDelta);
-    const keyCost = 0; // standard keys tracked in inventory if applicable
+    const moneyGain = Math.max(0, moneyDelta);
 
     // Gains (must be positive)
     const gain = {
@@ -154,17 +207,19 @@ function extractCandidateOpportunities(simulator, candidate, triggerFailure) {
       exp: Math.max(0, expDelta),
       equipCount: equipGained.length,
       pathOpportunity,
+      moneyGain,
+      inventoryGain,
     };
     const cost = {
       hpCost,
       moneyCost,
-      keyCost,
+      inventoryCost,
     };
 
     // An investment opportunity MUST yield a persistent positive gain
     const hasGain = gain.atk > 0 || gain.def > 0 || gain.mdef > 0 ||
                     gain.lv > 0 || gain.exp > 0 || gain.equipCount > 0 ||
-                    gain.pathOpportunity > 0 || moneyDelta > 0;
+                    gain.pathOpportunity > 0 || moneyGain > 0 || hasInventoryGain;
     if (!hasGain) continue; // Pure loss or zero delta is not an investment
 
     // Classify intent kind
@@ -173,7 +228,7 @@ function extractCandidateOpportunities(simulator, candidate, triggerFailure) {
       kind = "equipment";
     } else if (gain.lv > 0 || gain.exp > 0) {
       kind = "exp/level";
-    } else if (gain.pathOpportunity > 0 || action.kind === "openDoor" || action.kind === "useTool" || action.kind === "changeFloor") {
+    } else if (gain.pathOpportunity > 0 || action.kind === "openDoor" || action.kind === "useTool" || action.kind === "changeFloor" || action.kind === "floorFly") {
       kind = "path/unlock";
     } else if (gain.atk > 0 || gain.def > 0 || gain.mdef > 0) {
       kind = "stat";
@@ -197,6 +252,8 @@ function extractCandidateOpportunities(simulator, candidate, triggerFailure) {
         exp: expDelta,
         money: moneyDelta,
         equipment: equipGained,
+        inventoryGain,
+        inventoryCost,
         pathOpportunity,
       },
     });
@@ -209,12 +266,17 @@ function extractCandidateOpportunities(simulator, candidate, triggerFailure) {
  * Synthesizes a concrete Goal and ActionPolicy for an investment opportunity.
  */
 function synthesizeGoalAndPolicy(opp) {
+  const before = (opp.startCandidate && opp.startCandidate.state) ? opp.startCandidate.state : opp.startCandidate;
   const after = opp.afterState;
   const action = opp.action;
   const delta = opp.structuralDelta;
 
+  if (!before || !before.floorId || !after || !after.floorId) {
+    return { goal: null, actionPolicy: null };
+  }
+
   const goal = {
-    floorId: after.floorId || "F1",
+    floorId: after.floorId,
     minHero: {},
   };
 
@@ -228,7 +290,9 @@ function synthesizeGoalAndPolicy(opp) {
     goal.equipmentIncludes = delta.equipment.slice();
   }
 
-  if (action && action.target && action.target.x != null && action.target.y != null) {
+  if (action && (action.kind === "changeFloor" || action.kind === "floorFly")) {
+    goal.floorId = after.floorId;
+  } else if (action && action.target && action.target.x != null && action.target.y != null) {
     goal.removedTiles = [{
       floorId: action.floorId || after.floorId,
       x: action.target.x,
@@ -236,10 +300,24 @@ function synthesizeGoalAndPolicy(opp) {
     }];
   }
 
+  const allowedFloors = Array.from(new Set([before.floorId, after.floorId].filter(Boolean)));
+  const actionKinds = action && action.kind ? [action.kind] : ["battle", "pickup", "equip", "openDoor", "useTool"];
+  if (action && (action.kind === "changeFloor" || action.kind === "floorFly")) {
+    actionKinds.push(action.kind);
+  }
+
   const actionPolicy = {
-    allowedFloors: [after.floorId || "F1"],
-    actionKinds: action && action.kind ? [action.kind] : ["battle", "pickup", "equip", "openDoor", "useTool"],
+    allowedFloors,
+    actionKinds: Array.from(new Set(actionKinds)),
   };
+
+  if (action && action.kind === "changeFloor") {
+    const target = action.target || {};
+    const floorId = action.floorId || before.floorId;
+    if (floorId && target.x != null && target.y != null) {
+      actionPolicy.allowChangeFloors = [`${floorId}:${target.x},${target.y}`];
+    }
+  }
 
   return { goal, actionPolicy };
 }
@@ -281,7 +359,6 @@ function buildCounterfactualRepairIntents({
   }
 
   const selected = [];
-  // Round-robin selection across available kinds to ensure coverage
   const kinds = Array.from(byKind.keys());
   let added = true;
   let round = 0;
@@ -301,7 +378,7 @@ function buildCounterfactualRepairIntents({
   const intents = [];
   selected.forEach((opp, index) => {
     const { goal, actionPolicy } = synthesizeGoalAndPolicy(opp);
-    if (!isConcreteGoal(goal)) return; // Fail closed on non-concrete goals
+    if (!isConcreteGoal(goal, opp)) return; // Fail closed on non-concrete goals
 
     const candId = opp.startCandidate && opp.startCandidate.id != null
       ? String(opp.startCandidate.id)
@@ -331,4 +408,5 @@ module.exports = {
   filterParetoOpportunities,
   paretoDominates,
   isConcreteGoal,
+  diffInventory,
 };
