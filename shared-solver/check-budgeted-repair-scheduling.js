@@ -1146,7 +1146,7 @@ function buildSecondGrantSyntheticSimulator(gateAtk) {
 // (probe-limited, measurable statDeficit progress, none reaches the gate);
 // the continuation budget allows the full gate → FOUND in the second grant.
 function gateSecondGrantLateWinnerSynthetic() {
-  const GATE_ATK = 8;
+  const GATE_ATK = 10;
   const simulator = buildSecondGrantSyntheticSimulator(GATE_ATK);
   const SPEC = {
     routeName: "synthetic-second-grant-winner",
@@ -2371,7 +2371,7 @@ function buildDiversifiedSyntheticSimulator(gateAtk, options) {
 function gatePostAnchorHypothesisDiversification() {
   const { runMilestoneGraph } = require("./lib/segment-dp");
 
-  const GATE_ATK = 8;
+  const GATE_ATK = 10;
   const sim = buildDiversifiedSyntheticSimulator(GATE_ATK);
   const spec = {
     routeName: "g23-diversification",
@@ -2432,7 +2432,10 @@ function gatePostAnchorHypothesisDiversification() {
   const firstProbes = events.filter((e) => e.probeIndex === 1);
   assert.strictEqual(firstProbes.length, 3, "G23-B: all 3 first probes must run");
   const secondGrants = events.filter((e) => e.probeIndex === 2);
-  assert.ok(secondGrants.length >= 1, "G23-B: at least one second grant must run");
+  assert.ok(
+    secondGrants.length >= 1,
+    `G23-B: at least one second grant must run (got ${secondGrants.length})`,
+  );
   const lastFirstProbeIndex = events.reduce((acc, e, i) => (e.probeIndex === 1 ? i : acc), -1);
   const firstSecondGrantIndex = events.findIndex((e) => e.probeIndex === 2);
   assert.ok(lastFirstProbeIndex < firstSecondGrantIndex, "G23-B: all first probes must precede any second grant");
@@ -2589,6 +2592,66 @@ function gatePostAnchorHypothesisDiversification() {
   assert.strictEqual((bTicketDriftHp.grantHistory[1] || {}).outcome, "history-not-reproduced", "G23-G(state-drift): grantHistory[1] outcome must be history-not-reproduced");
   assert.strictEqual(resDriftHp.budget && resDriftHp.budget.stoppedReason, null, "G23-G(state-drift): global stop must stay null");
 
+  // G23-H: Child Probe Budget Independence (PR-5.24d Repair 2)
+  // Each child hypothesis gets a fresh bounded first probe (not a remainder of anchor).
+  // Tickets = 3, each child has historyProbeExpansions > 0,
+  // allocatedExpansions = adaptiveHypothesisProbeExpansions,
+  // allocatedWallMs = adaptiveHypothesisProbeWallMs,
+  // anchor execution count = 1.
+  assert.strictEqual(tickets.length, 3, "G23-H: tickets count must be 3");
+  assert.ok(tickets[0].historyProbeExpansions > 0, "G23-H: ticket 0 historyProbeExpansions > 0");
+  assert.ok(tickets[1].historyProbeExpansions > 0, "G23-H: ticket 1 historyProbeExpansions > 0");
+  assert.ok(tickets[2].historyProbeExpansions > 0, "G23-H: ticket 2 historyProbeExpansions > 0");
+  const firstProbeEventsH = events.filter((e) => e.probeIndex === 1);
+  assert.strictEqual(firstProbeEventsH.length, 3, "G23-H: exactly 3 first-probe events");
+  firstProbeEventsH.forEach((ev, i) => {
+    assert.strictEqual(
+      ev.allocatedExpansions, 4,
+      `G23-H event ${i}: allocatedExpansions must equal probeExpansions (4), not remainder`,
+    );
+    assert.strictEqual(
+      ev.allocatedWallMs, 2000,
+      `G23-H event ${i}: allocatedWallMs must equal probeWallMs (2000), not remainder`,
+    );
+  });
+  const anchorExecutions = (result.executionCompletionLedger || []).filter((e) => e.phase === "adaptive-expand");
+  assert.strictEqual(anchorExecutions.length, 1, "G23-H: shared anchor expansion count must be exactly 1");
+
+  // G23-H2: Partial first-round headroom barrier (PR-5.24d Repair 2)
+  // Sized global budget so A1 and B1 run, but C1 has insufficient headroom.
+  // Barrier must strictly prevent second grants (secondGrants = 0), and
+  // depthOutcome must be "incomplete" (never exhausted).
+  const simH2 = buildDiversifiedSyntheticSimulator(GATE_ATK);
+  const resH2 = runMilestoneGraph(simH2, simH2.createInitialState(), spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 30, // Sized so C1 has insufficient headroom
+    maxRuntimeMs: 60000,
+    maxRssMb: 4096,
+    candidateLimit: 1,
+    initialFrontier: [{ id: "origin", state: simH2.createInitialState() }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 4,
+    adaptiveHypothesisContinuationExpansions: 40,
+    adaptiveHypothesisContinuationMaxPerDepth: 1,
+  });
+  const rsH2 = resH2.repairScheduling || ((resH2.failedSegment || {}).backtrack || {}).repairScheduling;
+  assert.ok(rsH2, "G23-H2: scheduling telemetry required");
+  assert.strictEqual(rsH2.hypotheses.length, 3, "G23-H2: 3 hypotheses generated");
+  assert.strictEqual(rsH2.hypotheses[0].probeCount, 1, "G23-H2: hypothesis 0 probeCount must be 1");
+  assert.strictEqual(rsH2.hypotheses[1].probeCount, 1, "G23-H2: hypothesis 1 probeCount must be 1");
+  assert.strictEqual(rsH2.hypotheses[2].probeCount, 0, "G23-H2: hypothesis 2 probeCount must be 0 (no headroom)");
+  const secondGrantsH2 = rsH2.events.filter((e) => e.probeIndex === 2);
+  assert.strictEqual(secondGrantsH2.length, 0, "G23-H2: barrier must prevent any second grant when first round incomplete");
+  const depthSumH2 = ((resH2.failedSegment || {}).backtrack || {}).depthSummaries || [];
+  if (depthSumH2.length > 0) {
+    assert.strictEqual(depthSumH2[0].depthOutcome, "incomplete", "G23-H2: depthOutcome must be incomplete (not exhausted)");
+    assert.strictEqual(depthSumH2[0].depthExhausted, false, "G23-H2: depthExhausted must be false");
+  }
+
   return {
     g23A_oneInputThreeOutputs: tickets.length,
     g23B_firstProbeFairness: true,
@@ -2597,6 +2660,8 @@ function gatePostAnchorHypothesisDiversification() {
     g23E_noEnumerationWidening: true,
     g23F_oneOutputEquivalence: true,
     g23G_identityFailClosedAndDrift: true,
+    g23H_childProbeBudgetIndependence: true,
+    g23H2_partialFirstRoundHeadroomBarrier: true,
   };
 }
 

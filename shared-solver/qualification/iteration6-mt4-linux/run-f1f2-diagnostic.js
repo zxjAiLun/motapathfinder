@@ -87,10 +87,15 @@ function main() {
   const events = (rs && rs.events) || [];
   const budgetStop = result.budget && result.budget.stoppedReason;
   const resourceStops = new Set(["rss-limit", "heap-limit", "time-limit", "expansion-limit"]);
+  const schedulerPending = tickets.some((t) => t.status === "PROBE_PENDING");
   let finalCanonicalOutcome;
   if (result.found) finalCanonicalOutcome = "FOUND";
-  else if (runWide.finalPending > 0 || (budgetStop && resourceStops.has(budgetStop))) {
+  else if (budgetStop && resourceStops.has(budgetStop)) {
     finalCanonicalOutcome = "RESOURCE_LIMITED";
+  } else if (runWide.finalPending > 0) {
+    finalCanonicalOutcome = "RESOURCE_LIMITED";
+  } else if (schedulerPending) {
+    finalCanonicalOutcome = "INCOMPLETE_SCOPE";
   } else if (runWide.terminalIncomplete > 0 || runWide.unknownCompletion > 0) {
     finalCanonicalOutcome = "INCOMPLETE_SCOPE";
   } else if (result.cancelled) finalCanonicalOutcome = "CANCELLED";
