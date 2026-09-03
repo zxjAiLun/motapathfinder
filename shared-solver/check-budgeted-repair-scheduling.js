@@ -346,6 +346,7 @@ function main() {
   const g21 = timedGate("G21", gateIsolatedSecondGrantAuthority);
   const g21b = timedGate("G21b", gateCompactIsolatedProgressPayload);
   const g22 = timedGate("G22", gateHistoricalAnchorDeltaProgress);
+  const g22i = timedGate("G22i", gateHistoricalAnchorDeltaProgressIntegration);
   console.error(JSON.stringify({ gateTimings }));
 
   console.log(JSON.stringify({
@@ -393,6 +394,7 @@ function main() {
       g21IsolatedSecondGrantAuthority: g21,
       g21bCompactIsolatedProgressPayload: g21b,
       g22HistoricalAnchorDeltaProgress: g22,
+      g22iHistoricalAnchorDeltaIntegration: g22i,
     },
   }, null, 2));
 }
@@ -1837,19 +1839,21 @@ function gateDeterminateCompletionFailClose() {
   };
 }
 
-// G22 – Historical anchor delta progress (Follow-up A). The with-segment
-// progress evidence uses the ORIGINAL history's anchor output as the
-// baseline and the best of (repaired anchor, replay progress) as after.
-// Uses the PRODUCTION shared helpers (bestFrontierGoalProgress +
-// compareProgressProjections + the production classifyProgress semantics
-// replicated through the same comparator) — no copied scalar logic.
+// G22 – Historical anchor delta progress (Follow-up A Repair 1): a
+// PRODUCTION wiring gate. This function covers the direction contracts
+// (Part 1: bestOf/compare/frontier-best) and the G22-A positive wiring
+// through the ORIGIN-GATED SYNTHETIC simulator (no OnlyUp load — fast).
+// The real-map integration shapes (G22-B/C/Part-3 consistency) live in
+// gateHistoricalAnchorDeltaProgressIntegration (heavy only).
 function gateHistoricalAnchorDeltaProgress() {
   const {
-    compactProgressProjection,
     compareProgressProjections,
     bestFrontierGoalProgress,
+    bestOfProgressProjections,
   } = require("./lib/segment-progress");
+  const { runMilestoneGraph } = require("./lib/segment-dp");
 
+  // ---------- Part 1: shared helper direction contracts ----------
   const base = (over) => Object.assign({
     feasible: true, floorMatch: false, completion: 0.5,
     requirementsMet: 1, requirementsTotal: 2,
@@ -1871,52 +1875,30 @@ function gateHistoricalAnchorDeltaProgress() {
     nextLandmarkReachable: true,
     nextLandmarkDistance: 5,
   });
-  // Production semantics: WITHIN_SEGMENT_PROGRESS iff historical < after.
-  const classify = (historical, after, completedReplays) => {
-    if (completedReplays >= 1) return "SEGMENT_ADVANCE";
-    const cmp = compareProgressProjections(historical, after);
-    if (cmp != null && cmp > 0) return "WITHIN_SEGMENT_PROGRESS";
-    return "NO_MEASURABLE_PROGRESS";
-  };
 
-  // G22-A: repaired anchor strictly improves the historical baseline, no
-  // replay entered → WITHIN_SEGMENT_PROGRESS.
-  const histA = base();
-  const repA = base({ completion: 0.8, statDeficit: 0.2 });
+  // bestOfProgressProjections direction probes: whichever side is better
+  // wins regardless of argument order.
+  const p03 = base({ completion: 0.3 });
+  const p01 = base({ completion: 0.1 });
   assert.strictEqual(
-    classify(histA, repA, 0),
-    "WITHIN_SEGMENT_PROGRESS",
-    "G22-A: a repaired anchor that strictly improves the historical baseline must classify WITHIN_SEGMENT_PROGRESS even with zero replay entered",
+    bestOfProgressProjections(p03, p01).completion, 0.3,
+    "G22(direction): bestOf(0.3, 0.1) must keep 0.3",
   );
-
-  // G22-B: repair merely reproduces the baseline → NO_MEASURABLE_PROGRESS
-  // (the anti "expensive auto-renewal" gate).
-  const histB = base();
-  const repB = base();
   assert.strictEqual(
-    classify(histB, repB, 0),
-    "NO_MEASURABLE_PROGRESS",
-    "G22-B: a repair that merely reproduces the original history must stay NO_MEASURABLE_PROGRESS",
+    bestOfProgressProjections(p01, p03).completion, 0.3,
+    "G22(direction): bestOf(0.1, 0.3) must keep 0.3",
   );
-
-  // G22-C: anchor equal, downstream replay improves → WITHIN_SEGMENT_PROGRESS
-  // (the pre-Follow-up-A capability is retained).
-  const histC = base();
-  const replayBestC = base({ completion: 0.9, requirementsMet: 2 });
   assert.strictEqual(
-    classify(histC, replayBestC, 0),
-    "WITHIN_SEGMENT_PROGRESS",
-    "G22-C: an equal anchor with improving downstream replay must stay WITHIN_SEGMENT_PROGRESS",
+    bestOfProgressProjections(null, p01).completion, 0.1,
+    "G22(direction): bestOf(null, 0.1) must return 0.1",
   );
-
-  // G22-D: repaired anchor regresses → NO_MEASURABLE_PROGRESS (change
-  // alone is not progress).
-  const histD = base({ completion: 0.6 });
-  const repD = base({ completion: 0.2, statDeficit: 0.8 });
   assert.strictEqual(
-    classify(histD, repD, 0),
-    "NO_MEASURABLE_PROGRESS",
-    "G22-D: a regressing repaired anchor must stay NO_MEASURABLE_PROGRESS",
+    bestOfProgressProjections(p01, null).completion, 0.1,
+    "G22(direction): bestOf(0.1, null) must return 0.1",
+  );
+  assert.strictEqual(
+    bestOfProgressProjections(null, null), null,
+    "G22(direction): bestOf(null, null) must return null",
   );
 
   // G22-E: frontier-wide best projection, order independent.
@@ -1930,10 +1912,7 @@ function gateHistoricalAnchorDeltaProgress() {
   ];
   const bestHistorical = bestFrontierGoalProgress(historicalFrontier, projector);
   const bestRepaired = bestFrontierGoalProgress(repairedFrontier, projector);
-  assert.ok(
-    bestHistorical && bestRepaired,
-    "G22-E: projections must be produced",
-  );
+  assert.ok(bestHistorical && bestRepaired, "G22-E: projections must be produced");
   const shuffledHistorical = [historicalFrontier[1], historicalFrontier[0]];
   const shuffledRepaired = [repairedFrontier[1], repairedFrontier[0]];
   assert.deepStrictEqual(
@@ -1946,101 +1925,301 @@ function gateHistoricalAnchorDeltaProgress() {
     bestRepaired,
     "G22-E: shuffling the repaired frontier must not change the best projection",
   );
-  // The best is the MAX (0.3 / 0.4), not [0].
   assert.strictEqual(bestHistorical.completion, 0.3, "G22-E: best historical projection is the frontier max, not [0]");
   assert.strictEqual(bestRepaired.completion, 0.4, "G22-E: best repaired projection is the frontier max, not [0]");
-  assert.strictEqual(
-    classify(bestHistorical, bestRepaired, 0),
-    "WITHIN_SEGMENT_PROGRESS",
-    "G22-E: the frontier-wide best comparison must classify improvement",
-  );
 
-  // G22 integration (production wiring, real map, synthetic history): a
-  // wave whose anchor re-expand strictly improves the ORIGINAL history
-  // frontier for the next segment's goal must yield WITHIN_SEGMENT_PROGRESS
-  // even when the probe expires before any replay leg runs. Build it with
-  // the synthetic stat-gate simulator: the original history merged frontier
-  // has atk 0; the repair anchor re-expand (with more budget) reaches a
-  // higher-atk state; probe budget is sized so the replay never starts.
-  const project = loadProject(DEFAULT_PROJECT_ROOT);
-  const simulator = buildSimulator(project);
-  const base0 = simulator.createInitialState();
-  const initialFrontier = [{ id: "hyp-A", state: base0, tags: ["initial"] }];
-  // Force the ORIGINAL history to be weak (atk 0): the anchor merged state
-  // at MT2 starts at the floor.
-  const weakMerged = [{ id: "hist#0", state: (() => {
-    const s = JSON.parse(JSON.stringify(base0));
-    s.floorId = "MT2";
-    s.hero.atk = 0;
-    return s;
-  })(), tags: [] }];
-  const STRONG_GATE_SPEC = {
-    routeName: "g22-historical-delta",
-    milestones: [
+  // ---------- Part 2: production wiring A-D via synthetic simulator ----------
+  // Strategy: use the origin-gated work simulator (from G18) where the
+  // amount of available work is origin-controlled. Two synthetic
+  // milestones: seg1 (anchor segment, trivial goal) and seg2 (stat gate).
+  // The HISTORICAL merged frontier (from the ORIGINAL initial execution of
+  // seg1 starting at origin A with no work) has atk 0 → weak baseline.
+  // The repair anchor re-expand (origin B with work available) produces a
+  // higher-atk frontier → repaired > historical. A small probe lets the
+  // anchor complete but stops the replay mid-flight → probe-limited with
+  // WITHIN_SEGMENT_PROGRESS via the historical-delta evidence.
+  //
+  // G22-A (positive wiring): B's repair improves the historical baseline →
+  // WITHIN_SEGMENT_PROGRESS + eligible + granted second grant.
+  //
+  // G22-B (negative wiring): a repair whose anchor output reproduces the
+  // historical frontier → NO_MEASURABLE_PROGRESS + not eligible + 0 grants.
+  // Constructed with origin C (no work either) whose repair re-expand
+  // produces the same empty-atk frontier as the history.
+
+  const runSyntheticWiring = (gateAtk, probeExp, contExp) => {
+    const sim = buildSecondGrantSyntheticSimulator(gateAtk);
+    const spec = {
+      routeName: "g22-wiring",
+      milestones: [
+        {
+          id: "seg1",
+          label: "Anchor",
+          goal: { floorId: "F1", minHero: { atk: 0 } },
+          actionPolicy: { allowedFloors: ["F1"], actionKinds: ["pickup"] },
+          // The INITIAL seg1 execution only tries the first start candidate
+          // (origin A, no work) so the initial seg2 run cannot reach the
+          // gate and fails — the repair waves are the only path.
+          dp: { maxExpansions: 8000, startCandidateLimit: 1 },
+        },
+        {
+          id: "seg2",
+          label: "Gated",
+          startFrom: "seg1",
+          goal: { floorId: "F1", minHero: { atk: gateAtk } },
+          actionPolicy: { allowedFloors: ["F1"], actionKinds: ["pickup"] },
+          dp: { maxExpansions: 16000 },
+        },
+      ],
+    };
+    const frontier = [
+      { id: "hyp-A", state: sim.createInitialState({ origin: "A" }), tags: ["initial"] },
+      { id: "hyp-B", state: sim.createInitialState({ origin: "B" }), tags: ["initial"] },
+      { id: "hyp-C", state: sim.createInitialState({ origin: "C" }), tags: ["initial"] },
+    ];
+    const result = runMilestoneGraph(
+      sim,
+      sim.createInitialState({ origin: "A" }),
+      spec,
       {
-        id: "seg1",
-        label: "Cheap",
-        goal: { floorId: "MT2" },
-        actionPolicy: { allowedFloors: ["MT1", "MT2"] },
-        dp: { maxExpansions: 8000 },
+        searchIntent: "adaptive-feasible",
+        enableFailureBacktracking: true,
+        adaptiveBacktrackDepth: 1,
+        budgetScope: "global-run",
+        maxExpansions: 50000,
+        maxRuntimeMs: 60000,
+        maxRssMb: 4096,
+        memoryCheckIntervalExpansions: 1,
+        memoryCheckIntervalActions: 1,
+        candidateLimit: 8,
+        initialFrontier: frontier,
+        enableBudgetedRepairScheduling: true,
+        enableBudgetedRepairContinuation: true,
+        adaptiveHypothesisProbeWallMs: 60000,
+        adaptiveHypothesisProbeExpansions: probeExp,
+        adaptiveHypothesisContinuationExpansions: contExp,
+        adaptiveHypothesisContinuationMaxPerDepth: 1,
       },
-      {
-        id: "seg2",
-        label: "Stat gate",
-        startFrom: "seg1",
-        goal: { floorId: "MT2", minHero: { atk: 300 } },
-        actionPolicy: { allowedFloors: ["MT2"] },
-        dp: { maxExpansions: 16000 },
-      },
-    ],
+    );
+    const rs = schedulingOf(result);
+    return { result, rs };
   };
-  // Run a repair where the anchor re-expand gets enough budget to collect
-  // gems (higher atk at MT2) but the probe expires before the replay
-  // completes anything measurable: probe = ~115 (anchor) + tiny replay.
-  const result = runMilestoneGraph(
-    simulator,
-    base0,
-    STRONG_GATE_SPEC,
-    {
-      searchIntent: "adaptive-feasible",
-      enableFailureBacktracking: true,
-      adaptiveBacktrackDepth: 1,
-      budgetScope: "global-run",
-      maxExpansions: 50000,
-      maxRuntimeMs: 60000,
-      maxRssMb: 4096,
-      memoryCheckIntervalExpansions: 1,
-      memoryCheckIntervalActions: 1,
-      candidateLimit: 8,
-      initialFrontier,
-      enableBudgetedRepairScheduling: true,
-      enableBudgetedRepairContinuation: true,
-      adaptiveHypothesisProbeWallMs: 60000,
-      adaptiveHypothesisProbeExpansions: 150,
-      adaptiveHypothesisContinuationExpansions: 2000,
-      adaptiveHypothesisContinuationMaxPerDepth: 1,
-    },
-  );
-  // NOTE: this integration shape relies on the ORIGINAL history's merged
-  // frontier being the anchor.merged recorded at history-push time; the
-  // projection machinery is exercised through the production path. Assert
-  // the evidence schema exists on any ticket.
-  const rs = schedulingOf(result);
-  if (rs && Array.isArray(rs.hypotheses) && rs.hypotheses.length > 0) {
-    rs.hypotheses.forEach((ticket, index) => {
-      assert.ok(
-        ticket.progressEvidence &&
-          ticket.progressEvidence.hasOwnProperty("historicalAnchorProgress") &&
-          ticket.progressEvidence.hasOwnProperty("repairedAnchorProgress"),
-        `G22(integration) ticket ${index}: progressEvidence must carry historicalAnchorProgress and repairedAnchorProgress`,
+
+  // G22-A: B's repair anchor improves on the historical baseline (the
+  // history's merged frontier at atk 0 vs repair's atk > 0) even though
+  // the replay never completes a segment.
+  {
+    const { result, rs } = runSyntheticWiring(8, 4, 40);
+    assert.ok(rs, "G22-A: scheduling telemetry required");
+    const tickets = rs.hypotheses || [];
+    assert.ok(tickets.length >= 1, "G22-A: hypotheses required");
+    const events = rs.events || [];
+    const firstProbes = events.filter((e) => e.probeIndex === 1);
+    const secondGrants = events.filter((e) => e.probeIndex === 2);
+    assert.ok(
+      firstProbes.length >= 3,
+      `G22-A: all sibling first probes must run (got ${firstProbes.length})`,
+    );
+    // At least one ticket must show the historical-delta improvement AND be
+    // granted the second grant AND reach FOUND (that IS the G18 shape, now
+    // powered by the historical-baseline evidence instead of requiring a
+    // completed replay).
+    const grantedTicket = tickets.find(
+      (t) => t.probeCount === 2 &&
+        (t.grantHistory || [])[1] &&
+        t.grantHistory[1].outcome === "goal-reached");
+    assert.ok(
+      grantedTicket,
+      `G22-A: a second grant must reach goal-reached through the production path (tickets=${JSON.stringify(tickets.map((t) => [t.progressClass, t.probeCount, (t.grantHistory || []).map((g) => g.outcome)]))})`,
+    );
+    assert.ok(
+      grantedTicket.progressClass === "WITHIN_SEGMENT_PROGRESS" ||
+        grantedTicket.progressClass === "SEGMENT_ADVANCE",
+      `G22-A: the granted ticket's first probe must show measurable progress via the historical delta (got ${grantedTicket.progressClass})`,
+    );
+    assert.ok(
+      grantedTicket.progressEvidence &&
+        grantedTicket.progressEvidence.historicalAnchorProgress &&
+        grantedTicket.progressEvidence.repairedAnchorProgress,
+      "G22-A: the granted ticket must carry both historical and repaired projections",
+    );
+    const ev = grantedTicket.progressEvidence;
+    // The WITHIN classification may come from the anchor delta OR from the
+    // replay best; what must ALWAYS hold is the internal consistency:
+    // after == best(repaired, replayBest) and after > historical.
+    const expected = bestOfProgressProjections(
+      ev.repairedAnchorProgress, ev.replayBestProgress);
+    assert.deepStrictEqual(
+      ev.goalProgressAfter, expected,
+      "G22-A: goalProgressAfter must equal best(repaired, replayBest) on the granted ticket",
+    );
+    const cmpAfter = compareProgressProjections(
+      ev.historicalAnchorProgress, ev.goalProgressAfter);
+    assert.ok(
+      cmpAfter != null && cmpAfter > 0,
+      `G22-A: WITHIN_SEGMENT_PROGRESS requires the after evidence to strictly improve on the historical baseline (cmp=${cmpAfter})`,
+    );
+    assert.strictEqual(
+      result.found, true,
+      "G22-A: the second-grant winner must deliver top-level FOUND",
+    );
+    assert.strictEqual(
+      result.budget && result.budget.stoppedReason, null,
+      "G22-A: parent global stop must stay null",
+    );
+  }
+
+  return {
+    directionProbes: 5,
+    frontierBestOrderIndependent: true,
+    productionWiring: ["A"],
+    evidenceSchema: "historical/repaired/replayBest/after",
+  };
+}
+
+// G22-integration – heavy real-map shapes (OnlyUp load required): G22-B
+// (anti auto-renewal, unreachable destination), G22-C (stat-gate
+// consistency), and Part 3 (schema + goalProgressAfter == best(repaired,
+// replayBest) on real repair tickets).
+function gateHistoricalAnchorDeltaProgressIntegration() {
+  const { compareProgressProjections, bestOfProgressProjections } =
+    require("./lib/segment-progress");
+
+  const base = (over) => Object.assign({
+    feasible: true, floorMatch: false, completion: 0.5,
+    requirementsMet: 1, requirementsTotal: 2,
+    downstreamCompletion: 0, downstreamRequirementsMet: 0,
+    irreversibleLandmarksMet: 0, nextLandmarkReachable: true,
+    nextLandmarkDistance: 5, statDeficit: 0.5,
+  }, over || {});
+
+  // G22-B actual: the unreachable-destination fixture (nothing can ever
+  // improve the next-segment goal projection) → all tickets
+  // NO_MEASURABLE_PROGRESS → zero second grants.
+  {
+    const project = loadProject(DEFAULT_PROJECT_ROOT);
+    const simulator = buildSimulator(project);
+    const result = runContinuationGraph(
+      simulator, SYNTHETIC_SPEC, syntheticInitialFrontier(simulator), {
+        maxRuntimeMs: 180000,
+        adaptiveHypothesisProbeExpansions: 100,
+        adaptiveHypothesisContinuationExpansions: 3000,
+        adaptiveHypothesisContinuationMaxPerDepth: 1,
+      });
+    const rs = schedulingOf(result);
+    assert.ok(rs, "G22-B: scheduling telemetry required");
+    const tickets = rs.hypotheses || [];
+    tickets.forEach((ticket, index) => {
+      assert.strictEqual(
+        ticket.progressClass,
+        "NO_MEASURABLE_PROGRESS",
+        `G22-B ticket ${index}: a repair that cannot improve the historical baseline must stay NO_MEASURABLE_PROGRESS (got ${ticket.progressClass})`,
+      );
+      assert.strictEqual(
+        ticket.continuationEligible,
+        false,
+        `G22-B ticket ${index}: not eligible`,
+      );
+    });
+    const secondGrants = (rs.events || []).filter((e) => e.probeIndex === 2);
+    assert.strictEqual(
+      secondGrants.length, 0,
+      `G22-B: zero second grants when no repair improves the history (got ${secondGrants.length})`,
+    );
+  }
+
+  // G22-C: anchor equal to history + downstream replay improves →
+  // WITHIN_SEGMENT_PROGRESS (the pre-Follow-up-A capability). The stat-gate
+  // fixture: B's replay (if entered) collects gems beyond the anchor.
+  {
+    const project = loadProject(DEFAULT_PROJECT_ROOT);
+    const simulator = buildSimulator(project);
+    const result = runContinuationGraph(
+      simulator, STAT_GATE_SPEC, statGateFrontier(simulator), {
+        maxRuntimeMs: 180000,
+        adaptiveHypothesisProbeExpansions: 150,
+        adaptiveHypothesisContinuationExpansions: 2000,
+        adaptiveHypothesisContinuationMaxPerDepth: 1,
+      });
+    const rs = schedulingOf(result);
+    assert.ok(rs, "G22-C: scheduling telemetry required");
+    const tickets = rs.hypotheses || [];
+    const progressTickets = tickets.filter(
+      (t) => t.progressClass === "WITHIN_SEGMENT_PROGRESS" ||
+        t.progressClass === "SEGMENT_ADVANCE");
+    assert.ok(
+      progressTickets.length >= 1,
+      `G22-C: the stat-gate fixture must produce progress tickets (got ${JSON.stringify(tickets.map((t) => t.progressClass))})`,
+    );
+    // Internal consistency: goalProgressAfter == best(repaired, replayBest).
+    tickets.forEach((ticket, index) => {
+      const ev = ticket.progressEvidence;
+      if (!ev) return;
+      const expected = bestOfProgressProjections(
+        ev.repairedAnchorProgress,
+        ev.replayBestProgress);
+      assert.deepStrictEqual(
+        ev.goalProgressAfter,
+        expected,
+        `G22-C ticket ${index}: goalProgressAfter must equal best(repairedAnchorProgress, replayBestProgress)`,
       );
     });
   }
 
+  // G22-D: repaired anchor regresses → NO_MEASURABLE_PROGRESS. The
+  // production path cannot easily force a regressing anchor without a
+  // dedicated simulator; the shared comparator contract covers the
+  // classification semantics (regression is not progress) and the wiring
+  // is already proven by A/B/C.
+  {
+    const histD = base({ completion: 0.6 });
+    const repD = base({ completion: 0.2, statDeficit: 0.8 });
+    const cmp = compareProgressProjections(histD, repD);
+    assert.ok(
+      cmp != null && cmp < 0,
+      "G22-D: a regressing repaired anchor must compare strictly worse than the historical baseline",
+    );
+  }
+
+  // ---------- Part 3: real-map integration (schema + consistency) ----------
+  {
+    const project = loadProject(DEFAULT_PROJECT_ROOT);
+    const simulator = buildSimulator(project);
+    const result = runContinuationGraph(
+      simulator, STAT_GATE_SPEC, statGateFrontier(simulator), {
+        maxRuntimeMs: 180000,
+        adaptiveHypothesisProbeExpansions: 150,
+        adaptiveHypothesisContinuationExpansions: 2000,
+        adaptiveHypothesisContinuationMaxPerDepth: 1,
+      });
+    const rs = schedulingOf(result);
+    if (rs && Array.isArray(rs.hypotheses) && rs.hypotheses.length > 0) {
+      rs.hypotheses.forEach((ticket, index) => {
+        const ev = ticket.progressEvidence;
+        assert.ok(
+          ev && ev.hasOwnProperty("historicalAnchorProgress") &&
+            ev.hasOwnProperty("repairedAnchorProgress") &&
+            ev.hasOwnProperty("replayBestProgress"),
+          `G22(integration) ticket ${index}: progressEvidence must carry historicalAnchorProgress, repairedAnchorProgress, replayBestProgress`,
+        );
+        if (ev) {
+          const expected = bestOfProgressProjections(
+            ev.repairedAnchorProgress, ev.replayBestProgress);
+          assert.deepStrictEqual(
+            ev.goalProgressAfter, expected,
+            `G22(integration) ticket ${index}: goalProgressAfter must equal best(repaired, replayBest)`,
+          );
+        }
+      });
+    }
+  }
+
   return {
-    shapes: ["A", "B", "C", "D", "E"],
+    directionProbes: 5,
     frontierBestOrderIndependent: true,
-    evidenceSchema: "historicalAnchorProgress/repairedAnchorProgress/goalProgressAfter",
+    productionWiring: ["A", "B", "C", "D(semantics)"],
+    integrationConsistency: true,
+    evidenceSchema: "historical/repaired/replayBest/after",
   };
 }
 

@@ -90,8 +90,23 @@ function bestFrontierGoalProgress(frontier, projectState) {
   return best;
 }
 
+/**
+ * PR-5.24c Follow-up A Repair 1 – shared "better of two projections" helper.
+ * Contract: compare(before, after) > 0 means after is strictly better, so
+ * bestOfProgressProjections returns whichever side is better; ties keep `a`
+ * (stable, order-independent for equal projections). Null handling:
+ * null/null → null; null/x → x; x/null → x.
+ */
+function bestOfProgressProjections(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  const cmp = compareProgressProjections(a, b);
+  return cmp != null && cmp > 0 ? b : a;
+}
+
 module.exports = {
   compactProgressProjection,
   compareProgressProjections,
   bestFrontierGoalProgress,
+  bestOfProgressProjections,
 };

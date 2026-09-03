@@ -39,6 +39,7 @@ const {
   compactProgressProjection,
   compareProgressProjections,
   bestFrontierGoalProgress,
+  bestOfProgressProjections,
 } = require("./segment-progress");
 
 function number(value, fallback) {
@@ -5474,6 +5475,7 @@ function tryAdaptiveCheckpointRepair(
       // reproduces the original history stays NO_MEASURABLE_PROGRESS.
       let historicalAnchorProgress = null;
       let repairedAnchorProgress = null;
+      let replayBestProgress = null;
       let goalProgressAfter = null;
       const firstReplaySegmentForProgress =
         segments[anchorHistoryIndex + 1] &&
@@ -5558,6 +5560,15 @@ function tryAdaptiveCheckpointRepair(
           (state) => projectSegmentGoalProgress(
             simulator.project, state, firstReplaySegmentForProgress),
         );
+        // Repair 1 (P1-1): SEED the after-evidence with the repaired
+        // anchor projection. Without this seed, a probe whose budget is
+        // consumed entirely by the anchor re-expand (no replay evidence)
+        // leaves goalProgressAfter = null and the classifier can never see
+        // the historical -> repaired improvement. The semantic contract:
+        //   before = historicalAnchorProgress
+        //   after  = best(repairedAnchorProgress, replayBestProgress)
+        // so the seed IS the after value until a replay leg improves it.
+        goalProgressAfter = repairedAnchorProgress;
       }
 
       // PR-5.24c – probe expiry right after the anchor expand: if the local
@@ -5713,15 +5724,19 @@ function tryAdaptiveCheckpointRepair(
             if (cmp != null && cmp > 0) bestAfterProjection = projection;
           });
           if (bestAfterProjection) {
-            // Follow-up A: after = best(repaired anchor, replay best) — the
-            // replay may or may not exceed the repaired anchor's own state;
-            // keep the lexicographic best of the two.
-            if (!goalProgressAfter) {
-              goalProgressAfter = bestAfterProjection;
-            } else {
-              const cmp = compareGoalProgress(goalProgressAfter, bestAfterProjection);
-              if (cmp != null && cmp < 0) goalProgressAfter = bestAfterProjection;
-            }
+            // Follow-up A Repair 1: after = best(repaired anchor, replay
+            // best) via the SHARED direction-safe helper. The previous
+            // inline comparator had the direction inverted (cmp < 0 instead
+            // of > 0); bestOfProgressProjections is now the single
+            // implementation of "better of two projections".
+            goalProgressAfter = bestOfProgressProjections(
+              goalProgressAfter,
+              bestAfterProjection,
+            );
+            replayBestProgress = bestOfProgressProjections(
+              replayBestProgress,
+              bestAfterProjection,
+            );
           }
         }
         // PR-5.24c Repair 1 (P1-2) – cursor advances past replay K only when
@@ -5942,6 +5957,7 @@ function tryAdaptiveCheckpointRepair(
           nextReplaySegmentIndex: ticket.nextReplaySegmentIndex,
           historicalAnchorProgress,
           repairedAnchorProgress,
+          replayBestProgress,
           goalProgressAfter,
         };
         ticket.progressClass = classifyProgress(ticket, ticket.progressEvidence);
@@ -5982,6 +5998,7 @@ function tryAdaptiveCheckpointRepair(
           consumedExpansions: ticket.consumedExpansions,
           progressBefore: historicalAnchorProgress,
           repairedAnchorProgress,
+          replayBestProgress,
           progressAfter: ticket.lastProgress,
           progressClass: ticket.progressClass,
           continuationEligible: ticket.continuationEligible,
