@@ -6319,14 +6319,15 @@ function tryAdaptiveCheckpointRepair(
       }
     }
 
-    // PR-5.24e / Repair 1 — Counterfactual Resource-Investment Repair Generation.
+    // PR-5.24e / Repair 1a — Counterfactual Resource-Investment Repair Generation.
     // Triggered ONLY when:
     //   1. Normal first round is truly complete: all normal tickets have probeCount >= 1;
-    //   2. Normal repair waves at this depth produced zero positive progress tickets;
-    //   3. Global stop is clean (null);
-    //   4. Failure class is an eligible trusted complete failure;
-    //   5. Failed execution has canonical completion proof (isReplayDeterminatelyComplete);
-    //   6. Not goal-reached.
+    //   2. At least one REAL normal history (anchorOutputStateKey != null) completed its probe;
+    //   3. Normal repair waves at this depth produced zero positive progress tickets;
+    //   4. Global stop is clean (null);
+    //   5. Failure class is an eligible trusted complete failure;
+    //   6. Failed execution has canonical completion proof (isReplayDeterminatelyComplete);
+    //   7. Not goal-reached.
     // Executes at most one round of counterfactual generation per depth (no recursion).
     const normalDepthTickets = repairScheduling.hypotheses.filter(
       (t) => t.depth === depth && t.counterfactualIntentId == null,
@@ -6334,6 +6335,10 @@ function tryAdaptiveCheckpointRepair(
     const normalFirstRoundComplete =
       normalDepthTickets.length > 0 &&
       normalDepthTickets.every((t) => t.probeCount >= 1);
+
+    const realNormalProbedTickets = normalDepthTickets.filter(
+      (t) => t.probeCount >= 1 && t.anchorOutputStateKey != null,
+    );
 
     const positiveInitial = normalDepthTickets.filter(
       (t) => t.progressClass === "WITHIN_SEGMENT_PROGRESS" || t.progressClass === "SEGMENT_ADVANCE",
@@ -6364,6 +6369,7 @@ function tryAdaptiveCheckpointRepair(
     const shouldTriggerCounterfactual =
       !depthGoalReached &&
       normalFirstRoundComplete &&
+      realNormalProbedTickets.length >= 1 &&
       positiveInitial === 0 &&
       globalStopBeforeCf === null &&
       isTrustedCompleteFailure &&

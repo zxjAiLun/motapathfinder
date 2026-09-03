@@ -10,18 +10,22 @@ const {
 } = require("./lib/counterfactual-repair");
 
 /**
- * PR-5.24e — Counterfactual Resource-Investment Repair Generation Gates (G24 A-I).
+ * PR-5.24e — Counterfactual Resource-Investment Repair Generation Gates (G24 A-J).
  *
  * G24-A: HP-for-EXP investment generates valid intent and canonical DP realization yields HP 70 / EXP 10.
  * G24-B: Counterfactual investment history unlocks downstream segment, delivering top-level FOUND.
  * G24-C: Normal path priority: when normal path succeeds, counterfactual generation is not triggered.
  * G24-C2: Normal-first barrier: all normal tickets must complete first probe before counterfactual can trigger.
+ * G24-C3: Empty placeholder cannot trigger: placeholder tickets (anchorOutputStateKey=null) cannot trigger CF.
  * G24-D: Unweighted Pareto dominance trade-off filtering (no scalar scores).
  * G24-E: Non-stat generic investment (equipment & path unlock).
  * G24-F: Boundedness and single-round non-recursion.
  * G24-G: Completion authority (G1 indeterminate stops trigger, G2 determinate proof triggers).
  * G24-H: Generic key/resource Pareto dominance and pickup opportunity extraction.
  * G24-I: Cross-floor canonical realization with transition action policy.
+ * G24-J: Cross-origin Pareto isolation (different baseline start states cannot dominate each other).
+ * G24-J2: Same-origin Pareto dominance still active.
+ * G24-J3: Bounded 2D round-robin origin coverage + kind coverage.
  */
 
 // G24-D: Unweighted Pareto trade-off filtering
@@ -330,6 +334,105 @@ function gateG24C2_NormalFirstBarrier() {
   return {
     normalFirstRoundIncompleteBlocksCF: true,
     normalFirstRoundCompleteTriggersCF: true,
+  };
+}
+
+// G24-C3: Empty placeholder cannot trigger counterfactual repair
+function gateG24C3_EmptyPlaceholderCannotTrigger() {
+  function buildG24C3Simulator() {
+    let initialPassDone = false;
+    const project = {
+      floorOrder: ["F1"],
+      floorsById: { F1: { floorId: "F1", width: 2, height: 2, map: [[0, 0], [0, 0]], changeFloor: {} } },
+      mapTilesByNumber: { "0": { id: "empty", cls: "terrains", canPass: true } },
+      enemysById: { monster: { id: "monster", hp: 10, exp: 10, atk: 5 } },
+    };
+    return {
+      project,
+      stopFloorId: "F1",
+      createInitialState() {
+        return {
+          floorId: "F1",
+          hero: { loc: { x: 0, y: 0, direction: "down" }, hp: 100, atk: 5, def: 0, mdef: 0, lv: 1, exp: 0, money: 0, equipment: [] },
+          inventory: {},
+          flags: { step: 0, stones: 0 },
+          visitedFloors: { F1: true },
+          floorStates: { F1: { removed: {}, replaced: {} } },
+          route: [],
+        };
+      },
+      buildReachableRegionSignature(state) {
+        return { regionKey: `F1|s=${state.flags.stones}|h=${state.hero.hp}`, reachableEndpointsKey: "F1:0,0" };
+      },
+      stabilizeState(state) { return JSON.parse(JSON.stringify(state)); },
+      isTerminal() { return false; },
+      enumeratePrimitiveActions(state) {
+        if (state.flags.step === 0) {
+          if (!initialPassDone) {
+            return { actions: [
+              { kind: "conserve", summary: "conserve:bypass@F1:0,1", floorId: "F1", target: { x: 0, y: 1 } },
+            ]};
+          }
+          // During re-expansion of seg1: return empty actions so merged = []!
+          return { actions: [] };
+        }
+        // seg2
+        initialPassDone = true;
+        if (state.flags.stones < 10) {
+          return { actions: [{ kind: "stone", summary: `stone:${state.flags.stones}`, floorId: "F1", target: { x: 0, y: 0 } }] };
+        }
+        return { actions: [] };
+      },
+      applyAction(state, action) {
+        const next = JSON.parse(JSON.stringify(state));
+        next.flags.step += 1;
+        next.hero.money = 1;
+        next.route.push(action.summary);
+        if (action.kind === "conserve") return next;
+        next.flags.stones += 1;
+        return next;
+      },
+    };
+  }
+
+  const sim = buildG24C3Simulator();
+  const spec = {
+    routeName: "g24-c3-spec",
+    milestones: [
+      { id: "seg1", label: "Anchor", goal: { floorId: "F1", minHero: { money: 1 } }, actionPolicy: { allowedFloors: ["F1"], actionKinds: ["conserve"] }, dp: { maxExpansions: 100 } },
+      { id: "seg2", label: "Gated", startFrom: "seg1", goal: { floorId: "F1", minHero: { atk: 15 } }, actionPolicy: { allowedFloors: ["F1"], actionKinds: ["stone"] }, dp: { maxExpansions: 100 } },
+    ],
+  };
+
+  const res = runMilestoneGraph(sim, sim.createInitialState(), spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 5000,
+    maxRuntimeMs: 60000,
+    candidateLimit: 1,
+    initialFrontier: [{ id: "root", state: sim.createInitialState() }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 4,
+  });
+
+  const cf = res.counterfactualRepair;
+  const rs = res.repairScheduling;
+
+  assert.ok(rs, "G24-C3: repairScheduling required");
+  assert.strictEqual(rs.hypotheses.length, 1, "G24-C3: exactly 1 hypothesis (placeholder)");
+  assert.strictEqual(rs.hypotheses[0].anchorOutputStateKey, null, "G24-C3: placeholder has anchorOutputStateKey === null");
+  assert.strictEqual(rs.hypotheses[0].probeCount, 1, "G24-C3: placeholder completed first probe (probeCount === 1)");
+
+  assert.ok(cf, "G24-C3: counterfactual telemetry required");
+  assert.strictEqual(cf.triggered, false, "G24-C3: CF must NOT trigger on empty placeholder");
+  assert.strictEqual(cf.intentsGenerated, 0, "G24-C3: intentsGenerated must be 0");
+
+  return {
+    emptyPlaceholderBlocksCF: true,
+    placeholderHasNullStateKey: true,
   };
 }
 
@@ -742,16 +845,225 @@ function gateG24I_CrossFloorCanonicalRealization() {
   };
 }
 
+// G24-J: Cross-origin Pareto isolation (different baseline start states cannot dominate each other)
+function gateG24J_CrossOriginParetoIsolation() {
+  const sim = {
+    project: {
+      floorOrder: ["F1"],
+      floorsById: { F1: { floorId: "F1", width: 2, height: 2, map: [[0, 0]], changeFloor: {} } },
+      mapTilesByNumber: { "0": { id: "empty", canPass: true } },
+    },
+    enumeratePrimitiveActions(state) {
+      if (state.id === "candA") {
+        return { actions: [{ kind: "battle", summary: "battle:A@F1:0,1", floorId: "F1", target: { x: 0, y: 1 } }] };
+      }
+      if (state.id === "candB") {
+        return { actions: [{ kind: "battle", summary: "battle:B@F1:1,0", floorId: "F1", target: { x: 1, y: 0 } }] };
+      }
+      return { actions: [] };
+    },
+    applyAction(state, action) {
+      const next = JSON.parse(JSON.stringify(state));
+      if (state.id === "candA") {
+        next.hero.hp -= 20;
+        next.hero.atk += 2;
+      } else if (state.id === "candB") {
+        next.hero.hp -= 10;
+        next.hero.atk += 2;
+      }
+      next.route.push(action.summary);
+      return next;
+    }
+  };
+
+  const candidateA = {
+    id: "candA",
+    state: {
+      id: "candA",
+      floorId: "F1",
+      hero: { loc: { x: 0, y: 0 }, hp: 1000, atk: 5, def: 0, mdef: 0, lv: 1, exp: 0, money: 0, equipment: [] },
+      inventory: {},
+      visitedFloors: { F1: true },
+      floorStates: { F1: { removed: {}, replaced: {} } },
+      route: [],
+    }
+  };
+
+  const candidateB = {
+    id: "candB",
+    state: {
+      id: "candB",
+      floorId: "F1",
+      hero: { loc: { x: 0, y: 0 }, hp: 30, atk: 5, def: 0, mdef: 0, lv: 1, exp: 0, money: 0, equipment: [] },
+      inventory: {},
+      visitedFloors: { F1: true },
+      floorStates: { F1: { removed: {}, replaced: {} } },
+      route: [],
+    }
+  };
+
+  const intents = buildCounterfactualRepairIntents({
+    simulator: sim,
+    startCandidates: [candidateA, candidateB],
+    triggerFailure: { failureClass: "frontier-exhausted" },
+    failedSegment: { id: "seg2" },
+    candidateLimit: 8,
+  });
+
+  assert.strictEqual(intents.length, 2, "G24-J: Both A and B opportunities must survive (no cross-origin dominance)");
+  const candIds = intents.map((i) => i.startCandidateId);
+  assert.ok(candIds.includes("candA"), "G24-J: candidate A opportunity retained");
+  assert.ok(candIds.includes("candB"), "G24-J: candidate B opportunity retained");
+
+  return {
+    crossOriginDominancePrevented: true,
+    differentBaselinesPreserved: true,
+  };
+}
+
+// G24-J2: Same-origin Pareto dominance still active
+function gateG24J2_SameOriginDominance() {
+  const sim = {
+    project: {
+      floorOrder: ["F1"],
+      floorsById: { F1: { floorId: "F1", width: 2, height: 2, map: [[0, 0]], changeFloor: {} } },
+      mapTilesByNumber: { "0": { id: "empty", canPass: true } },
+    },
+    enumeratePrimitiveActions() {
+      return { actions: [
+        { kind: "battle", summary: "battle:A1@F1:0,1", floorId: "F1", target: { x: 0, y: 1 }, cost: 20 },
+        { kind: "battle", summary: "battle:A2@F1:1,0", floorId: "F1", target: { x: 1, y: 0 }, cost: 40 },
+      ]};
+    },
+    applyAction(state, action) {
+      const next = JSON.parse(JSON.stringify(state));
+      next.hero.hp -= action.cost;
+      next.hero.atk += 2;
+      next.route.push(action.summary);
+      return next;
+    }
+  };
+
+  const candidateA = {
+    id: "candA",
+    state: {
+      id: "candA",
+      floorId: "F1",
+      hero: { loc: { x: 0, y: 0 }, hp: 1000, atk: 5, def: 0, mdef: 0, lv: 1, exp: 0, money: 0, equipment: [] },
+      inventory: {},
+      visitedFloors: { F1: true },
+      floorStates: { F1: { removed: {}, replaced: {} } },
+      route: [],
+    }
+  };
+
+  const intents = buildCounterfactualRepairIntents({
+    simulator: sim,
+    startCandidates: [candidateA],
+    triggerFailure: { failureClass: "frontier-exhausted" },
+    failedSegment: { id: "seg2" },
+    candidateLimit: 8,
+  });
+
+  assert.strictEqual(intents.length, 1, "G24-J2: A1 must dominate A2 on same origin");
+  assert.strictEqual(intents[0].cost.hpCost, 20, "G24-J2: surviving intent is A1 (cost 20)");
+
+  return {
+    sameOriginDominanceActive: true,
+    inferiorCandidateFiltered: true,
+  };
+}
+
+// G24-J3: Bounded 2D round-robin origin coverage + kind coverage
+function gateG24J3_BoundedOriginCoverage() {
+  const sim = {
+    project: {
+      floorOrder: ["F1"],
+      floorsById: { F1: { floorId: "F1", width: 10, height: 10, map: [[0, 0]], changeFloor: {} } },
+      mapTilesByNumber: { "0": { id: "empty", canPass: true } },
+    },
+    enumeratePrimitiveActions(state) {
+      if (state.id === "A") {
+        return { actions: [
+          { kind: "battle", summary: "A1@1,0", target: { x: 1, y: 0 }, gain: { atk: 1 }, cost: 10 },
+          { kind: "battle", summary: "A2@2,0", target: { x: 2, y: 0 }, gain: { def: 1 }, cost: 10 },
+          { kind: "battle", summary: "A3@3,0", target: { x: 3, y: 0 }, gain: { mdef: 1 }, cost: 10 },
+          { kind: "battle", summary: "A4@4,0", target: { x: 4, y: 0 }, gain: { exp: 10 }, cost: 10 },
+          { kind: "battle", summary: "A5@5,0", target: { x: 5, y: 0 }, gain: { money: 10 }, cost: 10 },
+        ]};
+      }
+      if (state.id === "B") {
+        return { actions: [
+          { kind: "battle", summary: "B1@1,1", target: { x: 1, y: 1 }, gain: { atk: 2 }, cost: 10 },
+          { kind: "battle", summary: "B2@2,1", target: { x: 2, y: 1 }, gain: { def: 2 }, cost: 10 },
+        ]};
+      }
+      if (state.id === "C") {
+        return { actions: [
+          { kind: "battle", summary: "C1@1,2", target: { x: 1, y: 2 }, gain: { atk: 3 }, cost: 10 },
+          { kind: "battle", summary: "C2@2,2", target: { x: 2, y: 2 }, gain: { def: 3 }, cost: 10 },
+        ]};
+      }
+      return { actions: [] };
+    },
+    applyAction(state, action) {
+      const next = JSON.parse(JSON.stringify(state));
+      next.hero.hp -= action.cost;
+      if (action.gain.atk) next.hero.atk += action.gain.atk;
+      if (action.gain.def) next.hero.def += action.gain.def;
+      if (action.gain.mdef) next.hero.mdef += action.gain.mdef;
+      if (action.gain.exp) next.hero.exp += action.gain.exp;
+      if (action.gain.money) next.hero.money += action.gain.money;
+      next.route.push(action.summary);
+      return next;
+    }
+  };
+
+  function makeCand(id) {
+    return {
+      id,
+      state: {
+        id, floorId: "F1",
+        hero: { loc: { x: 0, y: 0 }, hp: 100, atk: 5, def: 0, mdef: 0, lv: 1, exp: 0, money: 0, equipment: [] },
+        inventory: {}, visitedFloors: { F1: true }, floorStates: { F1: { removed: {}, replaced: {} } }, route: [],
+      }
+    };
+  }
+
+  const intents = buildCounterfactualRepairIntents({
+    simulator: sim,
+    startCandidates: [makeCand("A"), makeCand("B"), makeCand("C")],
+    triggerFailure: { failureClass: "frontier-exhausted" },
+    failedSegment: { id: "seg2" },
+    candidateLimit: 3,
+  });
+
+  assert.strictEqual(intents.length, 3, "G24-J3: selected count must equal candidateLimit (3)");
+  const originIds = intents.map((i) => i.startCandidateId);
+  assert.ok(originIds.includes("A"), "G24-J3: origin A represented");
+  assert.ok(originIds.includes("B"), "G24-J3: origin B represented");
+  assert.ok(originIds.includes("C"), "G24-J3: origin C represented");
+
+  return {
+    originCoveragePreserved: true,
+    candidateLimitHonored: true,
+  };
+}
+
 function main() {
   const g24D = gateG24D_ParetoTradeOff();
   const g24AB = gateG24A_B_InvestmentAndDownstreamUnlock();
   const g24C = gateG24C_NormalPathPriority();
   const g24C2 = gateG24C2_NormalFirstBarrier();
+  const g24C3 = gateG24C3_EmptyPlaceholderCannotTrigger();
   const g24E = gateG24E_NonStatGenericCase();
   const g24F = gateG24F_BoundednessAndNonRecursion();
   const g24G = gateG24G_CompletionAuthority();
   const g24H = gateG24H_GenericKeyResourcePareto();
   const g24I = gateG24I_CrossFloorCanonicalRealization();
+  const g24J = gateG24J_CrossOriginParetoIsolation();
+  const g24J2 = gateG24J2_SameOriginDominance();
+  const g24J3 = gateG24J3_BoundedOriginCoverage();
 
   const report = {
     schema: "motapathfinder.counterfactual-repair.v1",
@@ -760,12 +1072,16 @@ function main() {
       "G24-A_B": g24AB,
       "G24-C": g24C,
       "G24-C2": g24C2,
+      "G24-C3": g24C3,
       "G24-D": g24D,
       "G24-E": g24E,
       "G24-F": g24F,
       "G24-G": g24G,
       "G24-H": g24H,
       "G24-I": g24I,
+      "G24-J": g24J,
+      "G24-J2": g24J2,
+      "G24-J3": g24J3,
     },
   };
   console.log(JSON.stringify(report, null, 2));
@@ -781,9 +1097,13 @@ module.exports = {
   gateG24A_B_InvestmentAndDownstreamUnlock,
   gateG24C_NormalPathPriority,
   gateG24C2_NormalFirstBarrier,
+  gateG24C3_EmptyPlaceholderCannotTrigger,
   gateG24E_NonStatGenericCase,
   gateG24F_BoundednessAndNonRecursion,
   gateG24G_CompletionAuthority,
   gateG24H_GenericKeyResourcePareto,
   gateG24I_CrossFloorCanonicalRealization,
+  gateG24J_CrossOriginParetoIsolation,
+  gateG24J2_SameOriginDominance,
+  gateG24J3_BoundedOriginCoverage,
 };

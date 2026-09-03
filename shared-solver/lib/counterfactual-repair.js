@@ -1,5 +1,7 @@
 "use strict";
 
+const { buildStateKey } = require("./state-key");
+
 /**
  * PR-5.24e — Counterfactual Resource-Investment Repair Generation.
  *
@@ -322,10 +324,24 @@ function synthesizeGoalAndPolicy(opp) {
   return { goal, actionPolicy };
 }
 
+function getCandidateOriginId(candidate, index) {
+  if (!candidate) return `cand-${index}`;
+  if (candidate.id != null) return String(candidate.id);
+  if (candidate.state && typeof buildStateKey === "function") {
+    try {
+      const key = buildStateKey(candidate.state);
+      if (key) return String(key);
+    } catch {
+      // ignore
+    }
+  }
+  return `cand-${index}`;
+}
+
 /**
  * Builds counterfactual repair intents for the given start candidates and failure context.
- * Performs opportunity extraction, Pareto trade-off filtering, intent-kind coverage,
- * and concrete goal validation.
+ * Performs opportunity extraction, per-origin Pareto trade-off filtering, 2D origin+kind
+ * round-robin coverage, and concrete goal validation.
  */
 function buildCounterfactualRepairIntents({
   simulator,
@@ -339,42 +355,68 @@ function buildCounterfactualRepairIntents({
 
   const limit = Math.max(1, number(candidateLimit, 8));
 
-  // 1. Extract investment opportunities from all start candidates
-  const allOpportunities = [];
-  for (const cand of candidates) {
+  // 1. Extract opportunities and filter Pareto dominance PER ORIGIN
+  // Pareto dominance is ONLY valid within the same baseline start candidate.
+  const origins = [];
+
+  for (let cIdx = 0; cIdx < candidates.length; cIdx += 1) {
+    const cand = candidates[cIdx];
     const opps = extractCandidateOpportunities(simulator, cand, triggerFailure);
-    allOpportunities.push(...opps);
+    if (opps.length === 0) continue;
+
+    // Per-origin Pareto filtering: opportunities on different candidates cannot dominate each other
+    const nondominatedForOrigin = filterParetoOpportunities(opps);
+    if (nondominatedForOrigin.length === 0) continue;
+
+    // Within this origin, interleave kinds to ensure category coverage
+    const byKind = new Map();
+    for (const opp of nondominatedForOrigin) {
+      if (!byKind.has(opp.kind)) byKind.set(opp.kind, []);
+      byKind.get(opp.kind).push(opp);
+    }
+
+    const originQueue = [];
+    const kinds = Array.from(byKind.keys());
+    let added = true;
+    let kRound = 0;
+    while (added) {
+      added = false;
+      for (const k of kinds) {
+        const list = byKind.get(k);
+        if (kRound < list.length) {
+          originQueue.push(list[kRound]);
+          added = true;
+        }
+      }
+      kRound += 1;
+    }
+
+    const originId = getCandidateOriginId(cand, cIdx);
+    origins.push({
+      originId,
+      candidate: cand,
+      queue: originQueue,
+    });
   }
 
-  if (allOpportunities.length === 0) return [];
+  if (origins.length === 0) return [];
 
-  // 2. Filter by Pareto dominance (no scalar weights)
-  const nondominated = filterParetoOpportunities(allOpportunities);
-
-  // 3. Ensure intent-kind coverage across diverse categories
-  const byKind = new Map();
-  for (const opp of nondominated) {
-    if (!byKind.has(opp.kind)) byKind.set(opp.kind, []);
-    byKind.get(opp.kind).push(opp);
-  }
-
+  // 2. Bounded 2D round-robin selection across origins and kinds
   const selected = [];
-  const kinds = Array.from(byKind.keys());
-  let added = true;
   let round = 0;
-  while (added && selected.length < limit) {
-    added = false;
-    for (const k of kinds) {
-      const list = byKind.get(k);
-      if (round < list.length && selected.length < limit) {
-        selected.push(list[round]);
-        added = true;
+  let addedAny = true;
+  while (addedAny && selected.length < limit) {
+    addedAny = false;
+    for (const origin of origins) {
+      if (round < origin.queue.length && selected.length < limit) {
+        selected.push(origin.queue[round]);
+        addedAny = true;
       }
     }
     round += 1;
   }
 
-  // 4. Synthesize concrete goals and build descriptors
+  // 3. Synthesize concrete goals and build descriptors
   const intents = [];
   selected.forEach((opp, index) => {
     const { goal, actionPolicy } = synthesizeGoalAndPolicy(opp);
