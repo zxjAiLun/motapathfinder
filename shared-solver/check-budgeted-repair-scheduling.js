@@ -2339,7 +2339,7 @@ function buildDiversifiedSyntheticSimulator(gateAtk, options) {
       if (action.branch === "B") {
         next.flags.branch = "B";
         next.hero.atk = 5;
-        next.hero.hp = 1000;
+        next.hero.hp = (opts.driftHpOnRestart && anchorExpands >= 3) ? 700 : 1000;
         next.hero.mdef = 50;
         next.route.push(action.summary);
         return next;
@@ -2557,6 +2557,37 @@ function gatePostAnchorHypothesisDiversification() {
   assert.ok(bTicketOrder, "G23-G(order-drift): candidate B ticket required");
   assert.strictEqual(bTicketOrder.probeCount, 2, "G23-G(order-drift): candidate B probeCount must be 2");
   assert.strictEqual((bTicketOrder.grantHistory[1] || {}).outcome, "goal-reached", "G23-G(order-drift): candidate B outcome must be goal-reached");
+
+  // Subcase 3: Same candidate ID but exact state key mismatch (HP 1000 -> 700) -> fail closed.
+  // Candidate ID alone is never sufficient to match; exact canonical buildStateKey is required.
+  const simDriftHp = buildDiversifiedSyntheticSimulator(GATE_ATK, { driftHpOnRestart: true });
+  const resDriftHp = runMilestoneGraph(simDriftHp, simDriftHp.createInitialState(), spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 50000,
+    maxRuntimeMs: 60000,
+    maxRssMb: 4096,
+    candidateLimit: 1,
+    initialFrontier: [{ id: "origin", state: simDriftHp.createInitialState() }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 4,
+    adaptiveHypothesisContinuationExpansions: 40,
+    adaptiveHypothesisContinuationMaxPerDepth: 1,
+  });
+  assert.strictEqual(resDriftHp.found, false, "G23-G(state-drift): found must stay false when state key mismatches despite same candidate ID");
+  const rsDriftHp = resDriftHp.repairScheduling || ((resDriftHp.failedSegment || {}).backtrack || {}).repairScheduling;
+  assert.ok(rsDriftHp, "G23-G(state-drift): scheduling telemetry required");
+  const bTicketDriftHp = rsDriftHp.hypotheses.find((t) => t.anchorOutputRank === 2);
+  assert.ok(bTicketDriftHp, "G23-G(state-drift): candidate B ticket required");
+  assert.strictEqual(bTicketDriftHp.probeCount, 2, "G23-G(state-drift): candidate B probeCount must be 2");
+  assert.strictEqual(bTicketDriftHp.continuationDecision, "history-not-reproduced", "G23-G(state-drift): continuation decision must be history-not-reproduced");
+  assert.notStrictEqual(bTicketDriftHp.stopReason, "goal-reached", "G23-G(state-drift): stopReason must not be goal-reached");
+  assert.notStrictEqual(bTicketDriftHp.stopReason, "exhausted", "G23-G(state-drift): stopReason must not be exhausted");
+  assert.strictEqual((bTicketDriftHp.grantHistory[1] || {}).outcome, "history-not-reproduced", "G23-G(state-drift): grantHistory[1] outcome must be history-not-reproduced");
+  assert.strictEqual(resDriftHp.budget && resDriftHp.budget.stoppedReason, null, "G23-G(state-drift): global stop must stay null");
 
   return {
     g23A_oneInputThreeOutputs: tickets.length,

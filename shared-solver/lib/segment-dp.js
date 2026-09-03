@@ -19,6 +19,7 @@ const {
   getRawRouteLength,
   getTileDefinitionAt,
 } = require("./state");
+const { buildStateKey } = require("./state-key");
 const { getFloorOrder } = require("./floor-id");
 const { resolveRelativeFloor } = require("./floor-transitions");
 const { compileGoalDependencyGraph } = require("./goal-dependency-graph");
@@ -5101,7 +5102,7 @@ function buildRepairedHistoryHypotheses({
     let stateKey = null;
     if (candidate && candidate.state) {
       try {
-        stateKey = buildDpStateKey(null, candidate.state, { dpKeyMode: "standard" });
+        stateKey = buildStateKey(candidate.state);
       } catch (_) {
         stateKey = null;
       }
@@ -6380,31 +6381,28 @@ function tryAdaptiveCheckpointRepair(
         depthAnchorExpandedCandidates += (contExpanded.summary && contExpanded.summary.attempts || [])
           .reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0);
 
-        // PR-5.24d Iteration 1 Repair 1 – strict canonical history identity matching.
+        // PR-5.24d Iteration 1 Repair 1a – exact canonical state identity matching.
+        // anchorOutputStateKey (from buildStateKey) is the authority on exact state identity.
+        // candidate ID is telemetry only and cannot override a state mismatch.
         // If the second-grant winner is NOT reproduced in the restart anchor output,
         // FAIL CLOSED immediately: do NOT fall back to old rank or [0], do NOT replay
         // any sibling candidate.
         let matchedCandidate = null;
         if (Array.isArray(contRepairFrontier)) {
-          if (candidateTicket.anchorOutputCandidateId != null) {
-            matchedCandidate = contRepairFrontier.find(
-              (c) => c && c.id != null && String(c.id) === String(candidateTicket.anchorOutputCandidateId)
-            ) || null;
-          }
-          if (!matchedCandidate && candidateTicket.anchorOutputStateKey != null) {
+          if (candidateTicket.anchorOutputStateKey != null) {
             matchedCandidate = contRepairFrontier.find((c) => {
               if (!c || !c.state) return false;
               try {
-                const sk = buildDpStateKey(null, c.state, { dpKeyMode: "standard" });
-                return sk === candidateTicket.anchorOutputStateKey;
+                return buildStateKey(c.state) === candidateTicket.anchorOutputStateKey;
               } catch (_) {
                 return false;
               }
             }) || null;
-          }
-          if (!matchedCandidate &&
-              candidateTicket.anchorOutputCandidateId == null &&
-              contRepairFrontier.length === 1) {
+          } else if (candidateTicket.anchorOutputCandidateId != null) {
+            matchedCandidate = contRepairFrontier.find(
+              (c) => c && c.id != null && String(c.id) === String(candidateTicket.anchorOutputCandidateId)
+            ) || null;
+          } else if (contRepairFrontier.length === 1) {
             matchedCandidate = contRepairFrontier[0];
           }
         }
