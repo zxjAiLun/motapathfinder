@@ -198,12 +198,18 @@ function main() {
     `probe gate: the scheduler must attempt more waves than the starving control (${scheduledWaves} vs ${controlWaves})`,
   );
 
-  // Hypothesis tickets: one per wave, exactly one probe each, two-level status.
+  // Hypothesis tickets: under PR-5.24d, tickets are diversified per repaired-history;
+  // all attempted parent waves are covered.
   const tickets = scheduling.hypotheses || [];
+  const parentWaves = new Set(tickets.map((t) => t.parentWaveId || t.hypothesisId));
   assert.strictEqual(
-    tickets.length,
+    parentWaves.size,
     scheduledWaves,
-    "ticket gate: one hypothesis ticket per attempted wave",
+    "ticket gate: all attempted waves must generate hypothesis tickets",
+  );
+  assert.ok(
+    tickets.length >= scheduledWaves,
+    "ticket gate: history diversification yields at least one ticket per wave",
   );
   tickets.forEach((ticket, index) => {
     assert.ok(
@@ -272,11 +278,11 @@ function main() {
     }
   });
 
-  // Events: bounded, one per wave, correct shape, unique hypothesis ids.
+  // Events: bounded, one per hypothesis, correct shape, unique hypothesis ids.
   const events = scheduling.events || [];
   assert.strictEqual(
     events.length,
-    scheduledWaves,
+    tickets.length,
     "event gate: one scheduling event per hypothesis",
   );
   assert.ok(events.length <= 64, "event gate: events bounded (<=64)");
@@ -347,6 +353,7 @@ function main() {
   const g21b = timedGate("G21b", gateCompactIsolatedProgressPayload);
   const g22 = timedGate("G22", gateHistoricalAnchorDeltaProgress);
   const g22i = timedGate("G22i", gateHistoricalAnchorDeltaProgressIntegration);
+  const g23 = timedGate("G23", gatePostAnchorHypothesisDiversification);
   console.error(JSON.stringify({ gateTimings }));
 
   console.log(JSON.stringify({
@@ -395,6 +402,7 @@ function main() {
       g21bCompactIsolatedProgressPayload: g21b,
       g22HistoricalAnchorDeltaProgress: g22,
       g22iHistoricalAnchorDeltaIntegration: g22i,
+      g23PostAnchorHypothesisDiversification: g23,
     },
   }, null, 2));
 }
@@ -2223,6 +2231,272 @@ function gateHistoricalAnchorDeltaProgressIntegration() {
   };
 }
 
+// G23 – Post-Anchor Repair-History Hypothesis Diversification (PR-5.24d).
+// Verifies that:
+//   G23-A: One input candidate whose anchor expansion produces 3 retained outputs
+//          yields 3 distinct history hypotheses (h-d1w0h0, h-d1w0h1, h-d1w0h2), not 1.
+//   G23-B: First-probe fairness barrier: all 3 first probes (probeIndex=1) complete
+//          before any continuation second grant (probeIndex=2) begins.
+//   G23-C: Independent progress discrimination: output histories are not contaminated
+//          by aggregated progress (A/C NO_MEASURABLE_PROGRESS & ineligible, B WITHIN_SEGMENT_PROGRESS & eligible).
+//   G23-D: Second-grant winner: candidate B wins continuation and achieves top-level FOUND.
+//   G23-E: No enumeration widening: candidate count <= backtrackCandidateLimit.
+//   G23-F: One-output equivalence: if expandedAnchor.merged.length === 1, exactly 1 hypothesis
+//          is produced with id h-d1w0, preserving PR-5.24c equivalence.
+
+function buildDiversifiedSyntheticSimulator(gateAtk) {
+  const project = {
+    floorOrder: ["F1"],
+    floorsById: {
+      F1: { floorId: "F1", width: 1, height: 1, map: [[0]], changeFloor: {} },
+    },
+    mapTilesByNumber: { "0": { id: "empty", cls: "terrains", canPass: true } },
+  };
+  return {
+    project,
+    solverModel: undefined,
+    stopFloorId: "F1",
+    createInitialState() {
+      return {
+        floorId: "F1",
+        hero: {
+          loc: { x: 0, y: 0, direction: "down" },
+          hp: 1000,
+          atk: 0,
+          def: 0,
+          mdef: 0,
+          lv: 1,
+          exp: 0,
+          money: 0,
+          equipment: [],
+        },
+        inventory: {},
+        flags: { branch: "none", pickups: 0, stones: 0 },
+        visitedFloors: { F1: true },
+        floorStates: { F1: { removed: {}, replaced: {} } },
+        route: [],
+      };
+    },
+    buildReachableRegionSignature(state) {
+      return {
+        regionKey: `F1|branch=${state.flags.branch}|p=${state.flags.pickups}|s=${state.flags.stones}`,
+        reachableEndpointsKey: "F1:0,0",
+      };
+    },
+    stabilizeState(state) {
+      return JSON.parse(JSON.stringify(state));
+    },
+    isTerminal() {
+      return false;
+    },
+    enumeratePrimitiveActions(state) {
+      const actions = [];
+      if (state.flags.branch === "none") {
+        actions.push({ kind: "branch", summary: "branch:A", branch: "A", floorId: "F1", target: { x: 0, y: 0 } });
+        actions.push({ kind: "branch", summary: "branch:B", branch: "B", floorId: "F1", target: { x: 0, y: 0 } });
+        actions.push({ kind: "branch", summary: "branch:C", branch: "C", floorId: "F1", target: { x: 0, y: 0 } });
+      } else if (state.flags.branch === "B" && state.flags.pickups < 20) {
+        actions.push({
+          kind: "pickup",
+          summary: `pickup:gem#${state.flags.pickups}`,
+          floorId: "F1",
+          target: { x: 0, y: 0 },
+        });
+      } else if ((state.flags.branch === "A" || state.flags.branch === "C") && state.flags.stones < 20) {
+        actions.push({
+          kind: "pickup",
+          summary: `pickup:stone#${state.flags.stones}`,
+          floorId: "F1",
+          target: { x: 0, y: 0 },
+        });
+      }
+      return { actions };
+    },
+    applyAction(state, action) {
+      const next = JSON.parse(JSON.stringify(state));
+      next.hero.money = 1;
+      if (action.branch === "A") {
+        next.flags.branch = "A";
+        next.hero.atk = 2;
+        next.hero.hp = 2000;
+        next.route.push(action.summary);
+        return next;
+      }
+      if (action.branch === "B") {
+        next.flags.branch = "B";
+        next.hero.atk = 5;
+        next.hero.hp = 1000;
+        next.hero.mdef = 50;
+        next.route.push(action.summary);
+        return next;
+      }
+      if (action.branch === "C") {
+        next.flags.branch = "C";
+        next.hero.atk = 0;
+        next.hero.hp = 1200;
+        next.hero.def = 50;
+        next.route.push(action.summary);
+        return next;
+      }
+      if (action.summary && action.summary.startsWith("pickup:gem")) {
+        next.hero.atk += 1;
+        next.flags.pickups += 1;
+        next.route.push(action.summary);
+        return next;
+      }
+      if (action.summary && action.summary.startsWith("pickup:stone")) {
+        next.flags.stones += 1;
+        next.route.push(action.summary);
+        return next;
+      }
+      return null;
+    },
+  };
+}
+
+function gatePostAnchorHypothesisDiversification() {
+  const { runMilestoneGraph } = require("./lib/segment-dp");
+
+  const GATE_ATK = 8;
+  const sim = buildDiversifiedSyntheticSimulator(GATE_ATK);
+  const spec = {
+    routeName: "g23-diversification",
+    milestones: [
+      {
+        id: "seg1",
+        label: "Anchor",
+        goal: { floorId: "F1", minHero: { money: 1 } },
+        actionPolicy: { allowedFloors: ["F1"], actionKinds: ["branch"] },
+        dp: { maxExpansions: 8000, stopOnFirstGoal: false, goalSkylineLimit: 1 },
+      },
+      {
+        id: "seg2",
+        label: "Gated",
+        startFrom: "seg1",
+        goal: { floorId: "F1", minHero: { atk: GATE_ATK } },
+        actionPolicy: { allowedFloors: ["F1"], actionKinds: ["pickup"] },
+        dp: { maxExpansions: 16000 },
+      },
+    ],
+  };
+
+  const result = runMilestoneGraph(sim, sim.createInitialState(), spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 50000,
+    maxRuntimeMs: 60000,
+    maxRssMb: 4096,
+    candidateLimit: 1,
+    initialFrontier: [{ id: "origin", state: sim.createInitialState() }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 4,
+    adaptiveHypothesisContinuationExpansions: 40,
+    adaptiveHypothesisContinuationMaxPerDepth: 1,
+  });
+
+  const rs = result.repairScheduling || ((result.failedSegment || {}).backtrack || {}).repairScheduling;
+  assert.ok(rs, "G23: scheduling telemetry required");
+  const tickets = rs.hypotheses || [];
+  const events = rs.events || [];
+
+  // G23-A: 1 input candidate expanded into 3 output candidates -> 3 history hypotheses (not 1)
+  assert.strictEqual(tickets.length, 3, "G23-A: must generate 3 history hypotheses from 3 repaired outputs");
+  assert.strictEqual(tickets[0].parentWaveId, "h-d1w0", "G23-A: ticket 0 parentWaveId");
+  assert.strictEqual(tickets[1].parentWaveId, "h-d1w0", "G23-A: ticket 1 parentWaveId");
+  assert.strictEqual(tickets[2].parentWaveId, "h-d1w0", "G23-A: ticket 2 parentWaveId");
+  assert.strictEqual(tickets[0].hypothesisId, "h-d1w0h0", "G23-A: ticket 0 hypothesisId");
+  assert.strictEqual(tickets[1].hypothesisId, "h-d1w0h1", "G23-A: ticket 1 hypothesisId");
+  assert.strictEqual(tickets[2].hypothesisId, "h-d1w0h2", "G23-A: ticket 2 hypothesisId");
+  assert.strictEqual(tickets[0].anchorOutputRank, 0, "G23-A: ticket 0 rank");
+  assert.strictEqual(tickets[1].anchorOutputRank, 1, "G23-A: ticket 1 rank");
+  assert.strictEqual(tickets[2].anchorOutputRank, 2, "G23-A: ticket 2 rank");
+
+  // G23-B: First-probe fairness barrier: all 3 first probes must run before any second grant
+  const firstProbes = events.filter((e) => e.probeIndex === 1);
+  assert.strictEqual(firstProbes.length, 3, "G23-B: all 3 first probes must run");
+  const secondGrants = events.filter((e) => e.probeIndex === 2);
+  assert.ok(secondGrants.length >= 1, "G23-B: at least one second grant must run");
+  const lastFirstProbeIndex = events.reduce((acc, e, i) => (e.probeIndex === 1 ? i : acc), -1);
+  const firstSecondGrantIndex = events.findIndex((e) => e.probeIndex === 2);
+  assert.ok(lastFirstProbeIndex < firstSecondGrantIndex, "G23-B: all first probes must precede any second grant");
+
+  // G23-C: One history advances, siblings do not (independent progress discrimination)
+  assert.strictEqual(tickets[0].progressClass, "NO_MEASURABLE_PROGRESS", "G23-C: ticket 0 must have NO_MEASURABLE_PROGRESS");
+  assert.strictEqual(tickets[0].continuationEligible, false, "G23-C: ticket 0 not eligible");
+  assert.strictEqual(tickets[1].progressClass, "NO_MEASURABLE_PROGRESS", "G23-C: ticket 1 must have NO_MEASURABLE_PROGRESS");
+  assert.strictEqual(tickets[1].continuationEligible, false, "G23-C: ticket 1 not eligible");
+  assert.strictEqual(tickets[2].progressClass, "WITHIN_SEGMENT_PROGRESS", "G23-C: ticket 2 must have WITHIN_SEGMENT_PROGRESS");
+  assert.strictEqual(tickets[2].continuationEligible, true, "G23-C: ticket 2 eligible");
+
+  // G23-D: Second-grant winner delivers top-level FOUND
+  assert.strictEqual(result.found, true, "G23-D: winner must deliver top-level FOUND");
+  const winner = tickets.find(
+    (t) => t.probeCount === 2 &&
+      (t.grantHistory || [])[1] &&
+      t.grantHistory[1].outcome === "goal-reached");
+  assert.ok(winner, "G23-D: ticket 2 must be second-grant winner with goal-reached");
+  assert.strictEqual(winner.hypothesisId, tickets[2].hypothesisId, "G23-D: winner must be candidate B (ticket 2)");
+  assert.strictEqual(result.budget && result.budget.stoppedReason, null, "G23-D: global stop must stay null");
+
+  // G23-E: No enumeration widening: child hypotheses count bounded
+  assert.ok(tickets.length <= 8, "G23-E: childHypothesisCount must be <= backtrackCandidateLimit");
+
+  // G23-F: Single output equivalence: when expandedAnchor.merged has length 1, exactly 1 hypothesis is produced with id h-d1w0
+  const simSingle = buildSecondGrantSyntheticSimulator(GATE_ATK);
+  const specSingle = {
+    routeName: "g23-single-output",
+    milestones: [
+      {
+        id: "seg1",
+        label: "Anchor",
+        goal: { floorId: "F1", minHero: { atk: 0 } },
+        actionPolicy: { allowedFloors: ["F1"], actionKinds: ["pickup"] },
+        dp: { maxExpansions: 8000, startCandidateLimit: 1 },
+      },
+      {
+        id: "seg2",
+        label: "Gated",
+        startFrom: "seg1",
+        goal: { floorId: "F1", minHero: { atk: GATE_ATK } },
+        actionPolicy: { allowedFloors: ["F1"], actionKinds: ["pickup"] },
+        dp: { maxExpansions: 16000 },
+      },
+    ],
+  };
+  const resSingle = runMilestoneGraph(simSingle, simSingle.createInitialState({ origin: "A" }), specSingle, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 50000,
+    maxRuntimeMs: 60000,
+    maxRssMb: 4096,
+    candidateLimit: 8,
+    initialFrontier: [{ id: "hyp-A", state: simSingle.createInitialState({ origin: "A" }) }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 4,
+    adaptiveHypothesisContinuationExpansions: 40,
+    adaptiveHypothesisContinuationMaxPerDepth: 1,
+  });
+  const rsSingle = resSingle.repairScheduling || ((resSingle.failedSegment || {}).backtrack || {}).repairScheduling;
+  assert.ok(rsSingle, "G23-F: scheduling telemetry required");
+  assert.strictEqual(rsSingle.hypotheses.length, 1, "G23-F: 1 output must produce 1 hypothesis");
+  assert.strictEqual(rsSingle.hypotheses[0].hypothesisId, "h-d1w0", "G23-F: hypothesisId must be h-d1w0 for single output");
+
+  return {
+    g23A_oneInputThreeOutputs: tickets.length,
+    g23B_firstProbeFairness: true,
+    g23C_independentProgressDiscrimination: true,
+    g23D_secondGrantWinner: winner.hypothesisId,
+    g23E_noEnumerationWidening: true,
+    g23F_oneOutputEquivalence: true,
+  };
+}
+
 // G14 – first-round barrier: all depth hypotheses complete probeIndex=1
 // BEFORE any probeIndex=2 event appears.
 function gateFirstRoundBarrier() {
@@ -2873,10 +3147,11 @@ if (require.main === module) {
       gateSecondGrantResourceInterrupt();
       gateDeterminateCompletionFailClose();
       gateHistoricalAnchorDeltaProgress();
+      gatePostAnchorHypothesisDiversification();
       console.log(JSON.stringify({
         schema: "motapathfinder.budgeted-repair-scheduling.fast",
         contractStatus: "passed",
-        gates: ["G18", "G19b", "G19c", "G22"],
+        gates: ["G18", "G19b", "G19c", "G22", "G23"],
       }));
     } catch (error) {
       console.error(error && error.stack ? error.stack : String(error));
