@@ -5098,15 +5098,19 @@ function buildRepairedHistoryHypotheses({
     }];
   }
   return retained.map((candidate, rank) => {
+    let stateKey = null;
+    if (candidate && candidate.state) {
+      try {
+        stateKey = buildDpStateKey(null, candidate.state, { dpKeyMode: "standard" });
+      } catch (_) {
+        stateKey = null;
+      }
+    }
     let candidateId = null;
     if (candidate && candidate.id != null && String(candidate.id).length > 0) {
       candidateId = String(candidate.id);
-    } else if (candidate && candidate.state) {
-      try {
-        candidateId = buildDpStateKey(null, candidate.state, { dpKeyMode: "standard" });
-      } catch (_) {
-        candidateId = `cand-${rank}`;
-      }
+    } else if (stateKey) {
+      candidateId = stateKey;
     } else {
       candidateId = `cand-${rank}`;
     }
@@ -5119,6 +5123,7 @@ function buildRepairedHistoryHypotheses({
       depth,
       waveIndex,
       anchorOutputCandidateId: candidateId,
+      anchorOutputStateKey: stateKey,
       anchorOutputRank: rank,
       anchorCandidate: candidate,
       replayFrontier: [candidate],
@@ -5267,6 +5272,7 @@ function tryAdaptiveCheckpointRepair(
     parentWaveId,
     anchorOutputCandidateId,
     anchorOutputRank,
+    anchorOutputStateKey,
   ) => ({
     hypothesisId: customHypothesisId || `h-d${depth}w${waveIndex}`,
     parentWaveId: parentWaveId || `h-d${depth}w${waveIndex}`,
@@ -5275,6 +5281,7 @@ function tryAdaptiveCheckpointRepair(
     anchorSegmentId,
     anchorInputCandidateIds: anchorCandidateIds,
     anchorOutputCandidateId: anchorOutputCandidateId != null ? anchorOutputCandidateId : null,
+    anchorOutputStateKey: anchorOutputStateKey != null ? anchorOutputStateKey : null,
     anchorOutputRank: anchorOutputRank != null ? anchorOutputRank : 0,
     nextReplaySegmentIndex: null,
     status: "PROBE_PENDING",
@@ -5651,6 +5658,7 @@ function tryAdaptiveCheckpointRepair(
             historyDesc.parentWaveId,
             historyDesc.anchorOutputCandidateId,
             historyDesc.anchorOutputRank,
+            historyDesc.anchorOutputStateKey,
           );
           ticket.anchorGenerationExpansions = anchorGenerationExpansions;
           ticket.anchorGenerationWallMs = anchorGenerationWallMs;
@@ -5987,6 +5995,7 @@ function tryAdaptiveCheckpointRepair(
             depth,
             anchorCandidateIds: ticket.anchorInputCandidateIds,
             anchorOutputCandidateId: ticket.anchorOutputCandidateId,
+            anchorOutputStateKey: ticket.anchorOutputStateKey,
             anchorOutputRank: ticket.anchorOutputRank,
             startReplayIndex: anchorHistoryIndex + 1,
             endReplayIndex: anchorHistoryIndex + replaySegments.length,
@@ -6365,26 +6374,112 @@ function tryAdaptiveCheckpointRepair(
           continuation: true,
           triggeredBySegment: segments[segmentIndex].id,
         };
-        contExpanded.executionPhase = "adaptive-expand";
         let contRepairFrontier = contExpanded.merged;
-        // PR-5.24d – downstream continuation replay isolates this hypothesis's
-        // specific repaired history candidate.
-        if (candidateTicket.anchorOutputCandidateId != null && Array.isArray(contRepairFrontier)) {
-          const matched = contRepairFrontier.find(
-            (c) => c && c.id === candidateTicket.anchorOutputCandidateId
-          );
-          if (matched) {
-            contRepairFrontier = [matched];
-          } else if (contRepairFrontier[candidateTicket.anchorOutputRank]) {
-            contRepairFrontier = [contRepairFrontier[candidateTicket.anchorOutputRank]];
-          } else if (contRepairFrontier.length > 0) {
-            contRepairFrontier = [contRepairFrontier[0]];
-          }
-        }
         const contExecutions = [contExpanded];
         depthWavesAttempted += 1;
         depthAnchorExpandedCandidates += (contExpanded.summary && contExpanded.summary.attempts || [])
           .reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0);
+
+        // PR-5.24d Iteration 1 Repair 1 – strict canonical history identity matching.
+        // If the second-grant winner is NOT reproduced in the restart anchor output,
+        // FAIL CLOSED immediately: do NOT fall back to old rank or [0], do NOT replay
+        // any sibling candidate.
+        let matchedCandidate = null;
+        if (Array.isArray(contRepairFrontier)) {
+          if (candidateTicket.anchorOutputCandidateId != null) {
+            matchedCandidate = contRepairFrontier.find(
+              (c) => c && c.id != null && String(c.id) === String(candidateTicket.anchorOutputCandidateId)
+            ) || null;
+          }
+          if (!matchedCandidate && candidateTicket.anchorOutputStateKey != null) {
+            matchedCandidate = contRepairFrontier.find((c) => {
+              if (!c || !c.state) return false;
+              try {
+                const sk = buildDpStateKey(null, c.state, { dpKeyMode: "standard" });
+                return sk === candidateTicket.anchorOutputStateKey;
+              } catch (_) {
+                return false;
+              }
+            }) || null;
+          }
+          if (!matchedCandidate &&
+              candidateTicket.anchorOutputCandidateId == null &&
+              contRepairFrontier.length === 1) {
+            matchedCandidate = contRepairFrontier[0];
+          }
+        }
+
+        if (!matchedCandidate) {
+          // Fail closed: history not reproduced in restart anchor.
+          const contConsumedWallMs = Date.now() - contStartedAt;
+          const contConsumedExpansions =
+            (config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) - contStartExpansions;
+          candidateTicket.consumedWallMs += contConsumedWallMs;
+          candidateTicket.consumedExpansions += contConsumedExpansions;
+          candidateTicket.stopReason = "incomplete";
+          candidateTicket.status = "PROBE_PENDING";
+          candidateTicket.continuationDecision = "history-not-reproduced";
+          candidateTicket.grantHistory.push({
+            probeIndex: 2,
+            grantKind: "continuation",
+            allocatedWallMs: continuationBudget.wallMs,
+            allocatedExpansions: continuationBudget.expansions,
+            consumedWallMs: contConsumedWallMs,
+            consumedExpansions: contConsumedExpansions,
+            outcome: "history-not-reproduced",
+            progressClass: null,
+          });
+          appendSchedulingEvent({
+            hypothesisId: candidateTicket.hypothesisId,
+            parentWaveId: candidateTicket.parentWaveId,
+            probeIndex: 2,
+            grantKind: "continuation",
+            depth,
+            anchorCandidateIds: candidateTicket.anchorInputCandidateIds,
+            anchorOutputCandidateId: candidateTicket.anchorOutputCandidateId,
+            anchorOutputStateKey: candidateTicket.anchorOutputStateKey,
+            anchorOutputRank: candidateTicket.anchorOutputRank,
+            startReplayIndex: anchorHistoryIndex + 1,
+            endReplayIndex: anchorHistoryIndex,
+            nextReplaySegmentIndex: candidateTicket.nextReplaySegmentIndex,
+            allocatedWallMs: continuationBudget.wallMs,
+            allocatedExpansions: continuationBudget.expansions,
+            consumedWallMs: contConsumedWallMs,
+            consumedExpansions: contConsumedExpansions,
+            progressBefore: null,
+            progressAfter: {
+              waveOutcome: "history-not-reproduced",
+              replaySegmentsCompleted: 0,
+              goalReached: false,
+              continuationMode: "restart-from-anchor",
+            },
+            progressClass: null,
+            yieldReason: "history-not-reproduced",
+            pendingAfterProbe: true,
+            globalStopReason: (config.globalBudget && config.globalBudget.stoppedReason) || null,
+          });
+          attempts.push({
+            depth,
+            anchorSegmentId: anchor.segment.id,
+            waveIndex: contWaveIndex,
+            anchorInputCandidates: restartCandidates.length,
+            anchorInputCandidateIds: restartCandidates.map((c) => c.id),
+            continuation: true,
+            anchorExpandedCandidates: (contExpanded.summary && contExpanded.summary.attempts || [])
+              .reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0),
+            replaySegmentIds: [],
+            waveOutcome: "incomplete",
+            depthConsumedExpansions: contConsumedExpansions,
+            depthConsumedWallMs: contConsumedWallMs,
+            depthStopReason: null,
+          });
+          contExecutions.forEach((exec) => {
+            ledgerExecutions.push(toCompactLedgerExecution(exec));
+          });
+          continue;
+        }
+
+        contRepairFrontier = [matchedCandidate];
 
         for (
           let replayIndex = anchorHistoryIndex + 1;

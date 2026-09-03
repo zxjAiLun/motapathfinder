@@ -2244,7 +2244,9 @@ function gateHistoricalAnchorDeltaProgressIntegration() {
 //   G23-F: One-output equivalence: if expandedAnchor.merged.length === 1, exactly 1 hypothesis
 //          is produced with id h-d1w0, preserving PR-5.24c equivalence.
 
-function buildDiversifiedSyntheticSimulator(gateAtk) {
+function buildDiversifiedSyntheticSimulator(gateAtk, options) {
+  const opts = options || {};
+  let anchorExpands = 0;
   const project = {
     floorOrder: ["F1"],
     floorsById: {
@@ -2292,9 +2294,21 @@ function buildDiversifiedSyntheticSimulator(gateAtk) {
     enumeratePrimitiveActions(state) {
       const actions = [];
       if (state.flags.branch === "none") {
-        actions.push({ kind: "branch", summary: "branch:A", branch: "A", floorId: "F1", target: { x: 0, y: 0 } });
-        actions.push({ kind: "branch", summary: "branch:B", branch: "B", floorId: "F1", target: { x: 0, y: 0 } });
-        actions.push({ kind: "branch", summary: "branch:C", branch: "C", floorId: "F1", target: { x: 0, y: 0 } });
+        anchorExpands += 1;
+        if (opts.omitBOnRestart && anchorExpands >= 3) {
+          // Restart anchor omits branch B
+          actions.push({ kind: "branch", summary: "branch:A", branch: "A", floorId: "F1", target: { x: 0, y: 0 } });
+          actions.push({ kind: "branch", summary: "branch:C", branch: "C", floorId: "F1", target: { x: 0, y: 0 } });
+        } else if (opts.reverseOrderOnRestart && anchorExpands >= 3) {
+          // Restart anchor reverses branch order: B becomes first!
+          actions.push({ kind: "branch", summary: "branch:B", branch: "B", floorId: "F1", target: { x: 0, y: 0 } });
+          actions.push({ kind: "branch", summary: "branch:A", branch: "A", floorId: "F1", target: { x: 0, y: 0 } });
+          actions.push({ kind: "branch", summary: "branch:C", branch: "C", floorId: "F1", target: { x: 0, y: 0 } });
+        } else {
+          actions.push({ kind: "branch", summary: "branch:A", branch: "A", floorId: "F1", target: { x: 0, y: 0 } });
+          actions.push({ kind: "branch", summary: "branch:B", branch: "B", floorId: "F1", target: { x: 0, y: 0 } });
+          actions.push({ kind: "branch", summary: "branch:C", branch: "C", floorId: "F1", target: { x: 0, y: 0 } });
+        }
       } else if (state.flags.branch === "B" && state.flags.pickups < 20) {
         actions.push({
           kind: "pickup",
@@ -2487,6 +2501,63 @@ function gatePostAnchorHypothesisDiversification() {
   assert.strictEqual(rsSingle.hypotheses.length, 1, "G23-F: 1 output must produce 1 hypothesis");
   assert.strictEqual(rsSingle.hypotheses[0].hypothesisId, "h-d1w0", "G23-F: hypothesisId must be h-d1w0 for single output");
 
+  // G23-G: Second-Grant History Identity Fail-Closed & Drift (PR-5.24d Repair 1)
+  // Subcase 1: Identity missing on restart -> fail closed immediately
+  // (history-not-reproduced, no sibling replayed, found=false, exhausted=false).
+  const simMissing = buildDiversifiedSyntheticSimulator(GATE_ATK, { omitBOnRestart: true });
+  const resMissing = runMilestoneGraph(simMissing, simMissing.createInitialState(), spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 50000,
+    maxRuntimeMs: 60000,
+    maxRssMb: 4096,
+    candidateLimit: 1,
+    initialFrontier: [{ id: "origin", state: simMissing.createInitialState() }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 4,
+    adaptiveHypothesisContinuationExpansions: 40,
+    adaptiveHypothesisContinuationMaxPerDepth: 1,
+  });
+  assert.strictEqual(resMissing.found, false, "G23-G(missing): found must stay false when winner is not reproduced");
+  const rsMissing = resMissing.repairScheduling || ((resMissing.failedSegment || {}).backtrack || {}).repairScheduling;
+  assert.ok(rsMissing, "G23-G(missing): scheduling telemetry required");
+  const bTicketMissing = rsMissing.hypotheses.find((t) => t.anchorOutputRank === 2);
+  assert.ok(bTicketMissing, "G23-G(missing): candidate B ticket required");
+  assert.strictEqual(bTicketMissing.probeCount, 2, "G23-G(missing): candidate B probeCount must be 2");
+  assert.strictEqual(bTicketMissing.continuationDecision, "history-not-reproduced", "G23-G(missing): continuation decision must be history-not-reproduced");
+  assert.notStrictEqual(bTicketMissing.stopReason, "goal-reached", "G23-G(missing): stopReason must not be goal-reached");
+  assert.notStrictEqual(bTicketMissing.stopReason, "exhausted", "G23-G(missing): stopReason must not be exhausted");
+  assert.strictEqual((bTicketMissing.grantHistory[1] || {}).outcome, "history-not-reproduced", "G23-G(missing): grantHistory[1] outcome must be history-not-reproduced");
+  assert.strictEqual(resMissing.budget && resMissing.budget.stoppedReason, null, "G23-G(missing): global stop must stay null");
+
+  // Subcase 2: Order drift on restart -> canonical identity matching succeeds even when rank changed.
+  const simOrder = buildDiversifiedSyntheticSimulator(GATE_ATK, { reverseOrderOnRestart: true });
+  const resOrder = runMilestoneGraph(simOrder, simOrder.createInitialState(), spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 50000,
+    maxRuntimeMs: 60000,
+    maxRssMb: 4096,
+    candidateLimit: 1,
+    initialFrontier: [{ id: "origin", state: simOrder.createInitialState() }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 4,
+    adaptiveHypothesisContinuationExpansions: 40,
+    adaptiveHypothesisContinuationMaxPerDepth: 1,
+  });
+  assert.strictEqual(resOrder.found, true, "G23-G(order-drift): found must be true when winner is matched by canonical identity despite rank change");
+  const rsOrder = resOrder.repairScheduling || ((resOrder.failedSegment || {}).backtrack || {}).repairScheduling;
+  const bTicketOrder = rsOrder.hypotheses.find((t) => t.anchorOutputRank === 2);
+  assert.ok(bTicketOrder, "G23-G(order-drift): candidate B ticket required");
+  assert.strictEqual(bTicketOrder.probeCount, 2, "G23-G(order-drift): candidate B probeCount must be 2");
+  assert.strictEqual((bTicketOrder.grantHistory[1] || {}).outcome, "goal-reached", "G23-G(order-drift): candidate B outcome must be goal-reached");
+
   return {
     g23A_oneInputThreeOutputs: tickets.length,
     g23B_firstProbeFairness: true,
@@ -2494,6 +2565,7 @@ function gatePostAnchorHypothesisDiversification() {
     g23D_secondGrantWinner: winner.hypothesisId,
     g23E_noEnumerationWidening: true,
     g23F_oneOutputEquivalence: true,
+    g23G_identityFailClosedAndDrift: true,
   };
 }
 
@@ -3000,7 +3072,7 @@ function gateContinuationDefaultOff() {
       adaptiveBacktrackDepth: 1,
       budgetScope: "global-run",
       maxExpansions: 50000,
-      maxRuntimeMs: 60000,
+      maxRuntimeMs: 180000,
       maxRssMb: 4096,
       memoryCheckIntervalExpansions: 1,
       memoryCheckIntervalActions: 1,
