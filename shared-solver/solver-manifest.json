@@ -508,6 +508,22 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/counterfactual-repair.js": {
+      "id": "counterfactual-repair",
+      "path": "shared-solver/lib/counterfactual-repair.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/current-reachable-battle.js": {
       "id": "current-reachable-battle",
       "path": "shared-solver/lib/current-reachable-battle.js",
@@ -2712,6 +2728,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "canonical core regression suite; no ignored route dependency"
+    },
+    "shared-solver/check-counterfactual-repair.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-d2-blind-failure-attribution.js": {
       "grade": "diagnostic",
