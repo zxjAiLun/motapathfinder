@@ -27,7 +27,7 @@ const { compileGoalDependencyGraph } = require("./goal-dependency-graph");
 const { compileAdmissibleFeasibilityBounds } = require("./goal-feasibility-bounds");
 const reachAndBattleOracle = require("./reach-and-battle-oracle");
 const { buildSearchOutcome } = require("./search-outcome");
-const { executeIsolatedSegment } = require("./isolated-segment-executor");
+const { executeIsolatedSegment, executeIsolatedSegmentBatch } = require("./isolated-segment-executor");
 // Iteration 6 – failure-conditioned adaptive investment. The scanner derives
 // generic resource intents (atk/def/mdef/hp/path/equipment) from a trusted
 // complete failure and inspects the REAL action opportunities near each
@@ -4071,6 +4071,7 @@ function runSegmentAgainstFrontierLocal(
     if (dp && ["heap-limit", "rss-limit"].includes(dp.stoppedReason)) {
       memoryLimited = true;
       memoryStopReason = dp.stoppedReason;
+      if (globalBudget) globalBudget.stoppedReason = dp.stoppedReason;
     }
     if (globalBudget) {
       globalBudget.consumedExpansions += number(dp && dp.expansions, 0);
@@ -5430,6 +5431,7 @@ function tryAdaptiveCheckpointRepair(
 
   let lastAdaptiveNormalAdmission = null;
   let lastAdaptiveCounterfactualAdmission = null;
+  let lastBatchFirstProbe = null;
   for (let depth = 1; depth <= maxDepth; depth += 1) {
     let depthFinalFrontier = null;
     const anchorHistoryIndex = history.length - depth;
@@ -5501,6 +5503,17 @@ function tryAdaptiveCheckpointRepair(
     let deferredNormalDescriptors = [];
     let normalAdmission = null;
     let counterfactualAdmission = null;
+    let probeTranche = null;
+
+    let batchFirstProbe = {
+      primary: { jobsRequested: 0, jobsExecuted: 0, processLaunches: 0 },
+      counterfactual: { jobsRequested: 0, jobsExecuted: 0, processLaunches: 0 },
+      secondary: { jobsRequested: 0, jobsExecuted: 0, processLaunches: 0 },
+    };
+    lastBatchFirstProbe = batchFirstProbe;
+    if (repairScheduling) {
+      repairScheduling.batchFirstProbe = batchFirstProbe;
+    }
 
     for (let waveIndex = 0; waveIndex < totalWaves; waveIndex += 1) {
       const waveInputCandidates = rankedInputFrontier.slice(
@@ -5698,11 +5711,12 @@ function tryAdaptiveCheckpointRepair(
       if (repairScheduling) {
         repairScheduling.normalAdmission = normalAdmission;
         repairScheduling.counterfactualAdmission = counterfactualAdmission;
+        repairScheduling.batchFirstProbe = batchFirstProbe;
       }
 
-      const probeSingleNormalHistory = (historyDesc) => {
-        let ticket = null;
-        if (budgetedSchedulingEnabled) {
+      const probeSingleNormalHistory = (historyDesc, existingTicket) => {
+        let ticket = existingTicket || null;
+        if (!ticket && budgetedSchedulingEnabled) {
           ticket = hypothesisTicket(
             depth,
             waveIndex,
@@ -5714,7 +5728,6 @@ function tryAdaptiveCheckpointRepair(
             historyDesc.anchorOutputRank,
             historyDesc.anchorOutputStateKey,
           );
-          ticket.anchorGenerationExpansions = anchorGenerationExpansions;
           ticket.anchorGenerationExpansions = anchorGenerationExpansions;
           ticket.anchorGenerationWallMs = anchorGenerationWallMs;
           ticket.consumedExpansions = anchorGenerationExpansions;
@@ -5832,8 +5845,18 @@ function tryAdaptiveCheckpointRepair(
           ? historyProbeStartWallMs + historyProbeBudget.wallMs
           : Infinity;
 
+        const anchorAttempt = expandedAnchor && expandedAnchor.attempts && expandedAnchor.attempts[0];
+        const anchorDp = anchorAttempt && anchorAttempt.diagnostics && anchorAttempt.diagnostics.dp;
+        const anchorProbeExpired = Boolean(
+          expandedAnchor &&
+          (!expandedAnchor.merged || expandedAnchor.merged.length === 0) &&
+          anchorDp &&
+          (anchorDp.stoppedReason === "time-limit" || anchorDp.stoppedReason === "expansion-limit") &&
+          !(config.globalBudget && config.globalBudget.stoppedReason)
+        );
+
         let completedReplayCount = 0;
-        let probeExpired = false;
+        let probeExpired = anchorProbeExpired;
         const replaySegments = [];
         for (
           let replayIndex = anchorHistoryIndex + 1;
@@ -6169,24 +6192,552 @@ function tryAdaptiveCheckpointRepair(
         return ticket;
       };
 
-      for (const historyDesc of primaryNormalDescriptors) {
-        const ticket = probeSingleNormalHistory(historyDesc);
-        if (ticket && ticket.probeCount >= 1) {
-          normalAdmission.primaryProbed += 1;
+      probeTranche = (descriptors, trancheType, trancheOpts) => {
+        if (!Array.isArray(descriptors) || descriptors.length === 0) return;
+        const topts = trancheOpts || {};
+        const wIndex = topts.waveIndex != null ? topts.waveIndex : waveIndex;
+        const inputCandIds = topts.inputCandidateIds
+          ? topts.inputCandidateIds
+          : (topts.waveInputCandidates
+            ? topts.waveInputCandidates.map((c) => c.id)
+            : (topts.cfIntent ? [topts.cfIntent.startCandidateId] : waveInputCandidates.map((c) => c.id)));
+        const aGenExp = topts.anchorGenExp != null ? topts.anchorGenExp : anchorGenerationExpansions;
+        const aGenWall = topts.anchorGenWall != null ? topts.anchorGenWall : anchorGenerationWallMs;
+        const hAnchorProgress = topts.historicalAnchorProgress || historicalAnchorProgress || null;
+        const firstReplaySeg = topts.firstReplaySegmentForProgress || firstReplaySegmentForProgress || anchor.segment;
+
+        const isBatchSupported =
+          config &&
+          config.segmentExecutionMode === "isolated-process" &&
+          config.enableBatchFirstProbe !== false &&
+          typeof executeIsolatedSegmentBatch === "function" &&
+          descriptors.length > 1;
+
+        if (!isBatchSupported) {
+          for (const desc of descriptors) {
+            let preCreatedTicket = null;
+            if (trancheType === "counterfactual" && topts.cfIntent) {
+              preCreatedTicket = hypothesisTicket(
+                depth,
+                wIndex,
+                anchor.segment.id,
+                inputCandIds,
+                desc.hypothesisId,
+                desc.parentWaveId,
+                desc.anchorOutputCandidateId,
+                desc.anchorOutputRank,
+                desc.anchorOutputStateKey,
+              );
+              preCreatedTicket.anchorGenerationExpansions = aGenExp;
+              preCreatedTicket.anchorGenerationWallMs = aGenWall;
+              preCreatedTicket.consumedExpansions = aGenExp;
+              preCreatedTicket.consumedWallMs = aGenWall;
+              preCreatedTicket.counterfactualIntentId = topts.cfIntent.intentId;
+              preCreatedTicket.counterfactualKind = topts.cfIntent.kind;
+              repairScheduling.hypotheses.push(preCreatedTicket);
+            }
+            const resTicket = probeSingleNormalHistory(desc, preCreatedTicket);
+            if (resTicket && resTicket.probeCount >= 1) {
+              if (trancheType === "primary") normalAdmission.primaryProbed += 1;
+              else if (trancheType === "secondary") normalAdmission.secondaryAdmitted += 1;
+            }
+            if (resTicket && (resTicket.progressClass === "WITHIN_SEGMENT_PROGRESS" || resTicket.progressClass === "SEGMENT_ADVANCE")) {
+              if (trancheType === "primary") normalAdmission.primaryPositive += 1;
+              if (topts.onPositive) topts.onPositive();
+            }
+            if (depthGoalReached) break;
+          }
+          return;
         }
-        if (ticket && (ticket.progressClass === "WITHIN_SEGMENT_PROGRESS" || ticket.progressClass === "SEGMENT_ADVANCE")) {
-          normalAdmission.primaryPositive += 1;
+
+        // BATCH FIRST-PROBE EXECUTION
+        const items = [];
+        for (const desc of descriptors) {
+          let ticket = null;
+          if (budgetedSchedulingEnabled) {
+            ticket = hypothesisTicket(
+              depth,
+              wIndex,
+              anchor.segment.id,
+              inputCandIds,
+              desc.hypothesisId,
+              desc.parentWaveId,
+              desc.anchorOutputCandidateId,
+              desc.anchorOutputRank,
+              desc.anchorOutputStateKey,
+            );
+            ticket.anchorGenerationExpansions = aGenExp;
+            ticket.anchorGenerationWallMs = aGenWall;
+            ticket.consumedExpansions = aGenExp;
+            ticket.consumedWallMs = aGenWall;
+            if (trancheType === "counterfactual" && topts.cfIntent) {
+              ticket.counterfactualIntentId = topts.cfIntent.intentId;
+              ticket.counterfactualKind = topts.cfIntent.kind;
+            }
+            repairScheduling.hypotheses.push(ticket);
+          }
+
+          let repairedAnchorProgress = null;
+          if (ticket && desc.anchorCandidate) {
+            const candState = desc.anchorCandidate.state || desc.anchorCandidate;
+            if (candState) {
+              repairedAnchorProgress = compactProgressProjection(
+                projectSegmentGoalProgress(simulator.project, candState, firstReplaySeg),
+              );
+            }
+          } else if (ticket && Array.isArray(desc.replayFrontier) && desc.replayFrontier.length > 0) {
+            repairedAnchorProgress = bestFrontierGoalProgress(
+              desc.replayFrontier,
+              (state) => projectSegmentGoalProgress(simulator.project, state, firstReplaySeg),
+            );
+          }
+
+          if (ticket) {
+            ticket.nextReplaySegmentIndex = anchorHistoryIndex + 1;
+          }
+
+          let historyRepairFrontier = desc.replayFrontier;
+          let failedAtIndex = historyRepairFrontier && historyRepairFrontier.length > 0 ? null : anchorHistoryIndex;
+
+          const historyProbeBudget = budgetedSchedulingEnabled ? probeBudgetForWave() : null;
+          const globalStopBeforeHistory = (config.globalBudget && config.globalBudget.stoppedReason) || null;
+
+          if (budgetedSchedulingEnabled && (
+              historyProbeBudget == null ||
+              historyProbeBudget.insufficientHeadroom === true ||
+              globalStopBeforeHistory != null)) {
+            if (ticket) {
+              ticket.probeCount = 0;
+              ticket.status = "PROBE_PENDING";
+              ticket.historyProbeExpansions = 0;
+              ticket.historyProbeWallMs = 0;
+              ticket.stopReason = globalStopBeforeHistory || (historyProbeBudget && historyProbeBudget.insufficientHeadroom
+                ? "insufficient-probe-headroom"
+                : "global-budget-exhausted");
+              ticket.progressClass = "NO_MEASURABLE_PROGRESS";
+              ticket.continuationEligible = false;
+              ticket.continuationDecision = historyProbeBudget && historyProbeBudget.insufficientHeadroom
+                ? "insufficient-headroom"
+                : "not-eligible";
+              ticket.lastProgress = {
+                waveOutcome: ticket.stopReason,
+                replaySegmentsEntered: 0,
+                replaySegmentsCompleted: 0,
+                failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,
+                goalReached: false,
+              };
+              ticket.progressEvidence = {
+                replaySegmentsCompleted: 0,
+                nextReplaySegmentIndex: ticket.nextReplaySegmentIndex,
+                historicalAnchorProgress: hAnchorProgress,
+                repairedAnchorProgress,
+                replayBestProgress: null,
+                goalProgressAfter: repairedAnchorProgress,
+              };
+              appendSchedulingEvent({
+                hypothesisId: ticket.hypothesisId,
+                parentWaveId: ticket.parentWaveId,
+                probeIndex: 0,
+                grantKind: "first-probe",
+                depth,
+                anchorCandidateIds: ticket.anchorInputCandidateIds,
+                anchorOutputCandidateId: ticket.anchorOutputCandidateId,
+                anchorOutputStateKey: ticket.anchorOutputStateKey,
+                anchorOutputRank: ticket.anchorOutputRank,
+                startReplayIndex: anchorHistoryIndex + 1,
+                endReplayIndex: anchorHistoryIndex,
+                nextReplaySegmentIndex: ticket.nextReplaySegmentIndex,
+                allocatedWallMs: null,
+                allocatedExpansions: null,
+                consumedWallMs: ticket.consumedWallMs,
+                consumedExpansions: ticket.consumedExpansions,
+                anchorGenerationExpansions: aGenExp,
+                historyProbeExpansions: 0,
+                progressBefore: hAnchorProgress,
+                repairedAnchorProgress,
+                replayBestProgress: null,
+                progressAfter: ticket.lastProgress,
+                progressClass: ticket.progressClass,
+                continuationEligible: false,
+                yieldReason: "insufficient-probe-headroom",
+                pendingAfterProbe: true,
+                globalStopReason: globalStopBeforeHistory,
+              });
+            }
+            continue;
+          }
+
+          if (ticket) {
+            probedHypotheses.add(ticket.hypothesisId);
+          }
+
+          items.push({
+            desc,
+            ticket,
+            repairedAnchorProgress,
+            historyProbeBudget,
+            currentFrontier: historyRepairFrontier,
+            failedAtIndex,
+            completedReplayCount: 0,
+            replaySegments: [],
+            replayBestProgress: null,
+            goalProgressAfter: repairedAnchorProgress,
+            probeStartWallMs: Date.now(),
+            probeStartExpansions: config && config.globalBudget ? config.globalBudget.consumedExpansions : 0,
+            probeExpired: false,
+            active: true,
+          });
         }
-        if (depthGoalReached) break;
-      }
+
+        if (items.length === 0) return;
+
+        for (
+          let replayIndex = anchorHistoryIndex + 1;
+          replayIndex <= segmentIndex;
+          replayIndex += 1
+        ) {
+          const replaySegment = segments[replayIndex];
+          const activeItems = items.filter(
+            (it) => it.active && !it.probeExpired && it.currentFrontier && it.currentFrontier.length > 0,
+          );
+          if (activeItems.length === 0) break;
+
+          activeItems.forEach((it) => {
+            it.replaySegments.push(replaySegment);
+            depthDownstreamReplayCount += 1;
+          });
+
+          const replayIntentLimit = backtrackCandidateLimit(replaySegment, config || {});
+
+          const batchJobs = activeItems.map((it) => {
+            const replayIntentRanking = rankCandidatesByFailureIntent(
+              simulator,
+              it.currentFrontier,
+              triggerFailure,
+              preferredTags,
+              {
+                phase: "adaptive-replay",
+                enabled: replayIntentEnabled,
+                consumptionMode: "top-n-truncate",
+                candidateLimit: replayIntentLimit,
+                evidenceDetailLimit: replayIntentLimit,
+              },
+            );
+            if (replayIntentRanking.activated) {
+              failureIntentRanking.replay = {
+                activated: true,
+                telemetry: replayIntentRanking.telemetry,
+              };
+            }
+            const rankedFrontier = replayIntentRanking.ranked;
+            const rRunConfig = {
+              ...(config || {}),
+              stopOnFirstGoal: undefined,
+            };
+            return {
+              jobId: it.ticket ? it.ticket.hypothesisId : it.desc.hypothesisId,
+              segment: replaySegment,
+              inputFrontier: rankedFrontier,
+              probeExpansionCap: it.historyProbeBudget ? it.historyProbeBudget.expansions : 200,
+              probeWallMs: it.historyProbeBudget ? it.historyProbeBudget.wallMs : 2000,
+              config: {
+                ...rRunConfig,
+                segmentIndex: replayIndex,
+                segmentTotal: segments.length,
+                goalDependencySegments: segments.slice(replayIndex),
+              },
+              overrides: withManualBudgetAuthority(rRunConfig, {
+                candidateLimit: backtrackCandidateLimit(replaySegment, config || {}),
+                dpOverrides: backtrackDpOverrides(replaySegment, config || {}),
+                preserveSkylineRoles: true,
+              }),
+            };
+          });
+
+          batchFirstProbe[trancheType].jobsRequested += batchJobs.length;
+
+          let batchExecutions;
+          if (config && config.disableBatchFirstProbe === true) {
+            batchExecutions = batchJobs.map((job) => {
+              batchFirstProbe[trancheType].processLaunches += 1;
+              return executeIsolatedSegment({
+                simulator,
+                segment: job.segment,
+                frontier: job.inputFrontier,
+                config: {
+                  ...(job.config || {}),
+                  probeExpansionCap: job.probeExpansionCap,
+                  probeDeadlineMs: job.probeWallMs ? (Date.now() + job.probeWallMs) : undefined,
+                },
+                overrides: job.overrides,
+                isolatedRuntimeDescriptor: config && config.isolatedRuntimeDescriptor,
+              });
+            });
+          } else {
+            batchFirstProbe[trancheType].processLaunches += 1;
+            batchExecutions = executeIsolatedSegmentBatch({
+              simulator,
+              jobs: batchJobs,
+              config: {
+                ...(config || {}),
+                projectRoot: (config && config.projectRoot) || undefined,
+              },
+              isolatedRuntimeDescriptor: config && config.isolatedRuntimeDescriptor,
+            });
+          }
+
+          if (batchExecutions.length !== batchJobs.length) {
+            throw new Error(`Batch execution count mismatch: ${batchExecutions.length} != ${batchJobs.length}`);
+          }
+
+          const executedCount = batchExecutions.filter(
+            (e) => e.telemetry && e.telemetry.executed !== false,
+          ).length;
+          batchFirstProbe[trancheType].jobsExecuted += executedCount;
+
+          for (let bIdx = 0; bIdx < activeItems.length; bIdx += 1) {
+            const it = activeItems[bIdx];
+            const replayExecution = batchExecutions[bIdx];
+            waveExecutions.push(replayExecution);
+            if (topts.cfExecutions) {
+              topts.cfExecutions.push(replayExecution);
+            }
+
+            it.consumedExpansions = (it.consumedExpansions || 0) +
+              (replayExecution.telemetry ? Number(replayExecution.telemetry.consumedExpansions || 0) : 0);
+            it.searchWallMs = (it.searchWallMs || 0) +
+              (replayExecution.telemetry ? Number(replayExecution.telemetry.searchWallMs || 0) : 0);
+
+            const isCompleteReplay = Boolean(
+              replayExecution.telemetry &&
+              replayExecution.telemetry.executed !== false &&
+              replayExecution.summary &&
+              replayExecution.summary.candidateSliceTelemetry &&
+              replayExecution.summary.candidateSliceTelemetry.candidateSliceSearchComplete,
+            );
+            if (isCompleteReplay) {
+              it.completedReplayCount += 1;
+              if (it.ticket) it.ticket.nextReplaySegmentIndex = replayIndex + 1;
+            } else {
+              if (it.ticket) it.ticket.nextReplaySegmentIndex = replayIndex;
+            }
+
+            if (Array.isArray(replayExecution.attempts)) {
+              let bAfter = null;
+              replayExecution.attempts.forEach((att) => {
+                if (!att) return;
+                let proj = att.bestProgressProjection || (att.bestProgress ? projectGoalProgressFor(att.bestProgress, replaySegment) : null);
+                if (!proj) return;
+                if (!bAfter) { bAfter = proj; return; }
+                const cmp = compareGoalProgress(bAfter, proj);
+                if (cmp != null && cmp > 0) bAfter = proj;
+              });
+              if (bAfter) {
+                it.goalProgressAfter = bestOfProgressProjections(it.goalProgressAfter, bAfter);
+                it.replayBestProgress = bestOfProgressProjections(it.replayBestProgress, bAfter);
+              }
+            }
+
+            if (!replayExecution.merged || replayExecution.merged.length === 0) {
+              it.failedAtIndex = replayIndex;
+              it.currentFrontier = null;
+              it.active = false;
+            } else {
+              it.currentFrontier = replayExecution.merged;
+            }
+
+            if (replayExecution.telemetry && replayExecution.telemetry.executed === false) {
+              it.active = false;
+              it.probeExpired = false;
+              it.wasExecuted = false;
+            } else {
+              it.wasExecuted = true;
+              if (
+                budgetedSchedulingEnabled &&
+                it.historyProbeBudget &&
+                (it.consumedExpansions >= it.historyProbeBudget.expansions ||
+                 it.searchWallMs >= it.historyProbeBudget.wallMs ||
+                 !isCompleteReplay)
+              ) {
+                it.probeExpired = true;
+                it.active = false;
+              }
+            }
+          }
+        }
+
+        for (const it of items) {
+          const ticket = it.ticket;
+          const historyGoalReached = Boolean(
+            it.currentFrontier &&
+            it.currentFrontier.length > 0 &&
+            it.replaySegments.length === (segmentIndex - anchorHistoryIndex) &&
+            it.completedReplayCount === it.replaySegments.length,
+          );
+
+          let waveStopReason = null;
+          if (config && config.globalBudget && config.globalBudget.stoppedReason) {
+            waveStopReason = config.globalBudget.stoppedReason;
+          } else if (it.probeExpired) {
+            waveStopReason = "probe-limited";
+          }
+
+          const waveResourceInterrupted = Boolean(
+            waveStopReason === "rss-limit" ||
+            waveStopReason === "heap-limit" ||
+            waveStopReason === "time-limit" ||
+            waveStopReason === "expansion-limit",
+          );
+
+          let waveOutcome = classifyAdaptiveHypothesisOutcome({
+            goalReached: historyGoalReached,
+            probeExpired: it.probeExpired,
+            resourceInterrupted: waveResourceInterrupted,
+            enteredReplays: it.replaySegments.length,
+            completedReplays: it.completedReplayCount,
+            emptyFrontier: !it.currentFrontier || it.currentFrontier.length === 0,
+            anchorExecution: expandedAnchor,
+            globalStopReason: waveStopReason,
+          });
+
+          const OUTCOME_PRIORITY = {
+            "goal-reached": 100,
+            "probe-limited": 80,
+            "time-limited": 60,
+            "expansion-limited": 60,
+            "incomplete": 40,
+            "exhausted": 20,
+          };
+          if (!attemptWaveOutcome ||
+              (OUTCOME_PRIORITY[waveOutcome] || 0) > (OUTCOME_PRIORITY[attemptWaveOutcome] || 0)) {
+            attemptWaveOutcome = waveOutcome;
+          }
+          if (waveStopReason) lastWaveStopReason = waveStopReason;
+          if (it.failedAtIndex != null) lastFailedAtIndex = it.failedAtIndex;
+          if (it.replaySegments.length > 0) lastReplaySegments = it.replaySegments;
+
+          if (ticket) {
+            if (it.wasExecuted === false) {
+              ticket.status = "PROBE_PENDING";
+              ticket.stopReason = waveStopReason || "global-budget-exhausted";
+              continue;
+            }
+
+            const historyProbeWallMs = it.searchWallMs != null
+              ? it.searchWallMs
+              : (Date.now() - it.probeStartWallMs);
+            const historyProbeExpansions = it.consumedExpansions != null
+              ? it.consumedExpansions
+              : ((config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) - it.probeStartExpansions);
+
+            ticket.consumedWallMs = aGenWall + historyProbeWallMs;
+            ticket.consumedExpansions = aGenExp + historyProbeExpansions;
+            ticket.anchorGenerationExpansions = aGenExp;
+            ticket.historyProbeExpansions = historyProbeExpansions;
+            ticket.anchorGenerationWallMs = aGenWall;
+            ticket.historyProbeWallMs = historyProbeWallMs;
+            ticket.probeCount = 1;
+            ticket.stopReason = waveOutcome;
+            ticket.status = (historyGoalReached || waveOutcome === "exhausted") ? "PROBE_COMPLETE_OR_GOAL" : "PROBE_PENDING";
+            ticket.lastProgress = {
+              waveOutcome,
+              replaySegmentsEntered: it.replaySegments.length,
+              replaySegmentsCompleted: it.completedReplayCount,
+              failedAtSegmentId: it.failedAtIndex == null ? null : segments[it.failedAtIndex].id,
+              goalReached: historyGoalReached,
+            };
+            ticket.progressEvidence = {
+              replaySegmentsCompleted: it.completedReplayCount,
+              nextReplaySegmentIndex: ticket.nextReplaySegmentIndex,
+              historicalAnchorProgress: hAnchorProgress,
+              repairedAnchorProgress: it.repairedAnchorProgress,
+              replayBestProgress: it.replayBestProgress,
+              goalProgressAfter: it.goalProgressAfter,
+            };
+            ticket.progressClass = classifyProgress(ticket, ticket.progressEvidence);
+            const globalStopAfterProbe = (config.globalBudget && config.globalBudget.stoppedReason) || null;
+            ticket.continuationEligible = isContinuationEligible(ticket, globalStopAfterProbe);
+            ticket.continuationDecision = ticket.continuationEligible
+              ? "eligible"
+              : (ticket.stopReason === "probe-limited" && !globalStopAfterProbe
+                ? "no-measurable-progress"
+                : ticket.stopReason === "insufficient-probe-headroom"
+                  ? "insufficient-headroom"
+                  : "not-eligible");
+            ticket.grantHistory.push({
+              probeIndex: ticket.probeCount,
+              grantKind: "first-probe",
+              allocatedWallMs: it.historyProbeBudget ? it.historyProbeBudget.wallMs : null,
+              allocatedExpansions: it.historyProbeBudget ? it.historyProbeBudget.expansions : null,
+              consumedWallMs: ticket.consumedWallMs,
+              consumedExpansions: ticket.consumedExpansions,
+              anchorGenerationExpansions: aGenExp,
+              historyProbeExpansions: ticket.historyProbeExpansions,
+              outcome: waveOutcome,
+              progressClass: ticket.progressClass,
+            });
+            appendSchedulingEvent({
+              hypothesisId: ticket.hypothesisId,
+              parentWaveId: ticket.parentWaveId,
+              probeIndex: ticket.probeCount,
+              grantKind: "first-probe",
+              depth,
+              anchorCandidateIds: ticket.anchorInputCandidateIds,
+              anchorOutputCandidateId: ticket.anchorOutputCandidateId,
+              anchorOutputStateKey: ticket.anchorOutputStateKey,
+              anchorOutputRank: ticket.anchorOutputRank,
+              startReplayIndex: anchorHistoryIndex + 1,
+              endReplayIndex: anchorHistoryIndex + it.replaySegments.length,
+              nextReplaySegmentIndex: ticket.nextReplaySegmentIndex,
+              allocatedWallMs: it.historyProbeBudget ? it.historyProbeBudget.wallMs : null,
+              allocatedExpansions: it.historyProbeBudget ? it.historyProbeBudget.expansions : null,
+              consumedWallMs: ticket.consumedWallMs,
+              consumedExpansions: ticket.consumedExpansions,
+              anchorGenerationExpansions: aGenExp,
+              historyProbeExpansions: ticket.historyProbeExpansions,
+              progressBefore: hAnchorProgress,
+              repairedAnchorProgress: it.repairedAnchorProgress,
+              replayBestProgress: it.replayBestProgress,
+              progressAfter: ticket.lastProgress,
+              progressClass: ticket.progressClass,
+              continuationEligible: ticket.continuationEligible,
+              yieldReason: it.probeExpired ? "probe-expired" : (historyGoalReached ? "goal-reached" : null),
+              pendingAfterProbe: !historyGoalReached && waveOutcome !== "exhausted",
+              globalStopReason: globalStopAfterProbe,
+            });
+
+            if (trancheType === "primary") {
+              normalAdmission.primaryProbed += 1;
+              if (ticket.progressClass === "WITHIN_SEGMENT_PROGRESS" || ticket.progressClass === "SEGMENT_ADVANCE") {
+                normalAdmission.primaryPositive += 1;
+              }
+            } else if (trancheType === "secondary") {
+              normalAdmission.secondaryAdmitted += 1;
+            }
+            if (topts.onPositive && (ticket.progressClass === "WITHIN_SEGMENT_PROGRESS" || ticket.progressClass === "SEGMENT_ADVANCE")) {
+              topts.onPositive();
+            }
+          }
+
+          if (historyGoalReached) {
+            depthFinalFrontier = it.currentFrontier;
+            depthGoalReached = true;
+            break;
+          }
+        }
+      };
+
+      probeTranche(primaryNormalDescriptors, "primary", {
+        waveIndex,
+        waveInputCandidates,
+        anchorGenerationExpansions,
+        anchorGenerationWallMs,
+        historicalAnchorProgress,
+        firstReplaySegmentForProgress,
+      });
 
       if (secondaryNormalDescriptors.length > 0) {
-        deferredNormalDescriptors.push(
-          ...secondaryNormalDescriptors.map((desc) => ({
-            historyDesc: desc,
-            probeFn: probeSingleNormalHistory,
-          }))
-        );
+        deferredNormalDescriptors.push(...secondaryNormalDescriptors);
       }
 
       const waveConsumedExpansions = (config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) - waveStartExpansions;
@@ -6335,6 +6886,7 @@ function tryAdaptiveCheckpointRepair(
           counterfactualRepair,
           normalAdmission,
           counterfactualAdmission,
+          batchFirstProbe: lastBatchFirstProbe,
         };
       }
 
@@ -6348,6 +6900,7 @@ function tryAdaptiveCheckpointRepair(
           counterfactualRepair,
           normalAdmission,
           counterfactualAdmission,
+          batchFirstProbe: lastBatchFirstProbe,
           maxDepth,
           attempts,
           depthSummaries,
@@ -6393,6 +6946,7 @@ function tryAdaptiveCheckpointRepair(
           counterfactualRepair,
           normalAdmission,
           counterfactualAdmission,
+          batchFirstProbe: lastBatchFirstProbe,
         };
       }
     }
@@ -6445,6 +6999,7 @@ function tryAdaptiveCheckpointRepair(
     });
 
     const shouldTriggerCounterfactual =
+      (config || {}).enableCounterfactualRepair !== false &&
       !depthGoalReached &&
       normalFirstRoundComplete &&
       realNormalProbedTickets.length >= 1 &&
@@ -6469,14 +7024,7 @@ function tryAdaptiveCheckpointRepair(
       if (globalStopBeforeSecondary === null && deferredNormalDescriptors.length > 0) {
         const toAdmit = deferredNormalDescriptors.slice();
         deferredNormalDescriptors.length = 0;
-        for (const item of toAdmit) {
-          if (depthGoalReached) break;
-          if (config.globalBudget && config.globalBudget.stoppedReason) break;
-          item.probeFn(item.historyDesc);
-          if (normalAdmission) {
-            normalAdmission.secondaryAdmitted += 1;
-          }
-        }
+        probeTranche(toAdmit, "secondary");
       }
     } else if (shouldTriggerCounterfactual) {
       if (counterfactualAdmission) {
@@ -6645,286 +7193,18 @@ function tryAdaptiveCheckpointRepair(
 
         let cfPositiveCount = 0;
 
-        for (const cfDesc of cfHistoryDescriptors) {
-          const cfTicket = hypothesisTicket(
-            depth,
-            totalWaves + intentIdx,
-            anchor.segment.id,
-            [intent.startCandidateId],
-            cfDesc.hypothesisId,
-            cfDesc.parentWaveId,
-            cfDesc.anchorOutputCandidateId,
-            cfDesc.anchorOutputRank,
-            cfDesc.anchorOutputStateKey,
-          );
-          cfTicket.anchorGenerationExpansions = cfAnchorGenExp;
-          cfTicket.anchorGenerationWallMs = cfAnchorGenWall;
-          cfTicket.consumedExpansions = cfAnchorGenExp;
-          cfTicket.consumedWallMs = cfAnchorGenWall;
-          cfTicket.counterfactualIntentId = intent.intentId;
-          cfTicket.counterfactualKind = intent.kind;
-          repairScheduling.hypotheses.push(cfTicket);
-
-          let cfRepairedAnchorProgress = null;
-          if (cfDesc.anchorCandidate) {
-            const candState = cfDesc.anchorCandidate.state || cfDesc.anchorCandidate;
-            if (candState) {
-              cfRepairedAnchorProgress = compactProgressProjection(
-                projectSegmentGoalProgress(simulator.project, candState, firstReplaySegmentForProgress),
-              );
-            }
-          }
-          let cfGoalProgressAfter = cfRepairedAnchorProgress;
-          let cfReplayBestProgress = null;
-
-          if (cfTicket) {
-            cfTicket.nextReplaySegmentIndex = anchorHistoryIndex + 1;
-          }
-
-          let cfHistoryRepairFrontier = cfDesc.replayFrontier;
-          let cfFailedAtIndex = cfHistoryRepairFrontier && cfHistoryRepairFrontier.length > 0 ? null : anchorHistoryIndex;
-
-          const cfProbeBudget = probeBudgetForWave();
-          const cfGlobalStopBefore = (config.globalBudget && config.globalBudget.stoppedReason) || null;
-
-          if (cfProbeBudget == null || cfProbeBudget.insufficientHeadroom === true || cfGlobalStopBefore != null) {
-            cfTicket.probeCount = 0;
-            cfTicket.status = "PROBE_PENDING";
-            cfTicket.stopReason = cfGlobalStopBefore || "insufficient-probe-headroom";
-            cfTicket.continuationDecision = "insufficient-headroom";
-            cfTicket.progressClass = "NO_MEASURABLE_PROGRESS";
-            cfTicket.continuationEligible = false;
-            cfTicket.lastProgress = {
-              waveOutcome: cfTicket.stopReason,
-              replaySegmentsEntered: 0,
-              replaySegmentsCompleted: 0,
-              failedAtSegmentId: cfFailedAtIndex == null ? null : segments[cfFailedAtIndex].id,
-              goalReached: false,
-            };
-            cfTicket.progressEvidence = {
-              replaySegmentsCompleted: 0,
-              nextReplaySegmentIndex: cfTicket.nextReplaySegmentIndex,
-              historicalAnchorProgress,
-              repairedAnchorProgress: cfRepairedAnchorProgress,
-              replayBestProgress: null,
-              goalProgressAfter: cfGoalProgressAfter,
-            };
-            continue;
-          }
-
-          cfTicket.probeCount = 1;
-          probedHypotheses.add(cfTicket.hypothesisId);
-
-          const cfProbeStartExp = config.globalBudget ? config.globalBudget.consumedExpansions : 0;
-          const cfProbeStartWall = Date.now();
-          const cfProbeExpCap = cfProbeStartExp + cfProbeBudget.expansions;
-          const cfProbeDeadline = cfProbeStartWall + cfProbeBudget.wallMs;
-
-          let cfCompletedReplays = 0;
-          let cfProbeExpired = false;
-          const cfReplaySegments = [];
-
-          for (
-            let rIdx = anchorHistoryIndex + 1;
-            !cfProbeExpired && cfHistoryRepairFrontier && cfHistoryRepairFrontier.length > 0 && rIdx <= segmentIndex;
-            rIdx += 1
-          ) {
-            const rSeg = segments[rIdx];
-            cfReplaySegments.push(rSeg);
-            depthDownstreamReplayCount += 1;
-            const rRunConfig = {
-              ...(config || {}),
-              probeDeadlineMs: cfProbeDeadline,
-              probeExpansionCap: cfProbeExpCap,
-              maxExpansions: Math.min(
-                number((config || {}).maxExpansions, cfProbeBudget.expansions),
-                cfProbeBudget.expansions,
-              ),
-            };
-            const rReplayed = runSegmentAgainstFrontier(
-              simulator,
-              rSeg,
-              cfHistoryRepairFrontier,
-              {
-                ...rRunConfig,
-                segmentIndex: rIdx,
-                segmentTotal: segments.length,
-                goalDependencySegments: segments.slice(rIdx),
-              },
-              withManualBudgetAuthority(rRunConfig, {
-                candidateLimit: backtrackCandidateLimit(rSeg, config || {}),
-                preserveSkylineRoles: true,
-              }),
-            );
-            rReplayed.executionPhase = "adaptive-replay";
-            cfExecutions.push(rReplayed);
-            cfHistoryRepairFrontier = rReplayed.merged;
-
-            if (Array.isArray(rReplayed.attempts)) {
-              let bAfter = null;
-              rReplayed.attempts.forEach((att) => {
-                if (!att) return;
-                let proj = att.bestProgressProjection || (att.bestProgress ? projectGoalProgressFor(att.bestProgress, rSeg) : null);
-                if (!proj) return;
-                if (!bAfter) { bAfter = proj; return; }
-                const cmp = compareGoalProgress(bAfter, proj);
-                if (cmp != null && cmp > 0) bAfter = proj;
-              });
-              if (bAfter) {
-                cfGoalProgressAfter = bestOfProgressProjections(cfGoalProgressAfter, bAfter);
-                cfReplayBestProgress = bestOfProgressProjections(cfReplayBestProgress, bAfter);
-              }
-            }
-
-            const cfExpiredAfter = Date.now() >= cfProbeDeadline ||
-              ((config.globalBudget.consumedExpansions - cfProbeStartExp) >= cfProbeBudget.expansions);
-            if (cfExpiredAfter) {
-              cfProbeExpired = true;
-            }
-            const cfDeterminate = isReplayDeterminatelyComplete(rReplayed, {
-              probeExpiredAfter: cfExpiredAfter,
-            });
-            if (cfDeterminate) {
-              cfCompletedReplays += 1;
-              cfTicket.nextReplaySegmentIndex = rIdx + 1;
-            } else {
-              cfTicket.nextReplaySegmentIndex = rIdx;
-            }
-            if (!cfHistoryRepairFrontier || cfHistoryRepairFrontier.length === 0) {
-              cfFailedAtIndex = rIdx;
-              break;
-            }
-            if (cfProbeExpired) {
-              break;
-            }
-          }
-
-          const cfProbeExp = (config.globalBudget ? config.globalBudget.consumedExpansions : 0) - cfProbeStartExp;
-          const cfProbeWall = Date.now() - cfProbeStartWall;
-          cfTicket.historyProbeExpansions = cfProbeExp;
-          cfTicket.historyProbeWallMs = cfProbeWall;
-          cfTicket.consumedExpansions = cfAnchorGenExp + cfProbeExp;
-          cfTicket.consumedWallMs = cfAnchorGenWall + cfProbeWall;
-
-          const cfGoalReached = Boolean(
-            cfHistoryRepairFrontier && cfHistoryRepairFrontier.length > 0 &&
-            cfReplaySegments.length === (segmentIndex - anchorHistoryIndex) &&
-            cfCompletedReplays === cfReplaySegments.length
-          );
-          if (cfGoalReached) {
-            depthGoalReached = true;
-            depthFinalFrontier = cfHistoryRepairFrontier;
-            const depthOutcome = "goal-reached";
-            depthSummaries.push({
-              depth,
-              anchorSegmentId: anchor.segment.id,
-              wavesTotal: totalWaves,
-              wavesAttempted: depthWavesAttempted,
-              wavesCompleted: depthWavesCompleted,
-              downstreamReplayCount: depthDownstreamReplayCount,
-              anchorExpandedCandidates: depthAnchorExpandedCandidates,
-              depthOutcome,
-              depthExhausted: false,
-              stopReason: depthStopReason,
-            });
-            cfExecutions.forEach((exec) => {
-              ledgerExecutions.push(exec);
-            });
-            return {
-              found: true,
-              triggerFailure,
-              failureIntentRanking,
-              repairScheduling,
-              maxDepth,
-              attempts,
-              depthSummaries,
-              executions: cfExecutions,
-              ledgerExecutions,
-              anchorHistoryIndex,
-              finalFrontier: depthFinalFrontier || [],
-              counterfactualRepair,
-            };
-          }
-
-          let cfWaveOutcome = classifyAdaptiveHypothesisOutcome({
-            goalReached: cfGoalReached,
-            probeExpired: cfProbeExpired,
-            resourceInterrupted: false,
-            enteredReplays: cfReplaySegments.length,
-            completedReplays: cfCompletedReplays,
-            emptyFrontier: !cfHistoryRepairFrontier || cfHistoryRepairFrontier.length === 0,
-            anchorExecution: cfAnchorExpanded,
-            globalStopReason: null,
-          });
-          cfTicket.stopReason = cfWaveOutcome;
-          cfTicket.status = (cfGoalReached || cfWaveOutcome === "exhausted") ? "PROBE_COMPLETE_OR_GOAL" : "PROBE_PENDING";
-          cfTicket.lastProgress = {
-            waveOutcome: cfWaveOutcome,
-            replaySegmentsEntered: cfReplaySegments.length,
-            replaySegmentsCompleted: cfCompletedReplays,
-            failedAtSegmentId: cfFailedAtIndex == null ? null : segments[cfFailedAtIndex].id,
-            goalReached: cfGoalReached,
-          };
-          cfTicket.progressEvidence = {
-            replaySegmentsCompleted: cfCompletedReplays,
-            nextReplaySegmentIndex: cfTicket.nextReplaySegmentIndex,
-            historicalAnchorProgress,
-            repairedAnchorProgress: cfRepairedAnchorProgress,
-            replayBestProgress: cfReplayBestProgress,
-            goalProgressAfter: cfGoalProgressAfter,
-          };
-          cfTicket.progressClass = classifyProgress(cfTicket, cfTicket.progressEvidence);
-          if (cfTicket.progressClass === "WITHIN_SEGMENT_PROGRESS" || cfTicket.progressClass === "SEGMENT_ADVANCE") {
+        probeTranche(cfHistoryDescriptors, "counterfactual", {
+          waveIndex: totalWaves + intentIdx,
+          inputCandidateIds: [intent.startCandidateId],
+          anchorGenExp: cfAnchorGenExp,
+          anchorGenWall: cfAnchorGenWall,
+          cfIntent: intent,
+          cfExecutions,
+          onPositive: () => {
             cfPositiveCount += 1;
-          }
-          cfTicket.continuationEligible = isContinuationEligible(cfTicket, null);
-          cfTicket.continuationDecision = cfTicket.continuationEligible
-            ? "eligible"
-            : (cfTicket.stopReason === "probe-limited" ? "no-measurable-progress" : "not-eligible");
-          cfTicket.grantHistory.push({
-            probeIndex: 1,
-            grantKind: "first-probe",
-            allocatedWallMs: cfProbeBudget.wallMs,
-            allocatedExpansions: cfProbeBudget.expansions,
-            consumedWallMs: cfTicket.consumedWallMs,
-            consumedExpansions: cfTicket.consumedExpansions,
-            anchorGenerationExpansions: cfAnchorGenExp,
-            historyProbeExpansions: cfProbeExp,
-            outcome: cfWaveOutcome,
-            progressClass: cfTicket.progressClass,
-          });
-          appendSchedulingEvent({
-            hypothesisId: cfTicket.hypothesisId,
-            parentWaveId: cfTicket.parentWaveId,
-            probeIndex: 1,
-            grantKind: "first-probe",
-            depth,
-            anchorCandidateIds: cfTicket.anchorInputCandidateIds,
-            anchorOutputCandidateId: cfTicket.anchorOutputCandidateId,
-            anchorOutputStateKey: cfTicket.anchorOutputStateKey,
-            anchorOutputRank: cfTicket.anchorOutputRank,
-            startReplayIndex: anchorHistoryIndex + 1,
-            endReplayIndex: anchorHistoryIndex + cfReplaySegments.length,
-            nextReplaySegmentIndex: cfTicket.nextReplaySegmentIndex,
-            allocatedWallMs: cfProbeBudget.wallMs,
-            allocatedExpansions: cfProbeBudget.expansions,
-            consumedWallMs: cfTicket.consumedWallMs,
-            consumedExpansions: cfTicket.consumedExpansions,
-            anchorGenerationExpansions: cfAnchorGenExp,
-            historyProbeExpansions: cfProbeExp,
-            progressBefore: historicalAnchorProgress,
-            repairedAnchorProgress: cfRepairedAnchorProgress,
-            replayBestProgress: cfReplayBestProgress,
-            progressAfter: cfTicket.lastProgress,
-            progressClass: cfTicket.progressClass,
-            continuationEligible: cfTicket.continuationEligible,
-            yieldReason: cfProbeExpired ? "probe-expired" : (cfGoalReached ? "goal-reached" : null),
-            pendingAfterProbe: !cfGoalReached && cfWaveOutcome !== "exhausted",
-            globalStopReason: null,
-          });
-
-          if (cfGoalReached) break;
-        }
+            totalCfPositiveCount += 1;
+          },
+        });
 
         counterfactualRepair.intents.push({
           intentId: intent.intentId,
@@ -6937,7 +7217,44 @@ function tryAdaptiveCheckpointRepair(
 
         totalCfPositiveCount += cfPositiveCount;
 
-        if (depthGoalReached) break;
+        if (depthGoalReached) {
+          const depthOutcome = "goal-reached";
+          depthSummaries.push({
+            depth,
+            anchorSegmentId: anchor.segment.id,
+            wavesTotal: totalWaves,
+            wavesAttempted: depthWavesAttempted,
+            wavesCompleted: depthWavesCompleted,
+            downstreamReplayCount: depthDownstreamReplayCount,
+            anchorExpandedCandidates: depthAnchorExpandedCandidates,
+            depthOutcome,
+            depthExhausted: false,
+            stopReason: depthStopReason,
+            normalAdmission: normalAdmission ? { ...normalAdmission } : null,
+            counterfactualAdmission: counterfactualAdmission ? { ...counterfactualAdmission } : null,
+            batchFirstProbe: { ...batchFirstProbe },
+          });
+          cfExecutions.forEach((exec) => {
+            ledgerExecutions.push(exec);
+          });
+          return {
+            found: true,
+            triggerFailure,
+            failureIntentRanking,
+            repairScheduling,
+            maxDepth,
+            attempts,
+            depthSummaries,
+            executions: cfExecutions,
+            ledgerExecutions,
+            anchorHistoryIndex,
+            finalFrontier: depthFinalFrontier || [],
+            counterfactualRepair,
+            normalAdmission,
+            counterfactualAdmission,
+            batchFirstProbe,
+          };
+        }
       }
       if (!depthGoalReached) {
         cfExecutions.forEach((exec) => {
@@ -6957,14 +7274,7 @@ function tryAdaptiveCheckpointRepair(
         if (globalStopAfterCf === null && deferredNormalDescriptors.length > 0) {
           const toAdmit = deferredNormalDescriptors.slice();
           deferredNormalDescriptors.length = 0;
-          for (const item of toAdmit) {
-            if (depthGoalReached) break;
-            if (config.globalBudget && config.globalBudget.stoppedReason) break;
-            item.probeFn(item.historyDesc);
-            if (normalAdmission) {
-              normalAdmission.secondaryAdmitted += 1;
-            }
-          }
+          probeTranche(toAdmit, "secondary");
         }
       }
     }
@@ -7541,6 +7851,7 @@ function tryAdaptiveCheckpointRepair(
             counterfactualRepair,
             normalAdmission,
             counterfactualAdmission,
+            batchFirstProbe: lastBatchFirstProbe,
           };
         }
         // Detach continuation executions (they failed).
@@ -7564,14 +7875,7 @@ function tryAdaptiveCheckpointRepair(
     if (globalStopAfterCont === null && deferredNormalDescriptors.length > 0 && !depthGoalReached) {
       const toAdmit = deferredNormalDescriptors.slice();
       deferredNormalDescriptors.length = 0;
-      for (const item of toAdmit) {
-        if (depthGoalReached) break;
-        if (config.globalBudget && config.globalBudget.stoppedReason) break;
-        item.probeFn(item.historyDesc);
-        if (normalAdmission) {
-          normalAdmission.secondaryAdmitted += 1;
-        }
-      }
+      probeTranche(toAdmit, "secondary");
 
       // If any newly admitted secondary ticket achieved positive progress,
       // allow continuation pass to run for it!
@@ -7632,6 +7936,7 @@ function tryAdaptiveCheckpointRepair(
     counterfactualRepair,
     normalAdmission: lastAdaptiveNormalAdmission,
     counterfactualAdmission: lastAdaptiveCounterfactualAdmission,
+    batchFirstProbe: lastBatchFirstProbe,
   };
 }
 
@@ -7901,6 +8206,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     counterfactualRepair: lastCounterfactualRepair,
     normalAdmission: lastNormalAdmission,
     counterfactualAdmission: lastCounterfactualAdmission,
+    batchFirstProbe: lastBatchFirstProbe,
     objectiveStopPolicy,
   });
   const rangeError = milestoneRangeError(
@@ -8093,6 +8399,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   let lastCounterfactualRepair = null;
   let lastNormalAdmission = null;
   let lastCounterfactualAdmission = null;
+  let lastBatchFirstProbe = null;
   const history = [];
   const shouldStop = typeof config.shouldStop === "function"
     ? config.shouldStop
@@ -8207,6 +8514,9 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         if (adaptiveRepair.counterfactualAdmission) {
           lastCounterfactualAdmission = adaptiveRepair.counterfactualAdmission;
         }
+        if (adaptiveRepair.batchFirstProbe) {
+          lastBatchFirstProbe = adaptiveRepair.batchFirstProbe;
+        }
         (adaptiveRepair.ledgerExecutions || adaptiveRepair.executions).forEach((entry, index) => {
           // Iteration 5 Repair (P2, phase fidelity) – the phase comes from the
           // execution source itself (stamped at push time), so multi-wave
@@ -8258,6 +8568,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
             counterfactualRepair: adaptiveRepair.counterfactualRepair || null,
             normalAdmission: adaptiveRepair.normalAdmission || null,
             counterfactualAdmission: adaptiveRepair.counterfactualAdmission || null,
+            batchFirstProbe: adaptiveRepair.batchFirstProbe || null,
             attempts: adaptiveRepair.attempts || [],
             depthSummaries: adaptiveRepair.depthSummaries || [],
             depths: adaptiveRepair.depthSummaries || [],
@@ -8285,6 +8596,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
             counterfactualRepair: adaptiveRepair.counterfactualRepair || null,
             normalAdmission: adaptiveRepair.normalAdmission || null,
             counterfactualAdmission: adaptiveRepair.counterfactualAdmission || null,
+            batchFirstProbe: adaptiveRepair.batchFirstProbe || null,
             attempts: adaptiveRepair.attempts || [],
             depthSummaries: adaptiveRepair.depthSummaries || [],
             depths: adaptiveRepair.depthSummaries || [],

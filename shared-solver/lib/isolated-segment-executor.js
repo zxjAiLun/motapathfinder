@@ -810,14 +810,23 @@ function executeIsolatedSegmentBatch(options) {
       : (job.config && job.config.probeExpansionCap != null ? Number(job.config.probeExpansionCap) : null);
     let childProbeExpansionCap = null;
     if (parentProbeExpansionCap != null && Number.isFinite(parentProbeExpansionCap)) {
-      childProbeExpansionCap = Math.max(0, parentProbeExpansionCap - parentGlobalConsumed);
+      childProbeExpansionCap = parentProbeExpansionCap > parentGlobalConsumed
+        ? parentProbeExpansionCap - parentGlobalConsumed
+        : parentProbeExpansionCap;
     }
+    const probeWallMs = job.probeWallMs != null
+      ? Number(job.probeWallMs)
+      : (job.config && job.config.probeWallMs != null
+        ? Number(job.config.probeWallMs)
+        : null);
+
     preparedJobs.push({
       jobId: job.jobId,
       segment: seg,
       inputFrontier,
       parentInputStateKeys,
       probeExpansionCap: childProbeExpansionCap,
+      probeWallMs: probeWallMs != null && Number.isFinite(probeWallMs) ? probeWallMs : null,
       probeDeadlineMs: job.probeDeadlineMs != null ? Number(job.probeDeadlineMs) : null,
       config: job.config || {},
       overrides: job.overrides || overrides || {},
@@ -1117,6 +1126,9 @@ function executeIsolatedSegmentBatch(options) {
         inputStateKeysVerified: jobRes.inputStateKeysVerified || 0,
         outputStateKeysVerified,
         stateRoundTripIdentity,
+        jobStartWallMs: jobRes.jobStartWallMs || 0,
+        effectiveProbeDeadlineMs: jobRes.effectiveProbeDeadlineMs || null,
+        allocatedProbeWallMs: jobRes.allocatedProbeWallMs || null,
         executed: true,
         isolatedBatch: null,
       },

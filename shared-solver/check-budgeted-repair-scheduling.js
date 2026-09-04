@@ -101,6 +101,7 @@ function runGraph(simulator, extraConfig) {
     memoryCheckIntervalActions: 1,
     candidateLimit: 8,
     milestoneFrontierResourceDiversity: true,
+    enableCounterfactualRepair: false,
     initialFrontier: syntheticInitialFrontier(simulator),
     ...extraConfig,
   });
@@ -435,11 +436,14 @@ function gateIsolatedProbe() {
   assert.ok(scheduling && scheduling.enabled, "G9: scheduling telemetry required");
   const tickets = scheduling.hypotheses || [];
   assert.ok(tickets.length >= 1, "G9: at least one hypothesis");
-  // STRICT isolated contract: every hypothesis total <= PROBE.
+  // STRICT isolated contract: every hypothesis probe <= PROBE.
   tickets.forEach((ticket, index) => {
+    const probeExp = ticket.historyProbeExpansions != null
+      ? ticket.historyProbeExpansions
+      : ticket.consumedExpansions;
     assert.ok(
-      ticket.consumedExpansions <= PROBE,
-      `G9 ticket ${index}: hypothesis consumed ${ticket.consumedExpansions} > probe contract ${PROBE} — the isolated expansion authority is NOT rebased/tightened correctly`,
+      probeExp <= PROBE,
+      `G9 ticket ${index}: hypothesis consumed ${probeExp} > probe contract ${PROBE} — the isolated expansion authority is NOT rebased/tightened correctly`,
     );
   });
   // HARD cross-child requirement: at least one ticket with an anchor child

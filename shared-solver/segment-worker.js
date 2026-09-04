@@ -431,15 +431,20 @@ function runBatchWorker(payload, outputPath, project, simulator, appliedSimulato
     simulator.__workerChoiceResolver = createNoStateChangeChoiceResolver();
     simulator.choiceResolver = simulator.__workerChoiceResolver;
 
+    const jobStartWallMs = Date.now();
     const jobStartExpansions = childGlobalBudget ? childGlobalBudget.consumedExpansions : 0;
     const jobLocalProbeCap = job.probeExpansionCap != null
       ? jobStartExpansions + Number(job.probeExpansionCap)
       : (payload.config && payload.config.probeExpansionCap != null
         ? jobStartExpansions + Number(payload.config.probeExpansionCap)
         : null);
-    const jobLocalDeadline = job.probeDeadlineMs != null
-      ? Math.min(childGlobalBudget ? childGlobalBudget.deadlineMs : Infinity, Number(job.probeDeadlineMs))
-      : (childGlobalBudget ? childGlobalBudget.deadlineMs : undefined);
+
+    // PR-5.24f Iteration 1 Repair 1: Per-job wall authority rebased at job start using duration probeWallMs!
+    const jobLocalDeadline = job.probeWallMs != null
+      ? Math.min(childGlobalBudget ? childGlobalBudget.deadlineMs : Infinity, jobStartWallMs + Number(job.probeWallMs))
+      : (job.probeDeadlineMs != null
+        ? Math.min(childGlobalBudget ? childGlobalBudget.deadlineMs : Infinity, Number(job.probeDeadlineMs))
+        : (childGlobalBudget ? childGlobalBudget.deadlineMs : undefined));
 
     const jobConfig = {
       ...(payload.config || {}),
@@ -451,7 +456,7 @@ function runBatchWorker(payload, outputPath, project, simulator, appliedSimulato
       maxRssHardCeilingMb: payload.config ? payload.config.maxRssHardCeilingMb : 260,
     };
 
-    const jobStartedAt = Date.now();
+    const jobStartedAt = jobStartWallMs;
 
     const result = runSegmentAgainstFrontierLocal(
       simulator,
@@ -504,6 +509,9 @@ function runBatchWorker(payload, outputPath, project, simulator, appliedSimulato
       memoryStopReason: result.memoryStopReason || null,
       consumedExpansions: jobConsumedExpansions,
       searchWallMs: jobWallMs,
+      jobStartWallMs,
+      effectiveProbeDeadlineMs: jobLocalDeadline,
+      allocatedProbeWallMs: job.probeWallMs != null ? Number(job.probeWallMs) : null,
       inputStateKeysVerified,
       outputStateKeysVerified,
       inputFrontierLength: jobInputFrontier.length,

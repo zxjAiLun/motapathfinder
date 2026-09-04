@@ -6,6 +6,7 @@ const {
   executeIsolatedSegment,
   executeIsolatedSegmentBatch,
 } = require("./lib/isolated-segment-executor");
+const { runMilestoneGraph } = require("./lib/segment-dp");
 const { loadProject } = require("./lib/project-loader");
 const { StaticSimulator } = require("./lib/simulator");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
@@ -292,8 +293,13 @@ function gateG25D_Performance() {
   );
 
   const speedupRatio = Math.round((legacyWallMs / batchWallMs) * 10) / 10;
+  assert.ok(
+    speedupRatio >= 2.0,
+    `G25-D: microbench speedup ratio (${speedupRatio}x) must be >= 2.0x`,
+  );
 
   return {
+    speedupLabel: "MICROBENCH_SPEEDUP",
     jobsCount: N,
     legacyLaunches: N,
     batchLaunches: 1,
@@ -343,12 +349,241 @@ function gateG25E_Telemetry() {
   };
 }
 
+// G25-F: Production Wiring Gate
+// First-probe tranches in runMilestoneGraph execute via executeIsolatedSegmentBatch in a single child process.
+function gateG25F_ProductionWiring() {
+  const { simulator } = createTestHarness();
+  const s0 = simulator.createInitialState();
+
+  const spec = {
+    routeName: "g25-f-spec",
+    milestones: [
+      { id: "seg1", label: "Anchor", goal: { floorId: "MT1", minHero: { hp: 1000 } }, actionPolicy: { allowedFloors: ["MT1"] }, dp: { maxExpansions: 30, maxRuntimeMs: 2000, candidateLimit: 4 } },
+      { id: "seg2", label: "Gated", startFrom: "seg1", goal: { floorId: "MT1", minHero: { money: 1000 } }, actionPolicy: { allowedFloors: ["MT1"] }, dp: { maxExpansions: 20, maxRuntimeMs: 2000 } },
+    ],
+  };
+
+  const res = runMilestoneGraph(simulator, s0, spec, {
+    searchIntent: "adaptive-feasible",
+    segmentExecutionMode: "isolated-process",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 5000,
+    maxRuntimeMs: 30000,
+    maxRssMb: 2048,
+    candidateLimit: 4,
+    initialFrontier: [{ id: "root", state: s0 }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 20,
+    projectRoot: PROJECT_ROOT,
+  });
+
+  const bfp = res.batchFirstProbe;
+  assert.ok(bfp, "G25-F: batchFirstProbe telemetry must exist on result");
+  assert.ok(bfp.primary.jobsRequested >= 4, `G25-F: jobsRequested (${bfp.primary.jobsRequested}) must be >= 4`);
+  assert.ok(bfp.primary.jobsExecuted >= 4, `G25-F: jobsExecuted (${bfp.primary.jobsExecuted}) must be >= 4`);
+  assert.strictEqual(bfp.primary.processLaunches, 1, "G25-F: primary tranche must execute in exactly 1 process launch");
+
+  const primaryTickets = res.repairScheduling.hypotheses.filter((h) => h.depth === 1 && h.anchorOutputRank < 4);
+  assert.ok(primaryTickets.length >= 4, "G25-F: at least 4 primary tickets generated");
+  assert.ok(primaryTickets.every((t) => t.probeCount >= 1), "G25-F: all primary tickets must have probeCount >= 1");
+
+  return {
+    productionWiringVerified: true,
+    jobsRequested: bfp.primary.jobsRequested,
+    jobsExecuted: bfp.primary.jobsExecuted,
+    processLaunches: bfp.primary.processLaunches,
+  };
+}
+
+// G25-G: Per-Job Wall Rebase Gate
+// Each job in a batch receives its full allocated probe wall budget rebased at its start time.
+function gateG25G_PerJobWallRebase() {
+  const { simulator } = createTestHarness();
+  const s0 = simulator.createInitialState();
+
+  const segment = {
+    id: "rebase-seg",
+    label: "Rebase Segment",
+    goal: { floorId: "MT1", minHero: { money: 1000 } },
+    actionPolicy: { allowedFloors: ["MT1"] },
+    dp: { maxExpansions: 50, maxRuntimeMs: 2000 },
+  };
+
+  const requestedProbeWallMs = 600;
+  const jobs = [
+    { jobId: "j1", segment, inputFrontier: [{ id: "c1", state: s0 }], probeExpansionCap: 50, probeWallMs: requestedProbeWallMs },
+    { jobId: "j2", segment, inputFrontier: [{ id: "c2", state: s0 }], probeExpansionCap: 50, probeWallMs: requestedProbeWallMs },
+    { jobId: "j3", segment, inputFrontier: [{ id: "c3", state: s0 }], probeExpansionCap: 50, probeWallMs: requestedProbeWallMs },
+  ];
+
+  const batchRes = executeIsolatedSegmentBatch({
+    simulator,
+    jobs,
+    config: { projectRoot: PROJECT_ROOT, maxExpansions: 5000, maxRuntimeMs: 30000 },
+  });
+
+  assert.strictEqual(batchRes.length, 3, "G25-G: all 3 jobs returned");
+  for (let i = 0; i < batchRes.length; i += 1) {
+    const r = batchRes[i];
+    assert.strictEqual(r.telemetry.executed, true, `G25-G: job ${i} executed`);
+    assert.strictEqual(r.telemetry.allocatedProbeWallMs, requestedProbeWallMs, `G25-G: job ${i} allocatedProbeWallMs match`);
+    assert.ok(typeof r.telemetry.jobStartWallMs === "number", `G25-G: job ${i} jobStartWallMs is number`);
+    assert.ok(typeof r.telemetry.effectiveProbeDeadlineMs === "number", `G25-G: job ${i} effectiveProbeDeadlineMs is number`);
+    assert.ok(
+      Math.abs(r.telemetry.effectiveProbeDeadlineMs - (r.telemetry.jobStartWallMs + requestedProbeWallMs)) < 50,
+      `G25-G: job ${i} effective deadline must be approximately jobStartWallMs + allocatedProbeWallMs`,
+    );
+    if (i > 0) {
+      assert.ok(
+        r.telemetry.jobStartWallMs >= batchRes[i - 1].telemetry.jobStartWallMs,
+        `G25-G: job ${i} started at or after job ${i - 1}`,
+      );
+    }
+  }
+
+  return {
+    perJobWallRebaseVerified: true,
+    allocatedProbeWallMs: requestedProbeWallMs,
+    jobsChecked: 3,
+  };
+}
+
+// G25-H: Production Equivalence Gate
+// Unbatched Arm A (disableBatchFirstProbe: true) vs Batched Arm B (disableBatchFirstProbe: false) produces identical tickets, progress, and outcomes.
+function gateG25H_ProductionEquivalence() {
+  const { simulator } = createTestHarness();
+  const s0 = simulator.createInitialState();
+
+  const spec = {
+    routeName: "g25-h-spec",
+    milestones: [
+      { id: "seg1", label: "Anchor", goal: { floorId: "MT1", minHero: { hp: 1000 } }, actionPolicy: { allowedFloors: ["MT1"] }, dp: { maxExpansions: 30, maxRuntimeMs: 2000, candidateLimit: 4 } },
+      { id: "seg2", label: "Gated", startFrom: "seg1", goal: { floorId: "MT1", minHero: { money: 1000 } }, actionPolicy: { allowedFloors: ["MT1"] }, dp: { maxExpansions: 20, maxRuntimeMs: 2000 } },
+    ],
+  };
+
+  const baseOpts = {
+    searchIntent: "adaptive-feasible",
+    segmentExecutionMode: "isolated-process",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 5000,
+    maxRuntimeMs: 30000,
+    maxRssMb: 2048,
+    candidateLimit: 4,
+    initialFrontier: [{ id: "root", state: s0 }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 20,
+    projectRoot: PROJECT_ROOT,
+  };
+
+  const resA = runMilestoneGraph(simulator, s0, spec, { ...baseOpts, disableBatchFirstProbe: true });
+  const resB = runMilestoneGraph(simulator, s0, spec, { ...baseOpts, disableBatchFirstProbe: false });
+
+  assert.strictEqual(resA.batchFirstProbe.primary.processLaunches, 4, "G25-H: Arm A uses 4 process launches");
+  assert.strictEqual(resB.batchFirstProbe.primary.processLaunches, 1, "G25-H: Arm B uses 1 process launch");
+
+  const ticketsA = resA.repairScheduling.hypotheses.filter((h) => h.depth === 1);
+  const ticketsB = resB.repairScheduling.hypotheses.filter((h) => h.depth === 1);
+  assert.strictEqual(ticketsA.length, ticketsB.length, "G25-H: ticket count match");
+
+  for (let i = 0; i < ticketsA.length; i += 1) {
+    assert.strictEqual(ticketsA[i].hypothesisId, ticketsB[i].hypothesisId, `G25-H: ticket ${i} id match`);
+    assert.strictEqual(ticketsA[i].status, ticketsB[i].status, `G25-H: ticket ${i} status match`);
+    assert.strictEqual(ticketsA[i].stopReason, ticketsB[i].stopReason, `G25-H: ticket ${i} stopReason match`);
+    assert.strictEqual(ticketsA[i].probeCount, ticketsB[i].probeCount, `G25-H: ticket ${i} probeCount match`);
+    assert.strictEqual(ticketsA[i].progressClass, ticketsB[i].progressClass, `G25-H: ticket ${i} progressClass match`);
+  }
+
+  return {
+    productionEquivalenceVerified: true,
+    armALaunches: resA.batchFirstProbe.primary.processLaunches,
+    armBLaunches: resB.batchFirstProbe.primary.processLaunches,
+    ticketsCompared: ticketsA.length,
+  };
+}
+
+// G25-I: Global Stop Mid-Batch Production Path Gate
+// When global budget is exhausted mid-batch on the production path, executed jobs produce normal results, unstarted jobs return PROBE_PENDING with depthExhausted: false, and final outcome is not EXHAUSTED.
+function gateG25I_GlobalStopMidBatchProductionPath() {
+  const { simulator } = createTestHarness();
+  const s0 = simulator.createInitialState();
+
+  const spec = {
+    routeName: "g25-i-spec",
+    milestones: [
+      { id: "seg1", label: "Anchor", goal: { floorId: "MT1", minHero: { hp: 1000 } }, actionPolicy: { allowedFloors: ["MT1"] }, dp: { maxExpansions: 30, maxRuntimeMs: 2000, candidateLimit: 4 } },
+      { id: "seg2", label: "Gated", startFrom: "seg1", goal: { floorId: "MT1", minHero: { money: 1000 } }, actionPolicy: { allowedFloors: ["MT1"] }, dp: { maxExpansions: 20, maxRuntimeMs: 2000 } },
+    ],
+  };
+
+  const res = runMilestoneGraph(simulator, s0, spec, {
+    searchIntent: "adaptive-feasible",
+    segmentExecutionMode: "isolated-process",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 112, // tuned to exhaust during batch execution of seg2
+    maxRuntimeMs: 30000,
+    maxRssMb: 2048,
+    candidateLimit: 4,
+    initialFrontier: [{ id: "root", state: s0 }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 20,
+    projectRoot: PROJECT_ROOT,
+  });
+
+  const bfp = res.batchFirstProbe;
+  assert.ok(bfp.primary.jobsRequested >= 4, "G25-I: jobsRequested >= 4");
+  assert.ok(bfp.primary.jobsExecuted >= 1, "G25-I: at least 1 job executed before budget exhaustion");
+  assert.ok(
+    bfp.primary.jobsExecuted < bfp.primary.jobsRequested,
+    `G25-I: mid-batch stop occurred (${bfp.primary.jobsExecuted} < ${bfp.primary.jobsRequested})`,
+  );
+
+  const tickets = res.repairScheduling.hypotheses.filter((h) => h.depth === 1);
+  const executedTickets = tickets.filter((t) => t.probeCount >= 1);
+  const unstartedTickets = tickets.filter((t) => t.probeCount === 0);
+
+  assert.ok(executedTickets.length >= 1, "G25-I: at least 1 ticket executed");
+  assert.ok(unstartedTickets.length >= 1, "G25-I: at least 1 ticket unstarted");
+  assert.ok(
+    unstartedTickets.every((t) => t.status === "PROBE_PENDING"),
+    "G25-I: all unstarted tickets have status PROBE_PENDING",
+  );
+
+  const ds = res.failedSegment.backtrack.depthSummaries[0];
+  assert.notStrictEqual(ds.depthOutcome, "exhausted", "G25-I: depthOutcome must not be exhausted");
+  assert.strictEqual(ds.depthExhausted, false, "G25-I: depthExhausted must be false");
+  assert.notStrictEqual(res.finalCanonicalOutcome, "EXHAUSTED", "G25-I: finalCanonicalOutcome must not be EXHAUSTED");
+
+  return {
+    midBatchGlobalStopVerified: true,
+    jobsRequested: bfp.primary.jobsRequested,
+    jobsExecuted: bfp.primary.jobsExecuted,
+    executedTicketsCount: executedTickets.length,
+    unstartedTicketsCount: unstartedTickets.length,
+    depthOutcome: ds.depthOutcome,
+    depthExhausted: ds.depthExhausted,
+  };
+}
+
 function main() {
   const g25A = gateG25A_Equivalence();
   const g25B = gateG25B_GlobalStop();
   const g25C = gateG25C_StateIsolation();
   const g25D = gateG25D_Performance();
   const g25E = gateG25E_Telemetry();
+  const g25F = gateG25F_ProductionWiring();
+  const g25G = gateG25G_PerJobWallRebase();
+  const g25H = gateG25H_ProductionEquivalence();
+  const g25I = gateG25I_GlobalStopMidBatchProductionPath();
 
   const report = {
     schema: "motapathfinder.isolated-batch.v1",
@@ -359,6 +594,10 @@ function main() {
       "G25-C": g25C,
       "G25-D": g25D,
       "G25-E": g25E,
+      "G25-F": g25F,
+      "G25-G": g25G,
+      "G25-H": g25H,
+      "G25-I": g25I,
     },
   };
   console.log(JSON.stringify(report, null, 2));
@@ -375,4 +614,8 @@ module.exports = {
   gateG25C_StateIsolation,
   gateG25D_Performance,
   gateG25E_Telemetry,
+  gateG25F_ProductionWiring,
+  gateG25G_PerJobWallRebase,
+  gateG25H_ProductionEquivalence,
+  gateG25I_GlobalStopMidBatchProductionPath,
 };
