@@ -10,7 +10,7 @@ const {
 } = require("./lib/counterfactual-repair");
 
 /**
- * PR-5.24e — Counterfactual Resource-Investment Repair Generation Gates (G24 A-K6).
+ * PR-5.24e — Counterfactual Resource-Investment Repair Generation Gates (G24 A-K7).
  *
  * G24-A: HP-for-EXP investment generates valid intent and canonical DP realization yields HP 70 / EXP 10.
  * G24-B: Counterfactual investment history unlocks downstream segment, delivering top-level FOUND.
@@ -32,6 +32,7 @@ const {
  * G24-K4: Useful CF can receive existing continuation (continuation grants second probe -> FOUND).
  * G24-K5: No search-space widening (limits and frontiers unchanged).
  * G24-K6: Primary incomplete remains fail-closed (insufficient headroom blocks CF and secondary).
+ * G24-K7: Useful CF failure returns deferred work & completion authority preserves outstanding secondary.
  */
 
 // G24-D: Unweighted Pareto trade-off filtering
@@ -1454,6 +1455,184 @@ function gateG24K6_PrimaryIncompleteRemainsFailClosed() {
   };
 }
 
+// G24-K7: Useful CF failure returns deferred work & completion authority preserves outstanding secondary
+function gateG24K7_UsefulCFFailureReturnsDeferredWork() {
+  function buildG24K7Simulator(withSecondaryContinuation) {
+    const map = Array(10).fill(null).map(() => Array(10).fill(0));
+    const project = {
+      floorOrder: ["F1"],
+      floorsById: { F1: { floorId: "F1", width: 10, height: 10, map, changeFloor: {} } },
+      mapTilesByNumber: { "0": { id: "empty", canPass: true } },
+      enemysById: { monster: { id: "monster", hp: 10, exp: 10, atk: 5 } },
+    };
+    return {
+      project,
+      stopFloorId: "F1",
+      createInitialState() {
+        return {
+          floorId: "F1",
+          hero: { loc: { x: 0, y: 0, direction: "down" }, hp: 1000, mana: 0, atk: 0, def: 0, mdef: 0, lv: 1, exp: 0, money: 0, equipment: [] },
+          inventory: {},
+          flags: { branch: "none", stones: 0, gems: 0, choice: 0 },
+          visitedFloors: { F1: true },
+          floorStates: { F1: { removed: {}, replaced: {} } },
+          route: [],
+        };
+      },
+      buildReachableRegionSignature(s) {
+        return { regionKey: `F1|b=${s.flags.branch}|st=${s.flags.stones}|g=${s.flags.gems}|c=${s.flags.choice}|atk=${s.hero.atk}|h=${s.hero.hp}|m=${s.hero.mana}`, reachableEndpointsKey: "F1:0,0" };
+      },
+      stabilizeState(s) { return JSON.parse(JSON.stringify(s)); },
+      isTerminal() { return false; },
+      enumeratePrimitiveActions(s) {
+        if (s.flags.branch === "none") {
+          const acts = [];
+          for (let i = 0; i < 8; i += 1) {
+            acts.push({ kind: "conserve", branch: `b${i}`, summary: `branch:b${i}`, floorId: "F1", target: { x: i, y: 1 } });
+          }
+          acts.push({ kind: "battle", summary: "battle:monster@F1:0,0", floorId: "F1", target: { x: 0, y: 0 } });
+          return { actions: acts };
+        }
+        if (s.flags.branch.startsWith("b")) {
+          if (withSecondaryContinuation && s.flags.branch === "b5" && s.flags.stones < 10) {
+            return { actions: [
+              { kind: "stone", choice: 1, summary: `stone:b5:${s.flags.stones}:1`, floorId: "F1", target: { x: 0, y: 0 } },
+              { kind: "stone", choice: 2, summary: `stone:b5:${s.flags.stones}:2`, floorId: "F1", target: { x: 0, y: 0 } },
+            ] };
+          }
+          if (s.flags.stones < 5) {
+            return { actions: [{ kind: "stone", summary: `stone:${s.flags.branch}:${s.flags.stones}`, floorId: "F1", target: { x: 0, y: 0 } }] };
+          }
+          return { actions: [] };
+        }
+        if (s.flags.branch === "inv") {
+          if (s.flags.gems < 2) {
+            return { actions: [
+              { kind: "pickup", choice: 1, summary: `pickup:gem#${s.flags.gems}:1`, floorId: "F1", target: { x: 0, y: 0 } },
+              { kind: "pickup", choice: 2, summary: `pickup:gem#${s.flags.gems}:2`, floorId: "F1", target: { x: 0, y: 0 } },
+              { kind: "pickup", choice: 3, summary: `pickup:gem#${s.flags.gems}:3`, floorId: "F1", target: { x: 0, y: 0 } },
+              { kind: "pickup", choice: 4, summary: `pickup:gem#${s.flags.gems}:4`, floorId: "F1", target: { x: 0, y: 0 } },
+            ] };
+          }
+          return { actions: [] };
+        }
+        return { actions: [] };
+      },
+      applyAction(s, a) {
+        const next = JSON.parse(JSON.stringify(s));
+        next.hero.money = 1;
+        next.route.push(a.summary);
+        if (a.kind === "conserve") {
+          next.flags.branch = a.branch;
+          const idx = parseInt(a.branch.slice(1), 10);
+          next.hero.hp = 1000 - idx * 10;
+          next.hero.mana = idx * 10;
+          return next;
+        }
+        if (a.kind === "battle") {
+          next.hero.hp -= 20;
+          next.hero.atk = 5;
+          next.flags.branch = "inv";
+          return next;
+        }
+        if (a.summary && a.summary.startsWith("pickup:gem")) {
+          next.flags.gems += 1;
+          next.flags.choice = a.choice;
+          next.hero.atk += 2;
+          return next;
+        }
+        if (withSecondaryContinuation && a.summary && a.summary.startsWith("stone:b5:")) {
+          next.flags.stones += 1;
+          next.flags.choice = a.choice;
+          next.hero.atk += 25;
+          return next;
+        }
+        next.flags.stones += 1;
+        return next;
+      },
+    };
+  }
+
+  // Subcase 1: CF continuation fails to reach goal -> deferred secondary normals are resumed and probed
+  const sim1 = buildG24K7Simulator(false);
+  const spec = {
+    routeName: "g24-k7-spec",
+    milestones: [
+      { id: "seg1", label: "Anchor", goal: { floorId: "F1", minHero: { money: 1 } }, actionPolicy: { allowedFloors: ["F1"], actionKinds: ["conserve"] }, dp: { maxExpansions: 200 } },
+      { id: "seg2", label: "Gated", startFrom: "seg1", goal: { floorId: "F1", minHero: { atk: 50 } }, actionPolicy: { allowedFloors: ["F1"], actionKinds: ["pickup", "stone"] }, dp: { maxExpansions: 100 } },
+    ],
+  };
+
+  const res1 = runMilestoneGraph(sim1, sim1.createInitialState(), spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 50000,
+    maxRuntimeMs: 60000,
+    candidateLimit: 4,
+    initialFrontier: [{ id: "root", state: sim1.createInitialState() }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 2,
+  });
+
+  assert.strictEqual(res1.found, false, "G24-K7 S1: CF continuation resolved without FOUND");
+  assert.strictEqual(res1.normalAdmission.secondaryDeferredBecauseCounterfactualUseful, true, "G24-K7 S1: secondary initially deferred for useful CF");
+  assert.strictEqual(res1.normalAdmission.secondaryAdmitted, 4, "G24-K7 S1: all 4 secondary normals resumed and admitted after CF continuation failure");
+  const normalTickets = res1.repairScheduling.hypotheses.filter((h) => h.depth === 1 && h.counterfactualIntentId == null);
+  assert.strictEqual(normalTickets.length, 8, "G24-K7 S1: all 8 normal tickets exist");
+  assert.ok(normalTickets.slice(4).every((t) => t.probeCount >= 1), "G24-K7 S1: N4-N7 all actually probed");
+
+  // Subcase 2: When budget runs out with outstanding secondary work, completion authority ensures depth is NEVER exhausted
+  const sim2 = buildG24K7Simulator(false);
+  const resBudgetStop = runMilestoneGraph(sim2, sim2.createInitialState(), spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 26,
+    maxRuntimeMs: 60000,
+    candidateLimit: 4,
+    initialFrontier: [{ id: "root", state: sim2.createInitialState() }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 2,
+  });
+
+  const depthSummary = (resBudgetStop.failedSegment && resBudgetStop.failedSegment.backtrack && resBudgetStop.failedSegment.backtrack.depthSummaries[0]) || {};
+  assert.notStrictEqual(depthSummary.depthOutcome, "exhausted", "G24-K7 S2: depthOutcome MUST NEVER be exhausted when secondary is outstanding");
+  assert.strictEqual(depthSummary.depthExhausted, false, "G24-K7 S2: depthExhausted must be false");
+
+  // Subcase 3: When a resumed secondary normal produces positive progress, it receives continuation and achieves FOUND
+  const sim3 = buildG24K7Simulator(true);
+  const res3 = runMilestoneGraph(sim3, sim3.createInitialState(), spec, {
+    searchIntent: "adaptive-feasible",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 50000,
+    maxRuntimeMs: 60000,
+    candidateLimit: 4,
+    initialFrontier: [{ id: "root", state: sim3.createInitialState() }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 2,
+  });
+
+  assert.strictEqual(res3.found, true, "G24-K7 S3: resumed secondary normal can receive continuation and achieve FOUND");
+  const b5Ticket = res3.repairScheduling.hypotheses.find((h) => h.hypothesisId === "h-d1w1h5");
+  assert.ok(b5Ticket, "G24-K7 S3: secondary ticket b5 found");
+  assert.strictEqual(b5Ticket.probeCount, 2, "G24-K7 S3: b5 granted continuation");
+  assert.strictEqual(b5Ticket.continuationDecision, "granted", "G24-K7 S3: b5 decision is granted");
+
+  return {
+    cfContinuationFailureResumesSecondary: true,
+    outstandingSecondaryBlocksExhausted: true,
+    resumedSecondaryReceivesContinuationAndFindsGoal: true,
+  };
+}
+
 function main() {
   const g24D = gateG24D_ParetoTradeOff();
   const g24AB = gateG24A_B_InvestmentAndDownstreamUnlock();
@@ -1474,6 +1653,7 @@ function main() {
   const g24K4 = gateG24K4_UsefulCFContinuationAchievesFound();
   const g24K5 = gateG24K5_NoSearchSpaceWidening();
   const g24K6 = gateG24K6_PrimaryIncompleteRemainsFailClosed();
+  const g24K7 = gateG24K7_UsefulCFFailureReturnsDeferredWork();
 
   const report = {
     schema: "motapathfinder.counterfactual-repair.v1",
@@ -1498,6 +1678,7 @@ function main() {
       "G24-K4": g24K4,
       "G24-K5": g24K5,
       "G24-K6": g24K6,
+      "G24-K7": g24K7,
     },
   };
   console.log(JSON.stringify(report, null, 2));
@@ -1528,4 +1709,5 @@ module.exports = {
   gateG24K4_UsefulCFContinuationAchievesFound,
   gateG24K5_NoSearchSpaceWidening,
   gateG24K6_PrimaryIncompleteRemainsFailClosed,
+  gateG24K7_UsefulCFFailureReturnsDeferredWork,
 };

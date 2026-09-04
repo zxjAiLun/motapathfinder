@@ -6278,10 +6278,16 @@ function tryAdaptiveCheckpointRepair(
       });
 
       const pushCurrentDepthSummary = () => {
-        // PR-5.24d Repair 2: if any hypothesis at this depth has status "PROBE_PENDING",
-        // the depth has unfinished scheduler work and can NEVER claim exhausted.
-        const hasPendingSchedulerWork = budgetedSchedulingEnabled &&
-          repairScheduling.hypotheses.some((t) => t.depth === depth && t.status === "PROBE_PENDING");
+        // PR-5.24d Repair 2 / PR-5.24e Iteration 2 Repair 1: if any hypothesis has status "PROBE_PENDING"
+        // or there is outstanding deferred normal work, the depth has unfinished scheduler work and can NEVER claim exhausted.
+        const hasOutstandingDeferredWork = Boolean(
+          (deferredNormalDescriptors && deferredNormalDescriptors.length > 0) ||
+          (normalAdmission && normalAdmission.secondaryDeferred > normalAdmission.secondaryAdmitted)
+        );
+        const hasPendingSchedulerWork = budgetedSchedulingEnabled && (
+          repairScheduling.hypotheses.some((t) => t.depth === depth && t.status === "PROBE_PENDING") ||
+          hasOutstandingDeferredWork
+        );
         const depthOutcome = depthGoalReached
           ? "goal-reached"
           : (!hasPendingSchedulerWork && depthWavesCompleted === totalWaves && depthStopReason === null)
@@ -6461,7 +6467,9 @@ function tryAdaptiveCheckpointRepair(
       // Resume secondary normal descriptors
       const globalStopBeforeSecondary = (config.globalBudget && config.globalBudget.stoppedReason) || null;
       if (globalStopBeforeSecondary === null && deferredNormalDescriptors.length > 0) {
-        for (const item of deferredNormalDescriptors) {
+        const toAdmit = deferredNormalDescriptors.slice();
+        deferredNormalDescriptors.length = 0;
+        for (const item of toAdmit) {
           if (depthGoalReached) break;
           if (config.globalBudget && config.globalBudget.stoppedReason) break;
           item.probeFn(item.historyDesc);
@@ -6947,7 +6955,9 @@ function tryAdaptiveCheckpointRepair(
         // Work-conserving: resume secondary normal breadth if global budget permits
         const globalStopAfterCf = (config.globalBudget && config.globalBudget.stoppedReason) || null;
         if (globalStopAfterCf === null && deferredNormalDescriptors.length > 0) {
-          for (const item of deferredNormalDescriptors) {
+          const toAdmit = deferredNormalDescriptors.slice();
+          deferredNormalDescriptors.length = 0;
+          for (const item of toAdmit) {
             if (depthGoalReached) break;
             if (config.globalBudget && config.globalBudget.stoppedReason) break;
             item.probeFn(item.historyDesc);
@@ -6959,16 +6969,11 @@ function tryAdaptiveCheckpointRepair(
       }
     }
 
-    // PR-5.24c Iteration 2 – progress-gated second-grant round (AFTER the
-    // whole first round completed: the first-round barrier is structural —
-    // the continuation loop only starts here). Restart-from-anchor semantics:
-    // an eligible hypothesis re-runs from its original anchor candidates
-    // under a fresh, larger bounded grant. probeCount <= 2 (no third grant).
-    // Selection order: SEGMENT_ADVANCE before WITHIN_SEGMENT_PROGRESS, then
-    // legacy wave order within a class. All probe authorities (wall local
-    // authority, expansion child-local rebase, isolated-process, headroom
-    // fail-closed) apply unchanged.
-    if (continuationEnabled && !depthGoalReached) {
+    // PR-5.24c Iteration 2 / PR-5.24e Iteration 2 Repair 1 – progress-gated second-grant round.
+    // Re-entrant continuation phase: handles both primary/CF tickets and newly-resumed secondary tickets.
+    let continuationGrants = 0;
+    const executeContinuationRound = () => {
+      if (!continuationEnabled || depthGoalReached) return null;
       const globalStopNow = (config.globalBudget && config.globalBudget.stoppedReason) || null;
       const depthTickets = repairScheduling.hypotheses.filter(
         (t) => t.depth === depth,
@@ -6985,30 +6990,36 @@ function tryAdaptiveCheckpointRepair(
             ? "insufficient-headroom"
             : "first-round-incomplete";
         });
-      } else {
-        const eligible = depthTickets
-          .filter((t) => isContinuationEligible(t, globalStopNow))
-          .sort((left, right) => {
-            // SEGMENT_ADVANCE outranks WITHIN_SEGMENT_PROGRESS; within a class
-            // the original ticket order (legacy/wave order) is preserved.
-            const rank = (t) => (t.progressClass === "SEGMENT_ADVANCE" ? 0 : 1);
-            const rankDiff = rank(left) - rank(right);
-            if (rankDiff !== 0) return rankDiff;
-            return depthTickets.indexOf(left) - depthTickets.indexOf(right);
-          })
-          .slice(0, continuationMaxPerDepth);
-        const ineligible = depthTickets.filter(
-          (t) => !isContinuationEligible(t, globalStopNow) &&
-            t.probeCount === 1 &&
-            t.continuationDecision == null,
-        );
-        ineligible.forEach((t) => {
-          t.continuationDecision = t.stopReason === "probe-limited" && !globalStopNow
-            ? "no-measurable-progress"
-            : "not-eligible";
-        });
-        let continuationGrants = 0;
-        for (const candidateTicket of eligible) {
+        return null;
+      }
+
+      const remainingGrants = Math.max(0, continuationMaxPerDepth - continuationGrants);
+      if (remainingGrants <= 0) return null;
+
+      const eligible = depthTickets
+        .filter((t) => isContinuationEligible(t, globalStopNow))
+        .sort((left, right) => {
+          // SEGMENT_ADVANCE outranks WITHIN_SEGMENT_PROGRESS; within a class
+          // the original ticket order (legacy/wave order) is preserved.
+          const rank = (t) => (t.progressClass === "SEGMENT_ADVANCE" ? 0 : 1);
+          const rankDiff = rank(left) - rank(right);
+          if (rankDiff !== 0) return rankDiff;
+          return depthTickets.indexOf(left) - depthTickets.indexOf(right);
+        })
+        .slice(0, remainingGrants);
+
+      const ineligible = depthTickets.filter(
+        (t) => !isContinuationEligible(t, globalStopNow) &&
+          t.probeCount === 1 &&
+          t.continuationDecision == null,
+      );
+      ineligible.forEach((t) => {
+        t.continuationDecision = t.stopReason === "probe-limited" && !globalStopNow
+          ? "no-measurable-progress"
+          : "not-eligible";
+      });
+
+      for (const candidateTicket of eligible) {
         if (globalStopNow) break;
         if (config.globalBudget && (
           config.globalBudget.stoppedReason === "time-limit" ||
@@ -7538,12 +7549,47 @@ function tryAdaptiveCheckpointRepair(
         });
         if (continuationGrants >= continuationMaxPerDepth) break;
       }
+      return null;
+    };
+
+    if (continuationEnabled && !depthGoalReached) {
+      const contRes = executeContinuationRound();
+      if (contRes) return contRes;
+    }
+
+    // PR-5.24e Iteration 2 Repair 1 — Post-CF Continuation Failure Resumption:
+    // If CF was useful but its continuation resolved without FOUND, and secondary normals are still deferred,
+    // resume secondary normal breadth if global budget is clean.
+    const globalStopAfterCont = (config.globalBudget && config.globalBudget.stoppedReason) || null;
+    if (globalStopAfterCont === null && deferredNormalDescriptors.length > 0 && !depthGoalReached) {
+      const toAdmit = deferredNormalDescriptors.slice();
+      deferredNormalDescriptors.length = 0;
+      for (const item of toAdmit) {
+        if (depthGoalReached) break;
+        if (config.globalBudget && config.globalBudget.stoppedReason) break;
+        item.probeFn(item.historyDesc);
+        if (normalAdmission) {
+          normalAdmission.secondaryAdmitted += 1;
+        }
+      }
+
+      // If any newly admitted secondary ticket achieved positive progress,
+      // allow continuation pass to run for it!
+      if (continuationEnabled && !depthGoalReached) {
+        const contRes2 = executeContinuationRound();
+        if (contRes2) return contRes2;
       }
     }
 
     if (!depthSummaries.some((d) => d.depth === depth)) {
-      const hasPendingSchedulerWork = budgetedSchedulingEnabled &&
-        repairScheduling.hypotheses.some((t) => t.depth === depth && t.status === "PROBE_PENDING");
+      const hasOutstandingDeferredWork = Boolean(
+        (deferredNormalDescriptors && deferredNormalDescriptors.length > 0) ||
+        (normalAdmission && normalAdmission.secondaryDeferred > normalAdmission.secondaryAdmitted)
+      );
+      const hasPendingSchedulerWork = budgetedSchedulingEnabled && (
+        repairScheduling.hypotheses.some((t) => t.depth === depth && t.status === "PROBE_PENDING") ||
+        hasOutstandingDeferredWork
+      );
       const depthOutcome = (!hasPendingSchedulerWork && depthWavesCompleted === totalWaves && depthStopReason === null)
         ? "exhausted"
         : depthStopReason === "rss-limit" || depthStopReason === "heap-limit"
