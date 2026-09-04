@@ -6814,7 +6814,7 @@ function tryAdaptiveCheckpointRepair(
           .map((candidate) => candidate.id),
         anchorExpandedCandidates: expandedAnchorCandidatesCount,
         replaySegmentIds: lastReplaySegments.map((s) => s.id),
-        failedAtSegmentId: lastFailedAtIndex == null ? null : segments[lastFailedAtIndex].id,
+        failedAtSegmentId: (lastFailedAtIndex != null && segments[lastFailedAtIndex]) ? segments[lastFailedAtIndex].id : null,
         segmentCandidateCounts: recordedSegmentCandidateCounts,
         waveOutcome: attemptWaveOutcome || "incomplete",
         depthConsumedExpansions: waveConsumedExpansions,
