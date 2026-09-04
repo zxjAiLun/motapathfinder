@@ -5432,6 +5432,17 @@ function tryAdaptiveCheckpointRepair(
   let lastAdaptiveNormalAdmission = null;
   let lastAdaptiveCounterfactualAdmission = null;
   let lastBatchFirstProbe = null;
+
+  const batchFirstProbe = {
+    primary: { jobsRequested: 0, jobsExecuted: 0, processLaunches: 0 },
+    counterfactual: { jobsRequested: 0, jobsExecuted: 0, processLaunches: 0 },
+    secondary: { jobsRequested: 0, jobsExecuted: 0, processLaunches: 0 },
+  };
+  lastBatchFirstProbe = batchFirstProbe;
+  if (repairScheduling) {
+    repairScheduling.batchFirstProbe = batchFirstProbe;
+  }
+
   for (let depth = 1; depth <= maxDepth; depth += 1) {
     let depthFinalFrontier = null;
     const anchorHistoryIndex = history.length - depth;
@@ -5505,15 +5516,7 @@ function tryAdaptiveCheckpointRepair(
     let counterfactualAdmission = null;
     let probeTranche = null;
 
-    let batchFirstProbe = {
-      primary: { jobsRequested: 0, jobsExecuted: 0, processLaunches: 0 },
-      counterfactual: { jobsRequested: 0, jobsExecuted: 0, processLaunches: 0 },
-      secondary: { jobsRequested: 0, jobsExecuted: 0, processLaunches: 0 },
-    };
-    lastBatchFirstProbe = batchFirstProbe;
-    if (repairScheduling) {
-      repairScheduling.batchFirstProbe = batchFirstProbe;
-    }
+    let winningChainExecutions = null;
 
     for (let waveIndex = 0; waveIndex < totalWaves; waveIndex += 1) {
       const waveInputCandidates = rankedInputFrontier.slice(
@@ -6386,6 +6389,7 @@ function tryAdaptiveCheckpointRepair(
             probeStartExpansions: config && config.globalBudget ? config.globalBudget.consumedExpansions : 0,
             probeExpired: false,
             active: true,
+            chainExecutions: [],
           });
         }
 
@@ -6432,7 +6436,6 @@ function tryAdaptiveCheckpointRepair(
             const rankedFrontier = replayIntentRanking.ranked;
             const rRunConfig = {
               ...(config || {}),
-              stopOnFirstGoal: undefined,
             };
             return {
               jobId: it.ticket ? it.ticket.hypothesisId : it.desc.hypothesisId,
@@ -6448,7 +6451,6 @@ function tryAdaptiveCheckpointRepair(
               },
               overrides: withManualBudgetAuthority(rRunConfig, {
                 candidateLimit: backtrackCandidateLimit(replaySegment, config || {}),
-                dpOverrides: backtrackDpOverrides(replaySegment, config || {}),
                 preserveSkylineRoles: true,
               }),
             };
@@ -6499,6 +6501,9 @@ function tryAdaptiveCheckpointRepair(
             const it = activeItems[bIdx];
             const replayExecution = batchExecutions[bIdx];
             waveExecutions.push(replayExecution);
+            if (it.chainExecutions) {
+              it.chainExecutions.push(replayExecution);
+            }
             if (topts.cfExecutions) {
               topts.cfExecutions.push(replayExecution);
             }
@@ -6722,6 +6727,7 @@ function tryAdaptiveCheckpointRepair(
           if (historyGoalReached) {
             depthFinalFrontier = it.currentFrontier;
             depthGoalReached = true;
+            winningChainExecutions = [expandedAnchor, ...(it.chainExecutions || [])];
             break;
           }
         }
@@ -6879,7 +6885,7 @@ function tryAdaptiveCheckpointRepair(
           maxDepth,
           attempts,
           depthSummaries,
-          executions: waveExecutions,
+          executions: winningChainExecutions || waveExecutions,
           ledgerExecutions,
           anchorHistoryIndex,
           finalFrontier: depthFinalFrontier || [],
@@ -8551,7 +8557,10 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
             repairExpanded: true,
           });
         });
-        frontier = adaptiveRepair.finalFrontier;
+        frontier = (adaptiveRepair.finalFrontier || []).slice(
+          0,
+          (graphConfig && graphConfig.candidateLimit != null) ? graphConfig.candidateLimit : 1,
+        );
         continue;
       }
       if (adaptiveRepair && !adaptiveRepair.found) {

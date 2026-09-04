@@ -349,6 +349,7 @@ function runBatchWorker(payload, outputPath, project, simulator, appliedSimulato
   const results = [];
   let totalSearchWallMs = 0;
   let maxAttemptPeakRssMb = workerStartRssMb;
+  let batchStoppedOnGoal = false;
 
   for (let jIdx = 0; jIdx < jobs.length; jIdx += 1) {
     const job = jobs[jIdx];
@@ -361,14 +362,14 @@ function runBatchWorker(payload, outputPath, project, simulator, appliedSimulato
       ? Math.max(0, childGlobalBudget.deadlineMs - now)
       : Infinity;
 
-    if (childGlobalBudget && (childGlobalBudget.stoppedReason || remainingExpansions <= 0 || remainingWallMs <= 0)) {
-      if (!childGlobalBudget.stoppedReason) {
+    if (batchStoppedOnGoal || (childGlobalBudget && (childGlobalBudget.stoppedReason || remainingExpansions <= 0 || remainingWallMs <= 0))) {
+      if (!childGlobalBudget.stoppedReason && !batchStoppedOnGoal) {
         childGlobalBudget.stoppedReason = remainingWallMs <= 0 ? "time-limit" : "expansion-limit";
       }
       results.push({
         jobId: job.jobId,
         executed: false,
-        notRunReason: childGlobalBudget.stoppedReason,
+        notRunReason: batchStoppedOnGoal ? "goal-found" : childGlobalBudget.stoppedReason,
         inputFrontierLength: (job.inputFrontier || []).length,
         inputStateKeysVerified: (job.parentInputStateKeys || []).length,
         merged: [],
@@ -382,7 +383,7 @@ function runBatchWorker(payload, outputPath, project, simulator, appliedSimulato
           startCandidatesTried: 0,
           candidates: [],
           attempts: [],
-          executionNotRunReason: childGlobalBudget.stoppedReason,
+          executionNotRunReason: batchStoppedOnGoal ? "goal-found" : childGlobalBudget.stoppedReason,
           candidateSliceTelemetry: {
             candidateSliceInitialAttempts: 0,
             candidateSliceLocalTimeouts: 0,
@@ -467,6 +468,9 @@ function runBatchWorker(payload, outputPath, project, simulator, appliedSimulato
     );
 
     const jobWallMs = Date.now() - jobStartedAt;
+    if (jobConfig.stopOnFirstGoal === true && result.summary && result.summary.found) {
+      batchStoppedOnGoal = true;
+    }
     totalSearchWallMs += jobWallMs;
     const jobConsumedExpansions = (childGlobalBudget ? childGlobalBudget.consumedExpansions : 0) - jobStartExpansions;
 
