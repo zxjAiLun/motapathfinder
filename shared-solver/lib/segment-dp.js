@@ -5787,7 +5787,7 @@ function tryAdaptiveCheckpointRepair(
               waveOutcome: ticket.stopReason,
               replaySegmentsEntered: 0,
               replaySegmentsCompleted: 0,
-              failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,
+              failedAtSegmentId: (failedAtIndex != null && segments[failedAtIndex]) ? segments[failedAtIndex].id : null,
               goalReached: false,
             };
             ticket.progressEvidence = {
@@ -6099,7 +6099,7 @@ function tryAdaptiveCheckpointRepair(
             waveOutcome,
             replaySegmentsEntered: replaySegments.length,
             replaySegmentsCompleted: completedReplayCount,
-            failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,
+            failedAtSegmentId: (failedAtIndex != null && segments[failedAtIndex]) ? segments[failedAtIndex].id : null,
             goalReached: historyGoalReached,
           };
           ticket.progressEvidence = {
@@ -6211,7 +6211,7 @@ function tryAdaptiveCheckpointRepair(
           config.segmentExecutionMode === "isolated-process" &&
           config.enableBatchFirstProbe !== false &&
           typeof executeIsolatedSegmentBatch === "function" &&
-          descriptors.length > 1;
+          descriptors.length >= 1;
 
         if (!isBatchSupported) {
           for (const desc of descriptors) {
@@ -6323,7 +6323,7 @@ function tryAdaptiveCheckpointRepair(
                 waveOutcome: ticket.stopReason,
                 replaySegmentsEntered: 0,
                 replaySegmentsCompleted: 0,
-                failedAtSegmentId: failedAtIndex == null ? null : segments[failedAtIndex].id,
+                failedAtSegmentId: (failedAtIndex != null && segments[failedAtIndex]) ? segments[failedAtIndex].id : null,
                 goalReached: false,
               };
               ticket.progressEvidence = {
@@ -6643,7 +6643,7 @@ function tryAdaptiveCheckpointRepair(
               waveOutcome,
               replaySegmentsEntered: it.replaySegments.length,
               replaySegmentsCompleted: it.completedReplayCount,
-              failedAtSegmentId: it.failedAtIndex == null ? null : segments[it.failedAtIndex].id,
+              failedAtSegmentId: (it.failedAtIndex != null && segments[it.failedAtIndex]) ? segments[it.failedAtIndex].id : null,
               goalReached: historyGoalReached,
             };
             ticket.progressEvidence = {
