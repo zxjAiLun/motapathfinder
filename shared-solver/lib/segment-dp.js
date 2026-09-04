@@ -5428,6 +5428,8 @@ function tryAdaptiveCheckpointRepair(
     return { wallMs: localWallMs, deadlineMs: now + localWallMs, expansions: localExpansions };
   };
 
+  let lastAdaptiveNormalAdmission = null;
+  let lastAdaptiveCounterfactualAdmission = null;
   for (let depth = 1; depth <= maxDepth; depth += 1) {
     let depthFinalFrontier = null;
     const anchorHistoryIndex = history.length - depth;
@@ -5495,6 +5497,10 @@ function tryAdaptiveCheckpointRepair(
     let depthStopReason = null;
     let depthAnchorExpandedCandidates = 0;
     let depthGoalReached = false;
+
+    let deferredNormalDescriptors = [];
+    let normalAdmission = null;
+    let counterfactualAdmission = null;
 
     for (let waveIndex = 0; waveIndex < totalWaves; waveIndex += 1) {
       const waveInputCandidates = rankedInputFrontier.slice(
@@ -5657,7 +5663,44 @@ function tryAdaptiveCheckpointRepair(
       let memoryExecution = expandedAnchor.memoryLimited ? expandedAnchor : null;
       let memorySegmentIndex = expandedAnchor.memoryLimited ? anchorHistoryIndex : null;
 
-      for (const historyDesc of historyDescriptors) {
+      // PR-5.24e Iteration 2 — Primary-Normal Tranche + Counterfactual Fallback Admission.
+      const primaryNormalLimit = Math.max(
+        number((config && config.candidateLimit) || (anchor.segment.dp && anchor.segment.dp.candidateLimit), 4),
+        4,
+      );
+      const primaryNormalDescriptors = historyDescriptors.slice(0, primaryNormalLimit);
+      const secondaryNormalDescriptors = historyDescriptors.slice(primaryNormalLimit);
+
+      if (!normalAdmission) {
+        normalAdmission = {
+          retainedCount: historyDescriptors.length,
+          primaryLimit: primaryNormalLimit,
+          primaryAdmitted: primaryNormalDescriptors.length,
+          primaryProbed: 0,
+          primaryPositive: 0,
+          secondaryDeferred: secondaryNormalDescriptors.length,
+          secondaryAdmitted: 0,
+          secondaryDeferredBecauseCounterfactualUseful: false,
+        };
+      } else {
+        normalAdmission.retainedCount += historyDescriptors.length;
+        normalAdmission.primaryAdmitted += primaryNormalDescriptors.length;
+        normalAdmission.secondaryDeferred += secondaryNormalDescriptors.length;
+      }
+      if (!counterfactualAdmission) {
+        counterfactualAdmission = {
+          admittedAfterPrimary: false,
+          admissionReason: null,
+        };
+      }
+      lastAdaptiveNormalAdmission = normalAdmission;
+      lastAdaptiveCounterfactualAdmission = counterfactualAdmission;
+      if (repairScheduling) {
+        repairScheduling.normalAdmission = normalAdmission;
+        repairScheduling.counterfactualAdmission = counterfactualAdmission;
+      }
+
+      const probeSingleNormalHistory = (historyDesc) => {
         let ticket = null;
         if (budgetedSchedulingEnabled) {
           ticket = hypothesisTicket(
@@ -5772,7 +5815,7 @@ function tryAdaptiveCheckpointRepair(
               globalStopReason: globalStopBeforeHistory,
             });
           }
-          continue;
+          return ticket;
         }
 
         if (ticket) {
@@ -6121,8 +6164,29 @@ function tryAdaptiveCheckpointRepair(
         if (historyGoalReached) {
           depthFinalFrontier = historyRepairFrontier;
           depthGoalReached = true;
-          break;
         }
+
+        return ticket;
+      };
+
+      for (const historyDesc of primaryNormalDescriptors) {
+        const ticket = probeSingleNormalHistory(historyDesc);
+        if (ticket && ticket.probeCount >= 1) {
+          normalAdmission.primaryProbed += 1;
+        }
+        if (ticket && (ticket.progressClass === "WITHIN_SEGMENT_PROGRESS" || ticket.progressClass === "SEGMENT_ADVANCE")) {
+          normalAdmission.primaryPositive += 1;
+        }
+        if (depthGoalReached) break;
+      }
+
+      if (secondaryNormalDescriptors.length > 0) {
+        deferredNormalDescriptors.push(
+          ...secondaryNormalDescriptors.map((desc) => ({
+            historyDesc: desc,
+            probeFn: probeSingleNormalHistory,
+          }))
+        );
       }
 
       const waveConsumedExpansions = (config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) - waveStartExpansions;
@@ -6243,6 +6307,8 @@ function tryAdaptiveCheckpointRepair(
           depthOutcome,
           depthExhausted,
           stopReason: depthStopReason,
+          normalAdmission: normalAdmission ? { ...normalAdmission } : null,
+          counterfactualAdmission: counterfactualAdmission ? { ...counterfactualAdmission } : null,
         });
       };
 
@@ -6261,6 +6327,8 @@ function tryAdaptiveCheckpointRepair(
           anchorHistoryIndex,
           finalFrontier: depthFinalFrontier || [],
           counterfactualRepair,
+          normalAdmission,
+          counterfactualAdmission,
         };
       }
 
@@ -6272,6 +6340,8 @@ function tryAdaptiveCheckpointRepair(
           failureIntentRanking,
           repairScheduling,
           counterfactualRepair,
+          normalAdmission,
+          counterfactualAdmission,
           maxDepth,
           attempts,
           depthSummaries,
@@ -6315,6 +6385,8 @@ function tryAdaptiveCheckpointRepair(
           memoryExecution,
           memorySegmentIndex,
           counterfactualRepair,
+          normalAdmission,
+          counterfactualAdmission,
         };
       }
     }
@@ -6377,11 +6449,36 @@ function tryAdaptiveCheckpointRepair(
       typeof buildCounterfactualRepairIntents === "function" &&
       !counterfactualRepair.triggered;
 
-    if (shouldTriggerCounterfactual) {
+    let allCfIntents = [];
+    if (positiveInitial > 0) {
+      counterfactualRepair.triggered = false;
+      counterfactualRepair.triggerReason = "normal-primary-progress";
+      if (counterfactualAdmission) {
+        counterfactualAdmission.admittedAfterPrimary = false;
+        counterfactualAdmission.admissionReason = "normal-primary-progress";
+      }
 
+      // Resume secondary normal descriptors
+      const globalStopBeforeSecondary = (config.globalBudget && config.globalBudget.stoppedReason) || null;
+      if (globalStopBeforeSecondary === null && deferredNormalDescriptors.length > 0) {
+        for (const item of deferredNormalDescriptors) {
+          if (depthGoalReached) break;
+          if (config.globalBudget && config.globalBudget.stoppedReason) break;
+          item.probeFn(item.historyDesc);
+          if (normalAdmission) {
+            normalAdmission.secondaryAdmitted += 1;
+          }
+        }
+      }
+    } else if (shouldTriggerCounterfactual) {
+      if (counterfactualAdmission) {
+        counterfactualAdmission.admittedAfterPrimary = true;
+        counterfactualAdmission.admissionReason = "primary-normal-exhausted-no-progress";
+      }
       counterfactualRepair.triggered = true;
       counterfactualRepair.triggerReason = currentFailureClass;
       const cfExecutions = [];
+      let totalCfPositiveCount = 0;
 
       const cfIntents = buildCounterfactualRepairIntents({
         simulator,
@@ -6390,6 +6487,7 @@ function tryAdaptiveCheckpointRepair(
         failedSegment: segments[segmentIndex],
         candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
       });
+      allCfIntents = cfIntents;
       counterfactualRepair.intentsGenerated = cfIntents.length;
 
       const firstReplaySegmentForProgress =
@@ -6672,6 +6770,9 @@ function tryAdaptiveCheckpointRepair(
 
             const cfExpiredAfter = Date.now() >= cfProbeDeadline ||
               ((config.globalBudget.consumedExpansions - cfProbeStartExp) >= cfProbeBudget.expansions);
+            if (cfExpiredAfter) {
+              cfProbeExpired = true;
+            }
             const cfDeterminate = isReplayDeterminatelyComplete(rReplayed, {
               probeExpiredAfter: cfExpiredAfter,
             });
@@ -6685,8 +6786,7 @@ function tryAdaptiveCheckpointRepair(
               cfFailedAtIndex = rIdx;
               break;
             }
-            if (cfExpiredAfter) {
-              cfProbeExpired = true;
+            if (cfProbeExpired) {
               break;
             }
           }
@@ -6827,12 +6927,35 @@ function tryAdaptiveCheckpointRepair(
           positiveProgressHistoryCount: cfPositiveCount,
         });
 
+        totalCfPositiveCount += cfPositiveCount;
+
         if (depthGoalReached) break;
       }
       if (!depthGoalReached) {
         cfExecutions.forEach((exec) => {
           ledgerExecutions.push(toCompactLedgerExecution(exec));
         });
+      }
+
+      const cfHasUsefulProgress = totalCfPositiveCount > 0 || depthGoalReached;
+      if (cfHasUsefulProgress) {
+        if (normalAdmission) {
+          normalAdmission.secondaryDeferredBecauseCounterfactualUseful = true;
+        }
+      } else {
+        // CF produced no useful progress!
+        // Work-conserving: resume secondary normal breadth if global budget permits
+        const globalStopAfterCf = (config.globalBudget && config.globalBudget.stoppedReason) || null;
+        if (globalStopAfterCf === null && deferredNormalDescriptors.length > 0) {
+          for (const item of deferredNormalDescriptors) {
+            if (depthGoalReached) break;
+            if (config.globalBudget && config.globalBudget.stoppedReason) break;
+            item.probeFn(item.historyDesc);
+            if (normalAdmission) {
+              normalAdmission.secondaryAdmitted += 1;
+            }
+          }
+        }
       }
     }
 
@@ -6942,11 +7065,20 @@ function tryAdaptiveCheckpointRepair(
           ? candidateTicket.waveIndex
           : depthTickets.indexOf(candidateTicket);
         const waveSliceStart = contWaveIndex * waveBatchSize;
-        const restartCandidates = rankedInputFrontier.slice(
+        let restartCandidates = rankedInputFrontier.slice(
           waveSliceStart,
           waveSliceStart + waveBatchSize,
         );
-        if (restartCandidates.length === 0) continue;
+        if (restartCandidates.length === 0 && candidateTicket.anchorInputCandidateIds && candidateTicket.anchorInputCandidateIds.length > 0) {
+          restartCandidates = anchor.inputFrontier.filter(
+            (c) => candidateTicket.anchorInputCandidateIds.includes(c.id)
+          );
+          if (restartCandidates.length === 0) {
+            restartCandidates = anchor.inputFrontier.slice(0, waveBatchSize);
+          }
+        }
+        if (candidateTicket.counterfactualIntentId == null && restartCandidates.length === 0) continue;
+
         candidateTicket.continuationDecision = "granted";
         candidateTicket.continuationMode = "restart-from-anchor";
         candidateTicket.probeCount = 2;
@@ -6967,34 +7099,108 @@ function tryAdaptiveCheckpointRepair(
             continuationBudget.expansions,
           ),
         };
-        let contExpanded = runSegmentAgainstFrontier(
-          simulator,
-          anchor.segment,
-          restartCandidates,
-          {
-            ...contAnchorConfig,
-            segmentIndex: anchorHistoryIndex,
-            segmentTotal: segments.length,
-            goalDependencySegments: segments.slice(anchorHistoryIndex),
-          },
-          withManualBudgetAuthority(contAnchorConfig, {
-            candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
-            dpOverrides: backtrackDpOverrides(anchor.segment, config || {}),
-            preserveSkylineRoles: true,
-          }),
-        );
-        contExpanded.summary.backtrack = {
-          mode: "adaptive-checkpoint-expand",
-          depth,
-          waveIndex: contWaveIndex,
-          continuation: true,
-          triggeredBySegment: segments[segmentIndex].id,
-        };
-        let contRepairFrontier = contExpanded.merged;
-        const contExecutions = [contExpanded];
+        let contRepairFrontier = null;
+        let contExpanded = null;
+        const contExecutions = [];
+
+        if (candidateTicket.counterfactualIntentId != null) {
+          const matchingIntent = allCfIntents.find(
+            (i) => i && i.intentId === candidateTicket.counterfactualIntentId,
+          );
+          if (matchingIntent) {
+            const intentSegment = {
+              id: `cf-${matchingIntent.intentId}`,
+              label: `Counterfactual Intent: ${matchingIntent.kind}`,
+              goal: matchingIntent.goal,
+              actionPolicy: matchingIntent.actionPolicy,
+              dp: {
+                stopOnFirstGoal: false,
+                candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
+                maxExpansions: continuationBudget.expansions,
+                maxRuntimeMs: continuationBudget.wallMs,
+              },
+            };
+            const intentRealized = runSegmentAgainstFrontier(
+              simulator,
+              intentSegment,
+              [matchingIntent.startCandidate],
+              {
+                ...contAnchorConfig,
+                segmentIndex: anchorHistoryIndex,
+                segmentTotal: segments.length,
+                goalDependencySegments: segments.slice(anchorHistoryIndex),
+              },
+              withManualBudgetAuthority(contAnchorConfig, {
+                candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
+                preserveSkylineRoles: true,
+              }),
+            );
+            intentRealized.executionPhase = "adaptive-expand";
+            contExecutions.push(intentRealized);
+            const intentFrontier = intentRealized.merged;
+
+            if (intentFrontier && intentFrontier.length > 0) {
+              contExpanded = runSegmentAgainstFrontier(
+                simulator,
+                anchor.segment,
+                intentFrontier,
+                {
+                  ...contAnchorConfig,
+                  segmentIndex: anchorHistoryIndex,
+                  segmentTotal: segments.length,
+                  goalDependencySegments: segments.slice(anchorHistoryIndex),
+                },
+                withManualBudgetAuthority(contAnchorConfig, {
+                  candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
+                  dpOverrides: backtrackDpOverrides(anchor.segment, config || {}),
+                  preserveSkylineRoles: true,
+                }),
+              );
+              contExpanded.summary.backtrack = {
+                mode: "adaptive-checkpoint-expand",
+                depth,
+                waveIndex: contWaveIndex,
+                continuation: true,
+                counterfactual: true,
+                triggeredBySegment: segments[segmentIndex].id,
+              };
+              contExecutions.push(contExpanded);
+              contRepairFrontier = contExpanded.merged;
+            }
+          }
+        } else {
+          contExpanded = runSegmentAgainstFrontier(
+            simulator,
+            anchor.segment,
+            restartCandidates,
+            {
+              ...contAnchorConfig,
+              segmentIndex: anchorHistoryIndex,
+              segmentTotal: segments.length,
+              goalDependencySegments: segments.slice(anchorHistoryIndex),
+            },
+            withManualBudgetAuthority(contAnchorConfig, {
+              candidateLimit: backtrackCandidateLimit(anchor.segment, config || {}),
+              dpOverrides: backtrackDpOverrides(anchor.segment, config || {}),
+              preserveSkylineRoles: true,
+            }),
+          );
+          contExpanded.summary.backtrack = {
+            mode: "adaptive-checkpoint-expand",
+            depth,
+            waveIndex: contWaveIndex,
+            continuation: true,
+            triggeredBySegment: segments[segmentIndex].id,
+          };
+          contRepairFrontier = contExpanded.merged;
+          contExecutions.push(contExpanded);
+        }
+
         depthWavesAttempted += 1;
-        depthAnchorExpandedCandidates += (contExpanded.summary && contExpanded.summary.attempts || [])
-          .reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0);
+        if (contExpanded && contExpanded.summary && contExpanded.summary.attempts) {
+          depthAnchorExpandedCandidates += contExpanded.summary.attempts
+            .reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0);
+        }
 
         // PR-5.24d Iteration 1 Repair 1a – exact canonical state identity matching.
         // anchorOutputStateKey (from buildStateKey) is the authority on exact state identity.
@@ -7173,9 +7379,12 @@ function tryAdaptiveCheckpointRepair(
               continuationBudget.expansions) {
           contExpired = true;
         }
+        const expectedContExecutionsCount = candidateTicket.counterfactualIntentId != null
+          ? (segmentIndex - anchorHistoryIndex + 2)
+          : (segmentIndex - anchorHistoryIndex + 1);
         contGoalReached = Boolean(
           contRepairFrontier && contRepairFrontier.length > 0 &&
-          contExecutions.length === (segmentIndex - anchorHistoryIndex + 1),
+          contExecutions.length === expectedContExecutionsCount,
         );
 
         const contConsumedWallMs = Date.now() - contStartedAt;
@@ -7303,6 +7512,8 @@ function tryAdaptiveCheckpointRepair(
             depthOutcome,
             depthExhausted: false,
             stopReason: depthStopReason,
+            normalAdmission: normalAdmission ? { ...normalAdmission } : null,
+            counterfactualAdmission: counterfactualAdmission ? { ...counterfactualAdmission } : null,
           });
           return {
             found: true,
@@ -7317,6 +7528,8 @@ function tryAdaptiveCheckpointRepair(
             anchorHistoryIndex,
             finalFrontier: contRepairFrontier,
             counterfactualRepair,
+            normalAdmission,
+            counterfactualAdmission,
           };
         }
         // Detach continuation executions (they failed).
@@ -7354,6 +7567,8 @@ function tryAdaptiveCheckpointRepair(
         depthOutcome,
         depthExhausted,
         stopReason: depthStopReason,
+        normalAdmission: normalAdmission ? { ...normalAdmission } : null,
+        counterfactualAdmission: counterfactualAdmission ? { ...counterfactualAdmission } : null,
       });
     }
   }
@@ -7369,6 +7584,8 @@ function tryAdaptiveCheckpointRepair(
     executions: [],
     ledgerExecutions,
     counterfactualRepair,
+    normalAdmission: lastAdaptiveNormalAdmission,
+    counterfactualAdmission: lastAdaptiveCounterfactualAdmission,
   };
 }
 
@@ -7636,6 +7853,8 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     // have no failedSegment) still expose the hypothesis/probe history.
     repairScheduling: lastRepairScheduling,
     counterfactualRepair: lastCounterfactualRepair,
+    normalAdmission: lastNormalAdmission,
+    counterfactualAdmission: lastCounterfactualAdmission,
     objectiveStopPolicy,
   });
   const rangeError = milestoneRangeError(
@@ -7826,6 +8045,8 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   // exposed on successful (FOUND) runs.
   let lastRepairScheduling = null;
   let lastCounterfactualRepair = null;
+  let lastNormalAdmission = null;
+  let lastCounterfactualAdmission = null;
   const history = [];
   const shouldStop = typeof config.shouldStop === "function"
     ? config.shouldStop
@@ -7934,6 +8155,12 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         if (adaptiveRepair.counterfactualRepair) {
           lastCounterfactualRepair = adaptiveRepair.counterfactualRepair;
         }
+        if (adaptiveRepair.normalAdmission) {
+          lastNormalAdmission = adaptiveRepair.normalAdmission;
+        }
+        if (adaptiveRepair.counterfactualAdmission) {
+          lastCounterfactualAdmission = adaptiveRepair.counterfactualAdmission;
+        }
         (adaptiveRepair.ledgerExecutions || adaptiveRepair.executions).forEach((entry, index) => {
           // Iteration 5 Repair (P2, phase fidelity) – the phase comes from the
           // execution source itself (stamped at push time), so multi-wave
@@ -7983,6 +8210,8 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
             failureIntentRanking: adaptiveRepair.failureIntentRanking || null,
             repairScheduling: adaptiveRepair.repairScheduling || null,
             counterfactualRepair: adaptiveRepair.counterfactualRepair || null,
+            normalAdmission: adaptiveRepair.normalAdmission || null,
+            counterfactualAdmission: adaptiveRepair.counterfactualAdmission || null,
             attempts: adaptiveRepair.attempts || [],
             depthSummaries: adaptiveRepair.depthSummaries || [],
             depths: adaptiveRepair.depthSummaries || [],
@@ -8008,6 +8237,8 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
             failureIntentRanking: adaptiveRepair.failureIntentRanking || null,
             repairScheduling: adaptiveRepair.repairScheduling || null,
             counterfactualRepair: adaptiveRepair.counterfactualRepair || null,
+            normalAdmission: adaptiveRepair.normalAdmission || null,
+            counterfactualAdmission: adaptiveRepair.counterfactualAdmission || null,
             attempts: adaptiveRepair.attempts || [],
             depthSummaries: adaptiveRepair.depthSummaries || [],
             depths: adaptiveRepair.depthSummaries || [],
