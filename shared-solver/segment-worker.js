@@ -162,6 +162,11 @@ function main() {
   }
   const appliedSimulatorProfile = buildAppliedProfile(simulator);
 
+  if (payload.mode === "batch" || Array.isArray(payload.jobs)) {
+    runBatchWorker(payload, outputPath, project, simulator, appliedSimulatorProfile);
+    return;
+  }
+
   // P2: strict input StateKey verification – counts must match exactly
   const inputFrontier = Array.isArray(payload.inputFrontier) ? payload.inputFrontier : [];
   const parentKeys = Array.isArray(payload.parentInputStateKeys) ? payload.parentInputStateKeys : [];
@@ -324,6 +329,202 @@ function main() {
   };
 
   fs.writeFileSync(outputPath, JSON.stringify(response));
+  process.exit(0);
+}
+
+function runBatchWorker(payload, outputPath, project, simulator, appliedSimulatorProfile) {
+  const workerStartRssMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+  const childGlobalBudget = {
+    scope: "global-run",
+    requestedExpansions: Number(payload.assignedExpansions || (payload.config && payload.config.maxExpansions) || 50000),
+    requestedRuntimeMs: Number(payload.childSearchRuntimeMs || (payload.config && payload.config.maxRuntimeMs) || 30000),
+    consumedExpansions: 0,
+    consumedWallMs: 0,
+    startedAt: Date.now(),
+    deadlineMs: Number(payload.childDeadlineMs || (Date.now() + 30000)),
+    stoppedReason: null,
+  };
+
+  const jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+  const results = [];
+  let totalSearchWallMs = 0;
+  let maxAttemptPeakRssMb = workerStartRssMb;
+
+  for (let jIdx = 0; jIdx < jobs.length; jIdx += 1) {
+    const job = jobs[jIdx];
+    const now = Date.now();
+
+    const remainingExpansions = childGlobalBudget
+      ? Math.max(0, childGlobalBudget.requestedExpansions - childGlobalBudget.consumedExpansions)
+      : Infinity;
+    const remainingWallMs = childGlobalBudget && childGlobalBudget.deadlineMs
+      ? Math.max(0, childGlobalBudget.deadlineMs - now)
+      : Infinity;
+
+    if (childGlobalBudget && (childGlobalBudget.stoppedReason || remainingExpansions <= 0 || remainingWallMs <= 0)) {
+      if (!childGlobalBudget.stoppedReason) {
+        childGlobalBudget.stoppedReason = remainingWallMs <= 0 ? "time-limit" : "expansion-limit";
+      }
+      results.push({
+        jobId: job.jobId,
+        executed: false,
+        notRunReason: childGlobalBudget.stoppedReason,
+        inputFrontierLength: (job.inputFrontier || []).length,
+        inputStateKeysVerified: (job.parentInputStateKeys || []).length,
+        merged: [],
+        attempts: [],
+        consumedExpansions: 0,
+        searchWallMs: 0,
+        summary: {
+          segmentId: job.segment.id,
+          label: job.segment.label,
+          found: false,
+          startCandidatesTried: 0,
+          candidates: [],
+          attempts: [],
+          executionNotRunReason: childGlobalBudget.stoppedReason,
+          candidateSliceTelemetry: {
+            candidateSliceInitialAttempts: 0,
+            candidateSliceLocalTimeouts: 0,
+            candidateSliceLocalExpansionStops: 0,
+            candidateSliceDeferredRetries: 0,
+            candidateSliceRecoveredToExhausted: 0,
+            candidateSliceRecoveredToFound: 0,
+            candidateSliceStillIncompleteAtGlobalStop: (job.inputFrontier || []).length,
+            unusedGlobalWallMsAtReturn: Math.max(0, remainingWallMs),
+            candidateSliceFinalFound: 0,
+            candidateSliceFinalComplete: 0,
+            candidateSliceFinalPending: (job.inputFrontier || []).length,
+            candidateSliceTerminalIncomplete: 0,
+            candidateSliceSearchComplete: false,
+          },
+          failurePropagation: {
+            failureClass: "budget-exhausted",
+            primaryFailureClass: "budget-exhausted",
+            reason: childGlobalBudget.stoppedReason,
+          },
+        },
+      });
+      continue;
+    }
+
+    // State isolation: fresh clone of inputFrontier
+    const jobInputFrontier = JSON.parse(JSON.stringify(job.inputFrontier || []));
+    const parentKeys = Array.isArray(job.parentInputStateKeys) ? job.parentInputStateKeys : [];
+    if (parentKeys.length !== jobInputFrontier.length) {
+      console.error(`Job ${job.jobId}: inputFrontier length ${jobInputFrontier.length} != parentInputStateKeys length ${parentKeys.length}`);
+      process.exit(2);
+    }
+    let inputStateKeysVerified = 0;
+    for (let i = 0; i < jobInputFrontier.length; i += 1) {
+      const cand = jobInputFrontier[i];
+      const expectedKey = parentKeys[i];
+      const actualKey = buildStateKey(cand.state);
+      if (actualKey !== expectedKey) {
+        console.error(`Job ${job.jobId} input candidate ${cand.id} stateKey mismatch`);
+        process.exit(2);
+      }
+      inputStateKeysVerified += 1;
+    }
+
+    // Fresh choice resolver per job to ensure zero state leakage
+    simulator.__workerChoiceResolver = createNoStateChangeChoiceResolver();
+    simulator.choiceResolver = simulator.__workerChoiceResolver;
+
+    const jobStartExpansions = childGlobalBudget ? childGlobalBudget.consumedExpansions : 0;
+    const jobLocalProbeCap = job.probeExpansionCap != null
+      ? jobStartExpansions + Number(job.probeExpansionCap)
+      : (payload.config && payload.config.probeExpansionCap != null
+        ? jobStartExpansions + Number(payload.config.probeExpansionCap)
+        : null);
+    const jobLocalDeadline = job.probeDeadlineMs != null
+      ? Math.min(childGlobalBudget ? childGlobalBudget.deadlineMs : Infinity, Number(job.probeDeadlineMs))
+      : (childGlobalBudget ? childGlobalBudget.deadlineMs : undefined);
+
+    const jobConfig = {
+      ...(payload.config || {}),
+      ...(job.config || {}),
+      globalBudget: childGlobalBudget,
+      probeExpansionCap: jobLocalProbeCap,
+      probeDeadlineMs: jobLocalDeadline,
+      maxRssMb: payload.config ? payload.config.maxRssMb : 256,
+      maxRssHardCeilingMb: payload.config ? payload.config.maxRssHardCeilingMb : 260,
+    };
+
+    const jobStartedAt = Date.now();
+
+    const result = runSegmentAgainstFrontierLocal(
+      simulator,
+      job.segment,
+      jobInputFrontier,
+      jobConfig,
+      job.overrides || {},
+    );
+
+    const jobWallMs = Date.now() - jobStartedAt;
+    totalSearchWallMs += jobWallMs;
+    const jobConsumedExpansions = (childGlobalBudget ? childGlobalBudget.consumedExpansions : 0) - jobStartExpansions;
+
+    let outputStateKeysVerified = 0;
+    if (Array.isArray(result.merged)) {
+      result.merged.forEach((cand) => {
+        if (!cand.state) {
+          console.error(`Missing state on output candidate ${cand.id}`);
+          process.exit(4);
+        }
+        cand.outputStateKey = buildStateKey(cand.state);
+        outputStateKeysVerified += 1;
+      });
+    }
+
+    (result.attempts || []).forEach((att) => {
+      const dp = att && att.diagnostics && att.diagnostics.dp;
+      const mem = dp && dp.memory;
+      if (mem) {
+        if (Number.isFinite(Number(mem.peakRssMb)) && Number(mem.peakRssMb) > maxAttemptPeakRssMb) {
+          maxAttemptPeakRssMb = Number(mem.peakRssMb);
+        }
+        if (Number.isFinite(Number(mem.rssMb)) && Number(mem.rssMb) > maxAttemptPeakRssMb) {
+          maxAttemptPeakRssMb = Number(mem.rssMb);
+        }
+      }
+      if (dp && Number.isFinite(Number(dp.peakRssMb)) && Number(dp.peakRssMb) > maxAttemptPeakRssMb) {
+        maxAttemptPeakRssMb = Number(dp.peakRssMb);
+      }
+    });
+
+    results.push({
+      jobId: job.jobId,
+      executed: true,
+      merged: result.merged,
+      attempts: result.attempts,
+      summary: result.summary,
+      candidateLimit: result.candidateLimit,
+      memoryLimited: Boolean(result.memoryLimited),
+      memoryStopReason: result.memoryStopReason || null,
+      consumedExpansions: jobConsumedExpansions,
+      searchWallMs: jobWallMs,
+      inputStateKeysVerified,
+      outputStateKeysVerified,
+      inputFrontierLength: jobInputFrontier.length,
+    });
+  }
+
+  const workerEndRssMb = Math.round((process.memoryUsage().rss / 1048576) * 10) / 10;
+  const peakRssMb = Math.max(workerStartRssMb, workerEndRssMb, maxAttemptPeakRssMb);
+
+  const batchResponse = {
+    success: true,
+    appliedSimulatorProfile,
+    totalConsumedExpansions: childGlobalBudget ? childGlobalBudget.consumedExpansions : 0,
+    totalSearchWallMs,
+    workerStartRssMb,
+    workerEndRssMb,
+    peakRssMb,
+    results,
+  };
+
+  fs.writeFileSync(outputPath, JSON.stringify(batchResponse));
   process.exit(0);
 }
 

@@ -2918,6 +2918,13 @@
       "cleanCheckout": true,
       "notes": "synthetic hybrid-fair agenda contract; no tower/project load"
     },
+    "shared-solver/check-isolated-batch-equivalence.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-isolated-parity.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
