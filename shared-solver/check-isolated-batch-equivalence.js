@@ -498,13 +498,29 @@ function gateG25H_ProductionEquivalence() {
     assert.strictEqual(ticketsA[i].stopReason, ticketsB[i].stopReason, `G25-H: ticket ${i} stopReason match`);
     assert.strictEqual(ticketsA[i].probeCount, ticketsB[i].probeCount, `G25-H: ticket ${i} probeCount match`);
     assert.strictEqual(ticketsA[i].progressClass, ticketsB[i].progressClass, `G25-H: ticket ${i} progressClass match`);
+    if (ticketsA[i].effectiveDp && ticketsB[i].effectiveDp) {
+      assert.strictEqual(ticketsA[i].effectiveDp.stopOnFirstGoal, ticketsB[i].effectiveDp.stopOnFirstGoal, `G25-H: ticket ${i} stopOnFirstGoal match`);
+      assert.strictEqual(ticketsA[i].effectiveDp.goalSkylineLimit, ticketsB[i].effectiveDp.goalSkylineLimit, `G25-H: ticket ${i} goalSkylineLimit match`);
+    }
   }
+
+  const keysA = (resA.finalCandidates || []).map((c) => buildStateKey(c.state)).sort();
+  const keysB = (resB.finalCandidates || []).map((c) => buildStateKey(c.state)).sort();
+  assert.deepStrictEqual(keysA, keysB, "G25-H: final frontier state-key multiset match");
+
+  const repCountA = resA.failedSegment && resA.failedSegment.backtrack && resA.failedSegment.backtrack.depthSummaries[0]
+    ? resA.failedSegment.backtrack.depthSummaries[0].anchorExpandedCandidates : null;
+  const repCountB = resB.failedSegment && resB.failedSegment.backtrack && resB.failedSegment.backtrack.depthSummaries[0]
+    ? resB.failedSegment.backtrack.depthSummaries[0].anchorExpandedCandidates : null;
+  assert.strictEqual(repCountA, repCountB, "G25-H: repair finalFrontier count match");
 
   return {
     productionEquivalenceVerified: true,
     armALaunches: resA.batchFirstProbe.primary.processLaunches,
     armBLaunches: resB.batchFirstProbe.primary.processLaunches,
     ticketsCompared: ticketsA.length,
+    finalFrontierStateKeysCount: keysA.length,
+    repairFinalFrontierCount: repCountA,
   };
 }
 
@@ -574,6 +590,150 @@ function gateG25I_GlobalStopMidBatchProductionPath() {
   };
 }
 
+// G25-J: Frozen Backtrack DP Authority Gate
+// Assert effective authority in production runMilestoneGraph:
+// stopOnFirstGoal = false, goalSkylineLimit = backtrackCandidateLimit, backtrack dpOverrides present.
+// Identical in Batch ON and OFF.
+function gateG25J_FrozenBacktrackDpAuthority() {
+  const { simulator } = createTestHarness();
+  const s0 = simulator.createInitialState();
+
+  const spec = {
+    routeName: "g25-j-spec",
+    milestones: [
+      { id: "seg1", label: "Anchor", goal: { floorId: "MT1", minHero: { hp: 1000 } }, actionPolicy: { allowedFloors: ["MT1"] }, dp: { maxExpansions: 30, maxRuntimeMs: 2000, candidateLimit: 4 } },
+      { id: "seg2", label: "Gated", startFrom: "seg1", goal: { floorId: "MT1", minHero: { money: 1000 } }, actionPolicy: { allowedFloors: ["MT1"] }, dp: { maxExpansions: 20, maxRuntimeMs: 2000 } },
+    ],
+  };
+
+  const baseOpts = {
+    searchIntent: "adaptive-feasible",
+    segmentExecutionMode: "isolated-process",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 5000,
+    maxRuntimeMs: 30000,
+    maxRssMb: 2048,
+    candidateLimit: 4,
+    initialFrontier: [{ id: "root", state: s0 }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 20,
+    projectRoot: PROJECT_ROOT,
+  };
+
+  const resOff = runMilestoneGraph(simulator, s0, spec, { ...baseOpts, disableBatchFirstProbe: true });
+  const resOn = runMilestoneGraph(simulator, s0, spec, { ...baseOpts, disableBatchFirstProbe: false });
+
+  const tOff = resOff.repairScheduling.hypotheses.filter((h) => h.depth === 1);
+  const tOn = resOn.repairScheduling.hypotheses.filter((h) => h.depth === 1);
+
+  [tOff, tOn].forEach((tickets, armIdx) => {
+    assert.ok(tickets.length >= 4, `G25-J arm ${armIdx}: at least 4 tickets`);
+    tickets.forEach((t, i) => {
+      assert.ok(t.effectiveDp, `G25-J ticket ${i}: effectiveDp required`);
+      assert.strictEqual(t.effectiveDp.stopOnFirstGoal, false, `G25-J ticket ${i}: stopOnFirstGoal must be false`);
+      assert.strictEqual(t.effectiveDp.goalSkylineLimit, 8, `G25-J ticket ${i}: goalSkylineLimit must equal backtrackCandidateLimit (8)`);
+      assert.ok(t.effectiveDp.dpOverrides != null, `G25-J ticket ${i}: dpOverrides required`);
+      assert.strictEqual(t.effectiveDp.dpOverrides.stopOnFirstGoal, false, `G25-J ticket ${i}: dpOverrides.stopOnFirstGoal must be false`);
+      assert.strictEqual(t.effectiveDp.dpOverrides.goalSkylineLimit, 8, `G25-J ticket ${i}: dpOverrides.goalSkylineLimit must match`);
+    });
+  });
+
+  assert.deepStrictEqual(tOff[0].effectiveDp, tOn[0].effectiveDp, "G25-J: Batch ON and OFF must have identical effective authority");
+
+  return {
+    frozenBacktrackDpAuthorityVerified: true,
+    stopOnFirstGoal: false,
+    goalSkylineLimit: 8,
+    batchOffAndOnIdentical: true,
+  };
+}
+
+// G25-K: Sibling Goal Independence Gate
+// 3 batch first-probe jobs: Job A reaches current replay segment goal, Job B and C are valid independent jobs.
+// Global budget is sufficient. All 3 must execute (executed=true). B/C must NOT be short-circuited with notRunReason=goal-found.
+function gateG25K_SiblingGoalIndependence() {
+  const { simulator } = createTestHarness();
+  const s0 = simulator.createInitialState();
+
+  const sA = JSON.parse(JSON.stringify(s0));
+  sA.hero.hp = 1500;
+  const seg = {
+    id: "sibling-goal-seg",
+    goal: { floorId: "MT1", minHero: { hp: 1000 } },
+    actionPolicy: { allowedFloors: ["MT1"] },
+    dp: { maxExpansions: 20, maxRuntimeMs: 2000 },
+  };
+
+  const jobs = [
+    { jobId: "jA", segment: seg, inputFrontier: [{ id: "cA", state: sA }], probeExpansionCap: 20, probeWallMs: 2000 },
+    { jobId: "jB", segment: seg, inputFrontier: [{ id: "cB", state: s0 }], probeExpansionCap: 20, probeWallMs: 2000 },
+    { jobId: "jC", segment: seg, inputFrontier: [{ id: "cC", state: s0 }], probeExpansionCap: 20, probeWallMs: 2000 },
+  ];
+
+  const config = { projectRoot: PROJECT_ROOT, maxExpansions: 5000, maxRuntimeMs: 30000 };
+  const batchRes = executeIsolatedSegmentBatch({ simulator, jobs, config });
+
+  assert.strictEqual(batchRes[0].telemetry.executed, true, "G25-K: job A executed");
+  assert.strictEqual(batchRes[0].summary.found, true, "G25-K: job A found goal");
+  assert.strictEqual(batchRes[1].telemetry.executed, true, "G25-K: job B executed independently");
+  assert.strictEqual(batchRes[2].telemetry.executed, true, "G25-K: job C executed independently");
+  assert.notStrictEqual(batchRes[1].telemetry.notRunReason, "goal-found", "G25-K: job B not cancelled on goal-found");
+  assert.notStrictEqual(batchRes[2].telemetry.notRunReason, "goal-found", "G25-K: job C not cancelled on goal-found");
+
+  return {
+    siblingGoalIndependenceVerified: true,
+    jobAFound: batchRes[0].summary.found,
+    allSiblingsExecuted: true,
+  };
+}
+
+// G25-L: Repair Frontier Width Frozen Gate
+// When graph candidateLimit = 4, adaptiveRepair.finalFrontier = >4 exact states,
+// assert that returned frontier behavior matches 0abec39 frozen contract (no narrowing .slice()).
+function gateG25L_RepairFrontierWidthFrozen() {
+  const { simulator } = createTestHarness();
+  const s0 = simulator.createInitialState();
+
+  const spec = {
+    routeName: "g25-l-spec",
+    milestones: [
+      { id: "seg1", label: "Anchor", goal: { floorId: "MT1", minHero: { hp: 1000 } }, actionPolicy: { allowedFloors: ["MT1"] }, dp: { maxExpansions: 30, maxRuntimeMs: 2000, candidateLimit: 4 } },
+      { id: "seg2", label: "Gated", startFrom: "seg1", goal: { floorId: "MT1", minHero: { money: 1000 } }, actionPolicy: { allowedFloors: ["MT1"] }, dp: { maxExpansions: 20, maxRuntimeMs: 2000 } },
+    ],
+  };
+
+  const res = runMilestoneGraph(simulator, s0, spec, {
+    searchIntent: "adaptive-feasible",
+    segmentExecutionMode: "isolated-process",
+    enableFailureBacktracking: true,
+    adaptiveBacktrackDepth: 1,
+    budgetScope: "global-run",
+    maxExpansions: 5000,
+    maxRuntimeMs: 30000,
+    maxRssMb: 2048,
+    candidateLimit: 4,
+    initialFrontier: [{ id: "root", state: s0 }],
+    enableBudgetedRepairScheduling: true,
+    enableBudgetedRepairContinuation: true,
+    adaptiveHypothesisProbeExpansions: 20,
+    projectRoot: PROJECT_ROOT,
+  });
+
+  const ds = res.failedSegment.backtrack.depthSummaries[0];
+  assert.ok(ds.normalAdmission.retainedCount > 4, "G25-L: retained count must exceed candidateLimit (4)");
+  assert.strictEqual(ds.anchorExpandedCandidates, 5, "G25-L: anchor expanded candidates must be exactly 5, not sliced to 4");
+
+  return {
+    repairFrontierWidthFrozenVerified: true,
+    retainedCount: ds.normalAdmission.retainedCount,
+    anchorExpandedCandidates: ds.anchorExpandedCandidates,
+    noArbitrarySlice: true,
+  };
+}
+
 function main() {
   const g25A = gateG25A_Equivalence();
   const g25B = gateG25B_GlobalStop();
@@ -584,9 +744,12 @@ function main() {
   const g25G = gateG25G_PerJobWallRebase();
   const g25H = gateG25H_ProductionEquivalence();
   const g25I = gateG25I_GlobalStopMidBatchProductionPath();
+  const g25J = gateG25J_FrozenBacktrackDpAuthority();
+  const g25K = gateG25K_SiblingGoalIndependence();
+  const g25L = gateG25L_RepairFrontierWidthFrozen();
 
   const report = {
-    schema: "motapathfinder.isolated-batch.v1",
+    schema: "motapathfinder.isolated-batch.v2",
     contractStatus: "passed",
     gates: {
       "G25-A": g25A,
@@ -598,6 +761,9 @@ function main() {
       "G25-G": g25G,
       "G25-H": g25H,
       "G25-I": g25I,
+      "G25-J": g25J,
+      "G25-K": g25K,
+      "G25-L": g25L,
     },
   };
   console.log(JSON.stringify(report, null, 2));
@@ -618,4 +784,7 @@ module.exports = {
   gateG25G_PerJobWallRebase,
   gateG25H_ProductionEquivalence,
   gateG25I_GlobalStopMidBatchProductionPath,
+  gateG25J_FrozenBacktrackDpAuthority,
+  gateG25K_SiblingGoalIndependence,
+  gateG25L_RepairFrontierWidthFrozen,
 };

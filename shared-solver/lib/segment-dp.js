@@ -5013,6 +5013,8 @@ function toCompactLedgerExecution(execution) {
         stoppedReason: att.diagnostics.dp.stoppedReason,
         searchOutcome: att.diagnostics.dp.searchOutcome,
         memory: att.diagnostics.dp.memory,
+        stopOnFirstGoal: att.diagnostics.dp.stopOnFirstGoal,
+        goalSkylineLimit: att.diagnostics.dp.goalSkylineLimit,
       } : {},
       failure: att.diagnostics && att.diagnostics.failure ? {
         failureClass: att.diagnostics.failure.failureClass,
@@ -5024,6 +5026,11 @@ function toCompactLedgerExecution(execution) {
   }));
   return {
     segment: { id: execution.segment ? execution.segment.id : summary.segmentId },
+    summary: {
+      ...summary,
+      attempts: compactAttempts,
+    },
+    attempts: compactAttempts,
     // Iteration 5 Repair (P2, phase fidelity) – the stamped execution phase
     // survives compaction so ledger consumers never infer phase from index.
     executionPhase: execution.executionPhase || null,
@@ -5145,6 +5152,8 @@ function tryAdaptiveCheckpointRepair(
   if ((config || {}).searchIntent !== "adaptive-feasible") return null;
   if ((config || {}).enableFailureBacktracking === false) return null;
   if (!Array.isArray(history) || history.length === 0 || segmentIndex <= 0) return null;
+
+  const tc = config && config.telemetryCollector;
 
   const failedSummary = failedExecution && failedExecution.summary;
   const failedAttempt = failedSummary && failedSummary.attempts && failedSummary.attempts[failedSummary.attempts.length - 1];
@@ -5516,8 +5525,6 @@ function tryAdaptiveCheckpointRepair(
     let counterfactualAdmission = null;
     let probeTranche = null;
 
-    let winningChainExecutions = null;
-
     for (let waveIndex = 0; waveIndex < totalWaves; waveIndex += 1) {
       const waveInputCandidates = rankedInputFrontier.slice(
         waveIndex * waveBatchSize,
@@ -5631,6 +5638,12 @@ function tryAdaptiveCheckpointRepair(
         (config && config.globalBudget ? config.globalBudget.consumedExpansions : 0) -
         waveStartExpansions;
       const anchorGenerationWallMs = Date.now() - waveStartedAt;
+      if (tc) {
+        tc.phaseWall.anchorGenerationMs += anchorGenerationWallMs;
+        if (expandedAnchor && expandedAnchor.telemetry) {
+          tc.phaseProcessLaunches.anchor += Number(expandedAnchor.telemetry.processLaunches || 1);
+        }
+      }
       const expandedAnchorCandidatesCount = expandedAnchor && expandedAnchor.summary && expandedAnchor.summary.attempts
         ? expandedAnchor.summary.attempts.reduce((sum, a) => sum + (a.goalCount || (a.found ? 1 : 0)), 0)
         : 0;
@@ -5853,8 +5866,8 @@ function tryAdaptiveCheckpointRepair(
         const anchorProbeExpired = Boolean(
           expandedAnchor &&
           (!expandedAnchor.merged || expandedAnchor.merged.length === 0) &&
-          anchorDp &&
-          (anchorDp.stoppedReason === "time-limit" || anchorDp.stoppedReason === "expansion-limit") &&
+          ((anchorDp && (anchorDp.stoppedReason === "time-limit" || anchorDp.stoppedReason === "expansion-limit")) ||
+           (expandedAnchor.telemetry && (expandedAnchor.telemetry.probeDeadlinePrecedesGlobal || expandedAnchor.telemetry.probeRuntimeBound))) &&
           !(config.globalBudget && config.globalBudget.stoppedReason)
         );
 
@@ -6098,6 +6111,12 @@ function tryAdaptiveCheckpointRepair(
           } else {
             ticket.status = "PROBE_PENDING";
           }
+          const effDpOverridesSingle = backtrackDpOverrides(firstReplaySegmentForProgress, config || {});
+          ticket.effectiveDp = {
+            stopOnFirstGoal: Boolean(effDpOverridesSingle.stopOnFirstGoal),
+            goalSkylineLimit: effDpOverridesSingle.goalSkylineLimit,
+            dpOverrides: { ...effDpOverridesSingle },
+          };
           ticket.lastProgress = {
             waveOutcome,
             replaySegmentsEntered: replaySegments.length,
@@ -6197,6 +6216,8 @@ function tryAdaptiveCheckpointRepair(
 
       probeTranche = (descriptors, trancheType, trancheOpts) => {
         if (!Array.isArray(descriptors) || descriptors.length === 0) return;
+        const ptStartMs = Date.now();
+        const launchesBefore = batchFirstProbe[trancheType] ? Number(batchFirstProbe[trancheType].processLaunches || 0) : 0;
         const topts = trancheOpts || {};
         const wIndex = topts.waveIndex != null ? topts.waveIndex : waveIndex;
         const inputCandIds = topts.inputCandidateIds
@@ -6374,6 +6395,16 @@ function tryAdaptiveCheckpointRepair(
             probedHypotheses.add(ticket.hypothesisId);
           }
 
+          const anchorAttempt = expandedAnchor && expandedAnchor.attempts && expandedAnchor.attempts[0];
+          const anchorDp = anchorAttempt && anchorAttempt.diagnostics && anchorAttempt.diagnostics.dp;
+          const anchorProbeExpired = Boolean(
+            expandedAnchor &&
+            (!expandedAnchor.merged || expandedAnchor.merged.length === 0) &&
+            ((anchorDp && (anchorDp.stoppedReason === "time-limit" || anchorDp.stoppedReason === "expansion-limit")) ||
+             (expandedAnchor.telemetry && (expandedAnchor.telemetry.probeDeadlinePrecedesGlobal || expandedAnchor.telemetry.probeRuntimeBound))) &&
+            !(config.globalBudget && config.globalBudget.stoppedReason)
+          );
+
           items.push({
             desc,
             ticket,
@@ -6387,9 +6418,8 @@ function tryAdaptiveCheckpointRepair(
             goalProgressAfter: repairedAnchorProgress,
             probeStartWallMs: Date.now(),
             probeStartExpansions: config && config.globalBudget ? config.globalBudget.consumedExpansions : 0,
-            probeExpired: false,
-            active: true,
-            chainExecutions: [],
+            probeExpired: anchorProbeExpired,
+            active: !anchorProbeExpired,
           });
         }
 
@@ -6436,6 +6466,7 @@ function tryAdaptiveCheckpointRepair(
             const rankedFrontier = replayIntentRanking.ranked;
             const rRunConfig = {
               ...(config || {}),
+              stopOnFirstGoal: undefined,
             };
             return {
               jobId: it.ticket ? it.ticket.hypothesisId : it.desc.hypothesisId,
@@ -6451,6 +6482,7 @@ function tryAdaptiveCheckpointRepair(
               },
               overrides: withManualBudgetAuthority(rRunConfig, {
                 candidateLimit: backtrackCandidateLimit(replaySegment, config || {}),
+                dpOverrides: backtrackDpOverrides(replaySegment, config || {}),
                 preserveSkylineRoles: true,
               }),
             };
@@ -6501,9 +6533,6 @@ function tryAdaptiveCheckpointRepair(
             const it = activeItems[bIdx];
             const replayExecution = batchExecutions[bIdx];
             waveExecutions.push(replayExecution);
-            if (it.chainExecutions) {
-              it.chainExecutions.push(replayExecution);
-            }
             if (topts.cfExecutions) {
               topts.cfExecutions.push(replayExecution);
             }
@@ -6644,6 +6673,12 @@ function tryAdaptiveCheckpointRepair(
             ticket.probeCount = 1;
             ticket.stopReason = waveOutcome;
             ticket.status = (historyGoalReached || waveOutcome === "exhausted") ? "PROBE_COMPLETE_OR_GOAL" : "PROBE_PENDING";
+            const effDpOverridesBatch = backtrackDpOverrides(firstReplaySeg, config || {});
+            ticket.effectiveDp = {
+              stopOnFirstGoal: Boolean(effDpOverridesBatch.stopOnFirstGoal),
+              goalSkylineLimit: effDpOverridesBatch.goalSkylineLimit,
+              dpOverrides: { ...effDpOverridesBatch },
+            };
             ticket.lastProgress = {
               waveOutcome,
               replaySegmentsEntered: it.replaySegments.length,
@@ -6727,9 +6762,21 @@ function tryAdaptiveCheckpointRepair(
           if (historyGoalReached) {
             depthFinalFrontier = it.currentFrontier;
             depthGoalReached = true;
-            winningChainExecutions = [expandedAnchor, ...(it.chainExecutions || [])];
             break;
           }
+        }
+
+        const ptWall = Date.now() - ptStartMs;
+        if (tc) {
+          if (trancheType === "primary") {
+            tc.phaseWall.primaryFirstProbeMs += ptWall;
+          } else if (trancheType === "counterfactual") {
+            tc.phaseWall.counterfactualFirstProbeMs += ptWall;
+          } else if (trancheType === "secondary") {
+            tc.phaseWall.secondaryFirstProbeMs += ptWall;
+          }
+          const trancheLaunches = batchFirstProbe[trancheType] ? Number(batchFirstProbe[trancheType].processLaunches || 0) : 0;
+          tc.phaseProcessLaunches.firstProbe += Math.max(0, trancheLaunches - launchesBefore);
         }
       };
 
@@ -6885,7 +6932,7 @@ function tryAdaptiveCheckpointRepair(
           maxDepth,
           attempts,
           depthSummaries,
-          executions: winningChainExecutions || waveExecutions,
+          executions: waveExecutions,
           ledgerExecutions,
           anchorHistoryIndex,
           finalFrontier: depthFinalFrontier || [],
@@ -7104,6 +7151,7 @@ function tryAdaptiveCheckpointRepair(
           ),
         };
 
+        const irStartMs = Date.now();
         const intentRealized = runSegmentAgainstFrontier(
           simulator,
           intentSegment,
@@ -7119,6 +7167,13 @@ function tryAdaptiveCheckpointRepair(
             preserveSkylineRoles: true,
           }),
         );
+        const irWall = Date.now() - irStartMs;
+        if (tc) {
+          tc.phaseWall.counterfactualIntentRealizationMs += irWall;
+          if (intentRealized && intentRealized.telemetry) {
+            tc.phaseProcessLaunches.intentRealization += Number(intentRealized.telemetry.processLaunches || 1);
+          }
+        }
         intentRealized.executionPhase = "adaptive-expand";
         cfExecutions.push(intentRealized);
 
@@ -7157,6 +7212,7 @@ function tryAdaptiveCheckpointRepair(
             : {}),
         };
 
+        const caStartMs = Date.now();
         const cfAnchorExpanded = runSegmentAgainstFrontier(
           simulator,
           anchor.segment,
@@ -7173,6 +7229,13 @@ function tryAdaptiveCheckpointRepair(
             preserveSkylineRoles: true,
           }),
         );
+        const caWall = Date.now() - caStartMs;
+        if (tc) {
+          tc.phaseWall.counterfactualAnchorGenerationMs += caWall;
+          if (cfAnchorExpanded && cfAnchorExpanded.telemetry) {
+            tc.phaseProcessLaunches.cfAnchor += Number(cfAnchorExpanded.telemetry.processLaunches || 1);
+          }
+        }
         cfAnchorExpanded.summary.backtrack = {
           mode: "adaptive-checkpoint-expand",
           depth,
@@ -7464,6 +7527,9 @@ function tryAdaptiveCheckpointRepair(
             );
             intentRealized.executionPhase = "adaptive-expand";
             contExecutions.push(intentRealized);
+            if (tc && intentRealized && intentRealized.telemetry) {
+              tc.phaseProcessLaunches.intentRealization += Number(intentRealized.telemetry.processLaunches || 1);
+            }
             const intentFrontier = intentRealized.merged;
 
             if (intentFrontier && intentFrontier.length > 0) {
@@ -7492,6 +7558,9 @@ function tryAdaptiveCheckpointRepair(
                 triggeredBySegment: segments[segmentIndex].id,
               };
               contExecutions.push(contExpanded);
+              if (tc && contExpanded && contExpanded.telemetry) {
+                tc.phaseProcessLaunches.continuation += Number(contExpanded.telemetry.processLaunches || 1);
+              }
               contRepairFrontier = contExpanded.merged;
             }
           }
@@ -7521,6 +7590,9 @@ function tryAdaptiveCheckpointRepair(
           };
           contRepairFrontier = contExpanded.merged;
           contExecutions.push(contExpanded);
+          if (tc && contExpanded && contExpanded.telemetry) {
+            tc.phaseProcessLaunches.continuation += Number(contExpanded.telemetry.processLaunches || 1);
+          }
         }
 
         depthWavesAttempted += 1;
@@ -7673,6 +7745,9 @@ function tryAdaptiveCheckpointRepair(
           };
           contReplayed.executionPhase = "adaptive-replay";
           contExecutions.push(contReplayed);
+          if (tc && contReplayed && contReplayed.telemetry) {
+            tc.phaseProcessLaunches.continuation += Number(contReplayed.telemetry.processLaunches || 1);
+          }
           contRepairFrontier = contReplayed.merged;
           // Iteration 2 Repair 1a (P1) – continuation replay completion uses
           // the SAME shared determinate-completion definition as the first
@@ -7870,7 +7945,9 @@ function tryAdaptiveCheckpointRepair(
     };
 
     if (continuationEnabled && !depthGoalReached) {
+      const contStartMs = Date.now();
       const contRes = executeContinuationRound();
+      if (tc) tc.phaseWall.continuationMs += Date.now() - contStartMs;
       if (contRes) return contRes;
     }
 
@@ -7886,7 +7963,9 @@ function tryAdaptiveCheckpointRepair(
       // If any newly admitted secondary ticket achieved positive progress,
       // allow continuation pass to run for it!
       if (continuationEnabled && !depthGoalReached) {
+        const contStartMs2 = Date.now();
         const contRes2 = executeContinuationRound();
+        if (tc) tc.phaseWall.continuationMs += Date.now() - contStartMs2;
         if (contRes2) return contRes2;
       }
     }
@@ -8121,6 +8200,25 @@ function summarizeMemoryAttempts(attempts, config) {
 
 function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
   const config = resolveSearchIntentOptions(options);
+  const phaseWall = {
+    initialMilestoneMs: 0,
+    anchorGenerationMs: 0,
+    primaryFirstProbeMs: 0,
+    counterfactualIntentRealizationMs: 0,
+    counterfactualAnchorGenerationMs: 0,
+    counterfactualFirstProbeMs: 0,
+    secondaryFirstProbeMs: 0,
+    continuationMs: 0,
+    otherPlannerMs: 0,
+  };
+  const phaseProcessLaunches = {
+    initial: 0,
+    anchor: 0,
+    intentRealization: 0,
+    cfAnchor: 0,
+    firstProbe: 0,
+    continuation: 0,
+  };
   const objective = config.objectiveSpec && config.objectiveSpec.compiled
     ? config.objectiveSpec
     : null;
@@ -8133,9 +8231,10 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
     ? { ...config, stopOnFirstGoal: false }
     : config;
   const globalBudget = objectiveConfig.globalBudget || createGlobalBudget(objectiveConfig);
-  const graphConfigBase = globalBudget
-    ? { ...objectiveConfig, globalBudget }
-    : objectiveConfig;
+  const graphConfigBase = {
+    ...(globalBudget ? { ...objectiveConfig, globalBudget } : objectiveConfig),
+    telemetryCollector: { phaseWall, phaseProcessLaunches },
+  };
   // Process-tree isolated execution telemetry (canonical qualification source)
   const isolatedProcessTreeTelemetry = {
     maxPlannerRssDuringIsolatedExecutionMb: 0,
@@ -8198,23 +8297,33 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       qualified: isolatedProcessTreeTelemetry.maxAggregateConcurrentRssUpperBoundMb <= 260 && overshoot <= 4,
     };
   };
-  const finishResult = (result) => ({
-    ...result,
-    searchIntent: config.searchIntent || "skyline",
-    budget: summarizeGlobalBudget(globalBudget),
-    memory: summarizeMemoryAttempts(result.evaluationAttemptLedger, objectiveConfig),
-    processTreeMemory: processTreeMemoryForResult(),
-    isolatedProcessTreeTelemetry: { ...isolatedProcessTreeTelemetry },
-    executionCompletionLedger: [...executionCompletionLedger],
-    // PR-5.24c – top-level repair-scheduling telemetry so FOUND runs (which
-    // have no failedSegment) still expose the hypothesis/probe history.
-    repairScheduling: lastRepairScheduling,
-    counterfactualRepair: lastCounterfactualRepair,
-    normalAdmission: lastNormalAdmission,
-    counterfactualAdmission: lastCounterfactualAdmission,
-    batchFirstProbe: lastBatchFirstProbe,
-    objectiveStopPolicy,
-  });
+  const finishResult = (result) => {
+    const totalRunWall = Date.now() - (globalBudget ? globalBudget.startedAt : Date.now());
+    const accounted = Object.keys(phaseWall)
+      .filter((k) => k !== "otherPlannerMs")
+      .reduce((sum, k) => sum + Number(phaseWall[k] || 0), 0);
+    phaseWall.otherPlannerMs = Math.max(0, totalRunWall - accounted);
+
+    return {
+      ...result,
+      searchIntent: config.searchIntent || "skyline",
+      budget: summarizeGlobalBudget(globalBudget),
+      memory: summarizeMemoryAttempts(result.evaluationAttemptLedger, objectiveConfig),
+      processTreeMemory: processTreeMemoryForResult(),
+      isolatedProcessTreeTelemetry: { ...isolatedProcessTreeTelemetry },
+      executionCompletionLedger: [...executionCompletionLedger],
+      // PR-5.24c – top-level repair-scheduling telemetry so FOUND runs (which
+      // have no failedSegment) still expose the hypothesis/probe history.
+      repairScheduling: lastRepairScheduling,
+      counterfactualRepair: lastCounterfactualRepair,
+      normalAdmission: lastNormalAdmission,
+      counterfactualAdmission: lastCounterfactualAdmission,
+      batchFirstProbe: lastBatchFirstProbe,
+      phaseWall: { ...phaseWall },
+      phaseProcessLaunches: { ...phaseProcessLaunches },
+      objectiveStopPolicy,
+    };
+  };
   const rangeError = milestoneRangeError(
     milestoneSpec,
     config.fromMilestoneId,
@@ -8447,6 +8556,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
       try { global.gc(); } catch (_) {}
     }
     const segment = segments[segmentIndex];
+    const initialStartMs = Date.now();
     const execution = runSegmentAgainstFrontier(
       simulator,
       segment,
@@ -8461,6 +8571,11 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
         candidateLimit: graphConfig.candidateLimit != null ? graphConfig.candidateLimit : undefined,
       }),
     );
+    const initialWall = Date.now() - initialStartMs;
+    phaseWall.initialMilestoneMs += initialWall;
+    if (execution && execution.telemetry) {
+      phaseProcessLaunches.initial += Number(execution.telemetry.processLaunches || 1);
+    }
     appendLedger(execution, "initial");
     appendExecutionCompletion(execution, "initial");
     recordIsolatedTelemetry(execution);
@@ -8557,10 +8672,7 @@ function runMilestoneGraph(simulator, initialState, milestoneSpec, options) {
             repairExpanded: true,
           });
         });
-        frontier = (adaptiveRepair.finalFrontier || []).slice(
-          0,
-          (graphConfig && graphConfig.candidateLimit != null) ? graphConfig.candidateLimit : 1,
-        );
+        frontier = adaptiveRepair.finalFrontier;
         continue;
       }
       if (adaptiveRepair && !adaptiveRepair.found) {
@@ -8843,5 +8955,7 @@ module.exports = {
     rankCandidatesByPreferredTags,
     rankCandidatesByFailureIntent,
     classifySegmentFailure,
+    backtrackDpOverrides,
+    backtrackCandidateLimit,
   },
 };
