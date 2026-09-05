@@ -18,6 +18,7 @@ const {
   getDecisionDepth,
   getRawRouteLength,
   getTileDefinitionAt,
+  markFloorStateMutated,
 } = require("./state");
 const { buildStateKey } = require("./state-key");
 const { buildCounterfactualRepairIntents } = require("./counterfactual-repair");
@@ -1167,6 +1168,7 @@ function protectPresentTiles(project, state, segment) {
     });
     delete floorState.removed[key];
     floorState.replaced[key] = BLOCKER_TILE_NUMBER;
+    markFloorStateMutated(floorState);
   }
   return saved;
 }
@@ -1183,6 +1185,7 @@ function restorePresentTiles(saved) {
     } else {
       delete entry.floorState.replaced[entry.key];
     }
+    markFloorStateMutated(entry.floorState);
   }
 }
 

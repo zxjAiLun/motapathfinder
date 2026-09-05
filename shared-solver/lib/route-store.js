@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
 
-const { createInitialState, ensureFloorState, getDecisionDepth } = require("./state");
+const { createInitialState, ensureFloorState, getDecisionDepth, markFloorStateMutated } = require("./state");
 const { buildDominanceKey, buildStateKey } = require("./state-key");
 const { isDecisionStep } = require("./updown-candidate-policy");
 const { buildSolverSnapshot, diffSnapshotSubset } = require("./route-snapshot");
@@ -296,6 +296,7 @@ function applySnapshotFloorMutations(project, state, snapshotFloors) {
       floorState.replaced[key] = snapshotTileIdToNumber(project, match[3]);
       delete floorState.removed[key];
     });
+    markFloorStateMutated(floorState);
   });
 }
 

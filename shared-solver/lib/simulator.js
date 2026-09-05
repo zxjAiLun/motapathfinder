@@ -372,11 +372,13 @@ class StaticSimulator {
     });
     this.toolRegistry = config.toolRegistry || new ToolRegistry();
     this.enableFastHazardBlockIndex = config.enableFastHazardBlockIndex !== false;
+    this.enableHazardBlockIndexMemoization = config.enableHazardBlockIndexMemoization !== false;
     this.autoResolver = config.autoResolver || new AutoActionResolver({
       autoPickupEnabled: config.autoPickupEnabled,
       autoBattleEnabled: config.autoBattleEnabled,
       enableFastRejectSkip: config.autoBattleFastRejectEnabled === true,
       enableFastHazardBlockIndex: this.enableFastHazardBlockIndex,
+      enableHazardBlockIndexMemoization: this.enableHazardBlockIndexMemoization,
       repeatUntilStable: config.autoRepeatUntilStable !== false,
     });
     this.choiceResolver = config.choiceResolver;
@@ -662,6 +664,7 @@ class StaticSimulator {
       stabilizeState: (nextState) => this.stabilizeState(nextState),
       walkReachabilityMode: this.walkReachabilityMode,
       enableFastHazardBlockIndex: this.enableFastHazardBlockIndex,
+      enableHazardBlockIndexMemoization: this.enableHazardBlockIndexMemoization,
       safeWalkSkeletonCache: this.enableActionExpansionCache && this.enableReachabilitySkeletonCache
         ? {
           get: (cacheKey) => this.cacheGet("reachabilitySkeleton", cacheKey),
@@ -2543,6 +2546,7 @@ class StaticSimulator {
         executeActionList,
         choiceResolver: this.choiceResolver,
         enableFastHazardBlockIndex: this.enableFastHazardBlockIndex,
+        enableHazardBlockIndexMemoization: this.enableHazardBlockIndexMemoization,
         predicate: (project, currentState, floorId, x, y) => x === action.x && y === action.y,
         beforeHazards: hooks && hooks.beforeHazards,
         afterHazards: hooks && hooks.afterHazards,

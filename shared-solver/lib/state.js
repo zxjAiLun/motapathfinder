@@ -263,11 +263,30 @@ function forEachMaterializedFloorTile(project, state, floorId, callback) {
   }
 }
 
+function getFloorMutationEpoch(floorState) {
+  return Number((floorState && floorState.__tileMutationEpoch) || 0);
+}
+
+function markFloorStateMutated(floorState) {
+  if (!floorState) return;
+  const nextEpoch = getFloorMutationEpoch(floorState) + 1;
+  Object.defineProperty(floorState, "__tileMutationEpoch", {
+    value: nextEpoch,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+  try {
+    delete floorState.__blockIndexCache;
+  } catch (_) {}
+}
+
 function removeTileAt(state, floorId, x, y) {
   const floorState = ensureFloorState(state, floorId);
   const key = `${x},${y}`;
   floorState.removed[key] = true;
   delete floorState.replaced[key];
+  markFloorStateMutated(floorState);
 }
 
 function replaceTileAt(state, floorId, x, y, number) {
@@ -275,6 +294,7 @@ function replaceTileAt(state, floorId, x, y, number) {
   const key = `${x},${y}`;
   floorState.replaced[key] = number;
   delete floorState.removed[key];
+  markFloorStateMutated(floorState);
 }
 
 function appendRouteStep(state, step, options) {
@@ -336,6 +356,8 @@ module.exports = {
   hasItem,
   hasVisitedFloor,
   listFloorMutationSummary,
+  getFloorMutationEpoch,
+  markFloorStateMutated,
   removeTileAt,
   replaceTileAt,
   visitFloor,

@@ -2,7 +2,7 @@
 
 const { estimateBattleSurvivability } = require("./battle-thresholds");
 const { getFloorOrder } = require("./floor-id");
-const { cloneState, getTileDefinitionAt } = require("./state");
+const { cloneState, getTileDefinitionAt, markFloorStateMutated } = require("./state");
 
 const BLOCKER_TILE_NUMBER = 1;
 
@@ -142,6 +142,7 @@ function protectPresentTiles(project, state, segment) {
     });
     delete floorState.removed[key];
     floorState.replaced[key] = BLOCKER_TILE_NUMBER;
+    markFloorStateMutated(floorState);
   }
   return saved;
 }
@@ -158,6 +159,7 @@ function restorePresentTiles(saved) {
     } else {
       delete entry.floorState.replaced[entry.key];
     }
+    markFloorStateMutated(entry.floorState);
   }
 }
 

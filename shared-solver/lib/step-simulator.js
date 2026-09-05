@@ -55,6 +55,7 @@ function getHazardsForState(project, state, options, cache) {
         floorId: state.floorId,
         battleResolver: options.battleResolver,
         enableFastHazardBlockIndex: options.enableFastHazardBlockIndex,
+        enableHazardBlockIndexMemoization: options.enableHazardBlockIndexMemoization,
       })
     );
   }
@@ -249,6 +250,7 @@ function classifySafeStaticWalk(project, state, options) {
     floorId: state.floorId,
     battleResolver: config.battleResolver,
     enableFastHazardBlockIndex: config.enableFastHazardBlockIndex,
+    enableHazardBlockIndexMemoization: config.enableHazardBlockIndexMemoization,
   });
   const hazardScanMs = Number(process.hrtime.bigint() - hazardStartedAt) / 1e6;
   if (hasMovementHazards(hazards)) {

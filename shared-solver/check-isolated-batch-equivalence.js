@@ -422,7 +422,7 @@ function gateG25G_PerJobWallRebase() {
   const batchRes = executeIsolatedSegmentBatch({
     simulator,
     jobs,
-    config: { projectRoot: PROJECT_ROOT, maxExpansions: 5000, maxRuntimeMs: 30000 },
+    config: { projectRoot: PROJECT_ROOT, maxExpansions: 5000, maxRuntimeMs: 30000, maxRssMb: 1024 },
   });
 
   assert.strictEqual(batchRes.length, 3, "G25-G: all 3 jobs returned");
@@ -673,7 +673,7 @@ function gateG25K_SiblingGoalIndependence() {
     { jobId: "jC", segment: seg, inputFrontier: [{ id: "cC", state: s0 }], probeExpansionCap: 20, probeWallMs: 2000 },
   ];
 
-  const config = { projectRoot: PROJECT_ROOT, maxExpansions: 5000, maxRuntimeMs: 30000 };
+  const config = { projectRoot: PROJECT_ROOT, maxExpansions: 5000, maxRuntimeMs: 30000, maxRssMb: 1024 };
   const batchRes = executeIsolatedSegmentBatch({ simulator, jobs, config });
 
   assert.strictEqual(batchRes[0].telemetry.executed, true, "G25-K: job A executed");

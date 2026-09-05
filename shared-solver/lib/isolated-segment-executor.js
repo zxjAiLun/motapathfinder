@@ -44,6 +44,7 @@ function buildSimulatorProfile(simulator) {
   const profile = {
     stopFloorId: simulator.stopFloorId || "MT11",
     enableFastHazardBlockIndex: simulator.enableFastHazardBlockIndex !== false,
+    enableHazardBlockIndexMemoization: simulator.enableHazardBlockIndexMemoization !== false,
     enableCompiledEffectCache: Boolean(simulator.enableCompiledEffectCache),
     autoPickupEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoPickupEnabled) : true,
     autoBattleEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoBattleEnabled) : true,

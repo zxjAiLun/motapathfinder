@@ -1,7 +1,7 @@
 "use strict";
 
 const { coordinateKey, isEnemyTile } = require("./reachability");
-const { floorHasCoordinate, forEachMaterializedFloorTile, getTileDefinitionAt, hasItem } = require("./state");
+const { floorHasCoordinate, forEachMaterializedFloorTile, getFloorMutationEpoch, getTileDefinitionAt, hasItem } = require("./state");
 const { getActivePerfTracker } = require("./perf");
 
 const SCAN4 = {
@@ -39,19 +39,24 @@ const BLOCK_INDEX_CACHE_KEY = "__blockIndexCache";
 function buildBlockIndex(project, state, floorId, perfTracker, options = {}) {
   const blocks = {};
   const useFastPath = options.enableFastHazardBlockIndex !== false;
+  const memoizationEnabled = options.enableHazardBlockIndexMemoization !== false;
 
-  // PR-5.24g: memoize block index per floorState object reference.
-  // The block index depends only on (project, floorId, floorState.removed, floorState.replaced).
-  // Within a single search, identical floorState objects (same reference) always
-  // produce identical block indexes. The cache is stored as a non-enumerable
-  // property on the floorState object and is automatically invalidated when
-  // the floorState object is replaced (a new object reference means a new key).
+  // PR-5.24g Iteration 1 Repair 1: mutation-safe memoization per (floorState, epoch).
+  // The block index depends strictly on (project, floorId, floorState.removed, floorState.replaced).
+  // Cache record binds both the floorState object reference AND the floor's tileMutationEpoch.
+  // Any in-place mutation (removeTileAt/replaceTileAt) advances the epoch, automatically
+  // invalidating stale cache records.
   const floorState = state.floorStates && state.floorStates[floorId];
-  if (floorState && floorState[BLOCK_INDEX_CACHE_KEY] && useFastPath) {
-    if (perfTracker && typeof perfTracker.increment === "function") {
-      perfTracker.increment("hazardBlockIndexCacheHits", 1);
+  const currentEpoch = floorState ? getFloorMutationEpoch(floorState) : 0;
+
+  if (floorState && useFastPath && memoizationEnabled) {
+    const cached = floorState[BLOCK_INDEX_CACHE_KEY];
+    if (cached && cached.epoch === currentEpoch && cached.blocks) {
+      if (perfTracker && typeof perfTracker.increment === "function") {
+        perfTracker.increment("hazardBlockIndexCacheHits", 1);
+      }
+      return cached.blocks;
     }
-    return floorState[BLOCK_INDEX_CACHE_KEY];
   }
 
   if (useFastPath) {
@@ -75,18 +80,19 @@ function buildBlockIndex(project, state, floorId, perfTracker, options = {}) {
       };
     });
 
-    // Cache the result for future identical floorState references
-    if (floorState && useFastPath) {
+    // Cache the result bound to the authoritative mutation epoch
+    if (floorState && useFastPath && memoizationEnabled) {
       try {
         Object.defineProperty(floorState, BLOCK_INDEX_CACHE_KEY, {
-          value: blocks,
+          value: {
+            epoch: currentEpoch,
+            blocks,
+          },
           enumerable: false,
           writable: true,
           configurable: true,
         });
-      } catch (_) {
-        // If defineProperty fails (frozen object etc), just skip caching
-      }
+      } catch (_) {}
     }
 
     return blocks;

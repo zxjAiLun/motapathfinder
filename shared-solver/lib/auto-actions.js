@@ -129,6 +129,7 @@ class AutoActionResolver {
     this.autoBattleEnabled = config.autoBattleEnabled !== false;
     this.enableFastRejectSkip = config.enableFastRejectSkip === true;
     this.enableFastHazardBlockIndex = config.enableFastHazardBlockIndex !== false;
+    this.enableHazardBlockIndexMemoization = config.enableHazardBlockIndexMemoization !== false;
     this.repeatUntilStable = config.repeatUntilStable === true;
     this.maxPasses = Number(config.maxPasses || 256);
   }
@@ -159,6 +160,7 @@ class AutoActionResolver {
         battleResolver,
         perfTracker,
         enableFastHazardBlockIndex: this.enableFastHazardBlockIndex,
+        enableHazardBlockIndexMemoization: this.enableHazardBlockIndexMemoization,
       }));
     }
     return buildMovementHazards(project, state, {
@@ -166,6 +168,7 @@ class AutoActionResolver {
       battleResolver,
       perfTracker,
       enableFastHazardBlockIndex: this.enableFastHazardBlockIndex,
+      enableHazardBlockIndexMemoization: this.enableHazardBlockIndexMemoization,
     });
   }
 
