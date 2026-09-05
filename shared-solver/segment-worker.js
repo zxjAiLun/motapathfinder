@@ -25,6 +25,7 @@ function buildSimulatorFromProfile(project, profile) {
   const stopFloorId = (profile && profile.stopFloorId) || "MT11";
   const enableFastHazardBlockIndex = profile ? profile.enableFastHazardBlockIndex !== false : true;
   const enableHazardBlockIndexMemoization = profile ? profile.enableHazardBlockIndexMemoization !== false : true;
+  const enableFastBattleEstimateCache = profile ? profile.enableFastBattleEstimateCache !== false : true;
   const enableCompiledEffectCache = profile ? Boolean(profile.enableCompiledEffectCache) : false;
   const autoPickupEnabled = profile ? profile.autoPickupEnabled !== false : true;
   const autoBattleEnabled = profile ? profile.autoBattleEnabled !== false : true;
@@ -34,12 +35,16 @@ function buildSimulatorFromProfile(project, profile) {
   const searchGraphMode = profile && profile.searchGraphMode ? String(profile.searchGraphMode) : undefined;
   const simulatorOptions = {
     stopFloorId,
-    battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: battleEnableFastReject }),
+    battleResolver: new FunctionBackedBattleResolver(project, {
+      enableFastReject: battleEnableFastReject,
+      enableFastBattleEstimateCache,
+    }),
     autoBattleFastRejectEnabled,
     autoPickupEnabled,
     autoBattleEnabled,
     enableFastHazardBlockIndex,
     enableHazardBlockIndexMemoization,
+    enableFastBattleEstimateCache,
     enableCompiledEffectCache,
     choiceResolver,
   };
@@ -56,6 +61,7 @@ function buildAppliedProfile(simulator) {
     stopFloorId: simulator.stopFloorId || "MT11",
     enableFastHazardBlockIndex: simulator.enableFastHazardBlockIndex !== false,
     enableHazardBlockIndexMemoization: simulator.enableHazardBlockIndexMemoization !== false,
+    enableFastBattleEstimateCache: simulator.battleResolver ? simulator.battleResolver.enableFastBattleEstimateCache !== false : true,
     enableCompiledEffectCache: Boolean(simulator.enableCompiledEffectCache),
     autoPickupEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoPickupEnabled) : true,
     autoBattleEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoBattleEnabled) : true,

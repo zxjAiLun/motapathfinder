@@ -8,6 +8,7 @@ const { DIRECTIONS, DIRECTION_DELTAS, isEnemyTile } = require("./reachability");
 const { classifyAutoBattleFastReject } = require("./auto-battle-fast-reject");
 const { executeActionList, runLevelUps } = require("./events");
 const { cloneState, getTileDefinitionAt, removeTileAt } = require("./state");
+const { getActivePerfTracker } = require("./perf");
 
 function stableObject(object) {
   return Object.keys(object || {})
@@ -26,6 +27,49 @@ function stableFloorState(floorState) {
     .sort()
     .map((key) => `${key}:${floorState.replaced[key]}`);
   return { removed, replaced };
+}
+
+function buildFastBattleEstimateKey(state, floorId, x, y, enemyId) {
+  const h = state.hero || {};
+  let k = `${floorId}|${x}|${y}|${enemyId}|${h.hp || 0},${h.atk || 0},${h.def || 0},${h.mdef || 0},${h.lv || 0},${h.hpmax || 0},${h.mana || 0},${h.manamax || 0}|`;
+  if (Array.isArray(h.equipment) && h.equipment.length > 0) {
+    k += (h.equipment.length === 1 ? h.equipment[0] : h.equipment.slice().sort().join(",")) + "|";
+  } else {
+    k += "|";
+  }
+  const inv = state.inventory;
+  if (inv) {
+    const keys = Object.keys(inv).sort();
+    for (let i = 0; i < keys.length; i += 1) {
+      const v = inv[keys[i]];
+      if (v != null && v !== 0) k += `${keys[i]}:${v},`;
+    }
+  }
+  k += "|";
+  const flg = state.flags;
+  if (flg) {
+    const keys = Object.keys(flg).sort();
+    for (let i = 0; i < keys.length; i += 1) {
+      const v = flg[keys[i]];
+      if (v != null && v !== 0) k += `${keys[i]}:${v},`;
+    }
+  }
+  k += "|";
+  const fs = state.floorStates && state.floorStates[floorId];
+  if (fs) {
+    if (fs.removed) {
+      const rk = Object.keys(fs.removed).sort();
+      for (let i = 0; i < rk.length; i += 1) k += `${rk[i]},`;
+    }
+    k += "|";
+    if (fs.replaced) {
+      const rep = Object.keys(fs.replaced).sort();
+      for (let i = 0; i < rep.length; i += 1) k += `${rep[i]}:${fs.replaced[rep[i]]},`;
+    }
+  } else {
+    k += "|";
+  }
+  return k;
 }
 
 function cloneJson(value) {
@@ -345,6 +389,7 @@ class FunctionBackedBattleResolver {
     this.autoLevelUp = config.autoLevelUp !== false;
     this.runtime = loadFunctionsRuntime(project);
     this.enableBattleEstimateCache = config.enableBattleEstimateCache !== false;
+    this.enableFastBattleEstimateCache = config.enableFastBattleEstimateCache !== false;
     this.battleEstimateCacheLimit = Number(config.battleEstimateCacheLimit || 4096);
     this.fastRejectClassifier = typeof config.fastRejectClassifier === "function"
       ? config.fastRejectClassifier
@@ -356,6 +401,9 @@ class FunctionBackedBattleResolver {
   }
 
   battleEstimateCacheKey(state, floorId, x, y, enemyId) {
+    if (this.enableFastBattleEstimateCache) {
+      return buildFastBattleEstimateKey(state, floorId, x, y, enemyId);
+    }
     const hero = state.hero || {};
     return JSON.stringify({
       floorId,
@@ -379,7 +427,7 @@ class FunctionBackedBattleResolver {
     });
   }
 
-  cacheGet(name, cache, key) {
+  cacheGet(name, cache, key, tracker) {
     if (!this.enableBattleEstimateCache || !key) return undefined;
     const stats = this.cacheStats[name];
     if (!cache.has(key)) {
@@ -394,24 +442,41 @@ class FunctionBackedBattleResolver {
       const avgComputeMs = stats.stores > 0 ? Number(stats.computeMs || 0) / stats.stores : 0;
       stats.estimatedMsSaved = Number(stats.estimatedMsSaved || 0) + avgComputeMs;
     }
+    if (this.enableFastBattleEstimateCache) {
+      return value;
+    }
+    if (tracker && typeof tracker.timeStabilizationSubphase === "function") {
+      return tracker.timeStabilizationSubphase("battleEstimateCacheHitReturn", () => cloneJson(value));
+    }
     return cloneJson(value);
   }
 
-  cacheSet(name, cache, key, value, limit, computeMs) {
+  cacheSet(name, cache, key, value, limit, computeMs, tracker) {
     if (!this.enableBattleEstimateCache || !key) return value;
     const stats = this.cacheStats[name];
-    cache.set(key, cloneJson(value));
+    const storedValue = this.enableFastBattleEstimateCache
+      ? (value && typeof value === "object" ? Object.freeze(value) : value)
+      : cloneJson(value);
+    cache.set(key, storedValue);
     if (stats) {
       stats.stores += 1;
+      if (tracker && typeof tracker.increment === "function") {
+        tracker.increment("battleEstimateStores", 1);
+      }
       if (Number.isFinite(Number(computeMs))) stats.computeMs = Number(stats.computeMs || 0) + Number(computeMs);
     }
     const maxSize = Math.max(0, Number(limit || this.battleEstimateCacheLimit || 0));
     while (maxSize > 0 && cache.size > maxSize) {
       const firstKey = cache.keys().next().value;
       cache.delete(firstKey);
-      if (stats) stats.evictions += 1;
+      if (stats) {
+        stats.evictions += 1;
+        if (tracker && typeof tracker.increment === "function") {
+          tracker.increment("battleEstimateEvictions", 1);
+        }
+      }
     }
-    return value;
+    return storedValue;
   }
 
   getCacheStats() {
@@ -459,12 +524,52 @@ class FunctionBackedBattleResolver {
   }
 
   evaluateBattle(state, floorId, x, y, enemyId) {
-    const key = this.battleEstimateCacheKey(state, floorId, x, y, enemyId);
-    const cached = this.cacheGet("battleEstimate", this.battleEstimateCache, key);
-    if (cached) return cached;
+    const tracker = getActivePerfTracker();
+    let key;
+    if (tracker && typeof tracker.timeStabilizationSubphase === "function") {
+      key = tracker.timeStabilizationSubphase("battleEstimateKeyBuild", () => (
+        this.battleEstimateCacheKey(state, floorId, x, y, enemyId)
+      ));
+    } else {
+      key = this.battleEstimateCacheKey(state, floorId, x, y, enemyId);
+    }
+
+    let cached;
+    if (tracker && typeof tracker.timeStabilizationSubphase === "function") {
+      cached = tracker.timeStabilizationSubphase("battleEstimateCacheLookup", () => (
+        this.cacheGet("battleEstimate", this.battleEstimateCache, key, tracker)
+      ));
+    } else {
+      cached = this.cacheGet("battleEstimate", this.battleEstimateCache, key);
+    }
+    if (cached) {
+      if (tracker && typeof tracker.increment === "function") {
+        tracker.increment("battleEstimateCacheHits", 1);
+      }
+      return cached;
+    }
+
+    if (tracker && typeof tracker.increment === "function") {
+      tracker.increment("battleEstimateCacheMisses", 1);
+    }
+
     const startedAt = Date.now();
-    const result = this.evaluateBattleUncached(state, floorId, x, y, enemyId);
-    return this.cacheSet("battleEstimate", this.battleEstimateCache, key, result, this.battleEstimateCacheLimit, Date.now() - startedAt);
+    let result;
+    if (tracker && typeof tracker.timeStabilizationSubphase === "function") {
+      result = tracker.timeStabilizationSubphase("battleEstimateUncachedCompute", () => (
+        this.evaluateBattleUncached(state, floorId, x, y, enemyId)
+      ));
+    } else {
+      result = this.evaluateBattleUncached(state, floorId, x, y, enemyId);
+    }
+    const computeMs = Date.now() - startedAt;
+
+    if (tracker && typeof tracker.timeStabilizationSubphase === "function") {
+      return tracker.timeStabilizationSubphase("battleEstimateCacheStore", () => (
+        this.cacheSet("battleEstimate", this.battleEstimateCache, key, result, this.battleEstimateCacheLimit, computeMs, tracker)
+      ));
+    }
+    return this.cacheSet("battleEstimate", this.battleEstimateCache, key, result, this.battleEstimateCacheLimit, computeMs);
   }
 
   classifyAutoBattleFastReject(state, floorId, x, y, enemyId) {

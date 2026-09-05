@@ -365,6 +365,10 @@ class StaticSimulator {
     this.dominanceSummaryFn = config.dominanceSummaryFn || buildDominanceSummary;
     this.dominatesFn = config.dominatesFn || dominatesSummary;
     this.battleResolver = config.battleResolver || new UnsupportedBattleResolver();
+    this.enableFastBattleEstimateCache = config.enableFastBattleEstimateCache !== false;
+    if (config.enableFastBattleEstimateCache !== undefined && this.battleResolver && this.battleResolver.enableFastBattleEstimateCache !== undefined) {
+      this.battleResolver.enableFastBattleEstimateCache = Boolean(config.enableFastBattleEstimateCache);
+    }
     this.doorResolver = config.doorResolver || new GenericDoorResolver();
     this.equipmentResolver = config.equipmentResolver || new EquipmentResolver();
     this.eventResolver = config.eventResolver || new EventResolver({
