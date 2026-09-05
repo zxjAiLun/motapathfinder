@@ -154,6 +154,7 @@ function createPerfTracker(options) {
     hazardBlockIndexCalls: 0,
     hazardBlockIndexFastCalls: 0,
     hazardBlockIndexLegacyCalls: 0,
+    hazardBlockIndexCacheHits: 0,
     hazardCellsScanned: 0,
     hazardBlocksMaterialized: 0,
     hazardZoneEnemies: 0,

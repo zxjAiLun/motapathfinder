@@ -2764,6 +2764,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.10b human-hint inventory, ablation ladder, architectural ceiling, and terminal-only blind-spec contract"
     },
+    "shared-solver/check-dp-hot-path.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-dp-observer.js": {
       "grade": "unit",
       "allowsNotFound": false,

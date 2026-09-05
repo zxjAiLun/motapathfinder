@@ -34,9 +34,25 @@ function addDamage(damage, type, loc, value, label) {
   type[loc][label] = true;
 }
 
+const BLOCK_INDEX_CACHE_KEY = "__blockIndexCache";
+
 function buildBlockIndex(project, state, floorId, perfTracker, options = {}) {
   const blocks = {};
   const useFastPath = options.enableFastHazardBlockIndex !== false;
+
+  // PR-5.24g: memoize block index per floorState object reference.
+  // The block index depends only on (project, floorId, floorState.removed, floorState.replaced).
+  // Within a single search, identical floorState objects (same reference) always
+  // produce identical block indexes. The cache is stored as a non-enumerable
+  // property on the floorState object and is automatically invalidated when
+  // the floorState object is replaced (a new object reference means a new key).
+  const floorState = state.floorStates && state.floorStates[floorId];
+  if (floorState && floorState[BLOCK_INDEX_CACHE_KEY] && useFastPath) {
+    if (perfTracker && typeof perfTracker.increment === "function") {
+      perfTracker.increment("hazardBlockIndexCacheHits", 1);
+    }
+    return floorState[BLOCK_INDEX_CACHE_KEY];
+  }
 
   if (useFastPath) {
     if (perfTracker && typeof perfTracker.increment === "function") {
@@ -58,6 +74,21 @@ function buildBlockIndex(project, state, floorId, perfTracker, options = {}) {
         tile,
       };
     });
+
+    // Cache the result for future identical floorState references
+    if (floorState && useFastPath) {
+      try {
+        Object.defineProperty(floorState, BLOCK_INDEX_CACHE_KEY, {
+          value: blocks,
+          enumerable: false,
+          writable: true,
+          configurable: true,
+        });
+      } catch (_) {
+        // If defineProperty fails (frozen object etc), just skip caching
+      }
+    }
+
     return blocks;
   }
 
