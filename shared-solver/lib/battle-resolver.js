@@ -29,47 +29,97 @@ function stableFloorState(floorState) {
   return { removed, replaced };
 }
 
+function buildLegacyBattleEstimateKey(state, floorId, x, y, enemyId) {
+  const hero = state.hero || {};
+  return JSON.stringify({
+    floorId,
+    x,
+    y,
+    enemyId,
+    hero: {
+      hp: Number(hero.hp || 0),
+      atk: Number(hero.atk || 0),
+      def: Number(hero.def || 0),
+      mdef: Number(hero.mdef || 0),
+      lv: Number(hero.lv || 0),
+      hpmax: Number(hero.hpmax || 0),
+      mana: Number(hero.mana || 0),
+      manamax: Number(hero.manamax || 0),
+      equipment: Array.isArray(hero.equipment) ? hero.equipment.slice().sort() : [],
+    },
+    inventory: stableObject(state.inventory),
+    flags: stableObject(state.flags),
+    localMutations: stableFloorState(((state.floorStates || {})[floorId]) || {}),
+  });
+}
+
 function buildFastBattleEstimateKey(state, floorId, x, y, enemyId) {
-  const h = state.hero || {};
-  let k = `${floorId}|${x}|${y}|${enemyId}|${h.hp || 0},${h.atk || 0},${h.def || 0},${h.mdef || 0},${h.lv || 0},${h.hpmax || 0},${h.mana || 0},${h.manamax || 0}|`;
-  if (Array.isArray(h.equipment) && h.equipment.length > 0) {
-    k += (h.equipment.length === 1 ? h.equipment[0] : h.equipment.slice().sort().join(",")) + "|";
-  } else {
-    k += "|";
-  }
+  const hero = state.hero || {};
+  const eq = Array.isArray(hero.equipment) && hero.equipment.length > 0
+    ? (hero.equipment.length === 1 ? hero.equipment : hero.equipment.slice().sort())
+    : [];
+
+  const invList = [];
   const inv = state.inventory;
   if (inv) {
     const keys = Object.keys(inv).sort();
     for (let i = 0; i < keys.length; i += 1) {
       const v = inv[keys[i]];
-      if (v != null && v !== 0) k += `${keys[i]}:${v},`;
+      if (v != null && v !== 0) invList.push(keys[i], v);
     }
   }
-  k += "|";
-  const flg = state.flags;
-  if (flg) {
-    const keys = Object.keys(flg).sort();
+
+  const flagsList = [];
+  const flags = state.flags;
+  if (flags) {
+    const keys = Object.keys(flags).sort();
     for (let i = 0; i < keys.length; i += 1) {
-      const v = flg[keys[i]];
-      if (v != null && v !== 0) k += `${keys[i]}:${v},`;
+      const v = flags[keys[i]];
+      if (v != null && v !== 0) flagsList.push(keys[i], v);
     }
   }
-  k += "|";
+
   const fs = state.floorStates && state.floorStates[floorId];
+  const remList = [];
+  const repList = [];
   if (fs) {
     if (fs.removed) {
       const rk = Object.keys(fs.removed).sort();
-      for (let i = 0; i < rk.length; i += 1) k += `${rk[i]},`;
+      for (let i = 0; i < rk.length; i += 1) {
+        if (fs.removed[rk[i]]) remList.push(rk[i]);
+      }
     }
-    k += "|";
     if (fs.replaced) {
-      const rep = Object.keys(fs.replaced).sort();
-      for (let i = 0; i < rep.length; i += 1) k += `${rep[i]}:${fs.replaced[rep[i]]},`;
+      const rk = Object.keys(fs.replaced).sort();
+      for (let i = 0; i < rk.length; i += 1) {
+        if (fs.replaced[rk[i]] != null) repList.push(rk[i], fs.replaced[rk[i]]);
+      }
+    }
+  }
+
+  return JSON.stringify([
+    floorId, x, y, enemyId,
+    Number(hero.hp || 0), Number(hero.atk || 0), Number(hero.def || 0), Number(hero.mdef || 0),
+    Number(hero.lv || 0), Number(hero.hpmax || 0), Number(hero.mana || 0), Number(hero.manamax || 0),
+    eq, invList, flagsList, remList, repList,
+  ]);
+}
+
+function deepFreeze(obj) {
+  if (obj == null || typeof obj !== "object") return obj;
+  if (Object.isFrozen(obj)) return obj;
+  Object.freeze(obj);
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i += 1) {
+      deepFreeze(obj[i]);
     }
   } else {
-    k += "|";
+    const keys = Object.keys(obj);
+    for (let i = 0; i < keys.length; i += 1) {
+      deepFreeze(obj[keys[i]]);
+    }
   }
-  return k;
+  return obj;
 }
 
 function cloneJson(value) {
@@ -404,27 +454,7 @@ class FunctionBackedBattleResolver {
     if (this.enableFastBattleEstimateCache) {
       return buildFastBattleEstimateKey(state, floorId, x, y, enemyId);
     }
-    const hero = state.hero || {};
-    return JSON.stringify({
-      floorId,
-      x,
-      y,
-      enemyId,
-      hero: {
-        hp: Number(hero.hp || 0),
-        atk: Number(hero.atk || 0),
-        def: Number(hero.def || 0),
-        mdef: Number(hero.mdef || 0),
-        lv: Number(hero.lv || 0),
-        hpmax: Number(hero.hpmax || 0),
-        mana: Number(hero.mana || 0),
-        manamax: Number(hero.manamax || 0),
-        equipment: Array.isArray(hero.equipment) ? hero.equipment.slice().sort() : [],
-      },
-      inventory: stableObject(state.inventory),
-      flags: stableObject(state.flags),
-      localMutations: stableFloorState(((state.floorStates || {})[floorId]) || {}),
-    });
+    return buildLegacyBattleEstimateKey(state, floorId, x, y, enemyId);
   }
 
   cacheGet(name, cache, key, tracker) {
@@ -454,8 +484,11 @@ class FunctionBackedBattleResolver {
   cacheSet(name, cache, key, value, limit, computeMs, tracker) {
     if (!this.enableBattleEstimateCache || !key) return value;
     const stats = this.cacheStats[name];
+    // PR-5.24g Iteration 2 Repair 1: Clone ONCE on store, then recursively deepFreeze.
+    // Cache hits return the immutable snapshot directly without hit-time cloning.
+    // Original result returned to caller or in runtime/project is never frozen or shared.
     const storedValue = this.enableFastBattleEstimateCache
-      ? (value && typeof value === "object" ? Object.freeze(value) : value)
+      ? deepFreeze(cloneJson(value))
       : cloneJson(value);
     cache.set(key, storedValue);
     if (stats) {
@@ -745,6 +778,9 @@ class FunctionBackedBattleResolver {
 module.exports = {
   buildBattleEvaluationProjection,
   canProjectBattleEvaluation,
+  buildFastBattleEstimateKey,
+  buildLegacyBattleEstimateKey,
+  deepFreeze,
   FunctionBackedBattleResolver,
   UnsupportedBattleResolver,
 };

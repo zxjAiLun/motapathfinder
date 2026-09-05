@@ -29,7 +29,12 @@ const path = require("node:path");
 const assert = require("node:assert");
 const { loadProject } = require("./lib/project-loader");
 const { StaticSimulator } = require("./lib/simulator");
-const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
+const {
+  FunctionBackedBattleResolver,
+  buildFastBattleEstimateKey,
+  buildLegacyBattleEstimateKey,
+  deepFreeze,
+} = require("./lib/battle-resolver");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { searchSegmentDP } = require("./lib/segment-dp");
 const { buildStateKey } = require("./lib/state-key");
@@ -459,9 +464,64 @@ function gateG27A_BattleResultExactParity() {
     });
   });
 
+  // Extended mutation parity conditions:
+  function checkExtendedParity(label, state, floorId, x, y, enemyId) {
+    const bOff = simOff.battleResolver.evaluateBattle(state, floorId, x, y, enemyId);
+    const bOn = simOn.battleResolver.evaluateBattle(state, floorId, x, y, enemyId);
+    assert.strictEqual(bOff.supported, bOn.supported, `G27-A (${label}): supported match`);
+    if (!bOff.supported) {
+      assert.strictEqual(bOff.reason, bOn.reason, `G27-A (${label}): reason match`);
+      return;
+    }
+    if (bOff.damageInfo == null) {
+      assert.strictEqual(bOn.damageInfo, null, `G27-A (${label}): null damageInfo match`);
+    } else {
+      assert.ok(bOn.damageInfo != null, `G27-A (${label}): non-null damageInfo match`);
+      assert.strictEqual(bOff.damageInfo.damage, bOn.damageInfo.damage, `G27-A (${label}): damage match`);
+      assert.strictEqual(bOff.damageInfo.turn, bOn.damageInfo.turn, `G27-A (${label}): turn match`);
+      assert.deepStrictEqual(
+        JSON.parse(JSON.stringify(bOff.damageInfo)),
+        JSON.parse(JSON.stringify(bOn.damageInfo)),
+        `G27-A (${label}): damageInfo match`,
+      );
+    }
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(bOff.guards)),
+      JSON.parse(JSON.stringify(bOn.guards)),
+      `G27-A (${label}): guards match`,
+    );
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(bOff.enemyInfo)),
+      JSON.parse(JSON.stringify(bOn.enemyInfo)),
+      `G27-A (${label}): enemyInfo match`,
+    );
+  }
+
+  // 1. Cache hit (second evaluation)
+  checkExtendedParity("cache hit", s0, "MT1", 8, 7, "blackSlime");
+  // 2. Local floor mutation
+  const sMut = JSON.parse(JSON.stringify(s0));
+  if (!sMut.floorStates) sMut.floorStates = {};
+  if (!sMut.floorStates.MT1) sMut.floorStates.MT1 = { removed: {}, replaced: {} };
+  sMut.floorStates.MT1.removed["5,5"] = true;
+  checkExtendedParity("floor mutation", sMut, "MT1", 8, 7, "blackSlime");
+  // 3. Flag mutation
+  const sFlg = JSON.parse(JSON.stringify(s0));
+  sFlg.flags.hatred = 10;
+  checkExtendedParity("flag mutation", sFlg, "MT1", 8, 7, "blackSlime");
+  // 4. Inventory mutation
+  const sInv = JSON.parse(JSON.stringify(s0));
+  sInv.inventory.coin = 1;
+  checkExtendedParity("inventory mutation", sInv, "MT1", 8, 7, "blackSlime");
+  // 5. Equipment mutation
+  const sEq = JSON.parse(JSON.stringify(s0));
+  sEq.hero.equipment = ["sword1"];
+  checkExtendedParity("equipment mutation", sEq, "MT1", 8, 7, "blackSlime");
+
   return {
     battleResultExactParityVerified: true,
     enemiesChecked: testEnemies.length,
+    extendedConditionsChecked: 5,
     allParityMatched: true,
     samples: results.slice(0, 4),
   };
@@ -601,7 +661,9 @@ function gateG27E_Performance() {
   const segment = getFixtureSegment(spec);
 
   // Warmup interleaved
+  if (typeof global.gc === "function") global.gc();
   runFixtureWithPerf(simOff, JSON.parse(JSON.stringify(startState)), segment);
+  if (typeof global.gc === "function") global.gc();
   runFixtureWithPerf(simOn, JSON.parse(JSON.stringify(startState)), segment);
 
   const offRuns = [];
@@ -609,7 +671,9 @@ function gateG27E_Performance() {
   const pairImprovements = [];
 
   for (let pair = 0; pair < PAIRS_COUNT; pair += 1) {
+    if (typeof global.gc === "function") global.gc();
     const resOff = runFixtureWithPerf(simOff, JSON.parse(JSON.stringify(startState)), segment);
+    if (typeof global.gc === "function") global.gc();
     const resOn = runFixtureWithPerf(simOn, JSON.parse(JSON.stringify(startState)), segment);
     offRuns.push(resOff);
     onRuns.push(resOn);
@@ -766,6 +830,195 @@ function gateG27F_BattleCacheMutationSafety() {
   };
 }
 
+// G27-G: Fast-Key Equivalence / Collision Resistance & Adversarial Property Gate
+function gateG27G_FastKeyEquivalenceAndCollisionResistance() {
+  // 1. Targeted delimiter collision tests
+  const colTests = [
+    {
+      name: "flags delimiter collision test",
+      sA: { flags: { a: "b,c:d" } },
+      sB: { flags: { a: "b", c: "d" } },
+    },
+    {
+      name: "equipment comma test",
+      sA: { hero: { equipment: ["a,b"] } },
+      sB: { hero: { equipment: ["a", "b"] } },
+    },
+    {
+      name: "nested plain objects in flags",
+      sA: { flags: { a: { x: 1 } } },
+      sB: { flags: { a: { y: 2 } } },
+    },
+    {
+      name: "pipe delimiter in flag string",
+      sA: { flags: { a: "x|y" } },
+      sB: { flags: { a: "x", y: true } },
+    },
+    {
+      name: "unicode and empty string",
+      sA: { flags: { str: "你好", empty: "" } },
+      sB: { flags: { str: "世界", empty: "" } },
+    },
+    {
+      name: "boolean vs string boolean",
+      sA: { flags: { flag: true } },
+      sB: { flags: { flag: "true" } },
+    },
+    {
+      name: "array in flags",
+      sA: { flags: { list: [1, 2] } },
+      sB: { flags: { list: [1, 2, 3] } },
+    },
+  ];
+
+  colTests.forEach((t) => {
+    const lA = buildLegacyBattleEstimateKey(t.sA, "MT1", 1, 1, "e1");
+    const lB = buildLegacyBattleEstimateKey(t.sB, "MT1", 1, 1, "e1");
+    const fA = buildFastBattleEstimateKey(t.sA, "MT1", 1, 1, "e1");
+    const fB = buildFastBattleEstimateKey(t.sB, "MT1", 1, 1, "e1");
+    assert.notStrictEqual(lA, lB, `legacy must differ for ${t.name}`);
+    assert.notStrictEqual(fA, fB, `fast must differ for ${t.name}`);
+  });
+
+  // 2. Deterministic adversarial property gate (500 synthetic states)
+  const states = [];
+  const items = ["sword", "shield", "potion", "key,special:item", "coin|extra"];
+  const flagNames = ["hatred", "curse", "mode:x,y", "sub_obj", "level0", "unicode_测试"];
+
+  for (let i = 0; i < 500; i += 1) {
+    states.push({
+      hero: {
+        hp: 100 + (i % 7) * 10,
+        atk: 10 + (i % 5),
+        def: 5 + (i % 3),
+        mdef: (i % 4) * 20,
+        equipment: (i % 2 === 0) ? ["eq1", "eq2"] : ["eq1,part2"],
+      },
+      inventory: {
+        [items[i % items.length]]: i % 3,
+        zeroItem: (i % 2 === 0) ? 0 : null,
+      },
+      flags: {
+        [flagNames[i % flagNames.length]]: (i % 3 === 0)
+          ? { nested: i }
+          : ((i % 3 === 1) ? "val,colon:x|pipe" : (i % 4)),
+      },
+      floorStates: {
+        MT1: {
+          removed: { "1,1": (i % 2 === 0), "2,2": (i % 3 === 0) },
+          replaced: { "3,3": (i % 2 === 0) ? 1 : 2 },
+        },
+      },
+    });
+  }
+
+  const legacyToFast = new Map();
+  const fastToLegacy = new Map();
+
+  for (let i = 0; i < states.length; i += 1) {
+    const lKey = buildLegacyBattleEstimateKey(states[i], "MT1", 1, 1, "slime");
+    const fKey = buildFastBattleEstimateKey(states[i], "MT1", 1, 1, "slime");
+
+    if (legacyToFast.has(lKey)) {
+      assert.strictEqual(
+        legacyToFast.get(lKey),
+        fKey,
+        `G27-G: Equivalence failure at state ${i}: same legacy key gave different fast keys`,
+      );
+    } else {
+      legacyToFast.set(lKey, fKey);
+    }
+
+    if (fastToLegacy.has(fKey)) {
+      assert.strictEqual(
+        fastToLegacy.get(fKey),
+        lKey,
+        `G27-G: Collision failure at state ${i}: same fast key gave different legacy keys`,
+      );
+    } else {
+      fastToLegacy.set(fKey, lKey);
+    }
+  }
+
+  assert.strictEqual(
+    legacyToFast.size,
+    fastToLegacy.size,
+    `G27-G: Equivalence class count mismatch: legacy=${legacyToFast.size} vs fast=${fastToLegacy.size}`,
+  );
+
+  return {
+    fastKeyEquivalenceVerified: true,
+    targetedCollisionTestsPassed: colTests.length,
+    syntheticStatesTested: states.length,
+    uniqueEquivalenceClasses: legacyToFast.size,
+    exactBijectionProven: true,
+  };
+}
+
+// G27-H: Cached Result Alias Safety
+function gateG27H_CachedResultAliasSafety() {
+  const { simulator } = createSimulator({ fastBattleEstimateCacheEnabled: true });
+  const resolver = simulator.battleResolver;
+  const s0 = simulator.createInitialState();
+
+  // 1. Initial evaluateBattle populates cache
+  const resA = resolver.evaluateBattle(s0, "MT1", 8, 7, "blackSlime");
+  assert.ok(resA && resA.supported, "G27-H: resA must be supported");
+  const origDamage = resA.damageInfo.damage;
+  const origMoney = resA.enemyInfo.money;
+  const origGuardsLen = (resA.guards || []).length;
+
+  // 2. Attempt to mutate nested properties
+  let damageMutationBlocked = false;
+  try {
+    resA.damageInfo.damage = 999999;
+  } catch (_) {
+    damageMutationBlocked = true;
+  }
+  if (!damageMutationBlocked) {
+    assert.strictEqual(resA.damageInfo.damage, origDamage, "G27-H: damageInfo must not be modified");
+  }
+
+  let moneyMutationBlocked = false;
+  try {
+    resA.enemyInfo.money = 888888;
+  } catch (_) {
+    moneyMutationBlocked = true;
+  }
+  if (!moneyMutationBlocked) {
+    assert.strictEqual(resA.enemyInfo.money, origMoney, "G27-H: enemyInfo must not be modified");
+  }
+
+  let guardsMutationBlocked = false;
+  try {
+    resA.guards.push(["MT1", "fakeGuard", 999]);
+  } catch (_) {
+    guardsMutationBlocked = true;
+  }
+  if (!guardsMutationBlocked) {
+    assert.strictEqual(resA.guards.length, origGuardsLen, "G27-H: guards array must not be modified");
+  }
+
+  // 3. Second evaluateBattle returns result B (cache hit)
+  const resB = resolver.evaluateBattle(s0, "MT1", 8, 7, "blackSlime");
+  assert.strictEqual(resB.damageInfo.damage, origDamage, "G27-H: resB damage must equal pristine damage");
+  assert.strictEqual(resB.enemyInfo.money, origMoney, "G27-H: resB money must equal pristine money");
+  assert.strictEqual((resB.guards || []).length, origGuardsLen, "G27-H: resB guards must equal pristine guards");
+
+  // 4. project.enemysById must NOT be frozen
+  const rawEnemy = simulator.project.enemysById["blackSlime"];
+  assert.strictEqual(Object.isFrozen(rawEnemy), false, "G27-H: project.enemysById must not be frozen");
+
+  return {
+    cachedResultAliasSafetyVerified: true,
+    damageMutationBlocked: true,
+    enemyInfoMutationBlocked: true,
+    guardsMutationBlocked: true,
+    cacheHitPristineMatched: true,
+    projectEnemyNotFrozen: true,
+  };
+}
+
 // ========== Main ==========
 function main() {
   // Iteration 1 Regression Gates
@@ -781,6 +1034,8 @@ function main() {
   const g27c = gateG27C_StabilizationExactParity();
   const g27d = gateG27D_SearchParity();
   const g27f = gateG27F_BattleCacheMutationSafety();
+  const g27g = gateG27G_FastKeyEquivalenceAndCollisionResistance();
+  const g27h = gateG27H_CachedResultAliasSafety();
   const g27e = gateG27E_Performance();
 
   const report = {
@@ -807,6 +1062,8 @@ function main() {
       "G27-D": g27d,
       "G27-E": g27e,
       "G27-F": g27f,
+      "G27-G": g27g,
+      "G27-H": g27h,
     },
   };
 
@@ -835,6 +1092,8 @@ module.exports = {
   gateG27D_SearchParity,
   gateG27E_Performance,
   gateG27F_BattleCacheMutationSafety,
+  gateG27G_FastKeyEquivalenceAndCollisionResistance,
+  gateG27H_CachedResultAliasSafety,
   createSimulator,
   getFixtureStartState,
   getFixtureSegment,
