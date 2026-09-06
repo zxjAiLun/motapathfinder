@@ -52,6 +52,86 @@ function isAutoBattleTile(tile) {
   return isEnemyTile(tile) && (tile.trigger == null || tile.trigger === "battle");
 }
 
+const BFS_MAX_CELLS = 1024;
+const bfsQueueX = new Int16Array(BFS_MAX_CELLS);
+const bfsQueueY = new Int16Array(BFS_MAX_CELLS);
+const bfsQueueDist = new Int16Array(BFS_MAX_CELLS);
+const bfsVisited = new Uint16Array(BFS_MAX_CELLS);
+let bfsGeneration = 1;
+
+function collectTargetsFast(project, state, options) {
+  const floorId = state.floorId;
+  const floor = project.floorsById[floorId];
+  if (!floor) return [];
+  const width = floor.width;
+  const height = floor.height;
+
+  bfsGeneration += 1;
+  if (bfsGeneration >= 65530) {
+    bfsVisited.fill(0);
+    bfsGeneration = 1;
+  }
+
+  const startX = state.hero.loc.x;
+  const startY = state.hero.loc.y;
+  bfsQueueX[0] = startX;
+  bfsQueueY[0] = startY;
+  bfsQueueDist[0] = 0;
+  bfsVisited[startY * width + startX] = bfsGeneration;
+
+  const targets = [];
+  let head = 0;
+  let tail = 1;
+
+  while (head < tail) {
+    const cx = bfsQueueX[head];
+    const cy = bfsQueueY[head];
+    const cdist = bfsQueueDist[head];
+    head += 1;
+
+    for (let i = 0; i < 4; i += 1) {
+      const dir = DIRECTIONS[i];
+      const delta = DIRECTION_DELTAS[dir];
+      const nx = cx + delta.x;
+      const ny = cy + delta.y;
+      if (!floorHasCoordinate(project, floorId, nx, ny)) continue;
+
+      const cellIdx = ny * width + nx;
+      if (bfsVisited[cellIdx] === bfsGeneration) continue;
+
+      const tile = getTileDefinitionAt(project, state, floorId, nx, ny);
+      const target = options.evaluateTarget(project, state, tile, nx, ny);
+      if (target) {
+        targets.push({
+          ...target,
+          x: nx,
+          y: ny,
+          distance: cdist + 1,
+          approach: dir,
+        });
+        if (target.continuePast === true) {
+          bfsVisited[cellIdx] = bfsGeneration;
+          bfsQueueX[tail] = nx;
+          bfsQueueY[tail] = ny;
+          bfsQueueDist[tail] = cdist + 1;
+          tail += 1;
+        }
+        continue;
+      }
+
+      if (!isAutoTraverseGivenTile(floor, tile, nx, ny)) continue;
+      if (typeof options.canTraverse === "function" && !options.canTraverse(project, state, tile, nx, ny)) continue;
+      bfsVisited[cellIdx] = bfsGeneration;
+      bfsQueueX[tail] = nx;
+      bfsQueueY[tail] = ny;
+      bfsQueueDist[tail] = cdist + 1;
+      tail += 1;
+    }
+  }
+
+  return targets;
+}
+
 function collectTargets(project, state, options) {
   const floorId = state.floorId;
   const floor = project.floorsById[floorId];
@@ -130,6 +210,7 @@ class AutoActionResolver {
     this.enableFastRejectSkip = config.enableFastRejectSkip === true;
     this.enableFastHazardBlockIndex = config.enableFastHazardBlockIndex !== false;
     this.enableHazardBlockIndexMemoization = config.enableHazardBlockIndexMemoization !== false;
+    this.enableFastCollectTargets = config.enableFastCollectTargets !== false;
     this.repeatUntilStable = config.repeatUntilStable === true;
     this.maxPasses = Number(config.maxPasses || 256);
   }
@@ -352,7 +433,8 @@ class AutoActionResolver {
       return { targets: [], hazards };
     }
 
-    const runCollect = () => collectTargets(project, state, {
+    const collector = this.enableFastCollectTargets ? collectTargetsFast : collectTargets;
+    const runCollect = () => collector(project, state, {
       evaluateTarget: (_, __, tile, x, y) => {
         if (!isAutoPickupTile(tile)) return null;
         return {
@@ -379,7 +461,8 @@ class AutoActionResolver {
       hazards = this.buildHazards(project, state, battleResolver, perfTracker);
     }
     const nearOnly = hasHazardAt(hazards, state.hero.loc.x, state.hero.loc.y, { damage: true, repulse: true, ambush: true });
-    const collector = nearOnly ? collectNearTargets : collectTargets;
+    const normalCollector = this.enableFastCollectTargets ? collectTargetsFast : collectTargets;
+    const collector = nearOnly ? collectNearTargets : normalCollector;
 
     const runCollect = () => {
       const traversalStarted = (perfTracker && typeof perfTracker.timeStabilizationSubphase === "function")
@@ -556,4 +639,10 @@ class AutoActionResolver {
 module.exports = {
   AUTO_BATTLE_BLOCKED_SPECIALS,
   AutoActionResolver,
+  collectTargets: collectTargetsFast,
+  collectTargetsLegacy: collectTargets,
+  collectNearTargets,
+  isAutoBattleTile,
+  isAutoPickupTile,
+  isAutoTraverseGivenTile,
 };

@@ -17,6 +17,7 @@
     "check:counterfactual-repair": "node check-counterfactual-repair.js",
     "check:isolated-batch": "node check-isolated-batch-equivalence.js",
     "check:dp:hot-path": "node --expose-gc check-dp-hot-path.js",
+    "check:mt3:hot-path": "node --expose-gc check-mt3-mt4-hot-path.js",
     "check:state-deps": "npm run check:key-audit",
     "check:static": "npm run check:static:clean",
     "check:static:legacy": "npm run check:manifest && npm run check:teacher-divergence && npm run check:core && npm run check:cluster && npm run check:confluence && npm run check:pocket && npm run check:mt2-local-order && npm run check:onlyup:key-states && npm run check:onlyup:segments && npm run check:milestone:audit && npm run check:region-specs && npm run check:resource-timing && npm run check:resource-timing-model && npm run check:resource-deferral && npm run check:no-tower-solver-js && npm run check:mt2-branch && npm run check:auto-stabilize && npm run check:floor-scout && npm run check:checkpoint-repair && npm run check:productization && npm run check:key-audit && npm run check:stage:short",

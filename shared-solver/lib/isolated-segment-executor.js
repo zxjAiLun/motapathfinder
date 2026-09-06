@@ -46,6 +46,7 @@ function buildSimulatorProfile(simulator) {
     enableFastHazardBlockIndex: simulator.enableFastHazardBlockIndex !== false,
     enableHazardBlockIndexMemoization: simulator.enableHazardBlockIndexMemoization !== false,
     enableFastBattleEstimateCache: simulator.battleResolver ? simulator.battleResolver.enableFastBattleEstimateCache !== false : true,
+    enableFastCollectTargets: simulator.autoResolver ? simulator.autoResolver.enableFastCollectTargets !== false : true,
     enableCompiledEffectCache: Boolean(simulator.enableCompiledEffectCache),
     autoPickupEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoPickupEnabled) : true,
     autoBattleEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoBattleEnabled) : true,

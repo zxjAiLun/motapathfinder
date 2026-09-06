@@ -26,6 +26,7 @@ function buildSimulatorFromProfile(project, profile) {
   const enableFastHazardBlockIndex = profile ? profile.enableFastHazardBlockIndex !== false : true;
   const enableHazardBlockIndexMemoization = profile ? profile.enableHazardBlockIndexMemoization !== false : true;
   const enableFastBattleEstimateCache = profile ? profile.enableFastBattleEstimateCache !== false : true;
+  const enableFastCollectTargets = profile ? profile.enableFastCollectTargets !== false : true;
   const enableCompiledEffectCache = profile ? Boolean(profile.enableCompiledEffectCache) : false;
   const autoPickupEnabled = profile ? profile.autoPickupEnabled !== false : true;
   const autoBattleEnabled = profile ? profile.autoBattleEnabled !== false : true;
@@ -45,6 +46,7 @@ function buildSimulatorFromProfile(project, profile) {
     enableFastHazardBlockIndex,
     enableHazardBlockIndexMemoization,
     enableFastBattleEstimateCache,
+    enableFastCollectTargets,
     enableCompiledEffectCache,
     choiceResolver,
   };
@@ -62,6 +64,7 @@ function buildAppliedProfile(simulator) {
     enableFastHazardBlockIndex: simulator.enableFastHazardBlockIndex !== false,
     enableHazardBlockIndexMemoization: simulator.enableHazardBlockIndexMemoization !== false,
     enableFastBattleEstimateCache: simulator.battleResolver ? simulator.battleResolver.enableFastBattleEstimateCache !== false : true,
+    enableFastCollectTargets: simulator.autoResolver ? simulator.autoResolver.enableFastCollectTargets !== false : true,
     enableCompiledEffectCache: Boolean(simulator.enableCompiledEffectCache),
     autoPickupEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoPickupEnabled) : true,
     autoBattleEnabled: simulator.autoResolver ? Boolean(simulator.autoResolver.autoBattleEnabled) : true,
