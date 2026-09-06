@@ -1,6 +1,6 @@
 "use strict";
 
-const { buildDpStateKey, compareDpBest, searchDP } = require("./dp-search");
+const { buildDpStateKey, compareDpBest, searchDP, searchDPMultiRoot } = require("./dp-search");
 const { estimateBattleSurvivability } = require("./battle-thresholds");
 const {
   annotateStateResourceTiming,
@@ -2870,6 +2870,24 @@ function perfSnapshotCompact(perfTracker) {
   }
 }
 
+// PR-5.24h Iteration 2 — ONE live multi-root shared-DP segment search over
+// multiple canonical start candidates.  Root provenance is preserved per goal
+// (record.rootCandidateId); the pending agenda stays live inside the shared
+// search, so budget-limited interruption can never falsely claim exhaustion.
+function searchSegmentDPMultiRoot(simulator, startCandidates, segment, options) {
+  const config = { ...(options || {}) };
+  const startCandidatesNormalized = (startCandidates || []).map((candidate, index) => ({
+    state: candidate.state,
+    id: candidate.id || candidate.candidateId || `candidate-${index}`,
+    route: Array.isArray(candidate.route) ? candidate.route : (Array.isArray(candidate.state && candidate.state.route) ? candidate.state.route : []),
+    trace: Array.isArray(candidate.trace) ? candidate.trace : [],
+  }));
+  return searchSegmentDP(simulator, startCandidatesNormalized[0] && startCandidatesNormalized[0].state, segment, {
+    ...config,
+    startCandidates: startCandidatesNormalized,
+  });
+}
+
 function searchSegmentDP(simulator, startState, segment, options) {
   const config = options || {};
   // Iteration 3 – throughput profiling: install a lightweight perf tracker so the
@@ -2916,8 +2934,33 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
         ? startState.routeTrace
         : []
     : [];
-  const seed = cloneStateWithoutRouteTrace(startState);
-  seed.route = prefixRoute.slice();
+  // PR-5.24h Iteration 2 — multi-root shared DP: when config.startCandidates
+  // is provided (array of { state, id }), ONE live multi-root search is run
+  // over all candidates instead of one search per candidate.  Root provenance
+  // travels on the search nodes (rootCandidateId/rootIndex), never on the
+  // canonical state.
+  const startCandidates = Array.isArray(config.startCandidates) && config.startCandidates.length > 0
+    ? config.startCandidates
+    : null;
+  const rootSpecs = startCandidates
+    ? startCandidates.map((candidate, index) => {
+        const candidatePrefixRoute = Array.isArray(candidate.route)
+          ? candidate.route
+          : (Array.isArray(candidate.state && candidate.state.route) ? candidate.state.route : []);
+        const candidateSeed = cloneStateWithoutRouteTrace(candidate.state);
+        candidateSeed.route = candidatePrefixRoute.slice();
+        return {
+          state: candidateSeed,
+          rootCandidateId: candidate.id || `candidate-${index}`,
+          rootIndex: index,
+          prefixTrace: captureTrace && Array.isArray(candidate.trace) ? candidate.trace.slice() : [],
+        };
+      })
+    : null;
+  const seed = startCandidates
+    ? rootSpecs[0].state
+    : cloneStateWithoutRouteTrace(startState);
+  if (!startCandidates) seed.route = prefixRoute.slice();
   const resourceTimingOptions = buildResourceTimingOptions(
     dpConfig,
     segment,
@@ -3175,7 +3218,7 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
     segment,
     dpConfig.goalFeasibilityMode,
   );
-  const result = searchDP(simulator, seed, {
+  const searchOptions = {
     targetFloorId: segment.goal && segment.goal.floorId,
     maxExpansions,
     maxActionsPerState,
@@ -3219,9 +3262,6 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
     captureExpandedStates: dpConfig.captureExpandedStates === true || config.captureExpandedStates === true,
     captureExpandedStateLimit: number(dpConfig.captureExpandedStateLimit, config.captureExpandedStateLimit || 0),
     candidateKeyShadowRecorder: config.candidateKeyShadowRecorder || dpConfig.candidateKeyShadowRecorder || null,
-    // PR-5.24h G28-I TEST-ONLY pass-through (default null = unchanged behavior).
-    dpSeedAuthority: config.dpSeedAuthority || dpConfig.dpSeedAuthority || null,
-    dpSeedAuthorityDiagnostics: config.dpSeedAuthorityDiagnostics || dpConfig.dpSeedAuthorityDiagnostics || null,
     dpStateKeyBuilder: config.dpStateKeyBuilder || dpConfig.dpStateKeyBuilder || null,
     dpKeyProfile: config.dpKeyProfile || dpConfig.dpKeyProfile || null,
     initialRouteTracePrefix: prefixTrace,
@@ -3266,7 +3306,25 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
       simulator,
     ),
     progressGoal: segment.goal || null,
-  });
+  };
+  const result = startCandidates
+    ? searchDPMultiRoot(simulator, rootSpecs, searchOptions)
+    : searchDP(simulator, seed, searchOptions);
+  // Per-goal root provenance (multi-root only): map materialized goal states
+  // back to their producing root via object identity (selectGoalSkyline and
+  // the goal-skyline assembly preserve state identity).
+  let goalRootByState = null;
+  if (startCandidates) {
+    goalRootByState = new Map();
+    const skylineStates = result.goalSkylineStates || [];
+    const skylineRoots = result.goalSkylineRootCandidateIds || [];
+    skylineStates.forEach((state, index) => goalRootByState.set(state, skylineRoots[index] != null ? skylineRoots[index] : null));
+    if (!skylineStates.length) {
+      if (result.bestGoalState) goalRootByState.set(result.bestGoalState, result.bestGoalRootCandidateId != null ? result.bestGoalRootCandidateId : null);
+      if (result.goalState && !goalRootByState.has(result.goalState)) goalRootByState.set(result.goalState, result.bestGoalRootCandidateId != null ? result.bestGoalRootCandidateId : null);
+      if (result.firstGoalState && !goalRootByState.has(result.firstGoalState)) goalRootByState.set(result.firstGoalState, result.firstGoalRootCandidateId != null ? result.firstGoalRootCandidateId : null);
+    }
+  }
   const baseDpDiagnostics = (result.diagnostics && result.diagnostics.dp) || {};
   const expansionBudgetExhausted =
     typeof baseDpDiagnostics.expansionBudgetExhausted === "boolean"
@@ -3303,11 +3361,20 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
     stopOnFirstGoal: baseDpDiagnostics.stopOnFirstGoal,
   });
   if (perfRestoreTracker) perfRestoreTracker();
+  if (startCandidates && goalRootByState) {
+    goalSkyline.forEach((record) => {
+      record.rootCandidateId = goalRootByState.get(record.state) != null
+        ? goalRootByState.get(record.state)
+        : null;
+    });
+  }
   return {
     segmentId: segment.id,
     found: goalSkyline.length > 0,
     searchOutcome,
     startCandidateId: config.candidateId || null,
+    startCandidateIds: startCandidates ? rootSpecs.map((spec) => spec.rootCandidateId) : null,
+    multiRootSharedDp: Boolean(startCandidates),
     goalSkyline,
     bestSeen: result.bestSeenState,
     bestProgress: result.bestProgressState,
@@ -3332,7 +3399,10 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
         depth: (result.diagnostics && result.diagnostics.depth) || null,
         routeFree: (result.diagnostics && result.diagnostics.routeFree) || null,
         capturedExpandedStates: (result.diagnostics && result.diagnostics.capturedExpandedStates) || [],
-        seedAuthority: (result.diagnostics && result.diagnostics.seedAuthority) || null,
+        pendingByRoot: result.pendingByRoot || null,
+        expansionCountByRoot: result.expansionCountByRoot || null,
+        rootCandidateIds: result.rootCandidateIds || null,
+        rootCount: result.rootCount != null ? result.rootCount : null,
         registry: (result.diagnostics && result.diagnostics.registry) || null,
         goalProjectionCache: dependencyGraph &&
           typeof dependencyGraph.getProjectionCacheStats === "function"
@@ -4146,11 +4216,166 @@ function runSegmentAgainstFrontierLocal(
     return { kind, result };
   };
 
+  // PR-5.24h Iteration 2 — Arm B: ONE live multi-root shared-DP search over
+  // the whole input frontier (default OFF via enableMultiRootSharedDp).
+  // Activation guard (first version): >= 2 candidates, same segment/simulator/
+  // DP config (all candidates in this call share them by construction),
+  // stopOnFirstGoal=false, best-first agenda, and no wave-level probe caps.
+  // This is NOT progressive seeding: all roots live in one shared
+  // bestByKey/agenda/nodes/budget authority, so an incomplete (budget-limited)
+  // run keeps its pending agenda and can never falsely claim exhaustion.
+  const guardDpConfig = segmentDpOverrides(segment, config || {}, overrides || {});
+  const multiRootEligible = Boolean(
+    (config || {}).enableMultiRootSharedDp === true
+    && inputFrontier.length >= 2
+    && guardDpConfig.stopOnFirstGoal !== true
+    && (guardDpConfig.agendaMode || "best-first") === "best-first"
+    && !((config || {}).probeDeadlineMs != null || (config || {}).probeExpansionCap != null)
+  );
   // Work-conserving scheduler: first a fair pass over all candidates, then as
   // many retry rounds as needed for locally-stopped candidates while the
   // global budget still has room.
   const deferredQueue = [];
   let attemptOrdinal = 0;
+  if (multiRootEligible) {
+    const configuredRemainingRuntimeMs = config && config.deadlineMs
+      ? Math.max(0, number(config.deadlineMs, 0) - Date.now())
+      : null;
+    const globalRemainingRuntimeMs = globalBudget && globalBudget.requestedRuntimeMs > 0
+      ? Math.max(0, globalBudget.deadlineMs - Date.now())
+      : null;
+    const remainingRuntimeMs = configuredRemainingRuntimeMs == null
+      ? globalRemainingRuntimeMs
+      : globalRemainingRuntimeMs == null
+        ? configuredRemainingRuntimeMs
+        : Math.min(configuredRemainingRuntimeMs, globalRemainingRuntimeMs);
+    const globalRemainingExpansions = globalBudget && globalBudget.requestedExpansions > 0
+      ? Math.max(0, globalBudget.requestedExpansions - globalBudget.consumedExpansions)
+      : null;
+    if (globalBudget && (
+      (globalRemainingExpansions != null && globalRemainingExpansions <= 0) ||
+      (globalRemainingRuntimeMs != null && globalRemainingRuntimeMs <= 0)
+    )) {
+      globalBudget.stoppedReason = globalRemainingRuntimeMs != null && globalRemainingRuntimeMs <= 0
+        ? "time-limit"
+        : "expansion-limit";
+      inputFrontier.forEach((candidate) => setCompletion(candidate.id, "LOCAL_INCOMPLETE_PENDING"));
+      candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop += inputFrontier.length;
+    } else {
+      const dpOverrides = segmentDpOverrides(segment, config || {}, overrides || {});
+      if (globalRemainingExpansions != null) {
+        dpOverrides.maxExpansions = Math.min(
+          number(dpOverrides.maxExpansions, globalRemainingExpansions),
+          globalRemainingExpansions,
+        );
+      }
+      if (remainingRuntimeMs != null) {
+        dpOverrides.maxRuntimeMs = Math.max(1, Math.min(
+          number(dpOverrides.maxRuntimeMs, remainingRuntimeMs),
+          remainingRuntimeMs,
+        ));
+      }
+      if (config && config.maxHeapMb != null) dpOverrides.maxHeapMb = number(config.maxHeapMb, 0);
+      if (config && config.maxRssMb != null) dpOverrides.maxRssMb = number(config.maxRssMb, 0);
+      const sharedResult = searchSegmentDPMultiRoot(
+        simulator,
+        inputFrontier.map((candidate) => ({
+          state: candidate.state,
+          id: candidate.id,
+          route: candidate.route,
+          trace: candidate.trace,
+        })),
+        segment,
+        {
+          candidateId: `${segment.id}:multi-root-shared`,
+          candidateLimit,
+          perfProfile: config && config.perfProfile === true,
+          preserveSkylineRoles: Boolean(
+            (config || {}).preserveSkylineRoles ||
+            (config || {}).qualityFloor ||
+            (overrides || {}).preserveSkylineRoles,
+          ),
+          captureTrace: config && config.captureTrace === true,
+          captureExpandedStates: config && config.captureExpandedStates === true,
+          captureExpandedStateLimit: config && config.captureExpandedStateLimit,
+          candidateKeyShadowRecorder: config && config.candidateKeyShadowRecorder,
+          dpStateKeyBuilder: config && config.dpStateKeyBuilder,
+          dpKeyProfile: config && config.dpKeyProfile,
+          observer: config && config.observer,
+          observerIncludeExactStateKey: config && config.observerIncludeExactStateKey === true,
+          observerCaptureMode: config && config.observerCaptureMode,
+          observerCaptureDominanceWitnesses: config && config.observerCaptureDominanceWitnesses === true,
+          observerCaptureWitnessStates: config && config.observerCaptureWitnessStates === true,
+          objectiveSpec,
+          goalDependencyGraph,
+          goalDependencySegments: config && config.goalDependencySegments,
+          dpOverrides,
+        },
+      );
+      attempts.push(sharedResult);
+      if (config && config.pipelineObserver && typeof config.pipelineObserver.onAttempt === "function") {
+        try {
+          config.pipelineObserver.onAttempt({ segment, candidate: null, candidateIndex: 0, attempt: sharedResult });
+        } catch (error) {
+          // Pipeline observation is diagnostic-only and must not affect search.
+        }
+      }
+      const dp = sharedResult && sharedResult.diagnostics && sharedResult.diagnostics.dp;
+      if (dp && ["heap-limit", "rss-limit"].includes(dp.stoppedReason)) {
+        memoryLimited = true;
+        memoryStopReason = dp.stoppedReason;
+        if (globalBudget) globalBudget.stoppedReason = dp.stoppedReason;
+      }
+      if (globalBudget) {
+        globalBudget.consumedExpansions += number(dp && dp.expansions, 0);
+        globalBudget.consumedWallMs = Math.max(
+          globalBudget.consumedWallMs,
+          Date.now() - globalBudget.startedAt,
+        );
+      }
+      sharedResult.goalSkyline.forEach((goal) =>
+        nextCandidates.push({
+          ...goal,
+          id: `${segment.id}:${goal.rootCandidateId || "unknown-root"}:${goal.id}`,
+        }),
+      );
+      // Release heavy rawResult fields exactly like the legacy per-candidate arm.
+      sharedResult.rawResult = null;
+      if (sharedResult.diagnostics && sharedResult.diagnostics.dp) {
+        sharedResult.diagnostics.dp.goalSkyline = null;
+        sharedResult.diagnostics.dp.bestSeenState = null;
+        sharedResult.diagnostics.dp.bestProgressState = null;
+      }
+      if (typeof global.gc === "function") global.gc();
+      const sharedStoppedReason = dp && dp.stoppedReason;
+      const sharedSearchOutcome = dp && dp.searchOutcome;
+      const sharedSearchComplete = sharedStoppedReason == null && sharedSearchOutcome && sharedSearchOutcome.searchComplete === true;
+      const sharedBudgetStopped = (sharedStoppedReason === "time-limit" || sharedStoppedReason === "expansion-limit") ||
+        (dp && dp.expansionBudgetExhausted === true);
+      // Completion ledger (conservative first version, review hard contract):
+      // a root with goals is definitive FOUND; when the SHARED search stopped
+      // on budget/memory, every non-found root stays LOCAL_INCOMPLETE_PENDING
+      // (never guessed complete, never EXHAUSTED); terminal incompleteness
+      // (stoppedReason null, searchOutcome incomplete) is TERMINAL_INCOMPLETE.
+      inputFrontier.forEach((candidate) => {
+        const rootGoals = sharedResult.goalSkyline.filter((goal) => goal.rootCandidateId === candidate.id);
+        if (rootGoals.length > 0) {
+          setCompletion(candidate.id, "FOUND");
+        } else if (memoryLimited || sharedBudgetStopped) {
+          setCompletion(candidate.id, "LOCAL_INCOMPLETE_PENDING");
+          candidateSliceTelemetry.candidateSliceStillIncompleteAtGlobalStop += 1;
+        } else if (sharedSearchComplete) {
+          setCompletion(candidate.id, "COMPLETE");
+        } else {
+          setCompletion(candidate.id, "TERMINAL_INCOMPLETE");
+          candidateSliceTelemetry.candidateSliceTerminalIncomplete += 1;
+        }
+      });
+      candidateSliceTelemetry.candidateSliceInitialAttempts += 1;
+      candidateSliceTelemetry.multiRootSharedDp = true;
+      candidateSliceTelemetry.multiRootSharedExpansions = number(dp && dp.expansions, 0);
+    }
+  } else {
   for (let candidateIndex = 0; candidateIndex < inputFrontier.length; candidateIndex += 1) {
     const candidate = inputFrontier[candidateIndex];
     if (lifecycle && typeof lifecycle.emit === "function") {
@@ -4296,6 +4521,7 @@ function runSegmentAgainstFrontierLocal(
       setCompletion(candidate.id, "LOCAL_INCOMPLETE_PENDING");
     }
   }
+  } // end legacy per-candidate scheduler (Arm A) else-branch
   if (globalBudget && globalBudget.requestedRuntimeMs > 0) {
     candidateSliceTelemetry.unusedGlobalWallMsAtReturn = Math.max(
       0,
@@ -4363,6 +4589,7 @@ function runSegmentAgainstFrontierLocal(
     found: merged.length > 0,
     startCandidatesTried: attempts.length,
     startCandidatesAvailable: (frontier || []).length,
+    executionMode: multiRootEligible ? "multi-root-shared-dp" : "per-candidate",
     candidateSliceTelemetry,
     candidates: compactSegmentCandidates(merged),
     milestoneFrontierTrimmed: merged.milestoneFrontierTrimmed === true,
@@ -8926,6 +9153,7 @@ module.exports = {
   createGlobalBudget,
   summarizeGlobalBudget,
   searchSegmentDP,
+  searchSegmentDPMultiRoot,
   segmentCandidateLimit,
   summarizeEffectiveHero,
   summarizeHero,

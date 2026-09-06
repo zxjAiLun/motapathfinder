@@ -3156,6 +3156,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.4a Commit 3: multi-region-route.v1 composite, exact boundary fingerprints, result regions, unified entry"
     },
+    "shared-solver/check-multi-root-shared-dp.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-objective-safe-archive.js": {
       "grade": "unit",
       "allowsNotFound": false,

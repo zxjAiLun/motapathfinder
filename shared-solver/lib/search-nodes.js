@@ -1,6 +1,6 @@
 "use strict";
 
-function createRootNode(state, stateKey) {
+function createRootNode(state, stateKey, rootMeta) {
   return {
     nodeId: 0,
     parentId: null,
@@ -10,6 +10,12 @@ function createRootNode(state, stateKey) {
     depth: 0,
     order: 0,
     actionEntry: null,
+    // PR-5.24h Iteration 2: multi-root provenance lives on the SEARCH NODE,
+    // never in the canonical state (provenance is not game state and must not
+    // reach buildStateKey / buildDpStateKey / dominance).  Single-root searches
+    // pass null and keep node.rootCandidateId === null.
+    rootCandidateId: (rootMeta && rootMeta.rootCandidateId) || null,
+    rootIndex: rootMeta && rootMeta.rootIndex != null ? rootMeta.rootIndex : null,
   };
 }
 
@@ -55,6 +61,10 @@ function createChildNode(parentNode, state, stateKey, action, nodeId, order) {
     depth: parentNode ? parentNode.depth + 1 : 0,
     order: order == null ? nodeId : order,
     actionEntry: normalizeActionEntry(action),
+    // Root provenance is inherited from the parent chain (never re-derived,
+    // never stored on the canonical state).
+    rootCandidateId: parentNode ? parentNode.rootCandidateId || null : null,
+    rootIndex: parentNode && parentNode.rootIndex != null ? parentNode.rootIndex : null,
   };
 }
 

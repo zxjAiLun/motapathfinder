@@ -1111,7 +1111,29 @@ function createDpObserver(config) {
   };
 }
 
+function searchDPMultiRoot(simulator, initialRoots, options) {
+  const config = options || {};
+  const roots = (initialRoots || []).map((rootSpec, index) => ({
+    state: rootSpec.state,
+    rootCandidateId: rootSpec.rootCandidateId != null ? rootSpec.rootCandidateId : null,
+    rootIndex: rootSpec.rootIndex != null ? Number(rootSpec.rootIndex) : index,
+    prefixTrace: rootSpec.prefixTrace,
+  }));
+  return searchDPCore(simulator, roots, config);
+}
+
+// Legacy single-root entry point (behavior-preserving wrapper over the
+// multi-root core; rootCandidateId defaults to config.candidateId).
 function searchDP(simulator, initialState, options) {
+  const config = options || {};
+  return searchDPCore(simulator, [{
+    state: initialState,
+    rootCandidateId: config.candidateId != null ? config.candidateId : null,
+    rootIndex: 0,
+  }], config);
+}
+
+function searchDPCore(simulator, initialRoots, options) {
   const config = options || {};
   // PR-5.4b perf hooks: only active when a perf tracker is installed (the
   // benchmark sets one); zero measurable overhead in normal search.
@@ -1181,86 +1203,100 @@ function searchDP(simulator, initialState, options) {
     skippedAlreadyExpanded: 0,
     maxFairQueueAgeExpansions: 0,
   };
+  // PR-5.24h Iteration 2 — multi-root shared DP authority: ONE live agenda.
+  // Root-ordered popping (root 0 drains first, then root 1, ...) keeps the
+  // shared-authority contract intact — an incomplete root's pending agenda
+  // stays alive inside the shared search, so budget interruption can never
+  // falsely claim exhaustion — while letting later roots compete against the
+  // accumulated (expanded + pending) cross-root authority.  Single-root
+  // searches are unaffected (rootIndex === 0 for every node).
+  const multiRootSearch = (initialRoots || []).length > 1;
+  const compareMultiRootAgendaEntry = (left, right) => {
+    const rootDiff = (right.rootIndex != null ? right.rootIndex : 0) - (left.rootIndex != null ? left.rootIndex : 0);
+    if (rootDiff !== 0) return rootDiff;
+    return config.dpPriorityMode === "goal-directed"
+      ? compareGoalDirectedDpAgendaRank(left.rank, right.rank)
+      : compareDpAgendaRank(left.rank, right.rank);
+  };
   const heap = agendaMode === "fifo"
     ? null
-    : config.dpPriorityMode === "goal-directed"
-      ? new BinaryHeap((left, right) => compareGoalDirectedDpAgendaRank(left.rank, right.rank))
-      : new BinaryHeap((left, right) => compareDpAgendaRank(left.rank, right.rank));
-  const initialRoutePrefix = Array.isArray(initialState.route) ? initialState.route.slice() : [];
+    : multiRootSearch
+      ? new BinaryHeap(compareMultiRootAgendaEntry)
+      : config.dpPriorityMode === "goal-directed"
+        ? new BinaryHeap((left, right) => compareGoalDirectedDpAgendaRank(left.rank, right.rank))
+        : new BinaryHeap((left, right) => compareDpAgendaRank(left.rank, right.rank));
+  // PR-5.24h Iteration 2 — multi-root shared DP authority.
   const captureTrace = config.captureTrace === true;
-  const initialRouteTracePrefix = captureTrace && Array.isArray(config.initialRouteTracePrefix)
-    ? config.initialRouteTracePrefix
-    : [];
-  const rootState = cloneState(initialState);
-  rootState.route = [];
-  // The carried route prefix's length survives on the canonical state as the
-  // raw route length; the in-search state itself stays route-free.  The true
-  // cumulative raw length (decisions + auto steps) from the caller's state is
-  // authoritative and must NEVER be re-derived from the materialized prefix.
-  if (!rootState.meta) rootState.meta = {};
-  rootState.meta.rawRouteLength = Math.max(
-    getRawRouteLength(initialState),
-    initialRoutePrefix.length,
-  );
-  if (typeof config.stateAnnotator === "function") {
-    try {
-      config.stateAnnotator(rootState, null, null);
-    } catch (error) {
-      // Timing annotations are diagnostic and must not make the search fail.
+  // searchDPCore receives initialRoots = [{ state, rootCandidateId, rootIndex,
+  // prefixTrace? }].  All roots register into ONE shared bestByKey / SkylineSet
+  // / agenda / nodes registry / budget & completion authority through the
+  // PRODUCTION registration rules (buildDpStateKey + isBetterForSameDpKey +
+  // SkylineSet.add), so cross-root dominance happens inside the live DP
+  // authority instead of via settled seed blockers.  This guarantees that an
+  // incomplete (budget-limited) run still keeps its pending agenda alive —
+  // there is no per-root progressive seeding from incomplete predecessors.
+  const rootContexts = (initialRoots || []).map((rootSpec, index) => {
+    const sourceState = rootSpec.state;
+    const prefixRoute = Array.isArray(sourceState.route) ? sourceState.route.slice() : [];
+    const rootState = cloneState(sourceState);
+    rootState.route = [];
+    // The carried route prefix's length survives on the canonical state as the
+    // raw route length; the in-search state itself stays route-free.  The true
+    // cumulative raw length (decisions + auto steps) from the caller's state is
+    // authoritative and must NEVER be re-derived from the materialized prefix.
+    if (!rootState.meta) rootState.meta = {};
+    rootState.meta.rawRouteLength = Math.max(
+      getRawRouteLength(sourceState),
+      prefixRoute.length,
+    );
+    if (typeof config.stateAnnotator === "function") {
+      try {
+        config.stateAnnotator(rootState, null, null);
+      } catch (error) {
+        // Timing annotations are diagnostic and must not make the search fail.
+      }
     }
-  }
+    const prefixTrace = captureTrace
+      ? (Array.isArray(rootSpec.prefixTrace)
+        ? rootSpec.prefixTrace
+        : (Array.isArray(config.initialRouteTracePrefix)
+          ? config.initialRouteTracePrefix
+          : []))
+      : [];
+    return {
+      rootCandidateId: rootSpec.rootCandidateId != null ? rootSpec.rootCandidateId : null,
+      rootIndex: rootSpec.rootIndex != null ? Number(rootSpec.rootIndex) : index,
+      prefixRoute,
+      prefixTrace,
+      rootState,
+    };
+  });
+  const rootContextByRootIndex = new Map(rootContexts.map((ctx) => [ctx.rootIndex, ctx]));
+  // Route prefix resolution is PER ROOT: every search node carries
+  // rootCandidateId/rootIndex (provenance on the node, never on the state), so
+  // materialization prepends the correct root's prefix and a root-A state can
+  // never be paired with a root-B route prefix.
+  const routePrefixForNode = (node) => {
+    if (node && node.rootIndex != null) {
+      const ctx = rootContextByRootIndex.get(node.rootIndex);
+      if (ctx) return ctx.prefixRoute;
+    }
+    return rootContexts.length > 0 ? rootContexts[0].prefixRoute : [];
+  };
+  const routeTracePrefixForNode = (node) => {
+    if (node && node.rootIndex != null) {
+      const ctx = rootContextByRootIndex.get(node.rootIndex);
+      if (ctx) return ctx.prefixTrace;
+    }
+    return rootContexts.length > 0 ? rootContexts[0].prefixTrace : [];
+  };
+  // Root provenance tagging for the initial root registration (children inherit
+  // via createChildNode).
+  let registeringRootMeta = null;
   const nodes = new Map();
   let nextNodeId = 1;
   const skylineMax = number(config.dpSkylineMax, 1);
   const bestByKey = skylineMax > 1 ? new SkylineSet(skylineMax) : new Map();
-  // PR-5.24h G28-I TEST-ONLY shared multi-root DP authority hook (default OFF).
-  // When config.dpSeedAuthority is a non-empty array of { state, originTag }
-  // entries, they are registered into bestByKey as already-settled DP buckets
-  // BEFORE this run's own expansion, so the run only performs canonical work a
-  // shared multi-root authority has not yet done.  Seeded entries are never
-  // placed on the agenda and are never expanded inside this run; they only
-  // participate in same-key HP/dominance exactly like any retained best entry.
-  // Production search never sets this config: when it is absent the block below
-  // is skipped entirely and search behavior is identical (covered by the
-  // hook-off parity check in check-mt3-mt4-hot-path.js G28-I precheck).
-  let seedAuthorityOriginTagByKey = null;
-  if (Array.isArray(config.dpSeedAuthority) && config.dpSeedAuthority.length > 0) {
-    seedAuthorityOriginTagByKey = new Map();
-    let seedAuthorityEntries = 0;
-    config.dpSeedAuthority.forEach((seed) => {
-      if (!seed || !seed.state) return;
-      const seedState = cloneState(seed.state);
-      seedState.route = [];
-      const seedKey = typeof config.dpStateKeyBuilder === "function"
-        ? config.dpStateKeyBuilder(seedState, config)
-        : buildDpStateKey(simulator, seedState, config);
-      const existing = bestByKey.get(seedKey);
-      if (existing && existing.state && !isBetterForSameDpKey(seedState, existing.state, config.dominanceConfig)) {
-        return;
-      }
-      const seedNode = createRootNode(seedState, seedKey);
-      seedNode.nodeId = nextNodeId;
-      nextNodeId += 1;
-      seedNode.testOriginTag = seed.originTag || null;
-      nodes.set(seedNode.nodeId, seedNode);
-      if (bestByKey instanceof SkylineSet) {
-        bestByKey.add(
-          seedKey,
-          seedNode,
-          typeof config.skylineCompare === "function" ? config.skylineCompare : compareDpBest,
-          config.skylineRoles,
-        );
-      } else {
-        bestByKey.set(seedKey, seedNode);
-      }
-      seedAuthorityOriginTagByKey.set(seedKey, seed.originTag || null);
-      seedAuthorityEntries += 1;
-    });
-    (config.dpSeedAuthorityDiagnostics || null)?.({
-      offered: config.dpSeedAuthority.length,
-      registered: seedAuthorityEntries,
-    });
-  }
   const captureFloorCheckpoints = config.captureFloorCheckpoints === true;
   const checkpointPool = captureFloorCheckpoints ? createCheckpointPool(config.checkpointOptions) : null;
   const acceptedNodesCumulativeByFloor = {};
@@ -1269,6 +1305,7 @@ function searchDP(simulator, initialState, options) {
   const startedAt = Date.now();
   let observerCaptureElapsedMs = 0;
   let expansions = 0;
+  const expansionCountByRoot = {};
   let generated = 0;
   let registered = 0;
   let newKeys = 0;
@@ -1328,7 +1365,12 @@ function searchDP(simulator, initialState, options) {
       state,
       actionEntry: normalizeActionEntry(sourceAction),
     };
-    materialized.route = initialRoutePrefix.concat(
+    const auditRoutePrefix = parentNode
+      ? routePrefixForNode(parentNode)
+      : (registeringRootMeta && rootContextByRootIndex.get(registeringRootMeta.rootIndex)
+        ? rootContextByRootIndex.get(registeringRootMeta.rootIndex).prefixRoute
+        : (rootContexts.length > 0 ? rootContexts[0].prefixRoute : []));
+    materialized.route = auditRoutePrefix.concat(
       reconstructMaterializedActionEntries(nodes, ephemeralNode),
     );
     if (!materialized.meta) materialized.meta = {};
@@ -1363,12 +1405,13 @@ function searchDP(simulator, initialState, options) {
       elapsedMs: Date.now() - startedAt,
     });
   };
+  const firstRootState = rootContexts.length > 0 ? rootContexts[0].rootState : null;
   const statProgressBaseline = {
-    hp: number(rootState.hero && rootState.hero.hp, 0),
-    atk: number(rootState.hero && rootState.hero.atk, 0),
-    def: number(rootState.hero && rootState.hero.def, 0),
-    mdef: number(rootState.hero && rootState.hero.mdef, 0),
-    exp: number(rootState.hero && rootState.hero.exp, 0),
+    hp: number(firstRootState && firstRootState.hero && firstRootState.hero.hp, 0),
+    atk: number(firstRootState && firstRootState.hero && firstRootState.hero.atk, 0),
+    def: number(firstRootState && firstRootState.hero && firstRootState.hero.def, 0),
+    mdef: number(firstRootState && firstRootState.hero && firstRootState.hero.mdef, 0),
+    exp: number(firstRootState && firstRootState.hero && firstRootState.hero.exp, 0),
   };
   const statProgress = {
     maxHeroSeen: { ...statProgressBaseline },
@@ -1445,7 +1488,7 @@ function searchDP(simulator, initialState, options) {
     ? config.goalPredicate
     : (state) => simulator.isTerminal(state);
 
-  const routeTailOfNode = (node) => initialRoutePrefix
+  const routeTailOfNode = (node) => routePrefixForNode(node)
     .concat(reconstructMaterializedActionEntries(nodes, node))
     .slice(-12)
     .map((entry) => (typeof entry === "string" ? entry : entry && entry.summary))
@@ -1838,7 +1881,7 @@ function searchDP(simulator, initialState, options) {
       : sourceAction;
     const node = parentNode
       ? createChildNode(parentNode, state, key, actionForEntry, nextNodeId++, sequence)
-      : createRootNode(state, key);
+      : createRootNode(state, key, registeringRootMeta);
     node.key = key;
     if (profileExpansion) {
       perfTracker.increment("frontierRankCalls");
@@ -2042,7 +2085,7 @@ function searchDP(simulator, initialState, options) {
           state,
           actionEntry: normalizeActionEntry(sourceAction),
         };
-        const materializedRoute = initialRoutePrefix.concat(
+        const materializedRoute = routePrefixForNode(node).concat(
           reconstructMaterializedActionEntries(nodes, ephemeralNode),
         );
         const canonicalRawRouteLength = getRawRouteLength(state);
@@ -2135,7 +2178,17 @@ function searchDP(simulator, initialState, options) {
         return false;
       };
 
-  enqueueCandidate(rootState);
+  // Root registration: every root enters through the SAME production enqueue
+  // path (buildDpStateKey + isBetterForSameDpKey + SkylineSet.add), so roots
+  // compete inside one live DP authority exactly like any other state.
+  rootContexts.forEach((rootContext) => {
+    registeringRootMeta = {
+      rootCandidateId: rootContext.rootCandidateId,
+      rootIndex: rootContext.rootIndex,
+    };
+    enqueueCandidate(rootContext.rootState);
+  });
+  registeringRootMeta = null;
 
   const popNext = () => {
     const popBest = () => {
@@ -2514,6 +2567,10 @@ function searchDP(simulator, initialState, options) {
 
     expansions += 1;
     const expandedNode = nodes.get(entry.nodeId);
+    // Per-root expansion attribution (multi-root diagnostics; single-root
+    // always attributes to root index 0).
+    expansionCountByRoot[expandedNode && expandedNode.rootIndex != null ? expandedNode.rootIndex : 0] =
+      (expansionCountByRoot[expandedNode && expandedNode.rootIndex != null ? expandedNode.rootIndex : 0] || 0) + 1;
     if (!deepestExpandedNode || number(expandedNode && expandedNode.depth, 0) > number(deepestExpandedNode.depth, 0)) {
       deepestExpandedNode = expandedNode || entry;
     }
@@ -2756,7 +2813,7 @@ function searchDP(simulator, initialState, options) {
       "budgetStopped",
       () => observerStatePayload(
           simulator,
-          bestSeenNode ? bestSeenNode.state : initialState,
+          bestSeenNode ? bestSeenNode.state : firstRootState,
           bestSeenNode,
           config,
           {
@@ -2819,9 +2876,9 @@ function searchDP(simulator, initialState, options) {
     if (!node || !node.state) return null;
     const canonicalRawRouteLength = getRawRouteLength(node.state);
     const materialized = cloneState(node.state);
-    materialized.route = initialRoutePrefix.concat(reconstructMaterializedActionEntries(nodes, node));
+    materialized.route = routePrefixForNode(node).concat(reconstructMaterializedActionEntries(nodes, node));
     if (captureTrace) {
-      materialized.routeTrace = initialRouteTracePrefix.concat(reconstructActionTrace(nodes, node));
+      materialized.routeTrace = routeTracePrefixForNode(node).concat(reconstructActionTrace(nodes, node));
     } else if (Object.prototype.hasOwnProperty.call(materialized, "routeTrace")) {
       delete materialized.routeTrace;
     }
@@ -2867,6 +2924,23 @@ function searchDP(simulator, initialState, options) {
   const goalSkylineStates = goalSkylineNodes
     .map((node) => attachRouteToNodeState(node))
     .filter(Boolean);
+  // Per-goal root provenance, index-aligned with goalSkylineStates.  Provenance
+  // lives on the search node and is surfaced out-of-band; it never enters the
+  // canonical state or any state key.
+  const goalSkylineRootCandidateIds = goalSkylineNodes.map((node) => (node && node.rootCandidateId != null) ? node.rootCandidateId : null);
+  const goalSkylineRootIndexes = goalSkylineNodes.map((node) => (node && node.rootIndex != null) ? node.rootIndex : null);
+  // Final pending agenda split by root (completion-ledger support for shared
+  // budget-limited runs: pending > 0 ⇒ searchComplete = false, never EXHAUSTED).
+  const frontierIsActiveEntry = (entry) => isActiveEntry(entry) &&
+    (!expandedNodeIds || !expandedNodeIds.has(entry.nodeId));
+  const pendingByRoot = {};
+  const countPendingForRoot = (entry) => {
+    if (!frontierIsActiveEntry(entry)) return;
+    const rootId = entry && entry.rootCandidateId != null ? entry.rootCandidateId : null;
+    pendingByRoot[rootId] = (pendingByRoot[rootId] || 0) + 1;
+  };
+  if (heap) heap.items.forEach(countPendingForRoot);
+  else fifoEntries.slice(cursor).forEach(countPendingForRoot);
   const bestSeenState = attachRouteToNodeState(bestSeenNode);
   const bestProgressState = attachRouteToNodeState(bestProgressNode);
   const deepestExpandedState = attachRouteToNodeState(deepestExpandedNode);
@@ -2910,7 +2984,16 @@ function searchDP(simulator, initialState, options) {
     goalState: bestGoalState,
     firstGoalState,
     bestGoalState,
+    bestGoalRootCandidateId: bestGoalNode && bestGoalNode.rootCandidateId != null ? bestGoalNode.rootCandidateId : null,
+    firstGoalRootCandidateId: firstGoalNode && firstGoalNode.rootCandidateId != null ? firstGoalNode.rootCandidateId : null,
     goalSkylineStates,
+    goalSkylineRootCandidateIds,
+    goalSkylineRootIndexes,
+    rootCandidateIds: rootContexts.map((ctx) => ctx.rootCandidateId),
+    rootCount: rootContexts.length,
+    expansionCountByRoot,
+    pendingByRoot,
+    multiRoot: rootContexts.length > 1,
     goalArchiveAudit,
     bestSeenState,
     bestProgressState,
@@ -2928,9 +3011,6 @@ function searchDP(simulator, initialState, options) {
     results: [bestGoalState, firstGoalState, ...goalSkylineStates].filter((state, index, list) => state && list.indexOf(state) === index),
     diagnostics: {
       algorithm: "dp",
-      seedAuthority: seedAuthorityOriginTagByKey
-        ? { registeredBuckets: seedAuthorityOriginTagByKey.size }
-        : null,
       registered,
       generated,
       trimmed: actionTrimmed,
@@ -3199,4 +3279,5 @@ module.exports = {
   compareGoalStates,
   routeLengthOfState,
   searchDP,
+  searchDPMultiRoot,
 };
