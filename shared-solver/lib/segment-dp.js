@@ -3219,6 +3219,9 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
     captureExpandedStates: dpConfig.captureExpandedStates === true || config.captureExpandedStates === true,
     captureExpandedStateLimit: number(dpConfig.captureExpandedStateLimit, config.captureExpandedStateLimit || 0),
     candidateKeyShadowRecorder: config.candidateKeyShadowRecorder || dpConfig.candidateKeyShadowRecorder || null,
+    // PR-5.24h G28-I TEST-ONLY pass-through (default null = unchanged behavior).
+    dpSeedAuthority: config.dpSeedAuthority || dpConfig.dpSeedAuthority || null,
+    dpSeedAuthorityDiagnostics: config.dpSeedAuthorityDiagnostics || dpConfig.dpSeedAuthorityDiagnostics || null,
     dpStateKeyBuilder: config.dpStateKeyBuilder || dpConfig.dpStateKeyBuilder || null,
     dpKeyProfile: config.dpKeyProfile || dpConfig.dpKeyProfile || null,
     initialRouteTracePrefix: prefixTrace,
@@ -3329,6 +3332,7 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
         depth: (result.diagnostics && result.diagnostics.depth) || null,
         routeFree: (result.diagnostics && result.diagnostics.routeFree) || null,
         capturedExpandedStates: (result.diagnostics && result.diagnostics.capturedExpandedStates) || [],
+        seedAuthority: (result.diagnostics && result.diagnostics.seedAuthority) || null,
         registry: (result.diagnostics && result.diagnostics.registry) || null,
         goalProjectionCache: dependencyGraph &&
           typeof dependencyGraph.getProjectionCacheStats === "function"

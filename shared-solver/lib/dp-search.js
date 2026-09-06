@@ -1213,6 +1213,54 @@ function searchDP(simulator, initialState, options) {
   let nextNodeId = 1;
   const skylineMax = number(config.dpSkylineMax, 1);
   const bestByKey = skylineMax > 1 ? new SkylineSet(skylineMax) : new Map();
+  // PR-5.24h G28-I TEST-ONLY shared multi-root DP authority hook (default OFF).
+  // When config.dpSeedAuthority is a non-empty array of { state, originTag }
+  // entries, they are registered into bestByKey as already-settled DP buckets
+  // BEFORE this run's own expansion, so the run only performs canonical work a
+  // shared multi-root authority has not yet done.  Seeded entries are never
+  // placed on the agenda and are never expanded inside this run; they only
+  // participate in same-key HP/dominance exactly like any retained best entry.
+  // Production search never sets this config: when it is absent the block below
+  // is skipped entirely and search behavior is identical (covered by the
+  // hook-off parity check in check-mt3-mt4-hot-path.js G28-I precheck).
+  let seedAuthorityOriginTagByKey = null;
+  if (Array.isArray(config.dpSeedAuthority) && config.dpSeedAuthority.length > 0) {
+    seedAuthorityOriginTagByKey = new Map();
+    let seedAuthorityEntries = 0;
+    config.dpSeedAuthority.forEach((seed) => {
+      if (!seed || !seed.state) return;
+      const seedState = cloneState(seed.state);
+      seedState.route = [];
+      const seedKey = typeof config.dpStateKeyBuilder === "function"
+        ? config.dpStateKeyBuilder(seedState, config)
+        : buildDpStateKey(simulator, seedState, config);
+      const existing = bestByKey.get(seedKey);
+      if (existing && existing.state && !isBetterForSameDpKey(seedState, existing.state, config.dominanceConfig)) {
+        return;
+      }
+      const seedNode = createRootNode(seedState, seedKey);
+      seedNode.nodeId = nextNodeId;
+      nextNodeId += 1;
+      seedNode.testOriginTag = seed.originTag || null;
+      nodes.set(seedNode.nodeId, seedNode);
+      if (bestByKey instanceof SkylineSet) {
+        bestByKey.add(
+          seedKey,
+          seedNode,
+          typeof config.skylineCompare === "function" ? config.skylineCompare : compareDpBest,
+          config.skylineRoles,
+        );
+      } else {
+        bestByKey.set(seedKey, seedNode);
+      }
+      seedAuthorityOriginTagByKey.set(seedKey, seed.originTag || null);
+      seedAuthorityEntries += 1;
+    });
+    (config.dpSeedAuthorityDiagnostics || null)?.({
+      offered: config.dpSeedAuthority.length,
+      registered: seedAuthorityEntries,
+    });
+  }
   const captureFloorCheckpoints = config.captureFloorCheckpoints === true;
   const checkpointPool = captureFloorCheckpoints ? createCheckpointPool(config.checkpointOptions) : null;
   const acceptedNodesCumulativeByFloor = {};
@@ -2880,6 +2928,9 @@ function searchDP(simulator, initialState, options) {
     results: [bestGoalState, firstGoalState, ...goalSkylineStates].filter((state, index, list) => state && list.indexOf(state) === index),
     diagnostics: {
       algorithm: "dp",
+      seedAuthority: seedAuthorityOriginTagByKey
+        ? { registeredBuckets: seedAuthorityOriginTagByKey.size }
+        : null,
       registered,
       generated,
       trimmed: actionTrimmed,

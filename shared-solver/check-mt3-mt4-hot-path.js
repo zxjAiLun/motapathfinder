@@ -6,16 +6,45 @@
  * PR-5.24h — MT3→MT4 Downstream Canonical Search Cost Reduction.
  *
  * Fixed-work deterministic profiling fixture and G28 gate suite for MT3→MT4 downstream search.
- * Source: canonical repaired MT3 state from PR-5.24g Formal Run 2.
- * Completion: frontier-exhausted deterministic completion at 897 expansions.
+ * Source: canonical repaired MT3 states from PR-5.24g Formal Run 2.
+ *
+ * Terminology (Iteration 1 Repair 2, binding):
+ *   buildStateKey        = CANONICAL_STATE_KEY (exact canonical state identity).
+ *   buildDpStateKey      = PRODUCTION_DP_EQUIVALENCE_BUCKET_KEY.  The DP key
+ *     deliberately EXCLUDES hero HP under the current implicit model; states in
+ *     the same DP bucket compete through isBetterForSameDpKey (HP, then
+ *     decision depth, then raw route length).  A shared DP bucket therefore
+ *     does NOT imply an identical successor state and must never be used as a
+ *     successor-cache key.
  *
  * G28 Gates:
- *   G28-A: MT3 Fixture Determinism (consecutive reference runs byte-identical at 897 expansions)
- *   G28-F: Fixture Route-Free Canonicality (route length = 0, stateKey identical to unstripped state)
- *   G28-G: Multi-Candidate Workload Characterization and Overlap Analysis
+ *   G28-A: MT3 Fixture Determinism (consecutive reference runs byte-identical;
+ *          candidate-0 natural exhaustion = 897 expansions, generated = 2285)
+ *   G28-F: Fixture Route-Free Canonicality (route length = 0, stateKey identical)
+ *   G28-G: Multi-Candidate Workload Characterization (FIRST-100 window).
+ *          Reports within-candidate duplicates and cross-candidate shared
+ *          buckets SEPARATELY for both CANONICAL_STATE_KEY and
+ *          PRODUCTION_DP_EQUIVALENCE_BUCKET_KEY, plus key multiplicity and
+ *          shared-bucket resource-quality ranges.  The legacy
+ *          (total - union) / total figure is reported only as
+ *          GLOBAL_DUPLICATE_OCCURRENCE_RATIO (it mixes within + cross).
+ *   G28-H: Full Candidate Completion Characterization — one fresh child
+ *          process per candidate, non-binding runtime, bounded 2000
+ *          expansions; captures expanded stateKey + DP bucket keys and goal
+ *          records; reports full-work overlap with the same within/cross split.
+ *   G28-I: Test-Only Multi-Root Shared-DP Feasibility (only when corrected
+ *          CROSS_CANDIDATE_DP_BUCKET_OVERLAP_RATIO >= 20% on the G28-H
+ *          full-work window).  16 canonical MT3 roots share ONE test-only
+ *          bestByKey/dominance authority via the default-off dpSeedAuthority
+ *          hook; per-root origin provenance is preserved; compared against the
+ *          G28-H independent arm on semantic outcome, completion authority,
+ *          origin correctness and expansion reduction.
  */
 
 const path = require("node:path");
+const fs = require("node:fs");
+const os = require("node:os");
+const { spawnSync } = require("node:child_process");
 const assert = require("node:assert");
 const { loadProject } = require("./lib/project-loader");
 const { StaticSimulator } = require("./lib/simulator");
@@ -36,6 +65,10 @@ const FRONTIER_FIXTURE_PATH = path.resolve(__dirname, "fixtures/perf/onlyup-mt3-
 
 const SINGLE_FIXTURE = require(SINGLE_FIXTURE_PATH);
 const FRONTIER_FIXTURE = require(FRONTIER_FIXTURE_PATH);
+
+// G28-H / G28-I shared-arm bounded workload (non-binding runtime).
+const G28_H_MAX_EXPANSIONS = 2000;
+const G28_NON_BINDING_MAX_RUNTIME_MS = 3 * 60 * 60 * 1000;
 
 function createSimulator(options = {}) {
   const project = loadProject(PROJECT_ROOT);
@@ -67,6 +100,12 @@ function getMt3Segment(project) {
   return { ...spec.milestones[2], dp: { ...spec.milestones[2].dp, maxRuntimeMs: 600000 } };
 }
 
+function buildDpBucketKey(simulator, state) {
+  // PRODUCTION_DP_EQUIVALENCE_BUCKET_KEY: deliberately HP-exclusive; same key
+  // does not imply identical successor state (see header terminology).
+  return buildDpStateKey(simulator, state, { keyMode: "region" });
+}
+
 function runMt3Fixture(simulator, segment, stateInput, opts = {}) {
   const config = {
     candidateId: "mt3-hotpath-candidate",
@@ -86,13 +125,9 @@ function runMt3Fixture(simulator, segment, stateInput, opts = {}) {
     rejectedByHigherHp: result.diagnostics.dp.rejectedByHigherHp,
     sameHpRejected: result.diagnostics.dp.sameHpRejected,
     generated: result.diagnostics.dp.acceptedStates + result.diagnostics.dp.rejectedByHigherHp + result.diagnostics.dp.sameHpRejected,
-    registered: result.diagnostics.dp.acceptedStates,
     goalSkylineCount: result.goalSkyline.length,
     goalSkylineKeys: result.goalSkyline.map((gs) => buildStateKey(gs.state)).sort(),
     capturedExpandedStates: result.diagnostics.dp.capturedExpandedStates || [],
-    route: result.goalSkyline.length > 0 && result.goalSkyline[0].route
-      ? result.goalSkyline[0].route
-      : null,
     raw: result,
   };
 }
@@ -112,12 +147,7 @@ function runMt3FixtureWithPerf(simulator, segment, stateInput, opts = {}) {
     const cpuEnd = process.cpuUsage(cpuStart);
     const wallMs = Date.now() - runStart;
     const cpuMs = (cpuEnd.user + cpuEnd.system) / 1000;
-    return {
-      wallMs,
-      cpuMs,
-      result,
-      tracker,
-    };
+    return { wallMs, cpuMs, result, tracker };
   } finally {
     setActivePerfTracker(previousTracker);
   }
@@ -127,6 +157,135 @@ function median(arr) {
   const sorted = arr.slice().sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+// ==== occurrence collection (stateKey + DP bucket key per expanded state) ====
+function collectOccurrences(simulator, expandedStates) {
+  return expandedStates.map((state) => ({
+    stateKey: buildStateKey(state),
+    dpKey: buildDpBucketKey(simulator, state),
+    hp: Number(((state.hero || {}).hp) || 0),
+    decisionDepth: Number((((state.meta || {}).decisionDepth)) || 0),
+    rawRouteLength: Number((((state.meta || {}).rawRouteLength)) || 0),
+  }));
+}
+
+// ==== corrected overlap analysis (within / cross / global split) ====
+function computeOverlapAnalysis(occurrencesByCandidate, candidateIds) {
+  const perCandidate = [];
+  const stateKeySets = [];
+  const dpKeySets = [];
+  const stateKeyUnion = new Set();
+  const dpKeyUnion = new Set();
+  let totalOccurrences = 0;
+
+  occurrencesByCandidate.forEach((occurrences, index) => {
+    const stateKeys = new Set();
+    const dpKeys = new Set();
+    occurrences.forEach((occ) => {
+      stateKeys.add(occ.stateKey);
+      dpKeys.add(occ.dpKey);
+      stateKeyUnion.add(occ.stateKey);
+      dpKeyUnion.add(occ.dpKey);
+    });
+    totalOccurrences += occurrences.length;
+    stateKeySets.push(stateKeys);
+    dpKeySets.push(dpKeys);
+    perCandidate.push({
+      candidateId: candidateIds[index],
+      totalOccurrences: occurrences.length,
+      uniqueStateKeys: stateKeys.size,
+      uniqueDpKeys: dpKeys.size,
+      withinStateDuplicateOccurrences: occurrences.length - stateKeys.size,
+      withinDpDuplicateOccurrences: occurrences.length - dpKeys.size,
+    });
+  });
+
+  const sumUniqueStateKeys = stateKeySets.reduce((sum, set) => sum + set.size, 0);
+  const sumUniqueDpKeys = dpKeySets.reduce((sum, set) => sum + set.size, 0);
+
+  const crossSharedStateOccurrences = sumUniqueStateKeys - stateKeyUnion.size;
+  const crossSharedDpBucketOccurrences = sumUniqueDpKeys - dpKeyUnion.size;
+
+  // Cross-candidate key multiplicity (how many candidates contain each key).
+  const stateKeyCandidates = new Map();
+  const dpKeyCandidates = new Map();
+  const dpKeyAttributes = new Map(); // per-bucket occurrence quality attributes (all occurrences)
+  occurrencesByCandidate.forEach((occurrences, index) => {
+    const candidateId = candidateIds[index];
+    occurrences.forEach((occ) => {
+      if (!stateKeyCandidates.has(occ.stateKey)) stateKeyCandidates.set(occ.stateKey, new Set());
+      stateKeyCandidates.get(occ.stateKey).add(candidateId);
+      if (!dpKeyCandidates.has(occ.dpKey)) dpKeyCandidates.set(occ.dpKey, new Set());
+      dpKeyCandidates.get(occ.dpKey).add(candidateId);
+      if (!dpKeyAttributes.has(occ.dpKey)) dpKeyAttributes.set(occ.dpKey, []);
+      dpKeyAttributes.get(occ.dpKey).push({
+        hp: occ.hp,
+        decisionDepth: occ.decisionDepth,
+        rawRouteLength: occ.rawRouteLength,
+      });
+    });
+  });
+
+  const multiplicityBuckets = (map, thresholds) => thresholds.map((t) => ({
+    threshold: t,
+    label: t === "all" ? "allCandidates" : `gte${t}Candidates`,
+    count: Array.from(map.values()).filter((set) => (t === "all" ? set.size === candidateIds.length : set.size >= t)).length,
+  }));
+
+  const sharedDpBuckets = Array.from(dpKeyCandidates.entries())
+    .filter(([, set]) => set.size >= 2)
+    .map(([dpKey, set]) => {
+      const attrs = dpKeyAttributes.get(dpKey) || [];
+      return {
+        dpKey: dpKey.length > 48 ? `${dpKey.slice(0, 45)}...` : dpKey,
+        candidateMultiplicity: set.size,
+        occurrenceCount: attrs.length,
+        hpMin: Math.min(...attrs.map((a) => a.hp)),
+        hpMax: Math.max(...attrs.map((a) => a.hp)),
+        decisionDepthMin: Math.min(...attrs.map((a) => a.decisionDepth)),
+        decisionDepthMax: Math.max(...attrs.map((a) => a.decisionDepth)),
+        rawRouteLengthMin: Math.min(...attrs.map((a) => a.rawRouteLength)),
+        rawRouteLengthMax: Math.max(...attrs.map((a) => a.rawRouteLength)),
+      };
+    })
+    .sort((a, b) => b.candidateMultiplicity - a.candidateMultiplicity || b.occurrenceCount - a.occurrenceCount);
+
+  return {
+    windowTotalOccurrences: totalOccurrences,
+    perCandidate,
+    withinCandidate: {
+      stateKeyDuplicateOccurrences: perCandidate.reduce((s, c) => s + c.withinStateDuplicateOccurrences, 0),
+      dpBucketDuplicateOccurrences: perCandidate.reduce((s, c) => s + c.withinDpDuplicateOccurrences, 0),
+    },
+    canonicalStateKey: {
+      sumUniquePerCandidate: sumUniqueStateKeys,
+      globalUnionUnique: stateKeyUnion.size,
+      crossCandidateSharedOccurrences: crossSharedStateOccurrences,
+      crossCandidateOverlapRatioPercent: sumUniqueStateKeys > 0
+        ? Number(((crossSharedStateOccurrences / sumUniqueStateKeys) * 100).toFixed(2))
+        : 0,
+      globalDuplicateOccurrenceRatioPercent: totalOccurrences > 0
+        ? Number((((totalOccurrences - stateKeyUnion.size) / totalOccurrences) * 100).toFixed(2))
+        : 0,
+      multiplicity: multiplicityBuckets(stateKeyCandidates, [2, 4, 8, "all"]),
+      maxCandidateMultiplicity: Math.max(...Array.from(stateKeyCandidates.values()).map((s) => s.size)),
+    },
+    dpBucketKey: {
+      sumUniquePerCandidate: sumUniqueDpKeys,
+      globalUnionUnique: dpKeyUnion.size,
+      crossCandidateSharedBucketOccurrences: crossSharedDpBucketOccurrences,
+      crossCandidateOverlapRatioPercent: sumUniqueDpKeys > 0
+        ? Number(((crossSharedDpBucketOccurrences / sumUniqueDpKeys) * 100).toFixed(2))
+        : 0,
+      globalDuplicateOccurrenceRatioPercent: totalOccurrences > 0
+        ? Number((((totalOccurrences - dpKeyUnion.size) / totalOccurrences) * 100).toFixed(2))
+        : 0,
+      multiplicity: multiplicityBuckets(dpKeyCandidates, [2, 4, 8, "all"]),
+      maxCandidateMultiplicity: Math.max(...Array.from(dpKeyCandidates.values()).map((s) => s.size)),
+      topSharedBuckets: sharedDpBuckets.slice(0, 20),
+    },
+  };
 }
 
 // ========== G28-A: MT3 Fixture Determinism ==========
@@ -174,6 +333,7 @@ function gateG28A_FixtureDeterminism() {
 
 // ========== G28-F: Fixture Route-Free Canonicality ==========
 function gateG28F_FixtureRouteFreeCanonicality() {
+  delete require.cache[require.resolve(SINGLE_FIXTURE_PATH)];
   const rawFixture = require(SINGLE_FIXTURE_PATH);
   assert.ok(rawFixture.state, "G28-F: fixture must contain state");
   assert.ok(Array.isArray(rawFixture.state.route), "G28-F: fixture state route must be an array");
@@ -182,15 +342,14 @@ function gateG28F_FixtureRouteFreeCanonicality() {
   const computedKey = buildStateKey(rawFixture.state);
   assert.strictEqual(computedKey, rawFixture.provenance.stateKey, "G28-F: computed stateKey must match provenance stateKey");
 
-  // Assert metadata is retained accurately
   assert.ok(rawFixture.state.meta, "G28-F: meta must be retained");
   assert.strictEqual(typeof rawFixture.state.meta.rawRouteLength, "number", "G28-F: meta.rawRouteLength is number");
   assert.strictEqual(typeof rawFixture.state.meta.decisionDepth, "number", "G28-F: meta.decisionDepth is number");
 
-  // Frontier fixture validation
-  assert.ok(Array.isArray(FRONTIER_FIXTURE.candidates), "G28-F: frontier candidates must be array");
-  assert.strictEqual(FRONTIER_FIXTURE.candidates.length, 16, "G28-F: frontier must have exactly 16 candidates");
-  FRONTIER_FIXTURE.candidates.forEach((c, i) => {
+  const frontierRaw = require(FRONTIER_FIXTURE_PATH);
+  assert.ok(Array.isArray(frontierRaw.candidates), "G28-F: frontier candidates must be array");
+  assert.strictEqual(frontierRaw.candidates.length, 16, "G28-F: frontier must have exactly 16 candidates");
+  frontierRaw.candidates.forEach((c, i) => {
     assert.strictEqual(c.state.route.length, 0, `G28-F: frontier candidate ${i} route must be empty`);
     assert.strictEqual(buildStateKey(c.state), c.stateKey, `G28-F: frontier candidate ${i} stateKey must match computed`);
   });
@@ -200,28 +359,23 @@ function gateG28F_FixtureRouteFreeCanonicality() {
     frontierFixtureRouteFree: true,
     canonicalStateKeyPreserved: true,
     metadataPreserved: true,
-    candidatesChecked: FRONTIER_FIXTURE.candidates.length,
+    candidatesChecked: frontierRaw.candidates.length,
   };
 }
 
-// ========== G28-G: Multi-Candidate Workload Characterization and Overlap Analysis ==========
+// ========== G28-G: Multi-Candidate Workload Characterization (FIRST-100 window) ==========
 function gateG28G_MultiCandidateWorkloadCharacterization() {
   const { project, simulator } = createSimulator();
   const segment = getMt3Segment(project);
 
-  const dpKeyOptions = { keyMode: "region", targetFloorOrder: 4 };
-  const candidateReports = [];
-  const candidateKeySets100 = [];
-  const candidateDpKeySets100 = [];
-  const allExpandedStateKeys = [];
-  const allExpandedDpKeys = [];
+  const candidateIds = FRONTIER_FIXTURE.candidates.map((c) => c.candidateId);
+  const occurrencesByCandidate = [];
+  const candidateSummaries = [];
 
   for (let i = 0; i < FRONTIER_FIXTURE.candidates.length; i += 1) {
     const c = FRONTIER_FIXTURE.candidates[i];
     if (typeof global.gc === "function") global.gc();
 
-    const t0 = Date.now();
-    const cpu0 = process.cpuUsage();
     const res = searchSegmentDP(simulator, JSON.parse(JSON.stringify(c.state)), segment, {
       candidateId: c.candidateId,
       maxExpansions: 100,
@@ -229,142 +383,254 @@ function gateG28G_MultiCandidateWorkloadCharacterization() {
       captureExpandedStates: true,
       captureExpandedStateLimit: 100,
     });
-    const wallMs = Date.now() - t0;
-    const cpuMs = (process.cpuUsage(cpu0).user + process.cpuUsage(cpu0).system) / 1000;
 
-    const exp = res.diagnostics.dp.expansions;
-    const expandedStates = res.diagnostics.dp.capturedExpandedStates || [];
-    const stKeys = expandedStates.map((s) => buildStateKey(s));
-    const dpKs = expandedStates.map((s) => buildDpStateKey(simulator, s, dpKeyOptions));
-
-    candidateKeySets100.push(new Set(stKeys));
-    candidateDpKeySets100.push(new Set(dpKs));
-    allExpandedStateKeys.push(...stKeys);
-    allExpandedDpKeys.push(...dpKs);
-
-    candidateReports.push({
+    const occurrences = collectOccurrences(simulator, res.diagnostics.dp.capturedExpandedStates || []);
+    occurrencesByCandidate.push(occurrences);
+    candidateSummaries.push({
       candidateId: c.candidateId,
       initialHp: c.heroSummary.hp,
       initialDef: c.heroSummary.def,
-      expansions: exp,
+      expansions: res.diagnostics.dp.expansions,
+      capturedOccurrences: occurrences.length,
+    });
+  }
+
+  const analysis = computeOverlapAnalysis(occurrencesByCandidate, candidateIds);
+
+  return {
+    workloadCharacterizationCompleted: true,
+    window: "FIRST_100_EXPANSIONS_PER_CANDIDATE",
+    fullCompletionMeasuredByThisGate: false,
+    candidatesAnalyzed: candidateIds.length,
+    totalStatesExpanded: analysis.windowTotalOccurrences,
+    withinCandidateDuplicates: analysis.withinCandidate,
+    canonicalStateKeyOverlap: analysis.canonicalStateKey,
+    dpBucketKeyOverlap: analysis.dpBucketKey,
+    perCandidate: analysis.perCandidate,
+    sampleCandidates: candidateSummaries.slice(0, 4),
+  };
+}
+
+// ==== shared child-worker helpers (G28-H / G28-I) ====
+function runWorker(args, timeoutSec) {
+  const result = spawnSync(
+    process.execPath,
+    ["--expose-gc", "--max-old-space-size=2048", __filename, ...args],
+    { cwd: __dirname, timeout: (timeoutSec || 1800) * 1000, encoding: "utf8" },
+  );
+  return result;
+}
+
+function writeWorkerOutput(outPath, payload) {
+  fs.writeFileSync(outPath, JSON.stringify(payload));
+}
+
+function readWorkerOutput(outPath) {
+  const raw = fs.readFileSync(outPath, "utf8");
+  try { fs.unlinkSync(outPath); } catch (_) { /* best effort */ }
+  return JSON.parse(raw);
+}
+
+function makeTempPath(name) {
+  return path.join(os.tmpdir(), `g28-${name}-${process.pid}-${Date.now()}.json`);
+}
+
+// G28-H worker: one candidate, full bounded completion, keys-only capture.
+function g28hWorker(candidateIndex, outPath) {
+  const candidate = FRONTIER_FIXTURE.candidates[candidateIndex];
+  const { project, simulator } = createSimulator();
+  const segment = getMt3Segment(project);
+  if (typeof global.gc === "function") global.gc();
+
+  let peakRssMb = 0;
+  const sampler = setInterval(() => {
+    const rssMb = process.memoryUsage().rss / (1024 * 1024);
+    if (rssMb > peakRssMb) peakRssMb = rssMb;
+  }, 250);
+
+  const t0 = Date.now();
+  const res = searchSegmentDP(simulator, JSON.parse(JSON.stringify(candidate.state)), segment, {
+    candidateId: candidate.candidateId,
+    maxExpansions: G28_H_MAX_EXPANSIONS,
+    maxRuntimeMs: G28_NON_BINDING_MAX_RUNTIME_MS,
+    captureExpandedStates: true,
+    captureExpandedStateLimit: G28_H_MAX_EXPANSIONS,
+  });
+  const wallMs = Date.now() - t0;
+  clearInterval(sampler);
+  peakRssMb = Math.max(peakRssMb, process.memoryUsage().rss / (1024 * 1024));
+
+  const occurrences = collectOccurrences(simulator, res.diagnostics.dp.capturedExpandedStates || []);
+  const goalRecords = (res.goalSkyline || []).map((gs) => ({
+    stateKey: buildStateKey(gs.state),
+    hp: Number(((gs.state.hero || {}).hp) || 0),
+    atk: Number(((gs.state.hero || {}).atk) || 0),
+    def: Number(((gs.state.hero || {}).def) || 0),
+    mdef: Number(((gs.state.hero || {}).mdef) || 0),
+    lv: Number(((gs.state.hero || {}).lv) || 0),
+    exp: Number(((gs.state.hero || {}).exp) || 0),
+    flags: gs.state.flags || {},
+    decisionDepth: Number((((gs.state.meta || {}).decisionDepth)) || 0),
+    rawRouteLength: Number((((gs.state.meta || {}).rawRouteLength)) || 0),
+    routeLength: Array.isArray(gs.state.route) ? gs.state.route.length : 0,
+  }));
+
+  writeWorkerOutput(outPath, {
+    candidateId: candidate.candidateId,
+    initialHp: candidate.heroSummary.hp,
+    initialDef: candidate.heroSummary.def,
+    expansions: res.diagnostics.dp.expansions,
+    frontierSize: res.diagnostics.dp.frontierSize,
+    searchComplete: res.diagnostics.dp.searchOutcome.searchComplete,
+    stoppedReason: res.diagnostics.dp.stoppedReason,
+    found: res.found,
+    accepted: res.diagnostics.dp.acceptedStates,
+    generated: res.diagnostics.dp.acceptedStates + res.diagnostics.dp.rejectedByHigherHp + res.diagnostics.dp.sameHpRejected,
+    wallMs,
+    peakRssMb: Math.round(peakRssMb * 10) / 10,
+    occurrences,
+    goalRecords,
+  });
+}
+
+// G28-I shared-arm worker: sequential shared-authority runs, one process.
+function g28iSharedArmWorker(outPath) {
+  const { project, simulator } = createSimulator();
+  const segment = getMt3Segment(project);
+  if (typeof global.gc === "function") global.gc();
+
+  let peakRssMb = 0;
+  const sampler = setInterval(() => {
+    const rssMb = process.memoryUsage().rss / (1024 * 1024);
+    if (rssMb > peakRssMb) peakRssMb = rssMb;
+  }, 250);
+
+  const authority = new Map(); // dpBucketKey -> { state, originTag, hp, decisionDepth, rawRouteLength }
+  const runReports = [];
+  const workerStart = Date.now();
+
+  for (let i = 0; i < FRONTIER_FIXTURE.candidates.length; i += 1) {
+    const c = FRONTIER_FIXTURE.candidates[i];
+    if (typeof global.gc === "function") global.gc();
+
+    const seedAuthority = Array.from(authority.values());
+    const t0 = Date.now();
+    const res = searchSegmentDP(simulator, JSON.parse(JSON.stringify(c.state)), segment, {
+      candidateId: c.candidateId,
+      maxExpansions: G28_H_MAX_EXPANSIONS,
+      maxRuntimeMs: G28_NON_BINDING_MAX_RUNTIME_MS,
+      captureExpandedStates: true,
+      captureExpandedStateLimit: G28_H_MAX_EXPANSIONS,
+      dpSeedAuthority: seedAuthority,
+    });
+    const wallMs = Date.now() - t0;
+
+    const occurrences = collectOccurrences(simulator, res.diagnostics.dp.capturedExpandedStates || []);
+    const capturedStates = res.diagnostics.dp.capturedExpandedStates || [];
+    occurrences.forEach((occ, occIndex) => {
+      const existing = authority.get(occ.dpKey);
+      // Production-equivalent same-bucket winner rule (isBetterForSameDpKey):
+      // higher HP, then shorter decision depth, then shorter raw route length.
+      const betterThanExisting = !existing
+        || occ.hp > existing.hp
+        || (occ.hp === existing.hp && (
+          occ.decisionDepth < existing.decisionDepth
+          || (occ.decisionDepth === existing.decisionDepth && occ.rawRouteLength < existing.rawRouteLength)));
+      if (betterThanExisting) {
+        authority.set(occ.dpKey, {
+          state: capturedStates[occIndex],
+          originTag: c.candidateId,
+          hp: occ.hp,
+          decisionDepth: occ.decisionDepth,
+          rawRouteLength: occ.rawRouteLength,
+        });
+      }
+    });
+
+    const goalRecords = (res.goalSkyline || []).map((gs) => ({
+      stateKey: buildStateKey(gs.state),
+      hp: Number(((gs.state.hero || {}).hp) || 0),
+      atk: Number(((gs.state.hero || {}).atk) || 0),
+      def: Number(((gs.state.hero || {}).def) || 0),
+      mdef: Number(((gs.state.hero || {}).mdef) || 0),
+      lv: Number(((gs.state.hero || {}).lv) || 0),
+      exp: Number(((gs.state.hero || {}).exp) || 0),
+      flags: gs.state.flags || {},
+      decisionDepth: Number((((gs.state.meta || {}).decisionDepth)) || 0),
+      rawRouteLength: Number((((gs.state.meta || {}).rawRouteLength)) || 0),
+      routeLength: Array.isArray(gs.state.route) ? gs.state.route.length : 0,
+      originCandidateId: c.candidateId,
+    }));
+
+    runReports.push({
+      candidateId: c.candidateId,
+      seedOffered: seedAuthority.length,
+      seedRegisteredBuckets: (res.diagnostics.dp.seedAuthority || {}).registeredBuckets || 0,
+      expansions: res.diagnostics.dp.expansions,
       frontierSize: res.diagnostics.dp.frontierSize,
       searchComplete: res.diagnostics.dp.searchOutcome.searchComplete,
+      stoppedReason: res.diagnostics.dp.stoppedReason,
       found: res.found,
       accepted: res.diagnostics.dp.acceptedStates,
       generated: res.diagnostics.dp.acceptedStates + res.diagnostics.dp.rejectedByHigherHp + res.diagnostics.dp.sameHpRejected,
       wallMs,
-      cpuMs: Math.round(cpuMs),
+      capturedOccurrences: occurrences.length,
+      goalRecords,
     });
+
+    // Free this run's captured states (authority keeps only winners).
+    res.diagnostics.dp.capturedExpandedStates = null;
   }
 
-  // Exact stateKey overlap across 16 candidates (first 100 expansions each = 1600 total states)
-  const totalExpandedStates = allExpandedStateKeys.length;
-  const uniqueStateKeysCount = new Set(allExpandedStateKeys).size;
-  const duplicateStateKeysCount = totalExpandedStates - uniqueStateKeysCount;
-  const duplicateStateKeyRatio = Number((duplicateStateKeysCount / totalExpandedStates).toFixed(4));
+  clearInterval(sampler);
+  peakRssMb = Math.max(peakRssMb, process.memoryUsage().rss / (1024 * 1024));
 
-  // Exact DP Key overlap across 16 candidates
-  const uniqueDpKeysCount = new Set(allExpandedDpKeys).size;
-  const duplicateDpKeysCount = totalExpandedStates - uniqueDpKeysCount;
-  const duplicateDpKeyRatio = Number((duplicateDpKeysCount / totalExpandedStates).toFixed(4));
+  writeWorkerOutput(outPath, {
+    runs: runReports,
+    finalAuthorityBuckets: authority.size,
+    totalSharedExpansions: runReports.reduce((s, r) => s + r.expansions, 0),
+    workerWallMs: Date.now() - workerStart,
+    peakRssMb: Math.round(peakRssMb * 10) / 10,
+  });
+}
 
-  // Pairwise Jaccard for DP keys across all 120 pairs
-  let sumDpJaccard = 0;
-  let pairCount = 0;
-  let maxDpJaccard = 0;
-  let maxDpPair = "";
-  for (let i = 0; i < candidateDpKeySets100.length; i += 1) {
-    for (let j = i + 1; j < candidateDpKeySets100.length; j += 1) {
-      const setA = candidateDpKeySets100[i];
-      const setB = candidateDpKeySets100[j];
-      let inter = 0;
-      for (const k of setA) {
-        if (setB.has(k)) inter += 1;
-      }
-      const union = new Set([...setA, ...setB]).size;
-      const jaccard = union > 0 ? inter / union : 0;
-      sumDpJaccard += jaccard;
-      if (jaccard > maxDpJaccard) {
-        maxDpJaccard = jaccard;
-        maxDpPair = `${FRONTIER_FIXTURE.candidates[i].candidateId} & ${FRONTIER_FIXTURE.candidates[j].candidateId}`;
-      }
-      pairCount += 1;
-    }
-  }
-  const avgDpJaccard = Number((sumDpJaccard / pairCount).toFixed(4));
-
+// G28-I hook-off parity precheck: dpSeedAuthority absent must reproduce the
+// G28-A reference exactly (proves the test-only hook cannot alter production).
+function g28iHookOffParityPrecheck() {
+  const { project, simulator } = createSimulator();
+  const segment = getMt3Segment(project);
+  const res = runMt3Fixture(simulator, segment, null, { captureExpandedStates: true, captureExpandedStateLimit: 100 });
+  assert.strictEqual(res.expansions, 897, "G28-I precheck: hook-off expansions must equal G28-A reference 897");
+  assert.strictEqual(res.generated, 2285, "G28-I precheck: hook-off generated must equal G28-A reference 2285");
+  assert.strictEqual(res.frontierSize, 0, "G28-I precheck: hook-off frontier exhausted");
   return {
-    workloadCharacterizationCompleted: true,
-    candidatesAnalyzed: candidateReports.length,
-    boundedExpansionsPerCandidate: 100,
-    totalStatesExpanded: totalExpandedStates,
-    stateKeyOverlap: {
-      totalExpanded: totalExpandedStates,
-      uniqueStateKeys: uniqueStateKeysCount,
-      duplicateStateKeys: duplicateStateKeysCount,
-      duplicateStateKeyRatio: Number((duplicateStateKeyRatio * 100).toFixed(2)),
-    },
-    dpKeyOverlap: {
-      totalExpanded: totalExpandedStates,
-      uniqueDpKeys: uniqueDpKeysCount,
-      duplicateDpKeys: duplicateDpKeysCount,
-      duplicateDpKeyRatio: Number((duplicateDpKeyRatio * 100).toFixed(2)),
-    },
-    pairwiseDpJaccard: {
-      pairsAnalyzed: pairCount,
-      averageJaccardPercent: Number((avgDpJaccard * 100).toFixed(2)),
-      maxJaccardPercent: Number((maxDpJaccard * 100).toFixed(2)),
-      maxOverlapPair: maxDpPair,
-    },
-    sampleCandidates: candidateReports.slice(0, 4),
+    hookOffParityVerified: true,
+    expansions: res.expansions,
+    generated: res.generated,
   };
 }
 
-function profileProductionMt3() {
-  const { project, simulator } = createSimulator();
-  const segment = getMt3Segment(project);
+// Best-goal comparator (mirrors production compareGoalStates terminal ordering).
+function effectiveHeroValueOf(stateLike, field) {
+  const flags = stateLike.flags || {};
+  const buff = Number(flags[`__${field}_buff__`] || 1);
+  return Math.floor(Number(stateLike[field] || 0) * buff);
+}
 
-  if (typeof global.gc === "function") global.gc();
-  runMt3FixtureWithPerf(simulator, segment);
-
-  const runs = [];
-  for (let i = 0; i < 4; i += 1) {
-    if (typeof global.gc === "function") global.gc();
-    runs.push(runMt3FixtureWithPerf(simulator, segment));
+function compareGoalRecords(left, right) {
+  if (!right) return 1;
+  if (!left) return -1;
+  const hpDiff = left.hp - right.hp;
+  if (hpDiff !== 0) return hpDiff;
+  for (const field of ["atk", "def", "mdef"]) {
+    const diff = effectiveHeroValueOf(left, field) - effectiveHeroValueOf(right, field);
+    if (diff !== 0) return diff;
   }
-
-  const medianWallMs = median(runs.map((r) => r.wallMs));
-  const medianCpuMs = median(runs.map((r) => r.cpuMs));
-  const expansions = runs[0].result.expansions;
-  const medianEps = Math.round(expansions / (medianWallMs / 1000));
-
-  const lastSnap = runs[runs.length - 1].tracker.snapshot();
-  const topLevel = lastSnap.topLevelSelfMs || {};
-  const stab = lastSnap.stabilizationSubphasesMs || {};
-  const counters = lastSnap.semanticCounters || {};
-
-  return {
-    medianWallMs: Math.round(medianWallMs),
-    medianCpuMs: Math.round(medianCpuMs * 1000) / 1000,
-    expansions,
-    medianExpansionsPerSec: medianEps,
-    topLevelSelfMs: topLevel,
-    stabilizationSubphasesMs: stab,
-    semanticCounters: counters,
-    perExpansionMetrics: {
-      wallMsPerExpansion: Number((medianWallMs / expansions).toFixed(3)),
-      cpuMsPerExpansion: Number((medianCpuMs / expansions).toFixed(3)),
-      battleResolverEvaluateCallsPerExpansion: Number(((counters.battleResolverEvaluateCalls || 0) / expansions).toFixed(2)),
-      hazardCellsScannedPerExpansion: Number(((counters.hazardCellsScanned || 0) / expansions).toFixed(2)),
-      stabilizationPassesPerExpansion: Number(((counters.stabilizationPasses || 0) / expansions).toFixed(2)),
-      primitiveEnumerationCallsPerExpansion: Number(((counters.primitiveEnumerationCalls || 0) / expansions).toFixed(2)),
-      stabilizationMsPerExpansion: Number(((topLevel.stabilization || 0) / expansions).toFixed(3)),
-      walkReachabilityMsPerExpansion: Number(((topLevel.walkReachability || 0) / expansions).toFixed(3)),
-      primitiveEnumerationMsPerExpansion: Number(((topLevel.primitiveEnumeration || 0) / expansions).toFixed(3)),
-      applyActionMsPerExpansion: Number(((topLevel.applyAction || 0) / expansions).toFixed(3)),
-      stateKeyAndDominanceMsPerExpansion: Number(((topLevel.stateKeyAndDominance || 0) / expansions).toFixed(3)),
-    },
-  };
+  for (const field of ["lv", "exp", "atk", "def", "mdef"]) {
+    const diff = Number(left[field] || 0) - Number(right[field] || 0);
+    if (diff !== 0) return diff;
+  }
+  return right.rawRouteLength - left.rawRouteLength;
 }
 
 // ========== Main ==========
@@ -373,29 +639,205 @@ function main() {
   const g28f = gateG28F_FixtureRouteFreeCanonicality();
   const g28g = gateG28G_MultiCandidateWorkloadCharacterization();
 
+  // ---- G28-H: full candidate completion characterization (child per candidate) ----
+  const g28hWorkers = [];
+  for (let i = 0; i < FRONTIER_FIXTURE.candidates.length; i += 1) {
+    const outPath = makeTempPath(`g28h-${i}`);
+    const result = runWorker(["--g28h-worker", String(i), outPath], 1800);
+    if (result.status !== 0) {
+      throw new Error(`G28-H worker ${i} failed (status ${result.status}):\n${result.stderr}`);
+    }
+    g28hWorkers.push(readWorkerOutput(outPath));
+  }
+
+  const g28hOccurrences = g28hWorkers.map((w) => w.occurrences);
+  const candidateIds = g28hWorkers.map((w) => w.candidateId);
+  const g28hOverlap = computeOverlapAnalysis(g28hOccurrences, candidateIds);
+  const g28h = {
+    fullCandidateCompletionCharacterizationCompleted: true,
+    workerArchitecture: "one-fresh-child-process-per-candidate",
+    maxExpansions: G28_H_MAX_EXPANSIONS,
+    maxRuntimeMs: G28_NON_BINDING_MAX_RUNTIME_MS,
+    candidates: g28hWorkers.map((w) => ({
+      candidateId: w.candidateId,
+      initialHp: w.initialHp,
+      initialDef: w.initialDef,
+      expansions: w.expansions,
+      frontierSize: w.frontierSize,
+      searchComplete: w.searchComplete,
+      stoppedReason: w.stoppedReason,
+      found: w.found,
+      accepted: w.accepted,
+      generated: w.generated,
+      wallMs: w.wallMs,
+      peakRssMb: w.peakRssMb,
+      goalCount: w.goalRecords.length,
+    })),
+    allCandidatesSearchComplete: g28hWorkers.every((w) => w.searchComplete === true),
+    anyGoalFound: g28hWorkers.some((w) => w.found === true),
+    fullWorkOverlap: {
+      window: "FULL_BOUNDED_WORKLOAD",
+      withinCandidateDuplicates: g28hOverlap.withinCandidate,
+      canonicalStateKeyOverlap: g28hOverlap.canonicalStateKey,
+      dpBucketKeyOverlap: g28hOverlap.dpBucketKey,
+    },
+  };
+
+  // ---- G28-I: test-only multi-root shared-DP feasibility (conditional) ----
+  const correctedCrossDpOverlap = g28hOverlap.dpBucketKey.crossCandidateOverlapRatioPercent;
+  const correctedCrossStateOverlap = g28hOverlap.canonicalStateKey.crossCandidateOverlapRatioPercent;
+  let g28i;
+  if (correctedCrossDpOverlap < 20) {
+    g28i = {
+      executed: false,
+      gate: "CROSS_CANDIDATE_DP_BUCKET_OVERLAP_RATIO >= 20%",
+      correctedCrossDpBucketOverlapPercent: correctedCrossDpOverlap,
+      status: "SKIPPED_LOW_OVERLAP",
+    };
+  } else {
+    const parityPrecheck = g28iHookOffParityPrecheck();
+    const outPath = makeTempPath("g28i-shared-arm");
+    const result = runWorker(["--g28i-worker", outPath], 3600);
+    if (result.status !== 0) {
+      throw new Error(`G28-I shared-arm worker failed (status ${result.status}):\n${result.stderr}`);
+    }
+    const shared = readWorkerOutput(outPath);
+
+    const sharedGoalRecords = shared.runs.flatMap((r) => r.goalRecords);
+    const independentGoalRecords = g28hWorkers.flatMap((w) => w.goalRecords.map((g) => ({ ...g, originCandidateId: w.candidateId })));
+    const goalMultisetOf = (records) => records.reduce((map, g) => {
+      map.set(g.stateKey, (map.get(g.stateKey) || 0) + 1);
+      return map;
+    }, new Map());
+    const independentGoalMultiset = goalMultisetOf(independentGoalRecords);
+    const sharedGoalMultiset = goalMultisetOf(sharedGoalRecords);
+    const goalMultisetMatched = independentGoalMultiset.size === sharedGoalMultiset.size
+      && Array.from(independentGoalMultiset.entries()).every(([k, v]) => sharedGoalMultiset.get(k) === v);
+    const bestIndependentGoal = independentGoalRecords.reduce((best, g) => (compareGoalRecords(g, best) < 0 ? g : best), null);
+    const bestSharedGoal = sharedGoalRecords.reduce((best, g) => (compareGoalRecords(g, best) < 0 ? g : best), null);
+
+    const sharedAllComplete = shared.runs.every((r) => r.searchComplete === true);
+    const sharedAnyGoal = sharedGoalRecords.length > 0;
+
+    // Completion authority parity (§9): if all independent searches complete
+    // and no goal, the shared arm must also complete and find no goal.
+    const completionAuthorityParity = g28h.allCandidatesSearchComplete && !g28h.anyGoalFound
+      ? (sharedAllComplete && !sharedAnyGoal)
+      : null; // goal-bearing scenario: judged via goal multiset + origins below
+
+    // Origin provenance (§10): every shared goal must originate from its own
+    // run's root with a materialized route (no cross-root contamination).
+    const originProvenanceVerified = sharedGoalRecords.every((g) =>
+      Boolean(g.originCandidateId)
+      && g.routeLength > 0
+      && FRONTIER_FIXTURE.candidates.some((c) => c.candidateId === g.originCandidateId));
+
+    const totalIndependentExpansions = g28hWorkers.reduce((s, w) => s + w.expansions, 0);
+    const expansionReductionRatioPercent = totalIndependentExpansions > 0
+      ? Number((((totalIndependentExpansions - shared.totalSharedExpansions) / totalIndependentExpansions) * 100).toFixed(2))
+      : 0;
+
+    g28i = {
+      executed: true,
+      gate: "CROSS_CANDIDATE_DP_BUCKET_OVERLAP_RATIO >= 20%",
+      correctedCrossDpBucketOverlapPercent: correctedCrossDpOverlap,
+      correctedCrossStateKeyOverlapPercent: correctedCrossStateOverlap,
+      status: "EXECUTED_TEST_ONLY",
+      hookOffParityPrecheck: parityPrecheck,
+      sharedArm: {
+        workerArchitecture: "one-dedicated-child-process-sequential-shared-authority",
+        runs: shared.runs.map((r) => ({
+          candidateId: r.candidateId,
+          seedOffered: r.seedOffered,
+          seedRegisteredBuckets: r.seedRegisteredBuckets,
+          expansions: r.expansions,
+          frontierSize: r.frontierSize,
+          searchComplete: r.searchComplete,
+          found: r.found,
+          accepted: r.accepted,
+          generated: r.generated,
+          wallMs: r.wallMs,
+        })),
+        totalSharedExpansions: shared.totalSharedExpansions,
+        finalAuthorityBuckets: shared.finalAuthorityBuckets,
+        workerWallMs: shared.workerWallMs,
+        peakRssMb: shared.peakRssMb,
+      },
+      signals: {
+        INDEPENDENT_TOTAL_EXPANSIONS: totalIndependentExpansions,
+        SHARED_MULTI_ROOT_EXPANSIONS: shared.totalSharedExpansions,
+        EXPANSION_REDUCTION_RATIO_PERCENT: expansionReductionRatioPercent,
+        INDEPENDENT_WALL_MS_TOTAL: g28hWorkers.reduce((s, w) => s + w.wallMs, 0),
+        SHARED_WALL_MS: shared.workerWallMs,
+        UNIQUE_DP_BUCKETS_EXPANDED_SHARED: shared.finalAuthorityBuckets,
+        INDEPENDENT_WALL_OBSERVATIONAL_ONLY: true,
+      },
+      semanticParity: {
+        independentFound: g28h.anyGoalFound,
+        sharedFound: sharedAnyGoal,
+        goalCountIndependent: independentGoalRecords.length,
+        goalCountShared: sharedGoalRecords.length,
+        bestGoalIndependent: bestIndependentGoal,
+        bestGoalShared: bestSharedGoal,
+        bestGoalMatched: Boolean(bestIndependentGoal) === Boolean(bestSharedGoal)
+          && (bestIndependentGoal == null || (
+            bestIndependentGoal.stateKey === bestSharedGoal.stateKey
+            || compareGoalRecords(bestIndependentGoal, bestSharedGoal) === 0)),
+        goalMultisetMatched,
+        completionAuthorityParity,
+        originProvenanceVerified,
+      },
+      testOnly: true,
+      productionWiring: "NOT_AUTHORIZED",
+    };
+  }
+
   const report = {
-    schema: "motapathfinder.mt3-mt4-hot-path.v2",
+    schema: "motapathfinder.mt3-mt4-hot-path.v3",
     contractStatus: "passed",
-    iteration: "PR-5.24h Iteration 1 (Workload Characterization & Overlap Discovery)",
+    iteration: "PR-5.24h Iteration 1 Repair 2 (Corrected Cross-Root Overlap + Multi-Root Shared-DP Feasibility)",
+    terminology: {
+      buildStateKey: "CANONICAL_STATE_KEY",
+      buildDpStateKey: "PRODUCTION_DP_EQUIVALENCE_BUCKET_KEY",
+      note: "DP key excludes HP under the current implicit model; same DP key does not imply identical successor state and must never back a successor cache.",
+    },
     fixture: {
       tower: "OnlyUp",
       segment: "mt3-to-mt4",
       singleCandidateId: SINGLE_FIXTURE.provenance.sourceCandidateId,
-      singleCandidateExpansions: g28a.expansions,
+      singleCandidateNaturalExhaustionExpansions: g28a.expansions,
       frontierCandidatesCount: FRONTIER_FIXTURE.candidates.length,
     },
     gates: {
       "G28-A": g28a,
       "G28-F": g28f,
       "G28-G": g28g,
+      "G28-H": g28h,
+      "G28-I": g28i,
     },
   };
 
   console.log(JSON.stringify(report, null, 2));
 }
 
+// ==== worker entrypoints ====
+function workerMain(args) {
+  if (args[0] === "--g28h-worker") {
+    g28hWorker(Number(args[1]), args[2]);
+    return true;
+  }
+  if (args[0] === "--g28i-worker") {
+    g28iSharedArmWorker(args[1]);
+    return true;
+  }
+  return false;
+}
+
 if (require.main === module) {
   try {
+    if (workerMain(process.argv.slice(2))) {
+      process.exit(0);
+    }
     main();
   } catch (error) {
     console.error(error && error.stack ? error.stack : String(error));
@@ -408,10 +850,12 @@ module.exports = {
   getMt3Segment,
   runMt3Fixture,
   runMt3FixtureWithPerf,
-  profileProductionMt3,
   gateG28A_FixtureDeterminism,
   gateG28F_FixtureRouteFreeCanonicality,
   gateG28G_MultiCandidateWorkloadCharacterization,
+  buildDpBucketKey,
+  collectOccurrences,
+  computeOverlapAnalysis,
   SINGLE_FIXTURE,
   FRONTIER_FIXTURE,
 };
