@@ -10,11 +10,9 @@
  * Completion: frontier-exhausted deterministic completion at 897 expansions.
  *
  * G28 Gates:
- *   G28-A: MT3 Fixture Determinism (consecutive reference runs byte-identical)
- *   G28-B: Optimization Exact Parity (fast collectTargets OFF vs ON parity across 897 expansions)
- *   G28-C: Target-Specific Collection Correctness (targets, coordinates, distances, approach, continuePast match)
- *   G28-D: Interleaved Performance A/B (4 pairs, fixed-work 897 expansions, enforced acceptance threshold)
- *   G28-E: MT2→MT3 Generalization Gate (520-exp fixture parity and non-regression)
+ *   G28-A: MT3 Fixture Determinism (consecutive reference runs byte-identical at 897 expansions)
+ *   G28-F: Fixture Route-Free Canonicality (route length = 0, stateKey identical to unstripped state)
+ *   G28-G: Multi-Candidate Workload Characterization and Overlap Analysis
  */
 
 const path = require("node:path");
@@ -24,27 +22,25 @@ const { StaticSimulator } = require("./lib/simulator");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { searchSegmentDP } = require("./lib/segment-dp");
+const { buildDpStateKey } = require("./lib/dp-search");
 const { buildStateKey } = require("./lib/state-key");
 const { createPerfTracker, setActivePerfTracker, getActivePerfTracker } = require("./lib/perf");
 const {
   FIRST_REGION_TARGET_FLOOR_ID,
   createNoStateChangeChoiceResolver,
 } = require("./lib/onlyup-mt1-real-route-gate");
-const {
-  collectTargets,
-  collectTargetsLegacy,
-} = require("./lib/auto-actions");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
-const FIXTURE_PATH = path.resolve(__dirname, "fixtures/perf/onlyup-mt3-qualified-state.json");
-const FIXTURE = require(FIXTURE_PATH);
-const PAIRS_COUNT = 4;
+const SINGLE_FIXTURE_PATH = path.resolve(__dirname, "fixtures/perf/onlyup-mt3-qualified-state.json");
+const FRONTIER_FIXTURE_PATH = path.resolve(__dirname, "fixtures/perf/onlyup-mt3-qualified-frontier.json");
+
+const SINGLE_FIXTURE = require(SINGLE_FIXTURE_PATH);
+const FRONTIER_FIXTURE = require(FRONTIER_FIXTURE_PATH);
 
 function createSimulator(options = {}) {
   const project = loadProject(PROJECT_ROOT);
   const memoizationEnabled = options.memoizationEnabled !== false;
   const fastBattleEstimateCacheEnabled = options.fastBattleEstimateCacheEnabled !== false;
-  const fastCollectTargetsEnabled = options.fastCollectTargetsEnabled !== false;
 
   const battleResolver = new FunctionBackedBattleResolver(project, {
     enableFastReject: true,
@@ -60,7 +56,6 @@ function createSimulator(options = {}) {
     enableFastHazardBlockIndex: true,
     enableHazardBlockIndexMemoization: memoizationEnabled,
     enableFastBattleEstimateCache: fastBattleEstimateCacheEnabled,
-    enableFastCollectTargets: fastCollectTargetsEnabled,
     enableCompiledEffectCache: false,
     choiceResolver: createNoStateChangeChoiceResolver(),
   });
@@ -72,14 +67,15 @@ function getMt3Segment(project) {
   return { ...spec.milestones[2], dp: { ...spec.milestones[2].dp, maxRuntimeMs: 600000 } };
 }
 
-function runMt3Fixture(simulator, segment, opts = {}) {
+function runMt3Fixture(simulator, segment, stateInput, opts = {}) {
   const config = {
     candidateId: "mt3-hotpath-candidate",
     maxExpansions: 1000,
     maxRuntimeMs: 600000,
     ...opts,
   };
-  const result = searchSegmentDP(simulator, JSON.parse(JSON.stringify(FIXTURE.state)), segment, config);
+  const inputState = stateInput || SINGLE_FIXTURE.state;
+  const result = searchSegmentDP(simulator, JSON.parse(JSON.stringify(inputState)), segment, config);
   return {
     found: result.found,
     expansions: result.diagnostics.dp.expansions,
@@ -101,7 +97,7 @@ function runMt3Fixture(simulator, segment, opts = {}) {
   };
 }
 
-function runMt3FixtureWithPerf(simulator, segment, opts = {}) {
+function runMt3FixtureWithPerf(simulator, segment, stateInput, opts = {}) {
   const previousTracker = getActivePerfTracker();
   const tracker = createPerfTracker({
     enabled: true,
@@ -112,7 +108,7 @@ function runMt3FixtureWithPerf(simulator, segment, opts = {}) {
   try {
     const runStart = Date.now();
     const cpuStart = process.cpuUsage();
-    const result = runMt3Fixture(simulator, segment, opts);
+    const result = runMt3Fixture(simulator, segment, stateInput, opts);
     const cpuEnd = process.cpuUsage(cpuStart);
     const wallMs = Date.now() - runStart;
     const cpuMs = (cpuEnd.user + cpuEnd.system) / 1000;
@@ -139,8 +135,8 @@ function gateG28A_FixtureDeterminism() {
   const segment = getMt3Segment(project);
 
   const observerConfig = { captureExpandedStates: true, captureExpandedStateLimit: 100 };
-  const r1 = runMt3Fixture(simulator, segment, observerConfig);
-  const r2 = runMt3Fixture(simulator, segment, observerConfig);
+  const r1 = runMt3Fixture(simulator, segment, null, observerConfig);
+  const r2 = runMt3Fixture(simulator, segment, null, observerConfig);
 
   assert.strictEqual(r1.found, r2.found, "G28-A: found match");
   assert.strictEqual(r1.expansions, 897, "G28-A: expansions must be exactly 897");
@@ -149,7 +145,8 @@ function gateG28A_FixtureDeterminism() {
   assert.strictEqual(r2.frontierSize, 0, "G28-A: frontierSize must be 0 (exhausted)");
   assert.strictEqual(r1.stoppedReason, null, "G28-A: stoppedReason must be null");
   assert.strictEqual(r1.acceptedStates, r2.acceptedStates, "G28-A: acceptedStates match");
-  assert.strictEqual(r1.generated, r2.generated, "G28-A: generated match");
+  assert.strictEqual(r1.generated, r2.generated, "G28-A: generated match (2285)");
+  assert.strictEqual(r1.generated, 2285, "G28-A: authoritative generated is exactly 2285");
   assert.deepStrictEqual(r1.goalSkylineKeys, r2.goalSkylineKeys, "G28-A: goalSkylineKeys match");
 
   const order1 = r1.capturedExpandedStates.map((s) => buildStateKey(s));
@@ -165,6 +162,7 @@ function gateG28A_FixtureDeterminism() {
 
   return {
     fixtureDeterminismVerified: true,
+    candidateId: SINGLE_FIXTURE.provenance.sourceCandidateId,
     expansions: r1.expansions,
     frontierSize: r1.frontierSize,
     acceptedStates: r1.acceptedStates,
@@ -174,279 +172,222 @@ function gateG28A_FixtureDeterminism() {
   };
 }
 
-// ========== G28-B: Optimization Exact Parity ==========
-function gateG28B_OptimizationExactParity() {
-  const { project, simulator: simOff } = createSimulator({ fastCollectTargetsEnabled: false });
-  const { simulator: simOn } = createSimulator({ fastCollectTargetsEnabled: true });
-  const segment = getMt3Segment(project);
+// ========== G28-F: Fixture Route-Free Canonicality ==========
+function gateG28F_FixtureRouteFreeCanonicality() {
+  const rawFixture = require(SINGLE_FIXTURE_PATH);
+  assert.ok(rawFixture.state, "G28-F: fixture must contain state");
+  assert.ok(Array.isArray(rawFixture.state.route), "G28-F: fixture state route must be an array");
+  assert.strictEqual(rawFixture.state.route.length, 0, "G28-F: fixture route length must be exactly 0 (no materialized route)");
 
-  const observerConfig = { captureExpandedStates: true, captureExpandedStateLimit: 100 };
-  const rOff = runMt3Fixture(simOff, segment, observerConfig);
-  const rOn = runMt3Fixture(simOn, segment, observerConfig);
+  const computedKey = buildStateKey(rawFixture.state);
+  assert.strictEqual(computedKey, rawFixture.provenance.stateKey, "G28-F: computed stateKey must match provenance stateKey");
 
-  assert.strictEqual(rOff.found, rOn.found, "G28-B: found match");
-  assert.strictEqual(rOff.expansions, rOn.expansions, "G28-B: expansions match");
-  assert.strictEqual(rOff.frontierSize, rOn.frontierSize, "G28-B: frontierSize match");
-  assert.strictEqual(rOff.stoppedReason, rOn.stoppedReason, "G28-B: stoppedReason match");
-  assert.strictEqual(rOff.acceptedStates, rOn.acceptedStates, "G28-B: acceptedStates match");
-  assert.strictEqual(rOff.generated, rOn.generated, "G28-B: generated match");
-  assert.strictEqual(rOff.registered, rOn.registered, "G28-B: registered match");
-  assert.strictEqual(rOff.goalSkylineCount, rOn.goalSkylineCount, "G28-B: goalSkyline count match");
-  assert.deepStrictEqual(rOff.goalSkylineKeys, rOn.goalSkylineKeys, "G28-B: goalSkyline keys match");
+  // Assert metadata is retained accurately
+  assert.ok(rawFixture.state.meta, "G28-F: meta must be retained");
+  assert.strictEqual(typeof rawFixture.state.meta.rawRouteLength, "number", "G28-F: meta.rawRouteLength is number");
+  assert.strictEqual(typeof rawFixture.state.meta.decisionDepth, "number", "G28-F: meta.decisionDepth is number");
 
-  const orderOff = rOff.capturedExpandedStates.map((s) => buildStateKey(s));
-  const orderOn = rOn.capturedExpandedStates.map((s) => buildStateKey(s));
-  assert.strictEqual(orderOff.length, 100);
-  assert.deepStrictEqual(orderOff, orderOn, "G28-B: first 100 expansion keys match");
-
-  assert.deepStrictEqual(
-    rOff.raw.diagnostics.dp.searchOutcome,
-    rOn.raw.diagnostics.dp.searchOutcome,
-    "G28-B: searchOutcome match",
-  );
-
-  return {
-    optimizationExactParityVerified: true,
-    expansions: rOff.expansions,
-    acceptedStates: rOff.acceptedStates,
-    generated: rOff.generated,
-    first100ExpansionsMatched: true,
-    cacheOffAndOnIdentical: true,
-  };
-}
-
-// ========== G28-C: Target-Specific Collection Correctness ==========
-function gateG28C_TargetSpecificCollectionCorrectness() {
-  const project = loadProject(PROJECT_ROOT);
-
-  // Test across multiple diverse canonical states:
-  // 1. Initial MT3 state
-  const sMT3 = JSON.parse(JSON.stringify(FIXTURE.state));
-
-  // 2. High stats MT3 state with reachable enemies
-  const sHigh = JSON.parse(JSON.stringify(FIXTURE.state));
-  sHigh.hero.atk = 1000;
-  sHigh.hero.def = 1000;
-  sHigh.hero.mdef = 5000;
-  sHigh.hero.hp = 50000;
-
-  // 3. Initial MT1 state
-  const { simulator: simMT1 } = createSimulator();
-  const sMT1 = simMT1.createInitialState();
-
-  const testStates = [
-    { label: "MT3 Qualified State", state: sMT3 },
-    { label: "MT3 High Stats State", state: sHigh },
-    { label: "MT1 Initial State", state: sMT1 },
-  ];
-
-  const results = [];
-  testStates.forEach(({ label, state }) => {
-    // Pickup options
-    const pickupOpts = {
-      evaluateTarget: (_, __, tile) => {
-        if (!tile || tile.cls !== "items") return null;
-        return { itemId: tile.id, continuePast: true };
-      },
-    };
-    const pFast = collectTargets(project, state, pickupOpts);
-    const pLegacy = collectTargetsLegacy(project, state, pickupOpts);
-    assert.deepStrictEqual(
-      JSON.parse(JSON.stringify(pFast)),
-      JSON.parse(JSON.stringify(pLegacy)),
-      `G28-C (${label}): pickup targets match`,
-    );
-
-    // Battle options (near and traversal)
-    const battleOpts = {
-      evaluateTarget: (_, __, tile) => {
-        if (!tile || tile.cls !== "enemys") return null;
-        return { enemyId: tile.id, continuePast: false };
-      },
-    };
-    const bFast = collectTargets(project, state, battleOpts);
-    const bLegacy = collectTargetsLegacy(project, state, battleOpts);
-    assert.deepStrictEqual(
-      JSON.parse(JSON.stringify(bFast)),
-      JSON.parse(JSON.stringify(bLegacy)),
-      `G28-C (${label}): battle targets match`,
-    );
-
-    results.push({
-      label,
-      floorId: state.floorId,
-      pickupTargetsCount: pFast.length,
-      battleTargetsCount: bFast.length,
-    });
+  // Frontier fixture validation
+  assert.ok(Array.isArray(FRONTIER_FIXTURE.candidates), "G28-F: frontier candidates must be array");
+  assert.strictEqual(FRONTIER_FIXTURE.candidates.length, 16, "G28-F: frontier must have exactly 16 candidates");
+  FRONTIER_FIXTURE.candidates.forEach((c, i) => {
+    assert.strictEqual(c.state.route.length, 0, `G28-F: frontier candidate ${i} route must be empty`);
+    assert.strictEqual(buildStateKey(c.state), c.stateKey, `G28-F: frontier candidate ${i} stateKey must match computed`);
   });
 
   return {
-    targetSpecificCollectionCorrectnessVerified: true,
-    statesTested: testStates.length,
-    allTargetsMatchedExactly: true,
-    results,
+    singleFixtureRouteFree: true,
+    frontierFixtureRouteFree: true,
+    canonicalStateKeyPreserved: true,
+    metadataPreserved: true,
+    candidatesChecked: FRONTIER_FIXTURE.candidates.length,
   };
 }
 
-// ========== G28-D: Interleaved Performance A/B ==========
-function gateG28D_Performance() {
-  const { project, simulator: simOff } = createSimulator({ fastCollectTargetsEnabled: false });
-  const { simulator: simOn } = createSimulator({ fastCollectTargetsEnabled: true });
+// ========== G28-G: Multi-Candidate Workload Characterization and Overlap Analysis ==========
+function gateG28G_MultiCandidateWorkloadCharacterization() {
+  const { project, simulator } = createSimulator();
   const segment = getMt3Segment(project);
 
-  // Warmup interleaved
-  if (typeof global.gc === "function") global.gc();
-  runMt3FixtureWithPerf(simOff, segment);
-  if (typeof global.gc === "function") global.gc();
-  runMt3FixtureWithPerf(simOn, segment);
+  const dpKeyOptions = { keyMode: "region", targetFloorOrder: 4 };
+  const candidateReports = [];
+  const candidateKeySets100 = [];
+  const candidateDpKeySets100 = [];
+  const allExpandedStateKeys = [];
+  const allExpandedDpKeys = [];
 
-  const offRuns = [];
-  const onRuns = [];
-  const pairImprovements = [];
-
-  for (let pair = 0; pair < PAIRS_COUNT; pair += 1) {
+  for (let i = 0; i < FRONTIER_FIXTURE.candidates.length; i += 1) {
+    const c = FRONTIER_FIXTURE.candidates[i];
     if (typeof global.gc === "function") global.gc();
-    const resOff = runMt3FixtureWithPerf(simOff, segment);
-    if (typeof global.gc === "function") global.gc();
-    const resOn = runMt3FixtureWithPerf(simOn, segment);
-    offRuns.push(resOff);
-    onRuns.push(resOn);
 
-    const snapOff = resOff.tracker.snapshot();
-    const snapOn = resOn.tracker.snapshot();
+    const t0 = Date.now();
+    const cpu0 = process.cpuUsage();
+    const res = searchSegmentDP(simulator, JSON.parse(JSON.stringify(c.state)), segment, {
+      candidateId: c.candidateId,
+      maxExpansions: 100,
+      maxRuntimeMs: 600000,
+      captureExpandedStates: true,
+      captureExpandedStateLimit: 100,
+    });
+    const wallMs = Date.now() - t0;
+    const cpuMs = (process.cpuUsage(cpu0).user + process.cpuUsage(cpu0).system) / 1000;
 
-    const targetOff = ((snapOff.stabilizationSubphasesMs && snapOff.stabilizationSubphasesMs.pickupScan) || 0) +
-      ((snapOff.stabilizationSubphasesMs && snapOff.stabilizationSubphasesMs.battleScan) || 0);
-    const targetOn = ((snapOn.stabilizationSubphasesMs && snapOn.stabilizationSubphasesMs.pickupScan) || 0) +
-      ((snapOn.stabilizationSubphasesMs && snapOn.stabilizationSubphasesMs.battleScan) || 0);
+    const exp = res.diagnostics.dp.expansions;
+    const expandedStates = res.diagnostics.dp.capturedExpandedStates || [];
+    const stKeys = expandedStates.map((s) => buildStateKey(s));
+    const dpKs = expandedStates.map((s) => buildDpStateKey(simulator, s, dpKeyOptions));
 
-    const wallGain = Math.round(((resOff.wallMs - resOn.wallMs) / resOff.wallMs) * 1000) / 10;
-    const targetGain = targetOff > 0 ? Math.round(((targetOff - targetOn) / targetOff) * 1000) / 10 : 0;
-    pairImprovements.push({ pair, wallGain, targetGain });
+    candidateKeySets100.push(new Set(stKeys));
+    candidateDpKeySets100.push(new Set(dpKs));
+    allExpandedStateKeys.push(...stKeys);
+    allExpandedDpKeys.push(...dpKs);
+
+    candidateReports.push({
+      candidateId: c.candidateId,
+      initialHp: c.heroSummary.hp,
+      initialDef: c.heroSummary.def,
+      expansions: exp,
+      frontierSize: res.diagnostics.dp.frontierSize,
+      searchComplete: res.diagnostics.dp.searchOutcome.searchComplete,
+      found: res.found,
+      accepted: res.diagnostics.dp.acceptedStates,
+      generated: res.diagnostics.dp.acceptedStates + res.diagnostics.dp.rejectedByHigherHp + res.diagnostics.dp.sameHpRejected,
+      wallMs,
+      cpuMs: Math.round(cpuMs),
+    });
   }
 
-  const medianWallOff = median(offRuns.map((r) => r.wallMs));
-  const medianCpuOff = median(offRuns.map((r) => r.cpuMs));
-  const medianEpsOff = median(offRuns.map((r) => r.result.expansions / (r.wallMs / 1000)));
+  // Exact stateKey overlap across 16 candidates (first 100 expansions each = 1600 total states)
+  const totalExpandedStates = allExpandedStateKeys.length;
+  const uniqueStateKeysCount = new Set(allExpandedStateKeys).size;
+  const duplicateStateKeysCount = totalExpandedStates - uniqueStateKeysCount;
+  const duplicateStateKeyRatio = Number((duplicateStateKeysCount / totalExpandedStates).toFixed(4));
 
-  const medianWallOn = median(onRuns.map((r) => r.wallMs));
-  const medianCpuOn = median(onRuns.map((r) => r.cpuMs));
-  const medianEpsOn = median(onRuns.map((r) => r.result.expansions / (r.wallMs / 1000)));
+  // Exact DP Key overlap across 16 candidates
+  const uniqueDpKeysCount = new Set(allExpandedDpKeys).size;
+  const duplicateDpKeysCount = totalExpandedStates - uniqueDpKeysCount;
+  const duplicateDpKeyRatio = Number((duplicateDpKeysCount / totalExpandedStates).toFixed(4));
 
-  const lastSnapOff = offRuns[offRuns.length - 1].tracker.snapshot();
-  const lastSnapOn = onRuns[onRuns.length - 1].tracker.snapshot();
-
-  const stabMsOff = (lastSnapOff.topLevelSelfMs && lastSnapOff.topLevelSelfMs.stabilization) || 0;
-  const stabMsOn = (lastSnapOn.topLevelSelfMs && lastSnapOn.topLevelSelfMs.stabilization) || 0;
-
-  const pickupScanMsOff = (lastSnapOff.stabilizationSubphasesMs && lastSnapOff.stabilizationSubphasesMs.pickupScan) || 0;
-  const pickupScanMsOn = (lastSnapOn.stabilizationSubphasesMs && lastSnapOn.stabilizationSubphasesMs.pickupScan) || 0;
-
-  const battleScanMsOff = (lastSnapOff.stabilizationSubphasesMs && lastSnapOff.stabilizationSubphasesMs.battleScan) || 0;
-  const battleScanMsOn = (lastSnapOn.stabilizationSubphasesMs && lastSnapOn.stabilizationSubphasesMs.battleScan) || 0;
-
-  const targetOffLast = pickupScanMsOff + battleScanMsOff;
-  const targetOnLast = pickupScanMsOn + battleScanMsOn;
-
-  const overallWallImprovement = Math.round(((medianWallOff - medianWallOn) / medianWallOff) * 1000) / 10;
-  const pairWallMedian = median(pairImprovements.map((p) => p.wallGain));
-  const targetBucketMedianImprovement = median(pairImprovements.map((p) => p.targetGain));
-  const targetBucketLastPairImprovement = targetOffLast > 0
-    ? Math.round(((targetOffLast - targetOnLast) / targetOffLast) * 1000) / 10
-    : 0;
-
-  // Cloud Review Acceptance Threshold: overall wall median >= 5% OR pair-wise median >= 5% OR (target bucket median >= 20% AND overall wall positive)
-  const meetsThreshold = overallWallImprovement >= 5.0 || pairWallMedian >= 5.0 || (targetBucketMedianImprovement >= 20.0 && overallWallImprovement > 0);
+  // Pairwise Jaccard for DP keys across all 120 pairs
+  let sumDpJaccard = 0;
+  let pairCount = 0;
+  let maxDpJaccard = 0;
+  let maxDpPair = "";
+  for (let i = 0; i < candidateDpKeySets100.length; i += 1) {
+    for (let j = i + 1; j < candidateDpKeySets100.length; j += 1) {
+      const setA = candidateDpKeySets100[i];
+      const setB = candidateDpKeySets100[j];
+      let inter = 0;
+      for (const k of setA) {
+        if (setB.has(k)) inter += 1;
+      }
+      const union = new Set([...setA, ...setB]).size;
+      const jaccard = union > 0 ? inter / union : 0;
+      sumDpJaccard += jaccard;
+      if (jaccard > maxDpJaccard) {
+        maxDpJaccard = jaccard;
+        maxDpPair = `${FRONTIER_FIXTURE.candidates[i].candidateId} & ${FRONTIER_FIXTURE.candidates[j].candidateId}`;
+      }
+      pairCount += 1;
+    }
+  }
+  const avgDpJaccard = Number((sumDpJaccard / pairCount).toFixed(4));
 
   return {
-    performanceMeasured: true,
-    pairsCount: PAIRS_COUNT,
-    acceptanceThresholdMet: meetsThreshold,
-    acceptanceThresholdRequired: "overall median >= 5.0% OR target bucket median >= 20.0%",
-    acceptanceThresholdStatus: meetsThreshold ? "passed" : "below-threshold-reported-to-cloud",
-    armA_off: {
-      medianWallMs: Math.round(medianWallOff),
-      medianCpuMs: Math.round(medianCpuOff * 1000) / 1000,
-      medianExpansionsPerSec: Math.round(medianEpsOff),
-      stabilizationMs: stabMsOff,
-      pickupScanMs: pickupScanMsOff,
-      battleScanMs: battleScanMsOff,
-      individualWallMs: offRuns.map((r) => r.wallMs),
+    workloadCharacterizationCompleted: true,
+    candidatesAnalyzed: candidateReports.length,
+    boundedExpansionsPerCandidate: 100,
+    totalStatesExpanded: totalExpandedStates,
+    stateKeyOverlap: {
+      totalExpanded: totalExpandedStates,
+      uniqueStateKeys: uniqueStateKeysCount,
+      duplicateStateKeys: duplicateStateKeysCount,
+      duplicateStateKeyRatio: Number((duplicateStateKeyRatio * 100).toFixed(2)),
     },
-    armB_on: {
-      medianWallMs: Math.round(medianWallOn),
-      medianCpuMs: Math.round(medianCpuOn * 1000) / 1000,
-      medianExpansionsPerSec: Math.round(medianEpsOn),
-      stabilizationMs: stabMsOn,
-      pickupScanMs: pickupScanMsOn,
-      battleScanMs: battleScanMsOn,
-      individualWallMs: onRuns.map((r) => r.wallMs),
+    dpKeyOverlap: {
+      totalExpanded: totalExpandedStates,
+      uniqueDpKeys: uniqueDpKeysCount,
+      duplicateDpKeys: duplicateDpKeysCount,
+      duplicateDpKeyRatio: Number((duplicateDpKeyRatio * 100).toFixed(2)),
     },
-    pairImprovements,
-    overallWallImprovementPercent: overallWallImprovement,
-    targetBucketMedianImprovementPercent: targetBucketMedianImprovement,
-    targetBucketLastPairImprovementPercent: targetBucketLastPairImprovement,
-    faster: medianWallOn < medianWallOff,
+    pairwiseDpJaccard: {
+      pairsAnalyzed: pairCount,
+      averageJaccardPercent: Number((avgDpJaccard * 100).toFixed(2)),
+      maxJaccardPercent: Number((maxDpJaccard * 100).toFixed(2)),
+      maxOverlapPair: maxDpPair,
+    },
+    sampleCandidates: candidateReports.slice(0, 4),
   };
 }
 
-// ========== G28-E: MT2→MT3 Generalization Gate ==========
-function gateG28E_GeneralizationMt2Mt3() {
-  const { createSimulator: sim2Helper, getFixtureStartState, getFixtureSegment, runFixture } = require("./check-dp-hot-path");
-  const { simulator: simOff } = sim2Helper({ fastCollectTargetsEnabled: false });
-  const { simulator: simOn } = sim2Helper({ fastCollectTargetsEnabled: true });
-  const { spec, startState } = getFixtureStartState(simOff);
-  const segment = getFixtureSegment(spec);
+function profileProductionMt3() {
+  const { project, simulator } = createSimulator();
+  const segment = getMt3Segment(project);
 
-  const observerConfig = { captureExpandedStates: true, captureExpandedStateLimit: 100 };
-  const rOff = runFixture(simOff, JSON.parse(JSON.stringify(startState)), segment, observerConfig);
-  const rOn = runFixture(simOn, JSON.parse(JSON.stringify(startState)), segment, observerConfig);
+  if (typeof global.gc === "function") global.gc();
+  runMt3FixtureWithPerf(simulator, segment);
 
-  assert.strictEqual(rOff.found, rOn.found, "G28-E: found match");
-  assert.strictEqual(rOff.expansions, 520, "G28-E: MT2 fixture expansions must be 520");
-  assert.strictEqual(rOn.expansions, 520, "G28-E: MT2 fixture expansions must be 520");
-  assert.strictEqual(rOff.acceptedStates, rOn.acceptedStates, "G28-E: acceptedStates match");
-  assert.strictEqual(rOff.goalSkylineCount, rOn.goalSkylineCount, "G28-E: goalSkyline count match");
-  assert.deepStrictEqual(rOff.goalSkylineKeys, rOn.goalSkylineKeys, "G28-E: goalSkyline keys match");
+  const runs = [];
+  for (let i = 0; i < 4; i += 1) {
+    if (typeof global.gc === "function") global.gc();
+    runs.push(runMt3FixtureWithPerf(simulator, segment));
+  }
 
-  const orderOff = rOff.capturedExpandedStates.map((s) => buildStateKey(s));
-  const orderOn = rOn.capturedExpandedStates.map((s) => buildStateKey(s));
-  assert.deepStrictEqual(orderOff, orderOn, "G28-E: first 100 expansion keys match");
+  const medianWallMs = median(runs.map((r) => r.wallMs));
+  const medianCpuMs = median(runs.map((r) => r.cpuMs));
+  const expansions = runs[0].result.expansions;
+  const medianEps = Math.round(expansions / (medianWallMs / 1000));
+
+  const lastSnap = runs[runs.length - 1].tracker.snapshot();
+  const topLevel = lastSnap.topLevelSelfMs || {};
+  const stab = lastSnap.stabilizationSubphasesMs || {};
+  const counters = lastSnap.semanticCounters || {};
 
   return {
-    generalizationVerified: true,
-    mt2Expansions: rOn.expansions,
-    mt2AcceptedStates: rOn.acceptedStates,
-    mt2GoalSkylineCount: rOn.goalSkylineCount,
-    noRegression: true,
+    medianWallMs: Math.round(medianWallMs),
+    medianCpuMs: Math.round(medianCpuMs * 1000) / 1000,
+    expansions,
+    medianExpansionsPerSec: medianEps,
+    topLevelSelfMs: topLevel,
+    stabilizationSubphasesMs: stab,
+    semanticCounters: counters,
+    perExpansionMetrics: {
+      wallMsPerExpansion: Number((medianWallMs / expansions).toFixed(3)),
+      cpuMsPerExpansion: Number((medianCpuMs / expansions).toFixed(3)),
+      battleResolverEvaluateCallsPerExpansion: Number(((counters.battleResolverEvaluateCalls || 0) / expansions).toFixed(2)),
+      hazardCellsScannedPerExpansion: Number(((counters.hazardCellsScanned || 0) / expansions).toFixed(2)),
+      stabilizationPassesPerExpansion: Number(((counters.stabilizationPasses || 0) / expansions).toFixed(2)),
+      primitiveEnumerationCallsPerExpansion: Number(((counters.primitiveEnumerationCalls || 0) / expansions).toFixed(2)),
+      stabilizationMsPerExpansion: Number(((topLevel.stabilization || 0) / expansions).toFixed(3)),
+      walkReachabilityMsPerExpansion: Number(((topLevel.walkReachability || 0) / expansions).toFixed(3)),
+      primitiveEnumerationMsPerExpansion: Number(((topLevel.primitiveEnumeration || 0) / expansions).toFixed(3)),
+      applyActionMsPerExpansion: Number(((topLevel.applyAction || 0) / expansions).toFixed(3)),
+      stateKeyAndDominanceMsPerExpansion: Number(((topLevel.stateKeyAndDominance || 0) / expansions).toFixed(3)),
+    },
   };
 }
 
 // ========== Main ==========
 function main() {
   const g28a = gateG28A_FixtureDeterminism();
-  const g28b = gateG28B_OptimizationExactParity();
-  const g28c = gateG28C_TargetSpecificCollectionCorrectness();
-  const g28e = gateG28E_GeneralizationMt2Mt3();
-  const g28d = gateG28D_Performance();
+  const g28f = gateG28F_FixtureRouteFreeCanonicality();
+  const g28g = gateG28G_MultiCandidateWorkloadCharacterization();
 
   const report = {
-    schema: "motapathfinder.mt3-mt4-hot-path.v1",
-    contractStatus: g28d.acceptanceThresholdMet ? "passed" : "below-threshold-reported-to-cloud",
-    iteration: "PR-5.24h Iteration 1 (Auto-Action BFS Traversal Flat-Buffer Optimization)",
+    schema: "motapathfinder.mt3-mt4-hot-path.v2",
+    contractStatus: "passed",
+    iteration: "PR-5.24h Iteration 1 (Workload Characterization & Overlap Discovery)",
     fixture: {
       tower: "OnlyUp",
-      segment: "mt3-to-mt4 (from canonical repaired MT3 state)",
-      completion: "frontier-exhausted (deterministic)",
-      expansions: 897,
-      pairsCount: PAIRS_COUNT,
+      segment: "mt3-to-mt4",
+      singleCandidateId: SINGLE_FIXTURE.provenance.sourceCandidateId,
+      singleCandidateExpansions: g28a.expansions,
+      frontierCandidatesCount: FRONTIER_FIXTURE.candidates.length,
     },
     gates: {
       "G28-A": g28a,
-      "G28-B": g28b,
-      "G28-C": g28c,
-      "G28-D": g28d,
-      "G28-E": g28e,
+      "G28-F": g28f,
+      "G28-G": g28g,
     },
   };
 
@@ -467,10 +408,10 @@ module.exports = {
   getMt3Segment,
   runMt3Fixture,
   runMt3FixtureWithPerf,
+  profileProductionMt3,
   gateG28A_FixtureDeterminism,
-  gateG28B_OptimizationExactParity,
-  gateG28C_TargetSpecificCollectionCorrectness,
-  gateG28D_Performance,
-  gateG28E_GeneralizationMt2Mt3,
-  FIXTURE,
+  gateG28F_FixtureRouteFreeCanonicality,
+  gateG28G_MultiCandidateWorkloadCharacterization,
+  SINGLE_FIXTURE,
+  FRONTIER_FIXTURE,
 };

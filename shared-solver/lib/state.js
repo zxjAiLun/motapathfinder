@@ -210,40 +210,20 @@ function getTileNumberAt(project, state, floorId, x, y) {
 
 function getTileDefinitionByNumber(project, number) {
   if (number == null || number === 0) return null;
-  const numStr = String(number);
-  if (!project.__cachedTileDefinitions) {
-    try {
-      Object.defineProperty(project, "__cachedTileDefinitions", {
-        value: {},
-        enumerable: false,
-        writable: true,
-        configurable: true,
-      });
-    } catch (_) {
-      project.__cachedTileDefinitions = {};
-    }
-  }
-  const cached = project.__cachedTileDefinitions[numStr];
-  if (cached) return cached;
-
-  const definition = project.mapTilesByNumber[numStr];
+  const definition = project.mapTilesByNumber[String(number)];
   if (definition == null) {
-    const unknown = Object.freeze({
+    return {
       number,
       id: `X${number}`,
       cls: "unknown",
       canPass: false,
       noPass: true,
-    });
-    project.__cachedTileDefinitions[numStr] = unknown;
-    return unknown;
+    };
   }
-  const populated = Object.freeze({
+  return {
     number,
     ...definition,
-  });
-  project.__cachedTileDefinitions[numStr] = populated;
-  return populated;
+  };
 }
 
 function getTileDefinitionAt(project, state, floorId, x, y) {

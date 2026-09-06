@@ -377,14 +377,12 @@ class StaticSimulator {
     this.toolRegistry = config.toolRegistry || new ToolRegistry();
     this.enableFastHazardBlockIndex = config.enableFastHazardBlockIndex !== false;
     this.enableHazardBlockIndexMemoization = config.enableHazardBlockIndexMemoization !== false;
-    this.enableFastCollectTargets = config.enableFastCollectTargets !== false;
     this.autoResolver = config.autoResolver || new AutoActionResolver({
       autoPickupEnabled: config.autoPickupEnabled,
       autoBattleEnabled: config.autoBattleEnabled,
       enableFastRejectSkip: config.autoBattleFastRejectEnabled === true,
       enableFastHazardBlockIndex: this.enableFastHazardBlockIndex,
       enableHazardBlockIndexMemoization: this.enableHazardBlockIndexMemoization,
-      enableFastCollectTargets: this.enableFastCollectTargets,
       repeatUntilStable: config.autoRepeatUntilStable !== false,
     });
     this.choiceResolver = config.choiceResolver;

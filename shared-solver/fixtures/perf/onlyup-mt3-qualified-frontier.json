@@ -1,0 +1,3198 @@
+{
+  "schema": "motapathfinder.perf-fixture.canonical-frontier.v1",
+  "provenance": {
+    "sourceQualificationSha": "db2e6c120f3855a97e62694a4a2946772e56bb8a",
+    "sourceRecordCommit": "3c4ae80a8c704b996aa4b2f202aa0962a339dcfd",
+    "inputFrontierCount": 16,
+    "floorId": "MT3",
+    "disclaimer": "This is a test-only benchmark fixture containing the full 16-candidate canonical MT3 input frontier from Run 2. It contains no route hints, correct routes, or manual labels, and must never be read by production solver logic."
+  },
+  "candidates": [
+    {
+      "candidateId": "mt2-to-mt3:candidate-0",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 12782,
+        "atk": 97,
+        "def": 65,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 12,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":12782,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":65,\"mdef\":490,\"money\":0,\"exp\":12,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":78,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 12782,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 65,
+          "mdef": 490,
+          "money": 0,
+          "exp": 12,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 279,
+          "statistics": {
+            "battleDamage": 15719,
+            "battle": 39,
+            "money": 0,
+            "exp": 50
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 78,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "4,7": true,
+              "5,7": true,
+              "7,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,10": true,
+              "10,11": true,
+              "8,11": true,
+              "7,11": true,
+              "5,11": true,
+              "4,11": true,
+              "2,11": true,
+              "2,8": true,
+              "3,9": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 30,
+          "rawRouteLength": 91,
+          "autoStepCount": 61,
+          "autoPickupCount": 50,
+          "autoBattleCount": 11
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-1",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 11563,
+        "atk": 97,
+        "def": 60,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 8,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":11563,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":60,\"mdef\":490,\"money\":0,\"exp\":8,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":74,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 11563,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 60,
+          "mdef": 490,
+          "money": 0,
+          "exp": 8,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 203,
+          "statistics": {
+            "battleDamage": 16138,
+            "battle": 37,
+            "money": 0,
+            "exp": 46
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 74,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "4,7": true,
+              "5,7": true,
+              "7,7": true,
+              "2,8": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 28,
+          "rawRouteLength": 87,
+          "autoStepCount": 59,
+          "autoPickupCount": 48,
+          "autoBattleCount": 11
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-2",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 10997,
+        "atk": 97,
+        "def": 70,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 14,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":10997,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":70,\"mdef\":490,\"money\":0,\"exp\":14,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":80,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"6,5\",\"6,6\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 10997,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 70,
+          "mdef": 490,
+          "money": 0,
+          "exp": 14,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 283,
+          "statistics": {
+            "battleDamage": 17504,
+            "battle": 40,
+            "money": 0,
+            "exp": 52
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 80,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "4,7": true,
+              "5,7": true,
+              "7,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,10": true,
+              "10,11": true,
+              "8,11": true,
+              "7,11": true,
+              "5,11": true,
+              "4,11": true,
+              "2,11": true,
+              "6,6": true,
+              "6,5": true,
+              "2,8": true,
+              "3,9": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 30,
+          "rawRouteLength": 93,
+          "autoStepCount": 63,
+          "autoPickupCount": 51,
+          "autoBattleCount": 12
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-3",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 12782,
+        "atk": 97,
+        "def": 65,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 12,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":12782,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":65,\"mdef\":490,\"money\":0,\"exp\":12,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":78,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 12782,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 65,
+          "mdef": 490,
+          "money": 0,
+          "exp": 12,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 275,
+          "statistics": {
+            "battleDamage": 15719,
+            "battle": 39,
+            "money": 0,
+            "exp": 50
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 78,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "8,7": true,
+              "7,7": true,
+              "5,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,10": true,
+              "10,11": true,
+              "8,11": true,
+              "7,11": true,
+              "5,11": true,
+              "4,11": true,
+              "2,11": true,
+              "2,8": true,
+              "3,9": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 30,
+          "rawRouteLength": 91,
+          "autoStepCount": 61,
+          "autoPickupCount": 50,
+          "autoBattleCount": 11
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-4",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 10997,
+        "atk": 97,
+        "def": 70,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 14,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":10997,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":70,\"mdef\":490,\"money\":0,\"exp\":14,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":80,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"6,5\",\"6,6\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 10997,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 70,
+          "mdef": 490,
+          "money": 0,
+          "exp": 14,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 243,
+          "statistics": {
+            "battleDamage": 17504,
+            "battle": 40,
+            "money": 0,
+            "exp": 52
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 80,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "8,7": true,
+              "7,7": true,
+              "5,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,10": true,
+              "10,11": true,
+              "8,11": true,
+              "7,11": true,
+              "5,11": true,
+              "4,11": true,
+              "2,11": true,
+              "6,6": true,
+              "6,5": true,
+              "2,8": true,
+              "3,9": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 30,
+          "rawRouteLength": 93,
+          "autoStepCount": 63,
+          "autoPickupCount": 51,
+          "autoBattleCount": 12
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-5",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 10197,
+        "atk": 92,
+        "def": 60,
+        "mdef": 440,
+        "lv": 4,
+        "exp": 8,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":10197,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":92,\"def\":60,\"mdef\":440,\"money\":0,\"exp\":8,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":74,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 10197,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 92,
+          "def": 60,
+          "mdef": 440,
+          "money": 0,
+          "exp": 8,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 221,
+          "statistics": {
+            "battleDamage": 15504,
+            "battle": 37,
+            "money": 0,
+            "exp": 46
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 74,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "4,7": true,
+              "5,7": true,
+              "7,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,10": true,
+              "10,11": true,
+              "8,11": true,
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 28,
+          "rawRouteLength": 87,
+          "autoStepCount": 59,
+          "autoPickupCount": 48,
+          "autoBattleCount": 11
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-6",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 12047,
+        "atk": 97,
+        "def": 65,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 10,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":12047,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":65,\"mdef\":490,\"money\":0,\"exp\":10,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":76,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 12047,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 65,
+          "mdef": 490,
+          "money": 0,
+          "exp": 10,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 223,
+          "statistics": {
+            "battleDamage": 15654,
+            "battle": 38,
+            "money": 0,
+            "exp": 48
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 76,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "4,7": true,
+              "5,7": true,
+              "7,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,10": true,
+              "10,11": true,
+              "8,11": true,
+              "7,11": true,
+              "5,11": true,
+              "4,11": true,
+              "2,11": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 29,
+          "rawRouteLength": 89,
+          "autoStepCount": 60,
+          "autoPickupCount": 49,
+          "autoBattleCount": 11
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-7",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 12047,
+        "atk": 97,
+        "def": 65,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 10,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":12047,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":65,\"mdef\":490,\"money\":0,\"exp\":10,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":76,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,11\",\"4,3\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 12047,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 65,
+          "mdef": 490,
+          "money": 0,
+          "exp": 10,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 219,
+          "statistics": {
+            "battleDamage": 15654,
+            "battle": 38,
+            "money": 0,
+            "exp": 48
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 76,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "8,7": true,
+              "7,7": true,
+              "5,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,10": true,
+              "10,11": true,
+              "8,11": true,
+              "7,11": true,
+              "5,11": true,
+              "4,11": true,
+              "2,11": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 29,
+          "rawRouteLength": 89,
+          "autoStepCount": 60,
+          "autoPickupCount": 49,
+          "autoBattleCount": 11
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-8",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 10617,
+        "atk": 92,
+        "def": 60,
+        "mdef": 440,
+        "lv": 4,
+        "exp": 10,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":10617,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":92,\"def\":60,\"mdef\":440,\"money\":0,\"exp\":10,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":76,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 10617,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 92,
+          "def": 60,
+          "mdef": 440,
+          "money": 0,
+          "exp": 10,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 271,
+          "statistics": {
+            "battleDamage": 15884,
+            "battle": 38,
+            "money": 0,
+            "exp": 48
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 76,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "4,7": true,
+              "5,7": true,
+              "7,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,10": true,
+              "10,11": true,
+              "8,11": true,
+              "7,11": true,
+              "5,11": true,
+              "2,8": true,
+              "3,9": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 29,
+          "rawRouteLength": 89,
+          "autoStepCount": 60,
+          "autoPickupCount": 49,
+          "autoBattleCount": 11
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-9",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 10617,
+        "atk": 92,
+        "def": 60,
+        "mdef": 440,
+        "lv": 4,
+        "exp": 10,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":10617,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":92,\"def\":60,\"mdef\":440,\"money\":0,\"exp\":10,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":76,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,3\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 10617,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 92,
+          "def": 60,
+          "mdef": 440,
+          "money": 0,
+          "exp": 10,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 267,
+          "statistics": {
+            "battleDamage": 15884,
+            "battle": 38,
+            "money": 0,
+            "exp": 48
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 76,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "8,7": true,
+              "7,7": true,
+              "5,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,10": true,
+              "10,11": true,
+              "8,11": true,
+              "7,11": true,
+              "5,11": true,
+              "2,8": true,
+              "3,9": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 29,
+          "rawRouteLength": 89,
+          "autoStepCount": 60,
+          "autoPickupCount": 49,
+          "autoBattleCount": 11
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-10",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 10370,
+        "atk": 97,
+        "def": 65,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 12,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":10370,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":65,\"mdef\":490,\"money\":0,\"exp\":12,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":78,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 10370,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 65,
+          "mdef": 490,
+          "money": 0,
+          "exp": 12,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 241,
+          "statistics": {
+            "battleDamage": 18131,
+            "battle": 39,
+            "money": 0,
+            "exp": 50
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 78,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "4,7": true,
+              "5,7": true,
+              "7,7": true,
+              "10,8": true,
+              "9,9": true,
+              "2,8": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "10,11": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 29,
+          "rawRouteLength": 91,
+          "autoStepCount": 62,
+          "autoPickupCount": 50,
+          "autoBattleCount": 12
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-11",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 10370,
+        "atk": 97,
+        "def": 65,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 12,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":10370,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":65,\"mdef\":490,\"money\":0,\"exp\":12,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":78,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 10370,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 65,
+          "mdef": 490,
+          "money": 0,
+          "exp": 12,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 237,
+          "statistics": {
+            "battleDamage": 18131,
+            "battle": 39,
+            "money": 0,
+            "exp": 50
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 78,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "8,7": true,
+              "7,7": true,
+              "5,7": true,
+              "10,8": true,
+              "9,9": true,
+              "2,8": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "10,11": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 29,
+          "rawRouteLength": 91,
+          "autoStepCount": 62,
+          "autoPickupCount": 50,
+          "autoBattleCount": 12
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-12",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 10197,
+        "atk": 92,
+        "def": 60,
+        "mdef": 440,
+        "lv": 4,
+        "exp": 8,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":10197,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":92,\"def\":60,\"mdef\":440,\"money\":0,\"exp\":8,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":74,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 10197,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 92,
+          "def": 60,
+          "mdef": 440,
+          "money": 0,
+          "exp": 8,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 217,
+          "statistics": {
+            "battleDamage": 15504,
+            "battle": 37,
+            "money": 0,
+            "exp": 46
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 74,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "8,7": true,
+              "7,7": true,
+              "5,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,10": true,
+              "10,11": true,
+              "8,11": true,
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 28,
+          "rawRouteLength": 87,
+          "autoStepCount": 59,
+          "autoPickupCount": 48,
+          "autoBattleCount": 11
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-13",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 9956,
+        "atk": 97,
+        "def": 65,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 12,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":9956,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":65,\"mdef\":490,\"money\":0,\"exp\":12,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":78,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"6,5\",\"6,6\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 9956,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 65,
+          "mdef": 490,
+          "money": 0,
+          "exp": 12,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 209,
+          "statistics": {
+            "battleDamage": 18545,
+            "battle": 39,
+            "money": 0,
+            "exp": 50
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 78,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "4,7": true,
+              "5,7": true,
+              "7,7": true,
+              "6,6": true,
+              "6,5": true,
+              "2,8": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "10,11": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 29,
+          "rawRouteLength": 91,
+          "autoStepCount": 62,
+          "autoPickupCount": 50,
+          "autoBattleCount": 12
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-14",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 9956,
+        "atk": 97,
+        "def": 65,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 12,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":9956,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":65,\"mdef\":490,\"money\":0,\"exp\":12,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":78,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"6,5\",\"6,6\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 9956,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 65,
+          "mdef": 490,
+          "money": 0,
+          "exp": 12,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 241,
+          "statistics": {
+            "battleDamage": 18545,
+            "battle": 39,
+            "money": 0,
+            "exp": 50
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 78,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "8,7": true,
+              "7,7": true,
+              "5,7": true,
+              "6,6": true,
+              "6,5": true,
+              "2,8": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "10,11": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 29,
+          "rawRouteLength": 91,
+          "autoStepCount": 62,
+          "autoPickupCount": 50,
+          "autoBattleCount": 12
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    },
+    {
+      "candidateId": "mt2-to-mt3:candidate-15",
+      "floorId": "MT3",
+      "heroSummary": {
+        "hp": 9891,
+        "atk": 97,
+        "def": 70,
+        "mdef": 490,
+        "lv": 4,
+        "exp": 14,
+        "money": 0
+      },
+      "stateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":9891,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":97,\"def\":70,\"mdef\":490,\"money\":0,\"exp\":14,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":80,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"6,5\",\"6,6\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+      "state": {
+        "floorId": "MT3",
+        "hero": {
+          "image": "hero.png",
+          "animate": false,
+          "name": "纱雪",
+          "lv": 4,
+          "hpmax": 9999,
+          "hp": 9891,
+          "manamax": -1,
+          "mana": 0,
+          "atk": 97,
+          "def": 70,
+          "mdef": 490,
+          "money": 0,
+          "exp": 14,
+          "equipment": [],
+          "loc": {
+            "direction": "down",
+            "x": 6,
+            "y": 12
+          },
+          "flags": {},
+          "followers": [],
+          "steps": 215,
+          "statistics": {
+            "battleDamage": 18610,
+            "battle": 40,
+            "money": 0,
+            "exp": 52
+          }
+        },
+        "inventory": {
+          "book": 1,
+          "fly": 1,
+          "I600": 1
+        },
+        "flags": {
+          "shiqu": 1,
+          "autoBattle": 1,
+          "hatred": 80,
+          "__leaveLoc__": {
+            "MT1": {
+              "x": 6,
+              "y": 0,
+              "direction": "up"
+            },
+            "MT2": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            }
+          }
+        },
+        "floorStates": {
+          "MT1": {
+            "removed": {
+              "7,6": true,
+              "5,6": true,
+              "7,8": true,
+              "5,8": true,
+              "8,7": true,
+              "10,7": true,
+              "4,7": true,
+              "2,7": true,
+              "10,8": true,
+              "9,9": true,
+              "9,6": true,
+              "10,5": true,
+              "2,8": true,
+              "11,5": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "3,6": true,
+              "9,10": true,
+              "10,11": true,
+              "9,4": true,
+              "9,2": true,
+              "10,3": true,
+              "3,4": true,
+              "3,2": true,
+              "2,3": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "11,11": true,
+              "12,11": true,
+              "2,1": true,
+              "1,2": true,
+              "10,1": true,
+              "11,2": true,
+              "4,3": true,
+              "1,11": true,
+              "5,3": true,
+              "0,11": true,
+              "2,5": true,
+              "1,5": true,
+              "4,1": true,
+              "5,1": true,
+              "7,1": true,
+              "8,3": true,
+              "7,3": true
+            },
+            "replaced": {}
+          },
+          "MT2": {
+            "removed": {
+              "7,1": true,
+              "5,1": true,
+              "4,1": true,
+              "3,2": true,
+              "2,3": true,
+              "2,1": true,
+              "1,2": true,
+              "8,1": true,
+              "9,2": true,
+              "10,3": true,
+              "8,3": true,
+              "7,3": true,
+              "9,4": true,
+              "10,5": true,
+              "11,5": true,
+              "9,6": true,
+              "3,4": true,
+              "10,7": true,
+              "2,5": true,
+              "1,5": true,
+              "4,3": true,
+              "5,3": true,
+              "10,1": true,
+              "11,2": true,
+              "3,6": true,
+              "2,7": true,
+              "4,7": true,
+              "5,7": true,
+              "7,7": true,
+              "6,6": true,
+              "6,5": true,
+              "2,8": true,
+              "3,9": true,
+              "3,10": true,
+              "2,11": true,
+              "4,11": true,
+              "5,11": true,
+              "7,11": true,
+              "8,11": true,
+              "10,11": true,
+              "9,10": true,
+              "9,9": true
+            },
+            "replaced": {}
+          },
+          "MT3": {
+            "removed": {
+              "7,11": true,
+              "5,11": true
+            },
+            "replaced": {}
+          }
+        },
+        "visitedFloors": {
+          "MT1": true,
+          "MT2": true,
+          "MT3": true
+        },
+        "triggeredAutoEvents": {},
+        "route": [],
+        "notes": [],
+        "meta": {
+          "rank": null,
+          "decisionDepth": 30,
+          "rawRouteLength": 93,
+          "autoStepCount": 63,
+          "autoPickupCount": 51,
+          "autoBattleCount": 12
+        },
+        "progress": {
+          "stageIndex": 2,
+          "milestoneMask": "MT1,MT2,MT3",
+          "visitedFloorMask": "MT1,MT2,MT3",
+          "targetFloor": null,
+          "bestFloorRank": 3,
+          "currentFloorRank": 3,
+          "lastProgressActionId": null
+        }
+      }
+    }
+  ]
+}
