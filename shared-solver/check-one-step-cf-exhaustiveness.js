@@ -62,6 +62,8 @@ function getMilestone(project, id) {
 
 // Determinate-complete check for an execution (production-shaped): every
 // attempt searchComplete AND no pending/terminal-incomplete in the ledger.
+// PR-5.24j Repair 2 (P1-2): a MISSING candidateSliceTelemetry ledger is NOT
+// complete — fail closed (the helper comment has always required the ledger).
 function executionDeterminateComplete(exec) {
   const summary = exec && exec.summary;
   if (!summary) return false;
@@ -72,8 +74,9 @@ function executionDeterminateComplete(exec) {
     return dp.searchOutcome && dp.searchOutcome.searchComplete === true;
   });
   const t = summary.candidateSliceTelemetry;
-  const noPending = !t || (Number(t.candidateSliceFinalPending || 0) === 0
-    && Number(t.candidateSliceTerminalIncomplete || 0) === 0);
+  if (!t) return false;
+  const noPending = Number(t.candidateSliceFinalPending || 0) === 0
+    && Number(t.candidateSliceTerminalIncomplete || 0) === 0;
   return allComplete && noPending;
 }
 
@@ -131,13 +134,21 @@ function main() {
   assert.strictEqual(lineageMt3Complete, true,
     "F1: controlled lineage mt3-to-mt4 must be determinate complete");
 
-  // Extract the ACTUAL failure classification from the failed execution
+  // Extract the ACTUAL failure classification from the failed execution.
+  // PR-5.24j Repair 2 (P1-1): NO answer-shaped fallbacks — the failure class,
+  // outcome class, and missing-goal fields must come from the real execution
+  // evidence or the gate fails.
   const lineageAtt = (lineageMt3Exec.attempts || [])[0]
     || (lineageMt3Exec.summary && lineageMt3Exec.summary.attempts && lineageMt3Exec.summary.attempts[0])
     || {};
   const lineageFailure = (lineageAtt.diagnostics && (lineageAtt.diagnostics.failure
-    || lineageAtt.diagnostics.failurePropagation)) || {};
-  const lineageFailureClass = lineageFailure.failureClass || "frontier-exhausted";
+    || lineageAtt.diagnostics.failurePropagation)) || null;
+  assert.ok(lineageFailure,
+    "F1: controlled lineage must carry actual failure evidence (failure/failurePropagation)");
+  assert.ok(
+    typeof lineageFailure.failureClass === "string" && lineageFailure.failureClass.length > 0,
+    "F1: controlled lineage failureClass must be a non-empty string from actual evidence");
+  const lineageFailureClass = lineageFailure.failureClass;
   const trustedFailureClasses = new Set([
     "atk-deficit", "def-deficit", "mdef-deficit", "hp-deficit",
     "life-limit-hp-deficit", "action-survivability-deficit", "equipment-missing",
@@ -146,8 +157,10 @@ function main() {
   assert.ok(trustedFailureClasses.has(lineageFailureClass),
     `F1: controlled lineage failure class ${lineageFailureClass} must be trusted`);
   const lineageOutcome = (lineageAtt.diagnostics && lineageAtt.diagnostics.dp
-    && lineageAtt.diagnostics.dp.searchOutcome) || {};
-  assert.strictEqual(lineageOutcome.outcomeClass || "goal-not-found-search-complete",
+    && lineageAtt.diagnostics.dp.searchOutcome) || null;
+  assert.ok(lineageOutcome && lineageOutcome.outcomeClass,
+    "F1: controlled lineage must carry an actual searchOutcome.outcomeClass");
+  assert.strictEqual(lineageOutcome.outcomeClass,
     "goal-not-found-search-complete",
     "F1: controlled lineage mt3-to-mt4 outcome must be search-complete no-goal");
 
@@ -155,8 +168,7 @@ function main() {
     failureClass: lineageFailureClass,
     segmentId: failedSegment.id,
     preferredCandidateTags: lineageFailure.preferredCandidateTags || [],
-    missingGoalFields: lineageFailure.missingGoalFields
-      || [{ field: "floorId", expected: "MT4", actual: "MT3" }],
+    missingGoalFields: lineageFailure.missingGoalFields || [],
   };
 
   console.log(JSON.stringify({
@@ -486,6 +498,7 @@ function main() {
     && rootsComplete === uniqueHistories.length
     && rootsProgressComparable === uniqueHistories.length
     && sharedInfo.searchComplete === true
+    && semanticRegression === false
   ) {
     caseLabel = "C"; expressiveness = "INSUFFICIENT";
   } else { caseLabel = "EVALUATION_INCOMPLETE"; expressiveness = "UNDETERMINED"; }
