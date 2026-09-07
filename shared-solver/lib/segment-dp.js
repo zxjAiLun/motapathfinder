@@ -7396,10 +7396,14 @@ function tryAdaptiveCheckpointRepair(
     }
 
     // PR-5.24e / Repair 1a — Counterfactual Resource-Investment Repair Generation.
-    // Triggered ONLY when:
+    // PR-5.24i — admission narrowed to ACTIONABLE positive tickets through the
+    // assessCounterfactualAdmission helper.  Triggered ONLY when:
     //   1. Normal first round is truly complete: all normal tickets have probeCount >= 1;
     //   2. At least one REAL normal history (anchorOutputStateKey != null) completed its probe;
-    //   3. Normal repair waves at this depth produced zero positive progress tickets;
+    //   3. No ACTIONABLE positive ticket remains (PR-5.24i: TERMINAL
+    //      positive-no-goal tickets — determinately exhausted, no goal, no
+    //      continuation, no pending — no longer block CF; historical rule was
+    //      "zero positive progress tickets of any kind");
     //   4. Global stop is clean (null);
     //   5. Failure class is an eligible trusted complete failure;
     //   6. Failed execution has canonical completion proof (isReplayDeterminatelyComplete);
