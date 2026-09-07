@@ -1204,19 +1204,61 @@ function searchDPCore(simulator, initialRoots, options) {
     maxFairQueueAgeExpansions: 0,
   };
   // PR-5.24h Iteration 2 — multi-root shared DP authority: ONE live agenda.
-  // Root-ordered popping (root 0 drains first, then root 1, ...) keeps the
-  // shared-authority contract intact — an incomplete root's pending agenda
-  // stays alive inside the shared search, so budget interruption can never
-  // falsely claim exhaustion — while letting later roots compete against the
-  // accumulated (expanded + pending) cross-root authority.  Single-root
-  // searches are unaffected (rootIndex === 0 for every node).
+  // PR-5.24h Iteration 3 — root-sliced scheduling (bounded root fairness).
+  //   The real-frontier qualification proved the Iteration-2 root-ORDERED
+  //   agenda front-loads bounded walls (14/16 registered roots starved at
+  //   13.7s), while unrestricted global competition (one heap, pure DP rank)
+  //   was already rejected by experiment (30k+ winner-churn expansions).
+  //   Root-slicing is the middle ground: each root keeps its OWN agenda heap
+  //   ordered by the single-root production comparator (goal-directed or
+  //   compareDpAgendaRank — intra-root expansion order is EXACTLY single-root
+  //   production), and the scheduler drains at most
+  //   MULTI_ROOT_EXPANSION_QUANTUM ACTIVE expansions per root slice before
+  //   round-robining to the next root with live entries.  Stale entries
+  //   (cross-root winner replacement / inactive skyline entries) never count
+  //   against the quantum.  The shared authority is UNCHANGED: one global
+  //   bestByKey / SkylineSet / nodes registry / goal archive / budget.
+  //   Single-root searches (multiRootSearch === false) keep the exact
+  //   historical single-heap path (G30-A parity).
   const multiRootSearch = (initialRoots || []).length > 1;
+  // Root-sliced scheduling applies to the best-first multi-root path (the
+  // activation guard requires best-first; hybrid-fair/fifo multi-root keeps
+  // the legacy ordering — heap is null for fifo, checked below after decl).
+  const multiRootSchedulingPolicy = multiRootSearch && !fairnessEnabled && agendaMode !== "fifo"
+    ? (config.multiRootSchedulingPolicy === "root-ordered"
+      ? "root-ordered"
+      : "root-sliced")
+    : null;
+  const multiRootExpansionQuantum = Math.max(1, Math.floor(number(config.multiRootExpansionQuantum, 64)));
+  const compareSingleRootRank = (left, right) => (
+    config.dpPriorityMode === "goal-directed"
+      ? compareGoalDirectedDpAgendaRank(left.rank, right.rank)
+      : compareDpAgendaRank(left.rank, right.rank)
+  );
   const compareMultiRootAgendaEntry = (left, right) => {
     const rootDiff = (right.rootIndex != null ? right.rootIndex : 0) - (left.rootIndex != null ? left.rootIndex : 0);
     if (rootDiff !== 0) return rootDiff;
-    return config.dpPriorityMode === "goal-directed"
-      ? compareGoalDirectedDpAgendaRank(left.rank, right.rank)
-      : compareDpAgendaRank(left.rank, right.rank);
+    return compareSingleRootRank(left, right);
+  };
+  const rootAgendas = new Map(); // rootIndex -> BinaryHeap(single-root comparator)
+  const rootSliced = multiRootSchedulingPolicy === "root-sliced";
+  if (multiRootSearch && rootSliced) {
+    // Per-root scheduling queues; the global `heap` stays as the agenda only
+    // for the legacy root-ordered policy (and the single-root path).
+    (initialRoots || []).forEach((rootSpec, index) => {
+      const rootIndex = rootSpec.rootIndex != null ? Number(rootSpec.rootIndex) : index;
+      rootAgendas.set(rootIndex, new BinaryHeap(compareSingleRootRank));
+    });
+  }
+  const multiRootSchedulerDiagnostics = {
+    policy: multiRootSchedulingPolicy,
+    expansionQuantum: rootSliced ? multiRootExpansionQuantum : null,
+    rootRoundsCompleted: 0,
+    rootSchedulerSwitches: 0,
+    staleEntriesSkipped: 0,
+    crossRootReplacements: 0,
+    slicesReceivedByRoot: {},
+    activeEntriesAtStopByRoot: {},
   };
   const heap = agendaMode === "fifo"
     ? null
@@ -1911,6 +1953,9 @@ function searchDPCore(simulator, initialRoots, options) {
     if (bestByKey instanceof SkylineSet) {
       if (existingSkyline.length > 0 && adaptiveTiming && timingConflict !== true) {
         bestByKey.replace(key, node);
+        if (rootSliced && existingSkyline.some((c) => c.rootIndex != null && c.rootIndex !== node.rootIndex)) {
+          multiRootSchedulerDiagnostics.crossRootReplacements += 1;
+        }
       } else {
         skylineInserted = bestByKey.add(
           key,
@@ -1920,6 +1965,10 @@ function searchDPCore(simulator, initialRoots, options) {
         );
       }
     } else {
+      if (rootSliced && existing != null
+        && existing.rootIndex != null && existing.rootIndex !== node.rootIndex) {
+        multiRootSchedulerDiagnostics.crossRootReplacements += 1;
+      }
       bestByKey.set(key, node);
     }
     const afterSkylineIds = bestByKey instanceof SkylineSet
@@ -2079,7 +2128,9 @@ function searchDPCore(simulator, initialRoots, options) {
       perfTracker.increment("frontierPushCalls");
       perfTracker.beginTopLevelPhase("frontierQueue");
     }
-    if (heap) heap.push(node);
+    if (rootSliced && node.rootIndex != null && rootAgendas.has(node.rootIndex)) {
+      rootAgendas.get(node.rootIndex).push(node);
+    } else if (heap) heap.push(node);
     else fifoEntries.push(node);
     if (fairEntries) {
       fairEntries.push(node);
@@ -2205,7 +2256,110 @@ function searchDPCore(simulator, initialRoots, options) {
   });
   registeringRootMeta = null;
 
+  // PR-5.24h Iteration 3 — root-sliced scheduler state.  Round-robins
+  // per-root agenda heaps; each slice grants at most
+  // multiRootExpansionQuantum ACTIVE expansions to the current root before
+  // advancing to the next root that still has live entries.  Stale pops
+  // (cross-root winner replacement / inactive skyline entries / already
+  // expanded) never consume the quantum; roots with no active entries are
+  // skipped immediately.  When no root has live entries the shared search is
+  // exhausted (identical termination semantics to the single heap).
+  let sliceRootCursor = 0;
+  let sliceExpansionsUsed = 0;
+  const rootSliceOrder = rootSliced
+    ? Array.from(rootAgendas.keys()).sort((a, b) => a - b)
+    : [];
+  const rootHasActiveEntries = (rootIndex) => {
+    const rootHeap = rootAgendas.get(rootIndex);
+    if (!rootHeap || rootHeap.length === 0) return false;
+    // Cheap liveness probe: pop stale entries off the root heap until an
+    // active one surfaces (entries popped here are permanently consumed —
+    // they were already dead in the shared authority).
+    while (rootHeap.length > 0) {
+      const entry = rootHeap.pop();
+      if (isActiveEntry(entry) && (!expandedNodeIds || !expandedNodeIds.has(entry.nodeId))) {
+        // Put the live entry back (it becomes the next pop target).
+        rootHeap.push(entry);
+        return true;
+      }
+      multiRootSchedulerDiagnostics.staleEntriesSkipped += 1;
+    }
+    return false;
+  };
+  const popRootSliced = () => {
+    if (sliceExpansionsUsed >= multiRootExpansionQuantum) {
+      // Advance to the next root with live entries (round-robin).
+      for (let probe = 0; probe < rootSliceOrder.length; probe += 1) {
+        const nextRoot = rootSliceOrder[(sliceRootCursor + 1 + probe) % rootSliceOrder.length];
+        if (rootHasActiveEntries(nextRoot)) {
+          if (rootSliceOrder.indexOf(nextRoot) <= sliceRootCursor) {
+            multiRootSchedulerDiagnostics.rootRoundsCompleted += 1;
+          }
+          sliceRootCursor = rootSliceOrder.indexOf(nextRoot);
+          sliceExpansionsUsed = 0;
+          multiRootSchedulerDiagnostics.rootSchedulerSwitches += 1;
+          break;
+        }
+      }
+      // If no root had live entries, fall through: the pop loop below will
+      // drain the current root's stale tail and terminate.
+      if (sliceExpansionsUsed >= multiRootExpansionQuantum) {
+        sliceExpansionsUsed = 0;
+      }
+    }
+    const activeRoot = rootSliceOrder[sliceRootCursor];
+    const rootHeap = rootAgendas.get(activeRoot);
+    if (rootHeap) {
+      while (rootHeap.length > 0) {
+        const entry = rootHeap.pop();
+        if (!isActiveEntry(entry)
+          || (expandedNodeIds && expandedNodeIds.has(entry.nodeId))) {
+          multiRootSchedulerDiagnostics.staleEntriesSkipped += 1;
+          continue;
+        }
+        sliceExpansionsUsed += 1;
+        if (sliceExpansionsUsed === 1) {
+          multiRootSchedulerDiagnostics.slicesReceivedByRoot[activeRoot] =
+            (multiRootSchedulerDiagnostics.slicesReceivedByRoot[activeRoot] || 0) + 1;
+        }
+        return { entry, popSource: "best-first" };
+      }
+    }
+    // Current root drained: try to move to any other live root immediately.
+    for (let probe = 1; probe <= rootSliceOrder.length; probe += 1) {
+      const nextRoot = rootSliceOrder[(sliceRootCursor + probe) % rootSliceOrder.length];
+      if (rootHasActiveEntries(nextRoot)) {
+        sliceRootCursor = rootSliceOrder.indexOf(nextRoot);
+        sliceExpansionsUsed = 0;
+        multiRootSchedulerDiagnostics.rootSchedulerSwitches += 1;
+        const nextHeap = rootAgendas.get(nextRoot);
+        while (nextHeap && nextHeap.length > 0) {
+          const entry = nextHeap.pop();
+          if (!isActiveEntry(entry)
+            || (expandedNodeIds && expandedNodeIds.has(entry.nodeId))) {
+            multiRootSchedulerDiagnostics.staleEntriesSkipped += 1;
+            continue;
+          }
+          sliceExpansionsUsed += 1;
+          if (sliceExpansionsUsed === 1) {
+            multiRootSchedulerDiagnostics.slicesReceivedByRoot[nextRoot] =
+              (multiRootSchedulerDiagnostics.slicesReceivedByRoot[nextRoot] || 0) + 1;
+          }
+          return { entry, popSource: "best-first" };
+        }
+      }
+    }
+    return null;
+  };
+
   const popNext = () => {
+    // PR-5.24h Iteration 3: root-sliced multi-root scheduling takes over the
+    // best-first pop path (fairness is a hybrid-fair-only feature and the
+    // multi-root activation guard requires best-first, so fairnessEnabled is
+    // always false here when rootSliced).
+    if (rootSliced) {
+      return popRootSliced();
+    }
     const popBest = () => {
       while (heap && heap.length > 0) {
         const entry = heap.pop();
@@ -2816,9 +2970,20 @@ function searchDPCore(simulator, initialRoots, options) {
     : 0;
   const frontierIsActive = (entry) => isActiveEntry(entry) &&
     (!expandedNodeIds || !expandedNodeIds.has(entry.nodeId));
-  const frontierSize = heap
-    ? heap.activeCount(frontierIsActive)
-    : fifoEntries.slice(cursor).filter(isActiveEntry).length;
+  const frontierIsActiveEntry = frontierIsActive;
+  const rootHeapActiveCount = (rootIndex) => {
+    const rootHeap = rootAgendas.get(rootIndex);
+    if (!rootHeap) return 0;
+    return rootHeap.items.reduce(
+      (count, entry) => (frontierIsActiveEntry(entry) ? count + 1 : count),
+      0,
+    );
+  };
+  const frontierSize = rootSliced
+    ? Array.from(rootAgendas.keys()).reduce((sum, rootIndex) => sum + rootHeapActiveCount(rootIndex), 0)
+    : heap
+      ? heap.activeCount(frontierIsActive)
+      : fifoEntries.slice(cursor).filter(isActiveEntry).length;
   recordMemoryUsage("between-attempts", expansions, !memoryStoppedReason);
   if (observer) {
     const budgetReason = stoppedReason || (
@@ -2946,15 +3111,19 @@ function searchDPCore(simulator, initialRoots, options) {
   const goalSkylineRootIndexes = goalSkylineNodes.map((node) => (node && node.rootIndex != null) ? node.rootIndex : null);
   // Final pending agenda split by root (completion-ledger support for shared
   // budget-limited runs: pending > 0 ⇒ searchComplete = false, never EXHAUSTED).
-  const frontierIsActiveEntry = (entry) => isActiveEntry(entry) &&
-    (!expandedNodeIds || !expandedNodeIds.has(entry.nodeId));
+  // (frontierIsActiveEntry is hoisted above with frontierSize.)
   const pendingByRoot = {};
   const countPendingForRoot = (entry) => {
     if (!frontierIsActiveEntry(entry)) return;
     const rootId = entry && entry.rootCandidateId != null ? entry.rootCandidateId : null;
     pendingByRoot[rootId] = (pendingByRoot[rootId] || 0) + 1;
   };
-  if (heap) heap.items.forEach(countPendingForRoot);
+  if (rootSliced) {
+    rootAgendas.forEach((rootHeap, rootIndex) => {
+      rootHeap.items.forEach(countPendingForRoot);
+      multiRootSchedulerDiagnostics.activeEntriesAtStopByRoot[rootIndex] = rootHeapActiveCount(rootIndex);
+    });
+  } else if (heap) heap.items.forEach(countPendingForRoot);
   else fifoEntries.slice(cursor).forEach(countPendingForRoot);
   const bestSeenState = attachRouteToNodeState(bestSeenNode);
   const bestProgressState = attachRouteToNodeState(bestProgressNode);
@@ -3009,6 +3178,9 @@ function searchDPCore(simulator, initialRoots, options) {
     expansionCountByRoot,
     registeredRootNodeIds,
     pendingByRoot,
+    multiRootScheduling: rootSliced
+      ? { ...multiRootSchedulerDiagnostics, rootCount: rootSliceOrder.length }
+      : null,
     multiRoot: rootContexts.length > 1,
     goalArchiveAudit,
     bestSeenState,

@@ -3259,6 +3259,10 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
     maxExpansionsAfterFirstGoal: dpConfig.maxExpansionsAfterFirstGoal,
     continueAfterGoal: dpConfig.continueAfterGoal === true,
     captureTrace,
+    // PR-5.24h Iteration 3 — root-sliced multi-root scheduling (default) with
+    // explicit legacy override; quantum is a frozen engineering constant.
+    multiRootSchedulingPolicy: config.multiRootSchedulingPolicy || dpConfig.multiRootSchedulingPolicy || null,
+    multiRootExpansionQuantum: number(config.multiRootExpansionQuantum, number(dpConfig.multiRootExpansionQuantum, 64)),
     captureExpandedStates: dpConfig.captureExpandedStates === true || config.captureExpandedStates === true,
     captureExpandedStateLimit: number(dpConfig.captureExpandedStateLimit, config.captureExpandedStateLimit || 0),
     candidateKeyShadowRecorder: config.candidateKeyShadowRecorder || dpConfig.candidateKeyShadowRecorder || null,
@@ -3404,6 +3408,7 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
         pendingByRoot: result.pendingByRoot || null,
         expansionCountByRoot: result.expansionCountByRoot || null,
         registeredRootNodeIds: result.registeredRootNodeIds || null,
+        multiRootScheduling: result.multiRootScheduling || null,
         rootCandidateIds: result.rootCandidateIds || null,
         rootCount: result.rootCount != null ? result.rootCount : null,
         registry: (result.diagnostics && result.diagnostics.registry) || null,
