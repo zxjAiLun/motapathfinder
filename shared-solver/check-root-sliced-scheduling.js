@@ -350,8 +350,20 @@ function gateG30I_IsolatedPipeline() {
     route: [],
     trace: [],
   }));
+  // PR-5.24h FINAL CLOSURE (promotion): default (unset) now activates
+  // multi-root for eligible workloads; explicit false must fall back to
+  // legacy per-candidate. Both arms verified through the same production
+  // isolated pipeline.
   const result = runSegmentAgainstFrontier(simulator, segment, frontier, {
-    enableMultiRootSharedDp: true,
+    // enableMultiRootSharedDp deliberately UNSET (default ON)
+    segmentExecutionMode: "isolated-process",
+    maxExpansions: 600,
+    maxRuntimeMs: 120000,
+    maxRssMb: 2048,
+    maxRssHardCeilingMb: 2048,
+  }, {});
+  const rollback = runSegmentAgainstFrontier(simulator, segment, frontier.map((c) => ({ ...c, state: JSON.parse(JSON.stringify(c.state)) })), {
+    enableMultiRootSharedDp: false,
     segmentExecutionMode: "isolated-process",
     maxExpansions: 600,
     maxRuntimeMs: 120000,
@@ -361,16 +373,24 @@ function gateG30I_IsolatedPipeline() {
   const telemetry = result.telemetry || {};
   const summary = result.summary || {};
   const dp = (result.attempts && result.attempts[0] && result.attempts[0].diagnostics && result.attempts[0].diagnostics.dp) || {};
-  assert.strictEqual(summary.executionMode, "multi-root-shared-dp", "G30-I: execution mode");
+  assert.strictEqual(summary.executionMode, "multi-root-shared-dp", "G30-I: default (unset) must activate multi-root-shared-dp");
   assert.strictEqual(dp.multiRootScheduling && dp.multiRootScheduling.policy, "root-sliced", "G30-I: root-sliced policy through the worker");
   assert.strictEqual(telemetry.inputStateKeysVerified, 6, "G30-I: input state keys 6/6");
   assert.strictEqual(telemetry.simulatorProfileIdentity, true, "G30-I: simulator profile identity");
   const byRoot = dp.expansionCountByRoot || {};
   const positiveRoots = Object.values(byRoot).filter((n) => n > 0).length;
   assert.ok(positiveRoots >= 5, `G30-I: bounded isolated run must cover >= 5/6 roots (got ${positiveRoots})`);
+  const rollbackSummary = rollback.summary || {};
+  assert.strictEqual(rollbackSummary.executionMode, "per-candidate", "G30-I: explicit false must roll back to per-candidate");
+  const rollbackAttempts = rollback.attempts || [];
+  assert.ok(rollbackAttempts.length >= 1, "G30-I: rollback arm must run per-candidate attempts");
   return {
     isolatedPipelineVerified: true,
+    defaultUnsetActivatesMultiRoot: true,
+    explicitFalseRollsBackToPerCandidate: true,
     executionMode: summary.executionMode,
+    rollbackExecutionMode: rollbackSummary.executionMode,
+    rollbackAttemptCount: rollbackAttempts.length,
     schedulingPolicy: dp.multiRootScheduling.policy,
     inputStateKeysVerified: telemetry.inputStateKeysVerified,
     simulatorProfileIdentity: telemetry.simulatorProfileIdentity,

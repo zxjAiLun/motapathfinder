@@ -4232,9 +4232,17 @@ function runSegmentAgainstFrontierLocal(
   // This is NOT progressive seeding: all roots live in one shared
   // bestByKey/agenda/nodes/budget authority, so an incomplete (budget-limited)
   // run keeps its pending agenda and can never falsely claim exhaustion.
+  //
+  // PR-5.24h FINAL CLOSURE (Cloud Review promotion): multi-root shared DP is
+  // now the DEFAULT for eligible workloads — enableMultiRootSharedDp must be
+  // explicitly set to false to fall back to legacy per-candidate execution.
+  // The rest of the guard (>= 2 candidates, stopOnFirstGoal !== true,
+  // best-first agenda, no probe caps) is byte-identical logic; the activation
+  // DOMAIN is unchanged (explicit rollback preserved, probe-capped wave
+  // paths and single-candidate inputs still take the legacy path).
   const guardDpConfig = segmentDpOverrides(segment, config || {}, overrides || {});
   const multiRootEligible = Boolean(
-    (config || {}).enableMultiRootSharedDp === true
+    (config || {}).enableMultiRootSharedDp !== false
     && inputFrontier.length >= 2
     && guardDpConfig.stopOnFirstGoal !== true
     && (guardDpConfig.agendaMode || "best-first") === "best-first"

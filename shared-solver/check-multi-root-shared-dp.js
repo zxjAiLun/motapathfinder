@@ -818,7 +818,7 @@ function main() {
     contractStatus: g29aPassed ? "passed" : "below-mechanism-threshold-reported-to-cloud",
     iteration: "PR-5.24h Iteration 2 (Production Multi-Root Shared DP Authority)",
     architecture: {
-      entryPoints: ["searchDPMultiRoot (dp-search)", "searchSegmentDPMultiRoot (segment-dp)", "enableMultiRootSharedDp (runSegmentAgainstFrontierLocal, default OFF)"],
+      entryPoints: ["searchDPMultiRoot (dp-search)", "searchSegmentDPMultiRoot (segment-dp)", "enableMultiRootSharedDp (runSegmentAgainstFrontierLocal, default ON under existing guard since PR-5.24h closure; explicit false rolls back)"],
       oneLiveAuthority: true,
       progressiveSeeding: "REMOVED (dpSeedAuthority prototype deleted)",
       rootProvenance: "search-node fields rootCandidateId/rootIndex; never on canonical state",
