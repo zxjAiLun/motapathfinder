@@ -5403,6 +5403,135 @@ function buildRepairedHistoryHypotheses({
   });
 }
 
+// PR-5.24i — Counterfactual admission assessment (pure helper).
+//
+// The historical admission contract (PR-5.24e) suppressed counterfactual
+// whenever ANY normal primary ticket ever showed positive progress
+// (progressClass WITHIN_SEGMENT_PROGRESS or SEGMENT_ADVANCE), i.e.
+// `positiveInitial > 0 ⇒ CF blocked ("normal-primary-progress")`.
+//
+// PR-5.24i narrows that to an ACTIONABLE-positive contract: a positive ticket
+// only blocks CF while it still represents executable normal work.  A ticket
+// that reached positive progress but is determinately finished without a
+// goal (probe complete, stopReason exhausted, no continuation eligibility,
+// no pending work) is TERMINAL_POSITIVE_NO_GOAL and no longer blocks CF on
+// its own.  Deferred normal authority, goal-reached, and global/resource
+// stops keep their existing veto semantics unchanged.
+function assessCounterfactualAdmission(input) {
+  const config = (input && input.config) || {};
+  const normalDepthTickets = (input && input.normalDepthTickets) || [];
+  const deferredNormalDescriptors = (input && input.deferredNormalDescriptors) || [];
+  const depthGoalReached = Boolean(input && input.depthGoalReached);
+  const globalStopReason = (input && input.globalStopReason) || null;
+  const isTrustedCompleteFailure = Boolean(input && input.isTrustedCompleteFailure);
+  const failureExecutionDeterminateComplete = Boolean(input && input.failureExecutionDeterminateComplete);
+  const counterfactualAlreadyTriggered = Boolean(input && input.counterfactualAlreadyTriggered);
+  const intentGeneratorAvailable = Boolean(input && input.intentGeneratorAvailable);
+  const normalFirstRoundComplete = Boolean(input && input.normalFirstRoundComplete);
+  const realNormalProbedTickets = (input && input.realNormalProbedTickets) || [];
+
+  const isPositive = (ticket) => (
+    ticket.progressClass === "WITHIN_SEGMENT_PROGRESS"
+    || ticket.progressClass === "SEGMENT_ADVANCE"
+  );
+  const positiveTickets = normalDepthTickets.filter(isPositive);
+
+  // ACTIONABLE positive: still represents executable normal work — any of
+  //   continuationEligible (progress-gated second grant pending),
+  //   PROBE_PENDING status (work not finished),
+  //   stopReason probe-limited (probe wall cut active work short),
+  //   goal reached by the ticket itself.
+  const isActionablePositive = (ticket) => {
+    if (!isPositive(ticket)) return false;
+    if (ticket.continuationEligible === true) return true;
+    if (ticket.status === "PROBE_PENDING") return true;
+    if (ticket.stopReason === "probe-limited") return true;
+    if (ticket.lastProgress && ticket.lastProgress.goalReached === true) return true;
+    return false;
+  };
+  const actionablePositiveTickets = positiveTickets.filter(isActionablePositive);
+
+  // TERMINAL positive no-goal: positive progress happened, but the ticket is
+  // determinately finished without reaching the goal — it no longer blocks CF.
+  const isTerminalPositiveNoGoal = (ticket) => (
+    isPositive(ticket)
+    && !(ticket.lastProgress && ticket.lastProgress.goalReached === true)
+    && ticket.status !== "PROBE_PENDING"
+    && ticket.stopReason !== "probe-limited"
+    && ticket.continuationEligible !== true
+  );
+  const terminalPositiveTickets = positiveTickets.filter(isTerminalPositiveNoGoal);
+
+  const hasDeferredNormalWork = deferredNormalDescriptors.length > 0;
+
+  const blockedByConfig = config.enableCounterfactualRepair === false;
+  const blockedByGoal = depthGoalReached;
+  const blockedByGlobalStop = globalStopReason !== null;
+  const blockedByFirstRound = !normalFirstRoundComplete;
+  const blockedByNoRealHistory = realNormalProbedTickets.length < 1;
+  const blockedByActionablePositive = actionablePositiveTickets.length > 0;
+  const blockedByUntrustedFailure = !isTrustedCompleteFailure;
+  const blockedByIndeterminateFailure = !failureExecutionDeterminateComplete;
+  const blockedByNoIntentGenerator = !intentGeneratorAvailable;
+  const blockedByAlreadyTriggered = counterfactualAlreadyTriggered;
+
+  let trigger = false;
+  let reason = null;
+  if (blockedByConfig) {
+    reason = "disabled-by-config";
+  } else if (blockedByGoal) {
+    reason = "goal-reached";
+  } else if (blockedByGlobalStop) {
+    reason = "global-stop";
+  } else if (blockedByFirstRound) {
+    reason = "normal-first-round-incomplete";
+  } else if (blockedByNoRealHistory) {
+    reason = "no-real-normal-history";
+  } else if (blockedByActionablePositive) {
+    reason = "normal-primary-progress";
+  } else if (blockedByUntrustedFailure) {
+    reason = "untrusted-failure-class";
+  } else if (blockedByIndeterminateFailure) {
+    reason = "failure-not-determinately-complete";
+  } else if (blockedByNoIntentGenerator) {
+    reason = "no-intent-generator";
+  } else if (blockedByAlreadyTriggered) {
+    reason = "already-triggered";
+  } else {
+    trigger = true;
+    reason = positiveTickets.length > 0
+      ? "terminal-positive-no-goal"
+      : (input && input.primaryNoProgressReason) || "primary-normal-exhausted-no-progress";
+  }
+
+  return {
+    trigger,
+    reason,
+    positiveTicketCount: positiveTickets.length,
+    actionablePositiveTicketCount: actionablePositiveTickets.length,
+    terminalPositiveTicketCount: terminalPositiveTickets.length,
+    hasPendingNormalWork: normalDepthTickets.some((t) => t.status === "PROBE_PENDING"),
+    hasDeferredNormalWork,
+    hasContinuationEligiblePositive: positiveTickets.some((t) => t.continuationEligible === true),
+    blockedBy: {
+      config: blockedByConfig,
+      goalReached: blockedByGoal,
+      globalStop: blockedByGlobalStop,
+      firstRound: blockedByFirstRound,
+      noRealHistory: blockedByNoRealHistory,
+      actionablePositive: blockedByActionablePositive,
+      untrustedFailure: blockedByUntrustedFailure,
+      indeterminateFailure: blockedByIndeterminateFailure,
+      noIntentGenerator: blockedByNoIntentGenerator,
+      alreadyTriggered: blockedByAlreadyTriggered,
+    },
+    // Deferred normals are PR-5.24e work-conservation fallback work: they do
+    // NOT block CF (CF runs first; deferred normals resume only if CF turns
+    // out useless — G24-K1/K3 contract, preserved verbatim by PR-5.24i).
+    deferredNormalPresent: hasDeferredNormalWork,
+  };
+}
+
 function tryAdaptiveCheckpointRepair(
   simulator,
   segments,
@@ -7287,9 +7416,6 @@ function tryAdaptiveCheckpointRepair(
       (t) => t.probeCount >= 1 && t.anchorOutputStateKey != null,
     );
 
-    const positiveInitial = normalDepthTickets.filter(
-      (t) => t.progressClass === "WITHIN_SEGMENT_PROGRESS" || t.progressClass === "SEGMENT_ADVANCE",
-    ).length;
     const globalStopBeforeCf = (config.globalBudget && config.globalBudget.stoppedReason) || null;
     const trustedFailureClasses = new Set([
       "atk-deficit",
@@ -7313,20 +7439,37 @@ function tryAdaptiveCheckpointRepair(
       resourceInterrupted: false,
     });
 
-    const shouldTriggerCounterfactual =
-      (config || {}).enableCounterfactualRepair !== false &&
-      !depthGoalReached &&
-      normalFirstRoundComplete &&
-      realNormalProbedTickets.length >= 1 &&
-      positiveInitial === 0 &&
-      globalStopBeforeCf === null &&
-      isTrustedCompleteFailure &&
-      failureExecutionDeterminateComplete &&
-      typeof buildCounterfactualRepairIntents === "function" &&
-      !counterfactualRepair.triggered;
+    // PR-5.24i — admission through the pure helper: only ACTIONABLE positive
+    // tickets (still-executable normal work) block CF.  TERMINAL
+    // positive-no-goal tickets no longer suppress counterfactual on their
+    // own; deferred normal authority, goal-reached, and global stops keep
+    // their existing veto semantics.
+    const admissionAssessment = assessCounterfactualAdmission({
+      config,
+      normalDepthTickets,
+      deferredNormalDescriptors,
+      depthGoalReached,
+      globalStopReason: globalStopBeforeCf,
+      isTrustedCompleteFailure,
+      failureExecutionDeterminateComplete,
+      counterfactualAlreadyTriggered: counterfactualRepair.triggered,
+      intentGeneratorAvailable: typeof buildCounterfactualRepairIntents === "function",
+      normalFirstRoundComplete,
+      realNormalProbedTickets,
+      primaryNoProgressReason: "primary-normal-exhausted-no-progress",
+    });
+    const shouldTriggerCounterfactual = admissionAssessment.trigger;
+    if (counterfactualAdmission) {
+      counterfactualAdmission.positiveTickets = admissionAssessment.positiveTicketCount;
+      counterfactualAdmission.actionablePositiveTickets = admissionAssessment.actionablePositiveTicketCount;
+      counterfactualAdmission.terminalPositiveTickets = admissionAssessment.terminalPositiveTicketCount;
+      counterfactualAdmission.pendingNormal = admissionAssessment.hasPendingNormalWork;
+      counterfactualAdmission.deferredNormal = admissionAssessment.hasDeferredNormalWork;
+      counterfactualAdmission.continuationEligible = admissionAssessment.hasContinuationEligiblePositive;
+    }
 
     let allCfIntents = [];
-    if (positiveInitial > 0) {
+    if (admissionAssessment.blockedBy.actionablePositive) {
       counterfactualRepair.triggered = false;
       counterfactualRepair.triggerReason = "normal-primary-progress";
       if (counterfactualAdmission) {
@@ -7344,10 +7487,11 @@ function tryAdaptiveCheckpointRepair(
     } else if (shouldTriggerCounterfactual) {
       if (counterfactualAdmission) {
         counterfactualAdmission.admittedAfterPrimary = true;
-        counterfactualAdmission.admissionReason = "primary-normal-exhausted-no-progress";
+        counterfactualAdmission.admissionReason = admissionAssessment.reason;
       }
       counterfactualRepair.triggered = true;
       counterfactualRepair.triggerReason = currentFailureClass;
+      counterfactualRepair.admissionReason = admissionAssessment.reason;
       const cfExecutions = [];
       let totalCfPositiveCount = 0;
 
@@ -9182,6 +9326,7 @@ module.exports = {
   summarizeGlobalBudget,
   searchSegmentDP,
   searchSegmentDPMultiRoot,
+  assessCounterfactualAdmission,
   segmentCandidateLimit,
   summarizeEffectiveHero,
   summarizeHero,
