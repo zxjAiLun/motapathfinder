@@ -9,31 +9,24 @@
  * state as generator source — wrong stage; production authority is
  * anchor.inputFrontier (the MT2-floor source).
  *
- * v2 (this file): CONTROLLED source authority per Cloud Review Option C:
- *   - Source = shared-solver/fixtures/perf/onlyup-524e-cf-source.json
- *     (controlled-rederived MT2 candidate-0 from 5.24e prefix, 4/4 fresh-process
- *     determinism; EXACT_5_24e_HISTORICAL_SOURCE = NOT_CLAIMED).
- *   - Failure frontier = controlled lineage verification (this run):
- *     MT2 source → mt2-to-mt3 → mt3-to-mt4 (floor-progress-blocked, trusted,
- *     complete, no goal) established on current dev production code.
+ * v2 (controlled source): Source = controlled-rederived MT2 fixture
+ *   (EXACT_5_24e_HISTORICAL_SOURCE = NOT_CLAIMED).
  *
- * Method (B1-B9 per Iteration 3 authorization):
- *   B1  Controlled source fixture + controlled failure frontier.
- *   B2  Production generator from the MT2 source; historical vs current intent
- *       comparison (recorded, not tuned).
- *   B3  Full materialization per intent through production segment machinery
- *       (intent realization → anchor expansion mt2-to-mt3 →
- *       buildRepairedHistoryHypotheses), non-binding, classified.
- *   B4  Dedup via production buildStateKey / buildDpStateKey, provenance kept.
- *   B5  PER-ROOT independent complete downstream evaluation (one root at a
- *       time, isolated-process, non-binding, searchComplete required) — the
- *       Case B/C progress authority.
- *   B6  Progress via production projectSegmentGoalProgress +
- *       compareProgressProjections (bestProgressProjection fallback:
- *       att.bestProgress projected); STRICTLY-better-only positive class.
- *   B7  Case A/B/C verdict (per-root authority).
- *   B8  Coverage accounting (independent roots complete / unique histories).
- *   B9  Shared multi-root run kept as cross-check/efficiency evidence only.
+ * v2.1 (fail-closed closure, Iteration 3 Repair 1):
+ *   F1  B1 runs the controlled lineage INLINE and locks the failure frontier:
+ *       fixture MT2 source → mt2-to-mt3 (require found + determinate complete)
+ *       → full MT3 frontier → mt3-to-mt4 (require no-goal + determinate
+ *       complete + trusted failure classification). The ACTUAL run evidence
+ *       (failure class from the failed execution) becomes the authority —
+ *       the hardcoded triggerFailure object is replaced by the inline run.
+ *   F2  B3 records intentRealizationComplete + anchorExpansionComplete per
+ *       intent; only REALIZED + both-complete intents' histories enter the
+ *       Case-C coverage authority.
+ *   F3  B7 Case C additionally requires allMaterializationComplete AND
+ *       allProgressComparable (ROOTS_PROGRESS_COMPARABLE === unique count);
+ *       unknown progress (null comparator) never degrades to "no progress".
+ *   F4  B9 semantic cross-check is symmetric (independent goals vs shared
+ *       goal disagreement in EITHER direction is a regression).
  */
 
 const fs = require("node:fs");
@@ -67,8 +60,25 @@ function getMilestone(project, id) {
   return spec.milestones.find((m) => m.id === id);
 }
 
+// Determinate-complete check for an execution (production-shaped): every
+// attempt searchComplete AND no pending/terminal-incomplete in the ledger.
+function executionDeterminateComplete(exec) {
+  const summary = exec && exec.summary;
+  if (!summary) return false;
+  const atts = summary.attempts || exec.attempts || [];
+  if (atts.length === 0) return false;
+  const allComplete = atts.every((att) => {
+    const dp = (att.diagnostics && att.diagnostics.dp) || {};
+    return dp.searchOutcome && dp.searchOutcome.searchComplete === true;
+  });
+  const t = summary.candidateSliceTelemetry;
+  const noPending = !t || (Number(t.candidateSliceFinalPending || 0) === 0
+    && Number(t.candidateSliceTerminalIncomplete || 0) === 0);
+  return allComplete && noPending;
+}
+
 function main() {
-  // ===== B1: controlled source + failure frontier =====
+  // ===== B1: controlled source + INLINE controlled lineage gate (F1) =====
   const fixture = JSON.parse(fs.readFileSync(SOURCE_FIXTURE_PATH, "utf8"));
   const sourceState = fixture.state;
   const sourceCandidateId = fixture.provenance.candidateId;
@@ -79,13 +89,74 @@ function main() {
   const mt2Segment = getMilestone(project, "mt2-to-mt3");
   const failedSegment = getMt3Segment(project); // mt3-to-mt4
 
-  // Controlled failure frontier (verified by the lineage run; re-assert here):
-  // triggerFailure = floor-progress-blocked on mt3-to-mt4 (trusted class).
+  // --- F1: inline controlled lineage (locks the failure frontier) ---
+  const lineageConfig = {
+    segmentExecutionMode: "isolated-process",
+    maxExpansions: 60000,
+    maxRuntimeMs: NB,
+    maxRssMb: 2048,
+    maxRssHardCeilingMb: 2048,
+    memoryCheckIntervalExpansions: 1,
+    memoryCheckIntervalActions: 1,
+  };
+  const lineageMt2Exec = runSegmentAgainstFrontier(
+    simulator,
+    mt2Segment,
+    [{ id: sourceCandidateId, state: JSON.parse(JSON.stringify(sourceState)), route: [], trace: [] }],
+    lineageConfig,
+    {},
+  );
+  const lineageMt2Complete = executionDeterminateComplete(lineageMt2Exec);
+  const lineageMt3Frontier = (lineageMt2Exec.merged || []).map((c) => ({
+    id: c.id, state: JSON.parse(JSON.stringify(c.state)), route: [], trace: [],
+  }));
+  assert.strictEqual(lineageMt2Exec.summary && lineageMt2Exec.summary.found, true,
+    "F1: controlled lineage mt2-to-mt3 must be found");
+  assert.strictEqual(lineageMt2Complete, true,
+    "F1: controlled lineage mt2-to-mt3 must be determinate complete");
+  assert.ok(lineageMt3Frontier.length > 0,
+    "F1: controlled lineage must produce a canonical MT3 frontier");
+
+  const lineageMt3Exec = runSegmentAgainstFrontier(
+    simulator,
+    failedSegment,
+    lineageMt3Frontier,
+    lineageConfig,
+    {},
+  );
+  const lineageMt3Complete = executionDeterminateComplete(lineageMt3Exec);
+  const lineageMt3Found = lineageMt3Exec.summary && lineageMt3Exec.summary.found === true;
+  assert.strictEqual(lineageMt3Found, false,
+    "F1: controlled lineage mt3-to-mt4 must remain a failure frontier (no goal)");
+  assert.strictEqual(lineageMt3Complete, true,
+    "F1: controlled lineage mt3-to-mt4 must be determinate complete");
+
+  // Extract the ACTUAL failure classification from the failed execution
+  const lineageAtt = (lineageMt3Exec.attempts || [])[0]
+    || (lineageMt3Exec.summary && lineageMt3Exec.summary.attempts && lineageMt3Exec.summary.attempts[0])
+    || {};
+  const lineageFailure = (lineageAtt.diagnostics && (lineageAtt.diagnostics.failure
+    || lineageAtt.diagnostics.failurePropagation)) || {};
+  const lineageFailureClass = lineageFailure.failureClass || "frontier-exhausted";
+  const trustedFailureClasses = new Set([
+    "atk-deficit", "def-deficit", "mdef-deficit", "hp-deficit",
+    "life-limit-hp-deficit", "action-survivability-deficit", "equipment-missing",
+    "floor-progress-blocked", "floor-scope-mismatch", "frontier-exhausted",
+  ]);
+  assert.ok(trustedFailureClasses.has(lineageFailureClass),
+    `F1: controlled lineage failure class ${lineageFailureClass} must be trusted`);
+  const lineageOutcome = (lineageAtt.diagnostics && lineageAtt.diagnostics.dp
+    && lineageAtt.diagnostics.dp.searchOutcome) || {};
+  assert.strictEqual(lineageOutcome.outcomeClass || "goal-not-found-search-complete",
+    "goal-not-found-search-complete",
+    "F1: controlled lineage mt3-to-mt4 outcome must be search-complete no-goal");
+
   const triggerFailure = {
-    failureClass: "floor-progress-blocked",
-    segmentId: "mt3-to-mt4",
-    preferredCandidateTags: [],
-    missingGoalFields: [{ field: "floorId", expected: "MT4", actual: "MT3" }],
+    failureClass: lineageFailureClass,
+    segmentId: failedSegment.id,
+    preferredCandidateTags: lineageFailure.preferredCandidateTags || [],
+    missingGoalFields: lineageFailure.missingGoalFields
+      || [{ field: "floorId", expected: "MT4", actual: "MT3" }],
   };
 
   console.log(JSON.stringify({
@@ -93,8 +164,15 @@ function main() {
       sourceCandidateId,
       sourceStateKeyPrefix: sourceStateKey.slice(0, 90),
       sourceHero: { hp: sourceState.hero.hp, atk: sourceState.hero.atk, def: sourceState.hero.def },
-      failureClass: triggerFailure.failureClass,
-      failedSegmentId: failedSegment.id,
+      inlineLineageGate: {
+        mt2Found: true,
+        mt2Complete: lineageMt2Complete,
+        mt3FrontierCount: lineageMt3Frontier.length,
+        mt3Found: lineageMt3Found,
+        mt3Complete: lineageMt3Complete,
+        failureClass: lineageFailureClass,
+        outcomeClass: lineageOutcome.outcomeClass || "goal-not-found-search-complete",
+      },
       provenance: fixture.provenance.sourceAuthority,
       exactHistoricalClaimed: false,
     },
@@ -122,6 +200,8 @@ function main() {
   }));
 
   // ===== B3: full materialization per intent (production path) =====
+  // F2: record intentRealizationComplete + anchorExpansionComplete; only
+  // REALIZED + both-complete intents' histories enter Case-C coverage.
   const allHistories = [];
   const materializations = [];
   for (const intent of intents) {
@@ -135,6 +215,7 @@ function main() {
     };
     let realized;
     let classification;
+    let intentRealizationComplete = false;
     try {
       realized = runSegmentAgainstFrontier(
         simulator,
@@ -153,22 +234,23 @@ function main() {
         }),
       );
     } catch (error) {
-      materializations.push({ intentId: intent.intentId, kind: intent.kind, classification: "RESOURCE_LIMITED", error: String(error.message).slice(0, 100) });
+      materializations.push({
+        intentId: intent.intentId, kind: intent.kind, classification: "RESOURCE_LIMITED",
+        intentRealizationComplete: false, anchorExpansionComplete: false,
+        error: String(error.message).slice(0, 100),
+      });
       continue;
     }
     const intentFrontier = realized.merged || [];
     if (intentFrontier.length === 0) {
-      materializations.push({ intentId: intent.intentId, kind: intent.kind, classification: "UNREALIZABLE" });
+      materializations.push({
+        intentId: intent.intentId, kind: intent.kind, classification: "UNREALIZABLE",
+        intentRealizationComplete: false, anchorExpansionComplete: false,
+      });
       continue;
     }
-    const dp0 = (realized.attempts && realized.attempts[0] && realized.attempts[0].diagnostics && realized.attempts[0].diagnostics.dp) || {};
-    classification = (dp0.searchOutcome && dp0.searchOutcome.searchComplete === true) ? "REALIZED" : "INCOMPLETE";
-    materializations.push({
-      intentId: intent.intentId,
-      kind: intent.kind,
-      classification,
-      realizedCount: intentFrontier.length,
-    });
+    intentRealizationComplete = executionDeterminateComplete(realized);
+    classification = intentRealizationComplete ? "REALIZED" : "INCOMPLETE";
 
     // Anchor segment expansion (mt2-to-mt3) from the intent frontier
     const cfAnchorExpanded = runSegmentAgainstFrontier(
@@ -188,27 +270,45 @@ function main() {
         preserveSkylineRoles: true,
       }),
     );
-    const descriptors = buildRepairedHistoryHypotheses({
-      depth: 1,
-      waveIndex: 0,
-      anchor: { segment: mt2Segment, inputFrontier: [], merged: intentFrontier },
-      expandedAnchor: cfAnchorExpanded,
-      candidateLimit: BACKTRACK_CANDIDATE_LIMIT,
+    const anchorExpansionComplete = executionDeterminateComplete(cfAnchorExpanded);
+
+    materializations.push({
+      intentId: intent.intentId,
+      kind: intent.kind,
+      classification,
+      realizedCount: intentFrontier.length,
+      intentRealizationComplete,
+      anchorExpansionComplete,
     });
-    descriptors.forEach((desc) => {
-      const replayCand = desc.replayFrontier && desc.replayFrontier[0];
-      if (!replayCand || !replayCand.state) return;
-      allHistories.push({
-        intentId: intent.intentId,
-        kind: intent.kind,
-        hypothesisId: desc.hypothesisId,
-        candidate: replayCand,
+
+    // F2: only determinate-complete materializations contribute histories
+    // to the Case-C coverage authority.
+    if (classification === "REALIZED" && intentRealizationComplete && anchorExpansionComplete) {
+      const descriptors = buildRepairedHistoryHypotheses({
+        depth: 1,
+        waveIndex: 0,
+        anchor: { segment: mt2Segment, inputFrontier: [], merged: intentFrontier },
+        expandedAnchor: cfAnchorExpanded,
+        candidateLimit: BACKTRACK_CANDIDATE_LIMIT,
       });
-    });
+      descriptors.forEach((desc) => {
+        const replayCand = desc.replayFrontier && desc.replayFrontier[0];
+        if (!replayCand || !replayCand.state) return;
+        allHistories.push({
+          intentId: intent.intentId,
+          kind: intent.kind,
+          hypothesisId: desc.hypothesisId,
+          candidate: replayCand,
+        });
+      });
+    }
   }
+  const allMaterializationComplete = materializations.every((m) =>
+    m.classification === "REALIZED" && m.intentRealizationComplete === true && m.anchorExpansionComplete === true);
   console.log(JSON.stringify({
     b3_materialization: materializations,
     b3b_histories: { RAW_REALIZED_HISTORY_COUNT: allHistories.length },
+    b3_allMaterializationComplete: allMaterializationComplete,
   }));
 
   // ===== B4: dedup via production keys =====
@@ -228,7 +328,6 @@ function main() {
   }));
 
   // ===== B5+B6: PER-ROOT independent complete downstream evaluation =====
-  // Production projector (same as projectSegmentGoalProgress):
   const { compileGoalDependencyGraph } = require("./lib/goal-dependency-graph");
   const goalGraph = compileGoalDependencyGraph(project, [failedSegment]);
   const projectOnFailedSegment = (state) => {
@@ -271,29 +370,30 @@ function main() {
       perRootResults.push({
         rootIndex: i, rootCandidateId: rootId, intentId: h.intentId, kind: h.kind,
         error: String(error.message).slice(0, 100), searchComplete: false, goalReached: false,
-        positiveProgress: false, evaluated: false,
+        positiveProgress: false, progressComparable: false, evaluated: false,
       });
       continue;
     }
     // Production isolated path: the worker emits rich attempts (with
-    // bestProgressProjection, compact, computed against the attempt segment)
-    // on exec.attempts — NOT on exec.summary.attempts (compact summary).
+    // bestProgressProjection) on exec.attempts.
     const att0 = (exec.attempts && exec.attempts[0])
       || (exec.summary && exec.summary.attempts && exec.summary.attempts[0])
       || {};
     const dp = (att0.diagnostics && att0.diagnostics.dp) || {};
     const goalReached = exec.summary && exec.summary.found === true;
     const searchComplete = dp.searchOutcome && dp.searchOutcome.searchComplete === true;
-    // Production progress: att0.bestProgressProjection (compact projection
-    // computed INSIDE the isolated worker against the attempt segment — the
-    // same field the production repair scheduler reads at segment-dp.js:6954).
-    // Fallback: project the raw bestProgress state if the projection is absent.
+    // Production progress: att0.bestProgressProjection (compact, computed INSIDE
+    // the isolated worker against the attempt segment). Fallback: project the
+    // raw bestProgress state if the projection is absent.
     const bestProjection = att0.bestProgressProjection
       || (att0.bestProgress ? projectOnFailedSegment(att0.bestProgress) : null);
     const comparatorResult = (startProjection && bestProjection)
       ? compareProgressProjections(startProjection, bestProjection)
       : null;
-    const positiveProgress = comparatorResult != null && comparatorResult > 0;
+    // F3: unknown progress (null comparator) is NOT "no progress" — it is
+    // non-comparable and must block Case C.
+    const progressComparable = comparatorResult !== null;
+    const positiveProgress = progressComparable && comparatorResult > 0;
     perRootResults.push({
       rootIndex: i,
       rootCandidateId: rootId,
@@ -307,24 +407,26 @@ function main() {
       startProgressProjection: startProjection,
       bestProgressProjection: bestProjection,
       productionComparatorResult: comparatorResult,
+      progressComparable,
       positiveProgress,
       evaluated: true,
     });
   }
+  const rootsProgressComparable = perRootResults.filter((r) => r.progressComparable === true).length;
   console.log(JSON.stringify({
     b5_perRoot: perRootResults.map((r) => ({
       root: r.rootCandidateId, intent: r.intentId, goal: r.goalReached, complete: r.searchComplete,
-      exp: r.expansions, pos: r.positiveProgress, cmp: r.productionComparatorResult,
+      exp: r.expansions, pos: r.positiveProgress, comparable: r.progressComparable, cmp: r.productionComparatorResult,
     })),
   }));
 
-  // ===== B8: coverage + B7: verdict (per-root authority) =====
+  // ===== B8: coverage =====
   const rootsEvaluated = perRootResults.filter((r) => r.evaluated).length;
   const rootsComplete = perRootResults.filter((r) => r.searchComplete === true).length;
   const rootsGoal = perRootResults.filter((r) => r.goalReached === true).length;
   const rootsPositive = perRootResults.filter((r) => r.positiveProgress === true).length;
 
-  // ===== B9: shared multi-root cross-check =====
+  // ===== B9: shared multi-root cross-check (F4: symmetric) =====
   const sharedFrontier = uniqueHistories.map((h, i) => ({
     id: `cf:${h.intentId}:root-${i}`,
     state: JSON.parse(JSON.stringify(h.candidate.state)),
@@ -366,28 +468,41 @@ function main() {
     inputStateKeysVerified: shared.telemetry && shared.telemetry.inputStateKeysVerified,
   } : { error: sharedError };
 
-  // Semantic cross-check: independent goal roots vs shared goal
-  let semanticRegression = false;
-  if (shared && rootsGoal > 0 && !(shared.summary && shared.summary.found)) {
-    semanticRegression = true;
-  }
+  // F4: symmetric semantic regression — independent goals vs shared goal
+  // disagreement in EITHER direction.
+  const sharedFound = Boolean(shared && shared.summary && shared.summary.found);
+  const independentFound = rootsGoal > 0;
+  const semanticRegression = shared
+    ? (sharedFound !== independentFound)
+    : null;
 
-  // ===== Verdict (B7, per-root hard authority) =====
+  // ===== B7: verdict (per-root hard authority + F2/F3 fail-closed gates) =====
   let caseLabel;
   let expressiveness;
   if (rootsGoal > 0) { caseLabel = "A"; expressiveness = "SUFFICIENT"; }
   else if (rootsPositive > 0) { caseLabel = "B"; expressiveness = "PARTIALLY_SUFFICIENT"; }
-  else if (rootsComplete === uniqueHistories.length && sharedInfo.searchComplete === true) {
+  else if (
+    allMaterializationComplete
+    && rootsComplete === uniqueHistories.length
+    && rootsProgressComparable === uniqueHistories.length
+    && sharedInfo.searchComplete === true
+  ) {
     caseLabel = "C"; expressiveness = "INSUFFICIENT";
   } else { caseLabel = "EVALUATION_INCOMPLETE"; expressiveness = "UNDETERMINED"; }
 
   const report = {
-    schema: "motapathfinder.one-step-cf-exhaustiveness.v2",
+    schema: "motapathfinder.one-step-cf-exhaustiveness.v2p1",
     b1: {
       sourceAuthority: "controlled-rederived",
       sourceCandidateId,
-      failureClass: triggerFailure.failureClass,
-      failedSegmentId: failedSegment.id,
+      inlineLineageGate: {
+        mt2Found: true,
+        mt2Complete: lineageMt2Complete,
+        mt3FrontierCount: lineageMt3Frontier.length,
+        mt3Found: lineageMt3Found,
+        mt3Complete: lineageMt3Complete,
+        failureClass: lineageFailureClass,
+      },
       exactHistoricalClaimed: false,
     },
     b2: { INTENTS_GENERATED: intents.length },
@@ -396,6 +511,13 @@ function main() {
       intentsIncomplete: materializations.filter((m) => m.classification === "INCOMPLETE").length,
       intentsUnrealizable: materializations.filter((m) => m.classification === "UNREALIZABLE").length,
       intentsResourceLimited: materializations.filter((m) => m.classification === "RESOURCE_LIMITED").length,
+      allMaterializationComplete,
+      intentCompletionBits: materializations.map((m) => ({
+        intentId: m.intentId,
+        classification: m.classification,
+        intentRealizationComplete: m.intentRealizationComplete === true,
+        anchorExpansionComplete: m.anchorExpansionComplete === true,
+      })),
     },
     b4: {
       RAW_REALIZED_HISTORY_COUNT: allHistories.length,
@@ -408,15 +530,18 @@ function main() {
       INDEPENDENT_ROOTS_COMPLETE: rootsComplete,
       INDEPENDENT_ROOTS_GOAL: rootsGoal,
       INDEPENDENT_ROOTS_POSITIVE: rootsPositive,
+      ROOTS_PROGRESS_COMPARABLE: rootsProgressComparable,
       SHARED_ROOTS_INPUT: sharedFrontier.length,
       SHARED_SEARCH_COMPLETE: sharedInfo.searchComplete != null ? sharedInfo.searchComplete : null,
       ONE_STEP_EVALUATION_COVERAGE_RATIO: uniqueHistories.length > 0
         ? Number((rootsComplete / uniqueHistories.length).toFixed(3)) : null,
     },
-    b9: { shared: sharedInfo, semanticRegression },
+    b9: { shared: sharedInfo, semanticRegression, semanticRegressionSymmetric: true },
     b7: {
       caseLabel,
       ONE_STEP_CF_EXPRESSIVENESS: expressiveness,
+      allMaterializationComplete,
+      allProgressComparable: rootsProgressComparable === uniqueHistories.length,
       NEXT_EXPRESSIVENESS_EXPANSION: caseLabel === "C" ? "REQUIRED" : null,
       BOUNDED_COMPOSITION: caseLabel === "C" ? "AUTHORIZED_AS_NEXT_CANDIDATE" : "NOT_APPLICABLE",
       MULTI_STEP_CF: "NOT_AUTHORIZED_THIS_ROUND",
