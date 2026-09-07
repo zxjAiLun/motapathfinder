@@ -1306,6 +1306,7 @@ function searchDPCore(simulator, initialRoots, options) {
   let observerCaptureElapsedMs = 0;
   let expansions = 0;
   const expansionCountByRoot = {};
+  const registeredRootNodeIds = [];
   let generated = 0;
   let registered = 0;
   let newKeys = 0;
@@ -1879,9 +1880,13 @@ function searchDPCore(simulator, initialRoots, options) {
     const actionForEntry = sourceAction && !sourceAction.fingerprint && typeof simulator.getActionFingerprint === "function"
       ? { ...sourceAction, fingerprint: simulator.getActionFingerprint(sourceAction) }
       : sourceAction;
+    // PR-5.24h Iteration 2 Repair 1: single-root keeps the historical root
+    // nodeId = 0 (children continue from 1). Multi-root allocates every root
+    // from nextNodeId so a replaced weak root's stale agenda entry can never
+    // alias the live winner (active.nodeId === entry.nodeId must stay exact).
     const node = parentNode
       ? createChildNode(parentNode, state, key, actionForEntry, nextNodeId++, sequence)
-      : createRootNode(state, key, registeringRootMeta);
+      : createRootNode(state, key, registeringRootMeta, multiRootSearch ? nextNodeId++ : 0);
     node.key = key;
     if (profileExpansion) {
       perfTracker.increment("frontierRankCalls");
@@ -1956,6 +1961,16 @@ function searchDPCore(simulator, initialRoots, options) {
       return false;
     }
     nodes.set(node.nodeId, node);
+    // PR-5.24h Iteration 2 Repair 1: record accepted root registrations so
+    // qualification gates can assert nodeId uniqueness (diagnostic only;
+    // children are never recorded here).
+    if (!parentNode) {
+      registeredRootNodeIds.push({
+        rootCandidateId: node.rootCandidateId != null ? node.rootCandidateId : null,
+        rootIndex: node.rootIndex != null ? node.rootIndex : null,
+        nodeId: node.nodeId,
+      });
+    }
     archiveLandmark(node, actionForEntry, parentNode);
     let enqueueExpansion = null;
     let enqueueElapsedMs = null;
@@ -2992,6 +3007,7 @@ function searchDPCore(simulator, initialRoots, options) {
     rootCandidateIds: rootContexts.map((ctx) => ctx.rootCandidateId),
     rootCount: rootContexts.length,
     expansionCountByRoot,
+    registeredRootNodeIds,
     pendingByRoot,
     multiRoot: rootContexts.length > 1,
     goalArchiveAudit,

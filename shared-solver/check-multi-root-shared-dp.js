@@ -268,7 +268,9 @@ function gateG29B_NonVacuousGoalAndProvenance(simulator, segment, roots) {
   assert.strictEqual(rootC.found, true, "G29-B: root C must reach the goal");
   const bestB = rootB.goals.reduce((best, g) => (best == null || compareGoalRecords(g, best) > 0 ? g : best), rootB.goals[0]);
   const bestC = rootC.goals.reduce((best, g) => (best == null || compareGoalRecords(g, best) > 0 ? g : best), rootC.goals[0]);
-  assert.ok(compareGoalRecords(bestB, bestC) < 0 || bestB.hp > bestC.hp || true, "G29-B: root C goal is not better than root B (sanity)");
+  // Root C starts with fewer resources, so its best reached goal must be
+  // strictly worse than root B's best under the production comparator.
+  assert.ok(compareGoalRecords(bestB, bestC) > 0, "G29-B: root B best goal must beat root C best goal under the comparator");
 
   const shared = workload.shared;
   assert.strictEqual(shared.found, true, "G29-B: shared arm must find the goal");
@@ -382,6 +384,200 @@ function gateG29C_CrossRootDominanceReplacement() {
     crossRootDominanceReplacementVerified: true,
     orders: reports,
     laterBetterRootStillExpands: strongExpansionsInWeakFirst > 0,
+  };
+}
+
+// G29-J: initial same-bucket root replacement (node-identity hardening).
+// Two initial roots share one DP bucket but differ in exact state and HP.
+// This covers the nodeId-collision case G29-C misses: G29-C roots live in
+// different buckets, so it never exercises two initial roots competing for
+// the SAME bestByKey entry at registration time.
+function gateG29J_InitialSameBucketRootReplacement() {
+  const { project, simulator } = createSimulator();
+  const segment = getMt3Segment(project);
+  const base = FRONTIER_FIXTURE.candidates[0].state;
+  const weakState = JSON.parse(JSON.stringify(base));
+  weakState.hero.hp = 9891;
+  const strongState = JSON.parse(JSON.stringify(base));
+  strongState.hero.hp = 12782;
+  const weak = { state: weakState, id: "g29j:root-weak-hp9891" };
+  const strong = { state: strongState, id: "g29j:root-strong-hp12782" };
+  // Precondition: same DP bucket, different exact states, HP ordered.
+  const keyOpts = { dpKeyMode: "region" };
+  assert.strictEqual(
+    buildDpStateKey(simulator, weak.state, keyOpts),
+    buildDpStateKey(simulator, strong.state, keyOpts),
+    "G29-J precondition: both roots share one DP bucket",
+  );
+  assert.notStrictEqual(buildStateKey(weak.state), buildStateKey(strong.state), "G29-J precondition: different exact states");
+  assert.ok(weak.state.hero.hp < strong.state.hero.hp, "G29-J precondition: HP ordered");
+
+  const runOrder = (label, first, second) => {
+    if (typeof global.gc === "function") global.gc();
+    const res = searchSegmentDPMultiRoot(
+      simulator,
+      [
+        { state: JSON.parse(JSON.stringify(first.state)), id: first.id },
+        { state: JSON.parse(JSON.stringify(second.state)), id: second.id },
+      ],
+      segment,
+      { candidateId: `g29j-${label}`, maxExpansions: G28_H_MAX_EXPANSIONS, maxRuntimeMs: G28_NON_BINDING_MAX_RUNTIME_MS },
+    );
+    return res;
+  };
+  const weakFirst = runOrder("weak-then-strong", weak, strong);
+  const strongFirst = runOrder("strong-then-weak", strong, weak);
+
+  // 1. Every accepted root nodeId is unique in both orders.
+  for (const [label, res] of [["weak-then-strong", weakFirst], ["strong-then-weak", strongFirst]]) {
+    const regs = res.diagnostics.dp.registeredRootNodeIds || [];
+    const ids = regs.map((r) => r.nodeId);
+    assert.strictEqual(new Set(ids).size, ids.length, `G29-J [${label}]: accepted root nodeIds must be unique`);
+  }
+
+  // 2. [weak,strong]: both roots are accepted at registration, but the stale
+  // weak root agenda entry must never expand once strong replaces it.
+  const wfDp = weakFirst.diagnostics.dp;
+  const wfRegs = wfDp.registeredRootNodeIds || [];
+  assert.strictEqual(wfRegs.length, 2, "G29-J [weak,strong]: both roots accepted at registration");
+  assert.strictEqual((wfDp.expansionCountByRoot || {})[0] || 0, 0, "G29-J [weak,strong]: stale weak root agenda entry must never expand after replacement");
+  assert.ok(((wfDp.expansionCountByRoot || {})[1] || 0) > 0, "G29-J [weak,strong]: strong root must expand");
+
+  // 3. [strong,weak]: the weak root is dominance-rejected at registration;
+  // it is never recorded and never expands.
+  const sfDp = strongFirst.diagnostics.dp;
+  const sfRegs = sfDp.registeredRootNodeIds || [];
+  assert.strictEqual(sfRegs.length, 1, "G29-J [strong,weak]: weak root must be dominance-rejected at registration");
+  assert.strictEqual(sfRegs[0].rootIndex, 0, "G29-J [strong,weak]: the sole accepted root is strong");
+  assert.strictEqual((sfDp.expansionCountByRoot || {})[1] || 0, 0, "G29-J [strong,weak]: weak expansionCount = 0");
+  assert.ok(((sfDp.expansionCountByRoot || {})[0] || 0) > 0, "G29-J [strong,weak]: strong root must expand");
+
+  // 4. Semantic results consistent across orders; completion authority correct.
+  assert.strictEqual(weakFirst.found, strongFirst.found, "G29-J: both orders agree on found");
+  assert.strictEqual(wfDp.searchOutcome.searchComplete, true, "G29-J [weak,strong]: searchComplete");
+  assert.strictEqual(sfDp.searchOutcome.searchComplete, true, "G29-J [strong,weak]: searchComplete");
+  assert.strictEqual(wfDp.frontierSize, 0, "G29-J [weak,strong]: frontier exhausted");
+  assert.strictEqual(sfDp.frontierSize, 0, "G29-J [strong,weak]: frontier exhausted");
+  return {
+    initialSameBucketRootReplacementVerified: true,
+    sameBucketPrecondition: true,
+    weakThenStrong: {
+      acceptedRoots: wfRegs.length,
+      weakExpansions: (wfDp.expansionCountByRoot || {})[0] || 0,
+      strongExpansions: (wfDp.expansionCountByRoot || {})[1] || 0,
+      found: weakFirst.found,
+      searchComplete: wfDp.searchOutcome.searchComplete,
+    },
+    strongThenWeak: {
+      acceptedRoots: sfRegs.length,
+      weakExpansions: (sfDp.expansionCountByRoot || {})[1] || 0,
+      strongExpansions: (sfDp.expansionCountByRoot || {})[0] || 0,
+      found: strongFirst.found,
+      searchComplete: sfDp.searchOutcome.searchComplete,
+    },
+  };
+}
+
+// G29-K: multi-root trace provenance (node-identity hardening).
+// Verifies a NON-last-registered root's goal trace genuinely starts at the
+// reported root and forms a continuous chain to the goal.  Under the old
+// nodeId=0 collision, nodes.get(0) would return the LAST registered root, so
+// a non-last root's trace[0] would reference the wrong root's state.
+//
+// Key-kind note: trace pre/postStateKey fields are PRODUCTION DP BUCKET keys
+// (node.stateKey), not exact state keys by design.  Exact-state identity is
+// proven through the per-step snapshots (full hero/inventory/flags content)
+// plus the G29-B materialized-route strict replay, which is retained.
+// G29-K fixture: two goal-bearing roots in DIFFERENT DP buckets with disjoint
+// goal stateKeys.  Root D carries a persistent marker flag (plus distinct HP
+// and ATK) so its lineage can never converge into root B's buckets — the two
+// lineages stay fully independent and both reach the goal.  D registers LAST
+// and is accepted, so under the old nodeId=0 collision every B-lineage trace
+// would resolve parentId 0 to D's node (wrong root).
+function buildG29KFixture(simulator) {
+  const base = simulator.createInitialState({ rank: "chaos" });
+  const mkRoot = (mut, id) => {
+    const state = JSON.parse(JSON.stringify(base));
+    mut(state);
+    return { state, id };
+  };
+  return [
+    mkRoot((s) => { s.hero.hp = 201; }, "g29k:root-b-normal"),
+    mkRoot((s) => { s.hero.hp = 180; s.hero.atk = s.hero.atk + 10; s.flags = { ...s.flags, __g29k_root__: "D" }; }, "g29k:root-d-flagged"),
+  ];
+}
+
+function gateG29K_MultiRootTraceProvenance() {
+  const { project, simulator } = createSimulator();
+  const segment = getMt1ToMt2Segment(project);
+  const roots = buildG29KFixture(simulator);
+  // Fixture contract: different buckets, different goal states, both reach.
+  assert.notStrictEqual(
+    buildDpStateKey(simulator, roots[0].state, { dpKeyMode: "region" }),
+    buildDpStateKey(simulator, roots[1].state, { dpKeyMode: "region" }),
+    "G29-K fixture: roots live in different DP buckets",
+  );
+  if (typeof global.gc === "function") global.gc();
+  const res = searchSegmentDPMultiRoot(
+    simulator,
+    roots.map((root) => ({ state: JSON.parse(JSON.stringify(root.state)), id: root.id })),
+    segment,
+    { candidateId: "g29k-trace", captureTrace: true, preserveFirstGoalCheckpoint: true, maxExpansions: G28_H_MAX_EXPANSIONS, maxRuntimeMs: G28_NON_BINDING_MAX_RUNTIME_MS, goalSkylineLimit: 16 },
+  );
+  assert.strictEqual(res.found, true, "G29-K: shared arm must find a goal");
+  const goals = res.goalSkyline || [];
+  assert.ok(goals.length > 0, "G29-K: goal records present");
+  // Pick a goal from a NON-last-registered root (registration order follows
+  // the input array; the last root is roots[roots.length - 1]).
+  const lastRootId = roots[roots.length - 1].id;
+  // Prefer the first-found goal record: root-ordered agenda drains root B
+  // first, so the first goal is B-lineage (non-last) by construction.  Fall
+  // back to any traced non-last-root goal.
+  const firstGoal = goals.find((g) => (g.tags || []).includes("first-goal") && Array.isArray(g.trace) && g.trace.length > 0);
+  const target = (firstGoal && firstGoal.rootCandidateId && firstGoal.rootCandidateId !== lastRootId)
+    ? firstGoal
+    : goals.find((g) => g.rootCandidateId && g.rootCandidateId !== lastRootId && Array.isArray(g.trace) && g.trace.length > 0);
+  assert.ok(target, "G29-K: need a traced goal from a non-last-registered root");
+  assert.ok(target.rootCandidateId !== lastRootId, "G29-K: target goal must come from a non-last-registered root");
+  const reportedRoot = roots.find((r) => r.id === target.rootCandidateId);
+  assert.ok(reportedRoot, "G29-K: reported root must be a real input root");
+  const trace = target.trace;
+  // 1. Trace starts at the reported root: DP-bucket key form.
+  assert.strictEqual(
+    trace[0].preStateKey,
+    buildDpStateKey(simulator, reportedRoot.state, { dpKeyMode: "region" }),
+    "G29-K: trace[0].preStateKey must equal the reported root DP bucket key",
+  );
+  // 2. Trace starts at the reported root: exact-value form via snapshot hero.
+  // (Catches same-bucket cross-root splicing, where DP keys alone cannot
+  // distinguish roots that differ only in HP.)
+  assert.strictEqual(
+    trace[0].preSnapshot && trace[0].preSnapshot.hero && trace[0].preSnapshot.hero.hp,
+    reportedRoot.state.hero.hp,
+    "G29-K: trace[0].preSnapshot hero HP must equal the reported root HP",
+  );
+  // 3. Chain continuity, DP-key form.
+  for (let i = 0; i < trace.length - 1; i += 1) {
+    assert.strictEqual(trace[i].postStateKey, trace[i + 1].preStateKey, `G29-K: DP-key chain continuous at step ${i}`);
+  }
+  // 4. Chain continuity, exact-snapshot form.
+  for (let i = 0; i < trace.length - 1; i += 1) {
+    assert.deepStrictEqual(trace[i].postSnapshot, trace[i + 1].preSnapshot, `G29-K: snapshot chain continuous at step ${i}`);
+  }
+  // 5. Chain ends at the goal state.
+  const last = trace[trace.length - 1];
+  assert.strictEqual(last.postStateKey, buildDpStateKey(simulator, target.state, { dpKeyMode: "region" }), "G29-K: final postStateKey must equal the goal DP bucket key");
+  assert.strictEqual(last.postSnapshot && last.postSnapshot.hero && last.postSnapshot.hero.hp, target.state.hero.hp, "G29-K: final postSnapshot HP must equal the goal HP");
+  return {
+    multiRootTraceProvenanceVerified: true,
+    goalRootCandidateId: target.rootCandidateId,
+    nonLastRegisteredRoot: target.rootCandidateId !== lastRootId,
+    traceLength: trace.length,
+    traceStartsAtReportedRootDpKey: true,
+    traceStartsAtReportedRootSnapshotHp: true,
+    dpKeyChainContinuous: true,
+    snapshotChainContinuous: true,
+    traceEndsAtGoal: true,
   };
 }
 
@@ -611,6 +807,8 @@ function main() {
   const g29f = gateG29F_GoalSkylineParity(simulator2, mt1Segment, roots);
 
   const g29c = gateG29C_CrossRootDominanceReplacement();
+  const g29j = gateG29J_InitialSameBucketRootReplacement();
+  const g29k = gateG29K_MultiRootTraceProvenance();
   const g29d = gateG29D_BudgetLimitedFailClose();
   const g29e = gateG29E_CandidateCompletionLedger();
   const g29g = gateG29G_IsolatedWorkerIntegration();
@@ -640,6 +838,8 @@ function main() {
       },
       "G29-B": g29b,
       "G29-C": g29c,
+      "G29-J": g29j,
+      "G29-K": g29k,
       "G29-D": g29d,
       "G29-E": g29e,
       "G29-F": g29f,
@@ -692,6 +892,8 @@ module.exports = {
   gateG29B_NonVacuousGoalAndProvenance,
   gateG29F_GoalSkylineParity,
   gateG29C_CrossRootDominanceReplacement,
+  gateG29J_InitialSameBucketRootReplacement,
+  gateG29K_MultiRootTraceProvenance,
   gateG29D_BudgetLimitedFailClose,
   gateG29E_CandidateCompletionLedger,
   gateG29G_IsolatedWorkerIntegration,

@@ -3319,11 +3319,13 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
     const skylineStates = result.goalSkylineStates || [];
     const skylineRoots = result.goalSkylineRootCandidateIds || [];
     skylineStates.forEach((state, index) => goalRootByState.set(state, skylineRoots[index] != null ? skylineRoots[index] : null));
-    if (!skylineStates.length) {
-      if (result.bestGoalState) goalRootByState.set(result.bestGoalState, result.bestGoalRootCandidateId != null ? result.bestGoalRootCandidateId : null);
-      if (result.goalState && !goalRootByState.has(result.goalState)) goalRootByState.set(result.goalState, result.bestGoalRootCandidateId != null ? result.bestGoalRootCandidateId : null);
-      if (result.firstGoalState && !goalRootByState.has(result.firstGoalState)) goalRootByState.set(result.firstGoalState, result.firstGoalRootCandidateId != null ? result.firstGoalRootCandidateId : null);
-    }
+    // PR-5.24h Iteration 2 Repair 1: singleton fallbacks (best/goal/first) must
+    // ALWAYS be mapped when absent — e.g. the first-found goal is kept in the
+    // archive via keepCandidate even when it is not among goalSkylineStates.
+    // Without this, such records get rootCandidateId null (provenance gap).
+    if (result.bestGoalState && !goalRootByState.has(result.bestGoalState)) goalRootByState.set(result.bestGoalState, result.bestGoalRootCandidateId != null ? result.bestGoalRootCandidateId : null);
+    if (result.goalState && !goalRootByState.has(result.goalState)) goalRootByState.set(result.goalState, result.bestGoalRootCandidateId != null ? result.bestGoalRootCandidateId : null);
+    if (result.firstGoalState && !goalRootByState.has(result.firstGoalState)) goalRootByState.set(result.firstGoalState, result.firstGoalRootCandidateId != null ? result.firstGoalRootCandidateId : null);
   }
   const baseDpDiagnostics = (result.diagnostics && result.diagnostics.dp) || {};
   const expansionBudgetExhausted =
@@ -3401,6 +3403,7 @@ function searchSegmentDPWithPerf(simulator, startState, segment, options, perfTr
         capturedExpandedStates: (result.diagnostics && result.diagnostics.capturedExpandedStates) || [],
         pendingByRoot: result.pendingByRoot || null,
         expansionCountByRoot: result.expansionCountByRoot || null,
+        registeredRootNodeIds: result.registeredRootNodeIds || null,
         rootCandidateIds: result.rootCandidateIds || null,
         rootCount: result.rootCount != null ? result.rootCount : null,
         registry: (result.diagnostics && result.diagnostics.registry) || null,
@@ -4371,8 +4374,15 @@ function runSegmentAgainstFrontierLocal(
           candidateSliceTelemetry.candidateSliceTerminalIncomplete += 1;
         }
       });
-      candidateSliceTelemetry.candidateSliceInitialAttempts += 1;
+      // PR-5.24h Iteration 2 Repair 1 (P2-1): candidateSliceInitialAttempts
+      // historically counts CANDIDATE attempts (legacy arm increments once
+      // per candidate attempt), so the shared arm counts admitted roots (N),
+      // not search invocations. multiRootRootCount freezes that meaning;
+      // searchInvocations (= attempts.length, 1 here) is reported separately
+      // in the summary so the two notions are never conflated.
+      candidateSliceTelemetry.candidateSliceInitialAttempts += inputFrontier.length;
       candidateSliceTelemetry.multiRootSharedDp = true;
+      candidateSliceTelemetry.multiRootRootCount = inputFrontier.length;
       candidateSliceTelemetry.multiRootSharedExpansions = number(dp && dp.expansions, 0);
     }
   } else {
@@ -4587,7 +4597,12 @@ function runSegmentAgainstFrontierLocal(
     segmentId: segment.id,
     label: segment.label,
     found: merged.length > 0,
-    startCandidatesTried: attempts.length,
+    // PR-5.24h Iteration 2 Repair 1 (P2-1): startCandidatesTried keeps its
+    // historical meaning (candidates tried = admitted roots, N in shared
+    // mode); searchInvocations counts searchSegmentDP calls (1 in shared
+    // mode) so a 16-root shared execution no longer reports "tried = 1".
+    startCandidatesTried: multiRootEligible ? inputFrontier.length : attempts.length,
+    searchInvocations: attempts.length,
     startCandidatesAvailable: (frontier || []).length,
     executionMode: multiRootEligible ? "multi-root-shared-dp" : "per-candidate",
     candidateSliceTelemetry,

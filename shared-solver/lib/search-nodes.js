@@ -1,8 +1,13 @@
 "use strict";
 
-function createRootNode(state, stateKey, rootMeta) {
+function createRootNode(state, stateKey, rootMeta, nodeId = 0) {
   return {
-    nodeId: 0,
+    // PR-5.24h Iteration 2 Repair 1: root nodeId must be unique within a
+    // searchDPCore invocation. Single-root searches pass the default 0
+    // (historical behavior: root = 0, first child = 1). Multi-root searches
+    // allocate each accepted root from nextNodeId so stale agenda entries
+    // can never alias a live winner. Identity only — never enters DP keys.
+    nodeId: nodeId == null ? 0 : nodeId,
     parentId: null,
     state,
     stateKey,
