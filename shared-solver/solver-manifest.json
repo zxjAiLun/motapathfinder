@@ -709,6 +709,22 @@
       },
       "notes": "auto-classified; refine in solver-manifest"
     },
+    "shared-solver/lib/event-forward-search.js": {
+      "id": "event-forward-search",
+      "path": "shared-solver/lib/event-forward-search.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/event-resolver.js": {
       "id": "event-resolver",
       "path": "shared-solver/lib/event-resolver.js",
@@ -1129,6 +1145,22 @@
     "shared-solver/lib/multi-region-key-shadow.js": {
       "id": "multi-region-key-shadow",
       "path": "shared-solver/lib/multi-region-key-shadow.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/multi-step-resource-lookahead.js": {
+      "id": "multi-step-resource-lookahead",
+      "path": "shared-solver/lib/multi-step-resource-lookahead.js",
       "layer": "unclassified",
       "status": "supporting",
       "role": "supporting",
@@ -2791,6 +2823,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "observation-only eval vector contract: signed per-field margins, near-term bottleneck vs full-horizon reporting, unknown-evidence is never viable, tracked MT5 first-sweep/third-gate HP-drop chain"
+    },
+    "shared-solver/check-event-forward-search.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-expansion-cost-attribution.js": {
       "grade": "integration-local",
