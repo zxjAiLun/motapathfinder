@@ -3,32 +3,39 @@
 /**
  * PR-5.25a — Event-Level Forward Search core.
  *
- * A unified forward search over REAL exact states:
- *   node = full canonical state (hero/inventory/flags/mutations/floor/location)
- *   edge = one decision-significant simulator action (reachability folds plain moves)
+ * Iteration 2: EXACT-SEMANTICS-PRESERVING SEARCH-STATE MEMORY REDUCTION.
  *
- * Architecture boundaries (PR-5.25a design, Cloud-Review approved):
+ * The ONLY change from Iteration 1 is the representation of accepted nodes
+ * in memory — the search semantics (exact keys, duplicate decisions, pop
+ * order, goal check, route reconstruction, budget accounting) are byte-
+ * identical:
+ *
+ *   CLOSED nodes release their full state (state = null), retaining only:
+ *     - exactKey (for duplicate detection)
+ *     - parentId (for route reconstruction)
+ *     - compact replay action descriptor (summary string)
+ *   OPEN nodes keep their full state.
+ *
+ *   The guided heap and neutral queue store lightweight nodeId handles
+ *   (integers), NOT node objects — stale entries cannot indirectly retain
+ *   full states.
+ *
+ *   Route reconstruction walks parentId → node records (which carry the
+ *   compact replay action), producing the identical route as Iteration 1.
+ *
+ * Architecture boundaries unchanged from Iteration 1:
  *   - search core → existing simulator (NOT planner → segment DP → repair)
- *   - the evaluator only affects PRIORITY, never successor existence
- *     (P1-1: legal action sets are identical with the evaluator OFF and ON)
- *   - one single exact-state registry; the guided and neutral queues are two
- *     scheduling views over the SAME nodes (P1-2). A node expanded once is
- *     never expanded again (no reopen in Iteration 1); stale entries in the
- *     other view are skipped.
- *   - dual-queue age-term exploration contract:
- *       EVALUATOR_CAN_PRIORITIZE = TRUE
- *       EVALUATOR_CAN_PERMANENTLY_STARVE_ACCEPTED_STATE = FALSE
- *     every NEUTRAL_EVERY guided pops, at least one neutral (FIFO) pop happens.
- *   - OFF/ON arms are byte-identical in exact key, duplicate policy, accepted
- *     registry, action generation, budget accounting, retention and goal check
- *     (P1-4); the ONLY difference is pop order via the evaluator priority.
- *   - no repair, no subgoals, no failure learning, no cross-state backjump.
+ *   - evaluator only affects PRIORITY (P1-1: identical legal action sets)
+ *   - single exact-state registry; dual-view bounded-fair scheduling
+ *     (guided + neutral FIFO, NEUTRAL_EVERY=8; no reopen)
+ *   - OFF/ON arms identical in exact key, duplicate policy, action
+ *     generation, budget, retention, goal check (P1-4)
  */
 
 const { buildStateKey } = require("./state-key");
 const { cloneState } = require("./state");
 
-const NEUTRAL_EVERY = 8; // frozen Iteration-1 value (no sweep)
+const NEUTRAL_EVERY = 8; // frozen (no sweep)
 
 function createEventForwardSearch(simulator) {
   const enumerateActions = (state) => {
@@ -44,7 +51,6 @@ function createEventForwardSearch(simulator) {
    *   isGoalState(state)  terminal predicate
    *   allowedFloors       region restriction (optional; null = all)
    *   evaluator           null (CONTROL) or { rank(state, actions) -> score }
-   *                       PRIORITY ONLY — never filters/creates actions.
    *   maxExpansions       shared ceiling
    *   maxRuntimeMs        shared wall (evaluator time counted when ON)
    *   maxRssMb            shared hard ceiling (0 = unlimited)
@@ -74,24 +80,29 @@ function createEventForwardSearch(simulator) {
     const rootNode = {
       id: 1,
       parentId: null,
-      state: rootState,
+      state: rootState,        // OPEN: full state retained
       key: buildStateKey(rootState),
       action: null,
+      actionSummary: null,      // compact replay descriptor
       depth: 0,
-      enqueuedAtExpansion: 0,
+      closed: false,
     };
 
-    // ---- single exact registry (P1-2) ----
-    const registry = new Map(); // exactKey -> node (expanded or accepted-pending)
+    // ---- single exact registry (key -> node record) ----
+    // Node records live in a Map keyed by id for parent-chain lookup, and a
+    // Map keyed by exactKey for duplicate detection. Both share the SAME
+    // records. CLOSED records have state=null.
+    const nodesById = new Map();     // nodeId -> node record
+    const registry = new Map();      // exactKey -> node record (same objects)
+    nodesById.set(rootNode.id, rootNode);
     registry.set(rootNode.key, rootNode);
 
-    // ---- two scheduling views over the same nodes ----
-    // guided: max-heap by evaluator score (only when evaluator ON)
-    // neutral: FIFO by acceptance order
-    const guidedHeap = []; // array-backed binary heap of { node, score }
-    const neutralQueue = [rootNode];
+    // ---- lightweight frontier views (nodeId handles only) ----
+    const guidedHeap = [];  // { nodeId, score } — no state references
+    const neutralQueue = [rootNode.id]; // nodeId — no state references
+    let neutralHead = 0;    // avoids O(n) shift on the neutral FIFO
     const expanded = new Set(); // node ids expanded exactly once
-    let neutralSinceGuided = 0; // guided pops since last neutral pop
+    let neutralSinceGuided = 0;
 
     const heapPush = (entry) => {
       guidedHeap.push(entry);
@@ -160,13 +171,37 @@ function createEventForwardSearch(simulator) {
       return true;
     };
 
-    // Seed the guided view when the evaluator is ON (the root participates too).
+    // --- Accept a successor state into the registry (shared logic for both arms).
+    // Returns the new node record, or null when rejected as duplicate.
+    const acceptChild = (node, action, nextState) => {
+      const key = buildStateKey(nextState);
+      if (registry.has(key)) {
+        duplicatesSkipped += 1;
+        return null;
+      }
+      const childNode = {
+        id: nextNodeId++,
+        parentId: node.id,
+        state: nextState,
+        key,
+        action,
+        actionSummary: action ? (action.summary || action.kind) : null,
+        depth: node.depth + 1,
+        closed: false,
+      };
+      nodesById.set(childNode.id, childNode);
+      registry.set(key, childNode);
+      accepted += 1;
+      return childNode;
+    };
+
+    // Seed the guided view when the evaluator is ON.
     if (evaluatorOn) {
       const t0 = Date.now();
       const score = evaluator.rank(rootNode.state, []);
       evaluatorWallMs += Date.now() - t0;
       evaluatorCalls += 1;
-      heapPush({ node: rootNode, score: Number(score) || 0 });
+      heapPush({ nodeId: rootNode.id, score: Number(score) || 0 });
     }
 
     // ---- main loop ----
@@ -175,64 +210,67 @@ function createEventForwardSearch(simulator) {
       sampleRss();
       if (stoppedReason) break;
 
-      // Pick the next node: neutral every NEUTRAL_EVERY guided pops, or when
-      // the guided view is empty (exploration contract: no permanent starvation).
-      let node = null;
+      // Pick the next node via lightweight handles; resolve to record on pop.
+      let nodeRecord = null;
       const neutralDue = !evaluatorOn || neutralSinceGuided >= NEUTRAL_EVERY || guidedHeap.length === 0;
-      if (neutralDue && neutralQueue.length > 0) {
-        while (neutralQueue.length > 0) {
-          const candidate = neutralQueue.shift();
-          if (expanded.has(candidate.id)) {
-            staleEntriesSkipped += 1; // already expanded via the other view
-            continue;
-          }
-          node = candidate;
-          break;
-        }
-        if (node) neutralSinceGuided = 0;
-      }
-      if (!node && evaluatorOn && guidedHeap.length > 0) {
-        while (guidedHeap.length > 0) {
-          const entry = heapPop();
-          if (expanded.has(entry.node.id)) {
+      if (neutralDue && neutralHead < neutralQueue.length) {
+        while (neutralHead < neutralQueue.length) {
+          const candidateId = neutralQueue[neutralHead];
+          neutralHead += 1;
+          if (expanded.has(candidateId)) {
             staleEntriesSkipped += 1;
             continue;
           }
-          node = entry.node;
-          break;
+          const candidate = nodesById.get(candidateId);
+          if (candidate && !candidate.closed) {
+            nodeRecord = candidate;
+            break;
+          }
+          staleEntriesSkipped += 1;
         }
-        if (node) neutralSinceGuided += 1;
+        if (nodeRecord) neutralSinceGuided = 0;
       }
-      if (!node) {
-        // both views exhausted
-        if (neutralQueue.length === 0 && guidedHeap.length === 0) {
-          stoppedReason = stoppedReason || null; // natural exhaustion
+      if (!nodeRecord && evaluatorOn && guidedHeap.length > 0) {
+        while (guidedHeap.length > 0) {
+          const entry = heapPop();
+          if (expanded.has(entry.nodeId)) {
+            staleEntriesSkipped += 1;
+            continue;
+          }
+          const candidate = nodesById.get(entry.nodeId);
+          if (candidate && !candidate.closed) {
+            nodeRecord = candidate;
+            break;
+          }
+          staleEntriesSkipped += 1;
         }
+        if (nodeRecord) neutralSinceGuided += 1;
+      }
+      if (!nodeRecord) {
         break;
       }
 
       // Goal check BEFORE expansion (identical for both arms).
-      if (isGoalState(node.state)) {
-        goalNode = node;
+      if (nodeRecord.state && isGoalState(nodeRecord.state)) {
+        goalNode = nodeRecord;
         break;
       }
 
-      // Expand: ALL legal actions are generated in BOTH arms (P1-1). The
-      // evaluator only chooses the priority of the successors.
-      expanded.add(node.id);
+      // Expand: ALL legal actions generated in BOTH arms (P1-1).
+      expanded.add(nodeRecord.id);
       expansions += 1;
 
       let actions = [];
       try {
-        actions = enumerateActions(node.state);
+        actions = enumerateActions(nodeRecord.state);
       } catch (_) {
         actions = [];
       }
 
-      // Region restriction is part of the shared config, identical in both arms.
+      // Region restriction (shared config, identical in both arms).
       if (allowedFloors) {
         actions = actions.filter((action) => {
-          const actionFloor = action.floorId || node.state.floorId;
+          const actionFloor = action.floorId || nodeRecord.state.floorId;
           if (!allowedFloors.has(actionFloor)) return false;
           if (action.changeFloor && action.changeFloor.floorId
             && action.changeFloor.floorId !== ":next" && action.changeFloor.floorId !== ":before") {
@@ -243,27 +281,24 @@ function createEventForwardSearch(simulator) {
       }
 
       // Rank successors when the evaluator is ON (priority only).
-      let scoredChildren = null;
       if (evaluatorOn && actions.length > 0) {
-        // Build child states first (identical generation in both arms).
-        scoredChildren = [];
+        const children = [];
         for (const action of actions) {
           let nextState = null;
           try {
-            nextState = simulator.applyAction(node.state, action, { storeRoute: false });
+            nextState = simulator.applyAction(nodeRecord.state, action, { storeRoute: false });
           } catch (_) {
             nextState = null;
           }
           if (!nextState || !nextState.hero || (nextState.hero.hp != null && nextState.hero.hp <= 0)) {
             continue;
           }
-          scoredChildren.push({ action, nextState });
+          children.push({ action, nextState });
         }
-        generated += scoredChildren.length;
+        generated += children.length;
 
-        // Evaluate each child ONCE for priority (cost counted in treatment).
         const childScores = [];
-        for (const child of scoredChildren) {
+        for (const child of children) {
           const t0 = Date.now();
           const score = evaluator.rank(child.nextState, []);
           evaluatorWallMs += Date.now() - t0;
@@ -273,43 +308,25 @@ function createEventForwardSearch(simulator) {
         if (onTrace) {
           onTrace({
             expansion: expansions,
-            nodeId: node.id,
+            nodeId: nodeRecord.id,
             actionCount: actions.length,
-            generated: scoredChildren.length,
+            generated: children.length,
             childScores: childScores.slice(0, 12),
           });
         }
 
-        // Accept in score order into the guided view; neutral FIFO gets them
-        // in generation order regardless (both views over the same nodes).
-        const order = scoredChildren.map((child, idx) => ({ child, idx, score: childScores[idx] }));
-        for (const { child, score } of order) {
-          const key = buildStateKey(child.nextState);
-          if (registry.has(key)) {
-            duplicatesSkipped += 1;
-            continue;
-          }
-          const childNode = {
-            id: nextNodeId++,
-            parentId: node.id,
-            parent: node,
-            state: child.nextState,
-            key,
-            action: child.action,
-            depth: node.depth + 1,
-            enqueuedAtExpansion: expansions,
-          };
-          registry.set(key, childNode);
-          accepted += 1;
-          neutralQueue.push(childNode); // generation order (shared)
-          heapPush({ node: childNode, score }); // priority order (treatment)
+        for (let ci = 0; ci < children.length; ci += 1) {
+          const child = children[ci];
+          const childNode = acceptChild(nodeRecord, child.action, child.nextState);
+          if (!childNode) continue;
+          neutralQueue.push(childNode.id);
+          heapPush({ nodeId: childNode.id, score: childScores[ci] });
         }
       } else {
-        // CONTROL arm (and treatment fallback): plain generation-order acceptance.
         for (const action of actions) {
           let nextState = null;
           try {
-            nextState = simulator.applyAction(node.state, action, { storeRoute: false });
+            nextState = simulator.applyAction(nodeRecord.state, action, { storeRoute: false });
           } catch (_) {
             nextState = null;
           }
@@ -317,44 +334,48 @@ function createEventForwardSearch(simulator) {
             continue;
           }
           generated += 1;
-          const key = buildStateKey(nextState);
-          if (registry.has(key)) {
-            duplicatesSkipped += 1;
-            continue;
-          }
-          const childNode = {
-            id: nextNodeId++,
-            parentId: node.id,
-            parent: node,
-            state: nextState,
-            key,
-            action,
-            depth: node.depth + 1,
-            enqueuedAtExpansion: expansions,
-          };
-          registry.set(key, childNode);
-          accepted += 1;
-          neutralQueue.push(childNode);
+          const childNode = acceptChild(nodeRecord, action, nextState);
+          if (!childNode) continue;
+          neutralQueue.push(childNode.id);
         }
       }
+
+      // MEMORY REDUCTION (Iteration 2): this node is now CLOSED. Release its
+      // full state; retain exactKey + parentId + compact replay action.
+      nodeRecord.closed = true;
+      nodeRecord.state = null;
     }
 
-    // ---- route reconstruction (parent object references kept on nodes) ----
+    // ---- route reconstruction (compact parent chain) ----
     let route = null;
     let finalState = null;
     if (goalNode) {
       const entries = [];
       let cursor = goalNode;
-      while (cursor && cursor.parent != null) {
-        entries.push(cursor.action ? cursor.action.summary || cursor.action.kind : "unknown");
-        cursor = cursor.parent;
+      while (cursor && cursor.parentId != null) {
+        entries.push(cursor.actionSummary || "unknown");
+        cursor = nodesById.get(cursor.parentId);
       }
       entries.reverse();
       route = entries;
-      finalState = goalNode.state;
+      finalState = goalNode.state; // goal node is not closed (found before expansion)
     }
 
-    const frontierOpen = neutralQueue.length > 0 || guidedHeap.length > 0;
+    // Memory telemetry (Iteration 2).
+    let fullStatesRetained = 0;
+    let closedNodes = 0;
+    let openNodes = 0;
+    registry.forEach((record) => {
+      if (record.closed) {
+        closedNodes += 1;
+      } else {
+        openNodes += 1;
+        if (record.state) fullStatesRetained += 1;
+      }
+    });
+    const staleQueueEntries = (neutralQueue.length - neutralHead) + guidedHeap.length;
+
+    const frontierOpen = staleQueueEntries > 0;
     const searchComplete = !goalNode && !stoppedReason && !frontierOpen;
 
     return {
@@ -374,13 +395,18 @@ function createEventForwardSearch(simulator) {
       evaluatorCalls,
       evaluatorWallMs,
       peakRssMb: Math.round(peakRssMb * 10) / 10,
+      // Iteration 2 memory telemetry
+      memory: {
+        fullStatesRetained,
+        closedNodes,
+        openNodes,
+        staleQueueEntries,
+        rssPerAccepted: accepted > 0 ? Number((peakRssMb / accepted).toFixed(3)) : null,
+        rssPerOpen: openNodes > 0 ? Number((peakRssMb / openNodes).toFixed(3)) : null,
+      },
     };
   }
 
-  // Wire parent references during search by monkey-patching the node creation
-  // above is not possible; instead search() is self-contained. We expose a
-  // helper to reconstruct the route from a found result via parent chain kept
-  // on the nodes themselves (set at creation time).
   return { search };
 }
 
