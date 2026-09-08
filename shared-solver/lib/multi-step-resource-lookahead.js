@@ -471,6 +471,25 @@ function createMultiStepResourceLookahead(project, options) {
       mdef: number(hero.mdef, 0), lv: number(hero.lv, 1), exp: number(hero.exp, 0),
     };
 
+    // PR-5.25a Iteration 3 — GOAL-RELEVANCE SELECTIVITY.
+    // Route-free terminal-progress component: floor progression toward the
+    // terminal goal floor and visited-floor irreversibility. This is NOT
+    // combat power — it rewards states that are actually closer to the goal.
+    // It does not replace the multi-step resource projection; it scales the
+    // overall priority so that "same combat power at a deeper floor" ranks
+    // higher than "prettier combat at a shallow floor".
+    const floorOrder = (project.floorOrder || []);
+    const currentFloorIndex = floorOrder.indexOf(state.floorId);
+    const terminalFloorIndex = floorOrder.indexOf(terminalGoal.floorId);
+    const visitedFloorCount = Array.isArray(state.visitedFloors) ? state.visitedFloors.length : 0;
+    const floorProgress = terminalFloorIndex >= 0 && currentFloorIndex >= 0
+      ? (currentFloorIndex + 1) / (terminalFloorIndex + 1)
+      : 0; // 0 at start floor, →1 near terminal
+    // Goal-relevance multiplier: scales combat-projection score by how close
+    // the state is to the terminal floor. Preserves sign; a negative
+    // combat score stays negative but deeper floors reduce the penalty.
+    const goalRelevance = 1 + floorProgress * 10; // [1, 11]
+
     const { obtainable, blocked, unknowns, alternativeGroups, unknownBlocked } =
       extractResourcesWithPrerequisites(project, simulatorRef, state, { maxPerKind: 12 });
 
@@ -587,10 +606,17 @@ function createMultiStepResourceLookahead(project, options) {
     const feasibilityGain = bestPlan && bestPlan.abstractHero
       ? (keyBattles.map((kb) => abstractBattleCost(bestPlan.abstractHero, kb.enemy)).filter((c) => c.survivable).length - baselineFeasible)
       : 0;
-    const score = feasibilityGain * 1e9
+    // Iteration 3: goal-relevance multiplier applied to the combat-projection
+    // base score. Preserves sign; deeper floors amplify positive scores and
+    // reduce negative penalties. floorProgress/visitedFloorCount also appear
+    // in the return for diagnostics.
+    const combatProjectionScore = feasibilityGain * 1e9
       + (bestScore === -Infinity ? 0 : bestScore * 1e-3)
       + number(hero.hp, 0) * 1e-6
       + number(hero.exp, 0) * 1e-3;
+    const score = combatProjectionScore * goalRelevance
+      + floorProgress * 1e6
+      + visitedFloorCount * 1e4;
 
     const usefulThresholds = keyBattles.map((kb, i) => ({
       enemyId: kb.enemyId,
@@ -633,6 +659,11 @@ function createMultiStepResourceLookahead(project, options) {
         unknownPlans,
         blockedResources: blocked.length,
         unknownPrerequisiteBlocked: unknownBlocked.length,
+      },
+      goalRelevance: {
+        floorProgress: Number(floorProgress.toFixed(3)),
+        visitedFloorCount,
+        goalRelevanceMultiplier: Number(goalRelevance.toFixed(1)),
       },
       trace,
     };
