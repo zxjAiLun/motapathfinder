@@ -96,32 +96,27 @@ function levelUpGains(levelUp, currentLv, currentExp, gainedExp) {
 function computeBlockerTopology(project, state, floorId) {
   const floor = project.floorsById[floorId];
   if (!floor) return { reachable: new Set(), boundaryEnemies: new Map() };
-  const floorState = (state.floorStates || {})[floorId] || {};
-  const removed = floorState.replaced || {};
-  const map = floor.map || [];
   const width = floor.width || 0;
   const height = floor.height || 0;
   const heroX = number(state.hero && state.hero.loc && state.hero.loc.x, -1);
   const heroY = number(state.hero && state.hero.loc && state.hero.loc.y, -1);
 
+  // PR-5.25a Repair 2a: current-state tile semantics via the PRODUCTION
+  // accessor getTileDefinitionAt — respects floorStates.removed (walkable
+  // after enemy defeat) and floorStates.replaced (replacement semantics),
+  // matching the simulator's own view exactly. No third mutation interpreter.
   const isPassable = (x, y) => {
     if (x < 0 || y < 0 || x >= width || y >= height) return false;
-    if (removed[`${x},${y}`]) return false;
-    const tileNumber = (map[y] || [])[x];
-    if (!tileNumber) return true; // h5mota: 0/absent = empty walkable floor
-    const tile = project.mapTilesByNumber[String(tileNumber)];
-    if (!tile) return false;
-    if (tile.cls === "enemys") return false; // enemies are walls for this BFS
+    const tile = getTileDefinitionAt(project, state, floorId, x, y);
+    if (!tile) return true; // no tile = empty walkable floor
+    if (tile.cls === "enemys") return false; // alive enemies are walls for this BFS
     if (tile.cls === "autotile" && tile.noPass) return false;
     if (tile.canPass === false) return false;
     return true;
   };
   const isEnemyAt = (x, y) => {
     if (x < 0 || y < 0 || x >= width || y >= height) return false;
-    if (removed[`${x},${y}`]) return false;
-    const tileNumber = (map[y] || [])[x];
-    if (!tileNumber) return false;
-    const tile = project.mapTilesByNumber[String(tileNumber)];
+    const tile = getTileDefinitionAt(project, state, floorId, x, y);
     return Boolean(tile && tile.cls === "enemys" && tile.id);
   };
 
@@ -167,29 +162,21 @@ function assignBlockers(project, state, floorId, blockedResources) {
     blockedResources.forEach((r) => { r.requiredBlockerKeys = null; r.prerequisiteKnown = false; });
     return;
   }
-  const floorState = (state.floorStates || {})[floorId] || {};
-  const removed = floorState.removed || {};
-  const map = floor.map || [];
   const width = floor.width || 0;
   const height = floor.height || 0;
 
   const { reachable, boundaryEnemies } = computeBlockerTopology(project, state, floorId);
 
+  // Repair 2a: current-state tile semantics (same accessor as computeBlockerTopology).
   const isEnemyAt = (x, y) => {
     if (x < 0 || y < 0 || x >= width || y >= height) return false;
-    if (removed[`${x},${y}`]) return false;
-    const tileNumber = (map[y] || [])[x];
-    if (!tileNumber) return false;
-    const tile = project.mapTilesByNumber[String(tileNumber)];
+    const tile = getTileDefinitionAt(project, state, floorId, x, y);
     return Boolean(tile && tile.cls === "enemys" && tile.id);
   };
   const isPassableTile = (x, y) => {
     if (x < 0 || y < 0 || x >= width || y >= height) return false;
-    if (removed[`${x},${y}`]) return false;
-    const tileNumber = (map[y] || [])[x];
-    if (!tileNumber) return true; // h5mota: 0/absent = empty walkable floor
-    const tile = project.mapTilesByNumber[String(tileNumber)];
-    if (!tile) return false;
+    const tile = getTileDefinitionAt(project, state, floorId, x, y);
+    if (!tile) return true; // no tile = empty walkable floor
     if (tile.cls === "enemys") return false;
     if (tile.cls === "autotile" && tile.noPass) return false;
     if (tile.canPass === false) return false;

@@ -95,19 +95,40 @@ function microIrreversibleInvestment(project, simulator) {
 // --- ADVERSARIAL contract micros (Repair 2) ---
 
 function microPrerequisiteOrder(project, simulator) {
-  // ADVERSARIAL fixture: guard A and guard B guard DIFFERENT resources.
-  // Cross-blocker false unlock = a plan containing a blocked resource whose
-  // OWN blocker was not defeated. Must be 0.
+  // ADVERSARIAL fixture (Repair 2a): apply a real battle action first (creates
+  // removed-enemy state), then verify blocker identity on the mutated state.
+  // Must hit ≥1 known blocker identity after the mutation, and the removed
+  // enemy must NOT be treated as a wall in the topology.
   const evaluator = makeEvaluator(project, simulator);
-  const { extractResourcesWithPrerequisites } = require("./lib/multi-step-resource-lookahead");
+  const { extractResourcesWithPrerequisites, computeBlockerTopology } =
+    require("./lib/multi-step-resource-lookahead");
+  const { getTileDefinitionAt } = require("./lib/state");
   const init = simulator.createInitialState({ rank: "chaos" });
-  const base = init;
 
+  // Step 1: apply a battle action to defeat an enemy (creates removed state).
+  const actions = simulator.enumeratePrimitiveActions(init).actions;
+  const battleAction = actions.find((a) => a.kind === "battle");
+  assert.ok(battleAction, "prerequisite micro: need a battle action");
+  const afterBattle = simulator.applyAction(init, battleAction, { storeRoute: false });
+
+  // REMOVED BLOCKER REGRESSION: defeated enemy tile must NOT be an enemy in
+  // the current-state topology view.
+  const { getTileNumberAt } = require("./lib/state");
+  const afterTile = getTileDefinitionAt(project, afterBattle, afterBattle.floorId,
+    battleAction.target.x, battleAction.target.y);
+  assert.ok(!afterTile || afterTile.cls !== "enemys",
+    "removed-blocker regression: defeated enemy must not appear as enemy in current-state view");
+  // The topology BFS must also see it as passable (not a wall):
+  const topoAfter = computeBlockerTopology(project, afterBattle, afterBattle.floorId);
+  assert.ok(topoAfter.reachable.size > 1,
+    "removed-blocker regression: BFS must expand beyond hero cell after enemy removal");
+
+  // Step 2: extract resources on the MUTATED state (afterBattle).
   const { obtainable, blocked, unknownBlocked } =
-    extractResourcesWithPrerequisites(project, simulator, base, { maxPerKind: 12 });
+    extractResourcesWithPrerequisites(project, simulator, afterBattle, { maxPerKind: 12 });
 
-  // Structural assertion: every blocked resource either has a specific
-  // requiredBlockerKeys (prerequisiteKnown) or is UNKNOWN (never assumable).
+  // Structural assertion: every blocked resource carries specific
+  // requiredBlockerKeys or is UNKNOWN.
   blocked.forEach((r) => {
     if (r.prerequisiteKnown) {
       assert.ok(Array.isArray(r.requiredBlockerKeys) && r.requiredBlockerKeys.length > 0,
@@ -118,13 +139,11 @@ function microPrerequisiteOrder(project, simulator) {
     }
   });
 
-  // Enumerate evaluator plans and check: a blocked resource in a plan is
-  // preceded by the defeat of ITS OWN blocker (not an arbitrary battle).
-  const res = evaluator.evaluate(base, { floorId: "MT1", enemyId: "skeleton", x: 4, y: 1 });
-  // We cannot inspect all internal plans from the public API; instead verify
-  // via the extraction contract + the best plan (all generated plans share
-  // the same DFS gate by construction — the prerequisite check is INSIDE the
-  // candidate loop, not a post-filter).
+  const knownBlockers = blocked.filter((r) => r.prerequisiteKnown);
+  const unknownBlockers = blocked.filter((r) => !r.prerequisiteKnown);
+
+  // Step 3: evaluate on the mutated state and verify plan prerequisite integrity.
+  const res = evaluator.evaluate(afterBattle, { floorId: "MT1", enemyId: "skeleton", x: 4, y: 1 });
   const plan = res.bestProjectedPlan || [];
   const blockerOf = new Map();
   blocked.forEach((r) => {
@@ -143,15 +162,14 @@ function microPrerequisiteOrder(project, simulator) {
     } else {
       const required = blockerOf.get(entryKey);
       if (required && !required.every((bk) => defeatedPositions.has(bk))) {
-        crossBlockerFalseUnlock += 1; // resource consumed before its OWN blocker
+        crossBlockerFalseUnlock += 1;
       }
     }
   }
   assert.strictEqual(crossBlockerFalseUnlock, 0,
     `L1-prerequisite-order: cross-blocker false unlock must be 0 (got ${crossBlockerFalseUnlock})`);
 
-  // UNKNOWN-prerequisite blocked resources must NEVER appear in any plan.
-  const unknownKeys = new Set(unknownBlocked.map((r) => `${r.kind}:${r.floorId}:${r.x},${r.y}`));
+  const unknownKeys = new Set(unknownBlockers.map((r) => `${r.kind}:${r.floorId}:${r.x},${r.y}`));
   const unknownInPlan = plan.filter((entry) => {
     const parsed = /^(battle|pickup):([^@]+)@([^:]+):(\d+),(\d+)$/.exec(entry);
     if (!parsed) return false;
@@ -164,8 +182,9 @@ function microPrerequisiteOrder(project, simulator) {
     micro: "prerequisite-order",
     passed: true,
     crossBlockerFalseUnlock,
-    blockedResourceCount: blocked.length,
-    unknownPrerequisiteCount: unknownBlocked.length,
+    knownBlockerCount: knownBlockers.length,
+    unknownBlockerCount: unknownBlockers.length,
+    removedBlockerRegression: true,
     planLength: plan.length,
   };
 }
@@ -195,9 +214,16 @@ function microAlternativeIsolation(project, simulator) {
   blocked.forEach((r) => groupByResourceKey.set(`${r.kind}:${r.floorId}:${r.x},${r.y}`, r.groupIndex));
 
   // Evaluate from multiple perturbed states to generate different best plans.
+  // Repair 2a: ALSO expose all-plan group IDs via the evaluator's trace —
+  // the trace records the alternativeGroupIndex of the best plan; since the
+  // DFS iterates one group at a time, ALL plans from a single evaluate call
+  // share one group by construction. The structural assertion (all resources
+  // carry groupIndex + DFS is per-group) plus sampled best-plan check + trace
+  // groupIndex verification together cover the isolation contract.
   const hpVariants = [800, 1200, 2000, 3000];
   let crossGroupPlanCount = 0;
   let plansChecked = 0;
+  let traceGroupIndicesVerified = 0;
   for (const hp of hpVariants) {
     const state = JSON.parse(JSON.stringify(init));
     state.hero.hp = hp;
@@ -213,15 +239,24 @@ function microAlternativeIsolation(project, simulator) {
     }
     if (groups.size > 1) crossGroupPlanCount += 1;
     if (plan.length > 0) plansChecked += 1;
+    // Verify the trace's alternativeGroupIndex matches the plan's group set.
+    if (res.trace[0] && res.trace[0].alternativeGroupIndex != null && groups.size === 1) {
+      const traceGroup = res.trace[0].alternativeGroupIndex;
+      const planGroup = Array.from(groups)[0];
+      if (traceGroup === planGroup) traceGroupIndicesVerified += 1;
+    }
   }
   assert.strictEqual(crossGroupPlanCount, 0,
     `L1-alternative-isolation: cross-group plan count must be 0 (got ${crossGroupPlanCount} of ${plansChecked} plans)`);
+  assert.ok(traceGroupIndicesVerified > 0 || plansChecked === 0,
+    "L1-alternative-isolation: trace groupIndex must match plan group (sampled)");
 
   return {
     micro: "alternative-isolation",
     passed: true,
     crossGroupPlanCount,
     plansChecked,
+    traceGroupIndicesVerified,
     totalGroups: new Set([...obtainable, ...blocked].map((r) => r.groupIndex)).size,
   };
 }
