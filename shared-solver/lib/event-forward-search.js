@@ -77,13 +77,19 @@ function createEventForwardSearch(simulator) {
     const rootState = cloneState(initialState);
     rootState.route = [];
     if (!rootState.meta) rootState.meta = {};
+    // PR-5.25a Iteration 2 Repair 1: node records NEVER retain the full
+    // simulator action object. The action's `travelState` field can carry a
+    // full game state (door/tool actions), so retaining it on CLOSED nodes
+    // would indirectly retain the world through the back door. Only the
+    // compact `actionSummary` string is kept for route reconstruction.
+    // representation="legacy" (test-only) retains state+action for G33.
+    const useLegacyRepresentation = config.representation === "legacy";
     const rootNode = {
       id: 1,
       parentId: null,
       state: rootState,        // OPEN: full state retained
       key: buildStateKey(rootState),
-      action: null,
-      actionSummary: null,      // compact replay descriptor
+      actionSummary: null,      // compact replay descriptor (string only)
       depth: 0,
       closed: false,
     };
@@ -149,6 +155,13 @@ function createEventForwardSearch(simulator) {
     let goalNode = null;
     let peakRssMb = 0;
 
+    // G33 digest tracking: expanded-key / accepted-key / duplicate-decision
+    // sequences for representation equivalence comparison.
+    const digestExpandedKeys = config.trackKeyDigest === true;
+    const expandedKeys = [];
+    const acceptedKeys = [];
+    const duplicateDecisionKeys = [];
+
     const sampleRss = () => {
       if (maxRssMb <= 0) return;
       const rssMb = process.memoryUsage().rss / (1024 * 1024);
@@ -177,6 +190,8 @@ function createEventForwardSearch(simulator) {
       const key = buildStateKey(nextState);
       if (registry.has(key)) {
         duplicatesSkipped += 1;
+        // Record duplicate-decision digest for G33 equivalence.
+        if (digestExpandedKeys) duplicateDecisionKeys.push(key);
         return null;
       }
       const childNode = {
@@ -184,14 +199,19 @@ function createEventForwardSearch(simulator) {
         parentId: node.id,
         state: nextState,
         key,
-        action,
+        // COMPACT: only the summary string; the full action object (with its
+        // potential travelState) is NEVER stored on the node.
         actionSummary: action ? (action.summary || action.kind) : null,
         depth: node.depth + 1,
         closed: false,
       };
+      if (useLegacyRepresentation && action) {
+        childNode.action = action; // test-only legacy mode retains the full action
+      }
       nodesById.set(childNode.id, childNode);
       registry.set(key, childNode);
       accepted += 1;
+      if (digestExpandedKeys) acceptedKeys.push(key);
       return childNode;
     };
 
@@ -259,6 +279,7 @@ function createEventForwardSearch(simulator) {
       // Expand: ALL legal actions generated in BOTH arms (P1-1).
       expanded.add(nodeRecord.id);
       expansions += 1;
+      if (digestExpandedKeys) expandedKeys.push(nodeRecord.key);
 
       let actions = [];
       try {
@@ -340,10 +361,14 @@ function createEventForwardSearch(simulator) {
         }
       }
 
-      // MEMORY REDUCTION (Iteration 2): this node is now CLOSED. Release its
-      // full state; retain exactKey + parentId + compact replay action.
+      // MEMORY REDUCTION (Iteration 2 Repair 1): this node is now CLOSED.
+      // Release full state AND full action (compact mode). In legacy mode
+      // (test-only), retain both for G33 comparison.
       nodeRecord.closed = true;
-      nodeRecord.state = null;
+      if (!useLegacyRepresentation) {
+        nodeRecord.state = null;
+        nodeRecord.action = undefined; // ensure no indirect retention
+      }
     }
 
     // ---- route reconstruction (compact parent chain) ----
@@ -363,19 +388,23 @@ function createEventForwardSearch(simulator) {
 
     // Memory telemetry (Iteration 2).
     let fullStatesRetained = 0;
+    let fullActionsRetained = 0;
     let closedNodes = 0;
     let openNodes = 0;
     registry.forEach((record) => {
       if (record.closed) {
         closedNodes += 1;
+        if (record.state) fullStatesRetained += 1;
+        if (record.action) fullActionsRetained += 1;
       } else {
         openNodes += 1;
         if (record.state) fullStatesRetained += 1;
+        if (record.action) fullActionsRetained += 1;
       }
     });
-    const staleQueueEntries = (neutralQueue.length - neutralHead) + guidedHeap.length;
+    const queuedFrontierHandles = (neutralQueue.length - neutralHead) + guidedHeap.length;
 
-    const frontierOpen = staleQueueEntries > 0;
+    const frontierOpen = queuedFrontierHandles > 0;
     const searchComplete = !goalNode && !stoppedReason && !frontierOpen;
 
     return {
@@ -398,12 +427,15 @@ function createEventForwardSearch(simulator) {
       // Iteration 2 memory telemetry
       memory: {
         fullStatesRetained,
+        fullActionsRetained,
         closedNodes,
         openNodes,
-        staleQueueEntries,
+        queuedFrontierHandles,
         rssPerAccepted: accepted > 0 ? Number((peakRssMb / accepted).toFixed(3)) : null,
         rssPerOpen: openNodes > 0 ? Number((peakRssMb / openNodes).toFixed(3)) : null,
       },
+      // G33 digest data (only when trackKeyDigest=true)
+      ...(digestExpandedKeys ? { digest: { expandedKeys, acceptedKeys, duplicateDecisionKeys } } : {}),
     };
   }
 

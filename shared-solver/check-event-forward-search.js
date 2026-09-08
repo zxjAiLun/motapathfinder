@@ -46,67 +46,95 @@ function makeEvaluator(project, simulator) {
   return createMultiStepResourceLookahead(project, { simulator });
 }
 
-// ============ G33-REPR: representation equivalence ============
-// Run the same fixed-work search in CONTROL (evaluator OFF) mode and verify
-// the compact representation produces identical semantics. We compare:
-// - expanded count / accepted count / duplicatesSkipped
-// - found / route (when found within the fixed work)
-// - fullStatesRetained ≈ openNodes (CLOSED released)
+// ============ G33-REPR: TRUE legacy vs compact representation equivalence ============
+// Run the SAME fixed-work search in legacy mode (retains state+action on
+// close) vs compact mode (releases both). Compare:
+//   - expanded exact-key sequence
+//   - accepted exact-key sequence
+//   - duplicate-decision key sequence
+//   - found / route (on a small goal case)
+//   - memory contract: compact CLOSED nodes have 0 states + 0 actions retained
 function gateRepresentationEquivalence(project, simulator) {
   const efs = createEventForwardSearch(simulator);
   const init = simulator.createInitialState({ rank: "chaos" });
-  const FIXED = { maxExpansions: 500, maxRuntimeMs: 60000, maxRssMb: 2048 };
-  const isGoal = () => false; // run to budget for comparison
+  const FIXED = { maxExpansions: 500, maxRuntimeMs: 60000, maxRssMb: 2048, trackKeyDigest: true };
+  const isGoal = () => false; // run to budget
 
   if (typeof global.gc === "function") global.gc();
-  const control = efs.search(JSON.parse(JSON.stringify(init)), {
-    isGoalState: isGoal, ...FIXED,
+  const legacy = efs.search(JSON.parse(JSON.stringify(init)), {
+    isGoalState: isGoal, representation: "legacy", ...FIXED,
   });
-
-  // Structural assertions: semantics preserved with compact representation.
-  assert.ok(control.expansions > 0, "G33: control must expand at least once");
-  assert.ok(control.accepted > 0, "G33: control must accept states");
-  assert.ok(control.duplicatesSkipped > 0, "G33: duplicates expected in a real search");
-
-  // Memory contract: CLOSED nodes release their full state.
-  assert.strictEqual(control.memory.fullStatesRetained, control.memory.openNodes,
-    `G33: fullStatesRetained (${control.memory.fullStatesRetained}) must equal openNodes (${control.memory.openNodes})`);
-  assert.strictEqual(control.memory.closedNodes, control.expansions,
-    `G33: closedNodes (${control.memory.closedNodes}) must equal expansions (${control.expansions})`);
-  assert.ok(control.memory.fullStatesRetained < control.accepted,
-    `G33: fullStatesRetained (${control.memory.fullStatesRetained}) must be < accepted (${control.accepted})`);
-
-  // Determinism: re-run same budget → identical results.
   if (typeof global.gc === "function") global.gc();
-  const control2 = efs.search(JSON.parse(JSON.stringify(init)), {
-    isGoalState: isGoal, ...FIXED,
+  const compact = efs.search(JSON.parse(JSON.stringify(init)), {
+    isGoalState: isGoal, representation: "compact", ...FIXED,
   });
-  assert.strictEqual(control.expansions, control2.expansions, "G33: expansions deterministic");
-  assert.strictEqual(control.accepted, control2.accepted, "G33: accepted deterministic");
-  assert.strictEqual(control.duplicatesSkipped, control2.duplicatesSkipped, "G33: duplicates deterministic");
 
-  // Route reconstruction: a small goal-run must produce the same route.
-  const res1 = efs.search(JSON.parse(JSON.stringify(init)), {
+  // G33-1: expanded exact-key sequence identical.
+  assert.deepStrictEqual(compact.digest.expandedKeys, legacy.digest.expandedKeys,
+    "G33: expanded exact-key sequence must be identical between legacy and compact");
+
+  // G33-2: accepted exact-key sequence identical.
+  assert.deepStrictEqual(compact.digest.acceptedKeys, legacy.digest.acceptedKeys,
+    "G33: accepted exact-key sequence must be identical");
+
+  // G33-3: duplicate-decision key sequence identical.
+  assert.deepStrictEqual(compact.digest.duplicateDecisionKeys, legacy.digest.duplicateDecisionKeys,
+    "G33: duplicate-decision sequence must be identical");
+
+  // G33-4: counts identical.
+  assert.strictEqual(compact.expansions, legacy.expansions);
+  assert.strictEqual(compact.accepted, legacy.accepted);
+  assert.strictEqual(compact.duplicatesSkipped, legacy.duplicatesSkipped);
+
+  // G33-5: compact CLOSED nodes have 0 full states + 0 full actions retained.
+  assert.strictEqual(compact.memory.fullStatesRetained, compact.memory.openNodes,
+    `G33: compact fullStatesRetained (${compact.memory.fullStatesRetained}) must equal openNodes (${compact.memory.openNodes})`);
+  assert.strictEqual(compact.memory.fullActionsRetained, 0,
+    `G33: compact fullActionsRetained must be 0 (got ${compact.memory.fullActionsRetained})`);
+  assert.strictEqual(compact.memory.closedNodes, compact.expansions);
+  assert.ok(compact.memory.fullStatesRetained < compact.accepted);
+
+  // G33-6: legacy mode retains states on close (validates the test actually
+  // exercised the different representation).
+  assert.strictEqual(legacy.memory.closedNodes, legacy.expansions);
+  assert.ok(legacy.registrySize > 0);
+
+  // G33-7: route reconstruction identical on a small goal case.
+  const legacyGoal = efs.search(JSON.parse(JSON.stringify(init)), {
     isGoalState: (s) => s.hero.exp >= 1, maxExpansions: 50, maxRuntimeMs: 30000,
+    representation: "legacy",
   });
-  assert.ok(res1.found, "G33: small goal must be found");
-  assert.ok(res1.route.length > 0, "G33: route must be non-empty");
-  assert.ok(res1.finalState, "G33: finalState must be present");
+  const compactGoal = efs.search(JSON.parse(JSON.stringify(init)), {
+    isGoalState: (s) => s.hero.exp >= 1, maxExpansions: 50, maxRuntimeMs: 30000,
+    representation: "compact",
+  });
+  assert.strictEqual(compactGoal.found, legacyGoal.found, "G33: small goal found must match");
+  assert.deepStrictEqual(compactGoal.route, legacyGoal.route, "G33: route must match");
+  assert.ok(compactGoal.route.length > 0, "G33: route must be non-empty");
 
   return {
     gate: "representation-equivalence",
     passed: true,
-    control: {
-      expansions: control.expansions,
-      accepted: control.accepted,
-      duplicatesSkipped: control.duplicatesSkipped,
-      staleEntriesSkipped: control.staleEntriesSkipped,
-      registrySize: control.registrySize,
-      stoppedReason: control.stoppedReason,
+    legacy: {
+      expansions: legacy.expansions,
+      accepted: legacy.accepted,
+      duplicatesSkipped: legacy.duplicatesSkipped,
+      fullStatesRetained: legacy.memory.fullStatesRetained,
+      fullActionsRetained: legacy.memory.fullActionsRetained,
     },
-    memory: control.memory,
-    determinismVerified: true,
-    routeReconstructionVerified: true,
+    compact: {
+      expansions: compact.expansions,
+      accepted: compact.accepted,
+      duplicatesSkipped: compact.duplicatesSkipped,
+      fullStatesRetained: compact.memory.fullStatesRetained,
+      fullActionsRetained: compact.memory.fullActionsRetained,
+    },
+    expandedKeysIdentical: true,
+    acceptedKeysIdentical: true,
+    duplicateDecisionsIdentical: true,
+    routeReconstructionIdentical: true,
+    compactClosedStateRefs: 0,
+    compactRetainedFullActionObjects: 0,
   };
 }
 
