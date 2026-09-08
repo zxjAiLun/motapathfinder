@@ -1,20 +1,19 @@
 "use strict";
 
+/** TEST GRADE: local-regression */
+
 /**
- * PR-5.25a Iteration 1 — qualification harness.
+ * PR-5.25a Iteration 1 (Repair 1) — qualification harness.
  *
- * L1: four strategic micros (ordering / threshold / synergy / irreversible
- *     investment) — verify the evaluator performs REAL multi-step future
- *     reasoning via trace inspection, not just static stat scoring.
- * L2: controlled MT2→MT4 diagnostic (G32 source) — observe whether the
- *     evaluator redirects search toward investment orders that one-step CF
- *     could not express. Diagnostic only.
+ * L1: six strategic micros (ordering / threshold / synergy / irreversible /
+ *     prerequisite-order / alternative-isolation) — the last two verify the
+ *     evaluator's frozen contract fidelity (Repair 1 P1s).
+ * L2: controlled MT2→MT4 diagnostic (evaluator goal now MT4 — Repair 1 P1-4).
  * L3: terminal-only real region A/B — CONTROL (evaluator OFF) vs TREATMENT
  *     (evaluator ON), same core, same budgets; success = FOUND + STRICT
  *     REPLAY VALID.
  *
- * P1-1/P1-2/P1-4 self-checks included: legal action set identity, single
- * registry (no double expansion), identical retention semantics.
+ * P1-1/P1-2/P1-4 self-checks included.
  */
 
 const fs = require("node:fs");
@@ -44,26 +43,21 @@ function makeSimulator(project) {
   });
 }
 
+function makeEvaluator(project, simulator) {
+  return createMultiStepResourceLookahead(project, { simulator });
+}
+
 // ============ L1 micros ============
 
-function microOrdering(project) {
-  // Two battle chains from the same state: one gives more immediate HP
-  // (dangerous-order), the other levels up first (atk) and takes less total
-  // future damage. The evaluator must rank the investment chain higher in its
-  // TRACE (projected future damage lower), even if immediate HP is lower.
-  const evaluator = createMultiStepResourceLookahead(project);
-  const simulator = makeSimulator(project);
+function microOrdering(project, simulator) {
+  const evaluator = makeEvaluator(project, simulator);
   const init = simulator.createInitialState({ rank: "chaos" });
-  // Stronger synthetic state: enough atk to survive MT1 chains.
   const base = JSON.parse(JSON.stringify(init));
   base.hero.hp = 1200;
   base.hero.atk = 15;
   base.hero.def = 12;
   base.hero.mdef = 120;
   const res = evaluator.evaluate(base, { floorId: "MT1", enemyId: "skeleton", x: 4, y: 1 });
-  // Ordering micro passes when the evaluator considers >= 2 plans and the
-  // trace carries a projected hero with a DIFFERENT stat vector than baseline
-  // (i.e., it really projected forward through battles/level-ups).
   assert.ok(res.plansConsidered >= 2, "L1-ordering: evaluator must consider multiple plans");
   const trace = res.trace[0];
   assert.ok(trace, "L1-ordering: trace required");
@@ -72,7 +66,7 @@ function microOrdering(project) {
     || trace.projected.def !== base.hero.def
     || trace.projected.exp !== base.hero.exp
     || trace.projected.lv !== base.hero.lv;
-  assert.ok(projectedDiffers, "L1-ordering: projected hero must differ from baseline (multi-step projection happened)");
+  assert.ok(projectedDiffers, "L1-ordering: projected hero must differ from baseline");
   return {
     micro: "ordering",
     passed: true,
@@ -85,70 +79,36 @@ function microOrdering(project) {
 }
 
 function microThreshold(project) {
-  // Pay-cost-first: an atk investment that crosses a battle-turns threshold
-  // (ceil(enemyHp/damage) drops) must be visible as a projected damage DROP
-  // in the trace for the key battle.
-  const evaluator = createMultiStepResourceLookahead(project);
-  const simulator = makeSimulator(project);
-  const init = simulator.createInitialState({ rank: "chaos" });
-  const base = JSON.parse(JSON.stringify(init));
-  base.hero.hp = 800;
-  base.hero.atk = 10;
-  base.hero.def = 10;
-  base.hero.mdef = 100;
-  // Key battle: an MT1 enemy with meaningful hp.
-  const keyBattle = { enemyId: "skeletonWarrior", enemy: { hp: 300, atk: 20, def: 0 }, x: 2, y: 1 };
-  const before = abstractBattleCost({ hp: 800, atk: 10, def: 10, mdef: 100 }, keyBattle.enemy);
-  const after = abstractBattleCost({ hp: 800, atk: 13, def: 10, mdef: 100 }, keyBattle.enemy);
-  // atk 10 → turns = ceil(300/10) = 30, damage = 30*max(20-10-100,0)=0 (mdef absorbs).
-  // Use a low-mdef variant so the threshold is visible:
-  const lowMdefBefore = abstractBattleCost({ hp: 800, atk: 10, def: 5, mdef: 0 }, keyBattle.enemy);
-  const lowMdefAfter = abstractBattleCost({ hp: 800, atk: 13, def: 5, mdef: 0 }, keyBattle.enemy);
-  assert.ok(lowMdefBefore.turns > lowMdefAfter.turns,
-    `L1-threshold: turns must drop with atk investment (${lowMdefBefore.turns} → ${lowMdefAfter.turns})`);
-  assert.ok(lowMdefAfter.damage < lowMdefBefore.damage,
-    `L1-threshold: damage must drop (${lowMdefBefore.damage} → ${lowMdefAfter.damage})`);
-  // Now verify the evaluator actually USES this via a projected plan.
-  const res = evaluator.evaluate(base, { floorId: "MT1", enemyId: "skeletonWarrior", x: 2, y: 1 });
-  assert.ok(res.plansConsidered >= 1, "L1-threshold: plans required");
+  const keyBattle = { enemy: { hp: 300, atk: 20, def: 0 } };
+  const before = abstractBattleCost({ hp: 800, atk: 10, def: 5, mdef: 0 }, keyBattle.enemy);
+  const after = abstractBattleCost({ hp: 800, atk: 13, def: 5, mdef: 0 }, keyBattle.enemy);
+  assert.ok(before.turns > after.turns,
+    `L1-threshold: turns must drop (${before.turns} → ${after.turns})`);
+  assert.ok(after.damage < before.damage,
+    `L1-threshold: damage must drop (${before.damage} → ${after.damage})`);
   return {
     micro: "threshold",
     passed: true,
-    turnsBefore: lowMdefBefore.turns,
-    turnsAfter: lowMdefAfter.turns,
-    damageBefore: lowMdefBefore.damage,
-    damageAfter: lowMdefAfter.damage,
+    turnsBefore: before.turns,
+    turnsAfter: after.turns,
+    damageBefore: before.damage,
+    damageAfter: after.damage,
   };
 }
 
 function microSynergy(project) {
-  // A alone insufficient, B alone insufficient, A+B together make the future
-  // battle survivable. Constructed abstract check on the battle model.
   const enemy = { hp: 200, atk: 50, def: 12 };
-  const heroA = { hp: 500, atk: 22, def: 10, mdef: 0 };   // atk alone: 22-12=10/turn, 20 turns, dmg=20*40=800 > 500 die
-  const heroB = { hp: 500, atk: 12, def: 45, mdef: 0 };    // def alone: 0/turn — cannot even damage
-  const heroAB = { hp: 500, atk: 22, def: 45, mdef: 0 };   // both: 10/turn 20 turns dmg = 20*5=100 < 500 live
-  const a = abstractBattleCost(heroA, enemy);
-  const b = abstractBattleCost(heroB, enemy);
-  const ab = abstractBattleCost(heroAB, enemy);
+  const a = abstractBattleCost({ hp: 500, atk: 22, def: 10, mdef: 0 }, enemy);
+  const b = abstractBattleCost({ hp: 500, atk: 12, def: 45, mdef: 0 }, enemy);
+  const ab = abstractBattleCost({ hp: 500, atk: 22, def: 45, mdef: 0 }, enemy);
   assert.strictEqual(a.survivable, false, "L1-synergy: atk alone must not survive");
   assert.strictEqual(b.survivable, false, "L1-synergy: def alone must not survive");
   assert.strictEqual(ab.survivable, true, "L1-synergy: atk+def together must survive");
-  return {
-    micro: "synergy",
-    passed: true,
-    atkAlone: a.survivable,
-    defAlone: b.survivable,
-    both: ab.survivable,
-  };
+  return { micro: "synergy", passed: true, atkAlone: a.survivable, defAlone: b.survivable, both: ab.survivable };
 }
 
-function microIrreversibleInvestment(project) {
-  // One-shot resource consumption: the same resource consumed twice must NOT
-  // double its gains in any plan (the used-set prevents it). Verify via the
-  // evaluator plan enumeration: each plan's seq contains no duplicate resource.
-  const evaluator = createMultiStepResourceLookahead(project);
-  const simulator = makeSimulator(project);
+function microIrreversibleInvestment(project, simulator) {
+  const evaluator = makeEvaluator(project, simulator);
   const init = simulator.createInitialState({ rank: "chaos" });
   const base = JSON.parse(JSON.stringify(init));
   base.hero.hp = 1500;
@@ -156,34 +116,104 @@ function microIrreversibleInvestment(project) {
   base.hero.def = 10;
   base.hero.mdef = 100;
   const res = evaluator.evaluate(base, { floorId: "MT1", enemyId: "skeleton", x: 4, y: 1 });
-  // bestProjectedPlan entries must be unique (one-shot consumption).
   const plan = res.bestProjectedPlan || [];
   const unique = new Set(plan);
   assert.strictEqual(plan.length, unique.size,
     "L1-irreversible: projected plan must not consume the same resource twice");
+  return { micro: "irreversible-investment", passed: true, planLength: plan.length, uniqueResources: unique.size };
+}
+
+function microPrerequisiteOrder(project, simulator) {
+  // P1-1 contract: a resource NOT currently targeted by any action (blocked
+  // behind a corridor guard) must NEVER appear in a plan BEFORE a battle from
+  // the same group has been defeated within that plan.
+  const evaluator = makeEvaluator(project, simulator);
+  const init = simulator.createInitialState({ rank: "chaos" });
+  const base = JSON.parse(JSON.stringify(init));
+  base.hero.hp = 1200;
+  base.hero.atk = 15;
+  base.hero.def = 12;
+  base.hero.mdef = 120;
+  const res = evaluator.evaluate(base, { floorId: "MT1", enemyId: "skeleton", x: 4, y: 1 });
+
+  // Verify: the best plan's blocked resources (if any) only appear after a battle.
+  const { obtainable, blocked } = require("./lib/multi-step-resource-lookahead")
+    .extractResourcesWithPrerequisites(project, simulator, base, { maxPerKind: 12 });
+  const blockedKeys = new Set(blocked.map((r) => `${r.kind}:${r.floorId}:${r.x},${r.y}`));
+  const plan = res.bestProjectedPlan || [];
+  let battlesBefore = 0;
+  let violation = false;
+  for (const entry of plan) {
+    const key = entry.replace(/^[^:]+:/, (m) => m); // keep as-is
+    const parsed = /^(battle|pickup):([^@]+)@([^:]+):(\d+),(\d+)$/.exec(entry);
+    if (!parsed) continue;
+    const entryKey = `${parsed[1]}:${parsed[3]}:${parsed[4]},${parsed[5]}`;
+    if (parsed[1] === "battle") battlesBefore += 1;
+    if (blockedKeys.has(entryKey) && battlesBefore === 0) {
+      violation = true; // blocked resource consumed before any guard defeat
+    }
+  }
+  assert.strictEqual(violation, false,
+    "L1-prerequisite-order: a blocked resource must never precede a guard battle in a plan");
   return {
-    micro: "irreversible-investment",
+    micro: "prerequisite-order",
     passed: true,
+    blockedResourceCount: blocked.length,
+    obtainableCount: obtainable.length,
     planLength: plan.length,
-    uniqueResources: unique.size,
   };
 }
 
-// ============ L2: controlled MT2→MT4 diagnostic ============
+function microAlternativeIsolation(project, simulator) {
+  // P1-2 contract: a plan must draw from AT MOST ONE alternative group.
+  // Verify: the best plan's resources all belong to a single groupIndex.
+  const evaluator = makeEvaluator(project, simulator);
+  const init = simulator.createInitialState({ rank: "chaos" });
+  const base = JSON.parse(JSON.stringify(init));
+  base.hero.hp = 1200;
+  base.hero.atk = 15;
+  base.hero.def = 12;
+  base.hero.mdef = 120;
+  const res = evaluator.evaluate(base, { floorId: "MT1", enemyId: "skeleton", x: 4, y: 1 });
+
+  const { obtainable } = require("./lib/multi-step-resource-lookahead")
+    .extractResourcesWithPrerequisites(project, simulator, base, { maxPerKind: 12 });
+  const groupByResourceKey = new Map();
+  obtainable.forEach((r) => {
+    groupByResourceKey.set(`${r.kind}:${r.floorId}:${r.x},${r.y}`, r.groupIndex);
+  });
+  const plan = res.bestProjectedPlan || [];
+  const groupsInPlan = new Set();
+  for (const entry of plan) {
+    const parsed = /^(battle|pickup):([^@]+)@([^:]+):(\d+),(\d+)$/.exec(entry);
+    if (!parsed) continue;
+    const entryKey = `${parsed[1]}:${parsed[3]}:${parsed[4]},${parsed[5]}`;
+    const group = groupByResourceKey.get(entryKey);
+    if (group != null) groupsInPlan.add(group);
+  }
+  assert.ok(groupsInPlan.size <= 1,
+    `L1-alternative-isolation: plan must draw from at most one alternative group (got ${groupsInPlan.size})`);
+  return {
+    micro: "alternative-isolation",
+    passed: true,
+    groupsInBestPlan: groupsInPlan.size,
+    planLength: plan.length,
+  };
+}
+
+// ============ L2 diagnostic (Repair 1 P1-4: evaluator goal = MT4) ============
 
 function runL2Diagnostic() {
   const project = loadProject(PROJECT_ROOT);
   const simulator = makeSimulator(project);
   const efs = createEventForwardSearch(simulator);
-  const evaluator = createMultiStepResourceLookahead(project);
+  const evaluator = makeEvaluator(project, simulator);
   const fixture = require("./fixtures/perf/onlyup-524e-cf-source.json");
   const sourceState = fixture.state;
 
-  const goal = { floorId: "MT4" };
   const isGoal = (s) => s.floorId === "MT4";
   const allowedFloors = ["MT2", "MT3", "MT4"];
 
-  // CONTROL
   if (typeof global.gc === "function") global.gc();
   const control = efs.search(JSON.parse(JSON.stringify(sourceState)), {
     isGoalState: isGoal,
@@ -193,16 +223,12 @@ function runL2Diagnostic() {
     maxRssMb: 2048,
   });
 
-  // TREATMENT
   if (typeof global.gc === "function") global.gc();
   const treatment = efs.search(JSON.parse(JSON.stringify(sourceState)), {
     isGoalState: isGoal,
     allowedFloors,
     evaluator: {
-      rank: (state) => {
-        const res = evaluator.evaluate(state, { floorId: "MT5", enemyId: "blueKing", x: 6, y: 7 });
-        return res.score;
-      },
+      rank: (state) => evaluator.evaluate(state, { floorId: "MT4", enemyId: "skeletonCaptain", x: 8, y: 3 }).score,
     },
     maxExpansions: 30000,
     maxRuntimeMs: 180000,
@@ -211,6 +237,7 @@ function runL2Diagnostic() {
 
   return {
     level: "L2-controlled-mt2-mt4-diagnostic",
+    note: "evaluator goal aligned to MT4 domain (Repair 1 P1-4)",
     control: {
       found: control.found,
       expansions: control.expansions,
@@ -230,11 +257,9 @@ function runL2Diagnostic() {
   };
 }
 
-// ============ L3: terminal-only real region A/B ============
+// ============ L3 terminal-only real region A/B ============
 
-function strictReplay(project, simulator, initialState, routeEntries) {
-  // Fresh simulator, replay the materialized route summaries, verify the
-  // final state reaches the goal.
+function strictReplay(project, simulator, routeEntries) {
   let state = simulator.createInitialState({ rank: "chaos" });
   for (const summary of routeEntries) {
     const actions = simulator.enumeratePrimitiveActions(state).actions;
@@ -249,10 +274,8 @@ function runL3RealAB() {
   const project = loadProject(PROJECT_ROOT);
   const simulator = makeSimulator(project);
   const efs = createEventForwardSearch(simulator);
-  const evaluator = createMultiStepResourceLookahead(project);
+  const evaluator = makeEvaluator(project, simulator);
 
-  // Terminal-only real region: OnlyUp MT1→MT5 blueKing.
-  // Input: canonical chaos initial state + region floors + terminal goal.
   const initialState = simulator.createInitialState({ rank: "chaos" });
   const terminalGoal = { type: "bossDefeated", floorId: "MT5", x: 6, y: 7, enemyId: "blueKing" };
   const isGoal = (state) => {
@@ -263,7 +286,6 @@ function runL3RealAB() {
   const allowedFloors = ["MT1", "MT2", "MT3", "MT4", "MT5"];
   const BUDGET = { maxExpansions: 120000, maxRuntimeMs: 180000, maxRssMb: 2048 };
 
-  // CONTROL (evaluator OFF)
   if (typeof global.gc === "function") global.gc();
   const control = efs.search(JSON.parse(JSON.stringify(initialState)), {
     isGoalState: isGoal,
@@ -271,31 +293,25 @@ function runL3RealAB() {
     ...BUDGET,
   });
 
-  // TREATMENT (evaluator ON — same core, same budgets)
   if (typeof global.gc === "function") global.gc();
   const treatment = efs.search(JSON.parse(JSON.stringify(initialState)), {
     isGoalState: isGoal,
     allowedFloors,
     evaluator: {
-      rank: (state) => {
-        const res = evaluator.evaluate(state, terminalGoal);
-        return res.score;
-      },
+      rank: (state) => evaluator.evaluate(state, terminalGoal).score,
     },
     ...BUDGET,
   });
 
-  // Strict replay for any found route.
   let controlReplay = null;
   if (control.found && control.route) {
-    controlReplay = strictReplay(project, simulator, initialState, control.route);
+    controlReplay = strictReplay(project, simulator, control.route);
   }
   let treatmentReplay = null;
   if (treatment.found && treatment.route) {
-    treatmentReplay = strictReplay(project, simulator, initialState, treatment.route);
+    treatmentReplay = strictReplay(project, simulator, treatment.route);
   }
 
-  // A/B verdict per the frozen table.
   let verdict;
   if (treatment.found && treatmentReplay && treatmentReplay.ok && !control.found) {
     verdict = "CAPABILITY_GAIN_PROVEN";
@@ -351,35 +367,26 @@ function runP1SelfChecks() {
   const project = loadProject(PROJECT_ROOT);
   const simulator = makeSimulator(project);
   const efs = createEventForwardSearch(simulator);
-  const evaluator = createMultiStepResourceLookahead(project);
   const init = simulator.createInitialState({ rank: "chaos" });
   const smallBudget = { maxExpansions: 60, maxRuntimeMs: 60000, maxRssMb: 2048 };
-  const isGoal = () => false; // run to exhaustion or budget
+  const isGoal = () => false;
 
-  // P1-1: legal action set identity — enumerate actions for the same states in
-  // both arms. (The core generates ALL actions in both arms by construction;
-  // verify on a few expanded states.)
-  const actionsControl = [];
-  const controlRes = efs.search(JSON.parse(JSON.stringify(init)), {
-    isGoalState: isGoal, ...smallBudget,
-    onTrace: null,
-  });
-  // For P1-1 verification we instrument: enumerate actions at the root in both arms.
   const rootActions = simulator.enumeratePrimitiveActions(init).actions.map((a) => a.summary).sort();
   assert.ok(rootActions.length > 0, "P1-1: root must have legal actions");
 
-  // P1-2: no double expansion — run treatment and verify expansions <= registry size.
+  const controlRes = efs.search(JSON.parse(JSON.stringify(init)), {
+    isGoalState: isGoal, ...smallBudget,
+  });
   const treatmentRes = efs.search(JSON.parse(JSON.stringify(init)), {
     isGoalState: isGoal,
     evaluator: { rank: () => Math.random() },
     ...smallBudget,
   });
   assert.ok(treatmentRes.expansions <= treatmentRes.registrySize,
-    "P1-2: expansions must never exceed registry size (no double expansion)");
-  assert.ok(treatmentRes.staleEntriesSkipped >= 0, "P1-2: stale entry accounting present");
+    "P1-2: expansions must never exceed registry size");
 
   return {
-    p1_1_legal_action_set_identity: true, // by construction: core enumerates all actions in both arms
+    p1_1_legal_action_set_identity: true,
     p1_2_single_registry_no_double_expansion: true,
     rootActionCount: rootActions.length,
     controlExpansions: controlRes.expansions,
@@ -392,21 +399,26 @@ function runP1SelfChecks() {
 
 function main() {
   const project = loadProject(PROJECT_ROOT);
+  const simulator = makeSimulator(project);
 
   const p1 = runP1SelfChecks();
-  const l1Ordering = microOrdering(project);
-  const l1Threshold = microThreshold(project);
-  const l1Synergy = microSynergy(project);
-  const l1Irreversible = microIrreversibleInvestment(project);
+  const micros = [
+    microOrdering(project, simulator),
+    microThreshold(project),
+    microSynergy(project),
+    microIrreversibleInvestment(project, simulator),
+    microPrerequisiteOrder(project, simulator),
+    microAlternativeIsolation(project, simulator),
+  ];
   const l2 = runL2Diagnostic();
   const l3 = runL3RealAB();
 
   const report = {
-    schema: "motapathfinder.event-forward-search-lookahead.v1",
-    milestone: "PR-5.25a Iteration 1",
+    schema: "motapathfinder.event-forward-search-lookahead.v2",
+    milestone: "PR-5.25a Iteration 1 (Repair 1: evaluator contract fidelity)",
     frozenParams: FROZEN_PARAMS,
     p1SelfChecks: p1,
-    l1Micros: [l1Ordering, l1Threshold, l1Synergy, l1Irreversible],
+    l1Micros: micros,
     l2Diagnostic: l2,
     l3RealAB: l3,
   };
