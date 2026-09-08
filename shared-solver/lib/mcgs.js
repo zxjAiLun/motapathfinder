@@ -135,10 +135,13 @@ function createMCGS(simulator, options) {
       ? floorOrder.indexOf(terminalGoal.floorId)
       : floorOrder.length > 0 ? floorOrder.length - 1 : 0;
 
+    // PR-5.25b design contract: MT1 = 0.0, ..., MT5 = 1.0 (first floor = 0,
+    // terminal floor = 1). Repair 1: was (idx+1)/(terminal+1) which made
+    // MT1=0.2 instead of 0.0.
     const auxProgressOf = (state) => {
       const idx = floorOrder.indexOf(state.floorId);
       if (idx < 0 || terminalFloorIndex <= 0) return 0;
-      return Math.min(1, Math.max(0, (idx + 1) / (terminalFloorIndex + 1)));
+      return Math.min(1, Math.max(0, idx / terminalFloorIndex));
     };
 
     // ---- Root ----
@@ -268,30 +271,32 @@ function createMCGS(simulator, options) {
     };
 
     // ---- Phase: GRAPH SELECTION ----
-    // Returns { trajectory: [{node, edge}], currentNode, remainingDecisions }
-    const graphSelection = (simIndex) => {
+    // Repair 1: (a) carries pathExactKeys for CYCLE_TRUNCATED during graph
+    // selection (design contract: single trajectory must not revisit an exact
+    // key, not just during rollout); (b) tracks deepestAux across all
+    // selection-visited states for simulation-wide deepest progress.
+    const graphSelection = (simIndex, pathKeys) => {
       const trajectory = [];
       let current = rootNode;
       let decisions = 0;
+      let selectionDeepestAux = auxProgressOf(rootNode.state);
+      const pathExactKeys = pathKeys || new Set([rootNode.exactKey]);
       while (decisions < MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION) {
         const actions = enumerateActions(current.state);
         if (actions.length === 0) {
-          return { trajectory, currentNode: current, remainingDecisions: MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION - decisions, noActions: true };
+          return { trajectory, currentNode: current, remainingDecisions: MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION - decisions, noActions: true, selectionDeepestAux, pathExactKeys };
         }
         const untried = selectUntriedAction(current, actions, simIndex);
         if (untried !== null) {
-          // Phase transitions to EXPANSION at this node.
-          return { trajectory, currentNode: current, remainingDecisions: MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION - decisions, expandAction: untried };
+          return { trajectory, currentNode: current, remainingDecisions: MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION - decisions, expandAction: untried, selectionDeepestAux, pathExactKeys };
         }
-        // Fully expanded: select existing edge.
         const edge = mode === "treatment" ? selectUctEdge(current) : selectUniformEdge(current, simIndex);
         if (!edge) {
-          return { trajectory, currentNode: current, remainingDecisions: MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION - decisions, noActions: true };
+          return { trajectory, currentNode: current, remainingDecisions: MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION - decisions, noActions: true, selectionDeepestAux, pathExactKeys };
         }
-        // Apply the edge's action to get the child state.
         const action = enumerateActions(current.state).find((a) => actionIdentityOf(a) === edge.identity);
         if (!action) {
-          return { trajectory, currentNode: current, remainingDecisions: MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION - decisions, noActions: true };
+          return { trajectory, currentNode: current, remainingDecisions: MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION - decisions, noActions: true, selectionDeepestAux, pathExactKeys };
         }
         let childState = null;
         try {
@@ -301,16 +306,23 @@ function createMCGS(simulator, options) {
           childState = null;
         }
         if (!childState || !childState.hero || (childState.hero.hp != null && childState.hero.hp <= 0)) {
-          // Edge leads to death; update stats and stop.
           trajectory.push({ node: current, edge });
-          return { trajectory, currentNode: current, remainingDecisions: MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION - decisions - 1, deadEnd: true };
+          return { trajectory, currentNode: current, remainingDecisions: MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION - decisions - 1, deadEnd: true, selectionDeepestAux, pathExactKeys };
+        }
+        const childKey = buildStateKey(childState);
+        if (pathExactKeys.has(childKey)) {
+          trajectory.push({ node: current, edge });
+          return { trajectory, currentNode: current, remainingDecisions: MCGS_PARAMS.TOTAL_DECISIONS_PER_SIMULATION - decisions - 1, cycleTruncated: true, selectionDeepestAux, pathExactKeys };
         }
         const { node: childNode } = getOrCreateNode(childState);
         trajectory.push({ node: current, edge });
+        pathExactKeys.add(childKey);
         current = childNode;
+        const aux = auxProgressOf(childState);
+        if (aux > selectionDeepestAux) selectionDeepestAux = aux;
         decisions += 1;
       }
-      return { trajectory, currentNode: current, remainingDecisions: 0, horizonTruncated: true };
+      return { trajectory, currentNode: current, remainingDecisions: 0, horizonTruncated: true, selectionDeepestAux, pathExactKeys };
     };
 
     // ---- Phase: EXPANSION + DEFAULT ROLLOUT ----
@@ -392,18 +404,14 @@ function createMCGS(simulator, options) {
       searchIterations += 1;
       const simIndex = searchIterations;
 
-      const pathExactKeys = new Set();
-      pathExactKeys.add(rootNode.exactKey);
-
       const sel = graphSelection(simIndex);
 
-      // Track path keys from graph selection.
-      sel.trajectory.forEach((step) => {
-        pathExactKeys.add(step.edge.childExactKey);
-      });
+      // Path keys from graph selection (now carried by graphSelection itself).
+      const pathExactKeys = sel.pathExactKeys;
 
       let goalReward = 0;
-      let auxProgress = 0;
+      // Simulation-wide deepest progress: max(selection deepest, expansion+rollout deepest).
+      let auxProgress = sel.selectionDeepestAux || 0;
       let termination = "HORIZON_TRUNCATED";
       let trajectoryEdges = sel.trajectory.map((step) => ({ node: step.node, edge: step.edge }));
       let rolloutActions = [];
@@ -411,17 +419,18 @@ function createMCGS(simulator, options) {
 
       if (sel.noActions) {
         termination = "DEAD_END";
-        auxProgress = auxProgressOf(sel.currentNode.state);
       } else if (sel.deadEnd) {
         termination = "DEAD_END";
-        auxProgress = auxProgressOf(sel.currentNode.state);
+      } else if (sel.cycleTruncated) {
+        termination = "CYCLE_TRUNCATED";
       } else if (sel.horizonTruncated) {
         termination = "HORIZON_TRUNCATED";
-        auxProgress = auxProgressOf(sel.currentNode.state);
       } else if (sel.expandAction) {
         const result = expansionAndRollout(sel.currentNode, sel.expandAction, sel.remainingDecisions, simIndex, pathExactKeys);
         goalReward = result.goalReward;
-        auxProgress = result.auxProgress;
+        // Take max of selection deepest and rollout deepest (design: "deepest
+        // actual floor progress observed" across the ENTIRE simulation).
+        if (result.auxProgress > auxProgress) auxProgress = result.auxProgress;
         termination = result.termination;
         rolloutActions = result.rolloutActions || [];
         if (result.trajectoryEdge) {
