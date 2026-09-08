@@ -1,27 +1,30 @@
 "use strict";
 
 /**
- * PR-5.25a — Multi-Step Resource Lookahead evaluator (Repair 1).
+ * PR-5.25a — Multi-Step Resource Lookahead evaluator (Repair 2).
  *
- * v1 gaps (Cloud Review P1s, fixed here):
- *   - prerequisite: resources are now gated by the simulator's own action
- *     enumeration (the authoritative "currently obtainable" signal). A map
- *     resource NOT targeted by any current action is BLOCKED — it may only be
- *     consumed in a plan AFTER its blocker enemy has been defeated within that
- *     plan. Undeterminable prerequisites are UNKNOWN, never assumable.
- *   - alternative isolation: obtainable resources are partitioned into
- *     route-alternative groups (connected walkable regions separated by alive
- *     blocking enemies). A plan draws from AT MOST ONE group; mutually
- *     exclusive resources never mix. MAX_ALTERNATIVES caps groups considered.
- *   - the `alternatives` counter now counts route alternatives (was
- *     miscounting unknown pickups).
+ * Repair 2 closes the last two contract gaps from the Repair 1 review:
+ *
+ *   Prerequisite IDENTITY (not just existence):
+ *     Each blocked resource carries requiredBlockerKeys — the specific alive
+ *     enemies that stand between the hero's currently reachable region and
+ *     that resource (computed by a BFS flood-fill on the map grid with alive
+ *     enemies as walls). A blocked resource enters a plan IFF its ACTUAL
+ *     blocker has been defeated within that plan. An unrelated battle never
+ *     unlocks it. When the blocker cannot be determined reliably → UNKNOWN
+ *     (never assumable).
+ *
+ *   Alternative group INTEGRITY:
+ *     Blocked resources are assigned to the same alternative group as their
+ *     blocker (the guard that unlocks them). Floor-wide blocked injection is
+ *     eliminated — plans draw from exactly ONE group, including blocked
+ *     members. MAX_ALTERNATIVES bounds the full projected resource space.
  *
  * Everything else (frozen params, one-shot consumption, level-up engine,
  * multi-step battle cost recomputation, UNKNOWN-not-BLOCKED for events,
- * priority-only output) is unchanged from v1.
+ * priority-only output) is unchanged.
  */
 
-const { estimateBattleSurvivability } = require("./battle-thresholds");
 const { getTileDefinitionAt } = require("./state");
 
 const FROZEN_PARAMS = {
@@ -37,7 +40,7 @@ function number(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-// ---------- abstract battle model (pure, no state mutation) ----------
+// ---------- abstract battle model ----------
 function abstractBattleCost(hero, enemy) {
   const atk = number(hero.atk, 0);
   const def = number(hero.def, 0);
@@ -74,19 +77,182 @@ function levelUpGains(levelUp, currentLv, currentExp, gainedExp) {
   return { lv, atk, def };
 }
 
-// ---------- prerequisite-aware resource extraction ----------
+// ---------- BFS blocker identity ----------
 /**
- * Extract resources WITH prerequisites and route-alternative grouping.
+ * Flood-fill from the hero's current position over PASSABLE, non-enemy tiles.
+ * Returns:
+ *   reachable: Set of "x,y" the hero can walk to right now (ignoring enemies
+ *              as walls — enemies are the boundary).
+ *   boundaryEnemies: Map "x,y" (enemy position) → reachable cell it is
+ *                   adjacent to. These are the FIRST-layer blockers.
  *
- * @param simulator  the production simulator (for action enumeration = the
- *                   authoritative "currently obtainable" reachability signal)
- * @param state      the real state
- * @returns { obtainable, blocked, unknowns, alternativeGroups }
- *   obtainable: [{kind, id, floorId, x, y, enemy?, item?, groupIndex}]
- *   blocked:    [{..., blockerKey}] — map resources not currently targeted;
- *               their prerequisite is defeating the blocker within the plan
- *   alternativeGroups: [[resourceIdx, ...], ...] — mutually exclusive groups
+ * For a blocked resource at (tx,ty): its required blockers = the alive
+ * enemies adjacent to the current reachable region that lie on any path
+ * toward it. We approximate with a second BFS through enemy tiles: expand
+ * through boundary enemies; the enemies encountered on the way to (tx,ty)
+ * are its prerequisite chain. The FIRST enemy on any such path is the
+ * immediate blocker.
  */
+function computeBlockerTopology(project, state, floorId) {
+  const floor = project.floorsById[floorId];
+  if (!floor) return { reachable: new Set(), boundaryEnemies: new Map() };
+  const floorState = (state.floorStates || {})[floorId] || {};
+  const removed = floorState.replaced || {};
+  const map = floor.map || [];
+  const width = floor.width || 0;
+  const height = floor.height || 0;
+  const heroX = number(state.hero && state.hero.loc && state.hero.loc.x, -1);
+  const heroY = number(state.hero && state.hero.loc && state.hero.loc.y, -1);
+
+  const isPassable = (x, y) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return false;
+    if (removed[`${x},${y}`]) return false;
+    const tileNumber = (map[y] || [])[x];
+    if (!tileNumber) return true; // h5mota: 0/absent = empty walkable floor
+    const tile = project.mapTilesByNumber[String(tileNumber)];
+    if (!tile) return false;
+    if (tile.cls === "enemys") return false; // enemies are walls for this BFS
+    if (tile.cls === "autotile" && tile.noPass) return false;
+    if (tile.canPass === false) return false;
+    return true;
+  };
+  const isEnemyAt = (x, y) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return false;
+    if (removed[`${x},${y}`]) return false;
+    const tileNumber = (map[y] || [])[x];
+    if (!tileNumber) return false;
+    const tile = project.mapTilesByNumber[String(tileNumber)];
+    return Boolean(tile && tile.cls === "enemys" && tile.id);
+  };
+
+  // BFS 1: reachable passable region from hero.
+  const reachable = new Set();
+  const boundaryEnemies = new Map(); // "ex,ey" -> first reachable cell adjacent
+  if (heroX >= 0 && heroY >= 0) {
+    const queue = [[heroX, heroY]];
+    reachable.add(`${heroX},${heroY}`);
+    const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    while (queue.length > 0) {
+      const [cx, cy] = queue.shift();
+      for (const [dx, dy] of DIRS) {
+        const nx = cx + dx;
+        const ny = cy + dy;
+        const key = `${nx},${ny}`;
+        if (reachable.has(key)) continue;
+        if (isPassable(nx, ny)) {
+          reachable.add(key);
+          queue.push([nx, ny]);
+        } else if (isEnemyAt(nx, ny)) {
+          if (!boundaryEnemies.has(key)) {
+            boundaryEnemies.set(key, `${cx},${cy}`);
+          }
+        }
+      }
+    }
+  }
+  return { reachable, boundaryEnemies };
+}
+
+/**
+ * For each blocked resource, find its immediate blocker: the boundary enemy
+ * that lies on a BFS path (through enemy tiles) toward the resource. We do a
+ * multi-source BFS from ALL boundary enemies simultaneously, expanding through
+ * enemy tiles, and record which boundary enemy is the "owner" of each reached
+ * cell. The first boundary enemy whose expansion reaches the resource's
+ * adjacent cell is the immediate blocker for that resource.
+ */
+function assignBlockers(project, state, floorId, blockedResources) {
+  const floor = project.floorsById[floorId];
+  if (!floor || blockedResources.length === 0) {
+    blockedResources.forEach((r) => { r.requiredBlockerKeys = null; r.prerequisiteKnown = false; });
+    return;
+  }
+  const floorState = (state.floorStates || {})[floorId] || {};
+  const removed = floorState.removed || {};
+  const map = floor.map || [];
+  const width = floor.width || 0;
+  const height = floor.height || 0;
+
+  const { reachable, boundaryEnemies } = computeBlockerTopology(project, state, floorId);
+
+  const isEnemyAt = (x, y) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return false;
+    if (removed[`${x},${y}`]) return false;
+    const tileNumber = (map[y] || [])[x];
+    if (!tileNumber) return false;
+    const tile = project.mapTilesByNumber[String(tileNumber)];
+    return Boolean(tile && tile.cls === "enemys" && tile.id);
+  };
+  const isPassableTile = (x, y) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return false;
+    if (removed[`${x},${y}`]) return false;
+    const tileNumber = (map[y] || [])[x];
+    if (!tileNumber) return true; // h5mota: 0/absent = empty walkable floor
+    const tile = project.mapTilesByNumber[String(tileNumber)];
+    if (!tile) return false;
+    if (tile.cls === "enemys") return false;
+    if (tile.cls === "autotile" && tile.noPass) return false;
+    if (tile.canPass === false) return false;
+    return true;
+  };
+
+  // Multi-source BFS from boundary enemies, expanding through enemy tiles AND
+  // passable tiles behind them (the blocked corridor interior).
+  const owner = new Map(); // "x,y" -> boundary enemy key that first reached it
+  const queue = [];
+  for (const enemyKey of boundaryEnemies.keys()) {
+    const [ex, ey] = enemyKey.split(",").map(Number);
+    owner.set(enemyKey, enemyKey); // each boundary enemy owns itself
+    queue.push([ex, ey, enemyKey]);
+  }
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  let bfsDepth = 0;
+  const maxBfsDepth = 400; // bounded: covers any single-floor corridor
+  while (queue.length > 0 && bfsDepth < maxBfsDepth) {
+    bfsDepth += 1;
+    const [cx, cy, source] = queue.shift();
+    for (const [dx, dy] of DIRS) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      const key = `${nx},${ny}`;
+      if (owner.has(key)) continue;
+      if (isEnemyAt(nx, ny)) {
+        owner.set(key, source);
+        queue.push([nx, ny, source]);
+      } else if (isPassableTile(nx, ny)) {
+        // Passable tiles BEHIND boundary enemies: blocked corridor interior.
+        owner.set(key, source);
+        queue.push([nx, ny, source]);
+      }
+      // walls and removed tiles are terminal — no expansion
+    }
+  }
+
+  // For each blocked resource, find the owner of its own cell or any adjacent cell.
+  for (const record of blockedResources) {
+    const ownKey = `${record.x},${record.y}`;
+    let blocker = owner.get(ownKey) || null;
+    if (!blocker) {
+      for (const [dx, dy] of DIRS) {
+        const adjKey = `${record.x + dx},${record.y + dy}`;
+        if (owner.has(adjKey)) {
+          blocker = owner.get(adjKey);
+          break;
+        }
+      }
+    }
+    if (blocker && boundaryEnemies.has(blocker)) {
+      record.requiredBlockerKeys = [blocker];
+      record.prerequisiteKnown = true;
+    } else {
+      // Cannot determine a reliable blocker → UNKNOWN (never assumable).
+      record.requiredBlockerKeys = null;
+      record.prerequisiteKnown = false;
+    }
+  }
+}
+
+// ---------- prerequisite-aware extraction with group integrity ----------
 function extractResourcesWithPrerequisites(project, simulator, state, options) {
   const config = options || {};
   const floorId = state.floorId;
@@ -94,7 +260,7 @@ function extractResourcesWithPrerequisites(project, simulator, state, options) {
   if (!floor) return { obtainable: [], blocked: [], unknowns: [], alternativeGroups: [] };
   const maxPerKind = number(config.maxPerKind, 12);
 
-  // 1) Authoritative obtainable set: action enumeration targets.
+  // 1) Authoritative obtainable set via action enumeration.
   let actions = [];
   try {
     actions = (simulator.enumeratePrimitiveActions(state) || {}).actions || [];
@@ -110,7 +276,7 @@ function extractResourcesWithPrerequisites(project, simulator, state, options) {
     }
   }
 
-  // 2) Scan the map for all one-shot resources; classify by prerequisite.
+  // 2) Scan map; classify resources.
   const floorState = (state.floorStates || {})[floorId] || {};
   const removed = floorState.removed || {};
   const obtainable = [];
@@ -137,11 +303,12 @@ function extractResourcesWithPrerequisites(project, simulator, state, options) {
           unknowns.push({ kind: "battle", id: tile.id, floorId, x, y, reason: "special-effect" });
           continue;
         }
-        const record = { kind: "battle", id: tile.id, floorId, x, y, enemy };
+        const record = { kind: "battle", id: tile.id, floorId, x, y, enemy, isDirectlyObtainable: false };
         if (obtainableKeys.has(`battle:${floorId}:${x},${y}`)) {
+          record.isDirectlyObtainable = true;
           obtainable.push(record);
         } else {
-          blocked.push(record); // prerequisite: some blocker on the path
+          blocked.push(record);
         }
       } else if (tile.cls === "items" && tile.id) {
         const item = project.itemsById && project.itemsById[tile.id];
@@ -149,8 +316,9 @@ function extractResourcesWithPrerequisites(project, simulator, state, options) {
           unknowns.push({ kind: "pickup", id: tile.id, floorId, x, y, reason: "unknown-item" });
           continue;
         }
-        const record = { kind: "pickup", id: tile.id, floorId, x, y, item };
+        const record = { kind: "pickup", id: tile.id, floorId, x, y, item, isDirectlyObtainable: false };
         if (obtainableKeys.has(`pickup:${floorId}:${x},${y}`)) {
+          record.isDirectlyObtainable = true;
           obtainable.push(record);
         } else {
           blocked.push(record);
@@ -159,78 +327,87 @@ function extractResourcesWithPrerequisites(project, simulator, state, options) {
     }
   }
 
-  // 3) Route-alternative grouping: partition OBTAINABLE resources by the
-  // connected walkable component they are adjacent to. Two resources in
-  // different components are only co-accessible after defeating the enemies
-  // separating them — they are mutually exclusive ALTERNATIVES for a bounded
-  // plan. We approximate components via the hero's walk reachability node
-  // graph: resources whose access nodes are in the same component share a group.
-  // Lightweight approach: group by reachability "region" — we use the action's
-  // stance node proximity clustering (same-adjacency = same group).
-  let reachability = null;
-  try {
-    reachability = simulator.getWalkReachability(state);
-  } catch (_) {
-    reachability = null;
+  // 3) Assign BLOCKER IDENTITY to blocked resources (Repair 2 P1-1).
+  assignBlockers(project, state, floorId, blocked);
+
+  // 4) Alternative grouping: obtainable by stance-proximity; blocked resources
+  //    join the group of their BLOCKER (group integrity — Repair 2 P1-2).
+  const CLUSTER_RADIUS = 6;
+  const clusters = [];
+  const actionStanceByKey = new Map();
+  for (const action of actions) {
+    if (action.kind === "battle" && action.target) {
+      actionStanceByKey.set(`battle:${action.floorId || floorId}:${action.target.x},${action.target.y}`, action.stance || null);
+    } else if ((action.kind === "pickup" || action.kind === "interactPickup") && action.x != null) {
+      actionStanceByKey.set(`pickup:${action.floorId || floorId}:${action.x},${action.y}`, action.stance || null);
+    }
   }
 
-  const alternativeGroups = [];
-  if (reachability && typeof reachability.forEachNode === "function") {
-    // Union-find over reachability nodes by adjacency (walls = alive enemies).
-    // Simpler faithful proxy: group resources by the corridor segment they are
-    // accessed from — use the stance coordinate of their enumerating action.
-    const actionStanceByKey = new Map();
-    for (const action of actions) {
-      if (action.kind === "battle" && action.target) {
-        actionStanceByKey.set(`battle:${action.floorId || floorId}:${action.target.x},${action.target.y}`, action.stance || null);
-      } else if ((action.kind === "pickup" || action.kind === "interactPickup") && action.x != null) {
-        actionStanceByKey.set(`pickup:${action.floorId || floorId}:${action.x},${action.y}`, action.stance || null);
-      }
+  // Obtainable grouping (stance-proximity clustering).
+  obtainable.forEach((record) => {
+    const key = `${record.kind}:${record.floorId}:${record.x},${record.y}`;
+    const stance = actionStanceByKey.get(key);
+    if (!stance) {
+      record.groupIndex = clusters.length;
+      clusters.push([record]);
+      return;
     }
-    // Group key: connected-component proxy via stance proximity clustering.
-    // Resources within walk-step distance share a group; distant clusters are
-    // separate alternatives (they require different corridor traversals).
-    const CLUSTER_RADIUS = 6; // tiles; two stance nodes farther than this are separate corridors
-    const clusters = [];
-    obtainable.forEach((record, idx) => {
-      const key = `${record.kind}:${record.floorId}:${record.x},${record.y}`;
-      const stance = actionStanceByKey.get(key);
-      if (!stance) {
-        // No stance info → put in its own group (conservative isolation).
-        record.groupIndex = clusters.length;
-        clusters.push([idx]);
-        return;
-      }
-      let placed = false;
-      for (let ci = 0; ci < clusters.length; ci += 1) {
-        const representative = obtainable[clusters[ci][0]];
-        const repKey = `${representative.kind}:${representative.floorId}:${representative.x},${representative.y}`;
-        const repStance = actionStanceByKey.get(repKey);
-        if (repStance) {
-          const dist = Math.abs((repStance.x || 0) - (stance.x || 0)) + Math.abs((repStance.y || 0) - (stance.y || 0));
-          if (dist <= CLUSTER_RADIUS) {
-            clusters[ci].push(idx);
-            record.groupIndex = ci;
-            placed = true;
-            break;
-          }
+    let placed = false;
+    for (let ci = 0; ci < clusters.length; ci += 1) {
+      const rep = clusters[ci][0];
+      const repKey = `${rep.kind}:${rep.floorId}:${rep.x},${rep.y}`;
+      const repStance = actionStanceByKey.get(repKey);
+      if (repStance) {
+        const dist = Math.abs((repStance.x || 0) - (stance.x || 0)) + Math.abs((repStance.y || 0) - (stance.y || 0));
+        if (dist <= CLUSTER_RADIUS) {
+          clusters[ci].push(record);
+          record.groupIndex = ci;
+          placed = true;
+          break;
         }
       }
-      if (!placed) {
-        record.groupIndex = clusters.length;
-        clusters.push([idx]);
-      }
-    });
-    alternativeGroups.push(...clusters);
-  } else {
-    // Reachability unavailable → every resource is its own group (max isolation).
-    obtainable.forEach((record, idx) => {
-      record.groupIndex = idx;
-      alternativeGroups.push([idx]);
-    });
-  }
+    }
+    if (!placed) {
+      record.groupIndex = clusters.length;
+      clusters.push([record]);
+    }
+  });
 
-  return { obtainable, blocked, unknowns, alternativeGroups };
+  // Blocker-to-group map: which obtainable battle is each blocker?
+  const blockerKeyToGroup = new Map();
+  obtainable.forEach((record) => {
+    if (record.kind === "battle") {
+      blockerKeyToGroup.set(`${record.x},${record.y}`, record.groupIndex);
+    }
+  });
+
+  // Blocked resources join their blocker's group (or their own new group when
+  // the blocker is not obtainable / prerequisite unknown).
+  const unknownBlocked = [];
+  blocked.forEach((record) => {
+    if (record.prerequisiteKnown && record.requiredBlockerKeys && record.requiredBlockerKeys.length > 0) {
+      const blockerKey = record.requiredBlockerKeys[0];
+      const group = blockerKeyToGroup.get(blockerKey);
+      if (group != null) {
+        record.groupIndex = group;
+        clusters[group].push(record);
+        return;
+      }
+    }
+    // Prerequisite unknown → its own isolated group (never mixed into others).
+    record.groupIndex = clusters.length;
+    record.prerequisiteUnknown = true;
+    unknownBlocked.push(record);
+    clusters.push([record]);
+  });
+
+  return {
+    obtainable,
+    blocked,
+    unknowns,
+    alternativeGroups: clusters,
+    unknownBlocked,
+  };
 }
 
 // ---------- evaluator factory ----------
@@ -297,32 +474,22 @@ function createMultiStepResourceLookahead(project, options) {
   const evaluate = (state, terminalGoal) => {
     if (!simulatorRef) {
       return {
-        score: 0,
-        feasibility: "UNKNOWN",
-        plansConsidered: 0,
-        bestProjectedPlan: null,
-        usefulThresholds: [],
-        uncertainty: { unknownEvents: 0, unknownPlans: 0, reason: "no-simulator" },
-        trace: [],
+        score: 0, feasibility: "UNKNOWN", plansConsidered: 0, bestProjectedPlan: null,
+        usefulThresholds: [], uncertainty: { unknownEvents: 0, unknownPlans: 0, reason: "no-simulator" }, trace: [],
       };
     }
     const hero = state.hero || {};
     const abstractHero0 = {
-      hp: number(hero.hp, 0),
-      atk: number(hero.atk, 0),
-      def: number(hero.def, 0),
-      mdef: number(hero.mdef, 0),
-      lv: number(hero.lv, 1),
-      exp: number(hero.exp, 0),
+      hp: number(hero.hp, 0), atk: number(hero.atk, 0), def: number(hero.def, 0),
+      mdef: number(hero.mdef, 0), lv: number(hero.lv, 1), exp: number(hero.exp, 0),
     };
 
-    // --- prerequisite-aware extraction with alternative grouping ---
-    const { obtainable, blocked, unknowns, alternativeGroups } =
+    const { obtainable, blocked, unknowns, alternativeGroups, unknownBlocked } =
       extractResourcesWithPrerequisites(project, simulatorRef, state, { maxPerKind: 12 });
 
-    // Cap alternatives at MAX_ALTERNATIVES (frozen param participates).
+    // Cap alternatives (frozen param bounds the FULL projected space —
+    // obtainable AND blocked members are inside their groups).
     const activeGroups = alternativeGroups.slice(0, params.MAX_ALTERNATIVES);
-    const activeGroupSet = new Set(activeGroups.flat());
 
     const keyBattles = keyBattlesFor(terminalGoal);
     const baselineCosts = keyBattles.map((kb) => abstractBattleCost(abstractHero0, kb.enemy));
@@ -330,7 +497,6 @@ function createMultiStepResourceLookahead(project, options) {
     const INFEASIBLE_PENALTY = 1e7;
     const baselineWorstDamage = baselineCosts.reduce((m, c) => Math.max(m, c.survivable ? c.damage : INFEASIBLE_PENALTY), 0);
 
-    // --- plan enumeration: per-alternative DFS (isolation contract) ---
     const plans = [];
     const trace = [];
     let unknownPlans = 0;
@@ -339,36 +505,14 @@ function createMultiStepResourceLookahead(project, options) {
       const costs = keyBattles.map((kb) => abstractBattleCost(planAbstractHero, kb.enemy));
       const feasible = costs.filter((c) => c.survivable).length;
       const worstDamageProxy = costs.reduce((m, c) => Math.max(m, c.survivable ? c.damage : INFEASIBLE_PENALTY), 0);
-      const residualHp = planAbstractHero.hp;
-      return feasible * 1e9 - worstDamageProxy * 1e3 + residualHp;
+      return feasible * 1e9 - worstDamageProxy * 1e3 + planAbstractHero.hp;
     };
 
-    // Alternative group → the resources available in plans rooted at this group.
-    // BLOCKED resources may join a plan only AFTER their blocker (an alive enemy
-    // on the path) is defeated within the plan — approximated by: a blocked
-    // resource becomes available after the plan has defeated >= 1 battle from
-    // the same group (the corridor guard). If no such battle exists → UNKNOWN.
-    // When obtainable resources are empty (a fully stabilized corridor state),
-    // seed alternative groups from blocked battles so plans can express
-    // "fight through the corridor" investments.
-    const effectiveGroups = activeGroups.length > 0
-      ? activeGroups
-      : blocked.filter((b) => b.kind === "battle").slice(0, params.MAX_ALTERNATIVES).map((b, idx) => [null, b]);
-    for (let gi = 0; gi < effectiveGroups.length && plans.length < params.MAX_PLANS; gi += 1) {
-      const group = effectiveGroups[gi];
-      // group may be [indices into obtainable] or [null, blockedBattle]
-      const groupResources = group
-        .map((entry, ei) => (typeof entry === "number" ? obtainable[entry] : entry))
-        .filter(Boolean);
-
-      // Blocked resources "behind" this group's corridor: those on the same
-      // floor whose nearest obtainable-group battle unlocks them. For the
-      // bounded model, we admit a blocked resource after the plan defeats any
-      // battle in this group (guard proxy), else mark it UNKNOWN for this plan.
-      const blockedAfterGuard = blocked.filter((b) => b.floorId === state.floorId);
-
+    for (let gi = 0; gi < activeGroups.length && plans.length < params.MAX_PLANS; gi += 1) {
+      const group = activeGroups[gi]; // ALL members (obtainable + blocked owned by this group)
       const used = new Set();
       const seq = [];
+      const defeatedBlockers = new Set(); // "x,y" of blockers defeated in this plan
 
       const extend = (depth, abstractHero, hasUnknown) => {
         if (plans.length >= params.MAX_PLANS) return;
@@ -377,21 +521,20 @@ function createMultiStepResourceLookahead(project, options) {
           if (hasUnknown) unknownPlans += 1;
           return;
         }
-        // Candidates: obtainable group resources not yet used + blocked
-        // resources whose guard has been defeated (at least one battle done).
-        const battlesDone = seq.filter((s) => s.kind === "battle").length;
-        const candidates = [
-          ...groupResources.filter((r) => !used.has(`${r.kind}:${r.floorId}:${r.x},${r.y}`)),
-          // Blocked battles may seed a plan at any depth (fighting through the
-          // corridor IS the prerequisite satisfaction); blocked pickups only
-          // after at least one battle in the plan (guard defeated).
-          ...blockedAfterGuard.filter((r) => r.kind === "battle" && !used.has(`${r.kind}:${r.floorId}:${r.x},${r.y}`)),
-          ...(battlesDone > 0 ? blockedAfterGuard.filter((r) => r.kind === "pickup" && !used.has(`${r.kind}:${r.floorId}:${r.x},${r.y}`)) : []),
-        ];
-        for (const opp of candidates) {
+        for (const opp of group) {
           if (plans.length >= params.MAX_PLANS) return;
           const oppKey = `${opp.kind}:${opp.floorId}:${opp.x},${opp.y}`;
           if (used.has(oppKey)) continue;
+
+          // PREREQUISITE IDENTITY: a blocked resource enters the plan IFF its
+          // actual blocker has been defeated in this plan (or it is directly
+          // obtainable). Unknown-prerequisite resources never enter.
+          if (!opp.isDirectlyObtainable) {
+            if (!opp.prerequisiteKnown || !opp.requiredBlockerKeys) continue; // UNKNOWN → skip
+            const satisfied = opp.requiredBlockerKeys.every((bk) => defeatedBlockers.has(bk));
+            if (!satisfied) continue;
+          }
+
           used.add(oppKey);
           seq.push(opp);
           let nextHero = null;
@@ -405,6 +548,8 @@ function createMultiStepResourceLookahead(project, options) {
               used.delete(oppKey);
               continue;
             }
+            // Register this battle's position as a defeated blocker.
+            defeatedBlockers.add(`${opp.x},${opp.y}`);
             const gains = levelUpGains(levelUp, abstractHero.lv, abstractHero.exp, number(opp.enemy.exp, 0));
             nextHero.lv = gains.lv;
             nextHero.atk += gains.atk;
@@ -417,6 +562,7 @@ function createMultiStepResourceLookahead(project, options) {
           extend(depth + 1, nextHero, unknown);
           seq.pop();
           used.delete(oppKey);
+          if (opp.kind === "battle") defeatedBlockers.delete(`${opp.x},${opp.y}`);
         }
         if (seq.length > 0) {
           plans.push({ seq: seq.slice(), abstractHero, groupIndex: gi, hasUnknown });
@@ -426,10 +572,8 @@ function createMultiStepResourceLookahead(project, options) {
       extend(0, abstractHero0, false);
     }
 
-    // --- best plan per alternative, then overall ---
     let bestScore = -Infinity;
     let bestPlan = null;
-    let feasiblePlans = 0;
     for (const plan of plans) {
       if (plan.dead || !plan.abstractHero) continue;
       const score = scorePlan(plan.abstractHero);
@@ -437,8 +581,6 @@ function createMultiStepResourceLookahead(project, options) {
         bestScore = score;
         bestPlan = plan;
       }
-      const costs = keyBattles.map((kb) => abstractBattleCost(plan.abstractHero, kb.enemy));
-      if (keyBattles.length > 0 && costs.every((c) => c.survivable)) feasiblePlans += 1;
     }
 
     const goalEnemy = keyBattles.find((kb) => kb.enemyId === terminalGoal.enemyId);
@@ -466,8 +608,7 @@ function createMultiStepResourceLookahead(project, options) {
     const usefulThresholds = keyBattles.map((kb, i) => ({
       enemyId: kb.enemyId,
       minHpRough: baselineCosts[i] && baselineCosts[i].survivable
-        ? Math.ceil(baselineCosts[i].damage) + 1
-        : null,
+        ? Math.ceil(baselineCosts[i].damage) + 1 : null,
     }));
 
     if (bestPlan) {
@@ -479,9 +620,7 @@ function createMultiStepResourceLookahead(project, options) {
         alternativeGroupIndex: bestPlan.groupIndex,
         alternativeGroupsConsidered: activeGroups.length,
         plan: bestPlan.seq.map((opp) => ({
-          kind: opp.kind,
-          id: opp.id,
-          at: `${opp.floorId}:${opp.x},${opp.y}`,
+          kind: opp.kind, id: opp.id, at: `${opp.floorId}:${opp.x},${opp.y}`,
         })),
         projected: bestPlan.abstractHero ? {
           hp: Math.round(bestPlan.abstractHero.hp),
@@ -506,6 +645,7 @@ function createMultiStepResourceLookahead(project, options) {
         unknownEvents: unknowns.length,
         unknownPlans,
         blockedResources: blocked.length,
+        unknownPrerequisiteBlocked: unknownBlocked.length,
       },
       trace,
     };
@@ -514,9 +654,7 @@ function createMultiStepResourceLookahead(project, options) {
   return {
     evaluate,
     params,
-    setSimulator(sim) {
-      simulatorRef = sim;
-    },
+    setSimulator(sim) { simulatorRef = sim; },
   };
 }
 
@@ -526,4 +664,6 @@ module.exports = {
   abstractBattleCost,
   levelUpGains,
   extractResourcesWithPrerequisites,
+  computeBlockerTopology,
+  assignBlockers,
 };
