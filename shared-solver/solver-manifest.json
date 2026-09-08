@@ -1080,6 +1080,22 @@
       },
       "notes": "auto-classified; refine in solver-manifest"
     },
+    "shared-solver/lib/mcgs.js": {
+      "id": "mcgs",
+      "path": "shared-solver/lib/mcgs.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/milestone-decomposer.js": {
       "id": "milestone-decomposer",
       "path": "shared-solver/lib/milestone-decomposer.js",
@@ -3026,6 +3042,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "manifest suite selection and fail-fast semantics; no tower/project load"
+    },
+    "shared-solver/check-mcgs.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-milestone-audit.js": {
       "grade": "diagnostic",
