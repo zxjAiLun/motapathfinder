@@ -80,8 +80,12 @@ function runMicroTests(project, simulator) {
   const resA = createMCGS(simulator, {
     isGoalState: (s) => s.hero.exp >= 2, ...budget, mode: "treatment", seed: 52501,
   }).search(JSON.parse(JSON.stringify(init)), { floorId: "MT5" });
+  // L1 doc grading (Repair 2): A/B are functional-reachability signals,
+  // C is transposition occurrence observation, D is a horizon diagnostic.
+  // We do NOT claim "all 4 adversarial micros passed".
   results.push({
     micro: "delayed-benefit",
+    grade: "FUNCTIONAL_SIGNAL",
     passed: resA.found,
     iterations: resA.telemetry.iterationsToFirstGoal,
     note: "MCGS found route gaining exp through battles",
@@ -94,6 +98,7 @@ function runMicroTests(project, simulator) {
   }).search(JSON.parse(JSON.stringify(init)), { floorId: "MT5" });
   results.push({
     micro: "irreversible-recovery",
+    grade: "FUNCTIONAL_SIGNAL",
     passed: resB.found,
     iterations: resB.telemetry.iterationsToFirstGoal,
     note: "MCGS found route with irreversible resource spend (atk >= 12)",
@@ -109,10 +114,11 @@ function runMicroTests(project, simulator) {
   const hasTransposition = resC.telemetry.transpositionHits > 0;
   results.push({
     micro: "transposition",
+    grade: "TRANSPOSITION_OCCURRENCE_OBSERVED",
     passed: hasTransposition,
     transpositionHits: resC.telemetry.transpositionHits,
     uniqueExactStates: resC.telemetry.uniqueExactStates,
-    note: "MCGS graph has transposition hits (different paths converge to same exact state)",
+    note: "Transposition occurrence observed (shared exact states via different paths); edge-local stats structure is by construction",
   });
 
   // D. deep-dead-vs-shallow-solvable: verify UCT prefers solvable over deep-dead.
@@ -139,17 +145,21 @@ function runMicroTests(project, simulator) {
   const auxDiversity = resD.rolloutReturnDiversity.uniqueAuxProgressBuckets.length;
   results.push({
     micro: "deep-dead-vs-shallow-solvable",
+    grade: "NOT_MET_AT_HORIZON_32",
     passed: auxDiversity > 1,
     auxBuckets: auxDiversity,
     found: resD.found,
-    note: "Q_aux diversity across edges (prerequisite for solvable-vs-dead discrimination)",
+    note: "Q_aux diversity prerequisite NOT met at horizon 32 (single bucket); consistent with the ROLLOUT_RETURN_DIVERSITY finding — this is a horizon diagnostic, not a gate failure",
   });
 
   return results;
 }
 
 // ============ Strict replay for witness and FOUND routes ============
-function strictReplayRoute(project, simulator, routeSummaries) {
+// Repair 2 (P1-1): strict replay must verify the TERMINAL GOAL PREDICATE on
+// the final state, not just floor identity. blueKing@MT5 defeated means:
+//   finalFloorId === "MT5" AND floorStates.MT5.removed["6,7"] === true.
+function strictReplayRoute(project, simulator, routeSummaries, terminalPredicate) {
   let state = simulator.createInitialState({ rank: "chaos" });
   for (const summary of routeSummaries) {
     const actions = simulator.enumeratePrimitiveActions(state).actions;
@@ -157,7 +167,15 @@ function strictReplayRoute(project, simulator, routeSummaries) {
     if (!matching) return { ok: false, reason: `action-not-enumerated: ${summary}` };
     state = simulator.applyAction(state, matching, { storeRoute: true });
   }
-  return { ok: true, finalFloor: state.floorId, finalHero: state.hero };
+  const goalMet = typeof terminalPredicate === "function"
+    ? terminalPredicate(state)
+    : true;
+  return {
+    ok: goalMet,
+    reason: goalMet ? null : "terminal-predicate-not-satisfied",
+    finalFloor: state.floorId,
+    finalHero: state.hero,
+  };
 }
 
 function auditWitness(project, simulator) {
@@ -172,17 +190,22 @@ function auditWitness(project, simulator) {
   if (!Array.isArray(decisions) || decisions.length === 0 || !startsAtMT1 || !targetsMT5) {
     return { witnessFound: false, status: "BLOCKED_BY_SOLVABILITY_WITNESS" };
   }
-  // STRICT REPLAY: replay the decision summaries on a fresh simulator.
+  // STRICT REPLAY: replay the decision summaries on a fresh simulator,
+  // checking the TERMINAL PREDICATE (blueKing actually defeated at 6,7).
+  const blueKingPredicate = (state) => {
+    if (state.floorId !== "MT5") return false;
+    const fs = (state.floorStates || {}).MT5 || {};
+    return Boolean(fs.removed && fs.removed["6,7"]);
+  };
   const summaries = decisions.map((d) => d.summary || d.action || d);
-  const replay = strictReplayRoute(project, simulator, summaries);
-  const blueKingDefeated = replay.ok && replay.finalFloor === "MT5";
+  const replay = strictReplayRoute(project, simulator, summaries, blueKingPredicate);
   return {
     witnessFound: true,
     witnessRoute: "routes/latest/mt5-blueking-kill.route.json",
     decisionsReplayed: decisions.length,
     strictReplayValid: replay.ok,
-    blueKingDefeated,
-    status: replay.ok && blueKingDefeated ? "STRICT_REPLAY_VALID" : "BLOCKED_BY_SOLVABILITY_WITNESS",
+    blueKingDefeated: replay.ok,
+    status: replay.ok ? "STRICT_REPLAY_VALID" : "BLOCKED_BY_SOLVABILITY_WITNESS",
   };
 }
 
@@ -206,10 +229,11 @@ function runL3RealAB() {
     const control = createMCGS(simulator, {
       isGoalState: isGoal, ...BUDGET, mode: "control", seed,
     }).search(JSON.parse(JSON.stringify(init)), terminalGoal);
-    // Strict replay gate for FOUND routes.
+    // Strict replay gate for FOUND routes (Repair 2 P1-1: must be === true,
+    // not !== false — null replayValid on a found route is NOT a valid FOUND).
     let controlReplayValid = null;
     if (control.found && control.goalRouteSummaries) {
-      const replay = strictReplayRoute(project, simulator, control.goalRouteSummaries);
+      const replay = strictReplayRoute(project, simulator, control.goalRouteSummaries, isGoal);
       controlReplayValid = replay.ok;
     }
     if (typeof global.gc === "function") global.gc();
@@ -218,7 +242,7 @@ function runL3RealAB() {
     }).search(JSON.parse(JSON.stringify(init)), terminalGoal);
     let treatmentReplayValid = null;
     if (treatment.found && treatment.goalRouteSummaries) {
-      const replay = strictReplayRoute(project, simulator, treatment.goalRouteSummaries);
+      const replay = strictReplayRoute(project, simulator, treatment.goalRouteSummaries, isGoal);
       treatmentReplayValid = replay.ok;
     }
     results.push({
@@ -244,9 +268,9 @@ function runL3RealAB() {
     });
   }
 
-  // Verdict only counts FOUND + STRICT_REPLAY_VALID.
-  const anyTreatmentFoundValid = results.some((r) => r.treatment.found && r.treatment.replayValid !== false);
-  const anyControlFoundValid = results.some((r) => r.control.found && r.control.replayValid !== false);
+  // Verdict only counts FOUND + STRICT_REPLAY_VALID === true (fail-closed).
+  const anyTreatmentFoundValid = results.some((r) => r.treatment.found === true && r.treatment.replayValid === true);
+  const anyControlFoundValid = results.some((r) => r.control.found === true && r.control.replayValid === true);
   let verdict;
   if (anyTreatmentFoundValid && !anyControlFoundValid) verdict = "CAPABILITY_GAIN_PROVEN";
   else if (anyTreatmentFoundValid && anyControlFoundValid) verdict = "BOTH_FOUND";

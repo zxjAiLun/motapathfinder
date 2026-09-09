@@ -344,6 +344,24 @@ function createMCGS(simulator, options) {
       // Record the graph edge for backup.
       const trajectoryEdge = { node, edge };
 
+      // Repair 2 (P1-2): EXPANSION TRANSITION CYCLE CHECK.
+      // Design contract: one simulation may not revisit an exact key.
+      // If the expansion child's exact key is already in the current
+      // trajectory (from graph selection), this simulation has a cycle.
+      // The edge is still a legal graph edge (global graph may contain
+      // cycles), but this simulation terminates CYCLE_TRUNCATED with no
+      // rollout.
+      if (pathExactKeys.has(childKey)) {
+        return {
+          goalReward: 0,
+          auxProgress: Math.max(auxProgressOf(node.state), auxProgressOf(childState)),
+          termination: "CYCLE_TRUNCATED",
+          rolloutActions: [],
+          trajectoryEdge,
+          childKey,
+        };
+      }
+
       // Now DEFAULT ROLLOUT from childNode — uniform, no heuristic.
       let current = childNode;
       let steps = 0;
