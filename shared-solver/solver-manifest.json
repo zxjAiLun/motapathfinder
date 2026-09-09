@@ -1049,6 +1049,22 @@
       },
       "notes": "auto milestone decomposition; proof not yet closed into checkpoint schedule"
     },
+    "shared-solver/lib/learned-action-prior.js": {
+      "id": "learned-action-prior",
+      "path": "shared-solver/lib/learned-action-prior.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/live-replay.js": {
       "id": "live-replay",
       "path": "shared-solver/lib/live-replay.js",
@@ -3021,6 +3037,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": false,
       "notes": "real Chromium launcher UI smoke: builder, preflight, worker job verified-route, refresh recovery, route metrics"
+    },
+    "shared-solver/check-learned-action-prior.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-live-snapshot-normalization.js": {
       "grade": "local-regression",
