@@ -38,7 +38,12 @@ const { cloneState } = require("./state");
 const { fingerprintAction } = require("./route-store");
 
 const MCGS_PARAMS = {
-  TOTAL_DECISIONS_PER_SIMULATION: 32,
+  // Iteration 2 (final): 32 → 96 total decision actions per simulation
+  // (selection + expansion + rollout combined). 96 is chosen because the
+  // strict-valid witness route is 92 decisions — placing the sampling
+  // horizon at the same order of magnitude as the known solvable route.
+  // NOT a sweep value.
+  TOTAL_DECISIONS_PER_SIMULATION: 96,
   LAMBDA_AUX: 0.10,
   UCT_C: 1.0,
 };

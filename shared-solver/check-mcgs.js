@@ -294,7 +294,7 @@ function main() {
 
   const report = {
     schema: "motapathfinder.mcgs.v2",
-    milestone: "PR-5.25b Iteration 1 (Repair 1: qualification closure)",
+    milestone: "PR-5.25b Iteration 2 (final 96-decision capability qualification)",
     closureChecks: { C2: c2, C3: c3 },
     l1Micros: micros,
     witnessAudit: witness,
