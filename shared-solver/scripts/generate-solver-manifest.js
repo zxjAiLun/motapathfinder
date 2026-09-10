@@ -113,6 +113,12 @@ const DIAG = new Set([
   "agenda-policy-evaluation.js",
   "region-entry-validator.js",
 ]);
+// PR-5.25c learned action prior experiment modules.  Exploration-class only:
+// they must never be cited as proof that a route is impossible.
+const LEARNED = new Set([
+  "learned-action-prior.js",
+  "learned-prior-dataset.js",
+]);
 
 const modules = {};
 
@@ -232,6 +238,21 @@ for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js"))
         fullClosure: false,
         cleanCheckout: true,
       },
+    });
+  } else if (LEARNED.has(file)) {
+    add(file, {
+      layer: "search/exploration",
+      status: "exploration",
+      role: "exploration-search",
+      correctnessSource: false,
+      tests: {
+        unit: false,
+        realFixture: false,
+        segmentClosure: false,
+        fullClosure: false,
+        cleanCheckout: true,
+      },
+      notes: "PR-5.25c learned action prior (deterministic pairwise-ranking MLP over strict-replayed fixture decisions); exploration only, never a route-closure or impossibility proof",
     });
   } else if (ROUTE.has(file)) {
     add(file, {
@@ -1448,6 +1469,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": false,
     "cleanCheckout": true,
     "notes": "PR-5.23b search retention shape measurement and floor-boundary Pareto structured planning slice A/B qualification"
+  },
+  "shared-solver/check-learned-action-prior.js": {
+    "grade": "local-regression",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25c strict two-route fixture replay (exact pre/post/final state-key verification), provenance/witness exclusion inventory, deterministic pairwise-ranking MLP held-out sanity gate, and matched control/treatment rollouts; BLOCK_REAL_ROLLOUT is a preserved negative result"
   }
 };
 

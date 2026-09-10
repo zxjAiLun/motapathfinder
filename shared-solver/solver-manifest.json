@@ -1052,9 +1052,9 @@
     "shared-solver/lib/learned-action-prior.js": {
       "id": "learned-action-prior",
       "path": "shared-solver/lib/learned-action-prior.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
+      "layer": "search/exploration",
+      "status": "exploration",
+      "role": "exploration-search",
       "correctnessSource": false,
       "tests": {
         "unit": false,
@@ -1063,7 +1063,23 @@
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "auto-classified; refine in solver-manifest"
+      "notes": "PR-5.25c learned action prior (deterministic pairwise-ranking MLP over strict-replayed fixture decisions); exploration only, never a route-closure or impossibility proof"
+    },
+    "shared-solver/lib/learned-prior-dataset.js": {
+      "id": "learned-prior-dataset",
+      "path": "shared-solver/lib/learned-prior-dataset.js",
+      "layer": "search/exploration",
+      "status": "exploration",
+      "role": "exploration-search",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.25c learned action prior (deterministic pairwise-ranking MLP over strict-replayed fixture decisions); exploration only, never a route-closure or impossibility proof"
     },
     "shared-solver/lib/live-replay.js": {
       "id": "live-replay",
@@ -3041,9 +3057,9 @@
     "shared-solver/check-learned-action-prior.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
-      "requiresStrictReplay": false,
-      "cleanCheckout": false,
-      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.25c strict two-route fixture replay (exact pre/post/final state-key verification), provenance/witness exclusion inventory, deterministic pairwise-ranking MLP held-out sanity gate, and matched control/treatment rollouts; BLOCK_REAL_ROLLOUT is a preserved negative result"
     },
     "shared-solver/check-live-snapshot-normalization.js": {
       "grade": "local-regression",
