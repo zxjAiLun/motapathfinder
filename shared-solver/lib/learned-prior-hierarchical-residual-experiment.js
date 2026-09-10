@@ -103,6 +103,29 @@ function normalizedAvailableKindPrior(vectors, kindProbability) {
   return prior;
 }
 
+// Analytic per-action probabilities of the explicit two-stage sampler at T = 1:
+//   P(a) = [P(kind(a)) / sum_available P] * exp(r(a)) / sum_{b in kind(a)} exp(r(b))
+// This is the theoretical distribution that sampleKindThenAction() must follow;
+// comparing it to softmax(computeHierarchicalScores) is a per-action identity,
+// and sampling frequencies can be checked against it directly.
+function analyticTwoStageProbabilities(vectors, residualScores, kindProbability) {
+  const groups = groupIndicesByKind(vectors);
+  let totalPrior = 0;
+  for (const kind of groups.keys()) {
+    totalPrior += kindProbability[kind] == null ? 1e-12 : kindProbability[kind];
+  }
+  const probabilities = new Array(vectors.length).fill(0);
+  for (const [kind, indices] of groups) {
+    const raw = kindProbability[kind] == null ? 1e-12 : kindProbability[kind];
+    const kindProbabilityNormalized = raw / totalPrior;
+    const logZ = logSumExp(indices.map((index) => residualScores[index]));
+    for (const index of indices) {
+      probabilities[index] = kindProbabilityNormalized * Math.exp(residualScores[index] - logZ);
+    }
+  }
+  return probabilities;
+}
+
 // residualModel === null -> pure kind-prior policy (control).
 function makeHierarchicalScorer(residualModel, kindProbability) {
   return (vectors) => {
@@ -446,6 +469,7 @@ module.exports = {
   EXTENSION_SEED,
   HISTORICAL_CONTROL_OVERALL_REFERENCE,
   V2_MONOLITHIC_CHANGEFLOOR_ANCHOR,
+  analyticTwoStageProbabilities,
   computeHierarchicalScores,
   evaluateWithSetScorer,
   groupIndicesByKind,

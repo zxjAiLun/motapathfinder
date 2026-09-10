@@ -77,14 +77,39 @@ function verifyCompositionProperty() {
     close(flatMass.get(kind), skewedMass.get(kind))
   ));
 
-  // Two-stage sampler probabilities must equal softmax(score) at T=1 in mass.
-  const scores = hierarchical.computeHierarchicalScores(vectors, [5, -3, 1, 2], probability);
+  // Two-stage sampler: the ANALYTIC distribution must equal softmax(score)
+  // per action at T=1, and the SAMPLER implementation must follow that
+  // analytic distribution (frequency check), so the assertion exercises
+  // sampleKindThenAction() itself rather than only the composition.
+  const residual = [5, -3, 1, 2];
+  const scores = hierarchical.computeHierarchicalScores(vectors, residual, probability);
   const softmaxProbabilities = hierarchical.softmaxFromScores(scores);
-  const twoStageKindMass = hierarchical.kindMass(vectors, [5, -3, 1, 2], probability);
-  const samplerMatchesSoftmax = [...expected.keys()].every((kind) => close(twoStageKindMass.get(kind), (() => {
-    const groups = hierarchical.groupIndicesByKind(vectors);
-    return groups.get(kind).reduce((sum, index) => sum + softmaxProbabilities[index], 0);
-  })()));
+  const analytic = hierarchical.analyticTwoStageProbabilities(vectors, residual, probability);
+  const analyticMatchesSoftmax = analytic.every((value, index) => close(value, softmaxProbabilities[index]));
+
+  const draws = 200000;
+  const rng = prior.mulberry32(20260910);
+  const frequency = new Array(vectors.length).fill(0);
+  for (let draw = 0; draw < draws; draw += 1) {
+    const picked = hierarchical.sampleKindThenAction(vectors, residual, probability, rng, 1, true);
+    frequency[picked.index] += 1;
+  }
+  const maxFrequencyDeviation = Math.max(...frequency.map((count, index) => (
+    Math.abs(count / draws - analytic[index])
+  )));
+  const samplerFollowsAnalytic = maxFrequencyDeviation < 0.01;
+
+  // Control variant: residual disabled must sample uniformly within the kind.
+  const controlAnalytic = hierarchical.analyticTwoStageProbabilities(vectors, [0, 0, 0, 0], probability);
+  const controlFrequency = new Array(vectors.length).fill(0);
+  for (let draw = 0; draw < draws; draw += 1) {
+    const picked = hierarchical.sampleKindThenAction(vectors, [0, 0, 0, 0], probability, rng, 1, false);
+    controlFrequency[picked.index] += 1;
+  }
+  const controlMaxDeviation = Math.max(...controlFrequency.map((count, index) => (
+    Math.abs(count / draws - controlAnalytic[index])
+  )));
+  const controlSamplerMatches = controlMaxDeviation < 0.01;
 
   return {
     flatResidualKindMass: Object.fromEntries(flatMass),
@@ -93,7 +118,11 @@ function verifyCompositionProperty() {
     flatMatchesPrior,
     nonFlatMatchesPrior,
     residualOnlyRedistributesWithinKind,
-    samplerMatchesSoftmax,
+    analyticTwoStageMatchesSoftmaxPerAction: analyticMatchesSoftmax,
+    samplerFollowsAnalyticDistribution: samplerFollowsAnalytic,
+    samplerMaxFrequencyDeviation: maxFrequencyDeviation,
+    controlSamplerFollowsAnalyticDistribution: controlSamplerMatches,
+    controlSamplerMaxFrequencyDeviation: controlMaxDeviation,
   };
 }
 
@@ -105,7 +134,9 @@ function main() {
   requireCondition(composition.flatMatchesPrior, "Repair 1: kind mass must equal the normalised available-kind prior under a flat residual", composition);
   requireCondition(composition.nonFlatMatchesPrior, "Repair 1: kind mass must equal the normalised available-kind prior under a non-flat residual", composition);
   requireCondition(composition.residualOnlyRedistributesWithinKind, "Repair 1: the residual must not change any kind's total mass", composition);
-  requireCondition(composition.samplerMatchesSoftmax, "Repair 1: the two-stage sampler must match softmax(score) kind mass at T=1", composition);
+  requireCondition(composition.analyticTwoStageMatchesSoftmaxPerAction, "Repair 1: analytic two-stage per-action probabilities must equal softmax(score)", composition);
+  requireCondition(composition.samplerFollowsAnalyticDistribution, "Repair 1: sampleKindThenAction must follow its analytic distribution (treatment)", composition);
+  requireCondition(composition.controlSamplerFollowsAnalyticDistribution, "Repair 1: sampleKindThenAction must follow its analytic distribution (control, uniform within kind)", composition);
 
   const first = hierarchical.runHierarchicalResidualExperiment({ corpus });
   const second = hierarchical.runHierarchicalResidualExperiment({ corpus });
@@ -145,7 +176,8 @@ function main() {
       deterministic: "pass",
       kindMassInvariant: "pass",
       residualOnlyRedistributesWithinKind: "pass",
-      twoStageSamplerMatchesSoftmax: "pass",
+      analyticTwoStageMatchesSoftmaxPerAction: "pass",
+      samplerImplementationFollowsAnalyticDistribution: "pass",
       withinKindAnchorsReproduced: "pass",
       featureSchemaUnchanged: "pass",
       corpusAndSplitUnchanged: "pass",

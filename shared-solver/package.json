@@ -184,6 +184,7 @@
   "check:learned-prior-estimate-baseline-probe": "node check-learned-prior-estimate-baseline-probe.js",
   "check:learned-prior-changefloor-repair": "node check-learned-prior-changefloor-repair.js",
   "check:learned-prior-hierarchical-residual": "node check-learned-prior-hierarchical-residual.js",
+  "check:learned-prior-on-policy-floor-dynamics": "node check-learned-prior-on-policy-floor-dynamics.js",
   "check:no-tower-solver-js": "node ../tools/audit-js-files.js --check-no-tower-solver-js",
     "check:public-layer-boundaries": "node ../tools/check-agent-boundaries.js --public-layer-dev",
     "check:agent-boundaries": "node ../tools/check-agent-boundaries.js",

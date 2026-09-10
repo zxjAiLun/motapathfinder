@@ -124,6 +124,7 @@ const LEARNED = new Set([
   "learned-prior-estimate-baseline-probe.js",
   "learned-prior-changefloor-repair-experiment.js",
   "learned-prior-hierarchical-residual-experiment.js",
+  "learned-prior-on-policy-floor-dynamics.js",
 ]);
 
 const modules = {};
@@ -1523,7 +1524,14 @@ const TEST_OVERRIDES = {
     "allowsNotFound": false,
     "requiresStrictReplay": true,
     "cleanCheckout": true,
-    "notes": "PR-5.25h kind-prior + within-kind residual policy: same-kind-only pairwise supervision plus a fixed train kind prior with the residualCentered composition (flat residual reproduces log P(kind) exactly); preflight blocks on zero changeFloor same-kind supervision; gates on treatment micro < kind-prior control and treatment unique changeFloor < 0.5 and < the V2 monolithic anchor; same-round rollout with a kind-prior-only control and true MT5 blueKing terminal; asserts kind-prior and V2 anchors"
+    "notes": "PR-5.25h kind-prior + within-kind residual policy (Repair 1): same-kind-only pairwise supervision plus a fixed train kind prior with the corrected composition (no +log N_k, so kind softmax mass equals the normalised available-kind prior exactly), plus an explicit two-stage sampler; asserts the kind-mass invariant with unequal group sizes, per-action analytic == softmax, and sampler-implementation frequency match; gates on treatment micro < kind-prior control and treatment unique changeFloor < 0.5 and < the V2 monolithic anchor"
+  },
+  "shared-solver/check-learned-prior-on-policy-floor-dynamics.js": {
+    "grade": "diagnostic",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25i zero-training on-policy floor transition dynamics telemetry: exact source->destination transition matrix, forward/backward counts, forward-stair availability (especially at MT2), forward choice conditional on availability, treatment forward probability mass, immediate reversals, exact-state revisit rate, first-hit steps; classifies the bottleneck advisory as A/B/C/D; no retrain, no scorer/parameter change, no horizon change"
   }
 };
 
