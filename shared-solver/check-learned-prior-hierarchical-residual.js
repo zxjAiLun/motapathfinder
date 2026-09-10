@@ -22,8 +22,11 @@ const prior = require("./lib/learned-action-prior");
 const hierarchical = require("./lib/learned-prior-hierarchical-residual-experiment");
 
 const DEFAULT_RESULT_PATH = path.resolve(__dirname, "routes", "generated", "learned-prior-hierarchical-residual.result.json");
-const ANCHOR_KIND_PRIOR_MICRO = 0.33992163274078147;
 const ANCHOR_V2_MONOLITHIC_CHANGEFLOOR = 0.8125;
+// Pre-Repair-1 within-kind ranks (must be reproduced: the Repair only removes a
+// term that is constant within a kind).
+const ANCHOR_RESIDUAL_CHANGEFLOOR = 0.125;
+const ANCHOR_RESIDUAL_BATTLE = 0.41561624649859963;
 
 function parseArgs(argv) {
   let out = DEFAULT_RESULT_PATH;
@@ -46,26 +49,52 @@ function closeTo(a, b, tolerance) {
   return typeof a === "number" && typeof b === "number" && Math.abs(a - b) <= (tolerance == null ? 1e-12 : tolerance);
 }
 
-// Structural check of the composition rule: a flat within-kind residual must
-// reproduce log P(kind) exactly, and a non-flat residual must reorder within a
-// kind.
+// Repair 1 structural check: the kind-mass invariant with UNEQUAL group sizes.
+//   Sum_{a in kind k} softmax(score)(a) must equal the normalised available-kind
+//   prior, and must be unchanged by the residual (the residual may only
+//   redistribute mass WITHIN a kind).
 function verifyCompositionProperty() {
   const mk = (kind) => {
     const vector = new Array(prior.FEATURE_DIM_V2).fill(0);
     vector[prior.STATE_FEATURE_COUNT + kind] = 1;
     return vector;
   };
-  const vectors = [mk(0), mk(0), mk(7), mk(7)];
+  const battleKind = prior.FEATURE_SCHEMA.actionKinds.indexOf("battle");
+  const changeFloorKind = prior.FEATURE_SCHEMA.actionKinds.indexOf("changeFloor");
+  // Unequal group sizes: battle N=3, changeFloor N=1.
+  const vectors = [mk(battleKind), mk(battleKind), mk(battleKind), mk(changeFloorKind)];
   const probability = new Array(prior.FEATURE_SCHEMA.actionKinds.length).fill(0.05);
-  probability[0] = 0.6;
-  probability[7] = 0.2;
-  const flat = hierarchical.computeHierarchicalScores(vectors, [2.5, 2.5, 2.5, 2.5], probability);
-  const flatIsLogPrior = flat.every((score, index) => (
-    Math.abs(score - Math.log(probability[prior.actionKindIndexOfVector(vectors[index])])) < 1e-12
+  probability[battleKind] = 0.6;
+  probability[changeFloorKind] = 0.2;
+  const expected = hierarchical.normalizedAvailableKindPrior(vectors, probability);
+
+  const flatMass = hierarchical.kindMass(vectors, [0, 0, 0, 0], probability);
+  const skewedMass = hierarchical.kindMass(vectors, [5, -3, 1, 2], probability);
+  const close = (a, b) => Math.abs(a - b) < 1e-12;
+  const flatMatchesPrior = [...expected.entries()].every(([kind, value]) => close(flatMass.get(kind), value));
+  const nonFlatMatchesPrior = [...expected.entries()].every(([kind, value]) => close(skewedMass.get(kind), value));
+  const residualOnlyRedistributesWithinKind = [...expected.keys()].every((kind) => (
+    close(flatMass.get(kind), skewedMass.get(kind))
   ));
-  const skewed = hierarchical.computeHierarchicalScores(vectors, [9, 1, 9, 1], probability);
-  const reordersWithinKind = skewed[0] > skewed[1] && skewed[2] > skewed[3];
-  return { flatIsLogPrior, reordersWithinKind };
+
+  // Two-stage sampler probabilities must equal softmax(score) at T=1 in mass.
+  const scores = hierarchical.computeHierarchicalScores(vectors, [5, -3, 1, 2], probability);
+  const softmaxProbabilities = hierarchical.softmaxFromScores(scores);
+  const twoStageKindMass = hierarchical.kindMass(vectors, [5, -3, 1, 2], probability);
+  const samplerMatchesSoftmax = [...expected.keys()].every((kind) => close(twoStageKindMass.get(kind), (() => {
+    const groups = hierarchical.groupIndicesByKind(vectors);
+    return groups.get(kind).reduce((sum, index) => sum + softmaxProbabilities[index], 0);
+  })()));
+
+  return {
+    flatResidualKindMass: Object.fromEntries(flatMass),
+    nonFlatResidualKindMass: Object.fromEntries(skewedMass),
+    normalizedAvailableKindPrior: Object.fromEntries(expected),
+    flatMatchesPrior,
+    nonFlatMatchesPrior,
+    residualOnlyRedistributesWithinKind,
+    samplerMatchesSoftmax,
+  };
 }
 
 function main() {
@@ -73,8 +102,10 @@ function main() {
   const corpus = inventory.inventoryCorpus({ captureDecisions: true });
 
   const composition = verifyCompositionProperty();
-  requireCondition(composition.flatIsLogPrior, "flat within-kind residual must reproduce log P(kind) exactly");
-  requireCondition(composition.reordersWithinKind, "non-flat residual must reorder within a kind");
+  requireCondition(composition.flatMatchesPrior, "Repair 1: kind mass must equal the normalised available-kind prior under a flat residual", composition);
+  requireCondition(composition.nonFlatMatchesPrior, "Repair 1: kind mass must equal the normalised available-kind prior under a non-flat residual", composition);
+  requireCondition(composition.residualOnlyRedistributesWithinKind, "Repair 1: the residual must not change any kind's total mass", composition);
+  requireCondition(composition.samplerMatchesSoftmax, "Repair 1: the two-stage sampler must match softmax(score) kind mass at T=1", composition);
 
   const first = hierarchical.runHierarchicalResidualExperiment({ corpus });
   const second = hierarchical.runHierarchicalResidualExperiment({ corpus });
@@ -87,13 +118,19 @@ function main() {
   requireCondition(!first.preflight.blocked, "PR-5.25h is blocked: no changeFloor within-kind supervision", {
     changeFloorSupervisedDecisions: first.preflight.changeFloorSupervisedDecisions,
   });
-  requireCondition(closeTo(first.metrics.controlOverallMicro, ANCHOR_KIND_PRIOR_MICRO, 1e-9),
-    "control policy drifted from the frozen kind-prior micro anchor", {
-      observed: first.metrics.controlOverallMicro, expected: ANCHOR_KIND_PRIOR_MICRO,
-    });
+  // Pre-Repair-1 within-kind anchors must be reproduced (Repair only removes a
+  // term that is constant within a kind).
   requireCondition(closeTo(first.metrics.uniqueChangeFloorMonolithicAnchor, ANCHOR_V2_MONOLITHIC_CHANGEFLOOR, 1e-9),
     "V2 monolithic changeFloor anchor drifted from the frozen PR-5.25g value", {
       observed: first.metrics.uniqueChangeFloorMonolithicAnchor, expected: ANCHOR_V2_MONOLITHIC_CHANGEFLOOR,
+    });
+  requireCondition(closeTo(first.metrics.uniqueChangeFloorTreatment, ANCHOR_RESIDUAL_CHANGEFLOOR, 1e-9),
+    "residual changeFloor within-kind rank drifted from the pre-Repair value", {
+      observed: first.metrics.uniqueChangeFloorTreatment, expected: ANCHOR_RESIDUAL_CHANGEFLOOR,
+    });
+  requireCondition(closeTo(first.metrics.uniqueBattleTreatment, ANCHOR_RESIDUAL_BATTLE, 1e-9),
+    "residual battle within-kind rank drifted from the pre-Repair value", {
+      observed: first.metrics.uniqueBattleTreatment, expected: ANCHOR_RESIDUAL_BATTLE,
     });
   requireCondition((first.rollouts !== null) === first.rolloutEligible,
     "rollouts must run if and only if both offline gates pass");
@@ -106,9 +143,10 @@ function main() {
     command: process.argv.join(" "),
     invariants: {
       deterministic: "pass",
-      compositionDegeneratesToKindPrior: "pass",
-      controlIsExactlyKindPrior: "pass",
-      v2MonolithicAnchorReproduced: "pass",
+      kindMassInvariant: "pass",
+      residualOnlyRedistributesWithinKind: "pass",
+      twoStageSamplerMatchesSoftmax: "pass",
+      withinKindAnchorsReproduced: "pass",
       featureSchemaUnchanged: "pass",
       corpusAndSplitUnchanged: "pass",
       noTunableWeights: "pass",
@@ -128,7 +166,8 @@ function main() {
   console.log(`  preflight                  : same-kind supervised ${p.sameKindSupervisedDecisions}/${p.trainDecisions} decisions, ${p.pairCount} pairs, ${p.distinctSupervisedSignatures} signatures`);
   console.log(`  preflight by kind          : battle ${p.byKind.battle.supervisedDecisions}/${p.byKind.battle.decisions} (${p.byKind.battle.distinctSignatures} sigs), changeFloor ${p.byKind.changeFloor.supervisedDecisions}/${p.byKind.changeFloor.decisions} (${p.byKind.changeFloor.distinctSignatures} sigs)`);
   console.log(`  blocked                    : ${p.blocked}`);
-  console.log(`  overall micro              : CONTROL ${m.controlOverallMicro.toFixed(4)} -> TREATMENT ${m.treatmentOverallMicro.toFixed(4)}`);
+  console.log(`  overall micro              : CONTROL(proper kind-prior) ${m.controlOverallMicro.toFixed(4)} -> TREATMENT ${m.treatmentOverallMicro.toFixed(4)}`);
+  console.log(`  historical control ref     : ${m.historicalControlOverallReference.toFixed(4)} (pre-Repair buggy per-action log P(k); NOT the control anchor)`);
   console.log(`  unique changeFloor         : monolithic anchor ${m.uniqueChangeFloorMonolithicAnchor.toFixed(4)} -> residual ${m.uniqueChangeFloorTreatment.toFixed(4)} (n=${m.uniqueChangeFloorCount})`);
   console.log(`  unique battle (report)     : ${m.uniqueBattleTreatment.toFixed(4)} (n=${m.uniqueBattleCount})`);
   console.log(`  unique aggregate (report)  : ${m.uniqueAggregateTreatment.toFixed(4)}`);
@@ -140,6 +179,8 @@ function main() {
     const t = first.rollouts.treatment;
     console.log(`  CONTROL   kind-prior (${c.rollouts}) : blueKing ${c.terminalBlueKing}, MT3 ${c.mt3Reach}, MT4 ${c.mt4Reach}, MT5 ${c.mt5Reach}, maxFloor ${JSON.stringify(c.maxFloorHistogram)}`);
     console.log(`  TREATMENT hierarchical(${t.rollouts}) : blueKing ${t.terminalBlueKing}, MT3 ${t.mt3Reach}, MT4 ${t.mt4Reach}, MT5 ${t.mt5Reach}, maxFloor ${JSON.stringify(t.maxFloorHistogram)}`);
+    console.log(`  CONTROL   kind histogram   : ${JSON.stringify(first.rollouts.controlSelectedKindHistogram)}`);
+    console.log(`  TREATMENT kind histogram   : ${JSON.stringify(first.rollouts.treatmentSelectedKindHistogram)}`);
   } else {
     console.log("  rollouts                   : not launched (offline gates not both passed)");
   }
