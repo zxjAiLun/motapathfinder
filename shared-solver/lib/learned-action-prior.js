@@ -263,6 +263,13 @@ function changeFloorDestinationDelta(state, action, context) {
   return clamp((destinationOrdinal - currentOrdinal) / 10, -1, 1);
 }
 
+function actionKindIndexOfVector(vector) {
+  for (let index = 0; index < FEATURE_SCHEMA.actionKinds.length; index += 1) {
+    if (vector[STATE_FEATURE_COUNT + index] === 1) return index;
+  }
+  return FEATURE_SCHEMA.actionKinds.length - 1;
+}
+
 // V2 = V1's 40 features (same order and values) plus changeFloorDestinationDelta
 // appended last, so the MLP's first 40 input columns stay comparable to V1.
 function encodeFeaturesV2(state, action, context) {
@@ -420,6 +427,10 @@ function trainModel(examples, config) {
   const cache = buildFeatureCache(examples);
   const featureDim = settings.featureDim == null ? FEATURE_DIM : settings.featureDim;
   const model = new DeterministicMlp(featureDim, settings.hiddenDim, settings.seed, settings.mlpInit);
+  // "monolithic" (default, unchanged) uses every other legal action as a
+  // negative; "same-kind" (PR-5.25h) uses only same-kind legal negatives so the
+  // residual scorer is never asked to learn cross-kind calibration.
+  const sameKindOnly = settings.supervision === "same-kind";
   const rng = mulberry32((settings.seed ^ 0x9e3779b9) >>> 0);
   let lastLoss = null;
   for (let epoch = 0; epoch < settings.epochs; epoch += 1) {
@@ -428,14 +439,17 @@ function trainModel(examples, config) {
     let pairCount = 0;
     for (const cacheIndex of order) {
       const entry = cache[cacheIndex];
+      const chosenVector = entry.vectors[entry.example.chosenIndex];
+      const chosenKind = sameKindOnly ? actionKindIndexOfVector(chosenVector) : null;
       const negatives = [];
       for (let index = 0; index < entry.vectors.length; index += 1) {
-        if (index !== entry.example.chosenIndex) negatives.push(index);
+        if (index === entry.example.chosenIndex) continue;
+        if (sameKindOnly && actionKindIndexOfVector(entry.vectors[index]) !== chosenKind) continue;
+        negatives.push(index);
       }
       if (negatives.length === 0) continue;
       model.resetGradients();
       const weight = 1 / negatives.length;
-      const chosenVector = entry.vectors[entry.example.chosenIndex];
       for (const negativeIndex of negatives) {
         epochLoss += model.accumulatePair(chosenVector, entry.vectors[negativeIndex], weight);
         pairCount += 1;
@@ -444,7 +458,7 @@ function trainModel(examples, config) {
     }
     lastLoss = pairCount > 0 ? epochLoss / pairCount : null;
   }
-  return { model, settings, finalLoss: lastLoss, examples: examples.length };
+  return { model, settings, finalLoss: lastLoss, examples: examples.length, supervision: sameKindOnly ? "same-kind" : "monolithic" };
 }
 
 // Expected rank of the recorded chosen action among the legal set.  Ties are
@@ -712,6 +726,7 @@ module.exports = {
   MT5_ORDINAL,
   STATE_FEATURE_COUNT,
   aggregateArm,
+  actionKindIndexOfVector,
   buildFeatureCache,
   changeFloorDestinationDelta,
   encodeFeatures,

@@ -67,10 +67,7 @@ function aggregateByLayer(routeResults, layer) {
 // The first STATE_FEATURE_COUNT action features are the action-kind one-hot, so
 // the kind of any encoded action can be recovered without storing it again.
 function kindIndexOfVector(vector) {
-  for (let index = 0; index < prior.FEATURE_SCHEMA.actionKinds.length; index += 1) {
-    if (vector[prior.STATE_FEATURE_COUNT + index] === 1) return index;
-  }
-  return prior.FEATURE_SCHEMA.actionKinds.length - 1;
+  return prior.actionKindIndexOfVector(vector);
 }
 
 function buildKindPriorModel(trainEntries) {
@@ -81,6 +78,8 @@ function buildKindPriorModel(trainEntries) {
   const probability = counts.map((count) => (count + 1) / (total + kinds.length));
   return {
     kindCounts: kinds.reduce((map, kind, index) => { map[kind] = counts[index]; return map; }, {}),
+    kinds,
+    probability,
     model: { score: (vector) => probability[kindIndexOfVector(vector)] },
   };
 }

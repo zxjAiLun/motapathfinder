@@ -123,6 +123,7 @@ const LEARNED = new Set([
   "learned-prior-within-kind-diagnostic.js",
   "learned-prior-estimate-baseline-probe.js",
   "learned-prior-changefloor-repair-experiment.js",
+  "learned-prior-hierarchical-residual-experiment.js",
 ]);
 
 const modules = {};
@@ -1515,7 +1516,14 @@ const TEST_OVERRIDES = {
     "allowsNotFound": false,
     "requiresStrictReplay": true,
     "cleanCheckout": true,
-    "notes": "PR-5.25g V1-vs-V2 representation A/B: V2 adds exactly one action feature (changeFloorDestinationDelta, resolved via floorOrder, fail-closed) while capacity/objective/corpus/recipe/seed stay frozen; gates on unique changeFloor rank < 0.5 and overall micro < kind-prior; rollouts (true MT5 blueKing terminal) only when both gates pass; asserts the V1 control still reproduces the frozen 5.25d/5.25e anchors"
+    "notes": "PR-5.25g V1-vs-V2 representation A/B: V2 adds exactly one action feature (changeFloorDestinationDelta, resolved via floorOrder, fail-closed) while width/depth/objective/corpus/recipe/seed stay frozen; gates on unique changeFloor rank < 0.5 and overall micro < kind-prior; rollouts (true MT5 blueKing terminal) only when both gates pass; asserts the V1 control still reproduces the frozen 5.25d/5.25e anchors"
+  },
+  "shared-solver/check-learned-prior-hierarchical-residual.js": {
+    "grade": "local-regression",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25h kind-prior + within-kind residual policy: same-kind-only pairwise supervision plus a fixed train kind prior with the residualCentered composition (flat residual reproduces log P(kind) exactly); preflight blocks on zero changeFloor same-kind supervision; gates on treatment micro < kind-prior control and treatment unique changeFloor < 0.5 and < the V2 monolithic anchor; same-round rollout with a kind-prior-only control and true MT5 blueKing terminal; asserts kind-prior and V2 anchors"
   }
 };
 
