@@ -712,9 +712,9 @@
     "shared-solver/lib/event-forward-search.js": {
       "id": "event-forward-search",
       "path": "shared-solver/lib/event-forward-search.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
+      "layer": "search/exploration",
+      "status": "exploration",
+      "role": "exploration-search",
       "correctnessSource": false,
       "tests": {
         "unit": false,
@@ -722,8 +722,7 @@
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
-      },
-      "notes": "auto-classified; refine in solver-manifest"
+      }
     },
     "shared-solver/lib/event-resolver.js": {
       "id": "event-resolver",
@@ -2730,6 +2729,21 @@
       },
       "notes": "auto-classified; refine in solver-manifest"
     },
+    "shared-solver/lib/transport-collapse.js": {
+      "id": "transport-collapse",
+      "path": "shared-solver/lib/transport-collapse.js",
+      "layer": "search/exploration",
+      "status": "exploration",
+      "role": "exploration-search",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/updown-candidate-policy.js": {
       "id": "updown-candidate-policy",
       "path": "shared-solver/lib/updown-candidate-policy.js",
@@ -4098,6 +4112,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4b Commit 3: single-Region TowerIR compile determinism, structure, shadow parity on representative corpus, observation isolation, immutability"
+    },
+    "shared-solver/check-transport-collapse.js": {
+      "grade": "diagnostic",
+      "allowsNotFound": true,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.25l transport-collapsed irreversible decision search: four correctness micros on a stub simulator (pure ping-pong collapses to zero strategic branches, first-arrive mutation stays strategic, one-way transport invents no return, macro chain expands to identical primitive execution) plus the real CHAOS-MT1 -> MT3 probe and, if it passes, the CHAOS-MT1 -> MT5 blueKing qualification, CONTROL = 5.25a event-forward search with the evaluator off, one search per child process; a not-found result is a preserved negative, not an infrastructure failure"
     },
     "shared-solver/check-walk-reachability-fast-path.js": {
       "grade": "local-regression",

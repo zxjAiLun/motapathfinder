@@ -84,6 +84,8 @@ const EXPLORATION = new Set([
   "frontier-features.js",
   "floor-scout.js",
   "floor-checkpoints.js",
+  "event-forward-search.js",
+  "transport-collapse.js",
 ]);
 const ROUTE = new Set([
   "route-store.js",
@@ -1540,6 +1542,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": true,
     "cleanCheckout": true,
     "notes": "PR-5.25j policy-guided untried-edge proposal in MCGS: sole change is the untried-edge proposer (uniform -> existing hierarchical policy) with BOTH arms on the 5.25b UCT backbone and UNIFORM rollout, H=96, budgets/graph/reward/backup/cycle handling untouched; proposer invariant exercises the real adapter (untried-only, no top-k, kind-mass over the untried subset, analytic-distribution frequency match, determinism); PRODUCT_GATE (found + strict replay) and PRIMARY_MECHANISM_GATE (treatment terminal > 0 or MT4/MT5 reach)"
+  },
+  "shared-solver/check-transport-collapse.js": {
+    "grade": "diagnostic",
+    "allowsNotFound": true,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25l transport-collapsed irreversible decision search: four correctness micros on a stub simulator (pure ping-pong collapses to zero strategic branches, first-arrive mutation stays strategic, one-way transport invents no return, macro chain expands to identical primitive execution) plus the real CHAOS-MT1 -> MT3 probe and, if it passes, the CHAOS-MT1 -> MT5 blueKing qualification, CONTROL = 5.25a event-forward search with the evaluator off, one search per child process; a not-found result is a preserved negative, not an infrastructure failure"
   }
 };
 

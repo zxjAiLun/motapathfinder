@@ -86,8 +86,9 @@ function hashStringToInt(str) {
 // Correct contract: progress is measured across the search region
 // [startFloorId .. goalFloorId], so a chaos-MT1 -> MT5 run gives MT1 = 0.00,
 // MT2 = 0.25, MT3 = 0.50, MT4 = 0.75, MT5 = 1.00.  The region is the contiguous
-// floorOrder slice [startIndex..goalIndex], so region ordinal and index
-// difference coincide and non-contiguous towers are still handled.
+// floorOrder slice [startIndex..goalIndex], i.e. arbitrary floor ids are
+// supported as long as they lie inside the ordered start->goal slice (it is not
+// a general non-contiguous region selector).
 //
 // Fail-closed: a missing start/goal floor, a goal that does not come after the
 // start, or an unmappable current floor throws instead of falling back to a

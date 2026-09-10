@@ -154,6 +154,11 @@ function createEventForwardSearch(simulator) {
     let stoppedReason = null;
     let goalNode = null;
     let peakRssMb = 0;
+    // PR-5.25l (additive telemetry only; search behaviour unchanged): deepest
+    // floor reached by an expanded node, so a NOT_FOUND run can still be
+    // compared against another abstraction's reach.
+    let deepestFloorOrdinal = 0;
+    const deepestFloorHistogram = {};
 
     // G33 digest tracking: expanded-key / accepted-key / duplicate-decision
     // sequences for representation equivalence comparison.
@@ -279,6 +284,13 @@ function createEventForwardSearch(simulator) {
       // Expand: ALL legal actions generated in BOTH arms (P1-1).
       expanded.add(nodeRecord.id);
       expansions += 1;
+      {
+        const floorId = nodeRecord.state.floorId;
+        const match = /^MT(\d+)$/.exec(String(floorId || ""));
+        const ordinal = match ? Number(match[1]) : 0;
+        deepestFloorHistogram[floorId] = (deepestFloorHistogram[floorId] || 0) + 1;
+        if (ordinal > deepestFloorOrdinal) deepestFloorOrdinal = ordinal;
+      }
       if (digestExpandedKeys) expandedKeys.push(nodeRecord.key);
 
       let actions = [];
@@ -424,6 +436,8 @@ function createEventForwardSearch(simulator) {
       evaluatorCalls,
       evaluatorWallMs,
       peakRssMb: Math.round(peakRssMb * 10) / 10,
+      deepestFloorOrdinal,
+      deepestFloorHistogram,
       // Iteration 2 memory telemetry
       memory: {
         fullStatesRetained,
