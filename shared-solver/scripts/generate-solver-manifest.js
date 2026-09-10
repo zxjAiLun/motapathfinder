@@ -118,6 +118,7 @@ const DIAG = new Set([
 const LEARNED = new Set([
   "learned-action-prior.js",
   "learned-prior-dataset.js",
+  "learned-prior-corpus-inventory.js",
 ]);
 
 const modules = {};
@@ -1476,6 +1477,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": true,
     "cleanCheckout": true,
     "notes": "PR-5.25c strict two-route fixture replay (exact pre/post/final state-key verification), provenance/witness exclusion inventory, deterministic pairwise-ranking MLP held-out sanity gate, and matched control/treatment rollouts; BLOCK_REAL_ROLLOUT is a preserved negative result"
+  },
+  "shared-solver/check-learned-prior-corpus-inventory.js": {
+    "grade": "diagnostic",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25d Step 0 read-only non-overlapping corpus inventory: multi-mode strict replay of fixtures+latest routes, decision identity (buildStateKey(state), chosen fingerprint), and TRAIN(final<=MT3) vs HELD-OUT(final>=MT4) unseen-decision analysis; no training and no rollouts"
   }
 };
 

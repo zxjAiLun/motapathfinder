@@ -1065,6 +1065,22 @@
       },
       "notes": "PR-5.25c learned action prior (deterministic pairwise-ranking MLP over strict-replayed fixture decisions); exploration only, never a route-closure or impossibility proof"
     },
+    "shared-solver/lib/learned-prior-corpus-inventory.js": {
+      "id": "learned-prior-corpus-inventory",
+      "path": "shared-solver/lib/learned-prior-corpus-inventory.js",
+      "layer": "search/exploration",
+      "status": "exploration",
+      "role": "exploration-search",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.25c learned action prior (deterministic pairwise-ranking MLP over strict-replayed fixture decisions); exploration only, never a route-closure or impossibility proof"
+    },
     "shared-solver/lib/learned-prior-dataset.js": {
       "id": "learned-prior-dataset",
       "path": "shared-solver/lib/learned-prior-dataset.js",
@@ -3060,6 +3076,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.25c strict two-route fixture replay (exact pre/post/final state-key verification), provenance/witness exclusion inventory, deterministic pairwise-ranking MLP held-out sanity gate, and matched control/treatment rollouts; BLOCK_REAL_ROLLOUT is a preserved negative result"
+    },
+    "shared-solver/check-learned-prior-corpus-inventory.js": {
+      "grade": "diagnostic",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.25d Step 0 read-only non-overlapping corpus inventory: multi-mode strict replay of fixtures+latest routes, decision identity (buildStateKey(state), chosen fingerprint), and TRAIN(final<=MT3) vs HELD-OUT(final>=MT4) unseen-decision analysis; no training and no rollouts"
     },
     "shared-solver/check-live-snapshot-normalization.js": {
       "grade": "local-regression",

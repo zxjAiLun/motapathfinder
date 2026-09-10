@@ -500,6 +500,7 @@ module.exports = {
   LearnedPriorDatasetError,
   PROJECT_ROOT,
   ROUTE_SCHEMA,
+  SOLVER_ROOT,
   TRAIN_ALLOWLIST,
   buildDataset,
   buildWitnessInventory,
