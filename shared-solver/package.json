@@ -179,6 +179,7 @@
     "audit:js": "node ../tools/audit-js-files.js",
     "check:learned-action-prior": "node check-learned-action-prior.js",
   "check:learned-prior-corpus-inventory": "node check-learned-prior-corpus-inventory.js",
+  "check:learned-prior-nonoverlap-experiment": "node check-learned-prior-nonoverlap-experiment.js",
   "check:no-tower-solver-js": "node ../tools/audit-js-files.js --check-no-tower-solver-js",
     "check:public-layer-boundaries": "node ../tools/check-agent-boundaries.js --public-layer-dev",
     "check:agent-boundaries": "node ../tools/check-agent-boundaries.js",

@@ -50,11 +50,11 @@ function main() {
   console.log(`  key modes                 : ${JSON.stringify(report.modeHistogram)}`);
   console.log(`  distinct routes           : ${report.distinctRoutes} (duplicates dropped: ${report.duplicateRoutes.length})`);
   console.log(`  distinct signatures       : ${report.distinctSignatures}`);
-  console.log(`  TRAIN  (final <= MT3)     : ${a.trainFamily.routeCount} routes / ${a.trainFamily.decisions} decisions / ${a.trainFamily.distinctSignatures} signatures`);
-  console.log(`  HELDOUT(final >= MT4)     : ${a.heldOutFamily.routeCount} routes / ${a.heldOutFamily.decisions} decisions / ${a.heldOutFamily.distinctUnseenSignatures} distinct unseen signatures`);
+  console.log(`  TRAIN  (maxReached <= MT3): ${a.trainFamily.routeCount} routes / ${a.trainFamily.decisions} decisions / ${a.trainFamily.distinctSignatures} signatures`);
+  console.log(`  HELDOUT(maxReached >= MT4): ${a.heldOutFamily.routeCount} routes (near ${a.heldOutFamily.nearRouteCount} / deep ${a.heldOutFamily.deepRouteCount}) / ${a.heldOutFamily.decisions} decisions / ${a.heldOutFamily.distinctUnseenSignatures} distinct unseen signatures`);
   console.log(`  unseen decision sum       : ${a.heldOutFamily.unseenDecisionSum} | max on one held-out route: ${a.maxUnseenDecisionsOnAnyHeldOutRoute}`);
   for (const route of a.heldOutFamily.routes) {
-    console.log(`    unseen ${String(route.unseenDecisions).padStart(3)}/${String(route.decisions).padStart(3)} (${(route.unseenFraction * 100).toFixed(0)}%) final=${route.finalFloor} ${route.relPath.replace("shared-solver/routes/", "")}`);
+    console.log(`    ${route.layer.padEnd(4)} unseen ${String(route.unseenDecisions).padStart(3)}/${String(route.decisions).padStart(3)} (${(route.unseenFraction * 100).toFixed(0)}%) final=${route.finalFloor} max=${route.maxReachedFloorOrdinal} ${route.relPath.replace("shared-solver/routes/", "")}`);
   }
   console.log(`  not-replayed histogram    : ${JSON.stringify(report.failureHistogram)}`);
   console.log(`  VERDICT                   : ${a.verdict}`);

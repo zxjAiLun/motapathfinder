@@ -119,6 +119,7 @@ const LEARNED = new Set([
   "learned-action-prior.js",
   "learned-prior-dataset.js",
   "learned-prior-corpus-inventory.js",
+  "learned-prior-nonoverlap-experiment.js",
 ]);
 
 const modules = {};
@@ -1483,7 +1484,14 @@ const TEST_OVERRIDES = {
     "allowsNotFound": false,
     "requiresStrictReplay": true,
     "cleanCheckout": true,
-    "notes": "PR-5.25d Step 0 read-only non-overlapping corpus inventory: multi-mode strict replay of fixtures+latest routes, decision identity (buildStateKey(state), chosen fingerprint), and TRAIN(final<=MT3) vs HELD-OUT(final>=MT4) unseen-decision analysis; no training and no rollouts"
+    "notes": "PR-5.25d Step 0 read-only non-overlapping corpus inventory: multi-mode strict replay of fixtures+latest routes, decision identity (buildStateKey(state), chosen fingerprint), and TRAIN/HELD-OUT unseen-decision analysis split by MAX REACHED floor (not final floor); no training and no rollouts"
+  },
+  "shared-solver/check-learned-prior-nonoverlap-experiment.js": {
+    "grade": "local-regression",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25d Step 1 frozen-model non-overlapping generalization probe: trains the unchanged PR-5.25c model on the max-reached-floor TRAIN family, gates micro rank on non-overlapping held-out decisions, and reports macro/per-route plus a kind-prior baseline control; no rollouts"
   }
 };
 

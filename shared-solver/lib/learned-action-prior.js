@@ -303,12 +303,17 @@ function shuffledOrder(length, rng) {
 }
 
 // Cache one feature vector per (example, action) so training folds and rank
-// evaluation never encode twice.
+// evaluation never encode twice.  Entries may either carry an already-encoded
+// `vectors` array (PR-5.25d Step 1 corpus, which never re-stores raw states) or
+// a live `state` + `legalActions` pair (PR-5.25c dataset).
 function buildFeatureCache(examples) {
-  return examples.map((example) => ({
-    example,
-    vectors: example.legalActions.map((action) => encodeFeatures(example.state, normalizeAction(action))),
-  }));
+  return examples.map((example) => {
+    if (Array.isArray(example.vectors)) return { example, vectors: example.vectors };
+    return {
+      example,
+      vectors: example.legalActions.map((action) => encodeFeatures(example.state, normalizeAction(action))),
+    };
+  });
 }
 
 function trainModel(examples, config) {

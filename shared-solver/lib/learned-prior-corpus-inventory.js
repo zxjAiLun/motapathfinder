@@ -1,9 +1,8 @@
 "use strict";
 
-// PR-5.25d Step 0: non-overlapping trajectory corpus inventory.
+// PR-5.25d Step 0/1 corpus layer: non-overlapping trajectory inventory.
 //
-// This module is READ-ONLY with respect to production solver behaviour.  It
-// answers one bounded question before any training happens:
+// READ-ONLY with respect to production solver behaviour.  It answers:
 //
 //   Among the existing legal routes, is there a (TRAIN family, HELD-OUT family)
 //   split whose held-out decisions do NOT appear in TRAIN?
@@ -14,6 +13,17 @@
 //
 // where the chosen action is the recorded decision matched to an enumerated
 // primitive action and disambiguated by the recorded post-state key.
+//
+// QUALIFICATION-FAMILY MEMBERSHIP IS BY MAX REACHED FLOOR, NOT FINAL FLOOR.
+// The solver supports cross-floor return / floorFly, so a route may go
+// MT1 -> MT2 -> MT3 -> MT4 -> back to MT3 and still end with finalFloor = MT3
+// while its decisions already contain MT4+ behaviour.  Classification therefore
+// uses the maximum floor ordinal observed on any reconstructed state along the
+// route:
+//
+//   TRAIN_ELIGIBLE     = chaos MT1 start AND maxReachedFloorOrdinal <= 3
+//   HELD_OUT_ELIGIBLE  = chaos MT1 start AND maxReachedFloorOrdinal >= 4
+//                        (near layer: == 4, deep layer: >= 5)
 //
 // Strict replay note: route records were written by several solver
 // generations, so three historical key normalizations coexist.  The correct
@@ -35,6 +45,7 @@ const path = require("path");
 
 const { buildStateKey } = require("./state-key");
 const { normalizeAction } = require("./route-store");
+const { encodeFeatures } = require("./learned-action-prior");
 const {
   SOLVER_ROOT,
   createSimulator,
@@ -92,8 +103,12 @@ function listRouteFiles() {
 }
 
 // Strict replay of one route from the chaos MT1 initial state.  Returns either
-// { ok: true, signatures, ... } or { ok: false, reason }.
-function replayRouteFile(project, absPath) {
+// { ok: true, signatures, maxReachedFloorOrdinal, ... } or { ok: false, reason }.
+// When `captureDecisions` is true each replayed decision also carries the
+// encoded feature vectors for its full legal action set plus the chosen index,
+// so downstream training never needs to re-store or re-encode raw states.
+function replayRouteFile(project, absPath, options) {
+  const config = options || {};
   const relPath = path.relative(REPO_ROOT, absPath).split(path.sep).join("/");
   const record = JSON.parse(fs.readFileSync(absPath, "utf8"));
   const snapshot = (record.start && record.start.snapshot) || {};
@@ -109,8 +124,10 @@ function replayRouteFile(project, absPath) {
   const keyOf = (candidateState) => normalizedRouteKey(candidateState, floorSet, mode);
   const decisions = Array.isArray(record.decisions) ? record.decisions : [];
   const signatures = [];
+  const decisionRecords = [];
   const kinds = {};
   let ambiguousResolved = 0;
+  let maxReachedFloorOrdinal = floorOrdinalValue(state.floorId);
 
   for (const decision of decisions) {
     if (keyOf(state) !== decision.preStateKey) {
@@ -132,12 +149,28 @@ function replayRouteFile(project, absPath) {
       return { relPath, ok: false, reason: `ambiguous(${reproducing.length}/${aliasIndexes.length})@${decision.index}`, mode };
     }
     if (aliasIndexes.length > 1) ambiguousResolved += 1;
-    signatures.push(`${buildStateKey(state)}|${normalized[reproducing[0]].fingerprint}`);
+
+    const signature = `${buildStateKey(state)}|${normalized[reproducing[0]].fingerprint}`;
+    signatures.push(signature);
     kinds[decision.kind] = (kinds[decision.kind] || 0) + 1;
+    if (config.captureDecisions) {
+      decisionRecords.push({
+        signature,
+        decisionIndex: decision.index,
+        floorId: state.floorId,
+        floorOrdinal: floorOrdinalValue(state.floorId),
+        kind: decision.kind,
+        chosenIndex: reproducing[0],
+        legalActionCount: normalized.length,
+        vectors: normalized.map((action) => encodeFeatures(state, action)),
+      });
+    }
+
     state = simulator.applyAction(state, actions[reproducing[0]], { storeRoute: false });
     if (keyOf(state) !== decision.postStateKey) {
       return { relPath, ok: false, reason: `post-mismatch@${decision.index}`, mode };
     }
+    maxReachedFloorOrdinal = Math.max(maxReachedFloorOrdinal, floorOrdinalValue(state.floorId));
   }
 
   return {
@@ -153,6 +186,12 @@ function replayRouteFile(project, absPath) {
     ambiguousResolved,
     kinds,
     signatures,
+    decisionRecords,
+    maxReachedFloorOrdinal,
+    reachedMt4Plus: maxReachedFloorOrdinal >= QUALIFICATION_MIN_FLOOR,
+    layer: maxReachedFloorOrdinal >= QUALIFICATION_MIN_FLOOR
+      ? (maxReachedFloorOrdinal === QUALIFICATION_MIN_FLOOR ? "near" : "deep")
+      : null,
   };
 }
 
@@ -178,18 +217,25 @@ function signatureUniverse(routes) {
   return universe;
 }
 
-// TRAIN = chaos MT1 -> final floor <= MT3 (excludes the MT4/MT5 qualification
-// family).  HELD-OUT = final floor >= MT4 qualification family.
+// TRAIN = chaos MT1 routes whose maximum reached floor is <= MT3.
+// HELD-OUT = chaos MT1 routes that reach MT4+ (near == MT4, deep >= MT5).
+function splitByMaxReachedFloor(distinctRoutes) {
+  const train = distinctRoutes.filter((route) => !route.reachedMt4Plus);
+  const heldOut = distinctRoutes.filter((route) => route.reachedMt4Plus);
+  return { train, heldOut };
+}
+
 function analyzeNonOverlap(distinctRoutes, options) {
   const criterion = Object.assign({}, DEFAULT_CRITERION, options || {});
-  const train = distinctRoutes.filter((route) => floorOrdinalValue(route.finalFloor) <= 3);
-  const heldOut = distinctRoutes.filter((route) => floorOrdinalValue(route.finalFloor) >= QUALIFICATION_MIN_FLOOR);
+  const { train, heldOut } = splitByMaxReachedFloor(distinctRoutes);
   const trainSignatures = signatureUniverse(train);
   const heldOutRows = heldOut.map((route) => {
     const unseen = route.signatures.filter((signature) => !trainSignatures.has(signature));
     return {
       relPath: route.relPath,
       finalFloor: route.finalFloor,
+      maxReachedFloorOrdinal: route.maxReachedFloorOrdinal,
+      layer: route.layer,
       mode: route.mode,
       decisions: route.decisions,
       unseenDecisions: unseen.length,
@@ -200,10 +246,17 @@ function analyzeNonOverlap(distinctRoutes, options) {
   const distinctUnseen = new Set();
   for (const row of heldOutRows) for (const signature of row.unseenSignatures) distinctUnseen.add(signature);
   const maxUnseen = heldOutRows.reduce((max, row) => Math.max(max, row.unseenDecisions), 0);
+  const nearCount = heldOutRows.filter((row) => row.layer === "near").length;
+  const deepCount = heldOutRows.filter((row) => row.layer === "deep").length;
   const sufficient = distinctUnseen.size >= criterion.minDistinctUnseenSignatures
     && maxUnseen >= criterion.minUnseenForAtLeastOneHeldOutRoute;
   return {
     criterion,
+    splitRule: {
+      train: "chaos MT1 start AND maxReachedFloorOrdinal <= 3",
+      heldOut: "chaos MT1 start AND maxReachedFloorOrdinal >= 4",
+      note: "membership uses the maximum floor reached during replay, not the final floor (cross-floor return / floorFly safe)",
+    },
     trainFamily: {
       routeCount: train.length,
       decisions: train.reduce((sum, route) => sum + route.decisions, 0),
@@ -211,6 +264,7 @@ function analyzeNonOverlap(distinctRoutes, options) {
       routes: train.map((route) => ({
         relPath: route.relPath,
         finalFloor: route.finalFloor,
+        maxReachedFloorOrdinal: route.maxReachedFloorOrdinal,
         mode: route.mode,
         decisions: route.decisions,
         sha256: route.sha256,
@@ -218,12 +272,16 @@ function analyzeNonOverlap(distinctRoutes, options) {
     },
     heldOutFamily: {
       routeCount: heldOut.length,
+      nearRouteCount: nearCount,
+      deepRouteCount: deepCount,
       decisions: heldOutRows.reduce((sum, row) => sum + row.decisions, 0),
       distinctUnseenSignatures: distinctUnseen.size,
       unseenDecisionSum: heldOutRows.reduce((sum, row) => sum + row.unseenDecisions, 0),
       routes: heldOutRows.map((row) => ({
         relPath: row.relPath,
         finalFloor: row.finalFloor,
+        maxReachedFloorOrdinal: row.maxReachedFloorOrdinal,
+        layer: row.layer,
         mode: row.mode,
         decisions: row.decisions,
         unseenDecisions: row.unseenDecisions,
@@ -239,7 +297,9 @@ function inventoryCorpus(options) {
   const config = options || {};
   const project = config.project || loadGameProject();
   const files = listRouteFiles();
-  const results = files.map((absPath) => replayRouteFile(project, absPath));
+  const results = files.map((absPath) => replayRouteFile(project, absPath, {
+    captureDecisions: Boolean(config.captureDecisions),
+  }));
   const replayed = results.filter((result) => result.ok);
   const { distinct, duplicates } = dedupeBySignatureSequence(replayed);
   const analysis = analyzeNonOverlap(distinct, config.criterion);
@@ -263,6 +323,7 @@ function inventoryCorpus(options) {
     distinctRoutes: distinct.length,
     duplicateRoutes: duplicates,
     distinctSignatures: signatureUniverse(distinct).size,
+    distinctRouteRecords: distinct,
     analysis,
   };
 }
@@ -279,4 +340,5 @@ module.exports = {
   normalizedRouteKey,
   replayRouteFile,
   signatureUniverse,
+  splitByMaxReachedFloor,
 };
