@@ -75,6 +75,52 @@ function hashStringToInt(str) {
   return h >>> 0;
 }
 
+// PR-5.25k: search-REGION-RELATIVE progress resolution.
+//
+// The 5.25b comment declared "MT1 = 0.0 ... MT5 = 1.0", but the implementation
+// used ABSOLUTE project floorOrder indices (idx / indexOf(goalFloor)).  That
+// gave MT1 a non-zero reward and compressed the MT1->MT5 dynamic range, which
+// matters because auxProgress is backed up into edge.W_aux and consumed by UCT
+// whenever goalReward is 0.
+//
+// Correct contract: progress is measured across the search region
+// [startFloorId .. goalFloorId], so a chaos-MT1 -> MT5 run gives MT1 = 0.00,
+// MT2 = 0.25, MT3 = 0.50, MT4 = 0.75, MT5 = 1.00.  The region is the contiguous
+// floorOrder slice [startIndex..goalIndex], so region ordinal and index
+// difference coincide and non-contiguous towers are still handled.
+//
+// Fail-closed: a missing start/goal floor, a goal that does not come after the
+// start, or an unmappable current floor throws instead of falling back to a
+// global index.
+function createRegionProgressResolver(floorOrder, startFloorId, goalFloorId) {
+  if (!Array.isArray(floorOrder) || floorOrder.length === 0) {
+    throw new Error("region progress requires a non-empty floorOrder (fail closed)");
+  }
+  if (!startFloorId) throw new Error("region progress requires a start floor id (fail closed)");
+  if (!goalFloorId) throw new Error("region progress requires a goal floor id (fail closed)");
+  const startIndex = floorOrder.indexOf(startFloorId);
+  if (startIndex < 0) throw new Error(`region start floor ${startFloorId} is not in floorOrder (fail closed)`);
+  const goalIndex = floorOrder.indexOf(goalFloorId);
+  if (goalIndex < 0) throw new Error(`region goal floor ${goalFloorId} is not in floorOrder (fail closed)`);
+  if (goalIndex <= startIndex) {
+    throw new Error(`region goal floor ${goalFloorId} must come after start floor ${startFloorId} (fail closed)`);
+  }
+  const span = goalIndex - startIndex;
+  return {
+    startFloorId,
+    goalFloorId,
+    startIndex,
+    goalIndex,
+    span,
+    regionFloors: floorOrder.slice(startIndex, goalIndex + 1),
+    progressOf(floorId) {
+      const index = floorOrder.indexOf(floorId);
+      if (index < 0) throw new Error(`current floor ${floorId} cannot be mapped into floorOrder (fail closed)`);
+      return Math.min(1, Math.max(0, (index - startIndex) / span));
+    },
+  };
+}
+
 /**
  * Create an MCGS search instance.
  *
@@ -141,20 +187,15 @@ function createMCGS(simulator, options) {
   function search(initialState, terminalGoal) {
     const startedAt = Date.now();
 
-    // Floor normalization for auxProgress.
+    // PR-5.25k: region-relative floor normalization for auxProgress.
     const floorOrder = (simulator.project && simulator.project.floorOrder) || [];
-    const terminalFloorIndex = terminalGoal && terminalGoal.floorId
-      ? floorOrder.indexOf(terminalGoal.floorId)
-      : floorOrder.length > 0 ? floorOrder.length - 1 : 0;
+    const region = createRegionProgressResolver(
+      floorOrder,
+      initialState && initialState.floorId,
+      terminalGoal && terminalGoal.floorId,
+    );
 
-    // PR-5.25b design contract: MT1 = 0.0, ..., MT5 = 1.0 (first floor = 0,
-    // terminal floor = 1). Repair 1: was (idx+1)/(terminal+1) which made
-    // MT1=0.2 instead of 0.0.
-    const auxProgressOf = (state) => {
-      const idx = floorOrder.indexOf(state.floorId);
-      if (idx < 0 || terminalFloorIndex <= 0) return 0;
-      return Math.min(1, Math.max(0, idx / terminalFloorIndex));
-    };
+    const auxProgressOf = (state) => region.progressOf(state.floorId);
 
     // ---- Root ----
     const rootState = cloneState(initialState);
@@ -189,6 +230,10 @@ function createMCGS(simulator, options) {
     let goalApplyActions = null;
     let goalIterations = null;
     let peakRssMb = 0;
+    const startingRssMb = Math.round((process.memoryUsage().rss / (1024 * 1024)) * 10) / 10;
+    // PR-5.25k mechanism telemetry: confirm the repaired progress values really
+    // enter the search (one entry per simulation backup).
+    const auxProgressValueHistogram = {};
     // PR-5.25j telemetry: which action kinds got expanded (untried proposer
     // effect), and the deepest floor actually reached.
     const expandedActionKindHistogram = {};
@@ -508,6 +553,9 @@ function createMCGS(simulator, options) {
       else if (termination === "CYCLE_TRUNCATED") cycleTruncatedRollouts += 1;
       else horizonTruncatedRollouts += 1;
 
+      const auxKey = String(auxProgress);
+      auxProgressValueHistogram[auxKey] = (auxProgressValueHistogram[auxKey] || 0) + 1;
+
       // Goal found
       if (goalReward === 1 && !goalFound) {
         goalFound = true;
@@ -529,7 +577,7 @@ function createMCGS(simulator, options) {
 
     // ---- ROLLOUT_RETURN_DIVERSITY diagnostics ----
     const maxAux = auxProgresses.length > 0 ? Math.max(...auxProgresses) : 0;
-    const deepestFloorIndex = Math.round(maxAux * terminalFloorIndex);
+    const deepestFloorIndex = Math.round(maxAux * region.span) + region.startIndex;
     const deepestFloorId = floorOrder[deepestFloorIndex] || null;
     const uniqueGoalBuckets = new Set(goalRewards.map((v) => v === 1 ? "hit" : "miss"));
     const uniqueAuxBuckets = new Set(auxProgresses.map((v) => Math.round(v * 20) / 20));
@@ -547,6 +595,15 @@ function createMCGS(simulator, options) {
       stoppedReason,
       wallMs: Date.now() - startedAt,
       peakRssMb: Math.round(peakRssMb * 10) / 10,
+      startingRssMb,
+      region: {
+        startFloorId: region.startFloorId,
+        goalFloorId: region.goalFloorId,
+        startIndex: region.startIndex,
+        goalIndex: region.goalIndex,
+        span: region.span,
+        regionFloors: region.regionFloors,
+      },
       telemetry: {
         searchIterations,
         applyActionCalls,
@@ -562,6 +619,8 @@ function createMCGS(simulator, options) {
         expandedActionKindHistogram,
         deepestFloorOrdinal: deepestFloorIndex,
         deepestFloorId,
+        auxProgressValueHistogram,
+        distinctAuxProgressValues: Object.keys(auxProgressValueHistogram).length,
         timeToFirstGoal: goalWallMs,
         applyActionsToFirstGoal: goalApplyActions,
         iterationsToFirstGoal: goalIterations,
@@ -583,6 +642,7 @@ function createMCGS(simulator, options) {
 module.exports = {
   createMCGS,
   MCGS_PARAMS,
+  createRegionProgressResolver,
   createSeededRng,
   hashStringToInt,
 };

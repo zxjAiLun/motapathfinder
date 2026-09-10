@@ -31,7 +31,7 @@ const { spawnSync } = require("child_process");
 const { loadProject } = require("./lib/project-loader");
 const { StaticSimulator } = require("./lib/simulator");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
-const { createMCGS, createSeededRng } = require("./lib/mcgs");
+const { createMCGS, createSeededRng, createRegionProgressResolver } = require("./lib/mcgs");
 const inventory = require("./lib/learned-prior-corpus-inventory");
 const experiment = require("./lib/learned-prior-nonoverlap-experiment");
 const prior = require("./lib/learned-action-prior");
@@ -215,6 +215,46 @@ function deserializeModel(payload) {
   return model;
 }
 
+// PR-5.25k: the corrected progress contract must hold on the REAL project
+// floorOrder (computed, never hardcoded), and the fail-closed branches must
+// actually throw.
+function checkRegionProgressContract(project, simulator) {
+  const floorOrder = project.floorOrder || [];
+  const startFloorId = simulator.createInitialState({ rank: "chaos" }).floorId;
+  const resolver = createRegionProgressResolver(floorOrder, startFloorId, "MT5");
+  const expected = { MT1: 0, MT2: 0.25, MT3: 0.5, MT4: 0.75, MT5: 1 };
+  const observed = {};
+  let matchesContract = true;
+  for (const [floorId, value] of Object.entries(expected)) {
+    observed[floorId] = resolver.progressOf(floorId);
+    if (Math.abs(observed[floorId] - value) > 1e-12) matchesContract = false;
+  }
+  const failClosedCases = [
+    { start: "MTX", goal: "MT5", label: "missing-start" },
+    { start: "MT1", goal: "MTX", label: "missing-goal" },
+    { start: "MT5", goal: "MT1", label: "goal-not-after-start" },
+    { start: null, goal: "MT5", label: "null-start" },
+    { start: "MT1", goal: null, label: "null-goal" },
+  ];
+  const failClosed = failClosedCases.map((testCase) => {
+    let threw = false;
+    try { createRegionProgressResolver(floorOrder, testCase.start, testCase.goal); } catch (error) { threw = true; }
+    return { ...testCase, threw };
+  });
+  return {
+    startFloorId,
+    regionFloors: resolver.regionFloors,
+    startIndex: resolver.startIndex,
+    goalIndex: resolver.goalIndex,
+    span: resolver.span,
+    observed,
+    expected,
+    matchesContract,
+    failClosed,
+    allFailClosed: failClosed.every((testCase) => testCase.threw),
+  };
+}
+
 function deepestFacts(run, floorOrder) {
   const deepest = run.telemetry.deepestFloorOrdinal;
   return {
@@ -232,6 +272,10 @@ function deepestFacts(run, floorOrder) {
     reachedMt5: typeof deepest === "number" && deepest >= floorOrder.indexOf("MT5"),
     expandedActionKindHistogram: run.telemetry.expandedActionKindHistogram,
     peakRssMb: run.peakRssMb,
+    startingRssMb: run.startingRssMb,
+    regionFloors: run.region && run.region.regionFloors,
+    distinctAuxProgressValues: run.telemetry.distinctAuxProgressValues,
+    auxProgressValueHistogram: run.telemetry.auxProgressValueHistogram,
   };
 }
 
@@ -350,6 +394,13 @@ function main() {
   const simulator = makeSimulator(project);
 
   const invariant = checkProposerInvariant(project, simulator);
+  const regionContract = checkRegionProgressContract(project, simulator);
+  requireCondition(regionContract.matchesContract,
+    "PR-5.25k: corrected progress must map MT1=0.00, MT2=0.25, MT3=0.50, MT4=0.75, MT5=1.00 on the real floorOrder",
+    regionContract);
+  requireCondition(regionContract.allFailClosed,
+    "PR-5.25k: unmappable start/goal floors must fail closed (no global-index fallback)",
+    regionContract);
   requireCondition(invariant.returnsUntriedOnly, "invariant: proposer must only return untried actions", invariant);
   requireCondition(invariant.kindMassMatchesNormalisedAvailablePrior, "invariant: kind mass over the untried subset must equal the renormalised available-kind prior", invariant);
   requireCondition(invariant.everyUntriedActionHasNonZeroProbability, "invariant: every untried action must keep non-zero probability (no top-k / threshold)", invariant);
@@ -395,8 +446,8 @@ function main() {
 
   const result = {
     schema: "learned-prior.mcgs-untried-proposer.v1",
-    milestone: "PR-5.25j",
-    step: "POLICY_GUIDED_UNTRIED_EDGE_PROPOSAL_IN_MCGS",
+    milestone: "PR-5.25k (requalifies the PR-5.25j A/B with repaired region-relative aux progress)",
+    step: "REGIONAL_AUX_PROGRESS_CONTRACT_REPAIR",
     generatedAt: new Date().toISOString(),
     command: process.argv.join(" "),
     invariants: {
@@ -406,6 +457,8 @@ function main() {
       proposerDeterministic: "pass",
       mcgsDefaultProposerUnchanged: "pass",
       mcgsCheckStillPasses: "pass",
+      regionProgressContract: "pass",
+      regionProgressFailClosed: "pass",
       oneSearchPerProcess: "pass",
       rolloutStillUniform: "pass",
       horizonUnchanged: "pass",
@@ -420,6 +473,7 @@ function main() {
       topKOrThresholdPruning: false,
     },
     proposerInvariant: invariant,
+    regionProgressContract: regionContract,
     frozenPolicy: { trainDecisions: frozen.trainDecisions },
     ab,
     verdict: ab.productGate.passed
@@ -431,12 +485,13 @@ function main() {
   fs.mkdirSync(path.dirname(args.out), { recursive: true });
   fs.writeFileSync(args.out, `${JSON.stringify(result, null, 2)}\n`, "utf8");
 
-  console.log("PR-5.25j — policy-guided untried-edge proposal in MCGS");
+  console.log("PR-5.25k — region-relative aux progress repair + PR-5.25j A/B requalification");
+  console.log(`  region contract            : ${JSON.stringify(regionContract.observed)} (region ${JSON.stringify(regionContract.regionFloors)}, span ${regionContract.span}), fail-closed ${regionContract.allFailClosed ? "ok" : "FAIL"}`);
   console.log(`  proposer invariant         : untried-only ok, kind-mass ${invariant.kindMassMatchesNormalisedAvailablePrior ? "ok" : "FAIL"}, no-pruning ${invariant.everyUntriedActionHasNonZeroProbability ? "ok" : "FAIL"}, sampler ${invariant.samplerFollowsAnalyticDistribution ? "ok" : "FAIL"} (maxdev ${invariant.samplerMaxFrequencyDeviation.toFixed(4)}), deterministic ${invariant.deterministic ? "ok" : "FAIL"}`);
   console.log(`  seeds                      : ${ab.seeds.join(", ")} | budget ${ab.budget.maxRuntimeMs}ms / ${ab.budget.maxSimulations} sims / ${ab.budget.maxRssMb}MB`);
   for (const row of ab.results) {
-    console.log(`  seed ${row.seed}  CONTROL   found=${row.control.found} replay=${row.control.replayValid} terminal=${row.control.terminalRollouts} deepest=${row.control.deepestFloorId} iters=${row.control.iterations} rss=${row.control.peakRssMb}MB stopped=${row.control.stoppedReason}`);
-    console.log(`  seed ${row.seed}  TREATMENT found=${row.treatment.found} replay=${row.treatment.replayValid} terminal=${row.treatment.terminalRollouts} deepest=${row.treatment.deepestFloorId} iters=${row.treatment.iterations} rss=${row.treatment.peakRssMb}MB stopped=${row.treatment.stoppedReason}`);
+    console.log(`  seed ${row.seed}  CONTROL   found=${row.control.found} replay=${row.control.replayValid} terminal=${row.control.terminalRollouts} deepest=${row.control.deepestFloorId} iters=${row.control.iterations} rss=${row.control.startingRssMb}->${row.control.peakRssMb}MB aux=${row.control.distinctAuxProgressValues}distinct ${JSON.stringify(row.control.auxProgressValueHistogram)} stopped=${row.control.stoppedReason}`);
+    console.log(`  seed ${row.seed}  TREATMENT found=${row.treatment.found} replay=${row.treatment.replayValid} terminal=${row.treatment.terminalRollouts} deepest=${row.treatment.deepestFloorId} iters=${row.treatment.iterations} rss=${row.treatment.startingRssMb}->${row.treatment.peakRssMb}MB aux=${row.treatment.distinctAuxProgressValues}distinct ${JSON.stringify(row.treatment.auxProgressValueHistogram)} stopped=${row.treatment.stoppedReason}`);
   }
   console.log(`  PRODUCT_GATE               : ${ab.productGate.passed ? "PASS" : "FAIL"}`);
   console.log(`  PRIMARY_MECHANISM_GATE     : ${ab.primaryMechanismGate.passed ? "PASS" : "FAIL"} (treatment terminal ${ab.primaryMechanismGate.treatmentTerminalRolloutsPositive}, MT4/5 ${ab.primaryMechanismGate.treatmentReachesMt4OrMt5}; control MT4/5 ${ab.primaryMechanismGate.controlReachesMt4OrMt5})`);
