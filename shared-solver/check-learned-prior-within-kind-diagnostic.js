@@ -1,12 +1,14 @@
 "use strict";
 
-// PR-5.25e driver: within-kind state-conditional signal probe.
+// PR-5.25e driver: within-kind state-conditional signal probe (+ Repair 1).
 //
-// Reuses the frozen PR-5.25d model (same deterministic preparation path, no
-// retraining of a different model, no data/config/objective change) and removes
-// the global action-kind base rate from the ranking metric by ranking the chosen
-// action only among legal SAME-KIND alternatives.  No rollouts, no MCGS, no
-// production change.
+// Reuses the frozen PR-5.25d model (same deterministic preparation path; no new
+// training recipe, no model change, no extra fit objective, no data/split change)
+// and removes the global action-kind base rate by ranking the chosen action only
+// among legal SAME-KIND alternatives.  Repair 1 reports BOTH weightings:
+// occurrence-weighted (every held-out route occurrence) and unique-signature
+// (each (buildStateKey, chosenFingerprint) counted once).  No rollouts, no MCGS,
+// no production change.
 //
 // Usage:
 //   node check-learned-prior-within-kind-diagnostic.js [--out=PATH]
@@ -36,34 +38,48 @@ function requireCondition(condition, message, details) {
   }
 }
 
+function printAggregate(label, aggregate, nonEvaluableByKind) {
+  console.log(`  ${label} aggregate       : ${aggregate.modelMeanNormalizedRank.toFixed(4)} vs uniform 0.5000  (top1 ${aggregate.modelTop1Rate.toFixed(3)})`);
+  console.log(`  ${label} evaluable       : ${aggregate.evaluableDecisions} / ${aggregate.totalDecisions}`);
+  if (nonEvaluableByKind) console.log(`  ${label} excluded by kind: ${JSON.stringify(aggregate.nonEvaluableByKind)}`);
+  for (const row of aggregate.perKind) {
+    console.log(`    ${label} ${row.kind.padEnd(12)} n=${String(row.evaluableDecisions).padStart(3)} rank ${row.meanNormalizedRank.toFixed(4)} top1 ${row.top1Rate.toFixed(3)}${row.beatsUniform ? "" : "  (>= uniform)"}`);
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv);
   const corpus = inventory.inventoryCorpus({ captureDecisions: true });
 
   const first = diagnostic.runWithinKindDiagnostic({ corpus });
   const second = diagnostic.runWithinKindDiagnostic({ corpus });
-  const deterministic = first.withinKind.modelMeanNormalizedRank === second.withinKind.modelMeanNormalizedRank
+  const deterministic = first.unique.uniqueWithinKindAggregate === second.unique.uniqueWithinKindAggregate
+    && first.withinKind.modelMeanNormalizedRank === second.withinKind.modelMeanNormalizedRank
     && first.referenceOverall.modelMicroMeanNormalizedRank === second.referenceOverall.modelMicroMeanNormalizedRank;
   requireCondition(deterministic, "within-kind diagnostic is not deterministic for the frozen seed", {
-    first: first.withinKind.modelMeanNormalizedRank,
-    second: second.withinKind.modelMeanNormalizedRank,
+    occurrence: first.withinKind.modelMeanNormalizedRank,
+    unique: first.unique.uniqueWithinKindAggregate,
   });
-  requireCondition(first.kindPriorWithinKindCheck.passed, "kind-prior within-kind rank check failed (expected exactly 0.5)", {
-    observed: first.kindPriorWithinKindCheck.observedMeanNormalizedRank,
+  requireCondition(first.kindPriorWithinKindCheck.passed, "kind-prior within-kind sanity check failed (expected exactly 0.5 under both weightings)", {
+    occurrence: first.kindPriorWithinKindCheck.occurrenceObservedMeanNormalizedRank,
+    unique: first.kindPriorWithinKindCheck.distinctObservedMeanNormalizedRank,
   });
-  requireCondition(first.withinKind.evaluableDecisions > 0, "no evaluable within-kind decisions (chosen action never had a same-kind alternative)");
+  requireCondition(first.unique.uniqueEvaluableSignatures > 0, "no evaluable unique unseen signatures");
 
   const result = {
     schema: "learned-prior.within-kind-diagnostic.v1",
     milestone: "PR-5.25e",
     step: "STATE_CONDITIONAL_SIGNAL_PROBE",
+    repair: "REPAIR_1_UNIQUE_SIGNATURE_DEDUP",
     generatedAt: new Date().toISOString(),
     command: process.argv.join(" "),
     invariants: {
       deterministic: "pass",
       kindPriorWithinKindIsExactlyUniform: "pass",
-      modelUnchangedFrom: "PR-5.25d",
-      retrainedForThisDiagnostic: "false",
+      noNewTrainingRecipe: "pass",
+      noModelChange: "pass",
+      noExtraFitObjective: "pass",
+      deterministicModelReproduction: "pass",
       noDataChange: "pass",
       noRollouts: "pass",
     },
@@ -73,18 +89,18 @@ function main() {
   fs.mkdirSync(path.dirname(args.out), { recursive: true });
   fs.writeFileSync(args.out, `${JSON.stringify(result, null, 2)}\n`, "utf8");
 
-  const wk = first.withinKind;
-  console.log("PR-5.25e — within-kind state-conditional signal probe");
-  console.log(`  reference (same unseen set): model ${first.referenceOverall.modelMicroMeanNormalizedRank.toFixed(4)} | kind-prior ${first.referenceOverall.kindPriorMicroMeanNormalizedRank.toFixed(4)} | uniform 0.5000`);
-  console.log(`  evaluable decisions        : ${wk.evaluableDecisions} / ${wk.totalDecisions} (${wk.nonEvaluableDecisions} excluded: only same-kind legal action)`);
-  console.log(`  same-kind set size histogram: ${JSON.stringify(wk.sameKindSetSizeHistogram)}`);
-  console.log(`  WITHIN_KIND model rank     : ${wk.modelMeanNormalizedRank.toFixed(4)} vs uniform 0.5000  (top1 ${wk.modelTop1Rate.toFixed(3)})`);
-  console.log(`  kind-prior within-kind rank: ${first.kindPriorWithinKindCheck.observedMeanNormalizedRank.toFixed(4)} (sanity: must be exactly 0.5000)`);
-  for (const row of wk.perKind) {
-    console.log(`    ${row.kind.padEnd(14)} n=${String(row.evaluableDecisions).padStart(3)} rank ${row.meanNormalizedRank.toFixed(4)} top1 ${row.top1Rate.toFixed(3)} ${row.beatsUniform ? "" : "(>= uniform)"}`);
-  }
-  console.log(`  excluded by kind           : ${JSON.stringify(wk.nonEvaluableByKind)}`);
-  console.log(`  verdict                    : ${first.verdict}`);
+  console.log("PR-5.25e — within-kind state-conditional signal probe (Repair 1: unique-signature dedup)");
+  console.log(`  reference overall          : model ${first.referenceOverall.modelMicroMeanNormalizedRank.toFixed(4)} | kind-prior ${first.referenceOverall.kindPriorMicroMeanNormalizedRank.toFixed(4)} | uniform 0.5000`);
+  console.log(`  held-out unseen            : ${first.duplicationAmplification.occurrenceDecisions} occurrences -> ${first.duplicationAmplification.distinctSignatures} distinct signatures (amplification ${first.duplicationAmplification.amplificationFactor.toFixed(2)}x)`);
+  console.log("  --- OCCURRENCE-WEIGHTED ---");
+  printAggregate("occurrence", first.withinKind, true);
+  console.log("  --- UNIQUE-SIGNATURE ---");
+  printAggregate("unique    ", first.withinKindDistinct, true);
+  console.log(`  kind-prior within-kind     : occurrence ${first.kindPriorWithinKindCheck.occurrenceObservedMeanNormalizedRank.toFixed(4)} | unique ${first.kindPriorWithinKindCheck.distinctObservedMeanNormalizedRank.toFixed(4)} (sanity: exactly 0.5000)`);
+  console.log(`  UNIQUE battle margin       : ${first.unique.battleMarginBelowUniform == null ? "n/a" : first.unique.battleMarginBelowUniform.toFixed(4)} below uniform (not-marginal margin ${first.unique.notMarginalMargin})`);
+  console.log(`  verdict occurrence         : ${first.verdict.occurrenceWeightedSignal}`);
+  console.log(`  verdict unique-signature   : ${first.verdict.distinctSignatureSignal}`);
+  console.log(`  estimate-only baseline     : ${first.verdict.estimateOnlyBaseline}`);
   console.log(`  result artifact            : ${path.relative(process.cwd(), args.out)}`);
 }
 

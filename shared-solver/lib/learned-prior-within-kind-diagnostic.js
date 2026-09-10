@@ -1,11 +1,15 @@
 "use strict";
 
-// PR-5.25e State-Conditional Signal Probe.
+// PR-5.25e State-Conditional Signal Probe (+ Repair 1: unique-signature dedup).
 //
-// Cheap diagnostic on the ALREADY-FROZEN PR-5.25d model.  No retraining, no
-// model change, no data change, no rollouts.  It removes the global action-kind
-// base rate from the ranking metric by scoring the chosen action ONLY against
-// legal alternatives of the SAME action kind:
+// Cheap diagnostic on the ALREADY-FROZEN PR-5.25d model.  No new training
+// recipe, no model change, no extra fit objective, no data/split change, no
+// rollouts.  The deterministic model is reproduced through the shared
+// preparation path.
+//
+// It removes the global action-kind base rate from the ranking metric by
+// scoring the chosen action ONLY against legal alternatives of the SAME action
+// kind:
 //
 //   WITHIN_KIND_RANK = rank of the chosen action among legal same-kind actions
 //
@@ -15,11 +19,23 @@
 // CONSTANT across same-kind actions, so its within-kind rank is exactly 0.5 --
 // a built-in check that the diagnostic has removed the kind base rate.
 //
+// Repair 1: a decision can occur on several held-out routes, so the plain
+// aggregate is DECISION-OCCURRENCE WEIGHTED and trajectory duplication can
+// amplify a route fragment.  Both weightings are reported side by side:
+//
+//   occurrence-weighted : every held-out route occurrence counts once
+//   unique-signature    : each (buildStateKey(state), chosenFingerprint)
+//                         signature counts exactly once
+//
 // Question answered: besides learning "which action kind is more common", has
 // the model learned "given this action kind, which one should be chosen now"?
 
 const prior = require("./learned-action-prior");
 const experiment = require("./learned-prior-nonoverlap-experiment");
+
+// Advisory margin for calling a within-kind improvement "not marginal".  This is
+// a reporting threshold, not a statistically established criterion.
+const NOT_MARGINAL_MARGIN = 0.05;
 
 function kindNameOfIndex(index) {
   return prior.FEATURE_SCHEMA.actionKinds[index] || `kind${index}`;
@@ -91,6 +107,8 @@ function aggregateWithinKind(model, entries) {
     modelMeanNormalizedRank: meanNormalizedRank,
     uniformBaselineMeanNormalizedRank: 0.5,
     modelTop1Rate: evaluable > 0 ? top1 / evaluable : null,
+    // Occurrence/unit label is supplied by the caller; a bare "< uniform" here
+    // does not distinguish the two weightings.
     beatsUniform: meanNormalizedRank != null && meanNormalizedRank < 0.5,
     sameKindSetSizeHistogram: sizeHistogram,
     nonEvaluableByKind,
@@ -106,22 +124,54 @@ function aggregateWithinKind(model, entries) {
   };
 }
 
+// Collapse held-out entries to one per (buildStateKey, chosenFingerprint)
+// signature, keeping the first occurrence.  A signature fixes the state, so the
+// legal action set, evaluability and within-kind rank are identical for every
+// occurrence; only the weighting changes.
+function dedupeBySignature(entries) {
+  const seen = new Set();
+  const distinct = [];
+  for (const entry of entries) {
+    if (seen.has(entry.signature)) continue;
+    seen.add(entry.signature);
+    distinct.push(entry);
+  }
+  return distinct;
+}
+
+function perKindRow(aggregate, kind) {
+  const row = aggregate.perKind.find((candidate) => candidate.kind === kind);
+  return row || { kind, evaluableDecisions: 0, meanNormalizedRank: null, top1Rate: null, beatsUniform: false };
+}
+
 function runWithinKindDiagnostic(options) {
   const prepared = experiment.prepareNonOverlapExperiment(options);
   const { modelConfig, corpus, distinct, train, heldOut, trainEntries, trained, heldOutUnseenEntries } = prepared;
+
+  const kindPriorModel = experiment.buildKindPriorModel(trainEntries).model;
 
   // References from the frozen Step 1 run (same entries, same model).
   const overallMicro = prior.evaluateChosenRank(trained.model, heldOutUnseenEntries);
   const kindPriorOverall = experiment.kindPriorBaseline(trainEntries, heldOutUnseenEntries);
 
+  // Occurrence-weighted (Repair 0): every held-out route occurrence counts once.
   const withinKind = aggregateWithinKind(trained.model, heldOutUnseenEntries);
-  const kindPriorWithinKind = aggregateWithinKind(
-    experiment.buildKindPriorModel(trainEntries).model,
-    heldOutUnseenEntries,
+  const kindPriorWithinKind = aggregateWithinKind(kindPriorModel, heldOutUnseenEntries);
+
+  // Unique-signature weighted (Repair 1): each signature counts exactly once.
+  const distinctUnseenEntries = dedupeBySignature(heldOutUnseenEntries);
+  const withinKindDistinct = aggregateWithinKind(trained.model, distinctUnseenEntries);
+  const kindPriorWithinKindDistinct = aggregateWithinKind(kindPriorModel, distinctUnseenEntries);
+
+  const distinctBattle = perKindRow(withinKindDistinct, "battle");
+  const distinctChangeFloor = perKindRow(withinKindDistinct, "changeFloor");
+  const distinctBattleMargin = distinctBattle.meanNormalizedRank == null
+    ? null
+    : 0.5 - distinctBattle.meanNormalizedRank;
+  const distinctSignalEstablished = Boolean(
+    distinctBattle.meanNormalizedRank != null
+    && distinctBattle.meanNormalizedRank < 0.5 - NOT_MARGINAL_MARGIN,
   );
-  // Built-in sanity: the kind prior is constant within a kind, so its mean
-  // within-kind rank must be exactly 0.5 on any evaluable set.
-  const kindPriorWithinKindRank = kindPriorWithinKind.modelMeanNormalizedRank;
 
   return {
     modelConfig,
@@ -133,8 +183,11 @@ function runWithinKindDiagnostic(options) {
       seed: modelConfig.seed,
       epochs: modelConfig.epochs,
       learningRate: modelConfig.learningRate,
-      retrainedForThisDiagnostic: false,
-      note: "same deterministic frozen PR-5.25d model reproduced by the shared preparation path; no model/data/config change",
+      noNewTrainingRecipe: true,
+      noModelChange: true,
+      noExtraFitObjective: true,
+      deterministicModelReproduction: true,
+      note: "same deterministic frozen PR-5.25d model reproduced through the shared preparation path; no model/data/config change",
     },
     corpus: {
       replayedFiles: corpus.replayedFiles,
@@ -147,28 +200,59 @@ function runWithinKindDiagnostic(options) {
       trainDecisions: trainEntries.length,
       heldOutRouteCount: heldOut.length,
       heldOutUnseenDecisions: heldOutUnseenEntries.length,
+      heldOutDistinctUnseenSignatures: distinctUnseenEntries.length,
+    },
+    duplicationAmplification: {
+      occurrenceDecisions: heldOutUnseenEntries.length,
+      distinctSignatures: distinctUnseenEntries.length,
+      amplificationFactor: distinctUnseenEntries.length > 0
+        ? heldOutUnseenEntries.length / distinctUnseenEntries.length
+        : null,
+      note: "occurrence-weighted counts every held-out route occurrence; unique-signature counts each (buildStateKey, chosenFingerprint) once",
     },
     referenceOverall: {
       modelMicroMeanNormalizedRank: overallMicro.meanNormalizedRank,
       kindPriorMicroMeanNormalizedRank: kindPriorOverall.meanNormalizedRank,
       uniform: 0.5,
     },
+    // Occurrence-weighted (unchanged from the original 5.25e evidence).
     withinKind,
-    kindPriorWithinKindCheck: {
-      observedMeanNormalizedRank: kindPriorWithinKindRank,
-      expected: 0.5,
-      passed: kindPriorWithinKindRank == null ? false : Math.abs(kindPriorWithinKindRank - 0.5) < 1e-9,
-      rationale: "the kind prior is constant across same-kind actions, so its within-kind rank is 0.5 exactly",
+    // Unique-signature weighted (Repair 1).
+    withinKindDistinct,
+    unique: {
+      uniqueEvaluableSignatures: withinKindDistinct.evaluableDecisions,
+      uniqueWithinKindAggregate: withinKindDistinct.modelMeanNormalizedRank,
+      uniqueWithinKindBattle: distinctBattle.meanNormalizedRank,
+      uniqueWithinKindChangeFloor: distinctChangeFloor.meanNormalizedRank,
+      uniqueWithinKindTop1Rate: withinKindDistinct.modelTop1Rate,
+      battleMarginBelowUniform: distinctBattleMargin,
+      notMarginalMargin: NOT_MARGINAL_MARGIN,
+      distinctSignalEstablished,
     },
-    verdict: withinKind.beatsUniform
-      ? "WITHIN_KIND_SIGNAL_ABOVE_UNIFORM"
-      : "WITHIN_KIND_NO_SIGNAL_ABOVE_UNIFORM",
+    kindPriorWithinKindCheck: {
+      occurrenceObservedMeanNormalizedRank: kindPriorWithinKind.modelMeanNormalizedRank,
+      distinctObservedMeanNormalizedRank: kindPriorWithinKindDistinct.modelMeanNormalizedRank,
+      expected: 0.5,
+      passed: kindPriorWithinKind.modelMeanNormalizedRank != null
+        && Math.abs(kindPriorWithinKind.modelMeanNormalizedRank - 0.5) < 1e-9
+        && kindPriorWithinKindDistinct.modelMeanNormalizedRank != null
+        && Math.abs(kindPriorWithinKindDistinct.modelMeanNormalizedRank - 0.5) < 1e-9,
+      rationale: "the kind prior is constant across same-kind actions, so its within-kind rank is 0.5 exactly under either weighting",
+    },
+    verdict: {
+      occurrenceWeightedSignal: withinKind.beatsUniform ? "OBSERVED_ABOVE_UNIFORM" : "NOT_ABOVE_UNIFORM",
+      distinctSignatureSignal: distinctSignalEstablished ? "ESTABLISHED" : "NOT_ESTABLISHED",
+      estimateOnlyBaseline: "NOT_YET_AUTHORIZED",
+    },
   };
 }
 
 module.exports = {
+  NOT_MARGINAL_MARGIN,
   aggregateWithinKind,
+  dedupeBySignature,
   kindNameOfIndex,
+  perKindRow,
   runWithinKindDiagnostic,
   withinKindDecision,
 };
