@@ -71,27 +71,37 @@ function kindIndexOfVector(vector) {
   return prior.FEATURE_SCHEMA.actionKinds.length - 1;
 }
 
-// Transparency control: rank by the TRAIN empirical action-kind prior with
-// Laplace smoothing.  If the learned model is no better than this, the learned
-// signal is a trivial "prefer the common action kind" bias.
-function kindPriorBaseline(trainEntries, heldOutEntries) {
+function buildKindPriorModel(trainEntries) {
   const kinds = prior.FEATURE_SCHEMA.actionKinds;
   const counts = new Array(kinds.length).fill(0);
   for (const entry of trainEntries) counts[kindIndexOfVector(entry.vectors[entry.chosenIndex])] += 1;
   const total = trainEntries.length;
   const probability = counts.map((count) => (count + 1) / (total + kinds.length));
-  const baselineModel = { score: (vector) => probability[kindIndexOfVector(vector)] };
-  const micro = prior.evaluateChosenRank(baselineModel, heldOutEntries);
+  return {
+    kindCounts: kinds.reduce((map, kind, index) => { map[kind] = counts[index]; return map; }, {}),
+    model: { score: (vector) => probability[kindIndexOfVector(vector)] },
+  };
+}
+
+// Transparency control: rank by the TRAIN empirical action-kind prior with
+// Laplace smoothing.  If the learned model is no better than this, the learned
+// signal is a trivial "prefer the common action kind" bias.
+function kindPriorBaseline(trainEntries, heldOutEntries) {
+  const { model, kindCounts } = buildKindPriorModel(trainEntries);
+  const micro = prior.evaluateChosenRank(model, heldOutEntries);
   return {
     metric: "micro mean normalized rank of the train action-kind prior on the same unseen decisions",
-    kindCounts: kinds.reduce((map, kind, index) => { map[kind] = counts[index]; return map; }, {}),
+    kindCounts,
     unseenDecisions: micro.count,
     meanNormalizedRank: micro.meanNormalizedRank,
     top1Rate: micro.top1Rate,
   };
 }
 
-function runNonOverlapExperiment(options) {
+// Single preparation path shared by the Step 1 probe and the PR-5.25e
+// within-kind diagnostic, so the frozen model is trained exactly once per run
+// with identical configuration and never redefined.
+function prepareNonOverlapExperiment(options) {
   const config = options || {};
   const modelConfig = Object.assign({}, prior.DEFAULT_CONFIG, config.modelConfig || {});
   const corpus = config.corpus || inventory.inventoryCorpus({ captureDecisions: true });
@@ -102,15 +112,37 @@ function runNonOverlapExperiment(options) {
   }
   const trainSignatures = inventory.signatureUniverse(train);
   const trainEntries = flattenTrainEntries(train);
-
   const trained = prior.trainModel(trainEntries, modelConfig);
+  const heldOutUnseenByRoute = heldOut.map((route) => ({
+    route,
+    entries: unseenEntriesForRoute(route, trainSignatures),
+  }));
+  const heldOutUnseenEntries = [].concat(...heldOutUnseenByRoute.map((item) => item.entries));
+  return {
+    modelConfig,
+    corpus,
+    distinct,
+    train,
+    heldOut,
+    trainSignatures,
+    trainEntries,
+    trained,
+    heldOutUnseenByRoute,
+    heldOutUnseenEntries,
+  };
+}
+
+function runNonOverlapExperiment(options) {
+  const prepared = prepareNonOverlapExperiment(options);
+  const {
+    modelConfig, corpus, distinct, train, heldOut, trainSignatures, trainEntries, trained, heldOutUnseenByRoute,
+  } = prepared;
   const trainInSample = prior.evaluateChosenRank(trained.model, trainEntries);
 
   const routeResults = [];
   const allUnseenEntries = [];
   const unseenSignatureRoutes = new Map();
-  for (const route of heldOut) {
-    const entries = unseenEntriesForRoute(route, trainSignatures);
+  for (const { route, entries } of heldOutUnseenByRoute) {
     for (const entry of entries) {
       if (!unseenSignatureRoutes.has(entry.signature)) unseenSignatureRoutes.set(entry.signature, new Set());
       unseenSignatureRoutes.get(entry.signature).add(route.relPath);
@@ -224,9 +256,11 @@ function runNonOverlapExperiment(options) {
 }
 
 module.exports = {
+  buildKindPriorModel,
   flattenTrainEntries,
   kindIndexOfVector,
   kindPriorBaseline,
+  prepareNonOverlapExperiment,
   runNonOverlapExperiment,
   unseenEntriesForRoute,
 };

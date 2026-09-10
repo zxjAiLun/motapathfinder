@@ -120,6 +120,7 @@ const LEARNED = new Set([
   "learned-prior-dataset.js",
   "learned-prior-corpus-inventory.js",
   "learned-prior-nonoverlap-experiment.js",
+  "learned-prior-within-kind-diagnostic.js",
 ]);
 
 const modules = {};
@@ -1492,6 +1493,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": true,
     "cleanCheckout": true,
     "notes": "PR-5.25d Step 1 frozen-model non-overlapping generalization probe: trains the unchanged PR-5.25c model on the max-reached-floor TRAIN family, gates micro rank on non-overlapping held-out decisions, and reports macro/per-route plus a kind-prior baseline control; no rollouts"
+  },
+  "shared-solver/check-learned-prior-within-kind-diagnostic.js": {
+    "grade": "diagnostic",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25e within-kind state-conditional signal probe: reuses the frozen PR-5.25d model (no retraining, no data/config change) and ranks the chosen action only among legal SAME-KIND alternatives to remove the global action-kind base rate; kind-prior within-kind rank must be exactly 0.5; no rollouts"
   }
 };
 
