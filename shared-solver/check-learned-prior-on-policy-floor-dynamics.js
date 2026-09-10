@@ -41,9 +41,10 @@ function printArm(label, summary, classification) {
   console.log(`  --- ${label} ---`);
   console.log(`    floor transitions      : ${JSON.stringify(summary.floorTransitions)}`);
   console.log(`    reach                  : MT2 ${summary.rolloutsReachingMt2}/${summary.rollouts}, MT3 ${summary.rolloutsReachingMt3}/${summary.rollouts}, MT4 ${summary.rolloutsReachingMt4}, MT5 ${summary.rolloutsReachingMt5}, blueKing ${summary.terminalBlueKing}`);
-  console.log(`    floor changes          : total ${summary.floorChangeCount} (forward ${summary.forwardCount}, backward ${summary.backwardCount}), reversals ${summary.reversalCount} (${pct(classification.metrics.reversalRate)})`);
-  console.log(`    MT2 steps              : ${summary.stepsAtMt2}, of which forward stair available ${summary.mt2ForwardAvailableSteps} (${pct(classification.metrics.mt2ForwardFraction)})`);
-  console.log(`    forward available      : ${summary.forwardAvailableSteps} steps; chose forward ${summary.forwardChosenSteps} (${pct(classification.metrics.forwardChoiceRateWhenAvailable)}); changeFloor chosen ${summary.changeFloorChosenWhenForwardAvailable}`);
+  console.log(`    floor changes          : total ${summary.floorChangeCount} (forward ${summary.forwardCount}, backward ${summary.backwardCount}), consecutive-reversal ${summary.consecutiveFloorChangeReversals} (${pct(classification.metrics.consecutiveFloorChangeReversalRate)})`);
+  console.log(`    MT2 steps              : ${summary.stepsAtMt2}, of which MT2 forward stair available ${summary.mt2ForwardAvailableSteps} (${pct(classification.metrics.mt2ForwardFraction)})`);
+  console.log(`    MT2 forward choice     : chose forward ${summary.mt2ForwardChosenSteps}/${summary.mt2ForwardAvailableSteps} (${pct(classification.metrics.mt2ForwardChoiceRateWhenAvailable)}), landed MT3 ${summary.mt2ForwardLandedMt3Steps} (${pct(classification.metrics.mt2ForwardLandedMt3Rate)})`);
+  console.log(`    forward available      : any-floor ${summary.forwardAvailableSteps} steps, chose forward ${summary.forwardChosenSteps}; changeFloor chosen ${summary.changeFloorChosenWhenForwardAvailable}`);
   if (summary.meanForwardProbabilityMass != null) {
     console.log(`    fwd prob mass (treat)  : mean ${summary.meanForwardProbabilityMass.toFixed(4)} over ${summary.forwardProbabilityMassSteps} steps`);
   }

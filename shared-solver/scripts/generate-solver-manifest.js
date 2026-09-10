@@ -125,6 +125,7 @@ const LEARNED = new Set([
   "learned-prior-changefloor-repair-experiment.js",
   "learned-prior-hierarchical-residual-experiment.js",
   "learned-prior-on-policy-floor-dynamics.js",
+  "learned-prior-mcgs-proposer.js",
 ]);
 
 const modules = {};
@@ -1531,7 +1532,14 @@ const TEST_OVERRIDES = {
     "allowsNotFound": false,
     "requiresStrictReplay": true,
     "cleanCheckout": true,
-    "notes": "PR-5.25i zero-training on-policy floor transition dynamics telemetry: exact source->destination transition matrix, forward/backward counts, forward-stair availability (especially at MT2), forward choice conditional on availability, treatment forward probability mass, immediate reversals, exact-state revisit rate, first-hit steps; classifies the bottleneck advisory as A/B/C/D; no retrain, no scorer/parameter change, no horizon change"
+    "notes": "PR-5.25i zero-training on-policy floor transition dynamics telemetry: exact source->destination transition matrix, forward/backward counts, forward-stair availability (especially at MT2 and the MT2-specific forward choice/landed rate), forward probability mass, CONSECUTIVE floor-change reversals (not strict immediate), exact-state revisit rate, first-hit steps; advisory A/B/C/D bottleneck classification; no retrain, no scorer/parameter change, no horizon change"
+  },
+  "shared-solver/check-learned-prior-mcgs-proposer.js": {
+    "grade": "diagnostic",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25j policy-guided untried-edge proposal in MCGS: sole change is the untried-edge proposer (uniform -> existing hierarchical policy) with BOTH arms on the 5.25b UCT backbone and UNIFORM rollout, H=96, budgets/graph/reward/backup/cycle handling untouched; proposer invariant exercises the real adapter (untried-only, no top-k, kind-mass over the untried subset, analytic-distribution frequency match, determinism); PRODUCT_GATE (found + strict replay) and PRIMARY_MECHANISM_GATE (treatment terminal > 0 or MT4/MT5 reach)"
   }
 };
 

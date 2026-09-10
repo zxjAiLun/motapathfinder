@@ -99,6 +99,13 @@ function createMCGS(simulator, options) {
   const maxRssMb = Number(config.maxRssMb || 0);
   const seed = Number(config.seed || 52501);
   const mode = config.mode === "treatment" ? "treatment" : "control";
+  // PR-5.25j: optional injected proposer for choosing WHICH untried action to
+  // expand first.  When absent the default uniform pick below is used verbatim,
+  // so existing behaviour is unchanged.  The proposer only reorders untried
+  // exploration; it can never make a legal action permanently unexpanded.
+  const untriedActionProposer = typeof config.untriedActionProposer === "function"
+    ? config.untriedActionProposer
+    : null;
 
   function enumerateActions(state) {
     let actions = [];
@@ -182,6 +189,9 @@ function createMCGS(simulator, options) {
     let goalApplyActions = null;
     let goalIterations = null;
     let peakRssMb = 0;
+    // PR-5.25j telemetry: which action kinds got expanded (untried proposer
+    // effect), and the deepest floor actually reached.
+    const expandedActionKindHistogram = {};
 
     const goalRewards = [];      // distribution for ROLLOUT_RETURN_DIVERSITY
     const auxProgresses = [];
@@ -238,12 +248,36 @@ function createMCGS(simulator, options) {
     };
 
     // ---- Deterministic untried-action selection (C3: stable per state) ----
+    // Default is the original uniform pick; PR-5.25j may inject a proposer that
+    // is applied ONLY to the untried subset (no top-k / threshold pruning).
     const selectUntriedAction = (node, actions, simIndex) => {
       const triedIdentities = new Set(node.edges.keys());
       const untried = actions.filter((a) => !triedIdentities.has(actionIdentityOf(a)));
       if (untried.length === 0) return null;
       // Stable random per (seed, parentExactKey, simIndex): same state → same pick.
+      // This is the isolated untried-selection stream; both arms derive it
+      // identically so the proposer cannot perturb the rollout RNG (C3).
       const rng = createSeededRng(seed ^ hashStringToInt(node.exactKey) ^ (simIndex * 2654435761));
+      if (untriedActionProposer) {
+        let selected = null;
+        try {
+          selected = untriedActionProposer({
+            state: node.state,
+            untriedActions: untried,
+            allActions: actions,
+            seed,
+            simulationIndex: simIndex,
+            exactKey: node.exactKey,
+            rng,
+            actionIdentity: actionIdentityOf,
+          });
+        } catch (error) {
+          selected = null;
+        }
+        // Fail-soft: only a genuine untried action is accepted, otherwise the
+        // default uniform pick is used (never "skip exploration").
+        if (selected && untried.includes(selected)) return selected;
+      }
       return untried[Math.floor(rng.next() * untried.length) % untried.length];
     };
 
@@ -345,6 +379,8 @@ function createMCGS(simulator, options) {
       const { node: childNode, key: childKey } = getOrCreateNode(childState);
       const edge = getOrCreateEdge(node, expandAction, childKey);
       expandedEdges += 1;
+      const expandKind = expandAction.kind || "unknown";
+      expandedActionKindHistogram[expandKind] = (expandedActionKindHistogram[expandKind] || 0) + 1;
 
       // Record the graph edge for backup.
       const trajectoryEdge = { node, edge };
@@ -492,6 +528,9 @@ function createMCGS(simulator, options) {
     }
 
     // ---- ROLLOUT_RETURN_DIVERSITY diagnostics ----
+    const maxAux = auxProgresses.length > 0 ? Math.max(...auxProgresses) : 0;
+    const deepestFloorIndex = Math.round(maxAux * terminalFloorIndex);
+    const deepestFloorId = floorOrder[deepestFloorIndex] || null;
     const uniqueGoalBuckets = new Set(goalRewards.map((v) => v === 1 ? "hit" : "miss"));
     const uniqueAuxBuckets = new Set(auxProgresses.map((v) => Math.round(v * 20) / 20));
     const allZeroCount = goalRewards.filter((g, i) => g === 0 && auxProgresses[i] === 0).length;
@@ -520,6 +559,9 @@ function createMCGS(simulator, options) {
         terminalRollouts,
         uniqueExactStates: nodesByExactKey.size,
         transpositionHits,
+        expandedActionKindHistogram,
+        deepestFloorOrdinal: deepestFloorIndex,
+        deepestFloorId,
         timeToFirstGoal: goalWallMs,
         applyActionsToFirstGoal: goalApplyActions,
         iterationsToFirstGoal: goalIterations,

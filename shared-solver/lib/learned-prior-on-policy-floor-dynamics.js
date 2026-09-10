@@ -73,11 +73,17 @@ function runInstrumentedRollout(simulator, options) {
   let backwardCount = 0;
   let lateralCount = 0;
   let floorChangeCount = 0;
-  let reversalCount = 0;
+  // NOTE: this counts CONSECUTIVE floor-change events that are mutual
+  // inverses.  Non-floor-change actions (battle/event/pickup) in between do NOT
+  // reset it, so it is NOT a strict "immediate" reversal; the field name says
+  // what it measures.
+  let consecutiveFloorChangeReversals = 0;
   let previousFloorChange = null; // { from, to }
 
   let stepsAtMt2 = 0;
   let mt2ForwardAvailableSteps = 0;
+  let mt2ForwardChosenSteps = 0;
+  let mt2ForwardLandedMt3Steps = 0;
   let forwardAvailableSteps = 0;
   let forwardChosenSteps = 0;
   let changeFloorChosenWhenForwardAvailable = 0;
@@ -125,8 +131,7 @@ function runInstrumentedRollout(simulator, options) {
         mt2ForwardAvailableSteps += 1;
         if (firstMt2ForwardAvailableStep == null) firstMt2ForwardAvailableStep = step;
       }
-    }
-    if (forwardAvailable) {
+    }    if (forwardAvailable) {
       forwardAvailableSteps += 1;
       if (firstForwardAvailableStep == null) firstForwardAvailableStep = step;
     }
@@ -154,6 +159,11 @@ function runInstrumentedRollout(simulator, options) {
       changeFloorChosenWhenForwardAvailable += 1;
       if (chosenDirection === "forward") forwardChosenSteps += 1;
     }
+    // MT2-specific: this is the metric that matters for the MT2->MT3
+    // prerequisite, since most "forward available" steps elsewhere are MT1.
+    if (currentFloor === "MT2" && forwardAvailable && chosenDirection === "forward") {
+      mt2ForwardChosenSteps += 1;
+    }
     kindHistogram[kindNames[chosenKind] || `kind${chosenKind}`] = (kindHistogram[kindNames[chosenKind] || `kind${chosenKind}`] || 0) + 1;
 
     try {
@@ -163,6 +173,10 @@ function runInstrumentedRollout(simulator, options) {
       break;
     }
     steps += 1;
+
+    if (currentFloor === "MT2" && chosenDirection === "forward" && state.floorId === "MT3") {
+      mt2ForwardLandedMt3Steps += 1;
+    }
 
     // Floor transition is read from the resulting state, so it is exact.
     if (state.floorId !== currentFloor) {
@@ -175,7 +189,7 @@ function runInstrumentedRollout(simulator, options) {
       else if (direction === "backward") backwardCount += 1;
       else lateralCount += 1;
       if (previousFloorChange && previousFloorChange.from === state.floorId && previousFloorChange.to === currentFloor) {
-        reversalCount += 1;
+        consecutiveFloorChangeReversals += 1;
       }
       previousFloorChange = { from: currentFloor, to: state.floorId };
     }
@@ -220,9 +234,11 @@ function runInstrumentedRollout(simulator, options) {
     backwardCount,
     lateralCount,
     floorChangeCount,
-    reversalCount,
+    consecutiveFloorChangeReversals,
     stepsAtMt2,
     mt2ForwardAvailableSteps,
+    mt2ForwardChosenSteps,
+    mt2ForwardLandedMt3Steps,
     forwardAvailableSteps,
     forwardChosenSteps,
     changeFloorChosenWhenForwardAvailable,
@@ -276,9 +292,11 @@ function summarize(results, horizon) {
     backwardCount: total((result) => result.backwardCount),
     lateralCount: total((result) => result.lateralCount),
     floorChangeCount: total((result) => result.floorChangeCount),
-    reversalCount: total((result) => result.reversalCount),
+    consecutiveFloorChangeReversals: total((result) => result.consecutiveFloorChangeReversals),
     stepsAtMt2,
     mt2ForwardAvailableSteps: total((result) => result.mt2ForwardAvailableSteps),
+    mt2ForwardChosenSteps: total((result) => result.mt2ForwardChosenSteps),
+    mt2ForwardLandedMt3Steps: total((result) => result.mt2ForwardLandedMt3Steps),
     forwardAvailableSteps,
     forwardChosenSteps: total((result) => result.forwardChosenSteps),
     changeFloorChosenWhenForwardAvailable: total((result) => result.changeFloorChosenWhenForwardAvailable),
@@ -308,40 +326,47 @@ function classifyBottleneck(summary, horizon) {
   const mt2ForwardFraction = summary.stepsAtMt2 > 0
     ? summary.mt2ForwardAvailableSteps / summary.stepsAtMt2
     : null;
-  const reversalRate = summary.floorChangeCount > 0
-    ? summary.reversalCount / summary.floorChangeCount
+  const consecutiveFloorChangeReversalRate = summary.floorChangeCount > 0
+    ? summary.consecutiveFloorChangeReversals / summary.floorChangeCount
     : null;
   const revisitRate = summary.rollingStates > 0
     ? summary.revisitCount / summary.rollingStates
     : null;
-  const forwardChoiceRateWhenAvailable = summary.forwardAvailableSteps > 0
-    ? summary.forwardChosenSteps / summary.forwardAvailableSteps
+  // MT2-specific choice rate: the only metric that reflects the MT2->MT3
+  // prerequisite (aggregate "forward available" is dominated by MT1 steps).
+  const mt2ForwardChoiceRateWhenAvailable = summary.mt2ForwardAvailableSteps > 0
+    ? summary.mt2ForwardChosenSteps / summary.mt2ForwardAvailableSteps
+    : null;
+  const mt2ForwardLandedMt3Rate = summary.mt2ForwardAvailableSteps > 0
+    ? summary.mt2ForwardLandedMt3Steps / summary.mt2ForwardAvailableSteps
     : null;
   const forwardAppearsLate = summary.firstMt2ForwardAvailableStepMean != null
     && summary.firstMt2ForwardAvailableStepMean >= 0.7 * horizon;
 
   const metrics = {
     mt2ForwardFraction,
-    reversalRate,
+    mt2ForwardChoiceRateWhenAvailable,
+    mt2ForwardLandedMt3Rate,
+    consecutiveFloorChangeReversalRate,
     revisitRate,
-    forwardChoiceRateWhenAvailable,
     forwardAppearsLate,
   };
   const criteria = {
     B: "mt2ForwardFraction < 0.5",
-    C: "forwardAppearsLate (mean first MT2-forward step >= 0.7 * horizon) AND forwardChoiceRateWhenAvailable >= 0.5",
-    A: "forwardChoiceRateWhenAvailable < 0.5 OR reversalRate >= 0.3",
-    D: "revisitRate >= 0.5",
+    C: "forwardAppearsLate (mean first MT2-forward step >= 0.7 * horizon) AND mt2ForwardChoiceRateWhenAvailable >= 0.5",
+    A: "mt2ForwardChoiceRateWhenAvailable < 0.5  (MT2-specific; reversals belong to D)",
+    D: "revisitRate >= 0.5 OR consecutiveFloorChangeReversalRate >= 0.3",
   };
   // All criteria that hold simultaneously: B (never unlocked) and D (ping-pong /
   // revisits) are not mutually exclusive and are usually co-mechanisms.
   const matches = {
     B_PREREQUISITE_SEQUENCING_PROBLEM: mt2ForwardFraction != null && mt2ForwardFraction < 0.5,
     C_HORIZON_PRESSURE_OBSERVED: forwardAppearsLate
-      && forwardChoiceRateWhenAvailable != null && forwardChoiceRateWhenAvailable >= 0.5,
-    A_ON_POLICY_WITHIN_KIND_TRANSFER_PROBLEM: (forwardChoiceRateWhenAvailable != null && forwardChoiceRateWhenAvailable < 0.5)
-      || (reversalRate != null && reversalRate >= 0.3),
-    D_CYCLIC_PROPOSAL_BEHAVIOR: revisitRate != null && revisitRate >= 0.5,
+      && mt2ForwardChoiceRateWhenAvailable != null && mt2ForwardChoiceRateWhenAvailable >= 0.5,
+    A_ON_POLICY_WITHIN_KIND_TRANSFER_PROBLEM: mt2ForwardChoiceRateWhenAvailable != null
+      && mt2ForwardChoiceRateWhenAvailable < 0.5,
+    D_CYCLIC_PROPOSAL_BEHAVIOR: (revisitRate != null && revisitRate >= 0.5)
+      || (consecutiveFloorChangeReversalRate != null && consecutiveFloorChangeReversalRate >= 0.3),
   };
   let primary = "UNDETERMINED";
   if (matches.B_PREREQUISITE_SEQUENCING_PROBLEM) {
