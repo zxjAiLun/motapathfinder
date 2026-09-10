@@ -89,6 +89,19 @@ function normalizedRouteKey(state, floorSet, mode) {
   return JSON.stringify(key);
 }
 
+// Raw (un-encoded) battle estimate keys for the PR-5.25f estimate-only baseline.
+// Missing or non-finite values are recorded as null so the baseline can declare
+// a decision non-evaluable instead of guessing.
+function normalizeEstimateForProbe(estimate) {
+  if (!estimate) return { damage: null, turn: null };
+  const damage = estimate.damage == null ? null : Number(estimate.damage);
+  const turn = estimate.turn == null ? null : Number(estimate.turn);
+  return {
+    damage: Number.isFinite(damage) ? damage : null,
+    turn: Number.isFinite(turn) ? turn : null,
+  };
+}
+
 function listRouteFiles() {
   const files = [];
   for (const dir of ["routes/fixtures", "routes/latest"]) {
@@ -163,6 +176,7 @@ function replayRouteFile(project, absPath, options) {
         chosenIndex: reproducing[0],
         legalActionCount: normalized.length,
         vectors: normalized.map((action) => encodeFeatures(state, action)),
+        actionEstimates: normalized.map((action) => normalizeEstimateForProbe(action.estimate)),
       });
     }
 
@@ -338,6 +352,7 @@ module.exports = {
   inventoryCorpus,
   listRouteFiles,
   normalizedRouteKey,
+  normalizeEstimateForProbe,
   replayRouteFile,
   signatureUniverse,
   splitByMaxReachedFloor,

@@ -121,6 +121,7 @@ const LEARNED = new Set([
   "learned-prior-corpus-inventory.js",
   "learned-prior-nonoverlap-experiment.js",
   "learned-prior-within-kind-diagnostic.js",
+  "learned-prior-estimate-baseline-probe.js",
 ]);
 
 const modules = {};
@@ -1499,7 +1500,14 @@ const TEST_OVERRIDES = {
     "allowsNotFound": false,
     "requiresStrictReplay": true,
     "cleanCheckout": true,
-    "notes": "PR-5.25e within-kind state-conditional signal probe: reuses the frozen PR-5.25d model (no retraining, no data/config change) and ranks the chosen action only among legal SAME-KIND alternatives to remove the global action-kind base rate; kind-prior within-kind rank must be exactly 0.5; no rollouts"
+    "notes": "PR-5.25e within-kind state-conditional signal probe: reuses the frozen PR-5.25d model (no new training recipe, no model/data change) and ranks the chosen action only among legal SAME-KIND alternatives to remove the global action-kind base rate; reports occurrence-weighted AND unique-signature weightings; kind-prior within-kind rank must be exactly 0.5; no rollouts"
+  },
+  "shared-solver/check-learned-prior-estimate-baseline-probe.js": {
+    "grade": "diagnostic",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25f single fixed unfitted estimate-only battle baseline (lexicographic estimate.damage then estimate.turn, lower is better) versus the unchanged PR-5.25d model on unique-signature/battle-only/same-kind decisions; both rankers scored on the exact same estimate-valid intersection; no fitting, no sweep, no rollouts"
   }
 };
 

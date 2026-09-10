@@ -100,8 +100,7 @@ function main() {
   console.log(`  UNIQUE battle margin       : ${first.unique.battleMarginBelowUniform == null ? "n/a" : first.unique.battleMarginBelowUniform.toFixed(4)} below uniform (not-marginal margin ${first.unique.notMarginalMargin})`);
   console.log(`  verdict occurrence         : ${first.verdict.occurrenceWeightedSignal}`);
   console.log(`  verdict unique-signature   : ${first.verdict.distinctSignatureSignal}`);
-  console.log(`  estimate-only baseline     : ${first.verdict.estimateOnlyBaseline}`);
-  console.log(`  result artifact            : ${path.relative(process.cwd(), args.out)}`);
+  console.log(`  estimate-only baseline     : ${first.verdict.estimateOnlyBaseline}`);  console.log(`  result artifact            : ${path.relative(process.cwd(), args.out)}`);
 }
 
 main();

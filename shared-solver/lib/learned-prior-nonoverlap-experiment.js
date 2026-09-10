@@ -32,6 +32,7 @@ function toEntry(route, decision) {
     signature: decision.signature,
     vectors: decision.vectors,
     chosenIndex: decision.chosenIndex,
+    actionEstimates: decision.actionEstimates || null,
   };
 }
 

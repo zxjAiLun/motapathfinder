@@ -241,8 +241,8 @@ function runWithinKindDiagnostic(options) {
     },
     verdict: {
       occurrenceWeightedSignal: withinKind.beatsUniform ? "OBSERVED_ABOVE_UNIFORM" : "NOT_ABOVE_UNIFORM",
-      distinctSignatureSignal: distinctSignalEstablished ? "ESTABLISHED" : "NOT_ESTABLISHED",
-      estimateOnlyBaseline: "NOT_YET_AUTHORIZED",
+      distinctSignatureSignal: distinctSignalEstablished ? "OBSERVED_ROBUST_TO_SIGNATURE_DEDUP" : "NOT_ESTABLISHED",
+      estimateOnlyBaseline: "SEE_PR_5_25F_ESTIMATE_BASELINE_PROBE",
     },
   };
 }
