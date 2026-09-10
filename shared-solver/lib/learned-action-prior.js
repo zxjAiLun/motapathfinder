@@ -197,20 +197,119 @@ function encodeFeatures(state, action) {
   return vector;
 }
 
+// ---- PR-5.25g: FEATURE_SCHEMA_V2 (one added action feature) -----------------
+//
+// V2 adds exactly one action feature on top of V1: the changeFloor destination
+// floor delta.  All enumerated changeFloor destinations in the corpus are
+// relative (`:next` / `:before`), so the destination is first resolved against
+// `project.floorOrder`; a literal floorOrdinal(":next") would be 0 and silently
+// wrong.  Missing / unresolvable destinations FAIL CLOSED instead of encoding 0.
+const FEATURE_SCHEMA_V2 = Object.freeze({
+  version: "learned-action-prior.features.v2",
+  base: FEATURE_SCHEMA.version,
+  addedActionFeatures: Object.freeze(["changeFloorDestinationDelta"]),
+  changeFloorOnly: true,
+  normalization: "clamp((floorOrdinal(resolvedDestination) - floorOrdinal(currentFloor)) / 10, -1, 1)",
+  failClosed: "a changeFloor action whose destination floor cannot be resolved throws instead of encoding 0",
+  positions: Object.freeze({ changeFloorDestinationDelta: FEATURE_DIM }),
+});
+
+const FEATURE_DIM_V2 = FEATURE_DIM + 1;
+
+function resolveChangeFloorDestinationFloorId(action) {
+  const changeFloor = action.changeFloor;
+  const raw = (changeFloor && (changeFloor.floorId || changeFloor.toFloor || changeFloor.floor))
+    || action.targetFloorId
+    || null;
+  return raw;
+}
+
+function resolveChangeFloorDestination(currentFloorId, action, floorOrder) {
+  const raw = resolveChangeFloorDestinationFloorId(action);
+  if (!raw) {
+    throw new Error(`changeFloor action has no destination floor (fail closed): ${action.fingerprint || action.summary || "unknown"}`);
+  }
+  if (raw === ":next" || raw === ":before") {
+    if (!Array.isArray(floorOrder)) {
+      throw new Error(`floorOrder is required to resolve ${raw} (fail closed): ${action.fingerprint || action.summary || "unknown"}`);
+    }
+    const index = floorOrder.indexOf(currentFloorId);
+    if (index < 0) {
+      throw new Error(`current floor ${currentFloorId} is not in floorOrder (fail closed)`);
+    }
+    if (raw === ":before") {
+      if (index === 0) throw new Error(`floor ${currentFloorId} has no previous floor (fail closed)`);
+      return floorOrder[index - 1];
+    }
+    if (index >= floorOrder.length - 1) throw new Error(`floor ${currentFloorId} has no next floor (fail closed)`);
+    return floorOrder[index + 1];
+  }
+  return raw;
+}
+
+// Returns 0 for every non-changeFloor action; for changeFloor returns the
+// normalized destination floor delta, or throws when the destination is unknown.
+function changeFloorDestinationDelta(state, action, context) {
+  const normalized = action && action.fingerprint ? action : normalizeAction(action);
+  if (normalized.kind !== "changeFloor") return 0;
+  const floorOrder = context && context.floorOrder;
+  const currentFloorId = normalized.floorId || (state && state.floorId) || null;
+  const destinationFloorId = resolveChangeFloorDestination(currentFloorId, normalized, floorOrder);
+  const currentOrdinal = floorOrdinal(currentFloorId);
+  const destinationOrdinal = floorOrdinal(destinationFloorId);
+  if (currentOrdinal === 0 || destinationOrdinal === 0) {
+    throw new Error(`changeFloor delta needs MT<n> floors (fail closed): current=${currentFloorId} destination=${destinationFloorId}`);
+  }
+  return clamp((destinationOrdinal - currentOrdinal) / 10, -1, 1);
+}
+
+// V2 = V1's 40 features (same order and values) plus changeFloorDestinationDelta
+// appended last, so the MLP's first 40 input columns stay comparable to V1.
+function encodeFeaturesV2(state, action, context) {
+  const normalized = action && action.fingerprint ? action : normalizeAction(action);
+  const base = encodeFeatures(state, normalized);
+  const vector = base.concat([changeFloorDestinationDelta(state, normalized, context)]);
+  if (vector.length !== FEATURE_DIM_V2) {
+    throw new Error(`V2 feature vector length ${vector.length} !== FEATURE_DIM_V2 ${FEATURE_DIM_V2}`);
+  }
+  return vector;
+}
+
 class DeterministicMlp {
-  constructor(inputDim, hiddenDim, seed) {
+  constructor(inputDim, hiddenDim, seed, options) {
+    const config = options || {};
+    const baseFeatureDim = config.baseFeatureDim == null ? inputDim : config.baseFeatureDim;
+    if (baseFeatureDim > inputDim) {
+      throw new Error(`baseFeatureDim ${baseFeatureDim} > inputDim ${inputDim}`);
+    }
     this.inputDim = inputDim;
     this.hiddenDim = hiddenDim;
     this.seed = seed;
+    this.baseFeatureDim = baseFeatureDim;
     const rng = mulberry32(seed);
-    const scale1 = 1 / Math.sqrt(inputDim);
+    // The first `baseFeatureDim` columns use the exact base stream and scale, so
+    // appending feature columns never perturbs existing weights or the output
+    // layer (identical RNG consumption order for the base block and w2).
+    const baseScale = 1 / Math.sqrt(baseFeatureDim);
     const scale2 = 1 / Math.sqrt(hiddenDim);
-    this.w1 = Array.from({ length: hiddenDim }, () => (
-      Array.from({ length: inputDim }, () => (rng() * 2 - 1) * scale1)
-    ));
+    this.w1 = Array.from({ length: hiddenDim }, () => {
+      const row = new Array(inputDim).fill(0);
+      for (let i = 0; i < baseFeatureDim; i += 1) row[i] = (rng() * 2 - 1) * baseScale;
+      return row;
+    });
     this.b1 = new Array(hiddenDim).fill(0);
     this.w2 = Array.from({ length: hiddenDim }, () => (rng() * 2 - 1) * scale2);
     this.b2 = 0;
+    if (inputDim > baseFeatureDim) {
+      const extensionSeed = (config.extensionSeed == null ? (seed ^ 0x9e3779b9) : config.extensionSeed) >>> 0;
+      const extensionRng = mulberry32(extensionSeed);
+      const extensionScale = 1 / Math.sqrt(inputDim);
+      for (let h = 0; h < hiddenDim; h += 1) {
+        for (let i = baseFeatureDim; i < inputDim; i += 1) {
+          this.w1[h][i] = (extensionRng() * 2 - 1) * extensionScale;
+        }
+      }
+    }
     this.resetGradients();
   }
 
@@ -319,7 +418,8 @@ function buildFeatureCache(examples) {
 function trainModel(examples, config) {
   const settings = Object.assign({}, DEFAULT_CONFIG, config || {});
   const cache = buildFeatureCache(examples);
-  const model = new DeterministicMlp(FEATURE_DIM, settings.hiddenDim, settings.seed);
+  const featureDim = settings.featureDim == null ? FEATURE_DIM : settings.featureDim;
+  const model = new DeterministicMlp(featureDim, settings.hiddenDim, settings.seed, settings.mlpInit);
   const rng = mulberry32((settings.seed ^ 0x9e3779b9) >>> 0);
   let lastLoss = null;
   for (let epoch = 0; epoch < settings.epochs; epoch += 1) {
@@ -605,18 +705,25 @@ module.exports = {
   DEFAULT_CONFIG,
   DeterministicMlp,
   FEATURE_DIM,
+  FEATURE_DIM_V2,
   FEATURE_SCHEMA,
+  FEATURE_SCHEMA_V2,
   MT4_ORDINAL,
   MT5_ORDINAL,
   STATE_FEATURE_COUNT,
   aggregateArm,
   buildFeatureCache,
+  changeFloorDestinationDelta,
   encodeFeatures,
+  encodeFeaturesV2,
   evaluateChosenRank,
   floorOrdinal,
   mulberry32,
+  resolveChangeFloorDestination,
+  resolveChangeFloorDestinationFloorId,
   runRollouts,
   runSanityGate,
+  sampleSoftmaxIndex,
   sharedPrefixSize,
   trainModel,
 };

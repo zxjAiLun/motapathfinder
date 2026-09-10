@@ -122,6 +122,7 @@ const LEARNED = new Set([
   "learned-prior-nonoverlap-experiment.js",
   "learned-prior-within-kind-diagnostic.js",
   "learned-prior-estimate-baseline-probe.js",
+  "learned-prior-changefloor-repair-experiment.js",
 ]);
 
 const modules = {};
@@ -1508,6 +1509,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": true,
     "cleanCheckout": true,
     "notes": "PR-5.25f single fixed unfitted estimate-only battle baseline (lexicographic estimate.damage then estimate.turn, lower is better) versus the unchanged PR-5.25d model on unique-signature/battle-only/same-kind decisions; both rankers scored on the exact same estimate-valid intersection; no fitting, no sweep, no rollouts"
+  },
+  "shared-solver/check-learned-prior-changefloor-repair.js": {
+    "grade": "local-regression",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25g V1-vs-V2 representation A/B: V2 adds exactly one action feature (changeFloorDestinationDelta, resolved via floorOrder, fail-closed) while capacity/objective/corpus/recipe/seed stay frozen; gates on unique changeFloor rank < 0.5 and overall micro < kind-prior; rollouts (true MT5 blueKing terminal) only when both gates pass; asserts the V1 control still reproduces the frozen 5.25d/5.25e anchors"
   }
 };
 

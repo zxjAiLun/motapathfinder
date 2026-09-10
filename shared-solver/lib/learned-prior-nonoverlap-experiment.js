@@ -23,31 +23,32 @@
 const prior = require("./learned-action-prior");
 const inventory = require("./learned-prior-corpus-inventory");
 
-function toEntry(route, decision) {
+function toEntry(route, decision, vectorKey) {
+  const key = vectorKey || "vectors";
   return {
     routeId: route.relPath,
     decisionIndex: decision.decisionIndex,
     kind: decision.kind,
     floorId: decision.floorId,
     signature: decision.signature,
-    vectors: decision.vectors,
+    vectors: decision[key],
     chosenIndex: decision.chosenIndex,
     actionEstimates: decision.actionEstimates || null,
   };
 }
 
-function flattenTrainEntries(routes) {
+function flattenTrainEntries(routes, vectorKey) {
   const entries = [];
   for (const route of routes) {
-    for (const decision of route.decisionRecords) entries.push(toEntry(route, decision));
+    for (const decision of route.decisionRecords) entries.push(toEntry(route, decision, vectorKey));
   }
   return entries;
 }
 
-function unseenEntriesForRoute(route, trainSignatures) {
+function unseenEntriesForRoute(route, trainSignatures, vectorKey) {
   return route.decisionRecords
     .filter((decision) => !trainSignatures.has(decision.signature))
-    .map((decision) => toEntry(route, decision));
+    .map((decision) => toEntry(route, decision, vectorKey));
 }
 
 function aggregateByLayer(routeResults, layer) {
@@ -105,6 +106,7 @@ function kindPriorBaseline(trainEntries, heldOutEntries) {
 function prepareNonOverlapExperiment(options) {
   const config = options || {};
   const modelConfig = Object.assign({}, prior.DEFAULT_CONFIG, config.modelConfig || {});
+  const vectorKey = config.vectorKey || "vectors";
   const corpus = config.corpus || inventory.inventoryCorpus({ captureDecisions: true });
   const { distinct } = inventory.dedupeBySignatureSequence(corpus.distinctRouteRecords);
   const { train, heldOut } = inventory.splitByMaxReachedFloor(distinct);
@@ -112,15 +114,16 @@ function prepareNonOverlapExperiment(options) {
     throw new Error(`split produced empty family: train=${train.length} heldOut=${heldOut.length}`);
   }
   const trainSignatures = inventory.signatureUniverse(train);
-  const trainEntries = flattenTrainEntries(train);
+  const trainEntries = flattenTrainEntries(train, vectorKey);
   const trained = prior.trainModel(trainEntries, modelConfig);
   const heldOutUnseenByRoute = heldOut.map((route) => ({
     route,
-    entries: unseenEntriesForRoute(route, trainSignatures),
+    entries: unseenEntriesForRoute(route, trainSignatures, vectorKey),
   }));
   const heldOutUnseenEntries = [].concat(...heldOutUnseenByRoute.map((item) => item.entries));
   return {
     modelConfig,
+    vectorKey,
     corpus,
     distinct,
     train,

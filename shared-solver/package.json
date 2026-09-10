@@ -182,6 +182,7 @@
   "check:learned-prior-nonoverlap-experiment": "node check-learned-prior-nonoverlap-experiment.js",
   "check:learned-prior-within-kind-diagnostic": "node check-learned-prior-within-kind-diagnostic.js",
   "check:learned-prior-estimate-baseline-probe": "node check-learned-prior-estimate-baseline-probe.js",
+  "check:learned-prior-changefloor-repair": "node check-learned-prior-changefloor-repair.js",
   "check:no-tower-solver-js": "node ../tools/audit-js-files.js --check-no-tower-solver-js",
     "check:public-layer-boundaries": "node ../tools/check-agent-boundaries.js --public-layer-dev",
     "check:agent-boundaries": "node ../tools/check-agent-boundaries.js",

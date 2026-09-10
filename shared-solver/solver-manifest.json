@@ -1065,6 +1065,22 @@
       },
       "notes": "PR-5.25c learned action prior (deterministic pairwise-ranking MLP over strict-replayed fixture decisions); exploration only, never a route-closure or impossibility proof"
     },
+    "shared-solver/lib/learned-prior-changefloor-repair-experiment.js": {
+      "id": "learned-prior-changefloor-repair-experiment",
+      "path": "shared-solver/lib/learned-prior-changefloor-repair-experiment.js",
+      "layer": "search/exploration",
+      "status": "exploration",
+      "role": "exploration-search",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "PR-5.25c learned action prior (deterministic pairwise-ranking MLP over strict-replayed fixture decisions); exploration only, never a route-closure or impossibility proof"
+    },
     "shared-solver/lib/learned-prior-corpus-inventory.js": {
       "id": "learned-prior-corpus-inventory",
       "path": "shared-solver/lib/learned-prior-corpus-inventory.js",
@@ -3124,6 +3140,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.25c strict two-route fixture replay (exact pre/post/final state-key verification), provenance/witness exclusion inventory, deterministic pairwise-ranking MLP held-out sanity gate, and matched control/treatment rollouts; BLOCK_REAL_ROLLOUT is a preserved negative result"
+    },
+    "shared-solver/check-learned-prior-changefloor-repair.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.25g V1-vs-V2 representation A/B: V2 adds exactly one action feature (changeFloorDestinationDelta, resolved via floorOrder, fail-closed) while capacity/objective/corpus/recipe/seed stay frozen; gates on unique changeFloor rank < 0.5 and overall micro < kind-prior; rollouts (true MT5 blueKing terminal) only when both gates pass; asserts the V1 control still reproduces the frozen 5.25d/5.25e anchors"
     },
     "shared-solver/check-learned-prior-corpus-inventory.js": {
       "grade": "diagnostic",

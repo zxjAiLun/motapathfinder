@@ -45,7 +45,7 @@ const path = require("path");
 
 const { buildStateKey } = require("./state-key");
 const { normalizeAction } = require("./route-store");
-const { encodeFeatures } = require("./learned-action-prior");
+const { encodeFeatures, encodeFeaturesV2 } = require("./learned-action-prior");
 const {
   SOLVER_ROOT,
   createSimulator,
@@ -167,6 +167,14 @@ function replayRouteFile(project, absPath, options) {
     signatures.push(signature);
     kinds[decision.kind] = (kinds[decision.kind] || 0) + 1;
     if (config.captureDecisions) {
+      // Fail closed on an unresolvable changeFloor destination: exclude the whole
+      // route (with a recorded reason) rather than silently encoding delta 0.
+      let vectorsV2;
+      try {
+        vectorsV2 = normalized.map((action) => encodeFeaturesV2(state, action, { floorOrder: project.floorOrder }));
+      } catch (error) {
+        return { relPath, ok: false, reason: `changefloor-destination-unresolved@${decision.index}`, mode, detail: error.message };
+      }
       decisionRecords.push({
         signature,
         decisionIndex: decision.index,
@@ -176,6 +184,7 @@ function replayRouteFile(project, absPath, options) {
         chosenIndex: reproducing[0],
         legalActionCount: normalized.length,
         vectors: normalized.map((action) => encodeFeatures(state, action)),
+        vectorsV2,
         actionEstimates: normalized.map((action) => normalizeEstimateForProbe(action.estimate)),
       });
     }
