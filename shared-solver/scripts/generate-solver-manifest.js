@@ -10,6 +10,7 @@ const CORE_DOMAIN = new Set([
   "project-loader.js",
   "state.js",
   "state-key.js",
+  "strict-replay.js",
   "start-state-loader.js",
   "solver-model.js",
 ]);

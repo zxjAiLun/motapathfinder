@@ -2648,6 +2648,21 @@
       },
       "notes": "auto-classified; refine in solver-manifest"
     },
+    "shared-solver/lib/strict-replay.js": {
+      "id": "strict-replay",
+      "path": "shared-solver/lib/strict-replay.js",
+      "layer": "domain",
+      "status": "canonical",
+      "role": "simulation-core",
+      "correctnessSource": true,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/teacher-divergence-audit.js": {
       "id": "teacher-divergence-audit",
       "path": "shared-solver/lib/teacher-divergence-audit.js",

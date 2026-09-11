@@ -36,6 +36,7 @@ const { StaticSimulator } = require("./lib/simulator");
 const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { createTransportCollapsedSearch } = require("./lib/transport-collapse");
 const { buildDependencyFrontier, evaluateWitnessRecall } = require("./lib/dependency-frontier");
+const { verifyStrictReplay: verifyStrictReplayShared } = require("./lib/strict-replay");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
 const DEFAULT_RESULT_PATH = path.resolve(__dirname, "routes", "generated", "resource-skyline-phase1.result.json");
@@ -98,24 +99,13 @@ function makeSimulator(project) {
   });
 }
 
-function verifyStrictReplay(simulator, route) {
-  if (!Array.isArray(route) || route.length === 0) {
-    return { ok: false, reason: "empty-or-non-array-route" };
-  }
-  let state = simulator.createInitialState({ rank: "chaos" });
-  for (let i = 0; i < route.length; i += 1) {
-    const step = route[i];
-    const actions = (simulator.enumeratePrimitiveActions(state) || {}).actions || [];
-    const matching = actions.find((a) => a.summary === step || a.kind === step);
-    if (!matching) {
-      return { ok: false, reason: `step-${i}-diverged: ${step}`, step: i, actionSummary: step };
-    }
-    state = simulator.applyAction(state, matching, { storeRoute: true });
-    if (!state || !state.hero || state.hero.hp <= 0) {
-      return { ok: false, reason: `step-${i}-lethal: ${step}`, step: i };
-    }
-  }
-  return { ok: true, finalFloorId: state.floorId, finalState: state };
+/**
+ * Strict replay gate. Delegates to the shared implementation so that every
+ * autonomous qualification harness uses the SAME acceptance rule, including
+ * terminal-state equality and post-replay goal re-verification.
+ */
+function verifyStrictReplay(simulator, route, options) {
+  return verifyStrictReplayShared(simulator, route, options);
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +141,10 @@ function runChild(args) {
 
   let replay = null;
   if (result.found && result.route) {
-    replay = verifyStrictReplay(simulator, result.route);
+    replay = verifyStrictReplay(simulator, result.route, {
+      isGoalState,
+      expectedFinalState: result.finalState,
+    });
   }
 
   const summary = {
