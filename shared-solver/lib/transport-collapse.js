@@ -37,6 +37,7 @@
 
 const { buildStateKey } = require("./state-key");
 const { cloneState, listFloorMutationSummary } = require("./state");
+const { resolveRelativeFloor } = require("./floor-transitions");
 
 /**
  * Flag keys that describe navigation position or pure caches rather than world
@@ -140,7 +141,7 @@ function summaryOf(action) {
   return action ? action.summary || action.kind || "unknown" : "unknown";
 }
 
-function actionToSemanticIdentity(action, state, nextState) {
+function actionToSemanticIdentity(action, state, nextState, project) {
   const floorId = action.floorId || (state && state.floorId) || "";
   const target = action.target || action.stance || {};
   const x = target.x;
@@ -155,7 +156,14 @@ function actionToSemanticIdentity(action, state, nextState) {
     return `item:${floorId}:${x},${y}:${action.itemId || ""}`;
   }
   if (action.kind === "changeFloor") {
-    const targetFloor = (nextState && nextState.floorId) || (action.changeFloor && action.changeFloor.floorId) || "";
+    let targetFloor = (nextState && nextState.floorId) || (action.changeFloor && action.changeFloor.floorId) || "";
+    if (project && typeof targetFloor === "string" && targetFloor.startsWith(":")) {
+      try {
+        targetFloor = resolveRelativeFloor(project, floorId, targetFloor);
+      } catch (_) {
+        // fallback
+      }
+    }
     return `changeFloor:${floorId}:${x},${y}->${targetFloor}`;
   }
   if (action.kind === "event") {
@@ -164,7 +172,7 @@ function actionToSemanticIdentity(action, state, nextState) {
   return `${action.kind}:${floorId}:${x},${y}`;
 }
 
-function poiToSemanticIdentity(poi) {
+function poiToSemanticIdentity(poi, project) {
   const floorId = poi.floorId;
   const x = poi.x;
   const y = poi.y;
@@ -178,12 +186,15 @@ function poiToSemanticIdentity(poi) {
     return `item:${floorId}:${x},${y}:${poi.tileId || ""}`;
   }
   if (poi.kind === "changeFloor") {
-    const targetFloor = (poi.transition && poi.transition.targetFloorId) || "";
-    let resolved = targetFloor;
-    if (floorId === "MT2" && targetFloor === ":before") resolved = "MT1";
-    if (floorId === "MT2" && targetFloor === ":next") resolved = "MT3";
-    if (floorId === "MT1" && targetFloor === ":next") resolved = "MT2";
-    return `changeFloor:${floorId}:${x},${y}->${resolved}`;
+    let targetFloor = (poi.transition && poi.transition.targetFloorId) || (poi.transition && poi.transition.floorId) || "";
+    if (project && typeof targetFloor === "string" && targetFloor.startsWith(":")) {
+      try {
+        targetFloor = resolveRelativeFloor(project, floorId, targetFloor);
+      } catch (_) {
+        // fallback
+      }
+    }
+    return `changeFloor:${floorId}:${x},${y}->${targetFloor}`;
   }
   if (poi.kind === "event") {
     return `event:${floorId}:${x},${y}`;
@@ -550,7 +561,7 @@ function createTransportCollapsedSearch(simulator) {
           frontier.push(child.id);
         } else {
           neutralQueue.push(child.id);
-          const identity = actionToSemanticIdentity(candidate.action, candidate.state, candidate.next);
+          const identity = actionToSemanticIdentity(candidate.action, candidate.state, candidate.next, simulator.project);
           if (frontierSet.has(identity)) {
             const score = (priorityMap && priorityMap.get(identity)) || 100;
             heapPush({ nodeId: child.id, score });

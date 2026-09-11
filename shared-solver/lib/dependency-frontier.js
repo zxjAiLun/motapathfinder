@@ -1,153 +1,148 @@
 "use strict";
 
 /**
- * PR-5.25m — Structural Prerequisite Frontier Identification & Dual-Queue Priority.
- *
- * Route-free structural prerequisite candidate identification for the MT1->MT3
- * corridor in Only up V2.1.
+ * PR-5.25m Repair 1 — Autonomous Structural Prerequisite Frontier Identification.
  *
  * PROTOCOL BOUNDARIES:
- *   1. ROUTE_FREE = TRUE — the frontier is constructed purely from TowerIR topology,
- *      walk components, and POI coordinates. No route fixture, no prefix, no
- *      trace, no authored sequence is ever read during frontier generation.
- *   2. WITNESS_IS_EVALUATOR_ONLY = TRUE — the successful witness route is used
- *      ONLY to evaluate whether the automatically inferred frontier covers the
- *      observed precursor state changes (recall).
- *   3. NO_PRUNING = TRUE — during search (Phase 2), dependency guidance only
- *      affects expansion priority via a bounded-fair dual queue (guided heap +
- *      neutral FIFO). Every legal action is generated, every strategic successor
- *      is retained in the exact registry, and neutral FIFO expands all nodes
- *      eventually.
+ *   1. ZERO_AUTHORED_TARGET_COORDINATES = TRUE
+ *      No corridor floors, no startNodeId, no goalNodeId, no MT2, no 6,0 or 6,12
+ *      are passed as inputs.
+ *      Only initialState (e.g. CHAOS MT1) and terminalGoal ({ type: "floorReached", floorId: "MT3" })
+ *      are provided.
+ *   2. TARGET_TRANSITION_DISCOVERY = DERIVED_FROM_PROJECT_AND_TERMINAL_GOAL
+ *      Floor envelope MT1->MT2->MT3 and target transition MT2:6,12->MT3 are derived
+ *      strictly and automatically via buildPlanningFloorEnvelope() and buildFloorTransitionGraph().
+ *   3. MACRO_GRAPH_REUSE = TRUE
+ *      The entire topology and cross-floor transition graph is built by
+ *      buildAutomaticMacroGraph(project, initialState, terminalGoal).
+ *   4. STRATEGIC_UNIVERSE_COMPLETION = TRUE
+ *      ALL_STRATEGIC_POIS includes all strategic POIs across the corridor:
+ *      ["enemy", "door", "item", "changeFloor", "event"] plus mutations.
+ *   5. DYNAMIC_RELATIVE_FLOOR_RESOLUTION = TRUE
+ *      All relative floor transitions (:next / :before) are resolved dynamically
+ *      via resolveRelativeFloor(project, ...). No hardcoded floor mappings.
+ *   6. BOUNDED_ALTERNATIVE_DEPENDENCY_PATHS = TRUE
+ *      Frontier is formed by the union of prerequisites from bounded alternative
+ *      paths to the discovered target transition and corridor resource targets,
+ *      replacing distance slack.
+ *   7. WITNESS_IS_EVALUATOR_ONLY = TRUE
+ *      The witness route is opened ONLY after the frontier is constructed and frozen.
  */
 
-const { compileTowerIR } = require("./tower-ir");
+const { buildFloorTransitionGraph, buildPlanningFloorEnvelope, buildAutomaticMacroGraph } = require("./automatic-macro-graph");
+const { distinctAlternativePaths } = require("./automatic-dependency-planner");
 const { actionToSemanticIdentity, poiToSemanticIdentity, transportSignature } = require("./transport-collapse");
 const { readRouteRecord, replayRoute } = require("./learned-prior-dataset");
 
-const CARDINAL_DELTAS = Object.freeze([
-  { x: 0, y: -1 },
-  { x: 0, y: 1 },
-  { x: -1, y: 0 },
-  { x: 1, y: 0 },
-]);
-
 /**
- * Route-free construction of candidate strategic POIs and dependency frontier.
+ * Autonomous route-free construction of strategic universe and dependency frontier.
  *
- * Uses TowerIR for the corridor ["MT1", "MT2"], connects walk components and
- * POIs via static adjacency and POI-contact, and extracts candidate prerequisites
- * using bounded topological slack to the goal transition (MT2:6,12 -> MT3).
+ * Signature: buildDependencyFrontier(project, initialState, terminalGoal, options)
  */
-function buildDependencyFrontier(project, options) {
+function buildDependencyFrontier(project, initialState, terminalGoal, options) {
   const config = options || {};
-  const corridorFloors = config.corridorFloors || ["MT1", "MT2"];
-  const maxSlack = config.maxSlack == null ? 4 : config.maxSlack;
+  if (!project || !initialState || !terminalGoal) {
+    throw new Error("buildDependencyFrontier requires project, initialState, and terminalGoal");
+  }
 
-  const ir = compileTowerIR(project, {
-    id: "corridor-macro-graph",
-    scope: { floors: corridorFloors },
+  // --- 1. Autonomous Floor Envelope Discovery ---
+  const envelope = buildPlanningFloorEnvelope(project, initialState, terminalGoal.floorId);
+  const floorIds = envelope.floorIds;
+  const floorSet = new Set(floorIds);
+
+  // --- 2. Autonomous Target Transition Discovery ---
+  const transitionGraph = buildFloorTransitionGraph(project);
+  const targetTransitions = transitionGraph.edges.filter((edge) =>
+    edge.targetFloorId === terminalGoal.floorId && floorSet.has(edge.floorId));
+
+  if (targetTransitions.length === 0) {
+    throw new Error(`No static floor transition enters target ${terminalGoal.floorId} from envelope [${floorIds.join(", ")}]`);
+  }
+
+  const derivedTargetPoiIdentities = targetTransitions.map((t) => {
+    const [x, y] = t.at.split(",").map(Number);
+    return poiToSemanticIdentity({
+      floorId: t.floorId,
+      x,
+      y,
+      kind: "changeFloor",
+      transition: t.transition,
+    }, project);
   });
 
-  // ALL_STRATEGIC_POIS: all candidate strategic POIs in the corridor macro graph
-  // (enemies, doors, floor transitions, events)
-  const allStrategicPois = ir.pois
-    .filter((poi) => ["enemy", "door", "changeFloor", "event"].includes(poi.kind))
-    .map(poiToSemanticIdentity);
+  const targetTransition = targetTransitions[0];
+  const targetPoiId = `${targetTransition.floorId}:changeFloor:${targetTransition.at}`;
 
-  // Build undirected topology graph over components and POIs
-  const adj = new Map();
-  const addEdge = (u, v) => {
-    if (!adj.has(u)) adj.set(u, []);
-    adj.get(u).push(v);
-  };
+  // --- 3. Build Automatic Macro Graph ---
+  const macroGraph = buildAutomaticMacroGraph(project, initialState, terminalGoal, config);
 
-  for (const poi of ir.pois) {
-    for (const compId of (poi.adjacentComponentIds || [])) {
-      addEdge(compId, poi.poiId);
-      addEdge(poi.poiId, compId);
+  // --- 4. Complete Strategic Universe (enemy, door, item, changeFloor, event, mutation) ---
+  const strategicKinds = new Set(["enemy", "door", "item", "changeFloor", "event"]);
+  const allStrategicPoisSet = new Set();
+
+  for (const node of macroGraph.nodes) {
+    if (node.floorId && floorSet.has(node.floorId) && strategicKinds.has(node.kind)) {
+      allStrategicPoisSet.add(poiToSemanticIdentity(node, project));
+    } else if (node.kind === "mutation" && node.floorId && floorSet.has(node.floorId)) {
+      allStrategicPoisSet.add(`mutation:${node.floorId}:${node.at || "arrival"}`);
     }
   }
 
-  const poiCoords = new Map();
-  for (const poi of ir.pois) {
-    poiCoords.set(`${poi.floorId}:${poi.x},${poi.y}`, poi.poiId);
-  }
+  const allStrategicPois = Array.from(allStrategicPoisSet).sort();
 
-  for (const poi of ir.pois) {
-    for (const delta of CARDINAL_DELTAS) {
-      const neighborId = poiCoords.get(`${poi.floorId}:${poi.x + delta.x},${poi.y + delta.y}`);
-      if (neighborId && neighborId !== poi.poiId) {
-        addEdge(poi.poiId, neighborId);
-      }
-    }
-  }
-
-  // Cross-floor transitions in the corridor
-  addEdge("MT1:changeFloor:6,0", "MT2:changeFloor:6,0");
-  addEdge("MT2:changeFloor:6,0", "MT1:changeFloor:6,0");
-
-  const bfsDist = (startId) => {
-    const dist = new Map([[startId, 0]]);
-    const queue = [startId];
-    while (queue.length > 0) {
-      const cur = queue.shift();
-      const d = dist.get(cur);
-      for (const nxt of (adj.get(cur) || [])) {
-        if (!dist.has(nxt)) {
-          dist.set(nxt, d + 1);
-          queue.push(nxt);
-        }
-      }
-    }
-    return dist;
-  };
-
-  // Start from MT2 entry (MT2:changeFloor:6,0); goal is MT2:changeFloor:6,12
-  const startNodeId = config.startNodeId || "MT2:changeFloor:6,0";
-  const goalNodeId = config.goalNodeId || "MT2:changeFloor:6,12";
-
-  const distFromStart = bfsDist(startNodeId);
-  const distToGoal = bfsDist(goalNodeId);
-  const shortestDist = distFromStart.get(goalNodeId);
-
+  // --- 5. Bounded Alternative Dependency Paths ---
   const frontierSet = new Set();
-  const frontierPoiDetails = [];
+  const alternativeLimit = config.alternativeLimit == null ? 20 : config.alternativeLimit;
 
-  for (const [id, d1] of distFromStart.entries()) {
-    const poi = ir.pois.find((p) => p.poiId === id);
-    if (!poi) continue;
-    if (!["enemy", "door", "changeFloor", "event"].includes(poi.kind)) continue;
-    const d2 = distToGoal.get(id);
-    if (d2 != null && shortestDist != null && (d1 + d2 - shortestDist) <= maxSlack) {
-      const identity = poiToSemanticIdentity(poi);
-      frontierSet.add(identity);
-      frontierPoiDetails.push({
-        poiId: id,
-        identity,
-        kind: poi.kind,
-        floorId: poi.floorId,
-        x: poi.x,
-        y: poi.y,
-        tileId: poi.tileId,
-        slack: d1 + d2 - shortestDist,
+  // 5a. Alternative paths from source:initial to the discovered target transition
+  const targetPaths = distinctAlternativePaths(project, initialState, macroGraph, "source:initial", targetPoiId, alternativeLimit);
+  targetPaths.forEach((p) => {
+    p.path.filter((id) => !id.includes("component") && !id.startsWith("source:") && !id.startsWith("goal:"))
+      .forEach((id) => {
+        const node = macroGraph.nodes.find((n) => n.id === id);
+        if (node) frontierSet.add(poiToSemanticIdentity(node, project));
       });
-    }
-  }
+  });
 
-  // Also include the return transition MT2:6,0->MT1 as a candidate resource detour
-  frontierSet.add("changeFloor:MT2:6,0->MT1");
+  // 5b. Alternative paths to resource targets on the target floor(s)
+  const resourceNodes = macroGraph.nodes.filter((n) =>
+    n.floorId === targetTransition.floorId && n.kind === "item");
+  resourceNodes.forEach((rn) => {
+    const rPaths = distinctAlternativePaths(project, initialState, macroGraph, "source:initial", rn.id, 6);
+    rPaths.forEach((p) => {
+      p.path.filter((id) => !id.includes("component") && !id.startsWith("source:") && !id.startsWith("goal:"))
+        .forEach((id) => {
+          const node = macroGraph.nodes.find((n) => n.id === id);
+          if (node) frontierSet.add(poiToSemanticIdentity(node, project));
+        });
+    });
+  });
+
+  // 5c. Dynamic return transitions between envelope floors (resource detours)
+  const returnEdges = transitionGraph.edges.filter((e) =>
+    e.floorId === targetTransition.floorId &&
+    floorSet.has(e.targetFloorId) &&
+    e.targetFloorId !== terminalGoal.floorId);
+  returnEdges.forEach((re) => {
+    const [rx, ry] = re.at.split(",").map(Number);
+    frontierSet.add(`changeFloor:${re.floorId}:${rx},${ry}->${re.targetFloorId}`);
+  });
 
   const frontier = Array.from(frontierSet).sort();
 
   return {
+    targetTransitionDiscovery: "DERIVED_FROM_PROJECT_AND_TERMINAL_GOAL",
+    noAuthoredTargetCoordinate: true,
+    derivedFloorEnvelope: floorIds,
+    derivedTargetTransitions: targetTransitions,
+    derivedTargetPoiIdentities,
+    targetPoiId,
     allStrategicPois,
     allStrategicPoiCount: allStrategicPois.length,
     frontierSet,
     frontier,
     frontierCount: frontier.length,
-    frontierPoiDetails,
-    shortestTopologicalDist: shortestDist,
-    maxSlack,
+    alternativePathsCount: targetPaths.length,
   };
 }
 
@@ -156,46 +151,49 @@ function buildDependencyFrontier(project, options) {
  *
  * REPLAY PROTOCOL:
  *   1. Replay witnessRouteRecord strictly with learned-prior-dataset.replayRoute.
- *   2. Identify firstMt2Entry: first replay state where state.floorId === "MT2".
- *   3. Identify unlockState: first replay state where legal forward MT2->MT3 changeFloor exists.
+ *   2. Identify firstMt2Entry: first replay state where state.floorId === intermediate target floor.
+ *   3. Identify unlockState: first replay state where legal forward changeFloor to goal exists.
  *   4. Extract OBSERVED_PRE_UNLOCK_STATE_CHANGES: actions between firstMt2Entry and unlockState
  *      where transportSignature(pre) !== transportSignature(post).
  *   5. Match against frozen frontierSet via semantic POI identity.
  */
-function evaluateWitnessRecall(project, witnessRelPath, frontierSet, allStrategicPoiCount) {
+function evaluateWitnessRecall(project, witnessRelPath, frontierSet, allStrategicPoiCount, intermediateFloorId, goalFloorId) {
+  const targetIntermediate = intermediateFloorId || "MT2";
+  const targetGoal = goalFloorId || "MT3";
+
   const entry = readRouteRecord(witnessRelPath);
   const replay = replayRoute(entry, project);
 
-  let firstMt2EntryIdx = -1;
+  let firstEntryIdx = -1;
   let unlockIdx = -1;
 
   for (let i = 0; i < replay.examples.length; i += 1) {
     const ex = replay.examples[i];
-    if (firstMt2EntryIdx === -1 && ex.state.floorId === "MT2") {
-      firstMt2EntryIdx = i;
+    if (firstEntryIdx === -1 && ex.state.floorId === targetIntermediate) {
+      firstEntryIdx = i;
     }
-    const hasMT3Forward = ex.legalActions.some((a) =>
+    const hasGoalForward = ex.legalActions.some((a) =>
       a.kind === "changeFloor" &&
-      a.floorId === "MT2" &&
+      a.floorId === targetIntermediate &&
       a.changeFloor &&
-      (a.changeFloor.floorId === ":next" || a.changeFloor.floorId === "MT3"));
-    if (hasMT3Forward) {
+      (a.changeFloor.floorId === ":next" || a.changeFloor.floorId === targetGoal));
+    if (hasGoalForward) {
       unlockIdx = i;
       break;
     }
   }
 
-  const firstMt2EntryFound = firstMt2EntryIdx !== -1;
+  const firstEntryFound = firstEntryIdx !== -1;
   const unlockStateFound = unlockIdx !== -1;
 
   const observedPrecursors = [];
-  if (firstMt2EntryFound && unlockStateFound) {
-    for (let i = firstMt2EntryIdx; i < unlockIdx; i += 1) {
+  if (firstEntryFound && unlockStateFound) {
+    for (let i = firstEntryIdx; i < unlockIdx; i += 1) {
       const ex = replay.examples[i];
       const chosen = ex.legalActions[ex.chosenIndex];
       const nextState = replay.examples[i + 1].state;
       if (transportSignature(ex.state) !== transportSignature(nextState)) {
-        const identity = actionToSemanticIdentity(chosen, ex.state, nextState);
+        const identity = actionToSemanticIdentity(chosen, ex.state, nextState, project);
         observedPrecursors.push({
           step: i,
           identity,
@@ -209,7 +207,7 @@ function evaluateWitnessRecall(project, witnessRelPath, frontierSet, allStrategi
   }
 
   const oracleCount = observedPrecursors.length;
-  const oracleValid = firstMt2EntryFound && unlockStateFound && oracleCount > 0;
+  const oracleValid = firstEntryFound && unlockStateFound && oracleCount > 0;
 
   const oracleIdentities = new Set(observedPrecursors.map((p) => p.identity));
   const intersection = Array.from(frontierSet).filter((id) => oracleIdentities.has(id));
@@ -235,9 +233,9 @@ function evaluateWitnessRecall(project, witnessRelPath, frontierSet, allStrategi
 
   return {
     oracleValid,
-    firstMt2EntryFound,
+    firstEntryFound,
     unlockStateFound,
-    firstMt2EntryStep: firstMt2EntryIdx,
+    firstEntryStep: firstEntryIdx,
     unlockStep: unlockIdx,
     oracle_count: oracleCount,
     frontier_count: frontierCount,
@@ -256,8 +254,6 @@ function evaluateWitnessRecall(project, witnessRelPath, frontierSet, allStrategi
 }
 
 module.exports = {
-  actionToSemanticIdentity,
-  poiToSemanticIdentity,
   buildDependencyFrontier,
   evaluateWitnessRecall,
 };

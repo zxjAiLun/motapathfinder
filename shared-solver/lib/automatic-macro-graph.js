@@ -259,12 +259,16 @@ function buildAutomaticMacroGraph(project, initialState, terminalGoal, options) 
   if (!project || !initialState || !terminalGoal) {
     throw new Error("Automatic macro graph requires project, initial state, and terminal goal");
   }
-  if (terminalGoal.type !== "bossDefeated") {
+  if (terminalGoal.type !== "bossDefeated" && terminalGoal.type !== "floorReached") {
     throw new Error(`Unsupported automatic macro goal: ${terminalGoal.type}`);
   }
   const corridor = buildPlanningFloorEnvelope(project, initialState, terminalGoal.floorId, config);
   const floorIds = corridor.floorIds;
   const floorSet = new Set(floorIds);
+  const transitionGraph = buildFloorTransitionGraph(project);
+  const targetTransitions = terminalGoal.type === "floorReached"
+    ? transitionGraph.edges.filter((e) => e.targetFloorId === terminalGoal.floorId && floorSet.has(e.floorId))
+    : [];
   const ir = compileTowerIR(project, {
     id: "automatic-blind-corridor",
     scope: { floors: floorIds },
@@ -340,7 +344,13 @@ function buildAutomaticMacroGraph(project, initialState, terminalGoal, options) 
       node.evidence = isTarget ? "hard-terminal-match" : "inspection-candidate";
       if (isTarget) targetPoiIds.push(poi.poiId);
     } else if (poi.kind === "changeFloor") {
-      node.role = "floor-transition";
+      const isTarget = terminalGoal.type === "floorReached" &&
+        targetTransitions.some((t) => t.floorId === poi.floorId && t.at === coordinateKey(poi.x, poi.y));
+      node.role = isTarget ? "terminal-transition" : "floor-transition";
+      if (isTarget) {
+        node.evidence = "hard-terminal-match";
+        targetPoiIds.push(poi.poiId);
+      }
     } else if (poi.kind === "event") {
       node.role = "scripted-event";
     }
@@ -385,10 +395,12 @@ function buildAutomaticMacroGraph(project, initialState, terminalGoal, options) 
       }
     }
   }
-  if (targetPoiIds.length !== 1) {
-    throw new Error(`Terminal boss must match exactly one TowerIR POI; matched ${targetPoiIds.length}`);
+  if (targetPoiIds.length < 1) {
+    throw new Error(`Terminal goal must match at least one TowerIR POI; matched ${targetPoiIds.length}`);
   }
-  addEdge({ kind: "goal-satisfaction", from: targetPoiIds[0], to: "goal:terminal", evidence: "hard-terminal-match" });
+  for (const targetPoiId of targetPoiIds) {
+    addEdge({ kind: "goal-satisfaction", from: targetPoiId, to: "goal:terminal", evidence: "hard-terminal-match" });
+  }
 
   for (const node of nodes.filter((entry) => entry.kind === "door")) {
     for (const [itemId, amount] of Object.entries(node.requirements || {}).sort()) {

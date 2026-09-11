@@ -1,20 +1,22 @@
 "use strict";
 
 /**
- * PR-5.25m — Structural Prerequisite Frontier Identification & Dual-Queue Priority.
+ * PR-5.25m Repair 1 — Autonomous Structural Prerequisite Frontier & Dual-Queue Priority.
  *
- * PHASE 1: Route-Free Frontier Identification & Witness Recall Qualification
- *   1. Route-free corridor macro graph construction & dependency frontier freeze.
- *   2. Strict witness replay & precursor state-change extraction (transport delta).
- *   3. Semantic POI identity matching (recall, frontier compression, missed/extra).
- *   4. Gate: ORACLE_VALID && OBSERVED_PRE_UNLOCK_RECALL == 1.0 && FRONTIER < ALL_STRATEGIC.
+ * PHASE 1: Autonomous Frontier Identification & Witness Recall Qualification
+ *   1. Derived floor envelope MT1->MT2->MT3 via buildPlanningFloorEnvelope().
+ *   2. Derived target transition MT2:6,12->MT3 via buildFloorTransitionGraph().
+ *   3. Macro graph construction via buildAutomaticMacroGraph(project, initialState, terminalGoal).
+ *   4. Bounded alternative dependency paths to discovered target transition & corridor resources.
+ *   5. Frozen frontier evaluated against strictly replayed witness (observed precursors).
+ *   6. Gates: TARGET_TRANSITION_DISCOVERY, NO_AUTHORED_TARGET_COORDINATE, ORACLE_VALID,
+ *             OBSERVED_PRE_UNLOCK_RECALL == 1.0, FRONTIER < ALL_STRATEGIC.
  *
- * PHASE 2: Prerequisite-Prioritized Search Qualification (runs only if Phase 1 passes)
+ * PHASE 2: Prerequisite-Prioritized Search Qualification (runs only after Phase 1 passes)
  *   CONTROL   = Repaired transport-collapsed FIFO strategic search
  *   TREATMENT = Identical search + dependency-frontier bounded-fair dual queue
- *   SAME      = Simulator, exact state semantics, legal actions, exact registry,
- *               wall (180s), RSS (2048MB), expansion ceiling (120k).
- *   GATE      = CHAOS_MT1_TO_MT3 == FOUND && STRICT_REPLAY_VALID.
+ *   BUDGET    = 180s / 2048MB / 120k expansions (per-search child process isolation)
+ *   GATE      = CHAOS_MT1_TO_MT3 == FOUND && STRICT_REPLAY_VALID
  *
  * Usage:
  *   node check-dependency-frontier.js [--smoke] [--phase1-only] [--out=PATH]
@@ -118,6 +120,7 @@ function runChild(args) {
   const project = loadProject(PROJECT_ROOT);
   const simulator = makeSimulator(project);
   const initialState = simulator.createInitialState({ rank: "chaos" });
+  const terminalGoal = { type: "floorReached", floorId: "MT3" };
 
   const isGoalState = (state) => state.floorId === "MT3";
   const allowedFloors = ["MT1", "MT2", "MT3"];
@@ -125,7 +128,7 @@ function runChild(args) {
   const search = createTransportCollapsedSearch(simulator);
   let frontierSet = null;
   if (args.arm === "treatment") {
-    const frontierReport = buildDependencyFrontier(project);
+    const frontierReport = buildDependencyFrontier(project, initialState, terminalGoal);
     frontierSet = frontierReport.frontierSet;
   }
 
@@ -210,25 +213,45 @@ function main() {
     return;
   }
 
-  console.log("PR-5.25m — Structural Prerequisite Frontier & Dual-Queue Priority");
+  console.log("PR-5.25m Repair 1 — Autonomous Structural Prerequisite Frontier");
 
   const project = loadProject(PROJECT_ROOT);
+  const simulator = makeSimulator(project);
+  const initialState = simulator.createInitialState({ rank: "chaos" });
+  const terminalGoal = { type: "floorReached", floorId: "MT3" };
 
-  // --- Step 1 & 2: Route-free frontier construction & freeze ---
-  const frontierReport = buildDependencyFrontier(project);
-  console.log("  Phase 1 route-free frontier:");
-  console.log(`    ALL_STRATEGIC_POIS: ${frontierReport.allStrategicPoiCount}`);
-  console.log(`    FRONTIER:           ${frontierReport.frontierCount}`);
+  // --- Step 1 & 2: Route-free autonomous discovery & frontier construction ---
+  const frontierReport = buildDependencyFrontier(project, initialState, terminalGoal);
 
-  // --- Step 3: Strict witness evaluation ---
+  console.log("  Phase 1 Autonomous Frontier Discovery:");
+  console.log(`    derived floor envelope:     ${frontierReport.derivedFloorEnvelope.join(" -> ")}`);
+  console.log(`    derived target transition:  ${frontierReport.derivedTargetTransitions.map((t) => `${t.floorId}:${t.at}->${t.targetFloorId}`).join(", ")}`);
+  console.log(`    derived target POI identity: ${frontierReport.derivedTargetPoiIdentities.join(", ")}`);
+  console.log(`    TARGET_TRANSITION_DISCOVERY:${frontierReport.targetTransitionDiscovery}`);
+  console.log(`    NO_AUTHORED_COORDINATE:     ${frontierReport.noAuthoredTargetCoordinate}`);
+  console.log(`    ALL_STRATEGIC_POIS:         ${frontierReport.allStrategicPoiCount}`);
+  console.log(`    FRONTIER:                   ${frontierReport.frontierCount}`);
+
+  requireCondition(
+    frontierReport.targetTransitionDiscovery === "DERIVED_FROM_PROJECT_AND_TERMINAL_GOAL",
+    "Target transition must be derived from project and terminal goal",
+  );
+  requireCondition(
+    frontierReport.noAuthoredTargetCoordinate === true,
+    "Target coordinates must not be authored inputs",
+  );
+
+  // --- Step 3: Strict witness recall evaluation ---
   const witnessEval = evaluateWitnessRecall(
     project,
     WITNESS_REL_PATH,
     frontierReport.frontierSet,
     frontierReport.allStrategicPoiCount,
+    "MT2",
+    "MT3",
   );
 
-  console.log("  Phase 1 witness recall evaluation:");
+  console.log("  Phase 1 Witness Recall Evaluation:");
   console.log(`    ORACLE_VALID:               ${witnessEval.oracleValid}`);
   console.log(`    oracle_count:               ${witnessEval.oracle_count}`);
   console.log(`    frontier_count:             ${witnessEval.frontier_count}`);
@@ -245,12 +268,17 @@ function main() {
 
   if (args.phase1Only) {
     const artifact = {
-      milestone: "PR-5.25m",
+      milestone: "PR-5.25m-repair-1",
       phase1: {
         frontierReport: {
+          targetTransitionDiscovery: frontierReport.targetTransitionDiscovery,
+          noAuthoredTargetCoordinate: frontierReport.noAuthoredTargetCoordinate,
+          derivedFloorEnvelope: frontierReport.derivedFloorEnvelope,
+          derivedTargetTransitions: frontierReport.derivedTargetTransitions,
+          derivedTargetPoiIdentities: frontierReport.derivedTargetPoiIdentities,
           allStrategicPoiCount: frontierReport.allStrategicPoiCount,
           frontierCount: frontierReport.frontierCount,
-          shortestTopologicalDist: frontierReport.shortestTopologicalDist,
+          alternativePathsCount: frontierReport.alternativePathsCount,
         },
         witnessEval,
       },
@@ -259,7 +287,7 @@ function main() {
     };
     fs.mkdirSync(path.dirname(args.out), { recursive: true });
     fs.writeFileSync(args.out, JSON.stringify(artifact, null, 2));
-    console.log(`  result artifact            ${path.relative(path.resolve(__dirname, ".."), args.out)}`);
+    console.log(`  result artifact:           ${path.relative(path.resolve(__dirname, ".."), args.out)}`);
     return;
   }
 
@@ -294,11 +322,10 @@ function main() {
   console.log(`  verdict:                   ${phase2Verdict}`);
 
   const artifact = {
-    milestone: "PR-5.25m",
+    milestone: "PR-5.25m-repair-1",
     timestamp: new Date().toISOString(),
     protocol: {
-      corridor: ["MT1", "MT2", "MT3"],
-      goal: "floor MT3 (forward MT2->MT3 changeFloor)",
+      targetGoal: terminalGoal,
       budget: {
         maxRuntimeMs: args.maxRuntimeMs,
         maxRssMb: args.maxRssMb,
@@ -307,10 +334,14 @@ function main() {
     },
     phase1: {
       frontierReport: {
+        targetTransitionDiscovery: frontierReport.targetTransitionDiscovery,
+        noAuthoredTargetCoordinate: frontierReport.noAuthoredTargetCoordinate,
+        derivedFloorEnvelope: frontierReport.derivedFloorEnvelope,
+        derivedTargetTransitions: frontierReport.derivedTargetTransitions,
+        derivedTargetPoiIdentities: frontierReport.derivedTargetPoiIdentities,
         allStrategicPoiCount: frontierReport.allStrategicPoiCount,
         frontierCount: frontierReport.frontierCount,
-        shortestTopologicalDist: frontierReport.shortestTopologicalDist,
-        maxSlack: frontierReport.maxSlack,
+        alternativePathsCount: frontierReport.alternativePathsCount,
       },
       witnessEval,
     },
