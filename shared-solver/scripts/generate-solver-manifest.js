@@ -1566,6 +1566,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": true,
     "cleanCheckout": true,
     "notes": "PR-5.25n frontier-conditioned resource-state skyline search: Phase 0 preflight cleanups and autonomous target transition discovery; Phase 1 MT2 resource-state pressure measurement over expanded states; Phase 2 Pareto resource skyline priority qualification probe (CONTROL = 5.25m autonomous frontier dual queue, TREATMENT = identical search + Pareto resource skyline priority within structural groups, 180s/2GB/120k budget, one search per child process)"
+  },
+  "shared-solver/check-bounded-candidate.js": {
+    "grade": "diagnostic",
+    "allowsNotFound": true,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25o bounded candidate search capability qualification: capability study, not a causal throughput A/B; pipeline is the existing StaticSimulator plus transport-collapsed strategic successors plus autonomous dependency frontier; single new variable pendingCandidateCap with two predeclared capacities (256, then 1024 only if 256 does not find a route); dropped candidates are removed from both the guided heap and the neutral queue and never return; no new score and no hand-authored weights; retention order inherits goal state, frontier-guided, Pareto admission, then insertion order; 180s/2GB/120k budget, fresh child process per attempt"
   }
 };
 

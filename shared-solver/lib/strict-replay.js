@@ -3,34 +3,61 @@
 /**
  * Shared strict replay gate for autonomous search qualification.
  *
- * Replaying a route and merely checking "every step was enumerated and the hero
- * did not die" is NOT sufficient to accept a found solution. That weaker check
- * proves the route is executable, but it does not prove:
- *
- *   1. the replayed terminal state is the same state the search claimed to reach
- *      (state-key equality), and
- *   2. the replayed terminal state actually satisfies the goal predicate.
- *
- * Both are required before any arm may be reported as FOUND. This module
- * implements the full gate once, so every qualification harness shares one
- * definition instead of each growing its own partial copy.
+ * "Every step enumerated and hero survived" only proves a route is executable.
+ * This gate additionally requires: every step resolves to EXACTLY ONE action
+ * (ambiguous resolution fails closed), no lethal transition, replayed terminal
+ * state key equals the searched final state key, and the replayed terminal
+ * state satisfies isGoalState.
  */
-
 const { buildStateKey } = require("./state-key");
 
 /**
- * Replays `route` from the canonical initial state and verifies:
- *   - each step is enumerated as a legal primitive action at that point,
- *   - the hero stays alive,
- *   - the replayed terminal state key equals the searched final state key
- *     (when `expectedFinalState` is provided),
- *   - the replayed terminal state satisfies `isGoalState`
- *     (when `isGoalState` is provided).
+ * Fail-closed unique action resolution.
+ *
+ * `a.summary === step || a.kind === step` inside `find` is not strict: when
+ * several enumerated actions share a summary it silently accepts one of them,
+ * and the replay then validates a route that was never proven unique.
+ *
+ * Multiple summary matches are ambiguous and fail closed.
+ *
+ * Exception: the simulator can enumerate several distinct
+ * action objects that share one `summary` (e.g. two
+ * different walk paths to the same battle). These are
+ * aliases of a single logical action. They are accepted
+ * only when every candidate produces the SAME resulting
+ * state key, in which case the choice is immaterial and
+ * we take the first.
  */
+function resolveUniqueAction(simulator, state, actions, step, index) {
+  const summaryMatches = actions.filter((a) => a.summary === step);
+  if (summaryMatches.length > 1) {
+    const keys = summaryMatches.map((a) => buildStateKey(simulator.applyAction(state, a, { storeRoute: false })));
+    const allSame = keys.every((k) => k === keys[0]);
+    if (!allSame) {
+      return { error: { ok: false, reason: `step-${index}-ambiguous-summary: ${step}`, step: index, matchCount: summaryMatches.length } };
+    }
+    return { action: summaryMatches[0] };
+  }
+  if (summaryMatches.length === 1) return { action: summaryMatches[0] };
+
+  const kindMatches = actions.filter((a) => a.kind === step);
+  if (kindMatches.length > 1) {
+    const kkeys = kindMatches.map((a) => buildStateKey(simulator.applyAction(state, a, { storeRoute: false })));
+    if (!kkeys.every((k) => k === kkeys[0])) {
+      return { error: { ok: false, reason: `step-${index}-ambiguous-kind: ${step}`, step: index, matchCount: kindMatches.length } };
+    }
+    return { action: kindMatches[0] };
+  }
+  if (kindMatches.length === 1) return { action: kindMatches[0] };
+
+  return {
+    error: { ok: false, reason: `step-${index}-diverged: ${step}`, step: index },
+  };
+}
+
 function verifyStrictReplay(simulator, route, options) {
   const config = options || {};
   const isGoalState = typeof config.isGoalState === "function" ? config.isGoalState : null;
-
   if (!Array.isArray(route) || route.length === 0) {
     return { ok: false, reason: "empty-or-non-array-route" };
   }
@@ -39,11 +66,9 @@ function verifyStrictReplay(simulator, route, options) {
   for (let i = 0; i < route.length; i += 1) {
     const step = route[i];
     const actions = (simulator.enumeratePrimitiveActions(state) || {}).actions || [];
-    const matching = actions.find((a) => a.summary === step || a.kind === step);
-    if (!matching) {
-      return { ok: false, reason: `step-${i}-diverged: ${step}`, step: i, actionSummary: step };
-    }
-    state = simulator.applyAction(state, matching, { storeRoute: true });
+    const resolved = resolveUniqueAction(simulator, state, actions, step, i);
+    if (resolved.error) return resolved.error;
+    state = simulator.applyAction(state, resolved.action, { storeRoute: true });
     if (!state || !state.hero || state.hero.hp <= 0) {
       return { ok: false, reason: `step-${i}-lethal: ${step}`, step: i };
     }
@@ -51,26 +76,24 @@ function verifyStrictReplay(simulator, route, options) {
 
   const finalKey = buildStateKey(state);
 
-  // Terminal-state identity: the replayed end state must be exactly the state
-  // the search reported as its goal state.
   if (config.expectedFinalState) {
     const expectedKey = buildStateKey(config.expectedFinalState);
     if (expectedKey !== finalKey) {
       return {
         ok: false,
         reason: "terminal-state-mismatch",
+        step: route.length,
         expectedFinalKey: expectedKey,
-        replayedFinalKey: finalKey,
+        replayFinalKey: finalKey,
       };
     }
   }
 
-  // Goal re-assertion: the replayed end state must still satisfy the goal
-  // predicate when evaluated independently of the search's own bookkeeping.
   if (isGoalState && !isGoalState(state)) {
     return {
       ok: false,
-      reason: "goal-not-satisfied-on-replayed-terminal-state",
+      reason: "goal-unsatisfied-after-replay",
+      step: route.length,
       finalFloorId: state.floorId,
     };
   }
@@ -85,6 +108,4 @@ function verifyStrictReplay(simulator, route, options) {
   };
 }
 
-module.exports = {
-  verifyStrictReplay,
-};
+module.exports = { verifyStrictReplay, resolveUniqueAction };

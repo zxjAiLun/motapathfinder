@@ -263,9 +263,32 @@ function createTransportCollapsedSearch(simulator) {
     const trackResourcePressure = config.trackResourcePressure === true;
     const mt2ExpandedStates = trackResourcePressure ? [] : null;
 
+    // PR-5.25o bounded candidate search: cap on pending candidates.
+    const pendingCandidateCap = Number.isFinite(config.pendingCandidateCap) && config.pendingCandidateCap > 0
+      ? Math.floor(config.pendingCandidateCap)
+      : null;
+    const pending = [];
+    let pendingSeq = 0;
+
+    /**
+     * PR-5.25o retention rank: lower is retained.
+     *
+     * Deliberately inherits ordering information the search already has.
+     * No new score and no hand-authored weights.
+     */
+    const pendingRank = (node) => {
+      if (node.rankValue != null) return node.rankValue;
+      let rank = 30;
+      if (node.state && isGoalState(node.state)) rank = 0;
+      else if (node.frontierGuided) rank = 10;
+      else if (node.paretoAdmitted) rank = 20;
+      node.rankValue = rank;
+      return rank;
+    };
+    let frontierHead = 0;
+
     // CONTROL: pure FIFO
     const frontier = frontierSet ? null : [rootNode.id];
-    let frontierHead = 0;
 
     // TREATMENT: bounded-fair dual queue
     const guidedHeap = frontierSet ? [] : null;
@@ -318,6 +341,7 @@ function createTransportCollapsedSearch(simulator) {
     let strategicBranches = 0;
     let exactSuccessors = 0;
     let duplicatesSkipped = 0;
+    let candidatesDropped = 0;
     let deadEndActions = 0;
     let transportClosureVisited = 0;
     let transportClosureExpansionRuns = 0;
@@ -507,7 +531,11 @@ function createTransportCollapsedSearch(simulator) {
             break;
           }
         }
-        if (node) expanded.add(node.id);
+        if (node) {
+          expanded.add(node.id);
+          const at = pending.indexOf(node.id);
+          if (at >= 0) pending.splice(at, 1);
+        }
       }
       if (!node) break;
       if (trackResourcePressure && node.state && node.state.floorId === "MT2") {
@@ -568,6 +596,10 @@ function createTransportCollapsedSearch(simulator) {
         nodesById.set(child.id, child);
         registry.set(child.key, child);
         exactSuccessors += 1;
+        child.frontierGuided = false;
+        child.paretoAdmitted = false;
+        child.pendingSeq = pendingSeq++;
+        pending.push(child.id);
 
         if (!frontierSet) {
           frontier.push(child.id);
@@ -575,16 +607,50 @@ function createTransportCollapsedSearch(simulator) {
           neutralQueue.push(child.id);
           const identity = actionToSemanticIdentity(candidate.action, candidate.state, candidate.next, simulator.project);
           if (frontierSet.has(identity)) {
+            child.frontierGuided = true;
             let isDominated = false;
             if (resourceSkylinePriority) {
               const query = skylineSet.query(candidate.next, child.id, candidate.key);
               isDominated = query.isDominated;
               skylineSet.insert(candidate.next, child.id, candidate.key);
             }
+            child.paretoAdmitted = !isDominated;
             if (!isDominated) {
+              if (resourceSkylinePriority) child.paretoAdmitted = true;
               const score = (priorityMap && priorityMap.get(identity)) || 100;
               heapPush({ nodeId: child.id, score });
             }
+          }
+        }
+      }
+
+      // PR-5.25o: bounded candidate drop. Enforce the cap AFTER the expansion is
+      // complete so the currently-expanded node's own children are never dropped
+      // before they can ever be considered. Dropped candidates are removed from
+      // BOTH the guided heap and the neutral queue — they never return.
+      if (pendingCandidateCap != null && pending.length > pendingCandidateCap) {
+        const scored = pending
+          .map((id, index) => ({ id, index, node: nodesById.get(id) }))
+          .filter((e) => e.node && !e.node.closed)
+          .map((e) => ({ id: e.id, index: e.index, rank: pendingRank(e.node) }))
+          .sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
+        const keep = new Set(scored.slice(0, pendingCandidateCap).map((e) => e.id));
+        const droppedIds = scored.slice(pendingCandidateCap).map((e) => e.id);
+        for (const id of droppedIds) {
+          const dn = nodesById.get(id);
+          if (dn) dn.dropped = true;
+        }
+        candidatesDropped += droppedIds.length;
+        pending.length = 0;
+        for (const e of scored) if (keep.has(e.id)) pending.push(e.id);
+        if (guidedHeap) {
+          for (let i = guidedHeap.length - 1; i >= 0; i -= 1) {
+            if (!keep.has(guidedHeap[i].nodeId)) guidedHeap.splice(i, 1);
+          }
+        }
+        if (neutralQueue) {
+          for (let i = neutralQueue.length - 1; i >= neutralHead; i -= 1) {
+            if (!keep.has(neutralQueue[i])) neutralQueue.splice(i, 1);
           }
         }
       }
@@ -635,6 +701,8 @@ function createTransportCollapsedSearch(simulator) {
       strategicBranches,
       exactSuccessors,
       duplicatesSkipped,
+      candidatesDropped,
+      pendingCandidateCap,
       deadEndActions,
       registrySize: registry.size,
       deepestStrategicDepth,
