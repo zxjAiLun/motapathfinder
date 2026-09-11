@@ -1747,6 +1747,21 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/resource-skyline.js": {
+      "id": "resource-skyline",
+      "path": "shared-solver/lib/resource-skyline.js",
+      "layer": "search/exploration",
+      "status": "exploration",
+      "role": "exploration-search",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/resource-timing-model.js": {
       "id": "resource-timing-model",
       "path": "shared-solver/lib/resource-timing-model.js",
@@ -3784,6 +3799,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-resource-skyline.js": {
+      "grade": "diagnostic",
+      "allowsNotFound": true,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.25n frontier-conditioned resource-state skyline search: Phase 0 preflight cleanups and autonomous target transition discovery; Phase 1 MT2 resource-state pressure measurement over expanded states; Phase 2 Pareto resource skyline priority qualification probe (CONTROL = 5.25m autonomous frontier dual queue, TREATMENT = identical search + Pareto resource skyline priority within structural groups, 180s/2GB/120k budget, one search per child process)"
     },
     "shared-solver/check-resource-timing-model.js": {
       "grade": "unit",

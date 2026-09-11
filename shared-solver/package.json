@@ -188,6 +188,7 @@
   "check:learned-prior-mcgs-proposer": "node check-learned-prior-mcgs-proposer.js",
   "check:transport-collapse": "node check-transport-collapse.js",
   "check:dependency-frontier": "node check-dependency-frontier.js",
+  "check:resource-skyline": "node check-resource-skyline.js",
   "check:no-tower-solver-js": "node ../tools/audit-js-files.js --check-no-tower-solver-js",
     "check:public-layer-boundaries": "node ../tools/check-agent-boundaries.js --public-layer-dev",
     "check:agent-boundaries": "node ../tools/check-agent-boundaries.js",

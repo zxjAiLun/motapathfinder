@@ -38,6 +38,7 @@
 const { buildStateKey } = require("./state-key");
 const { cloneState, listFloorMutationSummary } = require("./state");
 const { resolveRelativeFloor } = require("./floor-transitions");
+const { createResourceSkylineSet, analyzeResourceVariantPressure } = require("./resource-skyline");
 
 /**
  * Flag keys that describe navigation position or pure caches rather than world
@@ -176,6 +177,9 @@ function poiToSemanticIdentity(poi, project) {
   const floorId = poi.floorId;
   const x = poi.x;
   const y = poi.y;
+  if (poi.kind === "mutation") {
+    return `mutation:${poi.hook || "hook"}:${floorId}:${poi.at || "arrival"}`;
+  }
   if (poi.kind === "enemy") {
     return `battle:${floorId}:${x},${y}:${poi.tileId || ""}`;
   }
@@ -253,6 +257,11 @@ function createTransportCollapsedSearch(simulator) {
     const frontierSet = config.frontierSet instanceof Set ? config.frontierSet : null;
     const priorityMap = config.priorityMap instanceof Map ? config.priorityMap : null;
     const neutralEvery = config.neutralEvery == null ? 5 : Number(config.neutralEvery);
+    const resourceSkylinePriority = config.resourceSkylinePriority === true;
+    const skylineSet = resourceSkylinePriority ? createResourceSkylineSet() : null;
+
+    const trackResourcePressure = config.trackResourcePressure === true;
+    const mt2ExpandedStates = trackResourcePressure ? [] : null;
 
     // CONTROL: pure FIFO
     const frontier = frontierSet ? null : [rootNode.id];
@@ -501,6 +510,9 @@ function createTransportCollapsedSearch(simulator) {
         if (node) expanded.add(node.id);
       }
       if (!node) break;
+      if (trackResourcePressure && node.state && node.state.floorId === "MT2") {
+        mt2ExpandedStates.push({ id: node.id, key: node.key, state: cloneState(node.state) });
+      }
 
       if (isGoalState(node.state)) {
         goalNode = node;
@@ -563,8 +575,16 @@ function createTransportCollapsedSearch(simulator) {
           neutralQueue.push(child.id);
           const identity = actionToSemanticIdentity(candidate.action, candidate.state, candidate.next, simulator.project);
           if (frontierSet.has(identity)) {
-            const score = (priorityMap && priorityMap.get(identity)) || 100;
-            heapPush({ nodeId: child.id, score });
+            let isDominated = false;
+            if (resourceSkylinePriority) {
+              const query = skylineSet.query(candidate.next, child.id, candidate.key);
+              isDominated = query.isDominated;
+              skylineSet.insert(candidate.next, child.id, candidate.key);
+            }
+            if (!isDominated) {
+              const score = (priorityMap && priorityMap.get(identity)) || 100;
+              heapPush({ nodeId: child.id, score });
+            }
           }
         }
       }
@@ -602,6 +622,10 @@ function createTransportCollapsedSearch(simulator) {
       .slice(0, 5)
       .map(([key, count]) => ({ key, count }));
 
+    const resourceVariantPressure = trackResourcePressure
+      ? analyzeResourceVariantPressure(mt2ExpandedStates)
+      : null;
+
     return {
       found: Boolean(goalNode),
       route,
@@ -631,6 +655,7 @@ function createTransportCollapsedSearch(simulator) {
       stoppedReason,
       guidedExpansions,
       neutralExpansions,
+      resourceVariantPressure,
       searchComplete: !goalNode && !stoppedReason && !frontierOpen && closureTruncations === 0,
       wallMs: Date.now() - startedAt,
       peakRssMb: Math.round(peakRssMb * 10) / 10,

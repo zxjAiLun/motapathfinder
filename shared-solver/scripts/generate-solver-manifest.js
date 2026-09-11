@@ -87,6 +87,7 @@ const EXPLORATION = new Set([
   "event-forward-search.js",
   "transport-collapse.js",
   "dependency-frontier.js",
+  "resource-skyline.js",
 ]);
 const ROUTE = new Set([
   "route-store.js",
@@ -1557,6 +1558,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": true,
     "cleanCheckout": true,
     "notes": "PR-5.25m structural prerequisite frontier identification & dual-queue priority search: Phase 1 route-free corridor macro graph candidate identification and witness recall qualification; Phase 2 prerequisite-prioritized search qualification (CONTROL = repaired transport-collapsed FIFO, TREATMENT = identical search + dependency-frontier bounded-fair dual queue, 180s/2GB/120k budget, one search per child process)"
+  },
+  "shared-solver/check-resource-skyline.js": {
+    "grade": "diagnostic",
+    "allowsNotFound": true,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25n frontier-conditioned resource-state skyline search: Phase 0 preflight cleanups and autonomous target transition discovery; Phase 1 MT2 resource-state pressure measurement over expanded states; Phase 2 Pareto resource skyline priority qualification probe (CONTROL = 5.25m autonomous frontier dual queue, TREATMENT = identical search + Pareto resource skyline priority within structural groups, 180s/2GB/120k budget, one search per child process)"
   }
 };
 

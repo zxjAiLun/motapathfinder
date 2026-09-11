@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * PR-5.25m Repair 1 — Autonomous Structural Prerequisite Frontier Identification.
+ * PR-5.25n — Frontier-Conditioned Resource-State Skyline Search.
  *
  * PROTOCOL BOUNDARIES:
  *   1. ZERO_AUTHORED_TARGET_COORDINATES = TRUE
@@ -10,20 +10,21 @@
  *      Only initialState (e.g. CHAOS MT1) and terminalGoal ({ type: "floorReached", floorId: "MT3" })
  *      are provided.
  *   2. TARGET_TRANSITION_DISCOVERY = DERIVED_FROM_PROJECT_AND_TERMINAL_GOAL
- *      Floor envelope MT1->MT2->MT3 and target transition MT2:6,12->MT3 are derived
- *      strictly and automatically via buildPlanningFloorEnvelope() and buildFloorTransitionGraph().
- *   3. MACRO_GRAPH_REUSE = TRUE
- *      The entire topology and cross-floor transition graph is built by
- *      buildAutomaticMacroGraph(project, initialState, terminalGoal).
- *   4. STRATEGIC_UNIVERSE_COMPLETION = TRUE
- *      ALL_STRATEGIC_POIS includes all strategic POIs across the corridor:
- *      ["enemy", "door", "item", "changeFloor", "event"] plus mutations.
- *   5. DYNAMIC_RELATIVE_FLOOR_RESOLUTION = TRUE
+ *      Floor envelope MT1->MT2->MT3 and target transitions entering terminalGoal
+ *      are derived strictly and automatically via buildPlanningFloorEnvelope() and
+ *      buildFloorTransitionGraph(). Supports multiple target transitions by unioning.
+ *   3. PRE_GOAL_STRATEGIC_UNIVERSE = EXCLUDES_POST_GOAL_TARGET_FLOOR_CONTENT
+ *      ALL_STRATEGIC_POIS includes all strategic nodes on envelope floors before
+ *      the terminal floor, plus the terminal transitions themselves and corridor mutations.
+ *      Post-goal target floor content is excluded from the compression denominator.
+ *   4. DYNAMIC_RELATIVE_FLOOR_RESOLUTION = TRUE
  *      All relative floor transitions (:next / :before) are resolved dynamically
  *      via resolveRelativeFloor(project, ...). No hardcoded floor mappings.
+ *   5. UNIFIED_MUTATION_IDENTITY = TRUE
+ *      Mutations consistently use mutation:hook:floorId:at.
  *   6. BOUNDED_ALTERNATIVE_DEPENDENCY_PATHS = TRUE
  *      Frontier is formed by the union of prerequisites from bounded alternative
- *      paths to the discovered target transition and corridor resource targets,
+ *      paths to the discovered target transition(s) and intermediate corridor resources,
  *      replacing distance slack.
  *   7. WITNESS_IS_EVALUATOR_ONLY = TRUE
  *      The witness route is opened ONLY after the frontier is constructed and frozen.
@@ -49,14 +50,15 @@ function buildDependencyFrontier(project, initialState, terminalGoal, options) {
   const envelope = buildPlanningFloorEnvelope(project, initialState, terminalGoal.floorId);
   const floorIds = envelope.floorIds;
   const floorSet = new Set(floorIds);
+  const preGoalFloorSet = new Set(floorIds.filter((f) => f !== terminalGoal.floorId));
 
   // --- 2. Autonomous Target Transition Discovery ---
   const transitionGraph = buildFloorTransitionGraph(project);
   const targetTransitions = transitionGraph.edges.filter((edge) =>
-    edge.targetFloorId === terminalGoal.floorId && floorSet.has(edge.floorId));
+    edge.targetFloorId === terminalGoal.floorId && preGoalFloorSet.has(edge.floorId));
 
   if (targetTransitions.length === 0) {
-    throw new Error(`No static floor transition enters target ${terminalGoal.floorId} from envelope [${floorIds.join(", ")}]`);
+    throw new Error(`No static floor transition enters target ${terminalGoal.floorId} from pre-goal envelope [${Array.from(preGoalFloorSet).join(", ")}]`);
   }
 
   const derivedTargetPoiIdentities = targetTransitions.map((t) => {
@@ -70,43 +72,51 @@ function buildDependencyFrontier(project, initialState, terminalGoal, options) {
     }, project);
   });
 
-  const targetTransition = targetTransitions[0];
-  const targetPoiId = `${targetTransition.floorId}:changeFloor:${targetTransition.at}`;
-
   // --- 3. Build Automatic Macro Graph ---
   const macroGraph = buildAutomaticMacroGraph(project, initialState, terminalGoal, config);
 
-  // --- 4. Complete Strategic Universe (enemy, door, item, changeFloor, event, mutation) ---
+  // --- 4. Pre-Goal Strategic Universe (enemy, door, item, changeFloor, event, mutation) ---
+  // Excludes post-goal target floor content from the compression denominator.
   const strategicKinds = new Set(["enemy", "door", "item", "changeFloor", "event"]);
   const allStrategicPoisSet = new Set();
 
   for (const node of macroGraph.nodes) {
-    if (node.floorId && floorSet.has(node.floorId) && strategicKinds.has(node.kind)) {
+    if (node.floorId && preGoalFloorSet.has(node.floorId) && strategicKinds.has(node.kind)) {
       allStrategicPoisSet.add(poiToSemanticIdentity(node, project));
-    } else if (node.kind === "mutation" && node.floorId && floorSet.has(node.floorId)) {
-      allStrategicPoisSet.add(`mutation:${node.floorId}:${node.at || "arrival"}`);
+    } else if (node.kind === "mutation" && node.floorId && preGoalFloorSet.has(node.floorId)) {
+      allStrategicPoisSet.add(poiToSemanticIdentity(node, project));
     }
+  }
+
+  // Also include the terminal transition(s) themselves in the pre-goal strategic universe
+  for (const tid of derivedTargetPoiIdentities) {
+    allStrategicPoisSet.add(tid);
   }
 
   const allStrategicPois = Array.from(allStrategicPoisSet).sort();
 
-  // --- 5. Bounded Alternative Dependency Paths ---
+  // --- 5. Bounded Alternative Dependency Paths (Union over all target transitions & resources) ---
   const frontierSet = new Set();
   const alternativeLimit = config.alternativeLimit == null ? 20 : config.alternativeLimit;
+  let totalAlternativePaths = 0;
 
-  // 5a. Alternative paths from source:initial to the discovered target transition
-  const targetPaths = distinctAlternativePaths(project, initialState, macroGraph, "source:initial", targetPoiId, alternativeLimit);
-  targetPaths.forEach((p) => {
-    p.path.filter((id) => !id.includes("component") && !id.startsWith("source:") && !id.startsWith("goal:"))
-      .forEach((id) => {
-        const node = macroGraph.nodes.find((n) => n.id === id);
-        if (node) frontierSet.add(poiToSemanticIdentity(node, project));
-      });
-  });
+  // 5a. Alternative paths from source:initial to EVERY discovered target transition
+  for (const t of targetTransitions) {
+    const targetPoiId = `${t.floorId}:changeFloor:${t.at}`;
+    const targetPaths = distinctAlternativePaths(project, initialState, macroGraph, "source:initial", targetPoiId, alternativeLimit);
+    totalAlternativePaths += targetPaths.length;
+    targetPaths.forEach((p) => {
+      p.path.filter((id) => !id.includes("component") && !id.startsWith("source:") && !id.startsWith("goal:"))
+        .forEach((id) => {
+          const node = macroGraph.nodes.find((n) => n.id === id);
+          if (node) frontierSet.add(poiToSemanticIdentity(node, project));
+        });
+    });
+  }
 
-  // 5b. Alternative paths to resource targets on the target floor(s)
+  // 5b. Alternative paths to resource targets on all intermediate pre-goal floors
   const resourceNodes = macroGraph.nodes.filter((n) =>
-    n.floorId === targetTransition.floorId && n.kind === "item");
+    preGoalFloorSet.has(n.floorId) && n.floorId !== initialState.floorId && n.kind === "item");
   resourceNodes.forEach((rn) => {
     const rPaths = distinctAlternativePaths(project, initialState, macroGraph, "source:initial", rn.id, 6);
     rPaths.forEach((p) => {
@@ -120,8 +130,8 @@ function buildDependencyFrontier(project, initialState, terminalGoal, options) {
 
   // 5c. Dynamic return transitions between envelope floors (resource detours)
   const returnEdges = transitionGraph.edges.filter((e) =>
-    e.floorId === targetTransition.floorId &&
-    floorSet.has(e.targetFloorId) &&
+    preGoalFloorSet.has(e.floorId) &&
+    preGoalFloorSet.has(e.targetFloorId) &&
     e.targetFloorId !== terminalGoal.floorId);
   returnEdges.forEach((re) => {
     const [rx, ry] = re.at.split(",").map(Number);
@@ -134,15 +144,15 @@ function buildDependencyFrontier(project, initialState, terminalGoal, options) {
     targetTransitionDiscovery: "DERIVED_FROM_PROJECT_AND_TERMINAL_GOAL",
     noAuthoredTargetCoordinate: true,
     derivedFloorEnvelope: floorIds,
+    derivedPreGoalFloors: Array.from(preGoalFloorSet),
     derivedTargetTransitions: targetTransitions,
     derivedTargetPoiIdentities,
-    targetPoiId,
     allStrategicPois,
     allStrategicPoiCount: allStrategicPois.length,
     frontierSet,
     frontier,
     frontierCount: frontier.length,
-    alternativePathsCount: targetPaths.length,
+    alternativePathsCount: totalAlternativePaths,
   };
 }
 
@@ -151,9 +161,9 @@ function buildDependencyFrontier(project, initialState, terminalGoal, options) {
  *
  * REPLAY PROTOCOL:
  *   1. Replay witnessRouteRecord strictly with learned-prior-dataset.replayRoute.
- *   2. Identify firstMt2Entry: first replay state where state.floorId === intermediate target floor.
+ *   2. Identify firstEntry: first replay state on intermediate floor.
  *   3. Identify unlockState: first replay state where legal forward changeFloor to goal exists.
- *   4. Extract OBSERVED_PRE_UNLOCK_STATE_CHANGES: actions between firstMt2Entry and unlockState
+ *   4. Extract OBSERVED_PRE_UNLOCK_STATE_CHANGES: actions between firstEntry and unlockState
  *      where transportSignature(pre) !== transportSignature(post).
  *   5. Match against frozen frontierSet via semantic POI identity.
  */
@@ -235,6 +245,8 @@ function evaluateWitnessRecall(project, witnessRelPath, frontierSet, allStrategi
     oracleValid,
     firstEntryFound,
     unlockStateFound,
+    targetIntermediate,
+    targetGoal,
     firstEntryStep: firstEntryIdx,
     unlockStep: unlockIdx,
     oracle_count: oracleCount,
