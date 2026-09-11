@@ -39,6 +39,7 @@ const { buildStateKey } = require("./state-key");
 const { cloneState, listFloorMutationSummary } = require("./state");
 const { resolveRelativeFloor } = require("./floor-transitions");
 const { createResourceSkylineSet, analyzeResourceVariantPressure } = require("./resource-skyline");
+const { normalizeAction } = require("./route-store");
 
 /**
  * Flag keys that describe navigation position or pure caches rather than world
@@ -421,8 +422,8 @@ function createTransportCollapsedSearch(simulator) {
       const signaturesByKey = new Map();
       signaturesByKey.set(startKey, transportSignature(startState));
       const visited = new Map();
-      visited.set(startKey, { state: startState, chain: [] });
-      const queue = [{ state: startState, chain: [], signature: signaturesByKey.get(startKey) }];
+      visited.set(startKey, { state: startState, chain: [], trace: [] });
+      const queue = [{ state: startState, chain: [], trace: [], signature: signaturesByKey.get(startKey) }];
       let head = 0;
       const strategic = [];
       let absorbed = 0;
@@ -465,11 +466,15 @@ function createTransportCollapsedSearch(simulator) {
           if (signature === entry.signature) {
             absorbed += 1;
             if (visited.has(key)) continue;
-            const child = { state: next, chain: entry.chain.concat([summaryOf(action)]) };
+            const child = {
+              state: next,
+              chain: entry.chain.concat([summaryOf(action)]),
+              trace: entry.trace.concat([{ action: normalizeAction(action), postExactStateKey: key }]),
+            };
             visited.set(key, child);
-            queue.push({ state: next, chain: child.chain, signature });
+            queue.push({ state: next, chain: child.chain, trace: child.trace, signature });
           } else {
-            strategic.push({ state: entry.state, chain: entry.chain, action, next, key });
+            strategic.push({ state: entry.state, chain: entry.chain, trace: entry.trace, action, next, key });
           }
         }
       }
@@ -591,6 +596,14 @@ function createTransportCollapsedSearch(simulator) {
           // Macro search is not the correctness source, but the chain must be
           // complete for strict replay to be the final authority.
           macroChain: candidate.chain.concat([summaryOf(candidate.action)]),
+          // PR-5.25o Repair 1: structured replay trace. The summary string alone
+          // cannot uniquely identify an action variant (several walk paths to the
+          // same battle share one summary AND one fingerprint). Keep the
+          // normalized action entry plus its resulting exact state key so the
+          // existing route-store resolver can disambiguate on replay.
+          macroTrace: candidate.trace.concat([
+            { action: normalizeAction(candidate.action), postExactStateKey: candidate.key },
+          ]),
           depth: node.depth + 1,
         };
         nodesById.set(child.id, child);
@@ -661,18 +674,24 @@ function createTransportCollapsedSearch(simulator) {
     }
 
     let route = null;
+    let routeTrace = null;
     let finalState = null;
     if (goalNode) {
       const chain = [];
+      const trace = [];
       let cursor = goalNode;
       const segments = [];
       while (cursor && cursor.parentId != null) {
-        segments.push(cursor.macroChain || []);
+        segments.push({ chain: cursor.macroChain || [], trace: cursor.macroTrace || [] });
         cursor = nodesById.get(cursor.parentId);
       }
       segments.reverse();
-      for (const segment of segments) chain.push(...segment);
+      for (const segment of segments) {
+        chain.push(...segment.chain);
+        trace.push(...segment.trace);
+      }
       route = chain;
+      routeTrace = trace;
       finalState = goalNode.state;
     }
 
@@ -695,6 +714,7 @@ function createTransportCollapsedSearch(simulator) {
     return {
       found: Boolean(goalNode),
       route,
+      routeTrace,
       finalState,
       // strategic search accounting
       strategicExpansions,

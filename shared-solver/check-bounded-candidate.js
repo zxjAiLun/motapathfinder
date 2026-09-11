@@ -135,6 +135,7 @@ function runChild(args) {
     replay = verifyStrictReplay(simulator, result.route, {
       isGoalState,
       expectedFinalState: result.finalState,
+      routeTrace: result.routeTrace,
     });
   }
 
@@ -150,6 +151,8 @@ function runChild(args) {
     replayValid: replay ? replay.ok : null,
     replayReason: replay && !replay.ok ? replay.reason : null,
     routeLength: result.route ? result.route.length : null,
+    route: result.found ? result.route : null,
+    routeTrace: result.found ? result.routeTrace : null,
     stoppedReason: result.stoppedReason,
     searchComplete: result.searchComplete,
     deepestFloorOrdinal: result.deepestFloorOrdinal,
