@@ -86,6 +86,7 @@ const EXPLORATION = new Set([
   "floor-checkpoints.js",
   "event-forward-search.js",
   "transport-collapse.js",
+  "dependency-frontier.js",
 ]);
 const ROUTE = new Set([
   "route-store.js",
@@ -1549,6 +1550,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": true,
     "cleanCheckout": true,
     "notes": "PR-5.25l transport-collapsed irreversible decision search: four correctness micros on a stub simulator (pure ping-pong collapses to zero strategic branches, first-arrive mutation stays strategic, one-way transport invents no return, macro chain expands to identical primitive execution) plus the real CHAOS-MT1 -> MT3 probe and, if it passes, the CHAOS-MT1 -> MT5 blueKing qualification, CONTROL = 5.25a event-forward search with the evaluator off, one search per child process; a not-found result is a preserved negative, not an infrastructure failure"
+  },
+  "shared-solver/check-dependency-frontier.js": {
+    "grade": "diagnostic",
+    "allowsNotFound": true,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25m structural prerequisite frontier identification & dual-queue priority search: Phase 1 route-free corridor macro graph candidate identification and witness recall qualification; Phase 2 prerequisite-prioritized search qualification (CONTROL = repaired transport-collapsed FIFO, TREATMENT = identical search + dependency-frontier bounded-fair dual queue, 180s/2GB/120k budget, one search per child process)"
   }
 };
 

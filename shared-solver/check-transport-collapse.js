@@ -246,8 +246,56 @@ function microReplay() {
   return { micro: "REPLAY", pass: true, route: result.route, replayMatchesSearch: true };
 }
 
+/**
+ * Micro 5 — SEMANTIC_DOUBLE_UNDERSCORE_FLAG: an action mutates `__customSemanticFlag`.
+ * Since it is not in TRANSPORT_IGNORED_FLAG_KEYS, it must not be ignored by
+ * transportSignature and must be registered as a strategic branch.
+ */
+function microSemanticDoubleUnderscoreFlag() {
+  const setSemantic = (state) => { state.flags.__customSemanticFlag = 1; };
+  const simulator = createStubSimulator((state) => (
+    !state.flags.__customSemanticFlag ? [stubAction("event:set-semantic", "event", setSemantic)] : []
+  ));
+  const start = stubState({ floorId: "MT1", visited: ["MT1"] });
+  const search = createTransportCollapsedSearch(simulator);
+  const result = search.search(start, { isGoalState: () => false, maxExpansions: 10 });
+  requireCondition(result.transportActionsAbsorbed === 0, "SEMANTIC_DOUBLE_UNDERSCORE_FLAG: must not be absorbed", result);
+  requireCondition(result.strategicBranches === 1, "SEMANTIC_DOUBLE_UNDERSCORE_FLAG: must produce strategic branch", result);
+  requireCondition(
+    transportSignature(start) !== transportSignature(simulator.applyAction(start, simulator.enumeratePrimitiveActions(start).actions[0])),
+    "SEMANTIC_DOUBLE_UNDERSCORE_FLAG: signature must change",
+  );
+  return { micro: "SEMANTIC_DOUBLE_UNDERSCORE_FLAG", pass: true, absorbed: result.transportActionsAbsorbed, strategicBranches: result.strategicBranches };
+}
+
+/**
+ * Micro 6 — CLOSURE_LIMIT_FAIL_CLOSED: if maxClosureStates is exceeded,
+ * closure.truncated is true, stoppedReason is "closure-limit", and
+ * searchComplete must NOT be true.
+ */
+function microClosureLimitFailClosed() {
+  const step = (state) => { state.hero.loc.x += 1; };
+  const simulator = createStubSimulator((state) => (
+    state.hero.loc.x < 5 ? [stubAction(`step:${state.hero.loc.x}`, "changeFloor", step)] : []
+  ));
+  const start = stubState({ floorId: "MT1", visited: ["MT1"] });
+  const search = createTransportCollapsedSearch(simulator);
+  const result = search.search(start, { isGoalState: () => false, maxExpansions: 10, maxClosureStates: 2 });
+  requireCondition(result.closureTruncations > 0, "CLOSURE_LIMIT_FAIL_CLOSED: must record closure truncation", result);
+  requireCondition(result.stoppedReason === "closure-limit", "CLOSURE_LIMIT_FAIL_CLOSED: stoppedReason must be closure-limit", result);
+  requireCondition(result.searchComplete === false, "CLOSURE_LIMIT_FAIL_CLOSED: searchComplete must be false", result);
+  return { micro: "CLOSURE_LIMIT_FAIL_CLOSED", pass: true, truncations: result.closureTruncations, stoppedReason: result.stoppedReason, searchComplete: result.searchComplete };
+}
+
 function runMicros() {
-  const micros = [microPurePingPong(), microFirstArriveMutation(), microOneWayTransport(), microReplay()];
+  const micros = [
+    microPurePingPong(),
+    microFirstArriveMutation(),
+    microOneWayTransport(),
+    microReplay(),
+    microSemanticDoubleUnderscoreFlag(),
+    microClosureLimitFailClosed(),
+  ];
   requireCondition(micros.every((micro) => micro.pass), "every micro must pass", micros);
   return micros;
 }
@@ -329,6 +377,12 @@ function runChild(args) {
     exactSuccessors: result.exactSuccessors == null ? null : result.exactSuccessors,
     transportActionsAbsorbed: result.transportActionsAbsorbed == null ? null : result.transportActionsAbsorbed,
     transportClosureVisited: result.transportClosureVisited == null ? null : result.transportClosureVisited,
+    closureTruncations: result.closureTruncations == null ? null : result.closureTruncations,
+    closureStateVisitsTotal: result.closureStateVisitsTotal == null ? null : result.closureStateVisitsTotal,
+    distinctClosureExactKeysGlobal: result.distinctClosureExactKeysGlobal == null ? null : result.distinctClosureExactKeysGlobal,
+    repeatedClosureExactKeyVisits: result.repeatedClosureExactKeyVisits == null ? null : result.repeatedClosureExactKeyVisits,
+    repeatFraction: result.repeatFraction == null ? null : result.repeatFraction,
+    topRepeatedExactKeys: result.topRepeatedExactKeys == null ? null : result.topRepeatedExactKeys,
     signatureCalls: result.signatureCalls == null ? null : result.signatureCalls,
     signatureWallMs: result.signatureWallMs == null ? null : result.signatureWallMs,
     deepestFloorOrdinal: result.deepestFloorOrdinal == null ? null : result.deepestFloorOrdinal,

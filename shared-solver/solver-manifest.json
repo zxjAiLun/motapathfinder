@@ -571,6 +571,21 @@
       },
       "notes": "auto-classified; refine in solver-manifest"
     },
+    "shared-solver/lib/dependency-frontier.js": {
+      "id": "dependency-frontier",
+      "path": "shared-solver/lib/dependency-frontier.js",
+      "layer": "search/exploration",
+      "status": "exploration",
+      "role": "exploration-search",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      }
+    },
     "shared-solver/lib/discovery-capability-audit.js": {
       "id": "discovery-capability-audit",
       "path": "shared-solver/lib/discovery-capability-audit.js",
@@ -2978,6 +2993,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.16d real D2 top-1 checkpoint failure versus multi-role checkpoint and OR-alternative switch with incremental strict replay"
+    },
+    "shared-solver/check-dependency-frontier.js": {
+      "grade": "diagnostic",
+      "allowsNotFound": true,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.25m structural prerequisite frontier identification & dual-queue priority search: Phase 1 route-free corridor macro graph candidate identification and witness recall qualification; Phase 2 prerequisite-prioritized search qualification (CONTROL = repaired transport-collapsed FIFO, TREATMENT = identical search + dependency-frontier bounded-fair dual queue, 180s/2GB/120k budget, one search per child process)"
     },
     "shared-solver/check-discovery-capability-audit.js": {
       "grade": "unit",

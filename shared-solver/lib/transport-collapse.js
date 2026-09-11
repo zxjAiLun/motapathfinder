@@ -78,9 +78,6 @@ function stableFlags(flags) {
     .sort()
     .reduce((result, key) => {
       if (TRANSPORT_IGNORED_FLAG_KEYS.has(key)) return result;
-      // Other double-underscore keys are internal caches; `*_buff__` is game
-      // state and must never be dropped.
-      if (key.startsWith("__") && !key.endsWith("_buff__")) return result;
       const value = flags[key];
       if (value == null || value === 0) return result;
       result[key] = value;
@@ -143,6 +140,57 @@ function summaryOf(action) {
   return action ? action.summary || action.kind || "unknown" : "unknown";
 }
 
+function actionToSemanticIdentity(action, state, nextState) {
+  const floorId = action.floorId || (state && state.floorId) || "";
+  const target = action.target || action.stance || {};
+  const x = target.x;
+  const y = target.y;
+  if (action.kind === "battle") {
+    return `battle:${floorId}:${x},${y}:${action.enemyId || ""}`;
+  }
+  if (action.kind === "openDoor") {
+    return `door:${floorId}:${x},${y}:${action.doorId || ""}`;
+  }
+  if (action.kind === "pickup" || action.kind === "interactPickup") {
+    return `item:${floorId}:${x},${y}:${action.itemId || ""}`;
+  }
+  if (action.kind === "changeFloor") {
+    const targetFloor = (nextState && nextState.floorId) || (action.changeFloor && action.changeFloor.floorId) || "";
+    return `changeFloor:${floorId}:${x},${y}->${targetFloor}`;
+  }
+  if (action.kind === "event") {
+    return `event:${floorId}:${x},${y}`;
+  }
+  return `${action.kind}:${floorId}:${x},${y}`;
+}
+
+function poiToSemanticIdentity(poi) {
+  const floorId = poi.floorId;
+  const x = poi.x;
+  const y = poi.y;
+  if (poi.kind === "enemy") {
+    return `battle:${floorId}:${x},${y}:${poi.tileId || ""}`;
+  }
+  if (poi.kind === "door") {
+    return `door:${floorId}:${x},${y}:${poi.tileId || ""}`;
+  }
+  if (poi.kind === "item") {
+    return `item:${floorId}:${x},${y}:${poi.tileId || ""}`;
+  }
+  if (poi.kind === "changeFloor") {
+    const targetFloor = (poi.transition && poi.transition.targetFloorId) || "";
+    let resolved = targetFloor;
+    if (floorId === "MT2" && targetFloor === ":before") resolved = "MT1";
+    if (floorId === "MT2" && targetFloor === ":next") resolved = "MT3";
+    if (floorId === "MT1" && targetFloor === ":next") resolved = "MT2";
+    return `changeFloor:${floorId}:${x},${y}->${resolved}`;
+  }
+  if (poi.kind === "event") {
+    return `event:${floorId}:${x},${y}`;
+  }
+  return `${poi.kind}:${floorId}:${x},${y}`;
+}
+
 function createTransportCollapsedSearch(simulator) {
   const enumerateActions = (state) => {
     const result = simulator.enumeratePrimitiveActions(state);
@@ -190,8 +238,60 @@ function createTransportCollapsedSearch(simulator) {
 
     const nodesById = new Map([[rootNode.id, rootNode]]);
     const registry = new Map([[rootNode.key, rootNode]]);
-    const frontier = [rootNode.id];
+
+    const frontierSet = config.frontierSet instanceof Set ? config.frontierSet : null;
+    const priorityMap = config.priorityMap instanceof Map ? config.priorityMap : null;
+    const neutralEvery = config.neutralEvery == null ? 5 : Number(config.neutralEvery);
+
+    // CONTROL: pure FIFO
+    const frontier = frontierSet ? null : [rootNode.id];
     let frontierHead = 0;
+
+    // TREATMENT: bounded-fair dual queue
+    const guidedHeap = frontierSet ? [] : null;
+    const neutralQueue = frontierSet ? [rootNode.id] : null;
+    let neutralHead = 0;
+    const expanded = frontierSet ? new Set() : null;
+    let neutralSinceGuided = 0;
+    let guidedExpansions = 0;
+    let neutralExpansions = 0;
+
+    const heapPush = (entry) => {
+      guidedHeap.push(entry);
+      let i = guidedHeap.length - 1;
+      while (i > 0) {
+        const parent = Math.floor((i - 1) / 2);
+        if (guidedHeap[parent].score >= guidedHeap[i].score) break;
+        const tmp = guidedHeap[parent];
+        guidedHeap[parent] = guidedHeap[i];
+        guidedHeap[i] = tmp;
+        i = parent;
+      }
+    };
+
+    const heapPop = () => {
+      if (guidedHeap.length === 0) return null;
+      const top = guidedHeap[0];
+      const last = guidedHeap.pop();
+      if (guidedHeap.length > 0) {
+        guidedHeap[0] = last;
+        let i = 0;
+        for (;;) {
+          const l = 2 * i + 1;
+          const r = l + 1;
+          let best = i;
+          if (l < guidedHeap.length && guidedHeap[l].score > guidedHeap[best].score) best = l;
+          if (r < guidedHeap.length && guidedHeap[r].score > guidedHeap[best].score) best = r;
+          if (best === i) break;
+          const tmp = guidedHeap[i];
+          guidedHeap[i] = guidedHeap[best];
+          guidedHeap[best] = tmp;
+          i = best;
+        }
+      }
+      return top;
+    };
+
     let nextNodeId = 2;
 
     let strategicExpansions = 0;
@@ -203,6 +303,9 @@ function createTransportCollapsedSearch(simulator) {
     let transportClosureExpansionRuns = 0;
     let transportActionsAbsorbed = 0;
     let closureTruncations = 0;
+    let closureStateVisitsTotal = 0;
+    const globalClosureExactKeys = new Set();
+    const closureExactKeyVisitCounts = new Map();
     // Mechanism explanation only: how much of the wall goes into deciding
     // transport-vs-strategic. The abstraction only pays off if the branching it
     // removes costs more than these deltas.
@@ -334,13 +437,57 @@ function createTransportCollapsedSearch(simulator) {
       if (stoppedReason) break;
 
       let node = null;
-      while (frontierHead < frontier.length) {
-        const candidate = nodesById.get(frontier[frontierHead]);
-        frontierHead += 1;
-        if (candidate) {
-          node = candidate;
-          break;
+      if (!frontierSet) {
+        while (frontierHead < frontier.length) {
+          const candidate = nodesById.get(frontier[frontierHead]);
+          frontierHead += 1;
+          if (candidate) {
+            node = candidate;
+            break;
+          }
         }
+      } else {
+        while (true) {
+          const neutralDue = neutralSinceGuided >= neutralEvery || guidedHeap.length === 0;
+          let candidateId = null;
+          if (neutralDue && neutralHead < neutralQueue.length) {
+            candidateId = neutralQueue[neutralHead++];
+            if (candidateId && !expanded.has(candidateId)) {
+              const candidate = nodesById.get(candidateId);
+              if (candidate && !candidate.closed) {
+                node = candidate;
+                neutralSinceGuided = 0;
+                neutralExpansions += 1;
+                break;
+              }
+            }
+          } else if (guidedHeap.length > 0) {
+            const entry = heapPop();
+            if (entry && !expanded.has(entry.nodeId)) {
+              const candidate = nodesById.get(entry.nodeId);
+              if (candidate && !candidate.closed) {
+                node = candidate;
+                neutralSinceGuided += 1;
+                guidedExpansions += 1;
+                break;
+              }
+            }
+          } else if (neutralHead < neutralQueue.length) {
+            candidateId = neutralQueue[neutralHead++];
+            if (candidateId && !expanded.has(candidateId)) {
+              const candidate = nodesById.get(candidateId);
+              if (candidate && !candidate.closed) {
+                node = candidate;
+                neutralSinceGuided = 0;
+                neutralExpansions += 1;
+                break;
+              }
+            }
+          } else {
+            break;
+          }
+        }
+        if (node) expanded.add(node.id);
       }
       if (!node) break;
 
@@ -355,7 +502,15 @@ function createTransportCollapsedSearch(simulator) {
       transportClosureVisited += closure.states.size;
       transportClosureExpansionRuns += closure.expansionRuns;
       transportActionsAbsorbed += closure.absorbed;
-      if (closure.truncated) closureTruncations += 1;
+      closureStateVisitsTotal += closure.states.size;
+      for (const key of closure.states.keys()) {
+        globalClosureExactKeys.add(key);
+        closureExactKeyVisitCounts.set(key, (closureExactKeyVisitCounts.get(key) || 0) + 1);
+      }
+      if (closure.truncated) {
+        closureTruncations += 1;
+        if (!stoppedReason) stoppedReason = "closure-limit";
+      }
       signatureCalls += closure.signatureCalls;
       signatureWallMs += closure.signatureWallMs;
 
@@ -389,8 +544,18 @@ function createTransportCollapsedSearch(simulator) {
         };
         nodesById.set(child.id, child);
         registry.set(child.key, child);
-        frontier.push(child.id);
         exactSuccessors += 1;
+
+        if (!frontierSet) {
+          frontier.push(child.id);
+        } else {
+          neutralQueue.push(child.id);
+          const identity = actionToSemanticIdentity(candidate.action, candidate.state, candidate.next);
+          if (frontierSet.has(identity)) {
+            const score = (priorityMap && priorityMap.get(identity)) || 100;
+            heapPush({ nodeId: child.id, score });
+          }
+        }
       }
 
       // CLOSED: release the full state, keep only the chain-relevant fields.
@@ -414,7 +579,18 @@ function createTransportCollapsedSearch(simulator) {
       finalState = goalNode.state;
     }
 
-    const frontierOpen = frontier.length - frontierHead > 0;
+    const frontierOpen = frontierSet
+      ? (guidedHeap.length > 0 || neutralQueue.length - neutralHead > 0)
+      : (frontier.length - frontierHead > 0);
+    const distinctClosureExactKeysGlobal = globalClosureExactKeys.size;
+    const repeatedClosureExactKeyVisits = closureStateVisitsTotal - distinctClosureExactKeysGlobal;
+    const repeatFraction = closureStateVisitsTotal > 0 ? repeatedClosureExactKeyVisits / closureStateVisitsTotal : 0;
+    const topRepeatedExactKeys = [...closureExactKeyVisitCounts.entries()]
+      .filter(([, count]) => count > 1)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([key, count]) => ({ key, count }));
+
     return {
       found: Boolean(goalNode),
       route,
@@ -434,10 +610,17 @@ function createTransportCollapsedSearch(simulator) {
       signatureCalls,
       signatureWallMs,
       closureTruncations,
+      closureStateVisitsTotal,
+      distinctClosureExactKeysGlobal,
+      repeatedClosureExactKeyVisits,
+      repeatFraction,
+      topRepeatedExactKeys,
       deepestFloorOrdinal,
       deepestFloorHistogram,
       stoppedReason,
-      searchComplete: !goalNode && !stoppedReason && !frontierOpen,
+      guidedExpansions,
+      neutralExpansions,
+      searchComplete: !goalNode && !stoppedReason && !frontierOpen && closureTruncations === 0,
       wallMs: Date.now() - startedAt,
       peakRssMb: Math.round(peakRssMb * 10) / 10,
       maxClosureStates,
@@ -448,9 +631,11 @@ function createTransportCollapsedSearch(simulator) {
 }
 
 module.exports = {
+  actionToSemanticIdentity,
   canonicalJson,
   createTransportCollapsedSearch,
   flatPairs,
+  poiToSemanticIdentity,
   stableFlags,
   transportSignature,
 };
