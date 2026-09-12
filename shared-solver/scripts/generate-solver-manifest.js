@@ -1593,7 +1593,14 @@ const TEST_OVERRIDES = {
     "allowsNotFound": false,
     "requiresStrictReplay": false,
     "cleanCheckout": true,
-    "notes": "PR-5.25q changeFloor semantic identity contract repair: static micros (no search) asserting poiToSemanticIdentity/actionToSemanticIdentity parity for every enumerated changeFloor along the tracked PR-5.25o winner trajectory, the corrected changeFloor:MT2:6,12->MT3 stair-tile identity with F4 frontier membership, no stance-coordinate leakage, and the frozen byte-for-byte non-changeFloor contract (battle/openDoor from action.target, item/event from action.stance; event/pickup drift is a recorded adjacent observation, not fixed here)"
+    "notes": "PR-5.25q changeFloor semantic identity contract repair: static micros (no search) asserting poiToSemanticIdentity/actionToSemanticIdentity parity for every enumerated changeFloor along the tracked PR-5.25o winner trajectory, the corrected changeFloor:MT2:6,12->MT3 stair-tile identity with F4 frontier membership, no stance-coordinate leakage, and the non-changeFloor byte-for-byte contract. The original 5.25q guard froze the stance-based event/item behavior to prove 5.25q only touched changeFloor; it was upgraded by PR-5.25r to the corrected contract (battle/openDoor from action.target, item/event from POI interaction coordinates)"
+  },
+  "shared-solver/check-strategic-poi-identity-parity.js": {
+    "grade": "unit",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.25r strategic POI identity contract completion: static audit (no search) classifying EVERY enumerated action along the canonical initial state plus the tracked PR-5.25o winner trajectory pre-states for all supported kinds (battle, openDoor, pickup, interactPickup, event, changeFloor) into MATCHED/MISMATCHED/MISSING_TARGET_COORD/MISSING_ENTITY_ID/STANCE_USED_WHERE_POI_COORD_EXISTS against the POI identity built from each action's own interaction data; plus a pickup schema micro verifying a constructor-shaped pickup action against a real macro-graph item POI including route-store normalization (itemId/target from fields, not summary parsing). Ordinary pickup actions are not enumerable along the sampled states in this configuration (auto-pickup stabilization consumes items on standable tiles), reported as observed=0"
   }
 };
 

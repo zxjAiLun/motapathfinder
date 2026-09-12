@@ -894,6 +894,12 @@ class StaticSimulator {
         direction,
         x: targetX,
         y: targetY,
+        // PR-5.25r: complete the POI identity contract. The semantic identity
+        // of an item interaction must carry the item tile (not the hero
+        // stance) and the item id; route-store's own completeness predicate
+        // already expects exactly these fields.
+        target: { x: targetX, y: targetY },
+        itemId: tile.id,
         path,
         travelState: nodeState,
         summary: `pickup:${tile.id}@${nodeState.floorId}:${targetX},${targetY}`,

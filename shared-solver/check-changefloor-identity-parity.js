@@ -17,10 +17,12 @@
  *      (never the stance tile 6,11) and is a frontier member under the MT4
  *      goal; its F3 membership is reported as observed (F3 excludes its own
  *      target transition POI from frontierSet by construction).
- *   3. Non-changeFloor kinds keep the pre-repair byte-for-byte contract:
- *      battle/openDoor identities come from action.target, item and event
- *      identities still come from action.stance. This locks the shared
- *      extraction so a future global "unification" cannot silently drift.
+ *   3. Non-changeFloor kinds keep the corrected byte-for-byte contract
+ *      (PR-5.25r): battle/openDoor identities come from action.target; item
+ *      and event identities come from the POI interaction coordinates
+ *      (target -> x/y -> stance). The original 5.25q guard froze the
+ *      stance-based behavior to prove 5.25q only touched changeFloor; it is
+ *      superseded by the PR-5.25r contract completion.
  *   4. No enumerated changeFloor identity uses stance coordinates while the
  *      action carries x/y.
  *
@@ -55,12 +57,17 @@ function identityForAction(project, action, state) {
   return actionToSemanticIdentity(action, state, nextState, project);
 }
 
-/** Expected identity under the frozen non-changeFloor contract (pre-repair behavior). */
+/** Expected identity under the corrected non-changeFloor contract (PR-5.25r).
+ * The 5.25q scope guard "event/item keep stance" recorded the then-current
+ * behavior to prove 5.25q only touched changeFloor; PR-5.25r completed the
+ * contract (event identity resolves target -> x/y -> stance like changeFloor;
+ * pickup carries target + itemId), so this expectation now encodes the
+ * corrected behavior and must not be reverted to the stance-based form. */
 function expectedNonChangeFloorIdentity(action, state) {
   const floorId = action.floorId || (state && state.floorId) || "";
-  const source = action.target || action.stance || {};
-  const x = source.x;
-  const y = source.y;
+  const resolveCoord = (axis) => ((action.target && action.target[axis]) ?? action[axis] ?? (action.stance && action.stance[axis]));
+  const x = resolveCoord("x");
+  const y = resolveCoord("y");
   if (action.kind === "battle") return `battle:${floorId}:${x},${y}:${action.enemyId || ""}`;
   if (action.kind === "openDoor") return `door:${floorId}:${x},${y}:${action.doorId || ""}`;
   if (action.kind === "pickup" || action.kind === "interactPickup") return `item:${floorId}:${x},${y}:${action.itemId || ""}`;

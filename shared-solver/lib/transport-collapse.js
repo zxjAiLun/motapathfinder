@@ -181,7 +181,13 @@ function actionToSemanticIdentity(action, state, nextState, project) {
     return `changeFloor:${floorId}:${stairX},${stairY}->${targetFloor}`;
   }
   if (action.kind === "event") {
-    return `event:${floorId}:${x},${y}`;
+    // PR-5.25r: enumerated event actions carry no `target`; their `x`/`y` IS
+    // the event tile the macro-graph POI uses, while `stance` is only where
+    // the hero stands. Same resolution order as changeFloor so the identity
+    // matches poiToSemanticIdentity.
+    const eventX = (action.target && action.target.x) ?? action.x ?? (action.stance && action.stance.x);
+    const eventY = (action.target && action.target.y) ?? action.y ?? (action.stance && action.stance.y);
+    return `event:${floorId}:${eventX},${eventY}`;
   }
   return `${action.kind}:${floorId}:${x},${y}`;
 }
