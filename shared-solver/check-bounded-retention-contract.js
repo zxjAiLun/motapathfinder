@@ -192,6 +192,77 @@ function runStarvationScenario(onCandidateLifecycle) {
   });
 }
 
+// --- PR-5.25v FIFO head turnover scenario ----------------------------------
+//
+// cap = 2. Root generates H (guidedAdmitted dead end) and G1 (guidedAdmitted,
+// dead end that generates the next wave). Both are consumed via the guided
+// heap BEFORE any contested trim. G1's wave - enumerated C1 first - then
+// overflows the pool: the contested trim's head is C1, a MID-RUN-created
+// neutral candidate that the pure (rank, insertion) fill would drop behind
+// G2/G3. Head protection must advance to C1 and keep it; the goal is
+// reachable only through C1. This proves the protection tracks the neutral
+// queue contract (whoever is next), not a fixed node or an action class.
+
+function turnoverStubState() {
+  return {
+    floorId: "MT1",
+    hero: {
+      hp: 100, hpmax: 100, mana: 0, manamax: 0, atk: 1, def: 0, mdef: 0, money: 0, exp: 0, lv: 1,
+      loc: { x: 0, y: 0, direction: "down" },
+      equipment: [], followers: [],
+    },
+    inventory: {}, flags: {}, floorStates: {}, triggeredAutoEvents: {}, visitedFloors: { MT1: true },
+    route: [], notes: [], meta: { decisionDepth: 0, rawRouteLength: 0 },
+  };
+}
+
+function createTurnoverSimulator() {
+  return {
+    project: {},
+    enumeratePrimitiveActions(state) {
+      if (state.floorId === "MT1" && !state.flags.h && !state.flags.g1 && (state.hero.money || 0) === 0) {
+        return { actions: [
+          starvationAction("h:dead", 1, 0, (s) => { s.flags.h = 1; }),
+          starvationAction("g1:wave", 1, 1, (s) => { s.flags.g1 = 1; }),
+        ] };
+      }
+      if (state.floorId === "MT1" && state.flags.g1 === 1 && !state.flags.g2 && !state.flags.g3 && (state.hero.money || 0) === 0) {
+        return { actions: [
+          starvationAction("c1:path", 3, 0, (s) => { s.hero.money += 1; }),
+          starvationAction("g2:dead", 1, 2, (s) => { s.flags.g2 = 1; }),
+          starvationAction("g3:dead", 1, 3, (s) => { s.flags.g3 = 1; }),
+        ] };
+      }
+      if (state.floorId === "MT1" && (state.hero.money || 0) === 1) {
+        return { actions: [starvationAction("cgoal:goal", 3, 1, (s) => { s.floorId = "MT2"; s.hero.money += 1; })] };
+      }
+      return { actions: [] };
+    },
+    applyAction(state, action) {
+      const next = cloneState(state);
+      if (typeof action.__apply === "function") action.__apply(next);
+      return next;
+    },
+  };
+}
+
+function runTurnoverScenario(onCandidateLifecycle) {
+  const simulator = createTurnoverSimulator();
+  const search = createTransportCollapsedSearch(simulator);
+  const frontierSet = new Set(["event:MT1:1,0", "event:MT1:1,1", "event:MT1:1,2", "event:MT1:1,3"]);
+  return search.search(turnoverStubState(), {
+    isGoalState: (state) => state.floorId === "MT2",
+    frontierSet,
+    resourceSkylinePriority: true,
+    pendingCandidateCap: 2,
+    neutralEvery: 5,
+    maxExpansions: 1000,
+    maxRuntimeMs: 10000,
+    maxClosureStates: 1000,
+    onCandidateLifecycle,
+  });
+}
+
 /** Bounded-pool invariant from the observer event stream: pending can never
  * exceed the configured cap. registered - dropped - expanded approximates the
  * live pending count (the unregistered root expansion is clamped at zero). */
@@ -252,7 +323,9 @@ function main() {
   const maxPendingDominated = maxPendingFromEvents(observerEvents);
   check(maxPendingDominated <= 2, "cap-invariant-dominated-frontier", `maxPending=${maxPendingDominated} cap=2`);
 
-  // PR-5.25u fairness-starvation micro.
+  // PR-5.25u fairness-starvation micro, restated under the PR-5.25v head
+  // contract: F is the earliest FIFO candidate and the only goal path, so the
+  // next live neutralQueue head IS F, and head survival must keep it alive.
   const starvationEvents = [];
   const starvation = runStarvationScenario((event) => {
     starvationEvents.push(event);
@@ -264,13 +337,42 @@ function main() {
   check(JSON.stringify(starvationRoute) === JSON.stringify(["f:path", "fgoal:goal"]),
     "route-through-fifo-candidate", JSON.stringify(starvationRoute));
   check(starvation.candidatesDropped === 1, "starvation-exactly-one-drop", `dropped=${starvation.candidatesDropped}`);
-  check(starvation.fifoReserveTarget === 1 && starvation.fifoReserveKept >= 1,
-    "fifo-reserve-telemetry", `target=${starvation.fifoReserveTarget} kept=${starvation.fifoReserveKept}`);
-  const starvationLane = starvation.droppedByRetentionLane || {};
-  check(starvationLane.guided === 1 && starvationLane.ordinary === 0 && (starvationLane.fifoReserved || 0) === 0,
-    "drop-lane-classification", JSON.stringify(starvationLane));
+  check(starvation.fifoHeadProtectionOpportunities >= 1 && starvation.fifoHeadProtected >= 1,
+    "fifo-head-protected", `opportunities=${starvation.fifoHeadProtectionOpportunities} protected=${starvation.fifoHeadProtected}`);
+  check(starvation.fifoHeadWouldHaveDroppedWithoutProtection >= 1,
+    "fifo-head-would-have-dropped", `got=${starvation.fifoHeadWouldHaveDroppedWithoutProtection}`);
+  check(starvation.fifoProtectedNodeWasGuided === 0,
+    "protected-head-was-non-guided", `got=${starvation.fifoProtectedNodeWasGuided}`);
   const maxPendingStarvation = maxPendingFromEvents(starvationEvents);
   check(maxPendingStarvation <= 6, "cap-invariant-starvation", `maxPending=${maxPendingStarvation} cap=6`);
+
+  // PR-5.25v FIFO head turnover micro: the first-generation FIFO candidates
+  // (H, G1 - both guidedAdmitted) are consumed via the guided heap BEFORE the
+  // contested trim even happens; the trim's head is C1, a MID-RUN-created
+  // neutral candidate that the pure fill would drop (two guided candidates
+  // out-rank it). Protection must advance to C1 - the queue contract, not a
+  // fixed node or an action class - and the goal is reachable only through it.
+  const turnoverEvents = [];
+  const turnover = runTurnoverScenario((event) => {
+    turnoverEvents.push(event);
+    return null;
+  });
+  const turnoverRoute = Array.isArray(turnover.route) ? turnover.route : [];
+  check(turnover.found === true, "fifo-head-turnover-goal-found",
+    `found=${turnover.found} stopped=${turnover.stoppedReason} dropped=${turnover.candidatesDropped}`);
+  check(JSON.stringify(turnoverRoute) === JSON.stringify(["g1:wave", "c1:path", "cgoal:goal"]),
+    "turnover-route-through-mid-run-head", JSON.stringify(turnoverRoute));
+  check(turnover.candidatesDropped === 1, "turnover-exactly-one-drop", `dropped=${turnover.candidatesDropped}`);
+  check(turnover.fifoHeadProtected >= 1 && turnover.fifoHeadWouldHaveDroppedWithoutProtection >= 1,
+    "turnover-head-protection-mattered",
+    `protected=${turnover.fifoHeadProtected} wouldHaveDropped=${turnover.fifoHeadWouldHaveDroppedWithoutProtection}`);
+  const firstDepth1Expanded = turnoverEvents.findIndex((e) => e.type === "expanded" && e.depth === 1);
+  const firstDepth2Registered = turnoverEvents.findIndex((e) => e.type === "registered" && e.depth === 2);
+  check(firstDepth1Expanded !== -1 && firstDepth2Registered !== -1 && firstDepth1Expanded < firstDepth2Registered,
+    "turnover-head-created-after-first-generation-consumed",
+    `firstDepth1Expanded=${firstDepth1Expanded} firstDepth2Registered=${firstDepth2Registered}`);
+  const maxPendingTurnover = maxPendingFromEvents(turnoverEvents);
+  check(maxPendingTurnover <= 2, "cap-invariant-turnover", `maxPending=${maxPendingTurnover} cap=2`);
 
   // Corrected contract: the neutral goal-path candidate survives the cap, the
   // dominated frontier candidate does not.
@@ -312,10 +414,18 @@ function main() {
       found: starvation.found,
       route: starvationRoute,
       candidatesDropped: starvation.candidatesDropped,
-      fifoReserveTarget: starvation.fifoReserveTarget,
-      fifoReserveKept: starvation.fifoReserveKept,
-      droppedByRetentionLane: starvation.droppedByRetentionLane,
+      fifoHeadProtectionOpportunities: starvation.fifoHeadProtectionOpportunities,
+      fifoHeadProtected: starvation.fifoHeadProtected,
+      fifoHeadWouldHaveDroppedWithoutProtection: starvation.fifoHeadWouldHaveDroppedWithoutProtection,
       maxPendingObserved: maxPendingStarvation,
+    },
+    turnover: {
+      found: turnover.found,
+      route: turnoverRoute,
+      candidatesDropped: turnover.candidatesDropped,
+      fifoHeadProtected: turnover.fifoHeadProtected,
+      fifoHeadWouldHaveDroppedWithoutProtection: turnover.fifoHeadWouldHaveDroppedWithoutProtection,
+      maxPendingObserved: maxPendingTurnover,
     },
     failures,
     ok: failures.length === 0,
@@ -329,7 +439,8 @@ function main() {
   console.log(`  counters: frontierGuided=${result.frontierGuidedGenerated} guidedAdmitted=${result.guidedAdmittedGenerated} dominated=${result.frontierGuidedDominatedGenerated}`);
   console.log(`  byKind(event): frontierGuided=${byKindEvent} guidedAdmitted=${admittedByKindEvent} dominated=${dominatedByKindEvent}`);
   console.log(`  observer inertness: ${inertnessFailures.length === 0 ? "ok" : "FAIL"} (${observerEvents.length} events recorded, returns ignored)`);
-  console.log(`  starvation (cap=6, neutralEvery=5): found=${starvation.found} route=${JSON.stringify(starvationRoute)} dropped=${starvation.candidatesDropped} fifoTarget=${starvation.fifoReserveTarget} fifoKept=${starvation.fifoReserveKept} lanes=${JSON.stringify(starvation.droppedByRetentionLane)}`);
+  console.log(`  starvation (cap=6, neutralEvery=5): found=${starvation.found} route=${JSON.stringify(starvationRoute)} dropped=${starvation.candidatesDropped} headProtected=${starvation.fifoHeadProtected}/${starvation.fifoHeadProtectionOpportunities} wouldHaveDropped=${starvation.fifoHeadWouldHaveDroppedWithoutProtection}`);
+  console.log(`  turnover (cap=2): found=${turnover.found} route=${JSON.stringify(turnoverRoute)} dropped=${turnover.candidatesDropped} headProtected=${turnover.fifoHeadProtected} wouldHaveDropped=${turnover.fifoHeadWouldHaveDroppedWithoutProtection}`);
   if (failures.length > 0) {
     console.log(`  FAIL (${failures.length}):`);
     for (const f of failures) console.log(`    ${f.label}: ${f.detail}`);
