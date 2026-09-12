@@ -1574,6 +1574,13 @@ const TEST_OVERRIDES = {
     "cleanCheckout": true,
     "notes": "PR-5.25o bounded candidate search capability qualification: capability study, not a causal throughput A/B; pipeline is the existing StaticSimulator plus transport-collapsed strategic successors plus autonomous dependency frontier; single new variable pendingCandidateCap with two predeclared capacities (256, then 1024 only if 256 does not find a route); dropped candidates are removed from both the guided heap and the neutral queue and never return; no new score and no hand-authored weights; retention order inherits goal state, frontier-guided, Pareto admission, then insertion order; 180s/2GB/120k budget, fresh child process per attempt"
   },
+  "shared-solver/check-bounded-transfer.js": {
+    "grade": "diagnostic",
+    "allowsNotFound": true,
+    "requiresStrictReplay": true,
+    "cleanCheckout": false,
+    "notes": "PR-5.25p bounded candidate capability transfer: reuses the PR-5.25o cap=1024 configuration verbatim and changes only the terminal goal and region (CHAOS MT1 -> floorReached(MT4), region MT1..MT4); single formal attempt with one fresh-child repeatability rerun only on FOUND+strict-replay; no cap tuning, no ordering change, no planner, no backtracking; a tracked CHAOS MT1 -> MT4 fixture is replayed as a read-only KNOWN_SOLVABLE oracle and is never fed to the search; 180s/2GB/120k budget"
+  },
   "shared-solver/check-strict-replay-phase0.js": {
     "grade": "closure",
     "allowsNotFound": false,
