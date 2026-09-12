@@ -123,6 +123,93 @@ function runScenarioWithObserver(onCandidateLifecycle) {
   });
 }
 
+// --- PR-5.25u fairness-starvation scenario --------------------------------
+//
+// cap = 6, neutralEvery = 5. The root generates F first (a FIFO-only
+// candidate whose expansion is the ONLY path to the goal) and then six
+// guidedAdmitted dead ends (distinct structural keys, so none is
+// skyline-dominated). The scheduler promises a neutral FIFO turn every 6
+// expansions, but the pre-reserve trim sorts by (rank, insertion), keeps the
+// six guided candidates and drops F - the promised FIFO opportunity no
+// longer exists at scheduling time. The corrected FIFO reserve retains the
+// oldest pending candidate(s) so F survives and the goal is found.
+
+function starvationStubState() {
+  return {
+    floorId: "MT1",
+    hero: {
+      hp: 100, hpmax: 100, mana: 0, manamax: 0, atk: 1, def: 0, mdef: 0, money: 0, exp: 0, lv: 1,
+      loc: { x: 0, y: 0, direction: "down" },
+      equipment: [], followers: [],
+    },
+    inventory: {}, flags: {}, floorStates: {}, triggeredAutoEvents: {}, visitedFloors: { MT1: true },
+    route: [], notes: [], meta: { decisionDepth: 0, rawRouteLength: 0 },
+  };
+}
+
+function starvationAction(summary, x, y, apply) {
+  return { kind: "event", summary, x, y, stance: { x: 0, y: 0 }, __apply: apply };
+}
+
+function createStarvationSimulator() {
+  return {
+    project: {},
+    enumeratePrimitiveActions(state) {
+      if (state.floorId === "MT1" && state.hero.hp === 100 && (state.hero.money || 0) === 0) {
+        const actions = [starvationAction("f:path", 3, 0, (s) => { s.hero.money += 1; })];
+        for (let i = 1; i <= 6; i += 1) {
+          actions.push(starvationAction(`g${i}:dead`, 1, i, (s) => { s.hero.hp += 1; s.flags.g = i; }));
+        }
+        return { actions };
+      }
+      if (state.floorId === "MT1" && (state.hero.money || 0) === 1) {
+        return { actions: [starvationAction("fgoal:goal", 3, 1, (s) => { s.floorId = "MT2"; s.hero.money += 1; })] };
+      }
+      return { actions: [] };
+    },
+    applyAction(state, action) {
+      const next = cloneState(state);
+      if (typeof action.__apply === "function") action.__apply(next);
+      return next;
+    },
+  };
+}
+
+function runStarvationScenario(onCandidateLifecycle) {
+  const simulator = createStarvationSimulator();
+  const search = createTransportCollapsedSearch(simulator);
+  const frontierSet = new Set(["event:MT1:1,1", "event:MT1:1,2", "event:MT1:1,3", "event:MT1:1,4", "event:MT1:1,5", "event:MT1:1,6"]);
+  return search.search(starvationStubState(), {
+    isGoalState: (state) => state.floorId === "MT2",
+    frontierSet,
+    resourceSkylinePriority: true,
+    pendingCandidateCap: 6,
+    neutralEvery: 5,
+    maxExpansions: 1000,
+    maxRuntimeMs: 10000,
+    maxClosureStates: 1000,
+    onCandidateLifecycle,
+  });
+}
+
+/** Bounded-pool invariant from the observer event stream: pending can never
+ * exceed the configured cap. registered - dropped - expanded approximates the
+ * live pending count (the unregistered root expansion is clamped at zero). */
+function maxPendingFromEvents(events) {
+  let registered = 0;
+  let dropped = 0;
+  let expanded = 0;
+  let max = 0;
+  for (const event of events) {
+    if (event.type === "registered") registered += 1;
+    else if (event.type === "dropped") dropped += 1;
+    else if (event.type === "expanded") expanded += 1;
+    const live = Math.max(0, registered - dropped - expanded);
+    if (live > max) max = live;
+  }
+  return max;
+}
+
 function main() {
   const outPath = (() => {
     const arg = process.argv.slice(2).find((t) => t.startsWith("--out="));
@@ -161,6 +248,30 @@ function main() {
   };
   failures.push(...inertnessFailures);
 
+  // Cap invariant on the PR-5.25s scenario from the observer stream.
+  const maxPendingDominated = maxPendingFromEvents(observerEvents);
+  check(maxPendingDominated <= 2, "cap-invariant-dominated-frontier", `maxPending=${maxPendingDominated} cap=2`);
+
+  // PR-5.25u fairness-starvation micro.
+  const starvationEvents = [];
+  const starvation = runStarvationScenario((event) => {
+    starvationEvents.push(event);
+    return null;
+  });
+  const starvationRoute = Array.isArray(starvation.route) ? starvation.route : [];
+  check(starvation.found === true, "fifo-lane-survives-cap",
+    `found=${starvation.found} stopped=${starvation.stoppedReason} dropped=${starvation.candidatesDropped}`);
+  check(JSON.stringify(starvationRoute) === JSON.stringify(["f:path", "fgoal:goal"]),
+    "route-through-fifo-candidate", JSON.stringify(starvationRoute));
+  check(starvation.candidatesDropped === 1, "starvation-exactly-one-drop", `dropped=${starvation.candidatesDropped}`);
+  check(starvation.fifoReserveTarget === 1 && starvation.fifoReserveKept >= 1,
+    "fifo-reserve-telemetry", `target=${starvation.fifoReserveTarget} kept=${starvation.fifoReserveKept}`);
+  const starvationLane = starvation.droppedByRetentionLane || {};
+  check(starvationLane.guided === 1 && starvationLane.ordinary === 0 && (starvationLane.fifoReserved || 0) === 0,
+    "drop-lane-classification", JSON.stringify(starvationLane));
+  const maxPendingStarvation = maxPendingFromEvents(starvationEvents);
+  check(maxPendingStarvation <= 6, "cap-invariant-starvation", `maxPending=${maxPendingStarvation} cap=6`);
+
   // Corrected contract: the neutral goal-path candidate survives the cap, the
   // dominated frontier candidate does not.
   check(result.found === true, "goal-found-through-neutral-candidate",
@@ -197,6 +308,15 @@ function main() {
     frontierGuidedDominatedByKind: result.frontierGuidedDominatedByKind,
     observerEventsRecorded: observerEvents.length,
     observerInertness: inertnessFailures.length === 0,
+    starvation: {
+      found: starvation.found,
+      route: starvationRoute,
+      candidatesDropped: starvation.candidatesDropped,
+      fifoReserveTarget: starvation.fifoReserveTarget,
+      fifoReserveKept: starvation.fifoReserveKept,
+      droppedByRetentionLane: starvation.droppedByRetentionLane,
+      maxPendingObserved: maxPendingStarvation,
+    },
     failures,
     ok: failures.length === 0,
   };
@@ -209,6 +329,7 @@ function main() {
   console.log(`  counters: frontierGuided=${result.frontierGuidedGenerated} guidedAdmitted=${result.guidedAdmittedGenerated} dominated=${result.frontierGuidedDominatedGenerated}`);
   console.log(`  byKind(event): frontierGuided=${byKindEvent} guidedAdmitted=${admittedByKindEvent} dominated=${dominatedByKindEvent}`);
   console.log(`  observer inertness: ${inertnessFailures.length === 0 ? "ok" : "FAIL"} (${observerEvents.length} events recorded, returns ignored)`);
+  console.log(`  starvation (cap=6, neutralEvery=5): found=${starvation.found} route=${JSON.stringify(starvationRoute)} dropped=${starvation.candidatesDropped} fifoTarget=${starvation.fifoReserveTarget} fifoKept=${starvation.fifoReserveKept} lanes=${JSON.stringify(starvation.droppedByRetentionLane)}`);
   if (failures.length > 0) {
     console.log(`  FAIL (${failures.length}):`);
     for (const f of failures) console.log(`    ${f.label}: ${f.detail}`);

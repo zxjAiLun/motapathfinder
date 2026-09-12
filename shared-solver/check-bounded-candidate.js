@@ -174,6 +174,9 @@ function runChild(args) {
     frontierGuidedByKind: result.frontierGuidedByKind,
     guidedAdmittedByKind: result.guidedAdmittedByKind,
     frontierGuidedDominatedByKind: result.frontierGuidedDominatedByKind,
+    fifoReserveTarget: result.fifoReserveTarget,
+    fifoReserveKept: result.fifoReserveKept,
+    droppedByRetentionLane: result.droppedByRetentionLane,
     wallMs: result.wallMs,
     peakRssMb: result.peakRssMb,
   };

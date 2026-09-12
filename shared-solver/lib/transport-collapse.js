@@ -346,6 +346,10 @@ function createTransportCollapsedSearch(simulator) {
     const frontierGuidedByKind = {};
     const guidedAdmittedByKind = {};
     const frontierGuidedDominatedByKind = {};
+    // PR-5.25u FIFO fairness retention telemetry.
+    let fifoReserveTarget = null;
+    let fifoReserveKept = 0;
+    const droppedByRetentionLane = { fifoReserved: 0, guided: 0, ordinary: 0 };
 
     const heapPush = (entry) => {
       guidedHeap.push(entry);
@@ -762,18 +766,61 @@ function createTransportCollapsedSearch(simulator) {
       // complete so the currently-expanded node's own children are never dropped
       // before they can ever be considered. Dropped candidates are removed from
       // BOTH the guided heap and the neutral queue — they never return.
+      // PR-5.25u bounded FIFO fairness retention. The scheduler promises a
+      // periodic neutral/FIFO turn (neutralEvery), but the previous trim kept
+      // the top-cap by (rank, insertion) and could evict the ENTIRE FIFO lane
+      // whenever >= cap guided candidates were pending. Derive the reserve
+      // from the scheduler's own fairness ratio - no new tuning knob:
+      //   FIFO_RESERVE = ceil(cap / (neutralEvery + 1))
+      // Goal candidates are kept first; then the OLDEST pending candidates
+      // (pendingSeq = the neutralQueue's true FIFO order, guided or not) fill
+      // the reserve; remaining capacity fills guidedAdmitted-first by the
+      // existing (rank, insertion) semantics; a short lane yields its unused
+      // space to the other; total kept stays <= cap.
       if (pendingCandidateCap != null && pending.length > pendingCandidateCap) {
-        const scored = pending
-          .map((id, index) => ({ id, index, node: nodesById.get(id) }))
-          .filter((e) => e.node && !e.node.closed)
-          .map((e) => ({ id: e.id, index: e.index, rank: pendingRank(e.node) }))
+        const entries = [];
+        for (let i = 0; i < pending.length; i += 1) {
+          const node = nodesById.get(pending[i]);
+          if (node && !node.closed) {
+            entries.push({ id: pending[i], index: i, node, rank: pendingRank(node), seq: node.pendingSeq });
+          }
+        }
+        const fairnessDivisor = Math.max(0, neutralEvery) + 1;
+        fifoReserveTarget = Math.ceil(pendingCandidateCap / fairnessDivisor);
+        const goalEntries = entries.filter((e) => e.rank === 0).sort((a, b) => a.index - b.index);
+        const nonGoal = entries.filter((e) => e.rank !== 0);
+        const bySeq = nonGoal.slice().sort((a, b) => a.seq - b.seq);
+        const keep = new Set();
+        for (const e of goalEntries) {
+          if (keep.size >= pendingCandidateCap) break;
+          keep.add(e.id);
+        }
+        const fifoWindow = new Set();
+        for (let i = 0; i < bySeq.length && i < fifoReserveTarget; i += 1) fifoWindow.add(bySeq[i].id);
+        let fifoKeptThisTrim = 0;
+        for (const e of bySeq) {
+          if (fifoKeptThisTrim >= fifoReserveTarget || keep.size >= pendingCandidateCap) break;
+          if (!keep.has(e.id)) {
+            keep.add(e.id);
+            fifoKeptThisTrim += 1;
+          }
+        }
+        fifoReserveKept += fifoKeptThisTrim;
+        const rest = nonGoal
+          .filter((e) => !keep.has(e.id))
           .sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
-        const keep = new Set(scored.slice(0, pendingCandidateCap).map((e) => e.id));
-        const droppedIds = scored.slice(pendingCandidateCap).map((e) => e.id);
+        for (const e of rest) {
+          if (keep.size >= pendingCandidateCap) break;
+          keep.add(e.id);
+        }
+        const droppedIds = entries.filter((e) => !keep.has(e.id)).map((e) => e.id);
         for (const id of droppedIds) {
           const dn = nodesById.get(id);
           if (dn) {
             dn.dropped = true;
+            if (fifoWindow.has(id)) droppedByRetentionLane.fifoReserved += 1;
+            else if (dn.guidedAdmitted === true) droppedByRetentionLane.guided += 1;
+            else droppedByRetentionLane.ordinary += 1;
             if (emitLifecycle) {
               emitLifecycle({
                 type: "dropped",
@@ -789,7 +836,7 @@ function createTransportCollapsedSearch(simulator) {
         }
         candidatesDropped += droppedIds.length;
         pending.length = 0;
-        for (const e of scored) if (keep.has(e.id)) pending.push(e.id);
+        for (const e of entries) if (keep.has(e.id)) pending.push(e.id);
         if (guidedHeap) {
           for (let i = guidedHeap.length - 1; i >= 0; i -= 1) {
             if (!keep.has(guidedHeap[i].nodeId)) guidedHeap.splice(i, 1);
@@ -890,6 +937,9 @@ function createTransportCollapsedSearch(simulator) {
       frontierGuidedByKind,
       guidedAdmittedByKind,
       frontierGuidedDominatedByKind,
+      fifoReserveTarget,
+      fifoReserveKept,
+      droppedByRetentionLane,
       resourceVariantPressure,
       searchComplete: !goalNode && !stoppedReason && !frontierOpen && closureTruncations === 0,
       wallMs: Date.now() - startedAt,
