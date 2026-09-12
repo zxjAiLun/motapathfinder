@@ -1587,6 +1587,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": true,
     "cleanCheckout": true,
     "notes": "PR-5.25p Phase 0 strict replay hardening: explicit initialState is cloned so replay never starts from a hardcoded rank, a supplied structured trace must contain action plus non-empty postExactStateKey per entry, the resolver is restricted to the exact enumerated primitive candidates, and legacy summary-only routes remain fail-closed on ambiguity. Reads the tracked PR-5.25o cap=1024 winner qualification artifact."
+  },
+  "shared-solver/check-changefloor-identity-parity.js": {
+    "grade": "unit",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.25q changeFloor semantic identity contract repair: static micros (no search) asserting poiToSemanticIdentity/actionToSemanticIdentity parity for every enumerated changeFloor along the tracked PR-5.25o winner trajectory, the corrected changeFloor:MT2:6,12->MT3 stair-tile identity with F4 frontier membership, no stance-coordinate leakage, and the frozen byte-for-byte non-changeFloor contract (battle/openDoor from action.target, item/event from action.stance; event/pickup drift is a recorded adjacent observation, not fixed here)"
   }
 };
 

@@ -221,7 +221,7 @@ function main() {
   const effectiveF4Only = overall.f4Only.filter((id) => observedActionIdentities.has(id));
   const countChangeFloor = (set) => [...set].filter((id) => kindFromIdentity(id) === "changeFloor").length;
   const identityContract = {
-    note: "frontier changeFloor identities use the stair tile from the macro graph, while actionToSemanticIdentity falls back to action.stance for enumerated actions whose target is unset; a mismatched changeFloor identity can never set frontierGuided",
+    note: "PR-5.25q repair: actionToSemanticIdentity now resolves changeFloor coordinates explicit target -> action x/y -> stance, so enumerated changeFloor identities use the stair tile and can match frontier POIs; before this repair they fell back to action.stance and no changeFloor frontier entry could ever set frontierGuided",
     frontierChangeFloorEntriesF3: countChangeFloor(f3.frontierSet),
     frontierChangeFloorEntriesF4: countChangeFloor(f4.frontierSet),
     enumeratedChangeFloorAlongWinner: changeFloorEnumeratedTotal,

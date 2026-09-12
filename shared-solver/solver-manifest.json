@@ -2989,6 +2989,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.7a capture-all materialized goal candidates, exact 1/2/4/8 retention decisions including DP-key dedup vs capacity, and distinct stop-condition A/B/C controls"
     },
+    "shared-solver/check-changefloor-identity-parity.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.25q changeFloor semantic identity contract repair: static micros (no search) asserting poiToSemanticIdentity/actionToSemanticIdentity parity for every enumerated changeFloor along the tracked PR-5.25o winner trajectory, the corrected changeFloor:MT2:6,12->MT3 stair-tile identity with F4 frontier membership, no stance-coordinate leakage, and the frozen byte-for-byte non-changeFloor contract (battle/openDoor from action.target, item/event from action.stance; event/pickup drift is a recorded adjacent observation, not fixed here)"
+    },
     "shared-solver/check-checkpoint-repair.js": {
       "grade": "local-regression",
       "allowsNotFound": false,

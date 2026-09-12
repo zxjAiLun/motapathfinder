@@ -165,6 +165,9 @@ function runChild(args) {
     strategicExpansions: result.strategicExpansions,
     candidatesDropped: result.candidatesDropped,
     pendingCandidateCap: result.pendingCandidateCap,
+    guidedChangeFloorGenerated: result.guidedChangeFloorGenerated,
+    guidedChangeFloorExpanded: result.guidedChangeFloorExpanded,
+    guidedForwardFloorTransitions: result.guidedForwardFloorTransitions,
     wallMs: result.wallMs,
     peakRssMb: result.peakRssMb,
   };

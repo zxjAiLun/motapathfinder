@@ -143,6 +143,11 @@ function summaryOf(action) {
   return action ? action.summary || action.kind || "unknown" : "unknown";
 }
 
+function mtFloorOrdinal(floorId) {
+  const match = /^MT(\d+)$/.exec(String(floorId || ""));
+  return match ? Number(match[1]) : 0;
+}
+
 function actionToSemanticIdentity(action, state, nextState, project) {
   const floorId = action.floorId || (state && state.floorId) || "";
   const target = action.target || action.stance || {};
@@ -166,7 +171,14 @@ function actionToSemanticIdentity(action, state, nextState, project) {
         // fallback
       }
     }
-    return `changeFloor:${floorId}:${x},${y}->${targetFloor}`;
+    // PR-5.25q: enumerated changeFloor actions carry no `target`; their `x`/`y`
+    // IS the stair tile the macro-graph POI uses, while `stance` is only where
+    // the hero stands. Resolve coordinates explicit target -> action x/y ->
+    // stance so the identity matches poiToSemanticIdentity. Other kinds keep
+    // the shared extraction above.
+    const stairX = (action.target && action.target.x) ?? action.x ?? (action.stance && action.stance.x);
+    const stairY = (action.target && action.target.y) ?? action.y ?? (action.stance && action.stance.y);
+    return `changeFloor:${floorId}:${stairX},${stairY}->${targetFloor}`;
   }
   if (action.kind === "event") {
     return `event:${floorId}:${x},${y}`;
@@ -299,6 +311,10 @@ function createTransportCollapsedSearch(simulator) {
     let neutralSinceGuided = 0;
     let guidedExpansions = 0;
     let neutralExpansions = 0;
+    // PR-5.25q guided-changeFloor telemetry: additive counters, no behavior change.
+    let guidedChangeFloorGenerated = 0;
+    let guidedChangeFloorExpanded = 0;
+    let guidedForwardFloorTransitions = 0;
 
     const heapPush = (entry) => {
       guidedHeap.push(entry);
@@ -549,6 +565,7 @@ function createTransportCollapsedSearch(simulator) {
         }
         if (node) {
           expanded.add(node.id);
+          if (node.guidedChangeFloor) guidedChangeFloorExpanded += 1;
           const at = pending.indexOf(node.id);
           if (at >= 0) pending.splice(at, 1);
         }
@@ -633,6 +650,13 @@ function createTransportCollapsedSearch(simulator) {
           const identity = actionToSemanticIdentity(candidate.action, candidate.state, candidate.next, simulator.project);
           if (frontierSet.has(identity)) {
             child.frontierGuided = true;
+            if (candidate.action.kind === "changeFloor") {
+              child.guidedChangeFloor = true;
+              guidedChangeFloorGenerated += 1;
+              if (mtFloorOrdinal(String(identity).split("->")[1]) > mtFloorOrdinal(candidate.state.floorId)) {
+                guidedForwardFloorTransitions += 1;
+              }
+            }
             let isDominated = false;
             if (resourceSkylinePriority) {
               const query = skylineSet.query(candidate.next, child.id, candidate.key);
@@ -759,6 +783,9 @@ function createTransportCollapsedSearch(simulator) {
       stoppedReason,
       guidedExpansions,
       neutralExpansions,
+      guidedChangeFloorGenerated,
+      guidedChangeFloorExpanded,
+      guidedForwardFloorTransitions,
       resourceVariantPressure,
       searchComplete: !goalNode && !stoppedReason && !frontierOpen && closureTruncations === 0,
       wallMs: Date.now() - startedAt,

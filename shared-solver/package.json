@@ -193,6 +193,7 @@
   "check:bounded-transfer": "node check-bounded-transfer.js",
   "audit:pr525p:frontier-differential": "node audit-pr525p-frontier-differential.js",
   "check:strict-replay:phase0": "node check-strict-replay-phase0.js",
+  "check:changefloor-identity-parity": "node check-changefloor-identity-parity.js",
   "check:no-tower-solver-js": "node ../tools/audit-js-files.js --check-no-tower-solver-js",
     "check:public-layer-boundaries": "node ../tools/check-agent-boundaries.js --public-layer-dev",
     "check:agent-boundaries": "node ../tools/check-agent-boundaries.js",
