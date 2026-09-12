@@ -2954,6 +2954,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.25o bounded candidate search capability qualification: capability study, not a causal throughput A/B; pipeline is the existing StaticSimulator plus transport-collapsed strategic successors plus autonomous dependency frontier; single new variable pendingCandidateCap with two predeclared capacities (256, then 1024 only if 256 does not find a route); dropped candidates are removed from both the guided heap and the neutral queue and never return; no new score and no hand-authored weights; retention order inherits goal state, frontier-guided, Pareto admission, then insertion order; 180s/2GB/120k budget, fresh child process per attempt"
     },
+    "shared-solver/check-bounded-retention-contract.js": {
+      "grade": "unit",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.25s bounded retention contract repair: behavioral micro on a fully controlled stub world proving cap retention matches the guided scheduler. Scenario A(frontier+skyline-nondominated) C(neutral, only goal path) B(frontier+skyline-dominated) with pendingCandidateCap=2: pre-repair retained the dominated frontier candidate at rank 10 over the neutral goal-path candidate (goal unreachable; the documented rank-20 Pareto tier was unreachable because paretoAdmitted was only assigned inside the frontier-match branch); post-repair guidedAdmitted (actual guided-heap insertion) is the only rank-10 signal, the dominated candidate is dropped, the goal is found, and per-class counters (frontierGuidedGenerated / guidedAdmittedGenerated / frontierGuidedDominatedGenerated with per-kind maps) lock the contract"
+    },
     "shared-solver/check-bounded-transfer.js": {
       "grade": "diagnostic",
       "allowsNotFound": true,

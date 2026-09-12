@@ -1601,6 +1601,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": false,
     "cleanCheckout": true,
     "notes": "PR-5.25r strategic POI identity contract completion: static audit (no search) classifying EVERY enumerated action along the canonical initial state plus the tracked PR-5.25o winner trajectory pre-states for all supported kinds (battle, openDoor, pickup, interactPickup, event, changeFloor) into MATCHED/MISMATCHED/MISSING_TARGET_COORD/MISSING_ENTITY_ID/STANCE_USED_WHERE_POI_COORD_EXISTS against the POI identity built from each action's own interaction data; plus a pickup schema micro verifying a constructor-shaped pickup action against a real macro-graph item POI including route-store normalization (itemId/target from fields, not summary parsing). Ordinary pickup actions are not enumerable along the sampled states in this configuration (auto-pickup stabilization consumes items on standable tiles), reported as observed=0"
+  },
+  "shared-solver/check-bounded-retention-contract.js": {
+    "grade": "unit",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.25s bounded retention contract repair: behavioral micro on a fully controlled stub world proving cap retention matches the guided scheduler. Scenario A(frontier+skyline-nondominated) C(neutral, only goal path) B(frontier+skyline-dominated) with pendingCandidateCap=2: pre-repair retained the dominated frontier candidate at rank 10 over the neutral goal-path candidate (goal unreachable; the documented rank-20 Pareto tier was unreachable because paretoAdmitted was only assigned inside the frontier-match branch); post-repair guidedAdmitted (actual guided-heap insertion) is the only rank-10 signal, the dominated candidate is dropped, the goal is found, and per-class counters (frontierGuidedGenerated / guidedAdmittedGenerated / frontierGuidedDominatedGenerated with per-kind maps) lock the contract"
   }
 };
 

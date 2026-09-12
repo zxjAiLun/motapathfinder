@@ -292,15 +292,21 @@ function createTransportCollapsedSearch(simulator) {
     /**
      * PR-5.25o retention rank: lower is retained.
      *
-     * Deliberately inherits ordering information the search already has.
-     * No new score and no hand-authored weights.
+     * PR-5.25s contract: cap retention must match the guided scheduler.
+     *   frontierGuided = structural classification (identity in the frontier)
+     *   guidedAdmitted = frontierGuided AND passed resource skyline admission
+     *                    AND actually inserted into the guided heap
+     * Only guidedAdmitted earns rank 10: a frontier-matched child that the
+     * skyline dominates is scheduled as neutral and must not be retained as a
+     * VIP. There is NO rank-20 Pareto tier - paretoAdmitted was only ever
+     * assigned inside the frontier-match branch (so it implied frontierGuided
+     * and rank 10 won first) and is telemetry only now.
      */
     const pendingRank = (node) => {
       if (node.rankValue != null) return node.rankValue;
       let rank = 30;
       if (node.state && isGoalState(node.state)) rank = 0;
-      else if (node.frontierGuided) rank = 10;
-      else if (node.paretoAdmitted) rank = 20;
+      else if (node.guidedAdmitted) rank = 10;
       node.rankValue = rank;
       return rank;
     };
@@ -325,6 +331,14 @@ function createTransportCollapsedSearch(simulator) {
     let guidedChangeFloorGenerated = 0;
     let guidedChangeFloorNodesExpanded = 0;
     let guidedForwardFloorChildrenGenerated = 0;
+    // PR-5.25s admission telemetry: structural vs scheduling-eligible vs
+    // skyline-dominated frontier matches, total and per action kind.
+    let frontierGuidedGenerated = 0;
+    let guidedAdmittedGenerated = 0;
+    let frontierGuidedDominatedGenerated = 0;
+    const frontierGuidedByKind = {};
+    const guidedAdmittedByKind = {};
+    const frontierGuidedDominatedByKind = {};
 
     const heapPush = (entry) => {
       guidedHeap.push(entry);
@@ -650,6 +664,7 @@ function createTransportCollapsedSearch(simulator) {
         exactSuccessors += 1;
         child.frontierGuided = false;
         child.paretoAdmitted = false;
+        child.guidedAdmitted = false;
         child.pendingSeq = pendingSeq++;
         pending.push(child.id);
 
@@ -660,6 +675,8 @@ function createTransportCollapsedSearch(simulator) {
           const identity = actionToSemanticIdentity(candidate.action, candidate.state, candidate.next, simulator.project);
           if (frontierSet.has(identity)) {
             child.frontierGuided = true;
+            frontierGuidedGenerated += 1;
+            frontierGuidedByKind[candidate.action.kind] = (frontierGuidedByKind[candidate.action.kind] || 0) + 1;
             if (candidate.action.kind === "changeFloor") {
               child.guidedChangeFloor = true;
               guidedChangeFloorGenerated += 1;
@@ -675,9 +692,16 @@ function createTransportCollapsedSearch(simulator) {
             }
             child.paretoAdmitted = !isDominated;
             if (!isDominated) {
-              if (resourceSkylinePriority) child.paretoAdmitted = true;
+              // PR-5.25s: guidedAdmitted marks actual guided-heap insertion -
+              // the ONLY frontier property that earns cap-retention rank 10.
               const score = (priorityMap && priorityMap.get(identity)) || 100;
               heapPush({ nodeId: child.id, score });
+              child.guidedAdmitted = true;
+              guidedAdmittedGenerated += 1;
+              guidedAdmittedByKind[candidate.action.kind] = (guidedAdmittedByKind[candidate.action.kind] || 0) + 1;
+            } else {
+              frontierGuidedDominatedGenerated += 1;
+              frontierGuidedDominatedByKind[candidate.action.kind] = (frontierGuidedDominatedByKind[candidate.action.kind] || 0) + 1;
             }
           }
         }
@@ -796,6 +820,12 @@ function createTransportCollapsedSearch(simulator) {
       guidedChangeFloorGenerated,
       guidedChangeFloorNodesExpanded,
       guidedForwardFloorChildrenGenerated,
+      frontierGuidedGenerated,
+      guidedAdmittedGenerated,
+      frontierGuidedDominatedGenerated,
+      frontierGuidedByKind,
+      guidedAdmittedByKind,
+      frontierGuidedDominatedByKind,
       resourceVariantPressure,
       searchComplete: !goalNode && !stoppedReason && !frontierOpen && closureTruncations === 0,
       wallMs: Date.now() - startedAt,

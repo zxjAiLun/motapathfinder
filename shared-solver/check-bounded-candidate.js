@@ -168,6 +168,12 @@ function runChild(args) {
     guidedChangeFloorGenerated: result.guidedChangeFloorGenerated,
     guidedChangeFloorNodesExpanded: result.guidedChangeFloorNodesExpanded,
     guidedForwardFloorChildrenGenerated: result.guidedForwardFloorChildrenGenerated,
+    frontierGuidedGenerated: result.frontierGuidedGenerated,
+    guidedAdmittedGenerated: result.guidedAdmittedGenerated,
+    frontierGuidedDominatedGenerated: result.frontierGuidedDominatedGenerated,
+    frontierGuidedByKind: result.frontierGuidedByKind,
+    guidedAdmittedByKind: result.guidedAdmittedByKind,
+    frontierGuidedDominatedByKind: result.frontierGuidedDominatedByKind,
     wallMs: result.wallMs,
     peakRssMb: result.peakRssMb,
   };
