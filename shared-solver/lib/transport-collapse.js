@@ -148,6 +148,24 @@ function mtFloorOrdinal(floorId) {
   return match ? Number(match[1]) : 0;
 }
 
+/**
+ * PR-5.25x combat-progress signal V1: a transition that itself produces
+ * PERMANENT combat-stat growth. Pure state delta - no enemy IDs, no
+ * coordinates, no oracle knowledge, no weights. EXP deliberately does NOT
+ * qualify (almost every battle grants EXP; EXP-based admission would
+ * re-flood the high-priority class with ordinary battles).
+ */
+function isCombatProgressTransition(before, after) {
+  if (!before || !after || !before.hero || !after.hero) return false;
+  const h0 = before.hero;
+  const h1 = after.hero;
+  const increased = (key) => h1[key] != null && h0[key] != null && h1[key] > h0[key];
+  if (increased("atk") || increased("def") || increased("mdef") || increased("hpmax") || increased("lv")) return true;
+  const equipmentBefore = Array.isArray(h0.equipment) ? h0.equipment.slice().sort().join(",") : "";
+  const equipmentAfter = Array.isArray(h1.equipment) ? h1.equipment.slice().sort().join(",") : "";
+  return equipmentBefore !== equipmentAfter;
+}
+
 function actionToSemanticIdentity(action, state, nextState, project) {
   const floorId = action.floorId || (state && state.floorId) || "";
   const target = action.target || action.stance || {};
@@ -300,20 +318,18 @@ function createTransportCollapsedSearch(simulator) {
      * PR-5.25o retention rank: lower is retained.
      *
      * PR-5.25s contract: cap retention must match the guided scheduler.
-     *   frontierGuided = structural classification (identity in the frontier)
-     *   guidedAdmitted = frontierGuided AND passed resource skyline admission
-     *                    AND actually inserted into the guided heap
-     * Only guidedAdmitted earns rank 10: a frontier-matched child that the
-     * skyline dominates is scheduled as neutral and must not be retained as a
-     * VIP. There is NO rank-20 Pareto tier - paretoAdmitted was only ever
-     * assigned inside the frontier-match branch (so it implied frontierGuided
-     * and rank 10 won first) and is telemetry only now.
+     * PR-5.25x adds the first real rank-20 class: transitions that produced
+     * permanent combat-stat growth survive cap pressure better than ordinary
+     * neutrals. combatProgress candidates do NOT enter the guided heap and
+     * remain schedulable only through the neutral/FIFO lane - retention
+     * only, scheduler unchanged.
      */
     const pendingRank = (node) => {
       if (node.rankValue != null) return node.rankValue;
       let rank = 30;
       if (node.state && isGoalState(node.state)) rank = 0;
       else if (node.guidedAdmitted) rank = 10;
+      else if (node.combatProgress) rank = 20;
       node.rankValue = rank;
       return rank;
     };
@@ -351,6 +367,9 @@ function createTransportCollapsedSearch(simulator) {
     let fifoHeadProtected = 0;
     let fifoHeadWouldHaveDroppedWithoutProtection = 0;
     let fifoProtectedNodeWasGuided = 0;
+    // PR-5.25x combat-progress telemetry.
+    let combatProgressGenerated = 0;
+    let combatProgressAdmittedGenerated = 0;
 
     const heapPush = (entry) => {
       guidedHeap.push(entry);
@@ -696,6 +715,17 @@ function createTransportCollapsedSearch(simulator) {
         if (emitLifecycle) {
           emitLifecycle({ type: "registered", exactKey: child.key, depth: child.depth, floorId: child.state ? child.state.floorId : null });
         }
+        // PR-5.25x: permanent combat-stat growth produced by this transition
+        // (state delta only). Rank-20 retention class for non-guided children;
+        // no scheduler change. The admitted counter is finalized after the
+        // frontier branch below (guided children are rank 10).
+        child.combatProgress = isCombatProgressTransition(candidate.state, candidate.next);
+        if (child.combatProgress) {
+          combatProgressGenerated += 1;
+          if (!frontierSet) {
+            combatProgressAdmittedGenerated += 1;
+          }
+        }
         child.frontierGuided = false;
         child.paretoAdmitted = false;
         child.guidedAdmitted = false;
@@ -749,6 +779,7 @@ function createTransportCollapsedSearch(simulator) {
               frontierGuided: child.frontierGuided === true,
               guidedAdmitted: child.guidedAdmitted === true,
               skylineDominated,
+              combatProgress: child.combatProgress === true,
               depth: child.depth,
               floorId: child.state ? child.state.floorId : null,
               hero: childHero ? {
@@ -760,6 +791,9 @@ function createTransportCollapsedSearch(simulator) {
               } : null,
             });
           }
+        }
+        if (frontierSet && child.combatProgress && !child.guidedAdmitted) {
+          combatProgressAdmittedGenerated += 1;
         }
       }
 
@@ -964,6 +998,8 @@ function createTransportCollapsedSearch(simulator) {
       fifoHeadProtected,
       fifoHeadWouldHaveDroppedWithoutProtection,
       fifoProtectedNodeWasGuided,
+      combatProgressGenerated,
+      combatProgressAdmittedGenerated,
       resourceVariantPressure,
       searchComplete: !goalNode && !stoppedReason && !frontierOpen && closureTruncations === 0,
       wallMs: Date.now() - startedAt,
@@ -980,6 +1016,7 @@ module.exports = {
   canonicalJson,
   createTransportCollapsedSearch,
   flatPairs,
+  isCombatProgressTransition,
   poiToSemanticIdentity,
   stableFlags,
   transportSignature,

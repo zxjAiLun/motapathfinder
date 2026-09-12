@@ -231,6 +231,8 @@ function runChild(args) {
     fifoHeadProtected: result.fifoHeadProtected,
     fifoHeadWouldHaveDroppedWithoutProtection: result.fifoHeadWouldHaveDroppedWithoutProtection,
     fifoProtectedNodeWasGuided: result.fifoProtectedNodeWasGuided,
+    combatProgressGenerated: result.combatProgressGenerated,
+    combatProgressAdmittedGenerated: result.combatProgressAdmittedGenerated,
     wallMs: result.wallMs,
     peakRssMb: result.peakRssMb,
   };

@@ -222,6 +222,7 @@ function main() {
       frontierGuided: classified ? classified.frontierGuided === true : null,
       guidedAdmitted: classified ? classified.guidedAdmitted === true : null,
       skylineDominated: classified ? classified.skylineDominated === true : null,
+      combatProgress: classified ? classified.combatProgress === true : null,
       depth: classified ? classified.depth : null,
     };
   });

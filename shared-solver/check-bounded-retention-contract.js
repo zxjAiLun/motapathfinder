@@ -263,9 +263,76 @@ function runTurnoverScenario(onCandidateLifecycle) {
   });
 }
 
-/** Bounded-pool invariant from the observer event stream: pending can never
- * exceed the configured cap. registered - dropped - expanded approximates the
- * live pending count (the unregistered root expansion is clamped at zero). */
+// --- PR-5.25x combat-progress rank-20 scenario ------------------------------
+//
+// cap = 2. Root generates G (guidedAdmitted dead end), N1 (ordinary neutral
+// dead end), R (a transition that permanently raises ATK - the only path to
+// the goal), N2 (ordinary neutral dead end), in that order. Under the pure
+// (rank, insertion) fill with the PR-5.25x rank-20 class, the contested trim
+// keeps {G, R} and drops both ordinary neutrals; R is then expanded through
+// the neutral/FIFO lane (it never enters the guided heap) and the goal is
+// found. Without the rank-20 class R was an ordinary neutral and the fill
+// kept N1 instead - the goal was unreachable.
+
+function combatProgressStubState() {
+  return {
+    floorId: "MT1",
+    hero: {
+      hp: 100, hpmax: 100, mana: 0, manamax: 0, atk: 1, def: 0, mdef: 0, money: 0, exp: 0, lv: 1,
+      loc: { x: 0, y: 0, direction: "down" },
+      equipment: [], followers: [],
+    },
+    inventory: {}, flags: {}, floorStates: {}, triggeredAutoEvents: {}, visitedFloors: { MT1: true },
+    route: [], notes: [], meta: { decisionDepth: 0, rawRouteLength: 0 },
+  };
+}
+
+function createCombatProgressSimulator() {
+  return {
+    project: {},
+    enumeratePrimitiveActions(state) {
+      if (state.floorId === "MT1" && !state.flags.g && !state.flags.r && (state.hero.money || 0) === 0 && state.hero.atk === 1) {
+        return { actions: [
+          starvationAction("g:dead", 1, 0, (s) => { s.flags.g = 1; }),
+          starvationAction("n1:dead", 2, 0, (s) => { s.hero.money += 1; }),
+          starvationAction("r:invest", 3, 0, (s) => { s.hero.atk += 1; s.flags.r = 1; }),
+          starvationAction("n2:dead", 4, 0, (s) => { s.hero.money += 2; }),
+        ] };
+      }
+      if (state.floorId === "MT1" && state.flags.r === 1) {
+        return { actions: [starvationAction("rgoal:goal", 3, 1, (s) => { s.floorId = "MT2"; s.hero.money += 1; })] };
+      }
+      return { actions: [] };
+    },
+    applyAction(state, action) {
+      const next = cloneState(state);
+      if (typeof action.__apply === "function") action.__apply(next);
+      return next;
+    },
+  };
+}
+
+function runCombatProgressScenario(onCandidateLifecycle) {
+  const simulator = createCombatProgressSimulator();
+  const search = createTransportCollapsedSearch(simulator);
+  const frontierSet = new Set(["event:MT1:1,0"]);
+  return search.search(combatProgressStubState(), {
+    isGoalState: (state) => state.floorId === "MT2",
+    frontierSet,
+    resourceSkylinePriority: true,
+    pendingCandidateCap: 2,
+    neutralEvery: 5,
+    maxExpansions: 1000,
+    maxRuntimeMs: 10000,
+    maxClosureStates: 1000,
+    onCandidateLifecycle,
+  });
+}
+
+/** Bounded-pool invariant from the observer event stream: after every trim
+ * (dropped-event batch) and at the end, the live pending count must be within
+ * the configured cap. Transient registration overflow is by design - the cap
+ * is enforced after each expansion completes. */
 function maxPendingFromEvents(events) {
   let registered = 0;
   let dropped = 0;
@@ -273,11 +340,14 @@ function maxPendingFromEvents(events) {
   let max = 0;
   for (const event of events) {
     if (event.type === "registered") registered += 1;
-    else if (event.type === "dropped") dropped += 1;
-    else if (event.type === "expanded") expanded += 1;
-    const live = Math.max(0, registered - dropped - expanded);
-    if (live > max) max = live;
+    else if (event.type === "dropped") {
+      dropped += 1;
+      const live = Math.max(0, registered - dropped - expanded);
+      if (live > max) max = live;
+    } else if (event.type === "expanded") expanded += 1;
   }
+  const finalLive = Math.max(0, registered - dropped - expanded);
+  if (finalLive > max) max = finalLive;
   return max;
 }
 
@@ -374,6 +444,29 @@ function main() {
   const maxPendingTurnover = maxPendingFromEvents(turnoverEvents);
   check(maxPendingTurnover <= 2, "cap-invariant-turnover", `maxPending=${maxPendingTurnover} cap=2`);
 
+  // PR-5.25x combat-progress rank-20 micro: under capacity pressure the keep
+  // set is {G (rank 10), R (rank 20)} and both ordinary neutrals drop; R is
+  // expanded only through the neutral/FIFO lane and is the only goal path.
+  const combatEvents = [];
+  const combat = runCombatProgressScenario((event) => {
+    combatEvents.push(event);
+    return null;
+  });
+  const combatRoute = Array.isArray(combat.route) ? combat.route : [];
+  check(combat.found === true, "combat-progress-rank20-goal-found",
+    `found=${combat.found} stopped=${combat.stoppedReason} dropped=${combat.candidatesDropped}`);
+  check(JSON.stringify(combatRoute) === JSON.stringify(["r:invest", "rgoal:goal"]),
+    "combat-progress-route-through-r", JSON.stringify(combatRoute));
+  check(combat.candidatesDropped === 2, "combat-progress-both-neutrals-dropped", `dropped=${combat.candidatesDropped}`);
+  check(combat.combatProgressGenerated === 1 && combat.combatProgressAdmittedGenerated === 1,
+    "combat-progress-counters", `generated=${combat.combatProgressGenerated} admitted=${combat.combatProgressAdmittedGenerated}`);
+  const rClassified = combatEvents.find((e) => e.type === "classified" && e.combatProgress === true);
+  check(rClassified && rClassified.frontierGuided === false && rClassified.guidedAdmitted === false,
+    "combat-progress-not-guided-not-in-heap",
+    rClassified ? `frontierGuided=${rClassified.frontierGuided} guidedAdmitted=${rClassified.guidedAdmitted}` : "no flagged classified event");
+  const maxPendingCombat = maxPendingFromEvents(combatEvents);
+  check(maxPendingCombat <= 2, "cap-invariant-combat-progress", `maxPending=${maxPendingCombat} cap=2`);
+
   // Corrected contract: the neutral goal-path candidate survives the cap, the
   // dominated frontier candidate does not.
   check(result.found === true, "goal-found-through-neutral-candidate",
@@ -427,6 +520,14 @@ function main() {
       fifoHeadWouldHaveDroppedWithoutProtection: turnover.fifoHeadWouldHaveDroppedWithoutProtection,
       maxPendingObserved: maxPendingTurnover,
     },
+    combatProgress: {
+      found: combat.found,
+      route: combatRoute,
+      candidatesDropped: combat.candidatesDropped,
+      generated: combat.combatProgressGenerated,
+      admitted: combat.combatProgressAdmittedGenerated,
+      maxPendingObserved: maxPendingCombat,
+    },
     failures,
     ok: failures.length === 0,
   };
@@ -441,6 +542,7 @@ function main() {
   console.log(`  observer inertness: ${inertnessFailures.length === 0 ? "ok" : "FAIL"} (${observerEvents.length} events recorded, returns ignored)`);
   console.log(`  starvation (cap=6, neutralEvery=5): found=${starvation.found} route=${JSON.stringify(starvationRoute)} dropped=${starvation.candidatesDropped} headProtected=${starvation.fifoHeadProtected}/${starvation.fifoHeadProtectionOpportunities} wouldHaveDropped=${starvation.fifoHeadWouldHaveDroppedWithoutProtection}`);
   console.log(`  turnover (cap=2): found=${turnover.found} route=${JSON.stringify(turnoverRoute)} dropped=${turnover.candidatesDropped} headProtected=${turnover.fifoHeadProtected} wouldHaveDropped=${turnover.fifoHeadWouldHaveDroppedWithoutProtection}`);
+  console.log(`  combatProgress (cap=2): found=${combat.found} route=${JSON.stringify(combatRoute)} dropped=${combat.candidatesDropped} generated=${combat.combatProgressGenerated} admitted=${combat.combatProgressAdmittedGenerated}`);
   if (failures.length > 0) {
     console.log(`  FAIL (${failures.length}):`);
     for (const f of failures) console.log(`    ${f.label}: ${f.detail}`);
