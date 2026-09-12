@@ -253,6 +253,13 @@ function createTransportCollapsedSearch(simulator) {
       ? config.isGoalState
       : (state) => simulator.isTerminal(state);
     const onTrace = typeof config.onTrace === "function" ? config.onTrace : null;
+    // PR-5.25t: observational candidate-lifecycle observer. Return values are
+    // completely ignored - the observer can record, never steer. Absent
+    // callback = zero behavior change (one truthiness test per event site).
+    // Observer exceptions are NOT swallowed: a broken recorder aborts the
+    // diagnostic loudly instead of silently degrading the recording.
+    const onCandidateLifecycle = typeof config.onCandidateLifecycle === "function" ? config.onCandidateLifecycle : null;
+    const emitLifecycle = onCandidateLifecycle ? (event) => onCandidateLifecycle(event) : null;
 
     const startedAt = Date.now();
     let stoppedReason = null;
@@ -474,6 +481,7 @@ function createTransportCollapsedSearch(simulator) {
       signaturesByKey.set(startKey, transportSignature(startState));
       const visited = new Map();
       visited.set(startKey, { state: startState, chain: [], trace: [] });
+      if (emitLifecycle) emitLifecycle({ type: "closureSeen", exactKey: startKey });
       const queue = [{ state: startState, chain: [], trace: [], signature: signaturesByKey.get(startKey) }];
       let head = 0;
       const strategic = [];
@@ -523,6 +531,7 @@ function createTransportCollapsedSearch(simulator) {
               trace: entry.trace.concat([{ action: normalizeAction(action), postExactStateKey: key }]),
             };
             visited.set(key, child);
+            if (emitLifecycle) emitLifecycle({ type: "closureSeen", exactKey: key });
             queue.push({ state: next, chain: child.chain, trace: child.trace, signature });
           } else {
             strategic.push({ state: entry.state, chain: entry.chain, trace: entry.trace, action, next, key });
@@ -602,7 +611,14 @@ function createTransportCollapsedSearch(simulator) {
       if (isGoalState(node.state)) {
         recordReachedNode(node);
         goalNode = node;
+        if (emitLifecycle) {
+          emitLifecycle({ type: "goal", exactKey: node.key, depth: node.depth, floorId: node.state ? node.state.floorId : null });
+        }
         break;
+      }
+
+      if (emitLifecycle) {
+        emitLifecycle({ type: "expanded", exactKey: node.key, depth: node.depth, floorId: node.state ? node.state.floorId : null });
       }
 
       recordNode(node);
@@ -635,9 +651,18 @@ function createTransportCollapsedSearch(simulator) {
 
       for (const candidate of closure.strategic) {
         strategicBranches += 1;
+        if (emitLifecycle) {
+          emitLifecycle({
+            type: "strategicGenerated",
+            exactKey: candidate.key,
+            kind: candidate.action.kind,
+            floorId: candidate.state ? candidate.state.floorId : null,
+          });
+        }
         const next = candidate.next;
         if (registry.has(candidate.key)) {
           duplicatesSkipped += 1;
+          if (emitLifecycle) emitLifecycle({ type: "duplicateSkipped", exactKey: candidate.key, kind: candidate.action.kind });
           continue;
         }
         const child = {
@@ -645,6 +670,7 @@ function createTransportCollapsedSearch(simulator) {
           parentId: node.id,
           state: next,
           key: candidate.key,
+          actionKind: candidate.action.kind,
           // The full replay chain: transport summaries then the strategic action.
           // Macro search is not the correctness source, but the chain must be
           // complete for strict replay to be the final authority.
@@ -662,6 +688,9 @@ function createTransportCollapsedSearch(simulator) {
         nodesById.set(child.id, child);
         registry.set(child.key, child);
         exactSuccessors += 1;
+        if (emitLifecycle) {
+          emitLifecycle({ type: "registered", exactKey: child.key, depth: child.depth, floorId: child.state ? child.state.floorId : null });
+        }
         child.frontierGuided = false;
         child.paretoAdmitted = false;
         child.guidedAdmitted = false;
@@ -673,7 +702,9 @@ function createTransportCollapsedSearch(simulator) {
         } else {
           neutralQueue.push(child.id);
           const identity = actionToSemanticIdentity(candidate.action, candidate.state, candidate.next, simulator.project);
-          if (frontierSet.has(identity)) {
+          const identityInFrontier = frontierSet.has(identity);
+          let skylineDominated = false;
+          if (identityInFrontier) {
             child.frontierGuided = true;
             frontierGuidedGenerated += 1;
             frontierGuidedByKind[candidate.action.kind] = (frontierGuidedByKind[candidate.action.kind] || 0) + 1;
@@ -684,14 +715,13 @@ function createTransportCollapsedSearch(simulator) {
                 guidedForwardFloorChildrenGenerated += 1;
               }
             }
-            let isDominated = false;
             if (resourceSkylinePriority) {
               const query = skylineSet.query(candidate.next, child.id, candidate.key);
-              isDominated = query.isDominated;
+              skylineDominated = query.isDominated;
               skylineSet.insert(candidate.next, child.id, candidate.key);
             }
-            child.paretoAdmitted = !isDominated;
-            if (!isDominated) {
+            child.paretoAdmitted = !skylineDominated;
+            if (!skylineDominated) {
               // PR-5.25s: guidedAdmitted marks actual guided-heap insertion -
               // the ONLY frontier property that earns cap-retention rank 10.
               const score = (priorityMap && priorityMap.get(identity)) || 100;
@@ -703,6 +733,27 @@ function createTransportCollapsedSearch(simulator) {
               frontierGuidedDominatedGenerated += 1;
               frontierGuidedDominatedByKind[candidate.action.kind] = (frontierGuidedDominatedByKind[candidate.action.kind] || 0) + 1;
             }
+          }
+          if (emitLifecycle) {
+            const childHero = child.state ? child.state.hero : null;
+            emitLifecycle({
+              type: "classified",
+              exactKey: child.key,
+              identity,
+              kind: candidate.action.kind,
+              frontierGuided: child.frontierGuided === true,
+              guidedAdmitted: child.guidedAdmitted === true,
+              skylineDominated,
+              depth: child.depth,
+              floorId: child.state ? child.state.floorId : null,
+              hero: childHero ? {
+                hp: childHero.hp == null ? null : childHero.hp,
+                atk: childHero.atk == null ? null : childHero.atk,
+                def: childHero.def == null ? null : childHero.def,
+                mdef: childHero.mdef == null ? null : childHero.mdef,
+                money: childHero.money == null ? null : childHero.money,
+              } : null,
+            });
           }
         }
       }
@@ -721,7 +772,20 @@ function createTransportCollapsedSearch(simulator) {
         const droppedIds = scored.slice(pendingCandidateCap).map((e) => e.id);
         for (const id of droppedIds) {
           const dn = nodesById.get(id);
-          if (dn) dn.dropped = true;
+          if (dn) {
+            dn.dropped = true;
+            if (emitLifecycle) {
+              emitLifecycle({
+                type: "dropped",
+                exactKey: dn.key,
+                rankClass: pendingRank(dn),
+                kind: dn.actionKind,
+                frontierGuided: dn.frontierGuided === true,
+                guidedAdmitted: dn.guidedAdmitted === true,
+                skylineDominated: dn.frontierGuided === true && dn.paretoAdmitted === false,
+              });
+            }
+          }
         }
         candidatesDropped += droppedIds.length;
         pending.length = 0;

@@ -107,6 +107,22 @@ function runScenario() {
   });
 }
 
+function runScenarioWithObserver(onCandidateLifecycle) {
+  const simulator = createStubSimulator();
+  const search = createTransportCollapsedSearch(simulator);
+  const frontierSet = new Set(["event:MT1:1,1", "event:MT1:2,1"]);
+  return search.search(stubState(), {
+    isGoalState: (state) => state.floorId === "MT2",
+    frontierSet,
+    resourceSkylinePriority: true,
+    pendingCandidateCap: 2,
+    maxExpansions: 1000,
+    maxRuntimeMs: 10000,
+    maxClosureStates: 1000,
+    onCandidateLifecycle,
+  });
+}
+
 function main() {
   const outPath = (() => {
     const arg = process.argv.slice(2).find((t) => t.startsWith("--out="));
@@ -116,11 +132,34 @@ function main() {
   const result = runScenario();
   const routeSummaries = Array.isArray(result.route) ? result.route : [];
 
+  // PR-5.25t observer-inertness micro: the same scenario run with a lifecycle
+  // observer that returns arbitrary junk must produce IDENTICAL results. This
+  // permanently locks ORACLE_KEYS_AFFECT_SEARCH_DECISIONS = FALSE: the
+  // observation channel can record, never steer.
+  const observerEvents = [];
+  const junkReturns = [false, 0, "", { steer: "attempt" }, NaN, undefined, () => "junk"];
+  const observed = runScenarioWithObserver((event) => {
+    observerEvents.push(event.type);
+    return junkReturns[observerEvents.length % junkReturns.length];
+  });
+  const inertnessFailures = [];
+  const inertnessFields = [
+    "found", "route", "candidatesDropped", "strategicExpansions", "stoppedReason", "searchComplete",
+    "frontierGuidedGenerated", "guidedAdmittedGenerated", "frontierGuidedDominatedGenerated",
+  ];
+  for (const field of inertnessFields) {
+    const a = JSON.stringify(result[field]);
+    const b = JSON.stringify(observed[field]);
+    if (a !== b) inertnessFailures.push({ label: `observer-inert-${field}`, detail: `baseline=${a} observed=${b}` });
+  }
+  if (observerEvents.length === 0) inertnessFailures.push({ label: "observer-saw-events", detail: "observer recorded nothing" });
+
   const failures = [];
   const check = (ok, label, detail) => {
     if (!ok) failures.push({ label, detail });
     return ok;
   };
+  failures.push(...inertnessFailures);
 
   // Corrected contract: the neutral goal-path candidate survives the cap, the
   // dominated frontier candidate does not.
@@ -156,6 +195,8 @@ function main() {
     frontierGuidedByKind: result.frontierGuidedByKind,
     guidedAdmittedByKind: result.guidedAdmittedByKind,
     frontierGuidedDominatedByKind: result.frontierGuidedDominatedByKind,
+    observerEventsRecorded: observerEvents.length,
+    observerInertness: inertnessFailures.length === 0,
     failures,
     ok: failures.length === 0,
   };
@@ -167,6 +208,7 @@ function main() {
   console.log(`  found=${result.found} route=${JSON.stringify(routeSummaries)} dropped=${result.candidatesDropped}`);
   console.log(`  counters: frontierGuided=${result.frontierGuidedGenerated} guidedAdmitted=${result.guidedAdmittedGenerated} dominated=${result.frontierGuidedDominatedGenerated}`);
   console.log(`  byKind(event): frontierGuided=${byKindEvent} guidedAdmitted=${admittedByKindEvent} dominated=${dominatedByKindEvent}`);
+  console.log(`  observer inertness: ${inertnessFailures.length === 0 ? "ok" : "FAIL"} (${observerEvents.length} events recorded, returns ignored)`);
   if (failures.length > 0) {
     console.log(`  FAIL (${failures.length}):`);
     for (const f of failures) console.log(`    ${f.label}: ${f.detail}`);
