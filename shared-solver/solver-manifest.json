@@ -4123,6 +4123,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.19l verifies synthetic discrete consumption predicate and frozen witness-backed recovery; PR-5.19n extends the synthetic contracts with R1/R2/R3/R4 residual paid-witness attribution and real observation asserts O2-compatible suffix replay without changing the frozen result; --residual-recovery adds PR-5.19o prefix-only strict replay/materialization/continuation gates; --post-o3-observation adds PR-5.19p P1/P2/P3/P4 attribution from the O2+O3 prefix without behavior"
     },
+    "shared-solver/check-strict-replay-phase0.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.25p Phase 0 strict replay hardening: explicit initialState is cloned so replay never starts from a hardcoded rank, a supplied structured trace must contain action plus non-empty postExactStateKey per entry, the resolver is restricted to the exact enumerated primitive candidates, and legacy summary-only routes remain fail-closed on ambiguity. Reads the tracked PR-5.25o cap=1024 winner qualification artifact."
+    },
     "shared-solver/check-teacher-divergence.js": {
       "grade": "diagnostic",
       "allowsNotFound": true,

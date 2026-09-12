@@ -134,8 +134,10 @@ function runChild(args) {
   let replay = null;
   if (result.found && result.route) {
     replay = verifyStrictReplay(simulator, result.route, {
+      initialState,
       isGoalState,
       expectedFinalState: result.finalState,
+      routeTrace: result.routeTrace,
     });
   }
 

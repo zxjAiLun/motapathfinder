@@ -357,8 +357,10 @@ function createTransportCollapsedSearch(simulator) {
     let signatureCalls = 0;
     let signatureWallMs = 0;
     let deepestFloorOrdinal = 0;
+    let deepestReachedFloorOrdinal = 0;
     let deepestStrategicDepth = 0;
     const deepestFloorHistogram = {};
+    const deepestReachedFloorHistogram = {};
     let goalNode = null;
 
     const sampleRss = () => {
@@ -397,7 +399,16 @@ function createTransportCollapsedSearch(simulator) {
       return actions;
     };
 
+    const recordReachedNode = (node) => {
+      const floorId = node.state.floorId;
+      const match = /^MT(\d+)$/.exec(String(floorId || ""));
+      const ordinal = match ? Number(match[1]) : 0;
+      deepestReachedFloorHistogram[floorId] = (deepestReachedFloorHistogram[floorId] || 0) + 1;
+      if (ordinal > deepestReachedFloorOrdinal) deepestReachedFloorOrdinal = ordinal;
+    };
+
     const recordNode = (node) => {
+      recordReachedNode(node);
       const floorId = node.state.floorId;
       const match = /^MT(\d+)$/.exec(String(floorId || ""));
       const ordinal = match ? Number(match[1]) : 0;
@@ -548,6 +559,7 @@ function createTransportCollapsedSearch(simulator) {
       }
 
       if (isGoalState(node.state)) {
+        recordReachedNode(node);
         goalNode = node;
         break;
       }
@@ -740,6 +752,10 @@ function createTransportCollapsedSearch(simulator) {
       topRepeatedExactKeys,
       deepestFloorOrdinal,
       deepestFloorHistogram,
+      deepestExpandedNonGoalFloorOrdinal: deepestFloorOrdinal,
+      deepestExpandedNonGoalFloorHistogram: deepestFloorHistogram,
+      deepestReachedFloorOrdinal,
+      deepestReachedFloorHistogram,
       stoppedReason,
       guidedExpansions,
       neutralExpansions,

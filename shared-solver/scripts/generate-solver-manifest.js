@@ -1573,6 +1573,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": true,
     "cleanCheckout": true,
     "notes": "PR-5.25o bounded candidate search capability qualification: capability study, not a causal throughput A/B; pipeline is the existing StaticSimulator plus transport-collapsed strategic successors plus autonomous dependency frontier; single new variable pendingCandidateCap with two predeclared capacities (256, then 1024 only if 256 does not find a route); dropped candidates are removed from both the guided heap and the neutral queue and never return; no new score and no hand-authored weights; retention order inherits goal state, frontier-guided, Pareto admission, then insertion order; 180s/2GB/120k budget, fresh child process per attempt"
+  },
+  "shared-solver/check-strict-replay-phase0.js": {
+    "grade": "closure",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.25p Phase 0 strict replay hardening: explicit initialState is cloned so replay never starts from a hardcoded rank, a supplied structured trace must contain action plus non-empty postExactStateKey per entry, the resolver is restricted to the exact enumerated primitive candidates, and legacy summary-only routes remain fail-closed on ambiguity. Reads the tracked PR-5.25o cap=1024 winner qualification artifact."
   }
 };
 

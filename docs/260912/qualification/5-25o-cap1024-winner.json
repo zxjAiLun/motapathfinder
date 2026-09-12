@@ -1,0 +1,1121 @@
+{
+  "artifactType": "PR-5.25o-cap1024-winner-qualification",
+  "artifactVersion": 1,
+  "sourceCommit": "122e1385c5b696589bddab41f2f2f70d5452fe11",
+  "sourceGeneratedArtifact": "shared-solver/routes/generated/bounded-candidate.result.json",
+  "sourceGeneratedArtifactSha256": "1082e5af5dcdf0b0f6e79fe0b995d037cfb68bae0e73ee265f38271f9f887c10",
+  "frozenInputContract": {
+    "initialRank": "chaos",
+    "region": [
+      "MT1",
+      "MT2",
+      "MT3"
+    ],
+    "goalFloorId": "MT3",
+    "maxRuntimeMs": 180000,
+    "maxRssMb": 2048,
+    "maxExpansions": 120000,
+    "freshChildProcess": true,
+    "training": "NONE",
+    "witnessInSearch": "NONE",
+    "manualMilestone": "NONE",
+    "recursiveSubgoal": "NONE",
+    "backtracking": "NONE"
+  },
+  "qualificationProtocol": {
+    "capacities": [
+      256,
+      1024
+    ],
+    "cap256": "MISS",
+    "cap1024": "WINNER",
+    "freshChildProcess": true,
+    "searchAlgorithmChange": "NONE",
+    "completeness": "ABANDONED_BY_DESIGN",
+    "routeCorrectness": "STRICTLY_VERIFIED"
+  },
+  "winner": {
+    "cap": 1024,
+    "route": [
+      "battle:blackSlime@MT1:8,7",
+      "battle:redSlime@MT1:9,6",
+      "battle:slimelord@MT1:9,4",
+      "battle:slimelord@MT1:3,4",
+      "battle:skeletonWarrior@MT1:2,1",
+      "battle:vampire@MT1:4,3",
+      "battle:skeletonCaptain@MT1:2,5",
+      "battle:skeleton@MT1:8,1",
+      "changeFloor@MT1:6,0",
+      "changeFloor@MT2:6,0",
+      "changeFloor@MT1:6,0",
+      "battle:skeleton@MT2:4,1",
+      "battle:ghostSoldier@MT2:2,1",
+      "battle:zombie@MT2:8,3",
+      "battle:zombie@MT2:3,4",
+      "battle:zombieKnight@MT2:9,4",
+      "battle:zombie@MT2:9,6",
+      "battle:ghostSoldier@MT2:10,5",
+      "battle:slimeman@MT2:2,5",
+      "battle:rock@MT2:3,6",
+      "battle:zombieKnight@MT2:4,3",
+      "battle:rock@MT2:10,1",
+      "changeFloor@MT2:6,0",
+      "changeFloor@MT1:6,0",
+      "battle:redPriest@MT2:8,7",
+      "battle:redPriest@MT2:4,7",
+      "battle:redPriest@MT2:10,8",
+      "battle:bluePriest@MT2:9,10",
+      "battle:slimeman@MT2:8,11",
+      "changeFloor@MT2:6,12"
+    ],
+    "routeTrace": [
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:blackSlime@MT1:8,7",
+          "floorId": "MT1",
+          "path": [
+            "right"
+          ],
+          "stance": {
+            "floorId": "MT1",
+            "x": 7,
+            "y": 7
+          },
+          "target": {
+            "floorId": "MT1",
+            "x": 8,
+            "y": 7
+          },
+          "direction": "right",
+          "enemyId": "blackSlime",
+          "estimate": {
+            "damage": 170,
+            "turn": 21,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT1|8,7|blackSlime"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":7,\"y\":7,\"direction\":null,\"hp\":131,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":2,\"def\":0,\"mdef\":60,\"money\":0,\"exp\":2,\"lv\":1,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":4,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"10,7\",\"2,7\",\"4,7\",\"5,6\",\"5,8\",\"7,6\",\"7,8\",\"8,7\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:redSlime@MT1:9,6",
+          "floorId": "MT1",
+          "path": [
+            "right",
+            "right"
+          ],
+          "stance": {
+            "floorId": "MT1",
+            "x": 9,
+            "y": 7
+          },
+          "target": {
+            "floorId": "MT1",
+            "x": 9,
+            "y": 6
+          },
+          "direction": "up",
+          "enemyId": "redSlime",
+          "estimate": {
+            "damage": 30,
+            "turn": 16,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT1|9,6|redSlime"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":9,\"y\":7,\"direction\":null,\"hp\":101,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":5,\"def\":1,\"mdef\":60,\"money\":0,\"exp\":3,\"lv\":2,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":12,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"10,5\",\"10,7\",\"10,8\",\"11,5\",\"2,7\",\"2,8\",\"3,9\",\"4,7\",\"5,6\",\"5,8\",\"7,6\",\"7,8\",\"8,7\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:slimelord@MT1:9,4",
+          "floorId": "MT1",
+          "path": [
+            "up",
+            "up"
+          ],
+          "stance": {
+            "floorId": "MT1",
+            "x": 9,
+            "y": 5
+          },
+          "target": {
+            "floorId": "MT1",
+            "x": 9,
+            "y": 4
+          },
+          "direction": "up",
+          "enemyId": "slimelord",
+          "estimate": {
+            "damage": 59,
+            "turn": 7,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT1|9,4|slimelord"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":9,\"y\":5,\"direction\":null,\"hp\":1242,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":6,\"def\":2,\"mdef\":90,\"money\":0,\"exp\":7,\"lv\":2,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":20,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,5\",\"2,11\",\"2,7\",\"2,8\",\"3,10\",\"3,6\",\"3,9\",\"4,7\",\"5,6\",\"5,8\",\"7,6\",\"7,8\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:slimelord@MT1:3,4",
+          "floorId": "MT1",
+          "path": [
+            "down",
+            "down",
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "up",
+            "up"
+          ],
+          "stance": {
+            "floorId": "MT1",
+            "x": 3,
+            "y": 5
+          },
+          "target": {
+            "floorId": "MT1",
+            "x": 3,
+            "y": 4
+          },
+          "direction": "up",
+          "enemyId": "slimelord",
+          "estimate": {
+            "damage": 6,
+            "turn": 6,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT1|3,4|slimelord"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":1236,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":6,\"def\":3,\"mdef\":110,\"money\":0,\"exp\":8,\"lv\":2,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":22,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,5\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,7\",\"5,6\",\"5,8\",\"7,6\",\"7,8\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:skeletonWarrior@MT1:2,1",
+          "floorId": "MT1",
+          "path": [
+            "up",
+            "up",
+            "up",
+            "up"
+          ],
+          "stance": {
+            "floorId": "MT1",
+            "x": 3,
+            "y": 1
+          },
+          "target": {
+            "floorId": "MT1",
+            "x": 2,
+            "y": 1
+          },
+          "direction": "left",
+          "enemyId": "skeletonWarrior",
+          "estimate": {
+            "damage": 1115,
+            "turn": 50,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT1|2,1|skeletonWarrior"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":321,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":13,\"def\":6,\"mdef\":110,\"money\":0,\"exp\":1,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":28,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"1,2\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,5\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,7\",\"5,11\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:vampire@MT1:4,3",
+          "floorId": "MT1",
+          "path": [
+            "down",
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT1",
+            "x": 3,
+            "y": 3
+          },
+          "target": {
+            "floorId": "MT1",
+            "x": 4,
+            "y": 3
+          },
+          "direction": "right",
+          "enemyId": "vampire",
+          "estimate": {
+            "damage": 82,
+            "turn": 13,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT1|4,3|vampire"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":3,\"direction\":null,\"hp\":1039,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":5,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":36,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:skeletonCaptain@MT1:2,5",
+          "floorId": "MT1",
+          "path": [
+            "down",
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT1",
+            "x": 3,
+            "y": 5
+          },
+          "target": {
+            "floorId": "MT1",
+            "x": 2,
+            "y": 5
+          },
+          "direction": "left",
+          "enemyId": "skeletonCaptain",
+          "estimate": {
+            "damage": 431,
+            "turn": 34,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT1|2,5|skeletonCaptain"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":2208,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":19,\"def\":10,\"mdef\":130,\"money\":0,\"exp\":6,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":38,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,11\",\"7,6\",\"7,8\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:skeleton@MT1:8,1",
+          "floorId": "MT1",
+          "path": [
+            "down",
+            "down",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "up",
+            "up",
+            "up",
+            "up",
+            "up",
+            "up"
+          ],
+          "stance": {
+            "floorId": "MT1",
+            "x": 9,
+            "y": 1
+          },
+          "target": {
+            "floorId": "MT1",
+            "x": 8,
+            "y": 1
+          },
+          "direction": "left",
+          "enemyId": "skeleton",
+          "estimate": {
+            "damage": 1558,
+            "turn": 68,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT1|8,1|skeleton"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"0:MT1:MT1:1\",\"hero\":{\"x\":9,\"y\":1,\"direction\":null,\"hp\":650,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":12,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "changeFloor",
+          "summary": "changeFloor@MT1:6,0",
+          "floorId": "MT1",
+          "path": [
+            "left",
+            "left",
+            "left"
+          ],
+          "stance": {
+            "floorId": "MT1",
+            "x": 6,
+            "y": 1
+          },
+          "target": {
+            "floorId": "MT1",
+            "x": 6,
+            "y": 0
+          },
+          "direction": "up",
+          "changeFloor": {
+            "floorId": ":next",
+            "stair": "downFloor"
+          },
+          "fingerprint": "changeFloor|MT1|6,0|:next|,"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":2250,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "changeFloor",
+          "summary": "changeFloor@MT2:6,0",
+          "floorId": "MT2",
+          "path": [
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 1
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 0
+          },
+          "direction": "up",
+          "changeFloor": {
+            "floorId": ":before",
+            "stair": "upFloor"
+          },
+          "fingerprint": "changeFloor|MT2|6,0|:before|,"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":2250,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "changeFloor",
+          "summary": "changeFloor@MT1:6,0",
+          "floorId": "MT1",
+          "path": [
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT1",
+            "x": 6,
+            "y": 1
+          },
+          "target": {
+            "floorId": "MT1",
+            "x": 6,
+            "y": 0
+          },
+          "direction": "up",
+          "changeFloor": {
+            "floorId": ":next",
+            "stair": "downFloor"
+          },
+          "fingerprint": "changeFloor|MT1|6,0|:next|,"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":2250,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":17,\"mdef\":130,\"money\":0,\"exp\":7,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":40,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:skeleton@MT2:4,1",
+          "floorId": "MT2",
+          "path": [
+            "down",
+            "left"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 5,
+            "y": 1
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 4,
+            "y": 1
+          },
+          "direction": "left",
+          "enemyId": "skeleton",
+          "estimate": {
+            "damage": 295,
+            "turn": 48,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|4,1|skeleton"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":5,\"y\":1,\"direction\":null,\"hp\":5155,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":21,\"def\":19,\"mdef\":130,\"money\":0,\"exp\":8,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":42,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:ghostSoldier@MT2:2,1",
+          "floorId": "MT2",
+          "path": [
+            "left",
+            "left"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 1
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 2,
+            "y": 1
+          },
+          "direction": "left",
+          "enemyId": "ghostSoldier",
+          "estimate": {
+            "damage": 924,
+            "turn": 34,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|2,1|ghostSoldier"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":1,\"direction\":null,\"hp\":4231,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":19,\"mdef\":250,\"money\":0,\"exp\":10,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":46,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"8,1\",\"9,2\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:zombie@MT2:8,3",
+          "floorId": "MT2",
+          "path": [
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "down",
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 3
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 8,
+            "y": 3
+          },
+          "direction": "left",
+          "enemyId": "zombie",
+          "estimate": {
+            "damage": 387,
+            "turn": 50,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|8,3|zombie"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":3,\"direction\":null,\"hp\":3844,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":24,\"mdef\":250,\"money\":0,\"exp\":11,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":48,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"4,1\",\"5,1\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:zombie@MT2:3,4",
+          "floorId": "MT2",
+          "path": [
+            "up",
+            "up",
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "down",
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 3
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 4
+          },
+          "direction": "down",
+          "enemyId": "zombie",
+          "estimate": {
+            "damage": 142,
+            "turn": 50,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|3,4|zombie"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":3,\"direction\":null,\"hp\":3702,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":24,\"mdef\":250,\"money\":0,\"exp\":12,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":50,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"3,4\",\"4,1\",\"5,1\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:zombieKnight@MT2:9,4",
+          "floorId": "MT2",
+          "path": [
+            "up",
+            "up",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "down",
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 3
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 4
+          },
+          "direction": "down",
+          "enemyId": "zombieKnight",
+          "estimate": {
+            "damage": 1262,
+            "turn": 37,
+            "money": 0,
+            "exp": 2,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|9,4|zombieKnight"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":3,\"direction\":null,\"hp\":2440,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":31,\"def\":24,\"mdef\":250,\"money\":0,\"exp\":14,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":52,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"2,1\",\"2,3\",\"3,2\",\"3,4\",\"4,1\",\"5,1\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:zombie@MT2:9,6",
+          "floorId": "MT2",
+          "path": [
+            "down",
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 5
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 6
+          },
+          "direction": "down",
+          "enemyId": "zombie",
+          "estimate": {
+            "damage": 142,
+            "turn": 50,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|9,6|zombie"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":5,\"direction\":null,\"hp\":2298,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":36,\"def\":24,\"mdef\":250,\"money\":0,\"exp\":15,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":54,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"10,7\",\"2,1\",\"2,3\",\"3,2\",\"3,4\",\"4,1\",\"5,1\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:ghostSoldier@MT2:10,5",
+          "floorId": "MT2",
+          "stance": {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 5
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 10,
+            "y": 5
+          },
+          "direction": "right",
+          "enemyId": "ghostSoldier",
+          "estimate": {
+            "damage": 88,
+            "turn": 13,
+            "money": 0,
+            "exp": 1,
+            "guards": 0
+          },
+          "path": [],
+          "fingerprint": "battle|MT2|10,5|ghostSoldier"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":5,\"direction\":null,\"hp\":3010,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":38,\"def\":26,\"mdef\":270,\"money\":0,\"exp\":16,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":56,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"10,3\",\"10,5\",\"10,7\",\"11,5\",\"2,1\",\"2,3\",\"3,2\",\"3,4\",\"4,1\",\"5,1\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:slimeman@MT2:2,5",
+          "floorId": "MT2",
+          "path": [
+            "up",
+            "up",
+            "up",
+            "up",
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "down",
+            "down",
+            "down",
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 5
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 2,
+            "y": 5
+          },
+          "direction": "left",
+          "enemyId": "slimeman",
+          "estimate": {
+            "damage": 1736,
+            "turn": 60,
+            "money": 0,
+            "exp": 2,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|2,5|slimeman"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":1274,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":63,\"def\":26,\"mdef\":270,\"money\":0,\"exp\":18,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":58,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,3\",\"10,5\",\"10,7\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"3,2\",\"3,4\",\"4,1\",\"5,1\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:rock@MT2:3,6",
+          "floorId": "MT2",
+          "stance": {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 5
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 6
+          },
+          "direction": "down",
+          "enemyId": "rock",
+          "estimate": {
+            "damage": 81,
+            "turn": 10,
+            "money": 0,
+            "exp": 2,
+            "guards": 0
+          },
+          "path": [],
+          "fingerprint": "battle|MT2|3,6|rock"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":5,\"direction\":null,\"hp\":1193,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":63,\"def\":28,\"mdef\":270,\"money\":0,\"exp\":20,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":60,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,3\",\"10,5\",\"10,7\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"5,1\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:zombieKnight@MT2:4,3",
+          "floorId": "MT2",
+          "path": [
+            "up",
+            "up"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 3
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 4,
+            "y": 3
+          },
+          "direction": "right",
+          "enemyId": "zombieKnight",
+          "estimate": {
+            "damage": 104,
+            "turn": 12,
+            "money": 0,
+            "exp": 2,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|4,3|zombieKnight"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":3,\"direction\":null,\"hp\":1889,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":65,\"def\":30,\"mdef\":290,\"money\":0,\"exp\":22,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":62,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,3\",\"10,5\",\"10,7\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:rock@MT2:10,1",
+          "floorId": "MT2",
+          "path": [
+            "up",
+            "up",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 1
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 10,
+            "y": 1
+          },
+          "direction": "right",
+          "enemyId": "rock",
+          "estimate": {
+            "damage": 25,
+            "turn": 10,
+            "money": 0,
+            "exp": 2,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|10,1|rock"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":1,\"direction\":null,\"hp\":1864,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":67,\"def\":30,\"mdef\":290,\"money\":0,\"exp\":24,\"lv\":3,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":64,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "changeFloor",
+          "summary": "changeFloor@MT2:6,0",
+          "floorId": "MT2",
+          "path": [
+            "left",
+            "left",
+            "left"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 1
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 0
+          },
+          "direction": "up",
+          "changeFloor": {
+            "floorId": ":before",
+            "stair": "upFloor"
+          },
+          "fingerprint": "changeFloor|MT2|6,0|:before|,"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT1\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":2664,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":72,\"def\":35,\"mdef\":290,\"money\":0,\"exp\":1,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":68,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "changeFloor",
+          "summary": "changeFloor@MT1:6,0",
+          "floorId": "MT1",
+          "path": [
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT1",
+            "x": 6,
+            "y": 1
+          },
+          "target": {
+            "floorId": "MT1",
+            "x": 6,
+            "y": 0
+          },
+          "direction": "up",
+          "changeFloor": {
+            "floorId": ":next",
+            "stair": "downFloor"
+          },
+          "fingerprint": "changeFloor|MT1|6,0|:next|,"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":6,\"y\":0,\"direction\":null,\"hp\":2664,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":72,\"def\":35,\"mdef\":290,\"money\":0,\"exp\":1,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":68,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"7,1\",\"7,3\",\"8,1\",\"8,3\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:redPriest@MT2:8,7",
+          "floorId": "MT2",
+          "path": [
+            "down",
+            "right",
+            "right",
+            "right",
+            "down",
+            "down",
+            "down",
+            "down",
+            "down",
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 7
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 8,
+            "y": 7
+          },
+          "direction": "left",
+          "enemyId": "redPriest",
+          "estimate": {
+            "damage": 2608,
+            "turn": 44,
+            "money": 0,
+            "exp": 2,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|8,7|redPriest"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":7,\"direction\":null,\"hp\":6456,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":72,\"def\":35,\"mdef\":340,\"money\":0,\"exp\":3,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":70,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"5,1\",\"5,3\",\"5,7\",\"7,1\",\"7,3\",\"7,7\",\"8,1\",\"8,3\",\"8,7\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:redPriest@MT2:4,7",
+          "floorId": "MT2",
+          "path": [
+            "up",
+            "up",
+            "up",
+            "up",
+            "up",
+            "up",
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
+            "down",
+            "down",
+            "down",
+            "down",
+            "down",
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 3,
+            "y": 7
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 4,
+            "y": 7
+          },
+          "direction": "right",
+          "enemyId": "redPriest",
+          "estimate": {
+            "damage": 2558,
+            "turn": 44,
+            "money": 0,
+            "exp": 2,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|4,7|redPriest"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":3,\"y\":7,\"direction\":null,\"hp\":3898,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":72,\"def\":35,\"mdef\":340,\"money\":0,\"exp\":5,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":72,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"4,7\",\"5,1\",\"5,3\",\"5,7\",\"7,1\",\"7,3\",\"7,7\",\"8,1\",\"8,3\",\"8,7\",\"9,2\",\"9,4\",\"9,6\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:redPriest@MT2:10,8",
+          "floorId": "MT2",
+          "path": [
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 10,
+            "y": 7
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 10,
+            "y": 8
+          },
+          "direction": "down",
+          "enemyId": "redPriest",
+          "estimate": {
+            "damage": 2558,
+            "turn": 44,
+            "money": 0,
+            "exp": 2,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|10,8|redPriest"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":10,\"y\":7,\"direction\":null,\"hp\":1340,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":72,\"def\":40,\"mdef\":340,\"money\":0,\"exp\":7,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":74,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"4,7\",\"5,1\",\"5,3\",\"5,7\",\"7,1\",\"7,3\",\"7,7\",\"8,1\",\"8,3\",\"8,7\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:bluePriest@MT2:9,10",
+          "floorId": "MT2",
+          "path": [
+            "down",
+            "down",
+            "left"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 9
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 10
+          },
+          "direction": "down",
+          "enemyId": "bluePriest",
+          "estimate": {
+            "damage": 1280,
+            "turn": 55,
+            "money": 0,
+            "exp": 2,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|9,10|bluePriest"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":9,\"direction\":null,\"hp\":860,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":72,\"def\":40,\"mdef\":340,\"money\":0,\"exp\":9,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":76,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"4,7\",\"5,1\",\"5,3\",\"5,7\",\"7,1\",\"7,3\",\"7,7\",\"8,1\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "battle",
+          "summary": "battle:slimeman@MT2:8,11",
+          "floorId": "MT2",
+          "path": [
+            "down",
+            "down"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 9,
+            "y": 11
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 8,
+            "y": 11
+          },
+          "direction": "left",
+          "enemyId": "slimeman",
+          "estimate": {
+            "damage": 840,
+            "turn": 60,
+            "money": 0,
+            "exp": 2,
+            "guards": 0
+          },
+          "fingerprint": "battle|MT2|8,11|slimeman"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT2\",\"progressSig\":\"1:MT1,MT2:MT1,MT2:2\",\"hero\":{\"x\":9,\"y\":11,\"direction\":null,\"hp\":7220,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":82,\"def\":50,\"mdef\":440,\"money\":0,\"exp\":11,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":0,\"direction\":\"up\"}},\"autoBattle\":1,\"hatred\":78,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]}]}"
+      },
+      {
+        "action": {
+          "kind": "changeFloor",
+          "summary": "changeFloor@MT2:6,12",
+          "floorId": "MT2",
+          "path": [
+            "left",
+            "left",
+            "left"
+          ],
+          "stance": {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 11
+          },
+          "target": {
+            "floorId": "MT2",
+            "x": 6,
+            "y": 12
+          },
+          "direction": "down",
+          "changeFloor": {
+            "floorId": ":next",
+            "stair": "downFloor"
+          },
+          "fingerprint": "changeFloor|MT2|6,12|:next|,"
+        },
+        "postExactStateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":7220,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":92,\"def\":60,\"mdef\":440,\"money\":0,\"exp\":11,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":78,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}"
+      }
+    ],
+    "searchFinalExactStateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":7220,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":92,\"def\":60,\"mdef\":440,\"money\":0,\"exp\":11,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":78,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+    "replayFinalExactStateKey": "{\"floorId\":\"MT3\",\"progressSig\":\"2:MT1,MT2,MT3:MT1,MT2,MT3:3\",\"hero\":{\"x\":6,\"y\":12,\"direction\":null,\"hp\":7220,\"hpmax\":9999,\"mana\":0,\"manamax\":-1,\"atk\":92,\"def\":60,\"mdef\":440,\"money\":0,\"exp\":11,\"lv\":4,\"equipment\":[],\"followers\":[]},\"inventory\":{\"I600\":1,\"book\":1,\"fly\":1},\"flags\":{\"__leaveLoc__\":{\"MT1\":{\"x\":6,\"y\":0,\"direction\":\"up\"},\"MT2\":{\"x\":6,\"y\":12,\"direction\":\"down\"}},\"autoBattle\":1,\"hatred\":78,\"shiqu\":1},\"visitedFloors\":[\"MT1\",\"MT2\",\"MT3\"],\"mutations\":[{\"floorId\":\"MT1\",\"removed\":[\"0,11\",\"1,11\",\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,11\",\"11,2\",\"11,5\",\"12,11\",\"2,1\",\"2,11\",\"2,3\",\"2,5\",\"2,7\",\"2,8\",\"3,10\",\"3,2\",\"3,4\",\"3,6\",\"3,9\",\"4,1\",\"4,11\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,6\",\"5,8\",\"7,1\",\"7,11\",\"7,3\",\"7,6\",\"7,8\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT2\",\"removed\":[\"1,2\",\"1,5\",\"10,1\",\"10,11\",\"10,3\",\"10,5\",\"10,7\",\"10,8\",\"11,2\",\"11,5\",\"2,1\",\"2,3\",\"2,5\",\"2,7\",\"3,2\",\"3,4\",\"3,6\",\"4,1\",\"4,3\",\"4,7\",\"5,1\",\"5,11\",\"5,3\",\"5,7\",\"7,1\",\"7,11\",\"7,3\",\"7,7\",\"8,1\",\"8,11\",\"8,3\",\"8,7\",\"9,10\",\"9,2\",\"9,4\",\"9,6\",\"9,9\"],\"replaced\":[]},{\"floorId\":\"MT3\",\"removed\":[\"5,11\",\"7,11\"],\"replaced\":[]}]}",
+    "goal": {
+      "predicate": "state.floorId === MT3",
+      "searchGoalReached": true,
+      "replayGoalReasserted": true
+    },
+    "routeLength": 30,
+    "strategicExpansions": 10212,
+    "candidatesDropped": 10263,
+    "pendingCandidateCap": 1024,
+    "deepestExpandedNonGoalFloorOrdinal": 2,
+    "deepestExpandedNonGoalFloorHistogram": {
+      "MT1": 2560,
+      "MT2": 7652
+    },
+    "deepestStrategicDepth": 29,
+    "wallMs": 91600,
+    "peakRssMb": 1114.7
+  },
+  "audit": {
+    "routeTraceComplete": true,
+    "strictReplayValid": true,
+    "finalExactStateKeysEqual": true,
+    "generatedArtifactRetained": false,
+    "promotedBecause": "first capability winner requires versioned route provenance"
+  }
+}

@@ -133,6 +133,7 @@ function runChild(args) {
   let replay = null;
   if (result.found && result.route) {
     replay = verifyStrictReplay(simulator, result.route, {
+      initialState,
       isGoalState,
       expectedFinalState: result.finalState,
       routeTrace: result.routeTrace,
@@ -156,7 +157,10 @@ function runChild(args) {
     stoppedReason: result.stoppedReason,
     searchComplete: result.searchComplete,
     deepestFloorOrdinal: result.deepestFloorOrdinal,
+    deepestExpandedNonGoalFloorOrdinal: result.deepestExpandedNonGoalFloorOrdinal,
+    deepestReachedFloorOrdinal: result.deepestReachedFloorOrdinal,
     deepestFloorHistogram: result.deepestFloorHistogram,
+    deepestReachedFloorHistogram: result.deepestReachedFloorHistogram,
     deepestStrategicDepth: result.deepestStrategicDepth,
     strategicExpansions: result.strategicExpansions,
     candidatesDropped: result.candidatesDropped,
@@ -209,8 +213,8 @@ function main() {
     attempts.push(row);
     console.log(
       `    found=${row.found} replay=${row.replayValid} strategic=${row.strategicExpansions} ` +
-      `dropped=${row.candidatesDropped} deepest=${row.deepestFloorOrdinal} ` +
-      `depth=${row.deepestStrategicDepth} stopped=${row.stoppedReason} ` +
+      `dropped=${row.candidatesDropped} deepestNonGoal=${row.deepestExpandedNonGoalFloorOrdinal} ` +
+      `reached=${row.deepestReachedFloorOrdinal} depth=${row.deepestStrategicDepth} stopped=${row.stoppedReason} ` +
       `wall=${row.wallMs}ms rss=${row.peakRssMb}MB`,
     );
     if (row.found && row.replayValid === true) {

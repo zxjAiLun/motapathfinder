@@ -10,8 +10,7 @@
  * state satisfies isGoalState.
  */
 const { buildStateKey } = require("./state-key");
-
-
+const { cloneState } = require("./state");
 const { resolveRecordedAction } = require("./route-store");
 
 /**
@@ -42,7 +41,7 @@ function resolveReplayStep(simulator, state, actions, step, index, entry) {
     let resolved;
     try {
       resolved = resolveRecordedAction(simulator, state, decision, {
-        providedActions: actions,
+        candidates: actions,
       });
     } catch (error) {
       return { error: { ok: false, reason: `step-${index}-resolver-error: ${step}`, step: index, message: error.message } };
@@ -107,8 +106,21 @@ function verifyStrictReplay(simulator, route, options) {
   if (trace && trace.length !== route.length) {
     return { ok: false, reason: "trace-length-mismatch", routeLength: route.length, traceLength: trace.length };
   }
+  if (trace) {
+    for (let i = 0; i < trace.length; i += 1) {
+      const entry = trace[i];
+      if (!entry || !entry.action) {
+        return { ok: false, reason: `step-${i}-incomplete-structured-trace`, step: i, missing: "action" };
+      }
+      if (typeof entry.postExactStateKey !== "string" || entry.postExactStateKey.length === 0) {
+        return { ok: false, reason: `step-${i}-incomplete-structured-trace`, step: i, missing: "postExactStateKey" };
+      }
+    }
+  }
 
-  let state = simulator.createInitialState({ rank: "chaos" });
+  let state = config.initialState
+    ? cloneState(config.initialState)
+    : simulator.createInitialState({ rank: config.rank || "chaos" });
   for (let i = 0; i < route.length; i += 1) {
     const step = route[i];
     const actions = (simulator.enumeratePrimitiveActions(state) || {}).actions || [];
