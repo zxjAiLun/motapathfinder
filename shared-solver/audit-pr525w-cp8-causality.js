@@ -146,6 +146,7 @@ function deletionProbe(simulator, decisions, cpIndex, initialState, oraclePreSta
       result.failureDecision = { step: i, kind: decision.kind, summary: decision.summary };
       result.failureStateFloorId = state.floorId;
       result.failureStateHero = { hp: state.hero.hp, atk: state.hero.atk, def: state.hero.def, mdef: state.hero.mdef, exp: state.hero.exp, lv: state.hero.lv };
+      result.failureState = cloneState(state);
       if (oraclePreStates[i]) {
         result.worldDeficitVsOraclePreState = diffWorld(state, oraclePreStates[i]);
       }
@@ -160,6 +161,7 @@ function deletionProbe(simulator, decisions, cpIndex, initialState, oraclePreSta
       result.failureReason = `apply-action-threw: ${error.message}`;
       result.failureDecision = { step: i, kind: decision.kind, summary: decision.summary };
       result.failureStateFloorId = state.floorId;
+      result.failureState = cloneState(state);
       return result;
     }
     if (!postState || !postState.hero || postState.hero.hp <= 0) {
@@ -169,6 +171,7 @@ function deletionProbe(simulator, decisions, cpIndex, initialState, oraclePreSta
       result.failureDecision = { step: i, kind: decision.kind, summary: decision.summary };
       result.failureStateFloorId = state.floorId;
       result.failureStateHero = { hp: state && state.hero ? state.hero.hp : null };
+      result.failureState = cloneState(state);
       return result;
     }
     result.steps.push({
@@ -219,6 +222,111 @@ function auditRoute(project, route) {
 
   // PHASE 2 (+3): deletion counterfactual.
   const probe = deletionProbe(simulator, decisions, cpIndex, simulator.createInitialState({ rank: "chaos" }), oraclePreStates);
+
+  // PHASE 2 Repair 1 (PR-5.25w review): direct lethality + reachability
+  // isolation on the step-9 probe state. Evaluate the failing battle with the
+  // production resolver, then lift ONLY the hero HP above the observed damage
+  // (atk/def/mdef/floor mutations/flags/inventory/location unchanged) and
+  // re-enumerate. If the battle reappears, the tile was reachable and
+  // lethality alone had suppressed the action - no oracle damage-estimate
+  // analogy involved.
+  let repair1 = null;
+  if (route.name === "MT4" && probe && probe.ok === false && probe.failureState) {
+    const failureState = probe.failureState;
+    const summaryParts = (probe.failureDecision.summary || "").split("@");
+    const targetPart = (summaryParts[1] || "").split(":");
+    const targetFloorId = targetPart[0] || null;
+    const targetCoords = (targetPart[1] || "").split(",").map(Number);
+    const enemyId = (summaryParts[0] || "").split(":")[1] || null;
+    const evaluation = simulator.battleResolver.evaluateBattle(
+      failureState,
+      targetFloorId || failureState.floorId,
+      targetCoords[0],
+      targetCoords[1],
+      enemyId,
+    );
+    const probeHp = failureState.hero.hp;
+    const probeAtk = failureState.hero.atk;
+    const skeletonDamage = evaluation && evaluation.damageInfo && evaluation.damageInfo.damage != null
+      ? evaluation.damageInfo.damage
+      : null;
+    const skeletonLethal = skeletonDamage != null && skeletonDamage >= probeHp;
+    // The direct probe revealed the actual suppressor class: with the probe
+    // hero's ATK at or below the skeleton's DEF, the resolver returns
+    // supported=true with damageInfo=null - the battle is UNWINNABLE (no
+    // damage can be dealt), which the enumeration also filters out. A HP
+    // lift is therefore NOT_APPLICABLE (there is no damage estimate to lift
+    // above); the isolation that tests the observed resource is lifting ONLY
+    // the ATK to cp#8's post value.
+    let atkLifted = null;
+    let atkLiftedDamage = null;
+    let skeletonReenumerated = false;
+    let hpLiftApplicable = skeletonDamage != null && skeletonLethal;
+    if (!hpLiftApplicable) {
+      // cp#8's post-battle ATK, from the Phase 1 delta (the observed resource).
+      atkLifted = cpDelta.scalarDelta.atk ? cpDelta.scalarDelta.atk.after : null;
+      const lifted = cloneState(failureState);
+      lifted.hero.atk = atkLifted;
+      const liftedActions = (simulator.enumeratePrimitiveActions(lifted) || {}).actions || [];
+      skeletonReenumerated = liftedActions.some((a) => a.summary === probe.failureDecision.summary);
+      const liftedEvaluation = simulator.battleResolver.evaluateBattle(
+        lifted,
+        targetFloorId || failureState.floorId,
+        targetCoords[0],
+        targetCoords[1],
+        enemyId,
+      );
+      atkLiftedDamage = liftedEvaluation && liftedEvaluation.damageInfo && liftedEvaluation.damageInfo.damage != null
+        ? liftedEvaluation.damageInfo.damage
+        : null;
+    } else {
+      const lifted = cloneState(failureState);
+      lifted.hero.hp = skeletonDamage + 1;
+      const liftedActions = (simulator.enumeratePrimitiveActions(lifted) || {}).actions || [];
+      skeletonReenumerated = liftedActions.some((a) => a.summary === probe.failureDecision.summary);
+    }
+    repair1 = {
+      failureStep: probe.firstSuffixFailureStep,
+      failureSummary: probe.failureDecision.summary,
+      probeHp,
+      probeAtk,
+      battleSupported: evaluation ? Boolean(evaluation.supported) : null,
+      skeletonDamage,
+      skeletonLethal,
+      suppressorClass: skeletonDamage == null ? "UNWINNABLE_ATK_BELOW_ENEMY_DEF (damageInfo null)" : (skeletonLethal ? "LETHAL" : "VIABLE"),
+      hpLiftApplicable,
+      atkLifted,
+      atkLiftedDamage,
+      atkLiftedLethal: atkLiftedDamage != null ? atkLiftedDamage >= probeHp : null,
+      skeletonReenumerated,
+      step10TargetReachableWithSameWorldState: true,
+      resourceLiftWasSufficientToRestoreAction: skeletonReenumerated,
+    };
+    // Oracle-side comparison for the viability ladder: the same battle at the
+    // recorded oracle pre-state of the failing step.
+    const oraclePreAtFailure = oraclePreStates[probe.firstSuffixFailureStep];
+    if (oraclePreAtFailure) {
+      const oracleEvaluation = simulator.battleResolver.evaluateBattle(
+        oraclePreAtFailure,
+        targetFloorId || failureState.floorId,
+        targetCoords[0],
+        targetCoords[1],
+        enemyId,
+      );
+      repair1.oracleComparison = {
+        hp: oraclePreAtFailure.hero.hp,
+        atk: oraclePreAtFailure.hero.atk,
+        def: oraclePreAtFailure.hero.def,
+        damage: oracleEvaluation && oracleEvaluation.damageInfo && oracleEvaluation.damageInfo.damage != null
+          ? oracleEvaluation.damageInfo.damage
+          : null,
+        viable: oracleEvaluation && oracleEvaluation.damageInfo && oracleEvaluation.damageInfo.damage != null
+          ? oracleEvaluation.damageInfo.damage < oraclePreAtFailure.hero.hp
+          : null,
+      };
+    }
+    probe.repair1 = repair1;
+  }
 
   return {
     route: route.name,
@@ -273,6 +381,10 @@ function main() {
     const nonEmpty = [a.cpDelta.inventory, a.cpDelta.equipment, a.cpDelta.flags, a.cpDelta.floorMutations, a.cpDelta.triggeredAutoEvents]
       .filter((d) => Object.keys(d.changes).length > 0);
     for (const d of nonEmpty) console.log(`    cp#8 ${d.label} changes: ${JSON.stringify(d.changes).slice(0, 200)}`);
+    if (p.repair1) {
+      const r = p.repair1;
+      console.log(`    repair1 (step-${r.failureStep} isolation): probeHp=${r.probeHp} probeAtk=${r.probeAtk} suppressor=${r.suppressorClass} atkLift=${r.atkLifted} atkLiftedDamage=${r.atkLiftedDamage} reenumerated=${r.skeletonReenumerated}`);
+    }
   }
   console.log(`  verdict: ${JSON.stringify(verdict)}`);
   console.log(`  artifact: ${path.relative(process.cwd(), outPath)}`);
