@@ -312,9 +312,13 @@ function createTransportCollapsedSearch(simulator) {
     let guidedExpansions = 0;
     let neutralExpansions = 0;
     // PR-5.25q guided-changeFloor telemetry: additive counters, no behavior change.
+    // P2 naming (owner review of 5edefc4): generated/forward count CHILDREN at
+    // registration; the expanded counter counts nodes flagged guided-changeFloor
+    // that were later selected for expansion from EITHER queue (guided heap or
+    // neutral), not expansions that were prioritized by the guided queue.
     let guidedChangeFloorGenerated = 0;
-    let guidedChangeFloorExpanded = 0;
-    let guidedForwardFloorTransitions = 0;
+    let guidedChangeFloorNodesExpanded = 0;
+    let guidedForwardFloorChildrenGenerated = 0;
 
     const heapPush = (entry) => {
       guidedHeap.push(entry);
@@ -565,7 +569,7 @@ function createTransportCollapsedSearch(simulator) {
         }
         if (node) {
           expanded.add(node.id);
-          if (node.guidedChangeFloor) guidedChangeFloorExpanded += 1;
+          if (node.guidedChangeFloor) guidedChangeFloorNodesExpanded += 1;
           const at = pending.indexOf(node.id);
           if (at >= 0) pending.splice(at, 1);
         }
@@ -654,7 +658,7 @@ function createTransportCollapsedSearch(simulator) {
               child.guidedChangeFloor = true;
               guidedChangeFloorGenerated += 1;
               if (mtFloorOrdinal(String(identity).split("->")[1]) > mtFloorOrdinal(candidate.state.floorId)) {
-                guidedForwardFloorTransitions += 1;
+                guidedForwardFloorChildrenGenerated += 1;
               }
             }
             let isDominated = false;
@@ -784,8 +788,8 @@ function createTransportCollapsedSearch(simulator) {
       guidedExpansions,
       neutralExpansions,
       guidedChangeFloorGenerated,
-      guidedChangeFloorExpanded,
-      guidedForwardFloorTransitions,
+      guidedChangeFloorNodesExpanded,
+      guidedForwardFloorChildrenGenerated,
       resourceVariantPressure,
       searchComplete: !goalNode && !stoppedReason && !frontierOpen && closureTruncations === 0,
       wallMs: Date.now() - startedAt,

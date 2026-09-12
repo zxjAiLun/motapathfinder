@@ -219,8 +219,8 @@ function runChild(args) {
     candidatesDropped: result.candidatesDropped,
     pendingCandidateCap: result.pendingCandidateCap,
     guidedChangeFloorGenerated: result.guidedChangeFloorGenerated,
-    guidedChangeFloorExpanded: result.guidedChangeFloorExpanded,
-    guidedForwardFloorTransitions: result.guidedForwardFloorTransitions,
+    guidedChangeFloorNodesExpanded: result.guidedChangeFloorNodesExpanded,
+    guidedForwardFloorChildrenGenerated: result.guidedForwardFloorChildrenGenerated,
     wallMs: result.wallMs,
     peakRssMb: result.peakRssMb,
   };
