@@ -413,6 +413,39 @@ function main() {
     "fifo-head-would-have-dropped", `got=${starvation.fifoHeadWouldHaveDroppedWithoutProtection}`);
   check(starvation.fifoProtectedNodeWasGuided === 0,
     "protected-head-was-non-guided", `got=${starvation.fifoProtectedNodeWasGuided}`);
+  // PR-5.25y Repair 1: the starvation drop must be POSITIVELY attributed to FIFO
+  // head displacement, not left ambiguous. Under the pre-repair telemetry this
+  // node reports `rankClass=10, dropped, seq <= cutoff`, which is exactly the
+  // signature that could be misread as a retention anomaly (Case C). The repair
+  // shows the truth: the node survived the PURE FILL (rank0+rank10 = 6 = cap)
+  // and was then evicted by head protection, so it is Case C, a designed
+  // consequence of the FIFO guarantee.
+  {
+    const dropped = starvationEvents.filter((e) => e.type === "dropped");
+    check(dropped.length === 1, "starvation-one-dropped-event", `got=${dropped.length}`);
+    const d = dropped[0];
+    check(d.pureFillKept === true, "starvation-drop-survived-pure-fill", `pureFillKept=${d.pureFillKept}`);
+    check(d.displacedByFifoHeadProtection === true, "starvation-drop-is-head-displacement",
+      `displaced=${d.displacedByFifoHeadProtection}`);
+    const t = d.trim;
+    check(t && t.pureFillRankCounts != null && t.keptRankCounts != null,
+      "starvation-trim-has-both-fill-and-keep-counts", JSON.stringify(t && Object.keys(t)));
+    // The pure fill kept 6 and the final keep kept 6, but they are NOT the same
+    // set: head protection swapped one rank-10 node out for the rank-30 head.
+    check(t.pureFillKeptCount === t.finalKeepCount,
+      "starvation-cap-preserved-across-displacement",
+      `pureFillKeptCount=${t.pureFillKeptCount} finalKeepCount=${t.finalKeepCount}`);
+    check(Array.isArray(t.fifoHeadDisplacedIds) && t.fifoHeadDisplacedIds.length === 1,
+      "starvation-exactly-one-displaced-id", JSON.stringify(t.fifoHeadDisplacedIds));
+    check(t.fifoHeadProtectedThisTrim === true, "starvation-head-protected-this-trim",
+      `got=${t.fifoHeadProtectedThisTrim}`);
+    check(t.rank0PlusRank10Pending >= 6 && t.rank20CapacityUnderPureFill === 0,
+      "starvation-higher-ranks-exhaust-cap",
+      `base=${t.rank0PlusRank10Pending} rank20Capacity=${t.rank20CapacityUnderPureFill}`);
+    check(t.pureFillRankCounts[10] === 6 && t.keptRankCounts[10] === 5,
+      "starvation-rank10-swapped-for-head",
+      `pureFillRank10=${t.pureFillRankCounts[10]} keptRank10=${t.keptRankCounts[10]}`);
+  }
   const maxPendingStarvation = maxPendingFromEvents(starvationEvents);
   check(maxPendingStarvation <= 6, "cap-invariant-starvation", `maxPending=${maxPendingStarvation} cap=6`);
 
@@ -460,6 +493,35 @@ function main() {
   check(combat.candidatesDropped === 2, "combat-progress-both-neutrals-dropped", `dropped=${combat.candidatesDropped}`);
   check(combat.combatProgressGenerated === 1 && combat.combatProgressAdmittedGenerated === 1,
     "combat-progress-counters", `generated=${combat.combatProgressGenerated} admitted=${combat.combatProgressAdmittedGenerated}`);
+  // PR-5.25y Repair 1, Case A/B path: these two drops must be classified as
+  // PURE-FILL drops (the fill alone never admitted them), the opposite of the
+  // starvation scenario's displacement. Together the two micros pin BOTH
+  // branches of the pureFillKept / displacedByFifoHeadProtection matrix.
+  {
+    const dropped = combatEvents.filter((e) => e.type === "dropped");
+    check(dropped.length === 2, "combat-progress-two-dropped-events", `got=${dropped.length}`);
+    for (const d of dropped) {
+      check(d.pureFillKept === false, "combat-progress-drop-is-pure-fill-drop",
+        `key=${d.exactKey && d.exactKey.slice(0, 40)} pureFillKept=${d.pureFillKept}`);
+      check(d.displacedByFifoHeadProtection === false, "combat-progress-drop-not-displacement",
+        `displaced=${d.displacedByFifoHeadProtection}`);
+      check(d.trim && d.trim.fifoHeadDisplacedIds.length === 0,
+        "combat-progress-no-displaced-ids", JSON.stringify(d.trim && d.trim.fifoHeadDisplacedIds));
+      // Rank-20 competition: the kept rank-20 node (R) exists and its cutoff is
+      // recorded; the count of OLDER rank-20 pending nodes distinguishes "lost
+      // the insertion race to an earlier peer" from "everything rank-20 lost".
+      // Here rank0+rank10 = 1 < cap = 2, so capacity existed and rank-20 was
+      // not saturated - the neutral simply lost on rank.
+      check(d.trim.pureFillRank20Ids.length === 1 && d.trim.rank20PendingCount === 1,
+        "combat-progress-rank20-peer-kept",
+        `pureFillRank20Ids=${JSON.stringify(d.trim.pureFillRank20Ids)} rank20Pending=${d.trim.rank20PendingCount}`);
+      check(d.trim.rank0PlusRank10Pending < 2,
+        "combat-progress-rank20-capacity-existed",
+        `base=${d.trim.rank0PlusRank10Pending} cap=2`);
+      check(typeof d.olderRank20PendingCount === "number" && d.olderRank20PendingCount >= 0,
+        "combat-progress-older-rank20-count-present", `got=${d.olderRank20PendingCount}`);
+    }
+  }
   const rClassified = combatEvents.find((e) => e.type === "classified" && e.combatProgress === true);
   check(rClassified && rClassified.frontierGuided === false && rClassified.guidedAdmitted === false,
     "combat-progress-not-guided-not-in-heap",

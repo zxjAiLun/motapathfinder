@@ -890,13 +890,62 @@ function createTransportCollapsedSearch(simulator) {
               }
             }
           }
-          trimComposition = { pendingRankCounts, keptRankCounts, rank20CutoffPendingSeq };
+          // PR-5.25y Repair 1: distinguish a PURE-FILL drop (the (rank,
+          // insertion) fill alone never admitted the node) from a FIFO-HEAD
+          // DISPLACEMENT (the pure fill admitted it, then head protection evicted
+          // it). Without this split, a rank-20 node evicted by head protection
+          // is indistinguishable from a retention anomaly. Observational only -
+          // pureFill and keep are the sets the trim already computed above, and
+          // none of these counters feed back into retention or scheduling.
+          const pureFillRankCounts = { 0: 0, 10: 0, 20: 0, 30: 0 };
+          let pureFillRank20CutoffPendingSeq = null;
+          for (const e of entries) {
+            if (!pureFill.has(e.id)) continue;
+            pureFillRankCounts[e.rank] = (pureFillRankCounts[e.rank] || 0) + 1;
+            if (e.rank === 20 && (pureFillRank20CutoffPendingSeq == null || e.node.pendingSeq > pureFillRank20CutoffPendingSeq)) {
+              pureFillRank20CutoffPendingSeq = e.node.pendingSeq;
+            }
+          }
+          const fifoHeadDisplacedIds = new Set();
+          if (fifoHeadId != null && pureFill.has(fifoHeadId) === false && keep.has(fifoHeadId)) {
+            for (const e of entries) {
+              if (pureFill.has(e.id) && !keep.has(e.id)) fifoHeadDisplacedIds.add(e.id);
+            }
+          }
+          const pureFillRank20Ids = entries
+            .filter((e) => e.rank === 20 && pureFill.has(e.id))
+            .map((e) => e);
+          trimComposition = {
+            pendingRankCounts,
+            keptRankCounts,
+            rank20CutoffPendingSeq,
+            pureFillRankCounts,
+            pureFillRank20CutoffPendingSeq,
+            pureFillKeptCount: pureFill.size,
+            finalKeepCount: keep.size,
+            fifoHeadId,
+            fifoHeadProtectedThisTrim: fifoHeadId != null && pureFill.has(fifoHeadId) === false && keep.has(fifoHeadId),
+            rank0PlusRank10Pending: pendingRankCounts[0] + pendingRankCounts[10],
+            rank20CapacityUnderPureFill: Math.max(0, pendingCandidateCap - pendingRankCounts[0] - pendingRankCounts[10]),
+            rank20PendingCount: pendingRankCounts[20],
+          };
+          trimComposition.fifoHeadDisplacedIds = [...fifoHeadDisplacedIds];
+          trimComposition.pureFillRank20Ids = pureFillRank20Ids.map((e) => e.id);
         }
         for (const id of droppedIds) {
           const dn = nodesById.get(id);
           if (dn) {
             dn.dropped = true;
             if (emitLifecycle) {
+              const pureFillKept = pureFill.has(id);
+              const displaced = trimComposition ? trimComposition.fifoHeadDisplacedIds.includes(id) : false;
+              let olderRank20PendingCount = null;
+              if (pureFillKept === false) {
+                olderRank20PendingCount = 0;
+                for (const e of entries) {
+                  if (e.rank === 20 && e.node.pendingSeq < dn.pendingSeq) olderRank20PendingCount += 1;
+                }
+              }
               emitLifecycle({
                 type: "dropped",
                 exactKey: dn.key,
@@ -906,6 +955,9 @@ function createTransportCollapsedSearch(simulator) {
                 guidedAdmitted: dn.guidedAdmitted === true,
                 skylineDominated: dn.frontierGuided === true && dn.paretoAdmitted === false,
                 nodePendingSeq: dn.pendingSeq,
+                pureFillKept,
+                displacedByFifoHeadProtection: displaced,
+                olderRank20PendingCount,
                 trim: trimComposition,
               });
             }

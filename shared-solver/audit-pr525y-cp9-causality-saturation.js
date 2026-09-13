@@ -41,6 +41,13 @@ const FIXTURE = path.resolve(__dirname, "routes", "fixtures", "mt1-mt4-hp6428-be
 const CP9_SUMMARY_MARKER = "battle:redBat@MT1:10,1";
 const CP9_DECISION_INDEX = 9;
 const DIAGNOSTIC_MAX_EXPANSIONS = 2000;
+// PR-5.25y Repair 1 / Phase 2B: fixed-WORK observation budget. The earlier MT4
+// full run observed cp#9's drop within 7,174 expansions, so 8,000 crosses the
+// known observation point deterministically regardless of machine speed. This
+// is an observer budget, NOT a capability budget - no qualification claim may
+// be drawn from it. maxRuntimeMs is disabled so wall time cannot truncate the
+// expansion count.
+const PHASE_2B_MAX_EXPANSIONS = 8000;
 const DEFAULT_OUT = path.resolve(__dirname, "routes", "generated", "pr525y-cp9-causality-saturation.json");
 
 const FROZEN = {
@@ -52,6 +59,59 @@ const FROZEN = {
   maxExpansions: DIAGNOSTIC_MAX_EXPANSIONS,
   pendingCandidateCap: 1024,
 };
+
+const PHASE_2B = {
+  ...FROZEN,
+  maxExpansions: PHASE_2B_MAX_EXPANSIONS,
+  maxRuntimeMs: 0,
+};
+
+/**
+ * Mechanistic A/B/C/D classification of a rank-20 node's drop trim.
+ *
+ * PR-5.25y Repair 1 replaces the earlier fuzzy "rank10 fills most of the cap"
+ * reading with statements about the two sets the trim already computes:
+ * `pureFill` (what (rank, insertion) alone admits) and `keep` (pureFill plus
+ * FIFO-head protection). The decisive field is `pureFillKept`:
+ *
+ *   pureFillKept = false -> the fill itself never admitted the node (Case A/B)
+ *   pureFillKept = true  -> the fill DID admit it and head protection evicted it
+ *                           (Case C, a designed consequence of the FIFO
+ *                           guarantee, NOT a lifecycle bug)
+ *
+ * Case D exists so an unclassifiable trim is reported as unexpected rather than
+ * being silently forced into A, B, or C.
+ */
+function classifyDropTrim(dropped) {
+  const trim = dropped.trim || {};
+  const cap = dropped.cap;
+  const base = trim.rank0PlusRank10Pending;
+  const rank20Pending = trim.rank20PendingCount;
+  const rank20Capacity = trim.rank20CapacityUnderPureFill;
+  const evidence = {
+    pureFillKept: dropped.pureFillKept,
+    displacedByFifoHeadProtection: dropped.displacedByFifoHeadProtection,
+    rank0PlusRank10Pending: base,
+    rank20PendingCount: rank20Pending,
+    rank20CapacityUnderPureFill: rank20Capacity,
+    olderRank20PendingCount: dropped.olderRank20PendingCount,
+    pureFillRank20CutoffPendingSeq: trim.pureFillRank20CutoffPendingSeq,
+    finalRank20CutoffPendingSeq: trim.rank20CutoffPendingSeq,
+    cap,
+  };
+  if (dropped.pureFillKept === true && dropped.displacedByFifoHeadProtection === true) {
+    return { case: "C_FIFO_HEAD_DISPLACEMENT", evidence };
+  }
+  if (base != null && cap != null && base >= cap) {
+    return { case: "A_HIGHER_RANK_EXHAUSTION", evidence };
+  }
+  if (base != null && cap != null && base < cap && rank20Pending != null &&
+      rank20Capacity != null && rank20Pending > rank20Capacity &&
+      dropped.pureFillKept === false) {
+    return { case: "B_RANK20_SATURATION", evidence };
+  }
+  return { case: "D_UNEXPECTED", evidence };
+}
 
 function makeSimulator(project) {
   return new StaticSimulator(project, {
@@ -200,8 +260,10 @@ function evaluateBattleForDecision(simulator, state, decision) {
 }
 
 function main() {
+  const cliArgs = process.argv.slice(2);
+  const PHASE_2B_ENABLED = cliArgs.includes("--phase2b");
   const outPath = (() => {
-    const arg = process.argv.slice(2).find((t) => t.startsWith("--out="));
+    const arg = cliArgs.find((t) => t.startsWith("--out="));
     return arg ? path.resolve(arg.slice("--out=".length)) : DEFAULT_OUT;
   })();
 
@@ -263,11 +325,28 @@ function main() {
           exactKey: event.exactKey,
           rankClass: event.rankClass,
           nodePendingSeq: event.nodePendingSeq,
+          pureFillKept: event.pureFillKept,
+          displacedByFifoHeadProtection: event.displacedByFifoHeadProtection,
+          olderRank20PendingCount: event.olderRank20PendingCount,
+          cap: FROZEN.pendingCandidateCap,
           trim: event.trim,
         });
       }
       if (event.exactKey === cp9Key) {
-        cp9Events.push(event);
+        cp9Events.push({
+          type: event.type,
+          exactKey: event.exactKey,
+          rankClass: event.rankClass,
+          kind: event.kind,
+          frontierGuided: event.frontierGuided,
+          guidedAdmitted: event.guidedAdmitted,
+          skylineDominated: event.skylineDominated,
+          nodePendingSeq: event.nodePendingSeq,
+          pureFillKept: event.pureFillKept,
+          displacedByFifoHeadProtection: event.displacedByFifoHeadProtection,
+          olderRank20PendingCount: event.olderRank20PendingCount,
+          trim: event.trim,
+        });
         if ((event.type === "dropped" || event.type === "expanded") && !cp9FateObserved) {
           cp9FateObserved = true;
           cp9Fate = event.type;
@@ -277,15 +356,21 @@ function main() {
   };
 
   const search = createTransportCollapsedSearch(simulator);
+  const runConfig = PHASE_2B_ENABLED ? PHASE_2B : FROZEN;
+  if (PHASE_2B_ENABLED) {
+    console.log(`Phase 2B ENABLED: fixed-work observation, maxExpansions=${runConfig.maxExpansions}, ` +
+      `maxRuntimeMs=0 (wall time cannot truncate), cap=${runConfig.pendingCandidateCap}. ` +
+      `THIS_IS_NOT_A_QUALIFICATION_RUN = true; CAPABILITY_CLAIM_FROM_THIS_RUN = NONE`);
+  }
   const result = search.search(initialState, {
     isGoalState,
-    allowedFloors: FROZEN.region,
-    maxExpansions: FROZEN.maxExpansions,
-    maxRuntimeMs: FROZEN.maxRuntimeMs,
-    maxRssMb: FROZEN.maxRssMb,
+    allowedFloors: runConfig.region,
+    maxExpansions: runConfig.maxExpansions,
+    maxRuntimeMs: runConfig.maxRuntimeMs,
+    maxRssMb: runConfig.maxRssMb,
     frontierSet: frontierReport.frontierSet,
     resourceSkylinePriority: true,
-    pendingCandidateCap: FROZEN.pendingCandidateCap,
+    pendingCandidateCap: runConfig.pendingCandidateCap,
     onCandidateLifecycle,
   });
 
@@ -293,15 +378,31 @@ function main() {
     `dropped=${result.candidatesDropped} stopped=${result.stoppedReason} wall=${result.wallMs}ms; ` +
     `events=${totalEvents}, cp9 events=${cp9Events.length}, fate=${cp9Fate || "NOT_OBSERVED_WITHIN_BUDGET"}`);
   for (const d of dropTrimsWithOracleDrops.slice(0, 10)) {
-    console.log(`  oracle drop: rankClass=${d.rankClass} seq=${d.nodePendingSeq} pending=${JSON.stringify(d.trim.pendingRankCounts)} kept=${JSON.stringify(d.trim.keptRankCounts)} rank20CutoffSeq=${d.trim.rank20CutoffPendingSeq}`);
+    const cls = classifyDropTrim(d);
+    console.log(`  oracle drop: rankClass=${d.rankClass} seq=${d.nodePendingSeq} case=${cls.case} ` +
+      `pureFillKept=${d.pureFillKept} displaced=${d.displacedByFifoHeadProtection} ` +
+      `pending=${JSON.stringify(d.trim.pendingRankCounts)} pureFill=${JSON.stringify(d.trim.pureFillRankCounts)} ` +
+      `kept=${JSON.stringify(d.trim.keptRankCounts)} rank20Cap=${d.trim.rank20CapacityUnderPureFill}`);
+  }
+  const cp9DropEvent = dropTrimsWithOracleDrops.find((d) => d.exactKey === cp9Key);
+  const cp9Classification = cp9DropEvent ? classifyDropTrim(cp9DropEvent) : null;
+  if (cp9Classification) {
+    console.log(`  CP9_DROP_CLASSIFICATION = ${cp9Classification.case}`);
+    console.log(`  CP9_DROP_EVIDENCE = ${JSON.stringify(cp9Classification.evidence)}`);
   }
 
   const summary = {
     milestone: "PR-5.25y",
     audit: "CP9_CAUSALITY_AND_RANK20_SATURATION",
-    searchRun: "DIAGNOSTIC_ONLY_2000_EXPANSIONS",
+    searchRun: PHASE_2B_ENABLED
+      ? "PHASE_2B_FIXED_WORK_8000_EXPANSIONS_OBSERVATION_ONLY"
+      : "DIAGNOSTIC_ONLY_2000_EXPANSIONS",
+    phase2bEnabled: PHASE_2B_ENABLED,
+    thisIsNotAQualificationRun: PHASE_2B_ENABLED,
+    capabilityClaimFromThisRun: PHASE_2B_ENABLED ? "NONE" : null,
     cp9KeyAffectsSearchDecisions: false,
     frozen: FROZEN,
+    runConfig,
     cp9: {
       decisionIndex: CP9_DECISION_INDEX,
       summary: decisions[CP9_DECISION_INDEX].summary,
@@ -322,8 +423,15 @@ function main() {
       totalLifecycleEvents: totalEvents,
       cp9EventCount: cp9Events.length,
       cp9Fate,
+      cp9Classification,
       cp9Events,
       dropTrimsWithOracleDrops,
+      dropClassifications: dropTrimsWithOracleDrops.map((d) => ({
+        exactKey: d.exactKey,
+        rankClass: d.rankClass,
+        nodePendingSeq: d.nodePendingSeq,
+        ...classifyDropTrim(d),
+      })),
     },
   };
 
