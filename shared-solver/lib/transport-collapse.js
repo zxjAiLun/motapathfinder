@@ -38,7 +38,7 @@
 const { buildStateKey } = require("./state-key");
 const { cloneState, listFloorMutationSummary } = require("./state");
 const { resolveRelativeFloor } = require("./floor-transitions");
-const { createResourceSkylineSet, analyzeResourceVariantPressure } = require("./resource-skyline");
+const { createResourceSkylineSet, analyzeResourceVariantPressure, buildStructuralStateKey, extractResourceVector, paretoDominates } = require("./resource-skyline");
 const { normalizeAction } = require("./route-store");
 
 /**
@@ -278,6 +278,13 @@ function createTransportCollapsedSearch(simulator) {
     // diagnostic loudly instead of silently degrading the recording.
     const onCandidateLifecycle = typeof config.onCandidateLifecycle === "function" ? config.onCandidateLifecycle : null;
     const emitLifecycle = onCandidateLifecycle ? (event) => onCandidateLifecycle(event) : null;
+    // PR-5.25z observational-only: when enabled, every drop event also carries the
+    // rank-20 semantic-identity composition of the trim plus, for the dropped
+    // node, the structural/resource decomposition of its same-identity peers.
+    // Purely diagnostic: the fields are never read back into ranking, retention,
+    // the scheduler, or termination. Off by default so normal runs pay nothing.
+    const lifecyclePeerComposition = config.lifecyclePeerComposition === true;
+    const PEER_VARIANT_LIMIT = config.lifecyclePeerVariantLimit == null ? 64 : Number(config.lifecyclePeerVariantLimit);
 
     const startedAt = Date.now();
     let stoppedReason = null;
@@ -737,6 +744,10 @@ function createTransportCollapsedSearch(simulator) {
         } else {
           neutralQueue.push(child.id);
           const identity = actionToSemanticIdentity(candidate.action, candidate.state, candidate.next, simulator.project);
+          // PR-5.25z: observational only - lets the rank-20 composition audit group
+          // pending candidates by semantic action without any oracle knowledge.
+          // Never read by ranking, retention, or the scheduler.
+          child.semanticIdentity = identity;
           const identityInFrontier = frontierSet.has(identity);
           let skylineDominated = false;
           if (identityInFrontier) {
@@ -875,6 +886,9 @@ function createTransportCollapsedSearch(simulator) {
         }
         const droppedIds = entries.filter((e) => !keep.has(e.id)).map((e) => e.id);
         let trimComposition = null;
+        // Per-trim memo for the PR-5.25z peer decomposition (declared outside the
+        // emitLifecycle block: the drop loop below reads it).
+        let peerCache = null;
         if (emitLifecycle) {
           // PR-5.25y observational trim composition (never used for sorting):
           // per-class pending and kept counts plus the rank-20 fill boundary.
@@ -915,12 +929,57 @@ function createTransportCollapsedSearch(simulator) {
           const pureFillRank20Ids = entries
             .filter((e) => e.rank === 20 && pureFill.has(e.id))
             .map((e) => e);
+          // PR-5.25z Phase 1 (observational only, opt-in via
+          // lifecyclePeerComposition): how many DISTINCT semantic identities the
+          // rank-20 class actually holds. This separates "907 different
+          // investments" from "a few investments with hundreds of resource/path
+          // variants". Identity strings are already stored on the nodes; nothing
+          // here is read back into retention.
+          let rank20Composition = null;
+          if (lifecyclePeerComposition) {
+            const identityCounts = new Map();
+            const byKind = {};
+            const byFloor = {};
+            let rank20Pending = 0;
+            for (const e of entries) {
+              if (e.rank !== 20) continue;
+              rank20Pending += 1;
+              const idn = e.node.semanticIdentity || "<none>";
+              identityCounts.set(idn, (identityCounts.get(idn) || 0) + 1);
+              const k = e.node.actionKind || "<none>";
+              byKind[k] = (byKind[k] || 0) + 1;
+              const f = (e.node.state && e.node.state.floorId) || "<none>";
+              byFloor[f] = (byFloor[f] || 0) + 1;
+            }
+            const topIdentities = [...identityCounts.entries()]
+              .sort((a, b) => (b[1] - a[1]) || (a[0] < b[0] ? -1 : 1))
+              .slice(0, 25)
+              .map(([identity, count]) => ({ identity, count }));
+            // Identity multiplicity histogram: how many identities appear exactly
+            // n times. Compact summary of the duplicate structure.
+            const multiplicityHistogram = {};
+            for (const count of identityCounts.values()) {
+              multiplicityHistogram[count] = (multiplicityHistogram[count] || 0) + 1;
+            }
+            rank20Composition = {
+              rank20Pending,
+              rank20DistinctIdentities: identityCounts.size,
+              rank20DuplicateIdentities: identityCounts.size > 0
+                ? [...identityCounts.values()].filter((c) => c > 1).length
+                : 0,
+              topIdentities,
+              multiplicityHistogram,
+              byKind,
+              byFloor,
+            };
+          }
           trimComposition = {
             pendingRankCounts,
             keptRankCounts,
             rank20CutoffPendingSeq,
             pureFillRankCounts,
             pureFillRank20CutoffPendingSeq,
+            rank20Composition,
             pureFillKeptCount: pureFill.size,
             finalKeepCount: keep.size,
             fifoHeadId,
@@ -946,11 +1005,106 @@ function createTransportCollapsedSearch(simulator) {
                   if (e.rank === 20 && e.node.pendingSeq < dn.pendingSeq) olderRank20PendingCount += 1;
                 }
               }
+              // PR-5.25z Phase 2 (observational, opt-in): decompose the dropped
+              // node's SAME-IDENTITY peers into structural groups and resource
+              // vectors, and classify it with the unweighted Pareto comparator.
+              // This answers whether the search lost a genuinely new
+              // investment opportunity or merely preferred other resource-state
+              // variants of the same action. Diagnostic only - no candidate is
+              // removed, reordered, or promoted because of this, and a
+              // structural key is NOT treated as a proven future-legality
+              // equivalence.
+              let sameIdentityPeers = null;
+              if (lifecyclePeerComposition) {
+                const identity = dn.semanticIdentity || null;
+                // Per-trim memo: several dropped nodes in one trim can share an
+                // identity, and recomputing every peer's structural key for each
+                // of them is the dominant cost of this diagnostic. The peer set
+                // depends only on (entries, identity), both fixed for the trim.
+                if (!peerCache) peerCache = new Map();
+                let cached = peerCache.get(identity);
+                if (!cached) {
+                  const structuralKeys = new Set();
+                  const collected = [];
+                  for (const e of entries) {
+                    if (e.node === dn) continue;
+                    if ((e.node.semanticIdentity || null) !== identity) continue;
+                    const pk = e.node.state ? buildStructuralStateKey(e.node.state) : null;
+                    if (pk != null) structuralKeys.add(pk);
+                    collected.push({
+                      nodePendingSeq: e.node.pendingSeq,
+                      pureFillKept: pureFill.has(e.id),
+                      kept: keep.has(e.id),
+                      structuralKey: pk,
+                      resourceVector: e.node.state ? extractResourceVector(e.node.state) : null,
+                    });
+                  }
+                  cached = { collected, distinctStructuralKeys: structuralKeys.size };
+                  peerCache.set(identity, cached);
+                }
+                const structuralKeyOfDropped = dn.state ? buildStructuralStateKey(dn.state) : null;
+                const vecOfDropped = dn.state ? extractResourceVector(dn.state) : null;
+                let pendingCount = 0;
+                let pureFillKeptCount = 0;
+                let droppedCount = 0;
+                let structuralGroupSize = 0;
+                // Complete Pareto accounting over ALL peers in the dropped node's
+                // structural group (not the truncated evidence window). Counters
+                // are computed over the full set so the ratio is well defined;
+                // only the variant LIST is capped, and only for payload size.
+                let sameGroupKeptCount = 0;
+                let dominatedByRetainedCount = 0;
+                let dominatesRetainedCount = 0;
+                let incomparableRetainedCount = 0;
+                const variants = [];
+                for (const v of cached.collected) {
+                  pendingCount += 1;
+                  if (v.pureFillKept) pureFillKeptCount += 1;
+                  if (!v.kept) droppedCount += 1;
+                  const sameGroup = v.structuralKey != null && v.structuralKey === structuralKeyOfDropped;
+                  if (sameGroup) {
+                    structuralGroupSize += 1;
+                    if (v.kept && v.resourceVector && vecOfDropped) {
+                      sameGroupKeptCount += 1;
+                      if (paretoDominates(v.resourceVector, vecOfDropped)) dominatedByRetainedCount += 1;
+                      else if (paretoDominates(vecOfDropped, v.resourceVector)) dominatesRetainedCount += 1;
+                      else incomparableRetainedCount += 1;
+                    }
+                  }
+                  if (variants.length < PEER_VARIANT_LIMIT) {
+                    variants.push({
+                      nodePendingSeq: v.nodePendingSeq,
+                      pureFillKept: v.pureFillKept,
+                      kept: v.kept,
+                      structuralKey: v.structuralKey,
+                      resourceVector: v.resourceVector,
+                      sameStructuralGroup: sameGroup,
+                    });
+                  }
+                }
+                sameIdentityPeers = {
+                  identity,
+                  pendingCount,
+                  pureFillKeptCount,
+                  droppedCount,
+                  distinctStructuralKeys: cached.distinctStructuralKeys,
+                  structuralGroupSize,
+                  sameGroupKeptCount,
+                  dominatedByRetainedCount,
+                  dominatesRetainedCount,
+                  incomparableRetainedCount,
+                  variantsTruncated: pendingCount > variants.length,
+                  variants,
+                  droppedStructuralKey: structuralKeyOfDropped,
+                  droppedResourceVector: vecOfDropped,
+                };
+              }
               emitLifecycle({
                 type: "dropped",
                 exactKey: dn.key,
                 rankClass: pendingRank(dn),
                 kind: dn.actionKind,
+                semanticIdentity: dn.semanticIdentity || null,
                 frontierGuided: dn.frontierGuided === true,
                 guidedAdmitted: dn.guidedAdmitted === true,
                 skylineDominated: dn.frontierGuided === true && dn.paretoAdmitted === false,
@@ -958,6 +1112,7 @@ function createTransportCollapsedSearch(simulator) {
                 pureFillKept,
                 displacedByFifoHeadProtection: displaced,
                 olderRank20PendingCount,
+                sameIdentityPeers,
                 trim: trimComposition,
               });
             }

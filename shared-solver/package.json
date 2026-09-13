@@ -192,6 +192,7 @@
   "check:bounded-candidate": "node check-bounded-candidate.js",
   "check:bounded-transfer": "node check-bounded-transfer.js",
   "audit:pr525p:frontier-differential": "node audit-pr525p-frontier-differential.js",
+  "audit:pr525z:rank20-composition": "node audit-pr525z-rank20-composition.js",
   "check:strict-replay:phase0": "node check-strict-replay-phase0.js",
   "check:changefloor-identity-parity": "node check-changefloor-identity-parity.js",
   "check:strategic-poi-identity-parity": "node check-strategic-poi-identity-parity.js",

@@ -312,7 +312,7 @@ function createCombatProgressSimulator() {
   };
 }
 
-function runCombatProgressScenario(onCandidateLifecycle) {
+function runCombatProgressScenario(onCandidateLifecycle, extraOptions) {
   const simulator = createCombatProgressSimulator();
   const search = createTransportCollapsedSearch(simulator);
   const frontierSet = new Set(["event:MT1:1,0"]);
@@ -326,6 +326,7 @@ function runCombatProgressScenario(onCandidateLifecycle) {
     maxRuntimeMs: 10000,
     maxClosureStates: 1000,
     onCandidateLifecycle,
+    ...(extraOptions || {}),
   });
 }
 
@@ -528,6 +529,76 @@ function main() {
     rClassified ? `frontierGuided=${rClassified.frontierGuided} guidedAdmitted=${rClassified.guidedAdmitted}` : "no flagged classified event");
   const maxPendingCombat = maxPendingFromEvents(combatEvents);
   check(maxPendingCombat <= 2, "cap-invariant-combat-progress", `maxPending=${maxPendingCombat} cap=2`);
+
+  // PR-5.25z: the observational peer-composition extension must be INERT - turning
+  // it on may not change the search outcome, the drop count, or the route - and
+  // when on it must report a self-consistent rank-20 composition.
+  {
+    const plainEvents = [];
+    const plain = runCombatProgressScenario((event) => { plainEvents.push(event); return null; });
+    const observedEvents = [];
+    const observed = runCombatProgressScenario(
+      (event) => { observedEvents.push(event); return null; },
+      { lifecyclePeerComposition: true },
+    );
+    check(plain.found === observed.found,
+      "peer-composition-inert-found", `plain=${plain.found} observed=${observed.found}`);
+    check(plain.candidatesDropped === observed.candidatesDropped,
+      "peer-composition-inert-drop-count",
+      `plain=${plain.candidatesDropped} observed=${observed.candidatesDropped}`);
+    check(JSON.stringify(plain.route) === JSON.stringify(observed.route),
+      "peer-composition-inert-route",
+      `plain=${JSON.stringify(plain.route)} observed=${JSON.stringify(observed.route)}`);
+    const observedDrops = observedEvents.filter((e) => e.type === "dropped");
+    check(observedDrops.length === plain.candidatesDropped,
+      "peer-composition-drop-events-match",
+      `events=${observedDrops.length} counter=${plain.candidatesDropped}`);
+    const withComposition = observedDrops.filter((e) => e.trim && e.trim.rank20Composition);
+    check(withComposition.length === observedDrops.length,
+      "peer-composition-present-on-every-drop",
+      `${withComposition.length}/${observedDrops.length}`);
+    check(observedDrops.every((e) => e.sameIdentityPeers != null),
+      "peer-composition-same-identity-present",
+      observedDrops.map((e) => e.sameIdentityPeers == null).join(","));
+    check(observedDrops.every((e) => typeof e.semanticIdentity === "string" && e.semanticIdentity.length > 0),
+      "peer-composition-semantic-identity-present",
+      observedDrops.map((e) => String(e.semanticIdentity)).join(","));
+    // Self-consistency of the emitted composition.
+    for (const d of withComposition) {
+      const c = d.trim.rank20Composition;
+      const kindSum = Object.values(c.byKind).reduce((a, b) => a + b, 0);
+      const floorSum = Object.values(c.byFloor).reduce((a, b) => a + b, 0);
+      check(kindSum === c.rank20Pending && floorSum === c.rank20Pending,
+        "peer-composition-kind-floor-sums",
+        `pending=${c.rank20Pending} kindSum=${kindSum} floorSum=${floorSum}`);
+      const identSum = Object.entries(c.multiplicityHistogram)
+        .reduce((a, [mult, n]) => a + Number(mult) * n, 0);
+      check(identSum === c.rank20Pending,
+        "peer-composition-multiplicity-sums", `pending=${c.rank20Pending} identSum=${identSum}`);
+      check(c.rank20DistinctIdentities + c.rank20DuplicateIdentities ===
+        Object.values(c.multiplicityHistogram).reduce((a, b) => a + b, 0),
+        "peer-composition-distinct-plus-duplicate",
+        `distinct=${c.rank20DistinctIdentities} dup=${c.rank20DuplicateIdentities}`);
+    }
+    // Peer counters must be internally consistent for the dropped node.
+    for (const d of observedDrops) {
+      const p = d.sameIdentityPeers;
+      check(p.sameGroupKeptCount <= p.structuralGroupSize,
+        "peer-composition-group-kept-le-size",
+        `kept=${p.sameGroupKeptCount} size=${p.structuralGroupSize}`);
+      check((p.dominatedByRetainedCount + p.dominatesRetainedCount + p.incomparableRetainedCount) === 0 ||
+            (p.dominatedByRetainedCount + p.dominatesRetainedCount + p.incomparableRetainedCount) === p.sameGroupKeptCount,
+        "peer-composition-pareto-partition",
+        `dom=${p.dominatedByRetainedCount} dominates=${p.dominatesRetainedCount} inc=${p.incomparableRetainedCount} kept=${p.sameGroupKeptCount}`);
+      check(p.pureFillKeptCount <= p.pendingCount,
+        "peer-composition-kept-le-pending", `kept=${p.pureFillKeptCount} pending=${p.pendingCount}`);
+    }
+    // And with the flag OFF the extension must not appear at all.
+    const offDrop = plainEvents.find((e) => e.type === "dropped");
+    check(offDrop && offDrop.sameIdentityPeers == null,
+      "peer-composition-off-by-default",
+      offDrop ? String(offDrop.sameIdentityPeers) : "no drop event");
+  }
 
   // Corrected contract: the neutral goal-path candidate survives the cap, the
   // dominated frontier candidate does not.
