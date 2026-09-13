@@ -32,12 +32,23 @@
  *   Corrected retention keeps {A (guidedAdmitted), C (neutral, earlier index)}
  *   and drops B (dominated => neutral), so the goal is found.
  *
- * LOCKED CONTRACT:
- *   CAP_RETENTION = GOAL > ACTUALLY_GUIDED_ADMITTED > NEUTRAL
+ * LOCKED CONTRACT (as of PR-5.26a):
+ *   CAP_RETENTION = GOAL > ACTUALLY_GUIDED_ADMITTED > RANK20_PARETO_NONDOMINATED
+ *                   > RANK20_PARETO_DOMINATED > ORDINARY_NEUTRAL
  *   frontierGuided = structural classification (identity in autonomous frontier)
  *   guidedAdmitted = frontierGuided AND passed resource skyline admission
  *                    AND inserted into the guided heap
- *   There is NO rank-20 Pareto retention tier; paretoAdmitted is telemetry only.
+ *   rank 20 = combatProgress (permanent combat-stat growth), and WITHIN rank 20
+ *             the tie-break is trim-time dynamic Pareto status by
+ *             (semanticIdentity + structural state key), then insertion order.
+ *             It is a RETENTION TIE-BREAK ONLY: never a promotion into rank 10,
+ *             never a demotion to rank 30, never a hard prune of a dominated
+ *             candidate at generation time.
+ *   paretoAdmitted (the skyline query inside the frontier branch) is still the
+ *   rank-10 admission signal; the rank-20 mechanism is a separate trim-time
+ *   reclassification and deliberately does NOT reuse that append-only skyline,
+ *   because a prior-seen skyline cannot demote a variant dominated by a LATER
+ *   arrival.
  */
 
 const fs = require("fs");
@@ -384,6 +395,8 @@ function main() {
   if (observerEvents.length === 0) inertnessFailures.push({ label: "observer-saw-events", detail: "observer recorded nothing" });
 
   const failures = [];
+  let pr526aLateDominator = null;
+  let pr526aIncomparable = null;
   const check = (ok, label, detail) => {
     if (!ok) failures.push({ label, detail });
     return ok;
@@ -618,6 +631,163 @@ function main() {
   check(byKindEvent === 2 && admittedByKindEvent === 1 && dominatedByKindEvent === 1,
     "per-kind-event-admission-triple", `frontierGuided=${byKindEvent} guidedAdmitted=${admittedByKindEvent} dominated=${dominatedByKindEvent}`);
 
+  // --- PR-5.26a dynamic rank-20 Pareto retention scenarios -----------------
+  //
+  // Group key = semantic identity + structural state key. Every stub action
+  // below sits on the SAME tile (so actionToSemanticIdentity yields one shared
+  // identity) and leaves hero.loc untouched (so buildStructuralStateKey yields
+  // one shared structural key). The variants therefore differ ONLY in resource
+  // vector - exactly the shape PR-5.25z found at the cp#9 drop, where 29 nodes
+  // shared a structural key and only HP differed.
+  //
+  // The frontier set is EMPTY, so every variant is frontierGuided=false. They are
+  // rank 20 because ATK increases (combatProgress), not rank 10.
+  const rank20ParetoStubState = () => {
+    const s = stubState();
+    s.hero.hp = 50;
+    s.hero.atk = 1;
+    return s;
+  };
+
+  const createRank20ParetoSimulator = (specs) => ({
+    project: {},
+    enumeratePrimitiveActions(state) {
+      if (state.floorId === "MT1" && state.hero.atk === 1 && state.hero.hp === 50) {
+        return {
+          actions: specs.map((spec) => stubAction(spec.summary, 1, 1, (s) => {
+            s.hero.hp = spec.hp;
+            s.hero.atk = spec.atk;
+          })),
+        };
+      }
+      return { actions: [] };
+    },
+    applyAction(state, action) {
+      const next = cloneState(state);
+      if (typeof action.__apply === "function") action.__apply(next);
+      return next;
+    },
+  });
+
+  const runRank20ParetoScenario = (specs, opts) => {
+    const simulator = createRank20ParetoSimulator(specs);
+    const options = opts || {};
+    const base = rank20ParetoStubState();
+    const keysBySummary = {};
+    for (const action of simulator.enumeratePrimitiveActions(base).actions) {
+      keysBySummary[action.summary] = buildStateKey(simulator.applyAction(base, action));
+    }
+    const events = [];
+    const search = createTransportCollapsedSearch(simulator);
+    const result = search.search(base, {
+      isGoalState: (state) => state.floorId === "MT_NONE",
+      frontierSet: new Set(),
+      resourceSkylinePriority: true,
+      pendingCandidateCap: options.cap,
+      maxExpansions: 50,
+      maxRuntimeMs: 10000,
+      maxClosureStates: 500,
+      onCandidateLifecycle: (event) => { events.push(event); return null; },
+      ...(options.rank20DynamicPareto === undefined ? {} : { rank20DynamicPareto: options.rank20DynamicPareto }),
+    });
+    const droppedKeys = new Set(events.filter((e) => e.type === "dropped").map((e) => e.exactKey));
+    return { result, events, keysBySummary, droppedKeys };
+  };
+
+  // Scenario 1 - LATE DOMINATOR. Generation order D1(hp100) D2(hp120) L(hp200),
+  // all ATK 2, all one identity and one structural key. L arrives last and
+  // Pareto-dominates both. An append-only prior-seen skyline cannot demote D1/D2,
+  // so this is precisely the case that motivated trim-time reclassification.
+  {
+    const specs = [
+      { summary: "p:D1", hp: 100, atk: 2 },
+      { summary: "p:D2", hp: 120, atk: 2 },
+      { summary: "p:L", hp: 200, atk: 2 },
+    ];
+    const dynamic = runRank20ParetoScenario(specs, { cap: 2 });
+    const legacy = runRank20ParetoScenario(specs, { cap: 2, rank20DynamicPareto: false });
+    const dynamicDroppedL = dynamic.droppedKeys.has(dynamic.keysBySummary["p:L"]);
+    const legacyDroppedL = legacy.droppedKeys.has(legacy.keysBySummary["p:L"]);
+    check(dynamic.result.candidatesDropped === 1 && legacy.result.candidatesDropped === 1,
+      "late-dominator-exactly-one-drop",
+      `dynamic=${dynamic.result.candidatesDropped} legacy=${legacy.result.candidatesDropped}`);
+    check(legacyDroppedL === true, "late-dominator-legacy-drops-strong-variant",
+      `legacyDroppedL=${legacyDroppedL}`);
+    check(dynamicDroppedL === false, "late-dominator-dynamic-keeps-strong-variant",
+      `dynamicDroppedL=${dynamicDroppedL}`);
+    check(dynamic.result.rank20ParetoRescuedTotal >= 1,
+      "late-dominator-rescue-counted", `rescued=${dynamic.result.rank20ParetoRescuedTotal}`);
+    check(dynamic.result.rank20ParetoChangedTrims >= 1,
+      "late-dominator-changed-a-trim", `changedTrims=${dynamic.result.rank20ParetoChangedTrims}`);
+    // The dropped node must be one of the DOMINATED ones, never the dominator.
+    const dynamicDroppedLabels = Object.keys(dynamic.keysBySummary)
+      .filter((label) => dynamic.droppedKeys.has(dynamic.keysBySummary[label]));
+    check(dynamicDroppedLabels.length === 1 && dynamicDroppedLabels[0] !== "p:L",
+      "late-dominator-dropped-a-dominated-variant", JSON.stringify(dynamicDroppedLabels));
+    // The legacy path must classify nothing as dominated, because the rank-20
+    // Pareto flag is simply not computed when the mechanism is off.
+    check(legacy.result.rank20ParetoNondominatedPendingTotal === 0 &&
+      legacy.result.rank20ParetoDominatedPendingTotal === 0,
+      "late-dominator-legacy-computes-no-pareto",
+      `nd=${legacy.result.rank20ParetoNondominatedPendingTotal} dom=${legacy.result.rank20ParetoDominatedPendingTotal}`);
+    check(dynamic.result.rank20ParetoDominatedPendingTotal >= 1 &&
+      dynamic.result.rank20ParetoNondominatedPendingTotal >= 1,
+      "late-dominator-dynamic-classifies-both-classes",
+      `nd=${dynamic.result.rank20ParetoNondominatedPendingTotal} dom=${dynamic.result.rank20ParetoDominatedPendingTotal}`);
+    pr526aLateDominator = {
+      dynamicDroppedL,
+      legacyDroppedL,
+      rescued: dynamic.result.rank20ParetoRescuedTotal,
+      changedTrims: dynamic.result.rank20ParetoChangedTrims,
+      dynamicNondominatedPending: dynamic.result.rank20ParetoNondominatedPendingTotal,
+      dynamicDominatedPending: dynamic.result.rank20ParetoDominatedPendingTotal,
+      dynamicDroppedLabels,
+    };
+  }
+
+  // Scenario 2 - INCOMPARABLE TRADE-OFF / NO SCALAR WEIGHTING. A(hp200 atk2) and
+  // B(hp100 atk5) are mutually incomparable: more HP vs more ATK. No weighting
+  // may invent a winner, so BOTH must classify nondominated, and with cap=1 the
+  // survivor must follow INSERTION order - flipping when the generation order
+  // flips. A hidden scalar preference would pick the same winner both ways.
+  {
+    const specsAB = [
+      { summary: "p:A", hp: 200, atk: 2 },
+      { summary: "p:B", hp: 100, atk: 5 },
+    ];
+    const runAB = runRank20ParetoScenario(specsAB, { cap: 1 });
+    const runBA = runRank20ParetoScenario([specsAB[1], specsAB[0]], { cap: 1 });
+    check(runAB.result.rank20ParetoDominatedPendingTotal === 0,
+      "incomparable-no-fabricated-domination",
+      `dominatedPending=${runAB.result.rank20ParetoDominatedPendingTotal}`);
+    check(runAB.result.rank20ParetoNondominatedPendingTotal === 2,
+      "incomparable-both-nondominated",
+      `nondominatedPending=${runAB.result.rank20ParetoNondominatedPendingTotal}`);
+    check(runAB.result.rank20ParetoRescuedTotal === 0,
+      "incomparable-rescues-nothing", `rescued=${runAB.result.rank20ParetoRescuedTotal}`);
+    const abDroppedA = runAB.droppedKeys.has(runAB.keysBySummary["p:A"]);
+    const abDroppedB = runAB.droppedKeys.has(runAB.keysBySummary["p:B"]);
+    const baDroppedA = runBA.droppedKeys.has(runBA.keysBySummary["p:A"]);
+    const baDroppedB = runBA.droppedKeys.has(runBA.keysBySummary["p:B"]);
+    check(runAB.result.candidatesDropped === 1 && runBA.result.candidatesDropped === 1,
+      "incomparable-exactly-one-drop-each",
+      `ab=${runAB.result.candidatesDropped} ba=${runBA.result.candidatesDropped}`);
+    // Generation A,B -> B is dropped (A earlier). Generation B,A -> A is dropped.
+    check(abDroppedB === true && abDroppedA === false,
+      "incomparable-ab-order-keeps-first", `droppedA=${abDroppedA} droppedB=${abDroppedB}`);
+    check(baDroppedA === true && baDroppedB === false,
+      "incomparable-ba-order-keeps-first", `droppedA=${baDroppedA} droppedB=${baDroppedB}`);
+    pr526aIncomparable = {
+      dominatedPending: runAB.result.rank20ParetoDominatedPendingTotal,
+      nondominatedPending: runAB.result.rank20ParetoNondominatedPendingTotal,
+      rescued: runAB.result.rank20ParetoRescuedTotal,
+      abDroppedA,
+      abDroppedB,
+      baDroppedA,
+      baDroppedB,
+    };
+  }
+
   const summary = {
     milestone: "PR-5.25s",
     check: "BOUNDED_RETENTION_CONTRACT",
@@ -661,6 +831,10 @@ function main() {
       admitted: combat.combatProgressAdmittedGenerated,
       maxPendingObserved: maxPendingCombat,
     },
+    rank20DynamicPareto: {
+      lateDominator: pr526aLateDominator,
+      incomparable: pr526aIncomparable,
+    },
     failures,
     ok: failures.length === 0,
   };
@@ -676,6 +850,15 @@ function main() {
   console.log(`  starvation (cap=6, neutralEvery=5): found=${starvation.found} route=${JSON.stringify(starvationRoute)} dropped=${starvation.candidatesDropped} headProtected=${starvation.fifoHeadProtected}/${starvation.fifoHeadProtectionOpportunities} wouldHaveDropped=${starvation.fifoHeadWouldHaveDroppedWithoutProtection}`);
   console.log(`  turnover (cap=2): found=${turnover.found} route=${JSON.stringify(turnoverRoute)} dropped=${turnover.candidatesDropped} headProtected=${turnover.fifoHeadProtected} wouldHaveDropped=${turnover.fifoHeadWouldHaveDroppedWithoutProtection}`);
   console.log(`  combatProgress (cap=2): found=${combat.found} route=${JSON.stringify(combatRoute)} dropped=${combat.candidatesDropped} generated=${combat.combatProgressGenerated} admitted=${combat.combatProgressAdmittedGenerated}`);
+  if (pr526aLateDominator) {
+    console.log(`  rank20Pareto late-dominator (cap=2): dynamicDroppedL=${pr526aLateDominator.dynamicDroppedL} ` +
+      `legacyDroppedL=${pr526aLateDominator.legacyDroppedL} rescued=${pr526aLateDominator.rescued} ` +
+      `changedTrims=${pr526aLateDominator.changedTrims} dropped=${JSON.stringify(pr526aLateDominator.dynamicDroppedLabels)}`);
+  }
+  if (pr526aIncomparable) {
+    console.log(`  rank20Pareto incomparable (cap=1): AB dropsB=${pr526aIncomparable.abDroppedB} BA dropsA=${pr526aIncomparable.baDroppedA} ` +
+      `dominatedPending=${pr526aIncomparable.dominatedPending} (insertion order decides; no scalar weighting)`);
+  }
   if (failures.length > 0) {
     console.log(`  FAIL (${failures.length}):`);
     for (const f of failures) console.log(`    ${f.label}: ${f.detail}`);

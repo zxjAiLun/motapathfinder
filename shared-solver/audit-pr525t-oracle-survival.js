@@ -185,6 +185,10 @@ function main() {
   };
 
   const search = createTransportCollapsedSearch(simulator);
+  // PR-5.26a attribution control: --legacy-rank20 reproduces the pre-5.26a
+  // (rank, insertion) order so the effect of the dynamic Pareto tie-break can be
+  // isolated on the SAME audit rather than compared across milestones.
+  const legacyRank20 = process.argv.slice(2).includes("--legacy-rank20");
   const result = search.search(initialState, {
     isGoalState,
     allowedFloors: FROZEN.region,
@@ -195,6 +199,7 @@ function main() {
     resourceSkylinePriority: true,
     pendingCandidateCap: FROZEN.pendingCandidateCap,
     onCandidateLifecycle,
+    rank20DynamicPareto: !legacyRank20,
   });
 
   console.log(`Phase 3: search done found=${result.found} strategic=${result.strategicExpansions} ` +
@@ -223,6 +228,24 @@ function main() {
       guidedAdmitted: classified ? classified.guidedAdmitted === true : null,
       skylineDominated: classified ? classified.skylineDominated === true : null,
       combatProgress: classified ? classified.combatProgress === true : null,
+      // PR-5.26a: rank-20 dynamic Pareto status. Prefer the last event that
+      // actually carried the flag (dropped/expanded inform it; classified fires
+      // before any trim, so it is not authoritative).
+      rank20ParetoDominated: (() => {
+        for (let i = events.length - 1; i >= 0; i -= 1) {
+          const e = events[i];
+          if (e.type === "dropped" || e.type === "expanded") {
+            return e.rank20ParetoDominated === true;
+          }
+        }
+        return null;
+      })(),
+      pureFillKept: (() => {
+        for (let i = events.length - 1; i >= 0; i -= 1) {
+          if (events[i].type === "dropped") return events[i].pureFillKept === true;
+        }
+        return null;
+      })(),
       depth: classified ? classified.depth : null,
     };
   });
@@ -266,6 +289,7 @@ function main() {
     },
     search: {
       found: result.found,
+      rank20DynamicPareto: !legacyRank20,
       strictReplay: "not-applicable-diagnostic",
       strategicExpansions: result.strategicExpansions,
       candidatesDropped: result.candidatesDropped,
@@ -283,6 +307,30 @@ function main() {
       firstOracleCheckpointNotSurvivingStep: firstLossStep,
       firstLossStage,
       stageCountsOfNonSurvivingCheckpoints: stageCounts,
+    },
+    cp9DynamicPareto: (() => {
+      const cp9 = checkpoints.find((cp) => cp.step === 9) || null;
+      if (!cp9) return null;
+      return {
+        step: cp9.step,
+        summary: cp9.summary,
+        generated: cp9.generated,
+        duplicateSkipped: cp9.duplicateSkipped,
+        registered: cp9.registered,
+        dropped: cp9.dropped,
+        expanded: cp9.expanded,
+        rank20ParetoDominated: cp9.rank20ParetoDominated,
+        pureFillKept: cp9.pureFillKept,
+        combatProgress: cp9.combatProgress,
+        note: "CP9_DYNAMIC_PARETO_STATUS: null means no drop/expand event was seen for this key, so no trim ever classified it as the victim.",
+      };
+    })(),
+    rank20DynamicParetoCounters: {
+      recomputedGroups: result.rank20ParetoRecomputedGroups,
+      nondominatedPendingTotal: result.rank20ParetoNondominatedPendingTotal,
+      dominatedPendingTotal: result.rank20ParetoDominatedPendingTotal,
+      rescuedTotal: result.rank20ParetoRescuedTotal,
+      changedTrims: result.rank20ParetoChangedTrims,
     },
     checkpoints,
     mt3ArrivalQuality: {
@@ -302,6 +350,17 @@ function main() {
   console.log(`  LAST_ORACLE_CHECKPOINT_EXPANDED = ${lastExpandedStep}`);
   console.log(`  FIRST_ORACLE_CHECKPOINT_NOT_SURVIVING = ${firstLossStep}`);
   console.log(`  FIRST_LOSS_STAGE = ${firstLossStage}`);
+  {
+    const cp9 = checkpoints.find((cp) => cp.step === 9);
+    if (cp9) {
+      console.log(`  CP9: generated=${cp9.generated} duplicateSkipped=${cp9.duplicateSkipped} registered=${cp9.registered} ` +
+        `dropped=${cp9.dropped} expanded=${cp9.expanded} combatProgress=${cp9.combatProgress} ` +
+        `CP9_DYNAMIC_PARETO_STATUS=${cp9.rank20ParetoDominated} CP9_PURE_FILL_KEPT=${cp9.pureFillKept}`);
+    }
+  }
+  console.log(`  rank20Pareto counters: recomputedGroups=${result.rank20ParetoRecomputedGroups} ` +
+    `ndTotal=${result.rank20ParetoNondominatedPendingTotal} domTotal=${result.rank20ParetoDominatedPendingTotal} ` +
+    `rescued=${result.rank20ParetoRescuedTotal} changedTrims=${result.rank20ParetoChangedTrims}`);
   console.log(`  non-surviving stage counts: ${JSON.stringify(stageCounts)}`);
   console.log(`  MT3 arrival states classified: ${mt3ArrivalCount}`);
   console.log(`  artifact: ${path.relative(process.cwd(), outPath)}`);

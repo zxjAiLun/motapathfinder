@@ -243,6 +243,42 @@ function poiToSemanticIdentity(poi, project) {
   return `${poi.kind}:${floorId}:${x},${y}`;
 }
 
+/**
+ * PR-5.26a - dynamic rank-20 Pareto retention (helper 1 of 2).
+ *
+ * Group key for trim-time Pareto comparison: semantic action identity PLUS the
+ * structural state key. Only variants of the SAME action in the SAME world are
+ * ever compared - never "kill redBat" against "take equipment". Equipment is
+ * already part of buildStructuralStateKey, so different equipment still groups
+ * apart. Returns null when the node cannot be classified, and such nodes are
+ * deliberately left unpenalized rather than guessed at.
+ */
+function rank20ParetoGroupKey(node) {
+  const identity = node.semanticIdentity;
+  if (typeof identity !== "string" || identity.length === 0) return null;
+  if (!node.state) return null;
+  let structuralKey = node.rank20StructuralKey;
+  if (structuralKey === undefined) {
+    structuralKey = buildStructuralStateKey(node.state);
+    node.rank20StructuralKey = structuralKey;
+  }
+  if (typeof structuralKey !== "string" || structuralKey.length === 0) return null;
+  return `${identity}\u0000${structuralKey}`;
+}
+
+/**
+ * PR-5.26a - resource vector for a rank-20 node, memoized on the node because
+ * the vector is immutable while the node lives and this runs under cap pressure.
+ */
+function rank20ResourceVector(node) {
+  let vector = node.rank20ResourceVector;
+  if (vector === undefined) {
+    vector = extractResourceVector(node.state);
+    node.rank20ResourceVector = vector;
+  }
+  return vector;
+}
+
 function createTransportCollapsedSearch(simulator) {
   const enumerateActions = (state) => {
     const result = simulator.enumeratePrimitiveActions(state);
@@ -285,6 +321,100 @@ function createTransportCollapsedSearch(simulator) {
     // the scheduler, or termination. Off by default so normal runs pay nothing.
     const lifecyclePeerComposition = config.lifecyclePeerComposition === true;
     const PEER_VARIANT_LIMIT = config.lifecyclePeerVariantLimit == null ? 64 : Number(config.lifecyclePeerVariantLimit);
+    // PR-5.26a trim-time dynamic rank-20 Pareto retention. Default ON: it is the
+    // current retention contract. Set false only to reproduce the pre-5.26a
+    // (rank, insertion) ordering for attribution comparisons; that flag is a
+    // diagnostic switch, NOT a supported configuration.
+    const rank20DynamicPareto = config.rank20DynamicPareto !== false;
+    // Previous-trim membership per Pareto group, used to re-classify only groups
+    // whose membership actually changed. The Pareto relation is NOT monotone: a
+    // node dominated only by a peer that has since been dropped becomes
+    // nondominated, so a stale classification would be wrong.
+    const rank20ParetoGroups = new Map();
+    let rank20ParetoRecomputedGroups = 0;
+    let rank20ParetoNondominatedPendingTotal = 0;
+    let rank20ParetoDominatedPendingTotal = 0;
+    let rank20ParetoRescuedTotal = 0;
+    let rank20ParetoChangedTrims = 0;
+
+    /**
+     * Classify every live rank-20 entry as Pareto-dominated or nondominated
+     * WITHIN its own (identity, structural key) group, over the CURRENT pending
+     * set. This is what makes a late, strong variant able to overtake earlier
+     * weak ones, which an append-only prior-seen skyline cannot do. Results are
+     * stored on the node as a transient flag used ONLY for this trim's fill
+     * order; they are never folded into node.rankValue, which is cached and
+     * would go stale as peers come and go.
+     */
+    const classifyRank20Pareto = (entries) => {
+      const current = new Map();
+      for (const e of entries) {
+        if (e.rank !== 20) continue;
+        const node = e.node;
+        const key = rank20ParetoGroupKey(node);
+        if (key == null) {
+          node.rank20ParetoDominated = false;
+          continue;
+        }
+        let members = current.get(key);
+        if (!members) {
+          members = [];
+          current.set(key, members);
+        }
+        members.push(node);
+      }
+      for (const [key, members] of current) {
+        const previous = rank20ParetoGroups.get(key);
+        let changed = true;
+        if (previous && previous.size === members.length) {
+          changed = false;
+          for (const n of members) {
+            if (!previous.has(n.id)) { changed = true; break; }
+          }
+        }
+        if (changed) {
+          for (const n of members) n.rank20ParetoDominated = false;
+          // Exact nondominated-frontier sweep instead of an O(g^2) pairwise scan.
+          // Sorting by descending HP visits likely dominators first, and the
+          // standard incremental skyline then costs O(g * F) with F the frontier
+          // size. Eviction is sound because Pareto dominance is transitive: if n
+          // dominates x and x dominates y then n dominates y. A frontier member
+          // evicted by a later arrival must be re-marked dominated.
+          const ordered = members.slice().sort((a, b) => {
+            const va = rank20ResourceVector(a);
+            const vb = rank20ResourceVector(b);
+            return (vb.hp - va.hp) || (vb.atk - va.atk) || (vb.def - va.def) ||
+              (vb.mdef - va.mdef) || (vb.hpmax - va.hpmax) || (vb.lv - va.lv);
+          });
+          const frontier = [];
+          for (const n of ordered) {
+            const vec = rank20ResourceVector(n);
+            let dominated = false;
+            for (const f of frontier) {
+              if (paretoDominates(rank20ResourceVector(f), vec)) { dominated = true; break; }
+            }
+            if (dominated) {
+              n.rank20ParetoDominated = true;
+              continue;
+            }
+            for (let i = frontier.length - 1; i >= 0; i -= 1) {
+              if (paretoDominates(vec, rank20ResourceVector(frontier[i]))) {
+                frontier[i].rank20ParetoDominated = true;
+                frontier.splice(i, 1);
+              }
+            }
+            frontier.push(n);
+          }
+          rank20ParetoRecomputedGroups += 1;
+          const next = new Set();
+          for (const n of members) next.add(n.id);
+          rank20ParetoGroups.set(key, next);
+        }
+      }
+      for (const key of [...rank20ParetoGroups.keys()]) {
+        if (!current.has(key)) rank20ParetoGroups.delete(key);
+      }
+    };
 
     const startedAt = Date.now();
     let stoppedReason = null;
@@ -649,7 +779,17 @@ function createTransportCollapsedSearch(simulator) {
       }
 
       if (emitLifecycle) {
-        emitLifecycle({ type: "expanded", exactKey: node.key, depth: node.depth, floorId: node.state ? node.state.floorId : null });
+        emitLifecycle({
+          type: "expanded",
+          exactKey: node.key,
+          depth: node.depth,
+          floorId: node.state ? node.state.floorId : null,
+          // PR-5.26a: the node's rank-20 Pareto status as of the last trim that
+          // classified its group. A node only reaches expansion by surviving
+          // retention, so this records what it was holding when it won its slot.
+          rank20ParetoDominated: rank20DynamicPareto && node.rank20ParetoDominated === true,
+          combatProgress: node.combatProgress === true,
+        });
       }
 
       recordNode(node);
@@ -846,7 +986,17 @@ function createTransportCollapsedSearch(simulator) {
         }
         const goalEntries = entries.filter((e) => e.rank === 0).sort((a, b) => a.index - b.index);
         const nonGoal = entries.filter((e) => e.rank !== 0);
-        const nonGoalByRank = nonGoal.slice().sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
+        // PR-5.26a: re-classify rank-20 Pareto status over the CURRENT pending set
+        // before ordering the fill, so a late strong variant can overtake earlier
+        // weak ones. The penalty is a pure tie-break WITHIN rank 20 - it never
+        // promotes into rank 10, never demotes to rank 30, and never removes a
+        // candidate outright.
+        if (rank20DynamicPareto) {
+          classifyRank20Pareto(entries);
+        }
+        const paretoPenaltyOf = (e) => (rank20DynamicPareto && e.rank === 20 && e.node.rank20ParetoDominated === true ? 1 : 0);
+        const nonGoalByRank = nonGoal.slice().sort((a, b) =>
+          (a.rank - b.rank) || (paretoPenaltyOf(a) - paretoPenaltyOf(b)) || (a.index - b.index));
         // The pure PR-5.25s keep set: goals, then (rank, insertion) up to cap.
         const pureFill = new Set();
         for (const e of goalEntries) {
@@ -856,6 +1006,50 @@ function createTransportCollapsedSearch(simulator) {
         for (const e of nonGoalByRank) {
           if (pureFill.size >= pendingCandidateCap) break;
           pureFill.add(e.id);
+        }
+        // PR-5.26a light telemetry: how the rank-20 Pareto tie-break actually
+        // landed, plus how many nondominated rank-20 candidates it rescued from
+        // the drop the pure-insertion order would have chosen. `entries` is built
+        // by walking `pending` in order, so the rank-20 subsequence is already in
+        // insertion order and no extra sort is needed.
+        let rank20ParetoTrimInfo = null;
+        if (rank20DynamicPareto) {
+          const rank20Entries = entries.filter((e) => e.rank === 20);
+          const rank0Count = goalEntries.length;
+          let rank10Count = 0;
+          for (const e of entries) if (e.rank === 10) rank10Count += 1;
+          let nondominatedPending = 0;
+          let dominatedPending = 0;
+          let nondominatedKept = 0;
+          let dominatedKept = 0;
+          for (const e of rank20Entries) {
+            const dominated = e.node.rank20ParetoDominated === true;
+            if (dominated) dominatedPending += 1; else nondominatedPending += 1;
+            if (pureFill.has(e.id)) {
+              if (dominated) dominatedKept += 1; else nondominatedKept += 1;
+            }
+          }
+          const rank20Slots = Math.max(0,
+            Math.min(rank20Entries.length, pendingCandidateCap - rank0Count - rank10Count));
+          let insertionNondominatedKept = 0;
+          for (let i = 0; i < rank20Slots; i += 1) {
+            if (rank20Entries[i].node.rank20ParetoDominated !== true) insertionNondominatedKept += 1;
+          }
+          const paretoNondominatedKeptIdeal = Math.min(rank20Slots, nondominatedPending);
+          const rescued = Math.max(0, paretoNondominatedKeptIdeal - insertionNondominatedKept);
+          rank20ParetoTrimInfo = {
+            nondominatedPending,
+            dominatedPending,
+            nondominatedKept,
+            dominatedKept,
+            rank20Slots,
+            nondominatedKeptUnderInsertionOrder: insertionNondominatedKept,
+            nondominatedRescuedFromDrop: rescued,
+          };
+          rank20ParetoNondominatedPendingTotal += nondominatedPending;
+          rank20ParetoDominatedPendingTotal += dominatedPending;
+          rank20ParetoRescuedTotal += rescued;
+          if (rescued > 0) rank20ParetoChangedTrims += 1;
         }
         const keep = new Set(pureFill);
         if (fifoHeadId != null) {
@@ -977,6 +1171,7 @@ function createTransportCollapsedSearch(simulator) {
             pendingRankCounts,
             keptRankCounts,
             rank20CutoffPendingSeq,
+            rank20Pareto: rank20ParetoTrimInfo,
             pureFillRankCounts,
             pureFillRank20CutoffPendingSeq,
             rank20Composition,
@@ -1105,6 +1300,7 @@ function createTransportCollapsedSearch(simulator) {
                 rankClass: pendingRank(dn),
                 kind: dn.actionKind,
                 semanticIdentity: dn.semanticIdentity || null,
+                rank20ParetoDominated: rank20DynamicPareto && dn.rank20ParetoDominated === true,
                 frontierGuided: dn.frontierGuided === true,
                 guidedAdmitted: dn.guidedAdmitted === true,
                 skylineDominated: dn.frontierGuided === true && dn.paretoAdmitted === false,
@@ -1188,6 +1384,12 @@ function createTransportCollapsedSearch(simulator) {
       duplicatesSkipped,
       candidatesDropped,
       pendingCandidateCap,
+      rank20DynamicPareto,
+      rank20ParetoRecomputedGroups,
+      rank20ParetoNondominatedPendingTotal,
+      rank20ParetoDominatedPendingTotal,
+      rank20ParetoRescuedTotal,
+      rank20ParetoChangedTrims,
       deadEndActions,
       registrySize: registry.size,
       deepestStrategicDepth,
