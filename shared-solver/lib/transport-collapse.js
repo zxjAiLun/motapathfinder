@@ -461,15 +461,37 @@ function createTransportCollapsedSearch(simulator) {
      * remain schedulable only through the neutral/FIFO lane - retention
      * only, scheduler unchanged.
      */
+    /**
+     * PR-5.26b Repair 1: the rank classes WITHOUT caching, so telemetry can
+     * read a candidate's class without mutating search state. pendingRank()
+     * keeps its caching behaviour and now delegates here, so the two can never
+     * drift apart.
+     */
+    const rankClassOf = (node) => {
+      if (node.state && isGoalState(node.state)) return 0;
+      if (node.guidedAdmitted) return 10;
+      if (node.combatProgress) return 20;
+      return 30;
+    };
     const pendingRank = (node) => {
       if (node.rankValue != null) return node.rankValue;
-      let rank = 30;
-      if (node.state && isGoalState(node.state)) rank = 0;
-      else if (node.guidedAdmitted) rank = 10;
-      else if (node.combatProgress) rank = 20;
+      const rank = rankClassOf(node);
       node.rankValue = rank;
       return rank;
     };
+    /**
+     * PR-5.26b Repair 1: opt-in mirror of `pending`.
+     *
+     * `pending` is a plain array, and the enqueue telemetry needs a membership
+     * test per queue entry. Maintaining a Set only when a diagnostic asks for
+     * it keeps every capability run byte-for-byte unchanged: when this is null
+     * the guarded updates below are no-ops. buildPendingSnapshot() cross-checks
+     * the mirror against pending.length and reports any divergence rather than
+     * silently trusting it.
+     */
+    const livePendingIds = (config.emitEnqueueTelemetry === true || config.emitPendingSnapshot === true)
+      ? new Set()
+      : null;
     let frontierHead = 0;
 
     // CONTROL: pure FIFO
@@ -762,6 +784,7 @@ function createTransportCollapsedSearch(simulator) {
           if (node.guidedChangeFloor) guidedChangeFloorNodesExpanded += 1;
           const at = pending.indexOf(node.id);
           if (at >= 0) pending.splice(at, 1);
+          if (livePendingIds) livePendingIds.delete(node.id);
         }
       }
       if (!node) break;
@@ -893,11 +916,57 @@ function createTransportCollapsedSearch(simulator) {
         child.paretoAdmitted = false;
         child.guidedAdmitted = false;
         pending.push(child.id);
+        if (livePendingIds) livePendingIds.add(child.id);
 
         if (!frontierSet) {
           frontier.push(child.id);
         } else {
           neutralQueue.push(child.id);
+          // PR-5.26b Repair 1: observational enqueue-time queue attribution.
+          // Emitted here because this is the moment the candidate becomes
+          // schedulable, and because guidedAdmitted/combatProgress are final by
+          // now (they are set in the frontier branch below). Pure reads: no
+          // rankValue caching, no writes to any node, no oracle input. The
+          // dynamic Pareto status is deliberately NOT reported - no trim has
+          // classified this group yet, so any value would be fabricated.
+          if (emitLifecycle && config.emitEnqueueTelemetry === true) {
+            let liveNeutralAhead = 0;
+            let liveAheadGuidedAdmitted = 0;
+            let liveAheadCombatProgress = 0;
+            const liveAheadByRank = { 0: 0, 10: 0, 20: 0, 30: 0 };
+            for (let i = neutralHead; i < neutralQueue.length - 1; i += 1) {
+              const aheadId = neutralQueue[i];
+              if (!livePendingIds || !livePendingIds.has(aheadId)) continue;
+              const aheadNode = nodesById.get(aheadId);
+              if (!aheadNode) continue;
+              liveNeutralAhead += 1;
+              const rank = rankClassOf(aheadNode);
+              liveAheadByRank[rank] = (liveAheadByRank[rank] || 0) + 1;
+              if (aheadNode.guidedAdmitted === true) liveAheadGuidedAdmitted += 1;
+              if (aheadNode.combatProgress === true) liveAheadCombatProgress += 1;
+            }
+            emitLifecycle({
+              type: "enqueued",
+              exactKey: child.key,
+              nodeId: child.id,
+              pendingSeq: child.pendingSeq,
+              // Deliberately NOT `rankClass`: guidedAdmitted is assigned in the
+              // frontier branch further down, so at enqueue time every child is
+              // still pre-admission. Naming it exactly keeps it honest. The
+              // liveAheadByRank figures below are unaffected because those nodes
+              // were registered in earlier iterations and are already final.
+              rankClassBeforeGuidedAdmission: rankClassOf(child),
+              neutralHeadAtEnqueue: neutralHead,
+              neutralQueueAbsoluteIndexAtEnqueue: neutralQueue.length - 1,
+              liveNeutralAheadAtEnqueue: liveNeutralAhead,
+              liveAheadByRank,
+              liveAheadGuidedAdmitted,
+              liveAheadCombatProgress,
+              guidedExpansionsAtEnqueue: guidedExpansions,
+              neutralExpansionsAtEnqueue: neutralExpansions,
+              strategicExpansionsAtEnqueue: strategicExpansions,
+            });
+          }
           const identity = actionToSemanticIdentity(candidate.action, candidate.state, candidate.next, simulator.project);
           // PR-5.25z: observational only - lets the rank-20 composition audit group
           // pending candidates by semantic action without any oracle knowledge.
@@ -1334,6 +1403,10 @@ function createTransportCollapsedSearch(simulator) {
         candidatesDropped += droppedIds.length;
         pending.length = 0;
         for (const e of entries) if (keep.has(e.id)) pending.push(e.id);
+        if (livePendingIds) {
+          livePendingIds.clear();
+          for (const e of entries) if (keep.has(e.id)) livePendingIds.add(e.id);
+        }
         if (guidedHeap) {
           for (let i = guidedHeap.length - 1; i >= 0; i -= 1) {
             if (!keep.has(guidedHeap[i].nodeId)) guidedHeap.splice(i, 1);
@@ -1398,7 +1471,7 @@ function createTransportCollapsedSearch(simulator) {
      * it answers "how much backlog stood between a retained node and service".
      */
     const buildPendingSnapshot = () => {
-      const liveIds = new Set(pending);
+      const liveIds = livePendingIds || new Set(pending);
       let liveNeutralPending = 0;
       const neutralIndexById = new Map();
       const liveAheadById = new Map();
@@ -1449,6 +1522,9 @@ function createTransportCollapsedSearch(simulator) {
         nodesTruncated: pending.length > nodes.length,
         livePendingTotal: pending.length,
         pendingCapacityHint: pendingCandidateCap,
+        // Repair 1 self-check: the opt-in mirror must agree with `pending`, or
+        // every live-ahead figure derived from it would be silently wrong.
+        pendingMirrorConsistent: livePendingIds ? livePendingIds.size === pending.length : null,
         guidedExpansions,
         neutralExpansions,
         neutralHead,
