@@ -71,9 +71,11 @@ function parseArgs(argv) {
     maxRssMb: FROZEN.maxRssMb,
     maxExpansions: FROZEN.maxExpansions,
     json: null,
+    neutralParetoSubstitution: false,
   };
   for (const token of argv) {
     if (token === "--child") { args.child = true; continue; }
+    if (token === "--neutral-pareto-substitution") { args.neutralParetoSubstitution = true; continue; }
     if (token === "--oracle") { args.oracleOnly = true; continue; }
     if (token === "--skip-oracle") { args.skipOracle = true; continue; }
     if (token.startsWith("--out=")) { args.out = path.resolve(token.slice("--out=".length)); continue; }
@@ -180,6 +182,8 @@ function runChild(args) {
     frontierSet: frontierReport.frontierSet,
     resourceSkylinePriority: true,
     pendingCandidateCap: args.cap,
+    // PR-5.26c capability configuration: opt-in neutral-turn Pareto substitution.
+    neutralParetoSubstitution: args.neutralParetoSubstitution === true,
   });
 
   let replay = null;
@@ -248,6 +252,7 @@ function spawnAttempt(args, tag) {
     `--max-runtime-ms=${args.maxRuntimeMs}`,
     `--max-rss-mb=${args.maxRssMb}`,
   ];
+  if (args.neutralParetoSubstitution) childArgs.push("--neutral-pareto-substitution");
   const spawned = spawnSync(process.execPath, childArgs, { encoding: "utf8" });
   if (spawned.status !== 0) {
     throw new Error(`child (${tag}) failed: ${spawned.stderr || spawned.stdout}`);

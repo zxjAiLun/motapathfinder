@@ -330,4 +330,6 @@ function main() {
   console.log(`  artifact: ${path.relative(process.cwd(), outPath)}`);
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { buildCp9Key, makeSimulator, FROZEN, ORACLE_FIXTURE, PROJECT_ROOT, CP9_DECISION_INDEX };

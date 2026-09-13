@@ -62,8 +62,10 @@ Telemetry is pure observation: no oracle input, no writes to ranking, retention,
 
 ```ini
 CP9_REGISTERED_AT_EXPANSION             = 5958_OF_8000
-CP9_AHEAD_AT_REGISTRATION               = 1027
+CP9_PRE_TRIM_LIVE_AHEAD                 = 1027
+POST_RETENTION_EXACT_COUNT_AT_THAT_MOMENT = NOT_MEASURED
 AHEAD_BY_RANK_AT_REGISTRATION           = {0: 0, 10: 118, 20: 907, 30: 2}
+PRE_TRIM_RANK20_AHEAD                   = 907
 AHEAD_GUIDED_ADMITTED_AT_REGISTRATION   = 118
 AHEAD_COMBAT_PROGRESS_AT_REGISTRATION   = 984
 neutralHeadAtEnqueue = 2014   absoluteIndex = 3041
@@ -71,6 +73,20 @@ guidedExpansions = 3974   neutralExpansions = 1984
 ```
 
 cp#9 did **not** enter behind a 300-deep queue. It entered behind a **1027-deep** queue - essentially the entire cap. And that queue was **907 rank-20 / 118 rank-10 / 2 rank-30**.
+
+**Wording correction (owner review of `fe817e4`).** The 1027 is an **enqueue-time, pre-trim** snapshot: the cap is 1024 and the trim runs after an expansion has registered all its children, so `pending` may briefly exceed the cap. Describing these 907 as already-retained survivors is therefore wrong:
+
+```ini
+CP9_PRE_TRIM_LIVE_AHEAD = 1027
+PRE_TRIM_RANK20_AHEAD = 907
+POST_RETENTION_EXACT_COUNT_AT_THAT_MOMENT = NOT_MEASURED
+"ALL_907_WERE_ALREADY_RETENTION_SURVIVORS" = NOT_ESTABLISHED
+RANK20_DOMINATED_BACKLOG = ROBUSTLY_OBSERVED   # direction unaffected
+S_A_S_B_S_C = RETIRED_FOR_THIS_DIAGNOSIS
+GLOBAL_NEUTRAL_RATE_PROBLEM = NOT_ESTABLISHED
+```
+
+The conclusion is unaffected: the over-cap excess is small, the end snapshot is still `239/300 = 80%` rank-20, and rank-30 goes from 2 at registration to 0 at the end.
 
 ### Wait window
 
@@ -124,7 +140,7 @@ That is a materially different diagnosis from "the neutral lane is too infrequen
 
 Established:
 
-- cp#9 entered at expansion 5958 behind 1027 live candidates, of which 907 were rank-20 combatProgress - the pending pool was effectively full and rank-20-dominated.
+- cp#9 entered at expansion 5958 behind 1027 pre-trim live candidates, of which 907 were rank-20 combatProgress - the pending pool was effectively full and rank-20-dominated.
 - It was served `false` by the guided heap, waited 2042 expansions, and still had 300 live candidates ahead (239 rank-20) when the budget ended.
 - The enqueue telemetry is deterministic and its opt-in mirror agrees with `pending` (`pendingMirrorConsistent = true`).
 

@@ -196,6 +196,8 @@ function main() {
   // (rank, insertion) order so the effect of the dynamic Pareto tie-break can be
   // isolated on the SAME audit rather than compared across milestones.
   const legacyRank20 = process.argv.slice(2).includes("--legacy-rank20");
+  // PR-5.26c: the capability configuration under test.
+  const neutralParetoSubstitution = process.argv.slice(2).includes("--neutral-pareto-substitution");
   const result = search.search(initialState, {
     isGoalState,
     allowedFloors: FROZEN.region,
@@ -207,6 +209,7 @@ function main() {
     pendingCandidateCap: FROZEN.pendingCandidateCap,
     onCandidateLifecycle,
     rank20DynamicPareto: !legacyRank20,
+    neutralParetoSubstitution,
   });
 
   console.log(`Phase 3: search done found=${result.found} strategic=${result.strategicExpansions} ` +
@@ -300,6 +303,8 @@ function main() {
     search: {
       found: result.found,
       rank20DynamicPareto: !legacyRank20,
+      neutralParetoSubstitution,
+      neutralParetoSubstitutions: result.neutralParetoSubstitutions,
       strictReplay: "not-applicable-diagnostic",
       strategicExpansions: result.strategicExpansions,
       candidatesDropped: result.candidatesDropped,
@@ -371,6 +376,7 @@ function main() {
   console.log(`  rank20Pareto counters: recomputedGroups=${result.rank20ParetoRecomputedGroups} ` +
     `ndTotal=${result.rank20ParetoNondominatedPendingTotal} domTotal=${result.rank20ParetoDominatedPendingTotal} ` +
     `rescued=${result.rank20ParetoRescuedTotal} changedTrims=${result.rank20ParetoChangedTrims}`);
+  console.log(`  neutralParetoSubstitution=${neutralParetoSubstitution} substitutions=${result.neutralParetoSubstitutions}`);
   console.log(`  non-surviving stage counts: ${JSON.stringify(stageCounts)}`);
   console.log(`  MT3 arrival states classified: ${mt3ArrivalCount}`);
   console.log(`  artifact: ${path.relative(process.cwd(), outPath)}`);

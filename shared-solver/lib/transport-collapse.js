@@ -438,6 +438,19 @@ function createTransportCollapsedSearch(simulator) {
     const frontierSet = config.frontierSet instanceof Set ? config.frontierSet : null;
     const priorityMap = config.priorityMap instanceof Map ? config.priorityMap : null;
     const neutralEvery = config.neutralEvery == null ? 5 : Number(config.neutralEvery);
+    /**
+     * PR-5.26c - neutral-turn Pareto substitution.
+     *
+     * Off by default; the capability configuration opts in explicitly. This
+     * changes only WHO one already-scheduled neutral expansion is spent on, and
+     * only when the FIFO head is a rank-20 investment variant that a live
+     * same-group peer strictly dominates. It never changes how often a neutral
+     * turn happens, never moves a candidate into the guided heap, and never
+     * deletes the dominated variant.
+     */
+    const neutralParetoSubstitution = config.neutralParetoSubstitution === true;
+    let neutralParetoSubstitutions = 0;
+    let neutralParetoSubstitutionScans = 0;
     const resourceSkylinePriority = config.resourceSkylinePriority === true;
     const skylineSet = resourceSkylinePriority ? createResourceSkylineSet() : null;
 
@@ -724,6 +737,55 @@ function createTransportCollapsedSearch(simulator) {
       return { states: visited, strategic, absorbed, truncated, expansionRuns: queue.length, signatureCalls: closureSignatureCalls, signatureWallMs: closureSignatureWallMs };
     };
 
+    /**
+     * PR-5.26c - choose a substitute for a neutral turn.
+     *
+     * Contract (owner-specified, no scalar value function anywhere):
+     *   - only when the live FIFO head is rank 20 (an investment variant)
+     *   - only within the SAME group: semanticIdentity + structural state key
+     *   - only peers that strictly Pareto-dominate the head
+     *   - among those, the CURRENT nondominated frontier (a dominator that is
+     *     itself dominated by another dominator would be another wasted turn)
+     *   - ties broken by insertion order (lowest pendingSeq), the SAME tie-break
+     *     the retention path uses
+     *
+     * Dominance is recomputed here from live nodes, never read from the cached
+     * node.rank20ParetoDominated: group membership changes as nodes are expanded
+     * or dropped, and a node dominated at the last trim need not be dominated
+     * now. Returns null when no substitution is justified.
+     */
+    const selectNeutralSubstitute = (head) => {
+      if (!neutralParetoSubstitution) return null;
+      if (rankClassOf(head) !== 20) return null;
+      const headGroup = rank20ParetoGroupKey(head);
+      if (headGroup == null) return null;
+      neutralParetoSubstitutionScans += 1;
+      const headVec = rank20ResourceVector(head);
+      const dominators = [];
+      for (const id of pending) {
+        if (id === head.id) continue;
+        const peer = nodesById.get(id);
+        if (!peer || peer.closed) continue;
+        if (rankClassOf(peer) !== 20) continue;
+        if (rank20ParetoGroupKey(peer) !== headGroup) continue;
+        if (!paretoDominates(rank20ResourceVector(peer), headVec)) continue;
+        dominators.push(peer);
+      }
+      if (dominators.length === 0) return null;
+      let best = null;
+      for (const d of dominators) {
+        const dv = rank20ResourceVector(d);
+        let itselfDominated = false;
+        for (const other of dominators) {
+          if (other === d) continue;
+          if (paretoDominates(rank20ResourceVector(other), dv)) { itselfDominated = true; break; }
+        }
+        if (itselfDominated) continue;
+        if (best == null || d.pendingSeq < best.pendingSeq) best = d;
+      }
+      return best;
+    };
+
     while (budgetLeft()) {
       sampleRss();
       if (stoppedReason) break;
@@ -743,15 +805,50 @@ function createTransportCollapsedSearch(simulator) {
           const neutralDue = neutralSinceGuided >= neutralEvery || guidedHeap.length === 0;
           let candidateId = null;
           if (neutralDue && neutralHead < neutralQueue.length) {
-            candidateId = neutralQueue[neutralHead++];
-            if (candidateId && !expanded.has(candidateId)) {
-              const candidate = nodesById.get(candidateId);
-              if (candidate && !candidate.closed) {
-                node = candidate;
-                neutralSinceGuided = 0;
-                neutralExpansions += 1;
-                break;
+            // PR-5.26c: locate the first LIVE FIFO head WITHOUT consuming it.
+            // Dead entries (already expanded, or closed) are skipped and passed
+            // permanently - that is the pre-existing pop-and-discard behaviour.
+            // The live head is only consumed once it is actually expanded, so a
+            // substitution can leave it in place at the head.
+            let headIndex = neutralHead;
+            while (headIndex < neutralQueue.length) {
+              const id = neutralQueue[headIndex];
+              const candidate = id == null ? null : nodesById.get(id);
+              if (id != null && !expanded.has(id) && candidate && !candidate.closed) break;
+              headIndex += 1;
+            }
+            if (headIndex >= neutralQueue.length) {
+              // No live neutral candidate left: drop the consumed dead entries
+              // and let the loop fall through to the guided heap.
+              neutralHead = headIndex;
+            } else {
+              const head = nodesById.get(neutralQueue[headIndex]);
+              const substitute = selectNeutralSubstitute(head);
+              if (substitute) {
+                // H stays the FIFO head: neutralHead points AT it, not past it.
+                // A dominated variant is never deleted, only deferred, and it
+                // becomes serveable again once its dominators are expanded.
+                neutralHead = headIndex;
+                node = substitute;
+                neutralParetoSubstitutions += 1;
+                if (emitLifecycle) {
+                  emitLifecycle({
+                    type: "neutralSubstitution",
+                    exactKey: substitute.key,
+                    nodeId: substitute.id,
+                    headExactKey: head.key,
+                    headNodeId: head.id,
+                    headQueueIndex: headIndex,
+                    substitutedAtExpansion: strategicExpansions,
+                  });
+                }
+              } else {
+                neutralHead = headIndex + 1;
+                node = head;
               }
+              neutralSinceGuided = 0;
+              neutralExpansions += 1;
+              break;
             }
           } else if (guidedHeap.length > 0) {
             const entry = heapPop();
@@ -806,6 +903,7 @@ function createTransportCollapsedSearch(simulator) {
           type: "expanded",
           exactKey: node.key,
           nodeId: node.id,
+          strategicExpansion: strategicExpansions,
           depth: node.depth,
           floorId: node.state ? node.state.floorId : null,
           // PR-5.26a: the node's rank-20 Pareto status as of the last trim that
@@ -924,8 +1022,12 @@ function createTransportCollapsedSearch(simulator) {
           neutralQueue.push(child.id);
           // PR-5.26b Repair 1: observational enqueue-time queue attribution.
           // Emitted here because this is the moment the candidate becomes
-          // schedulable, and because guidedAdmitted/combatProgress are final by
-          // now (they are set in the frontier branch below). Pure reads: no
+          // schedulable. Every node READ below was registered in an EARLIER
+          // loop iteration, so its guidedAdmitted/combatProgress are already
+          // final - unlike THIS child, which is still pre-admission because
+          // guidedAdmitted is assigned in the frontier branch further down.
+          // That is why the child's own class is reported as
+          // rankClassBeforeGuidedAdmission and not as a rank. Pure reads: no
           // rankValue caching, no writes to any node, no oracle input. The
           // dynamic Pareto status is deliberately NOT reported - no trim has
           // classified this group yet, so any value would be fabricated.
@@ -1553,6 +1655,10 @@ function createTransportCollapsedSearch(simulator) {
       rank20ParetoDominatedPendingTotal,
       rank20ParetoRescuedTotal,
       rank20ParetoChangedTrims,
+      // PR-5.26c
+      neutralParetoSubstitution,
+      neutralParetoSubstitutions,
+      neutralParetoSubstitutionScans,
       // PR-5.26b: present only when config.emitPendingSnapshot is set.
       pendingSnapshot: config.emitPendingSnapshot === true ? buildPendingSnapshot() : null,
       deadEndActions,
