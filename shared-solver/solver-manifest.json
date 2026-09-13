@@ -3647,6 +3647,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.23b search retention shape measurement and floor-boundary Pareto structured planning slice A/B qualification"
     },
+    "shared-solver/check-oracle-survival-taxonomy.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-perf-baseline-contract.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": false,

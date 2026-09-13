@@ -782,6 +782,7 @@ function createTransportCollapsedSearch(simulator) {
         emitLifecycle({
           type: "expanded",
           exactKey: node.key,
+          nodeId: node.id,
           depth: node.depth,
           floorId: node.state ? node.state.floorId : null,
           // PR-5.26a: the node's rank-20 Pareto status as of the last trim that
@@ -838,6 +839,13 @@ function createTransportCollapsedSearch(simulator) {
         }
         const child = {
           id: nextNodeId++,
+          // PR-5.26b: registration FIFO age, observational only. pendingSeq is
+          // the counter the retention trim already uses; the expansion index is
+          // recorded so an audit can measure how long a retained node waited in
+          // the neutral lane before the budget ended. Neither is read by
+          // ranking, retention, or the scheduler.
+          pendingSeq: pendingSeq++,
+          registeredAtStrategicExpansion: strategicExpansions,
           parentId: node.id,
           state: next,
           key: candidate.key,
@@ -860,7 +868,15 @@ function createTransportCollapsedSearch(simulator) {
         registry.set(child.key, child);
         exactSuccessors += 1;
         if (emitLifecycle) {
-          emitLifecycle({ type: "registered", exactKey: child.key, depth: child.depth, floorId: child.state ? child.state.floorId : null });
+          emitLifecycle({
+            type: "registered",
+            exactKey: child.key,
+            nodeId: child.id,
+            pendingSeq: child.pendingSeq,
+            registeredAtStrategicExpansion: child.registeredAtStrategicExpansion,
+            depth: child.depth,
+            floorId: child.state ? child.state.floorId : null,
+          });
         }
         // PR-5.25x: permanent combat-stat growth produced by this transition
         // (state delta only). Rank-20 retention class for non-guided children;
@@ -876,7 +892,6 @@ function createTransportCollapsedSearch(simulator) {
         child.frontierGuided = false;
         child.paretoAdmitted = false;
         child.guidedAdmitted = false;
-        child.pendingSeq = pendingSeq++;
         pending.push(child.id);
 
         if (!frontierSet) {
@@ -925,6 +940,7 @@ function createTransportCollapsedSearch(simulator) {
             emitLifecycle({
               type: "classified",
               exactKey: child.key,
+              nodeId: child.id,
               identity,
               kind: candidate.action.kind,
               frontierGuided: child.frontierGuided === true,
@@ -1297,6 +1313,7 @@ function createTransportCollapsedSearch(simulator) {
               emitLifecycle({
                 type: "dropped",
                 exactKey: dn.key,
+                nodeId: dn.id,
                 rankClass: pendingRank(dn),
                 kind: dn.actionKind,
                 semanticIdentity: dn.semanticIdentity || null,
@@ -1372,6 +1389,76 @@ function createTransportCollapsedSearch(simulator) {
       ? analyzeResourceVariantPressure(mt2ExpandedStates)
       : null;
 
+    /**
+     * PR-5.26b diagnostic: what was still queued when the budget ended.
+     *
+     * Opt-in (config.emitPendingSnapshot) and built only after the search loop
+     * has finished, so it cannot influence scheduling, retention, or
+     * termination. Size is bounded by the candidate cap, which is the point:
+     * it answers "how much backlog stood between a retained node and service".
+     */
+    const buildPendingSnapshot = () => {
+      const liveIds = new Set(pending);
+      let liveNeutralPending = 0;
+      const neutralIndexById = new Map();
+      const liveAheadById = new Map();
+      if (neutralQueue) {
+        let liveAhead = 0;
+        for (let i = neutralHead; i < neutralQueue.length; i += 1) {
+          const id = neutralQueue[i];
+          neutralIndexById.set(id, i);
+          liveAheadById.set(id, liveAhead);
+          if (liveIds.has(id)) {
+            liveAhead += 1;
+            liveNeutralPending += 1;
+          }
+        }
+      }
+      let guidedHeapLiveCount = 0;
+      if (guidedHeap) {
+        for (const entry of guidedHeap) if (liveIds.has(entry.nodeId)) guidedHeapLiveCount += 1;
+      }
+      const limit = Number.isFinite(config.pendingSnapshotLimit) && config.pendingSnapshotLimit > 0
+        ? Math.floor(config.pendingSnapshotLimit)
+        : 2048;
+      const nodes = [];
+      for (const id of pending) {
+        if (nodes.length >= limit) break;
+        const node = nodesById.get(id);
+        if (!node) continue;
+        const neutralIndex = neutralIndexById.has(id) ? neutralIndexById.get(id) : null;
+        nodes.push({
+          exactKey: node.key,
+          nodeId: id,
+          pendingSeq: node.pendingSeq,
+          rankClass: pendingRank(node),
+          combatProgress: node.combatProgress === true,
+          guidedAdmitted: node.guidedAdmitted === true,
+          registeredAtExpansion: node.registeredAtStrategicExpansion,
+          depth: node.depth,
+          neutralQueueAbsoluteIndex: neutralIndex,
+          // Serviceable backlog ahead of this node in the neutral lane: entries
+          // that are still live pending work, not consumed/closed leftovers.
+          neutralQueueLiveAhead: neutralIndex == null ? null : liveAheadById.get(id),
+          neutralQueueIndexFromHead: neutralIndex == null ? null : neutralIndex - neutralHead,
+        });
+      }
+      return {
+        schema: "pr526b-pending-snapshot/v1",
+        nodes,
+        nodesTruncated: pending.length > nodes.length,
+        livePendingTotal: pending.length,
+        pendingCapacityHint: pendingCandidateCap,
+        guidedExpansions,
+        neutralExpansions,
+        neutralHead,
+        neutralQueueLength: neutralQueue ? neutralQueue.length - neutralHead : null,
+        liveNeutralPending,
+        guidedHeapLiveCount,
+        strategicExpansions,
+      };
+    };
+
     return {
       found: Boolean(goalNode),
       route,
@@ -1390,6 +1477,8 @@ function createTransportCollapsedSearch(simulator) {
       rank20ParetoDominatedPendingTotal,
       rank20ParetoRescuedTotal,
       rank20ParetoChangedTrims,
+      // PR-5.26b: present only when config.emitPendingSnapshot is set.
+      pendingSnapshot: config.emitPendingSnapshot === true ? buildPendingSnapshot() : null,
       deadEndActions,
       registrySize: registry.size,
       deepestStrategicDepth,

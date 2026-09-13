@@ -24,9 +24,17 @@
  * the PR-5.25s Phase 4 run, plus instrumentation) and the survival analysis:
  *   LAST_ORACLE_CHECKPOINT_EXPANDED
  *   FIRST_ORACLE_CHECKPOINT_NOT_SURVIVING
- *   FIRST_LOSS_STAGE in { NEVER_GENERATED, DUPLICATE_TO_EXISTING_STATE,
- *     REGISTERED_BUT_SKYLINE_DOMINATED, DROPPED_BY_CAP,
- *     KEPT_BUT_NOT_EXPANDED_BEFORE_TIMEOUT, PREVIOUS_PREFIX_NEVER_EXPANDED }
+ *   FIRST_LOSS_STAGE in { NEVER_GENERATED, DUPLICATE_WITHOUT_OBSERVED_REGISTERED_TWIN,
+ *     REGISTERED_NEUTRAL_NOT_EXPANDED, DROPPED_BY_CAP,
+ *     KEPT_BUT_NOT_EXPANDED_BEFORE_BUDGET_END, PREVIOUS_PREFIX_NEVER_EXPANDED }
+ *
+ * PR-5.26b corrected the stage precedence. A duplicateSkipped event is not a
+ * death event (PR-5.25t already established that); the fate of the canonical
+ * registered node for the same exact key is what decides the prefix. The old
+ * order ranked duplicateSkipped above registered, which mislabelled a node that
+ * was registered, live, retained, and merely unexpanded (cp#9) as
+ * DUPLICATE_TO_EXISTING_STATE. duplicateSkipped is now an annotation
+ * (ALSO_SEEN_AS_DUPLICATE_VARIANT), never a loss stage on its own.
  *
  * This is a diagnostic, not a qualification: instrumentation adds overhead, so
  * wall/expansion numbers are indicative only.
@@ -121,23 +129,22 @@ function buildOracleCheckpoints(simulator) {
   return { allSteps, strategicCheckpoints, finalFloorId: state.floorId, finalHeroHp: state.hero.hp };
 }
 
-function classifyStage(cp, checkpoints, lifecycle) {
-  const events = lifecycle.get(cp.postKey) || [];
-  if (events.length === 0) return "NEVER_GENERATED";
+function classifyStage(events) {
+  if (!events || events.length === 0) return "NEVER_GENERATED";
   const types = new Set(events.map((e) => e.type));
-  // Precedence note: a duplicateSkipped event only says this exact state was
-  // already registered through another action variant; whether the prefix
-  // actually died depends on what happened to that registered twin. A dropped
-  // event on the same exact key means the twin itself was dropped, so the cap
-  // drop - not the dedup - is the real loss stage.
+  if (types.has("expanded")) return "SURVIVED";
   if (types.has("dropped")) return "DROPPED_BY_CAP";
-  if (types.has("duplicateSkipped")) return "DUPLICATE_TO_EXISTING_STATE";
   if (types.has("registered")) {
     const classified = [...events].reverse().find((e) => e.type === "classified");
-    if (classified && classified.skylineDominated === true) return "REGISTERED_BUT_SKYLINE_DOMINATED";
-    return "KEPT_BUT_NOT_EXPANDED_BEFORE_TIMEOUT";
+    if (classified && classified.skylineDominated === true) return "REGISTERED_NEUTRAL_NOT_EXPANDED";
+    return "KEPT_BUT_NOT_EXPANDED_BEFORE_BUDGET_END";
   }
-  return "KEPT_BUT_NOT_EXPANDED_BEFORE_TIMEOUT";
+  if (types.has("duplicateSkipped")) return "DUPLICATE_WITHOUT_OBSERVED_REGISTERED_TWIN";
+  return "NEVER_GENERATED";
+}
+
+function eventsOf(lifecycle, cp) {
+  return lifecycle.get(cp.postKey) || [];
 }
 
 function main() {
@@ -247,6 +254,9 @@ function main() {
         return null;
       })(),
       depth: classified ? classified.depth : null,
+      // PR-5.26b annotation: this exact state was also reached through another
+      // action variant. Informational only - it never decides the loss stage.
+      alsoSeenAsDuplicateVariant: types.has("duplicateSkipped") && types.has("registered"),
     };
   });
 
@@ -257,7 +267,7 @@ function main() {
   let firstLossStep = null;
   if (firstLoss) {
     firstLossStep = firstLoss.step;
-    firstLossStage = classifyStage(firstLoss, checkpoints, lifecycle);
+    firstLossStage = classifyStage(eventsOf(lifecycle, firstLoss));
     if (firstLossStage === "NEVER_GENERATED") {
       const idx = checkpoints.indexOf(firstLoss);
       if (idx > 0 && !checkpoints[idx - 1].expanded) {
@@ -269,7 +279,7 @@ function main() {
   const stageCounts = {};
   for (const cp of checkpoints) {
     if (!cp.expanded) {
-      const stage = classifyStage(cp, checkpoints, lifecycle);
+      const stage = classifyStage(eventsOf(lifecycle, cp));
       stageCounts[stage] = (stageCounts[stage] || 0) + 1;
     }
   }
@@ -366,4 +376,6 @@ function main() {
   console.log(`  artifact: ${path.relative(process.cwd(), outPath)}`);
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { classifyStage, eventsOf, main };
