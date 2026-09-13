@@ -874,6 +874,24 @@ function createTransportCollapsedSearch(simulator) {
           }
         }
         const droppedIds = entries.filter((e) => !keep.has(e.id)).map((e) => e.id);
+        let trimComposition = null;
+        if (emitLifecycle) {
+          // PR-5.25y observational trim composition (never used for sorting):
+          // per-class pending and kept counts plus the rank-20 fill boundary.
+          const pendingRankCounts = { 0: 0, 10: 0, 20: 0, 30: 0 };
+          const keptRankCounts = { 0: 0, 10: 0, 20: 0, 30: 0 };
+          let rank20CutoffPendingSeq = null;
+          for (const e of entries) {
+            pendingRankCounts[e.rank] = (pendingRankCounts[e.rank] || 0) + 1;
+            if (keep.has(e.id)) {
+              keptRankCounts[e.rank] = (keptRankCounts[e.rank] || 0) + 1;
+              if (e.rank === 20 && (rank20CutoffPendingSeq == null || e.node.pendingSeq > rank20CutoffPendingSeq)) {
+                rank20CutoffPendingSeq = e.node.pendingSeq;
+              }
+            }
+          }
+          trimComposition = { pendingRankCounts, keptRankCounts, rank20CutoffPendingSeq };
+        }
         for (const id of droppedIds) {
           const dn = nodesById.get(id);
           if (dn) {
@@ -887,6 +905,8 @@ function createTransportCollapsedSearch(simulator) {
                 frontierGuided: dn.frontierGuided === true,
                 guidedAdmitted: dn.guidedAdmitted === true,
                 skylineDominated: dn.frontierGuided === true && dn.paretoAdmitted === false,
+                nodePendingSeq: dn.pendingSeq,
+                trim: trimComposition,
               });
             }
           }
