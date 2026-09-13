@@ -195,6 +195,7 @@
   "audit:pr525z:rank20-composition": "node audit-pr525z-rank20-composition.js",
   "audit:pr526b:scheduling-latency": "node audit-pr526b-scheduling-latency.js",
   "audit:pr526c:substitution-ab": "node audit-pr526c-substitution-ab.js",
+  "audit:pr526d:cp14-causality": "node audit-pr526d-cp14-causality.js",
   "check:strict-replay:phase0": "node check-strict-replay-phase0.js",
   "check:changefloor-identity-parity": "node check-changefloor-identity-parity.js",
   "check:strategic-poi-identity-parity": "node check-strategic-poi-identity-parity.js",

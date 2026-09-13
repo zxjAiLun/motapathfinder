@@ -238,6 +238,19 @@ function main() {
       guidedAdmitted: classified ? classified.guidedAdmitted === true : null,
       skylineDominated: classified ? classified.skylineDominated === true : null,
       combatProgress: classified ? classified.combatProgress === true : null,
+      // PR-5.26d: identity, registration age and a DERIVED rank class.
+      // The search assigns guidedAdmitted in the frontier branch and
+      // combatProgress at registration, so by classification time the class is
+      // settled for this exact key. Derived (not read from the scheduler) so
+      // that a rank change would show up as an inconsistency, not silently.
+      semanticIdentity: classified && typeof classified.identity === "string" ? classified.identity : null,
+      rankClassDerived: classified
+        ? (classified.guidedAdmitted === true ? 10 : (classified.combatProgress === true ? 20 : 30))
+        : null,
+      registeredAtExpansion: (() => {
+        const reg = [...events].reverse().find((e) => e.type === "registered");
+        return reg ? (reg.registeredAtStrategicExpansion == null ? null : reg.registeredAtStrategicExpansion) : null;
+      })(),
       // PR-5.26a: rank-20 dynamic Pareto status. Prefer the last event that
       // actually carried the flag (dropped/expanded inform it; classified fires
       // before any trim, so it is not authoritative).
