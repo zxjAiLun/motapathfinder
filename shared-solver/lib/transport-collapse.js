@@ -516,6 +516,51 @@ function createTransportCollapsedSearch(simulator) {
     let neutralParetoSubstitutionScans = 0;
     const resourceSkylinePriority = config.resourceSkylinePriority === true;
     const skylineSet = resourceSkylinePriority ? createResourceSkylineSet() : null;
+    /**
+     * PR-5.26g - retroactive guided skyline demotion (opt-in, default off).
+     *
+     * Repairs ONE asymmetry: the frontier skyline is append-only, so a weak
+     * variant that arrives BEFORE a stronger one keeps its guided admission,
+     * while the same weak variant arriving after is correctly rejected. See
+     * applyRetroactiveGuidedDemotion for the full contract.
+     */
+    const retroactiveGuidedSkylineDemotion = config.retroactiveGuidedSkylineDemotion === true;
+    // structuralKey -> Set(nodeId) of guided-admitted nodes. Membership is added
+    // at admission and removed on demotion; it is allowed to retain ids of
+    // nodes that have since been expanded or dropped, because LIVENESS IS
+    // DECIDED BY livePendingIds (the existing authoritative mirror of `pending`),
+    // not by this set. That keeps one source of truth and one correctness
+    // mechanism. Dead ids are reclaimed by a bounded sweep at trim time.
+    const guidedGroups = retroactiveGuidedSkylineDemotion ? new Map() : null;
+    let guidedGroupTrackedIds = 0;
+    let guidedGroupSweeps = 0;
+    let guidedRetroDemotions = 0;
+    let guidedRetroDemotionScans = 0;
+    let guidedHeapStaleDemotionSkips = 0;
+    const guidedGroupSweepThreshold = Number.isFinite(config.guidedGroupSweepThreshold) && config.guidedGroupSweepThreshold > 0
+      ? Math.floor(config.guidedGroupSweepThreshold)
+      : Math.max(256, 4 * Number(config.pendingCandidateCap || 1024));
+    const addGuidedGroupMember = (groupKey, nodeId) => {
+      let members = guidedGroups.get(groupKey);
+      if (!members) {
+        members = new Set();
+        guidedGroups.set(groupKey, members);
+      }
+      if (members.has(nodeId)) return;
+      members.add(nodeId);
+      guidedGroupTrackedIds += 1;
+    };
+    // Diagnostic only: live guided-admitted pending count and its peak. Never
+    // read by ranking, retention, or the scheduler.
+    let liveGuidedCount = 0;
+    let guidedActivePeak = 0;
+    const noteGuidedAdded = () => {
+      liveGuidedCount += 1;
+      if (liveGuidedCount > guidedActivePeak) guidedActivePeak = liveGuidedCount;
+    };
+    const noteGuidedRemoved = () => {
+      if (liveGuidedCount > 0) liveGuidedCount -= 1;
+    };
 
     const trackResourcePressure = config.trackResourcePressure === true;
     const mt2ExpandedStates = trackResourcePressure ? [] : null;
@@ -566,7 +611,7 @@ function createTransportCollapsedSearch(simulator) {
      * the mirror against pending.length and reports any divergence rather than
      * silently trusting it.
      */
-    const livePendingIds = (config.emitEnqueueTelemetry === true || config.emitPendingSnapshot === true || emitGuidedServiceTelemetry === true)
+    const livePendingIds = (config.emitEnqueueTelemetry === true || config.emitPendingSnapshot === true || emitGuidedServiceTelemetry === true || retroactiveGuidedSkylineDemotion === true)
       ? new Set()
       : null;
     let frontierHead = 0;
@@ -820,6 +865,90 @@ function createTransportCollapsedSearch(simulator) {
       return best;
     };
 
+    /**
+     * PR-5.26g - retroactive guided skyline demotion.
+     *
+     * `skylineSet.query()` asks only "did any previously SEEN state dominate
+     * this one?", and `skylineSet.insert()` is append-only: it never retracts a
+     * guided admission that a later, stronger state supersedes. So
+     *
+     *   weak then strong -> {weak, strong} both guided
+     *   strong then weak -> {strong} guided, weak rejected
+     *
+     * and the ACTIVE guided set is arrival-order sensitive. PR-5.26f made that
+     * visible: changing only guided service order changed the number of guided
+     * admissions (8916 -> 15792 at fixed work) and pushed MT4 into the RSS
+     * limit before the wall budget was spent.
+     *
+     * This repairs exactly that asymmetry: when a newly admitted state
+     * dominates an OLDER, STILL-LIVE guided node in the SAME structural skyline
+     * group, the older node loses guided status. The group is the skyline's own
+     * grouping (buildStructuralStateKey), i.e. the same grouping the admission
+     * heuristic used, so the repair cancels that heuristic's asymmetry rather
+     * than introducing a second notion of "the same state".
+     *
+     * NOT a prune: the demoted node stays pending, stays closed=false, stays in
+     * the neutral queue and remains searchable. It only stops occupying a
+     * rank-10 guided slot.
+     *
+     * Demotion is PERMANENT for guided eligibility (no re-promotion). The
+     * existing skyline contract is "once a dominator has been seen, a later
+     * weak variant never gets guided admission"; re-promoting would invent a
+     * live dynamic skyline instead of repairing the arrival-order asymmetry.
+     */
+    const applyRetroactiveGuidedDemotion = (newNode, structuralKey, newVector) => {
+      if (!retroactiveGuidedSkylineDemotion || !guidedGroups) return;
+      const members = guidedGroups.get(structuralKey);
+      if (!members || members.size === 0) return;
+      guidedRetroDemotionScans += 1;
+      const demote = [];
+      for (const id of members) {
+        if (id === newNode.id) continue;
+        // LIVENESS: livePendingIds is the same mirror of `pending` that the
+        // enqueue/snapshot telemetry already uses, maintained at registration,
+        // expansion, and trim. A node that has been expanded or dropped is not
+        // in it - which matters twice over, because an expanded node's state has
+        // been released and dereferencing it would throw.
+        if (livePendingIds) {
+          if (!livePendingIds.has(id)) continue;
+        } else if (expanded.has(id)) continue;
+        const peer = nodesById.get(id);
+        if (!peer) continue;
+        if (peer.closed === true || peer.guidedAdmitted !== true) continue;
+        // rank20ResourceVector is just extractResourceVector(node.state) with a
+        // per-node memo; the name reflects where it was first used (PR-5.26a),
+        // the extraction is the same one the skyline uses.
+        if (!paretoDominates(newVector, rank20ResourceVector(peer))) continue;
+        demote.push(peer);
+      }
+      for (const peer of demote) {
+        // PERMANENT: no code path re-admits a node to the guided heap, and the
+        // flag is recorded so an audit can tell a demoted node from a
+        // never-guided one.
+        peer.guidedAdmitted = false;
+        peer.guidedRetroDemoted = true;
+        // The rank cache may already hold 10. Drop it so the next retention
+        // recomputes rankClassOf() -> combatProgress ? 20 : 30. Never write 30.
+        peer.rankValue = null;
+        members.delete(peer.id);
+        guidedGroupTrackedIds -= 1;
+        noteGuidedRemoved();
+        guidedRetroDemotions += 1;
+        if (emitLifecycle) {
+          emitLifecycle({
+            type: "guidedRetroDemotion",
+            exactKey: peer.key,
+            nodeId: peer.id,
+            pendingSeq: peer.pendingSeq,
+            demotedByExactKey: newNode.key,
+            demotedByNodeId: newNode.id,
+            structuralKey,
+            demotedAtExpansion: strategicExpansions,
+          });
+        }
+      }
+    };
+
     while (budgetLeft()) {
       sampleRss();
       if (stoppedReason) break;
@@ -888,7 +1017,15 @@ function createTransportCollapsedSearch(simulator) {
             const entry = heapPop();
             if (entry && !expanded.has(entry.nodeId)) {
               const candidate = nodesById.get(entry.nodeId);
-              if (candidate && !candidate.closed) {
+              // PR-5.26g: a retro-demoted node's heap entry is deliberately left
+              // in place. Arbitrary delete in a binary heap is easy to get
+              // wrong; instead the entry becomes stale and is skipped here. The
+              // node remains reachable through the neutral lane like any other
+              // neutral work.
+              const staleDemoted = retroactiveGuidedSkylineDemotion && candidate
+                && candidate.closed !== true && candidate.guidedAdmitted !== true;
+              if (staleDemoted) guidedHeapStaleDemotionSkips += 1;
+              if (candidate && !candidate.closed && !staleDemoted) {
                 node = candidate;
                 neutralSinceGuided += 1;
                 guidedExpansions += 1;
@@ -912,6 +1049,7 @@ function createTransportCollapsedSearch(simulator) {
         }
         if (node) {
           expanded.add(node.id);
+          if (node.guidedAdmitted === true) noteGuidedRemoved();
           if (node.guidedChangeFloor) guidedChangeFloorNodesExpanded += 1;
           const at = pending.indexOf(node.id);
           if (at >= 0) pending.splice(at, 1);
@@ -1129,9 +1267,10 @@ function createTransportCollapsedSearch(simulator) {
                 guidedForwardFloorChildrenGenerated += 1;
               }
             }
+            let skylineQuery = null;
             if (resourceSkylinePriority) {
-              const query = skylineSet.query(candidate.next, child.id, candidate.key);
-              skylineDominated = query.isDominated;
+              skylineQuery = skylineSet.query(candidate.next, child.id, candidate.key);
+              skylineDominated = skylineQuery.isDominated;
               skylineSet.insert(candidate.next, child.id, candidate.key);
             }
             child.paretoAdmitted = !skylineDominated;
@@ -1143,6 +1282,14 @@ function createTransportCollapsedSearch(simulator) {
               child.guidedAdmitted = true;
               guidedAdmittedGenerated += 1;
               guidedAdmittedByKind[candidate.action.kind] = (guidedAdmittedByKind[candidate.action.kind] || 0) + 1;
+              noteGuidedAdded();
+              if (retroactiveGuidedSkylineDemotion && skylineQuery) {
+                addGuidedGroupMember(skylineQuery.structuralKey, child.id);
+                // Remembered so the trim-time sweep can rebuild membership from
+                // the live pending set without recomputing state keys.
+                child.retroGuidedGroupKey = skylineQuery.structuralKey;
+                applyRetroactiveGuidedDemotion(child, skylineQuery.structuralKey, skylineQuery.resourceVector);
+              }
               if (emitGuidedServiceTelemetry) {
                 const scoreKey = String(score);
                 guidedScoreHistogram[scoreKey] = (guidedScoreHistogram[scoreKey] || 0) + 1;
@@ -1568,11 +1715,28 @@ function createTransportCollapsedSearch(simulator) {
           }
         }
         candidatesDropped += droppedIds.length;
+        for (const id of droppedIds) {
+          const droppedNode = nodesById.get(id);
+          if (droppedNode && droppedNode.guidedAdmitted === true) noteGuidedRemoved();
+        }
         pending.length = 0;
         for (const e of entries) if (keep.has(e.id)) pending.push(e.id);
         if (livePendingIds) {
           livePendingIds.clear();
           for (const e of entries) if (keep.has(e.id)) livePendingIds.add(e.id);
+        }
+        // PR-5.26g: reclaim ids of nodes that have since been expanded or
+        // dropped. Amortized O(cap) and bounded; membership is never allowed to
+        // grow with total admissions.
+        if (guidedGroups && guidedGroupTrackedIds > guidedGroupSweepThreshold) {
+          guidedGroups.clear();
+          guidedGroupTrackedIds = 0;
+          for (const id of livePendingIds) {
+            const liveNode = nodesById.get(id);
+            if (!liveNode || liveNode.guidedAdmitted !== true || liveNode.retroGuidedGroupKey == null) continue;
+            addGuidedGroupMember(liveNode.retroGuidedGroupKey, id);
+          }
+          guidedGroupSweeps += 1;
         }
         if (guidedHeap) {
           for (let i = guidedHeap.length - 1; i >= 0; i -= 1) {
@@ -1702,6 +1866,19 @@ function createTransportCollapsedSearch(simulator) {
       };
     };
 
+    let liveGuidedPendingAtEnd = 0;
+    let rank10PendingAtEnd = 0;
+    let retroDemotedStillPendingAtEnd = 0;
+    for (const id of pending) {
+      const node = nodesById.get(id);
+      if (!node || node.closed) continue;
+      if (node.guidedAdmitted === true) liveGuidedPendingAtEnd += 1;
+      // Derived from the rank function rather than the flag, so a divergence
+      // between "is guided" and "is rank 10" would show up instead of hiding.
+      if (rankClassOf(node) === 10) rank10PendingAtEnd += 1;
+      if (node.guidedRetroDemoted === true) retroDemotedStillPendingAtEnd += 1;
+    }
+
     return {
       found: Boolean(goalNode),
       route,
@@ -1761,6 +1938,17 @@ function createTransportCollapsedSearch(simulator) {
       guidedScoreHistogram: emitGuidedServiceTelemetry ? guidedScoreHistogram : null,
       guidedPriorityMapProvided: emitGuidedServiceTelemetry ? Boolean(priorityMap) : null,
       stableGuidedTieBreak,
+      retroactiveGuidedSkylineDemotion,
+      guidedRetroDemotions,
+      guidedRetroDemotionScans,
+      guidedGroupTrackedIds,
+      guidedGroupSweeps,
+      guidedGroupSweepThreshold,
+      guidedHeapStaleDemotionSkips,
+      guidedActivePeak,
+      liveGuidedPendingAtEnd,
+      rank10PendingAtEnd,
+      retroDemotedStillPendingAtEnd,
       frontierGuidedDominatedByKind,
       fifoHeadProtectionOpportunities,
       fifoHeadProtected,

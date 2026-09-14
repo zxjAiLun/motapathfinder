@@ -205,6 +205,8 @@
   "check:oracle-survival-taxonomy": "node check-oracle-survival-taxonomy.js",
   "check:neutral-pareto-substitution": "node check-neutral-pareto-substitution.js",
   "check:guided-equal-score-service-order": "node check-guided-equal-score-service-order.js",
+  "check:guided-retro-demotion": "node check-guided-retro-demotion.js",
+  "audit:pr526g:retro-demotion-ab": "node audit-pr526g-retro-demotion-ab.js",
   "check:no-tower-solver-js": "node ../tools/audit-js-files.js --check-no-tower-solver-js",
     "check:public-layer-boundaries": "node ../tools/check-agent-boundaries.js --public-layer-dev",
     "check:agent-boundaries": "node ../tools/check-agent-boundaries.js",
