@@ -166,12 +166,32 @@ function isCombatProgressTransition(before, after) {
   return equipmentBefore !== equipmentAfter;
 }
 
-function guidedHeapPush(heap, entry) {
+/**
+ * PR-5.26f - equal-score guided service order.
+ *
+ * `stableTieBreak` is opt-in. When FALSE the comparator must reproduce the
+ * pre-5.26f behaviour exactly: equal scores are equivalent, so the heap keeps
+ * whatever shape its push/pop cycles produce and a later equal-score entry can
+ * be served before an older one. When TRUE the tie is broken by `pendingSeq`
+ * ascending, i.e. registration order.
+ *
+ * This is a TIE-BREAK only. A higher score always wins with or without the
+ * flag, so the heap never degenerates into a plain FIFO.
+ */
+function guidedComesBefore(a, b, stableTieBreak) {
+  if (a.score !== b.score) return a.score > b.score;
+  if (!stableTieBreak) return false;
+  const aSeq = a.pendingSeq == null ? 0 : a.pendingSeq;
+  const bSeq = b.pendingSeq == null ? 0 : b.pendingSeq;
+  return aSeq < bSeq;
+}
+
+function guidedHeapPush(heap, entry, stableTieBreak) {
   heap.push(entry);
   let i = heap.length - 1;
   while (i > 0) {
     const parent = Math.floor((i - 1) / 2);
-    if (heap[parent].score >= heap[i].score) break;
+    if (!guidedComesBefore(heap[i], heap[parent], stableTieBreak)) break;
     const tmp = heap[parent];
     heap[parent] = heap[i];
     heap[i] = tmp;
@@ -179,7 +199,7 @@ function guidedHeapPush(heap, entry) {
   }
 }
 
-function guidedHeapPop(heap) {
+function guidedHeapPop(heap, stableTieBreak) {
   if (heap.length === 0) return null;
   const top = heap[0];
   const last = heap.pop();
@@ -190,8 +210,8 @@ function guidedHeapPop(heap) {
       const l = 2 * i + 1;
       const r = l + 1;
       let best = i;
-      if (l < heap.length && heap[l].score > heap[best].score) best = l;
-      if (r < heap.length && heap[r].score > heap[best].score) best = r;
+      if (l < heap.length && guidedComesBefore(heap[l], heap[best], stableTieBreak)) best = l;
+      if (r < heap.length && guidedComesBefore(heap[r], heap[best], stableTieBreak)) best = r;
       if (best === i) break;
       const tmp = heap[i];
       heap[i] = heap[best];
@@ -474,6 +494,12 @@ function createTransportCollapsedSearch(simulator) {
     const frontierSet = config.frontierSet instanceof Set ? config.frontierSet : null;
     const priorityMap = config.priorityMap instanceof Map ? config.priorityMap : null;
     const emitGuidedServiceTelemetry = config.emitGuidedServiceTelemetry === true;
+    /**
+     * PR-5.26f: opt-in. Only changes how EQUAL scores are ordered inside the
+     * guided heap (registration order). Higher scores always win, and nothing
+     * outside the guided heap reads it.
+     */
+    const stableGuidedTieBreak = config.stableGuidedTieBreak === true;
     const neutralEvery = config.neutralEvery == null ? 5 : Number(config.neutralEvery);
     /**
      * PR-5.26c - neutral-turn Pareto substitution.
@@ -582,10 +608,10 @@ function createTransportCollapsedSearch(simulator) {
     let combatProgressAdmittedGenerated = 0;
 
     const heapPush = (entry) => {
-      guidedHeapPush(guidedHeap, entry);
+      guidedHeapPush(guidedHeap, entry, stableGuidedTieBreak);
     };
 
-    const heapPop = () => guidedHeapPop(guidedHeap);
+    const heapPop = () => guidedHeapPop(guidedHeap, stableGuidedTieBreak);
 
     let nextNodeId = 2;
 
@@ -919,6 +945,14 @@ function createTransportCollapsedSearch(simulator) {
           // retention, so this records what it was holding when it won its slot.
           rank20ParetoDominated: rank20DynamicPareto && node.rank20ParetoDominated === true,
           combatProgress: node.combatProgress === true,
+          // PR-5.26f diagnostic-only wait age. Emitted here (not reconstructed
+          // from a lifecycle map) so the audit never has to retain per-node
+          // state. Never read by ranking, retention, or the scheduler.
+          guidedAdmitted: node.guidedAdmitted === true,
+          guidedPendingSeq: emitGuidedServiceTelemetry && node.guidedAdmitted === true ? node.pendingSeq : null,
+          guidedWaitAgeAtExpansion: emitGuidedServiceTelemetry && node.guidedAdmitted === true
+            ? strategicExpansions - node.registeredAtStrategicExpansion
+            : null,
         });
       }
 
@@ -1105,7 +1139,7 @@ function createTransportCollapsedSearch(simulator) {
               // PR-5.25s: guidedAdmitted marks actual guided-heap insertion -
               // the ONLY frontier property that earns cap-retention rank 10.
               const score = (priorityMap && priorityMap.get(identity)) || 100;
-              heapPush({ nodeId: child.id, score });
+              heapPush({ nodeId: child.id, score, pendingSeq: child.pendingSeq });
               child.guidedAdmitted = true;
               guidedAdmittedGenerated += 1;
               guidedAdmittedByKind[candidate.action.kind] = (guidedAdmittedByKind[candidate.action.kind] || 0) + 1;
@@ -1726,6 +1760,7 @@ function createTransportCollapsedSearch(simulator) {
       guidedAdmittedByKind,
       guidedScoreHistogram: emitGuidedServiceTelemetry ? guidedScoreHistogram : null,
       guidedPriorityMapProvided: emitGuidedServiceTelemetry ? Boolean(priorityMap) : null,
+      stableGuidedTieBreak,
       frontierGuidedDominatedByKind,
       fifoHeadProtectionOpportunities,
       fifoHeadProtected,
@@ -1751,6 +1786,7 @@ module.exports = {
   flatPairs,
   guidedHeapPush,
   guidedHeapPop,
+  guidedComesBefore,
   isCombatProgressTransition,
   poiToSemanticIdentity,
   stableFlags,

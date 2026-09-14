@@ -71,11 +71,13 @@ function parseArgs(argv) {
     cap: null,
     json: null,
     neutralParetoSubstitution: false,
+    stableGuidedTieBreak: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--smoke") { args.smoke = true; continue; }
     if (token === "--neutral-pareto-substitution") { args.neutralParetoSubstitution = true; continue; }
+    if (token === "--stable-guided-tie-break") { args.stableGuidedTieBreak = true; continue; }
     if (token.startsWith("--out=")) { args.out = path.resolve(token.slice("--out=".length)); continue; }
     if (token.startsWith("--max-runtime-ms=")) { args.maxRuntimeMs = Number(token.slice("--max-runtime-ms=".length)); continue; }
     if (token.startsWith("--max-rss-mb=")) { args.maxRssMb = Number(token.slice("--max-rss-mb=".length)); continue; }
@@ -132,6 +134,7 @@ function runChild(args) {
     pendingCandidateCap: args.cap,
     // PR-5.26c capability configuration: opt-in neutral-turn Pareto substitution.
     neutralParetoSubstitution: args.neutralParetoSubstitution === true,
+    stableGuidedTieBreak: args.stableGuidedTieBreak === true,
   });
 
   let replay = null;
@@ -173,6 +176,8 @@ function runChild(args) {
     neutralParetoSubstitution: result.neutralParetoSubstitution === true,
     neutralParetoSubstitutions: result.neutralParetoSubstitutions,
     neutralParetoSubstitutionScans: result.neutralParetoSubstitutionScans,
+    // PR-5.26f
+    stableGuidedTieBreak: result.stableGuidedTieBreak === true,
     guidedChangeFloorGenerated: result.guidedChangeFloorGenerated,
     guidedChangeFloorNodesExpanded: result.guidedChangeFloorNodesExpanded,
     guidedForwardFloorChildrenGenerated: result.guidedForwardFloorChildrenGenerated,
@@ -204,6 +209,7 @@ function spawnAttempt(args, cap) {
     `--max-rss-mb=${args.maxRssMb}`,
   ];
   if (args.neutralParetoSubstitution) childArgs.push("--neutral-pareto-substitution");
+  if (args.stableGuidedTieBreak) childArgs.push("--stable-guided-tie-break");
   const spawned = spawnSync(process.execPath, childArgs, { encoding: "utf8" });
   if (spawned.status !== 0) {
     throw new Error(`child (cap=${cap}) failed: ${spawned.stderr || spawned.stdout}`);

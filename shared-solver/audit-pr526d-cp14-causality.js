@@ -323,6 +323,12 @@ function main() {
       PROBE_B_SKIP_WHOLE_ROUND_TRIP_14_15: {
         ROUND_TRIP_SUFFIX_CRITICAL: roundTripProbe.ok !== true,
         CP14_RESOURCE_CAUSALITY: "STRONGLY_SUPPORTED",
+        // PR-5.26f wording fix (owner review of 5159cf7): "NON_RESOURCE" was
+        // too strong - `hatred` and floor mutations are world state that can
+        // still be read as combat/progress state. This is a claim about the
+        // transport components that are NOT the normalized hero scalars, not a
+        // semantic claim that every differing component is non-resource.
+        NON_HERO_SCALAR_TRANSPORT_SIGNATURE_EQUAL: roundTripState.normalizedTransportSignatureEqual,
         NON_RESOURCE_TRANSPORT_SIGNATURE_EQUAL: roundTripState.normalizedTransportSignatureEqual,
         FULL_WORLD_EQUIVALENCE_AFTER_SKIPPING_ROUND_TRIP: roundTripState.normalizedTransportSignatureEqual
           ? "ESTABLISHED_UNDER_TRANSPORT_SIGNATURE"
@@ -378,7 +384,7 @@ function main() {
     console.log(`      world deficit vs oracle: ${JSON.stringify(roundTripProbe.worldDeficitVsOraclePreState)}`);
   }
   console.log(`    RESOURCE_CAUSALITY = STRONGLY_SUPPORTED`);
-  console.log(`    NON_RESOURCE_TRANSPORT_SIGNATURE_EQUAL = ${roundTripState.normalizedTransportSignatureEqual}`);
+  console.log(`    NON_HERO_SCALAR_TRANSPORT_SIGNATURE_EQUAL = ${roundTripState.normalizedTransportSignatureEqual}`);
   console.log(`    FULL_WORLD_EQUIVALENCE_AFTER_SKIPPING_ROUND_TRIP = ${roundTripState.normalizedTransportSignatureEqual ? "ESTABLISHED_UNDER_TRANSPORT_SIGNATURE" : "FALSE_UNDER_TRANSPORT_SIGNATURE"}`);
   console.log(`    CP14_CRITICALITY_KIND = ${roundTripState.normalizedTransportSignatureEqual ? "RESOURCE_INVESTMENT_ISOLATED" : "ROUND_TRIP_STATE_INVESTMENT"}`);
   console.log(`    non-resource component equality: ${JSON.stringify(roundTripState.componentEqual)}`);

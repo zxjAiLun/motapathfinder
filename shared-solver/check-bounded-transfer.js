@@ -72,10 +72,12 @@ function parseArgs(argv) {
     maxExpansions: FROZEN.maxExpansions,
     json: null,
     neutralParetoSubstitution: false,
+    stableGuidedTieBreak: false,
   };
   for (const token of argv) {
     if (token === "--child") { args.child = true; continue; }
     if (token === "--neutral-pareto-substitution") { args.neutralParetoSubstitution = true; continue; }
+    if (token === "--stable-guided-tie-break") { args.stableGuidedTieBreak = true; continue; }
     if (token === "--oracle") { args.oracleOnly = true; continue; }
     if (token === "--skip-oracle") { args.skipOracle = true; continue; }
     if (token.startsWith("--out=")) { args.out = path.resolve(token.slice("--out=".length)); continue; }
@@ -184,6 +186,8 @@ function runChild(args) {
     pendingCandidateCap: args.cap,
     // PR-5.26c capability configuration: opt-in neutral-turn Pareto substitution.
     neutralParetoSubstitution: args.neutralParetoSubstitution === true,
+    // PR-5.26f capability configuration: opt-in stable equal-score guided service order.
+    stableGuidedTieBreak: args.stableGuidedTieBreak === true,
   });
 
   let replay = null;
@@ -228,6 +232,7 @@ function runChild(args) {
     frontierGuidedGenerated: result.frontierGuidedGenerated,
     guidedAdmittedGenerated: result.guidedAdmittedGenerated,
     frontierGuidedDominatedGenerated: result.frontierGuidedDominatedGenerated,
+    stableGuidedTieBreak: result.stableGuidedTieBreak === true,
     frontierGuidedByKind: result.frontierGuidedByKind,
     guidedAdmittedByKind: result.guidedAdmittedByKind,
     frontierGuidedDominatedByKind: result.frontierGuidedDominatedByKind,
@@ -253,6 +258,7 @@ function spawnAttempt(args, tag) {
     `--max-rss-mb=${args.maxRssMb}`,
   ];
   if (args.neutralParetoSubstitution) childArgs.push("--neutral-pareto-substitution");
+  if (args.stableGuidedTieBreak) childArgs.push("--stable-guided-tie-break");
   const spawned = spawnSync(process.execPath, childArgs, { encoding: "utf8" });
   if (spawned.status !== 0) {
     throw new Error(`child (${tag}) failed: ${spawned.stderr || spawned.stdout}`);

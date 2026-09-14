@@ -197,6 +197,7 @@
   "audit:pr526c:substitution-ab": "node audit-pr526c-substitution-ab.js",
   "audit:pr526d:cp14-causality": "node audit-pr526d-cp14-causality.js",
   "audit:pr526e:guided-service-order": "node audit-pr526e-guided-service-order.js",
+  "audit:pr526f:tie-break-ab": "node audit-pr526f-tie-break-ab.js",
   "check:strict-replay:phase0": "node check-strict-replay-phase0.js",
   "check:changefloor-identity-parity": "node check-changefloor-identity-parity.js",
   "check:strategic-poi-identity-parity": "node check-strategic-poi-identity-parity.js",

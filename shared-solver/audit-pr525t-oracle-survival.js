@@ -170,10 +170,14 @@ function main() {
   const lifecycle = new Map();
   let recordedEvents = 0;
   let totalEvents = 0;
+  const guidedWaitAges = [];
   const mt3Arrivals = [];
   let mt3ArrivalCount = 0;
   const onCandidateLifecycle = (event) => {
     totalEvents += 1;
+    if (event.type === "expanded" && event.guidedWaitAgeAtExpansion != null) {
+      guidedWaitAges.push(event.guidedWaitAgeAtExpansion);
+    }
     if (event.type === "classified" && event.floorId === "MT3") {
       mt3ArrivalCount += 1;
       if (mt3Arrivals.length < 50) {
@@ -198,6 +202,8 @@ function main() {
   const legacyRank20 = process.argv.slice(2).includes("--legacy-rank20");
   // PR-5.26c: the capability configuration under test.
   const neutralParetoSubstitution = process.argv.slice(2).includes("--neutral-pareto-substitution");
+  // PR-5.26f: opt-in stable equal-score guided service order (diagnostic arm).
+  const stableGuidedTieBreak = process.argv.slice(2).includes("--stable-guided-tie-break");
   const result = search.search(initialState, {
     isGoalState,
     allowedFloors: FROZEN.region,
@@ -210,6 +216,8 @@ function main() {
     onCandidateLifecycle,
     rank20DynamicPareto: !legacyRank20,
     neutralParetoSubstitution,
+    stableGuidedTieBreak,
+    emitGuidedServiceTelemetry: true,
   });
 
   console.log(`Phase 3: search done found=${result.found} strategic=${result.strategicExpansions} ` +
@@ -317,6 +325,7 @@ function main() {
       found: result.found,
       rank20DynamicPareto: !legacyRank20,
       neutralParetoSubstitution,
+      stableGuidedTieBreak,
       neutralParetoSubstitutions: result.neutralParetoSubstitutions,
       strictReplay: "not-applicable-diagnostic",
       strategicExpansions: result.strategicExpansions,
@@ -360,6 +369,19 @@ function main() {
       rescuedTotal: result.rank20ParetoRescuedTotal,
       changedTrims: result.rank20ParetoChangedTrims,
     },
+    // PR-5.26f: diagnostic-only guided wait age (expansion - registration) over
+    // every guided-admitted expansion. Never participates in search.
+    guidedWaitAgeAtExpansion: (() => {
+      const sorted = guidedWaitAges.slice().sort((a, b) => a - b);
+      const pick = (fraction) => (sorted.length === 0 ? null
+        : sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(fraction * sorted.length) - 1))]);
+      return {
+        count: sorted.length,
+        median: pick(0.5),
+        p95: pick(0.95),
+        max: sorted.length === 0 ? null : sorted[sorted.length - 1],
+      };
+    })(),
     checkpoints,
     mt3ArrivalQuality: {
       classifiedMt3Arrivals: mt3ArrivalCount,
@@ -390,6 +412,11 @@ function main() {
     `ndTotal=${result.rank20ParetoNondominatedPendingTotal} domTotal=${result.rank20ParetoDominatedPendingTotal} ` +
     `rescued=${result.rank20ParetoRescuedTotal} changedTrims=${result.rank20ParetoChangedTrims}`);
   console.log(`  neutralParetoSubstitution=${neutralParetoSubstitution} substitutions=${result.neutralParetoSubstitutions}`);
+  console.log(`  stableGuidedTieBreak=${stableGuidedTieBreak}`);
+  {
+    const w = summary.guidedWaitAgeAtExpansion;
+    console.log(`  guided wait age: count=${w.count} median=${w.median} p95=${w.p95} max=${w.max}`);
+  }
   console.log(`  non-surviving stage counts: ${JSON.stringify(stageCounts)}`);
   console.log(`  MT3 arrival states classified: ${mt3ArrivalCount}`);
   console.log(`  artifact: ${path.relative(process.cwd(), outPath)}`);
