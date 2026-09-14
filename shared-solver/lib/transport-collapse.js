@@ -166,6 +166,42 @@ function isCombatProgressTransition(before, after) {
   return equipmentBefore !== equipmentAfter;
 }
 
+function guidedHeapPush(heap, entry) {
+  heap.push(entry);
+  let i = heap.length - 1;
+  while (i > 0) {
+    const parent = Math.floor((i - 1) / 2);
+    if (heap[parent].score >= heap[i].score) break;
+    const tmp = heap[parent];
+    heap[parent] = heap[i];
+    heap[i] = tmp;
+    i = parent;
+  }
+}
+
+function guidedHeapPop(heap) {
+  if (heap.length === 0) return null;
+  const top = heap[0];
+  const last = heap.pop();
+  if (heap.length > 0) {
+    heap[0] = last;
+    let i = 0;
+    for (;;) {
+      const l = 2 * i + 1;
+      const r = l + 1;
+      let best = i;
+      if (l < heap.length && heap[l].score > heap[best].score) best = l;
+      if (r < heap.length && heap[r].score > heap[best].score) best = r;
+      if (best === i) break;
+      const tmp = heap[i];
+      heap[i] = heap[best];
+      heap[best] = tmp;
+      i = best;
+    }
+  }
+  return top;
+}
+
 function actionToSemanticIdentity(action, state, nextState, project) {
   const floorId = action.floorId || (state && state.floorId) || "";
   const target = action.target || action.stance || {};
@@ -437,6 +473,7 @@ function createTransportCollapsedSearch(simulator) {
 
     const frontierSet = config.frontierSet instanceof Set ? config.frontierSet : null;
     const priorityMap = config.priorityMap instanceof Map ? config.priorityMap : null;
+    const emitGuidedServiceTelemetry = config.emitGuidedServiceTelemetry === true;
     const neutralEvery = config.neutralEvery == null ? 5 : Number(config.neutralEvery);
     /**
      * PR-5.26c - neutral-turn Pareto substitution.
@@ -463,6 +500,7 @@ function createTransportCollapsedSearch(simulator) {
       : null;
     const pending = [];
     let pendingSeq = 0;
+    let guidedScoreHistogram = emitGuidedServiceTelemetry ? {} : null;
 
     /**
      * PR-5.25o retention rank: lower is retained.
@@ -502,7 +540,7 @@ function createTransportCollapsedSearch(simulator) {
      * the mirror against pending.length and reports any divergence rather than
      * silently trusting it.
      */
-    const livePendingIds = (config.emitEnqueueTelemetry === true || config.emitPendingSnapshot === true)
+    const livePendingIds = (config.emitEnqueueTelemetry === true || config.emitPendingSnapshot === true || emitGuidedServiceTelemetry === true)
       ? new Set()
       : null;
     let frontierHead = 0;
@@ -544,40 +582,10 @@ function createTransportCollapsedSearch(simulator) {
     let combatProgressAdmittedGenerated = 0;
 
     const heapPush = (entry) => {
-      guidedHeap.push(entry);
-      let i = guidedHeap.length - 1;
-      while (i > 0) {
-        const parent = Math.floor((i - 1) / 2);
-        if (guidedHeap[parent].score >= guidedHeap[i].score) break;
-        const tmp = guidedHeap[parent];
-        guidedHeap[parent] = guidedHeap[i];
-        guidedHeap[i] = tmp;
-        i = parent;
-      }
+      guidedHeapPush(guidedHeap, entry);
     };
 
-    const heapPop = () => {
-      if (guidedHeap.length === 0) return null;
-      const top = guidedHeap[0];
-      const last = guidedHeap.pop();
-      if (guidedHeap.length > 0) {
-        guidedHeap[0] = last;
-        let i = 0;
-        for (;;) {
-          const l = 2 * i + 1;
-          const r = l + 1;
-          let best = i;
-          if (l < guidedHeap.length && guidedHeap[l].score > guidedHeap[best].score) best = l;
-          if (r < guidedHeap.length && guidedHeap[r].score > guidedHeap[best].score) best = r;
-          if (best === i) break;
-          const tmp = guidedHeap[i];
-          guidedHeap[i] = guidedHeap[best];
-          guidedHeap[best] = tmp;
-          i = best;
-        }
-      }
-      return top;
-    };
+    const heapPop = () => guidedHeapPop(guidedHeap);
 
     let nextNodeId = 2;
 
@@ -1101,6 +1109,29 @@ function createTransportCollapsedSearch(simulator) {
               child.guidedAdmitted = true;
               guidedAdmittedGenerated += 1;
               guidedAdmittedByKind[candidate.action.kind] = (guidedAdmittedByKind[candidate.action.kind] || 0) + 1;
+              if (emitGuidedServiceTelemetry) {
+                const scoreKey = String(score);
+                guidedScoreHistogram[scoreKey] = (guidedScoreHistogram[scoreKey] || 0) + 1;
+                if (emitLifecycle) {
+                  let guidedLiveCount = 0;
+                  let guidedSameScoreLiveCount = 0;
+                  for (const entry of guidedHeap) {
+                    if (!livePendingIds || !livePendingIds.has(entry.nodeId)) continue;
+                    guidedLiveCount += 1;
+                    if (entry.score === score) guidedSameScoreLiveCount += 1;
+                  }
+                  emitLifecycle({
+                    type: "guidedAdmitted",
+                    exactKey: child.key,
+                    nodeId: child.id,
+                    score,
+                    pendingSeq: child.pendingSeq,
+                    registeredAtExpansion: child.registeredAtStrategicExpansion,
+                    guidedLiveCountAtRegistration: guidedLiveCount,
+                    guidedSameScoreLiveCountAtRegistration: guidedSameScoreLiveCount,
+                  });
+                }
+              }
             } else {
               frontierGuidedDominatedGenerated += 1;
               frontierGuidedDominatedByKind[candidate.action.kind] = (frontierGuidedDominatedByKind[candidate.action.kind] || 0) + 1;
@@ -1693,6 +1724,8 @@ function createTransportCollapsedSearch(simulator) {
       frontierGuidedDominatedGenerated,
       frontierGuidedByKind,
       guidedAdmittedByKind,
+      guidedScoreHistogram: emitGuidedServiceTelemetry ? guidedScoreHistogram : null,
+      guidedPriorityMapProvided: emitGuidedServiceTelemetry ? Boolean(priorityMap) : null,
       frontierGuidedDominatedByKind,
       fifoHeadProtectionOpportunities,
       fifoHeadProtected,
@@ -1716,6 +1749,8 @@ module.exports = {
   canonicalJson,
   createTransportCollapsedSearch,
   flatPairs,
+  guidedHeapPush,
+  guidedHeapPop,
   isCombatProgressTransition,
   poiToSemanticIdentity,
   stableFlags,

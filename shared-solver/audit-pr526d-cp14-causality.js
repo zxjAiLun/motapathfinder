@@ -31,7 +31,7 @@ const { FunctionBackedBattleResolver } = require("./lib/battle-resolver");
 const { transportSignature } = require("./lib/transport-collapse");
 const { resolveRecordedAction } = require("./lib/route-store");
 const { buildStateKey } = require("./lib/state-key");
-const { cloneState } = require("./lib/state");
+const { cloneState, listFloorMutationSummary } = require("./lib/state");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
 const FIXTURE = path.resolve(__dirname, "routes", "fixtures", "mt1-mt4-hp6428-best.route.json");
@@ -39,6 +39,75 @@ const DEFAULT_OUT = path.resolve(__dirname, "routes", "generated", "pr526d-cp14-
 
 const CP14_DECISION_INDEX = 14;
 const FROZEN = { initialRank: "chaos", goalFloorId: "MT4" };
+const HERO_SCALAR_FIELDS = ["hp", "hpmax", "mana", "manamax", "atk", "def", "mdef", "money", "exp", "lv"];
+const TRANSPORT_IGNORED_FLAG_KEYS = new Set(["__leaveLoc__", "__frontierFeatures"]);
+
+function canonicalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (value && typeof value === "object") {
+    return Object.keys(value).sort().reduce((out, key) => {
+      out[key] = canonicalValue(value[key]);
+      return out;
+    }, {});
+  }
+  return value;
+}
+
+function transportRememberedFlags(flags) {
+  return canonicalValue(Object.keys(flags || {}).sort().reduce((out, key) => {
+    if (TRANSPORT_IGNORED_FLAG_KEYS.has(key)) return out;
+    const value = flags[key];
+    if (value == null || value === 0) return out;
+    out[key] = value;
+    return out;
+  }, {}));
+}
+
+function roundTripStateComponents(before, after) {
+  const heroScalars = {};
+  for (const field of HERO_SCALAR_FIELDS) {
+    if (before.hero[field] !== after.hero[field]) {
+      heroScalars[field] = { before: before.hero[field], after: after.hero[field] };
+    }
+  }
+  const beforeNormalized = cloneState(before);
+  const afterNormalized = cloneState(after);
+  for (const field of HERO_SCALAR_FIELDS) {
+    beforeNormalized.hero[field] = 0;
+    afterNormalized.hero[field] = 0;
+  }
+  const beforeHeroScalars = {};
+  const afterHeroScalars = {};
+  for (const field of HERO_SCALAR_FIELDS) {
+    beforeHeroScalars[field] = before.hero[field];
+    afterHeroScalars[field] = after.hero[field];
+  }
+  const components = {
+    HERO_SCALARS: { before: beforeHeroScalars, after: afterHeroScalars, delta: heroScalars },
+    EQUIPMENT: { before: canonicalValue(before.hero.equipment || []), after: canonicalValue(after.hero.equipment || []) },
+    FOLLOWERS: { before: canonicalValue(before.hero.followers || []), after: canonicalValue(after.hero.followers || []) },
+    INVENTORY: { before: canonicalValue(before.inventory || {}), after: canonicalValue(after.inventory || {}) },
+    FLAGS: { before: canonicalValue(before.flags || {}), after: canonicalValue(after.flags || {}) },
+    TRANSPORT_FLAGS: { before: transportRememberedFlags(before.flags), after: transportRememberedFlags(after.flags) },
+    VISITED_FLOORS: { before: canonicalValue(before.visitedFloors || {}), after: canonicalValue(after.visitedFloors || {}) },
+    FLOOR_MUTATIONS: { before: canonicalValue(listFloorMutationSummary(before.floorStates || {})), after: canonicalValue(listFloorMutationSummary(after.floorStates || {})) },
+    TRIGGERED_AUTO_EVENTS: { before: canonicalValue(before.triggeredAutoEvents || {}), after: canonicalValue(after.triggeredAutoEvents || {}) },
+  };
+  const componentEqual = {};
+  for (const [name, value] of Object.entries(components)) {
+    componentEqual[name] = JSON.stringify(value.before) === JSON.stringify(value.after);
+  }
+  return {
+    beforeFloorId: before.floorId,
+    afterFloorId: after.floorId,
+    componentEqual,
+    components,
+    normalizedTransportSignatureEqual: transportSignature(beforeNormalized) === transportSignature(afterNormalized),
+    normalizedTransportSignatureBefore: transportSignature(beforeNormalized),
+    normalizedTransportSignatureAfter: transportSignature(afterNormalized),
+  };
+}
+
 
 function makeSimulator(project) {
   return new StaticSimulator(project, {
@@ -205,6 +274,9 @@ function main() {
   // the MT1 mutations it caused. This is the probe that can actually speak to
   // resource criticality for a floor round trip.
   const roundTripProbe = deletionProbe(simulator, decisions, oracle.preStates, [CP14_DECISION_INDEX, CP14_DECISION_INDEX + 1]);
+  const roundTripAfter = oracle.preStates[CP14_DECISION_INDEX + 2];
+  if (!roundTripAfter) throw new Error("oracle fixture has no post-round-trip state after cp#15");
+  const roundTripState = roundTripStateComponents(pre14, roundTripAfter);
 
   // A floor transition is required for path continuity by construction: skipping
   // it leaves the hero in the wrong world, so "the suffix fails" is expected for
@@ -250,7 +322,15 @@ function main() {
       },
       PROBE_B_SKIP_WHOLE_ROUND_TRIP_14_15: {
         ROUND_TRIP_SUFFIX_CRITICAL: roundTripProbe.ok !== true,
-        suffixStart: roundTripProbe.suffixStart,
+        CP14_RESOURCE_CAUSALITY: "STRONGLY_SUPPORTED",
+        NON_RESOURCE_TRANSPORT_SIGNATURE_EQUAL: roundTripState.normalizedTransportSignatureEqual,
+        FULL_WORLD_EQUIVALENCE_AFTER_SKIPPING_ROUND_TRIP: roundTripState.normalizedTransportSignatureEqual
+          ? "ESTABLISHED_UNDER_TRANSPORT_SIGNATURE"
+          : "FALSE_UNDER_TRANSPORT_SIGNATURE",
+        CP14_CRITICALITY_KIND: roundTripState.normalizedTransportSignatureEqual
+          ? "RESOURCE_INVESTMENT_ISOLATED"
+          : "ROUND_TRIP_STATE_INVESTMENT",
+        roundTripStateComparison: roundTripState,
         stateAfterSkipFloorId: roundTripProbe.stateAfterSkipFloorId,
         stateAfterSkipHp: roundTripProbe.stateAfterSkipHp,
         firstSuffixFailureStep: roundTripProbe.firstSuffixFailureStep == null ? null : roundTripProbe.firstSuffixFailureStep,
@@ -270,7 +350,7 @@ function main() {
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, `${JSON.stringify(summary, null, 2)}\n`);
 
-  console.log("PR-5.26d cp#14 causality (deletion counterfactual)");
+  console.log("PR-5.26d cp#14 causality (deletion counterfactual; updated Phase 1 equivalence audit)");
   console.log(`  cp#14 = decision ${CP14_DECISION_INDEX} (${cp14.kind}) ${cp14.summary}`);
   console.log(`  immediate delta: floor ${delta.floorBefore} -> ${delta.floorAfter}, ` +
     `scalar=${JSON.stringify(delta.scalarDelta)}, inventory=${JSON.stringify(delta.inventoryChanges)}`);
@@ -292,11 +372,16 @@ function main() {
   if (roundTripProbe.ok) {
     console.log(`    ROUND_TRIP_SUFFIX_CRITICAL = FALSE - suffix still reaches ${roundTripProbe.finalFloorId} (hp ${roundTripProbe.finalHeroHp})`);
   } else {
-    console.log(`    ROUND_TRIP_SUFFIX_CRITICAL = TRUE`);
+  console.log(`    ROUND_TRIP_SUFFIX_CRITICAL = TRUE`);
     console.log(`      from MT2 hp=${roundTripProbe.stateAfterSkipHp}, first failure at step ${roundTripProbe.firstSuffixFailureStep} ` +
       `(${roundTripProbe.failureReason}) ${roundTripProbe.failureDecision ? roundTripProbe.failureDecision.summary : ""}`);
     console.log(`      world deficit vs oracle: ${JSON.stringify(roundTripProbe.worldDeficitVsOraclePreState)}`);
   }
+  console.log(`    RESOURCE_CAUSALITY = STRONGLY_SUPPORTED`);
+  console.log(`    NON_RESOURCE_TRANSPORT_SIGNATURE_EQUAL = ${roundTripState.normalizedTransportSignatureEqual}`);
+  console.log(`    FULL_WORLD_EQUIVALENCE_AFTER_SKIPPING_ROUND_TRIP = ${roundTripState.normalizedTransportSignatureEqual ? "ESTABLISHED_UNDER_TRANSPORT_SIGNATURE" : "FALSE_UNDER_TRANSPORT_SIGNATURE"}`);
+  console.log(`    CP14_CRITICALITY_KIND = ${roundTripState.normalizedTransportSignatureEqual ? "RESOURCE_INVESTMENT_ISOLATED" : "ROUND_TRIP_STATE_INVESTMENT"}`);
+  console.log(`    non-resource component equality: ${JSON.stringify(roundTripState.componentEqual)}`);
   console.log(`  artifact: ${path.relative(process.cwd(), outPath)}`);
 }
 

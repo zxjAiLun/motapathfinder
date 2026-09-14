@@ -397,4 +397,13 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { classifyStage, eventsOf, main };
+module.exports = {
+  FROZEN,
+  ORACLE_FIXTURE,
+  PROJECT_ROOT,
+  buildOracleCheckpoints,
+  classifyStage,
+  eventsOf,
+  main,
+  makeSimulator,
+};

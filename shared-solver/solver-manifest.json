@@ -3157,6 +3157,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.6c admissible necessary-condition bounds, unknown-evidence keep semantics, and structured prune witness diagnostics"
     },
+    "shared-solver/check-guided-equal-score-service-order.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-hierarchical-blind-planner.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": true,
