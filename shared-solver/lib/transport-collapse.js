@@ -495,6 +495,28 @@ function createTransportCollapsedSearch(simulator) {
     const priorityMap = config.priorityMap instanceof Map ? config.priorityMap : null;
     const emitGuidedServiceTelemetry = config.emitGuidedServiceTelemetry === true;
     /**
+     * PR-5.26h - guided pool saturation composition and flow audit.
+     *
+     * Aggregates only, opt-in, default off. No per-node events, at most two
+     * composition snapshots per run, and nothing here is read by ranking,
+     * retention, scheduling, or termination. The point is to measure WHY the
+     * capped pending pool tends to fill up with rank-10 work, instead of
+     * inferring it from an end-of-run snapshot.
+     */
+    const emitGuidedPoolTelemetry = config.emitGuidedPoolTelemetry === true;
+    let guidedPoolTrims = 0;
+    let guidedPoolRemovedByExpansion = 0;
+    let guidedPoolRemovedByDrop = 0;
+    let guidedPoolRank10FracSum = 0;
+    let guidedPoolRank10FracMin = null;
+    let guidedPoolRank10FracMax = null;
+    let guidedPoolTrimsGe90 = 0;
+    let guidedPoolTrimsGe99 = 0;
+    let guidedPoolFirstExpansionGe90 = null;
+    let guidedPoolFinalTrim = null;
+    let guidedPoolFirst99Snapshot = null;
+    let guidedPoolEndSnapshot = null;
+    /**
      * PR-5.26f: opt-in. Only changes how EQUAL scores are ordered inside the
      * guided heap (registration order). Higher scores always win, and nothing
      * outside the guided heap reads it.
@@ -622,6 +644,93 @@ function createTransportCollapsedSearch(simulator) {
     // TREATMENT: bounded-fair dual queue
     const guidedHeap = frontierSet ? [] : null;
     const neutralQueue = frontierSet ? [rootNode.id] : null;
+
+    /**
+     * PR-5.26h: composition snapshot of the LIVE rank-10 pending pool.
+     *
+     * "Live" means still in `pending` and not closed. Diagnostic only, and
+     * deliberately NOT hot-path - it is built at most twice per run. It reuses
+     * the same three primitives the resource skyline uses and never writes a
+     * node field (in particular it never touches node.rankValue or
+     * node.rank20ParetoDominated, which the trim later reads).
+     *
+     * `dominatedWithinGroup` / `nondominatedWithinGroup` are computed with an
+     * exact sorted incremental frontier sweep, not with pairwise comparison, so
+     * a group with many variants stays cheap; equal resource vectors do not
+     * dominate each other (paretoDominates requires a strict improvement).
+     */
+    const buildGuidedPoolSnapshot = (label) => {
+      const guided = [];
+      for (const id of pending) {
+        const node = nodesById.get(id);
+        if (!node || node.closed) continue;
+        if (rankClassOf(node) !== 10) continue;
+        guided.push(node);
+      }
+      const identityCounts = new Map();
+      const kindCounts = new Map();
+      const floorCounts = new Map();
+      const structuralCounts = new Map();
+      const vectorsByGroup = new Map();
+      for (const node of guided) {
+        const identity = node.semanticIdentity == null ? "(unknown)" : String(node.semanticIdentity);
+        identityCounts.set(identity, (identityCounts.get(identity) || 0) + 1);
+        const kind = node.actionKind == null ? "(unknown)" : String(node.actionKind);
+        kindCounts.set(kind, (kindCounts.get(kind) || 0) + 1);
+        const floor = node.state && node.state.floorId != null ? String(node.state.floorId) : "(unknown)";
+        floorCounts.set(floor, (floorCounts.get(floor) || 0) + 1);
+        if (!node.state) continue;
+        const structuralKey = buildStructuralStateKey(node.state);
+        structuralCounts.set(structuralKey, (structuralCounts.get(structuralKey) || 0) + 1);
+        let vectors = vectorsByGroup.get(structuralKey);
+        if (!vectors) {
+          vectors = [];
+          vectorsByGroup.set(structuralKey, vectors);
+        }
+        vectors.push(extractResourceVector(node.state));
+      }
+      let multiVariantStructuralGroupCount = 0;
+      let maxVariantsPerStructuralGroup = 0;
+      let dominatedWithinGroup = 0;
+      let nondominatedWithinGroup = 0;
+      for (const vectors of vectorsByGroup.values()) {
+        if (vectors.length > 1) multiVariantStructuralGroupCount += 1;
+        if (vectors.length > maxVariantsPerStructuralGroup) maxVariantsPerStructuralGroup = vectors.length;
+        const frontier = [];
+        for (const vec of vectors) {
+          let dominated = false;
+          for (const f of frontier) {
+            if (paretoDominates(f, vec)) { dominated = true; break; }
+          }
+          if (dominated) continue;
+          for (let i = frontier.length - 1; i >= 0; i -= 1) {
+            if (paretoDominates(vec, frontier[i])) frontier.splice(i, 1);
+          }
+          frontier.push(vec);
+        }
+        const nondominated = frontier.length;
+        nondominatedWithinGroup += nondominated;
+        dominatedWithinGroup += vectors.length - nondominated;
+      }
+      const topSemanticIdentityMultiplicities = [...identityCounts.entries()]
+        .sort((a, b) => (b[1] - a[1]) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+        .slice(0, 10)
+        .map(([identity, count]) => ({ identity, count }));
+      return {
+        label,
+        strategicExpansion: strategicExpansions,
+        liveGuidedCount: guided.length,
+        distinctSemanticIdentities: identityCounts.size,
+        distinctStructuralKeys: structuralCounts.size,
+        topSemanticIdentityMultiplicities,
+        byActionKind: Object.fromEntries(kindCounts),
+        byFloor: Object.fromEntries(floorCounts),
+        multiVariantStructuralGroupCount,
+        maxVariantsPerStructuralGroup,
+        liveGuidedParetoDominatedWithinStructuralGroup: dominatedWithinGroup,
+        liveGuidedParetoNondominatedWithinStructuralGroup: nondominatedWithinGroup,
+      };
+    };
     let neutralHead = 0;
     const expanded = frontierSet ? new Set() : null;
     let neutralSinceGuided = 0;
@@ -1049,7 +1158,10 @@ function createTransportCollapsedSearch(simulator) {
         }
         if (node) {
           expanded.add(node.id);
-          if (node.guidedAdmitted === true) noteGuidedRemoved();
+          if (node.guidedAdmitted === true) {
+            noteGuidedRemoved();
+            if (emitGuidedPoolTelemetry) guidedPoolRemovedByExpansion += 1;
+          }
           if (node.guidedChangeFloor) guidedChangeFloorNodesExpanded += 1;
           const at = pending.indexOf(node.id);
           if (at >= 0) pending.splice(at, 1);
@@ -1717,13 +1829,60 @@ function createTransportCollapsedSearch(simulator) {
         candidatesDropped += droppedIds.length;
         for (const id of droppedIds) {
           const droppedNode = nodesById.get(id);
-          if (droppedNode && droppedNode.guidedAdmitted === true) noteGuidedRemoved();
+          if (droppedNode && droppedNode.guidedAdmitted === true) {
+            noteGuidedRemoved();
+            if (emitGuidedPoolTelemetry) guidedPoolRemovedByDrop += 1;
+          }
         }
         pending.length = 0;
         for (const e of entries) if (keep.has(e.id)) pending.push(e.id);
         if (livePendingIds) {
           livePendingIds.clear();
           for (const e of entries) if (keep.has(e.id)) livePendingIds.add(e.id);
+        }
+        // PR-5.26h: guided-pool occupancy and composition, measured on the
+        // POST-trim pool. Read-only: `entries`/`keep` are the trim's own
+        // structures and rankClassOf() never caches.
+        if (emitGuidedPoolTelemetry) {
+          const cap = pendingCandidateCap;
+          let keptTotal = 0;
+          let keptRank0 = 0;
+          let keptRank10 = 0;
+          let keptRank20 = 0;
+          let keptRank30 = 0;
+          for (const e of entries) {
+            if (!keep.has(e.id)) continue;
+            keptTotal += 1;
+            if (e.rank === 0) keptRank0 += 1;
+            else if (e.rank === 10) keptRank10 += 1;
+            else if (e.rank === 20) keptRank20 += 1;
+            else keptRank30 += 1;
+          }
+          const fraction = cap > 0 ? keptRank10 / cap : 0;
+          guidedPoolTrims += 1;
+          guidedPoolRank10FracSum += fraction;
+          if (guidedPoolRank10FracMin == null || fraction < guidedPoolRank10FracMin) guidedPoolRank10FracMin = fraction;
+          if (guidedPoolRank10FracMax == null || fraction > guidedPoolRank10FracMax) guidedPoolRank10FracMax = fraction;
+          if (fraction >= 0.9) {
+            guidedPoolTrimsGe90 += 1;
+            if (guidedPoolFirstExpansionGe90 == null) guidedPoolFirstExpansionGe90 = strategicExpansions;
+          }
+          if (fraction >= 0.99) {
+            guidedPoolTrimsGe99 += 1;
+            if (guidedPoolFirst99Snapshot == null) {
+              guidedPoolFirst99Snapshot = buildGuidedPoolSnapshot("FIRST_99_PERCENT_GUIDED_SATURATION");
+            }
+          }
+          guidedPoolFinalTrim = {
+            strategicExpansion: strategicExpansions,
+            cap,
+            keptTotal,
+            keptRank0,
+            keptRank10,
+            keptRank20,
+            keptRank30,
+            rank10OccupancyFraction: fraction,
+          };
         }
         // PR-5.26g: reclaim ids of nodes that have since been expanded or
         // dropped. Amortized O(cap) and bounded; membership is never allowed to
@@ -1879,6 +2038,10 @@ function createTransportCollapsedSearch(simulator) {
       if (node.guidedRetroDemoted === true) retroDemotedStillPendingAtEnd += 1;
     }
 
+    if (emitGuidedPoolTelemetry) {
+      guidedPoolEndSnapshot = buildGuidedPoolSnapshot("END");
+    }
+
     return {
       found: Boolean(goalNode),
       route,
@@ -1949,6 +2112,41 @@ function createTransportCollapsedSearch(simulator) {
       liveGuidedPendingAtEnd,
       rank10PendingAtEnd,
       retroDemotedStillPendingAtEnd,
+      guidedPool: emitGuidedPoolTelemetry
+        ? {
+          trims: guidedPoolTrims,
+          finalKeepRank: guidedPoolFinalTrim
+            ? {
+              rank0: guidedPoolFinalTrim.keptRank0,
+              rank10: guidedPoolFinalTrim.keptRank10,
+              rank20: guidedPoolFinalTrim.keptRank20,
+              rank30: guidedPoolFinalTrim.keptRank30,
+              keptTotal: guidedPoolFinalTrim.keptTotal,
+              cap: guidedPoolFinalTrim.cap,
+              strategicExpansion: guidedPoolFinalTrim.strategicExpansion,
+            }
+            : null,
+          rank10OccupancyFraction: {
+            min: guidedPoolRank10FracMin,
+            max: guidedPoolRank10FracMax,
+            mean: guidedPoolTrims > 0 ? guidedPoolRank10FracSum / guidedPoolTrims : null,
+          },
+          trimsWithRank10Ge90PercentCap: guidedPoolTrimsGe90,
+          trimsWithRank10Ge99PercentCap: guidedPoolTrimsGe99,
+          firstExpansionRank10Ge90PercentCap: guidedPoolFirstExpansionGe90,
+          flow: {
+            guidedAdmitted: guidedAdmittedGenerated,
+            guidedPendingRemovedByExpansion: guidedPoolRemovedByExpansion,
+            guidedPendingRemovedByDrop: guidedPoolRemovedByDrop,
+            liveGuidedPendingAtEnd,
+            liveGuidedCounterAtEnd: liveGuidedCount,
+          },
+          snapshots: {
+            first99PercentGuidedSaturation: guidedPoolFirst99Snapshot,
+            end: guidedPoolEndSnapshot,
+          },
+        }
+        : null,
       frontierGuidedDominatedByKind,
       fifoHeadProtectionOpportunities,
       fifoHeadProtected,
