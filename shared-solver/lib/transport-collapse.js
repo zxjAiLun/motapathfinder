@@ -475,6 +475,7 @@ function createTransportCollapsedSearch(simulator) {
     const startedAt = Date.now();
     let stoppedReason = null;
     let peakRssMb = 0;
+    let peakHeapUsedMb = 0;
 
     const rootState = cloneState(initialState);
     rootState.route = [];
@@ -504,6 +505,28 @@ function createTransportCollapsedSearch(simulator) {
      * inferring it from an end-of-run snapshot.
      */
     const emitGuidedPoolTelemetry = config.emitGuidedPoolTelemetry === true;
+    /**
+     * PR-5.26i - dropped candidate state reclamation (default on, explicit `false` rolls back).
+     *
+     * A candidate that the bounded cap drops can never return to `pending`, can
+     * never be expanded, and keeps its duplicate-tombstone semantics purely
+     * through `registry.has(key)`. Nothing about it is search-relevant any more,
+     * yet its full world state stays reachable from `nodesById` - the same state
+     * that only expansion otherwise releases. This releases exactly that payload.
+     *
+     * SEARCH_POLICY_CHANGE = NONE: it is a resource-lifecycle repair, and the
+     * fixed-work A/B must show an identical trajectory.
+     *
+     * DEFAULT ON, with an explicit-false rollback. PR-5.26i's fixed-work A/B
+     * (8000 expansions, cap 1024, stress config) produced a byte-identical
+     * trajectory - result fields, lifecycle event stream, route and route trace
+     * all identical - while peak heapUsed fell 1019.3 -> 575.6 MB and peak RSS
+     * 1175.7 -> 717.9 MB. Since nothing search-visible depends on the payload,
+     * defaulting it on only removes dead memory. Pass `false` to roll back.
+     */
+    const reclaimDroppedState = config.reclaimDroppedState !== false;
+    let droppedStatesReclaimed = 0;
+    const trackPeakHeapUsed = config.trackPeakHeapUsed === true;
     let guidedPoolTrims = 0;
     let guidedPoolRemovedByExpansion = 0;
     let guidedPoolRemovedByDrop = 0;
@@ -795,10 +818,20 @@ function createTransportCollapsedSearch(simulator) {
     let goalNode = null;
 
     const sampleRss = () => {
-      if (maxRssMb <= 0) return;
-      const rssMb = process.memoryUsage().rss / (1024 * 1024);
-      if (rssMb > peakRssMb) peakRssMb = rssMb;
-      if (rssMb >= maxRssMb) stoppedReason = "rss-limit";
+      if (maxRssMb <= 0 && !trackPeakHeapUsed) return;
+      const usage = process.memoryUsage();
+      if (maxRssMb > 0) {
+        const rssMb = usage.rss / (1024 * 1024);
+        if (rssMb > peakRssMb) peakRssMb = rssMb;
+        if (rssMb >= maxRssMb) stoppedReason = "rss-limit";
+      }
+      // PR-5.26i diagnostic: heapUsed is a proxy, not a ceiling. V8 may release
+      // objects without returning pages to the OS, so RSS remains the budget that
+      // actually terminates a run.
+      if (trackPeakHeapUsed) {
+        const heapMb = usage.heapUsed / (1024 * 1024);
+        if (heapMb > peakHeapUsedMb) peakHeapUsedMb = heapMb;
+      }
     };
 
     const budgetLeft = () => {
@@ -1834,6 +1867,25 @@ function createTransportCollapsedSearch(simulator) {
             if (emitGuidedPoolTelemetry) guidedPoolRemovedByDrop += 1;
           }
         }
+        // PR-5.26i: release the world state of dropped candidates. Deliberately
+        // placed AFTER the drop lifecycle/peer-composition events above (which
+        // read `dn.state` to build the same-identity variant view) and after the
+        // guided counter bookkeeping, so nothing observable changes except the
+        // payload's reachability.
+        //
+        // V1 releases the state and nothing else: `key`, `parentId`, `pendingSeq`,
+        // `macroChain`, `macroTrace`, `semanticIdentity`, the rank fields, and
+        // `dropped` are all kept, the registry shape is untouched, and `closed` is
+        // NOT set (a dropped node is not an expanded node).
+        if (reclaimDroppedState) {
+          for (const id of droppedIds) {
+            const droppedNode = nodesById.get(id);
+            if (droppedNode && droppedNode.state) {
+              droppedNode.state = null;
+              droppedStatesReclaimed += 1;
+            }
+          }
+        }
         pending.length = 0;
         for (const e of entries) if (keep.has(e.id)) pending.push(e.id);
         if (livePendingIds) {
@@ -2158,6 +2210,9 @@ function createTransportCollapsedSearch(simulator) {
       searchComplete: !goalNode && !stoppedReason && !frontierOpen && closureTruncations === 0,
       wallMs: Date.now() - startedAt,
       peakRssMb: Math.round(peakRssMb * 10) / 10,
+      reclaimDroppedState,
+      droppedStatesReclaimed,
+      peakHeapUsedMb: trackPeakHeapUsed ? Math.round(peakHeapUsedMb * 10) / 10 : null,
       maxClosureStates,
     };
   }

@@ -3080,6 +3080,13 @@
       "cleanCheckout": true,
       "notes": "synthetic searchDP observer contract; no tower/project load"
     },
+    "shared-solver/check-dropped-state-reclamation.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-dual-key-shadow-contract.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": false,
