@@ -3052,6 +3052,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.16d real D2 top-1 checkpoint failure versus multi-role checkpoint and OR-alternative switch with incremental strict replay"
     },
+    "shared-solver/check-dependency-feedback-loop.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-dependency-frontier.js": {
       "grade": "diagnostic",
       "allowsNotFound": true,

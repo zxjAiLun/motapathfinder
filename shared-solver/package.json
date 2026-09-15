@@ -339,7 +339,8 @@
     "check:onlyup-first-region-expansion-profile": "node --max-old-space-size=256 check-onlyup-first-region-expansion-profile.js",
     "audit:pr526j:mt4-bottleneck": "node audit-pr526j-mt4-bottleneck-localization.js",
     "check:guided-head-retention": "node check-guided-head-retention.js",
-    "audit:pr526k:guided-head-ab": "node audit-pr526k-guided-head-retention-ab.js"
+    "audit:pr526k:guided-head-ab": "node audit-pr526k-guided-head-retention-ab.js",
+    "check:dependency-feedback-loop": "node check-dependency-feedback-loop.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

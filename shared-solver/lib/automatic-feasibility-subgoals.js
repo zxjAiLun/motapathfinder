@@ -22,7 +22,17 @@ function effectiveHero(state) {
 
 function bossDeficits(project, state, terminalGoal) {
   const enemy = (project.enemysById || {})[terminalGoal.enemyId];
-  if (!enemy) throw new Error(`Automatic feasibility target enemy not found: ${terminalGoal.enemyId}`);
+  if (!enemy) {
+    // PR-5.27a: the terminal goal may be a floor reach rather than a boss kill.
+    // There is then no target enemy to be deficient against, so report the hero
+    // and a zero baseline. Equipment candidates are scored purely by their
+    // counterfactual effective gain in that case, which keeps the same automatic
+    // property (no authored resource threshold) without inventing an enemy.
+    if (terminalGoal.type === "floorReached") {
+      return { hero: effectiveHero(state), enemy: null, attackDeficit: 0, defenseDeficit: 0 };
+    }
+    throw new Error(`Automatic feasibility target enemy not found: ${terminalGoal.enemyId}`);
+  }
   const hero = effectiveHero(state);
   return {
     hero,
