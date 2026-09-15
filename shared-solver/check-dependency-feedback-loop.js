@@ -159,7 +159,20 @@ function main() {
     .filter((key) => key != null);
   assert.strictEqual(new Set(roomierKeys).size, roomierKeys.length);
   assert.strictEqual(roomier.globalState.experimentKeyReuseCount, 0);
-  assert.strictEqual(roomier.globalState.repeatedCheckpointStateCount, 0);
+  // PR-5.27b: the loop no longer collapses repeated checkpoint states into a
+  // counter - distinct branches may legitimately share a state fingerprint - so
+  // the equivalent property is now expressed at branch level: every branch is a
+  // distinct entry in the portfolio, and open-branch accounting is consistent.
+  assert.strictEqual(
+    roomier.globalState.branchCount,
+    roomier.branches.length,
+    "branch accounting must be consistent",
+  );
+  assert.strictEqual(
+    roomier.globalState.openBranchCount + roomier.globalState.exhaustedBranchCount,
+    roomier.globalState.branchCount,
+    "every branch is either open or exhausted",
+  );
   assert.ok(roomierSteps.filter((round) => round.acceptedCheckpointId != null)
     .every((round) => round.acceptedStrictReplay === true));
   // It moves across alternatives rather than grinding one, which is the whole

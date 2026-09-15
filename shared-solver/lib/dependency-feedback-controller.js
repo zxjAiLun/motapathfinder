@@ -72,8 +72,12 @@ function compareAlternative(left, right) {
 }
 
 function evaluateCheckpoint(project, terminalGoal, checkpoint, options) {
-  const context = buildDependencyContext(project, checkpoint.state, terminalGoal, options);
-  const excluded = (options || {}).excludedExperimentKeys || new Set();
+  const config = options || {};
+  const buildContext = typeof config.contextBuilder === "function"
+    ? config.contextBuilder
+    : buildDependencyContext;
+  const context = buildContext(project, checkpoint.state, terminalGoal, options);
+  const excluded = config.excludedExperimentKeys || new Set();
   const alternatives = (context.plan.alternatives || []).map((alternative) => {
     const summary = summarizeAlternative(alternative);
     summary.experimentKey = [
@@ -153,8 +157,15 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
   }
   const config = options || {};
   const startedAt = Date.now();
+  // Same test seam as the loop: defaults are the real modules.
+  const executor = typeof config.executeLocalDependency === "function"
+    ? config.executeLocalDependency
+    : executeLocalDependency;
+  const contextBuilder = typeof config.buildDependencyContext === "function"
+    ? config.buildDependencyContext
+    : buildDependencyContext;
   const evaluations = (localExecution.checkpoints || [])
-    .map((checkpoint) => evaluateCheckpoint(project, terminalGoal, checkpoint, config))
+    .map((checkpoint) => evaluateCheckpoint(project, terminalGoal, checkpoint, { ...config, contextBuilder }))
     .sort((left, right) => {
       if (config.preferFirstGoalCheckpoint === true) {
         const leftFirst = left.roles.includes("first-goal") ? 1 : 0;
@@ -185,7 +196,7 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
     : null;
   const plannedAt = Date.now();
   const nextExecution = selectedPlan
-    ? executeLocalDependency(
+    ? executor(
       project,
       projectRoot,
       selectedCheckpoint.state,
@@ -257,45 +268,116 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   const contextOptions = { towerId: config.towerId, alternativeLimit: config.alternativeLimit };
   const startedAt = Date.now();
 
-  const attemptedExperimentKeys = new Set();
-  const visitedExactCheckpointStates = new Set();
+  // Test seam: the loop's own contract (branch portfolio, backtracking, budget
+  // clamping, route stitching) must be provable on a synthetic world whose shape
+  // is guaranteed, not by waiting for the real tower to produce a forced
+  // backtrack. Overriding these two does not change any production behaviour,
+  // because their defaults are the real planner and the real executor.
+  const executeLocal = typeof config.executeLocalDependency === "function"
+    ? config.executeLocalDependency
+    : executeLocalDependency;
+  const buildContext = typeof config.buildDependencyContext === "function"
+    ? config.buildDependencyContext
+    : buildDependencyContext;
+
+  // PR-5.27b: the loop keeps a PERSISTENT BRANCH PORTFOLIO instead of chaining a
+  // single `previousExecution`. Each round's selection is drawn from every branch
+  // that can still advance, so a blocked branch can be abandoned and an older
+  // branch revisited. Without this, "the current portfolio is blocked" is
+  // indistinguishable from "the search is exhausted".
+  const branches = new Map();
+  const attempts = [];
   const rounds = [];
+  const visitedExactCheckpointStates = new Set();
+  const attemptedExperimentKeys = new Set();
   let totalLocalExpansions = 0;
+  let branchCounter = 0;
   let frontierState = initialState;
   let frontierOrigin = "route-free-initial-state";
-  let previousExecution = null;
 
-  // Round 0 treats the caller's exact state as a checkpoint portfolio of one, so
-  // the very first dependency context is built from the initial state and nothing
-  // else. No route, no prefix, no authored subgoal.
-  const initialContext = buildDependencyContext(project, initialState, terminalGoal, contextOptions);
-  const localExecutionOptions = {
-    maxExpansions: localMaxExpansions,
+  const newBranchId = () => {
+    branchCounter += 1;
+    return `branch-${branchCounter}`;
+  };
+
+  // The global expansion budget is HARD: a local call may only spend what is left
+  // of it. The pre-round `>=` check alone is not enough, because issuing the next
+  // call with the full local budget can overshoot the global ceiling before the
+  // check is reached again.
+  const remainingGlobalBudget = () => maxTotalLocalExpansions - totalLocalExpansions;
+  const effectiveLocalBudget = () => Math.min(localMaxExpansions, remainingGlobalBudget());
+
+  const registerBranch = (parentBranchId, state, cumulativeDecisions, exactStateFingerprint, via) => {
+    const branchId = newBranchId();
+    const parent = parentBranchId ? branches.get(parentBranchId) : null;
+    const branch = {
+      branchId,
+      parentBranchId: parent ? parent.branchId : null,
+      state,
+      exactStateFingerprint,
+      cumulativeDecisions: cumulativeDecisions.slice(),
+      status: "open",
+      depth: parent ? parent.depth + 1 : 0,
+      openedByRound: rounds.length,
+      openedVia: via || null,
+      attemptCount: 0,
+      attemptedExperimentKeys: [],
+      exhaustedReason: null,
+    };
+    branches.set(branchId, branch);
+    return branch;
+  };
+
+  // Round 0 treats the caller's exact state as a portfolio of one. No route, no
+  // prefix, no authored subgoal.
+  const rootBranch = registerBranch(
+    null,
+    initialState,
+    [],
+    stateFingerprintOf(initialState),
+    "route-free-initial-state",
+  );
+  const initialContext = buildContext(project, initialState, terminalGoal, contextOptions);
+  const initialExecution = executeLocal(project, projectRoot, initialState, initialContext.plan, {
+    maxExpansions: effectiveLocalBudget(),
     candidateLimit,
     simulatorFactory: config.simulatorFactory,
-  };
-  const initialExecution = executeLocalDependency(project, projectRoot, initialState, initialContext.plan, localExecutionOptions);
+  });
   totalLocalExpansions += number(initialExecution.outcome.expansions, 0);
-  // The initial execution selects a prerequisite too, so its experiment identity
-  // must be burned as well. Otherwise round 1 can legitimately re-select the very
-  // same (checkpoint state, alternative, prerequisite) triple, which is exactly
-  // the duplication this loop exists to prevent.
+  rootBranch.attemptCount += 1;
   if (initialExecution.selected) {
-    attemptedExperimentKeys.add([
-      stateFingerprintOf(initialState),
+    // The initial execution selects a prerequisite too, so its experiment identity
+    // must be burned as well. Otherwise round 1 can legitimately re-select the very
+    // same (checkpoint state, alternative, prerequisite) triple, which is exactly
+    // the duplication this loop exists to prevent.
+    const initialKey = [
+      rootBranch.exactStateFingerprint,
       initialExecution.selected.alternativeId,
       (initialExecution.selected.prerequisite || {}).sourceNodeId || "complete",
-    ].join("|"));
+    ].join("|");
+    attemptedExperimentKeys.add(initialKey);
+    rootBranch.attemptedExperimentKeys.push(initialKey);
+    attempts.push({
+      experimentKey: initialKey,
+      branchId: rootBranch.branchId,
+      round: 0,
+      expansions: number(initialExecution.outcome.expansions, 0),
+      outcome: initialExecution.outcome.budgetExhausted === true
+        ? "attempted-but-inconclusive"
+        : initialExecution.outcome.frontierExhausted === true
+          ? "exhausted"
+          : "produced-checkpoints",
+    });
   }
-  for (const checkpoint of initialExecution.checkpoints || []) {
-    visitedExactCheckpointStates.add(checkpoint.exactStateFingerprint);
-  }
+  const initialCheckpoints = initialExecution.checkpoints || [];
   rounds.push({
     round: 0,
     kind: "initial-local-execution",
     origin: frontierOrigin,
+    branchId: rootBranch.branchId,
     selected: initialExecution.selected
       ? {
+        branchId: rootBranch.branchId,
         alternativeId: initialExecution.selected.alternativeId,
         prerequisiteId: initialExecution.selected.prerequisite.sourceNodeId,
       }
@@ -307,91 +389,207 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       frontierExhausted: initialExecution.outcome.frontierExhausted,
       reason: initialExecution.outcome.reason || null,
     },
-    checkpointCount: (initialExecution.checkpoints || []).length,
+    checkpointCount: initialCheckpoints.length,
     checkpointDiversity: initialExecution.checkpointDiversity || null,
     verdict: initialExecution.verdict,
   });
-  previousExecution = initialExecution;
+
+  // Each retained checkpoint from the initial execution becomes its own open
+  // branch, carrying the accumulated decisions that reached it.
+  const childBranches = [];
+  for (const checkpoint of initialCheckpoints) {
+    visitedExactCheckpointStates.add(checkpoint.exactStateFingerprint);
+    const child = registerBranch(
+      rootBranch.branchId,
+      checkpoint.state,
+      Array.isArray((checkpoint.routeRecord || {}).decisions) ? checkpoint.routeRecord.decisions : [],
+      checkpoint.exactStateFingerprint,
+      "initial-checkpoint",
+    );
+    childBranches.push({ branch: child, checkpoint });
+  }
 
   let frontierStateKey = null;
-  const initialCheckpoints = initialExecution.checkpoints || [];
-  const initialTerminal = initialCheckpoints.find((checkpoint) =>
-    terminalGoalReached(project, checkpoint.state, terminalGoal)) || null;
-
   let terminationReason = null;
-  let reachedTerminal = Boolean(initialTerminal);
-  if (reachedTerminal) terminationReason = "terminal-goal-reached-in-initial-execution";
-  else if (initialCheckpoints.length > 0) {
-    frontierState = initialCheckpoints[0].state;
-    frontierStateKey = initialCheckpoints[0].exactStateFingerprint;
-    frontierOrigin = `initial-checkpoint:${initialCheckpoints[0].id}`;
+  let terminationClass = null;
+  const initialTerminalEntry = childBranches.find((entry) =>
+    terminalGoalReached(project, entry.checkpoint.state, terminalGoal)) || null;
+  let reachedTerminal = Boolean(initialTerminalEntry);
+  let terminalBranchId = initialTerminalEntry ? initialTerminalEntry.branch.branchId : null;
+  if (reachedTerminal) {
+    terminationReason = "terminal-goal-reached-in-initial-execution";
+    terminationClass = "TERMINAL_GOAL_REACHED";
+  } else if (childBranches.length > 0) {
+    frontierState = childBranches[0].branch.state;
+    frontierStateKey = childBranches[0].branch.exactStateFingerprint;
+    frontierOrigin = `initial-checkpoint:${childBranches[0].checkpoint.id}`;
   } else if (initialExecution.outcome.searchComplete === true) {
+    rootBranch.status = "exhausted";
+    rootBranch.exhaustedReason = "initial-execution-proved-no-continuation";
     terminationReason = "initial-execution-proved-no-continuation";
+    terminationClass = "GLOBAL_PORTFOLIO_EXHAUSTED";
   }
+
+  const openBranches = () => Array.from(branches.values()).filter((branch) => branch.status !== "exhausted");
+
+  // A portfolio of the still-open branches, shaped like the checkpoint lists the
+  // one-step controller already knows how to rank. This is what makes selection
+  // draw from the whole history rather than only the newest execution.
+  const buildPortfolio = () => openBranches().map((branch) => ({
+    id: branch.branchId,
+    roles: branch.parentBranchId ? [`branch-depth-${branch.depth}`] : ["root-branch"],
+    exactStateFingerprint: branch.exactStateFingerprint,
+    state: branch.state,
+  }));
 
   let roundIndex = 0;
   while (!reachedTerminal && terminationReason == null && roundIndex < maxRounds) {
-    if (totalLocalExpansions >= maxTotalLocalExpansions) {
+    if (remainingGlobalBudget() <= 0) {
       terminationReason = "global-local-expansion-budget-exhausted";
+      terminationClass = "LOCAL_BUDGET_LIMITED";
       break;
     }
     roundIndex += 1;
 
-    // One bounded local execution per round: ask the existing single-step
-    // controller what the next prerequisite is, given everything we already tried.
-    const feedback = runDependencyFeedback(project, projectRoot, terminalGoal, previousExecution, {
+    const portfolio = buildPortfolio();
+    const feedback = runDependencyFeedback(project, projectRoot, terminalGoal, { checkpoints: portfolio }, {
       ...contextOptions,
       excludedExperimentKeys: attemptedExperimentKeys,
-      maxExpansions: localMaxExpansions,
+      maxExpansions: effectiveLocalBudget(),
       candidateLimit,
       simulatorFactory: config.simulatorFactory,
+      // Forward the test seam so a synthetic world can drive the whole stack.
+      buildDependencyContext: buildContext,
+      executeLocalDependency: executeLocal,
     });
     const selection = feedback.selection;
     const nextExecution = feedback.nextExecution;
+    const selectedBranch = selection ? branches.get(selection.checkpointId) || null : null;
+    const previousStepRound = rounds.filter((entry) => entry.kind === "dependency-feedback-step").slice(-1)[0];
 
-    // Deduplication is the loop's own contract, not the controller's: an
-    // experimentKey is burned the moment it is selected, whether or not the
-    // local execution produced anything.
+    // Deduplication is the loop's own contract: an experimentKey is burned the
+    // moment it is selected, whether or not the local execution produced anything.
     let experimentKeyReused = false;
     if (selection && selection.experimentKey) {
       experimentKeyReused = attemptedExperimentKeys.has(selection.experimentKey);
       attemptedExperimentKeys.add(selection.experimentKey);
     }
+
     const nextCheckpoints = (nextExecution && nextExecution.checkpoints) || [];
     const nextExpansions = nextExecution ? number(nextExecution.outcome.expansions, 0) : 0;
     totalLocalExpansions += nextExpansions;
 
-    const terminal = nextCheckpoints.find((checkpoint) =>
-      terminalGoalReached(project, checkpoint.state, terminalGoal)) || null;
-    const accepted = terminal || nextCheckpoints[0] || null;
-    let stateAlreadyVisited = false;
-    if (accepted) {
-      stateAlreadyVisited = visitedExactCheckpointStates.has(accepted.exactStateFingerprint);
-      visitedExactCheckpointStates.add(accepted.exactStateFingerprint);
+    const localOutcome = !nextExecution
+      ? "not-executed"
+      : nextExecution.outcome.budgetExhausted === true
+        ? "attempted-but-inconclusive"
+        : nextCheckpoints.length > 0
+          ? "produced-checkpoints"
+          : nextExecution.outcome.searchComplete === true
+            ? "exhausted"
+            : "attempted-but-inconclusive";
+    if (selection && selection.experimentKey) {
+      attempts.push({
+        experimentKey: selection.experimentKey,
+        branchId: selectedBranch ? selectedBranch.branchId : null,
+        round: roundIndex,
+        expansions: nextExpansions,
+        outcome: localOutcome,
+      });
+    }
+    if (selectedBranch) {
+      selectedBranch.attemptCount += 1;
+      if (selection && selection.experimentKey) {
+        selectedBranch.attemptedExperimentKeys.push(selection.experimentKey);
+      }
+    }
+
+    const terminalEntry = nextCheckpoints
+      .map((checkpoint) => ({ checkpoint }))
+      .find((entry) => terminalGoalReached(project, entry.checkpoint.state, terminalGoal)) || null;
+
+    // Child branches inherit the parent's accumulated decisions and append this
+    // local segment, so the lineage is explicit rather than relying on a
+    // checkpoint's own route happening to contain the prefix.
+    const openedChildren = [];
+    for (const checkpoint of nextCheckpoints) {
+      visitedExactCheckpointStates.add(checkpoint.exactStateFingerprint);
+      const child = registerBranch(
+        selectedBranch ? selectedBranch.branchId : rootBranch.branchId,
+        checkpoint.state,
+        (selectedBranch ? selectedBranch.cumulativeDecisions : [])
+          .concat(Array.isArray((checkpoint.routeRecord || {}).decisions) ? checkpoint.routeRecord.decisions : []),
+        checkpoint.exactStateFingerprint,
+        "dependency-feedback-step",
+      );
+      openedChildren.push({ branch: child, checkpoint });
+    }
+    const accepted = terminalEntry
+      ? openedChildren.find((entry) => entry.checkpoint === terminalEntry.checkpoint)
+      : openedChildren[0] || null;
+
+    // Branch status: only a PROVEN dead end marks a branch exhausted. A branch
+    // that merely cannot advance right now stays open, because whether it can
+    // advance is a function of the attempted-experiment set, which grows.
+    if (selectedBranch && nextCheckpoints.length === 0) {
+      if (nextExecution && nextExecution.outcome.budgetExhausted === true) {
+        selectedBranch.status = "open";
+      } else if (nextExecution == null) {
+        selectedBranch.status = "open";
+      } else {
+        selectedBranch.status = "exhausted";
+        selectedBranch.exhaustedReason = nextExecution.outcome.reason || "local-execution-produced-no-checkpoint";
+      }
     }
 
     let roundVerdict;
-    if (terminal) {
+    let selectedBranchParentIsPreviousRound = null;
+    let backtrackedToOlderBranch = false;
+    if (terminalEntry) {
       roundVerdict = "TERMINAL_GOAL_REACHED";
-      frontierState = terminal.state;
-      frontierStateKey = terminal.exactStateFingerprint;
+      frontierState = accepted.branch.state;
+      frontierStateKey = accepted.branch.exactStateFingerprint;
       frontierOrigin = `round-${roundIndex}-terminal-checkpoint`;
       reachedTerminal = true;
       terminationReason = "terminal-goal-reached";
+      terminationClass = "TERMINAL_GOAL_REACHED";
+      terminalBranchId = accepted.branch.branchId;
     } else if (!selection) {
-      roundVerdict = "NO_REMAINING_EXPERIMENT";
-      terminationReason = "no-remaining-unattempted-alternative";
-    } else if (nextExecution == null || nextCheckpoints.length === 0) {
+      // Distinguish "nothing in the current portfolio can advance" from "nothing
+      // anywhere in the search tree can advance". The former is a property of the
+      // attempted set at this moment; only the latter is exhaustion.
+      const viable = feedback.evaluations.filter((entry) => entry.canAdvance === true);
+      const openCount = openBranches().length;
+      roundVerdict = "CURRENT_PORTFOLIO_BLOCKED";
+      if (openCount === 0) {
+        terminationReason = "global-portfolio-exhausted";
+        terminationClass = "GLOBAL_PORTFOLIO_EXHAUSTED";
+      } else if (viable.length > 0) {
+        terminationReason = "no-unattempted-executable-experiment";
+        terminationClass = "GLOBAL_PORTFOLIO_EXHAUSTED";
+      } else {
+        terminationReason = "all-open-branches-currently-blocked";
+        terminationClass = "CURRENT_BRANCH_BLOCKED";
+      }
+    } else if (nextExecution == null) {
+      roundVerdict = "LOCAL_EXECUTION_NOT_RUN";
+    } else if (nextCheckpoints.length === 0) {
       roundVerdict = "LOCAL_EXECUTION_PRODUCED_NO_CHECKPOINT";
-      // The key is consumed and the loop asks again; it advances to a different
-      // checkpoint or alternative on the next round rather than retrying this one.
-    } else if (stateAlreadyVisited) {
-      roundVerdict = "CHECKPOINT_STATE_ALREADY_VISITED";
     } else {
       roundVerdict = "ADVANCED_TO_NEW_CHECKPOINT_STATE";
-      frontierState = accepted.state;
-      frontierStateKey = accepted.exactStateFingerprint;
-      frontierOrigin = `round-${roundIndex}-checkpoint:${accepted.id}`;
+      frontierState = accepted.branch.state;
+      frontierStateKey = accepted.branch.exactStateFingerprint;
+      frontierOrigin = `round-${roundIndex}-checkpoint:${accepted.checkpoint.id}`;
+      if (selectedBranch) {
+        // Backtracking = the branch we advanced from was NOT the branch the
+        // immediately preceding round advanced into. That is the observable
+        // difference between "switched alternative" and "returned to an older
+        // state".
+        selectedBranchParentIsPreviousRound = previousStepRound
+          ? selectedBranch.branchId === previousStepRound.acceptedBranchId
+          : selectedBranch.branchId === rootBranch.branchId;
+        backtrackedToOlderBranch = selectedBranchParentIsPreviousRound === false;
+      }
     }
 
     const selectedEvaluation = selection
@@ -403,7 +601,9 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       origin: frontierOrigin,
       feedbackVerdict: feedback.verdict,
       feedbackClass: selectedEvaluation ? selectedEvaluation.feedbackClass : null,
+      portfolioSize: portfolio.length,
       selected: selection ? {
+        branchId: selectedBranch ? selectedBranch.branchId : null,
         checkpointId: selection.checkpointId,
         alternativeId: selection.alternative.alternativeId,
         prerequisiteId: selection.alternative.leadingPrerequisiteId,
@@ -412,6 +612,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         changedAlternative: selection.changedAlternative,
       } : null,
       experimentKeyReused,
+      localOutcome,
       outcome: nextExecution ? {
         goalFound: nextExecution.outcome.goalFound,
         expansions: nextExpansions,
@@ -420,49 +621,39 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       } : null,
       checkpointCount: nextCheckpoints.length,
       checkpointDiversity: nextExecution ? nextExecution.checkpointDiversity : null,
-      acceptedCheckpointId: accepted ? accepted.id : null,
-      acceptedStateFingerprint: accepted ? accepted.exactStateFingerprint : null,
-      acceptedCheckpointLabel: accepted ? `round-${roundIndex}:${accepted.id}` : null,
-      acceptedStrictReplay: accepted ? accepted.replay.valid === true : null,
-      stateAlreadyVisited,
+      acceptedCheckpointId: accepted ? accepted.checkpoint.id : null,
+      acceptedBranchId: accepted ? accepted.branch.branchId : null,
+      acceptedStateFingerprint: accepted ? accepted.branch.exactStateFingerprint : null,
+      acceptedCheckpointLabel: accepted
+        ? `${accepted.branch.branchId}:${accepted.checkpoint.id}` : null,
+      acceptedStrictReplay: accepted ? accepted.checkpoint.replay.valid === true : null,
+      openedBranchIds: openedChildren.map((entry) => entry.branch.branchId),
+      selectedBranchParentIsPreviousRound,
+      backtrackedToOlderBranch,
       verdict: roundVerdict,
     });
-
-    if (nextExecution) previousExecution = nextExecution;
-    else break;
   }
 
   const completedAt = Date.now();
-  // A loop that stops without reaching the terminal goal must always say why.
-  // The two budgets are distinct and either can be the binding one.
   if (!reachedTerminal && terminationReason == null) {
-    terminationReason = totalLocalExpansions >= maxTotalLocalExpansions
-      ? "global-local-expansion-budget-exhausted"
-      : "global-round-budget-exhausted";
+    if (remainingGlobalBudget() <= 0) {
+      terminationReason = "global-local-expansion-budget-exhausted";
+      terminationClass = "LOCAL_BUDGET_LIMITED";
+    } else {
+      terminationReason = "global-round-budget-exhausted";
+      terminationClass = "ROUND_BUDGET_LIMITED";
+    }
   }
-  const acceptedCheckpoints = [];
-  const acceptedCheckpointLabels = [];
-  for (const round of rounds) {
-    if (round.kind !== "dependency-feedback-step" || round.acceptedCheckpointId == null) continue;
-    // `executeLocalDependency` numbers checkpoints per local execution, so the
-    // same id recurs every round. In a loop the identity that matters is the
-    // round-scoped one, otherwise "which checkpoints did we accept" is not
-    // answerable and the dedup below degenerates.
-    acceptedCheckpoints.push(round.acceptedCheckpointId);
-    acceptedCheckpointLabels.push(`round-${round.round}:${round.acceptedCheckpointId}`);
-  }
-  const roundStrictReplay = rounds
-    .filter((round) => round.kind === "dependency-feedback-step" && round.acceptedCheckpointId != null)
-    .every((round) => round.acceptedStrictReplay === true);
-  const finalExecution = previousExecution;
-  const finalCheckpoints = (finalExecution && finalExecution.checkpoints) || [];
-  const terminalCheckpoint = finalCheckpoints.find((checkpoint) =>
-    terminalGoalReached(project, checkpoint.state, terminalGoal)) || null;
-  const route = reachedTerminal
-    ? (terminalCheckpoint && terminalCheckpoint.routeRecord
-      ? terminalCheckpoint.routeRecord.decisions
-      : finalCheckpoints.flatMap((checkpoint) => checkpoint.routeRecord.decisions))
-    : null;
+
+  const stepRounds = rounds.filter((round) => round.kind === "dependency-feedback-step");
+  const acceptedRounds = stepRounds.filter((round) => round.acceptedBranchId != null);
+  const roundStrictReplay = acceptedRounds.every((round) => round.acceptedStrictReplay === true);
+
+  // The returned route is the terminal branch's ACCUMULATED decisions, i.e. every
+  // local segment from the original initial state, not just the last one. Each
+  // checkpoint's own routeRecord is an increment relative to its local execution.
+  const terminalBranch = terminalBranchId ? branches.get(terminalBranchId) : null;
+  const route = reachedTerminal && terminalBranch ? terminalBranch.cumulativeDecisions.slice() : null;
 
   return {
     schema: SCHEMA,
@@ -487,15 +678,35 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       towerId: config.towerId || null,
     },
     globalState: {
-      roundCount: rounds.filter((round) => round.kind === "dependency-feedback-step").length,
+      roundCount: stepRounds.length,
       totalLocalExpansions,
+      totalLocalExpansionsWithinBudget: totalLocalExpansions <= maxTotalLocalExpansions,
       attemptedExperimentKeyCount: attemptedExperimentKeys.size,
       attemptedExperimentKeys: Array.from(attemptedExperimentKeys).sort(),
       visitedExactCheckpointStateCount: visitedExactCheckpointStates.size,
       visitedExactCheckpointStates: Array.from(visitedExactCheckpointStates).sort(),
       experimentKeyReuseCount: rounds.filter((round) => round.experimentKeyReused === true).length,
-      repeatedCheckpointStateCount: rounds.filter((round) => round.stateAlreadyVisited === true).length,
+      branchCount: branches.size,
+      openBranchCount: openBranches().length,
+      exhaustedBranchCount: Array.from(branches.values())
+        .filter((branch) => branch.status === "exhausted").length,
+      backtrackCount: stepRounds.filter((round) => round.backtrackedToOlderBranch === true).length,
+      branchIds: Array.from(branches.keys()),
     },
+    branches: Array.from(branches.values()).map((branch) => ({
+      branchId: branch.branchId,
+      parentBranchId: branch.parentBranchId,
+      exactStateFingerprint: branch.exactStateFingerprint,
+      floorId: (branch.state || {}).floorId || null,
+      depth: branch.depth,
+      status: branch.status,
+      exhaustedReason: branch.exhaustedReason,
+      cumulativeDecisionCount: branch.cumulativeDecisions.length,
+      attemptCount: branch.attemptCount,
+      openedByRound: branch.openedByRound,
+      openedVia: branch.openedVia,
+    })),
+    attempts,
     terminal: {
       goal: terminalGoal,
       goalType: terminalGoal.type,
@@ -503,20 +714,25 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       reachedByRound: reachedTerminal
         ? (rounds.filter((round) => round.verdict === "TERMINAL_GOAL_REACHED").slice(-1)[0] || {}).round ?? 0
         : null,
+      terminalBranchId,
       terminationReason,
-      finalStateFingerprint: route != null && terminalCheckpoint
-        ? terminalCheckpoint.exactStateFingerprint
+      terminationClass,
+      finalStateFingerprint: reachedTerminal && terminalBranch
+        ? terminalBranch.exactStateFingerprint
         : frontierStateKey,
       finalFloorId: reachedTerminal
-        ? ((terminalCheckpoint || {}).floorId || frontierState.floorId || null)
+        ? (terminalBranch && terminalBranch.state ? terminalBranch.state.floorId || null : null)
         : (frontierState ? frontierState.floorId || null : null),
       frontierOrigin,
     },
     route,
-    routeValid: reachedTerminal ? Boolean(terminalCheckpoint && terminalCheckpoint.replay.valid) : null,
-    acceptedCheckpoints,
-    acceptedCheckpointLabels,
+    routeProvenance: reachedTerminal ? {
+      startsAtOriginalInitialState: true,
+      localSegmentCount: acceptedRounds.length,
+      cumulativeDecisionCount: terminalBranch ? terminalBranch.cumulativeDecisions.length : 0,
+    } : null,
     allAcceptedCheckpointsStrictReplay: roundStrictReplay,
+    acceptedCheckpoints: acceptedRounds.map((round) => round.acceptedCheckpointLabel),
     rounds,
     timing: { totalWallMs: completedAt - startedAt },
     verdict: reachedTerminal
