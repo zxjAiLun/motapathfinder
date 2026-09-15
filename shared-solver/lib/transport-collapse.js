@@ -527,6 +527,34 @@ function createTransportCollapsedSearch(simulator) {
     const reclaimDroppedState = config.reclaimDroppedState !== false;
     let droppedStatesReclaimed = 0;
     const trackPeakHeapUsed = config.trackPeakHeapUsed === true;
+    /**
+     * PR-5.26k - guided scheduler / retention decoupling (opt-in, default off).
+     *
+     * `guidedAdmitted` currently means two different things at once: "the guided
+     * scheduler should serve this candidate earlier" AND "this candidate keeps a
+     * permanent rank-10 storage entitlement". 5.26h showed the extreme form of
+     * that coupling (1024/1024 slots rank 10, rank 20 and rank 30 starved), and
+     * PR-5.26j showed it still develops on the legacy policy at long horizon: the
+     * first prefix loss was a guided candidate that could not even enter the
+     * active pool (`pureFillKept = false`).
+     *
+     * When enabled, retention class is the candidate's own value class - goal 0,
+     * combatProgress 20, otherwise 30 - and the guided lane keeps ONE survival
+     * protection for its next live head, the way PR-5.25v protects the next live
+     * neutral FIFO head. `guidedAdmitted` itself is untouched: it stays pure
+     * scheduler membership, so the guided heap and its pop order, frontier
+     * admission, the resource skyline and neutral substitution are all unchanged.
+     *
+     * This is a survival invariant for the scheduler's next candidate, NOT a
+     * storage reservation: no ratio, no quota, no per-identity or per-group cap.
+     */
+    const guidedHeadRetention = config.guidedHeadRetention === true;
+    let guidedHeadProtectionOpportunities = 0;
+    let guidedHeadProtected = 0;
+    let guidedHeadWouldHaveDroppedWithoutProtection = 0;
+    let guidedHeadStaleTopPops = 0;
+    let guidedHeadNotPendingAtTrim = 0;
+    let guidedHeadDisplacedAfterProtection = 0;
     let guidedPoolTrims = 0;
     let guidedPoolRemovedByExpansion = 0;
     let guidedPoolRemovedByDrop = 0;
@@ -636,7 +664,10 @@ function createTransportCollapsedSearch(simulator) {
      */
     const rankClassOf = (node) => {
       if (node.state && isGoalState(node.state)) return 0;
-      if (node.guidedAdmitted) return 10;
+      // PR-5.26k: with guided head retention, scheduler membership never grants a
+      // storage class. Retention follows the candidate's own value class and the
+      // scheduler's next live candidate is protected separately in the trim.
+      if (!guidedHeadRetention && node.guidedAdmitted) return 10;
       if (node.combatProgress) return 20;
       return 30;
     };
@@ -687,7 +718,10 @@ function createTransportCollapsedSearch(simulator) {
       for (const id of pending) {
         const node = nodesById.get(id);
         if (!node || node.closed) continue;
-        if (rankClassOf(node) !== 10) continue;
+        // PR-5.26k: enumerate the guided pool by scheduler membership, not by
+        // retention rank. Identical when guidedHeadRetention is off (rank 10 was
+        // then exactly `guidedAdmitted`), and still meaningful when it is on.
+        if (node.guidedAdmitted !== true) continue;
         guided.push(node);
       }
       const identityCounts = new Map();
@@ -1596,6 +1630,52 @@ function createTransportCollapsedSearch(simulator) {
           if (rescued > 0) rank20ParetoChangedTrims += 1;
         }
         const keep = new Set(pureFill);
+        // PR-5.26k trim order: goals -> base-rank pure fill -> guided head ->
+        // neutral FIFO head. Exactly like the neutral head below, this only
+        // guarantees that the candidate the scheduler is about to serve is still
+        // there when it gets its turn; it drops nothing else, and when the pure
+        // fill is full it displaces the worst kept non-goal like any other
+        // protection. Only entries the guided lane itself would skip are popped
+        // (already expanded, missing, closed, or stale retro-demoted) - never an
+        // arbitrary removal from the middle of the heap, and never a change to
+        // the lane's own pop path.
+        let guidedHeadId = null;
+        if (guidedHeadRetention && guidedHeap) {
+          while (guidedHeap.length > 0) {
+            const top = guidedHeap[0];
+            const topNode = top ? nodesById.get(top.nodeId) : null;
+            const topStaleDemoted = retroactiveGuidedSkylineDemotion && topNode
+              && topNode.closed !== true && topNode.guidedAdmitted !== true;
+            if (top && !expanded.has(top.nodeId) && topNode && !topNode.closed && !topStaleDemoted) {
+              if (pendingIdSet.has(top.nodeId)) guidedHeadId = top.nodeId;
+              else guidedHeadNotPendingAtTrim += 1;
+              break;
+            }
+            heapPop();
+            guidedHeadStaleTopPops += 1;
+          }
+        }
+        if (guidedHeadId != null) {
+          guidedHeadProtectionOpportunities += 1;
+          // "Would have been dropped" is decided by the pure fill alone: if the
+          // head was not pure-fill-kept, the retention it had before this flag
+          // existed would have dropped it. Whether the protection is finally
+          // effective is recorded AFTER the neutral head protection below, so a
+          // protection that is later displaced back reports honestly.
+          if (!pureFill.has(guidedHeadId)) {
+            guidedHeadWouldHaveDroppedWithoutProtection += 1;
+            if (keep.size >= pendingCandidateCap) {
+              for (let i = nonGoalByRank.length - 1; i >= 0; i -= 1) {
+                const e = nonGoalByRank[i];
+                if (keep.has(e.id)) {
+                  keep.delete(e.id);
+                  break;
+                }
+              }
+            }
+            if (keep.size < pendingCandidateCap) keep.add(guidedHeadId);
+          }
+        }
         if (fifoHeadId != null) {
           fifoHeadProtectionOpportunities += 1;
           if (!keep.has(fifoHeadId)) {
@@ -1623,6 +1703,14 @@ function createTransportCollapsedSearch(simulator) {
           }
         }
         const droppedIds = entries.filter((e) => !keep.has(e.id)).map((e) => e.id);
+        // PR-5.26k: finalize the guided head counters from the FINAL keep set.
+        // The neutral head protection runs after the guided one (the specified
+        // order), so in a cap-tight trim it can displace the guided head it had
+        // just saved. That is reported rather than hidden.
+        if (guidedHeadId != null && !pureFill.has(guidedHeadId)) {
+          if (keep.has(guidedHeadId)) guidedHeadProtected += 1;
+          else guidedHeadDisplacedAfterProtection += 1;
+        }
         let trimComposition = null;
         // Per-trim memo for the PR-5.25z peer decomposition (declared outside the
         // emitLifecycle block: the drop loop below reads it).
@@ -1662,6 +1750,12 @@ function createTransportCollapsedSearch(simulator) {
           if (fifoHeadId != null && pureFill.has(fifoHeadId) === false && keep.has(fifoHeadId)) {
             for (const e of entries) {
               if (pureFill.has(e.id) && !keep.has(e.id)) fifoHeadDisplacedIds.add(e.id);
+            }
+          }
+          const guidedHeadDisplacedIds = new Set();
+          if (guidedHeadId != null && pureFill.has(guidedHeadId) === false && keep.has(guidedHeadId)) {
+            for (const e of entries) {
+              if (pureFill.has(e.id) && !keep.has(e.id)) guidedHeadDisplacedIds.add(e.id);
             }
           }
           const pureFillRank20Ids = entries
@@ -1728,6 +1822,8 @@ function createTransportCollapsedSearch(simulator) {
             rank20PendingCount: pendingRankCounts[20],
           };
           trimComposition.fifoHeadDisplacedIds = [...fifoHeadDisplacedIds];
+          if (guidedHeadId != null) trimComposition.guidedHeadDisplacedIds = [...guidedHeadDisplacedIds];
+          trimComposition.guidedHeadProtectedThisTrim = guidedHeadId != null && pureFill.has(guidedHeadId) === false && keep.has(guidedHeadId);
           trimComposition.pureFillRank20Ids = pureFillRank20Ids.map((e) => e.id);
         }
         for (const id of droppedIds) {
@@ -1737,6 +1833,8 @@ function createTransportCollapsedSearch(simulator) {
             if (emitLifecycle) {
               const pureFillKept = pureFill.has(id);
               const displaced = trimComposition ? trimComposition.fifoHeadDisplacedIds.includes(id) : false;
+              const displacedByGuidedHead = trimComposition && trimComposition.guidedHeadDisplacedIds
+                ? trimComposition.guidedHeadDisplacedIds.includes(id) : false;
               let olderRank20PendingCount = null;
               if (pureFillKept === false) {
                 olderRank20PendingCount = 0;
@@ -1852,6 +1950,7 @@ function createTransportCollapsedSearch(simulator) {
                 nodePendingSeq: dn.pendingSeq,
                 pureFillKept,
                 displacedByFifoHeadProtection: displaced,
+                displacedByGuidedHeadProtection: displacedByGuidedHead,
                 olderRank20PendingCount,
                 sameIdentityPeers,
                 trim: trimComposition,
@@ -2161,6 +2260,13 @@ function createTransportCollapsedSearch(simulator) {
       guidedGroupSweepThreshold,
       guidedHeapStaleDemotionSkips,
       guidedActivePeak,
+      guidedHeadRetention,
+      guidedHeadProtectionOpportunities,
+      guidedHeadProtected,
+      guidedHeadWouldHaveDroppedWithoutProtection,
+      guidedHeadStaleTopPops,
+      guidedHeadNotPendingAtTrim,
+      guidedHeadDisplacedAfterProtection,
       liveGuidedPendingAtEnd,
       rank10PendingAtEnd,
       retroDemotedStillPendingAtEnd,

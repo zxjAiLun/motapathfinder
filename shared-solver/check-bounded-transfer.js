@@ -73,11 +73,13 @@ function parseArgs(argv) {
     json: null,
     neutralParetoSubstitution: false,
     stableGuidedTieBreak: false,
+    guidedHeadRetention: false,
   };
   for (const token of argv) {
     if (token === "--child") { args.child = true; continue; }
     if (token === "--neutral-pareto-substitution") { args.neutralParetoSubstitution = true; continue; }
     if (token === "--stable-guided-tie-break") { args.stableGuidedTieBreak = true; continue; }
+    if (token === "--guided-head-retention") { args.guidedHeadRetention = true; continue; }
     if (token === "--oracle") { args.oracleOnly = true; continue; }
     if (token === "--skip-oracle") { args.skipOracle = true; continue; }
     if (token.startsWith("--out=")) { args.out = path.resolve(token.slice("--out=".length)); continue; }
@@ -188,6 +190,8 @@ function runChild(args) {
     neutralParetoSubstitution: args.neutralParetoSubstitution === true,
     // PR-5.26f capability configuration: opt-in stable equal-score guided service order.
     stableGuidedTieBreak: args.stableGuidedTieBreak === true,
+    // PR-5.26k capability configuration: opt-in guided scheduler / retention decoupling.
+    guidedHeadRetention: args.guidedHeadRetention === true,
   });
 
   let replay = null;
@@ -233,6 +237,10 @@ function runChild(args) {
     guidedAdmittedGenerated: result.guidedAdmittedGenerated,
     frontierGuidedDominatedGenerated: result.frontierGuidedDominatedGenerated,
     stableGuidedTieBreak: result.stableGuidedTieBreak === true,
+    guidedHeadRetention: result.guidedHeadRetention === true,
+    guidedHeadProtectionOpportunities: result.guidedHeadProtectionOpportunities,
+    guidedHeadProtected: result.guidedHeadProtected,
+    guidedHeadWouldHaveDroppedWithoutProtection: result.guidedHeadWouldHaveDroppedWithoutProtection,
     frontierGuidedByKind: result.frontierGuidedByKind,
     guidedAdmittedByKind: result.guidedAdmittedByKind,
     frontierGuidedDominatedByKind: result.frontierGuidedDominatedByKind,
@@ -259,6 +267,7 @@ function spawnAttempt(args, tag) {
   ];
   if (args.neutralParetoSubstitution) childArgs.push("--neutral-pareto-substitution");
   if (args.stableGuidedTieBreak) childArgs.push("--stable-guided-tie-break");
+  if (args.guidedHeadRetention) childArgs.push("--guided-head-retention");
   const spawned = spawnSync(process.execPath, childArgs, { encoding: "utf8" });
   if (spawned.status !== 0) {
     throw new Error(`child (${tag}) failed: ${spawned.stderr || spawned.stdout}`);

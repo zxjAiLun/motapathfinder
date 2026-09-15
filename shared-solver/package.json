@@ -337,7 +337,9 @@
     "check:expansion-profiler-parity": "node check-expansion-profiler-parity.js",
     "check:expansion-cost-attribution": "node --max-old-space-size=256 check-expansion-cost-attribution.js",
     "check:onlyup-first-region-expansion-profile": "node --max-old-space-size=256 check-onlyup-first-region-expansion-profile.js",
-    "audit:pr526j:mt4-bottleneck": "node audit-pr526j-mt4-bottleneck-localization.js"
+    "audit:pr526j:mt4-bottleneck": "node audit-pr526j-mt4-bottleneck-localization.js",
+    "check:guided-head-retention": "node check-guided-head-retention.js",
+    "audit:pr526k:guided-head-ab": "node audit-pr526k-guided-head-retention-ab.js"
   },
   "dependencies": {
     "playwright-core": "^1.59.1"

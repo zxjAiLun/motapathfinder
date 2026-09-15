@@ -72,12 +72,14 @@ function parseArgs(argv) {
     json: null,
     neutralParetoSubstitution: false,
     stableGuidedTieBreak: false,
+    guidedHeadRetention: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--smoke") { args.smoke = true; continue; }
     if (token === "--neutral-pareto-substitution") { args.neutralParetoSubstitution = true; continue; }
     if (token === "--stable-guided-tie-break") { args.stableGuidedTieBreak = true; continue; }
+    if (token === "--guided-head-retention") { args.guidedHeadRetention = true; continue; }
     if (token.startsWith("--out=")) { args.out = path.resolve(token.slice("--out=".length)); continue; }
     if (token.startsWith("--max-runtime-ms=")) { args.maxRuntimeMs = Number(token.slice("--max-runtime-ms=".length)); continue; }
     if (token.startsWith("--max-rss-mb=")) { args.maxRssMb = Number(token.slice("--max-rss-mb=".length)); continue; }
@@ -135,6 +137,8 @@ function runChild(args) {
     // PR-5.26c capability configuration: opt-in neutral-turn Pareto substitution.
     neutralParetoSubstitution: args.neutralParetoSubstitution === true,
     stableGuidedTieBreak: args.stableGuidedTieBreak === true,
+    // PR-5.26k opt-in: guided scheduler / retention decoupling.
+    guidedHeadRetention: args.guidedHeadRetention === true,
   });
 
   let replay = null;
@@ -178,6 +182,11 @@ function runChild(args) {
     neutralParetoSubstitutionScans: result.neutralParetoSubstitutionScans,
     // PR-5.26f
     stableGuidedTieBreak: result.stableGuidedTieBreak === true,
+    // PR-5.26k
+    guidedHeadRetention: result.guidedHeadRetention === true,
+    guidedHeadProtectionOpportunities: result.guidedHeadProtectionOpportunities,
+    guidedHeadProtected: result.guidedHeadProtected,
+    guidedHeadWouldHaveDroppedWithoutProtection: result.guidedHeadWouldHaveDroppedWithoutProtection,
     guidedChangeFloorGenerated: result.guidedChangeFloorGenerated,
     guidedChangeFloorNodesExpanded: result.guidedChangeFloorNodesExpanded,
     guidedForwardFloorChildrenGenerated: result.guidedForwardFloorChildrenGenerated,
@@ -210,6 +219,7 @@ function spawnAttempt(args, cap) {
   ];
   if (args.neutralParetoSubstitution) childArgs.push("--neutral-pareto-substitution");
   if (args.stableGuidedTieBreak) childArgs.push("--stable-guided-tie-break");
+  if (args.guidedHeadRetention) childArgs.push("--guided-head-retention");
   const spawned = spawnSync(process.execPath, childArgs, { encoding: "utf8" });
   if (spawned.status !== 0) {
     throw new Error(`child (cap=${cap}) failed: ${spawned.stderr || spawned.stdout}`);
