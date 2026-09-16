@@ -50,7 +50,8 @@ function survivalMargin(prerequisite) {
 function summarizeAlternative(alternative) {
   const prerequisites = (alternative.prerequisites || []).slice();
   const leading = prerequisites[0] || null;
-  const leadingStatus = ((leading || {}).evidence || {}).status || "complete";
+  const leadingEvidence = (leading || {}).evidence || {};
+  const leadingStatus = leadingEvidence.status || "complete";
   return {
     alternativeId: alternative.id,
     remainingPrerequisiteCount: prerequisites.length,
@@ -62,6 +63,22 @@ function summarizeAlternative(alternative) {
     complete: prerequisites.length === 0,
     blockedTailCount: prerequisites.slice(1).filter((entry) =>
       ((entry.evidence || {}).status) !== "viable-at-current-state").length,
+    // PR-5.27d Phase 1 attribution: the planner already computed the full
+    // counterfactual evidence for the leading prerequisite; keep it so a blocked
+    // branch can be attributed to "no executable prerequisite" versus "every
+    // executable prerequisite was already attempted", with the target floor and
+    // evidence status visible instead of inferred.
+    leadingPrerequisite: leading ? {
+      sourceNodeId: leading.sourceNodeId || null,
+      kind: leading.kind || null,
+      targetFloorId: ((leading.target || {}).floorId) || null,
+      targetX: (leading.target || {}).x == null ? null : number((leading.target || {}).x, null),
+      targetY: (leading.target || {}).y == null ? null : number((leading.target || {}).y, null),
+      actionGoal: leading.actionGoal ? { ...leading.actionGoal } : null,
+      evidence: { ...leadingEvidence },
+    } : null,
+    tailPrerequisiteIds: prerequisites.slice(1).map((entry) => entry.sourceNodeId || null),
+    tailPrerequisiteFloors: prerequisites.slice(1).map((entry) => ((entry.target || {}).floorId) || null),
   };
 }
 
@@ -92,6 +109,8 @@ function evaluateCheckpoint(project, terminalGoal, checkpoint, options) {
   }).sort(compareAlternative);
   const selectedAlternative = alternatives.find((entry) =>
     (entry.complete || entry.executable) && !entry.previouslyAttempted) || null;
+  const hasExecutableAlternative = alternatives.some((entry) =>
+    entry.complete || entry.executable);
   return {
     checkpointId: checkpoint.id,
     roles: (checkpoint.roles || []).slice(),
@@ -103,7 +122,9 @@ function evaluateCheckpoint(project, terminalGoal, checkpoint, options) {
       ? selectedAlternative.complete
         ? "dependency-target-reachable"
         : "leading-prerequisite-executable"
-      : "all-leading-prerequisites-blocked",
+      : hasExecutableAlternative
+        ? "all-executable-experiments-already-attempted"
+        : "no-currently-executable-leading-prerequisite",
     context,
   };
 }
@@ -292,7 +313,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   const rounds = [];
   const visitedExactCheckpointStates = new Set();
   const attemptedExperimentKeys = new Set();
-  const commitSuccessfulLineage = config.commitSuccessfulLineage !== false;
+  const commitSuccessfulLineage = config.commitSuccessfulLineage === true;
   let preferredCohortBranchIds = new Set();
   let lastEvaluationMap = new Map();
   let totalLocalExpansions = 0;
@@ -511,7 +532,8 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
           const b = branches.get(ev.checkpointId);
           if (b && b.status !== "exhausted") {
             b.status = "exhausted";
-            b.exhaustedReason = "all-alternatives-blocked-in-cohort";
+            b.exhaustedReason = ev.feedbackClass;
+            b.lastEvaluationAlternatives = ev.alternatives;
           }
         }
       }
@@ -539,7 +561,8 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         const b = branches.get(ev.checkpointId);
         if (b && b.status !== "exhausted") {
           b.status = "exhausted";
-          b.exhaustedReason = "all-leading-prerequisites-blocked";
+          b.exhaustedReason = ev.feedbackClass;
+          b.lastEvaluationAlternatives = ev.alternatives;
         }
       }
     }
@@ -725,6 +748,87 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     });
   }
 
+  // PR-5.27d Phase 0: EXACT FINAL BRANCH LIFECYCLE SWEEP.
+  // The per-round `lastEvaluationMap` only ever contains the most recent portfolio
+  // pass, so an open branch that was not re-evaluated in the final round would
+  // otherwise be counted as advanceable by default. That made
+  // `advanceableBranchCount` an UPPER BOUND rather than a measurement. Here every
+  // remaining open branch is evaluated once against the final
+  // `attemptedExperimentKeys`, purely as observation: no local execution, no
+  // selection, no route change. Branches that prove unadvanceable are collapsed
+  // under the same monotonic rule used during the loop.
+  const finalSweep = {
+    evaluated: 0,
+    newlyExhausted: [],
+    advanceable: [],
+    records: [],
+  };
+  {
+    const finalBranches = openBranches();
+    const finalEvaluations = finalBranches.map((branch) => evaluateCheckpoint(
+      project,
+      terminalGoal,
+      {
+        id: branch.branchId,
+        roles: branch.parentBranchId ? [`branch-depth-${branch.depth}`] : ["root-branch"],
+        exactStateFingerprint: branch.exactStateFingerprint,
+        state: branch.state,
+      },
+      {
+        ...contextOptions,
+        excludedExperimentKeys: attemptedExperimentKeys,
+        contextBuilder: buildContext,
+      },
+    ));
+    lastEvaluationMap.clear();
+    finalSweep.evaluated = finalEvaluations.length;
+    for (const evaluation of finalEvaluations) {
+      const branch = branches.get(evaluation.checkpointId);
+      lastEvaluationMap.set(evaluation.checkpointId, evaluation);
+      finalSweep.records.push({
+        branchId: evaluation.checkpointId,
+        depth: branch ? branch.depth : null,
+        status: branch ? branch.status : null,
+        exhaustedReason: branch ? branch.exhaustedReason : null,
+        floorId: branch && branch.state ? branch.state.floorId || null : null,
+        canAdvance: evaluation.canAdvance,
+        feedbackClass: evaluation.feedbackClass,
+        alternatives: evaluation.alternatives,
+      });
+      if (evaluation.canAdvance) {
+        finalSweep.advanceable.push(evaluation.checkpointId);
+        continue;
+      }
+      if (branch && branch.status !== "exhausted") {
+        branch.status = "exhausted";
+        branch.exhaustedReason = evaluation.feedbackClass;
+        branch.lastEvaluationAlternatives = evaluation.alternatives;
+        finalSweep.newlyExhausted.push(evaluation.checkpointId);
+      }
+    }
+  }
+
+  // Attribution for branches that were already collapsed DURING the loop: their
+  // state is immutable, so the evaluation recorded at the moment of collapse is
+  // still the correct attribution. Phase 1 needs these, because the deepest
+  // branches are precisely the ones exhausted mid-loop rather than at the end.
+  for (const branch of branches.values()) {
+    if (branch.status !== "exhausted") continue;
+    if (finalSweep.records.some((entry) => entry.branchId === branch.branchId)) continue;
+    const alternativeSummary = branch.lastEvaluationAlternatives || null;
+    if (!alternativeSummary) continue;
+    finalSweep.records.push({
+      branchId: branch.branchId,
+      depth: branch.depth,
+      status: branch.status,
+      exhaustedReason: branch.exhaustedReason,
+      floorId: branch.state ? branch.state.floorId || null : null,
+      canAdvance: false,
+      feedbackClass: branch.exhaustedReason,
+      alternatives: alternativeSummary,
+    });
+  }
+
   const completedAt = Date.now();
   if (!reachedTerminal && terminationReason == null) {
     if (remainingGlobalBudget() <= 0) {
@@ -771,13 +875,15 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     }
   }
 
-  // Telemetry: unique exact states across all branches and advanceable branches at the end
+  // Telemetry: EXACT final lifecycle counts. `advanceableBranchCount` is now a
+  // measurement, not an upper bound, because the final sweep above evaluated
+  // every remaining open branch against the final attempted-experiment set.
   const allBranchesList = Array.from(branches.values());
   const uniqueExactStateCount = new Set(allBranchesList.map((b) => b.exactStateFingerprint)).size;
   const openBranchesList = openBranches();
   const advanceableBranchCount = openBranchesList.filter((b) => {
     const ev = lastEvaluationMap.get(b.branchId);
-    return ev ? ev.canAdvance === true : true;
+    return ev && ev.canAdvance === true;
   }).length;
 
   return {
@@ -816,6 +922,27 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       branchCount: branches.size,
       openBranchCount: openBranchesList.length,
       advanceableBranchCount,
+      finalBranchLifecycleSweep: {
+        evaluatedOpenBranchCount: finalSweep.evaluated,
+        advanceableBranchIds: finalSweep.advanceable.slice(),
+        newlyExhaustedBranchIds: finalSweep.newlyExhausted.slice(),
+      },
+      // PR-5.27d Phase 1 (opt-in, observation only): when the caller asks for it,
+      // expose the final evaluation of each branch - including each alternative's
+      // leading-prerequisite evidence - so a probe can attribute WHY the branch is
+      // blocked instead of inferring it. Omitted by default.
+      finalEvaluationDump: config.includeFinalEvaluations === true
+        ? finalSweep.records.map((entry) => ({
+          branchId: entry.branchId,
+          depth: entry.depth,
+          status: entry.status,
+          exhaustedReason: entry.exhaustedReason,
+          floorId: entry.floorId,
+          canAdvance: entry.canAdvance,
+          feedbackClass: entry.feedbackClass,
+          alternatives: entry.alternatives,
+        }))
+        : null,
       exhaustedBranchCount: allBranchesList
         .filter((branch) => branch.status === "exhausted").length,
       backtrackCount: stepRounds.filter((round) => round.backtrackedToOlderBranch === true).length,
@@ -867,7 +994,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     rounds,
     timing: { totalWallMs: completedAt - startedAt },
     verdict: reachedTerminal
-      ? (roundStrictReplay && (!fullRouteStrictReplay || fullRouteStrictReplay.ok === true)
+      ? (roundStrictReplay && fullRouteStrictReplay && fullRouteStrictReplay.ok === true
         ? "DEPENDENCY_FEEDBACK_LOOP_REACHED_TERMINAL_WITH_STRICT_REPLAY"
         : "DEPENDENCY_FEEDBACK_LOOP_REACHED_TERMINAL_REPLAY_UNVERIFIED")
       : "DEPENDENCY_FEEDBACK_LOOP_UNKNOWN_UNDER_THIS_BUDGET",

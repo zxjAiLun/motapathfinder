@@ -224,10 +224,10 @@ function main() {
       candidateLimit: 4,
       buildDependencyContext: buildContext,
       executeLocalDependency: executeLocal,
-      commitSuccessfulLineage: false,
       simulatorFactory: makeSyntheticSimulator,
     },
   );
+  assert.strictEqual(resultOff.controls.commitSuccessfulLineage, false, "commitment must default OFF");
   const offExecutionSequence = localExecutionLog.map((x) => `${x.node}->${x.alternative}`);
   assert.deepStrictEqual(
     offExecutionSequence,
@@ -315,6 +315,33 @@ function main() {
   assert.ok(typeof result.globalState.uniqueExactStateCount === "number");
   assert.ok(result.globalState.uniqueExactStateCount > 0);
   assert.ok(typeof result.globalState.advanceableBranchCount === "number");
+  assert.ok(
+    result.globalState.advanceableBranchCount <= result.globalState.openBranchCount,
+    "exact final sweep may not report more advanceable branches than open branches",
+  );
+
+  const replayUnverified = runDependencyFeedbackLoop(
+    { floors: {} },
+    PROJECT_ROOT,
+    TERMINAL_GOAL,
+    syntheticState(NODES.ROOT),
+    {
+      maxRounds: 10,
+      maxTotalLocalExpansions: 100,
+      localMaxExpansions: 10,
+      candidateLimit: 4,
+      buildDependencyContext: buildContext,
+      executeLocalDependency: executeLocal,
+      commitSuccessfulLineage: true,
+    },
+  );
+  assert.strictEqual(replayUnverified.terminal.reached, true);
+  assert.strictEqual(replayUnverified.fullRouteStrictReplay, null);
+  assert.strictEqual(
+    replayUnverified.verdict,
+    "DEPENDENCY_FEEDBACK_LOOP_REACHED_TERMINAL_REPLAY_UNVERIFIED",
+    "a non-empty terminal route without full-route replay evidence must fail closed",
+  );
 
   // --- Phase 2: hard global budget ceiling ---------------------------------
   localExecutionLog.length = 0;
@@ -377,6 +404,9 @@ function main() {
       FULL_ROUTE_STRICT_REPLAY_VALID: true,
       TERMINAL_GOAL_REACHED_AFTER_FULL_REPLAY: true,
       GLOBAL_EXPANSION_BUDGET_IS_A_HARD_CEILING: true,
+      COMMITMENT_DEFAULT_IS_OFF: true,
+      FULL_ROUTE_REPLAY_GATE_FAILS_CLOSED: true,
+      FINAL_BRANCH_LIFECYCLE_SWEEP_IS_EXACT: true,
     },
     lineageComparison: {
       uncommittedSequence: offExecutionSequence,
