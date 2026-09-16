@@ -198,11 +198,22 @@ function executeLocalDependency(project, projectRoot, initialState, dependencyPl
   };
   const simulator = makeSimulator();
   const reuseCheckpointSimulator = config.reuseCheckpointSimulator !== false;
+  // PR-5.27e: a failure-conditioned resource-repair experiment carries a fully
+  // synthesized goal (hero-threshold / removedTiles / equipment / floor) rather
+  // than a single prerequisite actionGoal. When present it is used verbatim as
+  // the segment goal, so the repair is realized by the same canonical DP.
+  const goalOverride = config.goalOverride && typeof config.goalOverride === "object"
+    ? { ...config.goalOverride }
+    : null;
   const segment = {
     id: `auto-local-${selected.alternative.id}-${selected.prerequisite.sourceNodeId}`,
-    label: "Automatically compiled local dependency prerequisite",
-    goal: { ...selected.prerequisite.actionGoal },
-    actionPolicy: {},
+    label: goalOverride
+      ? "Failure-conditioned resource-repair experiment"
+      : "Automatically compiled local dependency prerequisite",
+    goal: goalOverride || { ...selected.prerequisite.actionGoal },
+    actionPolicy: config.actionPolicy && typeof config.actionPolicy === "object"
+      ? { ...config.actionPolicy }
+      : {},
     dp: {},
   };
   const startedAt = Date.now();

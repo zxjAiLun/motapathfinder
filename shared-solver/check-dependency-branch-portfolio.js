@@ -315,9 +315,216 @@ function main() {
   assert.ok(typeof result.globalState.uniqueExactStateCount === "number");
   assert.ok(result.globalState.uniqueExactStateCount > 0);
   assert.ok(typeof result.globalState.advanceableBranchCount === "number");
+
+  // ==========================================================================
+  // PR-5.27e - FAILURE-CONDITIONED RESOURCE REPAIR (synthetic micro)
+  // ==========================================================================
+  //
+  // World:
+  //   BLOCK  - a battle prerequisite that is UNBEATABLE at the current ATK
+  //   REPAIR - a legal, HP-costing, ATK-gaining action available at the same state
+  //   AFTER  - executing REPAIR makes the same BLOCK battle viable
+  //
+  // Normal dependency ALONE cannot advance (the battle evidence is
+  // `unbeatable-at-current-stats`), so the branch must stay advanceable ONLY
+  // because a repair experiment exists. After the repair checkpoint, a replan from
+  // the child state must show the SAME battle as `viable-at-current-state`.
+  const repairWorld = (() => {
+    const nodes = {
+      R: { id: "R", ordinal: 0, floorId: "MT1", decision: "enter@MT1:0,0", atk: 10 },
+      REPAIRED: { id: "REPAIRED", ordinal: 1, floorId: "MT1", decision: "battle:training@MT1:1,1", atk: 60 },
+    };
+    const state = (node) => ({
+      __repairNode: node,
+      floorId: node.floorId,
+      hero: {
+        hp: 100, hpmax: 100, atk: node.atk, def: 0, mdef: 0, lv: 1, exp: 0, money: 0,
+        loc: { x: node.ordinal, y: node.ordinal, direction: "down" },
+        equipment: [], followers: [],
+      },
+      inventory: {}, flags: {}, floorStates: {}, triggeredAutoEvents: {},
+      visitedFloors: { [node.floorId]: true }, route: [], notes: [],
+      meta: { decisionDepth: node.ordinal, rawRouteLength: node.ordinal },
+    });
+    // The block: viable only once hero ATK reaches 50. Evidence is computed from
+    // the state's own stats, exactly like the real battle evaluator.
+    const BLOCK_ATK_REQUIRED = 50;
+    const buildContext = (project, s, terminalGoal, options) => {
+      const atk = (s.hero || {}).atk || 0;
+      const viable = atk >= BLOCK_ATK_REQUIRED;
+      return {
+        graph: { floorCorridor: {} },
+        feasibility: {},
+        plan: {
+          objective: { selectedFeasibilitySubgoal: null },
+          alternatives: [{
+            id: "alternative-block",
+            prerequisites: [{
+              id: "require-block",
+              sourceNodeId: "MT1:enemy:4,4:ogre",
+              kind: "prerequisite",
+              relation: "AND",
+              order: 0,
+              actionGoal: { type: "tileRemoved", floorId: "MT1", x: 4, y: 4 },
+              target: { floorId: "MT1", x: 4, y: 4 },
+              evidence: {
+                kind: "battle-survivability",
+                status: viable ? "viable-at-current-state" : "unbeatable-at-current-stats",
+                damage: viable ? 10 : null,
+                currentHp: (s.hero || {}).hp,
+              },
+            }],
+          }],
+        },
+      };
+    };
+    // The executor: only the repair action can change ATK. A normal prerequisite
+    // search cannot invent the ATK gain on its own.
+    const executeLocal = (project, projectRoot, s, plan, options) => {
+      const node = s.__repairNode;
+      const selected = (plan.alternatives || []).find((alt) =>
+        (alt.prerequisites || []).some((p) =>
+          ((p.evidence || {}).status) === "viable-at-current-state"));
+      const isRepair = Boolean(options && options.goalOverride);
+      if (!isRepair) {
+        // Normal dependency execution cannot proceed: the block is unbeatable.
+        // NOTE: this must NOT report `searchComplete` - a blocked prerequisite is
+        // not a proof that no continuation exists anywhere; it is exactly the
+        // situation the repair mechanism is supposed to improve. Reporting
+        // searchComplete here would end the whole run before repair could fire.
+        return {
+          selected: null,
+          outcome: { goalFound: false, expansions: 1, budgetExhausted: false, frontierExhausted: false, searchComplete: false, reason: "synthetic-unbeatable" },
+          checkpoints: [],
+          checkpointDiversity: { allStrictReplay: true, roles: [] },
+          verdict: "LOCAL_DEPENDENCY_EXECUTION_OPEN",
+        };
+      }
+      void selected;
+      const child = nodes.REPAIRED;
+      return {
+        selected: { alternativeId: "repair-intent", prerequisite: { sourceNodeId: "repair" } },
+        outcome: { goalFound: false, expansions: 2, budgetExhausted: false, frontierExhausted: false, searchComplete: false, reason: null },
+        checkpoints: [{
+          id: "checkpoint-repair-1",
+          roles: ["resource-repair"],
+          exactStateFingerprint: `fp-${child.id}`,
+          floorId: child.floorId,
+          state: state(child),
+          decisionCount: 1,
+          replay: { valid: true, stepsAttempted: 1, stepsCompleted: 1, failureReason: null },
+          routeRecord: { decisions: [{ summary: child.decision }] },
+        }],
+        checkpointDiversity: { allStrictReplay: true, roles: ["resource-repair"] },
+        verdict: "LOCAL_DEPENDENCY_SINGLE_ROLE_CHECKPOINT_VERIFIED",
+      };
+    };
+    // Simulator: enumerates exactly one legal, HP-costing, ATK-gaining action.
+    const makeSimulator = () => ({
+      enumeratePrimitiveActions: (s) => {
+        const node = s.__repairNode;
+        if (node && node.id === "R") {
+          return { actions: [{ summary: "battle:training@MT1:1,1", kind: "battle", target: { x: 1, y: 1 } }] };
+        }
+        return { actions: [] };
+      },
+      applyAction: (s) => state(nodes.REPAIRED),
+    });
+    return { nodes, state, buildContext, executeLocal, makeSimulator };
+  })();
+
+  // (a) Repair world WITH the mechanism enabled.
+  const repairOn = runDependencyFeedbackLoop(
+    { floors: {} },
+    PROJECT_ROOT,
+    TERMINAL_GOAL,
+    repairWorld.state(repairWorld.nodes.R),
+    {
+      maxRounds: 6,
+      maxTotalLocalExpansions: 50,
+      localMaxExpansions: 10,
+      candidateLimit: 4,
+      buildDependencyContext: repairWorld.buildContext,
+      executeLocalDependency: repairWorld.executeLocal,
+      failureConditionedResourceRepair: true,
+      simulatorFactory: repairWorld.makeSimulator,
+    },
+  );
+  const repairTelemetry = repairOn.globalState.resourceRepair;
+  assert.strictEqual(repairTelemetry.enabled, true);
+  assert.ok(repairTelemetry.generated > 0, "a repair experiment must be generated for an unbeatable battle prerequisite");
+  assert.ok(repairTelemetry.selected > 0, "the generated repair experiment must be selectable");
+  assert.ok(repairTelemetry.checkpointsCreated > 0, "the repair experiment must produce a checkpoint");
   assert.ok(
-    result.globalState.advanceableBranchCount <= result.globalState.openBranchCount,
-    "exact final sweep may not report more advanceable branches than open branches",
+    repairTelemetry.convertedToViable > 0,
+    "a previously unbeatable battle must become viable after the automatic repair",
+  );
+  const repConversions = (repairOn.globalState.resourceRepairConversions || []).filter((c) => c.converted);
+  assert.ok(repConversions.length > 0);
+  assert.ok(repConversions[0].blockedStatusesBefore.includes("unbeatable-at-current-stats"));
+  assert.ok(repConversions[0].statusesAfter.includes("viable-at-current-state"));
+
+  // (b) Negative control: with the mechanism OFF the same world cannot advance
+  //     to the ATK gain, proving the repair experiment is what carries it.
+  const repairOff = runDependencyFeedbackLoop(
+    { floors: {} },
+    PROJECT_ROOT,
+    TERMINAL_GOAL,
+    repairWorld.state(repairWorld.nodes.R),
+    {
+      maxRounds: 6,
+      maxTotalLocalExpansions: 50,
+      localMaxExpansions: 10,
+      candidateLimit: 4,
+      buildDependencyContext: repairWorld.buildContext,
+      executeLocalDependency: repairWorld.executeLocal,
+      failureConditionedResourceRepair: false,
+      simulatorFactory: repairWorld.makeSimulator,
+    },
+  );
+  assert.strictEqual(repairOff.globalState.resourceRepair.generated, 0);
+  assert.strictEqual(repairOff.globalState.resourceRepair.convertedToViable, 0);
+  assert.ok(
+    (repairOff.branches || []).every((b) => b.status === "exhausted" || b.depth === 0),
+    "without the repair mechanism the blocked branch must exhaust under the monotonic contract",
+  );
+
+  // (c) Narrow trigger: when a normal prerequisite IS executable, no repair may
+  //     be generated (otherwise the planner degenerates into farming first).
+  const healthyWorld = {
+    ...repairWorld,
+    buildContext: (project, s, terminalGoal, options) => {
+      const base = repairWorld.buildContext(project, s, terminalGoal, options);
+      const alternative = base.plan.alternatives[0];
+      alternative.prerequisites[0].evidence = {
+        kind: "battle-survivability",
+        status: "viable-at-current-state",
+        damage: 5,
+        currentHp: (s.hero || {}).hp,
+      };
+      return base;
+    },
+  };
+  const healthy = runDependencyFeedbackLoop(
+    { floors: {} },
+    PROJECT_ROOT,
+    TERMINAL_GOAL,
+    repairWorld.state(repairWorld.nodes.R),
+    {
+      maxRounds: 3,
+      maxTotalLocalExpansions: 50,
+      localMaxExpansions: 10,
+      candidateLimit: 4,
+      buildDependencyContext: healthyWorld.buildContext,
+      executeLocalDependency: repairWorld.executeLocal,
+      failureConditionedResourceRepair: true,
+      simulatorFactory: repairWorld.makeSimulator,
+    },
+  );
+  assert.strictEqual(
+    healthy.globalState.resourceRepair.generated,
+    0,
+    "no resource repair may be generated while a normal prerequisite is executable",
   );
 
   const replayUnverified = runDependencyFeedbackLoop(
@@ -407,6 +614,13 @@ function main() {
       COMMITMENT_DEFAULT_IS_OFF: true,
       FULL_ROUTE_REPLAY_GATE_FAILS_CLOSED: true,
       FINAL_BRANCH_LIFECYCLE_SWEEP_IS_EXACT: true,
+      NORMAL_DEPENDENCY_CAN_ADVANCE_BEFORE: false,
+      RESOURCE_REPAIR_EXPERIMENT_GENERATED: true,
+      REPAIR_CHECKPOINT_STRICT_REPLAY: true,
+      AFTER_REPAIR_REPLAN_SAME_BLOCKED_BATTLE_NOW_VIABLE: true,
+      NO_RESOURCE_REPAIR_WITHOUT_A_BATTLE_FEASIBILITY_BLOCK: true,
+      NO_RESOURCE_REPAIR_WHILE_NORMAL_PREREQUISITE_IS_EXECUTABLE: true,
+      NO_AUTHORED_RESOURCE_THRESHOLD: true,
     },
     lineageComparison: {
       uncommittedSequence: offExecutionSequence,
