@@ -5,6 +5,8 @@ const { compileAutomaticFeasibilitySubgoals } = require("./automatic-feasibility
 const { buildAutomaticMacroGraph } = require("./automatic-macro-graph");
 const crypto = require("node:crypto");
 const { buildStateKey } = require("./state-key");
+const { verifyStrictReplay } = require("./strict-replay");
+const { makeBlindSimulator } = require("./blind-discovery-baseline");
 const {
   executeLocalDependency,
   materializeDirectTargetPlan,
@@ -290,6 +292,9 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   const rounds = [];
   const visitedExactCheckpointStates = new Set();
   const attemptedExperimentKeys = new Set();
+  const commitSuccessfulLineage = config.commitSuccessfulLineage !== false;
+  let preferredCohortBranchIds = new Set();
+  let lastEvaluationMap = new Map();
   let totalLocalExpansions = 0;
   let branchCounter = 0;
   let frontierState = initialState;
@@ -409,6 +414,12 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     childBranches.push({ branch: child, checkpoint });
   }
 
+  // PR-5.27c: If round 0 opened children and commitment is enabled, seed preferred cohort
+  // with those children so round 1 continues exploring the newly opened lineage.
+  if (commitSuccessfulLineage && childBranches.length > 0) {
+    preferredCohortBranchIds = new Set(childBranches.map((entry) => entry.branch.branchId));
+  }
+
   let frontierStateKey = null;
   let terminationReason = null;
   let terminationClass = null;
@@ -443,6 +454,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   }));
 
   let roundIndex = 0;
+
   while (!reachedTerminal && terminationReason == null && roundIndex < maxRounds) {
     if (remainingGlobalBudget() <= 0) {
       terminationReason = "global-local-expansion-budget-exhausted";
@@ -451,8 +463,36 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     }
     roundIndex += 1;
 
-    const portfolio = buildPortfolio();
-    const feedback = runDependencyFeedback(project, projectRoot, terminalGoal, { checkpoints: portfolio }, {
+    // PR-5.27c: Commit-on-Success, Backtrack-on-Block.
+    // When commitSuccessfulLineage is enabled and preferredCohortBranchIds contains
+    // open branches, evaluate the preferred cohort first.
+    // If any preferred child canAdvance, restrict selection to the cohort.
+    // If all preferred children are blocked/exhausted, fall back to global historical open branches.
+    let portfolio;
+    let usingPreferredCohort = false;
+    if (commitSuccessfulLineage && preferredCohortBranchIds.size > 0) {
+      const cohortOpen = Array.from(preferredCohortBranchIds)
+        .map((id) => branches.get(id))
+        .filter((branch) => branch && branch.status !== "exhausted");
+      if (cohortOpen.length > 0) {
+        portfolio = cohortOpen.map((branch) => ({
+          id: branch.branchId,
+          roles: branch.parentBranchId ? [`branch-depth-${branch.depth}`] : ["root-branch"],
+          exactStateFingerprint: branch.exactStateFingerprint,
+          state: branch.state,
+        }));
+        usingPreferredCohort = true;
+      } else {
+        preferredCohortBranchIds.clear();
+      }
+    }
+
+    if (!portfolio || portfolio.length === 0) {
+      portfolio = buildPortfolio();
+      usingPreferredCohort = false;
+    }
+
+    let feedback = runDependencyFeedback(project, projectRoot, terminalGoal, { checkpoints: portfolio }, {
       ...contextOptions,
       excludedExperimentKeys: attemptedExperimentKeys,
       maxExpansions: effectiveLocalBudget(),
@@ -462,6 +502,48 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       buildDependencyContext: buildContext,
       executeLocalDependency: executeLocal,
     });
+
+    // If preferred cohort was evaluated but none could advance, mark non-advancing branches
+    // as exhausted under the monotonic contract, clear preferred cohort, and fall back to global portfolio.
+    if (usingPreferredCohort && !feedback.selection) {
+      for (const ev of feedback.evaluations || []) {
+        if (!ev.canAdvance) {
+          const b = branches.get(ev.checkpointId);
+          if (b && b.status !== "exhausted") {
+            b.status = "exhausted";
+            b.exhaustedReason = "all-alternatives-blocked-in-cohort";
+          }
+        }
+      }
+      preferredCohortBranchIds.clear();
+      portfolio = buildPortfolio();
+      usingPreferredCohort = false;
+      feedback = runDependencyFeedback(project, projectRoot, terminalGoal, { checkpoints: portfolio }, {
+        ...contextOptions,
+        excludedExperimentKeys: attemptedExperimentKeys,
+        maxExpansions: effectiveLocalBudget(),
+        candidateLimit,
+        simulatorFactory: config.simulatorFactory,
+        buildDependencyContext: buildContext,
+        executeLocalDependency: executeLocal,
+      });
+    }
+
+    // Monotonic branch exhaustion: for all branches evaluated in this portfolio pass,
+    // if canAdvance is false, mark exhausted under the current planner contract
+    // (an immutable state's available experiments can only shrink as attemptedExperimentKeys grows).
+    lastEvaluationMap.clear();
+    for (const ev of feedback.evaluations || []) {
+      lastEvaluationMap.set(ev.checkpointId, ev);
+      if (!ev.canAdvance) {
+        const b = branches.get(ev.checkpointId);
+        if (b && b.status !== "exhausted") {
+          b.status = "exhausted";
+          b.exhaustedReason = "all-leading-prerequisites-blocked";
+        }
+      }
+    }
+
     const selection = feedback.selection;
     const nextExecution = feedback.nextExecution;
     const selectedBranch = selection ? branches.get(selection.checkpointId) || null : null;
@@ -528,9 +610,6 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       ? openedChildren.find((entry) => entry.checkpoint === terminalEntry.checkpoint)
       : openedChildren[0] || null;
 
-    // Branch status: only a PROVEN dead end marks a branch exhausted. A branch
-    // that merely cannot advance right now stays open, because whether it can
-    // advance is a function of the attempted-experiment set, which grows.
     if (selectedBranch && nextCheckpoints.length === 0) {
       if (nextExecution && nextExecution.outcome.budgetExhausted === true) {
         selectedBranch.status = "open";
@@ -539,6 +618,18 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       } else {
         selectedBranch.status = "exhausted";
         selectedBranch.exhaustedReason = nextExecution.outcome.reason || "local-execution-produced-no-checkpoint";
+      }
+    }
+
+    // PR-5.27c: preferred child cohort update for commitment.
+    // If local execution successfully opened new children, commit to this cohort
+    // on the next round. If no children were opened, clear preferred cohort so
+    // the next round falls back to global historical open branches.
+    if (commitSuccessfulLineage) {
+      if (openedChildren.length > 0) {
+        preferredCohortBranchIds = new Set(openedChildren.map((entry) => entry.branch.branchId));
+      } else {
+        preferredCohortBranchIds.clear();
       }
     }
 
@@ -655,6 +746,40 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   const terminalBranch = terminalBranchId ? branches.get(terminalBranchId) : null;
   const route = reachedTerminal && terminalBranch ? terminalBranch.cumulativeDecisions.slice() : null;
 
+  // PR-5.27c P1: True end-to-end full route strict replay verification from original initial state.
+  // We do not rely only on per-segment flags or stitched route summaries; we run
+  // verifyStrictReplay(simulator, routeSummaries, { initialState, isGoalState })
+  // whenever a route is produced and simulatorFactory (or blind simulator) is available.
+  let fullRouteStrictReplay = null;
+  if (reachedTerminal && Array.isArray(route) && route.length > 0) {
+    try {
+      let replaySim = null;
+      if (typeof config.simulatorFactory === "function") {
+        replaySim = config.simulatorFactory();
+      } else if (project && project.floorsById && Object.keys(project.floorsById).length > 0) {
+        replaySim = makeBlindSimulator(project);
+      }
+      if (replaySim && typeof replaySim.enumeratePrimitiveActions === "function" && typeof replaySim.applyAction === "function") {
+        const summaries = route.map((d) => d && (d.summary || d.kind));
+        fullRouteStrictReplay = verifyStrictReplay(replaySim, summaries, {
+          initialState,
+          isGoalState: (s) => terminalGoalReached(project, s, terminalGoal),
+        });
+      }
+    } catch (error) {
+      fullRouteStrictReplay = { ok: false, reason: `full-route-replay-exception: ${error.message}` };
+    }
+  }
+
+  // Telemetry: unique exact states across all branches and advanceable branches at the end
+  const allBranchesList = Array.from(branches.values());
+  const uniqueExactStateCount = new Set(allBranchesList.map((b) => b.exactStateFingerprint)).size;
+  const openBranchesList = openBranches();
+  const advanceableBranchCount = openBranchesList.filter((b) => {
+    const ev = lastEvaluationMap.get(b.branchId);
+    return ev ? ev.canAdvance === true : true;
+  }).length;
+
   return {
     schema: SCHEMA,
     loop: "runDependencyFeedbackLoop",
@@ -674,6 +799,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       maxTotalLocalExpansions,
       localMaxExpansions,
       candidateLimit,
+      commitSuccessfulLineage,
       maxRuntimeMs: 0,
       towerId: config.towerId || null,
     },
@@ -685,15 +811,17 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       attemptedExperimentKeys: Array.from(attemptedExperimentKeys).sort(),
       visitedExactCheckpointStateCount: visitedExactCheckpointStates.size,
       visitedExactCheckpointStates: Array.from(visitedExactCheckpointStates).sort(),
+      uniqueExactStateCount,
       experimentKeyReuseCount: rounds.filter((round) => round.experimentKeyReused === true).length,
       branchCount: branches.size,
-      openBranchCount: openBranches().length,
-      exhaustedBranchCount: Array.from(branches.values())
+      openBranchCount: openBranchesList.length,
+      advanceableBranchCount,
+      exhaustedBranchCount: allBranchesList
         .filter((branch) => branch.status === "exhausted").length,
       backtrackCount: stepRounds.filter((round) => round.backtrackedToOlderBranch === true).length,
       branchIds: Array.from(branches.keys()),
     },
-    branches: Array.from(branches.values()).map((branch) => ({
+    branches: allBranchesList.map((branch) => ({
       branchId: branch.branchId,
       parentBranchId: branch.parentBranchId,
       exactStateFingerprint: branch.exactStateFingerprint,
@@ -730,13 +858,16 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       startsAtOriginalInitialState: true,
       localSegmentCount: acceptedRounds.length,
       cumulativeDecisionCount: terminalBranch ? terminalBranch.cumulativeDecisions.length : 0,
+      fullRouteStrictReplayValid: fullRouteStrictReplay ? fullRouteStrictReplay.ok === true : null,
+      fullRouteStrictReplayReason: fullRouteStrictReplay ? (fullRouteStrictReplay.reason || null) : null,
     } : null,
     allAcceptedCheckpointsStrictReplay: roundStrictReplay,
+    fullRouteStrictReplay,
     acceptedCheckpoints: acceptedRounds.map((round) => round.acceptedCheckpointLabel),
     rounds,
     timing: { totalWallMs: completedAt - startedAt },
     verdict: reachedTerminal
-      ? (roundStrictReplay
+      ? (roundStrictReplay && (!fullRouteStrictReplay || fullRouteStrictReplay.ok === true)
         ? "DEPENDENCY_FEEDBACK_LOOP_REACHED_TERMINAL_WITH_STRICT_REPLAY"
         : "DEPENDENCY_FEEDBACK_LOOP_REACHED_TERMINAL_REPLAY_UNVERIFIED")
       : "DEPENDENCY_FEEDBACK_LOOP_UNKNOWN_UNDER_THIS_BUDGET",

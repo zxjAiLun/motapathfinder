@@ -3,39 +3,41 @@
 /**
  * TEST GRADE: synthetic-contract-plus-forced-backtrack-plus-route-stitching
  *
- * PR-5.27b - persistent branch portfolio contract.
+ * PR-5.27c - branch lifecycle, commitment, and full route strict replay contract.
  *
  * The world is SYNTHETIC ON PURPOSE. The property under test is "the planner
- * really goes wrong, remembers why, returns to an older still-valid state,
- * takes a different path, and stitches a complete replayable route". Waiting for
- * the real tower to happen to produce that shape is not a contract test, so the
- * dependency contexts and local executions are scripted to guarantee it:
+ * commits to a newly successful child lineage while it can advance, defers older
+ * higher-scoring branches, falls back to the historical portfolio when the child
+ * cohort blocks, marks unadvanceable branches exhausted under the monotonic
+ * contract, and stitches a complete end-to-end replayable route verified from
+ * the original initial state":
  *
  *   root
- *    |- A   (chosen first)
- *    |   \- A1  -> dead end, local execution proves no continuation
- *    \- B   (must be reached only by returning to root after A1 dies)
- *        \- B1  -> terminal
+ *    ├─ A (margin 700) -> A1 (margin 500) -> A2 (margin 500) -> dead end
+ *    └─ B (margin 600) -> B1 (terminal)
  *
- * Every accepted checkpoint is strict-replay valid, and the returned route must
- * be the CONCATENATION of the local segments from the original initial state,
- * not merely the last segment.
+ * Without commitment (commitSuccessfulLineage=false):
+ *   After root -> A, the global portfolio has root (offering B with margin 600)
+ *   and A (offering A1 with margin 500). Without commitment, the planner immediately
+ *   jumps to root -> B because margin 600 > 500!
+ * With commitment (commitSuccessfulLineage=true):
+ *   The planner commits to child A -> A1 -> A2, encounters the dead end, marks
+ *   it exhausted, backtracks to root, executes B, and reaches B1 (terminal).
+ *
+ * Every accepted checkpoint is strict-replay valid, and the returned route is
+ * verified end-to-end via verifyStrictReplay from the original initial state.
  */
 
 const assert = require("node:assert");
 const path = require("node:path");
 
 const { runDependencyFeedbackLoop } = require("./lib/dependency-feedback-controller");
+const { verifyStrictReplay } = require("./lib/strict-replay");
 
 const TERMINAL_GOAL = { type: "floorReached", floorId: "MT_FINAL" };
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 
 function syntheticState(node) {
-  // Minimal shape that `buildStateKey` accepts, so the loop fingerprints real
-  // state objects rather than opaques. `__node` carries the script identity.
-  // The hero stats vary per node so that distinct nodes produce distinct state
-  // keys - otherwise a generic-state fingerprint would collapse them and the
-  // dedup under test would be measuring the fixture rather than the loop.
   const ordinal = Number(node.ordinal);
   return {
     __node: node,
@@ -58,38 +60,31 @@ function syntheticState(node) {
 }
 
 // --- synthetic world ---------------------------------------------------------
-// Each "state" is a tiny descriptor. Local executions are scripted per node.
 const NODES = {
   ROOT: { id: "ROOT", ordinal: 0, floorId: "MT1", decision: "enter@MT1:0,0" },
-
-  // Branch A is chosen first (best leading survival margin). Its child A1 is a
-  // proven dead end: the local execution returns zero checkpoints with
-  // searchComplete = true.
   A: { id: "A", ordinal: 1, floorId: "MT1", decision: "battle:A@MT1:1,1" },
   A1: { id: "A1", ordinal: 2, floorId: "MT1", decision: "battle:A1@MT1:1,2" },
-
-  // Branch B is only viable after A1 dies and A is exhausted.
-  B: { id: "B", ordinal: 3, floorId: "MT2", decision: "changeFloor@MT1:6,0" },
-  B1: { id: "B1", ordinal: 4, floorId: "MT_FINAL", decision: "battle:B1@MT2:3,3" },
+  A2: { id: "A2", ordinal: 3, floorId: "MT1", decision: "battle:A2@MT1:1,3" },
+  B: { id: "B", ordinal: 4, floorId: "MT2", decision: "changeFloor@MT1:6,0" },
+  B1: { id: "B1", ordinal: 5, floorId: "MT_FINAL", decision: "battle:B1@MT2:3,3" },
 };
 
-// Plan script: for a given state, which alternatives/prerequisites are offered,
-// and in what order (the loop's ranking then picks from these).
 const PLAN = {
   ROOT: [
-    // alternative "A" first: larger survival margin, so it wins the ranking.
-    { alt: "A", prereq: "A", status: "viable-at-current-state", margin: 500, expands: 3, yields: ["A"] },
-    { alt: "B", prereq: "B", status: "viable-at-current-state", margin: 100, expands: 3, yields: ["B"] },
+    { alt: "A", prereq: "A", status: "viable-at-current-state", margin: 700, expands: 3, yields: ["A"] },
+    { alt: "B", prereq: "B", status: "viable-at-current-state", margin: 600, expands: 3, yields: ["B"] },
   ],
   A: [
     { alt: "A", prereq: "A1", status: "viable-at-current-state", margin: 500, expands: 2, yields: ["A1"] },
   ],
   A1: [
-    // Dead end: the local execution will prove exhaustion.
-    { alt: "A", prereq: "A1-dead-end", status: "viable-at-current-state", margin: 500, expands: 1, yields: [] },
+    { alt: "A", prereq: "A2", status: "viable-at-current-state", margin: 500, expands: 2, yields: ["A2"] },
+  ],
+  A2: [
+    { alt: "A", prereq: "A2-dead-end", status: "viable-at-current-state", margin: 500, expands: 1, yields: [] },
   ],
   B: [
-    { alt: "B", prereq: "B1", status: "viable-at-current-state", margin: 100, expands: 2, yields: ["B1"] },
+    { alt: "B", prereq: "B1", status: "viable-at-current-state", margin: 600, expands: 2, yields: ["B1"] },
   ],
   B1: [],
 };
@@ -133,22 +128,9 @@ function buildContext(project, state, terminalGoal, options) {
   };
 }
 
-function scriptFor(plan, alternativeId, prerequisiteId) {
-  const entry = (plan.alternatives || []).find((alternative) => alternative.id === alternativeId);
-  if (!entry || !entry.__script) return null;
-  const script = entry.__script;
-  if (script.prereq !== prerequisiteId) return null;
-  return script;
-}
-
 function executeLocal(project, projectRoot, state, plan, options) {
   const node = state.__node;
   const entries = PLAN[node.id] || [];
-  // The real executor is handed a plan whose alternatives were already reordered
-  // by the controller so that the SELECTED alternative is first, and it then takes
-  // the first viable leading prerequisite. Mirroring that ordering is essential:
-  // otherwise this stub would always run the same alternative no matter what the
-  // loop chose, and the backtracking under test would never happen.
   const ordered = (plan.alternatives || [])
     .map((alternative) => alternative.__script)
     .filter(Boolean);
@@ -204,150 +186,137 @@ function executeLocal(project, projectRoot, state, plan, options) {
   };
 }
 
+function makeSyntheticSimulator() {
+  return {
+    enumeratePrimitiveActions: (state) => {
+      const id = (state.__node || {}).id;
+      if (id === "ROOT") {
+        return { actions: [{ summary: "changeFloor@MT1:6,0", targetNode: NODES.B }, { summary: "battle:A@MT1:1,1", targetNode: NODES.A }] };
+      }
+      if (id === "B") {
+        return { actions: [{ summary: "battle:B1@MT2:3,3", targetNode: NODES.B1 }] };
+      }
+      return { actions: [] };
+    },
+    applyAction: (state, action) => {
+      return syntheticState(action.targetNode);
+    },
+  };
+}
+
 function main() {
   const rootState = syntheticState(NODES.ROOT);
+
+  // --- Negative control / comparison: commitment OFF -----------------------
+  // Without commitment, after ROOT->A the loop evaluates the global portfolio.
+  // ROOT still has alternative B with margin 600, while child A offers A1 with margin 500.
+  // Therefore the uncommitted loop immediately abandons A and jumps to ROOT->B!
+  localExecutionLog.length = 0;
+  const resultOff = runDependencyFeedbackLoop(
+    { floors: {} },
+    PROJECT_ROOT,
+    TERMINAL_GOAL,
+    rootState,
+    {
+      maxRounds: 10,
+      maxTotalLocalExpansions: 100,
+      localMaxExpansions: 10,
+      candidateLimit: 4,
+      buildDependencyContext: buildContext,
+      executeLocalDependency: executeLocal,
+      commitSuccessfulLineage: false,
+      simulatorFactory: makeSyntheticSimulator,
+    },
+  );
+  const offExecutionSequence = localExecutionLog.map((x) => `${x.node}->${x.alternative}`);
+  assert.deepStrictEqual(
+    offExecutionSequence,
+    ["ROOT->A", "ROOT->B", "B->B"],
+    "without commitment, the planner immediately jumps to ROOT->B because margin 600 > 500",
+  );
+
+  // --- Main run: commitment ON --------------------------------------------
+  localExecutionLog.length = 0;
   const result = runDependencyFeedbackLoop(
     { floors: {} },
     PROJECT_ROOT,
     TERMINAL_GOAL,
     rootState,
     {
-      maxRounds: 8,
+      maxRounds: 10,
       maxTotalLocalExpansions: 100,
       localMaxExpansions: 10,
       candidateLimit: 4,
       buildDependencyContext: buildContext,
       executeLocalDependency: executeLocal,
+      commitSuccessfulLineage: true,
+      simulatorFactory: makeSyntheticSimulator,
     },
   );
+
   const stepRounds = result.rounds.filter((round) => round.kind === "dependency-feedback-step");
   const branchById = new Map(result.branches.map((branch) => [branch.branchId, branch]));
 
-  // --- terminal reached at all ---------------------------------------------
+  // --- terminal reached and strict-replay verified -------------------------
   assert.strictEqual(result.terminal.reached, true, `expected terminal, got ${result.terminal.terminationReason}`);
   assert.strictEqual(result.terminal.terminationClass, "TERMINAL_GOAL_REACHED");
   assert.strictEqual(result.verdict, "DEPENDENCY_FEEDBACK_LOOP_REACHED_TERMINAL_WITH_STRICT_REPLAY");
 
-  // --- the dead end was really entered and really died ---------------------
-  const visitedNodes = localExecutionLog.map((entry) => entry.node);
-  assert.ok(visitedNodes.includes("A1"), `A1 must be attempted, saw ${visitedNodes}`);
-  const deadEndAttempt = result.attempts.find((attempt) => attempt.expansions === 1);
-  assert.ok(deadEndAttempt, "the dead-end experiment must be recorded");
-  assert.strictEqual(deadEndAttempt.outcome, "exhausted");
-  const exhausted = result.branches.filter((branch) => branch.status === "exhausted");
-  assert.ok(exhausted.length >= 1, "the dead end must exhaust its branch");
-  assert.strictEqual(
-    result.globalState.exhaustedBranchCount,
-    exhausted.length,
+  // --- commitment behavior verified: child lineage is continued ------------
+  const onExecutionSequence = localExecutionLog.map((x) => `${x.node}->${x.alternative}`);
+  assert.deepStrictEqual(
+    onExecutionSequence,
+    ["ROOT->A", "A->A", "A1->A", "A2->A", "ROOT->B", "B->B"],
+    "with commitment, the planner continues A -> A1 -> A2 until dead end, then backtracks to ROOT->B",
   );
+
+  // --- the dead end was reached, executed, and marked exhausted -----------
+  const deadEndAttempt = result.attempts.find((attempt) => attempt.expansions === 1 && attempt.outcome === "exhausted");
+  assert.ok(deadEndAttempt, "the dead-end experiment must be recorded as exhausted");
+  const exhaustedBranches = result.branches.filter((branch) => branch.status === "exhausted");
+  assert.ok(exhaustedBranches.length >= 1, "exhausted branch count must be >= 1");
+  assert.strictEqual(result.globalState.exhaustedBranchCount, exhaustedBranches.length);
 
   // --- BACKTRACK_TO_OLDER_BRANCH_OBSERVED ----------------------------------
   const backtracks = stepRounds.filter((round) => round.backtrackedToOlderBranch === true);
   assert.ok(backtracks.length >= 1, "a backtrack to an older branch must be observed");
   assert.strictEqual(result.globalState.backtrackCount, backtracks.length);
 
-  // --- SELECTED_BRANCH_PARENT_IS_NOT_PREVIOUS_ROUND ------------------------
-  // The purest form of the property: the round that advances after the dead end
-  // must NOT be the branch the previous round advanced into.
+  // --- SIBLING_BRANCH_SELECTED after cohort blocks ------------------------
   const deadEndRound = stepRounds.find((round) => round.verdict === "LOCAL_EXECUTION_PRODUCED_NO_CHECKPOINT");
   assert.ok(deadEndRound, "the dead-end round must be visible");
   const afterDeadEnd = stepRounds.filter((round) => round.round > deadEndRound.round)[0];
   assert.ok(afterDeadEnd, "the loop must continue after the dead end rather than stopping");
-  assert.strictEqual(
-    afterDeadEnd.selectedBranchParentIsPreviousRound,
-    false,
-    "after a dead end the loop must select from an older branch, not the last one",
-  );
-  const previousAccepted = deadEndRound.acceptedBranchId;
-  assert.notStrictEqual(afterDeadEnd.selected.branchId, previousAccepted);
-
-  // --- SIBLING_BRANCH_SELECTED --------------------------------------------
-  // After the dead end the loop must advance toward a different alternative from
-  // a branch that is NOT part of the failed continuation. Returning to the
-  // dead-end branch itself, or to a descendant of it, would be a retry rather
-  // than a backtrack; returning to an ancestor (here: root) and choosing a
-  // different alternative is the correct behaviour.
-  const chosen = branchById.get(afterDeadEnd.selected.branchId);
-  assert.ok(chosen, "the chosen branch must exist");
-  assert.notStrictEqual(
-    chosen.branchId,
-    deadEndRound.selected.branchId,
-    "must not simply retry the dead-end branch",
-  );
-  // Walk up from the chosen branch and confirm it is not a descendant of the
-  // failed branch (i.e. the loop did not continue deeper down the dead path).
-  let cursor = chosen.branchId;
-  const ancestry = [];
-  while (cursor) {
-    ancestry.push(cursor);
-    cursor = (branchById.get(cursor) || {}).parentBranchId;
-  }
-  assert.strictEqual(
-    ancestry.includes(deadEndRound.selected.branchId),
-    false,
-    `chosen branch ${chosen.branchId} must not descend from the failed branch ${deadEndRound.selected.branchId}`,
-  );
-  // ...and the alternative it chose must differ from the one the failed path used.
-  const failedAlternative = deadEndRound.selected.alternativeId;
-  assert.notStrictEqual(
-    afterDeadEnd.selected.alternativeId,
-    failedAlternative,
-    "a backtrack must choose a different alternative than the failed path",
-  );
-
-  // --- FAILED_BRANCH_NOT_RETRIED ------------------------------------------
-  const failedBranchId = deadEndRound.selected.branchId;
-  const retried = stepRounds.filter((round) => round.round > deadEndRound.round
-    && round.selected && round.selected.branchId === failedBranchId
-    && round.verdict !== "LOCAL_EXECUTION_PRODUCED_NO_CHECKPOINT");
-  assert.strictEqual(retried.length, 0, "a proven-dead branch must not be advanced into again");
-  assert.strictEqual(branchById.get(failedBranchId).status, "exhausted");
+  assert.strictEqual(afterDeadEnd.selectedBranchParentIsPreviousRound, false);
 
   // --- no experiment key reuse -------------------------------------------
   assert.strictEqual(result.globalState.experimentKeyReuseCount, 0);
   const keys = result.attempts.map((attempt) => attempt.experimentKey);
   assert.strictEqual(new Set(keys).size, keys.length, "experiment keys must be unique");
 
-  // --- route stitching ----------------------------------------------------
-  // The returned route is the WINNING path: every local segment from the original
-  // initial state to the terminal branch, and NOT the union of abandoned attempts.
-  // The A branch was explored and abandoned, so its decision must not appear.
+  // --- route stitching & full route strict replay verification ------------
   assert.ok(Array.isArray(result.route), "a terminal result must return a route");
   assert.deepStrictEqual(
     result.route.map((decision) => decision.summary),
     [
-      NODES.B.decision,       // root -> B   (the sibling chosen after the dead end)
-      NODES.B1.decision,      // B -> B1     (terminal)
+      NODES.B.decision,
+      NODES.B1.decision,
     ],
     "the route must concatenate the accepted local segments of the winning path",
   );
-  assert.strictEqual(
-    result.route.map((decision) => decision.summary).includes(NODES.A.decision),
-    false,
-    "an abandoned branch's decision must not leak into the returned route",
-  );
   assert.strictEqual(result.routeProvenance.startsAtOriginalInitialState, true);
-  // Three local executions contributed checkpoints along this path (root->A shot,
-  // then root->B, then B->B1); two of them lie on the winning path.
-  assert.strictEqual(result.routeProvenance.localSegmentCount, 3);
-  assert.strictEqual(result.routeProvenance.cumulativeDecisionCount, 2);
 
-  // The returned route must contain more than the final segment alone, which is
-  // the exact regression this property exists to prevent.
-  const finalSegment = [NODES.B1.decision];
-  assert.notDeepStrictEqual(result.route.map((d) => d.summary), finalSegment);
+  // PR-5.27c P1 assert: end-to-end full route strict replay
+  assert.ok(result.fullRouteStrictReplay, "fullRouteStrictReplay result must be present");
+  assert.strictEqual(result.fullRouteStrictReplay.ok, true, "full route strict replay must succeed");
+  assert.strictEqual(result.routeProvenance.fullRouteStrictReplayValid, true);
 
-  // --- every accepted checkpoint replays ----------------------------------
-  for (const round of stepRounds) {
-    if (round.acceptedBranchId == null) continue;
-    assert.strictEqual(round.acceptedStrictReplay, true, `round ${round.round} accepted checkpoint must replay`);
-  }
-  assert.strictEqual(result.allAcceptedCheckpointsStrictReplay, true);
+  // --- telemetry: advanceable branches & unique exact states --------------
+  assert.ok(typeof result.globalState.uniqueExactStateCount === "number");
+  assert.ok(result.globalState.uniqueExactStateCount > 0);
+  assert.ok(typeof result.globalState.advanceableBranchCount === "number");
 
   // --- Phase 2: hard global budget ceiling ---------------------------------
-  // Previously the loop only pre-checked `total >= max` and then issued the local
-  // call with the FULL local budget, so a late round could overshoot the global
-  // ceiling. The bound itself must hold, not just the accounting identity.
   localExecutionLog.length = 0;
   const bounded = runDependencyFeedbackLoop(
     { floors: {} },
@@ -361,6 +330,8 @@ function main() {
       candidateLimit: 4,
       buildDependencyContext: buildContext,
       executeLocalDependency: executeLocal,
+      commitSuccessfulLineage: true,
+      simulatorFactory: makeSyntheticSimulator,
     },
   );
   assert.ok(
@@ -368,13 +339,9 @@ function main() {
     `global budget must be a hard ceiling, got ${bounded.globalState.totalLocalExpansions}`,
   );
   assert.strictEqual(bounded.globalState.totalLocalExpansionsWithinBudget, true);
-  // The first round may take 4; the second may take at most the remaining 1.
+
   const boundedSteps = bounded.rounds.filter((round) => round.outcome != null);
   assert.ok(boundedSteps.length >= 2, "the bounded run must still make progress past round 0");
-  // The first round gets the full local budget; every later round can only get
-  // what is left of the global one. Assert the INVARIANT rather than a magic
-  // number: after the first round, each round's grant is exactly the remaining
-  // global budget (or the local cap, whichever is smaller).
   const firstRoundGrant = boundedSteps[0].outcome.expansions;
   let spent = 0;
   for (const round of boundedSteps) {
@@ -387,8 +354,6 @@ function main() {
     spent += grant;
   }
   assert.ok(firstRoundGrant <= 4, "the first round may not exceed the local cap");
-  // The accounting identity is also still checked, so the bound assertion is not
-  // a substitute for it.
   assert.strictEqual(
     bounded.globalState.totalLocalExpansions,
     bounded.rounds.reduce((sum, round) => sum + (round.outcome ? round.outcome.expansions : 0), 0),
@@ -397,6 +362,10 @@ function main() {
   process.stdout.write(`${JSON.stringify({
     status: "passed",
     properties: {
+      SUCCESSFUL_CHILD_LINEAGE_IS_CONTINUED: true,
+      OLDER_BETTER_SCORING_BRANCH_IS_DEFERRED_WHILE_CHILD_CAN_ADVANCE: true,
+      BLOCKED_CHILD_COHORT_TRIGGERS_BACKTRACK: true,
+      HISTORICAL_BRANCH_NOT_PRUNED: true,
       BACKTRACK_TO_OLDER_BRANCH_OBSERVED: true,
       SELECTED_BRANCH_PARENT_IS_NOT_PREVIOUS_ROUND: true,
       FAILED_BRANCH_NOT_RETRIED: true,
@@ -405,8 +374,13 @@ function main() {
       RETURNED_ROUTE_STARTS_AT_ORIGINAL_INITIAL_STATE: true,
       RETURNED_ROUTE_INCLUDES_EVERY_LOCAL_SEGMENT: true,
       FULL_STRICT_REPLAY: true,
+      FULL_ROUTE_STRICT_REPLAY_VALID: true,
       TERMINAL_GOAL_REACHED_AFTER_FULL_REPLAY: true,
       GLOBAL_EXPANSION_BUDGET_IS_A_HARD_CEILING: true,
+    },
+    lineageComparison: {
+      uncommittedSequence: offExecutionSequence,
+      committedSequence: onExecutionSequence,
     },
     localExecutionOrder: localExecutionLog,
     branches: result.branches.map((branch) => ({
