@@ -37,6 +37,11 @@ const { verifyStrictReplay } = require("./lib/strict-replay");
 const TERMINAL_GOAL = { type: "floorReached", floorId: "MT_FINAL" };
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 
+function numberish(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function syntheticState(node) {
   const ordinal = Number(node.ordinal);
   return {
@@ -527,6 +532,201 @@ function main() {
     "no resource repair may be generated while a normal prerequisite is executable",
   );
 
+  // (d) PR-5.27f - relevance world.
+  //
+  // Same blocked battle (`MT1:enemy:4,4:ogre`, viable only at ATK >= 50), but the
+  // simulator now offers TWO investment opportunities:
+  //   - a PURE path unlock (changeFloor, zero combat-resource delta)
+  //   - a combat investment (battle: spend nothing, gain ATK)
+  // The path unlock is re-generable at every new floor, which is exactly the
+  // degeneracy observed in 5.27e (70 of 73 repair selections).
+  const relevanceWorld = (() => {
+    const BLOCK_ATK_REQUIRED = 50;
+    const state = (node) => ({
+      __repairNode: node,
+      floorId: node.floorId,
+      hero: {
+        hp: 100, hpmax: 100, atk: node.atk, def: 0, mdef: 0, lv: 1, exp: 0, money: 0,
+        loc: { x: 0, y: 0, direction: "down" },
+        equipment: [], followers: [],
+      },
+      inventory: {}, flags: {}, floorStates: {}, triggeredAutoEvents: {},
+      visitedFloors: { [node.floorId]: true }, route: [], notes: [],
+      meta: { decisionDepth: node.ordinal, rawRouteLength: node.ordinal },
+    });
+    const rootNode = { id: "R", ordinal: 0, floorId: "MT1", atk: 10 };
+    const buildContext = (project, s, terminalGoal, options) => {
+      const atk = (s.hero || {}).atk || 0;
+      const viable = atk >= BLOCK_ATK_REQUIRED;
+      return {
+        graph: { floorCorridor: {} },
+        feasibility: {},
+        plan: {
+          objective: { selectedFeasibilitySubgoal: null },
+          alternatives: [{
+            id: "alternative-block",
+            prerequisites: [{
+              id: "require-block",
+              sourceNodeId: "MT1:enemy:4,4:ogre",
+              kind: "prerequisite",
+              relation: "AND",
+              order: 0,
+              actionGoal: { type: "tileRemoved", floorId: "MT1", x: 4, y: 4 },
+              target: { floorId: "MT1", x: 4, y: 4 },
+              evidence: {
+                kind: "battle-survivability",
+                status: viable ? "viable-at-current-state" : "unbeatable-at-current-stats",
+                damage: viable ? 10 : null,
+                currentHp: (s.hero || {}).hp,
+              },
+            }],
+          }],
+        },
+      };
+    };
+    const executeLocal = (project, projectRoot, s, plan, options) => {
+      const goal = (options && options.goalOverride) || {};
+      if (!options || !options.goalOverride) {
+        return {
+          selected: null,
+          outcome: { goalFound: false, expansions: 1, budgetExhausted: false, frontierExhausted: false, searchComplete: false, reason: "synthetic-unbeatable" },
+          checkpoints: [],
+          checkpointDiversity: { allStrictReplay: true, roles: [] },
+          verdict: "LOCAL_DEPENDENCY_EXECUTION_OPEN",
+        };
+      }
+      const minHero = goal.minHero || {};
+      const combat = numberish(minHero.atk) > 0 || numberish(minHero.exp) > 0 || numberish(minHero.lv) > 0;
+      const node = combat
+        ? { id: "STAT", ordinal: 1, floorId: s.floorId, atk: 60, decision: "battle:training@MT1:1,1" }
+        : { id: "MOVED", ordinal: 1, floorId: s.floorId === "MT1" ? "MT2" : "MT3", atk: (s.hero || {}).atk, decision: `goto:MT2:0,0` };
+      return {
+        selected: { alternativeId: "repair-intent", prerequisite: { sourceNodeId: "repair" } },
+        outcome: { goalFound: false, expansions: 2, budgetExhausted: false, frontierExhausted: false, searchComplete: false, reason: null },
+        checkpoints: [{
+          id: `checkpoint-${node.id}`,
+          roles: ["resource-repair"],
+          exactStateFingerprint: `fp-${node.id}-${node.floorId}`,
+          floorId: node.floorId,
+          state: state(node),
+          decisionCount: 1,
+          replay: { valid: true, stepsAttempted: 1, stepsCompleted: 1, failureReason: null },
+          routeRecord: { decisions: [{ summary: node.decision }] },
+        }],
+        checkpointDiversity: { allStrictReplay: true, roles: ["resource-repair"] },
+        verdict: "LOCAL_DEPENDENCY_SINGLE_ROLE_CHECKPOINT_VERIFIED",
+      };
+    };
+    const PATH_ACTION = { summary: "goto:next-floor:0,0", kind: "changeFloor", target: { x: 0, y: 0 }, floorId: "MT1" };
+    const STAT_ACTION = { summary: "battle:training@MT1:1,1", kind: "battle", target: { x: 1, y: 1 } };
+    const makeSimulator = (actions) => () => ({
+      enumeratePrimitiveActions: () => ({ actions }),
+      applyAction: (s, action) => {
+        if (action.kind === "changeFloor") {
+          return state({
+            id: "MOVED",
+            ordinal: s.__repairNode.ordinal + 1,
+            floorId: s.floorId === "MT1" ? "MT2" : "MT3",
+            atk: (s.hero || {}).atk,
+            decision: "goto:next-floor:0,0",
+          });
+        }
+        return state({ id: "STAT", ordinal: s.__repairNode.ordinal + 1, floorId: s.floorId, atk: 60, decision: "battle:training@MT1:1,1" });
+      },
+    });
+    return { rootNode, state, buildContext, executeLocal, makeSimulator, PATH_ACTION, STAT_ACTION };
+  })();
+
+  const runRelevance = (actions, extra) => runDependencyFeedbackLoop(
+    { floors: {} },
+    PROJECT_ROOT,
+    TERMINAL_GOAL,
+    relevanceWorld.state(relevanceWorld.rootNode),
+    {
+      maxRounds: 4,
+      maxTotalLocalExpansions: 50,
+      localMaxExpansions: 10,
+      candidateLimit: 4,
+      buildDependencyContext: relevanceWorld.buildContext,
+      executeLocalDependency: relevanceWorld.executeLocal,
+      failureConditionedResourceRepair: true,
+      simulatorFactory: relevanceWorld.makeSimulator(actions),
+      ...extra,
+    },
+  );
+
+  // Case A - pure path/unlock only, with the battle-relevance gate ON.
+  const pathOnlyRelevant = runRelevance([relevanceWorld.PATH_ACTION], { battleRelevantRepairOnly: true });
+  assert.strictEqual(
+    pathOnlyRelevant.globalState.resourceRepair.selected,
+    0,
+    "a pure non-combat path unlock must not be selected as a battle-feasibility repair",
+  );
+  assert.ok(
+    pathOnlyRelevant.globalState.resourceRepair.rejectedByRelevance > 0,
+    "the pure path unlock must be rejected by the relevance gate, not silently dropped",
+  );
+  assert.ok(
+    Object.keys(pathOnlyRelevant.globalState.resourceRepair.rejectedIntentKinds)
+      .some((kind) => kind.includes("path_unlock")),
+    "the rejected intent kind must be reported as path_unlock",
+  );
+  assert.strictEqual(
+    pathOnlyRelevant.globalState.resourceRepair.exactSamePrerequisiteConversions,
+    0,
+    "a rejected repair cannot produce a same-prerequisite conversion",
+  );
+
+  // Case A control - the SAME world with the broad (ungated) repair reproduces
+  // the observed degeneracy: repeated path unlocks, no same-battle conversion.
+  const pathOnlyBroad = runRelevance([relevanceWorld.PATH_ACTION], { battleRelevantRepairOnly: false });
+  assert.ok(
+    pathOnlyBroad.globalState.resourceRepair.selected > 0,
+    "without the gate the pure path unlock is selected (the 5.27e failure shape)",
+  );
+  assert.strictEqual(
+    pathOnlyBroad.globalState.resourceRepair.exactSamePrerequisiteConversions,
+    0,
+    "repeated path unlocks must NOT count as a same-prerequisite conversion",
+  );
+  assert.ok(
+    pathOnlyBroad.globalState.advanceableBranchCount > 0,
+    "PR-5.27f P1-2: a branch with a live repair experiment is part of the effective "
+    + "experiment universe and must not be collapsed as exhausted",
+  );
+
+  // Case B - combat investment present, gate ON: the repair must be accepted and
+  // must convert THE SAME prerequisite identity.
+  let exactConversions = [];
+  const combatRelevant = runRelevance(
+    [relevanceWorld.PATH_ACTION, relevanceWorld.STAT_ACTION],
+    { battleRelevantRepairOnly: true },
+  );
+  const combatTelemetry = combatRelevant.globalState.resourceRepair;
+  assert.ok(combatTelemetry.selected > 0, "a combat-resource investment must be accepted as a repair");
+  const combatAttempts = combatRelevant.globalState.resourceRepairAttempts || [];
+  assert.ok(
+    combatAttempts.length > 0 && combatAttempts.every((entry) => entry.repairKind !== "path/unlock"),
+    "no selected repair may be a pure path unlock while the relevance gate is on",
+  );
+  assert.ok(
+    combatTelemetry.exactSamePrerequisiteConversions > 0,
+    "the accepted combat repair must convert the SAME blocked prerequisite",
+  );
+  exactConversions = (combatRelevant.globalState.resourceRepairConversions || [])
+    .flatMap((entry) => entry.identityConversions || [])
+    .filter((entry) => entry.converted);
+  assert.ok(exactConversions.length > 0);
+  assert.strictEqual(exactConversions[0].sameIdentity, true);
+  assert.strictEqual(exactConversions[0].blockedPrerequisiteId, "MT1:enemy:4,4:ogre|MT1|4,4");
+  assert.strictEqual(exactConversions[0].beforeStatus, "unbeatable-at-current-stats");
+  assert.strictEqual(exactConversions[0].afterStatus, "viable-at-current-state");
+  assert.ok(
+    combatRelevant.globalState.finalBranchLifecycleSweep.advanceableBranchIds.length > 0
+    || combatRelevant.globalState.advanceableBranchCount > 0,
+    "a branch carrying a repair experiment remains advanceable in the effective universe",
+  );
+
   const replayUnverified = runDependencyFeedbackLoop(
     { floors: {} },
     PROJECT_ROOT,
@@ -621,6 +821,33 @@ function main() {
       NO_RESOURCE_REPAIR_WITHOUT_A_BATTLE_FEASIBILITY_BLOCK: true,
       NO_RESOURCE_REPAIR_WHILE_NORMAL_PREREQUISITE_IS_EXECUTABLE: true,
       NO_AUTHORED_RESOURCE_THRESHOLD: true,
+      PURE_PATH_UNLOCK_REPAIR_REJECTED: true,
+      COMBAT_INVESTMENT_REPAIR_ACCEPTED: true,
+      SAME_PREREQUISITE_IDENTITY_CONVERSION_ATTRIBUTED: true,
+      BROAD_PATH_UNLOCK_DOES_NOT_COUNT_AS_SAME_PREREQUISITE_CONVERSION: true,
+      BRANCH_WITH_REPAIR_EXPERIMENT_IS_ADVANCEABLE: true,
+    },
+    relevanceGate: {
+      pathOnlyWithGate: {
+        selected: pathOnlyRelevant.globalState.resourceRepair.selected,
+        rejectedByRelevance: pathOnlyRelevant.globalState.resourceRepair.rejectedByRelevance,
+        rejectedIntentKinds: pathOnlyRelevant.globalState.resourceRepair.rejectedIntentKinds,
+        exactSamePrerequisiteConversions: pathOnlyRelevant.globalState.resourceRepair.exactSamePrerequisiteConversions,
+      },
+      pathOnlyBroad: {
+        selected: pathOnlyBroad.globalState.resourceRepair.selected,
+        rejectedByRelevance: pathOnlyBroad.globalState.resourceRepair.rejectedByRelevance,
+        exactSamePrerequisiteConversions: pathOnlyBroad.globalState.resourceRepair.exactSamePrerequisiteConversions,
+        convertedToViableBroad: pathOnlyBroad.globalState.resourceRepair.convertedToViable,
+        advanceableBranchCount: pathOnlyBroad.globalState.advanceableBranchCount,
+      },
+      combatInvestmentWithGate: {
+        selected: combatTelemetry.selected,
+        rejectedByRelevance: combatTelemetry.rejectedByRelevance,
+        selectedRepairKinds: combatAttempts.map((entry) => entry.repairKind),
+        exactSamePrerequisiteConversions: combatTelemetry.exactSamePrerequisiteConversions,
+        identityConversions: exactConversions,
+      },
     },
     lineageComparison: {
       uncommittedSequence: offExecutionSequence,

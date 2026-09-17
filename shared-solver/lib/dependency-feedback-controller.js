@@ -65,24 +65,230 @@ const RESOURCE_REPAIR_TRIGGER_STATUSES = new Set([
   "lethal-at-current-hp",
 ]);
 
+/**
+ * PR-5.27f - Same-prerequisite identity.
+ *
+ * A conversion claim is only meaningful for ONE specific battle: the same
+ * prerequisite node, on the same floor, at the same coordinate. Statuses alone
+ * cannot carry that, because the replan may surface an entirely different
+ * battle that happens to be viable.
+ */
+function prerequisiteIdentityOf(identity) {
+  if (!identity) return null;
+  const sourceNodeId = identity.sourceNodeId != null
+    ? String(identity.sourceNodeId)
+    : (identity.prerequisiteId != null ? String(identity.prerequisiteId) : null);
+  if (sourceNodeId == null) return null;
+  const floorId = identity.floorId != null ? String(identity.floorId) : null;
+  const x = identity.x == null ? null : number(identity.x, null);
+  const y = identity.y == null ? null : number(identity.y, null);
+  return [
+    sourceNodeId,
+    floorId == null ? "-" : floorId,
+    x == null || y == null ? "-" : `${x},${y}`,
+  ].join("|");
+}
+
+/** Normalizes either planner shape into `{ sourceNodeId, floorId, x, y }`. */
+function normalizePrerequisiteIdentity(source) {
+  if (!source) return null;
+  const target = source.target || {};
+  const sourceNodeId = source.sourceNodeId != null
+    ? String(source.sourceNodeId)
+    : (source.prerequisiteId != null ? String(source.prerequisiteId) : null);
+  if (sourceNodeId == null) return null;
+  const floorId = source.floorId != null
+    ? source.floorId
+    : (source.targetFloorId != null ? source.targetFloorId : (target.floorId != null ? target.floorId : null));
+  const x = source.x != null ? number(source.x, null)
+    : (source.targetX != null ? number(source.targetX, null) : (target.x != null ? number(target.x, null) : null));
+  const y = source.y != null ? number(source.y, null)
+    : (source.targetY != null ? number(source.targetY, null) : (target.y != null ? number(target.y, null) : null));
+  return { sourceNodeId, floorId: floorId == null ? null : String(floorId), x, y };
+}
+
 function evaluateResourceRepairTrigger(evaluation) {
   if (!evaluation || evaluation.canAdvance) {
-    return { triggered: false, reason: "normal-dependency-can-advance", blockedStatuses: [] };
+    return {
+      triggered: false,
+      reason: "normal-dependency-can-advance",
+      blockedStatuses: [],
+      blockedPrerequisites: [],
+    };
   }
   if (evaluation.feedbackClass !== "no-currently-executable-leading-prerequisite") {
-    return { triggered: false, reason: "blocked-for-a-non-viability-reason", blockedStatuses: [] };
+    return {
+      triggered: false,
+      reason: "blocked-for-a-non-viability-reason",
+      blockedStatuses: [],
+      blockedPrerequisites: [],
+    };
   }
   const blockedStatuses = [];
+  const blockedPrerequisites = [];
   for (const alternative of evaluation.alternatives || []) {
-    const status = ((alternative.leadingPrerequisite || {}).evidence || {}).status
+    const leading = alternative.leadingPrerequisite || null;
+    const status = ((leading || {}).evidence || {}).status
       || alternative.leadingStatus
       || null;
-    if (status && RESOURCE_REPAIR_TRIGGER_STATUSES.has(status)) blockedStatuses.push(status);
+    if (!status || !RESOURCE_REPAIR_TRIGGER_STATUSES.has(status)) continue;
+    blockedStatuses.push(status);
+    const normalized = normalizePrerequisiteIdentity(leading);
+    blockedPrerequisites.push({
+      ...(normalized || { sourceNodeId: null, floorId: null, x: null, y: null }),
+      kind: leading ? (leading.kind || null) : null,
+      alternativeId: alternative.alternativeId || null,
+      statusBefore: status,
+      identity: prerequisiteIdentityOf(normalized),
+      evidenceBefore: leading ? { ...(leading.evidence || {}) } : null,
+    });
   }
   if (blockedStatuses.length === 0) {
-    return { triggered: false, reason: "no-battle-feasibility-blocked-prerequisite", blockedStatuses };
+    return {
+      triggered: false,
+      reason: "no-battle-feasibility-blocked-prerequisite",
+      blockedStatuses,
+      blockedPrerequisites,
+    };
   }
-  return { triggered: true, reason: "battle-prerequisite-unattainable-with-current-resources", blockedStatuses };
+  return {
+    triggered: true,
+    reason: "battle-prerequisite-unattainable-with-current-resources",
+    blockedStatuses,
+    blockedPrerequisites,
+  };
+}
+
+/**
+ * PR-5.27f - Battle-relevance gate (narrow, first version).
+ *
+ * A battle-feasibility repair must make POSITIVE PERSISTENT COMBAT RESOURCE
+ * PROGRESS: ATK / DEF / MDEF / HP / LV / EXP / equipment. Deliberately NOT a
+ * scalar score and NOT a general "usefulness" filter: money, inventory and
+ * multi-step EXP preparation all stay allowed.
+ *
+ * The single rejected shape is the one actually observed in 5.27e (70 of 73
+ * selections): a pure path/unlock whose combat-resource delta is entirely zero,
+ * which can be re-generated at every new exact state without ever touching the
+ * battle that triggered the repair.
+ */
+function isBattleRelevantRepairIntent(intent) {
+  const delta = (intent || {}).structuralDelta || {};
+  const combatGain = number(delta.atk, 0) > 0
+    || number(delta.def, 0) > 0
+    || number(delta.mdef, 0) > 0
+    || number(delta.hp, 0) > 0
+    || number(delta.lv, 0) > 0
+    || number(delta.exp, 0) > 0
+    || (Array.isArray(delta.equipment) && delta.equipment.length > 0);
+  if (combatGain) return { relevant: true, reason: "positive-combat-resource-delta" };
+  const kind = String((intent || {}).kind || "");
+  if (kind === "path/unlock" || /path|unlock/.test(kind)) {
+    return { relevant: false, reason: "pure-path-unlock-without-combat-resource-delta" };
+  }
+  return { relevant: true, reason: "non-path-intent-retained" };
+}
+
+/**
+ * PR-5.27f Phase 0A - The branch experiment universe.
+ *
+ * One branch's executable experiments are `normal alternatives UNION repair
+ * experiments`. Every lifecycle decision (portfolio selection, monotonic
+ * exhaustion, preferred-cohort collapse, final sweep) must ask THIS object, not
+ * the bare normal evaluation, otherwise a branch with a live repair experiment
+ * is still recorded as exhausted.
+ */
+function evaluateBranchExperiments(project, terminalGoal, checkpoint, options) {
+  const config = options || {};
+  const normalEvaluation = evaluateCheckpoint(project, terminalGoal, checkpoint, config);
+  const repairEnabled = config.failureConditionedResourceRepair === true;
+  const trigger = repairEnabled
+    ? evaluateResourceRepairTrigger(normalEvaluation)
+    : {
+      triggered: false,
+      reason: config.failureConditionedResourceRepair === true
+        ? "unexpected"
+        : "failure-conditioned-resource-repair-disabled",
+      blockedStatuses: [],
+      blockedPrerequisites: [],
+    };
+  let repairExperiments = [];
+  const repairRejected = [];
+  if (trigger.triggered) {
+    const simulator = typeof config.simulatorProvider === "function"
+      ? config.simulatorProvider()
+      : (typeof config.simulatorFactory === "function" ? config.simulatorFactory() : null);
+    if (simulator) {
+      const generated = buildResourceRepairExperiments({
+        simulator,
+        checkpoint,
+        trigger,
+        candidateLimit: number(config.candidateLimit, 8),
+      });
+      for (const experiment of generated) {
+        if (config.battleRelevantRepairOnly === true) {
+          const verdict = isBattleRelevantRepairIntent(experiment);
+          if (!verdict.relevant) {
+            repairRejected.push({
+              intentId: experiment.intentId,
+              kind: experiment.kind,
+              reason: verdict.reason,
+            });
+            continue;
+          }
+        }
+        repairExperiments.push(experiment);
+      }
+    }
+  }
+  const normalCanAdvance = Boolean(normalEvaluation.canAdvance);
+  const effectiveCanAdvance = normalCanAdvance || repairExperiments.length > 0;
+  const effectiveFeedbackClass = normalCanAdvance
+    ? normalEvaluation.feedbackClass
+    : repairExperiments.length > 0
+      ? "repair-experiment-available"
+      : normalEvaluation.feedbackClass;
+  return {
+    ...normalEvaluation,
+    normalCanAdvance,
+    normalFeedbackClass: normalEvaluation.feedbackClass,
+    // `canAdvance` / `feedbackClass` now describe the EFFECTIVE universe, so all
+    // existing lifecycle passes read the right value without special cases.
+    canAdvance: effectiveCanAdvance,
+    feedbackClass: effectiveFeedbackClass,
+    effectiveCanAdvance,
+    effectiveFeedbackClass,
+    repairTrigger: {
+      triggered: trigger.triggered,
+      reason: trigger.reason,
+      blockedStatuses: trigger.blockedStatuses.slice(),
+      blockedPrerequisites: trigger.blockedPrerequisites.map((entry) => ({ ...entry })),
+    },
+    repairExperiments,
+    repairExperimentCount: repairExperiments.length,
+    repairRejected,
+  };
+}
+
+/**
+ * Re-reads the SAME prerequisite identities from a replanned evaluation.
+ * Reuses the planner's own battle-evidence objects; this never recomputes
+ * damage, it only reports what the planner already decided.
+ */
+function collectReplannedPrerequisiteStatuses(afterEvaluation) {
+  const statuses = new Map();
+  const plan = afterEvaluation && afterEvaluation.context ? afterEvaluation.context.plan : null;
+  for (const alternative of ((plan || {}).alternatives || [])) {
+    for (const prereq of (alternative.prerequisites || [])) {
+      const identity = prerequisiteIdentityOf(normalizePrerequisiteIdentity(prereq));
+      if (!identity) continue;
+      const status = ((prereq.evidence || {}).status) || "complete";
+      const previous = statuses.get(identity);
+      if (previous === "viable-at-current-state") continue;
+      statuses.set(identity, status);
+    }
+  }
+  return statuses;
 }
 
 /**
@@ -109,6 +315,7 @@ function buildResourceRepairExperiments({
     experimentKind: "resource-repair",
     repairIndex: index,
     blockedStatuses: trigger.blockedStatuses.slice(),
+    blockedPrerequisites: (trigger.blockedPrerequisites || []).map((entry) => ({ ...entry })),
     originCheckpointId: checkpoint.id,
   }));
 }
@@ -253,8 +460,24 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
   const contextBuilder = typeof config.buildDependencyContext === "function"
     ? config.buildDependencyContext
     : buildDependencyContext;
+  // PR-5.27f Phase 0A: every checkpoint is scored on its EFFECTIVE experiment
+  // universe (normal alternatives UNION repair experiments), not on the normal
+  // alternatives alone.
+  let repairSimulator = null;
+  const repairSimulatorProvider = () => {
+    if (!repairSimulator) {
+      repairSimulator = typeof config.simulatorFactory === "function"
+        ? config.simulatorFactory()
+        : makeBlindSimulator(project);
+    }
+    return repairSimulator;
+  };
   const evaluations = (localExecution.checkpoints || [])
-    .map((checkpoint) => evaluateCheckpoint(project, terminalGoal, checkpoint, { ...config, contextBuilder }))
+    .map((checkpoint) => evaluateBranchExperiments(project, terminalGoal, checkpoint, {
+      ...config,
+      contextBuilder,
+      simulatorProvider: repairSimulatorProvider,
+    }))
     .sort((left, right) => {
       if (config.preferFirstGoalCheckpoint === true) {
         const leftFirst = left.roles.includes("first-goal") ? 1 : 0;
@@ -263,52 +486,36 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
       }
       return compareCheckpoint(left, right);
     });
-  const selected = evaluations.find((entry) => entry.canAdvance) || null;
+  // `selected` remains the NORMAL selection. The repair selection is drawn from
+  // the same effective-universe ordering, but the two paths must stay distinct:
+  // a repair branch has no normal alternative to materialize a plan from.
+  const selected = evaluations.find((entry) => entry.normalCanAdvance) || null;
   const baselineCheckpointId = ((localExecution.checkpoints || [])[0] || {}).id || null;
   const baseline = evaluations.find((entry) => entry.checkpointId === baselineCheckpointId) || null;
 
-  // PR-5.27e - Failure-conditioned resource repair.
-  //
-  // When the normal dependency universe of a branch cannot advance AND the block
-  // is a battle-feasibility failure with current resources, conditionally
-  // generate resource-repair experiments for that same branch. The branch then
-  // still counts as advanceable (its experiment universe = normal + repair), so
-  // the monotonic exhaustion contract from 5.27c/5.27d is NOT bypassed: a branch
-  // only becomes exhausted when BOTH the normal alternatives and the repair
-  // candidates are unavailable.
+  // PR-5.27f Phase 0A: repair experiments were already generated as part of each
+  // branch's effective universe during evaluation. Selection is a single pass
+  // over that universe - first a normal alternative if one exists, otherwise the
+  // branch's own repair experiment. There is no separate side-selection path.
   const resourceRepairEnabled = config.failureConditionedResourceRepair === true;
-  const repairExperiments = [];
-  const repairTriggers = [];
-  let repairSimulator = null;
-  if (resourceRepairEnabled) {
-    for (const evaluation of evaluations) {
-      const trigger = evaluateResourceRepairTrigger(evaluation);
-      repairTriggers.push({
-        checkpointId: evaluation.checkpointId,
-        triggered: trigger.triggered,
-        reason: trigger.reason,
-        blockedStatuses: trigger.blockedStatuses,
-      });
-      if (!trigger.triggered) continue;
-      const checkpoint = (localExecution.checkpoints || [])
-        .find((entry) => entry.id === evaluation.checkpointId) || null;
-      if (!checkpoint) continue;
-      if (!repairSimulator) {
-        repairSimulator = typeof config.simulatorFactory === "function"
-          ? config.simulatorFactory()
-          : makeBlindSimulator(project);
-      }
-      const experiments = buildResourceRepairExperiments({
-        simulator: repairSimulator,
-        checkpoint,
-        trigger,
-        candidateLimit: number(config.candidateLimit, 8),
-      });
-      for (const experiment of experiments) repairExperiments.push(experiment);
-    }
-  }
+  const repairTriggers = evaluations.map((evaluation) => ({
+    checkpointId: evaluation.checkpointId,
+    triggered: evaluation.repairTrigger.triggered,
+    reason: evaluation.repairTrigger.reason,
+    blockedStatuses: evaluation.repairTrigger.blockedStatuses.slice(),
+    blockedPrerequisiteIds: evaluation.repairTrigger.blockedPrerequisites
+      .map((entry) => entry.identity).filter(Boolean),
+    rejectedIntentIds: (evaluation.repairRejected || []).map((entry) => entry.intentId),
+  }));
+  const selectedEvaluation = evaluations.find((entry) => entry.canAdvance) || null;
+  const selectedRepairCandidate = selectedEvaluation
+    ? (selectedEvaluation.normalCanAdvance
+      ? null
+      : (selectedEvaluation.repairExperiments || [])[0] || null)
+    : null;
+  const repairRejected = evaluations.reduce((sum, entry) => sum + ((entry.repairRejected || []).length), 0);
 
-  const selectedRepair = selected ? null : (repairExperiments[0] || null);
+  const selectedRepair = selectedRepairCandidate;
   const selectedCheckpoint = selected
     ? (localExecution.checkpoints || []).find((entry) => entry.id === selected.checkpointId) || null
     : selectedRepair
@@ -456,12 +663,20 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
       resourceRepair: true,
       repairKind: selectedRepair.kind,
       blockedStatuses: selectedRepair.blockedStatuses,
+      blockedPrerequisiteIds: (selectedRepair.blockedPrerequisites || [])
+        .map((entry) => entry.identity).filter(Boolean),
+      blockedPrerequisites: (selectedRepair.blockedPrerequisites || []).map((entry) => ({ ...entry })),
     } : null),
     resourceRepair: {
       enabled: resourceRepairEnabled,
-      generatedCount: repairExperiments.length,
-      generatedIntentIds: repairExperiments.map((experiment) => experiment.intentId),
+      generatedCount: evaluations.reduce((sum, entry) => sum + (entry.repairExperimentCount || 0), 0),
+      generatedIntentIds: evaluations.flatMap((entry) => (entry.repairExperiments || []).map((experiment) => experiment.intentId)),
       selectedIntentId: selectedRepair ? selectedRepair.intentId : null,
+      blockedPrerequisiteIds: selectedRepair
+        ? (selectedRepair.blockedPrerequisites || []).map((entry) => entry.identity).filter(Boolean)
+        : [],
+      rejectedCount: repairRejected,
+      rejectedByRelevance: repairRejected,
       triggers: repairTriggers,
     },
     nextExecution,
@@ -470,7 +685,7 @@ function runDependencyFeedback(project, projectRoot, terminalGoal, localExecutio
       nextExecutionMs: completedAt - plannedAt,
       totalWallMs: completedAt - startedAt,
     },
-    verdict: !selected
+    verdict: !selected && !selectedRepair
       ? "DEPENDENCY_FEEDBACK_REQUIRES_NEW_SUBGOAL"
       : nextExecution && nextExecution.outcome.goalFound && nextExecution.checkpointDiversity.allStrictReplay
         ? "DEPENDENCY_FEEDBACK_ADVANCED_WITH_STRICT_REPLAY"
@@ -510,14 +725,18 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   const branches = new Map();
   const attempts = [];
   // PR-5.27e: failure-conditioned resource-repair accounting.
+  const battleRelevantRepairOnly = config.battleRelevantRepairOnly === true;
   const repairTelemetry = {
     generated: 0,
     selected: 0,
     checkpointsCreated: 0,
     convertedToViable: 0,
+    exactSamePrerequisiteConversions: 0,
     blockedStatusesSeen: {},
     attempts: [],
     conversions: [],
+    rejectedByRelevance: 0,
+    rejectedIntentKinds: {},
   };
   const rounds = [];
   const visitedExactCheckpointStates = new Set();
@@ -730,6 +949,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       candidateLimit,
       simulatorFactory: config.simulatorFactory,
       failureConditionedResourceRepair,
+      battleRelevantRepairOnly,
       // Forward the test seam so a synthetic world can drive the whole stack.
       buildDependencyContext: buildContext,
       executeLocalDependency: executeLocal,
@@ -758,6 +978,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         candidateLimit,
         simulatorFactory: config.simulatorFactory,
         failureConditionedResourceRepair,
+        battleRelevantRepairOnly,
         buildDependencyContext: buildContext,
         executeLocalDependency: executeLocal,
       });
@@ -825,6 +1046,14 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     // converts a previously blocked battle into a viable one after replanning.
     if (feedback.resourceRepair && feedback.resourceRepair.enabled) {
       repairTelemetry.generated += number(feedback.resourceRepair.generatedCount, 0);
+      repairTelemetry.rejectedByRelevance += number(feedback.resourceRepair.rejectedByRelevance, 0);
+      for (const entry of (feedback.resourceRepair.triggers || [])) {
+        for (const kind of (entry.rejectedIntentIds || [])) {
+          const label = String(kind).replace(/^cf-d\d+-/, "");
+          repairTelemetry.rejectedIntentKinds[label] =
+            (repairTelemetry.rejectedIntentKinds[label] || 0) + 1;
+        }
+      }
       for (const status of (selection && selection.blockedStatuses) || []) {
         repairTelemetry.blockedStatusesSeen[status] =
           (repairTelemetry.blockedStatusesSeen[status] || 0) + 1;
@@ -841,6 +1070,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         intentId: selection.alternative.alternativeId,
         repairKind: selection.repairKind || null,
         blockedStatuses: (selection.blockedStatuses || []).slice(),
+        blockedPrerequisiteIds: (selection.blockedPrerequisiteIds || []).slice(),
         experimentKey: selection.experimentKey,
         expansions: nextExpansions,
         checkpointCount: nextCheckpoints.length,
@@ -899,10 +1129,16 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       }
     }
 
-    // PR-5.27e: CONVERSION CHECK. After a repair experiment produces a child, replan
-    // from the child's exact state and ask whether a battle that was
-    // unbeatable/lethal before is now viable. This is the mechanism's own claim
-    // and the only thing that licenses further work.
+    // PR-5.27f Phase 0B: SAME-PREREQUISITE CONVERSION CHECK.
+    //
+    // The claim under test is
+    //   before: battle X (specific node/floor/coordinate) = unbeatable | lethal
+    //   repair
+    //   after : THE SAME battle X = viable-at-current-state
+    // A replan that merely surfaces SOME viable prerequisite is not that claim,
+    // so conversion is now attributed per prerequisite IDENTITY, and a blocked
+    // battle that is absent from the replan reports
+    // `NOT_PRESENT_IN_REPLANNED_ALTERNATIVES` rather than counting as converted.
     if (repairSelected && openedChildren.length > 0) {
       for (const child of openedChildren.slice(0, 1)) {
         let afterEvaluation = null;
@@ -925,21 +1161,58 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         } catch {
           afterEvaluation = null;
         }
-        const statusesAfter = (afterEvaluation && afterEvaluation.alternatives || [])
-          .map((alternative) => ((alternative.leadingPrerequisite || {}).evidence || {}).status
-            || alternative.leadingStatus || null)
-          .filter(Boolean);
-        const converted = statusesAfter.some((status) => status === "viable-at-current-state");
+        const replanned = collectReplannedPrerequisiteStatuses(afterEvaluation);
+        const blockedBefore = (selection.blockedPrerequisites || []).length > 0
+          ? (selection.blockedPrerequisites || [])
+          : (selection.blockedPrerequisiteIds || []).map((identity) => ({
+            identity,
+            sourceNodeId: identity,
+            floorId: null,
+            x: null,
+            y: null,
+            statusBefore: null,
+          }));
+        const identityConversions = blockedBefore.map((blocked) => {
+          const identity = blocked.identity || prerequisiteIdentityOf(blocked);
+          const afterStatus = identity && replanned.has(identity)
+            ? replanned.get(identity)
+            : "NOT_PRESENT_IN_REPLANNED_ALTERNATIVES";
+          const beforeStatus = blocked.statusBefore || null;
+          const converted = RESOURCE_REPAIR_TRIGGER_STATUSES.has(beforeStatus)
+            && afterStatus === "viable-at-current-state";
+          return {
+            blockedPrerequisiteId: identity,
+            sourceNodeId: blocked.sourceNodeId || null,
+            floorId: blocked.floorId || null,
+            x: blocked.x == null ? null : blocked.x,
+            y: blocked.y == null ? null : blocked.y,
+            beforeStatus,
+            afterStatus,
+            sameIdentity: true,
+            converted,
+          };
+        });
+        // `convertedToViable` (broad) is retained only for backward comparison
+        // with 5.27e; the causal counter is `exactSamePrerequisiteConversions`.
+        const broadConverted = Array.from(replanned.values())
+          .some((status) => status === "viable-at-current-state");
+        const anyExact = identityConversions.some((entry) => entry.converted);
         repairTelemetry.conversions.push({
           round: roundIndex,
           originBranchId: selectedBranch ? selectedBranch.branchId : null,
           childBranchId: child.branch.branchId,
           intentId: selection.alternative.alternativeId,
+          repairKind: selection.repairKind || null,
           blockedStatusesBefore: (selection.blockedStatuses || []).slice(),
-          statusesAfter,
-          converted,
+          blockedPrerequisiteIds: identityConversions.map((entry) => entry.blockedPrerequisiteId),
+          identityConversions,
+          replannedPrerequisiteCount: replanned.size,
+          statusesAfter: Array.from(new Set(replanned.values())),
+          converted: anyExact,
+          convertedBroad: broadConverted,
         });
-        if (converted) repairTelemetry.convertedToViable += 1;
+        if (anyExact) repairTelemetry.exactSamePrerequisiteConversions += 1;
+        if (broadConverted) repairTelemetry.convertedToViable += 1;
       }
     }
 
@@ -1052,7 +1325,11 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   };
   {
     const finalBranches = openBranches();
-    const finalEvaluations = finalBranches.map((branch) => evaluateCheckpoint(
+    // PR-5.27f Phase 0A: the final sweep must also ask the EFFECTIVE universe.
+    // Otherwise a branch whose normal alternatives are all blocked but which
+    // still has a live repair experiment is wrongly collapsed and reported as
+    // exhausted, understating `advanceableBranchCount`.
+    const finalEvaluations = finalBranches.map((branch) => evaluateBranchExperiments(
       project,
       terminalGoal,
       {
@@ -1065,6 +1342,12 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         ...contextOptions,
         excludedExperimentKeys: attemptedExperimentKeys,
         contextBuilder: buildContext,
+        failureConditionedResourceRepair,
+        battleRelevantRepairOnly,
+        candidateLimit,
+        simulatorProvider: () => (typeof config.simulatorFactory === "function"
+          ? config.simulatorFactory()
+          : makeBlindSimulator(project)),
       },
     ));
     lastEvaluationMap.clear();
@@ -1076,7 +1359,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       // exhausted by this sweep reports its POST-collapse status/reason in the
       // diagnostic dump instead of the stale pre-collapse `open` / null pair.
       let newlyExhaustedHere = false;
-      if (!evaluation.canAdvance && branch && branch.status !== "exhausted") {
+      if (!evaluation.effectiveCanAdvance && branch && branch.status !== "exhausted") {
         branch.status = "exhausted";
         branch.exhaustedReason = evaluation.feedbackClass;
         branch.lastEvaluationAlternatives = evaluation.alternatives;
@@ -1090,11 +1373,14 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         exhaustedReason: branch ? branch.exhaustedReason : null,
         newlyExhaustedByFinalSweep: newlyExhaustedHere,
         floorId: branch && branch.state ? branch.state.floorId || null : null,
-        canAdvance: evaluation.canAdvance,
-        feedbackClass: evaluation.feedbackClass,
+        canAdvance: evaluation.effectiveCanAdvance,
+        feedbackClass: evaluation.effectiveFeedbackClass,
+        normalCanAdvance: evaluation.normalCanAdvance,
+        normalFeedbackClass: evaluation.normalFeedbackClass,
+        repairExperimentCount: evaluation.repairExperimentCount,
         alternatives: evaluation.alternatives,
       });
-      if (evaluation.canAdvance) {
+      if (evaluation.effectiveCanAdvance) {
         finalSweep.advanceable.push(evaluation.checkpointId);
       }
     }
@@ -1199,6 +1485,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       candidateLimit,
       commitSuccessfulLineage,
       failureConditionedResourceRepair,
+      battleRelevantRepairOnly,
       maxRuntimeMs: 0,
       towerId: config.towerId || null,
     },
@@ -1221,6 +1508,9 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         selected: repairTelemetry.selected,
         checkpointsCreated: repairTelemetry.checkpointsCreated,
         convertedToViable: repairTelemetry.convertedToViable,
+        exactSamePrerequisiteConversions: repairTelemetry.exactSamePrerequisiteConversions,
+        rejectedByRelevance: repairTelemetry.rejectedByRelevance,
+        rejectedIntentKinds: { ...repairTelemetry.rejectedIntentKinds },
         blockedStatusesSeen: { ...repairTelemetry.blockedStatusesSeen },
       },
       resourceRepairAttempts: repairTelemetry.attempts,
@@ -1308,6 +1598,12 @@ module.exports = {
   SCHEMA,
   buildDependencyContext,
   evaluateCheckpoint,
+  evaluateBranchExperiments,
+  evaluateResourceRepairTrigger,
+  isBattleRelevantRepairIntent,
+  prerequisiteIdentityOf,
+  normalizePrerequisiteIdentity,
+  collectReplannedPrerequisiteStatuses,
   runDependencyFeedback,
   runDependencyFeedbackLoop,
   summarizeAlternative,
