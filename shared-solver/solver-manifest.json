@@ -38,6 +38,14 @@
       "recommendedAction": "archive to _archive/experiments/pre-canonical/; do not treat as canonical"
     },
     {
+      "match": "shared-solver/audits/**",
+      "status": "supporting",
+      "role": "diagnostics",
+      "layer": "diagnostics",
+      "correctnessSource": false,
+      "recommendedAction": "keep as historical diagnostics; never cite a bounded probe as a no-route proof"
+    },
+    {
       "match": "shared-solver/check-*.js",
       "status": "supporting",
       "role": "test",
@@ -164,6 +172,51 @@
       "layer": "tools/route",
       "correctnessSource": false,
       "recommendedAction": "keep as route GUI assets"
+    }
+  ],
+  "entrypointGroups": [
+    {
+      "id": "canonical-dp",
+      "title": "Canonical region / segment DP",
+      "description": "Shared correctness search with explicit goals; incomplete searches are not impossibility proofs.",
+      "paths": [
+        "shared-solver/run-region-dp.js",
+        "shared-solver/run-segmented-dp.js",
+        "shared-solver/run-adaptive-segment-dp.js"
+      ]
+    },
+    {
+      "id": "product-replay",
+      "title": "Solve tasks, launcher and replay",
+      "paths": [
+        "shared-solver/run-solve-task.js",
+        "shared-solver/run-solver-launcher.js",
+        "shared-solver/route-gui.js",
+        "shared-solver/verify-route-live.js"
+      ]
+    },
+    {
+      "id": "dependency-planner",
+      "title": "Current dependency planner experiment (not capability-qualified)",
+      "description": "Internal API: lib/dependency-feedback-controller.js. This fixed-configuration audit reproduces PR-5.27f; it is not a general-purpose product CLI.",
+      "paths": [
+        "shared-solver/audit-pr527f-round-ab.js"
+      ]
+    },
+    {
+      "id": "historical-exploration",
+      "title": "Historical and auxiliary search families",
+      "description": "Retained for compatibility and reproducible baselines, not deleted or silently redirected to the new planner.",
+      "paths": [
+        "shared-solver/run-route.js",
+        "shared-solver/run-search.js",
+        "shared-solver/run-mt1-mt11.js",
+        "shared-solver/run-progressive-monster-planner.js",
+        "shared-solver/run-whiteisland-trial-topk.js",
+        "shared-solver/run-blind-discovery-baseline.js",
+        "shared-solver/audits/probes/probe-d2-strategic-search.js",
+        "shared-solver/audits/probes/probe-d2-hierarchical-discovery.js"
+      ]
     }
   ],
   "suites": {
@@ -325,34 +378,34 @@
     "shared-solver/lib/automatic-dependency-planner.js": {
       "id": "automatic-dependency-planner",
       "path": "shared-solver/lib/automatic-dependency-planner.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
       "correctnessSource": false,
       "tests": {
-        "unit": false,
-        "realFixture": false,
+        "unit": true,
+        "realFixture": true,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "auto-classified; refine in solver-manifest"
+      "notes": "Dependency planning reuses the shared simulator and canonical segment DP; mechanism checks are not autonomous terminal capability certification."
     },
     "shared-solver/lib/automatic-feasibility-subgoals.js": {
       "id": "automatic-feasibility-subgoals",
       "path": "shared-solver/lib/automatic-feasibility-subgoals.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
       "correctnessSource": false,
       "tests": {
-        "unit": false,
-        "realFixture": false,
+        "unit": true,
+        "realFixture": true,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "auto-classified; refine in solver-manifest"
+      "notes": "Dependency planning reuses the shared simulator and canonical segment DP; mechanism checks are not autonomous terminal capability certification."
     },
     "shared-solver/lib/automatic-macro-graph.js": {
       "id": "automatic-macro-graph",
@@ -558,18 +611,18 @@
     "shared-solver/lib/dependency-feedback-controller.js": {
       "id": "dependency-feedback-controller",
       "path": "shared-solver/lib/dependency-feedback-controller.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
       "correctnessSource": false,
       "tests": {
-        "unit": false,
-        "realFixture": false,
+        "unit": true,
+        "realFixture": true,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "auto-classified; refine in solver-manifest"
+      "notes": "Cross-round dependency loop and stable compatibility exports; feedback, repair, branch lifecycle and route finalization live in dependency-planner/. Not an independently qualified replacement kernel."
     },
     "shared-solver/lib/dependency-frontier.js": {
       "id": "dependency-frontier",
@@ -585,6 +638,86 @@
         "fullClosure": false,
         "cleanCheckout": true
       }
+    },
+    "shared-solver/lib/dependency-planner/branch-ledger.js": {
+      "id": "dependency-planner/branch-ledger",
+      "path": "shared-solver/lib/dependency-planner/branch-ledger.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "Dependency planning reuses the shared simulator and canonical segment DP; mechanism checks are not autonomous terminal capability certification."
+    },
+    "shared-solver/lib/dependency-planner/feedback.js": {
+      "id": "dependency-planner/feedback",
+      "path": "shared-solver/lib/dependency-planner/feedback.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "Dependency planning reuses the shared simulator and canonical segment DP; mechanism checks are not autonomous terminal capability certification."
+    },
+    "shared-solver/lib/dependency-planner/portfolio-journal.js": {
+      "id": "dependency-planner/portfolio-journal",
+      "path": "shared-solver/lib/dependency-planner/portfolio-journal.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/dependency-planner/repair-experiments.js": {
+      "id": "dependency-planner/repair-experiments",
+      "path": "shared-solver/lib/dependency-planner/repair-experiments.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "Dependency planning reuses the shared simulator and canonical segment DP; mechanism checks are not autonomous terminal capability certification."
+    },
+    "shared-solver/lib/dependency-planner/route-finalization.js": {
+      "id": "dependency-planner/route-finalization",
+      "path": "shared-solver/lib/dependency-planner/route-finalization.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": true,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "Dependency planning reuses the shared simulator and canonical segment DP; mechanism checks are not autonomous terminal capability certification."
     },
     "shared-solver/lib/discovery-capability-audit.js": {
       "id": "discovery-capability-audit",
@@ -662,6 +795,22 @@
         "cleanCheckout": true
       },
       "notes": "auto-classified; refine in solver-manifest"
+    },
+    "shared-solver/lib/durable-search.js": {
+      "id": "durable-search",
+      "path": "shared-solver/lib/durable-search.js",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
+      "correctnessSource": false,
+      "tests": {
+        "unit": true,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "Durable bounded task orchestration over canonical DP; explicit profile stages, multi-candidate checkpoints and strict replay. Not full-frontier resume or an optimality proof."
     },
     "shared-solver/lib/effect-vm.js": {
       "id": "effect-vm",
@@ -1241,18 +1390,18 @@
     "shared-solver/lib/local-dependency-executor.js": {
       "id": "local-dependency-executor",
       "path": "shared-solver/lib/local-dependency-executor.js",
-      "layer": "unclassified",
-      "status": "supporting",
-      "role": "supporting",
+      "layer": "planning/decomposition",
+      "status": "experimental",
+      "role": "candidate-generator",
       "correctnessSource": false,
       "tests": {
-        "unit": false,
-        "realFixture": false,
+        "unit": true,
+        "realFixture": true,
         "segmentClosure": false,
         "fullClosure": false,
         "cleanCheckout": true
       },
-      "notes": "auto-classified; refine in solver-manifest"
+      "notes": "Dependency planning reuses the shared simulator and canonical segment DP; mechanism checks are not autonomous terminal capability certification."
     },
     "shared-solver/lib/mcgs.js": {
       "id": "mcgs",
@@ -3107,6 +3256,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.4c Commit 2 Repair: independent candidate key builds (no exact-key cache in gate), equivalent->reject accounting, event vs occupancy split, negative state delta, perf-tracker key phase estimate"
+    },
+    "shared-solver/check-durable-search.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "Synthetic real-DP strict replay, persisted task resume, zero-spend guards, identity and writer locks, bounded negative control, read-only progress HTTP security. No external tower required."
     },
     "shared-solver/check-eval-vector.js": {
       "grade": "unit-plus-micro",

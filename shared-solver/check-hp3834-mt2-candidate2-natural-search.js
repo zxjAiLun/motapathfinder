@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("assert");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const {
   annotateLifecycleCoverage,
@@ -9,7 +11,7 @@ const {
   exactLineagePipelineEvidence,
   hardTilesMatchExpected,
   summarizePipelineStages,
-} = require("./audit-hp3834-mt2-candidate2-natural-search");
+} = require("./audits/hp3834/audit-hp3834-mt2-candidate2-natural-search");
 
 function attempt(overrides) {
   return {
@@ -140,3 +142,62 @@ const isolatedClassification = classifyIsolatedSearch([
 assert.strictEqual(isolatedClassification.classification, "inconclusive");
 
 console.log("hp3834 candidate-2 natural search audit checks: 25/25 passed");
+
+// Loading an audit module or checking an old report does not exercise CLI defaults.
+// Check every literal __dirname anchor, including provenance and worker cwd roots.
+function checkAuditPathAnchors() {
+  const repoRoot = path.resolve(__dirname, "..");
+  const directory = path.join(__dirname, "audits", "hp3834");
+  const files = fs.readdirSync(directory).filter((file) => file.endsWith(".js"));
+  assert.strictEqual(files.length, 12);
+  let checked = 0;
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(directory, file), "utf8");
+    const anchors = [...source.matchAll(/path\.(resolve|join)\(\s*(__dirname|ROOT),([^)]*)\)/g)];
+    assert.strictEqual(anchors.filter((match) => match[2] === "__dirname").length,
+      (source.match(/\b__dirname\b/g) || []).length, `${file}: untested anchor`);
+    const rootDeclaration = /const ROOT = path\.resolve\(__dirname,([^)]*)\)/.exec(source);
+    const actualRoot = rootDeclaration && path.resolve(directory,
+      ...[...rootDeclaration[1].matchAll(/"([^"]*)"/g)].map((match) => match[1]));
+    for (const [, method, base, argumentsSource] of anchors) {
+      const parts = [...argumentsSource.matchAll(/"([^"]*)"/g)].map((match) => match[1]);
+      assert.strictEqual(argumentsSource.replace(/"[^"]*"|[\s,]/g, ""), "", `${file}: nonliteral anchor`);
+      const tail = parts.filter((part) => part !== "..");
+      const solverRelative = ["routes", "lib", "run-segmented-dp.js"].includes(tail[0]);
+      assert.ok(solverRelative || tail.length === 0 || tail[0] === "Only upV2.1", `${file}: unknown anchor`);
+      const expected = path.join(solverRelative ? __dirname : repoRoot, ...tail);
+      assert.strictEqual(path[method](base === "ROOT" ? actualRoot : directory, ...parts), expected,
+        `${file}: path anchor ${argumentsSource.trim()}`);
+      checked += 1;
+    }
+  }
+  assert.strictEqual(checked, 45);
+  return checked;
+}
+
+const anchorsChecked = checkAuditPathAnchors();
+const { loadProject } = require("./lib/project-loader");
+const { makeSimulator } = require("./audits/hp3834/audit-hp3834-mt1-first-divergence");
+const { runIsolatedLocalCheckpoint } = require("./audits/hp3834/audit-hp3834-mt2-candidate2-natural-search");
+const projectRoot = path.resolve(__dirname, "..", "Only upV2.1", "Only upV2.1");
+const project = loadProject(projectRoot);
+const state = makeSimulator(project).createInitialState({ rank: "chaos" });
+const worker = runIsolatedLocalCheckpoint(projectRoot, project, { id: "path-smoke", state }, {
+  id: "path-smoke",
+  goal: { type: "floorReached", floorId: state.floorId },
+}, {
+  candidateLimit: 1,
+  goalSkylineLimit: 1,
+  dpSkylineMax: 1,
+  maxExpansions: 1,
+  maxRuntimeMs: 5000,
+  childOldSpaceMb: 256,
+});
+assert.strictEqual(worker.exitCode, 0, worker.error);
+assert.strictEqual(worker.error, null);
+assert.strictEqual(worker.processIsolated, true);
+assert.notStrictEqual(worker.pid, process.pid);
+assert.strictEqual(worker.workerReportValid, true);
+assert.strictEqual(worker.snapshotRoundTripExact, true);
+assert.strictEqual(worker.childOldSpaceActuallyApplied, true);
+console.log(`hp3834 migration contracts: ${anchorsChecked} path anchors and isolated worker passed`);

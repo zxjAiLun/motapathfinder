@@ -54,33 +54,48 @@ Public benchmark harness:
 node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchmarks/public/region-suite.json
 ```
 
-## Canonical Shared-Solver CLIs
+## Shared Solver Entry Roles
 
-- `shared-solver/audit-adaptive-repair-outcomes.js`
-- `shared-solver/audit-discovery-capability.js`
-- `shared-solver/audit-hp3834-mt1-first-divergence.js`
-- `shared-solver/audit-hp3834-mt1-gate-selection-future-value.js`
-- `shared-solver/audit-hp3834-mt1-rejecting-witness.js`
-- `shared-solver/audit-hp3834-mt2-candidate2-capacity-matrix-k.js`
-- `shared-solver/audit-hp3834-mt2-candidate2-capacity10-j.js`
-- `shared-solver/audit-hp3834-mt2-candidate2-capacity10-j1.js`
-- `shared-solver/audit-hp3834-mt2-candidate2-capacity10-j2.js`
-- `shared-solver/audit-hp3834-mt2-candidate2-goal-archive-audit-i.js`
-- `shared-solver/audit-hp3834-mt2-candidate2-natural-search-a.js`
-- `shared-solver/audit-hp3834-mt2-candidate2-natural-search-b.js`
-- `shared-solver/audit-hp3834-mt2-candidate2-natural-search.js`
-- `shared-solver/audit-hp3834-teacher-fixture.js`
-- `shared-solver/audit-mt5-candidate-quality-shadow.js`
-- `shared-solver/audit-mt5-feasibility-surface.js`
-- `shared-solver/audit-region-entry-contract.js`
-- `shared-solver/audit-region-route-output-contract.js`
-- `shared-solver/audit-replay-flag-identity-contract.js`
-- `shared-solver/audit-replay-flag-merge-cli-contract.js`
-- `shared-solver/audit-replay-h5save-resume-contract.js`
-- `shared-solver/audit-replay-start-offset-contract.js`
-- `shared-solver/audit-resource-intent-contract.js`
-- `shared-solver/audit-state-abstraction.js`
-- `shared-solver/audit-state-dependencies.js`
+Primary assignments come from `solver-manifest.json.entrypointGroups`; unassigned files are not presumed canonical. These are navigation roles, not search policy or proof claims.
+
+The current dependency planner reuses the shared simulator and canonical DP. It is not a replacement kernel. `lib/dependency-feedback-controller.js` keeps the cross-round loop and compatibility API; `lib/dependency-planner/` owns single-step feedback, repair experiments, branch lifecycle and route finalization. External agents still import only `shared-solver/public.js`.
+
+### Canonical region / segment DP (3)
+
+Shared correctness search with explicit goals; incomplete searches are not impossibility proofs.
+
+- `shared-solver/run-adaptive-segment-dp.js`
+- `shared-solver/run-region-dp.js`
+- `shared-solver/run-segmented-dp.js`
+
+### Solve tasks, launcher and replay (4)
+
+- `shared-solver/route-gui.js`
+- `shared-solver/run-solve-task.js`
+- `shared-solver/run-solver-launcher.js`
+- `shared-solver/verify-route-live.js`
+
+### Current dependency planner experiment (not capability-qualified) (1)
+
+Internal API: lib/dependency-feedback-controller.js. This fixed-configuration audit reproduces PR-5.27f; it is not a general-purpose product CLI.
+
+- `shared-solver/audit-pr527f-round-ab.js`
+
+### Historical and auxiliary search families (8)
+
+Retained for compatibility and reproducible baselines, not deleted or silently redirected to the new planner.
+
+- `shared-solver/audits/probes/probe-d2-hierarchical-discovery.js`
+- `shared-solver/audits/probes/probe-d2-strategic-search.js`
+- `shared-solver/run-blind-discovery-baseline.js`
+- `shared-solver/run-mt1-mt11.js`
+- `shared-solver/run-progressive-monster-planner.js`
+- `shared-solver/run-route.js`
+- `shared-solver/run-search.js`
+- `shared-solver/run-whiteisland-trial-topk.js`
+
+### Checks (not solver entrypoints) (214)
+
 - `shared-solver/check-action-expansion-cache-correctness.js`
 - `shared-solver/check-adaptive-onlyup.js`
 - `shared-solver/check-adaptive-repair-outcomes.js`
@@ -99,21 +114,31 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-blind-discovery-baseline.js`
 - `shared-solver/check-blind-qualification.js`
 - `shared-solver/check-bounded-abstraction-counterexample.js`
+- `shared-solver/check-bounded-candidate.js`
+- `shared-solver/check-bounded-retention-contract.js`
+- `shared-solver/check-bounded-transfer.js`
 - `shared-solver/check-budgeted-repair-scheduling.js`
 - `shared-solver/check-candidate-key-paired-benchmark.js`
 - `shared-solver/check-candidate-key-promotion-contract.js`
 - `shared-solver/check-candidate-quality-shadow.js`
+- `shared-solver/check-changefloor-identity-parity.js`
 - `shared-solver/check-checkpoint-repair.js`
 - `shared-solver/check-confluence-dominance.js`
 - `shared-solver/check-core-regressions.js`
 - `shared-solver/check-counterfactual-repair.js`
 - `shared-solver/check-d2-blind-failure-attribution.js`
 - `shared-solver/check-d2-deferred-heal-attribution.js`
+- `shared-solver/check-dependency-branch-portfolio.js`
 - `shared-solver/check-dependency-feedback-controller.js`
+- `shared-solver/check-dependency-feedback-loop.js`
+- `shared-solver/check-dependency-frontier.js`
 - `shared-solver/check-discovery-capability-audit.js`
+- `shared-solver/check-dp-hot-path.js`
 - `shared-solver/check-dp-observer.js`
+- `shared-solver/check-dropped-state-reclamation.js`
 - `shared-solver/check-dual-key-shadow-contract.js`
 - `shared-solver/check-eval-vector.js`
+- `shared-solver/check-event-forward-search.js`
 - `shared-solver/check-expansion-cost-attribution.js`
 - `shared-solver/check-expansion-profiler-parity.js`
 - `shared-solver/check-failure-conditioned-investment.js`
@@ -122,6 +147,9 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-full-solve-hotspot-reprofiling.js`
 - `shared-solver/check-goal-directed-search.js`
 - `shared-solver/check-goal-feasibility-bounds.js`
+- `shared-solver/check-guided-equal-score-service-order.js`
+- `shared-solver/check-guided-head-retention.js`
+- `shared-solver/check-guided-retro-demotion.js`
 - `shared-solver/check-hierarchical-blind-planner.js`
 - `shared-solver/check-hierarchical-discovery-engine.js`
 - `shared-solver/check-hp3834-mt2-candidate2-capacity-matrix-k.js`
@@ -139,9 +167,19 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-key-dependency-contract.js`
 - `shared-solver/check-launcher-api.js`
 - `shared-solver/check-launcher-ui-live.js`
+- `shared-solver/check-learned-action-prior.js`
+- `shared-solver/check-learned-prior-changefloor-repair.js`
+- `shared-solver/check-learned-prior-corpus-inventory.js`
+- `shared-solver/check-learned-prior-estimate-baseline-probe.js`
+- `shared-solver/check-learned-prior-hierarchical-residual.js`
+- `shared-solver/check-learned-prior-mcgs-proposer.js`
+- `shared-solver/check-learned-prior-nonoverlap-experiment.js`
+- `shared-solver/check-learned-prior-on-policy-floor-dynamics.js`
+- `shared-solver/check-learned-prior-within-kind-diagnostic.js`
 - `shared-solver/check-live-snapshot-normalization.js`
 - `shared-solver/check-local-dependency-executor.js`
 - `shared-solver/check-manifest-runner.js`
+- `shared-solver/check-mcgs.js`
 - `shared-solver/check-milestone-audit.js`
 - `shared-solver/check-milestone-resource-diversity.js`
 - `shared-solver/check-movement-hazard-fast-path.js`
@@ -150,6 +188,7 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-mt1-workload-matrix-contract.js`
 - `shared-solver/check-mt2-local-order.js`
 - `shared-solver/check-mt2-resource-branch.js`
+- `shared-solver/check-mt3-mt4-hot-path.js`
 - `shared-solver/check-mt3-mt4-witness-differential.js`
 - `shared-solver/check-mt5-51533-next-smoke.js`
 - `shared-solver/check-mt5-51533-next.js`
@@ -165,9 +204,12 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-multi-region-contract.js`
 - `shared-solver/check-multi-region-key-shadow-contract.js`
 - `shared-solver/check-multi-region-route-contract.js`
+- `shared-solver/check-multi-root-shared-dp.js`
+- `shared-solver/check-neutral-pareto-substitution.js`
 - `shared-solver/check-objective-safe-archive.js`
 - `shared-solver/check-objective-spec-contract.js`
 - `shared-solver/check-objective-spec-live.js`
+- `shared-solver/check-one-step-cf-exhaustiveness.js`
 - `shared-solver/check-onlyup-adaptive-mt1-mt3.js`
 - `shared-solver/check-onlyup-adaptive-mt1-mt4.js`
 - `shared-solver/check-onlyup-first-region-expansion-profile.js`
@@ -179,6 +221,7 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-onlyup-mt7-special80.js`
 - `shared-solver/check-onlyup-segment-dp.js`
 - `shared-solver/check-onlyup-structured-planning-ab.js`
+- `shared-solver/check-oracle-survival-taxonomy.js`
 - `shared-solver/check-perf-baseline-contract.js`
 - `shared-solver/check-post-mt5-long-chain-baseline.js`
 - `shared-solver/check-progressive-monster-planner.js`
@@ -207,8 +250,10 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-resource-deferral.js`
 - `shared-solver/check-resource-intent-contract.js`
 - `shared-solver/check-resource-pocket-order.js`
+- `shared-solver/check-resource-skyline.js`
 - `shared-solver/check-resource-timing-model.js`
 - `shared-solver/check-resource-timing.js`
+- `shared-solver/check-root-sliced-scheduling.js`
 - `shared-solver/check-route-audit.js`
 - `shared-solver/check-route-debugger.js`
 - `shared-solver/check-route-free-state-contract.js`
@@ -245,50 +290,109 @@ node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchm
 - `shared-solver/check-strategic-hierarchical-call-allocation.js`
 - `shared-solver/check-strategic-lethal-survival-attribution.js`
 - `shared-solver/check-strategic-parent-dependency-continuation.js`
+- `shared-solver/check-strategic-poi-identity-parity.js`
 - `shared-solver/check-strategic-retroactive-continuation-observation.js`
 - `shared-solver/check-strategic-survival-edge-attribution.js`
 - `shared-solver/check-strategic-survival-opportunity-prerequisite.js`
+- `shared-solver/check-strict-replay-phase0.js`
 - `shared-solver/check-teacher-divergence.js`
 - `shared-solver/check-teacher-dominance-audit.js`
 - `shared-solver/check-teacher-search-observer.js`
+- `shared-solver/check-terminal-positive-cf-admission.js`
 - `shared-solver/check-thin-planner-runtime-child.js`
 - `shared-solver/check-thin-planner.js`
 - `shared-solver/check-topology-first-materialization.js`
 - `shared-solver/check-tower-ir-shadow-contract.js`
+- `shared-solver/check-transport-collapse.js`
 - `shared-solver/check-walk-reachability-fast-path.js`
 - `shared-solver/check-walk-reachability-performance.js`
 - `shared-solver/check-whiteisland-trial-resource-order.js`
 - `shared-solver/check-window-repair.js`
 - `shared-solver/check-windows-route-gui-close.js`
 - `shared-solver/check-work-conserving-slices.js`
+
+### Audits, probes and diagnostics (not capability guarantees) (51)
+
+- `shared-solver/attribute-d2-blind-failure.js`
+- `shared-solver/audit-adaptive-repair-outcomes.js`
+- `shared-solver/audit-discovery-capability.js`
+- `shared-solver/audit-mt5-candidate-quality-shadow.js`
+- `shared-solver/audit-mt5-feasibility-surface.js`
+- `shared-solver/audit-pr527g-outcome-ab.js`
+- `shared-solver/audit-region-entry-contract.js`
+- `shared-solver/audit-region-route-output-contract.js`
+- `shared-solver/audit-replay-flag-identity-contract.js`
+- `shared-solver/audit-replay-flag-merge-cli-contract.js`
+- `shared-solver/audit-replay-h5save-resume-contract.js`
+- `shared-solver/audit-replay-start-offset-contract.js`
+- `shared-solver/audit-resource-intent-contract.js`
+- `shared-solver/audit-state-abstraction.js`
+- `shared-solver/audit-state-dependencies.js`
+- `shared-solver/audits/flat-search/audit-pr525p-frontier-differential.js`
+- `shared-solver/audits/flat-search/audit-pr525t-oracle-survival.js`
+- `shared-solver/audits/flat-search/audit-pr525w-cp8-causality.js`
+- `shared-solver/audits/flat-search/audit-pr525x-combat-progress-prevalence.js`
+- `shared-solver/audits/flat-search/audit-pr525y-cp9-causality-saturation.js`
+- `shared-solver/audits/flat-search/audit-pr525z-rank20-composition.js`
+- `shared-solver/audits/flat-search/audit-pr526b-scheduling-latency.js`
+- `shared-solver/audits/flat-search/audit-pr526c-substitution-ab.js`
+- `shared-solver/audits/flat-search/audit-pr526d-cp14-causality.js`
+- `shared-solver/audits/flat-search/audit-pr526e-guided-service-order.js`
+- `shared-solver/audits/flat-search/audit-pr526f-tie-break-ab.js`
+- `shared-solver/audits/flat-search/audit-pr526g-retro-demotion-ab.js`
+- `shared-solver/audits/flat-search/audit-pr526h-guided-pool-audit.js`
+- `shared-solver/audits/flat-search/audit-pr526i-dropped-state-reclamation-ab.js`
+- `shared-solver/audits/flat-search/audit-pr526j-mt4-bottleneck-localization.js`
+- `shared-solver/audits/flat-search/audit-pr526k-guided-head-retention-ab.js`
+- `shared-solver/audits/hp3834/audit-hp3834-mt1-first-divergence.js`
+- `shared-solver/audits/hp3834/audit-hp3834-mt1-gate-selection-future-value.js`
+- `shared-solver/audits/hp3834/audit-hp3834-mt1-rejecting-witness.js`
+- `shared-solver/audits/hp3834/audit-hp3834-mt2-candidate2-capacity-matrix-k.js`
+- `shared-solver/audits/hp3834/audit-hp3834-mt2-candidate2-capacity10-j.js`
+- `shared-solver/audits/hp3834/audit-hp3834-mt2-candidate2-capacity10-j1.js`
+- `shared-solver/audits/hp3834/audit-hp3834-mt2-candidate2-capacity10-j2.js`
+- `shared-solver/audits/hp3834/audit-hp3834-mt2-candidate2-goal-archive-audit-i.js`
+- `shared-solver/audits/hp3834/audit-hp3834-mt2-candidate2-natural-search-a.js`
+- `shared-solver/audits/hp3834/audit-hp3834-mt2-candidate2-natural-search-b.js`
+- `shared-solver/audits/hp3834/audit-hp3834-mt2-candidate2-natural-search.js`
+- `shared-solver/audits/hp3834/audit-hp3834-teacher-fixture.js`
+- `shared-solver/audits/probes/probe-failure-triggered-macro-backtracking.js`
+- `shared-solver/audits/probes/probe-hierarchical-blind-planner.js`
+- `shared-solver/bench-perf-baseline.js`
+- `shared-solver/debug-route-timeline.js`
+- `shared-solver/diagnose-window-repair.js`
+- `shared-solver/observe-d2-search.js`
+- `shared-solver/profile-search.js`
+- `shared-solver/qualify-blind-discovery.js`
+
+### Other compatibility and support files (not primary entrypoints) (26)
+
+- `shared-solver/adaptive-repair-synthetic-simulator.js`
+- `shared-solver/bounded-abstraction-counterexample-search.js`
+- `shared-solver/build-automatic-macro-graph.js`
+- `shared-solver/compose-route.js`
+- `shared-solver/explain-search-trace.js`
 - `shared-solver/export-h5-segment.js`
 - `shared-solver/export-route-report.js`
 - `shared-solver/export-route-state.js`
 - `shared-solver/find-route-bruteforce.js`
+- `shared-solver/mine-state-abstraction-collisions.js`
+- `shared-solver/planner-bootstrap-worker.js`
 - `shared-solver/print-route.js`
-- `shared-solver/profile-search.js`
+- `shared-solver/public.js`
 - `shared-solver/record-perf-baseline.js`
+- `shared-solver/render-route-debugger.js`
+- `shared-solver/resource-intent-contract-synthetic-simulator.js`
 - `shared-solver/route-audit.js`
-- `shared-solver/route-gui.js`
 - `shared-solver/route-repair.js`
-- `shared-solver/run-adaptive-segment-dp.js`
 - `shared-solver/run-agenda-policy-evaluation.js`
-- `shared-solver/run-blind-discovery-baseline.js`
-- `shared-solver/run-mt1-mt11.js`
-- `shared-solver/run-progressive-monster-planner.js`
-- `shared-solver/run-region-dp.js`
-- `shared-solver/run-route.js`
-- `shared-solver/run-search.js`
-- `shared-solver/run-segmented-dp.js`
-- `shared-solver/run-solve-task.js`
-- `shared-solver/run-solver-launcher.js`
 - `shared-solver/run-teacher-divergence.js`
 - `shared-solver/run-teacher-search-experiments.js`
-- `shared-solver/run-whiteisland-trial-topk.js`
 - `shared-solver/search-mt5-blueking-checkpoint-dp.js`
 - `shared-solver/search-mt5-blueking-local.js`
+- `shared-solver/segment-worker.js`
+- `shared-solver/solver-job-worker.js`
 - `shared-solver/verify-mt1-mt3-live.js`
-- `shared-solver/verify-route-live.js`
 
 ## Checks
 

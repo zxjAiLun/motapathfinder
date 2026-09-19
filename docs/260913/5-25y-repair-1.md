@@ -111,7 +111,7 @@ Rationale for 8,000 rather than a 180 s wall limit: the earlier MT4 full run alr
 Command:
 
 ```bash
-node audit-pr525y-cp9-causality-saturation.js --phase2b --out=routes/generated/pr525y-phase2b-cp9-trim.json
+node audits/flat-search/audit-pr525y-cp9-causality-saturation.js --phase2b --out=routes/generated/pr525y-phase2b-cp9-trim.json
 ```
 
 ## Result: CP9_DROP_CLASSIFICATION = CASE_B_RANK20_SATURATION

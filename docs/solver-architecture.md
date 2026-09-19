@@ -10,7 +10,9 @@ Companion docs:
 
 This repository is no longer a collection of isolated scripts. `shared-solver/` is the canonical solver implementation. Tower wrappers such as `Only upV2.1/Only upV2.1/solver.sh` and `whiteisland（9）/solver.sh` should forward into `shared-solver/` and inject `--project-root`.
 
-Tower-local `solver/` directories are legacy copies. They remain for archive/migration only and must not receive new solver code.
+Tower-local `solver/` directories have been removed and are forbidden; they are not a second kernel or migration target.
+
+The current dependency planner is an experimental orchestration layer over the **shared** simulator, canonical DP and replay code, not a replacement for that foundation. `lib/dependency-feedback-controller.js` retains the cross-round loop and compatibility exports; `lib/dependency-planner/` contains single-step feedback, repair experiments, branch lifecycle and route finalization. Historical flat/strategic/top-k families retain their own baselines; four pure historical probes now live under `shared-solver/audits/probes/`, twelve `audit-hp3834-*.js` audits under `shared-solver/audits/hp3834/`, and sixteen PR-5.25/5.26 flat-search audits under `shared-solver/audits/flat-search/` as diagnostics, not canonical CLIs. The active `audit-pr527f-round-ab.js` remains at the solver root. See [entrypoint roles](solver-entrypoints.md) and [PR-5.28](260918/5-28.md) for the implemented split and its limits.
 
 ## Search Strategy Split
 

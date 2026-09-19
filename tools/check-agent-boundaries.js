@@ -107,6 +107,9 @@ function isGeneratedOutputPath(filePath) {
 
 function isAllowedPublicLayerDevPath(filePath) {
   return (
+    // AGENTS.md requires this exact tracked handoff alongside material rounds.
+    // Do not turn this into a general allowance for root-level files.
+    filePath === "20260804handoff.md" ||
     filePath.startsWith("shared-solver/") ||
     filePath.startsWith("tools/") ||
     filePath.startsWith("docs/") ||
@@ -175,7 +178,7 @@ function usage() {
     "Strict agent mode allows writes only under:",
     "  agents/<agent>/runs/**, runs/**, routes/generated/**, logs/generated/**, benchmarks/results/**",
     "",
-    "Public-layer dev mode also allows shared-solver/**, tools/**, docs/**, agents/**, benchmarks/**, towers/**.",
+    "Public-layer dev mode also allows shared-solver/**, tools/**, docs/**, agents/**, benchmarks/**, towers/** and the exact tracked 20260804handoff.md.",
     "Tower project and legacy tower solver writes are always rejected.",
   ].join("\n"));
 }

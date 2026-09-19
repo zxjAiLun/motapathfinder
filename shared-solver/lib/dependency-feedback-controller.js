@@ -1,19 +1,37 @@
 "use strict";
 
-const { compileAutomaticDependencyPlan } = require("./automatic-dependency-planner");
-const { compileAutomaticFeasibilitySubgoals } = require("./automatic-feasibility-subgoals");
-const { buildAutomaticMacroGraph } = require("./automatic-macro-graph");
+// Cross-round orchestration and compatibility entry. Feedback, repair, branch
+// lifecycle and route finalization live in dependency-planner/.
 const crypto = require("node:crypto");
 const { buildStateKey } = require("./state-key");
-const { verifyStrictReplay } = require("./strict-replay");
+const { createBranchLedger } = require("./dependency-planner/branch-ledger");
+const { terminalGoalReached, finalizeDependencyRoute } = require("./dependency-planner/route-finalization");
 const { makeBlindSimulator } = require("./blind-discovery-baseline");
-const { buildCounterfactualRepairIntents } = require("./counterfactual-repair");
+const { executeLocalDependency } = require("./local-dependency-executor");
 const {
-  executeLocalDependency,
-  materializeDirectTargetPlan,
-} = require("./local-dependency-executor");
-
-const SCHEMA = "motapathfinder.dependency-feedback.v1";
+  SCHEMA,
+  buildDependencyContext,
+  evaluateCheckpoint,
+  evaluateBranchExperiments,
+  summarizeAlternative,
+  runDependencyFeedback,
+} = require("./dependency-planner/feedback");
+const {
+  RESOURCE_REPAIR_TRIGGER_STATUSES,
+  evaluateResourceRepairTrigger,
+  isBattleRelevantRepairIntent,
+  prerequisiteIdentityOf,
+  normalizePrerequisiteIdentity,
+  collectReplannedPrerequisiteStatuses,
+  collectReplannedPrerequisiteEvidence,
+  classifyRepairOutcome,
+  aggregateRepairOutcome,
+} = require("./dependency-planner/repair-experiments");
+const {
+  journalIdentity,
+  readPortfolioJournal,
+  writePortfolioJournal,
+} = require("./dependency-planner/portfolio-journal");
 
 function number(value, fallback) {
   const parsed = Number(value);
@@ -27,670 +45,6 @@ function number(value, fallback) {
  */
 function stateFingerprintOf(state) {
   return crypto.createHash("sha256").update(buildStateKey(state)).digest("hex").slice(0, 16);
-}
-
-function buildDependencyContext(project, state, terminalGoal, options) {
-  const graph = buildAutomaticMacroGraph(project, state, terminalGoal, {
-    towerId: (options || {}).towerId || "automatic",
-    envelopeMode: "state-visible-revisitable",
-  });
-  const feasibility = compileAutomaticFeasibilitySubgoals(project, state, terminalGoal, graph);
-  const plan = compileAutomaticDependencyPlan(project, state, terminalGoal, graph, feasibility, {
-    alternativeLimit: (options || {}).alternativeLimit,
-  });
-  return { graph, feasibility, plan };
-}
-
-function survivalMargin(prerequisite) {
-  const evidence = (prerequisite || {}).evidence || {};
-  if (evidence.status !== "viable-at-current-state") return null;
-  if (evidence.damage == null || evidence.currentHp == null) return 0;
-  return number(evidence.currentHp, 0) - number(evidence.damage, 0);
-}
-
-/**
- * PR-5.27e - Failure-conditioned resource-repair trigger.
- *
- * A branch qualifies for resource-repair experiments ONLY when the normal
- * dependency planner has no executable prerequisite AND the blocking evidence is
- * a battle-feasibility failure with the CURRENT resources
- * (`unbeatable-at-current-stats` / `lethal-at-current-hp`).
- *
- * Deliberately narrow: if any alternative exposes an executable/complete leading
- * prerequisite, repair MUST NOT activate, otherwise the planner degenerates into
- * "always farm resources first".
- */
-const RESOURCE_REPAIR_TRIGGER_STATUSES = new Set([
-  "unbeatable-at-current-stats",
-  "lethal-at-current-hp",
-]);
-
-/**
- * PR-5.27f - Same-prerequisite identity.
- *
- * A conversion claim is only meaningful for ONE specific battle: the same
- * prerequisite node, on the same floor, at the same coordinate. Statuses alone
- * cannot carry that, because the replan may surface an entirely different
- * battle that happens to be viable.
- */
-function prerequisiteIdentityOf(identity) {
-  if (!identity) return null;
-  const sourceNodeId = identity.sourceNodeId != null
-    ? String(identity.sourceNodeId)
-    : (identity.prerequisiteId != null ? String(identity.prerequisiteId) : null);
-  if (sourceNodeId == null) return null;
-  const floorId = identity.floorId != null ? String(identity.floorId) : null;
-  const x = identity.x == null ? null : number(identity.x, null);
-  const y = identity.y == null ? null : number(identity.y, null);
-  return [
-    sourceNodeId,
-    floorId == null ? "-" : floorId,
-    x == null || y == null ? "-" : `${x},${y}`,
-  ].join("|");
-}
-
-/** Normalizes either planner shape into `{ sourceNodeId, floorId, x, y }`. */
-function normalizePrerequisiteIdentity(source) {
-  if (!source) return null;
-  const target = source.target || {};
-  const sourceNodeId = source.sourceNodeId != null
-    ? String(source.sourceNodeId)
-    : (source.prerequisiteId != null ? String(source.prerequisiteId) : null);
-  if (sourceNodeId == null) return null;
-  const floorId = source.floorId != null
-    ? source.floorId
-    : (source.targetFloorId != null ? source.targetFloorId : (target.floorId != null ? target.floorId : null));
-  const x = source.x != null ? number(source.x, null)
-    : (source.targetX != null ? number(source.targetX, null) : (target.x != null ? number(target.x, null) : null));
-  const y = source.y != null ? number(source.y, null)
-    : (source.targetY != null ? number(source.targetY, null) : (target.y != null ? number(target.y, null) : null));
-  return { sourceNodeId, floorId: floorId == null ? null : String(floorId), x, y };
-}
-
-function evaluateResourceRepairTrigger(evaluation) {
-  if (!evaluation || evaluation.canAdvance) {
-    return {
-      triggered: false,
-      reason: "normal-dependency-can-advance",
-      blockedStatuses: [],
-      blockedPrerequisites: [],
-    };
-  }
-  if (evaluation.feedbackClass !== "no-currently-executable-leading-prerequisite") {
-    return {
-      triggered: false,
-      reason: "blocked-for-a-non-viability-reason",
-      blockedStatuses: [],
-      blockedPrerequisites: [],
-    };
-  }
-  const blockedStatuses = [];
-  const blockedPrerequisites = [];
-  for (const alternative of evaluation.alternatives || []) {
-    const leading = alternative.leadingPrerequisite || null;
-    const status = ((leading || {}).evidence || {}).status
-      || alternative.leadingStatus
-      || null;
-    if (!status || !RESOURCE_REPAIR_TRIGGER_STATUSES.has(status)) continue;
-    blockedStatuses.push(status);
-    const normalized = normalizePrerequisiteIdentity(leading);
-    blockedPrerequisites.push({
-      ...(normalized || { sourceNodeId: null, floorId: null, x: null, y: null }),
-      kind: leading ? (leading.kind || null) : null,
-      alternativeId: alternative.alternativeId || null,
-      statusBefore: status,
-      identity: prerequisiteIdentityOf(normalized),
-      evidenceBefore: leading ? { ...(leading.evidence || {}) } : null,
-    });
-  }
-  if (blockedStatuses.length === 0) {
-    return {
-      triggered: false,
-      reason: "no-battle-feasibility-blocked-prerequisite",
-      blockedStatuses,
-      blockedPrerequisites,
-    };
-  }
-  return {
-    triggered: true,
-    reason: "battle-prerequisite-unattainable-with-current-resources",
-    blockedStatuses,
-    blockedPrerequisites,
-  };
-}
-
-/**
- * PR-5.27f - Battle-relevance gate (narrow, first version).
- *
- * A battle-feasibility repair must make POSITIVE PERSISTENT COMBAT RESOURCE
- * PROGRESS: ATK / DEF / MDEF / HP / LV / EXP / equipment. Deliberately NOT a
- * scalar score and NOT a general "usefulness" filter: money, inventory and
- * multi-step EXP preparation all stay allowed.
- *
- * The single rejected shape is the one actually observed in 5.27e (70 of 73
- * selections): a pure path/unlock whose combat-resource delta is entirely zero,
- * which can be re-generated at every new exact state without ever touching the
- * battle that triggered the repair.
- */
-function isBattleRelevantRepairIntent(intent) {
-  const delta = (intent || {}).structuralDelta || {};
-  const combatGain = number(delta.atk, 0) > 0
-    || number(delta.def, 0) > 0
-    || number(delta.mdef, 0) > 0
-    || number(delta.hp, 0) > 0
-    || number(delta.lv, 0) > 0
-    || number(delta.exp, 0) > 0
-    || (Array.isArray(delta.equipment) && delta.equipment.length > 0);
-  if (combatGain) return { relevant: true, reason: "positive-combat-resource-delta" };
-  const kind = String((intent || {}).kind || "");
-  if (kind === "path/unlock" || /path|unlock/.test(kind)) {
-    return { relevant: false, reason: "pure-path-unlock-without-combat-resource-delta" };
-  }
-  return { relevant: true, reason: "non-path-intent-retained" };
-}
-
-/**
- * PR-5.27f Phase 0A - The branch experiment universe.
- *
- * One branch's executable experiments are `normal alternatives UNION repair
- * experiments`. Every lifecycle decision (portfolio selection, monotonic
- * exhaustion, preferred-cohort collapse, final sweep) must ask THIS object, not
- * the bare normal evaluation, otherwise a branch with a live repair experiment
- * is still recorded as exhausted.
- */
-function evaluateBranchExperiments(project, terminalGoal, checkpoint, options) {
-  const config = options || {};
-  const normalEvaluation = evaluateCheckpoint(project, terminalGoal, checkpoint, config);
-  const repairEnabled = config.failureConditionedResourceRepair === true;
-  const trigger = repairEnabled
-    ? evaluateResourceRepairTrigger(normalEvaluation)
-    : {
-      triggered: false,
-      reason: config.failureConditionedResourceRepair === true
-        ? "unexpected"
-        : "failure-conditioned-resource-repair-disabled",
-      blockedStatuses: [],
-      blockedPrerequisites: [],
-    };
-  let repairExperiments = [];
-  const repairRejected = [];
-  if (trigger.triggered) {
-    const simulator = typeof config.simulatorProvider === "function"
-      ? config.simulatorProvider()
-      : (typeof config.simulatorFactory === "function" ? config.simulatorFactory() : null);
-    if (simulator) {
-      const generated = buildResourceRepairExperiments({
-        simulator,
-        checkpoint,
-        trigger,
-        candidateLimit: number(config.candidateLimit, 8),
-      });
-      for (const experiment of generated) {
-        if (config.battleRelevantRepairOnly === true) {
-          const verdict = isBattleRelevantRepairIntent(experiment);
-          if (!verdict.relevant) {
-            repairRejected.push({
-              intentId: experiment.intentId,
-              kind: experiment.kind,
-              reason: verdict.reason,
-            });
-            continue;
-          }
-        }
-        repairExperiments.push(experiment);
-      }
-    }
-  }
-  const normalCanAdvance = Boolean(normalEvaluation.canAdvance);
-  const effectiveCanAdvance = normalCanAdvance || repairExperiments.length > 0;
-  const effectiveFeedbackClass = normalCanAdvance
-    ? normalEvaluation.feedbackClass
-    : repairExperiments.length > 0
-      ? "repair-experiment-available"
-      : normalEvaluation.feedbackClass;
-  return {
-    ...normalEvaluation,
-    normalCanAdvance,
-    normalFeedbackClass: normalEvaluation.feedbackClass,
-    // `canAdvance` / `feedbackClass` now describe the EFFECTIVE universe, so all
-    // existing lifecycle passes read the right value without special cases.
-    canAdvance: effectiveCanAdvance,
-    feedbackClass: effectiveFeedbackClass,
-    effectiveCanAdvance,
-    effectiveFeedbackClass,
-    repairTrigger: {
-      triggered: trigger.triggered,
-      reason: trigger.reason,
-      blockedStatuses: trigger.blockedStatuses.slice(),
-      blockedPrerequisites: trigger.blockedPrerequisites.map((entry) => ({ ...entry })),
-    },
-    repairExperiments,
-    repairExperimentCount: repairExperiments.length,
-    repairRejected,
-  };
-}
-
-/**
- * Re-reads the SAME prerequisite identities from a replanned evaluation.
- * Reuses the planner's own battle-evidence objects; this never recomputes
- * damage, it only reports what the planner already decided.
- */
-function collectReplannedPrerequisiteStatuses(afterEvaluation) {
-  const statuses = new Map();
-  const plan = afterEvaluation && afterEvaluation.context ? afterEvaluation.context.plan : null;
-  for (const alternative of ((plan || {}).alternatives || [])) {
-    for (const prereq of (alternative.prerequisites || [])) {
-      const identity = prerequisiteIdentityOf(normalizePrerequisiteIdentity(prereq));
-      if (!identity) continue;
-      const status = ((prereq.evidence || {}).status) || "complete";
-      const previous = statuses.get(identity);
-      if (previous === "viable-at-current-state") continue;
-      statuses.set(identity, status);
-    }
-  }
-  return statuses;
-}
-
-/**
- * Builds the conditionally generated resource-repair experiments for a blocked
- * checkpoint. Reuses the existing counterfactual repair generator rather than
- * inventing a weighted resource score.
- */
-function buildResourceRepairExperiments({
-  simulator,
-  checkpoint,
-  trigger,
-  candidateLimit,
-}) {
-  if (!trigger || trigger.triggered !== true) return [];
-  const intents = buildCounterfactualRepairIntents({
-    simulator,
-    startCandidates: [{ id: checkpoint.id, state: checkpoint.state }],
-    triggerFailure: "unbeatable-battle-prerequisite",
-    failedSegment: null,
-    candidateLimit,
-  });
-  return intents.map((intent, index) => ({
-    ...intent,
-    experimentKind: "resource-repair",
-    repairIndex: index,
-    blockedStatuses: trigger.blockedStatuses.slice(),
-    blockedPrerequisites: (trigger.blockedPrerequisites || []).map((entry) => ({ ...entry })),
-    originCheckpointId: checkpoint.id,
-  }));
-}
-
-function summarizeAlternative(alternative) {
-  const prerequisites = (alternative.prerequisites || []).slice();
-  const leading = prerequisites[0] || null;
-  const leadingEvidence = (leading || {}).evidence || {};
-  const leadingStatus = leadingEvidence.status || "complete";
-  return {
-    alternativeId: alternative.id,
-    remainingPrerequisiteCount: prerequisites.length,
-    leadingPrerequisiteId: leading ? leading.sourceNodeId : null,
-    leadingStatus,
-    leadingDamage: leading && leading.evidence ? leading.evidence.damage : null,
-    leadingSurvivalMargin: survivalMargin(leading),
-    executable: Boolean(leading && leadingStatus === "viable-at-current-state"),
-    complete: prerequisites.length === 0,
-    blockedTailCount: prerequisites.slice(1).filter((entry) =>
-      ((entry.evidence || {}).status) !== "viable-at-current-state").length,
-    // PR-5.27d Phase 1 attribution: the planner already computed the full
-    // counterfactual evidence for the leading prerequisite; keep it so a blocked
-    // branch can be attributed to "no executable prerequisite" versus "every
-    // executable prerequisite was already attempted", with the target floor and
-    // evidence status visible instead of inferred.
-    leadingPrerequisite: leading ? {
-      sourceNodeId: leading.sourceNodeId || null,
-      kind: leading.kind || null,
-      targetFloorId: ((leading.target || {}).floorId) || null,
-      targetX: (leading.target || {}).x == null ? null : number((leading.target || {}).x, null),
-      targetY: (leading.target || {}).y == null ? null : number((leading.target || {}).y, null),
-      actionGoal: leading.actionGoal ? { ...leading.actionGoal } : null,
-      evidence: { ...leadingEvidence },
-    } : null,
-    tailPrerequisiteIds: prerequisites.slice(1).map((entry) => entry.sourceNodeId || null),
-    tailPrerequisiteFloors: prerequisites.slice(1).map((entry) => ((entry.target || {}).floorId) || null),
-  };
-}
-
-function compareAlternative(left, right) {
-  return Number(right.complete) - Number(left.complete) ||
-    Number(right.executable) - Number(left.executable) ||
-    left.remainingPrerequisiteCount - right.remainingPrerequisiteCount ||
-    number(right.leadingSurvivalMargin, -Infinity) - number(left.leadingSurvivalMargin, -Infinity) ||
-    left.alternativeId.localeCompare(right.alternativeId);
-}
-
-function evaluateCheckpoint(project, terminalGoal, checkpoint, options) {
-  const config = options || {};
-  const buildContext = typeof config.contextBuilder === "function"
-    ? config.contextBuilder
-    : buildDependencyContext;
-  const context = buildContext(project, checkpoint.state, terminalGoal, options);
-  const excluded = config.excludedExperimentKeys || new Set();
-  const alternatives = (context.plan.alternatives || []).map((alternative) => {
-    const summary = summarizeAlternative(alternative);
-    summary.experimentKey = [
-      checkpoint.exactStateFingerprint,
-      summary.alternativeId,
-      summary.leadingPrerequisiteId || "complete",
-    ].join("|");
-    summary.previouslyAttempted = excluded.has(summary.experimentKey);
-    return summary;
-  }).sort(compareAlternative);
-  const selectedAlternative = alternatives.find((entry) =>
-    (entry.complete || entry.executable) && !entry.previouslyAttempted) || null;
-  const hasExecutableAlternative = alternatives.some((entry) =>
-    entry.complete || entry.executable);
-  return {
-    checkpointId: checkpoint.id,
-    roles: (checkpoint.roles || []).slice(),
-    exactStateFingerprint: checkpoint.exactStateFingerprint,
-    alternatives,
-    selectedAlternative,
-    canAdvance: Boolean(selectedAlternative),
-    feedbackClass: selectedAlternative
-      ? selectedAlternative.complete
-        ? "dependency-target-reachable"
-        : "leading-prerequisite-executable"
-      : hasExecutableAlternative
-        ? "all-executable-experiments-already-attempted"
-        : "no-currently-executable-leading-prerequisite",
-    context,
-  };
-}
-
-function compareCheckpoint(left, right) {
-  const leftAlternative = left.selectedAlternative || {};
-  const rightAlternative = right.selectedAlternative || {};
-  return Number(right.canAdvance) - Number(left.canAdvance) ||
-    Number(Boolean(rightAlternative.complete)) - Number(Boolean(leftAlternative.complete)) ||
-    number(leftAlternative.remainingPrerequisiteCount, Infinity) - number(rightAlternative.remainingPrerequisiteCount, Infinity) ||
-    number(rightAlternative.leadingSurvivalMargin, -Infinity) - number(leftAlternative.leadingSurvivalMargin, -Infinity) ||
-    left.checkpointId.localeCompare(right.checkpointId);
-}
-
-/**
- * PR-5.27a - Route-free terminal goal predicate.
- *
- * The loop must decide "has the terminal goal been reached" on its own, so this
- * is the only place that reads the goal object. It is deliberately generic and
- * mirrors the terms the macro graph already compiles target nodes from
- * (floorId, and for a boss the poi coordinate plus its defeating):
- *   - floorReached   -> the run is standing on the terminal floor
- *   - bossDefeated   -> the run is on the terminal floor and the target poi is gone
- *
- * There is no floor list, no corridor, no authored milestone and no authored
- * coordinate beyond the single terminal goal the caller passed in.
- */
-function terminalGoalReached(project, state, terminalGoal) {
-  if (!state || !terminalGoal) return false;
-  if (state.floorId !== terminalGoal.floorId) return false;
-  if (terminalGoal.type === "floorReached") return true;
-  if (terminalGoal.type !== "bossDefeated") return false;
-  const floor = ((project || {}).floors || {})[terminalGoal.floorId];
-  if (!floor) return false;
-  const targetX = Number(terminalGoal.x);
-  const targetY = Number(terminalGoal.y);
-  const pois = Array.isArray(floor.pois) ? floor.pois : [];
-  const poi = pois.find((entry) => Number(entry.x) === targetX && Number(entry.y) === targetY);
-  if (!poi) return false;
-  // The target is defeated when its poi is no longer reported on the map.
-  const survivors = typeof floor.currentPois === "function" ? floor.currentPois(state) : null;
-  if (Array.isArray(survivors)) {
-    return !survivors.some((entry) => Number(entry.x) === targetX && Number(entry.y) === targetY);
-  }
-  const triggered = (state.triggeredAutoEvents || {});
-  const key = `${terminalGoal.floorId}:${targetX},${targetY}`;
-  return triggered[key] === true;
-}
-
-function runDependencyFeedback(project, projectRoot, terminalGoal, localExecution, options) {
-  if (!project || !terminalGoal || !localExecution) {
-    throw new Error("Dependency feedback requires project, terminalGoal, and localExecution");
-  }
-  const config = options || {};
-  const startedAt = Date.now();
-  // Same test seam as the loop: defaults are the real modules.
-  const executor = typeof config.executeLocalDependency === "function"
-    ? config.executeLocalDependency
-    : executeLocalDependency;
-  const contextBuilder = typeof config.buildDependencyContext === "function"
-    ? config.buildDependencyContext
-    : buildDependencyContext;
-  // PR-5.27f Phase 0A: every checkpoint is scored on its EFFECTIVE experiment
-  // universe (normal alternatives UNION repair experiments), not on the normal
-  // alternatives alone.
-  let repairSimulator = null;
-  const repairSimulatorProvider = () => {
-    if (!repairSimulator) {
-      repairSimulator = typeof config.simulatorFactory === "function"
-        ? config.simulatorFactory()
-        : makeBlindSimulator(project);
-    }
-    return repairSimulator;
-  };
-  const evaluations = (localExecution.checkpoints || [])
-    .map((checkpoint) => evaluateBranchExperiments(project, terminalGoal, checkpoint, {
-      ...config,
-      contextBuilder,
-      simulatorProvider: repairSimulatorProvider,
-    }))
-    .sort((left, right) => {
-      if (config.preferFirstGoalCheckpoint === true) {
-        const leftFirst = left.roles.includes("first-goal") ? 1 : 0;
-        const rightFirst = right.roles.includes("first-goal") ? 1 : 0;
-        if (leftFirst !== rightFirst) return rightFirst - leftFirst;
-      }
-      return compareCheckpoint(left, right);
-    });
-  // `selected` remains the NORMAL selection. The repair selection is drawn from
-  // the same effective-universe ordering, but the two paths must stay distinct:
-  // a repair branch has no normal alternative to materialize a plan from.
-  const selected = evaluations.find((entry) => entry.normalCanAdvance) || null;
-  const baselineCheckpointId = ((localExecution.checkpoints || [])[0] || {}).id || null;
-  const baseline = evaluations.find((entry) => entry.checkpointId === baselineCheckpointId) || null;
-
-  // PR-5.27f Phase 0A: repair experiments were already generated as part of each
-  // branch's effective universe during evaluation. Selection is a single pass
-  // over that universe - first a normal alternative if one exists, otherwise the
-  // branch's own repair experiment. There is no separate side-selection path.
-  const resourceRepairEnabled = config.failureConditionedResourceRepair === true;
-  const repairTriggers = evaluations.map((evaluation) => ({
-    checkpointId: evaluation.checkpointId,
-    triggered: evaluation.repairTrigger.triggered,
-    reason: evaluation.repairTrigger.reason,
-    blockedStatuses: evaluation.repairTrigger.blockedStatuses.slice(),
-    blockedPrerequisiteIds: evaluation.repairTrigger.blockedPrerequisites
-      .map((entry) => entry.identity).filter(Boolean),
-    rejectedIntentIds: (evaluation.repairRejected || []).map((entry) => entry.intentId),
-  }));
-  const selectedEvaluation = evaluations.find((entry) => entry.canAdvance) || null;
-  const selectedRepairCandidate = selectedEvaluation
-    ? (selectedEvaluation.normalCanAdvance
-      ? null
-      : (selectedEvaluation.repairExperiments || [])[0] || null)
-    : null;
-  const repairRejected = evaluations.reduce((sum, entry) => sum + ((entry.repairRejected || []).length), 0);
-
-  const selectedRepair = selectedRepairCandidate;
-  const selectedCheckpoint = selected
-    ? (localExecution.checkpoints || []).find((entry) => entry.id === selected.checkpointId) || null
-    : selectedRepair
-      ? (localExecution.checkpoints || []).find((entry) => entry.id === selectedRepair.originCheckpointId) || null
-      : null;
-  const selectedPlan = selected && selected.selectedAlternative
-    ? selected.selectedAlternative.complete
-      ? materializeDirectTargetPlan(
-        selected.context.plan,
-        selected.context.plan.objective.selectedFeasibilitySubgoal,
-      )
-      : {
-        ...selected.context.plan,
-        alternatives: selected.context.plan.alternatives
-          .filter((alternative) => alternative.id === selected.selectedAlternative.alternativeId)
-          .concat(selected.context.plan.alternatives.filter((alternative) =>
-            alternative.id !== selected.selectedAlternative.alternativeId)),
-      }
-    : null;
-  const plannedAt = Date.now();
-  // A repair experiment is executed through the SAME local executor, using the
-  // concrete goal + action policy the repair generator synthesized. It is not a
-  // bypass: the resulting checkpoints become ordinary child branches, and the
-  // next round replans from the child's exact state.
-  const repairPlan = selectedRepair
-    ? {
-      objective: {
-        selectedFeasibilitySubgoal: {
-          id: selectedRepair.intentId,
-          sourceNodeId: selectedRepair.intentId,
-          goal: { ...selectedRepair.goal },
-          target: { floorId: selectedRepair.goal.floorId },
-        },
-      },
-      alternatives: [
-        {
-          id: selectedRepair.intentId,
-          relation: "OR",
-          rank: 1,
-          prerequisites: [{
-            id: `repair-${selectedRepair.intentId}`,
-            kind: "target",
-            relation: "AND",
-            order: 0,
-            sourceNodeId: selectedRepair.intentId,
-            actionGoal: { type: "resourceRepair", ...selectedRepair.goal },
-            target: { floorId: selectedRepair.goal.floorId },
-            evidence: {
-              kind: selectedRepair.kind,
-              status: "viable-at-current-state",
-              reason: "failure-conditioned-resource-repair",
-            },
-            provenance: "counterfactual-repair-intent",
-          }],
-          actionPolicy: selectedRepair.actionPolicy,
-        },
-      ],
-    }
-    : null;
-  const nextExecution = selectedPlan
-    ? executor(
-      project,
-      projectRoot,
-      selectedCheckpoint.state,
-      selectedPlan,
-      {
-        maxExpansions: number(config.maxExpansions, 32),
-        candidateLimit: number(config.candidateLimit, 8),
-      },
-    )
-    : repairPlan
-      ? executor(
-        project,
-        projectRoot,
-        selectedCheckpoint.state,
-        repairPlan,
-        {
-          maxExpansions: number(config.maxExpansions, 32),
-          candidateLimit: number(config.candidateLimit, 8),
-          goalOverride: { ...selectedRepair.goal },
-          actionPolicy: selectedRepair.actionPolicy,
-        },
-      )
-      : null;
-  const completedAt = Date.now();
-  return {
-    schema: SCHEMA,
-    inputContract: {
-      inputs: ["tower-project", "terminal-goal", "automatic-local-checkpoint-portfolio"],
-      forbidden: ["route-fixture", "route-prefix", "authored-milestone", "authored-event-order", "authored-resource-threshold"],
-      knownRouteUsed: false,
-    },
-    baseline: baseline ? {
-      checkpointId: baseline.checkpointId,
-      roles: baseline.roles,
-      canAdvance: baseline.canAdvance,
-      feedbackClass: baseline.feedbackClass,
-    } : null,
-    evaluations: evaluations.map((entry) => ({
-      checkpointId: entry.checkpointId,
-      roles: entry.roles,
-      exactStateFingerprint: entry.exactStateFingerprint,
-      alternatives: entry.alternatives,
-      selectedAlternative: entry.selectedAlternative,
-      canAdvance: entry.canAdvance,
-      feedbackClass: entry.feedbackClass,
-    })),
-    selection: selected ? {
-      checkpointId: selected.checkpointId,
-      roles: selected.roles,
-      alternative: selected.selectedAlternative,
-      changedCheckpoint: selected.checkpointId !== baselineCheckpointId,
-      changedAlternative: selected.selectedAlternative.alternativeId !==
-        ((localExecution.selected || {}).alternativeId || null),
-      reason: config.preferFirstGoalCheckpoint === true
-        ? "historical-backtrack-prefers-first-goal-then-normal-feedback-order"
-        : "fewest-remaining-runnable-alternative-then-largest-leading-survival-margin",
-      experimentKey: selected.selectedAlternative.experimentKey,
-    } : (selectedRepair ? {
-      // A reuse of the same selection envelope, so the loop's downstream handling
-      // (experiment-key burning, branch registration, replanning) is unchanged.
-      checkpointId: selectedRepair.originCheckpointId,
-      roles: ["resource-repair"],
-      alternative: {
-        alternativeId: selectedRepair.intentId,
-        experimentKey: [
-          (selectedCheckpoint || {}).exactStateFingerprint || null,
-          selectedRepair.intentId,
-          `repair:${selectedRepair.kind}`,
-        ].join("|"),
-        kind: selectedRepair.kind,
-        executable: true,
-        complete: false,
-        leadingPrerequisiteId: selectedRepair.intentId,
-        leadingStatus: "viable-at-current-state",
-      },
-      changedCheckpoint: selectedRepair.originCheckpointId !== baselineCheckpointId,
-      changedAlternative: true,
-      reason: "failure-conditioned-resource-repair-selected-because-dependency-universe-is-unattainable",
-      experimentKey: [
-        (selectedCheckpoint || {}).exactStateFingerprint || null,
-        selectedRepair.intentId,
-        `repair:${selectedRepair.kind}`,
-      ].join("|"),
-      resourceRepair: true,
-      repairKind: selectedRepair.kind,
-      blockedStatuses: selectedRepair.blockedStatuses,
-      blockedPrerequisiteIds: (selectedRepair.blockedPrerequisites || [])
-        .map((entry) => entry.identity).filter(Boolean),
-      blockedPrerequisites: (selectedRepair.blockedPrerequisites || []).map((entry) => ({ ...entry })),
-    } : null),
-    resourceRepair: {
-      enabled: resourceRepairEnabled,
-      generatedCount: evaluations.reduce((sum, entry) => sum + (entry.repairExperimentCount || 0), 0),
-      generatedIntentIds: evaluations.flatMap((entry) => (entry.repairExperiments || []).map((experiment) => experiment.intentId)),
-      selectedIntentId: selectedRepair ? selectedRepair.intentId : null,
-      blockedPrerequisiteIds: selectedRepair
-        ? (selectedRepair.blockedPrerequisites || []).map((entry) => entry.identity).filter(Boolean)
-        : [],
-      rejectedCount: repairRejected,
-      rejectedByRelevance: repairRejected,
-      triggers: repairTriggers,
-    },
-    nextExecution,
-    timing: {
-      evaluationAndPlanningMs: plannedAt - startedAt,
-      nextExecutionMs: completedAt - plannedAt,
-      totalWallMs: completedAt - startedAt,
-    },
-    verdict: !selected && !selectedRepair
-      ? "DEPENDENCY_FEEDBACK_REQUIRES_NEW_SUBGOAL"
-      : nextExecution && nextExecution.outcome.goalFound && nextExecution.checkpointDiversity.allStrictReplay
-        ? "DEPENDENCY_FEEDBACK_ADVANCED_WITH_STRICT_REPLAY"
-        : "DEPENDENCY_FEEDBACK_SELECTED_NEXT_EXPERIMENT",
-  };
 }
 
 function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialState, options) {
@@ -722,10 +76,13 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   // that can still advance, so a blocked branch can be abandoned and an older
   // branch revisited. Without this, "the current portfolio is blocked" is
   // indistinguishable from "the search is exhausted".
-  const branches = new Map();
+  const ledger = createBranchLedger();
   const attempts = [];
   // PR-5.27e: failure-conditioned resource-repair accounting.
   const battleRelevantRepairOnly = config.battleRelevantRepairOnly === true;
+  // PR-5.27g: outcome-conditioned commitment. Default OFF; the 5.27c
+  // commitment contract is unchanged unless this flag is explicitly set.
+  const outcomeConditionedRepairCommitment = config.outcomeConditionedRepairCommitment === true;
   const repairTelemetry = {
     generated: 0,
     selected: 0,
@@ -737,6 +94,8 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     conversions: [],
     rejectedByRelevance: 0,
     rejectedIntentKinds: {},
+    outcomeCounts: {},
+    commitmentsWithheld: 0,
   };
   const rounds = [];
   const visitedExactCheckpointStates = new Set();
@@ -744,15 +103,90 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   const commitSuccessfulLineage = config.commitSuccessfulLineage === true;
   const failureConditionedResourceRepair = config.failureConditionedResourceRepair === true;
   let preferredCohortBranchIds = new Set();
-  let lastEvaluationMap = new Map();
   let totalLocalExpansions = 0;
-  let branchCounter = 0;
   let frontierState = initialState;
   let frontierOrigin = "route-free-initial-state";
+  let rootBranch = null;
+  let frontierStateKey = null;
+  let terminationReason = null;
+  let terminationClass = null;
+  let reachedTerminal = false;
+  let terminalBranchId = null;
+  let roundIndex = 0;
 
-  const newBranchId = () => {
-    branchCounter += 1;
-    return `branch-${branchCounter}`;
+  // Owner-authorized item A: durable portfolio journal. Opt-in via
+  // config.portfolioJournalPath (write-only observation); resume additionally
+  // requires config.resumePortfolioJournal. The journal identity binds the
+  // terminal goal, the initial state fingerprint, budgets and flags, so a
+  // mismatched journal fails closed instead of silently resuming a different
+  // run. maxRounds is deliberately NOT part of the identity: resuming with a
+  // larger round budget is the journal's purpose, and a smaller one just exits
+  // the loop early.
+  const journalPath = typeof config.portfolioJournalPath === "string" && config.portfolioJournalPath
+    ? config.portfolioJournalPath
+    : null;
+  const resumeFromJournal = Boolean(journalPath) && config.resumePortfolioJournal === true;
+  const journalIdentityValue = journalIdentity({
+    terminalGoal,
+    initialStateFingerprint: stateFingerprintOf(initialState),
+    controls: {
+      towerId: config.towerId || null,
+      maxTotalLocalExpansions,
+      localMaxExpansions,
+      candidateLimit,
+      commitSuccessfulLineage,
+      failureConditionedResourceRepair,
+      battleRelevantRepairOnly,
+      outcomeConditionedRepairCommitment,
+    },
+  });
+  let resumedFromJournal = false;
+  if (resumeFromJournal) {
+    const journal = readPortfolioJournal(journalPath, journalIdentityValue);
+    ledger.deserialize(journal.ledger);
+    rootBranch = ledger.get(journal.rootBranchId);
+    if (!rootBranch) {
+      throw new Error(`portfolio journal restore failed: root branch ${journal.rootBranchId} is missing`);
+    }
+    roundIndex = Number(journal.roundIndex) || 0;
+    for (const entry of Array.isArray(journal.rounds) ? journal.rounds : []) rounds.push(entry);
+    for (const entry of Array.isArray(journal.attempts) ? journal.attempts : []) attempts.push(entry);
+    Object.assign(repairTelemetry, journal.repairTelemetry || {});
+    for (const key of journal.attemptedExperimentKeys || []) attemptedExperimentKeys.add(key);
+    for (const key of journal.visitedExactCheckpointStates || []) visitedExactCheckpointStates.add(key);
+    preferredCohortBranchIds = new Set(journal.preferredCohortBranchIds || []);
+    frontierState = journal.frontierState || initialState;
+    frontierStateKey = journal.frontierStateKey || null;
+    frontierOrigin = journal.frontierOrigin || "route-free-initial-state";
+    reachedTerminal = journal.reachedTerminal === true;
+    terminalBranchId = journal.terminalBranchId || null;
+    terminationReason = journal.terminationReason || null;
+    terminationClass = journal.terminationClass || null;
+    totalLocalExpansions = Number(journal.totalLocalExpansions) || 0;
+    resumedFromJournal = true;
+  }
+  const writeJournalSnapshot = () => {
+    if (!journalPath) return;
+    writePortfolioJournal(journalPath, {
+      identity: journalIdentityValue,
+      roundIndex,
+      rounds,
+      attempts,
+      repairTelemetry,
+      attemptedExperimentKeys: Array.from(attemptedExperimentKeys),
+      visitedExactCheckpointStates: Array.from(visitedExactCheckpointStates),
+      preferredCohortBranchIds: Array.from(preferredCohortBranchIds),
+      ledger: ledger.serialize(),
+      rootBranchId: rootBranch ? rootBranch.branchId : null,
+      frontierState,
+      frontierStateKey,
+      frontierOrigin,
+      reachedTerminal,
+      terminalBranchId,
+      terminationReason,
+      terminationClass,
+      totalLocalExpansions,
+    });
   };
 
   // The global expansion budget is HARD: a local call may only spend what is left
@@ -762,35 +196,17 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   const remainingGlobalBudget = () => maxTotalLocalExpansions - totalLocalExpansions;
   const effectiveLocalBudget = () => Math.min(localMaxExpansions, remainingGlobalBudget());
 
-  const registerBranch = (parentBranchId, state, cumulativeDecisions, exactStateFingerprint, via) => {
-    const branchId = newBranchId();
-    const parent = parentBranchId ? branches.get(parentBranchId) : null;
-    const branch = {
-      branchId,
-      parentBranchId: parent ? parent.branchId : null,
-      state,
-      exactStateFingerprint,
-      cumulativeDecisions: cumulativeDecisions.slice(),
-      status: "open",
-      depth: parent ? parent.depth + 1 : 0,
-      openedByRound: rounds.length,
-      openedVia: via || null,
-      attemptCount: 0,
-      attemptedExperimentKeys: [],
-      exhaustedReason: null,
-    };
-    branches.set(branchId, branch);
-    return branch;
-  };
+  if (!resumedFromJournal) {
 
   // Round 0 treats the caller's exact state as a portfolio of one. No route, no
   // prefix, no authored subgoal.
-  const rootBranch = registerBranch(
+  rootBranch = ledger.register(
     null,
     initialState,
     [],
     stateFingerprintOf(initialState),
     "route-free-initial-state",
+    rounds.length,
   );
   const initialContext = buildContext(project, initialState, terminalGoal, contextOptions);
   const initialExecution = executeLocal(project, projectRoot, initialState, initialContext.plan, {
@@ -854,12 +270,13 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   const childBranches = [];
   for (const checkpoint of initialCheckpoints) {
     visitedExactCheckpointStates.add(checkpoint.exactStateFingerprint);
-    const child = registerBranch(
+    const child = ledger.register(
       rootBranch.branchId,
       checkpoint.state,
       Array.isArray((checkpoint.routeRecord || {}).decisions) ? checkpoint.routeRecord.decisions : [],
       checkpoint.exactStateFingerprint,
       "initial-checkpoint",
+      rounds.length,
     );
     childBranches.push({ branch: child, checkpoint });
   }
@@ -870,13 +287,10 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     preferredCohortBranchIds = new Set(childBranches.map((entry) => entry.branch.branchId));
   }
 
-  let frontierStateKey = null;
-  let terminationReason = null;
-  let terminationClass = null;
   const initialTerminalEntry = childBranches.find((entry) =>
     terminalGoalReached(project, entry.checkpoint.state, terminalGoal)) || null;
-  let reachedTerminal = Boolean(initialTerminalEntry);
-  let terminalBranchId = initialTerminalEntry ? initialTerminalEntry.branch.branchId : null;
+  reachedTerminal = Boolean(initialTerminalEntry);
+  terminalBranchId = initialTerminalEntry ? initialTerminalEntry.branch.branchId : null;
   if (reachedTerminal) {
     terminationReason = "terminal-goal-reached-in-initial-execution";
     terminationClass = "TERMINAL_GOAL_REACHED";
@@ -885,25 +299,14 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     frontierStateKey = childBranches[0].branch.exactStateFingerprint;
     frontierOrigin = `initial-checkpoint:${childBranches[0].checkpoint.id}`;
   } else if (initialExecution.outcome.searchComplete === true) {
-    rootBranch.status = "exhausted";
-    rootBranch.exhaustedReason = "initial-execution-proved-no-continuation";
+    ledger.exhaust(rootBranch.branchId, "initial-execution-proved-no-continuation");
     terminationReason = "initial-execution-proved-no-continuation";
     terminationClass = "GLOBAL_PORTFOLIO_EXHAUSTED";
   }
+  writeJournalSnapshot();
+  }
 
-  const openBranches = () => Array.from(branches.values()).filter((branch) => branch.status !== "exhausted");
-
-  // A portfolio of the still-open branches, shaped like the checkpoint lists the
-  // one-step controller already knows how to rank. This is what makes selection
-  // draw from the whole history rather than only the newest execution.
-  const buildPortfolio = () => openBranches().map((branch) => ({
-    id: branch.branchId,
-    roles: branch.parentBranchId ? [`branch-depth-${branch.depth}`] : ["root-branch"],
-    exactStateFingerprint: branch.exactStateFingerprint,
-    state: branch.state,
-  }));
-
-  let roundIndex = 0;
+  const buildPortfolio = () => ledger.open().map(ledger.checkpoint);
 
   while (!reachedTerminal && terminationReason == null && roundIndex < maxRounds) {
     if (remainingGlobalBudget() <= 0) {
@@ -922,15 +325,10 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     let usingPreferredCohort = false;
     if (commitSuccessfulLineage && preferredCohortBranchIds.size > 0) {
       const cohortOpen = Array.from(preferredCohortBranchIds)
-        .map((id) => branches.get(id))
+        .map((id) => ledger.get(id))
         .filter((branch) => branch && branch.status !== "exhausted");
       if (cohortOpen.length > 0) {
-        portfolio = cohortOpen.map((branch) => ({
-          id: branch.branchId,
-          roles: branch.parentBranchId ? [`branch-depth-${branch.depth}`] : ["root-branch"],
-          exactStateFingerprint: branch.exactStateFingerprint,
-          state: branch.state,
-        }));
+        portfolio = cohortOpen.map(ledger.checkpoint);
         usingPreferredCohort = true;
       } else {
         preferredCohortBranchIds.clear();
@@ -958,16 +356,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     // If preferred cohort was evaluated but none could advance, mark non-advancing branches
     // as exhausted under the monotonic contract, clear preferred cohort, and fall back to global portfolio.
     if (usingPreferredCohort && !feedback.selection) {
-      for (const ev of feedback.evaluations || []) {
-        if (!ev.canAdvance) {
-          const b = branches.get(ev.checkpointId);
-          if (b && b.status !== "exhausted") {
-            b.status = "exhausted";
-            b.exhaustedReason = ev.feedbackClass;
-            b.lastEvaluationAlternatives = ev.alternatives;
-          }
-        }
-      }
+      ledger.collapseEvaluations(feedback.evaluations || []);
       preferredCohortBranchIds.clear();
       portfolio = buildPortfolio();
       usingPreferredCohort = false;
@@ -987,22 +376,11 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     // Monotonic branch exhaustion: for all branches evaluated in this portfolio pass,
     // if canAdvance is false, mark exhausted under the current planner contract
     // (an immutable state's available experiments can only shrink as attemptedExperimentKeys grows).
-    lastEvaluationMap.clear();
-    for (const ev of feedback.evaluations || []) {
-      lastEvaluationMap.set(ev.checkpointId, ev);
-      if (!ev.canAdvance) {
-        const b = branches.get(ev.checkpointId);
-        if (b && b.status !== "exhausted") {
-          b.status = "exhausted";
-          b.exhaustedReason = ev.feedbackClass;
-          b.lastEvaluationAlternatives = ev.alternatives;
-        }
-      }
-    }
+    ledger.recordEvaluationPass(feedback.evaluations || []);
 
     const selection = feedback.selection;
     const nextExecution = feedback.nextExecution;
-    const selectedBranch = selection ? branches.get(selection.checkpointId) || null : null;
+    const selectedBranch = selection ? ledger.get(selection.checkpointId) || null : null;
     const previousStepRound = rounds.filter((entry) => entry.kind === "dependency-feedback-step").slice(-1)[0];
 
     // Deduplication is the loop's own contract: an experimentKey is burned the
@@ -1088,13 +466,14 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
     const openedChildren = [];
     for (const checkpoint of nextCheckpoints) {
       visitedExactCheckpointStates.add(checkpoint.exactStateFingerprint);
-      const child = registerBranch(
+      const child = ledger.register(
         selectedBranch ? selectedBranch.branchId : rootBranch.branchId,
         checkpoint.state,
         (selectedBranch ? selectedBranch.cumulativeDecisions : [])
           .concat(Array.isArray((checkpoint.routeRecord || {}).decisions) ? checkpoint.routeRecord.decisions : []),
         checkpoint.exactStateFingerprint,
         "dependency-feedback-step",
+        rounds.length,
       );
       openedChildren.push({ branch: child, checkpoint });
     }
@@ -1106,39 +485,12 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       ? openedChildren.find((entry) => entry.checkpoint === terminalEntry.checkpoint)
       : openedChildren[0] || null;
 
-    if (selectedBranch && nextCheckpoints.length === 0) {
-      if (nextExecution && nextExecution.outcome.budgetExhausted === true) {
-        selectedBranch.status = "open";
-      } else if (nextExecution == null) {
-        selectedBranch.status = "open";
-      } else {
-        selectedBranch.status = "exhausted";
-        selectedBranch.exhaustedReason = nextExecution.outcome.reason || "local-execution-produced-no-checkpoint";
-      }
-    }
-
-    // PR-5.27c: preferred child cohort update for commitment.
-    // If local execution successfully opened new children, commit to this cohort
-    // on the next round. If no children were opened, clear preferred cohort so
-    // the next round falls back to global historical open branches.
-    if (commitSuccessfulLineage) {
-      if (openedChildren.length > 0) {
-        preferredCohortBranchIds = new Set(openedChildren.map((entry) => entry.branch.branchId));
-      } else {
-        preferredCohortBranchIds.clear();
-      }
-    }
-
-    // PR-5.27f Phase 0B: SAME-PREREQUISITE CONVERSION CHECK.
-    //
-    // The claim under test is
-    //   before: battle X (specific node/floor/coordinate) = unbeatable | lethal
-    //   repair
-    //   after : THE SAME battle X = viable-at-current-state
-    // A replan that merely surfaces SOME viable prerequisite is not that claim,
-    // so conversion is now attributed per prerequisite IDENTITY, and a blocked
-    // battle that is absent from the replan reports
-    // `NOT_PRESENT_IN_REPLANNED_ALTERNATIVES` rather than counting as converted.
+    // PR-5.27g: SAME-BLOCKER OUTCOME CLASSIFICATION, computed BEFORE the
+    // commitment decision so the preferred cohort can be conditioned on what
+    // the repair actually achieved against the identity that triggered it.
+    // The 5.27f conversion accounting below is unchanged; the only additions are
+    // the per-identity `outcome` field and the per-attempt aggregate.
+    let repairOutcome = null;
     if (repairSelected && openedChildren.length > 0) {
       for (const child of openedChildren.slice(0, 1)) {
         let afterEvaluation = null;
@@ -1161,7 +513,10 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         } catch {
           afterEvaluation = null;
         }
-        const replanned = collectReplannedPrerequisiteStatuses(afterEvaluation);
+        const replannedEvidence = collectReplannedPrerequisiteEvidence(afterEvaluation);
+        const replanned = new Map(
+          Array.from(replannedEvidence.entries()).map(([identity, entry]) => [identity, entry.status]),
+        );
         const blockedBefore = (selection.blockedPrerequisites || []).length > 0
           ? (selection.blockedPrerequisites || [])
           : (selection.blockedPrerequisiteIds || []).map((identity) => ({
@@ -1174,12 +529,19 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
           }));
         const identityConversions = blockedBefore.map((blocked) => {
           const identity = blocked.identity || prerequisiteIdentityOf(blocked);
-          const afterStatus = identity && replanned.has(identity)
-            ? replanned.get(identity)
-            : "NOT_PRESENT_IN_REPLANNED_ALTERNATIVES";
+          const after = identity && replannedEvidence.has(identity)
+            ? replannedEvidence.get(identity)
+            : null;
+          const afterStatus = after ? after.status : "NOT_PRESENT_IN_REPLANNED_ALTERNATIVES";
           const beforeStatus = blocked.statusBefore || null;
           const converted = RESOURCE_REPAIR_TRIGGER_STATUSES.has(beforeStatus)
             && afterStatus === "viable-at-current-state";
+          const outcome = classifyRepairOutcome({
+            beforeStatus,
+            beforeEvidence: blocked.evidenceBefore || null,
+            afterStatus,
+            afterEvidence: after ? after.evidence : null,
+          });
           return {
             blockedPrerequisiteId: identity,
             sourceNodeId: blocked.sourceNodeId || null,
@@ -1190,6 +552,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
             afterStatus,
             sameIdentity: true,
             converted,
+            outcome,
           };
         });
         // `convertedToViable` (broad) is retained only for backward comparison
@@ -1197,6 +560,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         const broadConverted = Array.from(replanned.values())
           .some((status) => status === "viable-at-current-state");
         const anyExact = identityConversions.some((entry) => entry.converted);
+        repairOutcome = aggregateRepairOutcome(identityConversions.map((entry) => entry.outcome));
         repairTelemetry.conversions.push({
           round: roundIndex,
           originBranchId: selectedBranch ? selectedBranch.branchId : null,
@@ -1210,11 +574,39 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
           statusesAfter: Array.from(new Set(replanned.values())),
           converted: anyExact,
           convertedBroad: broadConverted,
+          outcome: repairOutcome,
         });
         if (anyExact) repairTelemetry.exactSamePrerequisiteConversions += 1;
         if (broadConverted) repairTelemetry.convertedToViable += 1;
+        if (repairOutcome) {
+          repairTelemetry.outcomeCounts[repairOutcome] =
+            (repairTelemetry.outcomeCounts[repairOutcome] || 0) + 1;
+        }
       }
     }
+
+    ledger.applyLocalOutcome(selectedBranch ? selectedBranch.branchId : null, nextExecution, nextCheckpoints.length);
+
+    // PR-5.27c/5.27g: preferred child cohort update for commitment.
+    // Normal dependency success keeps the existing commitment contract. A
+    // failure-conditioned resource repair earns automatic commitment only when
+    // its outcome against the triggering blocker is CONVERTED or IMPROVED; a
+    // NO_PROGRESS / NOT_PRESENT repair keeps its children in the historical
+    // portfolio (no pruning, no invalidation) but does NOT set the preferred
+    // cohort, so the next round falls back to ordinary portfolio selection.
+    const withholdRepairCommitment = repairSelected
+      && outcomeConditionedRepairCommitment
+      && openedChildren.length > 0
+      && repairOutcome !== "CONVERTED"
+      && repairOutcome !== "IMPROVED";
+    if (commitSuccessfulLineage) {
+      if (openedChildren.length > 0 && !withholdRepairCommitment) {
+        preferredCohortBranchIds = new Set(openedChildren.map((entry) => entry.branch.branchId));
+      } else {
+        preferredCohortBranchIds.clear();
+      }
+    }
+    if (withholdRepairCommitment) repairTelemetry.commitmentsWithheld += 1;
 
     let roundVerdict;
     let selectedBranchParentIsPreviousRound = null;
@@ -1233,7 +625,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       // anywhere in the search tree can advance". The former is a property of the
       // attempted set at this moment; only the latter is exhaustion.
       const viable = feedback.evaluations.filter((entry) => entry.canAdvance === true);
-      const openCount = openBranches().length;
+      const openCount = ledger.open().length;
       roundVerdict = "CURRENT_PORTFOLIO_BLOCKED";
       if (openCount === 0) {
         terminationReason = "global-portfolio-exhausted";
@@ -1304,108 +696,31 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       openedBranchIds: openedChildren.map((entry) => entry.branch.branchId),
       selectedBranchParentIsPreviousRound,
       backtrackedToOlderBranch,
+      repairOutcome,
+      commitmentWithheld: withholdRepairCommitment,
       verdict: roundVerdict,
     });
+    writeJournalSnapshot();
   }
 
-  // PR-5.27d Phase 0: EXACT FINAL BRANCH LIFECYCLE SWEEP.
-  // The per-round `lastEvaluationMap` only ever contains the most recent portfolio
-  // pass, so an open branch that was not re-evaluated in the final round would
-  // otherwise be counted as advanceable by default. That made
-  // `advanceableBranchCount` an UPPER BOUND rather than a measurement. Here every
-  // remaining open branch is evaluated once against the final
-  // `attemptedExperimentKeys`, purely as observation: no local execution, no
-  // selection, no route change. Branches that prove unadvanceable are collapsed
-  // under the same monotonic rule used during the loop.
-  const finalSweep = {
-    evaluated: 0,
-    newlyExhausted: [],
-    advanceable: [],
-    records: [],
-  };
-  {
-    const finalBranches = openBranches();
-    // PR-5.27f Phase 0A: the final sweep must also ask the EFFECTIVE universe.
-    // Otherwise a branch whose normal alternatives are all blocked but which
-    // still has a live repair experiment is wrongly collapsed and reported as
-    // exhausted, understating `advanceableBranchCount`.
-    const finalEvaluations = finalBranches.map((branch) => evaluateBranchExperiments(
-      project,
-      terminalGoal,
-      {
-        id: branch.branchId,
-        roles: branch.parentBranchId ? [`branch-depth-${branch.depth}`] : ["root-branch"],
-        exactStateFingerprint: branch.exactStateFingerprint,
-        state: branch.state,
-      },
-      {
-        ...contextOptions,
-        excludedExperimentKeys: attemptedExperimentKeys,
-        contextBuilder: buildContext,
-        failureConditionedResourceRepair,
-        battleRelevantRepairOnly,
-        candidateLimit,
-        simulatorProvider: () => (typeof config.simulatorFactory === "function"
-          ? config.simulatorFactory()
-          : makeBlindSimulator(project)),
-      },
-    ));
-    lastEvaluationMap.clear();
-    finalSweep.evaluated = finalEvaluations.length;
-    for (const evaluation of finalEvaluations) {
-      const branch = branches.get(evaluation.checkpointId);
-      lastEvaluationMap.set(evaluation.checkpointId, evaluation);
-      // PR-5.27e P2: collapse first, then record, so a branch that is newly
-      // exhausted by this sweep reports its POST-collapse status/reason in the
-      // diagnostic dump instead of the stale pre-collapse `open` / null pair.
-      let newlyExhaustedHere = false;
-      if (!evaluation.effectiveCanAdvance && branch && branch.status !== "exhausted") {
-        branch.status = "exhausted";
-        branch.exhaustedReason = evaluation.feedbackClass;
-        branch.lastEvaluationAlternatives = evaluation.alternatives;
-        finalSweep.newlyExhausted.push(evaluation.checkpointId);
-        newlyExhaustedHere = true;
-      }
-      finalSweep.records.push({
-        branchId: evaluation.checkpointId,
-        depth: branch ? branch.depth : null,
-        status: branch ? branch.status : null,
-        exhaustedReason: branch ? branch.exhaustedReason : null,
-        newlyExhaustedByFinalSweep: newlyExhaustedHere,
-        floorId: branch && branch.state ? branch.state.floorId || null : null,
-        canAdvance: evaluation.effectiveCanAdvance,
-        feedbackClass: evaluation.effectiveFeedbackClass,
-        normalCanAdvance: evaluation.normalCanAdvance,
-        normalFeedbackClass: evaluation.normalFeedbackClass,
-        repairExperimentCount: evaluation.repairExperimentCount,
-        alternatives: evaluation.alternatives,
-      });
-      if (evaluation.effectiveCanAdvance) {
-        finalSweep.advanceable.push(evaluation.checkpointId);
-      }
-    }
-  }
-
-  // Attribution for branches that were already collapsed DURING the loop: their
-  // state is immutable, so the evaluation recorded at the moment of collapse is
-  // still the correct attribution. Phase 1 needs these, because the deepest
-  // branches are precisely the ones exhausted mid-loop rather than at the end.
-  for (const branch of branches.values()) {
-    if (branch.status !== "exhausted") continue;
-    if (finalSweep.records.some((entry) => entry.branchId === branch.branchId)) continue;
-    const alternativeSummary = branch.lastEvaluationAlternatives || null;
-    if (!alternativeSummary) continue;
-    finalSweep.records.push({
-      branchId: branch.branchId,
-      depth: branch.depth,
-      status: branch.status,
-      exhaustedReason: branch.exhaustedReason,
-      floorId: branch.state ? branch.state.floorId || null : null,
-      canAdvance: false,
-      feedbackClass: branch.exhaustedReason,
-      alternatives: alternativeSummary,
-    });
-  }
+  // Evaluate all remaining open branches against the final experiment universe;
+  // the ledger owns collapse ordering, historical attribution and final counts.
+  const finalSweep = ledger.finalize((branch) => evaluateBranchExperiments(
+    project,
+    terminalGoal,
+    ledger.checkpoint(branch),
+    {
+      ...contextOptions,
+      excludedExperimentKeys: attemptedExperimentKeys,
+      contextBuilder: buildContext,
+      failureConditionedResourceRepair,
+      battleRelevantRepairOnly,
+      candidateLimit,
+      simulatorProvider: () => (typeof config.simulatorFactory === "function"
+        ? config.simulatorFactory()
+        : makeBlindSimulator(project)),
+    },
+  ));
 
   const completedAt = Date.now();
   if (!reachedTerminal && terminationReason == null) {
@@ -1419,50 +734,21 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
   }
 
   const stepRounds = rounds.filter((round) => round.kind === "dependency-feedback-step");
-  const acceptedRounds = stepRounds.filter((round) => round.acceptedBranchId != null);
-  const roundStrictReplay = acceptedRounds.every((round) => round.acceptedStrictReplay === true);
-
-  // The returned route is the terminal branch's ACCUMULATED decisions, i.e. every
-  // local segment from the original initial state, not just the last one. Each
-  // checkpoint's own routeRecord is an increment relative to its local execution.
-  const terminalBranch = terminalBranchId ? branches.get(terminalBranchId) : null;
-  const route = reachedTerminal && terminalBranch ? terminalBranch.cumulativeDecisions.slice() : null;
-
-  // PR-5.27c P1: True end-to-end full route strict replay verification from original initial state.
-  // We do not rely only on per-segment flags or stitched route summaries; we run
-  // verifyStrictReplay(simulator, routeSummaries, { initialState, isGoalState })
-  // whenever a route is produced and simulatorFactory (or blind simulator) is available.
-  let fullRouteStrictReplay = null;
-  if (reachedTerminal && Array.isArray(route) && route.length > 0) {
-    try {
-      let replaySim = null;
-      if (typeof config.simulatorFactory === "function") {
-        replaySim = config.simulatorFactory();
-      } else if (project && project.floorsById && Object.keys(project.floorsById).length > 0) {
-        replaySim = makeBlindSimulator(project);
-      }
-      if (replaySim && typeof replaySim.enumeratePrimitiveActions === "function" && typeof replaySim.applyAction === "function") {
-        const summaries = route.map((d) => d && (d.summary || d.kind));
-        fullRouteStrictReplay = verifyStrictReplay(replaySim, summaries, {
-          initialState,
-          isGoalState: (s) => terminalGoalReached(project, s, terminalGoal),
-        });
-      }
-    } catch (error) {
-      fullRouteStrictReplay = { ok: false, reason: `full-route-replay-exception: ${error.message}` };
-    }
-  }
-
-  // Telemetry: EXACT final lifecycle counts. `advanceableBranchCount` is now a
-  // measurement, not an upper bound, because the final sweep above evaluated
-  // every remaining open branch against the final attempted-experiment set.
-  const allBranchesList = Array.from(branches.values());
-  const uniqueExactStateCount = new Set(allBranchesList.map((b) => b.exactStateFingerprint)).size;
-  const openBranchesList = openBranches();
-  const advanceableBranchCount = openBranchesList.filter((b) => {
-    const ev = lastEvaluationMap.get(b.branchId);
-    return ev && ev.canAdvance === true;
-  }).length;
+  const terminalBranch = terminalBranchId ? ledger.get(terminalBranchId) : null;
+  const finalizedRoute = finalizeDependencyRoute({
+    project,
+    initialState,
+    terminalGoal,
+    reachedTerminal,
+    terminalBranch,
+    stepRounds,
+    // Resolve lazily and keep method invocation on the original options object.
+    // Extracting a bare function would change `this` for caller-owned factories.
+    getSimulatorFactory: () => typeof config.simulatorFactory === "function"
+      ? () => config.simulatorFactory()
+      : null,
+  });
+  const branchSummary = ledger.summarize();
 
   return {
     schema: SCHEMA,
@@ -1486,6 +772,7 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       commitSuccessfulLineage,
       failureConditionedResourceRepair,
       battleRelevantRepairOnly,
+      outcomeConditionedRepairCommitment,
       maxRuntimeMs: 0,
       towerId: config.towerId || null,
     },
@@ -1497,11 +784,11 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
       attemptedExperimentKeys: Array.from(attemptedExperimentKeys).sort(),
       visitedExactCheckpointStateCount: visitedExactCheckpointStates.size,
       visitedExactCheckpointStates: Array.from(visitedExactCheckpointStates).sort(),
-      uniqueExactStateCount,
+      uniqueExactStateCount: branchSummary.uniqueExactStateCount,
       experimentKeyReuseCount: rounds.filter((round) => round.experimentKeyReused === true).length,
-      branchCount: branches.size,
-      openBranchCount: openBranchesList.length,
-      advanceableBranchCount,
+      branchCount: branchSummary.branchCount,
+      openBranchCount: branchSummary.openBranchCount,
+      advanceableBranchCount: branchSummary.advanceableBranchCount,
       resourceRepair: {
         enabled: failureConditionedResourceRepair,
         generated: repairTelemetry.generated,
@@ -1512,6 +799,8 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         rejectedByRelevance: repairTelemetry.rejectedByRelevance,
         rejectedIntentKinds: { ...repairTelemetry.rejectedIntentKinds },
         blockedStatusesSeen: { ...repairTelemetry.blockedStatusesSeen },
+        outcomeCounts: { ...repairTelemetry.outcomeCounts },
+        commitmentsWithheld: repairTelemetry.commitmentsWithheld,
       },
       resourceRepairAttempts: repairTelemetry.attempts,
       resourceRepairConversions: repairTelemetry.conversions,
@@ -1536,24 +825,11 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
           alternatives: entry.alternatives,
         }))
         : null,
-      exhaustedBranchCount: allBranchesList
-        .filter((branch) => branch.status === "exhausted").length,
+      exhaustedBranchCount: branchSummary.exhaustedBranchCount,
       backtrackCount: stepRounds.filter((round) => round.backtrackedToOlderBranch === true).length,
-      branchIds: Array.from(branches.keys()),
+      branchIds: branchSummary.branchIds,
     },
-    branches: allBranchesList.map((branch) => ({
-      branchId: branch.branchId,
-      parentBranchId: branch.parentBranchId,
-      exactStateFingerprint: branch.exactStateFingerprint,
-      floorId: (branch.state || {}).floorId || null,
-      depth: branch.depth,
-      status: branch.status,
-      exhaustedReason: branch.exhaustedReason,
-      cumulativeDecisionCount: branch.cumulativeDecisions.length,
-      attemptCount: branch.attemptCount,
-      openedByRound: branch.openedByRound,
-      openedVia: branch.openedVia,
-    })),
+    branches: branchSummary.branches,
     attempts,
     terminal: {
       goal: terminalGoal,
@@ -1573,24 +849,14 @@ function runDependencyFeedbackLoop(project, projectRoot, terminalGoal, initialSt
         : (frontierState ? frontierState.floorId || null : null),
       frontierOrigin,
     },
-    route,
-    routeProvenance: reachedTerminal ? {
-      startsAtOriginalInitialState: true,
-      localSegmentCount: acceptedRounds.length,
-      cumulativeDecisionCount: terminalBranch ? terminalBranch.cumulativeDecisions.length : 0,
-      fullRouteStrictReplayValid: fullRouteStrictReplay ? fullRouteStrictReplay.ok === true : null,
-      fullRouteStrictReplayReason: fullRouteStrictReplay ? (fullRouteStrictReplay.reason || null) : null,
-    } : null,
-    allAcceptedCheckpointsStrictReplay: roundStrictReplay,
-    fullRouteStrictReplay,
-    acceptedCheckpoints: acceptedRounds.map((round) => round.acceptedCheckpointLabel),
+    route: finalizedRoute.route,
+    routeProvenance: finalizedRoute.routeProvenance,
+    allAcceptedCheckpointsStrictReplay: finalizedRoute.allAcceptedCheckpointsStrictReplay,
+    fullRouteStrictReplay: finalizedRoute.fullRouteStrictReplay,
+    acceptedCheckpoints: finalizedRoute.acceptedCheckpoints,
     rounds,
     timing: { totalWallMs: completedAt - startedAt },
-    verdict: reachedTerminal
-      ? (roundStrictReplay && fullRouteStrictReplay && fullRouteStrictReplay.ok === true
-        ? "DEPENDENCY_FEEDBACK_LOOP_REACHED_TERMINAL_WITH_STRICT_REPLAY"
-        : "DEPENDENCY_FEEDBACK_LOOP_REACHED_TERMINAL_REPLAY_UNVERIFIED")
-      : "DEPENDENCY_FEEDBACK_LOOP_UNKNOWN_UNDER_THIS_BUDGET",
+    verdict: finalizedRoute.verdict,
   };
 }
 

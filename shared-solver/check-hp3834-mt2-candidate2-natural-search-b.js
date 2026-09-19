@@ -4,7 +4,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 
-const { hardTilesMatchExpected } = require("./audit-hp3834-mt2-candidate2-natural-search");
+const { hardTilesMatchExpected } = require("./audits/hp3834/audit-hp3834-mt2-candidate2-natural-search");
 
 const reportFile = path.resolve(
   __dirname,

@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { listSolverLibFiles } = require("../../tools/audit-js-files");
 
 const root = path.resolve(__dirname, "..");
 const libDir = path.join(root, "lib");
@@ -133,6 +134,17 @@ const LEARNED = new Set([
   "learned-prior-mcgs-proposer.js",
 ]);
 
+const DEPENDENCY_PLANNER = new Set([
+  "dependency-feedback-controller.js",
+  "dependency-planner/feedback.js",
+  "dependency-planner/repair-experiments.js",
+  "dependency-planner/branch-ledger.js",
+  "dependency-planner/route-finalization.js",
+  "local-dependency-executor.js",
+  "automatic-dependency-planner.js",
+  "automatic-feasibility-subgoals.js",
+]);
+
 const modules = {};
 
 function add(file, partial) {
@@ -144,8 +156,32 @@ function add(file, partial) {
   };
 }
 
-for (const file of fs.readdirSync(libDir).filter((name) => name.endsWith(".js")).sort()) {
-  if (CORE_DOMAIN.has(file)) {
+for (const file of listSolverLibFiles(libDir)) {
+  if (file === "durable-search.js") {
+    add(file, {
+      layer: "planning/decomposition", status: "experimental", role: "candidate-generator",
+      correctnessSource: false,
+      tests: { unit: true, realFixture: false, segmentClosure: false, fullClosure: false, cleanCheckout: true },
+      notes: "Durable bounded task orchestration over canonical DP; explicit profile stages, multi-candidate checkpoints and strict replay. Not full-frontier resume or an optimality proof.",
+    });
+  } else if (DEPENDENCY_PLANNER.has(file)) {
+    add(file, {
+      layer: "planning/decomposition",
+      status: "experimental",
+      role: "candidate-generator",
+      correctnessSource: false,
+      tests: {
+        unit: true,
+        realFixture: true,
+        segmentClosure: false,
+        fullClosure: false,
+        cleanCheckout: true,
+      },
+      notes: file === "dependency-feedback-controller.js"
+        ? "Cross-round dependency loop and stable compatibility exports; feedback, repair, branch lifecycle and route finalization live in dependency-planner/. Not an independently qualified replacement kernel."
+        : "Dependency planning reuses the shared simulator and canonical segment DP; mechanism checks are not autonomous terminal capability certification.",
+    });
+  } else if (CORE_DOMAIN.has(file)) {
     add(file, {
       layer: "domain",
       status: "canonical",
@@ -446,6 +482,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": true,
     "cleanCheckout": true,
     "notes": "PR-5.17a1 real D2 blocked evilHero repair, circular I1009 rejection, startable I1014 selection, first prerequisite strict replay, and empty-portfolio negative control"
+  },
+  "shared-solver/check-durable-search.js": {
+    "grade": "unit-plus-micro",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "Synthetic real-DP strict replay, persisted task resume, zero-spend guards, identity and writer locks, bounded negative control, read-only progress HTTP security. No external tower required."
   },
   "shared-solver/check-dependency-feedback-controller.js": {
     "grade": "integration-local",
@@ -1658,6 +1701,14 @@ const pathRules = [
     recommendedAction: "archive to _archive/experiments/pre-canonical/; do not treat as canonical",
   },
   {
+    match: "shared-solver/audits/**",
+    status: "supporting",
+    role: "diagnostics",
+    layer: "diagnostics",
+    correctnessSource: false,
+    recommendedAction: "keep as historical diagnostics; never cite a bounded probe as a no-route proof",
+  },
+  {
     match: "shared-solver/check-*.js",
     status: "supporting",
     role: "test",
@@ -1807,6 +1858,50 @@ const manifest = {
     ],
   },
   pathRules,
+  // Navigation metadata only. No default search configuration is selected here.
+  entrypointGroups: [
+    {
+      id: "canonical-dp",
+      title: "Canonical region / segment DP",
+      description: "Shared correctness search with explicit goals; incomplete searches are not impossibility proofs.",
+      paths: [
+        "shared-solver/run-region-dp.js",
+        "shared-solver/run-segmented-dp.js",
+        "shared-solver/run-adaptive-segment-dp.js",
+      ],
+    },
+    {
+      id: "product-replay",
+      title: "Solve tasks, launcher and replay",
+      paths: [
+        "shared-solver/run-solve-task.js",
+        "shared-solver/run-solver-launcher.js",
+        "shared-solver/route-gui.js",
+        "shared-solver/verify-route-live.js",
+      ],
+    },
+    {
+      id: "dependency-planner",
+      title: "Current dependency planner experiment (not capability-qualified)",
+      description: "Internal API: lib/dependency-feedback-controller.js. This fixed-configuration audit reproduces PR-5.27f; it is not a general-purpose product CLI.",
+      paths: ["shared-solver/audit-pr527f-round-ab.js"],
+    },
+    {
+      id: "historical-exploration",
+      title: "Historical and auxiliary search families",
+      description: "Retained for compatibility and reproducible baselines, not deleted or silently redirected to the new planner.",
+      paths: [
+        "shared-solver/run-route.js",
+        "shared-solver/run-search.js",
+        "shared-solver/run-mt1-mt11.js",
+        "shared-solver/run-progressive-monster-planner.js",
+        "shared-solver/run-whiteisland-trial-topk.js",
+        "shared-solver/run-blind-discovery-baseline.js",
+        "shared-solver/audits/probes/probe-d2-strategic-search.js",
+        "shared-solver/audits/probes/probe-d2-hierarchical-discovery.js",
+      ],
+    },
+  ],
   suites: {
     static: {
       requiredChecks: [

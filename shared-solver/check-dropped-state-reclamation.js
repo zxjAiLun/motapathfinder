@@ -35,7 +35,7 @@ const { spawnSync } = require("child_process");
 const { loadProject } = require("./lib/project-loader");
 const { createTransportCollapsedSearch } = require("./lib/transport-collapse");
 const { buildDependencyFrontier } = require("./lib/dependency-frontier");
-const { makeSimulator, PROJECT_ROOT } = require("./audit-pr525t-oracle-survival");
+const { makeSimulator, PROJECT_ROOT } = require("./audits/flat-search/audit-pr525t-oracle-survival");
 
 const WORK = {
   maxExpansions: 1200,

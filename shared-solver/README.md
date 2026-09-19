@@ -1,4 +1,61 @@
-# Solver Skeleton
+# Shared Solver
+
+## 当前入口（2026-09-18）
+
+本目录是唯一 canonical solver；塔内 `solver/` 已移除且禁止恢复。塔的 runtime/assets 不属于本轮重构范围。
+
+- 当前状态、授权与基线：[项目交接](../20260804handoff.md)。
+- 整理准备、实战证据和第一批拆分结果：[PR-5.28](../docs/260918/5-28.md)。
+- 按用途分组的脚本索引：[Solver Entrypoints](../docs/solver-entrypoints.md)（检查、审计、历史探索不再混称 canonical CLI）。
+- 最新 planner 实验：[PR-5.27f](../docs/260918/5-27f.md)，尚未通过 MT3 能力门，不能当作已验证的通用解塔器。
+- 模块角色和测试分级：`solver-manifest.json`（由 `scripts/generate-solver-manifest.js` 维护），不要另建竞争注册表。
+
+| 责任 | 主要代码 | 使用边界 |
+| --- | --- | --- |
+| 状态与规则 | `lib/state.js`、`lib/simulator.js`、battle/door/event resolvers | 语义底座；某规则有实现不等于已通过所有真实塔实战 |
+| 局部正确性搜索 | `lib/dp-search.js`、`lib/segment-dp.js` | canonical DP；预算/裁剪未穷尽不能声称无解 |
+| 当前自主规划实验 | `lib/dependency-feedback-controller.js`、`lib/dependency-planner/`、`lib/local-dependency-executor.js` | 新的是策略/编排层，不是独立替换内核；仍调用共享 DP |
+| 路线与验证 | `lib/route-store.js`、`lib/strict-replay.js`、`lib/live-replay.js` | 搜索命中后还须核验，局部 replay 不代替完整路线 |
+| 历史探索与复现 | top-k/beam/resource planners、`lib/transport-collapse.js`、`audits/probes/`、`audits/hp3834/`、`audits/flat-search/` 等 | 保留基线及诊断；bounded probe / audit 不是无解证明 |
+
+### “新 / 旧 / 共享”怎么找
+
+```text
+lib/dependency-feedback-controller.js       当前跨轮调度 + 旧 import 路径兼容
+lib/dependency-planner/
+  feedback.js                              单轮 checkpoint 评估、选择、执行
+  repair-experiments.js                    repair 证据、触发与候选构造
+  branch-ledger.js                         分支注册、生命周期、最终扫尾与统计
+  route-finalization.js                    终点判定、完整路线回放、最终 verdict
+lib/local-dependency-executor.js            planner → 共享 segment DP 的连接层
+lib/dp-search.js、segment-dp.js              共享正确性搜索，不是待删除的旧内核
+lib/state.js、simulator.js、strict-replay.js  共享状态、模拟与验证
+lib/transport-collapse.js、strategic-d2-search.js、search.js
+                                           历史/辅助搜索家族，保留复现与兼容
+```
+
+现有调用 `require("./lib/dependency-feedback-controller")` 仍有效，原 13 个导出不变。
+内部依赖从 controller 指向各职责模块；子模块不反向加载 controller。
+四批之后 controller 为 756 行（起点 1,612 行），预算、preferred cohort 和 repair 因果遥测仍留在调度循环。
+顶层 `probe-*.js` 已归入 `audits/probes/`，`audit-hp3834-*.js` 已归入 `audits/hp3834/`，PR-5.25/5.26 flat-search audit 已归入 `audits/flat-search/`；npm script 名称不变，实现路径更新。
+顶层 tracked JS 从 306 降到 290，但顶层 214 个检查脚本与其余 audit 尚未迁移；这不是整仓库已解耦或总文件数已减少。
+
+从仓库根目录执行快速合同检查：
+
+```bash
+npm run check:core --prefix shared-solver
+npm run check:dependency-branch-portfolio --prefix shared-solver
+npm run check:dependency-feedback --prefix shared-solver
+npm run check:dependency-feedback-loop --prefix shared-solver
+```
+
+这些检查通过不代表 MT3/MT4 实战命中。`RESEARCH_PROGRESS.md` 是累计历史，不是当前授权入口。
+
+## 历史 skeleton / 探索用法（保留供查阅）
+
+**下文是旧版说明，不是当前主线或下一任务。** `linear-main` / beam / top-k 仍属探索；旧的 tower-local `solver/` 路径与旧默认/状态表述不得照抄。是否迁移命令、删除模块需先检查实际引用和兼容合同。
+
+### 原始范围说明
 
 This directory contains a reusable MT1 -> MT11 solver skeleton for the current h5mota project.
 

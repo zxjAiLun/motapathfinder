@@ -4,7 +4,9 @@
 
 > 游戏原始工程提供数据和规则，`StaticSimulator` 精确执行动作，milestone 把长路线切成小段，segment DP 在每段内搜索并压缩状态，checkpoint 把少量候选交给下一段，最后用 strict replay 和浏览器 live replay 验证路线。
 
-本项目的 canonical solver 是 `shared-solver/`。塔工程里的 `solver/` 是历史副本，不是新的算法入口。
+本项目的 canonical solver 是 `shared-solver/`。塔工程里的 `solver/` 已移除且禁止恢复。
+
+**2026-09-18 分层说明**：下面介绍的是新旧搜索共同依赖的模拟器与 canonical DP，不是待淘汰的“旧内核”。当前 dependency planner 是它上面的实验编排层：跨轮循环在 `lib/dependency-feedback-controller.js`，单轮反馈、repair、分支生命周期和路线收尾已分入 `lib/dependency-planner/`。历史 flat / strategic / top-k 搜索保留为独立家族，不默认转发到新 planner；四个纯历史 probe 已迁入 `shared-solver/audits/probes/`，12 个 `audit-hp3834-*.js` 已迁入 `shared-solver/audits/hp3834/`，16 个 PR-5.25/5.26 flat-search audit 已迁入 `shared-solver/audits/flat-search/`，仍属诊断而非 canonical CLI；活动中的 `audit-pr527f-round-ab.js` 仍在 solver 根目录。当前入口见 [分组索引](solver-entrypoints.md)，前四批拆分及限制见 [PR-5.28](260918/5-28.md)。
 
 ## 1. 一张总图
 

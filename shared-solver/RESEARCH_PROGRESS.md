@@ -1479,5 +1479,5 @@ Review 已批准 PR-5.3a/a1 并正式关闭；本轮进入 ObjectiveSpec，但�
 ```bash
 node shared-solver/check-strategic-d2-search.js
 node shared-solver/check-manifest-runner.js
-node shared-solver/probe-d2-strategic-search.js
+node shared-solver/audits/probes/probe-d2-strategic-search.js
 ```

@@ -103,7 +103,7 @@ node shared-solver/route-gui.js \
 
 ## 5. 旧塔内 solver 处理策略
 
-当前策略是冻结，不直接删除。
+以下是历史迁移计划，不是当前状态：塔内 `solver/` 已删除且被禁止，不能因为旧计划写着“冻结”就恢复。共享 solver 内的新旧搜索家族是另一条分类轴，见 [入口角色](solver-entrypoints.md)。
 
 阶段：
 
@@ -126,6 +126,8 @@ whiteisland（9）/solver/**
 | --- | --- |
 | DP/search/simulator/replay 公共逻辑 | `shared-solver/lib/**` |
 | 公共 CLI | `shared-solver/*.js` |
+| 历史/一次性诊断 probe | `shared-solver/audits/probes/**` |
+| 历史审计族（如 hp3834 / flat-search） | `shared-solver/audits/<family>/**` |
 | 区域任务 spec | `towers/<tower>/region-specs/**` |
 | 小塔试炼 spec | `towers/<tower>/trial-specs/**` |
 | 路线 fixture | `towers/<tower>/route-fixtures/**` |
@@ -160,7 +162,7 @@ npm run check:agent-boundaries --prefix shared-solver -- --agent=<agent-name>
 
 仍需处理：
 
-- `shared-solver/lib/` 还没有物理拆成 `core/search/replay/cli`，目前先通过文档定义边界。
-- `shared-solver/README.md` 仍保留早期 macro/top-k 叙述，需要逐步改成“canonical DP 为主、beam 为辅助”。
-- 旧塔内 `solver/**` 文件仍存在，后续应按冻结策略归档。
+- `shared-solver/lib/` 的前两批物理边界已落地：`dependency-planner/` 分离单轮反馈、repair、branch ledger 和路线收尾，controller 保留跨轮调度；随后三批把四个历史 probe 迁入 `shared-solver/audits/probes/`，12 个 `audit-hp3834-*.js` 迁入 `shared-solver/audits/hp3834/`，16 个 PR-5.25/5.26 flat-search audit 迁入 `shared-solver/audits/flat-search/`。共享 DP/simulator、产品 CLI、214 个检查以及 5.27f 活动 audit 仍保持原位。
+- `shared-solver/README.md` 已加入当前分层和入口索引，早期 macro/top-k 正文明确标为历史资料。
+- 塔内 `solver/**` 已删除且禁止恢复；不要与仍有复现用途的共享历史搜索模块混淆。
 - `routes/`、`logs/`、`runs/` 中生成物需要按任务清理，避免提交大体积临时输出。

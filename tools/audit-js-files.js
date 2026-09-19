@@ -155,6 +155,23 @@ function walk(dir, files = []) {
   return files;
 }
 
+// Return lib-relative paths so generation and coverage checks agree on nested
+// modules. Do not reuse the repository inventory's archive exclusions here.
+function listSolverLibFiles(directory) {
+  if (!fs.existsSync(directory)) return [];
+  const files = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      for (const child of listSolverLibFiles(path.join(directory, entry.name))) {
+        files.push(`${entry.name}/${child}`);
+      }
+    } else if (entry.isFile() && entry.name.endsWith(".js")) {
+      files.push(entry.name);
+    }
+  }
+  return files.sort();
+}
+
 function classifyFile(relPath) {
   if (relPath.startsWith("tools/")) return "repo tools";
   if (relPath.startsWith("benchmarks/")) return "benchmark harness";
@@ -394,11 +411,43 @@ function findExisting(relPath) {
   return fs.existsSync(absPath) ? relPath : null;
 }
 
-function writeEntrypoints(rows) {
-  const sharedCli = rows
-    .filter((row) => row.path.startsWith("shared-solver/") && /^shared-solver\/(?:run|check|verify|route|export|search|print|find|profile|record|audit)[^/]*\.js$/.test(row.path))
-    .map((row) => row.path)
+function groupSolverEntrypoints(rows, manifest) {
+  const groups = ((manifest || {}).entrypointGroups || []).map((entry) => ({
+    ...entry,
+    paths: [],
+  }));
+  const declared = new Map();
+  for (const [index, entry] of ((manifest || {}).entrypointGroups || []).entries()) {
+    for (const file of entry.paths || []) {
+      if (declared.has(file)) throw new Error(`Duplicate entrypoint assignment: ${file}`);
+      declared.set(file, groups[index]);
+    }
+  }
+  const checks = { id: "checks", title: "Checks (not solver entrypoints)", paths: [] };
+  const diagnostics = { id: "diagnostics", title: "Audits, probes and diagnostics (not capability guarantees)", paths: [] };
+  const other = { id: "other", title: "Other compatibility and support files (not primary entrypoints)", paths: [] };
+  const files = rows.map((row) => row.path)
+    .filter((file) =>
+      (/^shared-solver\/[^/]+\.js$/.test(file) || /^shared-solver\/audits\/.+\.js$/.test(file))
+      && !file.startsWith("shared-solver/.tmp-")
+    )
     .sort();
+  for (const file of files) {
+    const name = path.posix.basename(file);
+    // Even a mistaken display assignment must not promote a check/probe to the
+    // correctness CLI group. An explicitly labelled experiment may own an audit.
+    const assigned = declared.get(file);
+    const diagnostic = /^(audit|probe|bench|profile|debug|diagnose|attribute|observe|qualify)-/.test(name);
+    const group = name.startsWith("check-") ? checks
+      : diagnostic && (!assigned || assigned.id === "canonical-dp") ? diagnostics
+        : assigned || other;
+    group.paths.push(file);
+  }
+  return [...groups, checks, diagnostics, other];
+}
+
+function writeEntrypoints(rows) {
+  const groups = groupSolverEntrypoints(rows, loadSolverManifest());
   const towerWrappers = [
     findExisting("Only upV2.1/Only upV2.1/solver.sh"),
     findExisting("Only upV2.1/Only upV2.1/solver.config.json"),
@@ -461,11 +510,20 @@ function writeEntrypoints(rows) {
   lines.push("node benchmarks/run-agent.js --agent=agents/.templates/agent.json --suite=benchmarks/public/region-suite.json");
   lines.push("```");
   lines.push("");
-  lines.push("## Canonical Shared-Solver CLIs");
+  lines.push("## Shared Solver Entry Roles");
   lines.push("");
-  for (const entrypoint of sharedCli) lines.push(`- \`${entrypoint}\``);
-  if (sharedCli.length === 0) lines.push("- None found.");
+  lines.push("Primary assignments come from `solver-manifest.json.entrypointGroups`; unassigned files are not presumed canonical. These are navigation roles, not search policy or proof claims.");
   lines.push("");
+  lines.push("The current dependency planner reuses the shared simulator and canonical DP. It is not a replacement kernel. `lib/dependency-feedback-controller.js` keeps the cross-round loop and compatibility API; `lib/dependency-planner/` owns single-step feedback, repair experiments, branch lifecycle and route finalization. External agents still import only `shared-solver/public.js`.");
+  lines.push("");
+  for (const group of groups) {
+    lines.push(`### ${group.title} (${group.paths.length})`);
+    lines.push("");
+    if (group.description) lines.push(group.description, "");
+    for (const entrypoint of group.paths) lines.push(`- \`${entrypoint}\``);
+    if (group.paths.length === 0) lines.push("- None found.");
+    lines.push("");
+  }
   lines.push("## Checks");
   lines.push("");
   lines.push("- Regenerate inventory: `node tools/audit-js-files.js`");
@@ -513,9 +571,7 @@ function checkSolverManifest() {
   }
 
   const libDir = path.join(repoRoot, "shared-solver", "lib");
-  const libFiles = fs.existsSync(libDir)
-    ? fs.readdirSync(libDir).filter((name) => name.endsWith(".js")).map((name) => `shared-solver/lib/${name}`)
-    : [];
+  const libFiles = listSolverLibFiles(libDir).map((name) => `shared-solver/lib/${name}`);
   const moduleKeys = new Set(Object.keys(manifest.modules || {}));
   const testEntries = manifest.tests || {};
   const missing = libFiles.filter((filePath) => !moduleKeys.has(filePath));
@@ -615,6 +671,16 @@ function main() {
     return;
   }
 
+  if (args.has("--entrypoints-only")) {
+    fs.mkdirSync(docsDir, { recursive: true });
+    const rows = fs.readdirSync(path.join(repoRoot, "shared-solver"))
+      .filter((name) => name.endsWith(".js"))
+      .map((name) => ({ path: `shared-solver/${name}` }));
+    writeEntrypoints(rows);
+    console.log(`Wrote ${relativePath(entrypointsPath)}`);
+    return;
+  }
+
   fs.mkdirSync(docsDir, { recursive: true });
   const rows = collectInventory();
   writeInventory(rows);
@@ -629,3 +695,5 @@ function main() {
 }
 
 if (require.main === module) main();
+
+module.exports = { listSolverLibFiles, groupSolverEntrypoints };

@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { classifyMatrix } = require("./audit-hp3834-mt2-candidate2-capacity-matrix-k");
+const { classifyMatrix } = require("./audits/hp3834/audit-hp3834-mt2-candidate2-capacity-matrix-k");
 
 const ROOT = path.resolve(__dirname, "..");
 const DEFAULT_REPORT = path.resolve(

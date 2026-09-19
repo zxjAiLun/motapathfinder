@@ -29,6 +29,8 @@
  */
 
 const assert = require("node:assert");
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const { runDependencyFeedbackLoop } = require("./lib/dependency-feedback-controller");
@@ -209,7 +211,138 @@ function makeSyntheticSimulator() {
   };
 }
 
+function checkModuleSplitContract() {
+  const controller = require("./lib/dependency-feedback-controller");
+  const feedback = require("./lib/dependency-planner/feedback");
+  const repair = require("./lib/dependency-planner/repair-experiments");
+  assert.deepStrictEqual(Object.keys(controller), [
+    "SCHEMA", "buildDependencyContext", "evaluateCheckpoint", "evaluateBranchExperiments",
+    "evaluateResourceRepairTrigger", "isBattleRelevantRepairIntent", "prerequisiteIdentityOf",
+    "normalizePrerequisiteIdentity", "collectReplannedPrerequisiteStatuses",
+    "runDependencyFeedback", "runDependencyFeedbackLoop", "summarizeAlternative", "terminalGoalReached",
+  ]);
+  for (const name of ["SCHEMA", "buildDependencyContext", "evaluateCheckpoint",
+    "evaluateBranchExperiments", "summarizeAlternative"]) {
+    assert.strictEqual(controller[name], feedback[name], `compatibility export ${name}`);
+  }
+  for (const name of ["evaluateResourceRepairTrigger", "isBattleRelevantRepairIntent",
+    "prerequisiteIdentityOf", "normalizePrerequisiteIdentity", "collectReplannedPrerequisiteStatuses"]) {
+    assert.strictEqual(controller[name], repair[name], `compatibility export ${name}`);
+  }
+  // Check the loaded dependency graph, not a grep of comments. Internal modules
+  // may consume the shared DP/simulator but must not load their parent controller.
+  const controllerPath = require.resolve("./lib/dependency-feedback-controller");
+  const seen = new Set();
+  function visit(module) {
+    assert.notStrictEqual(module.id, controllerPath, "internal planner imports its controller");
+    if (seen.has(module.id)) return;
+    seen.add(module.id);
+    for (const child of module.children) visit(child);
+  }
+  const finalization = require("./lib/dependency-planner/route-finalization");
+  assert.strictEqual(controller.terminalGoalReached, finalization.terminalGoalReached);
+  visit(require.cache[require.resolve("./lib/dependency-planner/feedback")]);
+  visit(require.cache[require.resolve("./lib/dependency-planner/repair-experiments")]);
+  visit(require.cache[require.resolve("./lib/dependency-planner/branch-ledger")]);
+  visit(require.cache[require.resolve("./lib/dependency-planner/route-finalization")]);
+}
+
+function checkBranchLedgerContract() {
+  const { createBranchLedger } = require("./lib/dependency-planner/branch-ledger");
+  const ledger = createBranchLedger();
+  const state = { floorId: "F" };
+  const decisions = [{ summary: "parent" }];
+  const root = ledger.register(null, state, decisions, "same", "initial", 0);
+  const old = ledger.register(root.branchId, state, [], "same", "child", 1);
+  const live = ledger.register(root.branchId, state, [], "other", "child", 2);
+  decisions.push({ summary: "must-not-leak" });
+  assert.strictEqual(root.cumulativeDecisions.length, 1);
+  assert.strictEqual(root.state, state, "state ownership must not silently change");
+  assert.strictEqual(old.parentBranchId, root.branchId);
+  assert.strictEqual(old.depth, 1);
+  assert.strictEqual(old.openedByRound, 1);
+  assert.strictEqual(createBranchLedger().register(null, state, [], "x", null, 0).branchId, "branch-1");
+  assert.deepStrictEqual(ledger.checkpoint(root), { id: root.branchId, roles: ["root-branch"], exactStateFingerprint: "same", state });
+  assert.deepStrictEqual(ledger.checkpoint(old).roles, ["branch-depth-1"]);
+  const evidence = [{ alternativeId: "blocked" }];
+  ledger.recordEvaluationPass([{ checkpointId: old.branchId, canAdvance: false, feedbackClass: "blocked", alternatives: evidence }]);
+  ledger.collapseEvaluations([{ checkpointId: old.branchId, canAdvance: false, feedbackClass: "must-not-rewrite", alternatives: [] }]);
+  assert.strictEqual(old.exhaustedReason, "blocked");
+  assert.strictEqual(old.lastEvaluationAlternatives, evidence);
+  const evaluated = [];
+  const sweep = ledger.finalize((branch) => {
+    evaluated.push(branch.branchId);
+    assert.strictEqual(root.status, "open", "all evaluations precede collapse");
+    assert.strictEqual(live.status, "open");
+    const viable = branch === live;
+    return { checkpointId: branch.branchId, canAdvance: viable, effectiveCanAdvance: viable,
+      feedbackClass: viable ? "repair-experiment-available" : "final-blocked",
+      effectiveFeedbackClass: viable ? "repair-experiment-available" : "final-blocked",
+      normalCanAdvance: false, normalFeedbackClass: "blocked", repairExperimentCount: viable ? 1 : 0,
+      alternatives: [] };
+  });
+  assert.deepStrictEqual(evaluated, [root.branchId, live.branchId]);
+  assert.deepStrictEqual(sweep.records.map((r) => r.branchId), [root.branchId, live.branchId, old.branchId]);
+  assert.strictEqual(sweep.records[0].status, "exhausted");
+  assert.strictEqual(sweep.records[0].newlyExhaustedByFinalSweep, true);
+  assert.strictEqual(sweep.records[0].exhaustedReason, "final-blocked");
+  assert.deepStrictEqual(sweep.advanceable, [live.branchId]);
+  const summary = ledger.summarize();
+  assert.deepStrictEqual([summary.branchCount, summary.uniqueExactStateCount, summary.openBranchCount,
+    summary.advanceableBranchCount, summary.exhaustedBranchCount], [3, 2, 1, 1, 2]);
+  assert.deepStrictEqual(summary.branchIds, [root.branchId, old.branchId, live.branchId]);
+  ledger.applyLocalOutcome(root.branchId, { outcome: { budgetExhausted: true } }, 0);
+  assert.strictEqual(root.status, "open");
+  assert.strictEqual(root.exhaustedReason, "final-blocked", "split preserves the old reason on reopening");
+  ledger.applyLocalOutcome(root.branchId, { outcome: { reason: "local-failed" } }, 0);
+  assert.strictEqual(root.exhaustedReason, "local-failed");
+  ledger.applyLocalOutcome(root.branchId, null, 1);
+  assert.strictEqual(root.status, "exhausted", "nonempty checkpoints leave lifecycle unchanged");
+  ledger.applyLocalOutcome(root.branchId, null, 0);
+  assert.strictEqual(root.status, "open");
+}
+
+function checkRouteFinalizationContract() {
+  const { finalizeDependencyRoute } = require("./lib/dependency-planner/route-finalization");
+  const decisions = [{ summary: NODES.B.decision }, { summary: NODES.B1.decision }];
+  const input = {
+    project: { floors: {} }, initialState: syntheticState(NODES.ROOT), terminalGoal: TERMINAL_GOAL,
+    reachedTerminal: true, terminalBranch: { cumulativeDecisions: decisions },
+    stepRounds: [{ acceptedBranchId: "branch-win", acceptedStrictReplay: true, acceptedCheckpointLabel: "win" }],
+    getSimulatorFactory: () => makeSyntheticSimulator,
+  };
+  const valid = finalizeDependencyRoute(input);
+  assert.strictEqual(valid.fullRouteStrictReplay.ok, true);
+  assert.strictEqual(valid.verdict, "DEPENDENCY_FEEDBACK_LOOP_REACHED_TERMINAL_WITH_STRICT_REPLAY");
+  assert.notStrictEqual(valid.route, decisions);
+  assert.strictEqual(valid.route[0], decisions[0], "preserve shallow decision copy");
+  const missing = finalizeDependencyRoute({ ...input, getSimulatorFactory: () => null });
+  assert.strictEqual(missing.fullRouteStrictReplay, null);
+  assert.strictEqual(missing.verdict, "DEPENDENCY_FEEDBACK_LOOP_REACHED_TERMINAL_REPLAY_UNVERIFIED");
+  const throwing = finalizeDependencyRoute({ ...input, getSimulatorFactory: () => () => { throw new Error("replay-sentinel"); } });
+  assert.deepStrictEqual(throwing.fullRouteStrictReplay, { ok: false, reason: "full-route-replay-exception: replay-sentinel" });
+  assert.strictEqual(throwing.verdict, missing.verdict);
+  const badRoute = finalizeDependencyRoute({ ...input, terminalBranch: { cumulativeDecisions: [{ summary: "not-an-action" }] } });
+  assert.strictEqual(badRoute.fullRouteStrictReplay.ok, false);
+  assert.strictEqual(badRoute.verdict, missing.verdict);
+  const badSegment = finalizeDependencyRoute({ ...input, stepRounds: [{ acceptedBranchId: "win", acceptedStrictReplay: false }] });
+  assert.strictEqual(badSegment.fullRouteStrictReplay.ok, true);
+  assert.strictEqual(badSegment.verdict, missing.verdict, "full replay must not erase failed segment evidence");
+  const forbiddenFactory = () => { throw new Error("factory must remain lazy"); };
+  const empty = finalizeDependencyRoute({ ...input, terminalBranch: { cumulativeDecisions: [] }, getSimulatorFactory: forbiddenFactory });
+  assert.strictEqual(empty.fullRouteStrictReplay, null);
+  assert.strictEqual(empty.verdict, missing.verdict);
+  const miss = finalizeDependencyRoute({ ...input, reachedTerminal: false, getSimulatorFactory: forbiddenFactory });
+  assert.strictEqual(miss.route, null);
+  assert.strictEqual(miss.routeProvenance, null);
+  assert.strictEqual(miss.verdict, "DEPENDENCY_FEEDBACK_LOOP_UNKNOWN_UNDER_THIS_BUDGET");
+}
+
 function main() {
+  // Load the ledger before checking the actual dependency graph.
+  checkBranchLedgerContract();
+  checkRouteFinalizationContract();
+  checkModuleSplitContract();
   const rootState = syntheticState(NODES.ROOT);
 
   // --- Negative control / comparison: commitment OFF -----------------------
@@ -242,21 +375,25 @@ function main() {
 
   // --- Main run: commitment ON --------------------------------------------
   localExecutionLog.length = 0;
+  const committedOptions = {
+    maxRounds: 10,
+    maxTotalLocalExpansions: 100,
+    localMaxExpansions: 10,
+    candidateLimit: 4,
+    buildDependencyContext: buildContext,
+    executeLocalDependency: executeLocal,
+    commitSuccessfulLineage: true,
+    simulatorFactory() {
+      assert.strictEqual(this, committedOptions, "finalizer must preserve the factory receiver");
+      return makeSyntheticSimulator();
+    },
+  };
   const result = runDependencyFeedbackLoop(
     { floors: {} },
     PROJECT_ROOT,
     TERMINAL_GOAL,
     rootState,
-    {
-      maxRounds: 10,
-      maxTotalLocalExpansions: 100,
-      localMaxExpansions: 10,
-      candidateLimit: 4,
-      buildDependencyContext: buildContext,
-      executeLocalDependency: executeLocal,
-      commitSuccessfulLineage: true,
-      simulatorFactory: makeSyntheticSimulator,
-    },
+    committedOptions,
   );
 
   const stepRounds = result.rounds.filter((round) => round.kind === "dependency-feedback-step");
@@ -727,6 +864,239 @@ function main() {
     "a branch carrying a repair experiment remains advanceable in the effective universe",
   );
 
+  // ==========================================================================
+  // PR-5.27g - REPAIR OUTCOME FEEDBACK (synthetic micro)
+  // ==========================================================================
+  //
+  // Three cases against the SAME blocker identity:
+  //   Case A: Converted -> child cohort committed (preferred cohort kept)
+  //   Case B: Improved but not converted -> child cohort committed
+  //   Case C: No progress -> child kept in historical portfolio, cohort withheld
+  const outcomeWorld = (() => {
+    const nodes = {
+      R: { id: "R", ordinal: 0, floorId: "MT1", hp: 400, atk: 10, exp: 0, damageTaken: 500, decision: "enter@MT1:0,0" },
+      IMPROVED: { id: "IMPROVED", ordinal: 1, floorId: "MT1", hp: 420, atk: 15, exp: 0, damageTaken: 470, decision: "battle:partial@MT1:1,1" },
+      FLAT: { id: "FLAT", ordinal: 1, floorId: "MT1", hp: 400, atk: 10, exp: 10, damageTaken: 500, decision: "battle:flat@MT1:2,2" },
+    };
+    const state = (node) => ({
+      __outcomeNode: node,
+      floorId: node.floorId,
+      hero: {
+        hp: node.hp, hpmax: 500, atk: node.atk, def: 0, mdef: 0, lv: 1, exp: node.exp, money: 0,
+        loc: { x: node.ordinal, y: node.ordinal, direction: "down" },
+        equipment: [], followers: [],
+      },
+      inventory: {}, flags: {}, floorStates: {}, triggeredAutoEvents: {},
+      visitedFloors: { [node.floorId]: true }, route: [], notes: [],
+      meta: { decisionDepth: node.ordinal, rawRouteLength: node.ordinal },
+    });
+    const buildContext = (project, s, terminalGoal, options) => {
+      const node = s.__outcomeNode || nodes.R;
+      const damage = node.damageTaken;
+      const currentHp = (s.hero || {}).hp;
+      const status = damage >= currentHp ? "lethal-at-current-hp" : "viable-at-current-state";
+      return {
+        graph: { floorCorridor: {} },
+        feasibility: {},
+        plan: {
+          objective: { selectedFeasibilitySubgoal: null },
+          alternatives: [{
+            id: "alternative-lethal-block",
+            prerequisites: [{
+              id: "require-lethal-block",
+              sourceNodeId: "MT1:enemy:7,7:deathKnight",
+              kind: "prerequisite",
+              relation: "AND",
+              order: 0,
+              actionGoal: { type: "tileRemoved", floorId: "MT1", x: 7, y: 7 },
+              target: { floorId: "MT1", x: 7, y: 7 },
+              evidence: { kind: "battle-survivability", status, damage, currentHp },
+            }],
+          }],
+        },
+      };
+    };
+    const makeExecuteLocal = (childNode) => (project, projectRoot, s, plan, options) => {
+      if (!options || !options.goalOverride) {
+        return {
+          selected: null,
+          outcome: { goalFound: false, expansions: 1, budgetExhausted: false, frontierExhausted: false, searchComplete: false, reason: "synthetic-lethal" },
+          checkpoints: [],
+          checkpointDiversity: { allStrictReplay: true, roles: [] },
+          verdict: "LOCAL_DEPENDENCY_EXECUTION_OPEN",
+        };
+      }
+      return {
+        selected: { alternativeId: "repair-intent", prerequisite: { sourceNodeId: "repair" } },
+        outcome: { goalFound: false, expansions: 2, budgetExhausted: false, frontierExhausted: false, searchComplete: false, reason: null },
+        checkpoints: [{
+          id: `checkpoint-${childNode.id}`,
+          roles: ["resource-repair"],
+          exactStateFingerprint: `fp-${childNode.id}`,
+          floorId: childNode.floorId,
+          state: state(childNode),
+          decisionCount: 1,
+          replay: { valid: true, stepsAttempted: 1, stepsCompleted: 1, failureReason: null },
+          routeRecord: { decisions: [{ summary: childNode.decision }] },
+        }],
+        checkpointDiversity: { allStrictReplay: true, roles: ["resource-repair"] },
+        verdict: "LOCAL_DEPENDENCY_SINGLE_ROLE_CHECKPOINT_VERIFIED",
+      };
+    };
+    const makeSimulator = (childNode) => () => ({
+      enumeratePrimitiveActions: (s) => {
+        const node = s.__outcomeNode || {};
+        if (node.id === "R") {
+          return { actions: [{ summary: childNode.decision, kind: "battle", target: { x: 1, y: 1 } }] };
+        }
+        return { actions: [] };
+      },
+      applyAction: () => state(childNode),
+    });
+    return { nodes, state, buildContext, makeExecuteLocal, makeSimulator };
+  })();
+
+  const runOutcome = (childNode, extra) => runDependencyFeedbackLoop(
+    { floors: {} },
+    PROJECT_ROOT,
+    TERMINAL_GOAL,
+    outcomeWorld.state(outcomeWorld.nodes.R),
+    {
+      maxRounds: 4,
+      maxTotalLocalExpansions: 50,
+      localMaxExpansions: 10,
+      candidateLimit: 4,
+      buildDependencyContext: outcomeWorld.buildContext,
+      executeLocalDependency: outcomeWorld.makeExecuteLocal(childNode),
+      failureConditionedResourceRepair: true,
+      commitSuccessfulLineage: true,
+      simulatorFactory: outcomeWorld.makeSimulator(childNode),
+      ...extra,
+    },
+  );
+
+  // Case A: Converted -> child cohort committed (uses relevanceWorld combat investment)
+  const caseAConverted = runRelevance(
+    [relevanceWorld.PATH_ACTION, relevanceWorld.STAT_ACTION],
+    {
+      battleRelevantRepairOnly: true,
+      commitSuccessfulLineage: true,
+      outcomeConditionedRepairCommitment: true,
+    },
+  );
+  const caseAConversions = (caseAConverted.globalState.resourceRepairConversions || [])
+    .flatMap((entry) => entry.identityConversions || [])
+    .filter((entry) => entry.converted);
+  assert.ok(caseAConversions.length > 0, "Case A must convert the blocked prerequisite");
+  assert.strictEqual(caseAConversions[0].outcome, "CONVERTED");
+  const caseARepairRound = caseAConverted.rounds.find((r) => r.repairOutcome === "CONVERTED");
+  assert.ok(caseARepairRound, "Case A repair round must record CONVERTED outcome");
+  assert.strictEqual(caseARepairRound.commitmentWithheld, false, "CONVERTED repair must NOT withhold commitment");
+  assert.strictEqual(caseAConverted.globalState.resourceRepair.commitmentsWithheld, 0);
+  const caseANextRound = caseAConverted.rounds.find((r) => r.round === caseARepairRound.round + 1);
+  assert.ok(caseANextRound, "Case A must continue past the repair round");
+  assert.strictEqual(caseANextRound.portfolioSize, 1, "CONVERTED repair must commit child cohort (portfolio size 1)");
+
+  // Case B: Improved but not converted -> child cohort committed
+  const caseBImproved = runOutcome(outcomeWorld.nodes.IMPROVED, {
+    outcomeConditionedRepairCommitment: true,
+  });
+  const caseBConversions = caseBImproved.globalState.resourceRepairConversions || [];
+  assert.ok(caseBConversions.length > 0, "Case B must record a conversion record");
+  assert.strictEqual(caseBConversions[0].outcome, "IMPROVED");
+  assert.strictEqual(caseBConversions[0].identityConversions[0].outcome, "IMPROVED");
+  const caseBRepairRound = caseBImproved.rounds.find((r) => r.repairOutcome === "IMPROVED");
+  assert.ok(caseBRepairRound, "Case B repair round must record IMPROVED outcome");
+  assert.strictEqual(caseBRepairRound.commitmentWithheld, false, "IMPROVED repair must NOT withhold commitment");
+  assert.strictEqual(caseBImproved.globalState.resourceRepair.commitmentsWithheld, 0);
+  const caseBNextRound = caseBImproved.rounds.find((r) => r.round === caseBRepairRound.round + 1);
+  assert.ok(caseBNextRound, "Case B must continue past repair round");
+  assert.strictEqual(caseBNextRound.portfolioSize, 1, "IMPROVED repair must commit child cohort (portfolio size 1)");
+
+  // Case C: No progress -> child kept in historical portfolio, cohort withheld
+  const caseCFlatWithheld = runOutcome(outcomeWorld.nodes.FLAT, {
+    outcomeConditionedRepairCommitment: true,
+  });
+  const caseCConversions = caseCFlatWithheld.globalState.resourceRepairConversions || [];
+  assert.ok(caseCConversions.length > 0, "Case C must record a conversion record");
+  assert.strictEqual(caseCConversions[0].outcome, "NO_PROGRESS");
+  assert.strictEqual(caseCConversions[0].identityConversions[0].outcome, "NO_PROGRESS");
+  const caseCRepairRound = caseCFlatWithheld.rounds.find((r) => r.repairOutcome === "NO_PROGRESS");
+  assert.ok(caseCRepairRound, "Case C repair round must record NO_PROGRESS outcome");
+  assert.strictEqual(caseCRepairRound.commitmentWithheld, true, "NO_PROGRESS repair MUST withhold commitment");
+  assert.ok(caseCFlatWithheld.globalState.resourceRepair.commitmentsWithheld > 0);
+  assert.ok(caseCFlatWithheld.branches.some((b) => b.branchId === "branch-2"), "Child branch must be registered");
+  assert.ok(caseCFlatWithheld.globalState.branchCount >= 2, "Historical branch count must retain child");
+  const caseCNextRound = caseCFlatWithheld.rounds.find((r) => r.round === caseCRepairRound.round + 1);
+  assert.ok(caseCNextRound, "Case C must continue past repair round to evaluate portfolio");
+  assert.strictEqual(caseCNextRound.portfolioSize, 2, "NO_PROGRESS must withhold cohort and fall back to global portfolio (size 2)");
+
+  // Case C Control (differential): with outcomeConditionedRepairCommitment OFF,
+  // NO_PROGRESS repair still gets committed (old 5.27c behavior)
+  const caseCFlatControl = runOutcome(outcomeWorld.nodes.FLAT, {
+    outcomeConditionedRepairCommitment: false,
+  });
+  const caseCControlRepairRound = caseCFlatControl.rounds.find((r) => r.repairOutcome === "NO_PROGRESS");
+  assert.ok(caseCControlRepairRound);
+  assert.strictEqual(caseCControlRepairRound.commitmentWithheld, false);
+  const caseCControlNextRound = caseCFlatControl.rounds.find((r) => r.round === caseCControlRepairRound.round + 1);
+  assert.ok(caseCControlNextRound);
+  assert.strictEqual(caseCControlNextRound.portfolioSize, 1, "Control without gate commits child cohort (size 1)");
+
+  // --- PR-5.28 item A: portfolio journal resume parity --------------------
+  const journalDir = path.join(os.tmpdir(), `motapathfind-portfolio-journal-${process.pid}-${Date.now()}`);
+  const baseJournalOptions = {
+    maxTotalLocalExpansions: 100,
+    localMaxExpansions: 10,
+    candidateLimit: 4,
+    buildDependencyContext: buildContext,
+    executeLocalDependency: executeLocal,
+    commitSuccessfulLineage: true,
+    simulatorFactory: makeSyntheticSimulator,
+  };
+  const freshFull = runDependencyFeedbackLoop(
+    { floors: {} },
+    PROJECT_ROOT,
+    TERMINAL_GOAL,
+    rootState,
+    { ...baseJournalOptions, maxRounds: 10, portfolioJournalPath: path.join(journalDir, "full.json") },
+  );
+  const interrupted = runDependencyFeedbackLoop(
+    { floors: {} },
+    PROJECT_ROOT,
+    TERMINAL_GOAL,
+    rootState,
+    { ...baseJournalOptions, maxRounds: 3, portfolioJournalPath: path.join(journalDir, "half.json") },
+  );
+  assert.strictEqual(interrupted.terminal.reached, false, "interrupted run must not have reached terminal");
+  const resumed = runDependencyFeedbackLoop(
+    { floors: {} },
+    PROJECT_ROOT,
+    TERMINAL_GOAL,
+    rootState,
+    { ...baseJournalOptions, maxRounds: 10, portfolioJournalPath: path.join(journalDir, "half.json"), resumePortfolioJournal: true },
+  );
+  const stripTiming = (obj) => {
+    const clone = JSON.parse(JSON.stringify(obj));
+    delete clone.timing;
+    return clone;
+  };
+  assert.deepStrictEqual(stripTiming(resumed), stripTiming(freshFull), "resumed run must reproduce the fresh run field-for-field");
+  let identityError = null;
+  try {
+    runDependencyFeedbackLoop(
+      { floors: {} },
+      PROJECT_ROOT,
+      TERMINAL_GOAL,
+      rootState,
+      { ...baseJournalOptions, maxRounds: 10, localMaxExpansions: 9, portfolioJournalPath: path.join(journalDir, "half.json"), resumePortfolioJournal: true },
+    );
+  } catch (error) {
+    identityError = error;
+  }
+  assert.ok(identityError && /identity mismatch/.test(identityError.message), "resuming with different controls must fail closed");
+  fs.rmSync(journalDir, { recursive: true, force: true });
+
   const replayUnverified = runDependencyFeedbackLoop(
     { floors: {} },
     PROJECT_ROOT,
@@ -826,6 +1196,10 @@ function main() {
       SAME_PREREQUISITE_IDENTITY_CONVERSION_ATTRIBUTED: true,
       BROAD_PATH_UNLOCK_DOES_NOT_COUNT_AS_SAME_PREREQUISITE_CONVERSION: true,
       BRANCH_WITH_REPAIR_EXPERIMENT_IS_ADVANCEABLE: true,
+      REPAIR_OUTCOME_CONVERTED_COMMITMENT_RETAINED: true,
+      REPAIR_OUTCOME_IMPROVED_COMMITMENT_RETAINED: true,
+      REPAIR_OUTCOME_NO_PROGRESS_CHILD_KEPT_COHORT_WITHHELD: true,
+      PORTFOLIO_JOURNAL_RESUME_PARITY: true,
     },
     relevanceGate: {
       pathOnlyWithGate: {
@@ -882,4 +1256,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { main, NODES, PLAN, syntheticState, buildContext, executeLocal };
+module.exports = { main, checkModuleSplitContract, checkBranchLedgerContract, checkRouteFinalizationContract, NODES, PLAN, syntheticState, buildContext, executeLocal };
