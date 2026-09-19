@@ -236,15 +236,13 @@ function spriteForTile(project, tile) {
   }
   const numeric = Number(index);
   const frame = cls === "enemy48" || cls === "npc48"
-    ? { width: 32, height: 48, sheetWidth: 32 }
-    : cls === "animates"
-      ? { width: 32, height: 32, sheetWidth: 128 }
-      : cls === "enemys"
-        ? { width: 32, height: 32, sheetWidth: 64 }
-        : { width: 32, height: 32, sheetWidth: 32 };
-  const columns = Math.max(1, Math.floor(frame.sheetWidth / frame.width));
-  const x = (numeric % columns) * frame.width;
-  const y = Math.floor(numeric / columns) * frame.height;
+    ? { width: 32, height: 48 }
+    : { width: 32, height: 32 };
+  // In H5 Mota sprite sheets, every row corresponds to one index.
+  // Multiple columns (if any) are animation frames for that same row.
+  // First frame is at x = 0.
+  const x = 0;
+  const y = numeric * frame.height;
   return {
     sheet: `materials/${cls}.png`,
     x,
@@ -262,6 +260,8 @@ function buildMapMetadata(project) {
     .sort()
     .reduce((result, floorId) => {
       const floor = project.floorsById[floorId];
+      const defaultGround = floor.defaultGround != null ? Number(floor.defaultGround) : 300;
+      tileNumbers.add(defaultGround);
       const width = Number(floor.width || (floor.map && floor.map[0] ? floor.map[0].length : 0));
       const height = Number(floor.height || (Array.isArray(floor.map) ? floor.map.length : 0));
       const map = [];
@@ -279,6 +279,7 @@ function buildMapMetadata(project) {
         title: floor.title || floor.name || floorId,
         width,
         height,
+        defaultGround,
         map,
       };
       return result;
@@ -287,7 +288,10 @@ function buildMapMetadata(project) {
     .sort((a, b) => a - b)
     .reduce((result, number) => {
       const meta = tileMetaForNumber(project, number);
-      if (meta) result[meta.id] = meta;
+      if (meta) {
+        result[meta.id] = meta;
+        result[String(number)] = meta;
+      }
       return result;
     }, {});
   return { floors, tiles };
@@ -799,6 +803,8 @@ function exportRouteState(project, simulator, routeRecord, stepIndex, options) {
 }
 
 module.exports = {
+  buildBattleOverlay,
+  buildMapMetadata,
   buildRouteTimeline,
   buildStepDelta,
   exportRouteState,

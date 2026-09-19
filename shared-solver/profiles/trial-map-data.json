@@ -1,0 +1,2943 @@
+{
+  "floors": {
+    "TS11": {
+      "floorId": "TS11",
+      "title": "血洛缘起 1层",
+      "width": 13,
+      "height": 13,
+      "defaultGround": 300,
+      "map": [
+        [
+          "blueWall",
+          "I893",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "I635",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "greenDoor",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "A990",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "greenDoor",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "I894",
+          "blueWall",
+          "blueWall",
+          "weakWine",
+          "blueWall",
+          null,
+          "blueWall",
+          "weakWine",
+          "blueWall",
+          "blueWall",
+          "I584",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "greenDoor",
+          "blueWall",
+          "blueWall",
+          "skeleton",
+          "blueWall",
+          "greenSlime",
+          "blueWall",
+          "skeleton",
+          "blueWall",
+          "blueWall",
+          "greenDoor",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          null,
+          "redSlime",
+          null,
+          "redPotion",
+          null,
+          "I902",
+          null,
+          "redPotion",
+          null,
+          "redSlime",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "bluePotion",
+          "blueWall",
+          "slimelord",
+          "blueWall",
+          "blueWall",
+          "bat",
+          "blueWall",
+          "blueWall",
+          "slimelord",
+          "blueWall",
+          "bluePotion",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blackSlime",
+          "blueWall",
+          null,
+          "redPotion",
+          "blueWall",
+          "steelDoor",
+          "blueWall",
+          "redPotion",
+          null,
+          "blueWall",
+          "blackSlime",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "bluePotion",
+          "blueWall",
+          "redGem",
+          "blueWall",
+          "blueWall",
+          "yellowPotion",
+          "blueWall",
+          "blueWall",
+          "redGem",
+          "blueWall",
+          "bluePotion",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          null,
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "slimelord",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          null,
+          "redSlime",
+          null,
+          "redPotion",
+          null,
+          "yellowPotion",
+          null,
+          "redPotion",
+          null,
+          "redSlime",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "skeleton",
+          "blueWall",
+          "blueWall",
+          "bat",
+          "blueWall",
+          "blueWall",
+          "skeleton",
+          "blueWall",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "poisonWine",
+          null,
+          "poisonWine",
+          "blueWall",
+          "blueWall",
+          null,
+          "blueWall",
+          "blueWall",
+          "poisonWine",
+          null,
+          "poisonWine",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "upFloor",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall"
+        ]
+      ]
+    },
+    "TS12": {
+      "floorId": "TS12",
+      "title": "血洛缘起 2层",
+      "width": 13,
+      "height": 13,
+      "defaultGround": 300,
+      "map": [
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "upFloor",
+          "I576",
+          null,
+          "blueWall",
+          null,
+          "weakWine",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          null,
+          "redGem",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "slimeman",
+          "blueWall",
+          "bluePotion",
+          null,
+          "blueWall",
+          "bluePotion",
+          "blueWall",
+          "redPotion",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "bluePotion",
+          "blueWall",
+          null,
+          "skeletonCaptain",
+          "yellowPotion",
+          null,
+          "slimeman",
+          null,
+          "redPotion",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          null,
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "redBat",
+          "blueWall",
+          "blueWall",
+          "skeletonCaptain",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "redGem",
+          "blueWall",
+          "vampire",
+          "blueWall",
+          "greenPotion",
+          "skeletonWarrior",
+          "bluePotion",
+          null,
+          "bigBat",
+          "yellowPotion",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          null,
+          "blueWall",
+          "yellowPotion",
+          "blueWall",
+          "blueWall",
+          null,
+          "blueWall",
+          "bluePotion",
+          "blueWall",
+          "blueWall",
+          "redBat",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "poisonWine",
+          "rock",
+          null,
+          "redBat",
+          "poisonWine",
+          "slimeman",
+          null,
+          "bigBat",
+          "blueWall",
+          "yellowPotion",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "bat",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "greenPotion",
+          "blueWall",
+          "greenPotion",
+          "blueWall",
+          "slimelord",
+          "redPotion",
+          null,
+          "bigBat",
+          "steelDoor",
+          "redPotion",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "vampire",
+          "blueWall",
+          "vampire",
+          "blueWall",
+          null,
+          "blueWall",
+          "redPotion",
+          "blueWall",
+          "blueWall",
+          null,
+          "bluePotion",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "redPotion",
+          null,
+          "redPotion",
+          "bat",
+          "bluePotion",
+          null,
+          "slimelord",
+          "blueWall",
+          "blueWall",
+          "yellowPotion",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "downFloor",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall"
+        ]
+      ]
+    },
+    "TS13": {
+      "floorId": "TS13",
+      "title": "血洛缘起 3层",
+      "width": 13,
+      "height": 13,
+      "defaultGround": 300,
+      "map": [
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "downFloor",
+          null,
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          null,
+          "redGem",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          null,
+          "yellowPotion",
+          "bat",
+          "redPotion",
+          "bluePotion",
+          "vampire",
+          "greenPotion",
+          "ghostSoldier",
+          "zombie",
+          "poisonWine",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "bat",
+          "blueWall",
+          "blueWall",
+          "skeletonCaptain",
+          "blueWall",
+          "blueWall",
+          "skeletonWarrior",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "rock",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "redPotion",
+          null,
+          "blueWall",
+          null,
+          "poisonWine",
+          "blueWall",
+          "bluePotion",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "greenPotion",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          null,
+          "yellowPotion",
+          "blueWall",
+          "redPotion",
+          null,
+          "blueWall",
+          null,
+          "slimeman",
+          "poisonWine",
+          "slimeman",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "skeleton",
+          "blueWall",
+          "blueWall",
+          "skeletonCaptain",
+          "blueWall",
+          "yellowPotion",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "greenPotion",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          null,
+          "bluePotion",
+          "blueWall",
+          "redPotion",
+          null,
+          "blueWall",
+          "skeletonWarrior",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "rock",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "weakWine",
+          null,
+          "blueWall",
+          null,
+          "poisonWine",
+          "ghostSoldier",
+          "bluePotion",
+          null,
+          "skeletonCaptain",
+          "greenPotion",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "skeleton",
+          "blueWall",
+          "blueWall",
+          "redPotion",
+          null,
+          "blueWall",
+          "rock",
+          "blueWall",
+          "blueWall",
+          "zombieKnight",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          null,
+          "redGem",
+          "blueWall",
+          "vampire",
+          "blueWall",
+          "blueWall",
+          "I619",
+          "zombie",
+          "blueWall",
+          "weakWine",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "poisonWine",
+          null,
+          "ghostSoldier",
+          null,
+          "yellowPotion",
+          "blueWall",
+          "blueWall",
+          "I576",
+          "blueWall",
+          null,
+          "upFloor",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall"
+        ]
+      ]
+    },
+    "TS14": {
+      "floorId": "TS14",
+      "title": "血洛缘起 4层",
+      "width": 13,
+      "height": 13,
+      "defaultGround": 300,
+      "map": [
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "upFloor",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "I576",
+          "blueWall",
+          "I619",
+          "blueWall",
+          "blueWall",
+          "blackKing",
+          null,
+          "blueWall",
+          null,
+          "I572",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "redWizard",
+          "blueWall",
+          null,
+          "arrowRight",
+          "I572",
+          null,
+          "curseWine",
+          "redWizard",
+          "redGem",
+          null,
+          "redGem",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "redWizard",
+          "blueWall",
+          "blueGateKeeper",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "brownWizard",
+          "blueWall",
+          "blueWall",
+          "blueGateKeeper",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          null,
+          "poisonWine",
+          null,
+          "zombieKnight",
+          null,
+          "blueWall",
+          "poisonWine",
+          "blueWall",
+          "I572",
+          null,
+          "greenPotion",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "I576",
+          null,
+          "weakWine",
+          "blueWall",
+          "poisonWine",
+          "bluePriest",
+          null,
+          "zombie",
+          null,
+          "I572",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "redPriest",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "I572",
+          null,
+          "I572",
+          "blueWall",
+          "redGem",
+          null,
+          "blueWall",
+          "I576",
+          "blueWall",
+          null,
+          "redGem",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "bluePriest",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          null,
+          "poisonWine",
+          "blueWall",
+          "slimeman",
+          "blueWall",
+          "greenPotion",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "weakWine",
+          "bluePriest",
+          null,
+          "blueWall",
+          "zombieKnight",
+          "blueWall",
+          "blueWall",
+          "slimeman",
+          "blueWall",
+          "blueWall",
+          "zombieKnight",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "weakWine",
+          "bluePriest",
+          "steelDoor",
+          null,
+          "poisonWine",
+          "rock",
+          null,
+          "rock",
+          "yellowPotion",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "weakWine",
+          "blueWall",
+          "poisonWine",
+          null,
+          "blueWall",
+          "poisonWine",
+          "blueWall",
+          null,
+          "downFloor",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall"
+        ]
+      ]
+    },
+    "TS15": {
+      "floorId": "TS15",
+      "title": "血洛缘起 5层",
+      "width": 13,
+      "height": 13,
+      "defaultGround": 300,
+      "map": [
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "downFloor",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "I621",
+          "blueWall",
+          "weakWine",
+          "blueWall",
+          "weakWine",
+          "I635",
+          "redWizard",
+          "blueWall",
+          "I619",
+          "I584",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "yellowKnight",
+          "blueWall",
+          "brownWizard",
+          "blueWall",
+          "redPriest",
+          "blueWall",
+          "weakWine",
+          "blueWall",
+          "yellowGateKeeper",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "curseWine",
+          null,
+          "redGateKeeper",
+          "weakWine",
+          null,
+          "yellowPotion",
+          "blueWall",
+          null,
+          "yellowKnight",
+          "I572",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "blueWall",
+          "yellowGateKeeper",
+          "blueWall",
+          "yellowPotion",
+          "blueWall",
+          "blueWall",
+          "yellowGateKeeper",
+          "blueWall"
+        ],
+        [
+          "greenPotion",
+          "I572",
+          "greenPotion",
+          "blueWall",
+          null,
+          "redWizard",
+          "I572",
+          "poisonWine",
+          "redGateKeeper",
+          "blueWall",
+          "poisonWine",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "yellowGateKeeper",
+          "blueWall",
+          "bluePriest",
+          "poisonWine",
+          null,
+          "blueWall",
+          "blueWall",
+          "weakWine",
+          "blueWall",
+          "blueWall",
+          "redGateKeeper",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "I572",
+          null,
+          "redPotion",
+          "blueWall",
+          "weakWine",
+          "blueWall",
+          "blueWall",
+          null,
+          "blueWall",
+          "I576",
+          null,
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "redWizard",
+          "blueWall",
+          "blueWall",
+          "yellowPotion",
+          "bluePriest",
+          null,
+          "I572",
+          "redGateKeeper",
+          "blueWall",
+          "blueWall",
+          "blackKing",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          null,
+          "blueWall",
+          "I576",
+          "redWizard",
+          "star",
+          "yellowKnight",
+          "star",
+          "I572",
+          "bluePotion",
+          "blackKing",
+          "I619",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blackKing",
+          "blueWall",
+          null,
+          "star",
+          "I584",
+          null,
+          "curseWine",
+          "star",
+          "skeletonPresbyter",
+          "I619",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "I576",
+          "yellowKnight",
+          "weakWine",
+          "star",
+          null,
+          "soldier",
+          null,
+          "star",
+          "curseWine",
+          "blueWall",
+          "blueWall",
+          "blueWall"
+        ],
+        [
+          "blueWall",
+          "blueWall",
+          "curseWine",
+          "blueWall",
+          "star",
+          "curseWine",
+          null,
+          "I584",
+          "star",
+          "I635",
+          "I621",
+          "blueWall",
+          "blueWall"
+        ]
+      ]
+    }
+  },
+  "tiles": {
+    "3": {
+      "number": 3,
+      "id": "blueWall",
+      "cls": "animates",
+      "name": null,
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/animates.png",
+        "x": 0,
+        "y": 384,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "4": {
+      "number": 4,
+      "id": "star",
+      "cls": "animates",
+      "name": "星空",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/animates.png",
+        "x": 0,
+        "y": 0,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "27": {
+      "number": 27,
+      "id": "redGem",
+      "cls": "items",
+      "name": "初始红宝石",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 512,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "31": {
+      "number": 31,
+      "id": "redPotion",
+      "cls": "items",
+      "name": "红色补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 640,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "32": {
+      "number": 32,
+      "id": "bluePotion",
+      "cls": "items",
+      "name": "蓝色补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 672,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "33": {
+      "number": 33,
+      "id": "greenPotion",
+      "cls": "items",
+      "name": "绿色补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 704,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "34": {
+      "number": 34,
+      "id": "yellowPotion",
+      "cls": "items",
+      "name": "黄色补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 736,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "58": {
+      "number": 58,
+      "id": "poisonWine",
+      "cls": "items",
+      "name": "大红补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 768,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "59": {
+      "number": 59,
+      "id": "weakWine",
+      "cls": "items",
+      "name": "大蓝补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 800,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "60": {
+      "number": 60,
+      "id": "curseWine",
+      "cls": "items",
+      "name": "大绿补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 864,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "84": {
+      "number": 84,
+      "id": "greenDoor",
+      "cls": "animates",
+      "name": "绿门",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/animates.png",
+        "x": 0,
+        "y": 224,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "86": {
+      "number": 86,
+      "id": "steelDoor",
+      "cls": "animates",
+      "name": "铁门",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/animates.png",
+        "x": 0,
+        "y": 288,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "87": {
+      "number": 87,
+      "id": "upFloor",
+      "cls": "terrains",
+      "name": null,
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/terrains.png",
+        "x": 0,
+        "y": 192,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "88": {
+      "number": 88,
+      "id": "downFloor",
+      "cls": "terrains",
+      "name": null,
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/terrains.png",
+        "x": 0,
+        "y": 160,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "164": {
+      "number": 164,
+      "id": "arrowRight",
+      "cls": "terrains",
+      "name": null,
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/terrains.png",
+        "x": 0,
+        "y": 448,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "201": {
+      "number": 201,
+      "id": "greenSlime",
+      "cls": "enemys",
+      "name": "毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 0,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "202": {
+      "number": 202,
+      "id": "redSlime",
+      "cls": "enemys",
+      "name": "武装毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 32,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "203": {
+      "number": 203,
+      "id": "blackSlime",
+      "cls": "enemys",
+      "name": "红毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 64,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "204": {
+      "number": 204,
+      "id": "slimelord",
+      "cls": "enemys",
+      "name": "小飞蛾",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 96,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "205": {
+      "number": 205,
+      "id": "bat",
+      "cls": "enemys",
+      "name": "骸骨",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 128,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "206": {
+      "number": 206,
+      "id": "bigBat",
+      "cls": "enemys",
+      "name": "武装红毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 160,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "207": {
+      "number": 207,
+      "id": "redBat",
+      "cls": "enemys",
+      "name": "少年法师",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 192,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "208": {
+      "number": 208,
+      "id": "vampire",
+      "cls": "enemys",
+      "name": "微尘级野兽",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 224,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "209": {
+      "number": 209,
+      "id": "skeleton",
+      "cls": "enemys",
+      "name": "废弃傀儡",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 256,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "210": {
+      "number": 210,
+      "id": "skeletonWarrior",
+      "cls": "enemys",
+      "name": "黑毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 288,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "211": {
+      "number": 211,
+      "id": "skeletonCaptain",
+      "cls": "enemys",
+      "name": "荧光飞蛾",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 320,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "212": {
+      "number": 212,
+      "id": "ghostSoldier",
+      "cls": "enemys",
+      "name": "橙毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 352,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "213": {
+      "number": 213,
+      "id": "zombie",
+      "cls": "enemys",
+      "name": "聚灵骸骨",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 384,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "214": {
+      "number": 214,
+      "id": "zombieKnight",
+      "cls": "enemys",
+      "name": "大飞蛾",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 416,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "215": {
+      "number": 215,
+      "id": "rock",
+      "cls": "enemys",
+      "name": "血洛游卒",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 448,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "216": {
+      "number": 216,
+      "id": "slimeman",
+      "cls": "enemys",
+      "name": "石精",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 480,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "217": {
+      "number": 217,
+      "id": "bluePriest",
+      "cls": "enemys",
+      "name": "弱小意念",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 512,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "218": {
+      "number": 218,
+      "id": "redPriest",
+      "cls": "enemys",
+      "name": "聚魂骸骨",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 544,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "219": {
+      "number": 219,
+      "id": "brownWizard",
+      "cls": "enemys",
+      "name": "青年法师",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 576,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "220": {
+      "number": 220,
+      "id": "redWizard",
+      "cls": "enemys",
+      "name": "武装橙毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 608,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "221": {
+      "number": 221,
+      "id": "yellowGateKeeper",
+      "cls": "enemys",
+      "name": "万物级凶兽",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 640,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "222": {
+      "number": 222,
+      "id": "blueGateKeeper",
+      "cls": "enemys",
+      "name": "习武孩童",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 672,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "223": {
+      "number": 223,
+      "id": "redGateKeeper",
+      "cls": "enemys",
+      "name": "出芽茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 704,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "225": {
+      "number": 225,
+      "id": "soldier",
+      "cls": "enemys",
+      "name": "纳家侍从",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 768,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "226": {
+      "number": 226,
+      "id": "yellowKnight",
+      "cls": "enemys",
+      "name": "轻型傀儡",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 800,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "229": {
+      "number": 229,
+      "id": "blackKing",
+      "cls": "enemys",
+      "name": "高速傀儡",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 896,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "239": {
+      "number": 239,
+      "id": "skeletonPresbyter",
+      "cls": "enemys",
+      "name": "精壮青年",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 1216,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "300": {
+      "number": 300,
+      "id": "ground",
+      "cls": "terrains",
+      "name": null,
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/terrains.png",
+        "x": 0,
+        "y": 0,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "572": {
+      "number": 572,
+      "id": "I572",
+      "cls": "items",
+      "name": "大黄补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 832,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "576": {
+      "number": 576,
+      "id": "I576",
+      "cls": "items",
+      "name": "高阶红宝石",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 1120,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "584": {
+      "number": 584,
+      "id": "I584",
+      "cls": "items",
+      "name": "极品红宝石",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 2080,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "619": {
+      "number": 619,
+      "id": "I619",
+      "cls": "items",
+      "name": "灵红补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 3200,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "621": {
+      "number": 621,
+      "id": "I621",
+      "cls": "items",
+      "name": "灵黄补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 3264,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "635": {
+      "number": 635,
+      "id": "I635",
+      "cls": "items",
+      "name": "殿堂红宝石",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 3712,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "893": {
+      "number": 893,
+      "id": "I893",
+      "cls": "items",
+      "name": "兽神残卷（基础）",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 7520,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "894": {
+      "number": 894,
+      "id": "I894",
+      "cls": "items",
+      "name": "融血术",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 7552,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "902": {
+      "number": 902,
+      "id": "I902",
+      "cls": "items",
+      "name": "绿钥匙串（四把）",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 7808,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "990": {
+      "number": 990,
+      "id": "A990",
+      "cls": "animates",
+      "name": null,
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/animates.png",
+        "x": 0,
+        "y": 2848,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "blueWall": {
+      "number": 3,
+      "id": "blueWall",
+      "cls": "animates",
+      "name": null,
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/animates.png",
+        "x": 0,
+        "y": 384,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "I893": {
+      "number": 893,
+      "id": "I893",
+      "cls": "items",
+      "name": "兽神残卷（基础）",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 7520,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "I635": {
+      "number": 635,
+      "id": "I635",
+      "cls": "items",
+      "name": "殿堂红宝石",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 3712,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "greenDoor": {
+      "number": 84,
+      "id": "greenDoor",
+      "cls": "animates",
+      "name": "绿门",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/animates.png",
+        "x": 0,
+        "y": 224,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "A990": {
+      "number": 990,
+      "id": "A990",
+      "cls": "animates",
+      "name": null,
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/animates.png",
+        "x": 0,
+        "y": 2848,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "I894": {
+      "number": 894,
+      "id": "I894",
+      "cls": "items",
+      "name": "融血术",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 7552,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "weakWine": {
+      "number": 59,
+      "id": "weakWine",
+      "cls": "items",
+      "name": "大蓝补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 800,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "I584": {
+      "number": 584,
+      "id": "I584",
+      "cls": "items",
+      "name": "极品红宝石",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 2080,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "skeleton": {
+      "number": 209,
+      "id": "skeleton",
+      "cls": "enemys",
+      "name": "废弃傀儡",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 256,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "greenSlime": {
+      "number": 201,
+      "id": "greenSlime",
+      "cls": "enemys",
+      "name": "毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 0,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "redSlime": {
+      "number": 202,
+      "id": "redSlime",
+      "cls": "enemys",
+      "name": "武装毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 32,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "redPotion": {
+      "number": 31,
+      "id": "redPotion",
+      "cls": "items",
+      "name": "红色补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 640,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "I902": {
+      "number": 902,
+      "id": "I902",
+      "cls": "items",
+      "name": "绿钥匙串（四把）",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 7808,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "bluePotion": {
+      "number": 32,
+      "id": "bluePotion",
+      "cls": "items",
+      "name": "蓝色补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 672,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "slimelord": {
+      "number": 204,
+      "id": "slimelord",
+      "cls": "enemys",
+      "name": "小飞蛾",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 96,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "bat": {
+      "number": 205,
+      "id": "bat",
+      "cls": "enemys",
+      "name": "骸骨",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 128,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "blackSlime": {
+      "number": 203,
+      "id": "blackSlime",
+      "cls": "enemys",
+      "name": "红毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 64,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "steelDoor": {
+      "number": 86,
+      "id": "steelDoor",
+      "cls": "animates",
+      "name": "铁门",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/animates.png",
+        "x": 0,
+        "y": 288,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "redGem": {
+      "number": 27,
+      "id": "redGem",
+      "cls": "items",
+      "name": "初始红宝石",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 512,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "yellowPotion": {
+      "number": 34,
+      "id": "yellowPotion",
+      "cls": "items",
+      "name": "黄色补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 736,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "poisonWine": {
+      "number": 58,
+      "id": "poisonWine",
+      "cls": "items",
+      "name": "大红补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 768,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "upFloor": {
+      "number": 87,
+      "id": "upFloor",
+      "cls": "terrains",
+      "name": null,
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/terrains.png",
+        "x": 0,
+        "y": 192,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "I576": {
+      "number": 576,
+      "id": "I576",
+      "cls": "items",
+      "name": "高阶红宝石",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 1120,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "slimeman": {
+      "number": 216,
+      "id": "slimeman",
+      "cls": "enemys",
+      "name": "石精",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 480,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "skeletonCaptain": {
+      "number": 211,
+      "id": "skeletonCaptain",
+      "cls": "enemys",
+      "name": "荧光飞蛾",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 320,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "redBat": {
+      "number": 207,
+      "id": "redBat",
+      "cls": "enemys",
+      "name": "少年法师",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 192,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "vampire": {
+      "number": 208,
+      "id": "vampire",
+      "cls": "enemys",
+      "name": "微尘级野兽",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 224,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "greenPotion": {
+      "number": 33,
+      "id": "greenPotion",
+      "cls": "items",
+      "name": "绿色补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 704,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "skeletonWarrior": {
+      "number": 210,
+      "id": "skeletonWarrior",
+      "cls": "enemys",
+      "name": "黑毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 288,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "bigBat": {
+      "number": 206,
+      "id": "bigBat",
+      "cls": "enemys",
+      "name": "武装红毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 160,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "rock": {
+      "number": 215,
+      "id": "rock",
+      "cls": "enemys",
+      "name": "血洛游卒",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 448,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "downFloor": {
+      "number": 88,
+      "id": "downFloor",
+      "cls": "terrains",
+      "name": null,
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/terrains.png",
+        "x": 0,
+        "y": 160,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "ghostSoldier": {
+      "number": 212,
+      "id": "ghostSoldier",
+      "cls": "enemys",
+      "name": "橙毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 352,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "zombie": {
+      "number": 213,
+      "id": "zombie",
+      "cls": "enemys",
+      "name": "聚灵骸骨",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 384,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "zombieKnight": {
+      "number": 214,
+      "id": "zombieKnight",
+      "cls": "enemys",
+      "name": "大飞蛾",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 416,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "I619": {
+      "number": 619,
+      "id": "I619",
+      "cls": "items",
+      "name": "灵红补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 3200,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "blackKing": {
+      "number": 229,
+      "id": "blackKing",
+      "cls": "enemys",
+      "name": "高速傀儡",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 896,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "I572": {
+      "number": 572,
+      "id": "I572",
+      "cls": "items",
+      "name": "大黄补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 832,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "redWizard": {
+      "number": 220,
+      "id": "redWizard",
+      "cls": "enemys",
+      "name": "武装橙毛茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 608,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "arrowRight": {
+      "number": 164,
+      "id": "arrowRight",
+      "cls": "terrains",
+      "name": null,
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/terrains.png",
+        "x": 0,
+        "y": 448,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "curseWine": {
+      "number": 60,
+      "id": "curseWine",
+      "cls": "items",
+      "name": "大绿补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 864,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "blueGateKeeper": {
+      "number": 222,
+      "id": "blueGateKeeper",
+      "cls": "enemys",
+      "name": "习武孩童",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 672,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "brownWizard": {
+      "number": 219,
+      "id": "brownWizard",
+      "cls": "enemys",
+      "name": "青年法师",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 576,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "bluePriest": {
+      "number": 217,
+      "id": "bluePriest",
+      "cls": "enemys",
+      "name": "弱小意念",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 512,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "redPriest": {
+      "number": 218,
+      "id": "redPriest",
+      "cls": "enemys",
+      "name": "聚魂骸骨",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 544,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "I621": {
+      "number": 621,
+      "id": "I621",
+      "cls": "items",
+      "name": "灵黄补给品",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/items.png",
+        "x": 0,
+        "y": 3264,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "yellowKnight": {
+      "number": 226,
+      "id": "yellowKnight",
+      "cls": "enemys",
+      "name": "轻型傀儡",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 800,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "yellowGateKeeper": {
+      "number": 221,
+      "id": "yellowGateKeeper",
+      "cls": "enemys",
+      "name": "万物级凶兽",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 640,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "redGateKeeper": {
+      "number": 223,
+      "id": "redGateKeeper",
+      "cls": "enemys",
+      "name": "出芽茸茸",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 704,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "star": {
+      "number": 4,
+      "id": "star",
+      "cls": "animates",
+      "name": "星空",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/animates.png",
+        "x": 0,
+        "y": 0,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "skeletonPresbyter": {
+      "number": 239,
+      "id": "skeletonPresbyter",
+      "cls": "enemys",
+      "name": "精壮青年",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 1216,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    },
+    "soldier": {
+      "number": 225,
+      "id": "soldier",
+      "cls": "enemys",
+      "name": "纳家侍从",
+      "wallLike": false,
+      "sprite": {
+        "sheet": "materials/enemys.png",
+        "x": 0,
+        "y": 768,
+        "width": 32,
+        "height": 32,
+        "frameWidth": 32,
+        "frameHeight": 32
+      }
+    }
+  },
+  "levelUp": [
+    {
+      "lv": 0,
+      "need": 0,
+      "title": "微尘级初级"
+    },
+    {
+      "lv": 1,
+      "need": 10,
+      "title": "微尘级中级"
+    },
+    {
+      "lv": 2,
+      "need": 25,
+      "title": "微尘级高级"
+    },
+    {
+      "lv": 3,
+      "need": 75,
+      "title": "万物级初等"
+    },
+    {
+      "lv": 4,
+      "need": 200,
+      "title": "万物级高等"
+    },
+    {
+      "lv": 5,
+      "need": 600,
+      "title": "万物级巅峰"
+    },
+    {
+      "lv": 6,
+      "need": 1500,
+      "title": "潮汐级初等"
+    },
+    {
+      "lv": 7,
+      "need": 4000,
+      "title": "潮汐级高等"
+    },
+    {
+      "lv": 8,
+      "need": 10000,
+      "title": "潮汐级巅峰"
+    },
+    {
+      "lv": 9,
+      "need": 100000,
+      "title": "大地级一阶"
+    },
+    {
+      "lv": 10,
+      "need": 80000,
+      "title": "大地级二阶"
+    },
+    {
+      "lv": 11,
+      "need": 80000,
+      "title": "大地级三阶"
+    },
+    {
+      "lv": 12,
+      "need": 80000,
+      "title": "大地级四阶"
+    },
+    {
+      "lv": 13,
+      "need": 300000,
+      "title": "大地级五阶"
+    },
+    {
+      "lv": 14,
+      "need": 300000,
+      "title": "大地级六阶"
+    },
+    {
+      "lv": 15,
+      "need": 300000,
+      "title": "大地级七阶"
+    },
+    {
+      "lv": 16,
+      "need": 900000,
+      "title": "大地级八阶"
+    },
+    {
+      "lv": 17,
+      "need": 900000,
+      "title": "大地级巅峰"
+    },
+    {
+      "lv": 18,
+      "need": 3600000,
+      "title": "天空级一阶"
+    },
+    {
+      "lv": 19,
+      "need": 6000000,
+      "title": "天空级二阶"
+    },
+    {
+      "lv": 20,
+      "need": 6000000,
+      "title": "天空级三阶"
+    },
+    {
+      "lv": 21,
+      "need": 6000000,
+      "title": "天空级四阶"
+    },
+    {
+      "lv": 22,
+      "need": 32000000,
+      "title": "天空级五阶"
+    },
+    {
+      "lv": 23,
+      "need": 32000000,
+      "title": "天空级六阶"
+    },
+    {
+      "lv": 24,
+      "need": 32000000,
+      "title": "天空级七阶"
+    },
+    {
+      "lv": 25,
+      "need": 240000000,
+      "title": "天空级八阶"
+    },
+    {
+      "lv": 26,
+      "need": 240000000,
+      "title": "天空级巅峰"
+    },
+    {
+      "lv": 27,
+      "need": 1500000000,
+      "title": "云霄级一阶"
+    },
+    {
+      "lv": 28,
+      "need": 2000000000,
+      "title": "云霄级二阶"
+    },
+    {
+      "lv": 29,
+      "need": 2000000000,
+      "title": "云霄级三阶"
+    },
+    {
+      "lv": 30,
+      "need": 2000000000,
+      "title": "云霄级四阶"
+    },
+    {
+      "lv": 31,
+      "need": 15000000000,
+      "title": "云霄级五阶"
+    },
+    {
+      "lv": 32,
+      "need": 15000000000,
+      "title": "云霄级六阶"
+    },
+    {
+      "lv": 33,
+      "need": 30000000000,
+      "title": "云霄级七阶"
+    },
+    {
+      "lv": 34,
+      "need": 125000000000,
+      "title": "云霄级八阶"
+    },
+    {
+      "lv": 35,
+      "need": 125000000000,
+      "title": "云霄级巅峰"
+    },
+    {
+      "lv": 36,
+      "need": 1500000000000,
+      "title": "领域级一阶"
+    },
+    {
+      "lv": 37,
+      "need": 500000000000,
+      "title": "领域级一阶"
+    },
+    {
+      "lv": 38,
+      "need": 1000000000000,
+      "title": "领域级二阶"
+    },
+    {
+      "lv": 39,
+      "need": 1000000000000,
+      "title": "领域级二阶"
+    },
+    {
+      "lv": 40,
+      "need": 1000000000000,
+      "title": "领域级二阶"
+    },
+    {
+      "lv": 41,
+      "need": 1500000000000,
+      "title": "领域级三阶"
+    },
+    {
+      "lv": 42,
+      "need": 1500000000000,
+      "title": "领域级三阶"
+    },
+    {
+      "lv": 43,
+      "need": 1500000000000,
+      "title": "领域级三阶"
+    },
+    {
+      "lv": 44,
+      "need": 5000000000000,
+      "title": "领域级四阶"
+    },
+    {
+      "lv": 45,
+      "need": 5000000000000,
+      "title": "领域级四阶"
+    },
+    {
+      "lv": 46,
+      "need": 5000000000000,
+      "title": "领域级四阶"
+    }
+  ]
+}

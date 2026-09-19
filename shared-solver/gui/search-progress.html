@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solver · 进度台与实时画面</title>
+<style>
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+  background: #0b111e;
+  color: #e2eaf5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1180px; margin: 0 auto; padding: 32px 20px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
+h1 { font-size: 26px; margin: 4px 0 10px; }
+h2 { font-size: 16px; margin: 0 0 14px; font-weight: 650; }
+.eyebrow { color: #62dcc3; letter-spacing: 2px; font-size: 11px; font-weight: 700; }
+.muted, small { color: #8e9fb8; }
+.badge { border: 1px solid #347a6d; background: #10372f; color: #8ee9d5; border-radius: 20px; padding: 7px 14px; white-space: nowrap; font-size: 13px; }
+.badge.running { background: #123d33; border-color: #388e7b; color: #7cf3d3; }
+.badge.error { background: #4a1c1a; border-color: #8c3631; color: #fca5a5; }
+.notice { background: #162135; border-left: 3px solid #62dcc3; padding: 12px 16px; margin: 18px 0; line-height: 1.6; border-radius: 0 6px 6px 0; }
+.notice.error { border-left-color: #f87171; color: #fca5a5; }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.card, .panel { background: #121c2c; border: 1px solid #23334a; border-radius: 12px; padding: 18px; }
+.number { font-size: 26px; font-weight: 650; margin: 8px 0; }
+.panel { margin-top: 16px; }
+.row { display: flex; justify-content: space-between; gap: 16px; margin: 10px 0; }
+.stages { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+.stage { padding: 6px 12px; background: #1a273b; border-radius: 6px; color: #9bb0cb; font-size: 13px; cursor: pointer; border: 1px solid transparent; }
+.stage.active { background: #15453b; color: #9df0d8; border-color: #2e8b75; font-weight: 600; }
+
+/* Real-Time Magic Tower Game Screen */
+.game-viewport-wrap {
+  display: flex;
+  gap: 20px;
+  background: #080d17;
+  border: 1px solid #1f2e45;
+  border-radius: 10px;
+  padding: 16px;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.hero-sidebar {
+  width: 160px;
+  background: #0d1624;
+  border: 1px solid #22354d;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+}
+.sidebar-floor {
+  font-size: 15px;
+  font-weight: 700;
+  color: #6edec6;
+  text-align: center;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #22354d;
+}
+.sidebar-hero {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+.sidebar-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 6px;
+  border: 1px solid #375373;
+  background-color: #1a273a;
+  background-image: url('/assets/images/hero.png');
+  background-repeat: no-repeat;
+  background-position: -5px -2px;
+  background-size: 168px 252px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+.sidebar-name-box { display: flex; flex-direction: column; }
+.sidebar-name { font-size: 14px; font-weight: 700; color: #fff; }
+.sidebar-lv { font-size: 12px; color: #f59e0b; }
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #141f30;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.stat-item .val { font-weight: 700; font-family: ui-monospace, Consolas, monospace; }
+.stat-hp .val { color: #f472b6; }
+.stat-atk .val { color: #f87171; }
+.stat-def .val { color: #60a5fa; }
+.stat-mdef .val { color: #34d399; }
+.stat-exp .val { color: #fbbf24; }
+.keys-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 4px;
+}
+.key-tag {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #152236;
+}
+.key-tag.green {
+  grid-column: span 2;
+  background: #0d382d;
+  color: #6ee7b7;
+  border: 1px solid #1f6b57;
+}
+
+/* Map Grid (13x13 @ 32px each = 416px) */
+.map-canvas-container {
+  position: relative;
+  width: 416px;
+  height: 416px;
+  border: 2px solid #2a3e59;
+  border-radius: 4px;
+  background-color: #000;
+  background-image: url('/assets/materials/ground.png');
+  background-repeat: repeat;
+  image-rendering: pixelated;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+  flex-shrink: 0;
+}
+.map-grid {
+  display: grid;
+  grid-template-columns: repeat(13, 32px);
+  grid-template-rows: repeat(13, 32px);
+  width: 416px;
+  height: 416px;
+  position: relative;
+}
+.map-cell {
+  width: 32px;
+  height: 32px;
+  position: relative;
+  overflow: visible;
+}
+.tile-sprite {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+.tile-sprite.tall {
+  height: 48px;
+  top: -16px;
+}
+.hero-marker {
+  position: absolute;
+  left: 0;
+  top: -16px;
+  width: 32px;
+  height: 48px;
+  background-image: url('/assets/images/hero.png');
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  z-index: 20;
+  filter: drop-shadow(0 0 4px #38bdf8);
+  pointer-events: none;
+}
+.dmg-badge {
+  position: absolute;
+  left: 0px;
+  bottom: 0px;
+  min-width: 14px;
+  font-size: 8px;
+  font-weight: 750;
+  line-height: 10px;
+  padding: 0 2px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #facc15;
+  z-index: 10;
+  pointer-events: none;
+  font-family: ui-monospace, Consolas, monospace;
+}
+.dmg-badge.zero { color: #4ade80; }
+.dmg-badge.lethal { color: #f87171; }
+.dmg-badge.unsupported { color: #f472b6; }
+
+.game-meta-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 12px;
+}
+.btn-toggle {
+  background: #1e3048;
+  border: 1px solid #334e73;
+  color: #c9daf0;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.btn-toggle:hover { background: #284163; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+th, td { padding: 10px 8px; border-bottom: 1px solid #23334a; }
+th { color: #8fa2bd; }
+tr.clickable:hover { background: #19273c; cursor: pointer; }
+tr.selected { background: #173742; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
+a { color: #7fe6d3; }
+footer { margin: 28px 0 12px; color: #72849e; font-size: 12px; line-height: 1.8; }
+.tablewrap { overflow-x: auto; }
+@media (max-width: 720px) {
+  main { padding: 20px 12px; }
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .game-viewport-wrap { flex-direction: column; align-items: center; }
+  .map-canvas-container { transform: scale(0.77); transform-origin: top center; margin-bottom: -90px; }
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div>
+    <div class="eyebrow">CANONICAL DP · 纳可物语血洛缘起</div>
+    <h1 id="title">Solver 进度台与实时视窗</h1>
+    <span class="muted">只读监控 · 真实魔塔画面每 3 秒同步 · 点击历史记录查看任意阶段盘面</span>
+  </div>
+  <span class="badge" id="status">连接中</span>
+</header>
+
+<div class="notice" id="notice">正在读取云端后台状态与地图素材……</div>
+
+<!-- Real-Time Magic Tower Visual Screen -->
+<section class="panel">
+  <h2>魔塔真实画面 · 局部搜索状态 (Real-Time Game View)</h2>
+  <div class="game-viewport-wrap">
+    <!-- Left Hero Sidebar -->
+    <div class="hero-sidebar">
+      <div class="sidebar-floor" id="sb-floor">血洛缘起 · 层</div>
+      <div class="sidebar-hero">
+        <div class="sidebar-avatar" id="sb-avatar"></div>
+        <div class="sidebar-name-box">
+          <span class="sidebar-name">纳可</span>
+          <span class="sidebar-lv" id="sb-lv">Lv. 1</span>
+        </div>
+      </div>
+      <div class="stat-item stat-hp"><span>生命</span><span class="val" id="sb-hp">—</span></div>
+      <div class="stat-item stat-atk"><span>攻击</span><span class="val" id="sb-atk">—</span></div>
+      <div class="stat-item stat-def"><span>防御</span><span class="val" id="sb-def">—</span></div>
+      <div class="stat-item stat-mdef"><span>魔防</span><span class="val" id="sb-mdef">0</span></div>
+      <div class="stat-item stat-exp"><span>距升级</span><span class="val" id="sb-exp" title="距离下次升级差多少经验">—</span></div>
+      <div class="keys-container">
+        <div class="key-tag"><span>黄</span><span id="sb-key-y">0</span></div>
+        <div class="key-tag"><span>蓝</span><span id="sb-key-b">0</span></div>
+        <div class="key-tag"><span>红</span><span id="sb-key-r">0</span></div>
+        <div class="key-tag green"><span>绿钥匙 (保)</span><span id="sb-key-g">34</span></div>
+      </div>
+    </div>
+
+    <!-- Right 13x13 Map Viewport -->
+    <div class="map-canvas-container">
+      <div id="map-grid" class="map-grid"></div>
+    </div>
+  </div>
+  <div class="game-meta-bar">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span id="view-mode-label" class="eyebrow">当前正在攻克的局部状态</span>
+      <span id="state-type-badge" class="badge" style="display:none;font-size:11px;padding:2px 8px;"></span>
+      <span class="muted" id="view-loc-info">主角坐标: (-, -)</span>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-toggle" id="btn-toggle-progress" style="display:none;" onclick="toggleProgressMode()">查看起点盘面</button>
+      <button class="btn-toggle" id="btn-follow-current" onclick="resetViewToCurrent()">恢复跟随当前搜索</button>
+    </div>
+  </div>
+</section>
+
+<!-- Metrics Grid -->
+<div class="grid">
+  <div class="card">
+    <small>已完成任务展开数</small>
+    <div class="number" id="expansions">—</div>
+    <small id="liveexp">当前任务 —</small>
+  </div>
+  <div class="card">
+    <small>持久化节点 / 待服务</small>
+    <div class="number" id="candidates">—</div>
+    <small id="attempts">—</small>
+  </div>
+  <div class="card">
+    <small>搜索进程内存 RSS</small>
+    <div class="number" id="memory">—</div>
+    <small id="limit">—</small>
+  </div>
+  <div class="card">
+    <small>累计运行时间</small>
+    <div class="number" id="elapsed">—</div>
+    <small id="heartbeat">—</small>
+  </div>
+</div>
+
+<section class="panel">
+  <h2>当前局部搜索阶段</h2>
+  <div id="stages" class="stages"></div>
+  <div class="row">
+    <span id="task">—</span>
+    <span class="muted" id="frontier">—</span>
+  </div>
+  <pre id="entry"></pre>
+</section>
+
+<section class="panel">
+  <h2>路线与验证 (Strict Replay)</h2>
+  <p id="result">尚无严格重放通过的五层完整路线。</p>
+  <a href="/route.json" id="download" hidden>下载已验证路线 JSON</a>
+  <p class="muted">局部候选 ≠ 五层通关；通关 ≠ 全局最优。这里不展示虚构的完成百分比。</p>
+</section>
+
+<section class="panel">
+  <h2>最近任务记录 (点击行可在上方渲染对应盘面)</h2>
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>阶段目标</th><th>预算档</th><th>展开数</th><th>候选数</th><th>停止原因</th><th>时间</th></tr>
+      </thead>
+      <tbody id="history"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <details>
+    <summary>输入约束与恢复边界</summary>
+    <pre id="contract"></pre>
+    <p class="muted" id="resume"></p>
+  </details>
+</section>
+
+<footer>
+  访问范围：服务器 loopback + SSH 隧道。此页面为只读状态探针，无启动/停止/写文件权限。<br>
+  怪物脚下数字为即时伤害标牌 (绿=0伤, 黄=损血, 红=不可战胜)。
+</footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const num = n => Number(n || 0).toLocaleString('zh-CN');
+const duration = ms => {
+  const s = Math.floor((ms || 0) / 1000);
+  return `${Math.floor(s / 3600)}h ${Math.floor(s / 60) % 60}m ${s % 60}s`;
+};
+const labels = {
+  ready: '就绪',
+  running: '搜索中',
+  stopping: '停止中',
+  paused: '已暂停',
+  verified_route: '严格重放通过',
+  bounded_not_found: '本轮预算内未找到',
+  run_budget_reached: '总时间预算已到',
+  error: '运行错误 · 已停止'
+};
+
+let cachedMapData = null;
+let currentViewingStateId = null; // null means follow live current
+let lastRenderedStateId = null;
+let isRenderingBoard = false;
+let liveStatus = null;
+let consecutiveErrors = 0;
+let currentStateMode = "auto";
+let hasCurrentProgress = false;
+let isCurrentShowingProgress = false;
+
+// Direction to hero spritesheet Y offset (128x192, 4 directions x 4 frames)
+// 0: down, 48: left, 96: right, 144: up
+const DIR_Y = {
+  down: 0,
+  left: 48,
+  right: 96,
+  up: 144
+};
+
+async function loadMapData() {
+  if (cachedMapData) return cachedMapData;
+  try {
+    const res = await fetch('/api/map-data');
+    if (res.ok) {
+      cachedMapData = await res.json();
+    }
+  } catch (e) {
+    console.warn('Failed to load map data:', e);
+  }
+  return cachedMapData;
+}
+
+function resetViewToCurrent() {
+  currentViewingStateId = null;
+  lastRenderedStateId = null;
+  currentStateMode = "auto";
+  $('view-mode-label').textContent = '当前正在攻克的局部状态';
+  $('btn-follow-current').style.display = 'none';
+  renderGameBoard();
+}
+
+function toggleProgressMode() {
+  if (isCurrentShowingProgress) {
+    currentStateMode = "entry";
+  } else {
+    currentStateMode = "progress";
+  }
+  lastRenderedStateId = null;
+  renderGameBoard(currentViewingStateId || liveStatus?.current?.id, currentStateMode);
+}
+
+async function renderGameBoard(explicitStateId = null, explicitMode = null) {
+  if (isRenderingBoard) return;
+  const targetId = explicitStateId || currentViewingStateId || (liveStatus?.current?.id);
+  if (!targetId) return;
+  const mode = explicitMode || currentStateMode;
+  const requestKey = `${targetId}:${mode}`;
+  if (!explicitStateId && requestKey === lastRenderedStateId) return;
+
+  isRenderingBoard = true;
+  try {
+    const mapData = await loadMapData();
+    const res = await fetch(`/api/view-state?id=${encodeURIComponent(targetId)}&mode=${encodeURIComponent(mode)}`, { signal: AbortSignal.timeout(12000) });
+    if (!res.ok) return;
+    const { state, overlay, isProgress, hasProgress } = await res.json();
+    if (!state) return;
+
+    lastRenderedStateId = requestKey;
+    hasCurrentProgress = Boolean(hasProgress);
+    isCurrentShowingProgress = Boolean(isProgress);
+
+    // Update Progress / Entry Indicators & Toggle Button
+    const badgeEl = $('state-type-badge');
+    const toggleBtn = $('btn-toggle-progress');
+    if (badgeEl) {
+      badgeEl.style.display = 'inline-block';
+      if (isCurrentShowingProgress) {
+        badgeEl.textContent = '★ 最大推进终态';
+        badgeEl.className = 'badge running';
+        badgeEl.title = '该任务在终止前实际探索到的最深/打掉最多怪的中间状态';
+      } else {
+        badgeEl.textContent = '◉ 阶段入口起点';
+        badgeEl.className = 'badge';
+        badgeEl.title = '该任务开始时的起点基准状态（刚进入本层、怪未击杀）';
+      }
+    }
+    if (toggleBtn) {
+      if (hasCurrentProgress) {
+        toggleBtn.style.display = 'inline-block';
+        toggleBtn.textContent = isCurrentShowingProgress ? '查看起点盘面' : '查看最大推进终态';
+      } else {
+        toggleBtn.style.display = 'none';
+      }
+    }
+
+    // Update Sidebar
+    const floor = mapData?.floors?.[state.floorId] || {};
+    $('sb-floor').textContent = floor.title || state.floorId;
+
+    // Calculate EXP to next level (距离下次升级差多少经验)
+    const lv = Number(state.hero?.lv || 1);
+    const currentExp = Number(state.hero?.exp || 0);
+    const levelUpList = mapData?.levelUp || [];
+    const levelInfo = levelUpList[lv];
+    let remainingText = '—';
+    let expTooltip = `当前累计经验: ${currentExp}`;
+
+    if (levelInfo && levelInfo.need != null) {
+      const need = Number(levelInfo.need);
+      const diff = Math.max(0, need - currentExp);
+      remainingText = diff.toLocaleString('zh-CN');
+      expTooltip = `当前累计经验: ${currentExp} / 升到下级需: ${need} (还差 ${diff})`;
+    } else {
+      remainingText = 'MAX';
+      expTooltip = `已达满级或无升级配置 (当前经验: ${currentExp})`;
+    }
+
+    $('sb-exp').textContent = remainingText;
+    $('sb-exp').title = expTooltip;
+    $('sb-lv').textContent = `Lv. ${lv} ${levelInfo?.title ? levelInfo.title : ''}`;
+
+    $('sb-hp').textContent = state.hero?.hp ?? '—';
+    $('sb-atk').textContent = state.hero?.atk ?? '—';
+    $('sb-def').textContent = state.hero?.def ?? '—';
+    $('sb-mdef').textContent = state.hero?.mdef ?? '0';
+
+    const inv = state.inventory || {};
+    $('sb-key-y').textContent = inv.yellowKey || 0;
+    $('sb-key-b').textContent = inv.blueKey || 0;
+    $('sb-key-r').textContent = inv.redKey || 0;
+    $('sb-key-g').textContent = inv.greenKey || 0;
+
+    const loc = state.hero?.loc || { x: 0, y: 0, direction: 'down' };
+    $('view-loc-info').textContent = `主角坐标: (${loc.x}, ${loc.y}) 朝向: ${loc.direction || 'down'}`;
+
+    // Render 13x13 Map Grid
+    const gridEl = $('map-grid');
+    gridEl.innerHTML = '';
+
+    const mapMatrix = floor.map || [];
+    const removedSet = new Set(Object.keys(state.floorStates?.[state.floorId]?.removed || {}));
+    const replacedMap = state.floorStates?.[state.floorId]?.replaced || {};
+    const enemiesOverlay = overlay?.enemies || {};
+
+    for (let y = 0; y < 13; y += 1) {
+      for (let x = 0; x < 13; x += 1) {
+        const coordKey = `${x},${y}`;
+        const cellEl = document.createElement('div');
+        cellEl.className = 'map-cell';
+
+        let tileId = replacedMap[coordKey] || (mapMatrix[y] ? mapMatrix[y][x] : null);
+        const isRemoved = removedSet.has(coordKey);
+
+        if (tileId && !isRemoved) {
+          const tile = mapData?.tiles?.[tileId];
+          if (tile && tile.sprite) {
+            const sp = tile.sprite;
+            const spriteEl = document.createElement('div');
+            const isTall = sp.height > 32;
+            spriteEl.className = 'tile-sprite' + (isTall ? ' tall' : '');
+            spriteEl.style.backgroundImage = `url('/assets/${sp.sheet}')`;
+            spriteEl.style.backgroundPosition = `-${sp.x}px -${sp.y}px`;
+            cellEl.appendChild(spriteEl);
+          }
+
+          // Damage Badge for enemies
+          if (enemiesOverlay[coordKey]) {
+            const badge = enemiesOverlay[coordKey];
+            const badgeEl = document.createElement('div');
+            const isZero = Number(badge.damage) === 0;
+            const isLethal = badge.lethal || !badge.supported;
+            badgeEl.className = 'dmg-badge' + (isZero ? ' zero' : isLethal ? ' lethal' : '');
+            badgeEl.textContent = badge.display || (badge.damage != null ? badge.damage : '???');
+            badgeEl.title = `${badge.name || tileId}: 战损 ${badge.damage != null ? badge.damage : '不可战胜'}`;
+            cellEl.appendChild(badgeEl);
+          }
+        }
+
+        // Hero Marker
+        if (Number(loc.x) === x && Number(loc.y) === y) {
+          const heroEl = document.createElement('div');
+          heroEl.className = 'hero-marker';
+          const dir = loc.direction || 'down';
+          const yOff = DIR_Y[dir] != null ? DIR_Y[dir] : 0;
+          heroEl.style.backgroundPosition = `0px -${yOff}px`;
+          cellEl.appendChild(heroEl);
+        }
+
+        gridEl.appendChild(cellEl);
+      }
+    }
+  } catch (err) {
+    console.warn('Game board render warning:', err.message);
+  } finally {
+    isRenderingBoard = false;
+  }
+}
+
+async function refresh() {
+  try {
+    const response = await fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error(response.status === 404 ? '任务尚未写入状态' : '读取状态失败');
+    const s = await response.json();
+    liveStatus = s;
+    consecutiveErrors = 0;
+
+    const age = Date.now() - Date.parse(s.heartbeatAt);
+    const workerAge = s.telemetry ? Date.now() - Date.parse(s.telemetry.time) : null;
+    const stale = s.state === 'running' && age > 25000;
+
+    $('title').textContent = s.title || 'Solver 进度台与实时画面';
+    $('status').textContent = stale ? '心跳延迟' : labels[s.state] || s.state;
+    $('status').className = 'badge ' + (stale || s.error ? 'error' : s.state);
+
+    $('notice').textContent = s.error || (
+      stale ? '后台长跑任务正在运算大分支，最近心跳稍有延迟，仍在正常持续。' :
+      s.best ? '已找到并严格重放验证一条可行路线；首轮搜索完成，未证明最大血量。' :
+      s.state === 'running' ? '正在按指定试炼初态后台长跑。已完成局部结果已持久化；上方魔塔画面实时反映当前探索。' :
+      '任务当前未运行。有限预算未找到不等于无解。'
+    );
+    $('notice').classList.toggle('error', Boolean(s.error || stale));
+
+    $('expansions').textContent = num(s.totalExpansions);
+    $('liveexp').textContent = `当前任务 +${num(s.telemetry?.expansions)}`;
+    $('candidates').textContent = `${num(s.candidates)} / ${num(s.pending)}`;
+    $('attempts').textContent = `已完成 ${num(s.completedAttempts)} 个局部任务`;
+    $('memory').textContent = s.telemetry ? `${(s.telemetry.rssMb / 1024).toFixed(2)} GiB` : '—';
+    $('limit').textContent = `RSS 限制 ${(s.limits.maxRssMb / 1024).toFixed(1)} GiB`;
+    $('elapsed').textContent = duration(s.elapsedMs);
+    $('heartbeat').textContent = `心跳: ${workerAge == null ? '等待中' : Math.max(0, Math.floor(workerAge / 1000)) + ' 秒前'}`;
+
+    $('stages').replaceChildren(...s.stages.map((stage, i) => {
+      const el = document.createElement('span');
+      el.className = 'stage' + (s.current?.stage === i ? ' active' : '');
+      el.textContent = stage.label || stage.floorId;
+      return el;
+    }));
+
+    $('task').textContent = s.current ? `阶段目标: ${s.stages[s.current.stage]?.label || s.stages[s.current.stage]?.floorId} · 预算档 ${s.current.tier + 1}` : '无在途任务';
+    $('frontier').textContent = `局部 frontier 队列: ${num(s.telemetry?.frontierSize)}`;
+    $('entry').textContent = s.current ? JSON.stringify(s.current.entry, null, 2) : '';
+
+    $('result').textContent = s.best ? `${s.best.valueLabel}：${s.best.value} · ${s.best.decisions} 个决策 · 端到端严格重放 PASS` : '尚无严格重放通过的五层完整路线。';
+    $('download').hidden = !s.best;
+
+    // History rows with click to view state
+    $('history').replaceChildren(...s.history.slice().reverse().map((row, idx) => {
+      const tr = document.createElement('tr');
+      tr.className = 'clickable' + (currentViewingStateId === row.id ? ' selected' : '');
+      tr.onclick = () => {
+        currentViewingStateId = row.id;
+        $('view-mode-label').textContent = `查看历史任务 [${s.stages[row.stage]?.label || row.stage}] 盘面`;
+        $('btn-follow-current').style.display = 'inline-block';
+        renderGameBoard(row.id);
+      };
+      for (const val of [
+        s.stages[row.stage]?.label || row.stage,
+        row.tier + 1,
+        num(row.expansions),
+        row.candidateCount,
+        row.stoppedReason,
+        row.time ? new Date(row.time).toLocaleTimeString() : '—'
+      ]) {
+        const td = document.createElement('td');
+        td.textContent = val;
+        tr.append(td);
+      }
+      return tr;
+    }));
+
+    $('contract').textContent = JSON.stringify({
+      initial: s.initial,
+      flags: s.initialFlags,
+      zeroSpend: s.protectedItems,
+      totalBudgetHours: s.maxRuntimeMs / 3600000,
+      optimalityProven: false
+    }, null, 2);
+    $('resume').textContent = s.resumeBoundary;
+
+    // Asynchronously trigger board render without blocking metrics polling
+    renderGameBoard();
+  } catch (error) {
+    consecutiveErrors += 1;
+    if (consecutiveErrors >= 3) {
+      $('status').textContent = '连接中断';
+      $('status').className = 'badge error';
+      $('notice').textContent = error.message;
+      $('notice').classList.add('error');
+    }
+  } finally {
+    setTimeout(refresh, 3000);
+  }
+}
+
+// Initial setup
+loadMapData().then(refresh);
+</script>
+</body>
+</html>
