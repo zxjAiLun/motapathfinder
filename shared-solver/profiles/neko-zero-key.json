@@ -1,0 +1,30 @@
+{
+  "title": "纳可物语 · 血洛缘起 · 零绿钥匙",
+  "initial": {
+    "floorId": "TS11",
+    "hero": { "hp": 100, "atk": 1, "def": 0, "mdef": 0, "lv": 1, "exp": 0, "money": 0, "loc": { "x": 6, "y": 1, "direction": "down" } },
+    "inventory": { "greenKey": 30 },
+    "flags": { "saltygreen": 2, "jc19f5": 1, "allhp": 0, "nowatk": 1, "nowdef": 0, "nowmdef": 0, "nowexp": 0, "nowlevel": 1 }
+  },
+  "protectedItems": ["greenKey"],
+  "allowedFloors": ["TS11", "TS12", "TS13", "TS14", "TS15", "JC19"],
+  "stages": [
+    { "label": "1 → 2 层", "floorId": "TS12" },
+    { "label": "2 → 3 层", "floorId": "TS13" },
+    { "label": "3 → 4 层", "floorId": "TS14" },
+    { "label": "4 → 5 层", "floorId": "TS15" },
+    { "label": "击败 Boss", "floorId": "JC19", "removed": { "floorId": "TS15", "x": 6, "y": 11 } }
+  ],
+  "budgets": [
+    { "expansions": 8000, "runtimeMs": 120000 },
+    { "expansions": 32000, "runtimeMs": 600000 },
+    { "expansions": 128000, "runtimeMs": 1800000 }
+  ],
+  "candidateLimit": 16,
+  "heapMb": 6144,
+  "maxRssMb": 8192,
+  "maxRuntimeMs": 21600000,
+  "scoreFlag": "allhp",
+  "scoreScale": 10,
+  "scoreLabel": "Boss 战后试炼剩余 HP"
+}

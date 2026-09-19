@@ -6,6 +6,8 @@ profiles/*
 !profiles/
 !profiles/perf-baseline.json
 !profiles/window-mt5.json
+!profiles/neko-zero-key.json
+!profiles/trial-map-data.json
 *.cpuprofile
 .tmp-*.js
 runs/
