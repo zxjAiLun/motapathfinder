@@ -22,6 +22,7 @@
     { "expansions": 256000, "runtimeMs": 3600000 }
   ],
   "candidateLimit": 16,
+  "dpPriorityMode": "goal-relative",
   "heapMb": 6144,
   "maxRssMb": 8192,
   "maxRuntimeMs": 0,

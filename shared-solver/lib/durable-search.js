@@ -284,8 +284,11 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
       report({ ...telemetry, rssMb: process.memoryUsage().rss / 1048576, time: new Date().toISOString() });
     }
   };
+  const stageGoal = config.stages[task.stage];
   const result = searchDP(sim, state, {
-    goalPredicate: (candidate) => matchesGoal(candidate, config.stages[task.stage]),
+    goalPredicate: (candidate) => matchesGoal(candidate, stageGoal),
+    dpPriorityMode: config.dpPriorityMode || "default",
+    stageGoal,
     maxExpansions: budget.expansions, maxRuntimeMs: budget.runtimeMs,
     maxRssMb: config.maxRssMb, maxHeapMb: Math.floor(config.heapMb * 0.85),
     maxActionsPerState: 4096, stopOnFirstGoal: false, captureTrace: false,
