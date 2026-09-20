@@ -37,6 +37,50 @@ function estimateNextFloorDistance(state, project) {
   }, Number.POSITIVE_INFINITY);
 }
 
+function estimateGoalRelativeDistance(state, project, stageGoal) {
+  if (!project || !project.floorsById || !project.floorsById[state.floorId]) return Number.POSITIVE_INFINITY;
+  const currentFloorId = state.floorId;
+  const goalFloorId = stageGoal && stageGoal.floorId;
+  if (!goalFloorId || currentFloorId === goalFloorId) {
+    return estimateNextFloorDistance(state, project);
+  }
+
+  const currentOrder = getFloorOrder(currentFloorId);
+  const goalOrder = getFloorOrder(goalFloorId);
+  if (currentOrder >= goalOrder) {
+    return estimateNextFloorDistance(state, project);
+  }
+
+  const localDist = estimateNextFloorDistance(state, project);
+  if (!Number.isFinite(localDist)) return Number.POSITIVE_INFINITY;
+
+  let transitPenalty = 0;
+  for (const [fId, floor] of Object.entries(project.floorsById)) {
+    const fOrder = getFloorOrder(fId);
+    if (fOrder > currentOrder && fOrder < goalOrder) {
+      let down = null;
+      let up = null;
+      for (let y = 0; y < floor.height; y++) {
+        for (let x = 0; x < floor.width; x++) {
+          const num = floor.map[y][x];
+          const tile = project.mapTilesByNumber && project.mapTilesByNumber[String(num)];
+          if (tile) {
+            if (tile.id === "downFloor") down = { x, y };
+            if (tile.id === "upFloor") up = { x, y };
+          }
+        }
+      }
+      if (down && up) {
+        transitPenalty += Math.abs(up.x - down.x) + Math.abs(up.y - down.y);
+      } else {
+        transitPenalty += 16;
+      }
+    }
+  }
+
+  return localDist + transitPenalty;
+}
+
 function defaultSearchRank(state, score, context) {
   const resolvedScore = score || defaultScore(state);
   const project = context && context.project;
@@ -119,6 +163,7 @@ module.exports = {
   compareScore,
   defaultScore,
   defaultSearchRank,
+  estimateGoalRelativeDistance,
   estimateNextFloorDistance,
   formatScore,
   getFloorOrder,

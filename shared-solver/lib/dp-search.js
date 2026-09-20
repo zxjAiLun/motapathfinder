@@ -1,7 +1,7 @@
 "use strict";
 
 const { getProgress, compareProgress } = require("./progress");
-const { estimateNextFloorDistance, getFloorOrder } = require("./score");
+const { estimateGoalRelativeDistance, estimateNextFloorDistance, getFloorOrder } = require("./score");
 const { cloneState, getDecisionDepth, getRawRouteLength, listFloorMutationSummary } = require("./state");
 const { buildStateKey } = require("./state-key");
 const {
@@ -401,7 +401,9 @@ function buildDpAgendaRank(simulator, state, sourceAction, sequence, options) {
   const config = options || {};
   const progress = getProgress(state);
   const hero = state.hero || {};
-  const nextDistance = estimateNextFloorDistance(state, simulator.project);
+  const nextDistance = config.dpPriorityMode === "goal-relative"
+    ? estimateGoalRelativeDistance(state, simulator.project, config.stageGoal)
+    : estimateNextFloorDistance(state, simulator.project);
   const routeLength = getRawRouteLength(state);
   return {
     priorityMode: String(config.dpPriorityMode || "default"),
