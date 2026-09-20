@@ -1,27 +1,25 @@
 "use strict";
 
 /**
- * Phase 1 — TS13 State-Abstraction Shadow Audit (Repair 1a)
+ * Phase 1 — TS13 State-Abstraction Shadow Audit (Repair 1b)
  *
  * Strictly observation-only: does NOT modify production DP keys, dominance rules,
  * goal predicates, or search behavior.
  *
  * Implements two cleanly decoupled audits:
  *
- * Part A: Candidate Shadow Abstraction Audit
+ * Part A: Candidate Shadow Abstraction Audit (FROZEN)
  *   Evaluates whether state distinctions driven purely by past item/monster consumption
  *   history can be safely abstracted into a Strategic Future Action & Reachable Region Signature
  *   while holding non-HP resources, inventory, flags, followers, and location strictly constant.
- *   - Uses production DP admitted/expanded population via captureExpandedStates
- *   - Compares shadowUniqueKeys against productionUniqueDpKeys (using canonical buildDpStateKey)
- *   - Categorizes shadow over-abstraction counterexamples across local and cross-floor actions
- *   - Extracts all-floor mutation attribution witnesses
+ *   - Status: PERMANENTLY REJECTED with valid counterexamples (as established in Repair 1)
  *
- * Part B: Production DP Safety Probe (Independent same-exactDpKey evaluation)
+ * Part B: Production DP Safety Probe (Dominance Transition Outcome Contract)
  *   Uses candidateKeyShadowRecorder to capture states sharing the same production exactDpKey
- *   - Audits whether same-production-DP-key pairs ever exhibit future divergence
- *   - Distinguishes expected HP-dominance action supersets from unexpected same-HP divergences
- *   - Reports non-vacuous status: not-evaluable (when pairs=0), no-counterexample-observed, or counterexample-observed
+ *   - Same HP pairs: asserts full action transition outcome set equivalence (same action, nextDpKey, dHp)
+ *   - Unequal HP pairs: verifies true HP dominance (every transition of lower-HP state L is matched by
+ *     higher-HP state H with identical action, identical nextDpKey, and successorHP(H) >= successorHP(L))
+ *   - Reports non-vacuous probe verdict: not-evaluable, no-counterexample-observed, or counterexample-observed
  */
 
 const fs = require("node:fs");
@@ -184,15 +182,48 @@ function findDifferingMutationsByFloor(s1, s2) {
 
   const diff = {};
   for (const fid of allFloors) {
-    const rem1 = new Set(Object.keys(((s1.floorStates || {})[fid] || {}).removed || {}));
-    const rem2 = new Set(Object.keys(((s2.floorStates || {})[fid] || {}).removed || {}));
-    const onlyIn1 = Array.from(rem1).filter((k) => !rem2.has(k)).sort();
-    const onlyIn2 = Array.from(rem2).filter((k) => !rem1.has(k)).sort();
-    if (onlyIn1.length > 0 || onlyIn2.length > 0) {
-      diff[fid] = { onlyIn1, onlyIn2 };
+    const fs1 = (s1.floorStates || {})[fid] || {};
+    const fs2 = (s2.floorStates || {})[fid] || {};
+    const rem1 = new Set(Object.keys(fs1.removed || {}));
+    const rem2 = new Set(Object.keys(fs2.removed || {}));
+    const removedOnlyIn1 = Array.from(rem1).filter((k) => !rem2.has(k)).sort();
+    const removedOnlyIn2 = Array.from(rem2).filter((k) => !rem1.has(k)).sort();
+
+    const rep1 = fs1.replaced || {};
+    const rep2 = fs2.replaced || {};
+    const allRepKeys = Array.from(new Set([...Object.keys(rep1), ...Object.keys(rep2)])).sort();
+    const replacedDiff = {};
+    for (const rk of allRepKeys) {
+      if (rep1[rk] !== rep2[rk]) {
+        replacedDiff[rk] = { in1: rep1[rk] || null, in2: rep2[rk] || null };
+      }
+    }
+
+    if (removedOnlyIn1.length > 0 || removedOnlyIn2.length > 0 || Object.keys(replacedDiff).length > 0) {
+      diff[fid] = { removedOnlyIn1, removedOnlyIn2, replacedDiff };
     }
   }
   return diff;
+}
+
+function enumerateTransitionOutcomes(simulator, state, config) {
+  const actions = simulator.enumerateActions(state);
+  const outcomes = [];
+  for (const action of actions) {
+    const next = simulator.applyAction(state, action);
+    if (!next) continue;
+    const nextDpKey = buildDpStateKey(simulator, next, config);
+    const actionFp = getCanonicalActionFingerprint(simulator, action);
+    outcomes.push({
+      actionFingerprint: actionFp,
+      actionKind: action.kind,
+      isCrossFloor: action.kind === "changeFloor" || action.kind === "floorFly",
+      dHp: next.hero.hp - state.hero.hp,
+      nextHp: next.hero.hp,
+      nextDpKey,
+    });
+  }
+  return outcomes;
 }
 
 function runShadowAudit(options = {}) {
@@ -354,77 +385,69 @@ function runShadowAudit(options = {}) {
 
   const totalShadowSuccessorMismatches = shadowLocalSuccessorMismatches + shadowCrossFloorSuccessorMismatches;
 
-  // Part B: Production DP Safety Probe (Independent same-production-DP-key verification)
-  let sameProductionDpKeyPairsAudited = 0;
-  let sameProductionDpKeySameHpPairs = 0;
-  let sameProductionDpKeySameHpDivergences = 0;
-  let sameProductionDpKeyActionMismatches = 0;
-  let sameProductionDpKeySuccessorDivergences = 0;
+  // Part B: Production DP Safety Probe (Dominance Transition Outcome Contract)
+  let sameHpEquivalencePairs = 0;
+  let sameHpEquivalenceViolations = 0;
+  let hpDominancePairs = 0;
+  let hpDominanceViolations = 0;
 
   for (const [, entries] of productionRecordedByDpKey.entries()) {
     if (entries.length < 2) continue;
     for (let i = 0; i < entries.length; i += 1) {
       for (let j = i + 1; j < entries.length; j += 1) {
-        sameProductionDpKeyPairsAudited += 1;
-        const e1 = entries[i];
-        const e2 = entries[j];
-        const s1 = e1.state;
-        const s2 = e2.state;
+        const s1 = entries[i].state;
+        const s2 = entries[j].state;
 
-        const isSameHp = s1.hero.hp === s2.hero.hp;
-        if (isSameHp) sameProductionDpKeySameHpPairs += 1;
+        const outcomes1 = enumerateTransitionOutcomes(sim, s1, config);
+        const outcomes2 = enumerateTransitionOutcomes(sim, s2, config);
 
-        const acts1 = getActionFingerprintSet(sim, s1);
-        const acts2 = getActionFingerprintSet(sim, s2);
-        if (acts1.join(";") !== acts2.join(";")) {
-          sameProductionDpKeyActionMismatches += 1;
-        }
-
-        const actions0 = sim.enumerateActions(s1);
-        const actions1 = sim.enumerateActions(s2);
-        const actionMap1 = new Map();
-        actions1.forEach((a) => {
-          const fp = getCanonicalActionFingerprint(sim, a);
-          if (fp && !actionMap1.has(fp)) actionMap1.set(fp, a);
-        });
-
-        for (const a0 of actions0) {
-          const fp0 = getCanonicalActionFingerprint(sim, a0);
-          if (!fp0) continue;
-          const a1 = actionMap1.get(fp0);
-          if (!a1) continue;
-
-          const next0 = sim.applyAction(s1, a0);
-          const next1 = sim.applyAction(s2, a1);
-
-          if (Boolean(next0) !== Boolean(next1)) {
-            sameProductionDpKeySuccessorDivergences += 1;
-            if (isSameHp) sameProductionDpKeySameHpDivergences += 1;
-          } else if (next0 && next1) {
-            const dpNext0 = buildDpStateKey(sim, next0, config);
-            const dpNext1 = buildDpStateKey(sim, next1, config);
-            const dHp0 = next0.hero.hp - s1.hero.hp;
-            const dHp1 = next1.hero.hp - s2.hero.hp;
-
-            if (dpNext0 !== dpNext1 || dHp0 !== dHp1) {
-              sameProductionDpKeySuccessorDivergences += 1;
-              if (isSameHp) sameProductionDpKeySameHpDivergences += 1;
+        if (s1.hero.hp === s2.hero.hp) {
+          sameHpEquivalencePairs += 1;
+          const sigs1 = new Set(outcomes1.map((o) => `${o.actionFingerprint}|${o.nextDpKey}|${o.dHp}`));
+          const sigs2 = new Set(outcomes2.map((o) => `${o.actionFingerprint}|${o.nextDpKey}|${o.dHp}`));
+          let match = (sigs1.size === sigs2.size);
+          if (match) {
+            for (const s of sigs1) {
+              if (!sigs2.has(s)) { match = false; break; }
             }
           }
+          if (!match) sameHpEquivalenceViolations += 1;
+        } else {
+          hpDominancePairs += 1;
+          const outcomesH = s1.hero.hp > s2.hero.hp ? outcomes1 : outcomes2;
+          const outcomesL = s1.hero.hp > s2.hero.hp ? outcomes2 : outcomes1;
+
+          // Every transition outcome of lower-HP state L must be matched by higher-HP state H
+          // with same action fingerprint, same nextDpKey, and nextHp(H) >= nextHp(L)
+          let dominated = true;
+          for (const oL of outcomesL) {
+            const matchingH = outcomesH.find((oH) =>
+              oH.actionFingerprint === oL.actionFingerprint &&
+              oH.nextDpKey === oL.nextDpKey &&
+              oH.nextHp >= oL.nextHp
+            );
+            if (!matchingH) {
+              dominated = false;
+              break;
+            }
+          }
+          if (!dominated) hpDominanceViolations += 1;
         }
       }
     }
   }
 
-  const productionDpSafetyProbeStatus = sameProductionDpKeyPairsAudited === 0
+  const totalAuditedPairs = sameHpEquivalencePairs + hpDominancePairs;
+  const totalViolations = sameHpEquivalenceViolations + hpDominanceViolations;
+  const productionDpSafetyProbeStatus = totalAuditedPairs === 0
     ? "not-evaluable"
-    : sameProductionDpKeySameHpDivergences === 0
+    : totalViolations === 0
       ? "no-counterexample-observed"
       : "counterexample-observed";
 
   const report = {
-    schema: "motapathfinder.shadow-audit.v4",
-    benchmark: "TS13_STATE_ABSTRACTION_SHADOW_AUDIT_REPAIR1A",
+    schema: "motapathfinder.shadow-audit.v5",
+    benchmark: "TS13_STATE_ABSTRACTION_SHADOW_AUDIT_REPAIR1B",
     auditedAt: new Date().toISOString(),
     provenance: {
       sourceStateFingerprint,
@@ -452,6 +475,7 @@ function runShadowAudit(options = {}) {
       },
     },
     contracts: {
+      partAFrozen: true,
       productionRelativeCorpus: true,
       denominatorIsProductionDpKeys: true,
       inventoryRetained: true,
@@ -462,7 +486,8 @@ function runShadowAudit(options = {}) {
       candidateKeyConstituentParityByConstruction: true,
       independentReachableRegionAudited: true,
       fullShadowSuccessorProjected: true,
-      productionDpSafetyProbeDecoupled: true,
+      partBDecoupledDominanceContract: true,
+      allFloorMutationsAttributed: true,
     },
     partA_shadowAbstraction: {
       productionExpandedStates: capturedStates.length,
@@ -492,11 +517,12 @@ function runShadowAudit(options = {}) {
     partB_productionDpSafetyProbe: {
       candidateRecorderInvocations: candidateRecorderCount,
       uniqueProductionDpKeysRecorded: productionRecordedByDpKey.size,
-      sameProductionDpKeyPairsAudited,
-      sameProductionDpKeySameHpPairs,
-      sameProductionDpKeyActionMismatches,
-      sameProductionDpKeySuccessorDivergences,
-      sameHpSuccessorDivergences: sameProductionDpKeySameHpDivergences,
+      sameHpEquivalencePairs,
+      sameHpEquivalenceViolations,
+      hpDominancePairs,
+      hpDominanceViolations,
+      totalAuditedPairs,
+      totalViolations,
       probeVerdict: productionDpSafetyProbeStatus,
     },
   };
