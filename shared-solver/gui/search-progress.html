@@ -33,6 +33,29 @@ h2 { font-size: 16px; margin: 0 0 14px; font-weight: 650; }
 .stage { padding: 6px 12px; background: #1a273b; border-radius: 6px; color: #9bb0cb; font-size: 13px; cursor: pointer; border: 1px solid transparent; }
 .stage.active { background: #15453b; color: #9df0d8; border-color: #2e8b75; font-weight: 600; }
 
+.btn-tab {
+  background: #162235;
+  border: 1px solid #2a3d56;
+  color: #94a3b8;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+.btn-tab:hover { background: #1f3048; color: #cbd5e1; }
+.btn-tab.active {
+  background: #143831;
+  border-color: #34d399;
+  color: #6ee7b7;
+}
+.btn-tab:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  border-color: #1a2536;
+}
+
 /* Real-Time Magic Tower Game Screen */
 .game-viewport-wrap {
   display: flex;
@@ -248,7 +271,22 @@ footer { margin: 28px 0 12px; color: #72849e; font-size: 12px; line-height: 1.8;
 
 <!-- Real-Time Magic Tower Visual Screen -->
 <section class="panel">
-  <h2>魔塔真实画面 · 局部搜索状态 (Real-Time Game View)</h2>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+    <h2 style="margin:0;">魔塔真实画面 · 局部状态观测 (Real-Time Game View)</h2>
+    <div style="display:flex;gap:6px;">
+      <button class="btn-tab active" id="tab-preview" onclick="selectViewMode('preview')">搜索进度预览</button>
+      <button class="btn-tab" id="tab-entry" onclick="selectViewMode('entry')">任务起点</button>
+    </div>
+  </div>
+
+  <!-- Observability Notices & Warnings -->
+  <div id="box-preview-warning" class="notice" style="display:none;margin:0 0 14px;border-left:3px solid #f59e0b;background:#1a170f;color:#fbbf24;font-size:12px;">
+    <strong>⚠️ 搜索进度预览：</strong>该状态仅用于观察搜索进展；不是已找到路线，不是可恢复 checkpoint，也不代表能够从这里继续到达目标。
+  </div>
+  <div id="box-entry-info" class="notice" style="display:none;margin:0 0 14px;border-left:3px solid #38bdf8;background:#0d1824;color:#7dd3fc;font-size:12px;">
+    <strong>◉ 任务起点：</strong>本视图为任务开始时的权威输入起点（刚进入本层，怪未击杀）。
+  </div>
+
   <div class="game-viewport-wrap">
     <!-- Left Hero Sidebar -->
     <div class="hero-sidebar">
@@ -281,11 +319,10 @@ footer { margin: 28px 0 12px; color: #72849e; font-size: 12px; line-height: 1.8;
   <div class="game-meta-bar">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
       <span id="view-mode-label" class="eyebrow">当前正在攻克的局部状态</span>
-      <span id="state-type-badge" class="badge" style="display:none;font-size:11px;padding:2px 8px;"></span>
+      <span id="view-provenance" class="muted" style="font-size:12px;"></span>
       <span class="muted" id="view-loc-info">主角坐标: (-, -)</span>
     </div>
     <div style="display:flex;gap:8px;">
-      <button class="btn-toggle" id="btn-toggle-progress" style="display:none;" onclick="toggleProgressMode()">查看起点盘面</button>
       <button class="btn-toggle" id="btn-follow-current" onclick="resetViewToCurrent()">恢复跟随当前搜索</button>
     </div>
   </div>
@@ -382,9 +419,7 @@ let lastRenderedStateId = null;
 let isRenderingBoard = false;
 let liveStatus = null;
 let consecutiveErrors = 0;
-let currentStateMode = "auto";
-let hasCurrentProgress = false;
-let isCurrentShowingProgress = false;
+let currentViewMode = "preview"; // "preview" or "entry"
 
 // Direction to hero spritesheet Y offset (128x192, 4 directions x 4 frames)
 // 0: down, 48: left, 96: right, 144: up
@@ -408,30 +443,24 @@ async function loadMapData() {
   return cachedMapData;
 }
 
+function selectViewMode(mode) {
+  currentViewMode = mode;
+  lastRenderedStateId = null;
+  renderGameBoard(currentViewingStateId || liveStatus?.current?.id, currentViewMode);
+}
+
 function resetViewToCurrent() {
   currentViewingStateId = null;
   lastRenderedStateId = null;
-  currentStateMode = "auto";
-  $('view-mode-label').textContent = '当前正在攻克的局部状态';
   $('btn-follow-current').style.display = 'none';
-  renderGameBoard();
-}
-
-function toggleProgressMode() {
-  if (isCurrentShowingProgress) {
-    currentStateMode = "entry";
-  } else {
-    currentStateMode = "progress";
-  }
-  lastRenderedStateId = null;
-  renderGameBoard(currentViewingStateId || liveStatus?.current?.id, currentStateMode);
+  renderGameBoard(null, currentViewMode);
 }
 
 async function renderGameBoard(explicitStateId = null, explicitMode = null) {
   if (isRenderingBoard) return;
   const targetId = explicitStateId || currentViewingStateId || (liveStatus?.current?.id);
   if (!targetId) return;
-  const mode = explicitMode || currentStateMode;
+  const mode = explicitMode || currentViewMode;
   const requestKey = `${targetId}:${mode}`;
   if (!explicitStateId && requestKey === lastRenderedStateId) return;
 
@@ -440,35 +469,38 @@ async function renderGameBoard(explicitStateId = null, explicitMode = null) {
     const mapData = await loadMapData();
     const res = await fetch(`/api/view-state?id=${encodeURIComponent(targetId)}&mode=${encodeURIComponent(mode)}`, { signal: AbortSignal.timeout(12000) });
     if (!res.ok) return;
-    const { state, overlay, isProgress, hasProgress } = await res.json();
+    const { state, preview, overlay, viewType, hasPreview } = await res.json();
     if (!state) return;
 
     lastRenderedStateId = requestKey;
-    hasCurrentProgress = Boolean(hasProgress);
-    isCurrentShowingProgress = Boolean(isProgress);
 
-    // Update Progress / Entry Indicators & Toggle Button
-    const badgeEl = $('state-type-badge');
-    const toggleBtn = $('btn-toggle-progress');
-    if (badgeEl) {
-      badgeEl.style.display = 'inline-block';
-      if (isCurrentShowingProgress) {
-        badgeEl.textContent = '★ 最大推进终态';
-        badgeEl.className = 'badge running';
-        badgeEl.title = '该任务在终止前实际探索到的最深/打掉最多怪的中间状态';
-      } else {
-        badgeEl.textContent = '◉ 阶段入口起点';
-        badgeEl.className = 'badge';
-        badgeEl.title = '该任务开始时的起点基准状态（刚进入本层、怪未击杀）';
-      }
+    // Update Tab States & Warning / Entry Notices
+    const tabPreview = $('tab-preview');
+    const tabEntry = $('tab-entry');
+    const boxWarning = $('box-preview-warning');
+    const boxEntry = $('box-entry-info');
+
+    if (tabPreview) {
+      tabPreview.disabled = !hasPreview;
+      tabPreview.classList.toggle('active', viewType === 'preview');
+      tabPreview.title = hasPreview ? '查看相对当前阶段目标最优的观察状态' : '本任务无进度快照';
     }
-    if (toggleBtn) {
-      if (hasCurrentProgress) {
-        toggleBtn.style.display = 'inline-block';
-        toggleBtn.textContent = isCurrentShowingProgress ? '查看起点盘面' : '查看最大推进终态';
-      } else {
-        toggleBtn.style.display = 'none';
-      }
+    if (tabEntry) {
+      tabEntry.classList.toggle('active', viewType === 'entry');
+    }
+
+    if (viewType === 'preview') {
+      if (boxWarning) boxWarning.style.display = 'block';
+      if (boxEntry) boxEntry.style.display = 'none';
+      const reason = preview?.stoppedReason || '未达目标';
+      $('view-mode-label').textContent = `搜索进度预览 · ${reason} 前最佳观察状态`;
+      const prov = preview ? `阶段: ${Number(preview.stage || 0) + 1} · 捕获时间: ${preview.capturedAt ? new Date(preview.capturedAt).toLocaleTimeString() : '—'}` : '';
+      $('view-provenance').textContent = prov;
+    } else {
+      if (boxWarning) boxWarning.style.display = 'none';
+      if (boxEntry) boxEntry.style.display = 'block';
+      $('view-mode-label').textContent = '任务起点 · 阶段输入基准状态';
+      $('view-provenance').textContent = '权威输入入口状态';
     }
 
     // Update Sidebar

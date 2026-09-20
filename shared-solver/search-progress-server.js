@@ -76,9 +76,34 @@ function createProgressServer(runDir, options = {}) {
       return;
     }
 
+    if (urlPath === "/api/preview") {
+      try {
+        const taskId = params.get("taskId");
+        const previewFile = taskId && /^[a-zA-Z0-9_-]+$/.test(taskId)
+          ? path.join(runDir, "previews", `${taskId}.preview.json`)
+          : path.join(runDir, "preview.json");
+        if (!fs.existsSync(previewFile)) {
+          response.writeHead(404, { "Content-Type": "application/json" });
+          response.end(JSON.stringify({ error: "Preview snapshot not found" }));
+          return;
+        }
+        const preview = JSON.parse(fs.readFileSync(previewFile, "utf8"));
+        let overlay = null;
+        if (project && sim && preview.renderState) {
+          try { overlay = buildBattleOverlay(project, sim, preview.renderState); } catch (e) {}
+        }
+        response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ preview, overlay }));
+      } catch (error) {
+        response.writeHead(500, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+
     if (urlPath === "/api/view-state") {
       let stateId = params.get("id");
-      const mode = params.get("mode") || "auto"; // "auto", "progress", "entry"
+      const mode = params.get("mode") || "auto"; // "entry", "preview", "auto"
       try {
         if (!stateId) {
           try {
@@ -102,34 +127,48 @@ function createProgressServer(runDir, options = {}) {
         const baseFile = stateId === "initial"
           ? path.join(runDir, "initial.json")
           : path.join(runDir, "states", `${stateId}.json`);
-        const progressFile = path.join(runDir, "states", `${stateId}-progress.json`);
-        const hasProgress = fs.existsSync(progressFile);
+        const previewFile = path.join(runDir, "previews", `${stateId}.preview.json`);
+        const legacyProgressFile = path.join(runDir, "states", `${stateId}-progress.json`);
+        const hasTaskPreview = fs.existsSync(previewFile) || fs.existsSync(legacyProgressFile);
 
-        let targetFile = baseFile;
-        let isProgress = false;
-        if (mode === "progress" && hasProgress) {
-          targetFile = progressFile;
-          isProgress = true;
-        } else if (mode === "auto" && hasProgress) {
-          targetFile = progressFile;
-          isProgress = true;
-        }
+        let preview = null;
+        let state = null;
+        let viewType = "entry"; // "entry" or "preview"
 
-        if (!fs.existsSync(targetFile)) {
-          if (fs.existsSync(baseFile)) {
-            targetFile = baseFile;
-            isProgress = false;
-          } else {
+        if ((mode === "preview" || mode === "auto") && hasTaskPreview) {
+          if (fs.existsSync(previewFile)) {
+            preview = JSON.parse(fs.readFileSync(previewFile, "utf8"));
+            state = preview.renderState;
+          } else if (fs.existsSync(legacyProgressFile)) {
+            const raw = JSON.parse(fs.readFileSync(legacyProgressFile, "utf8"));
+            state = {
+              floorId: raw.floorId,
+              hero: raw.hero,
+              inventory: raw.inventory,
+              floorStates: raw.floorStates,
+            };
+            preview = {
+              schema: "motapathfinder.search-preview.v1",
+              kind: "progress-preview",
+              taskId: stateId,
+              stoppedReason: "heap-limit",
+              renderState: state,
+            };
+          }
+          viewType = "preview";
+        } else {
+          if (!fs.existsSync(baseFile)) {
             response.writeHead(404, { "Content-Type": "application/json" });
             response.end(JSON.stringify({ error: "State file not found" }));
             return;
           }
+          state = JSON.parse(fs.readFileSync(baseFile, "utf8"));
+          viewType = "entry";
         }
 
-        const cacheKey = `${stateId}:${isProgress ? "prog" : "entry"}`;
+        const cacheKey = `${stateId}:${viewType}`;
         let overlay = overlayCache.get(cacheKey);
-        const state = JSON.parse(fs.readFileSync(targetFile, "utf8"));
-        if (!overlay && project && sim) {
+        if (!overlay && project && sim && state) {
           try {
             overlay = buildBattleOverlay(project, sim, state);
             if (overlayCache.size > 200) {
@@ -140,7 +179,7 @@ function createProgressServer(runDir, options = {}) {
           } catch (e) {}
         }
         response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-        response.end(JSON.stringify({ state, overlay, isProgress, hasProgress }));
+        response.end(JSON.stringify({ state, preview, overlay, viewType, hasPreview: hasTaskPreview }));
       } catch (error) {
         response.writeHead(500, { "Content-Type": "application/json" });
         response.end(JSON.stringify({ error: error.message }));

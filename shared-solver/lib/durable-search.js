@@ -121,6 +121,48 @@ function pickTask(journal) {
   return journal.nodes.filter((node) => node.status === "pending").sort((a, b) =>
     a.tier - b.tier || b.stage - a.stage || b.summary.hp - a.summary.hp || a.id.localeCompare(b.id))[0];
 }
+const SEARCH_PREVIEW_SCHEMA = "motapathfinder.search-preview.v1";
+
+function buildSearchPreview({ task, stageGoal, state, stoppedReason, progressProjection = null }) {
+  if (!state) return null;
+  const loc = state.hero && state.hero.loc ? { ...state.hero.loc } : { x: 0, y: 0, direction: "down" };
+  const currentFloorId = state.floorId;
+  const floorState = (state.floorStates && state.floorStates[currentFloorId]) || {};
+  return {
+    schema: SEARCH_PREVIEW_SCHEMA,
+    kind: "progress-preview",
+    taskId: task.id,
+    stage: task.stage,
+    tier: task.tier,
+    capturedAt: new Date().toISOString(),
+    stoppedReason: stoppedReason || null,
+    entryStateKey: task.id,
+    previewStateKey: typeof sha === "function" ? sha(buildStateKey(state)).slice(0, 24) : null,
+    progressProjection: progressProjection || null,
+    renderState: {
+      floorId: currentFloorId,
+      hero: {
+        name: (state.hero && state.hero.name) || "纳可",
+        image: (state.hero && state.hero.image) || "hero.png",
+        lv: Number((state.hero && state.hero.lv) || 1),
+        hp: Number((state.hero && state.hero.hp) || 0),
+        atk: Number((state.hero && state.hero.atk) || 0),
+        def: Number((state.hero && state.hero.def) || 0),
+        mdef: Number((state.hero && state.hero.mdef) || 0),
+        exp: Number((state.hero && state.hero.exp) || 0),
+        loc,
+      },
+      inventory: { ...(state.inventory || {}) },
+      floorStates: {
+        [currentFloorId]: {
+          removed: { ...(floorState.removed || {}) },
+          replaced: { ...(floorState.replaced || {}) },
+        },
+      },
+    },
+  };
+}
+
 function integrate(journal, task, result, config, dir) {
   const existing = new Set(journal.nodes.map((node) => node.id));
   for (const candidate of result.candidates) {
@@ -135,6 +177,22 @@ function integrate(journal, task, result, config, dir) {
   journal.completedAttempts += 1;
   journal.totalExpansions += result.stats.expansions;
   journal.history.push({ id: task.id, stage: task.stage, tier: task.tier, ...result.stats, time: new Date().toISOString() });
+
+  // Persist render-only progress preview (Contract: dedicated snapshot, not a resume checkpoint)
+  if (result.bestProgressPreview) {
+    const previewsDir = path.join(dir, "previews");
+    fs.mkdirSync(previewsDir, { recursive: true });
+    atomicJson(path.join(previewsDir, `${task.id}.preview.json`), result.bestProgressPreview);
+    atomicJson(path.join(dir, "preview.json"), result.bestProgressPreview);
+    journal.latestPreview = {
+      taskId: task.id,
+      stage: task.stage,
+      stoppedReason: result.stats.stoppedReason,
+      capturedAt: result.bestProgressPreview.capturedAt,
+      previewStateKey: result.bestProgressPreview.previewStateKey,
+    };
+  }
+
   // A capped archive or skyline is not an exhaustive proof even when the
   // agenda drained. Retry at the next predeclared budget, never delete parents.
   const incomplete = !result.stats.searchComplete || result.stats.archiveTrimmed;
@@ -189,10 +247,27 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
     searchComplete: outcome.searchComplete === true, foundGoal: result.foundGoal,
     candidateCount: candidates.length, actionTrimmed: result.diagnostics.trimmed,
     archiveTrimmed: Boolean(result.diagnostics.dp.goalArchiveTrimmed), diagnostics: result.diagnostics };
-  const progressState = (!candidates.length && (result.bestProgressState || result.deepestExpandedState)) || null;
-  if (progressState) {
-    atomicJson(path.join(dir, "states", `${task.id}-progress.json`), progressState);
-    stats.hasProgress = true;
+
+  // Render-only search preview: capture at most one preview in child before raw state release
+  let bestProgressPreview = null;
+  const rawProgressState = (!candidates.length && (result.bestProgressState || result.bestSeenState)) || null;
+  if (rawProgressState) {
+    let progressProjection = null;
+    try {
+      const { compactProgressProjection } = require("./segment-progress");
+      const { projectSegmentGoalProgress } = require("./segment-dp");
+      progressProjection = compactProgressProjection(
+        projectSegmentGoalProgress(project, rawProgressState, config.stages[task.stage])
+      );
+    } catch (e) {}
+    bestProgressPreview = buildSearchPreview({
+      task,
+      stageGoal: config.stages[task.stage],
+      state: rawProgressState,
+      stoppedReason: stats.stoppedReason,
+      progressProjection,
+    });
+    stats.hasPreview = true;
   }
   let verified = null;
   if (task.stage === config.stages.length - 1 && candidates.length) {
@@ -215,8 +290,8 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
       valueLabel: config.scoreLabel || "终点生命", decisions: best.record.decisions.length,
       final: summary(best.candidate), optimalityProven: false, time: new Date().toISOString() };
   }
-  return { candidates, stats, verified };
+  return { candidates, stats, verified, bestProgressPreview };
 }
-module.exports = { SCHEMA, sha, readJson, atomicJson, identityOf, validateConfig, protectedCost,
+module.exports = { SCHEMA, SEARCH_PREVIEW_SCHEMA, sha, readJson, atomicJson, identityOf, validateConfig, protectedCost,
   assertProtected, makeSimulator, initialState, matchesGoal, summary, checkpointId,
-  newJournal, recoverJournal, pickTask, integrate, runAttempt };
+  newJournal, recoverJournal, pickTask, integrate, runAttempt, buildSearchPreview };

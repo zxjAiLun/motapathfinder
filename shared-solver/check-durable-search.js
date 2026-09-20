@@ -96,7 +96,62 @@ async function main() {
     });
     assert.equal(foreignHost, 403);
     assert((await (await fetch(url)).text()).includes("textContent"));
-    console.log("PASS durable-search: real DP + strict replay; input isolation; zero-spend guards; journal resume/identity; single writer; bounded MISS; read-only HTTP/security");
+    // Verify render-only search preview projection & persistence contract
+    // 1. Projection stripping: must contain render fields, must NOT contain route/trace/nodes/caches
+    const mockState = {
+      floorId: "A",
+      hero: { hp: 100, atk: 1, def: 0, lv: 1, exp: 0, loc: { x: 1, y: 0, direction: "right" } },
+      inventory: { greenKey: 30 },
+      flags: { testFlag: 1 },
+      route: ["step1", "step2"],
+      trace: ["trace1"],
+      nodes: new Map(),
+      floorStates: { A: { removed: { "1,0": true }, replaced: {} } },
+    };
+    const preview = d.buildSearchPreview({
+      task: { id: "0-task-preview", stage: 0, tier: 0 },
+      stageGoal: { floorId: "B" },
+      state: mockState,
+      stoppedReason: "heap-limit",
+      progressProjection: { feasible: true, floorMatch: false, completion: 0.5 },
+    });
+    assert.equal(preview.schema, d.SEARCH_PREVIEW_SCHEMA);
+    assert.equal(preview.kind, "progress-preview");
+    assert.equal(preview.stoppedReason, "heap-limit");
+    assert.equal(preview.renderState.floorId, "A");
+    assert.equal(preview.renderState.hero.hp, 100);
+    assert.equal(preview.renderState.floorStates.A.removed["1,0"], true);
+    assert.equal(preview.renderState.route, undefined, "route must NOT be leaked into render preview");
+    assert.equal(preview.renderState.trace, undefined, "trace must NOT be leaked into render preview");
+    assert.equal(preview.renderState.nodes, undefined, "search nodes must NOT be leaked into render preview");
+
+    // 2. Integration and persistence: preview.json and previews/<id>.preview.json are written
+    const mockJournal = d.newJournal("ident", config, mockState);
+    const mockTask = d.pickTask(mockJournal);
+    d.integrate(mockJournal, mockTask, {
+      candidates: [],
+      stats: { expansions: 50, frontierSize: 10, stoppedReason: "heap-limit", searchComplete: false, foundGoal: false },
+      verified: null,
+      bestProgressPreview: preview,
+    }, config, runDir);
+
+    assert.equal(mockJournal.state, "ready", "heap-limited attempt must NOT declare verified route");
+    assert.ok(fs.existsSync(path.join(runDir, "preview.json")), "preview.json must exist");
+    assert.ok(fs.existsSync(path.join(runDir, "previews", `${mockTask.id}.preview.json`)), "task preview must exist");
+    const savedPreview = d.readJson(path.join(runDir, "preview.json"));
+    assert.equal(savedPreview.stoppedReason, "heap-limit");
+    assert.equal(savedPreview.renderState.hero.hp, 100);
+
+    // 3. Progress server API delivers preview and falls back cleanly for old tasks
+    const rPrev = await fetch(`${url}/api/preview`);
+    assert.equal(rPrev.status, 200);
+    const prevJson = await rPrev.json();
+    assert.equal(prevJson.preview.stoppedReason, "heap-limit");
+
+    const rOldTask = await fetch(`${url}/api/view-state?id=non-existent-task`);
+    assert.equal(rOldTask.status, 404, "non-existent task must return 404");
+
+    console.log("PASS durable-search: real DP + strict replay; input isolation; zero-spend guards; journal resume/identity; single writer; bounded MISS; render-only progress-preview; read-only HTTP/security");
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     fs.rmSync(temp, { recursive: true, force: true });
