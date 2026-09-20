@@ -36,10 +36,26 @@ function treeDigest(root) {
   visit(root);
   return hash.digest("hex");
 }
+function problemFingerprint(config, towerRoot) {
+  return sha(JSON.stringify({
+    schema: SCHEMA,
+    initial: config.initial,
+    stages: config.stages,
+    protectedItems: config.protectedItems,
+    allowedFloors: config.allowedFloors,
+    candidateLimit: config.candidateLimit,
+    tower: treeDigest(path.join(towerRoot, "project")),
+  }));
+}
 function identityOf(config, towerRoot) {
-  return sha(JSON.stringify({ schema: SCHEMA, config, solver: treeDigest(__dirname),
+  return sha(JSON.stringify({
+    schema: SCHEMA,
+    problem: problemFingerprint(config, towerRoot),
+    solver: treeDigest(__dirname),
     runner: fs.readFileSync(path.join(__dirname, "../run-durable-search.js"), "utf8"),
-    tower: treeDigest(path.join(towerRoot, "project")) }));
+    budgets: config.budgets,
+    limits: { heapMb: config.heapMb, maxRssMb: config.maxRssMb },
+  }));
 }
 function validateConfig(config) {
   if (!config.initial || !config.initial.floorId || !Array.isArray(config.stages) || !config.stages.length) throw new Error("initial and stages required");
@@ -106,18 +122,29 @@ function summary(state) {
 function checkpointId(stage, state) {
   return `${stage}-${sha(buildStateKey(state)).slice(0, 24)}`;
 }
-function newJournal(identity, config, state) {
+function newJournal(identity, config, state, towerRoot = null) {
   const id = checkpointId(0, state);
-  return { schema: SCHEMA, identity, createdAt: new Date().toISOString(), state: "ready", elapsedMs: 0,
+  const problem = towerRoot ? problemFingerprint(config, towerRoot) : null;
+  return { schema: SCHEMA, identity, problemFingerprint: problem, createdAt: new Date().toISOString(), state: "ready", elapsedMs: 0,
     totalExpansions: 0, completedAttempts: 0, initial: summary(state), initialFlags: state.flags,
     nodes: [{ id, stage: 0, tier: 0, status: "pending", summary: summary(state) }], history: [], best: null };
 }
 function recoverJournal(journal, identity, options = {}) {
   if (journal.schema !== SCHEMA) throw new Error("journal schema mismatch");
-  if (journal.identity !== identity) {
-    if (!options.allowResume) {
-      throw new Error("journal identity mismatch; use a new run directory or enable allowResume");
+  const { config, towerRoot } = options;
+  if (config && towerRoot) {
+    const currentProblem = problemFingerprint(config, towerRoot);
+    if (journal.problemFingerprint && journal.problemFingerprint !== currentProblem) {
+      throw new Error("problem contract mismatch: tower, initial state, stages, or protected items changed; cannot resume in existing run directory");
     }
+    if (journal.initial && config.initial && journal.initial.floorId !== config.initial.floorId) {
+      throw new Error(`initial floor mismatch: journal=${journal.initial.floorId} config=${config.initial.floorId}`);
+    }
+    if (!journal.problemFingerprint) journal.problemFingerprint = currentProblem;
+  } else if (journal.identity !== identity && !options.allowResume) {
+    throw new Error("journal identity mismatch; use a new run directory or supply problem contract");
+  }
+  if (journal.identity !== identity) {
     journal.identity = identity;
   }
   for (const node of journal.nodes) if (node.status === "running") node.status = "pending";
@@ -302,6 +329,6 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
   }
   return { candidates, stats, verified, bestProgressPreview };
 }
-module.exports = { SCHEMA, SEARCH_PREVIEW_SCHEMA, sha, readJson, atomicJson, identityOf, validateConfig, protectedCost,
+module.exports = { SCHEMA, SEARCH_PREVIEW_SCHEMA, sha, readJson, atomicJson, problemFingerprint, identityOf, validateConfig, protectedCost,
   assertProtected, makeSimulator, initialState, matchesGoal, summary, checkpointId,
   newJournal, recoverJournal, pickTask, integrate, runAttempt, buildSearchPreview };

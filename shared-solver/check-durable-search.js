@@ -164,7 +164,29 @@ async function main() {
     const rOldTask = await fetch(`${url}/api/view-state?id=non-existent-task`);
     assert.equal(rOldTask.status, 404, "non-existent task must return 404");
 
-    console.log("PASS durable-search: real DP + strict replay; input isolation; zero-spend guards; journal resume/identity; single writer; bounded MISS; render-only progress-preview; read-only HTTP/security");
+    // 4. Problem contract hardening: altering stages/initial/protected items in config throws on recovery
+    const savedJournal = d.readJson(path.join(runDir, "journal.json"));
+    const corruptedConfig = { ...config, stages: [{ floorId: "CorruptedStage" }] };
+    assert.throws(
+      () => d.recoverJournal(savedJournal, d.identityOf(corruptedConfig, path.dirname(project)), { config: corruptedConfig, towerRoot: path.dirname(project) }),
+      /problem contract mismatch/
+    );
+
+    // 5. Worker identity drift guard: child worker rejects mismatched expectedExecutionIdentity
+    const driftSpecPath = path.join(temp, "drift-task.json");
+    d.atomicJson(driftSpecPath, {
+      config,
+      towerRoot: path.dirname(project),
+      dir: runDir,
+      task: mockTask,
+      output: path.join(temp, "drift-out.json"),
+      expectedExecutionIdentity: "fake-unmatched-parent-identity",
+    });
+    const workerDriftRun = spawnSync(process.execPath, [path.join(__dirname, "run-durable-search.js"), `--worker=${driftSpecPath}`], { encoding: "utf8" });
+    assert.notEqual(workerDriftRun.status, 0, "worker must fail-closed on identity drift");
+    assert(workerDriftRun.stderr.includes("WORKER_IDENTITY_DRIFT"), "error must mention WORKER_IDENTITY_DRIFT");
+
+    console.log("PASS durable-search: real DP + strict replay; input isolation; zero-spend guards; journal resume/identity; single writer; bounded MISS; render-only progress-preview; worker-drift-guard; read-only HTTP/security");
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     fs.rmSync(temp, { recursive: true, force: true });

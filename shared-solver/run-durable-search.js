@@ -37,6 +37,12 @@ async function main(argv = process.argv.slice(2)) {
     const spec = d.readJson(args.worker);
     const releaseWorker = acquireLock(spec.dir, "worker.lock");
     try {
+      if (spec.expectedExecutionIdentity) {
+        const actualIdentity = d.identityOf(spec.config, spec.towerRoot);
+        if (actualIdentity !== spec.expectedExecutionIdentity) {
+          throw new Error(`WORKER_IDENTITY_DRIFT: actual worker code identity ${actualIdentity} does not match parent coordinator expected ${spec.expectedExecutionIdentity}; fail-closed`);
+        }
+      }
       const result = d.runAttempt(spec.config, spec.towerRoot, spec.dir, spec.task, (value) => {
         if (process.connected) process.send(value);
       });
@@ -59,11 +65,12 @@ async function main(argv = process.argv.slice(2)) {
     const identity = d.identityOf(config, towerRoot);
     const journalPath = path.join(dir, "journal.json");
     let journal;
-    if (fs.existsSync(journalPath)) journal = d.recoverJournal(d.readJson(journalPath), identity, { allowResume: true });
-    else {
+    if (fs.existsSync(journalPath)) {
+      journal = d.recoverJournal(d.readJson(journalPath), identity, { config, towerRoot });
+    } else {
       const project = loadProject(towerRoot);
       const state = d.initialState(project, d.makeSimulator(project, config), config);
-      journal = d.newJournal(identity, config, state);
+      journal = d.newJournal(identity, config, state, towerRoot);
       d.atomicJson(path.join(dir, "initial.json"), state);
       d.atomicJson(path.join(dir, "states", `${journal.nodes[0].id}.json`), state);
     }
@@ -115,7 +122,7 @@ async function main(argv = process.argv.slice(2)) {
       if (maxRuntime !== Infinity) {
         workerConfig.budgets[task.tier].runtimeMs = Math.min(workerConfig.budgets[task.tier].runtimeMs, remainingMs);
       }
-      d.atomicJson(specPath, { config: workerConfig, towerRoot, dir, task, output });
+      d.atomicJson(specPath, { config: workerConfig, towerRoot, dir, task, output, expectedExecutionIdentity: identity });
       try {
         if (!fs.existsSync(output)) await new Promise((resolve, reject) => {
           const log = fs.openSync(path.join(dir, "worker.log"), "a");
