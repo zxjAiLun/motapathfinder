@@ -34,24 +34,44 @@ function addDamage(damage, type, loc, value, label) {
   type[loc][label] = true;
 }
 
-const BLOCK_INDEX_CACHE_KEY = "__blockIndexCache";
+// A derived index must not live as long as every archived search state. Keep a
+// bounded working set outside state; WeakMap scopes ownership to the project.
+const BLOCK_INDEX_CACHE_LIMIT = 256;
+const blockIndexCaches = new WeakMap();
+
+function getBlockIndexCache(project) {
+  let cache = blockIndexCaches.get(project);
+  if (!cache) {
+    cache = new Map();
+    blockIndexCaches.set(project, cache);
+  }
+  return cache;
+}
+
+function getHazardBlockIndexCacheStats(project) {
+  const cache = blockIndexCaches.get(project);
+  return { entries: cache ? cache.size : 0, maxEntries: BLOCK_INDEX_CACHE_LIMIT };
+}
 
 function buildBlockIndex(project, state, floorId, perfTracker, options = {}) {
   const blocks = {};
   const useFastPath = options.enableFastHazardBlockIndex !== false;
   const memoizationEnabled = options.enableHazardBlockIndexMemoization !== false;
 
-  // PR-5.24g Iteration 1 Repair 1: mutation-safe memoization per (floorState, epoch).
-  // The block index depends strictly on (project, floorId, floorState.removed, floorState.replaced).
-  // Cache record binds both the floorState object reference AND the floor's tileMutationEpoch.
-  // Any in-place mutation (removeTileAt/replaceTileAt) advances the epoch, automatically
-  // invalidating stale cache records.
+  // The derived index depends on the project, floorId and floor mutations.
+  // Cloned floor states have distinct identities; in-place remove/replace
+  // operations advance the epoch. Cache eviction only causes recomputation.
   const floorState = state.floorStates && state.floorStates[floorId];
   const currentEpoch = floorState ? getFloorMutationEpoch(floorState) : 0;
+  const cache = floorState && useFastPath && memoizationEnabled
+    ? getBlockIndexCache(project)
+    : null;
 
-  if (floorState && useFastPath && memoizationEnabled) {
-    const cached = floorState[BLOCK_INDEX_CACHE_KEY];
-    if (cached && cached.epoch === currentEpoch && cached.blocks) {
+  if (cache) {
+    const cached = cache.get(floorState);
+    if (cached && cached.floorId === floorId && cached.epoch === currentEpoch) {
+      cache.delete(floorState);
+      cache.set(floorState, cached);
       if (perfTracker && typeof perfTracker.increment === "function") {
         perfTracker.increment("hazardBlockIndexCacheHits", 1);
       }
@@ -80,19 +100,12 @@ function buildBlockIndex(project, state, floorId, perfTracker, options = {}) {
       };
     });
 
-    // Cache the result bound to the authoritative mutation epoch
-    if (floorState && useFastPath && memoizationEnabled) {
-      try {
-        Object.defineProperty(floorState, BLOCK_INDEX_CACHE_KEY, {
-          value: {
-            epoch: currentEpoch,
-            blocks,
-          },
-          enumerable: false,
-          writable: true,
-          configurable: true,
-        });
-      } catch (_) {}
+    if (cache) {
+      cache.delete(floorState);
+      cache.set(floorState, { floorId, epoch: currentEpoch, blocks });
+      if (cache.size > BLOCK_INDEX_CACHE_LIMIT) {
+        cache.delete(cache.keys().next().value);
+      }
     }
 
     return blocks;
@@ -385,4 +398,5 @@ function buildMovementHazards(project, state, options) {
 
 module.exports = {
   buildMovementHazards,
+  getHazardBlockIndexCacheStats,
 };

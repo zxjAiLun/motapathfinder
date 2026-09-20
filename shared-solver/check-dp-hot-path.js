@@ -11,6 +11,7 @@
  *   G26-C1: State-Key Mutation Sensitivity (8 dimensions)
  *   G26-C2: Cached Block Index Mutation Invalidation (removeTileAt / replaceTileAt)
  *   G26-C3: Real Stabilization Mutation Path
+ *   G26-C4: Bounded external block-index residency (PR-5.28b)
  *   G26-D: Performance A/B (Block Index Memoization)
  *
  * Iteration 2 (G27 Suite):
@@ -38,7 +39,7 @@ const {
 const { getMilestoneSpec } = require("./lib/milestone-spec");
 const { searchSegmentDP } = require("./lib/segment-dp");
 const { buildStateKey } = require("./lib/state-key");
-const { buildMovementHazards } = require("./lib/movement-hazards");
+const { buildMovementHazards, getHazardBlockIndexCacheStats } = require("./lib/movement-hazards");
 const {
   getFloorMutationEpoch,
   getTileDefinitionAt,
@@ -289,80 +290,123 @@ function gateG26C2_CachedBlockIndexMutationInvalidation() {
   const { project, simulator } = createSimulator({ memoizationEnabled: true });
   const s0 = simulator.createInitialState();
   const floorId = "MT1";
-
   const tracker = createPerfTracker({ enabled: true });
-  setActivePerfTracker(tracker);
-
-  buildMovementHazards(project, s0, {
+  const build = (memoizationEnabled = true) => buildMovementHazards(project, s0, {
     floorId,
     perfTracker: tracker,
     enableFastHazardBlockIndex: true,
-    enableHazardBlockIndexMemoization: true,
+    enableHazardBlockIndexMemoization: memoizationEnabled,
   });
-
-  const floorState = s0.floorStates && s0.floorStates[floorId];
-  assert.ok(floorState, "G26-C2: floorState must exist for MT1");
+  const hits = () => Number((tracker.snapshot().semanticCounters || {}).hazardBlockIndexCacheHits || 0);
+  const initialHazards = build();
+  const floorState = s0.floorStates[floorId];
   const initialEpoch = getFloorMutationEpoch(floorState);
-
-  const cachedRecord = floorState.__blockIndexCache;
-  assert.ok(cachedRecord && cachedRecord.blocks, "G26-C2: cache record must be populated");
-  assert.strictEqual(cachedRecord.epoch, initialEpoch, `G26-C2: cache record must be bound to initial epoch (${initialEpoch})`);
+  assert.strictEqual(floorState.__blockIndexCache, undefined, "G26-C2: no derived index retained by state");
+  const initialHits = hits();
+  assert.deepStrictEqual(build(), initialHazards, "G26-C2: unchanged state cache hit is exact");
+  assert.strictEqual(hits(), initialHits + 1, "G26-C2: same identity and epoch must hit");
 
   const targetX = 8;
   const targetY = 7;
-  const tileBefore = getTileDefinitionAt(project, s0, floorId, targetX, targetY);
-  assert.ok(tileBefore != null, `G26-C2: tile at (${targetX},${targetY}) must exist initially`);
   const locKey = `${targetX},${targetY}`;
-  assert.ok(cachedRecord.blocks[locKey] != null, `G26-C2: cached blocks must contain (${targetX},${targetY})`);
-
+  assert.ok(getTileDefinitionAt(project, s0, floorId, targetX, targetY), "G26-C2: removal target exists");
+  assert.ok(initialHazards.type[locKey], "G26-C2: initial index visits removal target");
   removeTileAt(s0, floorId, targetX, targetY);
-
   const mutatedEpoch = getFloorMutationEpoch(floorState);
-  assert.strictEqual(mutatedEpoch, initialEpoch + 1, "G26-C2: epoch must increment by 1 after removeTileAt");
-  assert.strictEqual(floorState.__blockIndexCache, undefined, "G26-C2: defensive cleanup deletes stale cache property");
+  assert.strictEqual(mutatedEpoch, initialEpoch + 1, "G26-C2: remove increments epoch");
+  const hitsBeforeRemove = hits();
+  const removedHazards = build();
+  assert.strictEqual(hits(), hitsBeforeRemove, "G26-C2: stale epoch must miss");
+  assert.strictEqual(removedHazards.type[locKey], undefined, "G26-C2: removed tile is absent from rebuilt index");
+  assert.deepStrictEqual(removedHazards, build(false), "G26-C2: removal matches uncached hazards");
 
-  const hitsBefore = (tracker.snapshot().semanticCounters && tracker.snapshot().semanticCounters.hazardBlockIndexCacheHits) || 0;
-  buildMovementHazards(project, s0, {
-    floorId,
-    perfTracker: tracker,
-    enableFastHazardBlockIndex: true,
-    enableHazardBlockIndexMemoization: true,
-  });
-  const hitsAfter = (tracker.snapshot().semanticCounters && tracker.snapshot().semanticCounters.hazardBlockIndexCacheHits) || 0;
-  assert.strictEqual(hitsAfter, hitsBefore, "G26-C2: cache hit must NOT occur at stale epoch");
-
-  const newCachedRecord = floorState.__blockIndexCache;
-  assert.ok(newCachedRecord && newCachedRecord.blocks, "G26-C2: new cache record must be populated");
-  assert.strictEqual(newCachedRecord.epoch, initialEpoch + 1, `G26-C2: new cache record must be bound to epoch ${initialEpoch + 1}`);
-  assert.strictEqual(newCachedRecord.blocks[locKey], undefined, `G26-C2: removed tile (${targetX},${targetY}) must NOT be in rebuilt blocks`);
-
-  const replaceX = 5;
-  const replaceY = 5;
-  const newNumber = 1;
-  replaceTileAt(s0, floorId, replaceX, replaceY, newNumber);
-  assert.strictEqual(getFloorMutationEpoch(floorState), initialEpoch + 2, "G26-C2: epoch must increment after replaceTileAt");
-
-  buildMovementHazards(project, s0, {
-    floorId,
-    perfTracker: tracker,
-    enableFastHazardBlockIndex: true,
-    enableHazardBlockIndexMemoization: true,
-  });
-  const replaceCached = floorState.__blockIndexCache;
-  assert.ok(replaceCached && replaceCached.blocks, "G26-C2: cache after replace must exist");
-  assert.strictEqual(replaceCached.epoch, initialEpoch + 2, `G26-C2: cache after replace must be bound to epoch ${initialEpoch + 2}`);
-  assert.strictEqual(replaceCached.blocks[`${replaceX},${replaceY}`].id, "yellowWall", "G26-C2: replaced tile definition must be active");
-
-  setActivePerfTracker(null);
+  replaceTileAt(s0, floorId, 5, 5, 1);
+  assert.strictEqual(getFloorMutationEpoch(floorState), initialEpoch + 2, "G26-C2: replace increments epoch");
+  const hitsBeforeReplace = hits();
+  const replacedHazards = build();
+  assert.strictEqual(hits(), hitsBeforeReplace, "G26-C2: replacement invalidates cached index");
+  assert.strictEqual(getTileDefinitionAt(project, s0, floorId, 5, 5).id, "yellowWall");
+  assert.deepStrictEqual(replacedHazards, build(false), "G26-C2: replacement matches uncached hazards");
+  assert.strictEqual(floorState.__blockIndexCache, undefined, "G26-C2: rebuilt index remains outside state");
   return {
     cachedBlockIndexMutationInvalidationVerified: true,
-    initialEpoch,
-    mutatedEpoch,
-    replaceEpoch: initialEpoch + 2,
+    initialEpoch, mutatedEpoch, replaceEpoch: initialEpoch + 2,
     staleCacheHitPrevented: true,
     tileRemovedFromRebuiltBlocks: true,
     tileReplacedInRebuiltBlocks: true,
   };
+}
+
+function gateG26C4_BoundedBlockIndexResidence() {
+  const project = {
+    floorsById: {
+      A: { width: 1, height: 1, map: [[1]] },
+      B: { width: 1, height: 1, map: [[2]] },
+    },
+    mapTilesByNumber: {
+      1: { id: "lavaNet", cls: "terrains", canPass: true },
+      2: { id: "yellowWall", cls: "terrains", canPass: false },
+    },
+    enemysById: {}, values: { lavaDamage: 7 }, defaultFlags: {},
+  };
+  const makeState = () => ({ floorId: "A", hero: { hp: 100 }, flags: {}, inventory: {},
+    floorStates: { A: { removed: {}, replaced: {} } } });
+  const counts = {};
+  const perfTracker = { increment(name, value = 1) { counts[name] = (counts[name] || 0) + value; } };
+  const build = (state, owner = project, floorId = "A", memo = true) => buildMovementHazards(owner, state, {
+    floorId, perfTracker, enableHazardBlockIndexMemoization: memo,
+  });
+  const hits = () => counts.hazardBlockIndexCacheHits || 0;
+  const first = makeState();
+  const before = JSON.stringify(first);
+  const expected = build(first);
+  assert.strictEqual(expected.damage["0,0"], 7, "G26-C4: synthetic lava is observed");
+  assert.strictEqual(JSON.stringify(first), before, "G26-C4: cache never changes serialized state");
+  assert.ok(!Object.hasOwn(first.floorStates.A, "__blockIndexCache"), "G26-C4: no nonenumerable index on state either");
+  let previousHits = hits();
+  assert.deepStrictEqual(build(first), expected);
+  assert.strictEqual(hits(), previousHits + 1, "G26-C4: immediate repeat hits");
+
+  const clone = JSON.parse(before);
+  previousHits = hits();
+  assert.deepStrictEqual(build(clone), expected);
+  assert.strictEqual(hits(), previousHits, "G26-C4: cloned floorState has a distinct cache identity");
+  first.floorStates.B = first.floorStates.A;
+  assert.deepStrictEqual(build(first, project, "B").damage, {}, "G26-C4: same object on another floor cannot reuse A");
+  assert.deepStrictEqual(build(first), expected, "G26-C4: returning to A rebuilds its index");
+  const otherProject = { ...project, floorsById: { ...project.floorsById, A: project.floorsById.B } };
+  assert.deepStrictEqual(build(first, otherProject).damage, {}, "G26-C4: project identity isolates same state/floor/epoch");
+
+  // Keep every state alive, just as canonical DP does. Weak ownership alone
+  // would not bound the retained block indexes in this test.
+  const retained = [first];
+  const capacity = 256;
+  assert.strictEqual(getHazardBlockIndexCacheStats(project).maxEntries, capacity);
+  for (let index = 0; index < capacity + 16; index += 1) {
+    const state = makeState();
+    retained.push(state);
+    assert.deepStrictEqual(build(state), expected);
+    assert.ok(!Object.hasOwn(state.floorStates.A, "__blockIndexCache"));
+    assert.ok(getHazardBlockIndexCacheStats(project).entries <= capacity, "G26-C4: cache residency stays bounded while states remain live");
+  }
+  previousHits = hits();
+  assert.deepStrictEqual(build(first), expected);
+  assert.strictEqual(hits(), previousHits, "G26-C4: oldest entry is evicted, not retained by its state");
+  assert.strictEqual(getHazardBlockIndexCacheStats(project).entries, capacity);
+  const recent = retained.at(-1);
+  previousHits = hits();
+  assert.deepStrictEqual(build(recent), expected);
+  assert.strictEqual(hits(), previousHits + 1, "G26-C4: recent entry is retained");
+  assert.deepStrictEqual(build(first, project, "A", false), expected, "G26-C4: eviction changes no hazard result");
+
+  const frozen = makeState();
+  Object.freeze(frozen.floorStates.A);
+  assert.deepStrictEqual(build(frozen), expected);
+  previousHits = hits();
+  assert.deepStrictEqual(build(frozen), expected);
+  assert.strictEqual(hits(), previousHits + 1, "G26-C4: external cache also works with frozen floorState");
+  return { boundedResidence: true, capacity, retainedStates: retained.length,
+    projectAndFloorIsolated: true, cloneIsolated: true, frozenStateSupported: true };
 }
 
 function gateG26C3_RealStabilizationMutationPath() {
@@ -1027,6 +1071,7 @@ function main() {
   const g26c1 = gateG26C1_StateKeyMutationSensitivity();
   const g26c2 = gateG26C2_CachedBlockIndexMutationInvalidation();
   const g26c3 = gateG26C3_RealStabilizationMutationPath();
+  const g26c4 = gateG26C4_BoundedBlockIndexResidence();
 
   // Iteration 2 Active Gates
   const g27a = gateG27A_BattleResultExactParity();
@@ -1054,6 +1099,7 @@ function main() {
       "G26-C1": g26c1,
       "G26-C2": g26c2,
       "G26-C3": g26c3,
+      "G26-C4": g26c4,
     },
     iteration2_gates: {
       "G27-A": g27a,
@@ -1086,6 +1132,7 @@ module.exports = {
   gateG26C1_StateKeyMutationSensitivity,
   gateG26C2_CachedBlockIndexMutationInvalidation,
   gateG26C3_RealStabilizationMutationPath,
+  gateG26C4_BoundedBlockIndexResidence,
   gateG27A_BattleResultExactParity,
   gateG27B_AutoBattleScanParity,
   gateG27C_StabilizationExactParity,

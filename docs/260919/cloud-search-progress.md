@@ -60,3 +60,12 @@ Owner 授权部署 cloud1 并要求可查看进度的 UI。先前聊天的“五
 - 部署运维和精确路径/包hash/前缀证据：[cloud-search.md](../operations/cloud-search.md)。
 - **VERIFIED的是部署、任务持久化合同和进度UI，不是终端求解能力或最优性**。搜索当前独立后台RUNNING，前两段prefix VERIFIED，后段仍在有限预算尝试。
 - 不commit/push。后续只观察运行；若预算耗尽或error，读取journal/doctor原字段，再决定下一轮，不能把同样失败任务无限重启。
+
+### 2026-09-20 — 长跑账本归因与状态更正
+
+以上是首次部署时的状态与发布边界，后续提交和运行以当前 handoff 为准。Owner 要求继续分析长时间 MISS，追加[只读诊断报告](../260920/neko-cloud-baseline-diagnosis.md)，不倒改初始设计：
+
+- 旧三档共147次 / 5,512,921展开，其中TS13→TS14占102次 / 4,506,599展开；高档34次实际是33次heap-limit、1次旧6h总时间墙截断，**不是所有任务耗尽展开预算**。所有TS13任务仍有frontier，未找到TS14。
+- 2026-09-20 19:14上海时间快照：此前bounded终态已于18:04迁移重启，新256k档7次已完成尝试又消耗685,010展开 / 63.17分钟，7/7仍heap-limit。服务当时running；本次分析没有执行启停或发布。
+- durable重试从入口重新search，不续接frontier；不变的堆/candidate cap不能靠增大展开预算解除。默认“本层下一楼梯距离”排序在三个真实fixture中确实优先退回TS12，尚未证明其对MISS的独立因果贡献。
+- 本轮文档及离线分析验证 `VERIFIED`；完整证据、限制与下一建议gate见诊断报告。没有修改生产搜索语义、profile或内存上限，没有新增通关证据。
