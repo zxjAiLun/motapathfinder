@@ -43,18 +43,26 @@ function problemFingerprint(config, towerRoot) {
     stages: config.stages,
     protectedItems: config.protectedItems,
     allowedFloors: config.allowedFloors,
-    candidateLimit: config.candidateLimit,
     tower: treeDigest(path.join(towerRoot, "project")),
+  }));
+}
+function resumeSearchFingerprint(config, towerRoot) {
+  return sha(JSON.stringify({
+    schema: SCHEMA,
+    problem: problemFingerprint(config, towerRoot),
+    solver: treeDigest(__dirname),
+    budgets: config.budgets,
+    candidateLimit: config.candidateLimit,
+    limits: { heapMb: config.heapMb, maxRssMb: config.maxRssMb },
+    scoreFlag: config.scoreFlag || null,
+    scoreScale: config.scoreScale || null,
   }));
 }
 function identityOf(config, towerRoot) {
   return sha(JSON.stringify({
     schema: SCHEMA,
-    problem: problemFingerprint(config, towerRoot),
-    solver: treeDigest(__dirname),
+    resumeSearch: resumeSearchFingerprint(config, towerRoot),
     runner: fs.readFileSync(path.join(__dirname, "../run-durable-search.js"), "utf8"),
-    budgets: config.budgets,
-    limits: { heapMb: config.heapMb, maxRssMb: config.maxRssMb },
   }));
 }
 function validateConfig(config) {
@@ -125,28 +133,47 @@ function checkpointId(stage, state) {
 function newJournal(identity, config, state, towerRoot = null) {
   const id = checkpointId(0, state);
   const problem = towerRoot ? problemFingerprint(config, towerRoot) : null;
-  return { schema: SCHEMA, identity, problemFingerprint: problem, createdAt: new Date().toISOString(), state: "ready", elapsedMs: 0,
+  const resume = towerRoot ? resumeSearchFingerprint(config, towerRoot) : null;
+  return { schema: SCHEMA, identity, problemFingerprint: problem, resumeSearchFingerprint: resume, createdAt: new Date().toISOString(), state: "ready", elapsedMs: 0,
     totalExpansions: 0, completedAttempts: 0, initial: summary(state), initialFlags: state.flags,
     nodes: [{ id, stage: 0, tier: 0, status: "pending", summary: summary(state) }], history: [], best: null };
 }
 function recoverJournal(journal, identity, options = {}) {
   if (journal.schema !== SCHEMA) throw new Error("journal schema mismatch");
   const { config, towerRoot } = options;
-  if (config && towerRoot) {
-    const currentProblem = problemFingerprint(config, towerRoot);
-    if (journal.problemFingerprint && journal.problemFingerprint !== currentProblem) {
-      throw new Error("problem contract mismatch: tower, initial state, stages, or protected items changed; cannot resume in existing run directory");
+  if (!config || !towerRoot) {
+    if (journal.identity !== identity) {
+      throw new Error("journal identity mismatch: missing config/towerRoot context to verify resume contract");
     }
-    if (journal.initial && config.initial && journal.initial.floorId !== config.initial.floorId) {
-      throw new Error(`initial floor mismatch: journal=${journal.initial.floorId} config=${config.initial.floorId}`);
+  } else {
+    const expectedProblem = problemFingerprint(config, towerRoot);
+    const expectedResume = resumeSearchFingerprint(config, towerRoot);
+
+    // Legacy journal check (missing problemFingerprint or resumeSearchFingerprint on identity mismatch):
+    // Owner ruling: journal.problemFingerprint missing AND identity mismatch => REFUSE_AUTOMATIC_ADOPTION
+    if ((!journal.problemFingerprint || !journal.resumeSearchFingerprint) && journal.identity !== identity) {
+      if (!options.allowLegacyMigration) {
+        throw new Error("LEGACY_JOURNAL_IDENTITY_MISMATCH: journal is missing problem/resume fingerprint; refuse automatic adoption across code/identity changes without explicit operator migration");
+      }
+      journal.problemFingerprint = expectedProblem;
+      journal.resumeSearchFingerprint = expectedResume;
+      journal.identity = identity;
+      journal.legacyMigratedAt = new Date().toISOString();
+    } else {
+      // Both fingerprints exist: verify strictly
+      if (journal.problemFingerprint && journal.problemFingerprint !== expectedProblem) {
+        throw new Error("PROBLEM_CONTRACT_MISMATCH: tower project, initial state, stages, or protected items changed; cannot resume in existing run directory");
+      }
+      if (journal.resumeSearchFingerprint && journal.resumeSearchFingerprint !== expectedResume) {
+        throw new Error("SEARCH_SEMANTICS_DRIFT: solver code, search budgets, candidate limits, or memory limits changed; cannot resume previous searched/bounded nodes without explicit re-evaluation");
+      }
+      // If resumeSearchFingerprint matches, identity can safely update for runner/UI shell changes
+      if (journal.identity !== identity) {
+        journal.identity = identity;
+      }
     }
-    if (!journal.problemFingerprint) journal.problemFingerprint = currentProblem;
-  } else if (journal.identity !== identity && !options.allowResume) {
-    throw new Error("journal identity mismatch; use a new run directory or supply problem contract");
   }
-  if (journal.identity !== identity) {
-    journal.identity = identity;
-  }
+
   for (const node of journal.nodes) if (node.status === "running") node.status = "pending";
   if (["running", "stopping", "run_budget_reached"].includes(journal.state)) journal.state = "paused";
   return journal;
@@ -329,6 +356,6 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
   }
   return { candidates, stats, verified, bestProgressPreview };
 }
-module.exports = { SCHEMA, SEARCH_PREVIEW_SCHEMA, sha, readJson, atomicJson, problemFingerprint, identityOf, validateConfig, protectedCost,
+module.exports = { SCHEMA, SEARCH_PREVIEW_SCHEMA, sha, readJson, atomicJson, problemFingerprint, resumeSearchFingerprint, identityOf, validateConfig, protectedCost,
   assertProtected, makeSimulator, initialState, matchesGoal, summary, checkpointId,
   newJournal, recoverJournal, pickTask, integrate, runAttempt, buildSearchPreview };

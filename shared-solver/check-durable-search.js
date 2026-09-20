@@ -169,10 +169,30 @@ async function main() {
     const corruptedConfig = { ...config, stages: [{ floorId: "CorruptedStage" }] };
     assert.throws(
       () => d.recoverJournal(savedJournal, d.identityOf(corruptedConfig, path.dirname(project)), { config: corruptedConfig, towerRoot: path.dirname(project) }),
-      /problem contract mismatch/
+      /PROBLEM_CONTRACT_MISMATCH/
     );
 
-    // 5. Worker identity drift guard: child worker rejects mismatched expectedExecutionIdentity
+    // 5. Search semantics drift guard: altering budgets/limits throws on recovery
+    const modifiedBudgetConfig = { ...config, budgets: [{ expansions: 9999, runtimeMs: 5000 }] };
+    assert.throws(
+      () => d.recoverJournal(savedJournal, d.identityOf(modifiedBudgetConfig, path.dirname(project)), { config: modifiedBudgetConfig, towerRoot: path.dirname(project) }),
+      /SEARCH_SEMANTICS_DRIFT/
+    );
+
+    // 6. Legacy journal identity adoption refusal: missing problem/resume fingerprint refuses auto-adoption on identity mismatch
+    const legacyJournal = { ...savedJournal, identity: "old-legacy-identity" };
+    delete legacyJournal.problemFingerprint;
+    delete legacyJournal.resumeSearchFingerprint;
+    assert.throws(
+      () => d.recoverJournal(legacyJournal, d.identityOf(config, path.dirname(project)), { config, towerRoot: path.dirname(project) }),
+      /LEGACY_JOURNAL_IDENTITY_MISMATCH/
+    );
+    // But explicit migration is accepted:
+    const migrated = d.recoverJournal(legacyJournal, d.identityOf(config, path.dirname(project)), { config, towerRoot: path.dirname(project), allowLegacyMigration: true });
+    assert.ok(migrated.problemFingerprint);
+    assert.ok(migrated.resumeSearchFingerprint);
+
+    // 7. Worker identity drift guard: child worker rejects mismatched expectedExecutionIdentity
     const driftSpecPath = path.join(temp, "drift-task.json");
     d.atomicJson(driftSpecPath, {
       config,
