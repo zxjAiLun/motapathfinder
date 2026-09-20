@@ -1513,6 +1513,22 @@
       },
       "notes": "auto-classified; refine in solver-manifest"
     },
+    "shared-solver/lib/mutation-liveness.js": {
+      "id": "mutation-liveness",
+      "path": "shared-solver/lib/mutation-liveness.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/objective-spec.js": {
       "id": "objective-spec",
       "path": "shared-solver/lib/objective-spec.js",
