@@ -31,7 +31,8 @@ async function main() {
       allowedFloors: ["A", "B"], protectedItems: ["greenKey"], stages: [{ floorId: "B" }],
       budgets: [{ expansions: 100, runtimeMs: 5000 }], candidateLimit: 4, heapMb: 256, maxRssMb: 512, maxRuntimeMs: 10000 };
     d.validateConfig(config);
-    assert.throws(() => d.validateConfig({ ...config, maxRuntimeMs: 0 }));
+    assert.throws(() => d.validateConfig({ ...config, maxRuntimeMs: -1 }));
+    assert.throws(() => d.validateConfig({ ...config, heapMb: 0 }));
     assert(d.protectedCost({ requirements: { greenKey: 1 } }, config));
     assert(!d.protectedCost({ requirements: {} }, config));
     assert.throws(() => d.assertProtected({ inventory: { greenKey: 30 } }, { inventory: { greenKey: 29 } }, config));

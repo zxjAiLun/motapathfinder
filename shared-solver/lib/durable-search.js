@@ -47,7 +47,8 @@ function validateConfig(config) {
   for (const budget of config.budgets) {
     if (!(budget.expansions > 0) || !(budget.runtimeMs > 0)) throw new Error("finite positive task budgets required");
   }
-  if (!(config.maxRuntimeMs > 0) || !(config.maxRssMb > 0) || !(config.heapMb > 0)) throw new Error("run time and memory limits required");
+  if (!(config.maxRssMb > 0) || !(config.heapMb > 0)) throw new Error("run memory limits required");
+  if (config.maxRuntimeMs != null && config.maxRuntimeMs < 0) throw new Error("maxRuntimeMs must be non-negative");
   if (!Array.isArray(config.allowedFloors) || !config.allowedFloors.includes(config.initial.floorId)) throw new Error("allowedFloors must include start");
 }
 function protectedCost(action, config) {
@@ -111,10 +112,16 @@ function newJournal(identity, config, state) {
     totalExpansions: 0, completedAttempts: 0, initial: summary(state), initialFlags: state.flags,
     nodes: [{ id, stage: 0, tier: 0, status: "pending", summary: summary(state) }], history: [], best: null };
 }
-function recoverJournal(journal, identity) {
-  if (journal.schema !== SCHEMA || journal.identity !== identity) throw new Error("journal identity mismatch; use a new run directory");
+function recoverJournal(journal, identity, options = {}) {
+  if (journal.schema !== SCHEMA) throw new Error("journal schema mismatch");
+  if (journal.identity !== identity) {
+    if (!options.allowResume) {
+      throw new Error("journal identity mismatch; use a new run directory or enable allowResume");
+    }
+    journal.identity = identity;
+  }
   for (const node of journal.nodes) if (node.status === "running") node.status = "pending";
-  if (["running", "stopping"].includes(journal.state)) journal.state = "paused";
+  if (["running", "stopping", "run_budget_reached"].includes(journal.state)) journal.state = "paused";
   return journal;
 }
 function pickTask(journal) {

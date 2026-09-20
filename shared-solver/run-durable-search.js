@@ -59,7 +59,7 @@ async function main(argv = process.argv.slice(2)) {
     const identity = d.identityOf(config, towerRoot);
     const journalPath = path.join(dir, "journal.json");
     let journal;
-    if (fs.existsSync(journalPath)) journal = d.recoverJournal(d.readJson(journalPath), identity);
+    if (fs.existsSync(journalPath)) journal = d.recoverJournal(d.readJson(journalPath), identity, { allowResume: true });
     else {
       const project = loadProject(towerRoot);
       const state = d.initialState(project, d.makeSimulator(project, config), config);
@@ -71,11 +71,13 @@ async function main(argv = process.argv.slice(2)) {
     let task = null;
     const sessionStart = Date.now();
     const previousElapsed = journal.elapsedMs || 0;
+    const maxRuntime = (config.maxRuntimeMs && config.maxRuntimeMs > 0) ? Number(config.maxRuntimeMs) : Infinity;
     const publish = () => {
       journal.elapsedMs = previousElapsed + Date.now() - sessionStart;
       d.atomicJson(path.join(dir, "status.json"), {
         title: config.title, state: journal.state, heartbeatAt: new Date().toISOString(),
-        createdAt: journal.createdAt, elapsedMs: journal.elapsedMs, maxRuntimeMs: config.maxRuntimeMs,
+        createdAt: journal.createdAt, elapsedMs: journal.elapsedMs,
+        maxRuntimeMs: maxRuntime === Infinity ? null : maxRuntime,
         initial: journal.initial, initialFlags: journal.initialFlags, protectedItems: config.protectedItems,
         totalExpansions: journal.totalExpansions, completedAttempts: journal.completedAttempts,
         candidates: journal.nodes.length, pending: journal.nodes.filter((n) => n.status === "pending").length,
@@ -99,7 +101,7 @@ async function main(argv = process.argv.slice(2)) {
     let sessionAttempts = 0;
     const attemptLimit = args["attempt-limit"] == null ? Infinity : Number(args["attempt-limit"]);
     if (!(attemptLimit > 0)) throw new Error("attempt-limit must be positive");
-    while (journal.elapsedMs < config.maxRuntimeMs && sessionAttempts < attemptLimit && !fs.existsSync(path.join(dir, "STOP"))) {
+    while (journal.elapsedMs < maxRuntime && sessionAttempts < attemptLimit && !fs.existsSync(path.join(dir, "STOP"))) {
       task = d.pickTask(journal);
       if (!task) { journal.state = "bounded_not_found"; break; }
       const originalTier = task.tier;
@@ -108,9 +110,11 @@ async function main(argv = process.argv.slice(2)) {
       task.status = "running";
       telemetry = null;
       save();
-      const remainingMs = config.maxRuntimeMs - journal.elapsedMs;
+      const remainingMs = maxRuntime === Infinity ? Infinity : maxRuntime - journal.elapsedMs;
       const workerConfig = JSON.parse(JSON.stringify(config));
-      workerConfig.budgets[task.tier].runtimeMs = Math.min(workerConfig.budgets[task.tier].runtimeMs, remainingMs);
+      if (maxRuntime !== Infinity) {
+        workerConfig.budgets[task.tier].runtimeMs = Math.min(workerConfig.budgets[task.tier].runtimeMs, remainingMs);
+      }
       d.atomicJson(specPath, { config: workerConfig, towerRoot, dir, task, output });
       try {
         if (!fs.existsSync(output)) await new Promise((resolve, reject) => {
@@ -146,7 +150,11 @@ async function main(argv = process.argv.slice(2)) {
         break;
       }
     }
-    if (["running", "stopping"].includes(journal.state)) journal.state = fs.existsSync(path.join(dir, "STOP")) || sessionAttempts >= attemptLimit ? "paused" : "run_budget_reached";
+    if (["running", "stopping"].includes(journal.state)) {
+      journal.state = fs.existsSync(path.join(dir, "STOP")) || sessionAttempts >= attemptLimit
+        ? "paused"
+        : (journal.elapsedMs >= maxRuntime ? "run_budget_reached" : "paused");
+    }
     task = null;
     save();
   } finally { clearInterval(timer); release(); }

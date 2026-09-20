@@ -682,7 +682,7 @@ async function refresh() {
       initial: s.initial,
       flags: s.initialFlags,
       zeroSpend: s.protectedItems,
-      totalBudgetHours: s.maxRuntimeMs / 3600000,
+      totalBudgetHours: (s.maxRuntimeMs && s.maxRuntimeMs > 0) ? s.maxRuntimeMs / 3600000 : "无限制 · 持续长跑至击败关底Boss",
       optimalityProven: false
     }, null, 2);
     $('resume').textContent = s.resumeBoundary;

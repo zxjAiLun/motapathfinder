@@ -23,7 +23,7 @@
   "candidateLimit": 16,
   "heapMb": 6144,
   "maxRssMb": 8192,
-  "maxRuntimeMs": 21600000,
+  "maxRuntimeMs": 0,
   "scoreFlag": "allhp",
   "scoreScale": 10,
   "scoreLabel": "Boss 战后试炼剩余 HP"
