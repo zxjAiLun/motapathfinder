@@ -492,8 +492,14 @@ async function renderGameBoard(explicitStateId = null, explicitMode = null) {
     if (viewType === 'preview') {
       if (boxWarning) boxWarning.style.display = 'block';
       if (boxEntry) boxEntry.style.display = 'none';
-      const reason = preview?.stoppedReason || '未达目标';
-      $('view-mode-label').textContent = `搜索进度预览 · ${reason} 前最佳观察状态`;
+      const reason = preview?.stoppedReason;
+      if (preview?.legacyPreview && !reason) {
+        $('view-mode-label').textContent = '历史搜索进度预览 · 终止原因未记录';
+      } else if (reason) {
+        $('view-mode-label').textContent = `搜索进度预览 · ${reason} 前最佳观察状态`;
+      } else {
+        $('view-mode-label').textContent = '搜索进度预览 · 阶段目标最佳观察状态';
+      }
       const prov = preview ? `阶段: ${Number(preview.stage || 0) + 1} · 捕获时间: ${preview.capturedAt ? new Date(preview.capturedAt).toLocaleTimeString() : '—'}` : '';
       $('view-provenance').textContent = prov;
     } else {

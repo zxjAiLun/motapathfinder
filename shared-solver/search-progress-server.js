@@ -151,7 +151,8 @@ function createProgressServer(runDir, options = {}) {
               schema: "motapathfinder.search-preview.v1",
               kind: "progress-preview",
               taskId: stateId,
-              stoppedReason: "heap-limit",
+              stoppedReason: null,
+              legacyPreview: true,
               renderState: state,
             };
           }

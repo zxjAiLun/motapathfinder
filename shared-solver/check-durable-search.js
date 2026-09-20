@@ -119,6 +119,8 @@ async function main() {
     assert.equal(preview.schema, d.SEARCH_PREVIEW_SCHEMA);
     assert.equal(preview.kind, "progress-preview");
     assert.equal(preview.stoppedReason, "heap-limit");
+    assert.equal(preview.entryCheckpointId, "0-task-preview");
+    assert.ok(preview.previewStateFingerprint, "previewStateFingerprint must be populated");
     assert.equal(preview.renderState.floorId, "A");
     assert.equal(preview.renderState.hero.hp, 100);
     assert.equal(preview.renderState.floorStates.A.removed["1,0"], true);
@@ -148,6 +150,16 @@ async function main() {
     assert.equal(rPrev.status, 200);
     const prevJson = await rPrev.json();
     assert.equal(prevJson.preview.stoppedReason, "heap-limit");
+
+    // Contract: old task with base state in states/ but no preview file must fall back cleanly to entry
+    const oldTaskId = "0-old-task-fallback";
+    d.atomicJson(path.join(runDir, "states", `${oldTaskId}.json`), mockState);
+    const rFallback = await fetch(`${url}/api/view-state?id=${oldTaskId}&mode=preview`);
+    assert.equal(rFallback.status, 200);
+    const fallbackJson = await rFallback.json();
+    assert.equal(fallbackJson.viewType, "entry", "must cleanly fall back to entry when preview is absent");
+    assert.equal(fallbackJson.hasPreview, false, "hasPreview must be false when preview is absent");
+    assert.equal(fallbackJson.state.floorId, "A");
 
     const rOldTask = await fetch(`${url}/api/view-state?id=non-existent-task`);
     assert.equal(rOldTask.status, 404, "non-existent task must return 404");

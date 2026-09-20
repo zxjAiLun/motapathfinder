@@ -143,6 +143,8 @@ function buildSearchPreview({ task, stageGoal, state, stoppedReason, progressPro
     tier: task.tier,
     capturedAt: new Date().toISOString(),
     stoppedReason: stoppedReason || null,
+    entryCheckpointId: task.id,
+    previewStateFingerprint: typeof sha === "function" ? sha(buildStateKey(state)).slice(0, 24) : null,
     entryStateKey: task.id,
     previewStateKey: typeof sha === "function" ? sha(buildStateKey(state)).slice(0, 24) : null,
     progressProjection: progressProjection || null,
@@ -196,7 +198,8 @@ function integrate(journal, task, result, config, dir) {
       stage: task.stage,
       stoppedReason: result.stats.stoppedReason,
       capturedAt: result.bestProgressPreview.capturedAt,
-      previewStateKey: result.bestProgressPreview.previewStateKey,
+      previewStateFingerprint: result.bestProgressPreview.previewStateFingerprint || result.bestProgressPreview.previewStateKey,
+      previewStateKey: result.bestProgressPreview.previewStateFingerprint || result.bestProgressPreview.previewStateKey,
     };
   }
 
