@@ -18,7 +18,8 @@
   "budgets": [
     { "expansions": 8000, "runtimeMs": 120000 },
     { "expansions": 32000, "runtimeMs": 600000 },
-    { "expansions": 128000, "runtimeMs": 1800000 }
+    { "expansions": 128000, "runtimeMs": 1800000 },
+    { "expansions": 256000, "runtimeMs": 3600000 }
   ],
   "candidateLimit": 16,
   "heapMb": 6144,
