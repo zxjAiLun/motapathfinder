@@ -3191,6 +3191,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.7a capture-all materialized goal candidates, exact 1/2/4/8 retention decisions including DP-key dedup vs capacity, and distinct stop-condition A/B/C controls"
     },
+    "shared-solver/check-candidate-specific-closure.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-changefloor-identity-parity.js": {
       "grade": "unit",
       "allowsNotFound": false,
