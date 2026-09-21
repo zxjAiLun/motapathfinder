@@ -123,10 +123,19 @@ async function main() {
     assert.ok(preview.previewStateFingerprint, "previewStateFingerprint must be populated");
     assert.equal(preview.renderState.floorId, "A");
     assert.equal(preview.renderState.hero.hp, 100);
+    assert.equal(preview.renderState.flags.testFlag, 1, "flags must be preserved in renderState");
     assert.equal(preview.renderState.floorStates.A.removed["1,0"], true);
     assert.equal(preview.renderState.route, undefined, "route must NOT be leaked into render preview");
     assert.equal(preview.renderState.trace, undefined, "trace must NOT be leaked into render preview");
     assert.equal(preview.renderState.nodes, undefined, "search nodes must NOT be leaked into render preview");
+
+    // Defensive battle overlay check: renderState without flags must not throw TypeError
+    const { buildBattleOverlay } = require("./lib/route-debugger");
+    const { loadProject } = require("./lib/project-loader");
+    const dummyProject = loadProject(path.dirname(project));
+    const dummySim = d.makeSimulator(dummyProject, config);
+    const overlayNoFlags = buildBattleOverlay(dummyProject, dummySim, { ...preview.renderState, flags: undefined });
+    assert.ok(overlayNoFlags, "buildBattleOverlay must safely handle state without flags");
 
     // 2. Integration and persistence: preview.json and previews/<id>.preview.json are written
     const mockJournal = d.newJournal("ident", config, mockState);

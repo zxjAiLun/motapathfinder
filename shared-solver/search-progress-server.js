@@ -90,7 +90,10 @@ function createProgressServer(runDir, options = {}) {
         const preview = JSON.parse(fs.readFileSync(previewFile, "utf8"));
         let overlay = null;
         if (project && sim && preview.renderState) {
-          try { overlay = buildBattleOverlay(project, sim, preview.renderState); } catch (e) {}
+          try {
+            const stateForOverlay = preview.renderState.flags ? preview.renderState : { ...preview.renderState, flags: {} };
+            overlay = buildBattleOverlay(project, sim, stateForOverlay);
+          } catch (e) {}
         }
         response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
         response.end(JSON.stringify({ preview, overlay }));
@@ -145,6 +148,7 @@ function createProgressServer(runDir, options = {}) {
               floorId: raw.floorId,
               hero: raw.hero,
               inventory: raw.inventory,
+              flags: raw.flags || {},
               floorStates: raw.floorStates,
             };
             preview = {
@@ -171,7 +175,8 @@ function createProgressServer(runDir, options = {}) {
         let overlay = overlayCache.get(cacheKey);
         if (!overlay && project && sim && state) {
           try {
-            overlay = buildBattleOverlay(project, sim, state);
+            const stateForOverlay = (state && state.flags) ? state : { ...(state || {}), flags: (state && state.flags) || {} };
+            overlay = buildBattleOverlay(project, sim, stateForOverlay);
             if (overlayCache.size > 200) {
               const firstKey = overlayCache.keys().next().value;
               overlayCache.delete(firstKey);

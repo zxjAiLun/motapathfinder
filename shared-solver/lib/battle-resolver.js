@@ -186,8 +186,8 @@ function createEvaluationState(state) {
   return {
     floorId: state.floorId,
     hero: cloneState(state.hero),
-    inventory: cloneState(state.inventory),
-    flags: cloneState(state.flags),
+    inventory: cloneState(state.inventory || {}),
+    flags: cloneState(state.flags || {}),
     floorStates: state.floorStates,
   };
 }

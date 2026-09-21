@@ -8,19 +8,20 @@ const {
 } = require("./solver-model");
 
 function cloneState(state) {
+  if (state == null) return state;
   const tracker = getActivePerfTracker();
   const startedAt = tracker && tracker.enabled ? process.hrtime.bigint() : null;
   const cloned = typeof structuredClone === "function"
     ? structuredClone(state)
     : JSON.parse(JSON.stringify(state));
   if (startedAt) tracker.addPhase("cloneState", Number(process.hrtime.bigint() - startedAt) / 1e6);
-  if (cloned.meta && cloned.meta.__frontierFeatures) {
+  if (cloned && cloned.meta && cloned.meta.__frontierFeatures) {
     delete cloned.meta.__frontierFeatures;
   }
-  if (cloned.meta && cloned.meta.__floorScout) {
+  if (cloned && cloned.meta && cloned.meta.__floorScout) {
     delete cloned.meta.__floorScout;
   }
-  if (cloned.meta && cloned.meta.solverModel) {
+  if (cloned && cloned.meta && cloned.meta.solverModel) {
     // Migrate old serialized nodes without re-projecting the hero on every
     // clone. New search states only carry the model fingerprint.
     const model = normalizeSolverModel(cloned.meta.solverModel);

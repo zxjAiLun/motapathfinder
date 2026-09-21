@@ -1054,6 +1054,22 @@
         "cleanCheckout": true
       }
     },
+    "shared-solver/lib/forward-blocker-audit.js": {
+      "id": "forward-blocker-audit",
+      "path": "shared-solver/lib/forward-blocker-audit.js",
+      "layer": "unclassified",
+      "status": "supporting",
+      "role": "supporting",
+      "correctnessSource": false,
+      "tests": {
+        "unit": false,
+        "realFixture": false,
+        "segmentClosure": false,
+        "fullClosure": false,
+        "cleanCheckout": true
+      },
+      "notes": "auto-classified; refine in solver-manifest"
+    },
     "shared-solver/lib/frontier-features.js": {
       "id": "frontier-features",
       "path": "shared-solver/lib/frontier-features.js",
@@ -3330,6 +3346,13 @@
       "notes": "PR-5.13b bounded post-goal collection, deepest-expanded state, and route-free failure-triggered checkpoint/backtracking contract"
     },
     "shared-solver/check-floor-scout.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
+    "shared-solver/check-forward-blocker-feasibility.js": {
       "grade": "local-regression",
       "allowsNotFound": false,
       "requiresStrictReplay": false,

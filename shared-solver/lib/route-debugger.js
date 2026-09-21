@@ -365,6 +365,7 @@ function buildBattleOverlay(project, simulator, state, options) {
   const height = Number(floor.height || (Array.isArray(floor.map) ? floor.map.length : 0));
   const width = Number(floor.width || (floor.map && floor.map[0] ? floor.map[0].length : 0));
   const enemies = {};
+  const evalState = (state && state.flags) ? state : { ...(state || {}), flags: (state && state.flags) || {} };
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const key = `${x},${y}`;
@@ -374,7 +375,7 @@ function buildBattleOverlay(project, simulator, state, options) {
       const enemy = (project.enemysById || {})[tile.id] || {};
       let battle = null;
       try {
-        battle = simulator.battleResolver.evaluateBattle(state, floorId, x, y, tile.id);
+        battle = simulator.battleResolver.evaluateBattle(evalState, floorId, x, y, tile.id);
       } catch (error) {
         enemies[key] = {
           enemyId: tile.id,
