@@ -3604,6 +3604,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.16c real D2 automatic skeletonKing prerequisite, eight multi-role checkpoints, strict replay, deterministic fingerprints, and no-viable negative control"
     },
+    "shared-solver/check-local-feasibility-gap-closure.js": {
+      "grade": "closure",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-manifest-runner.js": {
       "grade": "unit",
       "allowsNotFound": false,
