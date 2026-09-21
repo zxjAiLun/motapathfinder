@@ -1,0 +1,170 @@
+{
+  "floorId": "TS13",
+  "hero": {
+    "image": "hero.png",
+    "animate": false,
+    "name": "纳可",
+    "lv": 2,
+    "hpmax": 9999,
+    "hp": 1337,
+    "manamax": -1,
+    "mana": 0,
+    "atk": 6,
+    "def": 0,
+    "mdef": 0,
+    "money": 0,
+    "exp": 19,
+    "equipment": [],
+    "loc": {
+      "x": 1,
+      "y": 1,
+      "direction": "left"
+    },
+    "flags": {},
+    "followers": [],
+    "steps": 169,
+    "statistics": {
+      "battleDamage": 12463,
+      "battle": 27,
+      "money": 0,
+      "exp": 29
+    }
+  },
+  "inventory": {
+    "greenKey": 34
+  },
+  "flags": {
+    "saltygreen": 2,
+    "jc19f5": 1,
+    "allhp": 0,
+    "nowatk": 1,
+    "nowdef": 0,
+    "nowmdef": 0,
+    "nowexp": 0,
+    "nowlevel": 1,
+    "shiqu": 1,
+    "autoBattle": 1,
+    "hatred": 54,
+    "__leaveLoc__": {
+      "TS11": {
+        "x": 6,
+        "y": 12,
+        "direction": "down"
+      },
+      "TS12": {
+        "x": 1,
+        "y": 1,
+        "direction": "left"
+      }
+    }
+  },
+  "floorStates": {
+    "TS11": {
+      "removed": {
+        "6,3": true,
+        "6,4": true,
+        "8,4": true,
+        "4,4": true,
+        "10,4": true,
+        "11,5": true,
+        "2,4": true,
+        "1,5": true,
+        "3,5": true,
+        "4,6": true,
+        "3,7": true,
+        "1,6": true,
+        "1,7": true,
+        "9,5": true,
+        "9,7": true,
+        "8,6": true,
+        "2,9": true,
+        "4,9": true,
+        "6,9": true,
+        "8,9": true,
+        "6,8": true,
+        "6,7": true,
+        "10,9": true,
+        "11,7": true,
+        "11,6": true,
+        "6,10": true
+      },
+      "replaced": {}
+    },
+    "TS12": {
+      "removed": {
+        "5,11": true,
+        "5,9": true,
+        "6,9": true,
+        "7,10": true,
+        "8,9": true,
+        "9,9": true,
+        "10,9": true,
+        "11,10": true,
+        "10,11": true,
+        "10,8": true,
+        "10,7": true,
+        "11,6": true,
+        "10,5": true,
+        "9,5": true,
+        "8,6": true,
+        "7,5": true,
+        "7,4": true,
+        "7,3": true,
+        "8,2": true,
+        "8,7": true,
+        "6,7": true,
+        "5,7": true,
+        "4,7": true,
+        "3,6": true,
+        "6,3": true,
+        "6,1": true,
+        "5,2": true,
+        "3,5": true,
+        "3,3": true,
+        "3,2": true,
+        "2,1": true,
+        "6,5": true,
+        "5,5": true,
+        "4,11": true,
+        "3,11": true,
+        "1,11": true,
+        "3,10": true,
+        "3,9": true,
+        "1,10": true,
+        "1,9": true
+      },
+      "replaced": {}
+    },
+    "TS13": {
+      "removed": {
+        "2,2": true
+      },
+      "replaced": {}
+    }
+  },
+  "visitedFloors": {
+    "TS11": true,
+    "TS12": true,
+    "TS13": true
+  },
+  "triggeredAutoEvents": {},
+  "route": [],
+  "notes": [],
+  "meta": {
+    "rank": null,
+    "decisionDepth": 30,
+    "rawRouteLength": 69,
+    "autoStepCount": 39,
+    "autoPickupCount": 39,
+    "autoBattleCount": 0
+  },
+  "progress": {
+    "stageIndex": 539012,
+    "milestoneMask": "TS11,TS12,TS13",
+    "visitedFloorMask": "TS11,TS12,TS13",
+    "targetFloor": null,
+    "bestFloorRank": 539013,
+    "currentFloorRank": 539013,
+    "lastProgressActionId": null
+  }
+}
