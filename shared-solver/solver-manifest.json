@@ -3163,6 +3163,13 @@
       "cleanCheckout": false,
       "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
+    "shared-solver/check-bypass-propagation-audit.js": {
+      "grade": "diagnostic",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-candidate-key-paired-benchmark.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": false,

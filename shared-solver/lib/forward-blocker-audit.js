@@ -303,6 +303,7 @@ function proveForwardCut(project, floorId, startLoc, goalLoc, evaluatedObstacles
     unexecutableBlockersCount: unexecutableBlockerLocs.size,
     cutBlockers: evaluatedObstacles.filter((o) => !o.executable),
     hasLegalBypass: pathExistsWithBlockers,
+    staticBypassExists: pathExistsWithBlockers,
   };
 }
 
@@ -393,6 +394,13 @@ function computeReachablePreparationEnvelope(simulator, state) {
     },
     levelUpProjection,
     envelopeMaxStats: {
+      atk: envelopeMaxAtk,
+      def: envelopeMaxDef,
+      hp: envelopeMaxHp,
+      lv: levelUpProjection.projectedLv,
+      exp: levelUpProjection.totalExp,
+    },
+    optimisticComponentWiseUpperBound: {
       atk: envelopeMaxAtk,
       def: envelopeMaxDef,
       hp: envelopeMaxHp,
@@ -518,6 +526,7 @@ function auditForwardBlockerFeasibility(simulator, frontierState, stageGoal, opt
       boundaryObstacleCount: boundaryObstacles.size,
       unexecutableBlockersCount: cutResult.unexecutableBlockersCount,
       hasLegalBypass: cutResult.hasLegalBypass,
+      staticBypassExists: cutResult.staticBypassExists,
     },
     tier2_blockerDeficits: evaluatedBlockers.map((b) => ({
       loc: `${b.obstacle.x},${b.obstacle.y}`,
