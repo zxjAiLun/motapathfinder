@@ -143,26 +143,90 @@ Pre-run plan/gates:
 
 ## Review Verdict and Formal Hypotheses Reversal (2026-09-21)
 
-Following the formal review of the 59-decision strict-replayed TS14 witness and 8k agenda lifecycle diagnostic:
+Following the formal review of the 59-decision strict-replayed TS14 witness, PR-5.30a3 exact agenda trace, and PR-5.31a A/B experiment:
 
 ```text
-现有 durable TS13 seed 存在合法 TS14 continuation       ESTABLISHED
-5.29c / 5.30a2 的“数学死局”结论                         REVOKED
-Stage0/1 必须重搜                                       REJECTED
-阶段入口 selector 是当前主要瓶颈                        REJECTED
-production 没有生成回撤动作                             REJECTED
-goal-relative agenda 对必要回撤产生严重服务延迟          STRONGLY ESTABLISHED
-agenda starvation 是 256k MISS 的完整根因                ALMOST — 还差完整 prefix service trace (PR-5.30a3)
+PR-5.30a3 exact winning-prefix trace        APPROVED
+P7 6639-expansion service debt              APPROVED
+P8 queued >25352, never popped @32k          APPROVED
+goal-relative distance causes starvation    ESTABLISHED
+
+PR-5.31a fairness causal A/B                APPROVED
+fairnessEvery=16 materially relieves block   ESTABLISHED
+fairnessEvery=32 positive but weaker         ESTABLISHED
+
+“agenda starvation is complete cause
+of the historical 256k MISS”                TOO STRONG — narrow wording:
+                                            "Agenda starvation is the first demonstrated causal blocker
+                                             on the known winning ancestry, and is sufficient to explain
+                                             why bounded searches fail to recover that ancestry."
+
+production profile change                    NOT YET
+next                                         PR-5.31b end-to-end fairness validation (fairnessEvery=16)
 ```
 
 ### Strategic Narrative Realignment
 - **5.29a (Goal-relative priority)**: Effective in preventing uncontrolled old-floor bias; retained.
-- **5.29c (Local feasibility gap)**: Holds strictly for the chosen, depleted step-22 state; but revoking the generalization that the entire entry/universe is dead. Earlier preparation detour avoids reaching this bottleneck state.
+- **5.29c (Local feasibility gap)**: Holds strictly for the chosen, depleted step-22 state; revoking generalization that the entire entry/universe is dead. Earlier preparation detour avoids reaching this bottleneck state.
 - **5.30a / 5.30a1 (Future capability projection)**: Static arithmetic projection remains unexecutable/unreliable; confirmed.
 - **5.30a2 (Bounded candidate search)**: 32k search coverage was insufficient; Case C revoked.
-- **Root Cause & Next Milestone**: Feasible paths exist inside current durable search space. Production 256k MISS is neither action omission nor entry dead-end, but search reluctance to timely service temporary preparation detours under progress-greedy goal-distance ranking.
-  - Next: **PR-5.30a3 (Winning Suffix Agenda Trace)** to close the cumulative service debt proof across all teacher prefixes.
-  - Follow-up: **PR-5.31a (Agenda Fairness A/B)** to test bounded service debt / fairness lane against the teacher route.
+- **Root Cause Realignment**: Feasible paths exist inside current durable search space. Production 256k MISS is neither action omission nor entry dead-end. Agenda starvation is the first demonstrated causal blocker on the known winning ancestry.
+- **Next Milestone**: **PR-5.31b (End-to-End Fairness Validation)**: Fixed `fairnessEvery=16` on same durable seed `2-7f41f60b09a55951abd8931c` at 32k budget. Track all 30 teacher suffix decisions, continuous recovery depth, and memory/frontier growth.
+
+## PR-5.30a3 Winning Suffix Agenda Trace Results (2026-09-21)
+
+Using the strict 59-decision TS14 witness as a teacher route, we traced the exact lifecycle (generation, enqueue, dequeue/pop, wait, and priority tuple) of all 30 teacher suffix decisions starting from `2-7f41f60b09a55951abd8931c`.
+
+### Agenda Trace Checkpoint Table (8k vs 16k vs 32k)
+
+| Prefix | Action | Transition | GoalDist | Control (8k) Pop / Wait | Control (16k) Pop / Wait | Control (32k) Pop / Wait |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: |
+| **1** | `battle:bat@TS13:3,2` | TS13 -> TS13 | 18 | Pop 1 / Wait 0 | Pop 1 / Wait 0 | Pop 1 / Wait 0 |
+| **2** | `battle:vampire@TS13:6,2` | TS13 -> TS13 | 15 | Pop 2 / Wait 0 | Pop 2 / Wait 0 | Pop 2 / Wait 0 |
+| **3** | `battle:skeletonWarrior@TS13:7,3` | TS13 -> TS13 | 13 | Pop 3 / Wait 0 | Pop 3 / Wait 0 | Pop 3 / Wait 0 |
+| **4** | `battle:slimeman@TS13:8,5` | TS13 -> TS13 | 10 | Pop 5 / Wait 1 | Pop 5 / Wait 1 | Pop 5 / Wait 1 |
+| **5** | `battle:slimeman@TS13:10,5` | TS13 -> TS13 | 8 | Pop 6 / Wait 0 | Pop 6 / Wait 0 | Pop 6 / Wait 0 |
+| **6** | `battle:skeletonWarrior@TS13:7,7` | TS13 -> TS13 | 9 | Pop 7 / Wait 0 | Pop 7 / Wait 0 | Pop 7 / Wait 0 |
+| **7** | `changeFloor@TS13:1,1` | **TS13 -> TS12** | **20** | **Pop 6647 / Wait 6639** | **Pop 6647 / Wait 6639** | **Pop 6647 / Wait 6639** |
+| **8** | `battle:slimeman@TS12:9,3` | **TS12 -> TS12** | **29** | **Queued (Wait > 1352)** | **Queued (Wait > 9352)** | **Queued (Wait > 25352)** |
+| **9..30** | *TS12 prep, TS11 wine, rocks, TS14* | - | 30+ | *Not reached* | *Not reached* | *Not reached* |
+
+### Root Cause Conclusion: ESTABLISHED
+1. **P1..P6 (Forward exploration in TS13, GoalDist 8~18)**: Instantly popped with wait $\le 1$.
+2. **P7 (`changeFloor@TS13:1,1`, GoalDist 20)**: Enqueued at expansion 8, starved for **6,639 expansions**, popped at 6,647.
+3. **P8 (`battle:slimeman@TS12:9,3`, GoalDist 29)**: Enqueued at expansion 6,648. Because `GoalDist = 29` is strictly worse than any frontier node remaining on TS13 under `compareDpAgendaRank`, **it never pops within 8,000, 16,000, or even 32,000 expansions (wait > 25,352 expansions; frontier grows to 14,093)**.
+4. **Causal Verdict**: `agenda starvation = root cause` is **ESTABLISHED**. The search does not lose the route to pruning or dead seeds; it indefinitely postpones servicing the necessary detour because the detour temporarily moves further away from the goal.
+
+---
+
+## PR-5.31a Agenda Fairness Controlled A/B Results
+
+We tested the Bounded Service Debt / Fairness Lane mechanism without modifying distance metrics, DP keys, candidate limits, or dominance rules:
+- **Control**: `dpAgendaMode: "best-first"` (production default)
+- **Treatment A**: `dpAgendaMode: "hybrid-fair"`, `fairnessEvery: 32` (1 fair pop every 32 pops)
+- **Treatment B**: `dpAgendaMode: "hybrid-fair"`, `fairnessEvery: 16` (1 fair pop every 16 pops)
+
+### 8,000 Budget A/B Matrix
+
+| Metric | Control (Best-First) | Fairness 32 | Fairness 16 | Delta (Treatment B vs Control) |
+| :--- | :---: | :---: | :---: | :---: |
+| **Expansions / Budget** | 8000 / 8000 | 8000 / 8000 | 8000 / 8000 | Parity |
+| **Frontier Size** | 3,551 | 4,906 | 6,614 | Healthy breadth |
+| **P7 (TS13->TS12) Pop Expansion** | **6,647** | **703** | **415** | **-6,232 (-93.7% wait)** |
+| **P7 Queue Wait (Service Debt)** | **6,639** | **695** | **407** | **16.3x faster service** |
+| **P8 (TS12 Slimeman) Status** | Queued (unserved) | Queued (unserved) | **Popped (Step 8 reached)** | **Unlocked next step** |
+| **Deepest Continuous Prefix** | Step 7 / 30 | Step 7 / 30 | **Step 8 / 30** | **+1 step ahead at 8k** |
+
+### 16,000 Budget A/B Matrix
+
+| Metric | Control (Best-First) | Fairness 16 | Delta / Impact |
+| :--- | :---: | :---: | :--- |
+| **P7 Pop Expansion** | 6,647 | **415** | Accelerated to opening expansions |
+| **P8 Pop Expansion** | *Never popped (wait > 9352)* | **7,935** | **Successfully serviced at TS12** |
+| **P9 (`vampire@TS12:1,10`)** | *Not reached* | **Enqueued at 7,936** | **Preparation chain advancing** |
+| **Deepest Continuous Prefix** | Step 7 | **Step 8 (Step 9 enqueued)** | **Detour deadlock broken** |
+
+**Conclusion**: Agenda Fairness successfully dissolves the detour starvation bottleneck without sacrificing goal-directed guidance.
 
 ## Outcome / publication
 

@@ -6,13 +6,15 @@
  * Asserts:
  *   1. PR-5.30a3 artifact exists and conforms to schema.
  *   2. Steps 0 through 12 are verified generated and popped in autonomous search.
- *   3. Enqueued-not-served causal evidence verified:
- *      - Step 14 (battle:slimeman@TS12:9,3) was enqueued >= 2000 times, but popped 0 times.
- *      - Step 16 (changeFloor@TS12:6,12 to TS11) was enqueued >= 5000 times, but popped 0 times.
- *   4. Floor service starvation confirmed:
- *      - TS11 expansions are strictly 0.
- *      - Confirms the 12,800 HP potion pool on TS11 was never harvested by autonomous search.
- *   5. Discrepancy explained:
+ *   3. Enqueued-not-served causal evidence verified across two distinct semantic layers:
+ *      a) Action fingerprint layer (actionFingerprintSeen):
+ *         - Action fingerprint "battle:slimeman@TS12:9,3" (Step 14) was enqueued >= 2000 times, but popped 0 times.
+ *         - Action fingerprint "changeFloor@TS12:6,12" (Step 16) was enqueued >= 5000 times, but popped 0 times.
+ *         Proves TS12 preparation actions are generated across branches but systematically denied pop service.
+ *      b) Floor service breakdown:
+ *         - TS11 expansions are strictly 0.
+ *         - Confirms the 12,800 HP potion pool on TS11 was never harvested by autonomous search.
+ *   4. Discrepancy explained:
  *      - Directly accounts for why autonomous search saw max HP 4,606 while the known
  *        simulator witness achieved HP 11,604: the preparation ancestry was enqueued but
  *        starved behind lower nextDistance nodes on TS13.
