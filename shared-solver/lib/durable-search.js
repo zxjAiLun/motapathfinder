@@ -216,6 +216,7 @@ function buildSearchPreview({ task, stageGoal, state, stoppedReason, progressPro
         loc,
       },
       inventory: { ...(state.inventory || {}) },
+      flags: { ...(state.flags || {}) },
       floorStates: {
         [currentFloorId]: {
           removed: { ...(floorState.removed || {}) },
