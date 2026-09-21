@@ -3527,6 +3527,13 @@
       "cleanCheckout": true,
       "notes": "PR-5.4c Commit 1 Repair 3: complete travel-variant-set dominance coverage (findChoiceRecords, no first-record-only), equivalent vs metadata-only split, exact goal predicate floorId+exp"
     },
+    "shared-solver/check-known-witness-coverage.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+    },
     "shared-solver/check-launcher-api.js": {
       "grade": "unit-plus-micro",
       "allowsNotFound": false,
@@ -4520,6 +4527,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.25l transport-collapsed irreversible decision search: four correctness micros on a stub simulator (pure ping-pong collapses to zero strategic branches, first-arrive mutation stays strategic, one-way transport invents no return, macro chain expands to identical primitive execution) plus the real CHAOS-MT1 -> MT3 probe and, if it passes, the CHAOS-MT1 -> MT5 blueKing qualification, CONTROL = 5.25a event-forward search with the evaluator off, one search per child process; a not-found result is a preserved negative, not an infrastructure failure"
+    },
+    "shared-solver/check-ts14-witness-propagation.js": {
+      "grade": "local-regression",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": false,
+      "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
     },
     "shared-solver/check-walk-reachability-fast-path.js": {
       "grade": "local-regression",
