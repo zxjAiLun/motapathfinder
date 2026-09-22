@@ -249,6 +249,7 @@
         "shared-solver/check-region-route-output-contract.js",
         "shared-solver/check-replay-start-offset-contract.js",
         "shared-solver/check-replay-start-state-contract.js",
+        "shared-solver/check-replay-hero-array-normalization-contract.js",
         "shared-solver/check-replay-flag-identity-contract.js",
         "shared-solver/check-replay-flag-merge-cli-contract.js",
         "shared-solver/check-replay-h5save-resume-contract.js",
@@ -4101,6 +4102,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": false,
       "notes": "PR-5.1b local Chrome/Edge export, fresh native h5save load, next-decision continuation, final identity, and CLI fingerprint mismatch smoke"
+    },
+    "shared-solver/check-replay-hero-array-normalization-contract.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.31i hero array-field snapshot parity: normalizeRuntimeSnapshotPair equalizes a missing hero array field (equipment/followers) against an EMPTY array on the other side so the initial-snapshot diff does not report undefined!==object; a non-empty array on either side still surfaces as a real mismatch. Pure/normalizer contract; live 59-step witness is the integration gate."
     },
     "shared-solver/check-replay-start-offset-contract.js": {
       "grade": "closure",

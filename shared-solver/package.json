@@ -229,6 +229,7 @@
     "run:replay:start-offset": "node audit-replay-start-offset-contract.js",
     "check:replay:flag-identity": "node check-replay-flag-identity-contract.js",
     "check:replay:start-state": "node check-replay-start-state-contract.js",
+    "check:replay:hero-array": "node check-replay-hero-array-normalization-contract.js",
     "run:replay:flag-identity": "node audit-replay-flag-identity-contract.js",
     "check:replay:flag-merge-cli": "node check-replay-flag-merge-cli-contract.js",
     "run:replay:flag-merge-cli": "node audit-replay-flag-merge-cli-contract.js",

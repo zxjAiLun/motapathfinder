@@ -432,7 +432,30 @@ function normalizeRuntimeSnapshotPair(expected, actual, config) {
       }
     }
   }
+
+  // A route record may omit an unset hero array field (e.g. `followers`) that
+  // captureRuntimeSnapshot always emits as `[]`.  Mirror the empty-floor-record
+  // parity above: when one side is missing the field and the other side has it
+  // as an EMPTY array, treat the missing side as `[]`.  A non-empty array on
+  // either side is left untouched so a real difference still surfaces.
+  equalizeEmptyHeroArrayFields(normalizedExpected.hero, normalizedActual.hero);
   return { expected: normalizedExpected, actual: normalizedActual };
+}
+
+function equalizeEmptyHeroArrayFields(expectedHero, actualHero) {
+  if (!expectedHero || !actualHero || typeof expectedHero !== "object" || typeof actualHero !== "object") {
+    return;
+  }
+  for (const field of ["equipment", "followers"]) {
+    const hasExpected = Object.prototype.hasOwnProperty.call(expectedHero, field);
+    const hasActual = Object.prototype.hasOwnProperty.call(actualHero, field);
+    if (hasExpected === hasActual) continue;
+    if (!hasExpected && Array.isArray(actualHero[field]) && actualHero[field].length === 0) {
+      expectedHero[field] = [];
+    } else if (!hasActual && Array.isArray(expectedHero[field]) && expectedHero[field].length === 0) {
+      actualHero[field] = [];
+    }
+  }
 }
 
 function buildRuntimeSnapshotIdentityPair(expected, actual, config) {
@@ -1507,6 +1530,8 @@ module.exports = {
   describeRuntimeStatus,
   diffSnapshots,
   diffRouteSnapshot,
+  normalizeRuntimeSnapshotPair,
+  equalizeEmptyHeroArrayFields,
   executeRuntimeDecision,
   findBrowserExecutable,
   deriveRuntimeStartFlagBaseline,

@@ -994,6 +994,13 @@ const TEST_OVERRIDES = {
     "cleanCheckout": false,
     "notes": "PR-5.1a local Chrome/Edge live smoke across both PR-4.8b routes, valid offsets, checkpoint plus offset, and pre-launch out-of-range rejection"
   },
+  "shared-solver/check-replay-hero-array-normalization-contract.js": {
+    "grade": "unit-plus-micro",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.31i hero array-field snapshot parity: normalizeRuntimeSnapshotPair equalizes a missing hero array field (equipment/followers) against an EMPTY array on the other side so the initial-snapshot diff does not report undefined!==object; a non-empty array on either side still surfaces as a real mismatch. Pure/normalizer contract; live 59-step witness is the integration gate."
+  },
   "shared-solver/check-replay-start-state-contract.js": {
     "grade": "unit-plus-micro",
     "allowsNotFound": false,
@@ -1946,6 +1953,7 @@ const manifest = {
         "shared-solver/check-region-route-output-contract.js",
         "shared-solver/check-replay-start-offset-contract.js",
         "shared-solver/check-replay-start-state-contract.js",
+        "shared-solver/check-replay-hero-array-normalization-contract.js",
         "shared-solver/check-replay-flag-identity-contract.js",
         "shared-solver/check-replay-flag-merge-cli-contract.js",
         "shared-solver/check-replay-h5save-resume-contract.js",
