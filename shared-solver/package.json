@@ -228,6 +228,7 @@
     "check:replay:start-offset": "node check-replay-start-offset-contract.js",
     "run:replay:start-offset": "node audit-replay-start-offset-contract.js",
     "check:replay:flag-identity": "node check-replay-flag-identity-contract.js",
+    "check:replay:start-state": "node check-replay-start-state-contract.js",
     "run:replay:flag-identity": "node audit-replay-flag-identity-contract.js",
     "check:replay:flag-merge-cli": "node check-replay-flag-merge-cli-contract.js",
     "run:replay:flag-merge-cli": "node audit-replay-flag-merge-cli-contract.js",
@@ -342,6 +343,7 @@
     "audit:pr526k:guided-head-ab": "node audits/flat-search/audit-pr526k-guided-head-retention-ab.js",
     "check:dependency-feedback-loop": "node check-dependency-feedback-loop.js",
     "check:durable-search": "node check-durable-search.js",
+    "check:search-semantics-identity": "node check-search-semantics-identity.js",
     "check:dependency-branch-portfolio": "node check-dependency-branch-portfolio.js"
   },
   "dependencies": {

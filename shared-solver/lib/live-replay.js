@@ -550,6 +550,50 @@ function buildRuntimeProjectedSolverStateKeyPair(expected, actual, templateExact
   };
 }
 
+// PR-5.31h — snapshot start-state flag contract.
+// A replay start snapshot is AUTHORITATIVE for the replay's start flags: after
+// restore, the runtime's representable flags must equal exactly the snapshot's
+// flags, never runtime-Start boot flags merged with snapshot overrides (that
+// merge is what leaked `shop1` from Start.js). `isRepresentableReplayFlag`
+// mirrors the projection used by captureRuntimeSnapshot: engine-internal `__`
+// flags are ignored (so they are neither compared nor cleared) EXCEPT
+// `__leaveLoc__` and `*_buff__`; null/0/object values are not representable.
+// `restoreStartFlags` returns the authoritative final flag map: clear every
+// representable runtime flag the snapshot does not carry, keep engine-internal
+// flags untouched, then apply the snapshot's flags verbatim. `autoBattle` is
+// intentionally left to the separate automation-configuration step, so it is
+// excluded from this contract. The browser restore below applies the SAME
+// rules in-page (page.evaluate cannot call this Node function); this helper is
+// the unit-testable source of truth and the two must stay in sync.
+function isRepresentableReplayFlag(key, value) {
+  if (key === "autoBattle") return false;
+  if (key === "__leaveLoc__") {
+    return value != null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0;
+  }
+  if (key.startsWith("__") && !key.endsWith("_buff__")) return false;
+  if (value == null || value === 0) return false;
+  if (typeof value === "object") return false;
+  return true;
+}
+
+function restoreStartFlags(currentFlags, snapshotFlags) {
+  const current = currentFlags && typeof currentFlags === "object" ? currentFlags : {};
+  const snapshot = snapshotFlags && typeof snapshotFlags === "object" ? snapshotFlags : {};
+  const result = {};
+  // Keep engine-internal (non-representable) runtime flags; drop representable
+  // runtime flags that the snapshot does not carry (authoritative clearing).
+  for (const [key, value] of Object.entries(current)) {
+    if (key === "autoBattle") { result[key] = value; continue; }
+    if (!isRepresentableReplayFlag(key, value)) result[key] = value;
+  }
+  // Apply the snapshot flags verbatim (snapshot wins on any shared key).
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (key === "autoBattle") continue; // owned by the automation step
+    result[key] = value;
+  }
+  return result;
+}
+
 function deriveRuntimeStartFlagBaseline(routeRecord, projectRoot) {
   const startSnapshot = routeRecord && routeRecord.start && routeRecord.start.snapshot;
   if (!startSnapshot || !startSnapshot.floorId || !projectRoot) return null;
@@ -725,7 +769,31 @@ async function restoreRuntimeSnapshotStart(page, snapshot, options) {
         core.status.hero.items[bucket][itemId] = amount;
       });
 
-      Object.entries(startSnapshot.flags || {}).forEach(([key, value]) => {
+      // PR-5.31h: authoritative flag restore. The snapshot fully represents the
+      // replay start flags, so first clear every REPRESENTABLE runtime flag the
+      // snapshot does not carry (this removes Start.js boot flags such as
+      // `shop1` that would otherwise leak), keeping engine-internal `__` flags
+      // (except __leaveLoc__ / *_buff__) untouched, then apply the snapshot.
+      // Rules mirror isRepresentableReplayFlag / restoreStartFlags in Node.
+      // `autoBattle` is owned by the separate automation-configuration step.
+      const snapshotFlags = startSnapshot.flags || {};
+      const runtimeFlags = (core.status.hero && core.status.hero.flags) || {};
+      const isRepresentable = (key, value) => {
+        if (key === "autoBattle") return false;
+        if (key === "__leaveLoc__") {
+          return value != null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0;
+        }
+        if (key.startsWith("__") && !key.endsWith("_buff__")) return false;
+        if (value == null || value === 0) return false;
+        if (typeof value === "object") return false;
+        return true;
+      };
+      Object.keys(runtimeFlags).forEach((key) => {
+        if (key === "autoBattle") return;
+        if (!isRepresentable(key, runtimeFlags[key])) return;
+        if (!Object.prototype.hasOwnProperty.call(snapshotFlags, key)) core.setFlag(key, 0);
+      });
+      Object.entries(snapshotFlags).forEach(([key, value]) => {
         if (key === "autoBattle") return;
         core.setFlag(key, value);
       });
@@ -1443,6 +1511,8 @@ module.exports = {
   findBrowserExecutable,
   deriveRuntimeStartFlagBaseline,
   enrichReplayStartSnapshot,
+  isRepresentableReplayFlag,
+  restoreStartFlags,
   isAutoAdvanceableRuntimeEvent,
   executeRouteDecision,
   launchRuntimeSession,

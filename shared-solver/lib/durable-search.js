@@ -46,6 +46,32 @@ function problemFingerprint(config, towerRoot) {
     tower: treeDigest(path.join(towerRoot, "project")),
   }));
 }
+// Canonical set of EFFECTIVE search-behavior options.  Every field here can
+// change DP search RESULTS, so all of them must enter resumeSearchFingerprint
+// and must be what runAttempt actually forwards to searchDP (fingerprint ==
+// executed semantics).  Defaults are exactly the current production behavior
+// (best-first / lazy fairness / 4096 action cap), so this is behavior-
+// preserving for the current neko config.  Diagnostic/output-only fields
+// (title, scoreLabel, log/report paths) MUST NOT be added here.
+function searchSemantics(config) {
+  const cfg = config || {};
+  const slice = cfg.continuationSlice && typeof cfg.continuationSlice === "object" ? cfg.continuationSlice : {};
+  return {
+    version: 1,
+    dpPriorityMode: cfg.dpPriorityMode || "default",
+    dpAgendaMode: cfg.dpAgendaMode || "best-first",
+    fairnessEvery: Math.max(1, Math.floor(Number(cfg.fairnessEvery) || 32)),
+    fairOrderMode: cfg.fairOrderMode || "fifo",
+    maxActionsPerState: Math.max(1, Math.floor(Number(cfg.maxActionsPerState) || 4096)),
+    // Reserved for PR-5.32a; fingerprinted now so enabling it later invalidates
+    // resume of runs made without it.
+    continuationSlice: {
+      enabled: slice.enabled === true,
+      mode: slice.enabled === true ? (slice.mode || null) : null,
+      budget: slice.enabled === true && Number.isFinite(Number(slice.budget)) ? Number(slice.budget) : null,
+    },
+  };
+}
 function resumeSearchFingerprint(config, towerRoot) {
   return sha(JSON.stringify({
     schema: SCHEMA,
@@ -56,7 +82,22 @@ function resumeSearchFingerprint(config, towerRoot) {
     limits: { heapMb: config.heapMb, maxRssMb: config.maxRssMb },
     scoreFlag: config.scoreFlag || null,
     scoreScale: config.scoreScale || null,
+    searchSemantics: searchSemantics(config),
   }));
+}
+// Execution provenance: what code + effective semantics actually ran.  Records
+// only; never enters a state key, DP decision or pruning.  Lets a reviewer see
+// the executed solver digest and search semantics without trusting a release
+// directory name.
+function executionProvenance(config, towerRoot) {
+  return {
+    schema: SCHEMA,
+    solverDigest: treeDigest(__dirname),
+    problemFingerprint: problemFingerprint(config, towerRoot),
+    resumeSearchFingerprint: resumeSearchFingerprint(config, towerRoot),
+    executionIdentity: identityOf(config, towerRoot),
+    searchSemantics: searchSemantics(config),
+  };
 }
 function identityOf(config, towerRoot) {
   return sha(JSON.stringify({
@@ -134,7 +175,8 @@ function newJournal(identity, config, state, towerRoot = null) {
   const id = checkpointId(0, state);
   const problem = towerRoot ? problemFingerprint(config, towerRoot) : null;
   const resume = towerRoot ? resumeSearchFingerprint(config, towerRoot) : null;
-  return { schema: SCHEMA, identity, problemFingerprint: problem, resumeSearchFingerprint: resume, createdAt: new Date().toISOString(), state: "ready", elapsedMs: 0,
+  return { schema: SCHEMA, identity, problemFingerprint: problem, resumeSearchFingerprint: resume,
+    executionProvenance: towerRoot ? executionProvenance(config, towerRoot) : null, createdAt: new Date().toISOString(), state: "ready", elapsedMs: 0,
     totalExpansions: 0, completedAttempts: 0, initial: summary(state), initialFlags: state.flags,
     nodes: [{ id, stage: 0, tier: 0, status: "pending", summary: summary(state) }], history: [], best: null };
 }
@@ -286,13 +328,20 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
     }
   };
   const stageGoal = config.stages[task.stage];
+  // Pull every effective search option from the SAME canonical extractor that
+  // feeds resumeSearchFingerprint, so the fingerprinted semantics are exactly
+  // what executes here.  Defaults preserve current production behavior.
+  const semantics = searchSemantics(config);
   const result = searchDP(sim, state, {
     goalPredicate: (candidate) => matchesGoal(candidate, stageGoal),
-    dpPriorityMode: config.dpPriorityMode || "default",
+    dpPriorityMode: semantics.dpPriorityMode,
+    dpAgendaMode: semantics.dpAgendaMode,
+    fairnessEvery: semantics.fairnessEvery,
+    fairOrderMode: semantics.fairOrderMode,
     stageGoal,
     maxExpansions: budget.expansions, maxRuntimeMs: budget.runtimeMs,
     maxRssMb: config.maxRssMb, maxHeapMb: Math.floor(config.heapMb * 0.85),
-    maxActionsPerState: 4096, stopOnFirstGoal: false, captureTrace: false,
+    maxActionsPerState: semantics.maxActionsPerState, stopOnFirstGoal: false, captureTrace: false,
     goalSkylineLimit: config.candidateLimit, dpSkylineMax: config.candidateLimit,
     preserveSkylineRoles: true,
     actionFilter: (action) => !protectedCost(action, config),
@@ -360,6 +409,6 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
   }
   return { candidates, stats, verified, bestProgressPreview };
 }
-module.exports = { SCHEMA, SEARCH_PREVIEW_SCHEMA, sha, readJson, atomicJson, problemFingerprint, resumeSearchFingerprint, identityOf, validateConfig, protectedCost,
+module.exports = { SCHEMA, SEARCH_PREVIEW_SCHEMA, sha, readJson, atomicJson, problemFingerprint, resumeSearchFingerprint, searchSemantics, executionProvenance, identityOf, validateConfig, protectedCost,
   assertProtected, makeSimulator, initialState, matchesGoal, summary, checkpointId,
   newJournal, recoverJournal, pickTask, integrate, runAttempt, buildSearchPreview };

@@ -90,4 +90,13 @@ node tools/check-agent-boundaries.js --allow-public-layer-dev=1
 
 本地及云端focused check均PASS。真实云端UI经本机隧道的Chrome桌面/390px移动视口截图检查通过，无pageerror及横向溢出。截图：`shared-solver/routes/generated/cloud-search/progress-{desktop,mobile}.png`（ignored）。
 
-里程碑：[Cloud search + progress UI](../260919/cloud-search-progress.md)。
+## Probe / release 隔离约定（PR-5.31g）
+
+实验/probe **禁止写入或覆盖生产 release 目录**。已实测到 `20260920-5-29a-56f6c7d` release 里的 `dp-search.js` 被换成未提交实验代码——目录名不能证明执行内容。约定：
+
+- probe 使用独立目录/独立 bundle（如 `probes/<id>/`），不 `cp` 覆盖 `releases/<prod>/`；生产 release 视为只读快照。
+- 每次 durable 运行的 journal 与 `status.json` 现记录 `executionProvenance`：`solverDigest`（solver 代码树 sha256）、`problemFingerprint`、`resumeSearchFingerprint`、`executionIdentity`、`searchSemantics`（dpPriorityMode/dpAgendaMode/fairnessEvery/fairOrderMode/maxActionsPerState/continuationSlice）。reviewer 以此追溯实际执行，不靠 `release_id` 猜。
+- `resumeSearchFingerprint` 现覆盖所有有效搜索选项。改任一语义选项 → resume 被 `SEARCH_SEMANTICS_DRIFT` 拒绝，不静默沿用旧 frontier；改诊断/输出项不影响身份。回归门：`npm run check:search-semantics-identity --prefix shared-solver`。
+- 校验实际执行身份（只读）：`node -e "const d=require('./shared-solver/lib/durable-search');console.log(d.executionProvenance(require('./<config>'),'<tower-root>'))"`，与 journal 内 `executionProvenance` 比对。
+
+里程碑：[Cloud search + progress UI](../260919/cloud-search-progress.md)、[PR-5.31g](../260922/5-31g.md)。

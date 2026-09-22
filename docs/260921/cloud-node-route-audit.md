@@ -141,28 +141,40 @@ Pre-run plan/gates:
 - Store bounded checkpoint tables and counts, not a full event stream. Conclusions must name work budget and distinguish exact-prefix fate, same-key representative service, and general feasibility.
 - Run on local copies; do not change cloud release, journal, scheduler, candidate limits, or source entry.
 
-## Review Verdict and Formal Hypotheses Reversal (2026-09-21)
+## Review Verdict and Formal Hypotheses Reversal (2026-09-21 / 2026-09-22)
 
-Following the formal review of the 59-decision strict-replayed TS14 witness, PR-5.30a3 exact agenda trace, and PR-5.31a A/B experiment:
+Following formal review of the 59-decision strict TS14 witness, agenda traces (5.30a3), fairness A/B (5.31a/b), rate probes (5.31c), and split-lane debt trials (5.31d):
 
 ```text
-PR-5.30a3 exact winning-prefix trace        APPROVED
-P7 6639-expansion service debt              APPROVED
-P8 queued >25352, never popped @32k          APPROVED
-goal-relative distance causes starvation    ESTABLISHED
+PR-5.31c Fair4 @32k / 64k                   APPROVED
+P10 recovered @49943                        ESTABLISHED
+P11 immediate greedy service                ESTABLISHED
+P12 becomes new starvation boundary         ESTABLISHED
+fixed-rate FIFO fairness
+only moves the starvation boundary          ESTABLISHED
+继续调 fairnessEvery                        STOP
 
-PR-5.31a fairness causal A/B                APPROVED
-fairnessEvery=16 materially relieves block   ESTABLISHED
-fairnessEvery=32 positive but weaker         ESTABLISHED
+PR-5.31d split debt-lane implementation     NEGATIVE / CLOSED
+无配额 debt lane 会垄断 fair service         ESTABLISHED
+配额化 debt lane 会拖慢原 FIFO cursor         ESTABLISHED
+Q2/Q4 + tested shares 均未超过 Fair4          ESTABLISHED
 
-“agenda starvation is complete cause
-of the historical 256k MISS”                TOO STRONG — narrow wording:
-                                            "Agenda starvation is the first demonstrated causal blocker
-                                             on the known winning ancestry, and is sufficient to explain
-                                             why bounded searches fail to recover that ancestry."
+PR-5.31e Single-Lane Inherited Position A/B  NEGATIVE / CLOSED
+单队列继承公平位置导致子树雪崩垄断               ESTABLISHED (7,999/8,000 pops 被首批节点后代独占)
+P7 在 5.31e 下严重回归饿死 (Step 6 vs Fair4 Step 9) ESTABLISHED
+当前把父代古老位置复制给后代的方案正式关闭       ESTABLISHED
+(5.31e 的实测证明了将古老入队位置复制给子树后代的具体方案失败；
+并不构成对所有非 FIFO 调度、分层队列或有界局部切片的普遍否定。)
 
-production profile change                    NOT YET
-next                                         PR-5.31b end-to-end fairness validation (fairnessEvery=16)
+PR-5.31f Fair4 @ 128k Production-Viability   HIT GATE B / CLOSED
+foundGoal = false                           ESTABLISHED
+deepestExactTeacherPrefix = Step 11         ESTABLISHED
+P12 enqueued @49945 (seq 103929), unpopped  ESTABLISHED (fairCursor 55987, gap 47942)
+fixed-rate global FIFO lacks practical      ESTABLISHED
+efficiency for multi-step preparation chains
+No 256k escalation; no Fair2/Fair8 tuning   STOP
+
+next                                         PR-5.32a Bounded Fair Continuation Slice A/B
 ```
 
 ### Strategic Narrative Realignment
@@ -171,7 +183,19 @@ next                                         PR-5.31b end-to-end fairness valida
 - **5.30a / 5.30a1 (Future capability projection)**: Static arithmetic projection remains unexecutable/unreliable; confirmed.
 - **5.30a2 (Bounded candidate search)**: 32k search coverage was insufficient; Case C revoked.
 - **Root Cause Realignment**: Feasible paths exist inside current durable search space. Production 256k MISS is neither action omission nor entry dead-end. Agenda starvation is the first demonstrated causal blocker on the known winning ancestry.
-- **Next Milestone**: **PR-5.31b (End-to-End Fairness Validation)**: Fixed `fairnessEvery=16` on same durable seed `2-7f41f60b09a55951abd8931c` at 32k budget. Track all 30 teacher suffix decisions, continuous recovery depth, and memory/frontier growth.
+- **Fairness Evolution**:
+  - `best-first`: starved at P7.
+  - `Fair16`: recovered P7/P8, starved at P9 (insufficient fairness throughput).
+  - `Fair4`: recovered P7..P11, starved at P12 (FIFO dilution shifts boundary, does not eliminate compounding debt).
+  - `Fair4 + split debt lane (5.31d)`: splitting 25% fair capacity into two lanes slowed the primary FIFO cursor, causing net regression.
+  - `Fair4 + single-lane inherited position (5.31e)`: inherited queue order triggered an exponential subtree flood (7,999/8,000 fair pops monopolized by earliest nodes), drowning P7 completely (regression to Step 6).
+- **Core Scientific Conclusion on Fairness Order**:
+  - Proven: split debt lane steals FIFO throughput; inherited fair order causes subtree-branching flood that monopolizes fair pops.
+  - Not proven: that every priority inheritance concept is mathematically impossible, or that global FIFO is universally the only valid fairness basis.
+- **Three-Way Architecture Decision (Reviewer Directive)**:
+  - **Route A (Fair4 128k Production-Viability Probe)**: **Active now**. Run single 128k probe on cloud1 with pure `hybrid-fair` / `fairnessEvery=4` / `fairOrderMode=fifo`. If found TS14 with strict replay PASS, Fair4 becomes production candidate without complex scheduler machinery.
+  - **Route B (Two-Stage Goal Switching)**: **Held**. High risk of baking map/gem-specific knowledge into the planner; conflicts with lean generalist goals.
+  - **Route C (Bounded Preparation Continuation Slice / PR-5.32a)**: **Primary fallback if Route A MISSes**. After a fair pop, grant a short, bounded local continuation episode (temporal locality of exploration) without permanent priority inheritance or queue-tail dilution.
 
 ## PR-5.30a3 Winning Suffix Agenda Trace Results (2026-09-21)
 
@@ -211,7 +235,7 @@ We tested the Bounded Service Debt / Fairness Lane mechanism without modifying d
 | Metric | Control (Best-First) | Fairness 32 | Fairness 16 | Delta (Treatment B vs Control) |
 | :--- | :---: | :---: | :---: | :---: |
 | **Expansions / Budget** | 8000 / 8000 | 8000 / 8000 | 8000 / 8000 | Parity |
-| **Frontier Size** | 3,551 | 4,906 | 6,614 | Healthy breadth |
+| **Frontier Size** | 3,551 | 4,906 | 6,614 | Frontier expansion (+86.3%) |
 | **P7 (TS13->TS12) Pop Expansion** | **6,647** | **703** | **415** | **-6,232 (-93.7% wait)** |
 | **P7 Queue Wait (Service Debt)** | **6,639** | **695** | **407** | **16.3x faster service** |
 | **P8 (TS12 Slimeman) Status** | Queued (unserved) | Queued (unserved) | **Popped (Step 8 reached)** | **Unlocked next step** |
@@ -226,7 +250,201 @@ We tested the Bounded Service Debt / Fairness Lane mechanism without modifying d
 | **P9 (`vampire@TS12:1,10`)** | *Not reached* | **Enqueued at 7,936** | **Preparation chain advancing** |
 | **Deepest Continuous Prefix** | Step 7 | **Step 8 (Step 9 enqueued)** | **Detour deadlock broken** |
 
-**Conclusion**: Agenda Fairness successfully dissolves the detour starvation bottleneck without sacrificing goal-directed guidance.
+**Conclusion**: Agenda Fairness demonstrates causal efficacy in relieving detour starvation, but fixed-ratio FIFO fairness does not guarantee bounded service wait as queue backlog grows.
+
+---
+
+## PR-5.31c Fair-Service Rate Sufficiency Probe (Fair4 @ 32k / 64k, executed on cloud1)
+
+Following the reviewer's single derived treatment directive, we tested `hybrid-fair` with `fairnessEvery = 4` (25% fair share) on the same seed `2-7f41...` against Control (`best-first`) and Fair16. All runs were offloaded to `cloud1` to avoid local CPU/thermal saturation.
+
+### 1. 32,000 Expansions 3-Way Comparison
+
+| Metric | Control (`best-first`) | Fair16 (5.31b) | Fair4 (5.31c) | Diagnosis |
+| :--- | :---: | :---: | :---: | :--- |
+| **Fair Share** | 0% (greedy) | 6.25% (1/16) | **25.0% (1/4)** | 4x fair throughput |
+| **Wall Time (s)** | 155.8s | 162.8s | **299.2s** | **~1.9x Control cost** |
+| **Frontier Size** | 14,093 | 20,265 | **33,695** | Broadened exploration |
+| **Peak RSS / Heap (MB)** | 1,688 / 1,526.4 | 1,836 / 1,663.5 | **1,427.3 / 1,275.8** | Safe vs 8GB limit (cannot infer long-horizon trend from two points) |
+| **Deepest Continuous Prefix** | Step 7 / 30 | Step 8 / 30 | **Step 9 / 30** | +2 vs Control |
+| **P7 (`changeFloor@TS13:1,1`)** | Pop 6,647 (Wait 6,639) | Pop 415 (Wait 407) | **Pop 143 (Wait 133)** | Earliest service |
+| **P8 (`battle:slimeman@TS12:9,3`)** | Never popped | Pop 7,935 (Wait 7,519) | **Pop 1,467 (Wait 1,323)** | 5.4x faster |
+| **P9 (`battle:vampire@TS12:1,10`)** | Not reached | Queued (unserved) | **Popped @ 10,651 (Wait 9,183)** | **P9 starvation relieved** |
+| **P10 (`changeFloor@TS12:1,1`)** | Not reached | Not reached | **Queued @ 10,652 (Seq 21,365)** | Generated + accepted |
+
+### 2. 64,000 Expansions Structural Probe (Fair4)
+
+**Headline result: Reviewer Gate B scenario confirmed.**
+
+| Metric | Fair4 @ 32k | Fair4 @ 64k | Structural Meaning |
+| :--- | :---: | :---: | :--- |
+| **Wall Time (s)** | 299.2s | **609.4s** | Linear-ish scaling, ~2.04x |
+| **Frontier Size** | 33,695 | **58,897** | +74.8% |
+| **Peak RSS / Heap (MB)** | 1,427.3 / 1,275.8 | **1,686.9 / 1,519.2** | Stable, far below 8GB solver limit |
+| **Fair Cursor / Backlog** | 13,181 / 67,926 | **27,526 / 130,394** | Cursor advances ~14k per 32k budget |
+| **Fair Pops / Best Pops** | 8,000 / 24,000 | **16,000 / 48,000** | Fixed 25% share |
+| **Skipped Inactive / Expanded** | 1,099 / 4,192 | **3,930 / 8,060** | Stale-entry skip overhead grows |
+| **Deepest Continuous Prefix** | Step 9 / 30 | **Step 11 / 30** | P10 + P11 recovered |
+| **P10 (`changeFloor@TS12:1,1`)** | Queued | **Popped @ 49,943 (Wait 39,291)** | Crossed at ~50k |
+| **P11 (`skeletonCaptain@TS13:9,8`)** | Not reached | **Popped @ 49,944 (Wait 0)** | **Greedy instantly served after return to TS13** |
+| **P12 (`battle:bat@TS13:1,3`)** | Not reached | **Queued @ 49,945 (GoalDist 19)** | New FIFO debt boundary |
+
+- **P10 at 64k**: The pre-run estimate was that P10 (sequence 21,365) would *likely* be crossed because cursor reached 27,526 > 21,365. This was **confirmed empirically**: P10 popped at expansion 49,943.
+- **P11 instant service**: As predicted, once back on TS13, `P11 (GoalDist 6)` was popped immediately at 49,944 with **Wait 0** by the greedy best-first lane, confirming goal-relative heuristic remains effective for on-target forward progression.
+- **P12 new boundary**: `P12 (GoalDist 19)` was generated at 49,945 and remained queued at 64k. Its GoalDist (19) is not close enough to win greedy competition, so it re-enters the fair FIFO lane behind ~58k active backlog entries.
+- **Structural verdict**: Fixed-rate FIFO fairness **shifts the blocker deeper but does not retire service debt**. Each new prefix on the serial preparation chain must wait for another full FIFO rotation (~40k-50k expansions at 25% share). Extrapolating 30 prefixes at this rate exceeds any practical budget. **Stop `fairnessEvery` tuning.**
+
+### 3. Cost / Benefit Realignment (per reviewer correction)
+- Fair4 is **not** "negligible scheduling overhead". Its ~1.9x wall time and 2.4x frontier vs Control reflect the expected mechanism cost: stronger fairness services more distant, high-branching preparation states, generating more successors and more simulator/reachability work per expansion.
+- Fair4 materially improves winning-preparation coverage, but trades higher search breadth and runtime. Production decisions must balance this explicitly.
+- Peak RSS at 64k (1,686.9 MB) remains far below the production `maxRssMb = 8192` solver limit. However, two bounded points cannot establish a long-horizon memory trend; GC timing and process state materially affect peak numbers, and Fair4's lower 32k RSS vs Fair16 despite larger frontier confirms single-run RSS is noisy.
+
+---
+
+## PR-5.31b End-to-End Fairness Validation Results (32k & 64k)
+
+Following reviewer guidance, we fixed `fairnessEvery = 16` (no parameter tuning sweeps) on the exact same durable seed `2-7f41f60b09a55951abd8931c` and evaluated end-to-end teacher prefix recovery against the unchanged Control (`best-first`).
+
+### 1. 32,000 Expansions End-to-End Comparison
+
+| Metric | Control (`best-first`) | Treatment (`hybrid-fair`, `fairnessEvery=16`) | Impact / Diagnosis |
+| :--- | :---: | :---: | :--- |
+| **Actual Expansions** | 32,000 / 32,000 | 32,000 / 32,000 | Identical deterministic work |
+| **Wall Time (s)** | 155.8s | 162.8s | +4.5% wall overhead (negligible) |
+| **Frontier Size** | 14,093 | 20,265 | +43.8% breadth expansion |
+| **Peak RSS / Peak Heap** | 1,688 MB / 1,526.4 MB | 1,836 MB / 1,663.5 MB | Well within 6GB node headroom |
+| **Deepest Continuous Prefix** | **Step 7 / 30** | **Step 8 / 30** (Step 9 queued) | Progress unbroken |
+| **P7 (`changeFloor@TS13:1,1`)** | Pop 6,647 (Wait 6,639) | **Pop 415 (Wait 407)** | 16.3x acceleration |
+| **P8 (`battle:slimeman@TS12:9,3`)** | **Never popped (Wait > 25,352)** | **Popped @ 7,935 (Wait 7,519)** | **Deadlock broken** |
+| **P9 (`battle:vampire@TS12:1,10`)** | Not reached | **Queued @ 7,936 (Seq 15,693, GoalDist 30)** | Active, not rejected, not evicted |
+| **First Unpopped Blocker** | Step 8 (starved) | **Step 9 (`battle:vampire@TS12:1,10`)** | Queue position 15,693 vs cursor 4,871 |
+
+### 2. 64,000 Expansions Diagnostic on Treatment (Fairness 16)
+
+To determine whether Step 9 (P9) was blocked by dominance/replacement or by FIFO queue throughput:
+- **Expansions**: 64,000 (338.3s)
+- **Frontier Size**: 33,208
+- **Peak RSS / Peak Heap**: 2,636.7 MB / 2,448.7 MB (64k 范围内内存增长与更大的 active frontier 同时发生，峰值仍处于当前资源限制内，未观察到异常失控迹象)
+- **Fair Cursor Progression**: Advanced from 4,871 (at 32k) to **9,355** (at 64k) out of 104,611 total fair entries.
+- **Fair Pop Skips**: `skippedInactive = 1,916`, `skippedAlreadyExpanded = 3,767`.
+- **P9 Status at 64k**: **`status: queued`, perfectly valid, active in skyline and fairEntries, zero rejection, zero eviction**.
+- **Structural Finding**: P9 was assigned FIFO `sequence = 15,693` upon insertion at expansion 7,936. At 64k expansions, `popFair` (1 pop per 16 expansions = 4,000 fair pops) plus skipped entries advanced the cursor to index **9,355**, which had not yet reached index **15,693**.
+- **Verdict**: The remaining latency is **pure FIFO queue service dilution** (because 93.75% of pops remain greedy `best-first`, continuously generating forward branches that push detour entries deeper down the shared queue). P9 encounters **zero semantic or dominance blockers**.
+
+---
+
+## PR-5.31d Split Debt-Lane Trial (Negative / Closed)
+
+To address the FIFO backlog dilution where each new prefix resets to the queue tail, we implemented an inherited service-debt lane where fairly-served nodes pass their debt origin to successors with a bounded continuation quantum.
+
+### 32,000 Expansions Diagnostic Matrix
+
+| Configuration | Deepest Prefix | P7 Pop / Wait | P8 Pop / Wait | P9 Pop / Wait | P10 | Frontier | Cursor / Total |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Fair4 Baseline (5.31c)** | **Step 9** | **143 / 133** | **1,467 / 1,323** | **10,651 / 9,183** | Queued | 33,695 | 13,181 / 67,926 |
+| Debt v1 (Q2, no quota) | Step 6 (regression) | Never popped | — | — | — | 36,200 | 2 / 76,310 |
+| Debt v2 (Q2, share 0.5) | Step 9 | 203 / 193 | 3,067 / 2,863 | 30,491 / 27,423 | Queued | 37,314 | 7,909 / 75,650 |
+| Debt v3 (Q4, share 0.25) | Step 9 | 143 / 133 | 1,771 / 1,627 | 14,019 / 12,247 | Queued | 32,694 | 11,375 / 70,385 |
+
+### Causal Findings
+1. **Uncapped debt lane causes monopoly (v1)**: Without an explicit share cap, the debt lane consumed almost 100% of fair pops (`cursor = 2 / 76,310`), starving the primary FIFO and preventing even P7 from emerging (regression to Step 6).
+2. **Quota-capped debt lane slows primary FIFO (v2/v3)**: Capping debt-lane share eliminated monopoly (v3 cursor reached 11,375), but every debt pop subtracted from the primary FIFO's throughput. Because P8/P9 themselves originally required the FIFO cursor to advance, slowing the FIFO cursor delayed P8 (1,771 vs 1,467) and P9 (14,019 vs 10,651).
+3. **Verdict**: Splitting the fixed 25% fair capacity into two competing lanes is counterproductive. PR-5.31d is closed as a negative result.
+4. **Scope of Negative Finding**: *The tested split debt-lane formulations failed because debt service consumed the fixed fairness budget and slowed the primary FIFO service rate. Whether inherited fair position is useful without splitting fairness capacity remains open.*
+
+---
+
+## PR-5.31e Single-Lane Inherited Fair Position (Negative / Closed)
+
+Rather than splitting capacity into two lanes (5.31d), we tested maintaining a **single unified fair queue** (25% share, `BinaryHeap(compareFairOrder)`) where nodes whose ancestry earned fair service inherit `effectiveFairOrder = parent.effectiveFairOrder` with a bounded continuation allowance (N=8 inherited pops per ancestry), returning to normal `enqueueSequence` once exhausted.
+
+### 32,000 Expansions Diagnostic Comparison
+
+| Metric | Fair4 Baseline (5.31c) | SingleLane-Inherited-Fair4 (5.31e) | Diagnosis |
+| :--- | :---: | :---: | :--- |
+| **Deepest Continuous Prefix** | **Step 9 / 30** | **Step 6 / 30 (severe regression)** | Starved at P7 |
+| **P7 (`changeFloor@TS13:1,1`)** | **Popped @ 143 (Wait 133)** | **Never popped (Queued at end)** | Drowned by early inheritors |
+| **P8 (`battle:slimeman@TS12:9,3`)** | **Popped @ 1,467 (Wait 1,323)** | Not reached | Blocked |
+| **P9 (`battle:vampire@TS12:1,10`)** | **Popped @ 10,651 (Wait 9,183)** | Not reached | Blocked |
+| **P10 (`changeFloor@TS12:1,1`)** | Queued @ 10,652 | Not reached | Blocked |
+| **Frontier Size** | 33,695 | 32,824 | Comparable |
+| **Peak RSS / Heap (MB)** | 1,427.3 / 1,275.8 | 1,455.6 / 1,307.1 | Stable |
+| **Fair Pops / Best Pops** | 8,000 / 24,000 | 8,000 / 24,000 | Fixed 25% share |
+| **Inherited Order Enqueued** | 0 (FIFO) | **73,735** | **Branching tree explosion** |
+| **Inherited Order Pops** | 0 (FIFO) | **7,999 / 8,000 (99.99%)** | **Complete monopoly** |
+| **Inherited Order Resets** | 0 | 257 | Allowances exhausted |
+| **Wall Time (s)** | 299.2s | 295.9s | Parity |
+
+### Causal Mechanism: Tree-Branching Avalanche in Inherited Order
+1. **Exponential Fanout Flood**: In a branching search tree with branching factor $b > 1$, granting an inherited order (e.g. order 4 at expansion 4) causes every successor branch down $N$ generations to inherit that ancient order. Across $N=8$ generations, $1 + b + b^2 + \dots + b^N$ entries (here **73,735 enqueued nodes**) all shared tiny orders ($\le 8$).
+2. **Breadth-First Inversion**: Because all these 73,735 descendant entries carry orders $\le 8$, they bubble to the top of the fair min-heap ahead of P7 (which has normal enqueue order 10).
+3. **Monopoly**: **7,999 out of 8,000 fair pops (99.99%)** were consumed exclusively by the subtrees of the very first fair-popped nodes from expansions 4 and 8. The single fair queue devolved from breadth-first FIFO fairness into a depth-first traversal of the earliest fair-popped subtrees.
+4. **Definitive Conclusion**: The idea of "inheriting an ancient queue position/debt" across tree branches is fundamentally incompatible with fairness. Whether split-lane (5.31d) or single-lane (5.31e), priority inheritance causes an exponential descendant flood that drowns all subsequently enqueued states.
+5. **Architectural Ruling**: The tested implementation of copying ancient queue positions to child subtrees failed catastrophically due to branching-factor cascade. While this refutes the specific priority-inheritance scheme, it does not mathematically prove that all non-FIFO or local-slice fairness designs are invalid.
+6. **PR-5.31f Directive**: Proceed immediately with **Route A (Fair4 @ 128k on cloud1)** as a single, decisive engineering viability test of the pure, simple `hybrid-fair` mechanism. If TS14 is found and strict-replayed, Fair4 advances to production profile validation. If 128k MISSes, stop budget expansion and pivot to **Route C (PR-5.32a Bounded Preparation Continuation Slice)**.
+
+---
+
+## PR-5.31f Fair4 Production-Viability Probe (128k on cloud1)
+
+Executed on `cloud1` with `dpAgendaMode="hybrid-fair"`, `fairnessEvery=4` (25% fairness share), `fairOrderMode="fifo"`, budget **128,000 expansions**.
+
+### Quantitative Results & Diagnostics
+
+| Metric | Measured Value | Notes / Interpretation |
+| :--- | :---: | :--- |
+| `foundGoal` | **false** | No TS14 goal found |
+| `deepestExactTeacherPrefix` | **Step 11 / 30** | Step 11 (`skeletonCaptain@TS13:9,8`) popped at exp 49,944 |
+| `totalPopped` | 11 / 30 | Exactly same continuous prefix depth as 64k |
+| `totalQueued` | 1 | Only P12 is active and unserved |
+| **P12 Status** | **queued (unpopped)** | `battle:bat@TS13:1,3` (GoalDist 19) |
+| P12 `enqueuedAt` (expansions) | 49,945 | Enqueued immediately after P11 greedy pop |
+| P12 `sequence` (FIFO ordinal) | **103,929** | Position in `fairEntries` queue |
+| P12 `serviceDebt` | **47,942 positions** | `fairCursor` at 55,987 vs sequence 103,929 |
+| P12 Queue Wait | **>78,055 expansions** | Never served from 49,945 to 128,000 |
+| Next Popped Prefix | *none* | P12 is the first unpopped prefix |
+| Next Queued-Unserved Prefix | **P12 (Step 12)** | Blocker for all downstream P13..P30 |
+| `fairCursor` | **55,987** | Advanced 55,987 slots in `fairEntries` |
+| `fairQueueLength` | **246,847** | Active unexpanded: 103,849 |
+| `fairPops` / `bestPops` | 32,000 / 96,000 | Strict 1:3 pop ratio maintained |
+| `skippedInactive` | 8,677 | Dominated / dead skyline entries |
+| `skippedAlreadyExpanded` | 16,007 | Best-first popped entries |
+| `frontierSize` | **103,849** | Broad exploration frontier |
+| `peakRssMb` / `peakHeapUsedMb`| **2,167.9 MB / 1,936.0 MB** | Well within 8,192 MB limit |
+| `wallMs` | **1,372.2s (~22.9 min)** | Cloud ARM64 execution |
+
+### Teacher Prefix Status at 128,000 Expansions
+
+| Step | Action | Transition | Status | Enqueued | Popped | Wait | GoalDist |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| 1 | `battle:bat@TS13:3,2` | TS13 -> TS13 | popped | 1 | 1 | 0 | 18 |
+| 2 | `battle:vampire@TS13:6,2` | TS13 -> TS13 | popped | 2 | 2 | 0 | 15 |
+| 3 | `battle:skeletonWarrior@TS13:7,3` | TS13 -> TS13 | popped | 3 | 4 | 1 | 13 |
+| 4 | `battle:slimeman@TS13:8,5` | TS13 -> TS13 | popped | 5 | 6 | 1 | 10 |
+| 5 | `battle:slimeman@TS13:10,5` | TS13 -> TS13 | popped | 7 | 8 | 1 | 8 |
+| 6 | `battle:skeletonWarrior@TS13:7,7` | TS13 -> TS13 | popped | 9 | 9 | 0 | 9 |
+| 7 | `changeFloor@TS13:1,1` | TS13 -> TS12 | popped | 10 | 143 | 133 | 20 |
+| 8 | `battle:slimeman@TS12:9,3` | TS12 -> TS12 | popped | 144 | 1,467 | 1,323 | 29 |
+| 9 | `battle:vampire@TS12:1,10` | TS12 -> TS12 | popped | 1,468 | 10,651 | 9,183 | 30 |
+| 10 | `changeFloor@TS12:1,1` | TS12 -> TS13 | popped | 10,652 | 49,943 | 39,291 | 20 |
+| 11 | `battle:skeletonCaptain@TS13:9,8` | TS13 -> TS13 | popped | 49,944 | 49,944 | 0 | 6 |
+| 12 | `battle:bat@TS13:1,3` | TS13 -> TS13 | queued | 49,945 | - | - | 19 |
+| 13..30 | *Downstream preparation & rocks* | - | not-reached | - | - | - | - |
+
+### Causal Mechanism & Structural Conclusion (Gate B Hit)
+
+1. **Service Rate vs Backlog Growth**:
+   - In 128,000 expansions, 32,000 fair pops combined with 24,684 skips advanced the `fairCursor` by **55,987 positions** (an effective advance rate of ~0.437 queue slots per total expansion).
+   - Because of branching, by expansion 49,945 (when P11 popped and P12 was enqueued), the FIFO queue length had reached **103,929**.
+   - At expansion 128,000, `fairCursor` reached only 55,987, still **47,942 positions behind P12**.
+   - Reaching P12 under Fair4 would require approximately $\frac{103,929 - 55,987}{0.437} \approx 110,000$ additional expansions (total ~238,000 expansions).
+2. **Compounding Serial Backlog Dilution**:
+   - Even if P12 popped at ~238k expansions, P13 would be enqueued into a queue that by then exceeded 450,000 items, requiring another ~500,000 expansions.
+   - For a 30-step strategic preparation chain, pure fixed-rate global FIFO incurs a compounding queue wait at every single non-greedy transition.
+3. **Verdict**:
+   - **Gate B is Hit**: Pure Fair4 with fixed-rate global FIFO does not possess practical engineering efficiency for autonomous multi-step preparation chains within reasonable production budgets.
+   - **Stop Policy Enforced**: No escalation to 256k, no tuning to Fair2 or Fair8.
+   - **Immediate Strategic Pivot**: Proceed to **Route C (PR-5.32a Bounded Fair Continuation Slice)**.
 
 ## Outcome / publication
 

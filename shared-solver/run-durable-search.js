@@ -63,10 +63,15 @@ async function main(argv = process.argv.slice(2)) {
     const workerProbe = acquireLock(dir, "worker.lock");
     workerProbe();
     const identity = d.identityOf(config, towerRoot);
+    const provenance = d.executionProvenance(config, towerRoot);
     const journalPath = path.join(dir, "journal.json");
     let journal;
     if (fs.existsSync(journalPath)) {
       journal = d.recoverJournal(d.readJson(journalPath), identity, { config, towerRoot });
+      // Record the executed solver digest / effective semantics on resume too,
+      // so a resumed journal always states what actually ran (recovery already
+      // fail-closed on any semantics drift above).
+      journal.executionProvenance = provenance;
     } else {
       const project = loadProject(towerRoot);
       const state = d.initialState(project, d.makeSimulator(project, config), config);
@@ -93,6 +98,7 @@ async function main(argv = process.argv.slice(2)) {
         history: journal.history.slice(-30).map(({ diagnostics, ...row }) => row),
         limits: { heapMb: config.heapMb, maxRssMb: config.maxRssMb },
         resumeBoundary: "已完成局部任务持久化；在途 DP 从该局部起点重跑，不是 frontier 续跑。",
+        executionProvenance: provenance,
         optimalityProven: false,
       });
     };

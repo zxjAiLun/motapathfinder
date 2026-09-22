@@ -994,6 +994,13 @@ const TEST_OVERRIDES = {
     "cleanCheckout": false,
     "notes": "PR-5.1a local Chrome/Edge live smoke across both PR-4.8b routes, valid offsets, checkpoint plus offset, and pre-launch out-of-range rejection"
   },
+  "shared-solver/check-replay-start-state-contract.js": {
+    "grade": "unit-plus-micro",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.31h snapshot start-state flag authority: restoreStartFlags clears runtime Start boot flags (e.g. shop1) with no special-case, preserves engine-internal flags, snapshot wins on shared keys; representable projection equals snapshot flags exactly. Pure-function contract; live 59-step witness is the integration gate."
+  },
   "shared-solver/check-resource-cluster.js": {
     "grade": "local-regression",
     "allowsNotFound": false,
@@ -1168,6 +1175,13 @@ const TEST_OVERRIDES = {
     "requiresStrictReplay": false,
     "cleanCheckout": false,
     "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
+  },
+  "shared-solver/check-search-semantics-identity.js": {
+    "grade": "unit-plus-micro",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.31g execution-identity contract: resumeSearchFingerprint covers every effective search option (agenda/priority/fairness/action-cap/continuation-slice), diagnostic fields are inert, recovery fail-closes on semantics drift, provenance recorded. Synthetic tower, no search run."
   },
   "shared-solver/check-search-trace-explainability.js": {
     "grade": "unit-plus-micro",
@@ -1931,6 +1945,7 @@ const manifest = {
         "shared-solver/check-region-entry-contract.js",
         "shared-solver/check-region-route-output-contract.js",
         "shared-solver/check-replay-start-offset-contract.js",
+        "shared-solver/check-replay-start-state-contract.js",
         "shared-solver/check-replay-flag-identity-contract.js",
         "shared-solver/check-replay-flag-merge-cli-contract.js",
         "shared-solver/check-replay-h5save-resume-contract.js",
