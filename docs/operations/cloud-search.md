@@ -100,3 +100,9 @@ node tools/check-agent-boundaries.js --allow-public-layer-dev=1
 - 校验实际执行身份（只读）：`node -e "const d=require('./shared-solver/lib/durable-search');console.log(d.executionProvenance(require('./<config>'),'<tower-root>'))"`，与 journal 内 `executionProvenance` 比对。
 
 里程碑：[Cloud search + progress UI](../260919/cloud-search-progress.md)、[PR-5.31g](../260922/5-31g.md)。
+
+### 2026-09-22 PR-5.32a 隔离约定实测
+
+`probes/pr532a-8e08e6a-r1/` 用提交 `8e08e6a` 的独立bundle、冻结tower/seed/initial、`runs/control-32k` 与 `runs/treatment-32k` 完成一对32k causal probe；这**不是生产release**。在搜索前持久化实际effective config的provenance，额外用probeExecutionId绑定seed/initial/harness/执行选项；搜索只记录通用exact-key hash事件，witness路线仅在离线结果分析解析（搜索启动前仅验证bundle文件哈希）。完整bundle 1266文件与旧生产journal/status/STOP均哈希不变。
+
+结果为局部连续服务正信号但完整晋级门未过（Step9→13、P7回归、P12仍wait30,505），`NOT_PROMOTED`。旧run继续paused，不自动64k或发release。证据、精确命令与下一步见[5.32a结果](../260922/5-32a.md)。
