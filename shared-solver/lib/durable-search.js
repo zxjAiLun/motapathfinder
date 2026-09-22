@@ -338,6 +338,11 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
     dpAgendaMode: semantics.dpAgendaMode,
     fairnessEvery: semantics.fairnessEvery,
     fairOrderMode: semantics.fairOrderMode,
+    // PR-5.32a: pass the continuation slice through from the SAME canonical
+    // extractor that feeds resumeSearchFingerprint — fingerprint == execution.
+    continuationSlice: semantics.continuationSlice.enabled
+      ? { enabled: true, budget: semantics.continuationSlice.budget, mode: semantics.continuationSlice.mode }
+      : undefined,
     stageGoal,
     maxExpansions: budget.expansions, maxRuntimeMs: budget.runtimeMs,
     maxRssMb: config.maxRssMb, maxHeapMb: Math.floor(config.heapMb * 0.85),

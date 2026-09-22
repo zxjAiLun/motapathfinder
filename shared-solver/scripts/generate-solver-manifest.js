@@ -602,6 +602,13 @@ const TEST_OVERRIDES = {
     "cleanCheckout": false,
     "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
   },
+  "shared-solver/check-continuation-slice-contract.js": {
+    "grade": "unit-plus-micro",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.32a bounded continuation slice: K=1 identity (== OFF), subtree shares ONE budget K, slice pops anchored to fair pops only (no inherited priority), same global expansion budget, huge-K pauses fair cadence, determinism; pure synthetic simulator, no tower dependency"
+  },
   "shared-solver/check-core-regressions.js": {
     "grade": "unit-plus-micro",
     "allowsNotFound": false,
@@ -1927,6 +1934,7 @@ const manifest = {
     static: {
       requiredChecks: [
         "shared-solver/check-core-regressions.js",
+        "shared-solver/check-continuation-slice-contract.js",
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-discovery-capability-audit.js",

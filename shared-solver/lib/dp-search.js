@@ -1181,6 +1181,20 @@ function searchDPCore(simulator, initialRoots, options) {
   const agendaMode = String(config.dpAgendaMode || config.agendaMode || "best-first");
   const fairnessEvery = Math.max(1, Math.floor(number(config.fairnessEvery, 32)));
   const fairnessEnabled = agendaMode === "hybrid-fair";
+  // PR-5.32a — Bounded continuation slice (temporal-locality probe).  Optional,
+  // default OFF (bit-for-bit behavior-preserving).  When enabled AND fairness is
+  // on, a fair-served node N opens a local slice: the whole local subtree shares
+  // ONE total budget K, drawn from the SAME global maxExpansions (never extra),
+  // expanding by the SAME single-root comparator; when K expansions are used (or
+  // the local frontier drains) survivors return to the global agenda normally.
+  // No per-child budget, no inherited permanent priority, no new heuristic.
+  const continuationSliceConfig = config.continuationSlice && typeof config.continuationSlice === "object"
+    ? config.continuationSlice
+    : {};
+  const continuationSliceEnabled = continuationSliceConfig.enabled === true && fairnessEnabled;
+  const continuationSliceBudget = continuationSliceEnabled
+    ? Math.max(1, Math.floor(number(continuationSliceConfig.budget, 32)))
+    : 0;
   const stopOnFirstGoal = config.stopOnFirstGoal !== false;
   const maxExpansionsAfterFirstGoal = config.maxExpansionsAfterFirstGoal == null
     ? null
@@ -1204,6 +1218,13 @@ function searchDPCore(simulator, initialRoots, options) {
     skippedInactive: 0,
     skippedAlreadyExpanded: 0,
     maxFairQueueAgeExpansions: 0,
+    // PR-5.32a bounded continuation slice diagnostics (all 0 when disabled).
+    continuationSliceEnabled,
+    continuationSliceBudget,
+    continuationSlicesOpened: 0,
+    continuationSliceLocalExpansions: 0,
+    continuationSliceSurvivorsReturned: 0,
+    continuationSliceMaxDepthReached: 0,
   };
   // PR-5.24h Iteration 2 — multi-root shared DP authority: ONE live agenda.
   // PR-5.24h Iteration 3 — root-sliced scheduling (bounded root fairness).
@@ -1244,6 +1265,12 @@ function searchDPCore(simulator, initialRoots, options) {
   };
   const rootAgendas = new Map(); // rootIndex -> BinaryHeap(single-root comparator)
   const rootSliced = multiRootSchedulingPolicy === "root-sliced";
+  // PR-5.32a: local continuation-slice frontier, ordered by the SAME single-root
+  // comparator as global expansion order (no new heuristic).  null until a slice
+  // opens; declared here so compareSingleRootRank is already initialized (no TDZ).
+  let continuationSliceHeap = null;
+  let continuationSliceRemaining = 0;
+  let continuationSliceActive = false;
   if (multiRootSearch && rootSliced) {
     // Per-root scheduling queues; the global `heap` stays as the agenda only
     // for the legacy root-ordered policy (and the single-root path).
@@ -2138,6 +2165,13 @@ function searchDPCore(simulator, initialRoots, options) {
       fairEntries.push(node);
       fairEnqueueExpansions.set(node.nodeId, expansions);
     }
+    // PR-5.32a: while a continuation slice is open, every newly registered
+    // child is ALSO pushed into the slice's local frontier (view-only — the
+    // node stays owned by the global agenda).  All expansions while a slice
+    // is open are slice-subtree expansions, so no ancestry check is needed.
+    if (continuationSliceActive) {
+      continuationSliceHeap.push(node);
+    }
     if (profileExpansion) {
       perfTracker.endTopLevelPhase("frontierQueue");
     }
@@ -2354,6 +2388,47 @@ function searchDPCore(simulator, initialRoots, options) {
     return null;
   };
 
+  // PR-5.32a — Bounded continuation slice helpers.  A fair-served node opens a
+  // LOCAL frontier (same single-root comparator, no new heuristic).  Children
+  // enqueued while the slice is open are pushed to BOTH the global agenda and
+  // the slice heap (the slice is a view, never the owner of a node), so when a
+  // slice ends its survivors are already back in the global agenda — no
+  // priority is inherited and nothing needs re-enqueueing.
+  const continuationSliceNodeIsLive = (entry) => isActiveEntry(entry)
+    && (!expandedNodeIds || !expandedNodeIds.has(entry.nodeId));
+  const popLiveContinuationSliceEntry = () => {
+    while (continuationSliceHeap && continuationSliceHeap.length > 0) {
+      const entry = continuationSliceHeap.pop();
+      if (!continuationSliceNodeIsLive(entry)) continue;
+      agendaFairness.continuationSliceMaxDepthReached = Math.max(
+        agendaFairness.continuationSliceMaxDepthReached,
+        Number(entry.depth || 0),
+      );
+      return { entry, popSource: "continuation-slice" };
+    }
+    return null;
+  };
+  const endContinuationSlice = () => {
+    if (!continuationSliceActive) return;
+    let survivors = 0;
+    while (continuationSliceHeap && continuationSliceHeap.length > 0) {
+      if (continuationSliceNodeIsLive(continuationSliceHeap.pop())) survivors += 1;
+    }
+    agendaFairness.continuationSliceSurvivorsReturned += survivors;
+    continuationSliceHeap = null;
+    continuationSliceRemaining = 0;
+    continuationSliceActive = false;
+  };
+  const beginContinuationSlice = () => {
+    if (!continuationSliceEnabled) return;
+    // The whole local subtree shares ONE total budget K; the fair-served root's
+    // own expansion consumes the first unit (decremented in the main loop).
+    continuationSliceHeap = new BinaryHeap(compareSingleRootRank);
+    continuationSliceRemaining = continuationSliceBudget;
+    continuationSliceActive = true;
+    agendaFairness.continuationSlicesOpened += 1;
+  };
+
   const popNext = () => {
     // PR-5.24h Iteration 3: root-sliced multi-root scheduling takes over the
     // best-first pop path (fairness is a hybrid-fair-only feature and the
@@ -2361,6 +2436,18 @@ function searchDPCore(simulator, initialRoots, options) {
     // always false here when rootSliced).
     if (rootSliced) {
       return popRootSliced();
+    }
+    // PR-5.32a: while a continuation slice is open, serve the local frontier.
+    // Fair cadence is intentionally paused for the slice window — the slice IS
+    // the fair service for the direction that just earned it.
+    if (continuationSliceActive) {
+      const sliceResult = popLiveContinuationSliceEntry();
+      if (sliceResult) {
+        return sliceResult;
+      }
+      // Local frontier drained before budget: close it (survivors already sit
+      // in the global agenda) and fall through to the normal global pop.
+      endContinuationSlice();
     }
     const popBest = () => {
       while (heap && heap.length > 0) {
@@ -2401,6 +2488,9 @@ function searchDPCore(simulator, initialRoots, options) {
         const fairResult = popFair();
         if (fairResult) {
           agendaFairness.fairPops += 1;
+          // PR-5.32a: a fair-served direction earns one bounded continuation
+          // slice (root expansion consumes budget unit #1, see main loop).
+          beginContinuationSlice();
           return fairResult;
         }
         agendaFairness.fairFallbacks += 1;
@@ -2414,6 +2504,8 @@ function searchDPCore(simulator, initialRoots, options) {
       const fairResult = popFair();
       if (fairResult) {
         agendaFairness.fairPops += 1;
+        // PR-5.32a: fair-service fallback pop opens the same bounded slice.
+        beginContinuationSlice();
         return fairResult;
       }
       return null;
@@ -2737,6 +2829,15 @@ function searchDPCore(simulator, initialRoots, options) {
     }
 
     expansions += 1;
+    // PR-5.32a: the slice window's expansions consume the shared local budget
+    // (the fair-served root's own expansion is unit #1).  The budget is drawn
+    // from the SAME global maxExpansions — never extra work, only a different
+    // pop order — so Control/Treatment stay matched on total work.
+    if (continuationSliceActive) {
+      continuationSliceRemaining -= 1;
+      agendaFairness.continuationSliceLocalExpansions += 1;
+      if (continuationSliceRemaining <= 0) endContinuationSlice();
+    }
     const expandedNode = nodes.get(entry.nodeId);
     // Per-root expansion attribution (multi-root diagnostics; single-root
     // always attributes to root index 0).
@@ -2965,6 +3066,10 @@ function searchDPCore(simulator, initialRoots, options) {
     }
   }
 
+  // PR-5.32a: close any still-open continuation slice so survivor diagnostics
+  // count the local frontier it left behind (survivors are already in the
+  // global agenda; nothing else to do).
+  endContinuationSlice();
   agendaFairness.fairCursor = fairnessEnabled ? fairCursor : 0;
   agendaFairness.fairQueueLength = fairnessEnabled ? fairEntries.length : 0;
   agendaFairness.fairActiveUnexpanded = fairnessEnabled
