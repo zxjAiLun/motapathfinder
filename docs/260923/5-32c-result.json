@@ -1,0 +1,152 @@
+{
+  "schema": "pr532c-resource-aware-local-continuation-result-v1",
+  "milestone": "PR-5.32c",
+  "date": "2026-09-23",
+  "sourceCommit": "7de00f27d13312cf26f45db92512a4bf68250a48",
+  "verification": "VERIFIED",
+  "acceptance": "NOT_PROMOTED",
+  "hypothesisVerdict": "REJECTED: resource-first inside the K32 continuation slice did not improve exact route-prefix progress and regressed the earliest live prefix",
+  "experiment": {
+    "sameCommitAndBundle": true,
+    "seedSha256": "68c230b811e9d763f1f2e672b6707233f1a8b395c477d34406c931105c2c8022",
+    "initialSha256": "c87aaefbebea65e77c4791ee65d8241f5d63c44e1a315b4067764ceb2f1ec04b",
+    "seedExactStateKeySha256": "7f41f60b09a55951abd8931c1e01a5c20e1e4e7e6ca1970d804e99a3f5222b8d",
+    "seedStrictReplay": { "pass": true, "decisions": 29, "protectedItemInvariantAsserted": true },
+    "problemFingerprint": "0ca7d0b09e97dac015a8dc36e14988764b52185ae2ed5d63e3db8a3d6e0dec78",
+    "solverDigest": "c40de1ab5d2dd3e78873fe5fd97e7d00d9e46487e3d59bd86b8fcdace5a82e05",
+    "bundle": {
+      "manifestSha256": "edcb5ccf5fed19bca6e86cb21e86f431e0102cdcb2b8faa2fe08644590f63b37",
+      "fileCount": 1262,
+      "postRunDrift": [],
+      "witnessRouteIncluded": false
+    },
+    "fixedOptions": {
+      "globalPriority": "goal-relative",
+      "agenda": "hybrid-fair",
+      "fairnessEvery": 4,
+      "fairOrder": "fifo",
+      "continuationSliceBudget": 32,
+      "totalExpansionBudgetPerArm": 32000,
+      "maxActionsPerState": 4096,
+      "stageGoal": "TS14",
+      "onlyArmDelta": "continuationSlice.localPriorityMode: inherit -> resource-first"
+    },
+    "offlineWitnessJoin": {
+      "performedAfterBothRunsCompleted": true,
+      "witnessSha256": "48cee9e225219e203378ab4e478ac28148233a31997c2e740b56462e230c9ad7",
+      "prefixLifecycleSha256": "98285d84b94d58d53338d8e9496b2598bea1e23d353590fcc96f5c2aec61acdb",
+      "correctedPerArmAccumulator": true
+    }
+  },
+  "arms": {
+    "control": {
+      "localPriorityMode": "inherit",
+      "resumeSearchFingerprint": "102621e2c9153f1af279fa604e5e9611b1190a7e3da5dcb2f6a9c7c46089bf0c",
+      "probeExecutionId": "f7e8466ef5ec5771f92200a18555f3741ea7055262bb46b226d03bd164a5ee22",
+      "reportSha256": "908f350c8d7e5f7e5407ddd39bf862e5dd917a60a5d02a06ad1d4de943fce12a",
+      "eventsSha256": "da02e10e4c66ace160b9c9b94306fbc249321b0ca7aa1b5b36d99b6d92a237d7",
+      "eventBytes": 112923079,
+      "expansions": 32000,
+      "foundGoal": false,
+      "goalCount": 0,
+      "frontierSize": 44885,
+      "frontierExhausted": false,
+      "budgetExhausted": true,
+      "searchComplete": false,
+      "outcomeClass": "goal-not-found-search-incomplete",
+      "wallMs": 325218,
+      "peakRssMb": 2286.6,
+      "actionTrimmed": 0,
+      "observerErrors": 0,
+      "errors": 0,
+      "maxHeroSeen": { "hp": 5451, "atk": 9, "def": 1, "mdef": 0, "exp": 24 },
+      "expansionsByFloor": { "TS13": 25322, "TS12": 5917, "TS11": 761 },
+      "slice": {
+        "windows": 1633,
+        "localExpansions": 29890,
+        "maxExpansionsInWindow": 32,
+        "expansionFloors": { "TS12": 5917, "TS13": 23212, "TS11": 761 },
+        "localExpansionFloors": { "TS13": 22425, "TS12": 5143, "TS11": 689 },
+        "rootFloorDistribution": { "TS12": 774, "TS13": 787, "TS11": 72 },
+        "goalDistanceDeltaRootToLastServed": { "mean": -4.288, "median": 0, "negative": 722, "zero": 744, "positive": 167 },
+        "resourceDeltaMeanRootToLastServed": { "hp": -190.413, "atk": 0.361, "def": 0.103, "exp": 0.011 }
+      },
+      "exactPrefix": {
+        "deepestConsecutivePopped": 13,
+        "P7": { "acceptedAt": 12, "poppedAt": 843, "wait": 831 },
+        "P8": { "acceptedAt": 844, "poppedAt": 845, "wait": 1 },
+        "P12": { "acceptedAt": 850, "poppedAt": 31355, "wait": 30505 },
+        "P13": { "acceptedAt": 31261, "poppedAt": 31356, "wait": 0 },
+        "firstUnpoppedPrefix": {
+          "prefix": 14,
+          "summary": "battle:skeletonCaptain@TS13:5,6",
+          "lifecycle": "rejected twice by dominance; not accepted or popped",
+          "candidateHero": { "hp": 2667, "atk": 8, "def": 1, "lv": 3, "exp": 8, "loc": { "x": 5, "y": 5 } }
+        },
+        "nonContiguousP15PoppedAt": 31574
+      }
+    },
+    "treatment": {
+      "localPriorityMode": "resource-first",
+      "resumeSearchFingerprint": "06a004feb40b79511a1b6fb7e67ab90f49fc18e11e19c60d671b87fd884b3952",
+      "probeExecutionId": "d19f3568a17705291ec2b5145f4757cec7ac055de82aebfa5edd8448ee480933",
+      "reportSha256": "8538b023689ff211543716e7085173b053fcf89733571c8862fb8578571ae5d9",
+      "eventsSha256": "96992a48afa5b134f4ea5a24195a9bbf54d74349470f73b19396b25ef8532c9f",
+      "eventBytes": 103932362,
+      "expansions": 32000,
+      "foundGoal": false,
+      "goalCount": 0,
+      "frontierSize": 38331,
+      "frontierExhausted": false,
+      "budgetExhausted": true,
+      "searchComplete": false,
+      "outcomeClass": "goal-not-found-search-incomplete",
+      "wallMs": 253917,
+      "peakRssMb": 2007.8,
+      "actionTrimmed": 0,
+      "observerErrors": 0,
+      "errors": 0,
+      "maxHeroSeen": { "hp": 4945, "atk": 9, "def": 1, "mdef": 0, "exp": 24 },
+      "expansionsByFloor": { "TS13": 12935, "TS12": 13066, "TS11": 5999 },
+      "slice": {
+        "windows": 2380,
+        "localExpansions": 27493,
+        "maxExpansionsInWindow": 32,
+        "expansionFloors": { "TS12": 13066, "TS13": 8428, "TS11": 5999 },
+        "localExpansionFloors": { "TS13": 7798, "TS11": 5595, "TS12": 11720 },
+        "rootFloorDistribution": { "TS12": 1346, "TS13": 630, "TS11": 404 },
+        "goalDistanceDeltaRootToLastServed": { "mean": -0.641, "median": 0, "negative": 486, "zero": 1450, "positive": 444 },
+        "resourceDeltaMeanRootToLastServed": { "hp": -18.099, "atk": 0.136, "def": 0.082, "exp": -1.278 }
+      },
+      "exactPrefix": {
+        "deepestConsecutivePopped": 7,
+        "P7": { "acceptedAt": 466, "poppedAt": 14127, "wait": 13661, "popSource": "fair-oldest" },
+        "P8": { "acceptedAt": 14128, "poppedAt": null, "status": "accepted-not-popped-liveness-unproven", "acceptedFromPoppedP7": true },
+        "P9": { "accepted": false },
+        "atControlP14": { "accepted": false, "popped": false, "nextPrefixAcceptedFromPop": false }
+      }
+    }
+  },
+  "gate": {
+    "autonomousGoalAndStrictReplay": false,
+    "controlFirstExactBlocker": "P14 battle:skeletonCaptain@TS13:5,6",
+    "treatmentPoppedControlBlocker": false,
+    "treatmentAcceptedNextPrefixFromThatPop": false,
+    "gateBPass": false,
+    "conclusion": "No full route or blocker breakthrough; local resource-first regressed consecutive exact-prefix service to P7. Close this priorityMode/comparator tuning branch; do not sweep K or weights."
+  },
+  "productionSafety": {
+    "searchService": "inactive before and after experiment",
+    "oldLedger": "paused; activeTask=null; 43 nodes; STOP present before and after",
+    "probeRunDirs": "fresh independent control-32k and treatment-32k",
+    "bundleDrift": []
+  },
+  "artifacts": {
+    "cloudProbeDirectory": "/home/ubuntu/motapath-solver/probes/pr532c-7de00f2-r1/",
+    "compactEvidenceArchive": "shared-solver/routes/generated/260923-pr532c/evidence-pr532c-32k-compact.tar.gz",
+    "compactEvidenceArchiveSha256": "686e0ca279a38c23c16d25ab675355c77e6ac9aff15855a0cf33b4dc5f640ecf",
+    "fullRawEventArchiveRetainedOnCloudSha256": "37056c1447d52a646281da1e5cea936d113a6018a8f1306fe8bc6563d1964d15",
+    "localDetailedEvidenceDirectory": "shared-solver/routes/generated/260923-pr532c/evidence-r1/",
+    "prefixLifecycleSha256": "98285d84b94d58d53338d8e9496b2598bea1e23d353590fcc96f5c2aec61acdb"
+  }
+}
