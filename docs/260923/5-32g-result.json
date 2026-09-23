@@ -1,0 +1,122 @@
+{
+  "schema": "motapathfinder.pr532g.result.v1",
+  "status": {
+    "analysis": "VERIFIED",
+    "solverImplementation": "NONE",
+    "disposition": "RESEARCH_ONLY",
+    "review": "NOT_PERFORMED",
+    "acceptance": "PENDING_OWNER"
+  },
+  "baseCommit": "f7af49891b04e0dfec2b3f0cae158dc75e041567",
+  "question": "Can useful forward exact confluence be separated from return-to-entry borrowing by a generic topology or canonical-state boundary?",
+  "inputs": {
+    "source": "PR-5.32f frozen bundle /home/ubuntu/motapath-solver/probes/pr532f-559e97d-r2/",
+    "controlEventsSha256": "da02e10e4c66ace160b9c9b94306fbc249321b0ca7aa1b5b36d99b6d92a237d7",
+    "treatmentEventsSha256": "baaea568b80dd72887c03dac9344292d326bec12f0ab371d9e5bfa9a49c3bc74",
+    "immutableFilesVerified": 1260,
+    "postRunDriftCount": 0,
+    "newTowerSearch": false,
+    "solverRuntimeChanged": false,
+    "witnessUsedDuringSearch": false
+  },
+  "cohortTreatment": {
+    "handoffs": 12339,
+    "borrowedLocalPops": 3062,
+    "representativeParentIsRootAncestor": { "handoffs": 294, "localPops": 201 },
+    "rootAncestorOfRepresentative": { "handoffs": 0, "localPops": 0 },
+    "representativeNoDeeperThanRoot": { "handoffs": 2692, "localPops": 1077 },
+    "crossFloorEntry": { "handoffs": 8110, "localPops": 2143 },
+    "allHandoffsAreTreeDescendantsOfRoot": false
+  },
+  "reconstruction": {
+    "controlEdges": 22,
+    "treatmentEdges": 134,
+    "uniqueCanonicalParentActionChildEdge": true,
+    "liveDecisionDepthAndRawRouteParity": true
+  },
+  "caseStudies": {
+    "p16ForwardPositive": {
+      "root": 1339,
+      "source": 46698,
+      "representative": 26836,
+      "representativeParentIsRootAncestor": false,
+      "lca": 748,
+      "rootDepth": 45,
+      "representativeDepth": 47,
+      "rootToSourceCanonicalDiffFields": ["hero.x", "hero.hp", "hero.exp", "flags.hatred", "floorStates mutations"],
+      "rootToSourceOnlyFloorId": false
+    },
+    "p7EmptyReturnNegative": {
+      "root": 49,
+      "source": 2550,
+      "representative": 52,
+      "rootParent": 47,
+      "representativeParentIsRootAncestor": true,
+      "rootDepth": 38,
+      "representativeDepth": 38,
+      "rootToSourceCanonicalDiffFields": ["floorId"],
+      "rootToSourceOnlyFloorId": true
+    },
+    "firstActualDivergence": {
+      "popOrdinal": 102,
+      "root": 5,
+      "source": 349,
+      "representative": 24,
+      "rootParent": 4,
+      "representativeParentIsRootAncestor": false,
+      "rootAncestorOfRepresentative": false,
+      "lca": 0,
+      "rootDepth": 31,
+      "representativeDepth": 33,
+      "rootToSourceCanonicalDiffFields": ["floorId"],
+      "rootToSourceOnlyFloorId": true,
+      "projectedDiffFields": []
+    },
+    "controlDeterministicSample": {
+      "sampleSize": 32,
+      "strictUnchangedReturnCount": 13,
+      "note": "13/32 sampled root->source pairs differ in canonical key only by floorId, retaining all flags including __leaveLoc__"
+    }
+  },
+  "rejectedBoundaries": {
+    "excludeRepresentativeAncestorOfRoot": "Both positive examples are also not root descendants; the gate has no principled target.",
+    "representativeParentMustNotBeRootAncestor": "P7 passes, but the first real divergence (pop 102) bypasses it; also flips with equally valid canonical parent choice.",
+    "representativeDepthGreaterThanRoot": "Admits the first real divergence; also flips with equally valid canonical parent choice.",
+    "banEmptyReturnBorrowing": "Removes the first real divergence, but the same state test also removes the real P16 forward confluence that only differs by added TS13 mutations, hero movement and non-floorId canonical deltas."
+  },
+  "designModel": {
+    "classification": "DESIGN_MODEL_ONLY_NOT_SOLVER_IMPLEMENTATION",
+    "script": "shared-solver/routes/generated/260923-pr532g/check-boundary-model.js",
+    "checksPassed": 11,
+    "openQuestion": "Does protected dual-origin bounded service (native local branch vs borrowed branch inside the same K) serve both real examples better than an empty-return ban?",
+    "models": {
+      "regressionP7Shaped": { "tree": "goal", "unrestricted": "monopolized by borrowed chain, no goal", "emptyReturnBan": "goal", "dualOrigin": "goal within same K", "naiveFreshNodesAsNative": "no goal" },
+      "forwardP16Shaped": { "tree": "no goal", "unrestricted": "goal", "emptyReturnBan": "goal", "dualOrigin": "goal", "naiveFreshNodesAsNative": "goal" },
+      "usefulReturnShaped": { "tree": "no goal", "unrestricted": "goal", "emptyReturnBan": "no goal (useful borrowing deleted)", "dualOrigin": "goal", "naiveFreshNodesAsNative": "goal" }
+    },
+    "counterexamples": [
+      "Ancestor/depth gates flip under equally valid canonical parent selection for the identical future state.",
+      "Naively treating newly registered descendants of borrowed nodes as native loses native local service (model MISS where dual-origin succeeds)."
+    ],
+    "notClaimed": [
+      "Not a production scheduler and not tested on the real 32k search.",
+      "No claim that P16/P7 outcomes would change in the real search.",
+      "No weights or service ratios were searched or tuned."
+    ]
+  },
+  "production": {
+    "state": "paused",
+    "current": null,
+    "nodes": 43,
+    "service": "inactive",
+    "journalStatusAndStopHashesUnchanged": true
+  },
+  "nextStep": "If authorized, implement a default-OFF, no-new-weights dual-origin bounded continuation view with provenance roles, then repeat the same-code fixed 32k A/B before any promotion.",
+  "artifacts": {
+    "cloudRoot": "/home/ubuntu/motapath-solver/probes/pr532g-boundary-r1/analysis/",
+    "localRoot": "shared-solver/routes/generated/260923-pr532g/evidence-r1/",
+    "researchSha256": "c39bc39751e33ea08d947deb422214f8b64b44dccaa3c038accab72638887e30",
+    "topologySha256": "894d3d58c89be327f551a12f27e34eaafb193d4901755d347766859af5c89b2c",
+    "modelChecksSha256": "d9ca6ec3897d11d5844eab860ed9774c09c332a0b360874d6b5ad1a7dfc42766"
+  }
+}
