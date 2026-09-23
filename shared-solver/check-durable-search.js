@@ -151,6 +151,22 @@ async function main() {
       "runAttempt must forward the fingerprinted exact-confluence option to searchDP");
     assert.equal(handoffAttempt.verified.strictReplay, true);
 
+    const dualOriginConfig = { ...config, dpAgendaMode: "hybrid-fair", fairnessEvery: 4,
+      continuationSlice: { enabled: true, budget: 4, dualOriginBoundedService: true } };
+    const dualOriginDir = path.join(temp, "dual-origin-forwarding");
+    const dualOriginState = d.initialState(dummyProject, d.makeSimulator(dummyProject, dualOriginConfig), dualOriginConfig);
+    d.atomicJson(path.join(dualOriginDir, "initial.json"), dualOriginState);
+    d.atomicJson(path.join(dualOriginDir, "states/dual-origin.json"), dualOriginState);
+    const dualOriginTask = { id: "dual-origin", stage: 0, tier: 0 };
+    const dualOriginAttempt = d.runAttempt(dualOriginConfig, path.dirname(project), dualOriginDir, dualOriginTask);
+    const dualAf = dualOriginAttempt.stats.diagnostics.dp.agendaFairness;
+    assert.equal(dualAf.continuationSliceDualOriginBoundedService, true,
+      "runAttempt must forward fingerprinted dual-origin option to searchDP");
+    assert.equal(dualOriginAttempt.verified.strictReplay, true);
+    assert.equal(dualAf.continuationNativeExpansions + dualAf.continuationBorrowedExpansions,
+      dualAf.continuationSliceLocalExpansions,
+      "durable runAttempt must keep both origins inside the existing slice work budget");
+
     // 2. Integration and persistence: preview.json and previews/<id>.preview.json are written
     const mockJournal = d.newJournal("ident", config, mockState);
     const mockTask = d.pickTask(mockJournal);

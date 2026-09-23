@@ -79,6 +79,7 @@
     }
   },
   "rejectedBoundaries": {
+    "claimBoundary": "Within the tested ancestry/depth/empty-roundtrip gate classes, none separated the observed negative from the known P16 positive; this is not a universal impossibility claim over all state/topology predicates.",
     "excludeRepresentativeAncestorOfRoot": "Both positive examples are also not root descendants; the gate has no principled target.",
     "representativeParentMustNotBeRootAncestor": "P7 passes, but the first real divergence (pop 102) bypasses it; also flips with equally valid canonical parent choice.",
     "representativeDepthGreaterThanRoot": "Admits the first real divergence; also flips with equally valid canonical parent choice.",
@@ -111,7 +112,7 @@
     "service": "inactive",
     "journalStatusAndStopHashesUnchanged": true
   },
-  "nextStep": "If authorized, implement a default-OFF, no-new-weights dual-origin bounded continuation view with provenance roles, then repeat the same-code fixed 32k A/B before any promotion.",
+  "nextStep": "PR-5.32h is authorized: implement default-OFF dual-origin bounded service and fixed same-code 32k A/B. Do not change dominance, increase budgets, sweep weights/K, or use topology/state special cases.",,
   "artifacts": {
     "cloudRoot": "/home/ubuntu/motapath-solver/probes/pr532g-boundary-r1/analysis/",
     "localRoot": "shared-solver/routes/generated/260923-pr532g/evidence-r1/",

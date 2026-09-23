@@ -192,7 +192,29 @@ function main() {
       "G5 FAIL: exact-confluence handoff drift must fail closed on recovery",
     );
 
-    console.log("PASS search-semantics-identity: effective options fingerprinted (agenda/priority/fairness/action-cap/local comparator/exact-confluence handoff); diagnostic fields inert; recovery fail-closed; OFF serialization preserved");
+    const dualOrigin = {
+      ...inheritLocal,
+      continuationSlice: { ...inheritLocal.continuationSlice, dualOriginBoundedService: true },
+    };
+    assert.deepEqual(d.searchSemantics({ ...inheritLocal, continuationSlice: {
+      ...inheritLocal.continuationSlice, dualOriginBoundedService: false,
+    } }), d.searchSemantics(inheritLocal),
+    "G5 FAIL: explicit dual-origin OFF must retain legacy semantics serialization");
+    assert.notEqual(d.resumeSearchFingerprint(dualOrigin, towerRoot), d.resumeSearchFingerprint(inheritLocal, towerRoot),
+      "G5 FAIL: dual-origin ON must change resume fingerprint");
+    assert.equal(d.problemFingerprint(dualOrigin, towerRoot), baseProblem);
+    assert.equal(d.searchSemantics(dualOrigin).continuationSlice.dualOriginBoundedService, true);
+    assert.deepEqual(d.searchSemantics({ ...base, continuationSlice: { enabled: false, dualOriginBoundedService: true } }),
+      d.searchSemantics(base), "G5 FAIL: disabled slice must ignore dual-origin option");
+    assert.throws(() => d.searchSemantics({ continuationSlice: { enabled: true, dualOriginBoundedService: "true" } }),
+      /unsupported continuationSlice.dualOriginBoundedService/);
+    assert.throws(
+      () => d.recoverJournal({ ...localJournal }, d.identityOf(dualOrigin, towerRoot), { config: dualOrigin, towerRoot }),
+      /SEARCH_SEMANTICS_DRIFT/,
+      "G5 FAIL: dual-origin drift must fail closed on recovery",
+    );
+
+    console.log("PASS search-semantics-identity: effective options fingerprinted (agenda/priority/fairness/action-cap/local comparator/exact-confluence/dual-origin); diagnostic fields inert; recovery fail-closed; OFF serialization preserved");
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

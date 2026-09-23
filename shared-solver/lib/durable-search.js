@@ -13,6 +13,7 @@ const {
   searchDP,
   normalizeContinuationSliceLocalPriorityMode,
   normalizeContinuationSliceExactConfluenceHandoff,
+  normalizeContinuationSliceDualOriginBoundedService,
 } = require("./dp-search");
 const { buildRouteRecord } = require("./route-store");
 
@@ -77,7 +78,12 @@ function searchSemantics(config) {
         ? normalizeContinuationSliceLocalPriorityMode(slice.localPriorityMode)
         : null,
       // Preserve the legacy OFF serialization; only opt-in adds semantics.
-      ...(slice.enabled === true && normalizeContinuationSliceExactConfluenceHandoff(slice.exactConfluenceHandoff)
+      ...(slice.enabled === true && normalizeContinuationSliceDualOriginBoundedService(slice.dualOriginBoundedService)
+        ? { dualOriginBoundedService: true }
+        : {}),
+      ...(slice.enabled === true
+        && !normalizeContinuationSliceDualOriginBoundedService(slice.dualOriginBoundedService)
+        && normalizeContinuationSliceExactConfluenceHandoff(slice.exactConfluenceHandoff)
         ? { exactConfluenceHandoff: true }
         : {}),
     },

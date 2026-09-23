@@ -28,8 +28,10 @@ function makeSimulator(settings) {
       let actions = [];
       if (x === 0) actions = [edge("a-fair-root", 1, 20), edge("b-old-target", 2, targetHp), edge("c-greedy", 10, 100)];
       else if (x === 1) actions = [edge("a-confluence", 2, cfg.nonExact ? 9 : targetHp),
-        edge("b-duplicate-confluence", 2, cfg.nonExact ? 9 : targetHp), edge("c-cycle-fair", 1, 20)];
+        edge("b-duplicate-confluence", 2, cfg.nonExact ? 9 : targetHp), edge("c-cycle-fair", 1, 20),
+        ...(cfg.nativeBranch || cfg.dualOrigin ? [edge("d-native-child", 3, 19)] : [])];
       else if (x === 2) actions = [edge("a-goal", 90, targetHp), edge("b-cycle-target", 2, state.hero.hp)];
+      else if (x === 3) actions = [edge("native-descendant", 4, 19)];
       else if (x >= 10 && x < 60) {
         actions = [edge(`greedy-${x + 1}`, x + 1, 100)];
         if (cfg.evictedTarget && x === 10) actions.push(edge("upgrade-target", 2, 15));
@@ -53,6 +55,7 @@ function options(slice, budget, observer, settings) {
 function run(flag, settings = {}) {
   const events = [];
   const slice = { enabled: settings.sliceEnabled !== false, budget: settings.k || 4,
+    ...(settings.dualOrigin ? { dualOriginBoundedService: true } : {}),
     ...(flag === undefined ? {} : { exactConfluenceHandoff: flag }) };
   const observer = settings.noObserver ? null : {
     eventTypes: ["skylineInserted", "skylineEvicted", "candidateRejected", "agendaPopped", "continuationHandoff"],
@@ -108,6 +111,41 @@ function main() {
   assert.equal(on.af.continuationConfluencePops, 1);
   assert.equal(on.af.continuationConfluenceAlreadyInView, 1);
   checkBudgetAndUniquePops(on, 4);
+  const dual = run(undefined, { dualOrigin: true, k: 5, budget: 8, noGoal: true });
+  const dualPops = pops(dual).filter(e => e.popSource === "fair-oldest" || e.popSource === "continuation-slice");
+  const dualSlice = dual.af.continuationDualOriginSlices[0];
+  assert.equal(dual.af.continuationSliceDualOriginBoundedService, true);
+  assert.equal(dual.af.continuationSliceExactConfluenceHandoff, true, "dual-origin includes exact live representative handoff");
+  assert.equal(dualSlice.serviceSequence, "NBNBN", "native root then work-conserving N/B round robin");
+  assert.equal(dualSlice.bothOriginsAvailable, "01110", "one-source-empty slots are work-conserving");
+  assert.equal(dualSlice.consumed, 5);
+  assert.equal(dualSlice.budget, 5);
+  assert.deepEqual(dualPops.map(e => e.continuationOrigin), ["native", "borrowed", "native", "borrowed", "native"]);
+  assert.equal(dual.af.continuationNativeExpansions + dual.af.continuationBorrowedExpansions,
+    dual.af.continuationSliceLocalExpansions);
+  assert.equal(dual.af.continuationNativeExpansions, 3);
+  assert.equal(dual.af.continuationBorrowedExpansions, 2);
+  assert.equal(dual.af.continuationNativeAcceptedDescendants, 2);
+  assert.equal(dual.af.continuationBorrowedAcceptedDescendants, 1);
+  assert.equal(dual.af.continuationBorrowedAdmitted, 2, "borrowed descendants inherit borrowed provenance");
+  assert.equal(dual.af.continuationDuplicateExpansionPrevented, 0);
+  assert.ok(dual.result.expansions <= 8, "dual-origin must remain inside original global budget");
+  assert.deepEqual(dual.af.continuationDualOriginSlices, run(undefined, { dualOrigin: true, k: 5, budget: 8, noGoal: true }).af.continuationDualOriginSlices,
+    "dual-origin deterministic service summary");
+  const dualK1 = run(undefined, { dualOrigin: true, k: 1 });
+  assert.deepEqual(content(dualK1), content(run(false, { nativeBranch: true, k: 1 })), "dual-origin K=1 identity");
+  assert.equal(dualK1.af.continuationDualOriginSlices[0].consumed, 1);
+  const dualCycle = run(undefined, { dualOrigin: true, budget: 160, k: 4, skylineMax: 4, noGoal: true });
+  checkBudgetAndUniquePops(dualCycle, 4);
+  assert.ok(dualCycle.result.expansions <= 160);
+  assert.equal(dualCycle.result.frontierSize, 0, "dual-origin cyclic graph must drain without repeated expansion");
+  const dualWithoutObserver = run(undefined, { dualOrigin: true, k: 5, budget: 8, noGoal: true, noObserver: true });
+  assert.equal(dualWithoutObserver.result.expansions, dual.result.expansions);
+  assert.equal(dualWithoutObserver.result.frontierSize, dual.result.frontierSize);
+  assert.equal(dualWithoutObserver.result.foundGoal, dual.result.foundGoal);
+  assert.deepEqual(dualWithoutObserver.af.continuationDualOriginSlices, dual.af.continuationDualOriginSlices,
+    "observer presence cannot change dual-origin schedule");
+
   const withoutObserver = run(true, { noObserver: true });
   assert.equal(withoutObserver.result.foundGoal, on.result.foundGoal);
   assert.equal(withoutObserver.result.frontierSize, on.result.frontierSize);
@@ -133,6 +171,8 @@ function main() {
   assert.throws(() => run("true"), /unsupported continuationSlice.exactConfluenceHandoff/);
   const multiOptions = options({ enabled: true, budget: 4, exactConfluenceHandoff: true }, 6);
   assert.throws(() => searchDPMultiRoot(makeSimulator(), [{ state: initialState() }, { state: initialState() }], multiOptions), /requires single-root/);
-  console.log("PASS continuation-confluence-contract: default OFF / real duplicate handoff / exact-live-unexpanded guards / immutable rank and parent / shared K / view dedup / cycle drain / observer independence");
+  assert.throws(() => searchDPMultiRoot(makeSimulator(), [{ state: initialState() }, { state: initialState() }],
+    options({ enabled: true, budget: 4, dualOriginBoundedService: true }, 6)), /requires single-root/);
+  console.log("PASS continuation-confluence-contract: default OFF / real duplicate handoff / dual-origin work-conserving round robin / provenance inheritance / exact-live-unexpanded guards / immutable rank and parent / shared K / view dedup / cycle drain / observer independence");
 }
 main();

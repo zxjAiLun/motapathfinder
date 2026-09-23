@@ -535,6 +535,12 @@ function normalizeContinuationSliceExactConfluenceHandoff(value) {
   throw new Error(`unsupported continuationSlice.exactConfluenceHandoff: ${String(value)}`);
 }
 
+function normalizeContinuationSliceDualOriginBoundedService(value) {
+  if (value == null || value === false) return false;
+  if (value === true) return true;
+  throw new Error(`unsupported continuationSlice.dualOriginBoundedService: ${String(value)}`);
+}
+
 function emptyActionStats() {
   return {
     byActionType: {},
@@ -1222,8 +1228,11 @@ function searchDPCore(simulator, initialRoots, options) {
   const continuationSliceLocalPriorityMode = continuationSliceEnabled
     ? normalizeContinuationSliceLocalPriorityMode(continuationSliceConfig.localPriorityMode)
     : "inherit";
+  const continuationSliceDualOriginBoundedService = continuationSliceEnabled
+    && normalizeContinuationSliceDualOriginBoundedService(continuationSliceConfig.dualOriginBoundedService);
   const continuationSliceExactConfluenceHandoff = continuationSliceEnabled
-    && normalizeContinuationSliceExactConfluenceHandoff(continuationSliceConfig.exactConfluenceHandoff);
+    && (continuationSliceDualOriginBoundedService
+      || normalizeContinuationSliceExactConfluenceHandoff(continuationSliceConfig.exactConfluenceHandoff));
   const stopOnFirstGoal = config.stopOnFirstGoal !== false;
   const maxExpansionsAfterFirstGoal = config.maxExpansionsAfterFirstGoal == null
     ? null
@@ -1255,6 +1264,19 @@ function searchDPCore(simulator, initialRoots, options) {
     continuationSliceLocalExpansions: 0,
     continuationSliceSurvivorsReturned: 0,
     continuationSliceMaxDepthReached: 0,
+    ...(continuationSliceDualOriginBoundedService ? {
+      continuationSliceDualOriginBoundedService: true,
+      continuationNativeAdmitted: 0,
+      continuationNativePopped: 0,
+      continuationNativeAcceptedDescendants: 0,
+      continuationNativeExpansions: 0,
+      continuationBorrowedAdmitted: 0,
+      continuationBorrowedPopped: 0,
+      continuationBorrowedAcceptedDescendants: 0,
+      continuationBorrowedExpansions: 0,
+      continuationDuplicateExpansionPrevented: 0,
+      continuationDualOriginSlices: [],
+    } : {}),
     ...(continuationSliceExactConfluenceHandoff ? {
       continuationSliceExactConfluenceHandoff: true,
       continuationConfluenceAttempts: 0,
@@ -1313,10 +1335,16 @@ function searchDPCore(simulator, initialRoots, options) {
   // rank or the goal-relative global agenda; local survivors keep their global
   // queue entries and resume global ordering when the bounded slice closes.
   let continuationSliceHeap = null;
+  let continuationSliceNativeHeap = null;
+  let continuationSliceBorrowedHeap = null;
   let continuationSliceRemaining = 0;
   let continuationSliceActive = false;
   let continuationSliceNodeIds = null;
   let continuationSliceBorrowedNodeIds = null;
+  let continuationSliceOrigins = null;
+  let continuationSliceNextOrigin = "borrowed";
+  let continuationSliceCurrentOrigins = null;
+  let continuationSliceExpansionContext = null;
   if (multiRootSearch && rootSliced) {
     // Per-root scheduling queues; the global `heap` stays as the agenda only
     // for the legacy root-ordered policy (and the single-root path).
@@ -1726,10 +1754,21 @@ function searchDPCore(simulator, initialRoots, options) {
     return continueAfterGoal || !isGoalState(entry.state);
   };
 
-  const pushContinuationSliceNode = (node) => {
+  const pushContinuationSliceNode = (node, requestedOrigin = "native") => {
     if (continuationSliceNodeIds) {
       if (continuationSliceNodeIds.has(node.nodeId)) return false;
       continuationSliceNodeIds.add(node.nodeId);
+    }
+    const origin = continuationSliceDualOriginBoundedService
+      ? (requestedOrigin === "borrowed" ? "borrowed" : "native")
+      : "native";
+    if (continuationSliceDualOriginBoundedService) {
+      continuationSliceOrigins.set(node.nodeId, origin);
+      const prefix = origin === "native" ? "continuationNative" : "continuationBorrowed";
+      agendaFairness[`${prefix}Admitted`] += 1;
+      continuationSliceCurrentOrigins[origin].admitted += 1;
+      (origin === "native" ? continuationSliceNativeHeap : continuationSliceBorrowedHeap).push(node);
+      return true;
     }
     continuationSliceHeap.push(node);
     return true;
@@ -1748,7 +1787,7 @@ function searchDPCore(simulator, initialRoots, options) {
         || heroHp(state) !== heroHp(node.state)) continue;
       if (exactKey === null) exactKey = buildStateKey(state);
       if (buildStateKey(node.state) !== exactKey) continue;
-      if (!pushContinuationSliceNode(node)) {
+      if (!pushContinuationSliceNode(node, "borrowed")) {
         agendaFairness.continuationConfluenceAlreadyInView += 1;
         return;
       }
@@ -2128,6 +2167,12 @@ function searchDPCore(simulator, initialRoots, options) {
       return false;
     }
     nodes.set(node.nodeId, node);
+    if (continuationSliceExpansionContext) {
+      const origin = continuationSliceExpansionContext.origin;
+      const prefix = origin === "native" ? "continuationNative" : "continuationBorrowed";
+      agendaFairness[`${prefix}AcceptedDescendants`] += 1;
+      continuationSliceExpansionContext.stats[origin].acceptedDescendants += 1;
+    }
     // PR-5.24h Iteration 2 Repair 1: record accepted root registrations so
     // qualification gates can assert nodeId uniqueness (diagnostic only;
     // children are never recorded here).
@@ -2258,7 +2303,10 @@ function searchDPCore(simulator, initialRoots, options) {
     // borrowed nodes may have an older parent chain; global ownership and
     // immutable node/rank/provenance remain unchanged in both cases.
     if (continuationSliceActive) {
-      pushContinuationSliceNode(node);
+      const inheritedOrigin = continuationSliceDualOriginBoundedService && parentNode
+        ? continuationSliceOrigins.get(parentNode.nodeId)
+        : null;
+      pushContinuationSliceNode(node, inheritedOrigin || "native");
     }
     if (profileExpansion) {
       perfTracker.endTopLevelPhase("frontierQueue");
@@ -2485,6 +2533,35 @@ function searchDPCore(simulator, initialRoots, options) {
   const continuationSliceNodeIsLive = (entry) => isActiveEntry(entry)
     && (!expandedNodeIds || !expandedNodeIds.has(entry.nodeId));
   const popLiveContinuationSliceEntry = () => {
+    if (continuationSliceDualOriginBoundedService) {
+      const discardStale = (origin) => {
+        const queue = origin === "native" ? continuationSliceNativeHeap : continuationSliceBorrowedHeap;
+        while (queue && queue.length > 0 && !continuationSliceNodeIsLive(queue.items[0])) {
+          const stale = queue.pop();
+          if (expandedNodeIds && expandedNodeIds.has(stale.nodeId)) {
+            agendaFairness.continuationDuplicateExpansionPrevented += 1;
+            continuationSliceCurrentOrigins.duplicateExpansionPrevented += 1;
+          }
+        }
+        return Boolean(queue && queue.length > 0);
+      };
+      const nativeAvailable = discardStale("native");
+      const borrowedAvailable = discardStale("borrowed");
+      if (!nativeAvailable && !borrowedAvailable) return null;
+      const origin = continuationSliceNextOrigin === "native"
+        ? (nativeAvailable ? "native" : "borrowed")
+        : (borrowedAvailable ? "borrowed" : "native");
+      const queue = origin === "native" ? continuationSliceNativeHeap : continuationSliceBorrowedHeap;
+      const entry = queue.pop();
+      continuationSliceNextOrigin = origin === "native" ? "borrowed" : "native";
+      if (origin === "borrowed") agendaFairness.continuationConfluencePops += 1;
+      agendaFairness.continuationSliceMaxDepthReached = Math.max(
+        agendaFairness.continuationSliceMaxDepthReached,
+        Number(entry.depth || 0),
+      );
+      return { entry, popSource: "continuation-slice", continuationOrigin: origin,
+        continuationBothOriginsAvailable: nativeAvailable && borrowedAvailable };
+    }
     while (continuationSliceHeap && continuationSliceHeap.length > 0) {
       const entry = continuationSliceHeap.pop();
       if (!continuationSliceNodeIsLive(entry)) continue;
@@ -2502,8 +2579,23 @@ function searchDPCore(simulator, initialRoots, options) {
   const endContinuationSlice = () => {
     if (!continuationSliceActive) return;
     let survivors = 0;
-    while (continuationSliceHeap && continuationSliceHeap.length > 0) {
-      if (continuationSliceNodeIsLive(continuationSliceHeap.pop())) survivors += 1;
+    if (continuationSliceDualOriginBoundedService) {
+      for (const queue of [continuationSliceNativeHeap, continuationSliceBorrowedHeap]) {
+        while (queue && queue.length > 0) {
+          if (continuationSliceNodeIsLive(queue.pop())) survivors += 1;
+        }
+      }
+      if (continuationSliceCurrentOrigins) {
+        agendaFairness.continuationDualOriginSlices.push(continuationSliceCurrentOrigins);
+      }
+      continuationSliceNativeHeap = null;
+      continuationSliceBorrowedHeap = null;
+      continuationSliceOrigins = null;
+      continuationSliceCurrentOrigins = null;
+    } else {
+      while (continuationSliceHeap && continuationSliceHeap.length > 0) {
+        if (continuationSliceNodeIsLive(continuationSliceHeap.pop())) survivors += 1;
+      }
     }
     agendaFairness.continuationSliceSurvivorsReturned += survivors;
     continuationSliceHeap = null;
@@ -2512,16 +2604,56 @@ function searchDPCore(simulator, initialRoots, options) {
     continuationSliceRemaining = 0;
     continuationSliceActive = false;
   };
-  const beginContinuationSlice = () => {
+  const beginContinuationSlice = (rootEntry) => {
     if (!continuationSliceEnabled) return;
     // The whole local subtree shares ONE total budget K; the fair-served root's
     // own expansion consumes the first unit (decremented in the main loop).
-    continuationSliceHeap = new BinaryHeap(compareContinuationSliceRank);
+    continuationSliceHeap = continuationSliceDualOriginBoundedService
+      ? null
+      : new BinaryHeap(compareContinuationSliceRank);
+    continuationSliceNativeHeap = continuationSliceDualOriginBoundedService
+      ? new BinaryHeap(compareContinuationSliceRank)
+      : null;
+    continuationSliceBorrowedHeap = continuationSliceDualOriginBoundedService
+      ? new BinaryHeap(compareContinuationSliceRank)
+      : null;
     continuationSliceNodeIds = continuationSliceExactConfluenceHandoff ? new Set() : null;
     continuationSliceBorrowedNodeIds = continuationSliceExactConfluenceHandoff ? new Set() : null;
+    continuationSliceOrigins = continuationSliceDualOriginBoundedService ? new Map() : null;
+    continuationSliceNextOrigin = "borrowed";
     continuationSliceRemaining = continuationSliceBudget;
     continuationSliceActive = true;
     agendaFairness.continuationSlicesOpened += 1;
+    if (continuationSliceDualOriginBoundedService) {
+      continuationSliceCurrentOrigins = {
+        sliceId: agendaFairness.continuationSlicesOpened,
+        rootNodeId: rootEntry.nodeId,
+        budget: continuationSliceBudget,
+        consumed: 0,
+        serviceSequence: "",
+        bothOriginsAvailable: "",
+        duplicateExpansionPrevented: 0,
+        native: { admitted: 1, popped: 0, acceptedDescendants: 0, expansions: 0 },
+        borrowed: { admitted: 0, popped: 0, acceptedDescendants: 0, expansions: 0 },
+      };
+      continuationSliceNodeIds.add(rootEntry.nodeId);
+      continuationSliceOrigins.set(rootEntry.nodeId, "native");
+      agendaFairness.continuationNativeAdmitted += 1;
+    }
+  };
+  const recordContinuationOriginExpansion = (popResult) => {
+    if (!continuationSliceDualOriginBoundedService || !continuationSliceActive
+      || !popResult.continuationOrigin) return;
+    const origin = popResult.continuationOrigin;
+    const current = continuationSliceCurrentOrigins;
+    const prefix = origin === "native" ? "continuationNative" : "continuationBorrowed";
+    current.consumed += 1;
+    current.serviceSequence += origin === "native" ? "N" : "B";
+    current.bothOriginsAvailable += popResult.continuationBothOriginsAvailable ? "1" : "0";
+    current[origin].popped += 1;
+    current[origin].expansions += 1;
+    agendaFairness[`${prefix}Popped`] += 1;
+    agendaFairness[`${prefix}Expansions`] += 1;
   };
 
   const popNext = () => {
@@ -2585,8 +2717,10 @@ function searchDPCore(simulator, initialRoots, options) {
           agendaFairness.fairPops += 1;
           // PR-5.32a: a fair-served direction earns one bounded continuation
           // slice (root expansion consumes budget unit #1, see main loop).
-          beginContinuationSlice();
-          return fairResult;
+          beginContinuationSlice(fairResult.entry);
+          return continuationSliceDualOriginBoundedService
+            ? { ...fairResult, continuationOrigin: "native", continuationBothOriginsAvailable: false }
+            : fairResult;
         }
         agendaFairness.fairFallbacks += 1;
       }
@@ -2858,6 +2992,9 @@ function searchDPCore(simulator, initialRoots, options) {
       selected = popNext();
     }
     if (!selected) break;
+    continuationSliceExpansionContext = continuationSliceDualOriginBoundedService && selected.continuationOrigin
+      ? { origin: selected.continuationOrigin, stats: continuationSliceCurrentOrigins }
+      : null;
     const entry = selected.entry;
     const popExpansion = observer ? expansions : null;
     const expansionOrdinal = expansions + 1;
@@ -2899,6 +3036,7 @@ function searchDPCore(simulator, initialRoots, options) {
       fairQueueOrdinal: fairQueueOrdinals ? fairQueueOrdinals.get(entry.nodeId) : null,
       fairCursorAtPop: fairnessEnabled ? fairCursor : null,
       fairPopsAtPop: fairnessEnabled ? agendaFairness.fairPops : null,
+      ...(selected.continuationOrigin ? { continuationOrigin: selected.continuationOrigin } : {}),
     });
     if (observerAgendaMeta) observerAgendaMeta.delete(entry.nodeId);
     if (bestByKey instanceof SkylineSet) {
@@ -2924,6 +3062,7 @@ function searchDPCore(simulator, initialRoots, options) {
     }
 
     expansions += 1;
+    if (continuationSliceDualOriginBoundedService) recordContinuationOriginExpansion(selected);
     // PR-5.32a: the slice window's expansions consume the shared local budget
     // (the fair-served root's own expansion is unit #1).  The budget is drawn
     // from the SAME global maxExpansions — never extra work, only a different
@@ -3674,4 +3813,5 @@ module.exports = {
   compareDpAgendaRankForMode,
   normalizeContinuationSliceLocalPriorityMode,
   normalizeContinuationSliceExactConfluenceHandoff,
+  normalizeContinuationSliceDualOriginBoundedService,
 };
