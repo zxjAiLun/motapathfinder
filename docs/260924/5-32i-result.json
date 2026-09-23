@@ -1,0 +1,78 @@
+{
+  "schema": "pr532i-dominance-capability-witness-v1",
+  "status": "VERIFIED",
+  "verdict": "SAFE_REPRESENTATIVE",
+  "scope": "P43 only; revalidation of previously audited P14 against PR-5.32h Control, not a new search or global dominance proof",
+  "baselineCommit": "bbd90210cffca1432101f2b1ed2ba0afbcc18a41",
+  "currentControl": {
+    "sourceCommit": "af69dc1229d086715171f9fc9f635c5c2bcac4ae",
+    "expansions": 32000,
+    "foundGoal": false,
+    "searchComplete": false,
+    "rawEventSha256": "5de4c90e0a032a57922958946a7c4f11508e8f92354ed3b9a63b32dba5bf13d2",
+    "normalizedEventSha256": "da02e10e4c66ace160b9c9b94306fbc249321b0ca7aa1b5b36d99b6d92a237d7",
+    "normalization": "Remove only collector-added continuationOrigin:null from each of 181653 event rows",
+    "priorPr532dDiagnosticControlRawSha256": "da02e10e4c66ace160b9c9b94306fbc249321b0ca7aa1b5b36d99b6d92a237d7",
+    "crossjoin": "Current Control normalized events exactly equal prior diagnostic Control byte stream"
+  },
+  "p42ToP43": {
+    "preStateExactKeySha256": "927381556431c13c0c0197eb2b39474a502a2f88480709fbcdee5d13ca994e7b",
+    "currentControlP42Pop": { "nodeId": 81710, "parentId": 2632, "atExpansion": 31356 },
+    "teacherDecision": 43,
+    "action": "battle:skeletonCaptain@TS13:5,6",
+    "teacherPostExactKeySha256": "ee902262dd212915db41ad767c8b831853088f51fc1bc7e83537789d1e97b6f0",
+    "postDpKeySha256": "e0b3337ceaa6a4922a27e1dcf528e5c6fc8d37518a9cae38883691fe7bb18edd",
+    "teacherPostHp": 2667,
+    "generatedFromP42": true,
+    "firstRejection": { "sourceNodeId": 81710, "sourceAtExpansion": 31356, "eventLine": 178473, "reason": "dominance-rejected" },
+    "secondRejection": { "sourceNodeId": 2640, "sourceAtExpansion": 31491, "eventLine": 179213, "reason": "dominance-rejected" },
+    "sameExactPostStateRejectionCount": 2,
+    "acceptedInsertionCount": 0,
+    "candidateEverPopped": false,
+    "candidateReplacedAfterAcceptance": false,
+    "diagnosis": "generated and rejected twice; not never materialized and not accepted then replaced"
+  },
+  "sameKeyIncumbent": {
+    "nodeId": 1339,
+    "parentId": 1333,
+    "exactStateKeySha256": "cb0376788d6d8c7522cfeef30aa90954f8232445e07f610107e072434029955f",
+    "dpKeyEqualToTeacherPost": true,
+    "hp": 2761,
+    "hpAdvantage": 94,
+    "insertedAtExpansion": 399,
+    "poppedAtExpansion": 17967,
+    "capturedDominanceWitnessForBothRejections": true,
+    "comparisonMode": "default-hp-depth-route",
+    "depthAndRouteLengthDifference": 0,
+    "nonHpStateDiffAtPostState": false
+  },
+  "knownSuffixCapability": {
+    "firstAction": "P44 battle:skeleton@TS13:2,6",
+    "candidateAndIncumbentExecutableActions": 7,
+    "candidateAndIncumbentCommonExecutableActions": 7,
+    "candidateAndIncumbentCommonSuccessorsSameExceptHp": 7,
+    "replayedActionsFromP44": 16,
+    "teacherPostState": { "allActionsExecutable": true, "reachedTS14": true, "finalHp": 5609 },
+    "incumbentState": { "allActionsExecutable": true, "reachedTS14": true, "finalHp": 5703, "firstNonHpDivergence": null, "exactRejoin": false },
+    "interpretation": "Known continuation preserved; exact teacher-state lineage does not rejoin because the +94 HP offset persists. No evidence of P43 capability loss."
+  },
+  "evidence": {
+    "priorAuditMilestone": "docs/260923/5-32d.md",
+    "priorAuditResult": "docs/260923/5-32d-result.json",
+    "offlineReplayResultSha256": "9fefbcaddd10a2375acc448861d1d5880bc594ad323e4c827129d2474ca6dde7",
+    "offlineReplayIdenticalToPriorVerifiedResult": true,
+    "currentControlCrossjoinSha256": "69a45d3b9b18fa2b3b0205833535bfc782ff80ff02c6d26910f63dda3219eef5",
+    "ignoredLocalFolder": "shared-solver/routes/generated/260924-pr532i/",
+    "noNewSearch": true,
+    "noSolverChange": true,
+    "noProductionRuntimeAccessByThisAudit": true,
+    "ownerProductionCheck": "Owner independently reports paused, active_task=null, old release and ledger unchanged"
+  },
+  "limits": [
+    "Safety verdict applies only to incumbent node 1339 and the 16 known P44+ suffix actions; not a universal dominance correctness proof.",
+    "The known authored suffix is offline-only and not an autonomous TS14 discovery or TS15/Boss proof.",
+    "Existing Control remained expansion-budget-exhausted with a live frontier; incumbent capability does not imply its successors were served to goal under 32k.",
+    "P2 six stale generated check:static fixture hashes remain for housekeeping before the next production release."
+  ],
+  "nextAuthorization": "No new solver/search/feasibility implementation is authorized in this round; any new generic feasibility/blocker-subgoal work requires separate owner authorization."
+}

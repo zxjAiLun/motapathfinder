@@ -110,7 +110,7 @@
     "result": "Treatment does not improve the exact teacher-state frontier capability: its ordered prefix is shorter (11 vs 13), the first missing target is not expanded despite two accepted insertions, and final frontier is larger by 2449. No autonomous TS14 goal was found; no candidate existed for strict route replay or protected-key verification.",
     "promotion": "NOT_PROMOTED; option remains default OFF",
     "review": "No independent review performed",
-    "ownerAcceptance": "Pending"
+    "ownerAcceptance": "APPROVED_AS_EXPERIMENT / NOT_PROMOTED (owner ruling 2026-09-24)"
   },
   "production": {
     "state": "paused",
