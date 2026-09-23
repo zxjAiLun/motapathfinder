@@ -1,0 +1,26 @@
+[Unit]
+Description=Motapath Read-Only Observer MCP Server (Dedicated Isolated User)
+After=network.target
+
+[Service]
+Type=simple
+User=motapath-observer
+Group=motapath-observer
+WorkingDirectory=/opt/motapath-observer-mcp
+Environment=NODE_ENV=production
+EnvironmentFile=-/etc/motapath-observer/observer.env
+ExecStart=/home/ubuntu/.local/share/motapath-solver/node/bin/node server.js --port=8788 --host=127.0.0.1 --run-dir=/home/ubuntu/motapath-solver/runs/neko-zero-key --runs-root=/home/ubuntu/motapath-solver/runs --repo-root=/home/ubuntu/motapath-solver/releases/20260920-5-28b-a647d573-r2
+Restart=always
+RestartSec=5
+MemoryMax=512M
+CPUQuota=50%
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/home/ubuntu/motapath-solver/runs /home/ubuntu/motapath-solver/releases /home/ubuntu/.local/share/motapath-solver/node
+InaccessiblePaths=/home/ubuntu/.ssh /root
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

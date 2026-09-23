@@ -1,0 +1,21 @@
+[Unit]
+Description=Motapath Read-Only Observer MCP Server (Streamable HTTP + SSE)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/motapath-solver/observer-mcp
+Environment=NODE_ENV=production
+EnvironmentFile=-%h/motapath-solver/observer-mcp/.env
+ExecStart=%h/.local/share/motapath-solver/node/bin/node server.js --port=8788 --host=127.0.0.1 --run-dir=%h/motapath-solver/runs/neko-zero-key --runs-root=%h/motapath-solver/runs --repo-root=%h/motapath-solver/releases/20260920-5-28b-a647d573-r2
+Restart=always
+RestartSec=5
+MemoryMax=512M
+CPUQuota=50%
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

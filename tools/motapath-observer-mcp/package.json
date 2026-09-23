@@ -1,0 +1,25 @@
+{
+  "name": "motapath-observer-mcp",
+  "version": "1.0.0",
+  "description": "Strictly read-only observer MCP server for motapath durable solver",
+  "main": "server.js",
+  "bin": {
+    "motapath-observer-mcp": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test-observer-mcp.js"
+  },
+  "keywords": [
+    "mcp",
+    "motapath",
+    "observer",
+    "durable-solver",
+    "read-only"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}
